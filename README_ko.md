@@ -76,7 +76,7 @@
 
 [https://cloud.ragflow.io](https://cloud.ragflow.io)에서 저희 클라우드 서비스를 이용해 보세요.
 
-로컬 배포는 [자체 호스팅](#-자체-호스팅)을 참조하세요.
+로컬 배포는 [자체 호스팅](#-로컬-배포)을 참조하세요.
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -85,6 +85,7 @@
 
 ## 🔥 업데이트
 
+- 2026-11-06 RAGFlow 1.0.0을 출시했습니다.
 - 2026-09-29 RAGFlow 1.0.0-rc1을 출시했습니다.
 
 - 2026-09-10 사이트맵을 통한 웹 콘텐츠 수집을 추가했습니다.

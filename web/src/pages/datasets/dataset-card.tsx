@@ -4,7 +4,9 @@ import { SharedBadge } from '@/components/shared-badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IDataset } from '@/interfaces/database/dataset';
+import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
 import { ChevronRight } from 'lucide-react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DatasetDropdown } from './dataset-dropdown';
@@ -28,6 +30,12 @@ export function DatasetCard({
 }: DatasetCardProps) {
   const { t } = useTranslation();
   const { navigateToDataset } = useNavigatePage();
+  const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
+
+  const handleCardClick = useCallback(() => {
+    setPrimarySidebarCollapsed(true);
+    navigateToDataset(dataset.id)();
+  }, [dataset.id, navigateToDataset, setPrimarySidebarCollapsed]);
 
   return (
     <HomeCard
@@ -46,7 +54,7 @@ export function DatasetCard({
         </DatasetDropdown>
       }
       sharedBadge={<SharedBadge>{dataset.nickname}</SharedBadge>}
-      onClick={navigateToDataset(dataset.id)}
+      onClick={handleCardClick}
     ></HomeCard>
   );
 }

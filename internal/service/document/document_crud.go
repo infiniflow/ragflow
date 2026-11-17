@@ -308,6 +308,10 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	}
 
 	fileCleanupCtx := context.WithoutCancel(ctx)
+	// Preview artifacts are independent of the source-file cleanup. Remove them
+	// before the fallible file cleanup so a file cleanup failure cannot orphan
+	// them after the document row is gone.
+	cleanupPreviewArtifacts(fileCleanupCtx, doc)
 	if err = s.cleanupFileReferences(fileCleanupCtx, docID, doc.KbID); err != nil {
 		return fmt.Errorf("document deleted but file cleanup failed: %w", err)
 	}
@@ -354,6 +358,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
 	}
+	cleanupPreviewArtifacts(context.WithoutCancel(ctx), doc)
 	return nil
 }
 

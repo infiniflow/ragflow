@@ -408,10 +408,45 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 	}
 }
 
+func TestMaybeDispatchImage_ExplicitLanguageOverridesDatasetLanguage(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+
+	drv := &imagePromptCaptureDriver{}
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	_, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(),
+		dao.DB,
+		utility.FileTypeVISUAL,
+		"test.png",
+		picturePNG(t),
+		map[string]any{"tenant_id": "t1", "lang": "Japanese"},
+		defaultSetups(),
+		true,
+		visionSettings{language: "French"},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+
+	got, ok := firstUserText(drv.captured)
+	if !ok {
+		t.Fatalf("no user text captured in VLM messages: %#v", drv.captured)
+	}
+	if !strings.Contains(got, "Respond in French.") {
+		t.Fatalf("VLM user text = %q, want explicit enhancement language", got)
+	}
+	if strings.Contains(got, "Respond in Japanese.") {
+		t.Fatalf("VLM user text = %q, dataset language overrode the explicit enhancement language", got)
+	}
+}
+
 // TestMaybeDispatchImage_GlobalVisionPromptDrivesImage locks the moved
 // contract: the image description reads its prompt from the global vlm block,
 // and a legacy per-family value only applies when the global one is unset.
-// Language is not part of the enhancement settings — captions follow the
+// Captions follow the explicit enhancement language when set, otherwise the
 // knowledge base language (see TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage).
 func TestMaybeDispatchImage_GlobalVisionPromptDrivesImage(t *testing.T) {
 	origResolver := resolveTenantModelByType

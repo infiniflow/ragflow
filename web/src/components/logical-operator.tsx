@@ -24,7 +24,7 @@ export function LogicalOperator({ name }: LogicalOperatorProps) {
   const switchLogicOperatorOptions = useBuildSwitchLogicOperatorOptions();
 
   return (
-    <div className="relative min-w-14">
+    <div className="relative min-w-20">
       <RAGFlowFormItem
         name={name}
         className="absolute top-1/2 -translate-y-1/2 right-1 left-0 z-10 bg-bg-base"

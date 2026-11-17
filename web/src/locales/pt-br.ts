@@ -151,10 +151,6 @@ export default {
       layoutRecognize: 'Reconhecimento de layout',
       layoutRecognizeTip:
         'Use modelos visuais para análise de layout para entender melhor a estrutura do documento e localizar efetivamente títulos, blocos de texto, imagens e tabelas. Se desativado, apenas o texto simples no PDF será recuperado. Para mais informações, acesse https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Tamanho da página da tarefa',
-      taskPageSizeMessage: 'Por favor, insira o tamanho da página da tarefa!',
-      taskPageSizeTip:
-        'Durante o reconhecimento de layout, um arquivo PDF é dividido em fragmentos e processado em paralelo para aumentar a velocidade de processamento. Este parâmetro define o tamanho de cada fragmento. Um tamanho de fragmento maior reduz a probabilidade de dividir texto contínuo entre páginas.',
       addPage: 'Adicionar página',
       greaterThan: 'O valor atual deve ser maior que!',
       greaterThanPrevious: 'O valor atual deve ser maior que o anterior!',
@@ -177,9 +173,6 @@ export default {
       delimiter: 'Delimitadores para segmentação de texto',
       delimiterTip:
         'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \\n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula. Defina os delimitadores apenas após entender o mecanismo de segmentação e particionamento de texto.',
-      html4excel: 'Excel para HTML',
-      html4excelTip:
-        'Use em conjunto com o método de fragmentação General. Quando desativado, arquivos de planilhas (XLSX, XLS (Excel 97-2003)) serão analisados linha por linha como pares chave-valor. Quando ativado, os arquivos de planilhas serão convertidos em tabelas HTML. Se a tabela original tiver mais de 12 linhas, o sistema dividirá automaticamente em várias tabelas HTML a cada 12 linhas. Para mais informações, consulte https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.',
       autoKeywords: 'Palavras-chave automáticas',
       autoKeywordsTip:
         'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos. Para mais detalhes, consulte https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',

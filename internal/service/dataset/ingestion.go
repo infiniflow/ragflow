@@ -58,16 +58,16 @@ func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID stri
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("invalid Dataset ID '%s'", datasetID)
 		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	status, err := d.documentDAO.GetParsingStatusByKBID(ctx, dao.DB, datasetID)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 	downloadStatus, err := d.getDownloadStatus(ctx, datasetID)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	return map[string]interface{}{

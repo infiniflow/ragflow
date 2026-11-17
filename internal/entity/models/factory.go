@@ -92,6 +92,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewCheaperInferenceModel(baseURL, urlSuffix), nil
 	case "cohere":
 		return NewCoHereModel(baseURL, urlSuffix), nil
+	case "aimlapi.com":
+		return NewAimlapiModel(baseURL, urlSuffix), nil
 	case "cometapi":
 		return NewCometAPIModel(baseURL, urlSuffix), nil
 	case "daoxe":
@@ -165,6 +167,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 	case "monkeyocr":
 		// MonkeyOCR's RAGFlow adapter uses the same /file_parse ZIP protocol as MinerU.
 		return NewMonkeyOCRModel(baseURL, urlSuffix), nil
+	case "unlimited_ocr", "unlimited-ocr-2":
+		return NewUnlimitedOCRModel(baseURL, urlSuffix), nil
 	case "futurmix":
 		return NewFuturMixModel(baseURL, urlSuffix), nil
 	case "perplexity":
@@ -199,12 +203,17 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAnonRouterModel(baseURL, urlSuffix), nil
 	case "api-route":
 		return NewApiRouteModel(baseURL, urlSuffix), nil
+	case "shengsuanyun":
+		return NewShengsuanyunModel(baseURL, urlSuffix), nil
 	case "opper":
 		return NewOpperModel(baseURL, urlSuffix), nil
 	case "empiriolabs ai":
 		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
 	case "runcrate":
 		return NewRuncrateModel(baseURL, urlSuffix), nil
+	case "nace":
+		// System One protocol, like "systemone", with Nace's own model catalog.
+		return NewNaceModel(baseURL, urlSuffix), nil
 	case "worldrouter":
 		return NewWorldRouterModel(baseURL, urlSuffix), nil
 	case "cloudgpu":
@@ -221,6 +230,12 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewWallyModel(baseURL, urlSuffix), nil
 	case "synap":
 		return NewSynapModel(baseURL, urlSuffix), nil
+	case "wiro ai":
+		return NewWiroModel(baseURL, urlSuffix), nil
+	case "crusoe":
+		return NewCrusoeModel(baseURL, urlSuffix), nil
+	case "hopbase":
+		return NewHopBaseModel(baseURL, urlSuffix), nil
 	case "standard compute":
 		return NewStandardComputeModel(baseURL, urlSuffix), nil
 	default:

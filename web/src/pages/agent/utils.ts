@@ -1,4 +1,4 @@
-import { FileType, FileTypeSuffixMap } from '@/constants/file';
+import { FileType } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -228,15 +228,11 @@ export function transformParserParams(params: ParserFormSchemaType) {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
         Omit<ParserFormSchemaType['setups'][0], 'pages'> & {
-          suffix: string[];
-        } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
           pages: number[][];
         }
-      > = {
-        suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
-      };
+      > = {};
 
       switch (cur.fileFormat) {
         case FileType.PDF:
@@ -247,6 +243,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
             mineru_lang: cur.mineru_lang,
             mineru_formula_enable: cur.mineru_formula_enable,
             mineru_table_enable: cur.mineru_table_enable,
+            unlimited_ocr_crop_mode: cur.unlimited_ocr_crop_mode,
+            unlimited_ocr_no_repeat_ngram_size:
+              cur.unlimited_ocr_no_repeat_ngram_size,
+            unlimited_ocr_page_guard: cur.unlimited_ocr_page_guard,
             lang: cur.lang,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
@@ -313,6 +313,12 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
+        case FileType.TextMarkdown:
+          filteredSetup = {
+            ...filteredSetup,
+            remove_toc: cur.remove_toc || false,
           };
           break;
         case FileType.Audio:

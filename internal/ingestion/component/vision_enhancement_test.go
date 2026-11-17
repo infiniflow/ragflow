@@ -559,16 +559,23 @@ func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 }
 
 // TestVisionEnhancement_LanguagePriority pins the prompt-language chain:
-// run-level dataset language (inputs) > family setup lang > English. The
-// setup fallback is what makes the DSL's pdf.lang effective, mirroring
-// Python's conf.get("lang") in parser.py:778.
+// explicit enhancement language > run-level dataset language (inputs) > English.
+// The family setup's lang is an OCR engine input, not a caption language.
 func TestVisionEnhancement_LanguagePriority(t *testing.T) {
 	tests := []struct {
 		name   string
 		inputs map[string]any
 		setups map[string]schema.ParserSetup
+		vision visionSettings
 		want   string
 	}{
+		{
+			name:   "explicit enhancement language wins over the dataset language",
+			inputs: map[string]any{"tenant_id": "t1", "lang": "Japanese"},
+			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
+			vision: visionSettings{language: "French"},
+			want:   "French",
+		},
 		{
 			name:   "dataset language wins over setup lang",
 			inputs: map[string]any{"tenant_id": "t1", "lang": "Japanese"},
@@ -606,7 +613,7 @@ func TestVisionEnhancement_LanguagePriority(t *testing.T) {
 
 			_, handled, err := maybeDispatchVisionEnhancement(
 				t.Context(), dao.DB, utility.FileTypePDF, dispatched, tc.inputs,
-				visionSettings{}, progress.Window{})
+				tc.vision, progress.Window{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -1294,8 +1301,8 @@ func TestDefaultVisionChatInvoker_AppliesDeadline(t *testing.T) {
 	if drv.config == nil || drv.config.Vision == nil || !*drv.config.Vision {
 		t.Fatal("vision chat must enable vision")
 	}
-	if drv.config.Thinking != nil {
-		t.Fatal("non-Ollama vision chat must preserve provider thinking default")
+	if drv.config.Thinking == nil || *drv.config.Thinking {
+		t.Fatal("vision chat must disable thinking by default")
 	}
 }
 

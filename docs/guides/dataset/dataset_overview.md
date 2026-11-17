@@ -4,7 +4,7 @@ title: Dataset Overview
 sidebar_label: Dataset Overview
 slug: /dataset_overview
 sidebar_custom_props: {
-  categoryIcon: LucideDatabaseZap
+  categoryIcon: LucideLayoutDashboard
 }
 ---
 

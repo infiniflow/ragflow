@@ -44,6 +44,7 @@ import { useHandleFreedomChange } from './use-watch-change';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
+  enabledPrefix?: string;
   modelTypes?: string[];
   llmId?: string;
   llmSelectTestId?: string;
@@ -93,6 +94,7 @@ export const LlmSettingSchema = {
 
 export function LlmSettingFieldItems({
   prefix,
+  enabledPrefix,
   modelTypes,
   llmSelectTestId,
   llmOptionTestIdPrefix,
@@ -121,7 +123,17 @@ export function LlmSettingFieldItems({
     [prefix],
   );
 
-  const handleChange = useHandleFreedomChange(getFieldWithPrefix);
+  const getCheckFieldWithPrefix = useCallback(
+    (name: string) => {
+      return `${enabledPrefix ?? ''}${name}`;
+    },
+    [enabledPrefix],
+  );
+
+  const handleChange = useHandleFreedomChange(
+    getFieldWithPrefix,
+    getCheckFieldWithPrefix,
+  );
 
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
     label: t(camelCase(x)),
@@ -272,7 +284,7 @@ export function LlmSettingFieldItems({
               </FormLabel>
               <FormControl>
                 <Select
-                  value={field.value ?? 'default'}
+                  value={field.value ?? 'disabled'}
                   onValueChange={field.onChange}
                 >
                   <SelectTrigger className="flex-1 !m-0">

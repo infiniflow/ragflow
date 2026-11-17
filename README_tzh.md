@@ -86,6 +86,7 @@
 
 ## 🔥 近期更新
 
+- 2026-11-06 發佈 RAGFlow 1.0.0。
 - 2026-09-30 發佈 RAGFlow 1.0.0-rc1。
 - 2026-09-10 支持通過 Sitemap 接入網站內容。
 - 2026-08-19 推出知識編譯，支持在文檔級和知識庫級生成 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills。

@@ -72,14 +72,13 @@ func TestImageOCRSavedConfigToSearchableChunk(t *testing.T) {
 			t.Errorf("wrong selected instance request: %s %s", r.URL.Path, r.Header.Get("Authorization"))
 		}
 		var request struct {
-			File      string `json:"file"`
-			FileType  int    `json:"fileType"`
-			Algorithm string `json:"algorithm"`
+			File     string `json:"file"`
+			FileType int    `json:"fileType"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 		}
-		if request.FileType != 1 || request.Algorithm != "PP-OCRv6" {
+		if request.FileType != 1 {
 			t.Errorf("not the selected image model: %+v", request)
 		}
 		data, _ := base64.StdEncoding.DecodeString(request.File)

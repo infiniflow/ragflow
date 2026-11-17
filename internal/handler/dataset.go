@@ -27,11 +27,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
@@ -211,47 +211,28 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 
 // CreateDataset handles POST /api/v1/datasets.
 func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "create_dataset",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
+	common.StartOperationLog(c, "create_dataset")
+	defer common.FinishOperationLog(c)
 
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
-	operationLog.UserID = user.ID
 
 	bodyBytes, raw, err := parseJSONRequestObject(c)
 	if err != nil {
-		operationLog.Code = int(common.CodeArgumentError)
-		operationLog.Error = err
 		return
 	}
 	if _, exists := raw["ext"]; exists {
 		err = fmt.Errorf("extra inputs are not permitted: ext")
 		common.RespondError(c, common.CodeArgumentError, err.Error())
-		operationLog.Code = int(common.CodeArgumentError)
-		operationLog.Error = err
 		return
 	}
 	for field := range raw {
 		if !createDatasetAllowedFields[field] {
 			err = fmt.Errorf("extra inputs are not permitted: %s", field)
 			common.RespondError(c, common.CodeArgumentError, err.Error())
-			operationLog.Code = int(common.CodeArgumentError)
-			operationLog.Error = err
 			return
 		}
 	}
@@ -259,8 +240,6 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	var req service.CreateDatasetRequest
 	if err = json.Unmarshal(bodyBytes, &req); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
-		operationLog.Code = int(common.CodeDataError)
-		operationLog.Error = err
 		return
 	}
 	if req.ParserConfig == nil && req.PipelineID == nil {
@@ -270,8 +249,6 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	if req.Name == "" || (len(bodyBytes) > 0 && jsonNullValue(bodyBytes, "name")) {
 		err = fmt.Errorf("field validation for 'name' failed on the 'required' tag")
 		common.RespondError(c, common.CodeDataError, err.Error())
-		operationLog.Code = int(common.CodeDataError)
-		operationLog.Error = err
 		return
 	}
 
@@ -293,13 +270,9 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 					"current":  insufficient.Current,
 					"limit":    insufficient.Limit,
 				}})
-				operationLog.Code = int(common.CodeBillingAppsInsufficient)
-				operationLog.Error = insufficient
 				return
 			}
 			common.RespondError(c, common.CodeServerError, quotaErr.Error())
-			operationLog.Code = int(common.CodeServerError)
-			operationLog.Error = quotaErr
 			return
 		}
 	}
@@ -307,11 +280,12 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	result, code, err := h.datasetsService.CreateDataset(ctx, &req)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
-		operationLog.Code = int(code)
-		operationLog.Error = err
 		return
 	}
 
+	if id, ok := result["id"].(string); ok {
+		common.SetOperationResource(c, "dataset_id", id)
+	}
 	common.RespondSuccess(c, result, "success")
 }
 
@@ -328,6 +302,11 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 	datasetID := c.Param("dataset_id")
 	result, code, err := h.datasetsService.GetDataset(ctx, datasetID)
 	if err != nil {
+		if code == common.CodeServerError {
+			common.Error("Failed to get dataset", err)
+			common.RespondError(c, code, common.CodeServerError.Message())
+			return
+		}
 		common.RespondError(c, code, err.Error())
 		return
 	}
@@ -358,14 +337,18 @@ func parseJSONRequestObject(c *gin.Context) ([]byte, map[string]interface{}, err
 	}
 
 	body, err := c.GetRawData()
-	if err != nil || len(body) == 0 {
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, "Failed to read request body: "+err.Error())
+		return nil, nil, err
+	}
+	if len(body) == 0 {
 		common.RespondError(c, common.CodeArgumentError, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
 		return nil, nil, fmt.Errorf("malformed JSON syntax: Missing commas/brackets or invalid encoding")
 	}
 
 	var payload interface{}
 	if err = json.Unmarshal(body, &payload); err != nil {
-		common.RespondError(c, common.CodeArgumentError, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+		common.RespondError(c, common.CodeArgumentError, "Malformed JSON syntax: "+err.Error())
 		return nil, nil, err
 	}
 	raw, isObject := payload.(map[string]interface{})
@@ -434,63 +417,41 @@ var updateDatasetAllowedFields = map[string]bool{
 }
 
 func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "create_dataset",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
+	common.StartOperationLog(c, "update_dataset")
+	defer common.FinishOperationLog(c)
 
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
 		common.RespondError(c, common.CodeDataError, "user id is required")
-		operationLog.Code = int(common.CodeDataError)
-		operationLog.Error = errors.New("user id is required")
 		return
 	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
 		common.RespondError(c, common.CodeBadRequest, "dataset id is required")
-		operationLog.Code = int(common.CodeBadRequest)
-		operationLog.Error = errors.New("dataset id is required")
 		return
 	}
 
 	if _, err := dataset.NormalizeDatasetID(datasetID); err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
-		operationLog.Code = int(common.CodeArgumentError)
-		operationLog.Error = err
 		return
 	}
 
 	bodyBytes, _, err := parseJSONRequestObject(c)
 	if err != nil {
 		// parseJSONRequestObject already wrote the error response.
-		operationLog.Code = int(common.CodeArgumentError)
-		operationLog.Error = err
 		return
 	}
 
 	var req service.UpdateDatasetRequest
 	if err = json.Unmarshal(bodyBytes, &req); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
-		operationLog.Code = int(common.CodeDataError)
-		operationLog.Error = err
 		return
 	}
 
@@ -503,8 +464,6 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 		for field := range providedFields {
 			if !updateDatasetAllowedFields[field] {
 				common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("Extra inputs are not permitted: %s", field))
-				operationLog.Code = int(common.CodeArgumentError)
-				operationLog.Error = fmt.Errorf("extra inputs are not permitted: %s", field)
 				return
 			}
 		}
@@ -513,8 +472,6 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 			if json.Unmarshal(parserConfig, &config) == nil {
 				if _, ok = config["ext"]; ok {
 					common.RespondError(c, common.CodeArgumentError, "parser_config.ext is not supported; send parser configuration fields directly")
-					operationLog.Code = int(common.CodeArgumentError)
-					operationLog.Error = errors.New("parser_config.ext is not supported; send parser configuration fields directly")
 					return
 				}
 			}
@@ -526,14 +483,10 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 	result, code, err := h.datasetsService.UpdateDataset(ctx, datasetID, req)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
-		operationLog.Code = int(code)
-		operationLog.Error = err
 		return
 	}
 	if code != common.CodeSuccess {
 		common.RespondError(c, code, "dataset updated failed")
-		operationLog.Code = int(code)
-		operationLog.Error = errors.New("dataset updated failed")
 		return
 	}
 
@@ -560,6 +513,9 @@ func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
 }
 
 func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_metadata_config")
+	defer common.FinishOperationLog(c)
+
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
@@ -725,32 +681,18 @@ func ingestionEventCursor(c *gin.Context, name string) (*int, bool) {
 
 // DeleteDatasets handles DELETE /api/v1/datasets.
 func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "delete_dataset",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
-	user, errorCode, errorMessage := GetUser(c)
+	common.StartOperationLog(c, "delete_dataset")
+	defer common.FinishOperationLog(c)
+
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
-	operationLog.UserID = user.ID
 
 	bodyBytes, rawPayload, err := parseJSONRequestObject(c)
 	if err != nil {
 		// parseJSONRequestObject already wrote the error response.
-		operationLog.Code = int(common.CodeArgumentError)
-		operationLog.Error = err
 		return
 	}
 
@@ -759,8 +701,6 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 		if field != "ids" && field != "delete_all" {
 			err = fmt.Errorf("extra inputs are not permitted: %s", field)
 			common.RespondError(c, common.CodeArgumentError, err.Error())
-			operationLog.Code = int(common.CodeArgumentError)
-			operationLog.Error = err
 			return
 		}
 	}
@@ -771,13 +711,14 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	}
 	if err = json.Unmarshal(bodyBytes, &req); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
-		operationLog.Code = int(common.CodeDataError)
-		operationLog.Error = err
 		return
 	}
 
 	// Mirror DeleteReq duplicate detection.
+	common.SetOperationResource(c, "delete_all", req.DeleteAll)
 	if req.IDs != nil {
+		common.SetOperationResource(c, "ids", *req.IDs)
+
 		seen := make(map[string]int, len(*req.IDs))
 		duplicates := make([]string, 0)
 		for _, id := range *req.IDs {
@@ -789,8 +730,6 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 		if len(duplicates) > 0 {
 			err = fmt.Errorf("duplicate ids: '%s'", strings.Join(duplicates, ", "))
 			common.RespondError(c, common.CodeArgumentError, err.Error())
-			operationLog.Code = int(common.CodeArgumentError)
-			operationLog.Error = err
 			return
 		}
 	}
@@ -804,8 +743,6 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
-		operationLog.Code = int(code)
-		operationLog.Error = err
 		return
 	}
 
@@ -1107,6 +1044,9 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 }
 
 func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_document_metadata_config")
+	defer common.FinishOperationLog(c)
+
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
@@ -1159,6 +1099,12 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 
+	if req.SearchID != nil && strings.TrimSpace(*req.SearchID) != "" {
+		common.StartOperationLog(c, "request_search_query")
+		defer common.FinishOperationLog(c)
+		common.SetOperationResource(c, "search_id", *req.SearchID)
+	}
+
 	if req.Page == nil {
 		defaultPage := common.DefaultPage
 		req.Page = &defaultPage
@@ -1195,6 +1141,10 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 	if err := validateSearchDatasetsRequest(&req); err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
@@ -1248,12 +1198,23 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
+	if req.SearchID != nil && strings.TrimSpace(*req.SearchID) != "" {
+		common.StartOperationLog(c, "request_search_query")
+		defer common.FinishOperationLog(c)
+		common.SetOperationResource(c, "search_id", *req.SearchID)
+		common.SetOperationResource(c, "dataset_id", datasetID)
+	}
+
 	req.Question = strings.TrimSpace(req.Question)
 	if req.Question == "" {
 		common.RespondError(c, common.CodeArgumentError, "question is required")
 		return
 	}
 	if err := validateSearchDatasetRequest(&req); err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}

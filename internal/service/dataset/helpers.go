@@ -52,9 +52,6 @@ var (
 		"time":   {},
 		"number": {},
 	}
-	validIndexTypes        = []string{"graph", "raptor", "mindmap"}
-	indexTypeToTaskType    = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
-	indexTypeToDisplayName = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
 )
 
 const (
@@ -155,6 +152,13 @@ func isHexID(s string) bool {
 
 func validateDatasetEmbeddingModel(embeddingModel string) error {
 	if isHexID(embeddingModel) {
+		return nil
+	}
+
+	// A gp- model group reference resolves through the group picker at use
+	// time (verifyEmbeddingAvailability -> ResolveInfo), so it passes format
+	// validation here.
+	if _, ok := common.ParseGroupModelRef(embeddingModel); ok {
 		return nil
 	}
 

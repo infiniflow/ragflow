@@ -278,10 +278,6 @@ func autoMigrateModels() []interface{} {
 		&entity.MemoryTask{},
 		&entity.Search{},
 		&entity.PipelineOperationLog{},
-		&entity.EvaluationDataset{},
-		&entity.EvaluationCase{},
-		&entity.EvaluationRun{},
-		&entity.EvaluationResult{},
 		&entity.TimeRecord{},
 		&entity.License{},
 		&entity.SkillSpace{},
@@ -442,6 +438,13 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		}
 		if err = migrateResourceUserIDs(ctx, DB); err != nil {
 			return fmt.Errorf("failed to backfill resource user IDs: %w", err)
+		}
+		// Normalize the Python / early-Go ingestion shapes that the earlier
+		// parser-config step deliberately left in component nodes and custom
+		// canvas DSLs. It runs last because its target version sorts above every
+		// other version-gated step.
+		if err = migrateIngestionLegacyConfigs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to normalize legacy ingestion configs: %w", err)
 		}
 		common.Info("Database schema migrated successfully")
 	} else {

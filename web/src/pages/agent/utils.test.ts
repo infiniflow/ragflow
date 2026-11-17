@@ -149,6 +149,36 @@ describe('transformParserParams MinerU settings', () => {
       }
     },
   );
+
+  it('preserves Unlimited-OCR-2 options when serializing PDF setups', () => {
+    const result = transformParserParams({
+      setups: [
+        {
+          fileFormat: FileType.PDF,
+          parse_method: 'unlimited-ocr-model-id',
+          unlimited_ocr_crop_mode: 'gundam',
+          unlimited_ocr_no_repeat_ngram_size: 40,
+          unlimited_ocr_page_guard: false,
+        },
+      ],
+    } as any);
+    const saved = JSON.parse(JSON.stringify(result)).pdf;
+    expect(saved).toMatchObject({
+      parse_method: 'unlimited-ocr-model-id',
+      unlimited_ocr_crop_mode: 'gundam',
+      unlimited_ocr_no_repeat_ngram_size: 40,
+      unlimited_ocr_page_guard: false,
+    });
+  });
+});
+
+describe('transformParserParams markdown settings', () => {
+  it.each([true, false])('keeps the remove_toc switch %s', (removeToc) => {
+    const result: Record<string, any> = transformParserParams({
+      setups: [{ fileFormat: FileType.TextMarkdown, remove_toc: removeToc }],
+    } as any);
+    expect(result.markdown.remove_toc).toBe(removeToc);
+  });
 });
 
 describe('transformParserParams vision settings', () => {
@@ -196,6 +226,34 @@ describe('transformParserParams vision settings', () => {
     expect(result).not.toHaveProperty(`${FileType.PDF}.vlm`);
     expect(result).toHaveProperty(`${FileType.Audio}.vlm`, {
       llm_id: 'asr-model',
+    });
+  });
+
+  it('saves an explicit global description language', () => {
+    const result = transformParserParams({
+      enable_vision_enhancement: true,
+      vlm: {
+        llm_id: 'model-B',
+        lang: 'Japanese',
+        system_prompt: '',
+      },
+      setups: [{ fileFormat: FileType.Image, ocr_enabled: true }],
+    } as any);
+
+    expect(result.vlm).toEqual({
+      llm_id: 'model-B',
+      lang: 'Japanese',
+      system_prompt: '',
+    });
+
+    const reloaded = transformApiConfigToForm(
+      Operator.Parser,
+      JSON.parse(JSON.stringify(result)),
+    );
+    expect(transformParserParams(reloaded as any).vlm).toEqual({
+      llm_id: 'model-B',
+      lang: 'Japanese',
+      system_prompt: '',
     });
   });
 

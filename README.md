@@ -84,6 +84,7 @@ For local deployment, see [Local Deployment](#-local-deployment).
 
 ## 🔥 Latest Updates
 
+- 2026-11-06 RAGFlow 1.0.0 released.
 - 2026-09-29 RAGFlow 1.0.0-rc1 released.
 - 2026-09-10 Added website content ingestion through sitemaps.
 - 2026-08-19 Introduced Knowledge Compilation to generate Wikis, Graphs, Trees, PageIndex, Mind Maps, Timelines, and Skills at the document and dataset levels.

@@ -608,10 +608,6 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       layoutRecognize: 'PDF parseri',
       layoutRecognizeTip:
         'Sənəd başlıqlarının, mətn bloklarının, şəkillərin və cədvəllərin yerini səmərəli şəkildə müəyyən etmək üçün PDF tərtibatının təhlilində vizual modeldən istifadə edin. Sadə seçim seçilərsə, PDF-dən yalnız adi mətn çıxarılacaq. Nəzərə alın ki, bu seçim hazırda YALNIZ PDF sənədləri üçün işləyir.',
-      taskPageSize: 'Tapşırıq üzrə səhifə sayı',
-      taskPageSizeMessage: 'Tapşırıq üzrə səhifə sayını daxil edin!',
-      taskPageSizeTip:
-        'Tərtibatın tanınması zamanı emal sürətini artırmaq üçün PDF faylı fraqmentlərə bölünür və paralel emal olunur. Bu parametr hər fraqmentin ölçüsünü təyin edir. Daha böyük fraqment ölçüsü ardıcıl mətnin səhifələr arasında bölünməsi ehtimalını azaldır.',
       addPage: 'Səhifə əlavə et',
       greaterThan: 'Cari dəyər son dəyərdən böyük olmalıdır!',
       greaterThanPrevious: 'Cari dəyər əvvəlki son dəyərdən böyük olmalıdır!',
@@ -643,9 +639,6 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       delimiterPreviewEmpty:
         'Ayırıcı yoxdur — mətn yalnız ölçüsünə görə hissələrə bölünəcək.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: 'Excel-dən HTML-ə',
-      html4excelTip:
-        'Ümumi hissələrə bölmə üsulu ilə istifadə edin. Söndürüldükdə verilənlər dəstindəki elektron cədvəllər (XLSX və ya XLS(Excel 97-2003)) açar-dəyər cütlərinə çevriləcək. Aktivləşdirildikdə isə HTML cədvəllərinə çevriləcək və ilkin cədvəldə 12-dən çox sətir varsa, hər 12 sətirdən bir bölünəcək. Ətraflı məlumat üçün https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration ünvanına baxın.',
       autoKeywords: 'Çıxarılacaq açar sözlərin sayı',
       autoKeywordsTip:
         "Hər hissə üçün avtomatik olaraq N açar söz çıxarır ki, həmin sözləri ehtiva edən sorğularda hissələrin sıralamadakı yeri yüksəlsin. Nəzərə alın ki, 'Konfiqurasiya' bölməsində göstərilən indeksləşdirmə modeli əlavə tokenlər sərf edəcək. Hissəyə əlavə edilmiş açar sözləri hissələr siyahısından yoxlaya və ya yeniləyə bilərsiniz. Ətraflı məlumat üçün https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration ünvanına baxın.",
@@ -1375,16 +1368,6 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
       dataSourceFieldClientSecret: 'Müştəri sirri',
       dataSourceFieldFolderPathOptional: 'Qovluq yolu',
       dataSourceFieldBatchSize: 'Dəstə ölçüsü',
-      dataSourceFieldFeishuAppId: 'Feishu tətbiqinin ID-si',
-      dataSourceFieldFeishuAppSecret: 'Feishu tətbiqinin sirri',
-      dataSourceFieldWikiSpaceId: 'Viki sahəsinin ID-si',
-      dataSourceFieldRootNodeToken: 'Vikinin kök düyününün tokeni',
-      dataSourceFieldIncludeExtensions: 'İcazə verilən fayl genişlənmələri',
-      dataSourceFieldIncludeKeywords: 'Fayl adında tələb olunan açar sözlər',
-      dataSourceFieldExcludeKeywords: 'Fayl adında istisna edilən açar sözlər',
-      dataSourceFieldMaxFileSizeBytes: 'Maksimum fayl ölçüsü (bayt)',
-      dataSourceValidationFeishuBatchSize:
-        'Dəstə ölçüsü 1 ilə 10 arasında olmalıdır',
       dataSourceFieldMailFolder: 'Poçt qovluğu',
       dataSourceFieldMailboxUserIds: 'Poçt qutusu istifadəçilərinin ID-ləri',
       dataSourceFieldInstanceUrl: 'Nüsxənin URL-i',
@@ -1661,8 +1644,6 @@ Nümunə: Virtual host üslubu`,
         'Bilik axtarışı üçün Notion-dan səhifələri və verilənlər bazalarını sinxronlaşdırın.',
       google_driveDescription:
         'Google Drive hesabınızı OAuth vasitəsilə qoşun və müəyyən qovluqları və ya diskləri sinxronlaşdırın.',
-      feishu_wikiDescription:
-        'Feishu Wiki alt ağacından endirilə bilən fayl qovşaqlarını sinxronlaşdırın.',
       gmailDescription:
         'E-poçtları sinxronlaşdırmaq üçün Gmail hesabınızı OAuth vasitəsilə qoşun.',
       webdavDescription:
@@ -2120,12 +2101,6 @@ Nümunə: Virtual host üslubu`,
       apiKeyTip:
         'Müvafiq LLM provayderində qeydiyyatdan keçməklə API açarını əldə edə bilərsiniz.',
       aimlapiGetKey: 'API açarı al',
-      aimlapiCheckStatus: 'Vəziyyəti yoxla',
-      aimlapiAwaitingConsent: 'AI/ML API pəncərəsində təsdiq gözlənilir…',
-      aimlapiKeyAdded: 'AI/ML API açarınız yaradıldı və yuxarıya əlavə edildi.',
-      aimlapiAuthDenied: 'İcazə verilmədi. Yenidən cəhd edin.',
-      aimlapiAuthExpired: 'Sorğunun vaxtı bitdi. Yenidən cəhd edin.',
-      aimlapiAuthFailed: 'Giriş alınmadı. Yenidən cəhd edin.',
       showMoreModels: 'Modellərə bax',
       hideModels: 'Modelləri gizlət',
       baseUrl: 'Baza URL-i',
@@ -2666,13 +2641,6 @@ Nümunə: Virtual host üslubu`,
     },
     flow: {
       exportCurrentPage: 'Cari səhifəni ixrac et',
-      preprocess: {
-        preprocess: 'İlkin emal',
-        mainContent: 'Əsas məzmun',
-        abstract: 'Xülasə',
-        author: 'Müəllif',
-        sectionTitle: 'Bölmə başlığı',
-      },
       tags: 'Etiketlər',
       agentCategory: 'Kətan kateqoriyası',
       editTags: 'Etiketləri redaktə et',
@@ -2785,9 +2753,6 @@ Nümunə: Virtual host üslubu`,
       oneChunkTitle: 'Qeyd',
       oneChunkDescription:
         'Təhlil edilmiş bütün bölmələr ardıcıllıqla bir hissədə birləşdiriləcək.',
-      flattenMediaToText: 'Görmə modelini söndür',
-      flattenMediaToTextTip:
-        'Şəkil və cədvəl bölmələrini adi mətn kimi qəbul edir və görmə modeli ilə təkmilləşdirməni ötürür.',
       enableChildrenDelimiters: 'Alt hissələr axtarış üçün istifadə olunur',
       merge: 'Birləşdir',
       split: 'Böl',

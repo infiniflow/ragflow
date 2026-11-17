@@ -39,7 +39,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
 		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	connectorsProvided := req.Connectors != nil
@@ -247,7 +247,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			})
 			if nameErr != nil {
 				txCode = common.CodeServerError
-				return errors.New("database operation failed")
+				return fmt.Errorf("database operation failed: %w", nameErr)
 			}
 			if !available {
 				txCode = common.CodeDataError
@@ -260,7 +260,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 					if code == common.CodeServerError {
 						common.Warn("dataset folder rename failed",
 							zap.String("dataset_id", lockedKB.ID), zap.Error(renameErr))
-						return errors.New("database operation failed")
+						return fmt.Errorf("database operation failed: %w", renameErr)
 					}
 					return renameErr
 				}
@@ -470,7 +470,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 					return errors.New("dataset name already exists")
 				}
 				txCode = common.CodeServerError
-				return errors.New("dataset update error. (database error)")
+				return fmt.Errorf("dataset update error. (database error): %w", err)
 			}
 		}
 
@@ -482,20 +482,20 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 					return err
 				}
 				txCode = common.CodeServerError
-				return errors.New("database operation failed")
+				return fmt.Errorf("database operation failed: %w", err)
 			}
 		}
 
 		updatedKB = &entity.Knowledgebase{}
 		if err = tx.Where("id = ? AND status = ?", lockedKB.ID, string(entity.StatusValid)).First(updatedKB).Error; err != nil {
 			txCode = common.CodeDataError
-			return errors.New("dataset updated failed")
+			return fmt.Errorf("dataset updated failed: %w", err)
 		}
 
 		linkedConnectors, err = d.connectorDAO.ListByDatasetIDTx(ctx, tx, lockedKB.ID)
 		if err != nil {
 			txCode = common.CodeServerError
-			return errors.New("database operation failed")
+			return fmt.Errorf("database operation failed: %w", err)
 		}
 
 		return nil
@@ -630,7 +630,7 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
 		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	err = permission.NewLockingDatabaseChecker(tx).CheckResource(

@@ -374,28 +374,18 @@ func TestPDFMarkdownKeepsInlineDataURIImage(t *testing.T) {
 	}
 }
 
-func TestMarkdownParserIngestionFlattenKeepsImageAsText(t *testing.T) {
+func TestMarkdownParserIngestionKeepsImageMedia(t *testing.T) {
 	ctx, cache := recordingMediaContext()
-	p := markdownIngestionParser(t)
-	markdown, ok := p.(*MarkdownParser)
-	if !ok {
-		t.Fatalf("GetParser(FileTypeMarkdown) = %T", p)
-	}
-	markdown.FlattenMediaToText = true
-
-	res := p.ParseWithResult(ctx, "flatten.md", []byte("![figure]("+markdownMediaDataURI+")\n"))
+	res := markdownIngestionParser(t).ParseWithResult(ctx, "image.md", []byte("![figure]("+markdownMediaDataURI+")\n"))
 	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
+		t.Fatal(res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 1 || items[0]["doc_type_kwd"] != DocTypeImage || entity.MediaRefFromAny(items[0]["media_ref"]) == nil {
+		t.Fatalf("image item lost its type or media reference: %+v", items)
 	}
 	if len(cache.puts) != 1 || string(cache.puts[0].data) != "hello" {
 		t.Fatalf("cache puts = %+v", cache.puts)
-	}
-	items := ItemsToMaps(res.JSON)
-	if len(items) != 1 || items[0]["doc_type_kwd"] != DocTypeText {
-		t.Fatalf("flattened items = %+v, want one text item", items)
-	}
-	if entity.MediaRefFromAny(items[0]["media_ref"]) == nil {
-		t.Fatalf("flattened image lost its media_ref: %+v", items[0])
 	}
 }
 

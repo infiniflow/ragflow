@@ -613,10 +613,6 @@ export default {
       layoutRecognize: 'PDF parseri',
       layoutRecognizeTip:
         'PDF maketini tahlil qilish uchun vizual modeldan foydalanib, hujjat sarlavhalari, matn bloklari, rasmlari va jadvallarini aniq joylashtiradi. Naive varianti tanlansa, PDFdan faqat oddiy matn olinadi. E’tibor bering, bu variant hozircha FAQAT PDF hujjatlari uchun ishlaydi.',
-      taskPageSize: 'Vazifa sahifa hajmi',
-      taskPageSizeMessage: 'Iltimos, vazifa sahifa hajmini kiriting!',
-      taskPageSizeTip:
-        'Maketni aniqlash paytida PDF fayli bo‘laklarga bo‘linadi va qayta ishlash tezligini oshirish uchun parallel qayta ishlanadi. Bu parametr har bir bo‘lak hajmini belgilaydi. Kattaroq bo‘lak hajmi sahifalar orasidagi uzluksiz matnni bo‘lib yuborish ehtimolini kamaytiradi.',
       addPage: 'Sahifa qo‘shish',
       greaterThan: 'Joriy qiymat "gacha" qiymatidan katta bo‘lishi kerak!',
       greaterThanPrevious:
@@ -648,9 +644,6 @@ export default {
       delimiterPreviewEmpty:
         'Ajratgichlar yo‘q — matn faqat hajm bo‘yicha bo‘laklanadi.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: 'Excel’dan HTML’ga',
-      html4excelTip:
-        'Umumiy bo‘laklash usuli bilan ishlatiladi. O‘chirilganda, to‘plamdagi elektron jadvallar (XLSX yoki XLS (Excel 97-2003)) kalit-qiymat juftliklariga tahlil qilinadi. Yoqilganda, ular HTML jadvallarga tahlil qilinadi va agar original jadval 12 qatordan ko‘p bo‘lsa, har 12 qatorda bo‘linadi. Tafsilotlar uchun https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration ga qarang.',
       autoKeywords: 'Ajratib olinadigan kalit so‘zlar soni',
       autoKeywordsTip:
         'Har bir bo‘lak uchun N ta kalit so‘zni avtomatik ajratib olib, ushbu kalit so‘zlarni o‘z ichiga olgan so‘rovlar uchun ularning reytingini oshiradi. ‘Sozlash’da belgilangan indekslash modeli tomonidan qo‘shimcha tokenlar sarflanishini yodda tuting. Bo‘lak uchun qo‘shilgan kalit so‘zlarni bo‘laklar ro‘yxatidan tekshirishingiz yoki yangilashingiz mumkin. Tafsilotlar uchun https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration ga qarang.',
@@ -1265,17 +1258,6 @@ export default {
       dataSourceFieldClientSecret: 'Client Secret',
       dataSourceFieldFolderPathOptional: 'Papka yo‘li',
       dataSourceFieldBatchSize: 'Partiya hajmi',
-      dataSourceFieldFeishuAppId: 'Feishu app ID',
-      dataSourceFieldFeishuAppSecret: 'Feishu app kaliti (secret)',
-      dataSourceFieldWikiSpaceId: 'Wiki maydon ID',
-      dataSourceFieldRootNodeToken: 'Wiki ildiz tugmasi tokeni',
-      dataSourceFieldIncludeExtensions: 'Ruxsat etilgan fayl kengaytmalari',
-      dataSourceFieldIncludeKeywords: 'Majburiy fayl nomi kalit so‘zlari',
-      dataSourceFieldExcludeKeywords:
-        'Istisno qilinadigan fayl nomi kalit so‘zlari',
-      dataSourceFieldMaxFileSizeBytes: 'Maksimal fayl hajmi (bayt)',
-      dataSourceValidationFeishuBatchSize:
-        'Partiya hajmi 1 dan 10 gacha bo‘lishi kerak',
       dataSourceFieldMailFolder: 'Pochta papkasi',
       dataSourceFieldMailboxUserIds: 'Pochta qutilari foydalanuvchi ID’lari',
       dataSourceFieldInstanceUrl: 'Instansiya URL',
@@ -1550,8 +1532,6 @@ export default {
         'Bilim olish uchun Notion’dan sahifa va ma’lumotlar bazalarini sinxronlang.',
       google_driveDescription:
         'Google Drive’ingizni OAuth orqali ulang va aniq papkalar yoki drivelarni sinxronlang.',
-      feishu_wikiDescription:
-        'Feishu Wiki subtreesidan yuklab olinadigan fayl tugmalarini sinxronlash.',
       gmailDescription:
         'Email sinxronlash uchun Gmail’ingizni OAuth orqali ulang.',
       webdavDescription:
@@ -2014,14 +1994,6 @@ export default {
       apiKeyTip:
         'API Key mos LLM provayderida ro‘yxatdan o‘tish orqali olinishi mumkin.',
       aimlapiGetKey: 'API kalitini olish',
-      aimlapiCheckStatus: 'Holatni tekshirish',
-      aimlapiAwaitingConsent: 'AI/ML API oynasida tasdiqlanishi kutilmoqda…',
-      aimlapiKeyAdded: 'AI/ML API kalitingiz yaratildi va yuqorida qo‘shildi.',
-      aimlapiAuthDenied: 'Ruxsat rad etildi. Iltimos, qayta urinib ko‘ring.',
-      aimlapiAuthExpired:
-        'So‘rov muddati tugadi. Iltimos, qayta urinib ko‘ring.',
-      aimlapiAuthFailed:
-        'Kirish amalga oshmadi. Iltimos, qayta urinib ko‘ring.',
       showMoreModels: 'Modellarni ko‘rish',
       hideModels: 'Modellarni yashirish',
       baseUrl: 'Base URL',
@@ -2565,13 +2537,6 @@ export default {
     },
     flow: {
       exportCurrentPage: 'Joriy sahifani eksport qilish',
-      preprocess: {
-        preprocess: 'Oldindan qayta ishlash',
-        mainContent: 'Asosiy kontent',
-        abstract: 'Annotatsiya',
-        author: 'Muallif',
-        sectionTitle: 'Bo‘lim sarlavhasi',
-      },
       tags: 'Teglar',
       agentCategory: 'Canvas toifasi',
       editTags: 'Teglarni tahrirlash',
@@ -2685,9 +2650,6 @@ export default {
       oneChunkTitle: 'Eslatma',
       oneChunkDescription:
         'Tahlil qilingan barcha bo‘limlar tartib bilan bitta bo‘lakka birlashtiriladi.',
-      flattenMediaToText: 'Vizual modelni o‘chirish',
-      flattenMediaToTextTip:
-        'Rasm va jadval bo‘limlarini oddiy matn sifatida qarab, vizual yaxshilashni o‘tkazib yuboradi.',
       enableChildrenDelimiters: 'Qidiruv uchun bola bo‘laklar ishlatiladi',
       merge: 'Birlashtirish',
       split: 'Bo‘lish',

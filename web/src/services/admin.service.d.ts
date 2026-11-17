@@ -44,7 +44,6 @@ declare namespace AdminService {
     is_active: '0' | '1';
     is_superuser: boolean;
     nickname: string;
-    role?: string;
     ldap_server?: string;
     last_login_time?: string;
     plan?: string;
@@ -62,7 +61,6 @@ declare namespace AdminService {
     login_channel: unknown;
     status: '0' | '1';
     update_date: string;
-    role: string;
   };
 
   export type ListUserDatasetItem = {
@@ -168,7 +166,6 @@ declare namespace AdminService {
     user: {
       id: string;
       username: string;
-      role: string;
     };
     role_permissions: Record<string, PermissionData>;
   };

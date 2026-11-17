@@ -66,12 +66,7 @@ func syncWhatsAppGateway(ctx context.Context, enabled bool) error {
 
 // gatewayEnabled reads the environment switch controlling gateway process management.
 func gatewayEnabled() bool {
-	raw := strings.TrimSpace(os.Getenv("WHATSAPP_GATEWAY_ENABLED"))
-	if raw == "" {
-		return false
-	}
-	v, err := strconv.ParseBool(raw)
-	return err == nil && v
+	return common.GetEnvBool("WHATSAPP_GATEWAY_ENABLED", false)
 }
 
 // gatewayCommand resolves the command and working directory used to start the gateway.

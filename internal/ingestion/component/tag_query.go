@@ -34,7 +34,7 @@ const (
 	// tagQueryTopLabels caps how many tag source records contribute to the
 	// question's tag distribution.
 	//
-	// Python's tag_query (rag/nlp/search.py) issues the match with a
+	// tag_query issues the match with a
 	// MatchTextExpr whose topn is 100, so the engine returns at most 100
 	// records and the tag aggregation is computed over exactly that window:
 	//
@@ -48,7 +48,7 @@ const (
 	// 100 matches the non-ES engines; for ES the window is an approximation.
 	tagQueryTopLabels = 100
 
-	// tagQueryProportionSmoothing is the S constant in Python's
+	// tagQueryProportionSmoothing is the S constant in
 	// all_tags_in_portion / tag_query formulas.
 	tagQueryProportionSmoothing = 1000.0
 
@@ -142,7 +142,7 @@ type resolvedTagSource struct {
 // the merged index). A single tag source file needs no merging: its own cached
 // index is returned as-is.
 //
-// It is the Go equivalent of Python's tag-dataset corpus used by
+// It is the Go equivalent of tag-dataset corpus used by
 // all_tags_in_portion / tag_query: Go has no tag dataset, so the records come
 // from the tag source file. Returns (nil, nil) when refs is empty or yields no
 // usable records.
@@ -200,7 +200,7 @@ func LoadTagQueryIndex(ctx context.Context, db *gorm.DB, refs []TagSourceRef) (*
 }
 
 // TagProportions returns the per-tag background proportions used by the
-// tag_query formula, mirroring Python's all_tags_in_portion: a tag's count is
+// tag_query formula, mirroring all_tags_in_portion: a tag's count is
 // the number of records that mention it, and its proportion is
 // (count+1)/(total+smoothing).
 // The counts are precomputed on the index: only the smoothing denominator
@@ -218,10 +218,10 @@ func (idx *MemoryTagIndex) TagProportions(smoothing float64) map[string]float64 
 	return out
 }
 
-// MatchTagQuery mirrors rag/nlp/search.py::tag_query over a Go tag source file:
-// it matches the question against the tag source records, aggregates the tags of
-// the best-matching records, and converts that distribution into rank-feature
-// weights with Python's formula
+// MatchTagQuery scores a question against the tag source records: it matches
+// the question against the tag source records, aggregates the tags of the
+// best-matching records, and converts that distribution into rank-feature
+// weights with formula
 //
 //	round(0.1 * (count+1) / (total + S) / max(1e-6, all_tags[tag]))
 //
@@ -231,10 +231,10 @@ func (idx *MemoryTagIndex) TagProportions(smoothing float64) map[string]float64 
 // (idx.tok), so records and question can never be analyzed differently: a
 // mismatched analyzer does not fail, it just silently matches nothing.
 //
-// The record-matching step approximates Python's engine query with an
+// The record-matching step approximates engine query with an
 // IDF-weighted token overlap over the tag source records; unlike ingestion-time
 // tagging it applies no coverage threshold, because the query is short and
-// Python's tag_query runs with min_match=0.0.
+// tag_query runs with min_match=0.0
 func (idx *MemoryTagIndex) MatchTagQuery(question string, topnTags int) map[string]float64 {
 	out := make(map[string]float64)
 	if idx == nil || len(idx.examples) == 0 || topnTags <= 0 || strings.TrimSpace(question) == "" {
@@ -308,12 +308,12 @@ func (idx *MemoryTagIndex) MatchTagQuery(question string, topnTags int) map[stri
 			background = 0.0001
 		}
 		raw := 0.1 * float64(c+1) / (float64(total) + tagQueryProportionSmoothing) / math.Max(1e-6, background)
-		// Python rounds the raw score with round() before ranking it and only
-		// then floors it at 1 (search.py: tag_query), so the weight is an
+		// rounds the raw score with round() before ranking it and only
+		// then floors it at 1 (: tag_query), so the weight is an
 		// integer. round() is round-half-to-even, i.e. math.RoundToEven, not
 		// math.Round: round(2.5) == 2 while math.Round(2.5) == 3. Ranking on
-		// the rounded value keeps the top-n cut the same as Python's. Ties are
-		// broken by tag name here, where Python's are left in the engine's
+		// the rounded value keeps the top-n cut the same as . Ties are
+		// broken by tag name here, where are left in the engine's
 		// aggregation order.
 		scored = append(scored, tagScore{tag: t, score: math.RoundToEven(raw)})
 	}

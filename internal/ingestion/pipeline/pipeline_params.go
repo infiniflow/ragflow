@@ -208,11 +208,12 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		if componentNames[key] == schema.ComponentNameGeneralChunker {
 			params = normalizeGeneralComponentParams(params)
 		}
-		// Legacy parser_config rows (or canvases) saved by the Python-era
+		// Legacy parser_config rows (or canvases) saved by the -era
 		// frontend nest the Parser's setups under a "setups" key; lift them
 		// before filtering, otherwise the families are dropped as unknown
 		// params against the flat DSL schema keys.
-		if common.IsParserComponent(key, componentNames[key]) {
+		isParser := common.IsParserComponent(key, componentNames[key])
+		if isParser {
 			params = schema.FlattenLegacyParserSetups(params)
 		}
 		dynamicWhitelist, hasDynamic := getComponentParamWhitelist(key)
@@ -221,6 +222,9 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		}
 		cleaned := make(map[string]any, len(params))
 		for pk, pv := range params {
+			if isParser {
+				pv = stripParserFamilySuffix(pv)
+			}
 			if _, ok := validKeys[pk]; ok {
 				cleaned[pk] = pv
 				continue
@@ -240,6 +244,26 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		}
 	}
 	return result
+}
+
+// stripParserFamilySuffix returns a copy of a Parser family setup without the
+// retired suffix key. Family maps sit below the top-level param whitelist, so
+// an API caller could otherwise keep the dead key alive.
+func stripParserFamilySuffix(value any) any {
+	setup, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	if _, found := setup["suffix"]; !found {
+		return value
+	}
+	next := make(map[string]any, len(setup)-1)
+	for key, item := range setup {
+		if key != "suffix" {
+			next[key] = item
+		}
+	}
+	return next
 }
 
 func normalizeGeneralComponentParams(params map[string]any) map[string]any {
@@ -281,49 +305,17 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 		out[k] = v
 	}
 
-	// 1. Keywords
-	if kwRaw, ok := out["keywords"].(map[string]any); ok {
-		kw := make(map[string]any, len(kwRaw))
-		for k, v := range kwRaw {
-			kw[k] = v
+	// The five modular extractor sub-objects are cloned one level deep so the
+	// caller can mutate them without aliasing the request map. Any other value
+	// (scalars, unknown nested maps) is carried over by reference.
+	for _, key := range []string{"keywords", "questions", "tags", "summary", "metadata"} {
+		if sub, ok := out[key].(map[string]any); ok {
+			cp := make(map[string]any, len(sub))
+			for k, v := range sub {
+				cp[k] = v
+			}
+			out[key] = cp
 		}
-		out["keywords"] = kw
-	}
-
-	// 2. Questions
-	if qRaw, ok := out["questions"].(map[string]any); ok {
-		q := make(map[string]any, len(qRaw))
-		for k, v := range qRaw {
-			q[k] = v
-		}
-		out["questions"] = q
-	}
-
-	// 3. Tags
-	if tagRaw, ok := out["tags"].(map[string]any); ok {
-		tag := make(map[string]any, len(tagRaw))
-		for k, v := range tagRaw {
-			tag[k] = v
-		}
-		out["tags"] = tag
-	}
-
-	// 4. Summary
-	if sumRaw, ok := out["summary"].(map[string]any); ok {
-		sum := make(map[string]any, len(sumRaw))
-		for k, v := range sumRaw {
-			sum[k] = v
-		}
-		out["summary"] = sum
-	}
-
-	// 5. Metadata
-	if metaRaw, ok := out["metadata"].(map[string]any); ok {
-		meta := make(map[string]any, len(metaRaw))
-		for k, v := range metaRaw {
-			meta[k] = v
-		}
-		out["metadata"] = meta
 	}
 
 	return out

@@ -4,7 +4,7 @@ title: FAQ
 sidebar_label: FAQ
 slug: /knowledge_compilation/faq
 sidebar_custom_props: {
-  categoryIcon: LucideWandSparkles
+  categoryIcon: LucideFileQuestionMark
 }
 ---
 

@@ -15,11 +15,10 @@
 //
 
 // OneChunker emits a single chunk per upstream document. It is the
-// faithful Go port of the Python `one` chunk method
-// (rag/app/one.py) and also covers the `picture` / `audio` methods,
-// whose Python chunk() functions return exactly one chunk per file
-// (rag/app/picture.py, rag/app/audio.py) — the latter additionally
-// carrying the raw image / media context, which this chunker preserves.
+// faithful Go port of the `one` chunk method and also covers the `picture`
+// / `audio` methods, whose chunk() functions return exactly one chunk per
+// file — the latter additionally carrying the raw image / media context,
+// which this chunker preserves.
 //
 // Unlike TokenChunker in "one" mode (which drops per-item media
 // context), OneChunker carries the image attachment and doc_type of a
@@ -108,9 +107,9 @@ func emitOne(text, docType string) map[string]any {
 	}
 	return chunkOutputs([]schema.ChunkDoc{{
 		// Strip parser coordinate tags so they never reach embedding/index,
-		// matching the Python flow chunker's tag-free "one" output
-		// (rag/flow/chunker/token_chunker.py delimiter_mode one). The legacy
-		// rag/app/one.py predates tag stripping and is intentionally out of
+		// matching the flow chunker's tag-free "one" output
+		// ( delimiter_mode one). The legacy
+		// predates tag stripping and is intentionally out of
 		// scope here.
 		Text:    removeTag(text),
 		DocType: docType,
@@ -121,7 +120,7 @@ func emitOne(text, docType string) map[string]any {
 // chunk. When the payload is a single item, its media context (image)
 // and doc_type are preserved. When it is many items, their text is
 // concatenated and the first available image attachment is carried over —
-// mirroring the Python "one chunk per file" behavior for picture/audio,
+// mirroring the "one chunk per file" behavior for picture/audio
 // where each upstream item is one page/slide/transcript segment of the
 // same source file.
 func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
@@ -174,8 +173,8 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		return emptyOutputs()
 	}
 	out := schema.ChunkDoc{Text: merged, DocType: "text"}
-	// Multi-item merge produces a single text-only chunk mirroring Python
-	// one.py:166-168. Per-item Positions/PDFPositions are intentionally
+	// Multi-item merge produces a single text-only chunk mirroring
+	// . Per-item Positions/PDFPositions are intentionally
 	// not carried — merging coordinates from different source items would
 	// produce meaningless composite geometry, and the downstream
 	// processChunkPositions would map them to incorrect pages.
