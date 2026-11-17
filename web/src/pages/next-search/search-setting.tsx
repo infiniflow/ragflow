@@ -41,7 +41,7 @@ import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
   ISearchAppDetailProps,
@@ -213,6 +213,20 @@ function SearchSetting({
       setFormSubmitLoading(false);
     }
   };
+
+  const handleValidSubmit = (formData: SearchSettingFormData) => {
+    onSubmit(formData as unknown as IUpdateSearchProps);
+  };
+
+  const handleInvalidSubmit = (errors: FieldErrors<SearchSettingFormData>) => {
+    console.error(errors, formMethods.getValues());
+  };
+
+  const handleSubmit = formMethods.handleSubmit(
+    handleValidSubmit,
+    handleInvalidSubmit,
+  );
+
   return (
     <div
       className={cn(
@@ -232,17 +246,7 @@ function SearchSetting({
         </div>
       </div>
       <Form {...formMethods}>
-        <form
-          onSubmit={formMethods.handleSubmit(
-            (data) => {
-              onSubmit(data as unknown as IUpdateSearchProps);
-            },
-            (error) => {
-              console.error(error, formMethods.getValues());
-            },
-          )}
-          className="flex min-h-0 flex-1 flex-col"
-        >
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="scrollbar-auto min-h-0 flex-1 space-y-6 overflow-y-auto p-1 text-text-secondary">
             <AvatarNameDescription avatarField="avatar" />
 
