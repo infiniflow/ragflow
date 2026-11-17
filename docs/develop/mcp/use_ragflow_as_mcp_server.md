@@ -19,7 +19,7 @@ External MCP client → Go MCP endpoint → RAGFlow services
 
 | Endpoint | Availability | Transport | Authentication |
 | --- | --- | --- | --- |
-| `POST /api/v1/mcp` on the Go API port | Available while the Go API runs | Streamable HTTP with JSON responses | Each client sends its RAGFlow credential in `Authorization`. |
+| `POST /api/v1/mcp` on the Go API port | Available while the Go API runs | Streamable HTTP with JSON responses | Each client sends its RAGFlow API key in `Authorization`. Share-link (beta) tokens are rejected. |
 | `/mcp` on the optional MCP listener | Enable `mcp.enabled` or `RAGFLOW_MCP_ENABLED` | Streamable HTTP; legacy SSE at `/sse` and `/messages/` when enabled | `host` mode authenticates each request; `self-host` mode uses one configured key for all clients. |
 
 For a local binary, start the API with `bin/ragflow_server --api --config conf/service_conf.yaml`. The target Go API port is `9380`, so its direct endpoint is `http://127.0.0.1:9380/api/v1/mcp`. Use the configured address if your port or reverse proxy differs. This API route accepts POST requests; it does not provide the legacy SSE paths.
