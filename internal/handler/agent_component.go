@@ -169,14 +169,12 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	dslParams, _ := dsl.ExtractComponentParams(cv.DSL, componentID)
 
 	// Build the Invoke inputs map by flattening the request body's
-	// {param: {value: ...}} shape into {param: value}. Mirrors python
-	// agent_api.py:830 (`component.invoke(**{k: o["value"] for k, o in
-	// req["params"].items()})`).
+	// {param: {value: ...}} shape into {param: value}.
 	//
 	// The body contract requires `params.*.value` — a missing value
 	// field used to slip through as nil and still invoke the
 	// component, which silently corrupted debug input. Now we fail
-	// fast. CodeRabbit PR review #2.
+	// fast.
 	inputs := make(map[string]any, len(body.Params))
 	for k, v := range body.Params {
 		if v == nil {

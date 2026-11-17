@@ -7,8 +7,9 @@ import {
 } from '@/components/ui/tooltip';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IBuiltinPipelineListItem } from '@/interfaces/database/agent';
+import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
 import { Copy } from 'lucide-react';
-import type { MouseEvent } from 'react';
+import { useCallback, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCopyBuiltinPipeline } from './use-copy-builtin-pipeline';
 
@@ -24,6 +25,12 @@ export function BuiltinPipelineCard({
   const { t } = useTranslation();
   const { copy, copying } = useCopyBuiltinPipeline();
   const { navigateToBuiltinPipeline } = useNavigatePage();
+  const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
+
+  const handleCardClick = useCallback(() => {
+    setPrimarySidebarCollapsed(true);
+    navigateToBuiltinPipeline(data.id)();
+  }, [data.id, navigateToBuiltinPipeline, setPrimarySidebarCollapsed]);
 
   const handleCopyClick = (e: MouseEvent) => {
     e.stopPropagation();
@@ -39,7 +46,7 @@ export function BuiltinPipelineCard({
       }}
       // Read-only: clicking opens the built-in pipeline on the view-only
       // canvas; the template itself can never be edited.
-      onClick={navigateToBuiltinPipeline(data.id)}
+      onClick={handleCardClick}
       // No rename / delete / edit-tags menu for built-in items; the top-right
       // slot carries the icon-only Copy action instead.
       moreDropdown={

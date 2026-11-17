@@ -697,27 +697,6 @@ Subsequent synchronizations use the sitemap's last-modified dates to identify up
 
 ![Sitemap connector configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/data_source_sitemap_configuration.jpg)
 
-## Feishu Wiki
-
-The Feishu Wiki data source is used to synchronize downloadable file nodes from a specified Feishu Wiki space to a RAGFlow Dataset. After configuration, RAGFlow can retrieve files under the specified root node and filter the files to be synchronized according to the configured conditions.
-
-**Requirements**: Authorize the Feishu application to access the target Wiki space and read or download the files to synchronize.
-
-**Configuration parameters**:
-
-- **Name**: Customize the name in RAGFlow to identify this Feishu Wiki connection.
-- **Feishu App ID**: Fill in the App ID of the Feishu application.
-- **Feishu App Secret**: Fill in the App Secret of the Feishu application.
-- **Wiki space ID**: Fill in the Space ID of the Feishu Wiki space to synchronize.
-- **Wiki root node Token**: Fill in the token of the root Wiki node from which synchronization starts.
-- **Allowed file extensions**: Specify the file extensions that are allowed to be synchronized.
-- **Required filename keywords**: Specify keywords that must appear in the file name. Only matching files are synchronized.
-- **Excluded filename keywords**: Specify keywords used to exclude files from synchronization.
-- **Maximum file size (bytes)**: Set the maximum size of a single file that can be synchronized. The default value is **52428800** bytes.
-- **Batch size**: Set the number of files processed in each batch. The default value is **2**.
-
-![Feishu Wiki connector configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/data_source_feishu_wiki_configuration.jpg)
-
 ## WebDAV
 
 The WebDAV data source is used to connect to a WebDAV server and synchronize files from a specified remote path to a RAGFlow Dataset.

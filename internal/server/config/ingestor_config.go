@@ -306,6 +306,33 @@ func (c *Config) GetIngestorConfig() *IngestorConfig {
 	return &c.ingestor
 }
 
+// GetIngestorTier resolves the ingestor tier (which lanes the ingestor consumes)
+// with precedence CLI flag > environment variable RAGFLOW_INGESTOR_TIER >
+// default (TierDefault). It validates the value through common.ParseIngestorTier,
+// which is edition-specific: the community build accepts only the default (low)
+// lane, while the enterprise build accepts its full high/medium/low set. An
+// invalid value at any layer is a fatal startup error.
+func (c *Config) GetIngestorTier(argValue *string) (common.Tier, error) {
+	tier := common.TierDefault
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorTier)); v != "" {
+		parsed, err := common.ParseIngestorTier(v)
+		if err != nil {
+			return "", err
+		}
+		tier = parsed
+	}
+	if argValue != nil {
+		if v := strings.TrimSpace(*argValue); v != "" {
+			parsed, err := common.ParseIngestorTier(v)
+			if err != nil {
+				return "", err
+			}
+			tier = parsed
+		}
+	}
+	return tier, nil
+}
+
 func (c *Config) GetIngestLogConfig() *IngestLogConfig {
 	return &c.ingestor.logConfig
 }

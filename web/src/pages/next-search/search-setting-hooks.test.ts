@@ -1,44 +1,26 @@
-import { renderHook } from '@testing-library/react';
-import { useSearchSettingFormSchema } from './search-setting-hooks';
+import en from '@/locales/en';
+import zh from '@/locales/zh';
+import { get } from 'lodash';
+import {
+  buildSearchSettingFormSchema,
+  type SearchSettingFormData,
+} from './search-setting-hooks';
 
-const mockUseModelValidIds = jest.fn();
-const mockT = (key: string) => key;
-let rerankState: Record<string, unknown>;
-let llmState: Record<string, unknown>;
-
-jest.mock('@/hooks/use-llm-request', () => ({
-  useModelValidIds: (...args: unknown[]) => mockUseModelValidIds(...args),
-}));
-
-jest.mock('@/components/model-tree-select', () => ({
-  ModelTypeMap: {
-    llm_id: ['chat', 'vision'],
-    rerank_id: ['rerank'],
-  },
-}));
-
-jest.mock('react-i18next', () => ({
-  ...jest.requireActual('react-i18next'),
-  useTranslation: () => ({ t: mockT }),
-}));
-
-const groupRef = 'gp-0123456789abcdef0123456789abcdef';
-const pendingMessage = 'setting.modelGroupSelector.pending';
-const baseValue = {
+const ValidFormData: SearchSettingFormData = {
   name: 'Search',
   search_config: {
-    kb_ids: ['kb-1'],
+    kb_ids: ['dataset-id'],
     keywords_similarity_weight: 0.7,
     web_search: false,
     similarity_threshold: 0.2,
     use_kg: false,
-    rerank_id: groupRef,
+    rerank_id: 'rerank-id',
     use_rerank: true,
     rerank_candidates_count: 100,
     summary: true,
-    llm_setting: { llm_id: groupRef },
-    related_search: false,
-    query_mindmap: false,
+    llm_setting: { llm_id: 'llm-id' },
+    related_search: true,
+    query_mindmap: true,
     doc_ids: [],
     chat_id: '',
     highlight: false,
@@ -47,68 +29,39 @@ const baseValue = {
   },
 };
 
-function settledState(validIds: Set<string>) {
-  return {
-    validIds,
-    isFetched: true,
-    isSettled: true,
-    getPendingMessage: () => undefined,
-  };
-}
+const InvalidFormData: SearchSettingFormData = {
+  ...ValidFormData,
+  name: '',
+  search_config: {
+    ...ValidFormData.search_config,
+    kb_ids: [],
+    rerank_id: '',
+    llm_setting: { llm_id: '' },
+  },
+};
 
-describe('useSearchSettingFormSchema', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockUseModelValidIds.mockImplementation((modelTypes: string[]) =>
-      modelTypes.includes('rerank') ? rerankState : llmState,
+describe('buildSearchSettingFormSchema', () => {
+  it.each([
+    ['Chinese', zh.translation],
+    ['English', en.translation],
+  ])('uses %s required-field messages', (_, translation) => {
+    const formSchema = buildSearchSettingFormSchema(
+      (key) => get(translation, key) as string,
     );
-  });
 
-  it('accepts settled compatible rerank and llm group references', () => {
-    rerankState = settledState(new Set([groupRef]));
-    llmState = settledState(new Set([groupRef]));
-    const { result } = renderHook(() => useSearchSettingFormSchema());
+    const result = formSchema.safeParse(InvalidFormData);
 
-    const parsed = result.current.formSchema.safeParse(baseValue);
+    expect(result.success).toBe(false);
+    if (result.success) return;
 
-    expect(parsed.success).toBe(true);
-    expect(result.current.modelsFetched).toBe(true);
-  });
-
-  it('combines rerank pending with direct llm unavailability', () => {
-    rerankState = {
-      validIds: new Set(),
-      isFetched: true,
-      isSettled: false,
-      getPendingMessage: (value: string) =>
-        value === groupRef ? pendingMessage : undefined,
-    };
-    llmState = settledState(new Set(['model-1']));
-    const { result } = renderHook(() => useSearchSettingFormSchema());
-
-    const parsed = result.current.formSchema.safeParse({
-      ...baseValue,
-      search_config: {
-        ...baseValue.search_config,
-        llm_setting: { llm_id: 'gone' },
-      },
+    const messages = Object.fromEntries(
+      result.error.issues.map((issue) => [issue.path.join('.'), issue.message]),
+    );
+    expect(messages).toMatchObject({
+      name: translation.search.nameRequired,
+      'search_config.kb_ids': translation.search.datasetRequired,
+      'search_config.rerank_id': translation.search.rerankModelRequired,
+      'search_config.llm_setting.llm_id': translation.search.modelRequired,
     });
-
-    expect(parsed.success).toBe(false);
-    if (!parsed.success) {
-      expect(parsed.error.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            path: ['search_config', 'rerank_id'],
-            message: pendingMessage,
-          }),
-          expect.objectContaining({
-            path: ['search_config', 'llm_setting', 'llm_id'],
-            message: 'common.modelUnavailable',
-          }),
-        ]),
-      );
-    }
-    expect(result.current.modelsFetched).toBe(false);
   });
 });
