@@ -20,17 +20,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"regexp"
-	"strings"
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/tokenizer"
+	"ragflow/internal/engine/internal/esoscommon"
 
 	"go.uber.org/zap"
 )
@@ -45,49 +41,6 @@ const (
 
 const osSQLRetryAttempts = 2
 const osSQLRetryDelay = 3 * time.Second
-
-var whitespaceRe = regexp.MustCompile("[ `]+")
-var lktksMatchRe = regexp.MustCompile(` ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'`)
-
-// Preprocess normalizes SQL for OpenSearch: collapses whitespace/backticks,
-// strips '%', and rewrites `<field>_l?tks like/= 'value'` into a tokenized
-// MATCH() call. MATCH(field, tokens, 'operator=OR;minimum_should_match=30%')
-// is the OpenSearch SQL dialect (ES SQL has no such three-argument form),
-// mirroring Python's opensearch_conn.py sql().
-func Preprocess(sql string) string {
-	sql = whitespaceRe.ReplaceAllString(sql, " ")
-	sql = strings.ReplaceAll(sql, "%", "")
-
-	// Collect replacements so we don't re-scan tokens we've already rewritten
-	type replacement struct {
-		old, new string
-	}
-	var replaces []replacement
-	for _, m := range lktksMatchRe.FindAllStringSubmatchIndex(sql, -1) {
-		match := sql[m[0]:m[1]]
-		fld := sql[m[2]:m[3]]
-		val := sql[m[6]:m[7]]
-		tokenized, err := tokenizer.Tokenize(val)
-		if err != nil {
-			continue
-		}
-		fine, err := tokenizer.FineGrainedTokenize(tokenized)
-		if err != nil {
-			continue
-		}
-		replaces = append(replaces, replacement{
-			old: match,
-			// fine comes from tokenizer.FineGrainedTokenize, which strips
-			// non-alphanumerics; defense-in-depth escape just in case a
-			// future tokenizer change reintroduces a quote.
-			new: fmt.Sprintf(" MATCH(%s, '%s', 'operator=OR;minimum_should_match=30%%') ", fld, strings.ReplaceAll(fine, "'", "''")),
-		})
-	}
-	for _, r := range replaces {
-		sql = strings.Replace(sql, r.old, r.new, 1)
-	}
-	return sql
-}
 
 // RunSQL posts SQL to `/_plugins/_sql`, translates the response into
 // chunk-shaped maps. Returns (nil, nil) on empty rows; (nil, error) when
@@ -106,7 +59,7 @@ func (e *Engine) RunSQL(ctx context.Context, sqlText string, _ string) ([]map[st
 	}
 
 	common.Debug("OSConnection.sql get sql", zap.String("sql", sqlText))
-	sqlText = Preprocess(sqlText)
+	sqlText = esoscommon.PreprocessSQL(sqlText)
 	common.Debug("OSConnection.sql to os", zap.String("sql", sqlText))
 
 	var lastErr error
@@ -116,7 +69,7 @@ func (e *Engine) RunSQL(ctx context.Context, sqlText string, _ string) ([]map[st
 			return rows, nil
 		}
 		lastErr = err
-		if !isTimeoutError(err) {
+		if !esoscommon.IsTimeoutError(err) {
 			common.Warn("OSConnection.sql got exception",
 				zap.String("sql", sqlText),
 				zap.Error(err))
@@ -232,27 +185,4 @@ func (e *Engine) runSQLPage(ctx context.Context, sqlText string, cursor string) 
 		out = append(out, cm)
 	}
 	return out, resp.Cursor, nil
-}
-
-// isTimeoutError detects connection-level and per-attempt timeouts
-// via context.DeadlineExceeded, net.Error.Timeout(), and substring
-// matches (for SDKs that wrap without typed errors).
-func isTimeoutError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-	msg := err.Error()
-	for _, sub := range []string{"i/o timeout", "deadline exceeded", "connection timeout", "context deadline"} {
-		if strings.Contains(msg, sub) {
-			return true
-		}
-	}
-	return false
 }

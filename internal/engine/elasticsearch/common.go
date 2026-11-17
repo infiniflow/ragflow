@@ -93,8 +93,3 @@ func (e *Engine) indexExists(ctx context.Context, indexName string) (bool, error
 	}
 	return false, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 }
-
-// buildMetadataIndexName returns the metadata index name for a tenant
-func buildMetadataIndexName(tenantID string) string {
-	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
-}
