@@ -1467,6 +1467,17 @@ func TestBuildHypergraphMaterializesFacts(t *testing.T) {
 		}
 	}
 
+	// A block's provenance is the chunks of the facts it carries, not its
+	// root's. London is stated in c2, so the block that reached it must name
+	// both chunks — naming only the root's c1 sends a reader to text that never
+	// says "London".
+	if got := common.MetaStringSlice(edges[0].Meta, "source_chunk_ids"); strings.Join(got, ",") != "c1" {
+		t.Errorf("root block chunks = %v, want [c1]", got)
+	}
+	if got := common.MetaStringSlice(edges[1].Meta, "source_chunk_ids"); strings.Join(got, ",") != "c1,c2" {
+		t.Errorf("deep block chunks = %v, want [c1 c2]", got)
+	}
+
 	// The root's own pair belongs to BOTH blocks; the nested pair to one. This
 	// many-to-many membership is why hyperedge_ids is an array column.
 	rootEdgeIDs := common.MetaStringSlice(edges[0].Meta, "id")
@@ -1479,9 +1490,18 @@ func TestBuildHypergraphMaterializesFacts(t *testing.T) {
 			if len(ids) != 2 {
 				t.Errorf("person:name belongs to %d hyperedges, want 2 (both blocks)", len(ids))
 			}
+			// The slot is Ada's, so it points at Ada's chunk only.
+			if got := common.MetaStringSlice(r.Meta, "source_chunk_ids"); strings.Join(got, ",") != "c1" {
+				t.Errorf("person:name chunks = %v, want [c1]", got)
+			}
 		case "person:born_in.place:name":
 			if len(ids) != 1 {
 				t.Errorf("nested fact belongs to %d hyperedges, want 1", len(ids))
+			}
+			// The slot is London's, and London is stated in c2 — not in the
+			// root's chunk, which is what the block used to carry for it.
+			if got := common.MetaStringSlice(r.Meta, "source_chunk_ids"); strings.Join(got, ",") != "c2" {
+				t.Errorf("nested fact chunks = %v, want [c2] (the chunk that states London)", got)
 			}
 		}
 		if prop, _ := r.Meta["prop"].(string); prop == "" {
@@ -1546,6 +1566,10 @@ func TestBuildHypergraphHypernodeIsSharedAcrossRoots(t *testing.T) {
 		found++
 		if ids := common.MetaStringSlice(r.Meta, "hyperedge_ids"); len(ids) != 2 {
 			t.Errorf("shared hypernode belongs to %d hyperedges, want 2", len(ids))
+		}
+		// The slot is London's, so it carries London's chunk — not either root's.
+		if ids := common.MetaStringSlice(r.Meta, "source_chunk_ids"); strings.Join(ids, ",") != "c3" {
+			t.Errorf("shared hypernode chunks = %v, want [c3]", ids)
 		}
 	}
 	if found != 1 {

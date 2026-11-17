@@ -101,6 +101,11 @@ type hypernodeFact struct {
 	prop string
 	// val is the value exactly as the source states it.
 	val string
+	// chunks are the source chunks of the entity this fact is an assertion
+	// about — the entity itself, not the block's root. A nested entity's value
+	// is stated in its own chunk, so a block that named only the root's chunk
+	// would send a reader to text that never says it.
+	chunks []string
 }
 
 // hyperedgeDraft is one flattened factual block, before ids are assigned.
@@ -125,6 +130,7 @@ type hypergraphIndex struct {
 	classOf  map[string]string                  // entity name -> class
 	nameOf   map[string]string                  // entity name -> display name
 	values   map[string]map[string]any          // entity name -> declared attribute values
+	chunks   map[string][]string                // entity name -> source chunk ids
 	outEdges map[string][]hypergraphEdge        // entity name -> outgoing object assertions
 	entityOf map[string]bool                    // entity name -> is an entity row
 	targeted map[string]bool                    // entity name -> is some edge's target
@@ -173,6 +179,7 @@ func buildHypergraphIndex(prods []common.Product, parserConfig map[string]any) *
 		classOf:  map[string]string{},
 		nameOf:   map[string]string{},
 		values:   map[string]map[string]any{},
+		chunks:   map[string][]string{},
 		outEdges: map[string][]hypergraphEdge{},
 		entityOf: map[string]bool{},
 		targeted: map[string]bool{},
@@ -192,6 +199,10 @@ func buildHypergraphIndex(prods []common.Product, parserConfig map[string]any) *
 			if attrs, ok := p.Meta["attr"].(map[string]any); ok {
 				idx.values[key] = attrs
 			}
+			// The chunks behind this instance's assertions travel with the
+			// facts it contributes, so a block's provenance is the union of
+			// what its facts came from rather than its root's alone.
+			idx.chunks[key] = append(idx.chunks[key], common.MetaStringSlice(p.Meta, "source_chunk_ids")...)
 		case "relation":
 			from := strings.TrimSpace(stringOf(p.Meta["from"]))
 			to := strings.TrimSpace(stringOf(p.Meta["to"]))
@@ -297,12 +308,14 @@ func (idx *hypergraphIndex) ownFacts(key, prefix string) []hypernodeFact {
 		return nil
 	}
 	facts := make([]hypernodeFact, 0, 1+len(idx.attrs[cls]))
+	chunks := idx.chunks[key]
 	namePath := prefix + cls + ":name"
 	facts = append(facts, hypernodeFact{
-		path: namePath,
-		key:  nlKey(namePath),
-		prop: "name",
-		val:  idx.nameOf[key],
+		path:   namePath,
+		key:    nlKey(namePath),
+		prop:   "name",
+		val:    idx.nameOf[key],
+		chunks: chunks,
 	})
 	// idx.attrs is in template declaration order, so the facts of a block are
 	// reproducible run to run.
@@ -310,10 +323,11 @@ func (idx *hypergraphIndex) ownFacts(key, prefix string) []hypernodeFact {
 		for _, item := range flattenValues(idx.values[key][a.name]) {
 			p := prefix + cls + ":" + a.name
 			facts = append(facts, hypernodeFact{
-				path: p,
-				key:  nlKey(p),
-				prop: a.name,
-				val:  item,
+				path:   p,
+				key:    nlKey(p),
+				prop:   a.name,
+				val:    item,
+				chunks: chunks,
 			})
 		}
 	}
@@ -396,6 +410,28 @@ func hyperedgePayload(d hyperedgeDraft) map[string]any {
 	return payload
 }
 
+// hyperedgeChunkIDs is the union of the chunks behind a block's facts. Those
+// facts come from every entity the descent reached, not from the root alone,
+// and each entity's assertion is stated in its own source chunk — naming only
+// the root's chunk would hand a reader text that never says what the block
+// claims.
+func hyperedgeChunkIDs(d hyperedgeDraft) []string {
+	ids := make([]string, 0, len(d.facts))
+	seen := make(map[string]bool, len(d.facts))
+	for _, f := range d.facts {
+		// hyperedgePayload keeps only the first fact of a repeated key, so only
+		// that fact is evidence for the block; a dropped duplicate's chunk must
+		// not be named as a source the payload does not speak to.
+		if seen[f.key] {
+			continue
+		}
+		seen[f.key] = true
+		ids = append(ids, f.chunks...)
+	}
+	sort.Strings(ids)
+	return dedupeStrings(ids)
+}
+
 // buildHypergraph returns the hyperedge and hypernode rows for prods. A nil
 // index (no declared object properties) returns no rows at all, so every
 // non-ontology template is untouched.
@@ -444,18 +480,6 @@ func buildHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, p
 	nodes := map[string]*hypernodeAcc{}
 	var nodeOrder []string
 
-	byName := map[string][]string{} // entity name -> source chunk ids
-	for _, p := range prods {
-		if kind, _ := p.Meta["kind"].(string); kind != "entity" {
-			continue
-		}
-		name := strings.ToLower(strings.TrimSpace(stringOf(p.Meta["name"])))
-		if name == "" {
-			continue
-		}
-		byName[name] = append(byName[name], common.MetaStringSlice(p.Meta, "source_chunk_ids")...)
-	}
-
 	for _, d := range drafts {
 		payload := hyperedgePayload(d)
 		content := payloadJSON(payload)
@@ -468,7 +492,7 @@ func buildHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, p
 			id:        common.StableRowID(idParts...),
 			payload:   payload,
 			draft:     d,
-			chunkIDs:  byName[rootLower],
+			chunkIDs:  hyperedgeChunkIDs(d),
 			rootLower: rootLower,
 		})
 	}
@@ -484,7 +508,7 @@ func buildHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, p
 				nodeOrder = append(nodeOrder, key)
 			}
 			acc.edgeIDs = append(acc.edgeIDs, e.id)
-			acc.chunks = append(acc.chunks, e.chunkIDs...)
+			acc.chunks = append(acc.chunks, f.chunks...)
 		}
 	}
 	// Stable order so the node rows are reproducible, and sorted membership so a
@@ -494,6 +518,7 @@ func buildHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, p
 		acc := nodes[key]
 		sort.Strings(acc.edgeIDs)
 		acc.edgeIDs = dedupeStrings(acc.edgeIDs)
+		sort.Strings(acc.chunks)
 		acc.chunks = dedupeStrings(acc.chunks)
 	}
 

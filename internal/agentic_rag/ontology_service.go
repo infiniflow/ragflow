@@ -191,8 +191,9 @@ type OntologyHyperedge struct {
 	// contributed. It is what the coverage selection maximized, and it is what
 	// lets a reader see why this block and not another was assembled.
 	CoveredNodes int `json:"covered_nodes"`
-	// ChunkIDs are the root entity's source chunks: the original text this
-	// block was compiled from.
+	// ChunkIDs are the source chunks behind the block's facts: the root's and
+	// every nested entity's, unioned. They are the original text this block was
+	// compiled from, so a block must never name only the root's chunk.
 	ChunkIDs []string `json:"chunk_ids"`
 	DocIDs   []string `json:"doc_ids"`
 }
