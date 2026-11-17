@@ -1029,6 +1029,23 @@ func extractTagFeasMap(v interface{}) map[string]float64 {
 			out[k] = float64(val)
 		}
 		return out
+	case []interface{}:
+		// The Infinity backend stores tag_feas as an array of single-key
+		// objects so its rankfeatures analyzer can invert the value (#22454);
+		// fold that shape back here for callers that read the raw column.
+		out := make(map[string]float64, len(t))
+		for _, entry := range t {
+			pair, ok := entry.(map[string]interface{})
+			if !ok || len(pair) != 1 {
+				return nil
+			}
+			for k, val := range pair {
+				if f, ok := toFloat64(val); ok {
+					out[k] = f
+				}
+			}
+		}
+		return out
 	case nil:
 		return nil
 	default:
