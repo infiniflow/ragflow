@@ -47,7 +47,6 @@
 /internal/compliance/ @wangq8
 /internal/dao/transaction/ @Lynn-Inf
 /internal/deepdoc/ @xugangqiang
-/internal/docguard/ @xugangqiang
 /internal/engine/infinity/ @qinling0210
 /internal/engine/internal/ @xugangqiang
 /internal/engine/kvrocks/ @xugangqiang
