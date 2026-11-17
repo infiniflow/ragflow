@@ -6,7 +6,6 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -49,6 +48,7 @@ import {
 } from '../compilation/constants';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
+import { DatasetTableLayout } from '../components/dataset-table-layout';
 import { useIngestionMessages } from '../ingestion-message-hooks';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
@@ -433,8 +433,16 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   });
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 w-full">
-      <Table rootClassName="flex-1 min-h-0 mb-4">
+    <>
+      <DatasetTableLayout
+        pagination={
+          <RAGFlowPagination
+            {...{ current: pagination.current, pageSize: pagination.pageSize }}
+            total={pagination.total}
+            onChange={(page, pageSize) => setPagination({ page, pageSize })}
+          />
+        }
+      >
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -478,15 +486,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
             </TableRow>
           )}
         </TableBody>
-      </Table>
-
-      <div className="mt-auto flex items-center justify-end">
-        <RAGFlowPagination
-          {...{ current: pagination.current, pageSize: pagination.pageSize }}
-          total={pagination.total}
-          onChange={(page, pageSize) => setPagination({ page, pageSize })}
-        />
-      </div>
+      </DatasetTableLayout>
 
       {isModalVisible && (
         <ProcessLogModal
@@ -496,7 +496,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           logInfo={modalLogInfo as ILogInfo}
         />
       )}
-    </div>
+    </>
   );
 };
 

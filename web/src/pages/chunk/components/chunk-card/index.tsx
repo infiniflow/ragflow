@@ -23,7 +23,7 @@ import styles from './index.module.less';
 interface IProps {
   item: IChunk;
   checked: boolean;
-  switchChunk: (available?: number, chunkIds?: string[]) => void;
+  switchChunk: (available?: number, chunkIds?: string[]) => Promise<void>;
   editChunk: (chunkId: string) => void;
   removeChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
@@ -50,10 +50,16 @@ const ChunkCard = ({
 
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
-  const onChange = (checked: boolean) => {
+  const onChange = async (checked: boolean) => {
     setEnabled(checked);
-    switchChunk(available === 0 ? 1 : 0, [item.chunk_id]);
+    setSwitching(true);
+    try {
+      await switchChunk(available === 0 ? 1 : 0, [item.chunk_id]);
+    } finally {
+      setSwitching(false);
+    }
   };
 
   const handleCheck = (e: CheckedState) => {
@@ -149,41 +155,43 @@ const ChunkCard = ({
           />
         </section>
 
-        <span
-          className={cn(
-            'm-1.5 size-2 rounded-full group-hover:hidden group-focus-within:hidden',
-            enabled ? 'bg-state-success' : 'bg-text-disabled',
-          )}
-        />
-
-        <div className="hidden group-hover:flex group-focus-within:flex flex-col items-center gap-2">
-          <Switch
-            checked={enabled}
-            onCheckedChange={onChange}
-            aria-readonly
-            className="!m-0"
-            disabled={datasetEditButtonDisabled}
+        <div className="flex w-7 shrink-0 flex-col items-center">
+          <span
+            className={cn(
+              'm-1.5 size-2 rounded-full group-hover:hidden group-has-[:focus-visible]:hidden',
+              enabled ? 'bg-state-success' : 'bg-text-disabled',
+            )}
           />
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={t('common.edit')}
-            title={t('common.edit')}
-            onClick={handleEditClick}
-            disabled={datasetEditButtonDisabled}
-          >
-            <PenLine className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={t('common.delete')}
-            title={t('common.delete')}
-            onClick={handleDeleteClick}
-            disabled={datasetEditButtonDisabled}
-          >
-            <Trash2 className="size-4 text-state-error" />
-          </Button>
+
+          <div className="hidden group-hover:flex group-has-[:focus-visible]:flex flex-col items-center gap-2">
+            <Switch
+              checked={enabled}
+              onCheckedChange={onChange}
+              aria-readonly
+              className="!m-0"
+              disabled={datasetEditButtonDisabled || switching}
+            />
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t('common.edit')}
+              title={t('common.edit')}
+              onClick={handleEditClick}
+              disabled={datasetEditButtonDisabled}
+            >
+              <PenLine className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t('common.delete')}
+              title={t('common.delete')}
+              onClick={handleDeleteClick}
+              disabled={datasetEditButtonDisabled}
+            >
+              <Trash2 className="size-4 text-state-error" />
+            </Button>
+          </div>
         </div>
       </div>
     </Card>

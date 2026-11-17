@@ -41,7 +41,7 @@ import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
   ISearchAppDetailProps,
@@ -213,10 +213,24 @@ function SearchSetting({
       setFormSubmitLoading(false);
     }
   };
+
+  const handleValidSubmit = (formData: SearchSettingFormData) => {
+    onSubmit(formData as unknown as IUpdateSearchProps);
+  };
+
+  const handleInvalidSubmit = (errors: FieldErrors<SearchSettingFormData>) => {
+    console.error(errors, formMethods.getValues());
+  };
+
+  const handleSubmit = formMethods.handleSubmit(
+    handleValidSubmit,
+    handleInvalidSubmit,
+  );
+
   return (
     <div
       className={cn(
-        'text-text-primary border-l-0.5 p-4 pb-12',
+        'text-text-primary border-l-0.5 flex min-h-0 flex-col p-4',
         {
           'animate-fade-in-right': open,
           'animate-fade-out-right': !open,
@@ -225,28 +239,15 @@ function SearchSetting({
         className,
       )}
     >
-      <div className="flex justify-between items-center text-base mb-8">
+      <div className="mb-8 flex shrink-0 items-center justify-between text-base">
         <div className="text-text-primary">{t('search.searchSettings')}</div>
         <div onClick={() => setOpen(false)}>
           <X size={16} className="text-text-primary cursor-pointer" />
         </div>
       </div>
-      <div
-        style={{ maxHeight: 'calc(100dvh - 270px)' }}
-        className="overflow-y-auto scrollbar-auto p-1 text-text-secondary"
-      >
-        <Form {...formMethods}>
-          <form
-            onSubmit={formMethods.handleSubmit(
-              (data) => {
-                onSubmit(data as unknown as IUpdateSearchProps);
-              },
-              (error) => {
-                console.error(error, formMethods.getValues());
-              },
-            )}
-            className="space-y-6"
-          >
+      <Form {...formMethods}>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="scrollbar-auto min-h-0 flex-1 space-y-6 overflow-y-auto p-1 text-text-secondary">
             <AvatarNameDescription avatarField="avatar" />
 
             <KnowledgeBaseFormField
@@ -362,35 +363,33 @@ function SearchSetting({
                 </FormItem>
               )}
             />
-            {/* Submit Button */}
-            <div className="flex justify-end"></div>
-            <div className="flex justify-end gap-2 absolute bottom-1 right-3 bg-bg-base w-[calc(100%-1em)] py-2">
-              <Button
-                type="reset"
-                variant={'transparent'}
-                onClick={() => {
-                  resetForm();
-                  setOpen(false);
-                }}
-              >
-                {t('search.cancelText')}
-              </Button>
-              <Button
-                data-testid="search-settings-save"
-                type="submit"
-                disabled={formSubmitLoading}
-              >
-                {formSubmitLoading && (
-                  <div className="size-4">
-                    <Spin size="small" />
-                  </div>
-                )}
-                {t('search.okText')}
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </div>
+          </div>
+          <div className="flex shrink-0 justify-end gap-2 bg-bg-base pt-2">
+            <Button
+              type="reset"
+              variant={'transparent'}
+              onClick={() => {
+                resetForm();
+                setOpen(false);
+              }}
+            >
+              {t('search.cancelText')}
+            </Button>
+            <Button
+              data-testid="search-settings-save"
+              type="submit"
+              disabled={formSubmitLoading}
+            >
+              {formSubmitLoading && (
+                <div className="size-4">
+                  <Spin size="small" />
+                </div>
+              )}
+              {t('search.okText')}
+            </Button>
+          </div>
+        </form>
+      </Form>
     </div>
   );
 }

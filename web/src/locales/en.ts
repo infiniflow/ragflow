@@ -148,7 +148,6 @@ export default {
       library: 'Library',
       integrations: 'Integrations',
       team: 'Team',
-      models: 'Models',
       mcp: 'MCP',
       theme: 'Theme',
       language: 'Language',
@@ -1343,6 +1342,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       firecrawlApiKeyTip:
         'When Firecrawl is selected, its search results supplement dataset retrieval. Only the search snippets are pulled, not a full page scrape.',
       firecrawlApiKeyMessage: 'Please enter your Firecrawl API Key',
+      keirolabsApiKeyTip:
+        'When Keirolabs is selected, its web results supplement dataset retrieval.',
+      keirolabsApiKeyMessage: 'Please enter your Keirolabs API Key',
       linkupApiKeyTip:
         'When Linkup is selected, its web results supplement dataset retrieval.',
       linkupApiKeyMessage: 'Please enter your Linkup API Key',
@@ -4055,11 +4057,16 @@ Important structured information may include: names, dates, locations, events, k
       welcomeBack: 'Welcome back',
       searchSettings: 'Search settings',
       name: 'Name',
+      nameRequired: 'Name is required',
       avatar: 'Avatar',
       description: 'Description',
       datasets: 'Datasets',
+      datasetRequired: 'At least one dataset is required',
       rerankModel: 'Rerank model',
+      rerankModelRequired: 'Rerank model is required when rerank is enabled',
       AISummary: 'AI summary',
+      modelRequired:
+        'Model is required when AI summary, related search, or query mindmap is enabled',
       enableWebSearch: 'Enable web search',
       enableRelatedSearch: 'Enable related search',
       showQueryMindmap: 'Show query mindmap',

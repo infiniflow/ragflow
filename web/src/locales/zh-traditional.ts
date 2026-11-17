@@ -600,6 +600,8 @@ export default {
       firecrawlApiKeyTip:
         '選擇 Firecrawl 後，將使用其搜尋結果補充知識庫檢索。只取搜尋摘要，不抓取整頁。',
       firecrawlApiKeyMessage: '請輸入你的 Firecrawl API Key',
+      keirolabsApiKeyTip: '選擇 Keirolabs 後，將使用其搜尋結果補充知識庫檢索。',
+      keirolabsApiKeyMessage: '請輸入你的 Keirolabs API Key',
       linkupApiKeyTip: '選擇 Linkup 後，將使用其搜尋結果補充知識庫檢索。',
       linkupApiKeyMessage: '請輸入你的 Linkup API Key',
       parallelApiKeyTip: '選擇 Parallel 後，將使用其搜尋摘錄補充知識庫檢索。',

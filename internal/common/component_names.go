@@ -36,6 +36,20 @@ const (
 	ComponentNameHierarchyTitleChunker = "HierarchyTitleChunker"
 )
 
+// componentNameExtensions holds ingestion component names supplied by an
+// edition. The community build registers none, so its canonical name set is
+// exactly the list above.
+var componentNameExtensions = map[string]struct{}{}
+
+// RegisterComponentName adds an edition component name to the canonical set.
+// It must be called from an edition init, before the name is validated.
+func RegisterComponentName(name string) {
+	if name == "" {
+		return
+	}
+	componentNameExtensions[name] = struct{}{}
+}
+
 // IsComponentName reports whether name is a canonical ingestion component name.
 func IsComponentName(name string) bool {
 	switch name {
@@ -56,6 +70,7 @@ func IsComponentName(name string) bool {
 		ComponentNameHierarchyTitleChunker:
 		return true
 	default:
-		return false
+		_, ok := componentNameExtensions[name]
+		return ok
 	}
 }

@@ -17,6 +17,7 @@ import { Domain, ThemeEnum } from '@/constants/common';
 import {
   EnterpriseHeaderPlanBadge,
   EnterpriseHeaderTicketsLink,
+  EnterpriseSidebarTenantSwitcher,
 } from '@/ee/layouts/components/header-enterprise';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
@@ -160,6 +161,7 @@ export function UserFooter() {
             <DropdownMenuLabel className="truncate font-normal text-text-secondary">
               {email}
             </DropdownMenuLabel>
+            <EnterpriseSidebarTenantSwitcher />
             <DropdownMenuSeparator />
 
             <DropdownMenuItem onClick={navigateToUserSettingProfile}>

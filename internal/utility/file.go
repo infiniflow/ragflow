@@ -246,6 +246,27 @@ func FilenameType(filename string) FileType {
 	return FileTypeOTHER
 }
 
+// forbiddenFSChars are filesystem-forbidden characters replaced with underscore.
+const forbiddenFSChars = "\\/:*?\"<>|"
+
+// SanitizeFileNameComponent strips control characters and replaces
+// filesystem-forbidden characters with underscore. It does NOT handle
+// extensions, length caps, or empty fallbacks - callers apply those.
+func SanitizeFileNameComponent(name string) string {
+	name = strings.TrimSpace(name)
+	var b strings.Builder
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		if strings.ContainsRune(forbiddenFSChars, r) {
+			r = '_'
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 func SanitizeFilename(filename string) string {
 	if filename == "" {
 		return ""
