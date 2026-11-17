@@ -219,13 +219,12 @@ type TableItem struct {
 	// tables. It is a plain (non-build-tagged) field so the shared
 	// ConstructTable can dispatch without branching on the edition.
 	RenderVH bool
-	// GridUnified is set by MergeTablesAcrossPages when it successfully
-	// rebuilt anchor.Grid from the per-page grids (Y-shifted and coordinate
-	// unified). It tells the EE renderer that item.Grid is the correct,
-	// text-bearing, cross-page-unified structure and should be rendered via
-	// the grid path instead of the ragged V/H path (whose item.Cells is a
-	// per-page concat in mixed crop frames and would misplace OCR text for
-	// merged tables).
+	// GridUnified is a reserved hook for an alternate renderer that consumes
+	// a cross-page unified grid. When set, it tells that renderer item.Grid is
+	// the text-bearing, Y-shifted and X-aligned structure to render, instead of
+	// the ragged cell stream (a per-page concat in mixed crop frames). No code
+	// in this tree sets it; a renderer that wants the unified-grid path must
+	// opt in on the TableItem it renders.
 	GridUnified bool
 	// VHPageSpans, when set by MergeTablesAcrossPages for a cross-page V/H
 	// table, records each source page's slice of the flat Cells and the crop

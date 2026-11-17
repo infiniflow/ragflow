@@ -10,16 +10,10 @@ import (
 	"ragflow/internal/parser/tableutil"
 )
 
-// constructTable produces an HTML table string from TSR cells and text boxes.
-// Both cells and boxes must be in the same coordinate space (crop pixel space).
-// Fills item.Rows so downstream consumers don't need to re-group cells.
-//
-// Python equivalent: TableStructureRecognizer.construct_table()
-// stripCaptionFromCells clears caption-like text from TSR cells.
-// This catches captions that fillCellTextFromBoxes missed (e.g. text
-// that doesn't match isCaptionBox patterns like "公司差旅费管理办法").
-// Only clears cells whose text matches caption patterns or that contain
-// only number+separator text (pure "1. ", "一、" etc. without data).
+// StripCaptionFromCells clears caption-like text from TSR cells. It catches
+// captions that fillCellTextFromBoxes missed (e.g. text that doesn't match
+// isCaptionBox patterns), clearing only cells whose text matches caption
+// patterns or contains only number+separator text.
 func StripCaptionFromCells(cells []pdf.TSRCell) {
 	for i := range cells {
 		t := strings.TrimSpace(cells[i].Text)
@@ -73,7 +67,7 @@ func dropEmptyColumns(grid [][]pdf.TSRCell) [][]pdf.TSRCell {
 	for i, row := range grid {
 		nr := make([]pdf.TSRCell, 0, nCols)
 		for j, c := range row {
-			if keep[j] {
+			if j < len(keep) && keep[j] {
 				nr = append(nr, c)
 			}
 		}
@@ -113,6 +107,11 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 	return constructTableCore(cells, boxes, caption, item)
 }
 
+// constructTableCore produces an HTML table string from TSR cells and text
+// boxes. Both cells and boxes must be in the same coordinate space (crop pixel
+// space). Fills item.Rows so downstream consumers don't need to re-group cells.
+//
+// Python equivalent: TableStructureRecognizer.construct_table()
 func constructTableCore(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, item *pdf.TableItem) string {
 	// Strip caption-like text from cells (defense-in-depth: fillCellTextFromBoxes
 	// may include caption text that doesn't match isCaptionBox patterns).

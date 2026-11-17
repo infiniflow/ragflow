@@ -65,6 +65,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		// boxes on only that page's cells. Harmless to OSS: no OSS TableItem
 		// sets VHPageSpans/RenderVH, so this data is never read there.
 		var vhSpans []pdf.VHPageSpan
+		var hasContSpan bool
 		if len(anchor.Cells) > 0 {
 			vhSpans = append(vhSpans, pdf.VHPageSpan{
 				Page: it.pg, CellStart: 0, CellEnd: len(anchor.Cells),
@@ -175,6 +176,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 					Page: bpg, CellStart: contStart, CellEnd: len(anchor.Cells),
 					Scale: tables[jt.idx].Scale, CropOffX: tables[jt.idx].CropOffX, CropOffY: tables[jt.idx].CropOffY,
 				})
+				hasContSpan = true
 			}
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
 			anchor.RegionPositions = append(anchor.RegionPositions, tableRegionPositions(tables[jt.idx])...)
@@ -259,7 +261,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 				anchor.Rows = RowsToStrings(anchor.Grid)
 			}
 		}
-		if len(vhSpans) > 0 {
+		if hasContSpan {
 			anchor.VHPageSpans = vhSpans
 		}
 		result = append(result, anchor)
