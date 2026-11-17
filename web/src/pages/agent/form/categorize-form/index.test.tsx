@@ -27,6 +27,10 @@ const mockFetchModels = jest.fn().mockReturnValue({
 
 jest.mock('@/hooks/use-llm-request', () => ({
   useFetchAllAddedModels: (...args: unknown[]) => mockFetchModels(...args),
+  useModelValidIds: () => ({ isSettled: true }),
+}));
+jest.mock('@/hooks/use-user-setting-request', () => ({
+  useFetchTenantInfo: () => ({ data: {} }),
 }));
 jest.mock('@/components/svg-icon', () => ({ LlmIcon: () => null }));
 jest.mock('@/components/llm-select/llm-label', () => ({

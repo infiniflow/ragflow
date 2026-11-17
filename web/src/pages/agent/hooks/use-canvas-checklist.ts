@@ -79,11 +79,11 @@ export function useCanvasChecklist({
   // Model and template-group references use the canvas owner's tenant.
   // Dataset and memory references are scoped by canvasID so both the canvas
   // owner and current user can use the resource.
-  const { validIds: modelValidIds, isFetched: modelsFetched } =
+  const { validIds: modelValidIds, isSettled: modelsFetched } =
     useModelValidIds(ModelTypeMap.llm_id, ownerTenantId);
   const {
     validIds: categorizeModelValidIds,
-    isFetched: categorizeModelsFetched,
+    isSettled: categorizeModelsFetched,
   } = useModelValidIds(['chat', 'vision', 'decision'], ownerTenantId);
   const {
     groups: templateGroups,

@@ -24,7 +24,11 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { ModelTypeProviderMap } from '@/constants/llm';
-import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
+import { ModelReferenceSelect } from '@/ee/components/model-reference-select';
+import {
+  useFetchAllAddedModels,
+  useModelValidIds,
+} from '@/hooks/use-llm-request';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IAddedModel } from '@/interfaces/database/llm';
 import { buildModelValue, getRealModelName } from '@/utils/llm-util';
@@ -49,9 +53,11 @@ function filterAddedModels(
   allModels: IAddedModel[],
   modelTypes: string[],
   providers?: string[],
+  requireModelId = false,
 ): IAddedModel[] {
   return allModels.filter(
     (m) =>
+      (!requireModelId || Boolean(m.model_id)) &&
       m.model_type?.some((t) => modelTypes.includes(t)) &&
       (!providers?.length || providers.includes(m.provider_name)),
   );
@@ -66,8 +72,14 @@ export function buildModelTree(
     model: IAddedModel,
   ) => React.ReactNode,
   providers?: string[],
+  requireModelId = false,
 ): TreeSelectNode[] {
-  const filtered = filterAddedModels(allModels, modelTypes, providers);
+  const filtered = filterAddedModels(
+    allModels,
+    modelTypes,
+    providers,
+    requireModelId,
+  );
 
   const seenLeafIds = new Set<string>();
   const providerMap = new Map<string, Map<string, IAddedModel[]>>();
@@ -148,6 +160,7 @@ export interface UseModelTreeOptions {
    * with ModelTreeSelect, so callers that pass nothing get every provider.
    */
   providers?: string[];
+  requireModelId?: boolean;
   renderLeafLabel?: (
     node: TreeSelectNode,
     model: IAddedModel,
@@ -173,6 +186,7 @@ export interface UseModelTreeOptions {
 export function useModelTree({
   modelTypes = ModelTypeMap.llm_id,
   providers,
+  requireModelId = false,
   renderLeafLabel,
   ownerTenantId,
   skipTenantInfo = false,
@@ -185,8 +199,9 @@ export function useModelTree({
   const { data: tenantInfo } = useFetchTenantInfo(!skipTenantInfo);
 
   const models = useMemo(
-    () => filterAddedModels(allAddedModels, modelTypes, providers),
-    [allAddedModels, modelTypes, providers],
+    () =>
+      filterAddedModels(allAddedModels, modelTypes, providers, requireModelId),
+    [allAddedModels, modelTypes, providers, requireModelId],
   );
 
   const treeData = useMemo(
@@ -197,6 +212,7 @@ export function useModelTree({
         tenantInfo?.tenant_id,
         renderLeafLabel,
         providers,
+        requireModelId,
       ),
     [
       allAddedModels,
@@ -204,6 +220,7 @@ export function useModelTree({
       tenantInfo?.tenant_id,
       renderLeafLabel,
       providers,
+      requireModelId,
     ],
   );
 
@@ -218,6 +235,9 @@ export interface ModelTreeSelectProps {
    * picks modelTypes automatically inherits the provider restriction.
    */
   providers?: string[];
+  dropdownHeader?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   value?: string;
   onChange?: (value: string) => void;
   disabled?: boolean;
@@ -231,13 +251,21 @@ export interface ModelTreeSelectProps {
   skipTenantInfo?: boolean;
 }
 
-export const ModelTreeSelect = forwardRef<
+export interface DirectModelTreeSelectProps extends ModelTreeSelectProps {
+  requireModelId?: boolean;
+}
+
+export const DirectModelTreeSelect = forwardRef<
   HTMLButtonElement,
-  ModelTreeSelectProps
->(function ModelTreeSelect(
+  DirectModelTreeSelectProps
+>(function DirectModelTreeSelect(
   {
     modelTypes = ModelTypeMap.llm_id,
     providers,
+    requireModelId = false,
+    dropdownHeader,
+    open,
+    onOpenChange,
     value,
     onChange,
     disabled,
@@ -271,6 +299,7 @@ export const ModelTreeSelect = forwardRef<
   } = useModelTree({
     modelTypes,
     providers: allowedProviders,
+    requireModelId,
     ownerTenantId,
     skipTenantInfo,
   });
@@ -334,6 +363,9 @@ export const ModelTreeSelect = forwardRef<
     <TreeSelect
       ref={ref}
       data={treeData}
+      dropdownHeader={dropdownHeader}
+      open={open}
+      onOpenChange={onOpenChange}
       value={normalizedValue}
       onChange={onChange}
       placeholder={placeholder}
@@ -346,6 +378,21 @@ export const ModelTreeSelect = forwardRef<
       renderMissingValue={renderMissingModel}
       loading={!modelsFetched || modelsError}
       testId={testId}
+    />
+  );
+});
+
+export const ModelTreeSelect = forwardRef<
+  HTMLButtonElement,
+  ModelTreeSelectProps
+>(function ModelTreeSelect(props, ref) {
+  const modelTypes = props.modelTypes ?? ModelTypeMap.llm_id;
+  return (
+    <ModelReferenceSelect
+      {...props}
+      modelTypes={modelTypes}
+      directModelSelect={DirectModelTreeSelect}
+      ref={ref}
     />
   );
 });
@@ -366,7 +413,12 @@ export function ModelTreeSelectFormField({
 }: ModelTreeSelectFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
-  const { loading } = useFetchAllAddedModels(undefined, rest.ownerTenantId);
+  const modelTypes = rest.modelTypes ?? ModelTypeMap.llm_id;
+  const { isSettled: modelsSettled } = useModelValidIds(
+    modelTypes,
+    rest.ownerTenantId,
+    !rest.skipTenantInfo,
+  );
   const value = useWatch({ control: form.control, name });
 
   // `form` from context is a new object on every provider render, so it must
@@ -380,9 +432,9 @@ export function ModelTreeSelectFormField({
   // has loaded, revalidate explicitly — it may reference a model that has
   // since been deleted, and the error should be visible before submit.
   useEffect(() => {
-    if (loading || !value) return;
+    if (!modelsSettled || !value) return;
     trigger(name);
-  }, [trigger, loading, name, value]);
+  }, [trigger, modelsSettled, name, value]);
 
   return (
     <FormField

@@ -28,6 +28,7 @@ type UnavailableValueCheck = {
   validIds: Set<string>;
   isFetched: boolean;
   message: string;
+  getPendingMessage?: (value: string) => string | undefined;
 };
 
 /**
@@ -38,13 +39,27 @@ type UnavailableValueCheck = {
  */
 export function useUnavailableValueFormSchema<T extends z.ZodTypeAny>(
   schema: T,
-  { fieldName, validIds, isFetched, message }: UnavailableValueCheck,
+  {
+    fieldName,
+    validIds,
+    isFetched,
+    message,
+    getPendingMessage,
+  }: UnavailableValueCheck,
 ) {
   const formSchema = useMemo(() => {
     const path = fieldName.split('.');
     return schema.superRefine((data: any, ctx) => {
       const value = get(data, path) as string | undefined;
-      if (isFetched && value && !validIds.has(value)) {
+      if (!value) return;
+      const pendingMessage = getPendingMessage?.(value);
+      if (pendingMessage) {
+        ctx.addIssue({
+          path,
+          message: pendingMessage,
+          code: z.ZodIssueCode.custom,
+        });
+      } else if (isFetched && !validIds.has(value)) {
         ctx.addIssue({
           path,
           message,
@@ -52,7 +67,7 @@ export function useUnavailableValueFormSchema<T extends z.ZodTypeAny>(
         });
       }
     });
-  }, [schema, validIds, isFetched, fieldName, message]);
+  }, [schema, validIds, isFetched, fieldName, message, getPendingMessage]);
 
   return { formSchema };
 }
@@ -73,15 +88,18 @@ export function useUnavailableModelFormSchema<T extends z.ZodTypeAny>(
   }: { fieldName?: string; modelTypes?: string[]; ownerTenantId?: string } = {},
 ) {
   const { t } = useTranslation();
-  const { validIds, isFetched: modelsFetched } = useModelValidIds(
-    modelTypes,
-    ownerTenantId,
-  );
+  const {
+    validIds,
+    isFetched: directModelsFetched,
+    isSettled: modelsFetched,
+    getPendingMessage,
+  } = useModelValidIds(modelTypes, ownerTenantId);
 
   const { formSchema } = useUnavailableValueFormSchema(schema, {
     fieldName,
     validIds,
-    isFetched: modelsFetched,
+    isFetched: directModelsFetched,
+    getPendingMessage,
     message: t('common.modelUnavailable'),
   });
 
