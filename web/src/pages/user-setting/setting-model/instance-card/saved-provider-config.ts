@@ -34,6 +34,8 @@ export const SavedProviderConfigFields = [
   'opendataloader_apiserver',
   'paddleocr_api_url',
   'provider_order',
+  'unlimited_ocr_apiserver',
+  'unlimited_ocr_server_url',
 ] as const;
 
 export const SavedProviderConfigFieldSet = new Set<string>(
