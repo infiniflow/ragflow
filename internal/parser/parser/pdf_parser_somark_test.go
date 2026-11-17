@@ -12,6 +12,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -670,5 +671,54 @@ func TestSoMarkPollTimeoutReadsEnv(t *testing.T) {
 	t.Setenv("SOMARK_POLL_TIMEOUT", "90s")
 	if got := soMarkPollTimeout(); got != 90*time.Second {
 		t.Fatalf("soMarkPollTimeout() = %v, want 90s", got)
+	}
+}
+
+func TestSoMarkPollDeadlineDuringRequestFormatsTimeout(t *testing.T) {
+	withSSRFBypass(t)
+	withSoMarkPollInterval(t, time.Millisecond)
+	t.Setenv("SOMARK_POLL_TIMEOUT", "20ms")
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Never respond: the client's poll budget, not the server, must end
+		// the request. (r.Context().Done() is not reliable here — the server
+		// may not observe the client's cancellation until it writes.)
+		<-release
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(release) })
+	_, err := soMarkPoll(t.Context(), server.URL, "task-1", "")
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("error = %v, want the standardized timeout error (with the last status), not the raw transport error", err)
+	}
+}
+
+func TestSoMarkPollRejectsPermanentHTTPErrorBeforeReadingBody(t *testing.T) {
+	withSSRFBypass(t)
+	withSoMarkPollInterval(t, 5*time.Millisecond)
+	t.Setenv("SOMARK_POLL_TIMEOUT", "500ms")
+	release := make(chan struct{})
+	var polls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		polls.Add(1)
+		w.Header().Set("Content-Length", "1024")
+		w.WriteHeader(http.StatusUnauthorized)
+		// Flush the headers, then never write the body: a client that reads
+		// before classifying would block until the poll deadline.
+		w.(http.Flusher).Flush()
+		<-release
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(release) })
+	start := time.Now()
+	_, err := soMarkPoll(t.Context(), server.URL, "task-1", "")
+	if err == nil || !strings.Contains(err.Error(), "HTTP 401") {
+		t.Fatalf("error = %v, want HTTP 401", err)
+	}
+	if elapsed := time.Since(start); elapsed > 400*time.Millisecond {
+		t.Fatalf("took %v, want fast failure before reading the stalled body", elapsed)
+	}
+	if got := polls.Load(); got != 1 {
+		t.Fatalf("polls = %d, want 1 (a 4xx is terminal)", got)
 	}
 }

@@ -175,6 +175,13 @@ const (
 // only the documented in-progress states keep polling, SUCCESS/FAILED are
 // terminal, and anything else is a protocol error rather than an implicit
 // "keep polling until the deadline". An empty status lands here too.
+//
+// PENDING and QUEUEING (double E) are kept as defensive aliases even though
+// the documented set is WAITING/QUEUING/CONVERTING/PROCESSING: PENDING is what
+// the implementation merged in #21710 reports, and QUEUEING is a plausible
+// spelling from a proxy that rewrites the payload. Treating either as unknown
+// would turn a live task into an immediate protocol error; the deadline still
+// bounds how long an alias can keep the loop running.
 func classifySoMarkStatus(status string) soMarkStatus {
 	switch strings.ToUpper(strings.TrimSpace(status)) {
 	case "SUCCESS":
@@ -236,6 +243,13 @@ func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string
 		if err != nil {
 			var pollErr *soMarkPollError
 			if !errors.As(err, &pollErr) || !pollErr.transient {
+				// When the deadline or a cancellation ended the in-flight
+				// request, report the standardized timeout/cancel error (with
+				// the last status) instead of the raw transport error, so
+				// callers see the same wording as the wait-path timeout.
+				if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+					return nil, soMarkPollDeadlineError(taskID, lastStatus, pollCtx.Err())
+				}
 				return nil, err
 			}
 			failures++
@@ -285,16 +299,22 @@ func soMarkPollOnce(ctx context.Context, baseURL, taskID, apiKey string) (result
 		}
 		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark poll: %w", err))
 	}
-	raw, readErr := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if readErr != nil {
-		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark read poll: %w", readErr))
-	}
+	defer resp.Body.Close()
+	// Classify the status before touching the body: a permanent 4xx must fail
+	// fast even when the server stalls or truncates the body, and a read error
+	// on a known 4xx must not be retried as a transport blip.
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError {
 		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark poll: HTTP %d", resp.StatusCode))
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, "", soMarkTerminalError(fmt.Errorf("parser: SoMark poll: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw))))
+		return nil, "", soMarkTerminalError(fmt.Errorf("parser: SoMark poll: HTTP %d", resp.StatusCode))
+	}
+	raw, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		if ctx.Err() != nil {
+			return nil, "", soMarkTerminalError(fmt.Errorf("parser: SoMark read poll: %w", readErr))
+		}
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark read poll: %w", readErr))
 	}
 	var payload struct {
 		Code    int            `json:"code"`
