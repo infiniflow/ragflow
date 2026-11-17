@@ -19,7 +19,7 @@ import { OntologyAboxPanel } from '@/components/ontology-abox';
 import { OntologyReviewSheet } from '@/components/compilation-template-group/ontology/review-sheet';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Button } from '@/components/ui/button';
-import { useFetchCompilationModelImpact } from '@/hooks/use-compilation-model-request';
+import { useFetchOntologyModelImpact } from '@/hooks/use-ontology-model-request';
 import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
 import type { ICompilationTemplate } from '@/interfaces/database/compilation-template';
 import { CompilationTemplateKind } from '@/constants/compilation';
@@ -89,7 +89,7 @@ export default function CompilationTemplateInstancesPage() {
   // `:id` addresses the group (the editor route's unit); every model-scoped read
   // below is keyed by the template row inside it.
   const templateId = ontologyTemplateIdOf(group);
-  const { impact } = useFetchCompilationModelImpact(templateId);
+  const { impact } = useFetchOntologyModelImpact(templateId);
   const datasets = useMemo(() => impact?.datasets ?? [], [impact]);
   const [datasetId, setDatasetId] = useState('');
 

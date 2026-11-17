@@ -1,7 +1,7 @@
 import {
   AssertionReviewAction,
   AssertionReviewStatus,
-} from '@/interfaces/database/compilation-model';
+} from '@/interfaces/database/ontology-model';
 
 /**
  * How much of the review queue to read.

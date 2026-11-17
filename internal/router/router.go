@@ -57,7 +57,7 @@ type Router struct {
 
 	compilationTemplateHandler      *handler.CompilationTemplateHandler
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler
-	compilationModelHandler         *handler.CompilationModelHandler
+	ontologyModelHandler            *handler.OntologyModelHandler
 	datasetArtifactHandler          *handler.DatasetArtifactHandler
 	ontologyABoxRetrievalHandler    *handler.OntologyABoxRetrievalHandler
 }
@@ -96,7 +96,7 @@ func NewRouter(
 	pipelineHandler *handler.PipelineHandler,
 	compilationTemplateHandler *handler.CompilationTemplateHandler,
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler,
-	compilationModelHandler *handler.CompilationModelHandler,
+	ontologyModelHandler *handler.OntologyModelHandler,
 	datasetArtifactHandler *handler.DatasetArtifactHandler,
 	ontologyABoxRetrievalHandler *handler.OntologyABoxRetrievalHandler,
 ) *Router {
@@ -134,7 +134,7 @@ func NewRouter(
 
 		compilationTemplateHandler:      compilationTemplateHandler,
 		compilationTemplateGroupHandler: compilationTemplateGroupHandler,
-		compilationModelHandler:         compilationModelHandler,
+		ontologyModelHandler:            ontologyModelHandler,
 		datasetArtifactHandler:          datasetArtifactHandler,
 		ontologyABoxRetrievalHandler:    ontologyABoxRetrievalHandler,
 	}
@@ -642,41 +642,41 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// is in force and who put it there", which is a different question
 			// from the template palette above — and the one that has to survive
 			// an edit.
-			v1.GET("/compilation-models", r.compilationModelHandler.List)
-			v1.GET("/compilation-models/:template_id/check", r.compilationModelHandler.Check)
-			v1.POST("/compilation-models/:template_id/review", r.compilationModelHandler.SubmitForReview)
-			v1.POST("/compilation-models/:template_id/publish", r.compilationModelHandler.Publish)
-			v1.POST("/compilation-models/:template_id/reject", r.compilationModelHandler.Reject)
-			v1.POST("/compilation-models/:template_id/retire", r.compilationModelHandler.Retire)
-			v1.GET("/compilation-models/:template_id/versions", r.compilationModelHandler.ListVersions)
-			v1.GET("/compilation-models/:template_id/versions/diff", r.compilationModelHandler.VersionDiff)
-			v1.GET("/compilation-models/:template_id/datasets", r.compilationModelHandler.Impact)
-			v1.POST("/compilation-models/:template_id/trial", r.compilationModelHandler.Trial)
+			v1.GET("/ontology-models", r.ontologyModelHandler.List)
+			v1.GET("/ontology-models/:template_id/check", r.ontologyModelHandler.Check)
+			v1.POST("/ontology-models/:template_id/review", r.ontologyModelHandler.SubmitForReview)
+			v1.POST("/ontology-models/:template_id/publish", r.ontologyModelHandler.Publish)
+			v1.POST("/ontology-models/:template_id/reject", r.ontologyModelHandler.Reject)
+			v1.POST("/ontology-models/:template_id/retire", r.ontologyModelHandler.Retire)
+			v1.GET("/ontology-models/:template_id/versions", r.ontologyModelHandler.ListVersions)
+			v1.GET("/ontology-models/:template_id/versions/diff", r.ontologyModelHandler.VersionDiff)
+			v1.GET("/ontology-models/:template_id/datasets", r.ontologyModelHandler.Impact)
+			v1.POST("/ontology-models/:template_id/trial", r.ontologyModelHandler.Trial)
 			// Assertion review: the only cross-dataset read of a model's rows.
 			// The rows themselves are browsed per dataset (the ABox panel), but
 			// "what has this model produced that nobody checked" is a model-level
 			// question, so the queue still fans out.
-			v1.GET("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.AssertionReviewQueue)
-			v1.POST("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.DecideAssertions)
+			v1.GET("/ontology-models/:template_id/assertions/review", r.ontologyModelHandler.AssertionReviewQueue)
+			v1.POST("/ontology-models/:template_id/assertions/review", r.ontologyModelHandler.DecideAssertions)
 
 			// Actions: the contract an action must state, the tool that executes
 			// it, and the audit of every attempt. Reads are member-level because
 			// an analyst has to be able to see why an action is not runnable;
 			// every write is admin-level, since a contract decides what the
 			// system may do and a binding decides which system does it.
-			v1.GET("/compilation-models/:template_id/actions", r.compilationModelHandler.ListActions)
-			v1.PATCH("/compilation-models/:template_id/actions/:action_id", r.compilationModelHandler.UpdateAction)
-			v1.POST("/compilation-models/:template_id/actions/:action_name/dry-run", r.compilationModelHandler.DryRunAction)
-			v1.POST("/compilation-models/:template_id/actions/:action_name/execute", r.compilationModelHandler.ExecuteAction)
-			v1.GET("/compilation-models/:template_id/action-bindings", r.compilationModelHandler.ListBindings)
-			v1.PUT("/compilation-models/:template_id/action-bindings/:action_name", r.compilationModelHandler.SaveBinding)
-			v1.DELETE("/compilation-models/:template_id/action-bindings/:action_name", r.compilationModelHandler.DeleteBinding)
-			v1.GET("/compilation-models/:template_id/action-executions", r.compilationModelHandler.ListExecutions)
+			v1.GET("/ontology-models/:template_id/actions", r.ontologyModelHandler.ListActions)
+			v1.PATCH("/ontology-models/:template_id/actions/:action_id", r.ontologyModelHandler.UpdateAction)
+			v1.POST("/ontology-models/:template_id/actions/:action_name/dry-run", r.ontologyModelHandler.DryRunAction)
+			v1.POST("/ontology-models/:template_id/actions/:action_name/execute", r.ontologyModelHandler.ExecuteAction)
+			v1.GET("/ontology-models/:template_id/action-bindings", r.ontologyModelHandler.ListBindings)
+			v1.PUT("/ontology-models/:template_id/action-bindings/:action_name", r.ontologyModelHandler.SaveBinding)
+			v1.DELETE("/ontology-models/:template_id/action-bindings/:action_name", r.ontologyModelHandler.DeleteBinding)
+			v1.GET("/ontology-models/:template_id/action-executions", r.ontologyModelHandler.ListExecutions)
 			// The contract's own history: the row keeps only its newest signature.
-			v1.GET("/compilation-models/:template_id/actions/:action_name/contract-edits", r.compilationModelHandler.ListContractEdits)
+			v1.GET("/ontology-models/:template_id/actions/:action_name/contract-edits", r.ontologyModelHandler.ListContractEdits)
 			// Stamps the contract columns on rows compiled before they existed.
 			// Idempotent, so it is a button rather than a script.
-			v1.POST("/compilation-models/:template_id/actions/backfill", r.compilationModelHandler.BackfillActions)
+			v1.POST("/ontology-models/:template_id/actions/backfill", r.ontologyModelHandler.BackfillActions)
 
 			connectors := v1.Group("/connectors")
 			{

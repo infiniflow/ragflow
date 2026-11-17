@@ -17,7 +17,7 @@
 import {
   ACTION_CONTRACT_FIELD_ORDER,
   ActionContractFieldName,
-} from '@/interfaces/database/compilation-model';
+} from '@/interfaces/database/ontology-model';
 
 /**
  * declaredContractFields reads a class's `|`-separated declaration.

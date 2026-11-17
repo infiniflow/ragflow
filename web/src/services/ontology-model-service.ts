@@ -17,41 +17,40 @@
 import {
   IAssertionReviewRequestBody,
   IAssertionReviewRequestParams,
-} from '@/interfaces/request/compilation-model';
+} from '@/interfaces/request/ontology-model';
 import api from '@/utils/api';
 import request from '@/utils/next-request';
 
-export const listCompilationModels = (params?: { kind?: string }) =>
-  request.get(api.compilationModels, { params });
+export const listOntologyModels = () => request.get(api.ontologyModels);
 
-export const checkCompilationModel = (id: string) =>
-  request.get(api.compilationModelCheck(id));
+export const checkOntologyModel = (id: string) =>
+  request.get(api.ontologyModelCheck(id));
 
-export const submitCompilationModelForReview = (id: string) =>
-  request.post(api.compilationModelReview(id));
+export const submitOntologyModelForReview = (id: string) =>
+  request.post(api.ontologyModelReview(id));
 
-export const publishCompilationModel = (
+export const publishOntologyModel = (
   id: string,
   data: { note?: string; force?: boolean },
-) => request.post(api.compilationModelPublish(id), data);
+) => request.post(api.ontologyModelPublish(id), data);
 
-export const rejectCompilationModel = (id: string, data: { reason: string }) =>
-  request.post(api.compilationModelReject(id), data);
+export const rejectOntologyModel = (id: string, data: { reason: string }) =>
+  request.post(api.ontologyModelReject(id), data);
 
-export const retireCompilationModel = (id: string) =>
-  request.post(api.compilationModelRetire(id));
+export const retireOntologyModel = (id: string) =>
+  request.post(api.ontologyModelRetire(id));
 
-export const listCompilationModelVersions = (id: string) =>
-  request.get(api.compilationModelVersions(id));
+export const listOntologyModelVersions = (id: string) =>
+  request.get(api.ontologyModelVersions(id));
 
-export const diffCompilationModelVersions = (
+export const diffOntologyModelVersions = (
   id: string,
   from: number,
   to: number,
-) => request.get(api.compilationModelVersionDiff(id), { params: { from, to } });
+) => request.get(api.ontologyModelVersionDiff(id), { params: { from, to } });
 
-export const listCompilationModelDatasets = (id: string) =>
-  request.get(api.compilationModelDatasets(id));
+export const listOntologyModelDatasets = (id: string) =>
+  request.get(api.ontologyModelDatasets(id));
 
 /**
  * Rehearses a model change over real documents.
@@ -59,8 +58,8 @@ export const listCompilationModelDatasets = (id: string) =>
  * It is a POST because it is not a read: the server compiles sampled documents
  * with the draft model, which costs an LLM pass per document.
  */
-export const trialCompilationModel = (id: string) =>
-  request.post(api.compilationModelTrial(id), {});
+export const trialOntologyModel = (id: string) =>
+  request.post(api.ontologyModelTrial(id), {});
 
 /**
  * Reads the assertions of a model that still need a verdict.
@@ -93,7 +92,7 @@ export const reviewAssertions = (
  * fetching them apart would let the row's cells disagree on screen.
  */
 export const listModelActions = (id: string) =>
-  request.get(api.compilationModelActions(id));
+  request.get(api.ontologyModelActions(id));
 
 /**
  * Edits one action's contract.
@@ -110,10 +109,10 @@ export const updateActionContract = (
     reason: string;
   },
   params?: { dataset_id?: string },
-) => request.patch(api.compilationModelAction(id, actionId), data, { params });
+) => request.patch(api.ontologyModelAction(id, actionId), data, { params });
 
 export const listActionBindings = (id: string) =>
-  request.get(api.compilationModelActionBindings(id));
+  request.get(api.ontologyModelActionBindings(id));
 
 export const saveActionBinding = (
   id: string,
@@ -130,17 +129,17 @@ export const saveActionBinding = (
     note?: string;
     dataset_id?: string;
   },
-) => request.put(api.compilationModelActionBinding(id, actionName), data);
+) => request.put(api.ontologyModelActionBinding(id, actionName), data);
 
 export const deleteActionBinding = (id: string, actionName: string) =>
-  request.delete(api.compilationModelActionBinding(id, actionName));
+  request.delete(api.ontologyModelActionBinding(id, actionName));
 
 /** Reports the verdict and the exact arguments without calling anything. */
 export const dryRunAction = (
   id: string,
   actionName: string,
   data: { arguments?: Record<string, unknown> } = {},
-) => request.post(api.compilationModelActionDryRun(id, actionName), data);
+) => request.post(api.ontologyModelActionDryRun(id, actionName), data);
 
 /**
  * Runs one action.
@@ -152,7 +151,7 @@ export const executeAction = (
   id: string,
   actionName: string,
   data: { arguments?: Record<string, unknown>; reason: string },
-) => request.post(api.compilationModelActionExecute(id, actionName), data);
+) => request.post(api.ontologyModelActionExecute(id, actionName), data);
 
 export const listActionExecutions = (
   id: string,
@@ -166,14 +165,14 @@ export const listActionExecutions = (
     from?: number;
     to?: number;
   },
-) => request.get(api.compilationModelActionExecutions(id), { params });
+) => request.get(api.ontologyModelActionExecutions(id), { params });
 
 export const listActionContractEdits = (
   id: string,
   actionName: string,
   params?: { page?: number; page_size?: number },
 ) =>
-  request.get(api.compilationModelActionContractEdits(id, actionName), {
+  request.get(api.ontologyModelActionContractEdits(id, actionName), {
     params,
   });
 
@@ -185,4 +184,4 @@ export const listActionContractEdits = (
  * has to remember to apply to a database by hand.
  */
 export const backfillActionContracts = (id: string) =>
-  request.post(api.compilationModelActionBackfill(id), {});
+  request.post(api.ontologyModelActionBackfill(id), {});

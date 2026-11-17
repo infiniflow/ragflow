@@ -212,10 +212,10 @@ func TestUpdateDatasetPreservesParentChildChunkerRuntimeConfig(t *testing.T) {
 }
 
 // This path writes parser_config itself instead of going through the
-// knowledgebase DAO, so it has to re-index the compilation-model references on
+// knowledgebase DAO, so it has to re-index the ontology-model references on
 // its own. A stale index would leave the model library counting a dataset that
 // no longer compiles against the model, and a publish trial sampling it.
-func TestUpdateDatasetReindexesCompilationModelRefs(t *testing.T) {
+func TestUpdateDatasetReindexesOntologyModelRefs(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")

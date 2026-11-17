@@ -440,52 +440,52 @@ const apiEndpoints = {
   // The model lifecycle: which version of a template is in force, and who
   // moved it there. Separate from the template palette above because a save
   // stops affecting the corpus the moment a model has been published.
-  compilationModels: `${restAPIv1}/compilation-models`,
-  compilationModelCheck: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/check`,
-  compilationModelReview: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/review`,
-  compilationModelPublish: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/publish`,
-  compilationModelReject: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/reject`,
-  compilationModelRetire: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/retire`,
-  compilationModelVersions: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/versions`,
-  compilationModelVersionDiff: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/versions/diff`,
-  compilationModelDatasets: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/datasets`,
-  compilationModelTrial: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/trial`,
+  ontologyModels: `${restAPIv1}/ontology-models`,
+  ontologyModelCheck: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/check`,
+  ontologyModelReview: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/review`,
+  ontologyModelPublish: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/publish`,
+  ontologyModelReject: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/reject`,
+  ontologyModelRetire: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/retire`,
+  ontologyModelVersions: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/versions`,
+  ontologyModelVersionDiff: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/versions/diff`,
+  ontologyModelDatasets: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/datasets`,
+  ontologyModelTrial: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/trial`,
   // The assertion queue and the verdicts on it share a path: a review is a
   // write to the rows the read just listed, not a separate resource.
   assertionReview: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/assertions/review`,
+    `${restAPIv1}/ontology-models/${id}/assertions/review`,
   // Actions: the compiled actions of a model, their tool bindings, and the
   // audit of every attempt. The contract edit is a PATCH on one action row
   // because it changes that row and nothing else.
-  compilationModelActions: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/actions`,
-  compilationModelAction: (id: string, actionId: string) =>
-    `${restAPIv1}/compilation-models/${id}/actions/${actionId}`,
-  compilationModelActionDryRun: (id: string, actionName: string) =>
-    `${restAPIv1}/compilation-models/${id}/actions/${actionName}/dry-run`,
-  compilationModelActionExecute: (id: string, actionName: string) =>
-    `${restAPIv1}/compilation-models/${id}/actions/${actionName}/execute`,
-  compilationModelActionBindings: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/action-bindings`,
-  compilationModelActionBinding: (id: string, actionName: string) =>
-    `${restAPIv1}/compilation-models/${id}/action-bindings/${actionName}`,
-  compilationModelActionBackfill: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/actions/backfill`,
-  compilationModelActionExecutions: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/action-executions`,
+  ontologyModelActions: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions`,
+  ontologyModelAction: (id: string, actionId: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions/${actionId}`,
+  ontologyModelActionDryRun: (id: string, actionName: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions/${actionName}/dry-run`,
+  ontologyModelActionExecute: (id: string, actionName: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions/${actionName}/execute`,
+  ontologyModelActionBindings: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/action-bindings`,
+  ontologyModelActionBinding: (id: string, actionName: string) =>
+    `${restAPIv1}/ontology-models/${id}/action-bindings/${actionName}`,
+  ontologyModelActionBackfill: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions/backfill`,
+  ontologyModelActionExecutions: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/action-executions`,
   // The contract's own history: the action row keeps only its newest signature,
   // so "who widened the authorization, and from what" lives here.
-  compilationModelActionContractEdits: (id: string, actionName: string) =>
-    `${restAPIv1}/compilation-models/${id}/actions/${actionName}/contract-edits`,
+  ontologyModelActionContractEdits: (id: string, actionName: string) =>
+    `${restAPIv1}/ontology-models/${id}/actions/${actionName}/contract-edits`,
   // One confirmed edit from the compile-quality ledger (ontology.md §2.7).
   compilationTemplateOntologyFix: (id: string) =>
     `${restAPIv1}/compilation-templates/${id}/ontology-fix`,

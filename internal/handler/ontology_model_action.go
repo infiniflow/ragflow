@@ -24,8 +24,8 @@ import (
 //	@Tags compilation model
 //	@Security ApiKeyAuth
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/actions [get]
-func (h *CompilationModelHandler) ListActions(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/actions [get]
+func (h *OntologyModelHandler) ListActions(c *gin.Context) {
 	_, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
@@ -54,8 +54,8 @@ type actionContractEditRequest struct {
 //	@Param template_id path string true "model id"
 //	@Param action_id path string true "compiled action row id"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/actions/{action_id} [patch]
-func (h *CompilationModelHandler) UpdateAction(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/actions/{action_id} [patch]
+func (h *OntologyModelHandler) UpdateAction(c *gin.Context) {
 	user, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return
@@ -100,8 +100,8 @@ type bindingRequest struct {
 //	@Summary List action bindings
 //	@Tags compilation model
 //	@Security ApiKeyAuth
-//	@Router /v1/compilation-models/{template_id}/action-bindings [get]
-func (h *CompilationModelHandler) ListBindings(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/action-bindings [get]
+func (h *OntologyModelHandler) ListBindings(c *gin.Context) {
 	_, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
@@ -125,8 +125,8 @@ func (h *CompilationModelHandler) ListBindings(c *gin.Context) {
 //	@Summary Save action binding
 //	@Tags compilation model
 //	@Security ApiKeyAuth
-//	@Router /v1/compilation-models/{template_id}/action-bindings/{action_name} [put]
-func (h *CompilationModelHandler) SaveBinding(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/action-bindings/{action_name} [put]
+func (h *OntologyModelHandler) SaveBinding(c *gin.Context) {
 	user, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return
@@ -164,8 +164,8 @@ func (h *CompilationModelHandler) SaveBinding(c *gin.Context) {
 //	@Summary Delete action binding
 //	@Tags compilation model
 //	@Security ApiKeyAuth
-//	@Router /v1/compilation-models/{template_id}/action-bindings/{action_name} [delete]
-func (h *CompilationModelHandler) DeleteBinding(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/action-bindings/{action_name} [delete]
+func (h *OntologyModelHandler) DeleteBinding(c *gin.Context) {
 	_, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return
@@ -188,8 +188,8 @@ type actionCallRequest struct {
 //	@Summary Dry-run an action
 //	@Tags compilation model
 //	@Security ApiKeyAuth
-//	@Router /v1/compilation-models/{template_id}/actions/{action_name}/dry-run [post]
-func (h *CompilationModelHandler) DryRunAction(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/actions/{action_name}/dry-run [post]
+func (h *OntologyModelHandler) DryRunAction(c *gin.Context) {
 	_, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
@@ -217,8 +217,8 @@ func (h *CompilationModelHandler) DryRunAction(c *gin.Context) {
 //	@Summary Execute an action manually
 //	@Tags compilation model
 //	@Security ApiKeyAuth
-//	@Router /v1/compilation-models/{template_id}/actions/{action_name}/execute [post]
-func (h *CompilationModelHandler) ExecuteAction(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/actions/{action_name}/execute [post]
+func (h *OntologyModelHandler) ExecuteAction(c *gin.Context) {
 	user, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return
@@ -261,8 +261,8 @@ func (h *CompilationModelHandler) ExecuteAction(c *gin.Context) {
 //	@Summary List action executions
 //	@Tags compilation model
 //	@Security ApiKeyAuth
-//	@Router /v1/compilation-models/{template_id}/action-executions [get]
-func (h *CompilationModelHandler) ListExecutions(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/action-executions [get]
+func (h *OntologyModelHandler) ListExecutions(c *gin.Context) {
 	_, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
@@ -294,8 +294,8 @@ func (h *CompilationModelHandler) ListExecutions(c *gin.Context) {
 //	@Summary List manual contract edits of an action
 //	@Tags compilation model
 //	@Security ApiKeyAuth
-//	@Router /v1/compilation-models/{template_id}/actions/{action_name}/contract-edits [get]
-func (h *CompilationModelHandler) ListContractEdits(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/actions/{action_name}/contract-edits [get]
+func (h *OntologyModelHandler) ListContractEdits(c *gin.Context) {
 	_, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
@@ -345,8 +345,8 @@ func respondActionError(c *gin.Context, err error) {
 //	@Summary Backfill action contracts
 //	@Tags compilation model
 //	@Security ApiKeyAuth
-//	@Router /v1/compilation-models/{template_id}/actions/backfill [post]
-func (h *CompilationModelHandler) BackfillActions(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/actions/backfill [post]
+func (h *OntologyModelHandler) BackfillActions(c *gin.Context) {
 	_, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return

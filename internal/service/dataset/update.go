@@ -473,7 +473,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 				return fmt.Errorf("dataset update error. (database error): %w", err)
 			}
 			// This path writes parser_config inside its own transaction rather
-			// than through the knowledgebase DAO, so the compilation-model
+			// than through the knowledgebase DAO, so the ontology-model
 			// references the config implies are refreshed here too. Leaving
 			// them to the DAO would skip every edit made through this path, and
 			// the model library would keep counting datasets that no longer

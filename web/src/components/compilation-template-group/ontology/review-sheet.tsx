@@ -40,13 +40,13 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   useFetchAssertionReview,
   useReviewAssertions,
-} from '@/hooks/use-compilation-model-request';
+} from '@/hooks/use-ontology-model-request';
 import {
   AssertionReviewAction,
   AssertionReviewStatus,
   IAssertionReviewItem,
-} from '@/interfaces/database/compilation-model';
-import { IAssertionReviewRequestParams } from '@/interfaces/request/compilation-model';
+} from '@/interfaces/database/ontology-model';
+import { IAssertionReviewRequestParams } from '@/interfaces/request/ontology-model';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { Check, RotateCcw, X } from 'lucide-react';

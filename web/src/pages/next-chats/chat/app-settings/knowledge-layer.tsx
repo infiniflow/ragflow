@@ -11,12 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { CompilationTemplateKind } from '@/constants/compilation';
 import {
-  compilationModelStatusLabel,
-  useFetchCompilationModelVersions,
-  useFetchCompilationModels,
-} from '@/hooks/use-compilation-model-request';
+  ontologyModelStatusLabel,
+  useFetchOntologyModelVersions,
+  useFetchOntologyModels,
+} from '@/hooks/use-ontology-model-request';
 import { IOntologyBinding } from '@/interfaces/database/chat';
 import { prefixName } from '@/utils/form';
 import { useCallback, useMemo } from 'react';
@@ -60,15 +59,13 @@ export function KnowledgeLayer({ prefix = '' }: KnowledgeLayerProps) {
   }) as IOntologyBinding | null | undefined;
   const mode = ontologyOverrideMode(binding);
 
-  const { models, loading: modelsLoading } = useFetchCompilationModels(
-    CompilationTemplateKind.Ontology,
-  );
-  const { versions } = useFetchCompilationModelVersions(binding?.model_id);
+  const { models, loading: modelsLoading } = useFetchOntologyModels();
+  const { versions } = useFetchOntologyModelVersions(binding?.model_id);
 
   const modelOptions = useMemo(
     () =>
       models.map((model) => ({
-        label: `${model.name} · ${compilationModelStatusLabel(model.publish_status)}`,
+        label: `${model.name} · ${ontologyModelStatusLabel(model.publish_status)}`,
         value: model.id,
         description: model.version
           ? t('chat.knowledgeLayerModelPublishedVersion', {

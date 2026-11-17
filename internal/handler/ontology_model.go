@@ -23,21 +23,22 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
-// CompilationModelHandler serves the lifecycle of a compilation template: which
+// OntologyModelHandler serves the lifecycle of a compilation template: which
 // version of it is in force, whether the next one may be published, and who
 // moved it.
 //
 // It is a separate handler from CompilationTemplateHandler because it answers a
 // different question. /compilation-templates/* serves the editable palette;
-// /compilation-models/* serves "what is in force and who put it there", which is
+// /ontology-models/* serves "what is in force and who put it there", which is
 // the half that has to survive an edit.
-type CompilationModelHandler struct {
+type OntologyModelHandler struct {
 	governance *service.CompilationTemplateGovernanceService
 	// actions serves the action half of the same model: its contract, its tool
 	// binding and its audit trail. It lives on this handler because everything it
@@ -46,27 +47,30 @@ type CompilationModelHandler struct {
 	actions *service.ActionBindingService
 }
 
-// NewCompilationModelHandler creates a CompilationModelHandler.
-func NewCompilationModelHandler(svc *service.CompilationTemplateGovernanceService) *CompilationModelHandler {
-	return &CompilationModelHandler{governance: svc, actions: service.NewActionBindingService()}
+// NewOntologyModelHandler creates a OntologyModelHandler.
+func NewOntologyModelHandler(svc *service.CompilationTemplateGovernanceService) *OntologyModelHandler {
+	return &OntologyModelHandler{governance: svc, actions: service.NewActionBindingService()}
 }
 
-// List returns the tenant's models with their published version, lifecycle
-// state, and how many datasets compile against them.
+// List returns the tenant's ontology models with their published version,
+// lifecycle state, and how many datasets compile against them.
 //
-//	@Summary List models
-//	@Tags compilation model
+// The kind is fixed rather than taken from the caller: a model is an ontology
+// template, so a kind parameter would only offer a way to ask this endpoint for
+// rows it cannot describe.
+//
+//	@Summary List ontology models
+//	@Tags ontology model
 //	@Security ApiKeyAuth
-//	@Param kind query string false "restrict to one template kind; defaults to ontology, because a model is an ontology template"
 //	@Param tenant_id query string false "tenant whose models are listed (defaults to the current user)"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models [get]
-func (h *CompilationModelHandler) List(c *gin.Context) {
+//	@Router /v1/ontology-models [get]
+func (h *OntologyModelHandler) List(c *gin.Context) {
 	_, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
 	}
-	models, err := h.governance.ListModels(c.Request.Context(), dao.DB, tenantID, c.Query("kind"))
+	models, err := h.governance.ListModels(c.Request.Context(), dao.DB, tenantID, kccommon.KindOntology)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
@@ -82,8 +86,8 @@ func (h *CompilationModelHandler) List(c *gin.Context) {
 //	@Security ApiKeyAuth
 //	@Param template_id path string true "template id"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/check [get]
-func (h *CompilationModelHandler) Check(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/check [get]
+func (h *OntologyModelHandler) Check(c *gin.Context) {
 	_, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return
@@ -104,8 +108,8 @@ func (h *CompilationModelHandler) Check(c *gin.Context) {
 //	@Security ApiKeyAuth
 //	@Param template_id path string true "template id"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/review [post]
-func (h *CompilationModelHandler) SubmitForReview(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/review [post]
+func (h *OntologyModelHandler) SubmitForReview(c *gin.Context) {
 	user, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return
@@ -137,8 +141,8 @@ type publishModelRequest struct {
 //	@Param template_id path string true "template id"
 //	@Param request body publishModelRequest true "publish options"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/publish [post]
-func (h *CompilationModelHandler) Publish(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/publish [post]
+func (h *OntologyModelHandler) Publish(c *gin.Context) {
 	user, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return
@@ -168,8 +172,8 @@ type rejectModelRequest struct {
 //	@Param template_id path string true "template id"
 //	@Param request body rejectModelRequest true "rejection reason"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/reject [post]
-func (h *CompilationModelHandler) Reject(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/reject [post]
+func (h *OntologyModelHandler) Reject(c *gin.Context) {
 	user, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return
@@ -194,8 +198,8 @@ func (h *CompilationModelHandler) Reject(c *gin.Context) {
 //	@Security ApiKeyAuth
 //	@Param template_id path string true "template id"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/retire [post]
-func (h *CompilationModelHandler) Retire(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/retire [post]
+func (h *OntologyModelHandler) Retire(c *gin.Context) {
 	user, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return
@@ -214,8 +218,8 @@ func (h *CompilationModelHandler) Retire(c *gin.Context) {
 //	@Security ApiKeyAuth
 //	@Param template_id path string true "template id"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/versions [get]
-func (h *CompilationModelHandler) ListVersions(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/versions [get]
+func (h *OntologyModelHandler) ListVersions(c *gin.Context) {
 	_, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
@@ -239,8 +243,8 @@ func (h *CompilationModelHandler) ListVersions(c *gin.Context) {
 //	@Param from query int false "source version, 0 for the working draft"
 //	@Param to query int false "target version, 0 for the working draft"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/versions/diff [get]
-func (h *CompilationModelHandler) VersionDiff(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/versions/diff [get]
+func (h *OntologyModelHandler) VersionDiff(c *gin.Context) {
 	_, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
@@ -274,8 +278,8 @@ type trialModelRequest struct {
 //	@Param template_id path string true "template id"
 //	@Param request body trialModelRequest false "sample bounds"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/trial [post]
-func (h *CompilationModelHandler) Trial(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/trial [post]
+func (h *OntologyModelHandler) Trial(c *gin.Context) {
 	_, tenantID, ok := h.resolveWriter(c)
 	if !ok {
 		return
@@ -308,8 +312,8 @@ func (h *CompilationModelHandler) Trial(c *gin.Context) {
 //	@Security ApiKeyAuth
 //	@Param template_id path string true "template id"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/datasets [get]
-func (h *CompilationModelHandler) Impact(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/datasets [get]
+func (h *OntologyModelHandler) Impact(c *gin.Context) {
 	_, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
@@ -338,8 +342,8 @@ func (h *CompilationModelHandler) Impact(c *gin.Context) {
 //	@Param limit query int false "page size (default 30, max 200)"
 //	@Param offset query int false "page offset"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/assertions/review [get]
-func (h *CompilationModelHandler) AssertionReviewQueue(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/assertions/review [get]
+func (h *OntologyModelHandler) AssertionReviewQueue(c *gin.Context) {
 	_, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
@@ -380,8 +384,8 @@ func (h *CompilationModelHandler) AssertionReviewQueue(c *gin.Context) {
 //	@Param template_id path string true "template id"
 //	@Param request body assertionReviewRequest true "decisions"
 //	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/assertions/review [post]
-func (h *CompilationModelHandler) DecideAssertions(c *gin.Context) {
+//	@Router /v1/ontology-models/{template_id}/assertions/review [post]
+func (h *OntologyModelHandler) DecideAssertions(c *gin.Context) {
 	user, tenantID, ok := h.resolveReader(c)
 	if !ok {
 		return
@@ -427,7 +431,7 @@ type assertionReviewItemRequest struct {
 
 // parseAssertionReviewPaging reads limit/offset, writing the response itself when
 // either is malformed.
-func (h *CompilationModelHandler) parseAssertionReviewPaging(c *gin.Context) (int, int, bool) {
+func (h *OntologyModelHandler) parseAssertionReviewPaging(c *gin.Context) (int, int, bool) {
 	limit, offset := 0, 0
 	for _, spec := range []struct {
 		name string
@@ -449,18 +453,18 @@ func (h *CompilationModelHandler) parseAssertionReviewPaging(c *gin.Context) (in
 
 // resolveReader resolves the caller and the tenant a read is scoped to, writing
 // the response itself when the caller may not read there.
-func (h *CompilationModelHandler) resolveReader(c *gin.Context) (*entity.User, string, bool) {
+func (h *OntologyModelHandler) resolveReader(c *gin.Context) (*entity.User, string, bool) {
 	return h.resolve(c, permission.TenantMember)
 }
 
 // resolveWriter resolves the caller for a lifecycle transition, which changes
 // what every dataset compiling against the model will produce — so it asks for
 // tenant admin rather than mere membership.
-func (h *CompilationModelHandler) resolveWriter(c *gin.Context) (*entity.User, string, bool) {
+func (h *OntologyModelHandler) resolveWriter(c *gin.Context) (*entity.User, string, bool) {
 	return h.resolve(c, permission.TenantAdmin)
 }
 
-func (h *CompilationModelHandler) resolve(c *gin.Context, requirement permission.TenantRequirement) (*entity.User, string, bool) {
+func (h *OntologyModelHandler) resolve(c *gin.Context, requirement permission.TenantRequirement) (*entity.User, string, bool) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
 		common.RespondError(c, code, msg)

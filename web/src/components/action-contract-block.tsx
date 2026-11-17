@@ -21,7 +21,7 @@ import {
   ACTION_CONTRACT_FIELD_ORDER,
   ActionContractFieldName,
   IActionContractField,
-} from '@/interfaces/database/compilation-model';
+} from '@/interfaces/database/ontology-model';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 

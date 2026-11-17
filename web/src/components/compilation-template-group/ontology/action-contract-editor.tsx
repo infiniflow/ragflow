@@ -31,7 +31,7 @@ import {
   ACTION_CONTRACT_FIELD_ORDER,
   ActionContractFieldName,
   IModelAction,
-} from '@/interfaces/database/compilation-model';
+} from '@/interfaces/database/ontology-model';
 import { useUpdateActionContract } from '@/hooks/use-ontology-action-request';
 import message from '@/components/ui/message';
 import { ReactNode, useCallback, useMemo, useState } from 'react';

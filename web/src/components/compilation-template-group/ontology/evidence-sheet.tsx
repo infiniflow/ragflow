@@ -21,7 +21,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { IOntologyEvidence } from '@/interfaces/database/compilation-model';
+import { IOntologyEvidence } from '@/interfaces/database/ontology-model';
 import kbService from '@/services/knowledge-service';
 import { useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';

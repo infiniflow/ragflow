@@ -16,7 +16,7 @@
 
 import { render, screen } from '@testing-library/react';
 
-import { ACTION_CONTRACT_FIELD_ORDER } from '@/interfaces/database/compilation-model';
+import { ACTION_CONTRACT_FIELD_ORDER } from '@/interfaces/database/ontology-model';
 
 import { ActionContractBlock } from './action-contract-block';
 

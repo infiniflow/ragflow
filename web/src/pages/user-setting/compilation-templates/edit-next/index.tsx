@@ -15,7 +15,7 @@
  */
 
 import BackButton from '@/components/back-button';
-import { CompilationModelsSheet } from '@/components/compilation-models-sheet';
+import { OntologyModelsSheet } from '@/components/ontology-models-sheet';
 import {
   CompilationTemplateGroupEditor,
   CompilationTemplateGroupEditorState,
@@ -152,7 +152,7 @@ export default function EditNextCompilationTemplate() {
               </Button>
             </div>
           )}
-          <CompilationModelsSheet templateId={templateId} />
+          {isOntology && <OntologyModelsSheet templateId={templateId} />}
         </div>
       </header>
     ),

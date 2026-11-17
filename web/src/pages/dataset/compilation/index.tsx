@@ -1,5 +1,5 @@
 import BackButton from '@/components/back-button';
-import { CompilationModelsSheet } from '@/components/compilation-models-sheet';
+import { OntologyModelsSheet } from '@/components/ontology-models-sheet';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
@@ -55,7 +55,7 @@ export default function Compilation() {
             the way from the output back to the contract that produced it. The
             view selector itself lives in the view's own navigation, so this
             header keeps only what the views cannot answer. */}
-        <CompilationModelsSheet />
+        {viewMode === ViewMode.Ontology && <OntologyModelsSheet />}
       </header>
 
       {viewMode === ViewMode.LlmWiki && <LlmWikiView {...viewProps} />}

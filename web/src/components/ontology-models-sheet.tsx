@@ -47,27 +47,27 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  compilationModelStatusLabel,
-  useCheckCompilationModel,
-  useFetchCompilationModelImpact,
-  useFetchCompilationModelVersionDiff,
-  useFetchCompilationModelVersions,
-  useFetchCompilationModels,
-  usePublishCompilationModel,
-  useRejectCompilationModel,
-  useRetireCompilationModel,
-  useSubmitCompilationModelForReview,
-  useTrialCompilationModel,
-} from '@/hooks/use-compilation-model-request';
+  ontologyModelStatusLabel,
+  useCheckOntologyModel,
+  useFetchOntologyModelImpact,
+  useFetchOntologyModelVersionDiff,
+  useFetchOntologyModelVersions,
+  useFetchOntologyModels,
+  usePublishOntologyModel,
+  useRejectOntologyModel,
+  useRetireOntologyModel,
+  useSubmitOntologyModelForReview,
+  useTrialOntologyModel,
+} from '@/hooks/use-ontology-model-request';
 import {
-  CompilationModelPublishStatus,
-  ICompilationModel,
-  ICompilationModelIssue,
-  ICompilationModelPublishCheck,
-  ICompilationModelTrial,
-  ICompilationModelTrialAssertion,
-  ICompilationModelVersion,
-} from '@/interfaces/database/compilation-model';
+  OntologyModelPublishStatus,
+  IOntologyModel,
+  IOntologyModelIssue,
+  IOntologyModelPublishCheck,
+  IOntologyModelTrial,
+  IOntologyModelTrialAssertion,
+  IOntologyModelVersion,
+} from '@/interfaces/database/ontology-model';
 import { Routes } from '@/routes';
 import { Layers } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -75,7 +75,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import message from '@/components/ui/message';
 
-interface CompilationModelsSheetProps {
+interface OntologyModelsSheetProps {
   /**
    * The template being edited, when the sheet is opened from the editor.
    * Opening lands on that model's versions: the reader came to ask "is the
@@ -85,9 +85,13 @@ interface CompilationModelsSheetProps {
 }
 
 /**
- * The model library: every compilation template of the tenant with the version
- * of it that is in force, who put it there, and how many datasets compile
- * against it.
+ * The ontology model library: every ontology model of the tenant with the
+ * version in force, who put it there, and how many datasets compile against it.
+ *
+ * Callers render it only while an ontology template (or the ontology view of a
+ * dataset's output) is on screen: the endpoint it reads lists ontology models
+ * alone, so opening it under a wiki or tree template would answer a question
+ * about the wrong resource.
  *
  * Editing a model happens in the template editor. This answers the two
  * questions the editor cannot: is the model on screen the one the corpus ran on,
@@ -98,55 +102,55 @@ interface CompilationModelsSheetProps {
  * navigating away from that context to read the answer is what the sheet
  * exists to avoid.
  */
-export function CompilationModelsSheet({
+export function OntologyModelsSheet({
   templateId,
-}: CompilationModelsSheetProps) {
+}: OntologyModelsSheetProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const { models, loading } = useFetchCompilationModels();
+  const { models, loading } = useFetchOntologyModels();
 
-  const [publishTarget, setPublishTarget] = useState<ICompilationModel | null>(
+  const [publishTarget, setPublishTarget] = useState<IOntologyModel | null>(
     null,
   );
-  const [check, setCheck] = useState<ICompilationModelPublishCheck | null>(
+  const [check, setCheck] = useState<IOntologyModelPublishCheck | null>(
     null,
   );
   const [note, setNote] = useState('');
-  const [historyTarget, setHistoryTarget] = useState<ICompilationModel | null>(
+  const [historyTarget, setHistoryTarget] = useState<IOntologyModel | null>(
     null,
   );
   const [diffVersions, setDiffVersions] = useState<{
     from: number;
     to: number;
   } | null>(null);
-  const [impactTarget, setImpactTarget] = useState<ICompilationModel | null>(
+  const [impactTarget, setImpactTarget] = useState<IOntologyModel | null>(
     null,
   );
   // A rehearsal is an action, not a report: the dialog opens on a warning that
   // says what it will cost, and only then runs.
-  const [trialTarget, setTrialTarget] = useState<ICompilationModel | null>(
+  const [trialTarget, setTrialTarget] = useState<IOntologyModel | null>(
     null,
   );
-  const [trial, setTrial] = useState<ICompilationModelTrial | null>(null);
+  const [trial, setTrial] = useState<IOntologyModelTrial | null>(null);
 
-  const { checkModel, loading: checking } = useCheckCompilationModel();
-  const { publishModel, loading: publishing } = usePublishCompilationModel();
+  const { checkModel, loading: checking } = useCheckOntologyModel();
+  const { publishModel, loading: publishing } = usePublishOntologyModel();
   const { submitForReview, loading: submitting } =
-    useSubmitCompilationModelForReview();
-  const { rejectModel, loading: rejecting } = useRejectCompilationModel();
-  const { retireModel, loading: retiring } = useRetireCompilationModel();
+    useSubmitOntologyModelForReview();
+  const { rejectModel, loading: rejecting } = useRejectOntologyModel();
+  const { retireModel, loading: retiring } = useRetireOntologyModel();
 
   const { versions, loading: versionsLoading } =
-    useFetchCompilationModelVersions(historyTarget?.id);
-  const { diff, loading: diffLoading } = useFetchCompilationModelVersionDiff(
+    useFetchOntologyModelVersions(historyTarget?.id);
+  const { diff, loading: diffLoading } = useFetchOntologyModelVersionDiff(
     historyTarget?.id,
     diffVersions?.from,
     diffVersions?.to,
   );
-  const { impact, loading: impactLoading } = useFetchCompilationModelImpact(
+  const { impact, loading: impactLoading } = useFetchOntologyModelImpact(
     impactTarget?.id,
   );
-  const { runTrial, loading: trialing } = useTrialCompilationModel();
+  const { runTrial, loading: trialing } = useTrialOntologyModel();
 
   // Opening from the editor lands on the edited model once the list has
   // arrived. The ref keeps that to one automatic open per sheet opening: after
@@ -172,7 +176,7 @@ export function CompilationModelsSheet({
 
   // The rehearsal is opened rather than run: the dialog states what it will
   // cost, and the operator decides. Nothing expensive happens on a hover.
-  const openTrial = useCallback((model: ICompilationModel) => {
+  const openTrial = useCallback((model: IOntologyModel) => {
     setTrialTarget(model);
     setTrial(null);
   }, []);
@@ -199,7 +203,7 @@ export function CompilationModelsSheet({
   // Opening the publish dialog reads the findings first: the dialog has to show
   // what stands in the way before the button is pressed, not after.
   const openPublish = useCallback(
-    async (model: ICompilationModel) => {
+    async (model: IOntologyModel) => {
       setPublishTarget(model);
       setCheck(null);
       setNote('');
@@ -240,7 +244,7 @@ export function CompilationModelsSheet({
   }, [check, note, publishModel, publishTarget, t]);
 
   const review = useCallback(
-    async (model: ICompilationModel) => {
+    async (model: IOntologyModel) => {
       const result = await submitForReview(model.id);
       if (result.ok) {
         message.success(
@@ -257,7 +261,7 @@ export function CompilationModelsSheet({
   );
 
   const reject = useCallback(
-    async (model: ICompilationModel) => {
+    async (model: IOntologyModel) => {
       const reason = window.prompt(
         t('knowledgeCompilation.ontologyModel.rejectPrompt'),
       );
@@ -276,7 +280,7 @@ export function CompilationModelsSheet({
   );
 
   const retire = useCallback(
-    async (model: ICompilationModel) => {
+    async (model: IOntologyModel) => {
       const result = await retireModel(model.id);
       if (result.ok) {
         message.success(t('knowledgeCompilation.ontologyModel.retired'));
@@ -621,21 +625,21 @@ function ModelRow({
   onImpact,
   onTrial,
 }: {
-  model: ICompilationModel;
+  model: IOntologyModel;
   busy: boolean;
-  onPublish: (model: ICompilationModel) => void;
-  onReview: (model: ICompilationModel) => void;
-  onReject: (model: ICompilationModel) => void;
-  onRetire: (model: ICompilationModel) => void;
-  onHistory: (model: ICompilationModel) => void;
-  onImpact: (model: ICompilationModel) => void;
-  onTrial: (model: ICompilationModel) => void;
+  onPublish: (model: IOntologyModel) => void;
+  onReview: (model: IOntologyModel) => void;
+  onReject: (model: IOntologyModel) => void;
+  onRetire: (model: IOntologyModel) => void;
+  onHistory: (model: IOntologyModel) => void;
+  onImpact: (model: IOntologyModel) => void;
+  onTrial: (model: IOntologyModel) => void;
 }) {
   const { t } = useTranslation();
   const isReview =
-    model.publish_status === CompilationModelPublishStatus.Review;
+    model.publish_status === OntologyModelPublishStatus.Review;
   const isPublished =
-    model.publish_status === CompilationModelPublishStatus.Published;
+    model.publish_status === OntologyModelPublishStatus.Published;
 
   return (
     <Card>
@@ -645,7 +649,7 @@ function ModelRow({
             <CardTitle className="truncate">{model.name}</CardTitle>
             <Badge variant="secondary">{model.kind}</Badge>
             <Badge variant={isPublished ? 'success' : 'secondary'}>
-              {compilationModelStatusLabel(model.publish_status)}
+              {ontologyModelStatusLabel(model.publish_status)}
             </Badge>
             {model.unpublished_changes && (
               <Badge
@@ -772,7 +776,7 @@ function ModelRow({
  * them are the evidence. A publisher who reads "2 added, 0 dropped" needs to
  * see which document and which assertions, or the number is not actionable.
  */
-function ModelTrialBody({ trial }: { trial: ICompilationModelTrial }) {
+function ModelTrialBody({ trial }: { trial: IOntologyModelTrial }) {
   const { t } = useTranslation();
   const unchangedModel = trial.added === 0 && trial.removed === 0;
 
@@ -853,7 +857,7 @@ function TrialAssertionList({
   added,
 }: {
   label: string;
-  assertions: ICompilationModelTrialAssertion[];
+  assertions: IOntologyModelTrialAssertion[];
   added?: boolean;
 }) {
   if (assertions.length === 0) return null;
@@ -880,7 +884,7 @@ function PublishCheckBody({
   check,
   loading,
 }: {
-  check: ICompilationModelPublishCheck | null;
+  check: IOntologyModelPublishCheck | null;
   loading: boolean;
 }) {
   const { t } = useTranslation();
@@ -928,7 +932,7 @@ function IssueGroup({
   tone,
 }: {
   heading: string;
-  issues: ICompilationModelIssue[];
+  issues: IOntologyModelIssue[];
   tone: 'destructive' | 'warning';
 }) {
   return (
@@ -962,7 +966,7 @@ function VersionRow({
   selected,
   onSelect,
 }: {
-  version: ICompilationModelVersion;
+  version: IOntologyModelVersion;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -1046,4 +1050,4 @@ function VersionDiffBody({
   );
 }
 
-export default CompilationModelsSheet;
+export default OntologyModelsSheet;

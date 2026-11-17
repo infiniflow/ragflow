@@ -14,14 +14,14 @@
  *  limitations under the License.
  */
 
-export enum CompilationModelPublishStatus {
+export enum OntologyModelPublishStatus {
   Draft = 'draft',
   Review = 'review',
   Published = 'published',
   Retired = 'retired',
 }
 
-export enum CompilationModelIssueSeverity {
+export enum OntologyModelIssueSeverity {
   Blocker = 'blocker',
   Warning = 'warning',
 }
@@ -32,27 +32,27 @@ export enum CompilationModelIssueSeverity {
  * The blocker / warning split is the mechanism of the gate: a warning is a
  * judgement the publisher may overrule, a blocker is not.
  */
-export interface ICompilationModelIssue {
+export interface IOntologyModelIssue {
   code: string;
   category?: string;
-  severity: CompilationModelIssueSeverity | string;
+  severity: OntologyModelIssueSeverity | string;
   message: string;
   subjects?: string[];
 }
 
 /** The report the publish gate decides on. Returned on refusals too. */
-export interface ICompilationModelPublishCheck {
+export interface IOntologyModelPublishCheck {
   template_id: string;
   name: string;
   kind: string;
   current_version: number;
   next_version: number;
-  blockers: ICompilationModelIssue[];
-  warnings: ICompilationModelIssue[];
+  blockers: IOntologyModelIssue[];
+  warnings: IOntologyModelIssue[];
   publishable: boolean;
 }
 
-export interface ICompilationModel {
+export interface IOntologyModel {
   id: string;
   name: string;
   kind: string;
@@ -60,7 +60,7 @@ export interface ICompilationModel {
   description?: string;
   /** Published version number; 0 means never published. */
   version: number;
-  publish_status: CompilationModelPublishStatus | string;
+  publish_status: OntologyModelPublishStatus | string;
   published_at?: string;
   published_by?: string;
   updated_at?: string;
@@ -75,7 +75,7 @@ export interface ICompilationModel {
 }
 
 /** One dataset a change to a model reaches. */
-export interface ICompilationModelImpactDataset {
+export interface IOntologyModelImpactDataset {
   id: string;
   name: string;
   doc_num: number;
@@ -89,15 +89,15 @@ export interface ICompilationModelImpactDataset {
  * This is the decision: a publisher told "3 datasets" has to know which three
  * to tell whether the change can be made now or has to be scheduled.
  */
-export interface ICompilationModelImpact {
+export interface IOntologyModelImpact {
   template_id: string;
   /** The reference datasets store: the model's group, or the template itself. */
   ref: { kind: string; id: string };
-  datasets: ICompilationModelImpactDataset[];
+  datasets: IOntologyModelImpactDataset[];
 }
 
 /** One piece of knowledge a compile run produced. */
-export interface ICompilationModelTrialAssertion {
+export interface IOntologyModelTrialAssertion {
   kind: string;
   type?: string;
   name: string;
@@ -105,14 +105,14 @@ export interface ICompilationModelTrialAssertion {
 }
 
 /** One document's rehearsal result. */
-export interface ICompilationModelTrialDocument {
+export interface IOntologyModelTrialDocument {
   dataset_id: string;
   dataset_name: string;
   document_id: string;
   document_name: string;
   chunks: number;
-  added: ICompilationModelTrialAssertion[];
-  removed: ICompilationModelTrialAssertion[];
+  added: IOntologyModelTrialAssertion[];
+  removed: IOntologyModelTrialAssertion[];
   unchanged: number;
   /** Why this document produced no comparison. */
   error?: string;
@@ -126,12 +126,12 @@ export interface ICompilationModelTrialDocument {
  * and because it answers a different question: the check asks whether the model
  * is self-consistent, the rehearsal asks what it would change.
  */
-export interface ICompilationModelTrial {
+export interface IOntologyModelTrial {
   template_id: string;
   kind: string;
   current_version: number;
   draft_version: number;
-  documents: ICompilationModelTrialDocument[];
+  documents: IOntologyModelTrialDocument[];
   added: number;
   removed: number;
   runs: number;
@@ -458,7 +458,7 @@ export interface IAssertionReviewItem {
  * The rows themselves are browsed per dataset; this list exists so a queue that
  * could not read everything can say which datasets it skipped.
  */
-export interface ICompilationModelInspectDataset {
+export interface IOntologyModelInspectDataset {
   id: string;
   name: string;
   doc_num: number;
@@ -474,7 +474,7 @@ export interface ICompilationModelInspectDataset {
 export interface IAssertionReviewQueue {
   template_id: string;
   model_version: number;
-  datasets: ICompilationModelInspectDataset[];
+  datasets: IOntologyModelInspectDataset[];
   /** Datasets the read cap left out: "did not look" must not read as "empty". */
   skipped_dataset_ids: string[];
   counts: IAssertionReviewCounts;
@@ -502,7 +502,7 @@ export interface IAssertionReviewResult {
   counts: IAssertionReviewCounts;
 }
 
-export interface ICompilationModelVersion {
+export interface IOntologyModelVersion {
   version: number;
   name: string;
   note?: string;
@@ -511,7 +511,7 @@ export interface ICompilationModelVersion {
   is_current: boolean;
 }
 
-export interface ICompilationModelVersionChange {
+export interface IOntologyModelVersionChange {
   /** JSON path, e.g. `entity.fields[place].parent`. */
   path: string;
   change: 'added' | 'removed' | 'modified';
@@ -519,9 +519,9 @@ export interface ICompilationModelVersionChange {
   after?: string;
 }
 
-export interface ICompilationModelVersionDiff {
+export interface IOntologyModelVersionDiff {
   template_id: string;
   from: number;
   to: number;
-  changes: ICompilationModelVersionChange[];
+  changes: IOntologyModelVersionChange[];
 }

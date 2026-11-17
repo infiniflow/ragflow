@@ -562,7 +562,7 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.TenantModel{},
 		&entity.UserCanvas{},
 		&entity.API4Conversation{},
-		// UpdateMetadataConfig rewrites the dataset's compilation-model
+		// UpdateMetadataConfig rewrites the dataset's ontology-model
 		// references in the same transaction as the kb row, so any test that
 		// drives that real entry point needs the table to exist.
 		&entity.DatasetModelRef{},

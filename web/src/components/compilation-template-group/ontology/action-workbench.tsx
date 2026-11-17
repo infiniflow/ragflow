@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import message from '@/components/ui/message';
-import { backfillActionContracts } from '@/services/compilation-model-service';
+import { backfillActionContracts } from '@/services/ontology-model-service';
 import {
   useDryRunAction,
   useExecuteAction,
@@ -40,7 +40,7 @@ import {
   IActionCallResult,
   IActionExecution,
   IModelAction,
-} from '@/interfaces/database/compilation-model';
+} from '@/interfaces/database/ontology-model';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import {

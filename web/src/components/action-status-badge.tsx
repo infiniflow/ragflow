@@ -16,7 +16,7 @@
 
 'use client';
 
-import { IModelAction } from '@/interfaces/database/compilation-model';
+import { IModelAction } from '@/interfaces/database/ontology-model';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 

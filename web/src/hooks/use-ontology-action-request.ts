@@ -21,7 +21,7 @@ import {
   IActionExecutionFilters,
   IActionExecutionList,
   IModelAction,
-} from '@/interfaces/database/compilation-model';
+} from '@/interfaces/database/ontology-model';
 import {
   deleteActionBinding,
   dryRunAction,
@@ -32,7 +32,7 @@ import {
   listModelActions,
   saveActionBinding,
   updateActionContract,
-} from '@/services/compilation-model-service';
+} from '@/services/ontology-model-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const enum OntologyActionApiAction {

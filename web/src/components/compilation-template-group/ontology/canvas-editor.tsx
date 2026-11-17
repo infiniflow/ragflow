@@ -23,7 +23,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   ACTION_CONTRACT_FIELD_ORDER,
   ActionContractFieldName,
-} from '@/interfaces/database/compilation-model';
+} from '@/interfaces/database/ontology-model';
 import { cn } from '@/lib/utils';
 import { declaredContractFields } from '@/utils/action-contract';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
