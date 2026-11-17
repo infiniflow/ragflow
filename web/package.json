@@ -185,6 +185,7 @@
     "postcss": "^8.5.6",
     "postcss-loader": "^8.2.0",
     "react-dev-inspector": "^2.0.1",
+    "react-devtools-cdt-mcp": "^0.1.0",
     "react-doctor": "^0.9.22",
     "remark-loader": "^6.0.0",
     "simple-icons": "^16.23.0",

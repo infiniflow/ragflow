@@ -432,7 +432,7 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	common.Debug("models: eino generate message skeleton",
 		zap.String("skeleton", describeInternalMessages(internal)))
 	captureModelInput(ctx, *cm.ModelName, internal)
-	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, internal, cm.APIConfig, chatCfg, nil)
+	resp, err := cm.ChatWithMessages(ctx, internal, chatCfg, nil)
 	if err != nil {
 		// The chat paths surface this to the user as `**ERROR**: <err>`
 		// (errorAnswerText in agentic-rag/agentic_rag_graph.go, chat_pipeline.go),
@@ -923,7 +923,7 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 			attemptCfg.ToolCallsResult = nil
 			attemptCfg.UsageResult = nil
 			captureModelInput(ctx, *cm.ModelName, internalMessage)
-			err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, internalMessage, cm.APIConfig, attemptCfg, nil, sender)
+			err := cm.ChatStreamlyWithSender(ctx, internalMessage, attemptCfg, nil, sender)
 			if err != nil {
 				// Same user-visible shape as generateOnce's error: lead with the
 				// model name and keep the provider's own sentence. Tagging it HERE

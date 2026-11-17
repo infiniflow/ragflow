@@ -1636,9 +1636,10 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 	var driver models.ModelDriver
 	var modelName string
 	var apiConfig *models.APIConfig
-	if isBareTenantModelID(compositeLLMID) {
-		// Resolve the exact tenant model without a separate existence check.
-		resolved, err := resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
+	if _, isGroupRef := common.ParseGroupModelRef(compositeLLMID); isGroupRef || isBareTenantModelID(compositeLLMID) {
+		// Resolve the exact tenant model (or the model group's current
+		// member) without a separate existence check.
+		resolved, err := resolveModelConfigByRef(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
 			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
 		}

@@ -204,9 +204,8 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		switch req.Thinking {
 		case "enabled":
 			genConfig["thinking"] = true
-		case "disabled":
+		case "disabled", "default":
 			genConfig["thinking"] = false
-		case "", "default":
 		}
 	}
 	if req.Temperature != nil {

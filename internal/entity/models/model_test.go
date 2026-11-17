@@ -977,15 +977,20 @@ func TestChatModelWithDefaults(t *testing.T) {
 	if config.ModelClass == nil || *config.ModelClass != "chat" {
 		t.Fatalf("ModelClass = %v, want chat", config.ModelClass)
 	}
-	if config.Thinking == nil || !*config.Thinking {
-		t.Fatalf("Thinking = %v, want true", config.Thinking)
+	if config.Thinking == nil || *config.Thinking {
+		t.Fatalf("Thinking = %v, want false even when the model defaults to thinking", config.Thinking)
 	}
 
 	modelClass := "custom"
-	thinking := false
+	thinking := true
 	config = model.withDefaults(&ChatConfig{ModelClass: &modelClass, Thinking: &thinking})
 	if config.ModelClass != &modelClass || config.Thinking != &thinking {
 		t.Fatal("explicit chat config values should not be overwritten by model defaults")
+	}
+
+	config = (&ChatModel{}).withDefaults(nil)
+	if config.Thinking == nil || *config.Thinking {
+		t.Fatalf("Thinking without metadata = %v, want false", config.Thinking)
 	}
 }
 
