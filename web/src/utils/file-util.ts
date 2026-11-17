@@ -207,6 +207,13 @@ export const formatBytes = (x: string | number) => {
     n = n / 1024;
   }
 
+  // A value just under 1024 of a unit rounds to "1024 KB"; show it in the
+  // next unit instead.
+  if (l > 0 && l < Units.length - 1 && Math.round(n) >= 1024) {
+    n = n / 1024;
+    ++l;
+  }
+
   return n.toFixed(n < 10 && l > 0 ? 1 : 0) + ' ' + Units[l];
 };
 
