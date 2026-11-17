@@ -153,13 +153,20 @@ export function ActionContractEditor({
       return;
     }
     try {
-      await updateContract({
+      const saved = await updateContract({
         id: templateId,
         actionId: action.id,
         datasetId: action.dataset_id,
         contract: changed,
         reason: reasonText,
       });
+      // The server explains a refusal through the response interceptor; claiming
+      // success here told the reader the contract had been written when it had
+      // not, and closed the dialog over the reason it needed to read.
+      const status = saved as { code?: number } | undefined;
+      if (typeof status?.code === 'number' && status.code !== 0) {
+        return;
+      }
       message.success(
         t('knowledgeCompilation.ontologyInspect.actionContractSaved', {
           defaultValue: 'Contract updated.',

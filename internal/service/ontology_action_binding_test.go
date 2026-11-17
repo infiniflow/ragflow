@@ -3,8 +3,11 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -108,5 +111,73 @@ func TestSaveActionBindingSafeCombinationSkipsRiskAck(t *testing.T) {
 	}
 	if rejected.Code == "RISK_NOT_ACKNOWLEDGED" {
 		t.Fatalf("a read-only, non-callable binding must not need an acknowledgement")
+	}
+}
+
+// A model may front several upstream systems, so its addresses are a list. The
+// list is normalised once here because the picker, the tool cache and the
+// executor all read it, and the first entry is the default a binding follows.
+func TestModelMCPServersKeepOrderAndDropRepeats(t *testing.T) {
+	got := normalizeMCPServers([]string{
+		"  https://a.example/mcp  ",
+		"",
+		"https://b.example/mcp",
+		"https://a.example/mcp",
+		"   ",
+	})
+	if len(got) != 2 || got[0] != "https://a.example/mcp" || got[1] != "https://b.example/mcp" {
+		t.Fatalf("normalizeMCPServers = %v, want the two trimmed addresses in order", got)
+	}
+
+	template := &entity.CompilationTemplate{MCPServers: entity.JSONList(got)}
+	if endpoint := modelMCPEndpoint(template); endpoint != "https://a.example/mcp" {
+		t.Fatalf("default endpoint = %q, want the first entry", endpoint)
+	}
+	if endpoint := modelMCPEndpoint(&entity.CompilationTemplate{}); endpoint != "" {
+		t.Fatalf("unset model endpoint = %q, want empty", endpoint)
+	}
+}
+
+// The binding row answers "is this wiring usable", not "may this action run".
+// Judging the action gates on a path that never loads an action reported a
+// permanent refuse/action_not_found on every row, which is why a correctly bound,
+// reachable tool still showed up as refused.
+func TestBindingVerdictIsScopedToTheBinding(t *testing.T) {
+	verdict, reasons := bindingVerdict(true, true)
+	if verdict != "allow" || len(reasons) != 1 || reasons[0] != "allowed" {
+		t.Fatalf("usable binding = %q %v, want allow/allowed", verdict, reasons)
+	}
+
+	verdict, reasons = bindingVerdict(false, true)
+	if verdict != "refuse" || len(reasons) != 1 || reasons[0] != "binding_disabled" {
+		t.Fatalf("disabled binding = %q %v, want refuse/binding_disabled", verdict, reasons)
+	}
+
+	verdict, reasons = bindingVerdict(true, false)
+	if verdict != "refuse" || len(reasons) != 1 || reasons[0] != "tool_unavailable" {
+		t.Fatalf("missing tool = %q %v, want refuse/tool_unavailable", verdict, reasons)
+	}
+}
+
+// A deployment that refuses to dial a private address is not reporting a broken
+// server: the endpoint may be healthy and the fix is a deployment setting. The
+// two failures therefore carry different codes, and the address survives in the
+// message so the reader knows which endpoint was refused.
+func TestMCPFetchRejectionSeparatesPrivateHostBlockFromUnavailable(t *testing.T) {
+	blocked := fmt.Errorf("tools/list: %w", &common.NonPublicAddressError{Address: "192.168.1.43"})
+	rejected := MCPFetchRejection(blocked)
+	if rejected.Code != "MCP_PRIVATE_HOST_BLOCKED" {
+		t.Fatalf("private-host refusal code = %q, want MCP_PRIVATE_HOST_BLOCKED", rejected.Code)
+	}
+	if !strings.Contains(rejected.Message, "192.168.1.43") {
+		t.Fatalf("message should name the refused address, got %q", rejected.Message)
+	}
+	if len(rejected.Fields) != 1 || rejected.Fields[0] != "mcp_server" {
+		t.Fatalf("the refusal must point at the address field, got %v", rejected.Fields)
+	}
+
+	unreachable := MCPFetchRejection(errors.New("dial tcp: connection refused"))
+	if unreachable.Code != "MCP_SERVER_UNAVAILABLE" {
+		t.Fatalf("plain transport failure code = %q, want MCP_SERVER_UNAVAILABLE", unreachable.Code)
 	}
 }

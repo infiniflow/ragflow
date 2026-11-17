@@ -317,9 +317,22 @@ export interface IActionBinding {
   note?: string;
   tool_available: boolean;
   tool_check_error?: string;
+  /** The address this binding dials after inheriting the model default. */
+  effective_mcp_server?: string;
   missing_required_args?: string[];
   verdict: ActionVerdict;
   verdict_reasons?: string[];
+}
+
+/**
+ * One tool the model's MCP address advertises.
+ *
+ * Read on demand rather than stored: the list belongs to the server, and a
+ * cached copy would let the workbench offer a tool that no longer exists.
+ */
+export interface IModelMCPTool {
+  name: string;
+  description?: string;
 }
 
 /** The outcome of a dry run or an execution. */

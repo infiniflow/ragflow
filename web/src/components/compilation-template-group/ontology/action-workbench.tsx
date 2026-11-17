@@ -18,6 +18,10 @@
 
 import { ActionContractBlock } from '@/components/action-contract-block';
 import {
+  verdictLabel,
+  verdictReasons,
+} from '@/components/compilation-template-group/ontology/action-verdict';
+import {
   ActionRowStatus,
   ActionStatusBadge,
   resolveStatus,
@@ -25,19 +29,19 @@ import {
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import message from '@/components/ui/message';
+import { Textarea } from '@/components/ui/textarea';
 import { backfillActionContracts } from '@/services/ontology-model-service';
 import {
-  useDryRunAction,
-  useExecuteAction,
   useFetchActionExecutions,
   useFetchActionBindings,
   useFetchModelActions,
+  useFetchModelMCPServers,
+  useUpdateModelMCPServers,
 } from '@/hooks/use-ontology-action-request';
 import {
   ActionVerdict,
-  IActionCallResult,
+  IActionBinding,
   IActionExecution,
   IModelAction,
 } from '@/interfaces/database/ontology-model';
@@ -52,6 +56,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { ActionContractEditor } from './action-contract-editor';
+import { ActionRunTest } from './action-run-test';
 
 /**
  * The ontology class an action is declared under.
@@ -169,11 +174,19 @@ export function ActionWorkbench({
   const [tab, setTab] = useState<'actions' | 'audit'>('actions');
   const [backfilling, setBackfilling] = useState(false);
   const { actions, loading } = useFetchModelActions(templateId, enabled);
-  const { execEnabled } = useFetchActionBindings(templateId, enabled);
+  // Bindings are read here rather than in the detail pane so one request feeds
+  // every row, and a save invalidates both this list and the action verdicts.
+  const { bindings, execEnabled } = useFetchActionBindings(templateId, enabled);
   const [page, setPage] = useState(1);
   const { executions, total } = useFetchActionExecutions(
     templateId,
     page,
+    enabled,
+  );
+  // Read here as well as in the address bar: the same cached query, but the
+  // detail pane needs the list to offer which system an action dials.
+  const { servers: modelServers } = useFetchModelMCPServers(
+    templateId,
     enabled,
   );
 
@@ -253,14 +266,9 @@ export function ActionWorkbench({
             defaultValue: 'Actions',
           })}
         </span>
-        {execEnabled === false && (
-          <Badge variant="secondary" className="text-state-warning">
-            {t('knowledgeCompilation.ontologyInspect.actionsExecOff', {
-              defaultValue: 'execution is off for this deployment',
-            })}
-          </Badge>
-        )}
       </div>
+
+      <ModelEndpointBar templateId={templateId!} />
 
       <div className="mt-2 flex shrink-0 items-center gap-2 text-xs">
         <Button
@@ -443,6 +451,8 @@ export function ActionWorkbench({
               <ActionDetail
                 templateId={templateId!}
                 action={active}
+                bindings={bindings ?? []}
+                modelServers={modelServers}
                 execEnabled={execEnabled !== false}
                 executions={(executions ?? []).filter(
                   (row) => row.action_name === active.name,
@@ -462,15 +472,124 @@ export function ActionWorkbench({
   );
 }
 
-/** One action: its contract, a rehearsal, and its own recent attempts. */
+/**
+ * The model's MCP address, stated once above the actions.
+ *
+ * A model's actions normally drive one upstream system and differ only in which
+ * tool they call, so the address belongs to the model. Asking for it on every
+ * action made the same value be typed repeatedly and drift between rows; an
+ * action can still override it when it has to reach a different system.
+ */
+/**
+ * The addresses this model's actions may dial.
+ *
+ * A model can front several upstream systems, so the addresses are a list: one
+ * per line, the first being the default a binding follows. Editing it whole
+ * keeps "which systems exist" in one place instead of scattered across bindings.
+ */
+function ModelEndpointBar({ templateId }: { templateId: string }) {
+  const { t } = useTranslation();
+  const { servers, loading: fetching } = useFetchModelMCPServers(templateId);
+  const { updateEndpoints, loading: saving } = useUpdateModelMCPServers();
+  // `undefined` follows the server value; typing takes over until it is saved.
+  const [draft, setDraft] = useState<string>();
+  const savedText = servers.join('\n');
+  const value = draft ?? savedText;
+  const dirty = draft !== undefined && draft.trim() !== savedText.trim();
+
+  const handleSave = useCallback(async () => {
+    const list = (draft ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    try {
+      const saved = await updateEndpoints({ id: templateId, servers: list });
+      // A refusal is answered with a non-zero code and explained by the response
+      // interceptor. Clearing the draft anyway made a rejected write look like a
+      // successful save that had already been forgotten.
+      if (
+        typeof (saved as { code?: number } | undefined)?.code === 'number' &&
+        (saved as { code: number }).code !== 0
+      ) {
+        return;
+      }
+      setDraft(undefined);
+      message.success(
+        t('knowledgeCompilation.ontologyInspect.actionModelEndpointSaved', {
+          defaultValue: 'Addresses saved.',
+        }),
+      );
+    } catch (error) {
+      message.error((error as Error)?.message);
+    }
+  }, [draft, templateId, updateEndpoints, t]);
+
+  return (
+    <div className="mt-2 flex flex-col gap-1 rounded border border-border-button p-2">
+      <div className="flex items-start gap-2">
+        <span className="text-xs font-medium">
+          {t('knowledgeCompilation.ontologyInspect.actionModelEndpoints', {
+            defaultValue:
+              'MCP addresses (one per line, the first is the default)',
+          })}
+        </span>
+        <Textarea
+          value={value}
+          rows={3}
+          className="max-w-[420px] font-mono text-xs"
+          placeholder={'http://127.0.0.1:18080/mcp\nhttp://127.0.0.1:18081/mcp'}
+          disabled={fetching}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <Button
+          size="sm"
+          loading={saving}
+          disabled={!dirty}
+          onClick={handleSave}
+        >
+          {t('common.save')}
+        </Button>
+      </div>
+      <span className="text-xs text-text-disabled">
+        {t('knowledgeCompilation.ontologyInspect.actionModelEndpointsHint', {
+          defaultValue:
+            'Each binding picks one of these addresses (or enters its own); leaving it on the default means "follow the first line".',
+        })}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The binding that belongs to one action statement.
+ *
+ * An action can be stated per document and once for the dataset, and each
+ * statement can carry its own binding. The row matching this statement's
+ * dataset wins over a model-wide one, so a document-level statement is never
+ * silently shown as bound to a different dataset.
+ */
+function bindingFor(bindings: IActionBinding[], action: IModelAction) {
+  const same = bindings.filter((row) => row.action_name === action.name);
+  return (
+    same.find((row) => (row.dataset_id ?? '') === (action.dataset_id ?? '')) ??
+    same[0]
+  );
+}
+
+/** One action: its contract, its binding, one run test, and recent attempts. */
 function ActionDetail({
   templateId,
   action,
+  bindings,
+  modelServers,
   execEnabled,
   executions,
 }: {
   templateId: string;
   action: IModelAction;
+  bindings: IActionBinding[];
+  /** The model addresses this action may dial; the first is the default. */
+  modelServers: string[];
   execEnabled: boolean;
   executions: {
     id: string;
@@ -480,52 +599,14 @@ function ActionDetail({
   }[];
 }) {
   const { t } = useTranslation();
-  const [dryRunResult, setDryRunResult] = useState<IActionCallResult>();
-  const [execResult, setExecResult] = useState<IActionCallResult>();
-  const [reason, setReason] = useState('');
-  const { loading: dryRunLoading, dryRun } = useDryRunAction();
-  const { loading: execLoading, execute } = useExecuteAction();
-
-  const handleDryRun = useCallback(async () => {
-    try {
-      setDryRunResult(
-        await dryRun({ id: templateId, actionName: action.name }),
-      );
-    } catch (error) {
-      message.error((error as Error)?.message);
-    }
-  }, [dryRun, templateId, action.name]);
-
-  const handleExecute = useCallback(async () => {
-    if (!reason.trim()) {
-      message.error(
-        t('knowledgeCompilation.ontologyInspect.actionReasonRequired', {
-          defaultValue: 'State why this action is being run.',
-        }),
-      );
-      return;
-    }
-    try {
-      setExecResult(
-        await execute({
-          id: templateId,
-          actionName: action.name,
-          reason: reason.trim(),
-        }),
-      );
-    } catch (error) {
-      // A refusal answers with its verdict, not an error; a genuine failure is
-      // worth showing verbatim too.
-      message.error((error as Error)?.message);
-    }
-  }, [execute, reason, templateId, action.name, t]);
+  const binding = bindingFor(bindings, action);
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium text-sm">{action.name}</span>
         <Badge variant="secondary" className={verdictClass(action.verdict)}>
-          {action.verdict}
+          {verdictLabel(t, action.verdict)}
         </Badge>
         {action.dataset_id && (
           <span className="text-text-secondary">{action.dataset_id}</span>
@@ -538,7 +619,7 @@ function ActionDetail({
 
       {(action.verdict_reasons?.length ?? 0) > 0 && (
         <p className="text-text-secondary break-all">
-          {action.verdict_reasons?.join(' · ')}
+          {verdictReasons(t, action.verdict_reasons).join(' · ')}
         </p>
       )}
 
@@ -565,67 +646,132 @@ function ActionDetail({
         required={action.contract?.required}
       />
 
-      <div className="flex flex-col gap-2 rounded border border-border-button p-2">
-        <span className="font-medium">
-          {t('knowledgeCompilation.ontologyInspect.actionTrialTitle', {
-            defaultValue: 'Rehearse and run',
-          })}
-        </span>
-        <p className="text-text-disabled">
-          {t('knowledgeCompilation.ontologyInspect.actionTrialIntro', {
-            defaultValue:
-              'A rehearsal calls nothing: it reports the verdict and the exact arguments the mapping produces. Running is audited either way, refusals included.',
-          })}
-        </p>
+      {/* Which tool performs the action. Declared next to the contract because a
+          binding is what turns a contract into something runnable; the server
+          re-checks the tool and the mapping on every write. */}
+      <div className="flex flex-col gap-1 rounded border border-border-button p-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            loading={dryRunLoading}
-            onClick={handleDryRun}
-          >
-            {t('knowledgeCompilation.ontologyInspect.actionDryRun', {
-              defaultValue: 'Rehearse',
-            })}
-          </Button>
-          <Input
-            value={reason}
-            placeholder={t(
-              'knowledgeCompilation.ontologyInspect.actionReason',
-              { defaultValue: 'Reason for running (required)' },
-            )}
-            onChange={(e) => setReason(e.target.value)}
-            className="h-8 max-w-[320px] text-xs"
-          />
-          <Button
-            size="sm"
-            loading={execLoading}
-            disabled={!execEnabled}
-            onClick={handleExecute}
-          >
-            {t('knowledgeCompilation.ontologyInspect.actionExecute', {
-              defaultValue: 'Run',
-            })}
-          </Button>
-        </div>
-        {dryRunResult && (
-          <CallResult
-            title={t(
-              'knowledgeCompilation.ontologyInspect.actionDryRunResult',
+          <span className="font-medium">
+            {t(
+              'knowledgeCompilation.ontologyInspect.actionBindingSectionTitle',
               {
-                defaultValue: 'Rehearsal',
+                defaultValue: 'MCP address binding',
               },
             )}
-            result={dryRunResult}
+          </span>
+          {binding && (
+            <>
+              {/* The binding's own verdict, in words: "refuse" alone said nothing
+                  about what was refused or why. */}
+              {/* An unrecognised reason stays in the tooltip: repeating "not
+                  usable" beside the badge said nothing and printed one copy per
+                  reason code. */}
+              <Badge
+                variant="secondary"
+                className={verdictClass(binding.verdict)}
+                title={(binding.verdict_reasons ?? []).join(' · ')}
+              >
+                {binding.verdict === 'allow'
+                  ? t(
+                      'knowledgeCompilation.ontologyInspect.actionBindingUsable',
+                      {
+                        defaultValue: 'usable',
+                      },
+                    )
+                  : t(
+                      'knowledgeCompilation.ontologyInspect.actionBindingUnusable',
+                      { defaultValue: 'not usable' },
+                    )}
+              </Badge>
+              {verdictReasons(t, binding.verdict_reasons).map((text) => (
+                <span key={text} className="text-text-disabled">
+                  {text}
+                </span>
+              ))}
+            </>
+          )}
+          <ActionRunTest
+            templateId={templateId}
+            action={action}
+            binding={binding}
+            modelServers={modelServers}
+            execEnabled={execEnabled}
+            trigger={
+              <Button size="sm">
+                {/* The dialog writes the binding; running the tool is one of the
+                    things it can then do, not the reason the button exists. */}
+                {binding
+                  ? t(
+                      'knowledgeCompilation.ontologyInspect.actionEditBinding',
+                      {
+                        defaultValue: 'Edit binding',
+                      },
+                    )
+                  : t('knowledgeCompilation.ontologyInspect.actionBindAction', {
+                      defaultValue: 'Bind',
+                    })}
+              </Button>
+            }
           />
-        )}
-        {execResult && (
-          <CallResult
-            title={t('knowledgeCompilation.ontologyInspect.actionExecResult', {
-              defaultValue: 'Result',
+        </div>
+        {binding ? (
+          <>
+            <span className="text-text-secondary break-all">
+              {`${
+                binding.effective_mcp_server || binding.mcp_server || '—'
+              } · ${binding.mcp_tool}`}
+            </span>
+            <span className="text-text-disabled">
+              {[
+                binding.enabled &&
+                  t(
+                    'knowledgeCompilation.ontologyInspect.actionBindingEnabled',
+                    { defaultValue: 'Enabled' },
+                  ),
+                binding.read_only &&
+                  t(
+                    'knowledgeCompilation.ontologyInspect.actionBindingReadOnly',
+                    { defaultValue: 'Read only' },
+                  ),
+                binding.qa_callable &&
+                  t(
+                    'knowledgeCompilation.ontologyInspect.actionBindingQaCallable',
+                    { defaultValue: 'Agent may call it' },
+                  ),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            {/* A missing tool is the one failure an operator cannot fix on this
+                page, so it says so instead of hiding behind a verdict. */}
+            {!binding.tool_available && (
+              <span className="text-state-error break-all">
+                {binding.tool_check_error ||
+                  t('knowledgeCompilation.ontologyInspect.actionToolMissing', {
+                    defaultValue: 'tool missing',
+                  })}
+              </span>
+            )}
+            {(binding.missing_required_args?.length ?? 0) > 0 && (
+              <span className="text-state-warning break-all">
+                {t('knowledgeCompilation.ontologyInspect.actionArgsUnmapped', {
+                  args: (binding.missing_required_args ?? []).join(', '),
+                  defaultValue: 'Unmapped required arguments: {{args}}',
+                })}
+              </span>
+            )}
+            {binding.note && (
+              <span className="text-text-disabled break-all">
+                {binding.note}
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="text-text-disabled">
+            {t('knowledgeCompilation.ontologyInspect.actionUnbound', {
+              defaultValue: 'not bound',
             })}
-            result={execResult}
-          />
+          </span>
         )}
       </div>
 
@@ -645,46 +791,14 @@ function ActionDetail({
           executions.map((row) => (
             <div key={row.id} className="flex flex-wrap items-center gap-2">
               <span className="text-text-secondary">{row.status}</span>
-              <span className="text-text-disabled">{row.verdict}</span>
+              <span className="text-text-disabled">
+                {verdictLabel(t, row.verdict)}
+              </span>
             </div>
           ))
         )}
       </div>
     </>
-  );
-}
-
-function CallResult({
-  title,
-  result,
-}: {
-  title: string;
-  result: IActionCallResult;
-}) {
-  return (
-    <div className="rounded border border-border-button p-2 flex flex-col gap-1">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-text-secondary">{title}</span>
-        <Badge variant="secondary" className={verdictClass(result.verdict)}>
-          {result.verdict}
-        </Badge>
-        <span className="text-text-disabled">{result.status}</span>
-        {typeof result.duration_ms === 'number' && (
-          <span className="text-text-disabled">{`${result.duration_ms} ms`}</span>
-        )}
-      </div>
-      {result.arguments && (
-        <pre className="text-text-secondary whitespace-pre-wrap break-all">
-          {JSON.stringify(result.arguments, null, 2)}
-        </pre>
-      )}
-      {result.error && <p className="text-state-error">{result.error}</p>}
-      {result.output && (
-        <pre className="text-text-primary whitespace-pre-wrap break-all">
-          {result.output}
-        </pre>
-      )}
-    </div>
   );
 }
 
@@ -856,7 +970,9 @@ export function ActionAuditTable({
             <summary className="flex flex-wrap items-center gap-2 cursor-pointer">
               <span className="text-text-primary">{row.action_name}</span>
               <span className="text-text-secondary">{row.mode}</span>
-              <span className={verdictClass(row.verdict)}>{row.verdict}</span>
+              <span className={verdictClass(row.verdict)}>
+                {verdictLabel(t, row.verdict)}
+              </span>
               <span className="text-text-secondary">{row.status}</span>
               <span className="text-text-disabled">{row.mcp_tool}</span>
               {row.create_time ? (
@@ -874,7 +990,9 @@ export function ActionAuditTable({
                   {t(
                     'knowledgeCompilation.ontologyInspect.actionAuditReasons',
                     {
-                      reasons: (row.verdict_reasons ?? []).join(' · '),
+                      reasons: verdictReasons(t, row.verdict_reasons).join(
+                        ' · ',
+                      ),
                       defaultValue: 'Decided by: {{reasons}}',
                     },
                   )}

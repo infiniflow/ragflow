@@ -671,9 +671,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// system may do and a binding decides which system does it.
 			v1.GET("/ontology-models/:template_id/actions", r.ontologyModelHandler.ListActions)
 			v1.PATCH("/ontology-models/:template_id/actions/:action_id", r.ontologyModelHandler.UpdateAction)
-			v1.POST("/ontology-models/:template_id/actions/:action_name/dry-run", r.ontologyModelHandler.DryRunAction)
 			v1.POST("/ontology-models/:template_id/actions/:action_name/execute", r.ontologyModelHandler.ExecuteAction)
 			v1.GET("/ontology-models/:template_id/action-bindings", r.ontologyModelHandler.ListBindings)
+			// One address per model: the actions of a model usually drive the same
+			// upstream system and differ only in which tool they call.
+			v1.GET("/ontology-models/:template_id/mcp-endpoint", r.ontologyModelHandler.GetMCPEndpoints)
+			v1.PUT("/ontology-models/:template_id/mcp-endpoint", r.ontologyModelHandler.UpdateMCPEndpoints)
+			// The tool names that address advertises, so a binding picks one
+			// instead of typing it from memory.
+			v1.GET("/ontology-models/:template_id/mcp-endpoint/tools", r.ontologyModelHandler.ListMCPEndpointTools)
 			v1.PUT("/ontology-models/:template_id/action-bindings/:action_name", r.ontologyModelHandler.SaveBinding)
 			v1.DELETE("/ontology-models/:template_id/action-bindings/:action_name", r.ontologyModelHandler.DeleteBinding)
 			v1.GET("/ontology-models/:template_id/action-executions", r.ontologyModelHandler.ListExecutions)

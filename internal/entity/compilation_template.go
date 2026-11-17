@@ -29,6 +29,11 @@ type CompilationTemplate struct {
 	IsBuiltin   bool    `gorm:"column:is_builtin;not null;default:false;index" json:"is_builtin"`
 	Status      *string `gorm:"column:status;size:1;default:1;index" json:"status,omitempty"`
 
+	// MCPServers are the endpoints the model's actions may call. A model can
+	// front several upstream systems, so the addresses are listed once here and
+	// each binding picks one; the first address is what a binding follows when it
+	// names none of its own.
+	MCPServers JSONList `gorm:"column:mcp_servers;type:json" json:"mcp_servers,omitempty"`
 	// Version is the published version number. 0 means "never published": the
 	// template is still a plain editable config and compilation reads the working
 	// Config. From 1 on, compilation reads the immutable snapshot with that

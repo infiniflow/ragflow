@@ -468,10 +468,12 @@ const apiEndpoints = {
     `${restAPIv1}/ontology-models/${id}/actions`,
   ontologyModelAction: (id: string, actionId: string) =>
     `${restAPIv1}/ontology-models/${id}/actions/${actionId}`,
-  ontologyModelActionDryRun: (id: string, actionName: string) =>
-    `${restAPIv1}/ontology-models/${id}/actions/${actionName}/dry-run`,
   ontologyModelActionExecute: (id: string, actionName: string) =>
     `${restAPIv1}/ontology-models/${id}/actions/${actionName}/execute`,
+  ontologyModelMCPEndpoint: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/mcp-endpoint`,
+  ontologyModelMCPEndpointTools: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/mcp-endpoint/tools`,
   ontologyModelActionBindings: (id: string) =>
     `${restAPIv1}/ontology-models/${id}/action-bindings`,
   ontologyModelActionBinding: (id: string, actionName: string) =>

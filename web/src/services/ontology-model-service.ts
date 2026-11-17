@@ -29,6 +29,9 @@ export const checkOntologyModel = (id: string) =>
 export const submitOntologyModelForReview = (id: string) =>
   request.post(api.ontologyModelReview(id));
 
+// axios (next-request) takes the body as the second argument, not umi-request's
+// `{ data }` options object: wrapping it sent `{"data":{...}}`, so the server saw
+// every field as absent.
 export const publishOntologyModel = (
   id: string,
   data: { note?: string; force?: boolean },
@@ -114,6 +117,35 @@ export const updateActionContract = (
 export const listActionBindings = (id: string) =>
   request.get(api.ontologyModelActionBindings(id));
 
+/**
+ * The model's default MCP address.
+ *
+ * Stated once per model: its actions usually drive one upstream system and only
+ * the tool differs. A binding that needs another system still carries its own
+ * address, but that is the exception rather than the form.
+ */
+/** The addresses this model's actions may call, in the order they are listed. */
+export const getModelMCPServers = (id: string) =>
+  request.get(api.ontologyModelMCPEndpoint(id));
+
+/** Replace the list whole: the first entry is the default. */
+export const updateModelMCPServers = (id: string, servers: string[]) =>
+  request.put(api.ontologyModelMCPEndpoint(id), { mcp_servers: servers });
+
+/**
+ * The tools one address advertises.
+ *
+ * The server answers "which tool" because it is the only one that knows: a name
+ * typed from memory is refused at save time with "tool not found", and this is
+ * also where an unreachable or refused address surfaces first. The address is
+ * passed along because a model can list several, and the picker must show the
+ * tools of the one this binding will dial.
+ */
+export const listModelMCPTools = (id: string, server?: string) =>
+  request.get(api.ontologyModelMCPEndpointTools(id), {
+    params: server ? { server } : undefined,
+  });
+
 export const saveActionBinding = (
   id: string,
   actionName: string,
@@ -129,17 +161,20 @@ export const saveActionBinding = (
     note?: string;
     dataset_id?: string;
   },
-) => request.put(api.ontologyModelActionBinding(id, actionName), data);
+  /**
+   * `binding_id` names the row to replace. One action can carry a per-document
+   * binding and a dataset-wide one, so the name alone does not say which row is
+   * being edited; omitting the id creates a new binding.
+   */
+  params?: { binding_id?: string },
+) =>
+  request.put(api.ontologyModelActionBinding(id, actionName), data, { params });
 
-export const deleteActionBinding = (id: string, actionName: string) =>
-  request.delete(api.ontologyModelActionBinding(id, actionName));
-
-/** Reports the verdict and the exact arguments without calling anything. */
-export const dryRunAction = (
+export const deleteActionBinding = (
   id: string,
   actionName: string,
-  data: { arguments?: Record<string, unknown> } = {},
-) => request.post(api.ontologyModelActionDryRun(id, actionName), data);
+  params?: { binding_id?: string },
+) => request.delete(api.ontologyModelActionBinding(id, actionName), { params });
 
 /**
  * Runs one action.

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"net/http"
 	"strconv"
 
 	"ragflow/internal/common"
@@ -183,35 +184,6 @@ type actionCallRequest struct {
 	Reason    string                 `json:"reason"`
 }
 
-// DryRunAction reports the verdict and the exact arguments without calling.
-//
-//	@Summary Dry-run an action
-//	@Tags compilation model
-//	@Security ApiKeyAuth
-//	@Router /v1/ontology-models/{template_id}/actions/{action_name}/dry-run [post]
-func (h *OntologyModelHandler) DryRunAction(c *gin.Context) {
-	_, tenantID, ok := h.resolveReader(c)
-	if !ok {
-		return
-	}
-	var req actionCallRequest
-	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
-		common.RespondError(c, common.CodeArgumentError, err.Error())
-		return
-	}
-	result, err := h.actions.ActionDryRun(c.Request.Context(), dao.DB, service.ActionCallInput{
-		TenantID:   tenantID,
-		TemplateID: c.Param("template_id"),
-		ActionName: c.Param("action_name"),
-		Arguments:  req.Arguments,
-	})
-	if err != nil {
-		respondActionError(c, err)
-		return
-	}
-	common.RespondSuccess(c, result, "success")
-}
-
 // ExecuteAction runs one action on an operator's behalf.
 //
 //	@Summary Execute an action manually
@@ -254,6 +226,92 @@ func (h *OntologyModelHandler) ExecuteAction(c *gin.Context) {
 		return
 	}
 	common.RespondSuccess(c, result, "success")
+}
+
+// GetMCPEndpoints returns the addresses the model's actions may call.
+//
+//	@Summary Read the model's MCP addresses
+//	@Tags compilation model
+//	@Security ApiKeyAuth
+//	@Router /v1/ontology-models/{template_id}/mcp-endpoint [get]
+func (h *OntologyModelHandler) GetMCPEndpoints(c *gin.Context) {
+	_, tenantID, ok := h.resolveReader(c)
+	if !ok {
+		return
+	}
+	servers, err := h.actions.ModelMCPServers(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"))
+	if err != nil {
+		respondActionError(c, err)
+		return
+	}
+	common.RespondSuccess(c, gin.H{"mcp_servers": servers}, "success")
+}
+
+// UpdateMCPEndpoints replaces the model's address list.
+//
+// One model can front several upstream systems, so the list is replaced whole:
+// the first entry is the default a binding follows, the rest are choices its
+// actions can make.
+//
+//	@Summary Set the model's MCP addresses
+//	@Tags compilation model
+//	@Security ApiKeyAuth
+//	@Router /v1/ontology-models/{template_id}/mcp-endpoint [put]
+func (h *OntologyModelHandler) UpdateMCPEndpoints(c *gin.Context) {
+	_, tenantID, ok := h.resolveWriter(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		MCPServers []string `json:"mcp_servers"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if err := h.actions.SetModelMCPServers(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"), req.MCPServers); err != nil {
+		respondActionError(c, err)
+		return
+	}
+	servers, err := h.actions.ModelMCPServers(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"))
+	if err != nil {
+		respondActionError(c, err)
+		return
+	}
+	common.RespondSuccess(c, gin.H{"mcp_servers": servers}, "success")
+}
+
+// ListMCPEndpointTools lists the tools the model's address exposes.
+//
+// The run test has to name the tool an action calls, and the server is the only
+// source for that name: typing one from memory is answered with "tool not
+// found" after a round trip, and an empty field with "mcp_tool is required". The
+// listing is also where an unreachable or refused address surfaces first, so the
+// operator fixes the endpoint before writing bindings against it.
+//
+//	@Summary List the tools on the model's MCP address
+//	@Tags compilation model
+//	@Security ApiKeyAuth
+//	@Router /v1/ontology-models/{template_id}/mcp-endpoint/tools [get]
+func (h *OntologyModelHandler) ListMCPEndpointTools(c *gin.Context) {
+	_, tenantID, ok := h.resolveReader(c)
+	if !ok {
+		return
+	}
+	tools, err := h.actions.ModelMCPTools(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"), c.Query("server"))
+	if err != nil {
+		respondActionError(c, service.MCPFetchRejection(err))
+		return
+	}
+	type toolView struct {
+		Name        string `json:"name"`
+		Description string `json:"description,omitempty"`
+	}
+	out := make([]toolView, 0, len(tools))
+	for _, tool := range tools {
+		out = append(out, toolView{Name: tool.Name, Description: tool.Description})
+	}
+	common.RespondSuccess(c, gin.H{"tools": out, "total": len(out)}, "success")
 }
 
 // ListExecutions returns the audit trail.
@@ -322,7 +380,11 @@ func (h *OntologyModelHandler) ListContractEdits(c *gin.Context) {
 func respondActionError(c *gin.Context, err error) {
 	var rejected *service.ActionEditRejectedError
 	if errors.As(err, &rejected) {
-		common.Respond(c, int(common.CodeArgumentError), common.CodeArgumentError, gin.H{
+		// The application code travels in the body, not as the HTTP status: a
+		// rejection is a normal answer the UI renders, and using the code as the
+		// status turned 101 (invalid argument) into "Switching Protocols", which
+		// browsers surface as a network error instead of the message.
+		common.Respond(c, http.StatusOK, common.CodeArgumentError, gin.H{
 			"code":   rejected.Code,
 			"fields": rejected.Fields,
 		}, rejected.Message)
@@ -330,7 +392,7 @@ func respondActionError(c *gin.Context, err error) {
 	}
 	var refused *service.ActionCallError
 	if errors.As(err, &refused) {
-		common.Respond(c, int(common.CodeForbidden), common.CodeForbidden, gin.H{
+		common.Respond(c, http.StatusOK, common.CodeForbidden, gin.H{
 			"verdict": refused.Verdict,
 			"reasons": refused.Reasons,
 		}, refused.Error())

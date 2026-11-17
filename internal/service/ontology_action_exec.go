@@ -170,7 +170,7 @@ func (s *ActionBindingService) ListModelActions(ctx context.Context, db *gorm.DB
 		toolAvailable := false
 		var tool mcpclient.Tool
 		if binding != nil {
-			if tools, err := s.serverTools(ctx, db, tenantID, binding.MCPServer); err == nil {
+			if tools, err := s.serverTools(ctx, db, tenantID, effectiveMCPServer(binding.MCPServer, modelMCPEndpoint(template))); err == nil {
 				if found, ok := tools[binding.MCPTool]; ok {
 					toolAvailable = true
 					tool = found
@@ -305,9 +305,10 @@ func (s *ActionBindingService) RunAction(ctx context.Context, db *gorm.DB, in Ac
 	toolAvailable := false
 	var tool mcpclient.Tool
 	if binding != nil {
-		tools, err := s.serverTools(ctx, db, in.TenantID, binding.MCPServer)
+		server := effectiveMCPServer(binding.MCPServer, modelMCPEndpoint(template))
+		tools, err := s.serverTools(ctx, db, in.TenantID, server)
 		if err != nil {
-			log.Printf("[action-exec] mcp server %q unavailable: %v", binding.MCPServer, err)
+			log.Printf("[action-exec] mcp server %q unavailable: %v", server, err)
 		} else if found, ok := tools[binding.MCPTool]; ok {
 			toolAvailable = true
 			tool = found
@@ -341,8 +342,29 @@ func (s *ActionBindingService) RunAction(ctx context.Context, db *gorm.DB, in Ac
 		// A query turn has nobody to confirm with; a manual run does, and the
 		// confirmation has to arrive as data (ConfirmedBy) rather than as a claim.
 		callable = contract.ActionCallableFromQA(verdict)
-	} else if verdict.Verdict == contract.ContractVerdictConfirm && strings.TrimSpace(in.ConfirmedBy) != "" {
-		callable = true
+	} else {
+		// A manual run has a person behind it: opening the run test and supplying
+		// the reason is that person's decision. `manual` is the verdict that says
+		// "a human has to judge this", so refusing it here would make the run test
+		// unusable for exactly the actions it exists for — an unbound-in-chat
+		// action still has to be testable by its owner. Only `refuse` is final.
+		confirmed := strings.TrimSpace(in.ConfirmedBy) != ""
+		switch verdict.Verdict {
+		case contract.ContractVerdictAllow:
+			callable = true
+		case contract.ContractVerdictConfirm, contract.ContractVerdictManual:
+			callable = confirmed
+		}
+		// The process-wide switch is not a judgement about this action, so it is
+		// checked apart from the verdict instead of being folded into it.
+		if !ActionExecEnabled() {
+			callable = false
+		}
+		if binding == nil {
+			// Nothing is wired: there is no tool to call, and the arguments below
+			// are read off the binding.
+			callable = false
+		}
 	}
 	if !callable {
 		result.Status = entity.ActionExecutionStatusRefused
@@ -386,7 +408,7 @@ func (s *ActionBindingService) RunAction(ctx context.Context, db *gorm.DB, in Ac
 		return result, err
 	}
 	audit.InputDigest = argumentDigest(encoded)
-	serverRow, err := s.loadMCPServer(ctx, db, in.TenantID, binding.MCPServer)
+	target, err := resolveMCPTarget(ctx, db, in.TenantID, effectiveMCPServer(binding.MCPServer, modelMCPEndpoint(template)))
 	if err != nil {
 		result.Status = entity.ActionExecutionStatusFailed
 		result.Error = err.Error()
@@ -394,10 +416,10 @@ func (s *ActionBindingService) RunAction(ctx context.Context, db *gorm.DB, in Ac
 		return result, err
 	}
 	callResult, err := mcpclient.CallTool(ctx, mcpclient.CallOptions{
-		URL:               serverRow.URL,
-		ServerType:        serverRow.ServerType,
-		Headers:           jsonMapStringValues(serverRow.Headers),
-		Variables:         jsonMapStringValues(serverRow.Variables),
+		URL:               target.URL,
+		ServerType:        target.ServerType,
+		Headers:           target.Headers,
+		Variables:         target.Variables,
 		ToolName:          binding.MCPTool,
 		Arguments:         encoded,
 		Timeout:           30 * time.Second,
@@ -421,19 +443,6 @@ func (s *ActionBindingService) RunAction(ctx context.Context, db *gorm.DB, in Ac
 	}
 	finish(result.Status, result.Error)
 	return result, nil
-}
-
-func (s *ActionBindingService) loadMCPServer(ctx context.Context, db *gorm.DB, tenantID, serverName string) (*entity.MCPServer, error) {
-	var servers []entity.MCPServer
-	if err := db.WithContext(ctx).
-		Where("tenant_id = ? AND (id = ? OR name = ?)", tenantID, serverName, serverName).
-		Limit(1).Find(&servers).Error; err != nil {
-		return nil, err
-	}
-	if len(servers) == 0 {
-		return nil, fmt.Errorf("mcp server %q is not configured", serverName)
-	}
-	return &servers[0], nil
 }
 
 // assembleActionArguments resolves the binding's arg_mapping into a call payload.
@@ -553,75 +562,6 @@ func truncateRunes(text string, limit int) string {
 		return text
 	}
 	return string(runes[:limit]) + "…"
-}
-
-// ActionDryRun answers "what would happen" without calling anything.
-//
-// It exists because the alternative is discovering that a binding is misconfigured
-// by executing it. The arguments it reports are the real ones: same assembly code
-// as the real call.
-func (s *ActionBindingService) ActionDryRun(ctx context.Context, db *gorm.DB, in ActionCallInput) (*ActionCallResult, error) {
-	template, err := s.templateDAO.GetTemplate(ctx, db, in.TenantID, in.TemplateID)
-	if err != nil {
-		return nil, err
-	}
-	_, _, datasetIDs, err := reviewScopeDatasets(ctx, db, in.TenantID, template, nil)
-	if err != nil {
-		return nil, err
-	}
-	action, err := LoadCompiledAction(ctx, db, in.TenantID, in.TemplateID, datasetIDs, in.ActionName)
-	if err != nil {
-		return nil, err
-	}
-	binding, err := s.bindingDAO.FindByAction(ctx, db, in.TenantID, in.TemplateID, in.ActionName)
-	if err != nil {
-		return nil, err
-	}
-	toolAvailable := false
-	var tool mcpclient.Tool
-	if binding != nil {
-		if tools, err := s.serverTools(ctx, db, in.TenantID, binding.MCPServer); err == nil {
-			if found, ok := tools[binding.MCPTool]; ok {
-				toolAvailable = true
-				tool = found
-			}
-		}
-	}
-	gate := contract.ActionGateInput{
-		ActionExists:      action != nil,
-		TemplatePublished: template.Version > 0,
-		Bound:             binding != nil,
-		BindingEnabled:    binding != nil && binding.Enabled,
-		ToolAvailable:     toolAvailable,
-		QACallable:        binding != nil && binding.QACallable,
-		ReadOnly:          binding != nil && binding.ReadOnly,
-		ExecEnabled:       ActionExecEnabled(),
-	}
-	if action != nil {
-		gate.Contract = action.Contract
-	}
-	verdict := contract.EvaluateActionGates(gate)
-	out := &ActionCallResult{
-		ActionName: in.ActionName,
-		Verdict:    string(verdict.Verdict),
-		Reasons:    verdict.Reasons,
-		Status:     "dry_run",
-	}
-	if action == nil || binding == nil {
-		return out, nil
-	}
-	args, err := assembleActionArguments(action, binding.ArgMapping, in.Arguments)
-	if err != nil {
-		// A dry run reports the failure instead of returning an error: the point of
-		// asking is to see the problem.
-		out.Error = err.Error()
-		return out, nil
-	}
-	if missing := missingRequiredArgs(tool, mapKeys(args)); len(missing) > 0 {
-		out.Error = "unmapped required arguments: " + strings.Join(missing, ", ")
-	}
-	out.Arguments = args
-	return out, nil
 }
 
 // BackfillActionContracts stamps the contract columns on action rows compiled

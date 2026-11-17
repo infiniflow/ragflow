@@ -21,29 +21,34 @@ import {
   IActionExecutionFilters,
   IActionExecutionList,
   IModelAction,
+  IModelMCPTool,
 } from '@/interfaces/database/ontology-model';
 import {
   deleteActionBinding,
-  dryRunAction,
   executeAction,
+  getModelMCPServers,
   listActionBindings,
   listActionContractEdits,
   listActionExecutions,
   listModelActions,
+  listModelMCPTools,
   saveActionBinding,
   updateActionContract,
+  updateModelMCPServers,
 } from '@/services/ontology-model-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const enum OntologyActionApiAction {
   FetchActions = 'fetchModelActions',
   FetchBindings = 'fetchActionBindings',
+  FetchMCPEndpoint = 'fetchModelMCPEndpoint',
+  FetchMCPTools = 'fetchModelMCPTools',
+  UpdateMCPEndpoint = 'updateModelMCPEndpoint',
   FetchExecutions = 'fetchActionExecutions',
   FetchContractEdits = 'fetchActionContractEdits',
   UpdateContract = 'updateActionContract',
   SaveBinding = 'saveActionBinding',
   DeleteBinding = 'deleteActionBinding',
-  DryRun = 'dryRunAction',
   Execute = 'executeAction',
 }
 
@@ -61,6 +66,10 @@ export const OntologyActionKeys = {
     [OntologyActionApiAction.FetchExecutions, id, page, filters] as const,
   edits: (id?: string, actionName?: string) =>
     [OntologyActionApiAction.FetchContractEdits, id, actionName] as const,
+  mcpEndpoint: (id?: string) =>
+    [OntologyActionApiAction.FetchMCPEndpoint, id] as const,
+  mcpTools: (id?: string, server?: string) =>
+    [OntologyActionApiAction.FetchMCPTools, id, server] as const,
 };
 
 export const useFetchModelActions = (id?: string, enabled = true) => {
@@ -219,6 +228,99 @@ export const useUpdateActionContract = () => {
   return { loading, updateContract: mutateAsync };
 };
 
+/**
+ * The model-level MCP addresses.
+ *
+ * Kept apart from the bindings query because they are not bindings: they are the
+ * systems this model's actions may reach, and the page shows them above the list.
+ * The first entry is the default a binding follows.
+ */
+export const useFetchModelMCPServers = (id?: string, enabled = true) => {
+  const { data, isFetching: loading } = useQuery<string[]>({
+    queryKey: OntologyActionKeys.mcpEndpoint(id),
+    enabled: !!id && enabled,
+    queryFn: async () => {
+      const { data } = await getModelMCPServers(id!);
+      return (data?.data?.mcp_servers ?? []) as string[];
+    },
+  });
+
+  return { servers: data ?? [], loading };
+};
+
+/**
+ * The tool names one of the model's addresses exposes.
+ *
+ * Fetched when the run test opens instead of on page load: the call reaches the
+ * MCP server, and paying for it on every visit to the actions page would slow
+ * the list down for rows nobody is binding. `server` is the address the binding
+ * will dial, so the picker lists that server's tools rather than the default's.
+ */
+export const useFetchModelMCPTools = (
+  id?: string,
+  server?: string,
+  enabled = true,
+) => {
+  const {
+    data,
+    isFetching: loading,
+    error,
+    refetch,
+  } = useQuery<IModelMCPTool[]>({
+    queryKey: OntologyActionKeys.mcpTools(id, server),
+    enabled: !!id && enabled,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    queryFn: async () => {
+      const { data } = await listModelMCPTools(id!, server);
+      if (data?.code !== 0) {
+        // A failed listing is not "the server exposes nothing": it means the
+        // address could not be reached or was refused. Raising it keeps the
+        // picker from claiming an empty tool list.
+        const failure = new Error(
+          data?.message || 'The tool list could not be read.',
+        ) as Error & { code?: string };
+        failure.code = data?.data?.code;
+        throw failure;
+      }
+      return (data?.data?.tools ?? []) as IModelMCPTool[];
+    },
+  });
+
+  return { tools: data, loading, error, refetch };
+};
+
+export const useUpdateModelMCPServers = () => {
+  const queryClient = useQueryClient();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [OntologyActionApiAction.UpdateMCPEndpoint],
+    mutationFn: async ({ id, servers }: { id: string; servers: string[] }) => {
+      const { data } = await updateModelMCPServers(id, servers);
+      return data;
+    },
+    // Await the refetch before the caller clears its draft: the editor renders
+    // the fetched value once it stops editing, so resolving first left a beat
+    // where the field showed the previous (empty) address — indistinguishable
+    // from the value having been dropped.
+    onSuccess: async (_data, variables) => {
+      // The address decides whether a tool is reachable, so every verdict on the
+      // page is stale after this write.
+      await queryClient.invalidateQueries({
+        queryKey: OntologyActionKeys.mcpEndpoint(variables.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: OntologyActionKeys.actions(variables.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: OntologyActionKeys.bindings(variables.id),
+      });
+    },
+  });
+
+  return { loading, updateEndpoints: mutateAsync };
+};
+
 export const useSaveActionBinding = () => {
   const queryClient = useQueryClient();
   const { mutateAsync, isPending: loading } = useMutation({
@@ -227,12 +329,20 @@ export const useSaveActionBinding = () => {
       id,
       actionName,
       payload,
+      bindingId,
     }: {
       id: string;
       actionName: string;
       payload: Parameters<typeof saveActionBinding>[2];
+      /** Existing row to replace; omitted for the first binding of an action. */
+      bindingId?: string;
     }) => {
-      const { data } = await saveActionBinding(id, actionName, payload);
+      const { data } = await saveActionBinding(
+        id,
+        actionName,
+        payload,
+        bindingId ? { binding_id: bindingId } : undefined,
+      );
       return data;
     },
     onSuccess: (_data, variables) => {
@@ -255,11 +365,15 @@ export const useDeleteActionBinding = () => {
     mutationFn: async ({
       id,
       actionName,
+      bindingId,
     }: {
       id: string;
       actionName: string;
+      bindingId: string;
     }) => {
-      const { data } = await deleteActionBinding(id, actionName);
+      const { data } = await deleteActionBinding(id, actionName, {
+        binding_id: bindingId,
+      });
       return data;
     },
     onSuccess: (_data, variables) => {
@@ -273,26 +387,6 @@ export const useDeleteActionBinding = () => {
   });
 
   return { loading, deleteBinding: mutateAsync };
-};
-
-export const useDryRunAction = () => {
-  const { mutateAsync, isPending: loading } = useMutation({
-    mutationKey: [OntologyActionApiAction.DryRun],
-    mutationFn: async ({
-      id,
-      actionName,
-      args,
-    }: {
-      id: string;
-      actionName: string;
-      args?: Record<string, unknown>;
-    }): Promise<IActionCallResult> => {
-      const { data } = await dryRunAction(id, actionName, { arguments: args });
-      return data?.data as IActionCallResult;
-    },
-  });
-
-  return { loading, dryRun: mutateAsync };
 };
 
 export const useExecuteAction = () => {
@@ -314,6 +408,19 @@ export const useExecuteAction = () => {
         arguments: args,
         reason,
       });
+      if (data?.code !== 0) {
+        // A refused call is answered with the verdict and its reasons instead of
+        // a result; rendering that as "no result" hid the explanation the run
+        // test exists to show.
+        return {
+          action_name: actionName,
+          verdict: (data?.data?.verdict ??
+            'refuse') as IActionCallResult['verdict'],
+          reasons: data?.data?.reasons ?? [],
+          status: 'refused',
+          error: data?.message,
+        } satisfies IActionCallResult;
+      }
       return data?.data as IActionCallResult;
     },
     onSuccess: (_data, variables) => {
