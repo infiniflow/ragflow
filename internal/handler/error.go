@@ -28,15 +28,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// jsonInternalError logs the original error while returning a generic message
-// to avoid exposing internal implementation details in API responses.
+// jsonInternalError logs the original error without exposing internal details.
 func jsonInternalError(c *gin.Context, err error) {
 	common.Warn("handler internal error",
 		zap.Error(err),
 		zap.String("method", c.Request.Method),
 		zap.String("path", c.Request.URL.Path),
 	)
-	common.ResponseWithCodeData(c, common.CodeServerError, nil, common.CodeServerError.Message())
+	common.RespondError(c, common.CodeServerError, common.CodeServerError.Message())
 }
 
 // HandleNoRoute handles requests to undefined routes
@@ -48,7 +47,7 @@ func HandleNoRoute(c *gin.Context) {
 	if isOAuthLoginNoRoute(c) ||
 		(c.Request.Method == http.MethodPost && c.Request.URL.Path == "/api/v1/chats//sessions") ||
 		(c.Request.Method == http.MethodPatch && strings.HasSuffix(c.Request.URL.Path, "/sessions/")) {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, false, "<MethodNotAllowed '405: Method Not Allowed'>")
+		common.RespondError(c, common.CodeExceptionError, "<MethodNotAllowed '405: Method Not Allowed'>")
 		return
 	}
 
@@ -65,7 +64,6 @@ func HandleNoRoute(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"code":    404,
 		"message": "Not Found: " + c.Request.URL.Path,
-		"data":    nil,
 		"error":   "Not Found",
 	})
 }

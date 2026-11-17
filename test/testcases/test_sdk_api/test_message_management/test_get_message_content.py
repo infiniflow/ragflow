@@ -42,7 +42,7 @@ class TestGetMessageContent:
             assert_content(content, payload, memory.id)
             assert content["status"] is True, content
 
-    def test_get_message_content_embedding(self, populated_memory, doc_engine):
+    def test_get_message_content_embedding(self, populated_memory):
         memory = populated_memory["memory"]
         content = memory.get_message_content(populated_memory["rows"][0]["message_id"])
         vector = content["content_embed"]

@@ -585,6 +585,15 @@ func (m *MockTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	return nil
 }
 
+// FinalizeGrid returns annotGrid unchanged (identity). The fake carries no
+// deferred OCR-overlay behavior, matching the production DeepDoc builder.
+func (m *MockTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
+	return annotGrid
+}
+
+// AttachSpanInfo is a no-op for the fake builder.
+func (m *MockTableBuilder) AttachSpanInfo(item *pdf.TableItem) {}
+
 // ── writeTableAnnotations unit tests ──────────────────────────────────
 
 func TestWriteTableAnnotations_WriteBack(t *testing.T) {
@@ -649,10 +658,31 @@ func TestWriteTableAnnotations_EmptyCells(t *testing.T) {
 	tb := &MockTableBuilder{GroupCellsFn: func(cells []pdf.TSRCell) [][]pdf.TSRCell {
 		return nil
 	}}
-	// Should not panic with empty cells.
+	// Should not panic with empty cells; R stays missing and C uses the
+	// X-order fallback.
 	WriteTableAnnotations(boxes, BoxIdx, cells, 3.0, 0, 0, tb)
-	if boxes[0].R != 0 || boxes[0].C != 0 {
-		t.Errorf("empty cells: R=%d C=%d, want 0,0", boxes[0].R, boxes[0].C)
+	if boxes[0].R != -1 || boxes[0].C != 0 {
+		t.Errorf("empty cells: R=%d C=%d, want -1,0", boxes[0].R, boxes[0].C)
+	}
+}
+
+func TestWriteTableAnnotations_EmptyGridKeepsCFallback(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 100, X1: 200, Top: 10, Bottom: 30, Text: "B", LayoutType: "table"},
+		{X0: 0, X1: 100, Top: 10, Bottom: 30, Text: "A", LayoutType: "table"},
+	}
+	BoxIdx := []int{0, 1}
+
+	tb := &MockTableBuilder{GroupCellsFn: func(cells []pdf.TSRCell) [][]pdf.TSRCell {
+		return nil
+	}}
+	WriteTableAnnotations(boxes, BoxIdx, nil, 3.0, 0, 0, tb)
+
+	if boxes[1].C != 0 || boxes[0].C != 1 {
+		t.Errorf("C fallback = A:%d B:%d, want A:0 B:1", boxes[1].C, boxes[0].C)
+	}
+	if boxes[0].R != -1 || boxes[1].R != -1 {
+		t.Errorf("empty grid R = %d/%d, want -1/-1", boxes[0].R, boxes[1].R)
 	}
 }
 

@@ -86,7 +86,12 @@ func maybeDispatchTenantPDFParser(ctx context.Context, db *gorm.DB, filename str
 	var instance *entity.TenantModelInstance
 	var err error
 	if composite {
-		provider, err = providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+		owner, ownerErr := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
+		if ownerErr != nil {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: tenant owner lookup: %w", ownerErr)
+		}
+		ownerUserID := owner.UserID
+		provider, err = providerDAO.GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, ownerUserID, providerName)
 		if err == nil {
 			instance, err = instanceDAO.GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 		}

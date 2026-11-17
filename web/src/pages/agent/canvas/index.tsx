@@ -320,7 +320,7 @@ function AgentCanvas({
       currentEventListWithoutMessageById,
     });
   return (
-    <div className={cn(styles.canvasWrapper, 'px-5 pb-5')}>
+    <div className={cn(styles.canvasWrapper, 'pr-5 pb-5')}>
       <svg
         xmlns="http://www.w3.org/2000/svg"
         style={{ position: 'absolute', top: 10, left: 0 }}

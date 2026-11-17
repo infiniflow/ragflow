@@ -479,18 +479,16 @@ func TestBitbucketConnectorValidateMissingConfig(t *testing.T) {
 }
 
 func TestBitbucketGetJSONRetriesOnTransientStatuses(t *testing.T) {
-	originalAllowAny := common.AllowAnyHostForTest
 	originalTries := bitbucketRetryTries
 	originalDelay := bitbucketRetryBaseDelay
 	originalBackoff := bitbucketRetryBackoff
 	originalMaxDelay := bitbucketRetryMaxDelay
-	common.AllowAnyHostForTest = true
+	t.Setenv(common.EnvAllowAnyHost, "true")
 	bitbucketRetryTries = 3
 	bitbucketRetryBaseDelay = time.Millisecond
 	bitbucketRetryBackoff = 1
 	bitbucketRetryMaxDelay = 10 * time.Millisecond
 	t.Cleanup(func() {
-		common.AllowAnyHostForTest = originalAllowAny
 		bitbucketRetryTries = originalTries
 		bitbucketRetryBaseDelay = originalDelay
 		bitbucketRetryBackoff = originalBackoff

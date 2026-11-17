@@ -75,7 +75,7 @@
 
 Попробуйте облачную версию: [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
-Для локального развёртывания см. раздел [Локальное развёртывание](#-самостоятельное-развёртывание).
+Для локального развёртывания см. раздел [Локальное развёртывание](#-локальное-развёртывание).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -84,6 +84,7 @@
 
 ## 🔥 Последние обновления
 
+- 2026-11-06 Выпущен RAGFlow 1.0.0.
 - 2026-09-29 Выпущен RAGFlow 1.0.0-rc1.
 
 - 2026-09-10 Добавлен сбор веб-контента через sitemap.
@@ -92,14 +93,6 @@
 - 2026-07-02 Добавлены источник данных Google BigQuery и инкрементальная синхронизация.
 
 Другие обновления см. в [полных примечаниях к выпускам](https://ragflow.io/docs/dev/release_notes).
-
-## 🎉 Следите за обновлениями
-
-⭐️ Поставьте звезду репозиторию, чтобы не пропускать новые возможности и улучшения. Получайте уведомления о релизах!
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
 
 ## 🌟 Ключевые возможности
 
@@ -184,7 +177,7 @@ Docker подходит для быстрой оценки, интеграцио
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

@@ -72,7 +72,7 @@ type fakeAgentWebhookCredentialManager struct {
 	revokedUser  string
 }
 
-func (f *fakeAgentWebhookCredentialManager) Issue(_ context.Context, _ permission.Subject, _ *entity.UserCanvas) (string, error) {
+func (f *fakeAgentWebhookCredentialManager) Issue(_ context.Context, _ *entity.UserCanvas) (string, error) {
 	return f.issueToken, f.issueErr
 }
 
@@ -87,21 +87,22 @@ func (f *fakeAgentWebhookCredentialManager) Resolve(_ context.Context, canvasID,
 	return &credential, nil
 }
 
-func (f *fakeAgentWebhookCredentialManager) Revoke(_ context.Context, canvasID, userID string) error {
+func (f *fakeAgentWebhookCredentialManager) Revoke(ctx context.Context, canvasID string) error {
 	f.revokedID = canvasID
-	f.revokedUser = userID
+	f.revokedUser = permission.UserIDFromContext(ctx)
 	return nil
 }
 
-func (f *fakeCanvasLoader) LoadCanvasByID(_ context.Context, userID, _ string) (*entity.UserCanvas, error) {
-	f.loadUserID = userID
+func (f *fakeCanvasLoader) LoadCanvasByID(ctx context.Context, _ string) (*entity.UserCanvas, error) {
+	f.loadUserID = permission.UserIDFromContext(ctx)
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.canvas, nil
 }
 
-func (f *fakeCanvasLoader) RunAgentWithWebhook(ctx context.Context, userID, canvasID string, payload map[string]any) (<-chan canvas.RunEvent, error) {
+func (f *fakeCanvasLoader) RunAgentWithWebhook(ctx context.Context, canvasID string, payload map[string]any) (<-chan canvas.RunEvent, error) {
+	userID := permission.UserIDFromContext(ctx)
 	f.runCalls.Add(1)
 	f.runUserID = userID
 	f.runCanvasID = canvasID
@@ -140,6 +141,7 @@ func (f *fakeCanvasLoader) RunAgentWithWebhook(ctx context.Context, userID, canv
 // schema/content-type checks under test.
 func makeWebhookCanvas(id, userID, mode string, params map[string]any) *entity.UserCanvas {
 	dsl := map[string]any{
+		"graph": map[string]any{"nodes": []any{map[string]any{"id": "begin", "type": "beginNode", "position": map[string]any{"x": 0, "y": 0}, "data": map[string]any{"label": "Begin", "name": "Begin"}}}, "edges": []any{}},
 		"components": map[string]any{
 			"begin": map[string]any{
 				"obj": map[string]any{
@@ -198,6 +200,7 @@ func webhookCtx(method, path, body, contentType string) (*gin.Context, *httptest
 		c.Request.Header.Set("Content-Type", contentType)
 	}
 	c.Set("user", &entity.User{ID: "u-1"})
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "u-1", "u-1"))
 	return c, w
 }
 
@@ -249,8 +252,8 @@ func TestPublicWebhookRunsAsCredentialIdentityWithoutUserToken(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("webhook did not start the agent")
 	}
-	if subject, ok := permission.SubjectFromContext(loader.runContext); !ok || subject.TenantID != tenantID {
-		t.Fatalf("run tenant = %q, want %q", subject.TenantID, tenantID)
+	if permission.TenantIDFromContext(loader.runContext) != tenantID {
+		t.Fatalf("run tenant = %q, want %q", permission.TenantIDFromContext(loader.runContext), tenantID)
 	}
 	input := loader.runPayload["input"].(map[string]any)
 	query := input["query"].(map[string]any)
@@ -899,7 +902,7 @@ func TestRunWebhookDetachedAppendsFinishedTrace(t *testing.T) {
 				trace = append(trace, ev)
 			}
 
-			h.runWebhookDetached(t.Context(), "u-1", cv, map[string]any{}, true, time.Now())
+			h.runWebhookDetached(t.Context(), cv, map[string]any{}, true, time.Now())
 
 			assertWebhookFinishedTrace(t, trace, tt.wantSuccess)
 			if tt.forbidden != "" {
@@ -940,7 +943,7 @@ func TestRunWebhookDetachedRecordsTimeoutTrace(t *testing.T) {
 			)
 			defer cancel()
 			<-ctx.Done()
-			h.runWebhookDetachedWithContext(ctx, "u-1", cv, map[string]any{}, true, time.Now(), "session-1")
+			h.runWebhookDetachedWithContext(ctx, cv, map[string]any{}, true, time.Now(), "session-1")
 
 			if len(trace) < 2 || trace[0].Type != "error" || !strings.Contains(trace[0].Data, "timed out") {
 				t.Fatalf("timeout trace = %+v, want error followed by failed finished event", trace)
@@ -963,7 +966,7 @@ func TestRunWebhookSyncRecordsCancelledTrace(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	result := h.runWebhookSync(ctx, "u-1", cv, map[string]any{}, true, time.Now())
+	result := h.runWebhookSync(ctx, cv, map[string]any{}, true, time.Now())
 
 	if result.status != http.StatusConflict {
 		t.Errorf("status = %d, want %d", result.status, http.StatusConflict)
@@ -982,13 +985,13 @@ func TestWebhookBufferedTerminalEventAfterCancellationUsesCleanupContext(t *test
 		{
 			name: "detached",
 			run: func(_ *testing.T, h *AgentHandler, ctx context.Context, cv *entity.UserCanvas) {
-				h.runWebhookDetachedWithContext(ctx, "u-1", cv, map[string]any{}, true, time.Now(), "session-1")
+				h.runWebhookDetachedWithContext(ctx, cv, map[string]any{}, true, time.Now(), "session-1")
 			},
 		},
 		{
 			name: "sync",
 			run: func(t *testing.T, h *AgentHandler, ctx context.Context, cv *entity.UserCanvas) {
-				result := h.runWebhookSync(ctx, "u-1", cv, map[string]any{}, true, time.Now())
+				result := h.runWebhookSync(ctx, cv, map[string]any{}, true, time.Now())
 				if result.status != http.StatusConflict {
 					t.Errorf("status = %d, want %d", result.status, http.StatusConflict)
 				}
@@ -1358,3 +1361,57 @@ func TestWebhook_ContentTypeMissingHeaderRejected(t *testing.T) {
 // inline above.)
 // _unused previously lived here as a placeholder; deleted during
 // cleanup (code-review MEDIUM-2).
+
+// Saved canvases include both the editor graph and nested runtime components.
+func TestWebhookSavedDSLRepresentations(t *testing.T) {
+	for _, format := range []string{"nested graph", "flat graph", "nested graphless"} {
+		for _, endpoint := range []string{"/webhook", "/webhook/test"} {
+			for _, scenario := range []string{"valid", "invalid token", "manual", "missing begin"} {
+				t.Run(format+endpoint+"/"+scenario, func(t *testing.T) {
+					cv := makeWebhookCanvas("c1", "u-1", "Webhook", map[string]any{
+						"execution_mode": "Streaming",
+						"security":       map[string]any{"auth_type": "token", "token": map[string]any{"token_header": "X-Webhook-Token", "token_value": "fixture-token"}},
+					})
+					comps := cv.DSL["components"].(map[string]any)
+					entry := comps["begin"].(map[string]any)
+					obj := entry["obj"].(map[string]any)
+					if scenario == "manual" {
+						obj["params"].(map[string]any)["mode"] = "conversational"
+					}
+					if format == "flat graph" {
+						comps["begin"] = map[string]any{"name": obj["component_name"], "params": obj["params"]}
+					}
+					if format == "nested graphless" {
+						delete(cv.DSL, "graph")
+					}
+					if scenario == "missing begin" {
+						delete(comps, "begin")
+					}
+					loader := &fakeCanvasLoader{canvas: cv}
+					h := newWebhookTestAgentHandler(loader)
+					c, w := webhookCtx("POST", "/api/v1/agents/c1"+endpoint, "{}", "application/json")
+					token := "fixture-token"
+					if scenario == "invalid token" {
+						token = "wrong"
+					}
+					c.Request.Header.Set("X-Webhook-Token", token)
+					h.Webhook(c)
+					if scenario == "valid" {
+						if w.Code != http.StatusOK || loader.runCalls.Load() != 1 {
+							t.Fatalf("status=%d body=%s runs=%d", w.Code, w.Body.String(), loader.runCalls.Load())
+						}
+					} else {
+						code, msg := errBody(t, w.Body.Bytes())
+						want := "Webhook not configured for this agent."
+						if scenario == "invalid token" {
+							want = "invalid token authentication"
+						}
+						if code != int(common.CodeDataError) || msg != want || loader.runCalls.Load() != 0 {
+							t.Fatalf("code=%d message=%q runs=%d", code, msg, loader.runCalls.Load())
+						}
+					}
+				})
+			}
+		}
+	}
+}

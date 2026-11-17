@@ -109,6 +109,27 @@ func TestBuildAll_CanvasComponentNameUsesCanonicalParams(t *testing.T) {
 	}
 }
 
+// TestBuildByName_FunctionNameCollisionPrefersComponentName asserts that a
+// Retrieval node whose DSL function_name happens to match a registered tool
+// (e.g., "wikipedia") still builds the retrieval tool, not the registered one.
+// The retrieval tool advertises the DSL function_name as its agent-visible name.
+func TestBuildByName_FunctionNameCollisionPrefersComponentName(t *testing.T) {
+	built, err := BuildByName("wikipedia", map[string]any{
+		"component_name": "Retrieval",
+		"function_name":  "wikipedia",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	info, err := built.Info(t.Context())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if info.Name != "wikipedia" {
+		t.Errorf("tool name = %q, want retrieval advertised as the DSL function_name (collision must not build Wikipedia)", info.Name)
+	}
+}
+
 func TestBuildByName_QueritAliases(t *testing.T) {
 	for _, name := range []string{"querit", "querit_search", "queritsearch", "QueritSearch"} {
 		built, err := BuildByName(name, map[string]any{
@@ -156,6 +177,24 @@ func TestBuildByName_QueritContentsAliases(t *testing.T) {
 		}
 		if contents.defaults.Format != "html" || contents.defaults.CrawlTimeout != 20 || !contents.defaults.ExtrasMeta {
 			t.Fatalf("BuildByName(%q) defaults = %#v", name, contents.defaults)
+		}
+	}
+}
+
+func TestBuildByName_QueritContentsEmptyTimeoutUsesDefault(t *testing.T) {
+	for _, value := range []string{"", "  "} {
+		built, err := BuildByName("querit_contents", map[string]any{
+			"crawl_timeout": value,
+		})
+		if err != nil {
+			t.Fatalf("BuildByName with empty crawl_timeout %q: %v", value, err)
+		}
+		contents, ok := built.(*QueritContentsTool)
+		if !ok {
+			t.Fatalf("BuildByName returned %T, want *QueritContentsTool", built)
+		}
+		if contents.defaults.CrawlTimeout != 10 {
+			t.Fatalf("crawl timeout = %d, want default 10", contents.defaults.CrawlTimeout)
 		}
 	}
 }

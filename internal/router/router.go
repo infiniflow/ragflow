@@ -231,6 +231,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
+			// Doc-analyzer availability: which PDF structure/table engines this
+			// deployment can actually serve. Requires auth so the availability
+			// of internal backends is not exposed to anonymous clients.
+			v1.GET("/system/doc-analyzers", r.systemHandler.DocAnalyzers)
+
 			// Auth routes
 			auth := v1.Group("/auth")
 			{
@@ -554,19 +559,20 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			model := v1.Group("/models", ToggleModel())
 			{
-				// GET /models returns the tenant's added models across
-				// all instances. Front-end useFetchAllAddedModels consumes this.
-				model.GET("", r.providerHandler.ListTenantAddedModels)
+				// GET /models returns models available to the authenticated user
+				// in the selected tenant context.
+				model.GET("", r.providerHandler.ListModelsForUserInTenant)
 				model.PATCH("", r.tenantHandler.SetModels)
 				// Tenant default-model selection (used by the agent page's useFetchDefaultModels hook)
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
 
-				model.POST("/groups", r.providerHandler.CreateModelGroup)
-				model.DELETE("/groups/:group_name", r.providerHandler.DeleteModelGroup)
-				model.GET("/groups", r.providerHandler.ShowModelGroup)                            // LIST and SHOW MODEL GROUP
-				model.POST("/groups/:group_name/model", r.providerHandler.AddModelToGroup)        // ADD MODEL TO GROUP
-				model.DELETE("/groups/:group_name/model", r.providerHandler.RemoveModelFromGroup) // REMOVE MODEL FROM GROUP
+				model.POST("/groups", r.providerHandler.CreateModelGroup)                  // CREATE MODEL GROUP
+				model.GET("/groups", r.providerHandler.ListModelGroups)                    // LIST MODEL GROUPS
+				model.GET("/groups/:group_name", r.providerHandler.ShowModelGroup)         // SHOW MODEL GROUP
+				model.DELETE("/groups/:group_name", r.providerHandler.DeleteModelGroup)    // DELETE MODEL GROUP
+				model.POST("/groups/:group_name/model", r.providerHandler.AddModelToGroup) // ADD MODEL TO GROUP
+				model.DELETE("/groups/:group_name/model", r.providerHandler.RemoveModelFromGroup)
 			}
 
 			allModels := v1.Group("/all-models", ToggleModel())
@@ -592,7 +598,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// with the binary, but the endpoint is gated behind auth so the
 			// /pipelines namespace is already auth-protected when per-tenant
 			// user pipelines (dataflow canvases) are added later. Those will
-			// reuse user_canvas + CheckCanvasPermission for ownership checks.
+			// reuse user_canvas and the permission checker for ownership checks.
 			// Query: ?type=builtin returns built-in templates (default).
 			v1.GET("/pipelines", r.pipelineHandler.ListPipelines)
 			v1.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)

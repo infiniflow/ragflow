@@ -289,7 +289,7 @@ func TestHTMLParser_ParseWithResult_SkipsScriptAndStyle(t *testing.T) {
 // `utility.FileTypeTXT` resolves to a TextParser that satisfies
 // ParseResultProducer.
 func TestGetParser_RoutesTextAndCode(t *testing.T) {
-	p, err := GetParser(utility.FileTypeTXT)
+	p, _, err := GetParser(utility.FileTypeTXT, nil)
 	if err != nil {
 		t.Fatalf("GetParser(FileTypeTXT): %v", err)
 	}

@@ -47,6 +47,7 @@ func TestReconcileMemoryTasksPublishesDueWakeups(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := NewMemoryMessageService(NewMemoryService(db, nil))
 	svc.taskPublisher = publisher
+	svc.tierResolver = (&fakeTierResolver{tier: common.TierDefault}).resolve
 	if err := svc.ReconcileMemoryTasks(t.Context(), 100); err != nil {
 		t.Fatalf("ReconcileMemoryTasks: %v", err)
 	}

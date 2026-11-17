@@ -1,7 +1,10 @@
 import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
-import ListFilterBar from '@/components/list-filter-bar';
+import { ListPageCard } from '@/components/list-page-card';
+import { NavGroupListFilterBar } from '@/layouts/components/nav-group-list-filter-bar';
+import { NavGroupTitle } from '@/layouts/components/nav-group-title';
+import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { ListDeletionKey } from '@/constants/list-deletion';
@@ -34,6 +37,7 @@ import { useSelectFilters } from './hooks/use-select-filters';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useHandleImportJsonFile } from './use-import-json';
 import { useRenameAgent } from './use-rename-agent';
+import { useShowPrivilegeDialog } from '@/ee/pages/agents/use-show-privilege-dialog';
 
 export default function Agents() {
   const {
@@ -108,6 +112,12 @@ export default function Agents() {
     handleImportJson,
   );
 
+  const {
+    privilegeModalVisible,
+    hidePrivilegeModal,
+    handShowPrivilegeModal,
+    recordWithSourceType,
+  } = useShowPrivilegeDialog();
   const { deleteGroup } = useDeleteCompilationTemplateGroup();
 
   const filters = useSelectFilters(activeCategory);
@@ -179,12 +189,12 @@ export default function Agents() {
           onReport={setBuiltinState}
         />
       )}
-      <article
-        className="size-full min-w-0 flex flex-col"
-        data-testid="agents-list"
-      >
-        <header className="mb-4 min-w-0 px-5 pt-8">
-          <ListFilterBar
+      <ListPageCard as="article" data-testid="agents-list">
+        <div className="shrink-0 px-5 pt-5">
+          <NavGroupTitle />
+        </div>
+        <header className="mb-5 min-w-0 px-5 pt-5">
+          <NavGroupListFilterBar
             searchString={searchString}
             onSearchChange={handleInputChange}
             filters={filters}
@@ -205,7 +215,7 @@ export default function Agents() {
                   : undefined
               }
             />
-          </ListFilterBar>
+          </NavGroupListFilterBar>
         </header>
 
         {emptyState === 'content' ? (
@@ -224,6 +234,7 @@ export default function Agents() {
                     key={x.id}
                     data={x}
                     showAgentRenameModal={showAgentRenameModal}
+                    showPrivilegeModal={handShowPrivilegeModal(x)}
                   />
                 ),
               )}
@@ -272,7 +283,7 @@ export default function Agents() {
             </EmptyAppCard>
           </div>
         )}
-      </article>
+      </ListPageCard>
 
       {agentRenameVisible && (
         <RenameDialog
@@ -296,6 +307,12 @@ export default function Agents() {
           hideModal={hideFileUploadModal}
           onOk={onFileUploadOk}
         ></UploadAgentDialog>
+      )}
+      {privilegeModalVisible && (
+        <PrivilegeManagementDialog
+          hideModal={hidePrivilegeModal}
+          initialValues={recordWithSourceType}
+        ></PrivilegeManagementDialog>
       )}
     </>
   );

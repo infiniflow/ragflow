@@ -51,9 +51,12 @@ es:
   username: '${ES_USER:-elastic}'
   password: '${ELASTIC_PASSWORD:-infini_rag_flow}'
 os:
-  hosts: 'http://${OS_HOST:-opensearch01}:9201'
+  hosts: 'http://${OS_HOST:-opensearch39}:9201'
   username: '${OS_USER:-admin}'
   password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
+  # Optional: skip TLS certificate verification for a self-signed development
+  # cluster. Leave it off (the default) for any HTTPS deployment.
+  # insecure_skip_verify: false
   # Optional hybrid (BM25 + KNN) search tuning. The connector self-provisions the
   # normalization search pipeline on start-up (requires OpenSearch >= 2.10).
   # hybrid_search_pipeline: 'ragflow_hybrid_pipeline'
@@ -97,6 +100,11 @@ vastbase:
   user: '${VB_USERNAME:-ragflow}'
   password: '${VB_PASSWORD:-Infini_Rag@123}'
   db_name: '${VB_VEC_DBNAME:-ragflow}'
+  # Metadata database, read only when DB_TYPE=vastbase; host/port/user/
+  # password/ssl_mode above are shared with the doc engine.
+  name: '${VB_META_DBNAME:-rag_flow}'
+  max_connections: 50
+  stale_timeout: 300
   dbcompatibility: '${VB_DBCOMPATIBILITY:-B}'
   # No disable fallback: an empty ssl_mode reaches the engine's host policy
   # (disable on loopback, verify-full otherwise). docker/.env sets disable

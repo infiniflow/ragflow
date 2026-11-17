@@ -11,12 +11,16 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	pdfreader "github.com/ledongthuc/pdf"
 
 	"ragflow/internal/common"
 	"ragflow/internal/parser/media"
 )
+
+const soMarkPollTimeout = 30 * time.Minute
+const soMarkPollInterval = 2 * time.Second
 
 // parsePDFWithSoMark submits a PDF and converts the task result into parser
 // output. Explicit tenant configuration never borrows a global endpoint or key.
@@ -125,44 +129,61 @@ func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, pa
 }
 
 func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string]any, error) {
-	form := url.Values{"task_id": {taskID}}
-	if apiKey != "" {
-		form.Set("api_key", apiKey)
+	pollCtx, cancel := context.WithTimeout(ctx, soMarkPollTimeout)
+	defer cancel()
+	ticker := time.NewTicker(soMarkPollInterval)
+	defer ticker.Stop()
+	for {
+		form := url.Values{"task_id": {taskID}}
+		if apiKey != "" {
+			form.Set("api_key", apiKey)
+		}
+		req, err := http.NewRequestWithContext(pollCtx, http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
+		if err != nil {
+			return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		resp, err := common.GetSSRFHTTPClient().Do(req)
+		if err != nil {
+			if pollCtx.Err() != nil {
+				return nil, fmt.Errorf("parser: timed out waiting for SoMark task %s: %w", taskID, pollCtx.Err())
+			}
+			return nil, fmt.Errorf("parser: SoMark poll: %w", err)
+		}
+		raw, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("parser: SoMark read poll: %w", readErr)
+		}
+		var payload struct {
+			Code    int            `json:"code"`
+			Message string         `json:"message"`
+			Data    map[string]any `json:"data"`
+		}
+		if err = json.Unmarshal(raw, &payload); err != nil {
+			return nil, fmt.Errorf("parser: SoMark decode poll: %w", err)
+		}
+		if payload.Code != 0 {
+			return nil, fmt.Errorf("parser: SoMark poll business error code=%d message=%s", payload.Code, payload.Message)
+		}
+		status, _ := payload.Data["status"].(string)
+		switch strings.ToUpper(status) {
+		case "SUCCESS":
+			result, _ := payload.Data["result"].(map[string]any)
+			if result == nil {
+				return nil, fmt.Errorf("parser: SoMark SUCCESS without result")
+			}
+			return result, nil
+		case "QUEUING", "PENDING", "RUNNING", "PROCESSING":
+			select {
+			case <-pollCtx.Done():
+				return nil, fmt.Errorf("parser: timed out waiting for SoMark task %s; last status=%s: %w", taskID, status, pollCtx.Err())
+			case <-ticker.C:
+			}
+		default:
+			return nil, fmt.Errorf("parser: SoMark task %s status=%s", taskID, status)
+		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := common.GetSSRFHTTPClient().Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("parser: SoMark poll: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("parser: SoMark read poll: %w", err)
-	}
-	var payload struct {
-		Code    int            `json:"code"`
-		Message string         `json:"message"`
-		Data    map[string]any `json:"data"`
-	}
-	if err = json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("parser: SoMark decode poll: %w", err)
-	}
-	if payload.Code != 0 {
-		return nil, fmt.Errorf("parser: SoMark poll business error code=%d message=%s", payload.Code, payload.Message)
-	}
-	status, _ := payload.Data["status"].(string)
-	if status != "SUCCESS" {
-		return nil, fmt.Errorf("parser: SoMark task %s status=%s", taskID, status)
-	}
-	result, _ := payload.Data["result"].(map[string]any)
-	if result == nil {
-		return nil, fmt.Errorf("parser: SoMark SUCCESS without result")
-	}
-	return result, nil
 }
 
 func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bool, pageSizes [][2]float64) ([]map[string]any, int, []string) {

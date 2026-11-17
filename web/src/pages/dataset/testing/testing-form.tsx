@@ -100,10 +100,10 @@ export default function TestingForm({
   return (
     <Form {...form}>
       <form
-        className="size-full flex flex-col"
+        className="size-full min-h-0 flex flex-col"
         onSubmit={form.handleSubmit(onSubmit)}
       >
-        <div className="px-5 h-0 flex-1">
+        <div className="px-5 h-0 flex-1 min-h-0">
           <FormContainer className="p-5 h-full overflow-auto">
             <SimilaritySliderFormField
               isTooltipShown={true}
@@ -118,7 +118,7 @@ export default function TestingForm({
           </FormContainer>
         </div>
 
-        <footer className="flex-0 p-5">
+        <footer className="shrink-0 p-5">
           <FormField
             control={form.control}
             name="question"

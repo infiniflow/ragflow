@@ -86,9 +86,13 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 		t.Fatalf("ack: %v", ackErr)
 	}
 
-	// Delete the consumer behind the engine's back; the stored handle now
-	// addresses something that no longer exists.
-	if err := queue.stream.DeleteConsumer(t.Context(), "RAGFLOW_CONSUMER"); err != nil {
+	// Delete the primary lane's consumer behind the engine's back; the stored
+	// handle now addresses something that no longer exists. Publishers route to
+	// the default tier subject, and the default lane owns it.
+	pt := defaultTier()
+	primarySpec := tierStreams[pt]
+	primaryStream := queue.streams[pt]
+	if err := primaryStream.DeleteConsumer(t.Context(), primarySpec.consumerName); err != nil {
 		t.Fatalf("delete consumer: %v", err)
 	}
 
@@ -102,7 +106,7 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 
 	// The consumer must exist again under the same durable name, so the next
 	// restart reattaches instead of orphaning a replacement.
-	if _, err := queue.stream.Consumer(t.Context(), "RAGFLOW_CONSUMER"); err != nil {
+	if _, err := primaryStream.Consumer(t.Context(), primarySpec.consumerName); err != nil {
 		t.Fatalf("consumer was not recreated: %v", err)
 	}
 
@@ -124,7 +128,7 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 // ordinary "nothing to deliver" outcome.
 func TestPullMessages_KeepsHandleWhenNothingToDeliver(t *testing.T) {
 	queue := newTaskQueue(t)
-	before, err := queue.consumerHandle()
+	before, err := queue.consumerHandle(defaultTier())
 	if err != nil {
 		t.Fatalf("consumerHandle: %v", err)
 	}
@@ -135,7 +139,7 @@ func TestPullMessages_KeepsHandleWhenNothingToDeliver(t *testing.T) {
 		t.Fatalf("PullMessage on an empty queue: %v", err)
 	}
 
-	after, err := queue.consumerHandle()
+	after, err := queue.consumerHandle(defaultTier())
 	if err != nil {
 		t.Fatalf("consumerHandle: %v", err)
 	}

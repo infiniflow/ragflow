@@ -72,6 +72,11 @@ vastbase:
   user: 'ragflow'
   password: 'Infini_Rag@123'
   db_name: 'ragflow'
+  # Metadata database, read only when DB_TYPE=vastbase; host/port/user/
+  # password/ssl_mode above are shared with the doc engine.
+  name: 'rag_flow'
+  max_connections: 50
+  stale_timeout: 300
   dbcompatibility: 'B'
   ssl_mode: '' # empty: engine picks by host (disable on loopback, verify-full otherwise)
 kvrocks:

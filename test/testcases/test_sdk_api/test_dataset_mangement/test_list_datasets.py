@@ -150,7 +150,7 @@ class TestDatasetsList:
 
     @pytest.mark.p2
     def test_page_invalid(self, client):
-        with pytest.raises(Exception, match="greater than or equal to 1"):
+        with pytest.raises(Exception, match="page must be a positive integer"):
             client.list_datasets(page=0)
 
     @pytest.mark.p1
@@ -163,7 +163,7 @@ class TestDatasetsList:
 
     @pytest.mark.p2
     def test_page_size_invalid(self, client):
-        with pytest.raises(Exception, match="greater than or equal to 1"):
+        with pytest.raises(Exception, match="page_size must be between 1 and 100"):
             client.list_datasets(page_size=0)
 
     @pytest.mark.p3

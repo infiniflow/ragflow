@@ -16,16 +16,19 @@
 
 package schema
 
-// Canonical ingestion component names. These are the identities components
-// register under in runtime.DefaultRegistry and the values a DSL
-// component_name carries. Layers that must recognise a component by name
-// across the component/pipeline boundary (dispatch, param whitelists,
-// operator-facing failure messages) reference these constants instead of
-// repeating the literals; the schema package is the shared dependency both
-// sides already import. More names can join this set as other layers need
-// them.
+import "ragflow/internal/common"
+
+// Canonical ingestion component names re-exported from common for callers that
+// need them across the pipeline/component boundary.
 const (
-	ComponentNameParser    = "Parser"
-	ComponentNameExtractor = "Extractor"
-	ComponentNameCompiler  = "Compiler"
+	ComponentNameFile      = common.ComponentNameFile
+	ComponentNameParser    = common.ComponentNameParser
+	ComponentNameExtractor = common.ComponentNameExtractor
+	ComponentNameCompiler  = common.ComponentNameCompiler
+	ComponentNameTokenizer = common.ComponentNameTokenizer
+
+	ComponentNameGeneralChunker = common.ComponentNameGeneralChunker
+	ComponentNameTokenChunker   = common.ComponentNameTokenChunker
+	ComponentNameTitleChunker   = common.ComponentNameTitleChunker
+	ComponentNameManualChunker  = common.ComponentNameManualChunker
 )

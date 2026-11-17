@@ -72,8 +72,7 @@ func extractSelectedImageOCR(ctx context.Context, db *gorm.DB, tenantID, modelID
 		return "", fmt.Errorf("selected image OCR instance has no base URL")
 	}
 	apiConfig.BaseURL = &baseURL
-	response, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig,
-		&modelModule.OCRConfig{Algorithm: modelName}, nil)
+	response, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig, nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("selected image OCR: %w", err)
 	}

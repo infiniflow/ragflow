@@ -202,8 +202,8 @@ func TestHostingerRouterListModelsAndCheckConnection(t *testing.T) {
 // reported as chat-only, while other models keep name-inferred types.
 func TestHostingerRouterListModelsKeepsCatalogueTypes(t *testing.T) {
 	withSSRFBypass(t)
-	prev := providerManager
-	defer func() { providerManager = prev }()
+	saved := GetProviderManager()
+	defer setProviderManager(saved)
 	dir, restore := setupProviderTestDir(t, "hostinger_router.json")
 	defer restore()
 	if err := InitProviderManager(dir); err != nil {

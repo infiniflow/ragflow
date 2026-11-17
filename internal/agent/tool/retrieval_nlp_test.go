@@ -451,7 +451,7 @@ func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.Sys["user_id"] = "member"
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "member", TenantID: "tenant-1"})
+	ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "member", "tenant-1")
 	_, err = adapter.Search(ctx, db, RetrievalRequest{
 		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "owner",
 	})

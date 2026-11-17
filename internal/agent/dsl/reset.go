@@ -44,6 +44,10 @@
 
 package dsl
 
+import (
+	"ragflow/internal/common"
+)
+
 // ResetForNewSession returns a defensive copy of dsl with only
 // conversation-owned state cleared. A fresh session must not inherit the
 // runtime replica's conversation history or execution path, while reusable
@@ -53,7 +57,7 @@ func ResetForNewSession(dsl map[string]any) map[string]any {
 	if dsl == nil {
 		return map[string]any{}
 	}
-	out := deepCopyMap(dsl)
+	out := common.DeepCopyMap(dsl)
 	out["history"] = []any{}
 	out["path"] = []any{}
 
@@ -108,7 +112,7 @@ func ResetForCanvas(dsl map[string]any) map[string]any {
 	if vars == nil {
 		vars = map[string]any{}
 	}
-	vars = deepCopyMap(vars)
+	vars = common.DeepCopyMap(vars)
 
 	globals, _ := out["globals"].(map[string]any)
 	if globals == nil {
@@ -118,7 +122,7 @@ func ResetForCanvas(dsl map[string]any) map[string]any {
 		// preserve that shape instead of inserting a nil.
 		return out
 	}
-	globals = deepCopyMap(globals)
+	globals = common.DeepCopyMap(globals)
 	// Stash the (deep-copied) globals back into out so the
 	// returned DSL reflects every change the reset loop makes.
 	out["globals"] = globals
@@ -224,49 +228,4 @@ func zeroByVariableType(v map[string]any) any {
 		return []any{}
 	}
 	return ""
-}
-
-// deepCopyMap returns a fresh map with the same keys, recursively
-// copying nested map / slice values. Primitives are shared by
-// reference (they are immutable in Go). This is a focused helper
-// for the reset path: in practice globals is a flat
-// string→primitive map and variables is a flat
-// string→{type, value} map, so a full deep walk is overkill, but
-// the cost is negligible and it eliminates a class of
-// "the caller's map got mutated" bugs the shallow `copyMapStringAny`
-// helper would let through.
-func deepCopyMap(m map[string]any) map[string]any {
-	if m == nil {
-		return nil
-	}
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		switch x := v.(type) {
-		case map[string]any:
-			out[k] = deepCopyMap(x)
-		case []any:
-			out[k] = deepCopySlice(x)
-		default:
-			out[k] = v
-		}
-	}
-	return out
-}
-
-func deepCopySlice(s []any) []any {
-	if s == nil {
-		return nil
-	}
-	out := make([]any, len(s))
-	for i, v := range s {
-		switch x := v.(type) {
-		case map[string]any:
-			out[i] = deepCopyMap(x)
-		case []any:
-			out[i] = deepCopySlice(x)
-		default:
-			out[i] = x
-		}
-	}
-	return out
 }

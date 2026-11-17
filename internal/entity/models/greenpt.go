@@ -62,6 +62,7 @@ func (m *GreenPTModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		switch models[i].Name {
 		case "green-s", "green-s-pro":
 			models[i].ModelTypes = []string{"asr"}
+			models[i].ModelTypesInferred = false
 		}
 	}
 	return models, nil
@@ -224,5 +225,5 @@ func (m *GreenPTModel) TranscribeAudio(ctx context.Context, modelName *string, f
 }
 
 func (g *GreenPTModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", g.Name())
 }

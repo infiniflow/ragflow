@@ -1,19 +1,18 @@
 #include "openccxx.h"
 #include "opencc.h"
-#include "utils.h"
 
-#include <iostream>
+#include <stdexcept>
 #include <string>
 
 OpenCC::OpenCC(const std::string &home_dir) : od((opencc_t)-1) {
-    config_file = mstrcpy(OPENCC_DEFAULT_CONFIG_TRAD_TO_SIMP);
-    open(config_file, home_dir.c_str());
+    if (open(OPENCC_DEFAULT_CONFIG_TRAD_TO_SIMP, home_dir.c_str()) != 0) {
+        throw std::runtime_error("failed to load OpenCC config " OPENCC_DEFAULT_CONFIG_TRAD_TO_SIMP " from " + home_dir);
+    }
 }
 
 OpenCC::~OpenCC() {
     if (od != (opencc_t)-1)
         opencc_close(od);
-    free(config_file);
 }
 
 int OpenCC::open(const char *config_file, const char *home_dir) {

@@ -1,7 +1,8 @@
 import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
-import ListFilterBar from '@/components/list-filter-bar';
+import { NavGroupListFilterBar } from '@/layouts/components/nav-group-list-filter-bar';
+import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { ListDeletionKey } from '@/constants/list-deletion';
@@ -21,6 +22,7 @@ import {
 } from './hooks';
 import { ICreateMemoryProps, IMemory } from './interface';
 import { MemoryCard } from './memory-card';
+import { useShowPrivilegeDialog } from '@/ee/pages/memories/use-show-privilege-dialog';
 
 export default function MemoryList() {
   // const { data } = useFetchFlowList();
@@ -50,6 +52,12 @@ export default function MemoryList() {
     onMemoryRenameOk,
     initialMemory,
   } = useRenameMemory();
+  const {
+    privilegeModalVisible,
+    hidePrivilegeModal,
+    handShowPrivilegeModal,
+    recordWithSourceType,
+  } = useShowPrivilegeDialog();
 
   const onMemoryConfirm = (data: ICreateMemoryProps) => {
     onMemoryRenameOk(data, () => {
@@ -88,76 +96,62 @@ export default function MemoryList() {
 
   return (
     <>
-      {list?.data?.memory_list?.length || searchString ? (
-        <article
-          className="size-full min-w-0 flex flex-col"
-          data-testid="memory-list"
-        >
-          <header className="mb-4 min-w-0 px-5 pt-8">
-            <ListFilterBar
-              icon="memory"
-              title={t('memory')}
-              onSearchChange={handleInputChange}
-              searchString={searchString}
-              filters={filters}
-              onChange={handleFilterSubmit}
-              value={filterValue}
-            >
-              <Button onClick={() => openCreateModalFun()}>
-                <Plus className="size-[1em]" />
-                {t('createMemory')}
-              </Button>
-            </ListFilterBar>
-          </header>
+      <article
+        className="size-full min-w-0 flex flex-col"
+        data-testid="memory-list"
+      >
+        <header className="mb-5 min-w-0 px-5 pt-5">
+          <NavGroupListFilterBar
+            onSearchChange={handleInputChange}
+            searchString={searchString}
+            filters={filters}
+            onChange={handleFilterSubmit}
+            value={filterValue}
+          >
+            <Button onClick={openCreateModalFun}>
+              <Plus className="size-[1em]" />
+              {t('createMemory')}
+            </Button>
+          </NavGroupListFilterBar>
+        </header>
 
-          {list?.data?.memory_list?.length ? (
-            <>
-              <CardContainer className="flex-1 overflow-auto px-5">
-                {list?.data.memory_list.map((x) => (
-                  <MemoryCard
-                    key={x.id}
-                    data={x}
-                    showMemoryRenameModal={() => {
-                      setAddOrEditType('edit');
-                      showMemoryRenameModal(x);
-                    }}
-                  />
-                ))}
-              </CardContainer>
-
-              <footer className="mt-4 px-5 pb-5">
-                <RAGFlowPagination
-                  {...pick(pagination, 'current', 'pageSize')}
-                  total={list?.data.total_count}
-                  onChange={handlePageChange}
+        {list?.data?.memory_list?.length ? (
+          <>
+            <CardContainer className="flex-1 overflow-auto px-5">
+              {list?.data.memory_list.map((x) => (
+                <MemoryCard
+                  key={x.id}
+                  data={x}
+                  showMemoryRenameModal={() => {
+                    setAddOrEditType('edit');
+                    showMemoryRenameModal(x);
+                  }}
+                  showPrivilegeModal={handShowPrivilegeModal(x)}
                 />
-              </footer>
-            </>
-          ) : (
-            <div className="flex flex-1 items-center justify-center px-5">
-              <EmptyAppCard
-                showIcon
-                size="large"
-                isSearch
-                type={EmptyCardType.Memory}
-                onClick={() => openCreateModalFun()}
+              ))}
+            </CardContainer>
+
+            <footer className="mt-4 px-5 pb-5">
+              <RAGFlowPagination
+                {...pick(pagination, 'current', 'pageSize')}
+                total={list?.data.total_count}
+                onChange={handlePageChange}
               />
-            </div>
-          )}
-        </article>
-      ) : (
-        <article
-          className="size-full min-w-0 flex items-center justify-center px-5"
-          data-testid="memory-list"
-        >
-          <EmptyAppCard
-            showIcon
-            size="large"
-            type={EmptyCardType.Memory}
-            onClick={() => openCreateModalFun()}
-          />
-        </article>
-      )}
+            </footer>
+          </>
+        ) : (
+          <div className="flex flex-1 items-center justify-center px-5">
+            <EmptyAppCard
+              showIcon
+              size="large"
+              className={searchString ? undefined : 'w-[480px] p-14'}
+              isSearch={Boolean(searchString)}
+              type={EmptyCardType.Memory}
+              onClick={openCreateModalFun}
+            />
+          </div>
+        )}
+      </article>
       {/* {openCreateModal && (
         <RenameDialog
           hideModal={hideMemoryRenameModal}
@@ -175,6 +169,12 @@ export default function MemoryList() {
           loading={memoryRenameLoading}
           onClose={hideMemoryModal}
           onSubmit={onMemoryConfirm}
+        />
+      )}
+      {privilegeModalVisible && (
+        <PrivilegeManagementDialog
+          hideModal={hidePrivilegeModal}
+          initialValues={recordWithSourceType}
         />
       )}
     </>

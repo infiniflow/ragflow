@@ -9,6 +9,56 @@ import {
   missingWebSearchApiKeyField,
 } from './web-search-api-key';
 
+describe('AnySearch configuration', () => {
+  const provider = WebSearchProvider.AnySearch;
+
+  it.each([undefined, '', '   '])(
+    'allows anonymous search with key %p',
+    (key) => {
+      const saved = JSON.parse(
+        JSON.stringify({
+          web_search_provider: provider,
+          anysearch_api_key: key,
+          tavily_api_key: 'other-provider-key',
+        }),
+      );
+
+      expect(getWebSearchProvider(saved)).toBe(provider);
+      expect(getWebSearchApiKeyField(provider)).toBe('anysearch_api_key');
+      expect(isWebSearchApiKeyRequired(provider)).toBe(false);
+      expect(missingWebSearchApiKeyField(saved)).toBeUndefined();
+      expect(hasWebSearchProvider(saved)).toBe(true);
+      expect(getWebSearchApiKey(saved)).toBe(
+        key === undefined ? undefined : '',
+      );
+    },
+  );
+
+  it('reads only the saved AnySearch key and trims it', () => {
+    const saved = JSON.parse(
+      JSON.stringify({
+        web_search_provider: provider,
+        anysearch_api_key: '  anysearch-test  ',
+        tavily_api_key: 'other-provider-key',
+      }),
+    );
+    expect(getWebSearchApiKey(saved)).toBe('anysearch-test');
+  });
+
+  it('keeps a cleared provider disabled after reload despite retained keys', () => {
+    const saved = JSON.parse(
+      JSON.stringify({
+        web_search_provider: '',
+        anysearch_api_key: 'anysearch-test',
+        tavily_api_key: 'other-provider-key',
+      }),
+    );
+    expect(getWebSearchProvider(saved)).toBeUndefined();
+    expect(getWebSearchApiKey(saved)).toBeUndefined();
+    expect(hasWebSearchProvider(saved)).toBe(false);
+  });
+});
+
 describe('getWebSearchProvider', () => {
   it('does not select a provider for a new unconfigured dialog', () => {
     expect(getWebSearchProvider({} as PromptConfig)).toBeUndefined();
@@ -55,6 +105,25 @@ describe('getWebSearchApiKey', () => {
   it('does not fall back to Tavily when Search1API is selected without a key', () => {
     const promptConfig = {
       web_search_provider: WebSearchProvider.Search1API,
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
+  });
+
+  it('uses only the selected Keirolabs key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.Keirolabs,
+      keirolabs_api_key: 'keirolabs-test',
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBe('keirolabs-test');
+  });
+
+  it('does not fall back to Tavily when Keirolabs is selected without a key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.Keirolabs,
       tavily_api_key: 'tvly-test',
     } as PromptConfig;
 
@@ -255,6 +324,9 @@ describe('provider key field mapping', () => {
     expect(getWebSearchApiKeyField(WebSearchProvider.Exa)).toBe('exa_api_key');
     expect(getWebSearchApiKeyField(WebSearchProvider.Firecrawl)).toBe(
       'firecrawl_api_key',
+    );
+    expect(getWebSearchApiKeyField(WebSearchProvider.Keirolabs)).toBe(
+      'keirolabs_api_key',
     );
     expect(getWebSearchApiKeyField(WebSearchProvider.Linkup)).toBe(
       'linkup_api_key',

@@ -36,13 +36,13 @@ func TestMergeTopicProductsPreservesEvidenceAndStableTopicIdentity(t *testing.T)
 	if !strings.Contains(merged[0].Content, "first") || !strings.Contains(merged[0].Content, "second") {
 		t.Fatalf("merged content lost evidence: %q", merged[0].Content)
 	}
-	if got := metaString(merged[0].Meta, "slug"); got != "topic/history-a" {
+	if got := kccommon.MetaString(merged[0].Meta, "slug"); got != "topic/history-a" {
 		t.Fatalf("topic slug = %q, want existing slug", got)
 	}
-	if got := metaString(merged[0].Meta, "title"); got != "History" {
+	if got := kccommon.MetaString(merged[0].Meta, "title"); got != "History" {
 		t.Fatalf("topic title = %q, want existing title", got)
 	}
-	if got := metaStringSlice(merged[0].Meta, "entity_names"); len(got) != 2 {
+	if got := kccommon.MetaStringSlice(merged[0].Meta, "entity_names"); len(got) != 2 {
 		t.Fatalf("entity names = %v, want both entities", got)
 	}
 }

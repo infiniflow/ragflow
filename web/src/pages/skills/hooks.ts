@@ -563,7 +563,9 @@ export const useSkills = () => {
       try {
         await skillSpaceService.updateSpace(spaceId, { name: spaceName });
         message.success(
-          t('skills.spaceUpdated') || 'Skill Space renamed successfully',
+          t('skills.spaceUpdated', {
+            defaultValue: 'Skill Space renamed successfully',
+          }),
         );
         return true;
       } catch (error: any) {
@@ -797,7 +799,9 @@ export const useSkills = () => {
 
               if (existingVersion) {
                 message.error(
-                  t('skills.versionExists') || 'This version already exists',
+                  t('skills.validation.versionExists', {
+                    defaultValue: 'This version already exists',
+                  }),
                 );
                 return false;
               }

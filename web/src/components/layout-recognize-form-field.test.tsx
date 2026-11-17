@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
-import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { LayoutRecognizeFormField } from './layout-recognize-form-field';
+import { useModelTree } from './model-tree-select';
 import { Form } from './ui/form';
 import { TooltipProvider } from './ui/tooltip';
 
@@ -15,9 +15,22 @@ jest.mock('react-i18next', () => ({
   }),
 }));
 
+// The real hook module transitively boots the app shell (router), so the
+// models query stays stubbed even though the component only sees useModelTree.
 jest.mock('@/hooks/use-llm-request', () => ({
   useFetchAllAddedModels: jest.fn(() => ({
-    data: [
+    data: [],
+    isFetched: true,
+    isError: false,
+  })),
+}));
+
+jest.mock('./model-tree-select', () => ({
+  buildModelTree: () => [],
+  useModelTree: jest.fn(() => ({
+    treeData: [],
+    models: [],
+    allAddedModels: [
       { model_id: 'mineru-uuid', provider_name: 'MinerU' },
       { model_id: 'minerunet-uuid', provider_name: 'MinerU.Net' },
       { model_id: 'other-uuid', provider_name: 'Other' },
@@ -26,8 +39,6 @@ jest.mock('@/hooks/use-llm-request', () => ({
     isError: false,
   })),
 }));
-
-jest.mock('./model-tree-select', () => ({ buildModelTree: () => [] }));
 jest.mock('./tree-select', () => {
   const React = jest.requireActual('react');
   return {
@@ -101,9 +112,8 @@ describe('MinerU PDF options', () => {
     expect(
       screen.getByRole('switch', { name: /Table Recognition/ }),
     ).toBeChecked();
-    expect(useFetchAllAddedModels).toHaveBeenCalledWith(
-      undefined,
-      'owner-tenant',
+    expect(useModelTree).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerTenantId: 'owner-tenant' }),
     );
   });
 

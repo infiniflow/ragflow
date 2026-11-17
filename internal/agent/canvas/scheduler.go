@@ -848,31 +848,29 @@ func messageConsumesComponent(c *Canvas, msgID, cpnID string) bool {
 		return false
 	}
 	msgComp, ok := c.Components[msgID]
-	if !ok || len(msgComp.Obj.Params) == 0 {
+	if !ok {
 		return false
 	}
-	needle := strings.ToLower(cpnID) + "@"
-	for _, v := range msgComp.Obj.Params {
-		switch x := v.(type) {
+	text := ""
+	if v, ok := msgComp.Obj.Params["text"].(string); ok {
+		text = v
+	} else {
+		switch x := msgComp.Obj.Params["content"].(type) {
 		case string:
-			if strings.Contains(strings.ToLower(x), needle) {
-				return true
-			}
+			text = x
 		case []string:
-			for _, s := range x {
-				if strings.Contains(strings.ToLower(s), needle) {
-					return true
-				}
-			}
+			text = strings.Join(x, "")
 		case []any:
+			parts := make([]string, 0, len(x))
 			for _, item := range x {
-				if s, ok := item.(string); ok && strings.Contains(strings.ToLower(s), needle) {
-					return true
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					parts = append(parts, s)
 				}
 			}
+			text = strings.Join(parts, "")
 		}
 	}
-	return false
+	return strings.Contains(strings.ToLower(text), strings.ToLower(cpnID)+"@")
 }
 
 func hasStructuredOutput(params map[string]any) bool {

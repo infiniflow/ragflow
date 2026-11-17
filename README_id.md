@@ -82,6 +82,7 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2026-11-06 RAGFlow 1.0.0 dirilis.
 - 2026-09-29 RAGFlow 1.0.0-rc1 dirilis.
 
 - 2026-09-10 Menambahkan ingest konten situs web melalui sitemap.
@@ -90,14 +91,6 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 - 2026-07-02 Menambahkan ingest sumber data Google BigQuery dan sinkronisasi inkremental.
 
 Lihat [catatan rilis lengkap](https://ragflow.io/docs/dev/release_notes) untuk pembaruan lainnya.
-
-## 🎉 Tetap Terkini
-
-⭐️ Star repositori kami untuk tetap mendapat informasi tentang fitur baru dan peningkatan menarik! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
 
 ## 🌟 Fitur Utama
 
@@ -173,7 +166,7 @@ Deployment lokal mendukung Docker dan menjalankan dari sumber. Docker cocok untu
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

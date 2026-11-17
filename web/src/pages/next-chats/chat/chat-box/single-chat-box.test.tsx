@@ -10,6 +10,9 @@ jest.mock('@/components/message-input/next', () => ({
   NextMessageInput: () => null,
 }));
 jest.mock('@/components/message-item', () => () => null);
+jest.mock('@/components/virtual-message-list', () => ({
+  VirtualMessageList: () => null,
+}));
 jest.mock('@/components/pdf-drawer', () => () => null);
 jest.mock('@/components/pdf-drawer/hooks', () => ({
   useClickDrawer: () => ({

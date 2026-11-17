@@ -53,9 +53,11 @@ export function getWebSearchProvider(promptConfig?: WebSearchKeyConfig) {
 // for validation, and the reader below uses it to fetch the value — three
 // callers that used to each spell the mapping out again.
 const webSearchApiKeyFields: Record<WebSearchProvider, string> = {
+  [WebSearchProvider.AnySearch]: 'anysearch_api_key',
   [WebSearchProvider.Brave]: 'brave_api_key',
   [WebSearchProvider.Exa]: 'exa_api_key',
   [WebSearchProvider.Firecrawl]: 'firecrawl_api_key',
+  [WebSearchProvider.Keirolabs]: 'keirolabs_api_key',
   [WebSearchProvider.Linkup]: 'linkup_api_key',
   [WebSearchProvider.Parallel]: 'parallel_api_key',
   [WebSearchProvider.Querit]: 'querit_api_key',

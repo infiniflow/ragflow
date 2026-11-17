@@ -20,12 +20,25 @@ import { DocumentKeys } from '../document-query-keys';
 describe('DocumentKeys', () => {
   it('matches parameterized document lists with the list prefix', () => {
     const actual = DocumentKeys.list(
+      'dataset-id',
       'keyword',
       { current: 1, pageSize: 30 },
       { run: ['1'] },
     );
 
     expect(partialMatchKey(actual, DocumentKeys.all())).toBe(true);
+  });
+
+  it('scopes document lists to the dataset id', () => {
+    const shared = [
+      'keyword',
+      { current: 1, pageSize: 30 },
+      { run: ['1'] },
+    ] as const;
+    const datasetA = DocumentKeys.list('dataset-a', ...shared);
+    const datasetB = DocumentKeys.list('dataset-b', ...shared);
+
+    expect(partialMatchKey(datasetA, datasetB)).toBe(false);
   });
 
   it('matches parameterized document filters with the filter prefix', () => {

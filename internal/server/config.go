@@ -166,6 +166,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse audit log config error: %w", err)
 	}
 
+	err = globalConfig.ParseIngestLogConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse ingestion log config error: %w", err)
+	}
+
 	return nil
 }
 
@@ -198,6 +203,9 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 		mysqlConfig := globalConfig.GetMySQLConfig()
 		exportedMySQLConfigs := mysqlConfig.ExportConfigs()
 		allConfigs = append(allConfigs, exportedMySQLConfigs)
+	case "vastbase":
+		vastbaseConfig := globalConfig.GetVastbaseMetaConfig()
+		allConfigs = append(allConfigs, vastbaseConfig.ExportConfigs())
 	default:
 		return nil, fmt.Errorf("not supported database: %s", databaseType)
 	}
@@ -213,6 +221,9 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 		infinityConfig := globalConfig.GetInfinityConfig()
 		exportedInfinityConfigs := infinityConfig.ExportConfigs()
 		allConfigs = append(allConfigs, exportedInfinityConfigs)
+	case "opensearch":
+		openSearchConfig := globalConfig.GetOpenSearchConfig()
+		allConfigs = append(allConfigs, openSearchConfig.ExportConfigs())
 	case "oceanbase":
 		oceanBaseConfig := globalConfig.GetOceanBaseConfig()
 		allConfigs = append(allConfigs, oceanBaseConfig.ExportConfigs())

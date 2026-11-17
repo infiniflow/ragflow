@@ -80,6 +80,15 @@ func (b *staticTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	return [][]pdf.TSRCell{{cells[0]}}
 }
 
+// FinalizeGrid returns annotGrid unchanged (identity). The fake carries no
+// deferred OCR-overlay behavior, matching the production DeepDoc builder.
+func (b *staticTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
+	return annotGrid
+}
+
+// AttachSpanInfo is a no-op for the fake builder.
+func (b *staticTableBuilder) AttachSpanInfo(item *pdf.TableItem) {}
+
 func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 	autoRotate := true
 	cfg := pdf.DefaultParserConfig()
@@ -248,6 +257,15 @@ func (b *twoRowTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	}
 	return rows
 }
+
+// FinalizeGrid returns annotGrid unchanged (identity). The fake carries no
+// deferred OCR-overlay behavior, matching the production DeepDoc builder.
+func (b *twoRowTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
+	return annotGrid
+}
+
+// AttachSpanInfo is a no-op for the fake builder.
+func (b *twoRowTableBuilder) AttachSpanInfo(item *pdf.TableItem) {}
 
 func TestProcessOneTable_HandlesTextFragments(t *testing.T) {
 	for _, tc := range []struct {
@@ -422,5 +440,17 @@ func TestProcessOneTable_DeduplicatesSameCellOCR(t *testing.T) {
 				t.Fatalf("rows = %v, want %v", item.Rows, tc.want)
 			}
 		})
+	}
+}
+
+func TestHeaderRowsSkipEmptyLeadingGridRow(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{},
+		{{Text: "Header", Label: "table column header"}},
+		{{Text: "data"}},
+	}
+	grid = tbl.DropAllEmptyRows(grid)
+	if got, want := leadingHeaderRows(tbl.HeaderSetWithBlockType(grid, nil)), 1; got != want {
+		t.Fatalf("header rows = %d, want %d", got, want)
 	}
 }

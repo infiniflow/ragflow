@@ -46,14 +46,12 @@ func TestPDFParser_NormalizeMarkdown_ConvertsToJSON(t *testing.T) {
 
 // TestPDFParser_NormalizeMarkdown_DoesNotFetchRemoteImages pins that backend
 // markdown normalization never pulls remote image URLs (untrusted OCR response,
-// deterministic local normalization only). ssrfAllowLoopback is enabled so the
-// SSRF guard does not reject the loopback request before the handler runs; that
+// deterministic local normalization only). Loopback is allowed so the SSRF
+// guard does not reject the loopback request before the handler runs; that
 // would make requests stay 0 regardless and mask a regression where NormalizeMarkdown
 // started fetching remote images.
 func TestPDFParser_NormalizeMarkdown_DoesNotFetchRemoteImages(t *testing.T) {
-	prev := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	t.Cleanup(func() { ssrfAllowLoopback = prev })
+	allowLoopbackImages(t)
 
 	var requests int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,22 +67,6 @@ func TestPDFParser_NormalizeMarkdown_DoesNotFetchRemoteImages(t *testing.T) {
 	}
 	if requests != 0 {
 		t.Errorf("NormalizeMarkdown fetched %d remote image(s); want 0", requests)
-	}
-}
-
-// TestPDFParser_NormalizeMarkdown_FlattenMediaToText pins that, with flatten
-// enabled, image markdown is flattened to a text carrier (doc_type_kwd == text).
-func TestPDFParser_NormalizeMarkdown_FlattenMediaToText(t *testing.T) {
-	p := NewPDFParser()
-	p.FlattenMediaToText = true
-	res := p.NormalizeMarkdown(context.Background(), "doc.md", "![img](data:image/png;base64,abc)\n")
-	if res.Err != nil {
-		t.Fatalf("err: %v", res.Err)
-	}
-	for _, it := range res.JSON {
-		if dt, _ := it.ToMap()["doc_type_kwd"].(string); dt != "text" {
-			t.Errorf("doc_type_kwd = %q, want text", dt)
-		}
 	}
 }
 

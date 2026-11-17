@@ -496,42 +496,6 @@ func (r *Client) SetNX(ctx context.Context, key string, value string, exp time.D
 	return result == "OK", nil
 }
 
-// GetOrCreateKey atomically retrieves an existing key or creates a new one
-// Uses Redis SETNX command to ensure atomicity across multiple goroutines/processes
-func (r *Client) GetOrCreateKey(ctx context.Context, key string, value string) (string, error) {
-	if r.client == nil {
-		return "", nil
-	}
-	// First, try to get the existing key
-	existingKey, err := r.client.Get(ctx, key).Result()
-	if err == nil {
-		common.Warn("Redis Get error", zap.String("key", key), zap.Error(err))
-		// Successfully retrieved existing key
-		return existingKey, nil
-	}
-
-	// Use SETNX to atomically set the key only if it doesn't exist
-	// SETNX returns true if the key was set, false if it already existed
-	success, err := r.client.SetNX(ctx, key, value, 0).Result()
-	if err != nil {
-		return "", fmt.Errorf("failed to set key in Redis: %w", err)
-	}
-
-	if success {
-		// This goroutine successfully set the key
-		return value, nil
-	}
-
-	// SETNX failed, meaning another goroutine set the key concurrently
-	// Retrieve and return that key
-	finalKey, err := r.client.Get(ctx, key).Result()
-	if err != nil {
-		return "", fmt.Errorf("failed to get key set by another process: %w", err)
-	}
-
-	return finalKey, nil
-}
-
 // SAdd adds member to set
 func (r *Client) SAdd(ctx context.Context, key string, member string) bool {
 	if r.client == nil {
@@ -961,6 +925,61 @@ func (r *Client) Delete(ctx context.Context, key string) bool {
 		return false
 	}
 	return true
+}
+
+// deleteBatchSize bounds a single DEL command issued by DeleteMany. The previous
+// unbounded DEL scaled its argument list with the task manifest size; splitting
+// keeps each command small (avoids Redis/kvrocks proto-size limits and long
+// single-threaded stalls) at the cost of losing strict atomicity across the whole
+// batch. That loss is acceptable because cache reclaim is best-effort and TTL is
+// the fallback. Declared as a var (not a const) so tests can shrink it to
+// exercise the multi-batch path; production always uses the default.
+var deleteBatchSize = 1024
+
+// splitIntoBatches partitions keys into chunks of at most size, preserving input
+// order within and across chunks. A non-positive size degrades to one key per
+// chunk so the helper never emits an infinite or empty loop. No key is dropped
+// or duplicated; an empty input yields nil.
+func splitIntoBatches(keys []string, size int) [][]string {
+	if size <= 0 {
+		size = 1
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([][]string, 0, (len(keys)+size-1)/size)
+	for start := 0; start < len(keys); start += size {
+		end := start + size
+		if end > len(keys) {
+			end = len(keys)
+		}
+		out = append(out, keys[start:end])
+	}
+	return out
+}
+
+// DeleteMany deletes multiple keys by issuing one DEL per batch of at most
+// deleteBatchSize keys. A key that no longer exists is not an error (DEL reports
+// only the count removed), so a purge that races a TTL expiration still completes
+// instead of failing on a vanished key. An empty key list is a no-op: go-redis
+// rejects a zero-argument DEL, and there is nothing to remove anyway. The overall
+// result is false if any batch fails, but batches already issued are not rolled
+// back — TTL reclaims the rest.
+func (r *Client) DeleteMany(ctx context.Context, keys ...string) bool {
+	if r.client == nil {
+		return false
+	}
+	if len(keys) == 0 {
+		return true
+	}
+	ok := true
+	for _, batch := range splitIntoBatches(keys, deleteBatchSize) {
+		if err := r.client.Del(ctx, batch...).Err(); err != nil {
+			common.Warn("Redis DeleteMany error", zap.Strings("keys", batch), zap.Error(err))
+			ok = false
+		}
+	}
+	return ok
 }
 
 // Expire sets expiration on a key

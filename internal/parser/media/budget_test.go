@@ -182,6 +182,68 @@ func TestBudgetInvalidSizes(t *testing.T) {
 	}
 }
 
+// TestBudgetUnknownSizeOverflowStopsFurtherReservations pins that once an
+// unknown-size payload spends the run byte budget, later unknown-size sources
+// are rejected before their bytes are read and do not consume an item slot.
+func TestBudgetUnknownSizeOverflowStopsFurtherReservations(t *testing.T) {
+	budget := testBudget(4, 8, 5)
+	reservation, admission := budget.Reserve(UnknownSize)
+	if admission != Admitted {
+		t.Fatalf("first reservation = %v, want admitted", admission)
+	}
+	if reservation.Commit(6) {
+		t.Fatal("Commit admitted a payload past the total byte limit")
+	}
+	before := budget.Count()
+	if _, admission := budget.Reserve(UnknownSize); admission != RejectedByBytes {
+		t.Fatalf("reservation after byte exhaustion = %v, want byte rejection", admission)
+	}
+	if budget.Count() != before {
+		t.Fatalf("count = %d, want %d (a byte rejection must not consume a slot)", budget.Count(), before)
+	}
+	if budget.totalOverflows != 2 {
+		t.Fatalf("overflows = %d, want 2", budget.totalOverflows)
+	}
+}
+
+// TestBudgetDeclaredByteRejectionDoesNotSpendRunBudget pins that a rejected
+// declared size leaves the byte budget unspent, so a later smaller image is
+// still admitted.
+func TestBudgetDeclaredByteRejectionDoesNotSpendRunBudget(t *testing.T) {
+	budget := testBudget(4, 8, 5)
+	if _, admission := budget.Reserve(6); admission != RejectedByBytes {
+		t.Fatalf("declared rejection = %v, want byte rejection", admission)
+	}
+	reservation, admission := budget.Reserve(UnknownSize)
+	if admission != Admitted {
+		t.Fatalf("small reservation = %v, want admitted", admission)
+	}
+	if !reservation.Commit(1) {
+		t.Fatal("small image should fit after a declared-size rejection")
+	}
+}
+
+// TestBudgetPerImageOversizeDoesNotSpendRunBudget pins that an unknown-size
+// payload larger than the per-image limit does not mark the byte budget as
+// spent: later images that fit both limits are still admitted.
+func TestBudgetPerImageOversizeDoesNotSpendRunBudget(t *testing.T) {
+	budget := testBudget(4, 8, 5)
+	reservation, admission := budget.Reserve(UnknownSize)
+	if admission != Admitted {
+		t.Fatalf("oversized reservation = %v, want admitted", admission)
+	}
+	if reservation.Commit(9) {
+		t.Fatal("Commit admitted a payload past the per-image limit")
+	}
+	reservation, admission = budget.Reserve(UnknownSize)
+	if admission != Admitted {
+		t.Fatalf("reservation after an oversized image = %v, want admitted", admission)
+	}
+	if !reservation.Commit(4) {
+		t.Fatal("image within both limits should be admitted after an oversized one")
+	}
+}
+
 func TestBudgetWarningsAreStable(t *testing.T) {
 	budget := testBudget(3, 4, 5)
 	_, _ = budget.Reserve(5)

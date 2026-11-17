@@ -53,6 +53,9 @@ func TestShouldSkipMigration(t *testing.T) {
 		{name: "missing v prefix", current: "0.27.1", target: "v0.27.1", want: true},
 		{name: "invalid current", current: "not-a-version", target: "v0.27.1", want: false},
 		{name: "invalid target", current: "v0.27.1", target: "not-a-version", want: false},
+		{name: "four-part post-release version", current: "v1.0.0.1", target: "v1.0.0.1", want: true},
+		{name: "four-part post-release follows release candidate", current: "v1.0.0.1", target: "v1.0.0-rc3.dev3", want: true},
+		{name: "release candidate precedes four-part post-release", current: "v1.0.0-rc3.dev3", target: "v1.0.0.1", want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -45,6 +45,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 // ChatbotSSEFrame is one envelope pushed to the SSE writer by the
@@ -83,15 +84,11 @@ type ChatbotSSEFrame struct {
 // WriteChatbotFrame emits one SSE frame and flushes the underlying
 // http.ResponseWriter. The frame is `data: <json>\n\n`.
 //
-// Error frames sanitize the message — internal errors (gorm stack
-// frames, SQL details, storage paths) MUST NOT be echoed to the
-// client. The caller is expected to log the real error via
-// common.Error / zap before publishing the frame; only a generic
-// placeholder is rendered here. Mirrors the python
-// `api/db/services/conversation_service.py` error frame shape.
+// Error frames log the failure server-side and use a generic client message.
 func WriteChatbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 	var payload map[string]any
 	if f.Err != nil {
+		common.Error("Chatbot pipeline failed", f.Err)
 		const clientErrMsg = "an internal error occurred"
 		payload = map[string]any{
 			"code":    500,
@@ -218,6 +215,8 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 			} else if s, _ := m["message"].(string); s != "" {
 				msg = s
 			}
+		} else if s, ok := data.(string); ok && s != "" {
+			msg = s
 		}
 		payload := map[string]any{
 			"code":    500,
@@ -288,7 +287,7 @@ func writeSSEJSON(w http.ResponseWriter, payload map[string]any) error {
 // Authorization is checked against the Chat resource before the
 // completion pipeline or session state is touched.
 func (s *BotService) ChatbotCompletion(
-	ctx context.Context, userID, dialogID string, req ChatbotCompletionRequest,
+	ctx context.Context, dialogID string, req ChatbotCompletionRequest,
 ) (<-chan ChatbotSSEFrame, common.ErrorCode, error) {
 	receivedAt := float64(time.Now().UnixNano()) / 1e9
 	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
@@ -297,20 +296,21 @@ func (s *BotService) ChatbotCompletion(
 	}
 	req.Question = question
 	// 1. Authorize and load the dialog before touching session state.
-	if err := checkChatPermission(ctx, nil, userID, dialogID, permission.OperationRun); err != nil {
-		code, normalizedErr := normalizeChatPermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: dialogID}, permission.OperationRun); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
+	userID := permission.UserIDFromContext(ctx)
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			code, normalizedErr := normalizeChatPermissionError(permission.ErrResourceNotFound)
+			code, normalizedErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, normalizedErr
 		}
 		return nil, common.CodeServerError, err
 	}
 	if dialog == nil {
-		code, normalizedErr := normalizeChatPermissionError(permission.ErrResourceNotFound)
+		code, normalizedErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return nil, code, normalizedErr
 	}
 
@@ -371,7 +371,7 @@ func (s *BotService) ChatbotCompletion(
 		}
 	}
 
-	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, req.SessionID, dialogID)
+	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, req.SessionID, dialogID, true)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -379,10 +379,8 @@ func (s *BotService) ChatbotCompletion(
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
-	// 3. Guard rails mirroring the previous implementation: surface
-	// a sanitised error before any SSE byte is written when the
-	// service is unwired (test boot path) or the dialog has no LLM
-	// configured — see WriteChatbotFrame's sanitization contract.
+	// 3. Surface an error before any SSE byte is written when the service is
+	// unwired (test boot path) or the dialog has no LLM configured.
 	// NewBotService wires the pipeline; the nil check only guards a
 	// hand-rolled zero-value BotService against panicking.
 	if s.pipeline == nil {
@@ -426,7 +424,7 @@ func (s *BotService) ChatbotCompletion(
 	if err := s.persistChatbotQuestion(ctx, session, req.Question, messageID, receivedAt); err != nil {
 		return nil, common.CodeServerError, err
 	}
-	results, err := s.pipeline.AsyncChat(ctx, userID, dialog, messages, true, kwargs)
+	results, err := s.pipeline.AsyncChat(ctx, dialog, messages, true, kwargs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}

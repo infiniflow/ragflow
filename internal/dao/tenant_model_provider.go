@@ -45,33 +45,29 @@ func (dao *TenantModelProviderDAO) GetByID(ctx context.Context, db *gorm.DB, id 
 	return &provider, nil
 }
 
-// GetByTenantIDAndProviderName get the providers by tenant ID and provider name
-func (dao *TenantModelProviderDAO) GetByTenantIDAndProviderName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (*entity.TenantModelProvider, error) {
+// GetByTenantIDAndUserIDAndProviderName gets a user's provider configuration in a tenant.
+func (dao *TenantModelProviderDAO) GetByTenantIDAndUserIDAndProviderName(ctx context.Context, db *gorm.DB, tenantID, userID, providerName string) (*entity.TenantModelProvider, error) {
 	var provider entity.TenantModelProvider
-	err := db.WithContext(ctx).Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).First(&provider).Error
+	err := db.WithContext(ctx).
+		Where("tenant_id = ? AND user_id = ? AND LOWER(provider_name) = LOWER(?)", tenantID, userID, providerName).
+		First(&provider).Error
 	if err != nil {
 		return nil, err
 	}
 	return &provider, nil
 }
 
-// DeleteByTenantIDAndProviderName DeleteByTenantID deletes all providers by tenant ID (hard delete)
-func (dao *TenantModelProviderDAO) DeleteByTenantIDAndProviderName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).Delete(&entity.TenantModelProvider{})
-	return result.RowsAffected, result.Error
+// ListByTenantIDAndUserID returns one user's provider configurations in a tenant.
+func (dao *TenantModelProviderDAO) ListByTenantIDAndUserID(ctx context.Context, db *gorm.DB, tenantID, userID string) ([]*entity.TenantModelProvider, error) {
+	var providers []*entity.TenantModelProvider
+	err := db.WithContext(ctx).
+		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
+		Find(&providers).Error
+	return providers, err
 }
 
-// GetByTenantID returns all TenantModelProvider rows for a tenant.
-// Mirrors Python's TenantModelProviderService.get_by_tenant_id and is the
-// entry point for /api/v1/models ("list all added models"). The Go port
-// uses this to enumerate which providers a tenant has linked before
-// fanning out to TenantModelInstanceDAO / TenantModelDAO for the joined
-// result.
-func (dao *TenantModelProviderDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*entity.TenantModelProvider, error) {
-	var providers []*entity.TenantModelProvider
-	err := db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&providers).Error
-	if err != nil {
-		return nil, err
-	}
-	return providers, nil
+// DeleteByID hard-deletes one provider configuration.
+func (dao *TenantModelProviderDAO) DeleteByID(ctx context.Context, db *gorm.DB, id string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("id = ?", id).Delete(&entity.TenantModelProvider{})
+	return result.RowsAffected, result.Error
 }
