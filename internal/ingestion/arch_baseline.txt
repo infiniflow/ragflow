@@ -1,0 +1,7 @@
+# Convergence ratchet baseline: one internal/service production file per line.
+# Append-only: adding a line registers a file for the guard; removing one is a
+# reviewed decision. Must stay in sync with convergedServiceFiles in arch_policy_test.go.
+internal/service/memory.go
+internal/service/memory_message_service.go
+internal/service/memory_extractor.go
+internal/service/memory_saver_adapter.go

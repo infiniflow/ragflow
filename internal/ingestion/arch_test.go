@@ -70,31 +70,20 @@ var globalAccessWhitelist = map[string]string{
 }
 
 // scanRoots are the directory trees this guard covers: the ingestion
-// orchestration layers plus the Go memory service files. The wider
-// internal/service package is deliberately out of scope for this guard; it
-// converges separately.
+// orchestration layers plus the explicitly registered service files. Service
+// files outside convergedServiceFiles (arch_policy_test.go) are skipped until
+// their module is migrated and registered; adding an entry is what extends
+// the guard's reach.
 var scanRoots = []string{
 	"internal/ingestion",
 	"internal/service",
 }
 
-// memoryFilePrefix scopes the internal/service scan to the memory module
-// files only.
-//
 // Blind spots — read before trusting a green run:
-//   - internal/service is only scanned for files whose base name starts with
-//     "memory". Production files that feed the memory (or other DI-converged)
-//     modules but are not memory*-named — e.g. task_publisher.go (the memory
-//     module's MQ publisher) or document/document.go (which injects the
-//     knowledge_compile publisher) — are invisible to this guard and may still
-//     read process-wide singletons. Their global reads are only safe because a
-//     composition root reads the singleton to inject it; the guard cannot see
-//     that intent, so reviewers must check such sites manually.
 //   - Detection is AST-based and only matches literal pkg.Symbol selectors.
 //     A helper that wraps a singleton read (e.g. chunkcache.Client() wrapping
 //     kvrocks.Get()) is invisible even within a scanned file; it relies on the
 //     globalAccessWhitelist to be declared as an explicit, approved access.
-const memoryFilePrefix = "memory"
 
 // findModuleRoot walks up from the working directory until it finds go.mod.
 func findModuleRoot(t *testing.T) string {
@@ -306,8 +295,9 @@ func f() { _ = engine{}.Get }
 
 func TestForbiddenGlobalDetectorSkipsTestFilesAndWhitelist(t *testing.T) {
 	// The detector is fed by the walker, so verify the walker's own rules:
-	// _test.go files are skipped, whitelisted files are skipped, and files
-	// under internal/service that are not memory files are skipped.
+	// _test.go files, whitelisted files, and service files outside the explicit
+	// converged set are all skipped. The selection itself is exercised directly
+	// by TestArchSkipReasonUsesExplicitList in arch_policy_test.go.
 	root := findModuleRoot(t)
 
 	scanned, skipped := 0, 0
@@ -327,14 +317,7 @@ func TestForbiddenGlobalDetectorSkipsTestFilesAndWhitelist(t *testing.T) {
 			if !strings.HasSuffix(rel, ".go") {
 				return nil
 			}
-			switch {
-			case strings.HasSuffix(rel, "_test.go"):
-				skipped++
-				return nil
-			case globalAccessWhitelist[rel] != "":
-				skipped++
-				return nil
-			case scanRoot == "internal/service" && !strings.HasPrefix(filepath.Base(rel), memoryFilePrefix):
+			if reason := archSkipReason(rel, scanRoot); reason != "" {
 				skipped++
 				return nil
 			}
@@ -376,13 +359,10 @@ func TestProductionCodeDoesNotAccessGlobalSingletons(t *testing.T) {
 				return err
 			}
 			rel = filepath.ToSlash(rel)
-			if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
+			if !strings.HasSuffix(rel, ".go") {
 				return nil
 			}
-			if reason := globalAccessWhitelist[rel]; reason != "" {
-				return nil
-			}
-			if scanRoot == "internal/service" && !strings.HasPrefix(filepath.Base(rel), memoryFilePrefix) {
+			if reason := archSkipReason(rel, scanRoot); reason != "" {
 				return nil
 			}
 			scanned++
