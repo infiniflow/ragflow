@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -37,20 +38,7 @@ import (
 // asserting the dialector's full data type guards both the cap removal and the
 // widening of existing installations.
 func TestTenantModelInstanceAPIKeyColumnIsUnsizedText(t *testing.T) {
-	shared, _, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { shared.Close() })
-
-	db, err := gorm.Open(mysql.New(mysql.Config{
-		DSN:                       "test:test@tcp(localhost:3306)/test?parseTime=True",
-		Conn:                      shared,
-		SkipInitializeWithVersion: true,
-	}), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	db, _ := openMySQLSpecMock(t)
 
 	s, err := schema.Parse(&entity.TenantModelInstance{}, &sync.Map{}, db.NamingStrategy)
 	if err != nil {
@@ -70,5 +58,101 @@ func TestTenantModelInstanceAPIKeyColumnIsUnsizedText(t *testing.T) {
 	}
 	if strings.Contains(fullType, "varchar") || strings.Contains(fullType, "512") {
 		t.Fatalf("mysql full data type for api_key = %q, must not stay a sized varchar", fullType)
+	}
+}
+
+// openMySQLSpecMock opens a gorm session on the real mysql dialector with a
+// sqlmock connection, so migration code paths that read INFORMATION_SCHEMA or
+// issue DDL can be driven without a live server.
+func openMySQLSpecMock(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
+	t.Helper()
+	shared, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { shared.Close() })
+
+	db, err := gorm.Open(mysql.New(mysql.Config{
+		DSN:                       "test:test@tcp(localhost:3306)/test?parseTime=True",
+		Conn:                      shared,
+		SkipInitializeWithVersion: true,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db, mock
+}
+
+// expectSchemaLookups mocks the catalog reads applyColumnSpec performs before
+// deciding on DDL: the dialector's current-database resolution, the HasTable
+// probe, and the live column definition.
+func expectSchemaLookups(mock sqlmock.Sqlmock, table, column, liveType, isNullable string) {
+	mock.ExpectQuery(`SELECT DATABASE\(\)`).
+		WillReturnRows(sqlmock.NewRows([]string{"DATABASE()"}).AddRow("test"))
+	mock.ExpectQuery(`SELECT SCHEMA_NAME from Information_schema.SCHEMATA`).
+		WithArgs("test%", "test").
+		WillReturnRows(sqlmock.NewRows([]string{"SCHEMA_NAME"}).AddRow("test"))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM information_schema.tables`).
+		WithArgs("test", table, "BASE TABLE").
+		WillReturnRows(sqlmock.NewRows([]string{"count(*)"}).AddRow(1))
+	mock.ExpectQuery(`SELECT COLUMN_TYPE AS column_type, IS_NULLABLE AS is_nullable`).
+		WithArgs(table, column).
+		WillReturnRows(sqlmock.NewRows([]string{"column_type", "is_nullable"}).AddRow(liveType, isNullable))
+}
+
+// TestTenantModelInstanceAPIKeyWidenedBeforeBackfill pins the pre-backfill
+// widening of tenant_model_instance.api_key. migrateModelData — whose base
+// step copies tenant_llm keys into the column — runs before AutoMigrate, so
+// the revision that turned the entity column into TEXT also has to widen
+// tables that still hold the legacy varchar(512): otherwise a long provider
+// key fails the backfill INSERT (strict mode Error 1406, aborting startup)
+// before AutoMigrate ever reaches the column. The spec must issue the ALTER
+// exactly once on the narrow shape and no DDL once converged.
+func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
+	db, mock := openMySQLSpecMock(t)
+
+	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(512)", "NO")
+	mock.ExpectExec(
+		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key text NOT NULL`,
+	).WillReturnResult(sqlmock.NewResult(0, 0))
+
+	if err := applyColumnSpec(context.Background(), db, tenantModelInstanceAPIKeyColumnSpec); err != nil {
+		t.Fatalf("applyColumnSpec on the legacy narrow column: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sqlmock expectations: %v", err)
+	}
+
+	// Converged shape: the ALTER must not repeat on later startups.
+	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "text", "NO")
+	if err := applyColumnSpec(context.Background(), db, tenantModelInstanceAPIKeyColumnSpec); err != nil {
+		t.Fatalf("applyColumnSpec on the converged column: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("the converged column must trigger no further DDL: %v", err)
+	}
+}
+
+// TestTenantModelInstanceAPIKeySpecSkipsFreshInstalls pins the guards: on a
+// database whose tenant_model_instance table does not exist yet (a fresh or
+// pre-split install), the spec must leave the schema untouched — the table is
+// created later with the text column already in place.
+func TestTenantModelInstanceAPIKeySpecSkipsFreshInstalls(t *testing.T) {
+	db, mock := openMySQLSpecMock(t)
+
+	mock.ExpectQuery(`SELECT DATABASE\(\)`).
+		WillReturnRows(sqlmock.NewRows([]string{"DATABASE()"}).AddRow("test"))
+	mock.ExpectQuery(`SELECT SCHEMA_NAME from Information_schema.SCHEMATA`).
+		WithArgs("test%", "test").
+		WillReturnRows(sqlmock.NewRows([]string{"SCHEMA_NAME"}).AddRow("test"))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM information_schema.tables`).
+		WithArgs("test", "tenant_model_instance", "BASE TABLE").
+		WillReturnRows(sqlmock.NewRows([]string{"count(*)"}).AddRow(0))
+
+	if err := applyColumnSpec(context.Background(), db, tenantModelInstanceAPIKeyColumnSpec); err != nil {
+		t.Fatalf("applyColumnSpec on a missing table: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("a missing table must trigger no catalog column reads or DDL: %v", err)
 	}
 }
