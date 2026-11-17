@@ -81,6 +81,37 @@ func TestDatasetServiceListDatasetsIDsAccessibleViaTeamTenant(t *testing.T) {
 	if total != 1 || len(data) != 1 || data[0]["id"] != "kb-team" {
 		t.Fatalf("expected the shared dataset, got total=%d data=%#v", total, data)
 	}
+	if got := data[0]["nickname"]; got != "owner" {
+		t.Fatalf("team label = %q, want configured team name", got)
+	}
+}
+
+func TestDatasetServiceListsFallbackLabelForLegacyPersonalTeam(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Legacy")
+	if err := db.Create(&entity.Tenant{ID: "tenant-1", Name: sptr("'s Kingdom"), Status: sptr("1")}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&entity.User{}).Where("id = ?", "tenant-1").Updates(map[string]any{
+		"nickname": " ", "email": "legacy-user@example.test",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	svc := testDatasetListService(t)
+	data, total, code, err := svc.ListDatasets(ctx, "", "", 1, 30, nil, "", nil, "", nil, "")
+	if err != nil || code != common.CodeSuccess || total != 1 || len(data) != 1 || data[0]["nickname"] != "legacy-user" {
+		t.Fatalf("legacy list label: total=%d code=%d err=%v data=%#v", total, code, err, data)
+	}
+	filters, code, err := svc.ListDatasetFilters(ctx, "")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListDatasetFilters: code=%d err=%v", code, err)
+	}
+	owners := filters["filter"].(map[string]interface{})["owner"].([]*entity.DatasetOwnerFilter)
+	if len(owners) != 1 || owners[0].Label != "legacy-user" {
+		t.Fatalf("legacy filter label: %#v", owners)
+	}
 }
 
 func TestDatasetServiceListDatasetsAndFiltersUseAuthorizedScope(t *testing.T) {

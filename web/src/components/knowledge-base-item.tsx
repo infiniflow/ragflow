@@ -29,6 +29,7 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { RAGFlowAvatar } from './ragflow-avatar';
 import { RAGFlowFormItem } from './ragflow-form';
+import { TruncatedText } from './truncated-text';
 import { MultiSelect } from './ui/multi-select';
 
 function buildQueryVariableOptionsByShowVariable(showVariable?: boolean) {
@@ -36,10 +37,16 @@ function buildQueryVariableOptionsByShowVariable(showVariable?: boolean) {
 }
 
 function DatasetLabel({ text }: { text: string }) {
+  if (!text?.trim()) {
+    return null;
+  }
   return (
-    <div className="text-xs px-3 p-1 bg-bg-card text-text-secondary rounded-lg border border-bg-card">
+    <TruncatedText
+      className="min-w-0 truncate text-xs px-3 p-1 bg-bg-card text-text-secondary rounded-lg border border-bg-card"
+      tooltip={text}
+    >
       {text}
-    </div>
+    </TruncatedText>
   );
 }
 
@@ -104,7 +111,7 @@ export function useDisableDifferenceEmbeddingDataset(
           />
         ),
         suffix: (
-          <section className="flex gap-2">
+          <section className="flex min-w-0 gap-2">
             <DatasetLabel text={item.nickname} />
             <DatasetLabel
               text={

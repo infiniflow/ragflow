@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -324,24 +323,15 @@ func datasetCosSim(a, b []float64) float64 {
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }
 
-func datasetCleanEmbeddingText(s string) string {
-	re := regexp.MustCompile(`<[^>]*>`)
-	return re.ReplaceAllString(s, "")
-}
-
 func datasetEncodeEmbedding(ctx context.Context, embeddingModel *modelModule.EmbeddingModel, texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return nil, nil
-	}
-	cleaned := make([]string, len(texts))
-	for i, t := range texts {
-		cleaned[i] = datasetCleanEmbeddingText(t)
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
 	// Embed inside the model's window: this path takes whatever text the API handed
 	// it, and the provider rejects an over-window input with 400/20015 instead of
 	// truncating it.
-	embeddings, err := embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: cleaned}, embeddingConfig, nil)
+	embeddings, err := embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: texts}, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}
