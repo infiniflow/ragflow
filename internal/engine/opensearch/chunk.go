@@ -63,6 +63,18 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 			common.Info("Memory index already exists, ensured vector mapping", zap.String("index_name", baseName), zap.Int("vector_size", vectorSize))
 			return nil
 		}
+		if datasetID == "skill" || strings.HasPrefix(baseName, "skill_") {
+			if err := e.ensureSkillVectorMappings(ctx, baseName); err != nil {
+				return fmt.Errorf("failed to ensure skill vector mappings: %w", err)
+			}
+			if vectorSize > 0 {
+				if err := e.ensureSkillVectorMapping(ctx, baseName, vectorSize); err != nil {
+					return fmt.Errorf("failed to ensure skill vector mapping for dimension %d: %w", vectorSize, err)
+				}
+			}
+			common.Info("Skill index already exists, ensured vector mappings", zap.String("index_name", baseName))
+			return nil
+		}
 		common.Info("Index already exists, skipping creation", zap.String("index_name", baseName))
 		return nil
 	}
@@ -161,6 +173,12 @@ func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface
 	isMemoryIndex := strings.HasPrefix(baseName, "memory_")
 	if isMemoryIndex {
 		if err := e.ensureMemoryMessageVectorMappingsForDocs(ctx, baseName, chunks); err != nil {
+			return nil, err
+		}
+	}
+	isSkillIndex := datasetID == "skill" || strings.HasPrefix(baseName, "skill_")
+	if isSkillIndex {
+		if err := e.ensureSkillVectorMappingsForDocs(ctx, baseName, chunks); err != nil {
 			return nil, err
 		}
 	}
@@ -1071,6 +1089,11 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	if hasVectorMatch {
 		if isMemoryIndex {
 			if err := e.ensureMemoryMessageSearchVectorMappings(ctx, req.IndexNames, matchDense.VectorColumnName, len(matchDense.EmbeddingData)); err != nil {
+				return nil, err
+			}
+		}
+		if isSkillIndex {
+			if err := e.ensureSkillSearchVectorMappings(ctx, req.IndexNames, matchDense.VectorColumnName, len(matchDense.EmbeddingData)); err != nil {
 				return nil, err
 			}
 		}
@@ -2452,30 +2475,46 @@ func loadOSMapping() (map[string]interface{}, error) {
 	return mapping, nil
 }
 
-// loadSkillMapping loads the skill index mapping from config file
+func extractMappingProperties(mapping map[string]interface{}) map[string]interface{} {
+	if mapping == nil {
+		return nil
+	}
+	if mappings, ok := mapping["mappings"].(map[string]interface{}); ok {
+		if props, ok := mappings["properties"].(map[string]interface{}); ok {
+			return props
+		}
+	}
+	if props, ok := mapping["properties"].(map[string]interface{}); ok {
+		return props
+	}
+	return nil
+}
 
-func (e *Engine) memoryMessageVectorMappingExists(ctx context.Context, indexName, fieldName string) (bool, error) {
+func (e *Engine) getIndexProperties(ctx context.Context, indexName string) (map[string]interface{}, error) {
 	result, err := e.doIndicesGetMapping(ctx, []string{indexName})
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if result == nil || len(result) == 0 {
-		return false, nil
+		return nil, nil
 	}
 
 	indexMapping, ok := result[indexName].(map[string]interface{})
 	if !ok {
+		return nil, nil
+	}
+	return extractMappingProperties(indexMapping), nil
+}
+
+func (e *Engine) memoryMessageVectorMappingExists(ctx context.Context, indexName, fieldName string) (bool, error) {
+	properties, err := e.getIndexProperties(ctx, indexName)
+	if err != nil {
+		return false, err
+	}
+	if properties == nil {
 		return false, nil
 	}
-	mapping, ok := indexMapping["mappings"].(map[string]interface{})
-	if !ok {
-		return false, nil
-	}
-	properties, ok := mapping["properties"].(map[string]interface{})
-	if !ok {
-		return false, nil
-	}
-	_, ok = properties[fieldName]
+	_, ok := properties[fieldName]
 	return ok, nil
 }
 
@@ -2552,6 +2591,137 @@ func (e *Engine) ensureMemoryMessageSearchVectorMappings(ctx context.Context, in
 			continue
 		}
 		if err = e.ensureMemoryMessageVectorMapping(ctx, indexName, vectorSize); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Engine) ensureSkillVectorMappings(ctx context.Context, indexName string) error {
+	skillMapping, err := esoscommon.LoadSkillMapping("conf/skill_os_mapping.json", esoscommon.OSVectorField)
+	if err != nil {
+		return fmt.Errorf("failed to load skill mapping: %w", err)
+	}
+
+	desiredProperties := extractMappingProperties(skillMapping)
+	if desiredProperties == nil {
+		return fmt.Errorf("skill mapping has no properties")
+	}
+
+	existingProperties, err := e.getIndexProperties(ctx, indexName)
+	if err != nil {
+		return fmt.Errorf("failed to get index mapping for %s: %w", indexName, err)
+	}
+
+	missingProperties := make(map[string]interface{})
+	for fieldName, prop := range desiredProperties {
+		if !common.IsVectorColumn(fieldName) {
+			continue
+		}
+		if existingProperties != nil {
+			if _, exists := existingProperties[fieldName]; exists {
+				continue
+			}
+		}
+		missingProperties[fieldName] = prop
+	}
+
+	if len(missingProperties) == 0 {
+		return nil
+	}
+
+	body := map[string]interface{}{
+		"properties": missingProperties,
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to marshal skill vector mappings update: %w", err)
+	}
+
+	_, err = e.doIndicesPutMapping(ctx, []string{indexName}, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to put skill vector mappings: %w", err)
+	}
+
+	common.Info("Updated skill vector mappings on index", zap.String("index_name", indexName), zap.Int("missing_count", len(missingProperties)))
+	return nil
+}
+
+func (e *Engine) ensureSkillVectorMapping(ctx context.Context, indexName string, vectorSize int) error {
+	if vectorSize <= 0 {
+		return fmt.Errorf("skill vector size must be positive, got %d", vectorSize)
+	}
+
+	fieldName := common.VectorColumnName(vectorSize)
+	existingProperties, err := e.getIndexProperties(ctx, indexName)
+	if err != nil {
+		return err
+	}
+	if existingProperties != nil {
+		if _, exists := existingProperties[fieldName]; exists {
+			return nil
+		}
+	}
+
+	body := map[string]interface{}{
+		"properties": map[string]interface{}{
+			fieldName: esoscommon.SkillVectorProperty(vectorSize, esoscommon.OSVectorField),
+		},
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to marshal skill vector mapping: %w", err)
+	}
+
+	_, err = e.doIndicesPutMapping(ctx, []string{indexName}, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (e *Engine) ensureSkillVectorMappingsForDocs(ctx context.Context, indexName string, chunks []map[string]interface{}) error {
+	seen := map[int]struct{}{}
+	for _, chunk := range chunks {
+		for field := range chunk {
+			vectorSize, ok := common.VectorColumnDim(field)
+			if !ok {
+				continue
+			}
+			if _, ok := seen[vectorSize]; ok {
+				continue
+			}
+			if err := e.ensureSkillVectorMapping(ctx, indexName, vectorSize); err != nil {
+				return err
+			}
+			seen[vectorSize] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) ensureSkillSearchVectorMappings(ctx context.Context, indexNames []string, vectorFieldName string, fallbackVectorSize int) error {
+	vectorSize, ok := common.VectorColumnDim(vectorFieldName)
+	if !ok {
+		vectorSize = fallbackVectorSize
+	}
+	if vectorSize <= 0 {
+		return fmt.Errorf("skill vector size must be positive, got %d", vectorSize)
+	}
+
+	for _, indexName := range indexNames {
+		if !strings.HasPrefix(indexName, "skill_") {
+			continue
+		}
+		exists, err := e.indexExists(ctx, indexName)
+		if err != nil {
+			return fmt.Errorf("failed to check skill index existence: %w", err)
+		}
+		if !exists {
+			continue
+		}
+		if err = e.ensureSkillVectorMapping(ctx, indexName, vectorSize); err != nil {
 			return err
 		}
 	}

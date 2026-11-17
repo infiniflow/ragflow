@@ -19,6 +19,7 @@ package opensearch
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -190,5 +191,356 @@ func TestCreateIndexTemplateRegistration(t *testing.T) {
 	}
 	if template["settings"] == nil {
 		t.Error("expected template.settings to not be nil")
+	}
+}
+
+func TestEnsureSkillVectorMappingsOnExistingIndex(t *testing.T) {
+	const indexName = "skill_test_tenant_space"
+	var putMappingCalled bool
+	var capturedPutBody map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/"+indexName:
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodGet && r.URL.Path == "/"+indexName+"/_mapping":
+			// Legacy index: only has 768 and 1536 vector fields, missing 4096, 3584, 2048, 384
+			resp := map[string]interface{}{
+				indexName: map[string]interface{}{
+					"mappings": map[string]interface{}{
+						"dynamic": false,
+						"properties": map[string]interface{}{
+							"skill_id": map[string]interface{}{"type": "keyword"},
+							"q_768_vec": map[string]interface{}{
+								"type":       "knn_vector",
+								"dimension":  768,
+								"space_type": "cosinesimil",
+							},
+							"q_1536_vec": map[string]interface{}{
+								"type":       "knn_vector",
+								"dimension":  1536,
+								"space_type": "cosinesimil",
+							},
+						},
+					},
+				},
+			}
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(resp)
+		case r.Method == http.MethodPut && r.URL.Path == "/"+indexName+"/_mapping":
+			putMappingCalled = true
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &capturedPutBody)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"acknowledged": true}`))
+		default:
+			t.Logf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client, err := opensearch.NewClient(opensearch.Config{
+		Addresses: []string{server.URL},
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	apiClient, err := opensearchapi.NewClient(opensearchapi.Config{
+		Client: opensearch.Config{
+			Addresses: []string{server.URL},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewApiClient: %v", err)
+	}
+
+	eng := &Engine{
+		client:    client,
+		apiClient: apiClient,
+	}
+
+	ctx := context.Background()
+	err = eng.CreateChunkStore(ctx, indexName, "skill", 0, "", "")
+	if err != nil {
+		t.Fatalf("CreateChunkStore failed: %v", err)
+	}
+
+	if !putMappingCalled {
+		t.Fatal("expected PUT /<index>/_mapping to be called on legacy index")
+	}
+
+	props, ok := capturedPutBody["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties in PUT body, got %v", capturedPutBody)
+	}
+
+	// Verify missing dimensions are in the PUT body
+	for _, dim := range []int{4096, 3584, 3072, 2560, 2048, 1024, 512, 384, 256} {
+		fieldName := fmt.Sprintf("q_%d_vec", dim)
+		field, ok := props[fieldName].(map[string]interface{})
+		if !ok {
+			t.Errorf("expected missing field %s in PUT mapping, but was absent", fieldName)
+			continue
+		}
+		if field["type"] != "knn_vector" {
+			t.Errorf("field %s: expected type knn_vector, got %v", fieldName, field["type"])
+		}
+		if int(field["dimension"].(float64)) != dim {
+			t.Errorf("field %s: expected dimension %d, got %v", fieldName, dim, field["dimension"])
+		}
+	}
+
+	// Verify existing dimensions were NOT re-sent
+	for _, dim := range []int{768, 1536} {
+		fieldName := fmt.Sprintf("q_%d_vec", dim)
+		if _, exists := props[fieldName]; exists {
+			t.Errorf("field %s already existed, should not be included in PUT mapping update", fieldName)
+		}
+	}
+}
+
+func TestEnsureSkillVectorMappingsNoOpWhenUpToDate(t *testing.T) {
+	const indexName = "skill_test_tenant_uptodate"
+	var putMappingCalled bool
+
+	allProperties := map[string]interface{}{
+		"skill_id": map[string]interface{}{"type": "keyword"},
+	}
+	for _, dim := range []int{4096, 3584, 3072, 2560, 2048, 1536, 1024, 768, 512, 384, 256} {
+		allProperties[fmt.Sprintf("q_%d_vec", dim)] = map[string]interface{}{
+			"type":       "knn_vector",
+			"dimension":  dim,
+			"space_type": "cosinesimil",
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/"+indexName:
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodGet && r.URL.Path == "/"+indexName+"/_mapping":
+			resp := map[string]interface{}{
+				indexName: map[string]interface{}{
+					"mappings": map[string]interface{}{
+						"dynamic":    false,
+						"properties": allProperties,
+					},
+				},
+			}
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(resp)
+		case r.Method == http.MethodPut && r.URL.Path == "/"+indexName+"/_mapping":
+			putMappingCalled = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"acknowledged": true}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client, err := opensearch.NewClient(opensearch.Config{
+		Addresses: []string{server.URL},
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	apiClient, err := opensearchapi.NewClient(opensearchapi.Config{
+		Client: opensearch.Config{
+			Addresses: []string{server.URL},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewApiClient: %v", err)
+	}
+
+	eng := &Engine{
+		client:    client,
+		apiClient: apiClient,
+	}
+
+	ctx := context.Background()
+	err = eng.CreateChunkStore(ctx, indexName, "skill", 0, "", "")
+	if err != nil {
+		t.Fatalf("CreateChunkStore failed: %v", err)
+	}
+
+	if putMappingCalled {
+		t.Error("PUT /<index>/_mapping should NOT be called when index already has all vector mappings")
+	}
+}
+
+func TestEnsureSkillVectorMappingOnIndexDocument(t *testing.T) {
+	const indexName = "skill_test_tenant_indexdoc"
+	var putMappingCalled bool
+	var indexDocCalled bool
+	var capturedPutBody map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/"+indexName+"/_mapping":
+			resp := map[string]interface{}{
+				indexName: map[string]interface{}{
+					"mappings": map[string]interface{}{
+						"dynamic": false,
+						"properties": map[string]interface{}{
+							"skill_id": map[string]interface{}{"type": "keyword"},
+						},
+					},
+				},
+			}
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(resp)
+		case r.Method == http.MethodPut && r.URL.Path == "/"+indexName+"/_mapping":
+			putMappingCalled = true
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &capturedPutBody)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"acknowledged": true}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/"+indexName+"/_doc/test_skill":
+			indexDocCalled = true
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"result": "created"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client, err := opensearch.NewClient(opensearch.Config{
+		Addresses: []string{server.URL},
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	apiClient, err := opensearchapi.NewClient(opensearchapi.Config{
+		Client: opensearch.Config{
+			Addresses: []string{server.URL},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewApiClient: %v", err)
+	}
+
+	eng := &Engine{
+		client:    client,
+		apiClient: apiClient,
+	}
+
+	ctx := context.Background()
+	doc := map[string]interface{}{
+		"skill_id":   "test_skill",
+		"q_4096_vec": []float64{0.1, 0.2},
+	}
+	err = eng.IndexDocument(ctx, indexName, "test_skill", doc)
+	if err != nil {
+		t.Fatalf("IndexDocument failed: %v", err)
+	}
+
+	if !putMappingCalled {
+		t.Fatal("expected PUT /<index>/_mapping to be called before IndexDocument")
+	}
+	if !indexDocCalled {
+		t.Fatal("expected document to be indexed")
+	}
+
+	props, ok := capturedPutBody["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties in PUT mapping, got %v", capturedPutBody)
+	}
+	q4096, ok := props["q_4096_vec"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected q_4096_vec in PUT mapping, got %v", props)
+	}
+	if q4096["type"] != "knn_vector" {
+		t.Errorf("expected type knn_vector, got %v", q4096["type"])
+	}
+	if int(q4096["dimension"].(float64)) != 4096 {
+		t.Errorf("expected dimension 4096, got %v", q4096["dimension"])
+	}
+}
+
+func TestEnsureSkillSearchVectorMappings(t *testing.T) {
+	const indexName = "skill_test_tenant_search"
+	var putMappingCalled bool
+	var capturedPutBody map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodHead && r.URL.Path == "/"+indexName:
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodGet && r.URL.Path == "/"+indexName+"/_mapping":
+			resp := map[string]interface{}{
+				indexName: map[string]interface{}{
+					"mappings": map[string]interface{}{
+						"dynamic": false,
+						"properties": map[string]interface{}{
+							"skill_id": map[string]interface{}{"type": "keyword"},
+						},
+					},
+				},
+			}
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(resp)
+		case r.Method == http.MethodPut && r.URL.Path == "/"+indexName+"/_mapping":
+			putMappingCalled = true
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &capturedPutBody)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"acknowledged": true}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client, err := opensearch.NewClient(opensearch.Config{
+		Addresses: []string{server.URL},
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	apiClient, err := opensearchapi.NewClient(opensearchapi.Config{
+		Client: opensearch.Config{
+			Addresses: []string{server.URL},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewApiClient: %v", err)
+	}
+
+	eng := &Engine{
+		client:    client,
+		apiClient: apiClient,
+	}
+
+	ctx := context.Background()
+	err = eng.ensureSkillSearchVectorMappings(ctx, []string{indexName}, "q_2048_vec", 0)
+	if err != nil {
+		t.Fatalf("ensureSkillSearchVectorMappings failed: %v", err)
+	}
+
+	if !putMappingCalled {
+		t.Fatal("expected PUT /<index>/_mapping to be called for search vector mapping")
+	}
+
+	props, ok := capturedPutBody["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties in PUT mapping, got %v", capturedPutBody)
+	}
+	q2048, ok := props["q_2048_vec"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected q_2048_vec in PUT mapping, got %v", props)
+	}
+	if q2048["type"] != "knn_vector" {
+		t.Errorf("expected type knn_vector, got %v", q2048["type"])
+	}
+	if int(q2048["dimension"].(float64)) != 2048 {
+		t.Errorf("expected dimension 2048, got %v", q2048["dimension"])
 	}
 }
