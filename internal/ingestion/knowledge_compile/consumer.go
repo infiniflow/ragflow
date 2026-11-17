@@ -1399,33 +1399,20 @@ type mergedWikiPageDeleter interface {
 	DeleteMergedWikiPages(ctx context.Context, tenant, kb string, ids []string) error
 }
 
-// deleteMissingScopedWikiPages removes the merged wiki pages whose contribution
-// was dropped by this batch (present in affectedKeys but no longer in current).
-// It takes the already-loaded merged pages (existingPages) so the merge step can
-// reuse a single LoadMergedWikiPages snapshot; the caller passes the same slice
-// it uses to seed the topic-key map, excluding the returned deleted IDs.
+// deleteMissingScopedWikiPages removes the merged wiki pages the current batch
+// supersedes: pages whose contribution was dropped, and rows whose stored id
+// predates slug normalization (the rewritten row would otherwise share
+// slug_kwd with them). It takes the already-loaded merged pages (existingPages)
+// so the merge step can reuse a single LoadMergedWikiPages snapshot; the caller
+// passes the same slice it uses to seed the topic-key map, excluding the
+// returned deleted IDs.
 func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb, token string, affected map[string]struct{}, current, existingPages []kccommon.Product) ([]string, error) {
 	_, readerOK := c.reader.(mergedWikiPageReader)
 	deleter, writerOK := c.writer.(mergedWikiPageDeleter)
 	if !readerOK || !writerOK {
 		return nil, fmt.Errorf("knowledge_compile: scoped Wiki cleanup is unsupported")
 	}
-	present := make(map[string]struct{}, len(current))
-	for _, page := range current {
-		if key := wikiPageMergeKey(page); key != "" {
-			present[key] = struct{}{}
-		}
-	}
-	ids := make([]string, 0)
-	for _, page := range existingPages {
-		key := wikiPageMergeKey(page)
-		if _, scoped := affected[key]; !scoped {
-			continue
-		}
-		if _, remains := present[key]; !remains && page.ID != "" {
-			ids = append(ids, page.ID)
-		}
-	}
+	ids := staleWikiPageRowIDs(tenant, kb, affected, current, existingPages)
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -1435,6 +1422,46 @@ func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb,
 		return nil, err
 	}
 	return ids, nil
+}
+
+// staleWikiPageRowIDs returns the existing merged wiki-page rows the current
+// merged set supersedes. A page whose contribution disappeared is dropped; so
+// is a row whose stored id predates the slug normalization, because the
+// bare-slug build keyed the dataset-level id on the raw slug while already
+// storing "<page_type>/<slug>" in slug_kwd. Leaving that row in place would put
+// two rows under one slug_kwd, and a slug-filtered read could return either.
+func staleWikiPageRowIDs(tenant, kb string, affected map[string]struct{}, current, existingPages []kccommon.Product) []string {
+	expectedID := make(map[string]string, len(current))
+	for _, page := range current {
+		if key := wikiPageMergeKey(page); key != "" {
+			expectedID[key] = datasetLevelID(tenant, kb, page)
+		}
+	}
+	ids := make([]string, 0)
+	seen := make(map[string]struct{}, len(existingPages))
+	add := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, dup := seen[id]; dup {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	for _, page := range existingPages {
+		key := wikiPageMergeKey(page)
+		if want, rewritten := expectedID[key]; rewritten {
+			if page.ID != want {
+				add(page.ID)
+			}
+			continue
+		}
+		if _, scoped := affected[key]; scoped {
+			add(page.ID)
+		}
+	}
+	return ids
 }
 
 // buildTopicPagesByKey indexes the topic-mode merged pages by their topic key,

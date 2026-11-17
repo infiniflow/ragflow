@@ -102,6 +102,51 @@ func TestWikiPageIdentityLeavesNonPageProductsAlone(t *testing.T) {
 	}
 }
 
+// A bare-slug build keyed the dataset-level id on the raw slug while already
+// storing "<page_type>/<slug>" in slug_kwd. Once the rewritten page lands under
+// the normalized id, that old row has to go with it; otherwise both rows stay
+// under one slug_kwd and a slug-filtered read can return either.
+func TestStaleWikiPageRowIDsRemovesPreNormalizationRow(t *testing.T) {
+	bare := kccommon.Product{Variant: kccommon.VariantWiki, Meta: map[string]any{
+		"kind": "page", "page_type": "entity", "slug": "alpha",
+	}}
+	legacyID := hashStr("tenant-1\x00kb-1\x00" + string(kccommon.VariantWiki) + "\x00alpha")
+	currentID := datasetLevelID("tenant-1", "kb-1", bare)
+	if legacyID == currentID {
+		t.Fatalf("legacy and normalized ids coincide: %q", legacyID)
+	}
+	legacyRow := kccommon.Product{ID: legacyID, DocID: "kb-1", Variant: kccommon.VariantWiki, Meta: map[string]any{
+		"kind": "page", "page_type": "entity", "slug": "entity/alpha",
+	}}
+	currentRow := kccommon.Product{ID: currentID, DocID: "kb-1", Variant: kccommon.VariantWiki, Meta: map[string]any{
+		"kind": "page", "page_type": "entity", "slug": "entity/alpha",
+	}}
+	affected := map[string]struct{}{wikiPageMergeKey(bare): {}}
+
+	got := staleWikiPageRowIDs("tenant-1", "kb-1", affected, []kccommon.Product{bare}, []kccommon.Product{legacyRow, currentRow})
+	if len(got) != 1 || got[0] != legacyID {
+		t.Fatalf("stale ids = %v, want [%s]", got, legacyID)
+	}
+	if got := staleWikiPageRowIDs("tenant-1", "kb-1", affected, []kccommon.Product{bare}, []kccommon.Product{currentRow}); len(got) != 0 {
+		t.Fatalf("up-to-date row reported stale: %v", got)
+	}
+
+	// A page outside this batch must not be touched just because its snapshot
+	// was loaded for the merge.
+	other := kccommon.Product{ID: "other-row", Variant: kccommon.VariantWiki, Meta: map[string]any{
+		"kind": "page", "page_type": "entity", "slug": "entity/beta",
+	}}
+	if got := staleWikiPageRowIDs("tenant-1", "kb-1", affected, []kccommon.Product{bare}, []kccommon.Product{other}); len(got) != 0 {
+		t.Fatalf("out-of-batch page reported stale: %v", got)
+	}
+
+	// A page whose contribution was dropped still reports its row.
+	dropped := map[string]struct{}{wikiPageMergeKey(other): {}}
+	if got := staleWikiPageRowIDs("tenant-1", "kb-1", dropped, nil, []kccommon.Product{other}); len(got) != 1 || got[0] != "other-row" {
+		t.Fatalf("dropped page ids = %v, want [other-row]", got)
+	}
+}
+
 func TestSelectMergedWikiTopicPathUsesSourceSupport(t *testing.T) {
 	products := []kccommon.Product{
 		{DocID: "doc-1", Meta: map[string]any{
