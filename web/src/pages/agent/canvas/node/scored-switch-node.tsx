@@ -1,9 +1,4 @@
-import { LLMLabelCard } from './card';
-import { CommonHandle, LeftEndHandle } from './handle';
-import { RightHandleStyle } from './handle-icon';
-import NodeHeader from './node-header';
-import { NodeWrapper } from './node-wrapper';
-import { ToolBar } from './toolbar';
+import { ModelTypeMap } from '@/components/model-tree-select';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { NodeHandleId } from '@/pages/agent/constant';
 import {
@@ -15,6 +10,12 @@ import { Position, useUpdateNodeInternals } from '@xyflow/react';
 import { get } from 'lodash';
 import { memo, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { LLMLabelCard } from './card';
+import { CommonHandle, LeftEndHandle } from './handle';
+import { RightHandleStyle } from './handle-icon';
+import NodeHeader from './node-header';
+import { NodeWrapper } from './node-wrapper';
+import { ToolBar } from './toolbar';
 
 type OptionItem = {
   name?: string;
@@ -91,7 +92,10 @@ function InnerScoredSwitchNode({
         <LeftEndHandle></LeftEndHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="flex flex-col gap-2">
-          <LLMLabelCard llmId={get(data, 'form.llm_id')}></LLMLabelCard>
+          <LLMLabelCard
+            llmId={get(data, 'form.llm_id')}
+            modelTypes={ModelTypeMap.scoring_id}
+          ></LLMLabelCard>
           {positions.map((position) => (
             <div key={position.uuid || position.name}>
               <div className="bg-bg-card rounded-sm p-1 truncate">

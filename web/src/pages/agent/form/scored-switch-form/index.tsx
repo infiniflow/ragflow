@@ -53,19 +53,28 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
   });
   useWatchFormChange(node?.id, form);
   const ownerTenantId = useOwnerTenantId();
-  const { data: addedModels } = useFetchAllAddedModels(undefined, ownerTenantId);
+  const { data: addedModels, isFetched: modelsFetched } =
+    useFetchAllAddedModels(undefined, ownerTenantId);
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
-  const selectedModel = (addedModels ?? []).find(
-    (model) => model.model_id === llmId,
-  );
+  const savedFieldMode = useWatch({
+    control: form.control,
+    name: 'field_mode',
+  });
+  const selectedModel = modelsFetched
+    ? (addedModels ?? []).find((model) => model.model_id === llmId)
+    : undefined;
   const features = new Set(selectedModel?.features ?? []);
   const imageSupport = features.has('supports_image');
   const boxSupport = features.has('supports_box');
   const yesNoSupport = features.has('supports_noul');
   const levelSupport = features.has('supports_score');
-  const fieldMode = features.has('supports_fields');
+  // An empty or still-loading model list must not flip a saved field mode.
+  // A model that cannot be resolved keeps the saved mode too.
+  const fieldMode = selectedModel
+    ? features.has('supports_fields')
+    : savedFieldMode === true;
   useEffect(() => {
-    if (!addedModels) {
+    if (!modelsFetched || !selectedModel) {
       return;
     }
     if (form.getValues('field_mode') !== fieldMode) {
@@ -74,7 +83,7 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
         shouldValidate: true,
       });
     }
-  }, [addedModels, fieldMode, form]);
+  }, [fieldMode, form, modelsFetched, selectedModel]);
   const escalateEnabled = useWatch({
     control: form.control,
     name: 'escalate_enabled',
