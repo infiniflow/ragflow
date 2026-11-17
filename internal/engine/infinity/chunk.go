@@ -3748,17 +3748,6 @@ func numericSlice(v interface{}) ([]interface{}, bool) {
 	return out, true
 }
 
-// transformChunkFields converts chunk field names to Infinity format.
-// Converts internal field names (like docnm_kwd) to Infinity column names (docnm).
-// Also handles:
-// - kb_id: extracts first element if it's a list
-// - position_int, page_num_int, top_int: converts arrays to hex strings
-// - fieldJSON / fieldJSONList: json column -> JSON string (Infinity json columns)
-// - tag_kwd: joins with ### separator
-// - question_kwd: joins with newline separator
-// - other *_kwd keyword fields: lists join with ###
-// - chunk_data / extra: dict -> JSON string (chunk-table varchar columns)
-// - Missing embeddings filled with zeros if embeddingCols provided
 // encodeTagFeasColumn renders tag_feas as a JSON array of single-key objects,
 // e.g. [{"finance":4},{"travel":8}].
 //
@@ -3794,8 +3783,15 @@ func encodeTagFeasColumn(value interface{}) (string, bool) {
 		if !ok {
 			return "", false
 		}
-		var weight float64
-		if err := decoder.Decode(&weight); err != nil {
+		// Decode into interface{} rather than float64: json.Unmarshal leaves a
+		// float64 untouched and reports no error for JSON null, so
+		// {"finance":null} would be rewritten as {"finance":0}.
+		var decodedWeight interface{}
+		if err := decoder.Decode(&decodedWeight); err != nil {
+			return "", false
+		}
+		weight, ok := decodedWeight.(float64)
+		if !ok {
 			return "", false
 		}
 		pairs = append(pairs, taggedWeight{name: name, value: weight})
@@ -3845,6 +3841,17 @@ func normalizeTagFeasValue(decoded interface{}) interface{} {
 	return out
 }
 
+// transformChunkFields converts chunk field names to Infinity format.
+// Converts internal field names (like docnm_kwd) to Infinity column names (docnm).
+// Also handles:
+// - kb_id: extracts first element if it's a list
+// - position_int, page_num_int, top_int: converts arrays to hex strings
+// - fieldJSON / fieldJSONList: json column -> JSON string (Infinity json columns)
+// - tag_kwd: joins with ### separator
+// - question_kwd: joins with newline separator
+// - other *_kwd keyword fields: lists join with ###
+// - chunk_data / extra: dict -> JSON string (chunk-table varchar columns)
+// - Missing embeddings filled with zeros if embeddingCols provided
 func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]interface{}) map[string]interface{} {
 	d := make(map[string]interface{})
 
