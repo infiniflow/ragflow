@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -95,7 +96,7 @@ func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID 
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
 	if tenantModelID := tenantModelIDByType(membership, modelType); tenantModelID != "" {
-		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, tenantModelID)
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, modelType, tenantModelID)
 		if err == nil {
 			return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
 		}
@@ -219,17 +220,37 @@ func stringValue(value *string) string {
 }
 
 // defaultResolveModelConfig treats a reference without "@" as an exact tenant
-// model ID and a reference containing "@" as a provider-instance composite.
-// Failed ID lookups never fall through to composite or catalog resolution.
+// model ID or a gp- model group reference, and a reference containing "@" as
+// a provider-instance composite. Failed ID lookups never fall through to
+// composite or catalog resolution.
 func defaultResolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if !strings.Contains(modelRef, "@") {
-		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, modelType, modelRef)
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
 		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
 	}
 	return resolveModelConfigFromProviderInstance(ctx, db, tenantID, modelType, modelRef)
+}
+
+// resolveModelConfigByRef resolves a non-composite model reference — an exact
+// tenant-model ID or a gp- model group reference — to a driver config. A group
+// reference picks the group's current active member of the requested type and
+// resolves that member by ID, so failover stays a runtime decision and a
+// member marked inactive is skipped exactly like the model factory does.
+func resolveModelConfigByRef(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (*resolvedModelConfig, error) {
+	if groupID, ok := common.ParseGroupModelRef(modelRef); ok {
+		member, err := transaction.PickModelFromGroup(ctx, db, groupID, modelType)
+		if err != nil {
+			return nil, fmt.Errorf("pick model from group %s: %w", groupID, err)
+		}
+		if member == nil {
+			return nil, fmt.Errorf("model group %s has no available model", groupID)
+		}
+		modelRef = member.ID
+	}
+	return resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)
 }
 
 // resolveModelConfigByID resolves an enrolled model within tenantID before
