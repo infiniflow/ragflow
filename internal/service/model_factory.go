@@ -42,6 +42,7 @@ type modelTarget struct {
 	ProviderName  string
 	InstanceID    string
 	InstanceName  string
+	GroupID       string
 	Driver        modelModule.ModelDriver
 	APIConfig     *modelModule.APIConfig
 	ModelInfo     *modelModule.Model
@@ -96,13 +97,31 @@ func NewModelFactory() *ModelFactory {
 	}
 }
 
+// usageTemplateAttacher, when set, pre-fills the construction-time usage
+// identity (tenant, user, provider, instance, model, group) on the model
+// info, which the typed models reuse whenever a call site passes nil usage so
+// every call produces an attributable usage row without each call site
+// building one. Enterprise editions install the attacher at startup; the
+// community build leaves it unset.
+var usageTemplateAttacher func(ctx context.Context, apiConfig *modelModule.APIConfig, info *modelModule.ModelInfo)
+
+// attachUsageTemplate applies the installed attacher, if any.
+func attachUsageTemplate(ctx context.Context, apiConfig *modelModule.APIConfig, info *modelModule.ModelInfo) {
+	if usageTemplateAttacher == nil {
+		return
+	}
+	usageTemplateAttacher(ctx, apiConfig, info)
+}
+
 // NewChatModel resolves a chat model in the Tenant scope carried by ctx.
 func (f *ModelFactory) NewChatModel(ctx context.Context, modelRef string) (*modelModule.ChatModel, error) {
 	target, err := f.resolveConfig(ctx, entity.ModelTypeChat, modelRef)
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewChatModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewChatModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, info), nil
 }
 
 // NewDefaultChatModel constructs the tenant's configured default chat model.
@@ -111,7 +130,9 @@ func (f *ModelFactory) NewDefaultChatModel(ctx context.Context) (*modelModule.Ch
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewChatModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewChatModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, info), nil
 }
 
 // NewEmbeddingModel resolves and constructs an embedding model.
@@ -120,7 +141,9 @@ func (f *ModelFactory) NewEmbeddingModel(ctx context.Context, modelRef string) (
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewEmbeddingModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewEmbeddingModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), info), nil
 }
 
 // NewDefaultEmbeddingModel constructs the tenant's configured default embedding model.
@@ -129,7 +152,9 @@ func (f *ModelFactory) NewDefaultEmbeddingModel(ctx context.Context) (*modelModu
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewEmbeddingModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewEmbeddingModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), info), nil
 }
 
 // NewRerankModel resolves and constructs a rerank model.
@@ -138,7 +163,9 @@ func (f *ModelFactory) NewRerankModel(ctx context.Context, modelRef string) (*mo
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewRerankModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewRerankModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), info), nil
 }
 
 // NewDefaultRerankModel constructs the tenant's configured default rerank model.
@@ -147,7 +174,9 @@ func (f *ModelFactory) NewDefaultRerankModel(ctx context.Context) (*modelModule.
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewRerankModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewRerankModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), info), nil
 }
 
 // NewOCRModel resolves and constructs an OCR model.
@@ -258,6 +287,7 @@ func modelInfoFromTarget(target *modelTarget) *modelModule.ModelInfo {
 		ProviderName:  target.ProviderName,
 		InstanceID:    target.InstanceID,
 		InstanceName:  target.InstanceName,
+		GroupID:       target.GroupID,
 		ModelTypes:    modelTypes,
 		ContextLength: target.ContextLength,
 		MaxOutput:     target.MaxOutput,
@@ -600,6 +630,7 @@ type modelIdentity struct {
 	providerEntity *entity.TenantModelProvider
 	instanceEntity *entity.TenantModelInstance
 	modelType      entity.ModelType
+	groupID        string
 }
 
 func toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName string) bool {
@@ -662,10 +693,14 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 	}
 	var model *entity.TenantModel
 	var err error
-	if groupID, ok := common.ParseGroupModelRef(modelRef); ok {
+	var groupID string
+	if parsedGroupID, ok := common.ParseGroupModelRef(modelRef); ok {
 		// A gp-<group_id> reference resolves through the group's failover
 		// picker instead of a single saved row. Enterprise-only; the community
-		// stub rejects the reference.
+		// stub rejects the reference. The group is carried into the resolved
+		// target so usage records can tell group-mediated calls from direct
+		// model calls.
+		groupID = parsedGroupID
 		model, err = s.pickGroupModel(ctx, tenantID, groupID, requestedType)
 		if err != nil {
 			return nil, err
@@ -683,7 +718,7 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 	if err != nil {
 		return nil, err
 	}
-	identity := &modelIdentity{modelEntity: model}
+	identity := &modelIdentity{modelEntity: model, groupID: groupID}
 	var candidates []*entity.TenantModel
 	if model != nil {
 		identity.modelName = model.ModelName
@@ -874,6 +909,7 @@ func modelTargetFromIdentity(identity *modelIdentity, modelType entity.ModelType
 		ProviderName:  providerEntity.ProviderName,
 		InstanceID:    instanceEntity.ID,
 		InstanceName:  instanceEntity.InstanceName,
+		GroupID:       identity.groupID,
 		ModelInfo:     modelInfo,
 		ContextLength: contextLengthFromModelInfo(modelInfo),
 		MaxOutput:     maxOutputFromModelInfo(modelInfo),
