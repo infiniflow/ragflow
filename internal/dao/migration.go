@@ -847,6 +847,7 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 			columnType: "text", nullable: true,
 			definition: "text",
 		},
+		tenantModelInstanceAPIKeyColumnSpec,
 		// api_token.dialog_id mirrors Python's CharField(max_length=32, null=True).
 		{
 			table: "api_token", column: "dialog_id",
@@ -891,6 +892,25 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// tenantModelInstanceAPIKeyColumnSpec widens tenant_model_instance.api_key
+// ahead of the base-step backfill. migrateModelData — and with it
+// migrateTenantModelInstances, which copies tenant_llm keys into the column
+// with a raw INSERT — runs before AutoMigrate, so on an upgrade whose table
+// still holds the legacy varchar(512) a provider key longer than 512
+// characters (IONOS keys exceed 1,700, #22422) fails the INSERT in strict
+// mode and with it the whole startup, before AutoMigrate could converge the
+// entity's text declaration; non-strict sessions truncate the key silently.
+// The spec mirrors the tenant_llm.api_key one and is guarded like every
+// other: it issues no DDL when the table or column is missing or already
+// carries the target shape.
+var tenantModelInstanceAPIKeyColumnSpec = columnSpec{
+	table:      "tenant_model_instance",
+	column:     "api_key",
+	columnType: "text",
+	nullable:   false,
+	definition: "text NOT NULL",
 }
 
 // tenantModelIDColumnSpecs projects tenantModelIDFields into column specs for
