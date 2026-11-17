@@ -472,4 +472,3 @@ func ExtractPageRange(pdfData []byte, startPage, endPage int) ([]byte, error) {
 	}
 	return ExtractPages(pdfData, indices)
 }
-

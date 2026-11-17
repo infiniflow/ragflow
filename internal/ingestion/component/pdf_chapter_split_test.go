@@ -314,4 +314,3 @@ func TestDispatchAdaptiveChapterPDF_WorkerError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
-
