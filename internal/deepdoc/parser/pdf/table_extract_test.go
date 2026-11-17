@@ -131,16 +131,54 @@ func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 		t.Errorf("cell area = %.0f, want %.0f (rotation preserves area)", gotW*gotH, inW*inH)
 	}
 
-	// The cell must stay inside the cropped image. Crop bounds are derived
-	// from the shared TSRCropMargin helper, so they track margin changes.
-	cropMX, cropMY := util.TSRCropMargin(match.Region)
-	cropX0 := math.Max(0, match.Region.X0-cropMX)
-	cropY0 := math.Max(0, match.Region.Y0-cropMY)
-	cropX1 := math.Min(float64(pageImg.Bounds().Dx()), match.Region.X1+cropMX)
-	cropY1 := math.Min(float64(pageImg.Bounds().Dy()), match.Region.Y1+cropMY)
-	if got.X0 < cropX0-1 || got.Y0 < cropY0-1 || got.X1 > cropX1+1 || got.Y1 > cropY1+1 {
-		t.Errorf("cell (%.0f,%.0f,%.0f,%.0f) outside crop (%.0f,%.0f,%.0f,%.0f)",
-			got.X0, got.Y0, got.X1, got.Y1, cropX0, cropY0, cropX1, cropY1)
+	// The cell must stay inside the cropped image, in crop-local coordinates.
+	if !cellWithinCrop(got, match.Region, pageImg.Bounds().Dx(), pageImg.Bounds().Dy(), 1) {
+		t.Errorf("cell %+v outside crop-local bounds for region %+v", got, match.Region)
+	}
+}
+
+// cellWithinCrop reports whether a TSR cell (crop-local coordinates) lies
+// inside the crop produced for the given DLA region. It is the shared guard
+// behind the processOneTable cell-bounds assertions.
+func cellWithinCrop(c pdf.TSRCell, r pdf.DLARegion, pageW, pageH int, tol float64) bool {
+	mx, my := util.TSRCropMargin(r)
+	// CropImageRegion truncates the crop origin and far edge to integers, so
+	// the crop-local frame is [0, cropW] x [0, cropH]. TSR cells are already in
+	// that frame — comparing them to the page-space crop rectangle lets cells
+	// past the crop edge slip through.
+	x0 := int(math.Max(0, r.X0-mx))
+	y0 := int(math.Max(0, r.Y0-my))
+	x1 := int(math.Min(float64(pageW), r.X1+mx))
+	y1 := int(math.Min(float64(pageH), r.Y1+my))
+	cropW, cropH := x1-x0, y1-y0
+	return !(c.X0 < -tol || c.Y0 < -tol ||
+		c.X1 > float64(cropW)+tol || c.Y1 > float64(cropH)+tol)
+}
+
+// TestCellBoundsUseCropLocalSpace locks the invariant that TSR cells (which
+// are in crop-local pixels) are validated against the crop-local frame
+// [0, cropW] x [0, cropH], not the page-space crop rectangle. The old
+// page-space comparison let cells extending past the crop edge pass.
+func TestCellBoundsUseCropLocalSpace(t *testing.T) {
+	r := pdf.DLARegion{X0: 10, Y0: 10, X1: 210, Y1: 110, Label: pdf.LayoutTypeTable}
+	const pageW, pageH = 320, 220
+	cases := []struct {
+		name string
+		cell pdf.TSRCell
+		want bool
+	}{
+		{"inside crop", pdf.TSRCell{X0: 10, Y0: 13, X1: 110, Y1: 83}, true},
+		{"overflow right beyond cropW", pdf.TSRCell{X0: 166, Y0: 10, X1: 216, Y1: 70}, false},
+		{"overflow bottom beyond cropH", pdf.TSRCell{X0: 10, Y0: 90, X1: 110, Y1: 114}, false},
+		{"negative crop-local origin", pdf.TSRCell{X0: -5, Y0: 10, X1: 50, Y1: 60}, false},
+		{"within 1px tolerance", pdf.TSRCell{X0: -0.5, Y0: -0.5, X1: 212.5, Y1: 106.5}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cellWithinCrop(tc.cell, r, pageW, pageH, 1); got != tc.want {
+				t.Errorf("cellWithinCrop(%+v) = %v, want %v", tc.cell, got, tc.want)
+			}
+		})
 	}
 }
 
