@@ -100,14 +100,14 @@ const (
 // model-emitted runtime input; the remaining fields are Canvas node
 // configuration and are not exposed from Info.
 type exesqlConnParams struct {
-	SQL        string `json:"sql"`
-	DBType     string `json:"db_type"` // mysql | postgres | mariadb | mssql | oceanbase
-	Database   string `json:"database"`
-	Username   string `json:"username"`
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	Password   string `json:"password"`
-	MaxRecords int    `json:"max_records"`
+	SQL        string `json:"sql" doc:"The SQL statement to execute. Must be a SELECT (read-only)." required:"true"`
+	DBType     string `json:"db_type" schema:"-"` // mysql | postgres | mariadb | mssql | oceanbase
+	Database   string `json:"database" schema:"-"`
+	Username   string `json:"username" schema:"-"`
+	Host       string `json:"host" schema:"-"`
+	Port       int    `json:"port" schema:"-"`
+	Password   string `json:"password" schema:"-"`
+	MaxRecords int    `json:"max_records" schema:"-"`
 }
 
 func defaultExeSQLConnParams() exesqlConnParams {
@@ -254,17 +254,7 @@ func (e *ExeSQLTool) WithExeSQLDialer(d exesqlDialer) *ExeSQLTool {
 // where ExeSQLParam fields like `db_type` / `host` are tool
 // configuration, not function-call arguments.
 func (e *ExeSQLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: exesqlToolName,
-		Desc: exesqlToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"sql": {
-				Type:     schema.String,
-				Desc:     "The SQL statement to execute. Must be a SELECT (read-only).",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(exesqlToolName, exesqlToolDescription, exesqlConnParams{})
 }
 
 func (e *ExeSQLTool) ComponentSpec() ComponentSpec {

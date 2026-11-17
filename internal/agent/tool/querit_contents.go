@@ -34,11 +34,11 @@ const (
 )
 
 type queritContentsParams struct {
-	APIKey       string `json:"api_key"`
-	URLs         any    `json:"urls"`
-	Format       string `json:"format"`
-	CrawlTimeout int    `json:"crawl_timeout"`
-	ExtrasMeta   bool   `json:"extras_meta"`
+	APIKey       string `json:"api_key,omitempty" schema:"-"`
+	URLs         any    `json:"urls" type:"array" doc:"One to ten absolute HTTP or HTTPS URLs to crawl." required:"true"`
+	Format       string `json:"format,omitempty" doc:"Content format: \"text\", \"markdown\" (default), or \"html\"."`
+	CrawlTimeout int    `json:"crawl_timeout,omitempty" doc:"Per-page crawl timeout in seconds. Defaults to 10 and must be between 1 and 60."`
+	ExtrasMeta   bool   `json:"extras_meta,omitempty" doc:"Whether to include page metadata in each result."`
 }
 
 type queritContentsRequest struct {
@@ -96,33 +96,7 @@ func newQueritContentsTool(
 }
 
 func (q *QueritContentsTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: queritContentsToolName,
-		Desc: "Crawl one or more web pages with Querit and return their contents.",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"urls": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "One to ten absolute HTTP or HTTPS URLs to crawl.",
-				Required: true,
-			},
-			"format": {
-				Type:     schema.String,
-				Desc:     `Content format: "text", "markdown" (default), or "html".`,
-				Required: false,
-			},
-			"crawl_timeout": {
-				Type:     schema.Integer,
-				Desc:     "Per-page crawl timeout in seconds. Defaults to 10 and must be between 1 and 60.",
-				Required: false,
-			},
-			"extras_meta": {
-				Type:     schema.Boolean,
-				Desc:     "Whether to include page metadata in each result.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(queritContentsToolName, "Crawl one or more web pages with Querit and return their contents.", queritContentsParams{})
 }
 
 func (q *QueritContentsTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
