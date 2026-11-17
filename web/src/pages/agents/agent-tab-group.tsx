@@ -37,7 +37,6 @@ export function AgentTabGroup({
         return {
           value: config.canvasCategory,
           label: t(`flow.${config.labelKey}`),
-          icon: config.icon,
         };
       }),
     [t],

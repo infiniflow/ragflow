@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package admin
+package service
 
 import (
 	"context"
@@ -26,12 +26,28 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
-	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// DeleteUserResult result of delete user operation
+type DeleteUserResult struct {
+	Username        string   `json:"username"`
+	LangfuseCount   int      `json:"langfuse_count"`
+	MetadataTable   string   `json:"metadata_table"`
+	TenantCount     int      `json:"tenant_count"`
+	UserTenantCount int      `json:"user_tenant_count"`
+	UserCount       int      `json:"user_count"`
+	DeletedDetails  []string `json:"deleted_details"`
+}
+
+// UserDeletionService removes a user and their associated data. Its zero value uses configured backends.
+type UserDeletionService struct {
+	engine  engine.DocEngine
+	storage storage.Storage
+}
 
 type userDeletionData struct {
 	ownedTenantID string
@@ -60,16 +76,16 @@ func namedDocument(document entity.Document) string {
 	return namedID(*document.Name, document.ID)
 }
 
-func (s *Service) deleteUserData(ctx context.Context, user *entity.User) (*DeleteUserResult, error) {
+func (s UserDeletionService) Delete(ctx context.Context, user *entity.User) (*DeleteUserResult, error) {
 	data, err := loadUserDeletionData(ctx, user.ID)
 	if err != nil {
 		return nil, err
 	}
-	docEngine := s.deleteEngine
+	docEngine := s.engine
 	if docEngine == nil {
 		docEngine = engine.Get()
 	}
-	store := s.deleteStorage
+	store := s.storage
 	if store == nil {
 		store = storage.GetStorageFactory().GetStorage()
 	}
@@ -319,10 +335,10 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 				ownedDatasetIDs = append(ownedDatasetIDs, dataset.ID)
 			}
 		}
-		if err := dropUserChunkStore(ctx, docEngine, servicepkg.IndexName(data.ownedTenantID), ownedDatasetIDs); err != nil {
+		if err := dropUserChunkStore(ctx, docEngine, IndexName(data.ownedTenantID), ownedDatasetIDs); err != nil {
 			return fmt.Errorf("remove tenant chunks: %w", err)
 		}
-		if err := dropUserChunkStore(ctx, docEngine, servicepkg.MemoryIndexName(data.ownedTenantID), memoryIDs(data.memories)); err != nil {
+		if err := dropUserChunkStore(ctx, docEngine, MemoryIndexName(data.ownedTenantID), memoryIDs(data.memories)); err != nil {
 			return fmt.Errorf("remove memory messages: %w", err)
 		}
 		if err := docEngine.DropMetadataStore(ctx, data.ownedTenantID); err != nil {
@@ -331,7 +347,7 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	}
 	for _, dataset := range data.datasets {
 		if dataset.TenantID != data.ownedTenantID {
-			indexName := servicepkg.IndexName(dataset.TenantID)
+			indexName := IndexName(dataset.TenantID)
 			exists, err := docEngine.ChunkStoreExists(ctx, indexName, dataset.ID)
 			if err != nil {
 				return fmt.Errorf("check dataset chunks %s: %w", dataset.ID, err)
@@ -355,7 +371,7 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 		if tenantID == "" {
 			return fmt.Errorf("dataset %s for documents not found", kbID)
 		}
-		indexName := servicepkg.IndexName(tenantID)
+		indexName := IndexName(tenantID)
 		exists, err := docEngine.ChunkStoreExists(ctx, indexName, kbID)
 		if err != nil {
 			return fmt.Errorf("check document chunks for dataset %s: %w", kbID, err)
@@ -700,7 +716,7 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 			return err
 		}
 		result.LangfuseCount = int(langfuseCount)
-		result.MetadataTable = servicepkg.BuildMetadataIndexName(owner)
+		result.MetadataTable = BuildMetadataIndexName(owner)
 		ownerMemberships, err := remove("tenant memberships", &entity.UserTenant{}, "tenant_id = ?", owner)
 		if err != nil {
 			return err

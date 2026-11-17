@@ -365,6 +365,12 @@ const (
 	// ingestor.page_concurrency config key and is itself overridden by the
 	// --ingestor-page-concurrency CLI flag.
 	EnvIngestorPageConcurrency = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
+	// EnvIngestorTier restricts which ingestion lanes an ingestor consumes
+	// (high/medium/low). It is overridden by the --ingestor-tier CLI flag and
+	// defaults to the default (low) lane when unset. The accepted values are
+	// edition-specific: the community build accepts only the default lane, the
+	// enterprise build accepts its full high/medium/low set.
+	EnvIngestorTier = "RAGFLOW_INGESTOR_TIER"
 	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
 	// in-process inference (0 = all cores). It overrides the
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
@@ -617,6 +623,36 @@ func HasModelFiles(dir string) bool {
 		}
 	}
 	return true
+}
+
+// DeepDocModelDir resolves the directory holding the in-process (Go) DeepDoc
+// weights. It is the single source of truth shared by the DeepDoc server boot
+// path and any runtime probe (e.g. the /system/doc-analyzers availability
+// check) so the two never disagree about where the weights live.
+//
+// Resolution order:
+//  1. the explicit DEEPDOC_MODEL_DIR env, when set;
+//  2. the first MODEL_ASSETS_DIR candidate that actually contains the
+//     required weights (see HasModelFiles / DeepDocModelFiles);
+//  3. the repo-default internal/rag/res/deepdoc layout;
+//  4. as a last resort the canonical default, so a missing-weights error
+//     message points at the conventional location.
+func DeepDocModelDir() string {
+	if v := strings.TrimSpace(GetEnv(EnvDeepDocModelDir)); v != "" {
+		return v
+	}
+	wd, _ := os.Getwd()
+	candidates := append([]string(nil), ModelAssetCandidates("huggingface.co/InfiniFlow/deepdoc")...)
+	candidates = append(candidates,
+		filepath.Join(wd, "internal", "rag", "res", "deepdoc"),
+		filepath.Join(wd, "huggingface.co", "InfiniFlow", "deepdoc"),
+	)
+	for _, c := range candidates {
+		if HasModelFiles(c) {
+			return c
+		}
+	}
+	return filepath.Join(wd, "internal", "rag", "res", "deepdoc")
 }
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)

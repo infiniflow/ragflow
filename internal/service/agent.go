@@ -44,6 +44,7 @@ import (
 	agentsandbox "ragflow/internal/agent/sandbox"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	permissionresponse "ragflow/internal/permission/response"
@@ -2283,6 +2284,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		startedAt := float64(time.Now().UnixNano()) / 1e9
 
 		userInput := root["user_input"]
+		if err := compliance.ValidateQuestion(ctx, stringifyAgentUserInput(agentRunQuery(userInput))); err != nil {
+			return nil, err
+		}
 
 		resumeID, isResume := root["__resume_interrupt_id__"].(string)
 		if !isResume || resumeID == "" {
