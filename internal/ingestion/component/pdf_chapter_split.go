@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -50,7 +51,9 @@ func getNumericSetting(val any) (int, bool) {
 	case int64:
 		return int(v), true
 	case float64:
-		return int(v), true
+		if !math.IsNaN(v) && !math.IsInf(v, 0) && v == math.Trunc(v) {
+			return int(v), true
+		}
 	case string:
 		if iv, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
 			return iv, true

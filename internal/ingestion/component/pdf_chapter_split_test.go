@@ -259,6 +259,30 @@ func TestResolveSplitOptions_JSONTypes(t *testing.T) {
 	}
 }
 
+func TestResolveSplitOptions_FractionalRejected(t *testing.T) {
+	defaultOpts := splitter.DefaultSplitOptions()
+	setup := schema.ParserSetup{
+		"chapter_split_threshold": float64(150.5),
+		"chapter_min_pages":       float64(3.7),
+		"chapter_max_pages":       float64(120.9),
+		"chapter_concurrency":     float64(2.5),
+	}
+	opts := resolveSplitOptions(setup)
+
+	if opts.ThresholdPages != defaultOpts.ThresholdPages {
+		t.Errorf("ThresholdPages = %d, want default %d", opts.ThresholdPages, defaultOpts.ThresholdPages)
+	}
+	if opts.MinPages != defaultOpts.MinPages {
+		t.Errorf("MinPages = %d, want default %d", opts.MinPages, defaultOpts.MinPages)
+	}
+	if opts.MaxPages != defaultOpts.MaxPages {
+		t.Errorf("MaxPages = %d, want default %d", opts.MaxPages, defaultOpts.MaxPages)
+	}
+	if opts.MaxConcurrency != defaultOpts.MaxConcurrency {
+		t.Errorf("MaxConcurrency = %d, want default %d", opts.MaxConcurrency, defaultOpts.MaxConcurrency)
+	}
+}
+
 func TestDispatchAdaptiveChapterPDF_FallbackWhenUnhandled(t *testing.T) {
 	orig := pdfChapterDispatchSingle
 	defer func() { pdfChapterDispatchSingle = orig }()
