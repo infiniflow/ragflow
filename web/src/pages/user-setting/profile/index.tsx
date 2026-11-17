@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
+import AccountDeletion from '@/ee/pages/user-setting/profile/account-deletion';
 import { useTranslate } from '@/hooks/common-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -252,6 +253,7 @@ const ProfilePage: FC = () => {
             </div>
           </div>
         )}
+        <AccountDeletion />
       </div>
 
       {editType && (
