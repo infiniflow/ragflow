@@ -1409,14 +1409,14 @@ type mergedWikiPageDeleter interface {
 // snapshot; the caller passes the same slice it uses to seed the topic-key map,
 // excluding both returned ID sets.
 func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb, token string, affected map[string]struct{}, current, existingPages []kccommon.Product) ([]string, []string, error) {
+	missing, superseded := wikiPageRowIDsToDelete(tenant, kb, affected, current, existingPages)
+	if len(missing) == 0 {
+		return nil, superseded, nil
+	}
 	_, readerOK := c.reader.(mergedWikiPageReader)
 	deleter, writerOK := c.writer.(mergedWikiPageDeleter)
 	if !readerOK || !writerOK {
 		return nil, nil, fmt.Errorf("knowledge_compile: scoped Wiki cleanup is unsupported")
-	}
-	missing, superseded := wikiPageRowIDsToDelete(tenant, kb, affected, current, existingPages)
-	if len(missing) == 0 {
-		return nil, superseded, nil
 	}
 	if err := c.withWriteLock(ctx, kb, token, func() error {
 		return deleter.DeleteMergedWikiPages(ctx, tenant, kb, missing)
