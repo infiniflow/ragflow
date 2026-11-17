@@ -1,0 +1,92 @@
+# One reviewer per folder; the last matching rule wins (owners do not accumulate).
+# internal/ and web/: evaluated through root-relative directory depth 3.
+# Other directories: evaluated at depth 1. Deeper paths inherit their folder owner.
+# Contribution counts, selection method, and activation: reviewer-assignments.md.
+
+# Default for root files and new folders.
+* @JinHai-CN
+
+# Root documentation and build/CI files.
+/*.md @Yannnnnnny
+/LICENSE @Yannnnnnny
+/Dockerfile* @myf-bee
+/*.sh @myf-bee
+/.dockerignore @myf-bee
+/codecov.yml @myf-bee
+/lefthook.yml @myf-bee
+
+# Top-level directories (including defaults for internal/ and web/).
+/.agents/ @Yannnnnnny
+/.github/ @myf-bee
+/bin/ @myf-bee
+/cmd/ @JinHai-CN
+/conf/ @JinHai-CN
+/deps/ @myf-bee
+/docker/ @myf-bee
+/docs/ @Yannnnnnny
+/example/ @JinHai-CN
+/internal/ @JinHai-CN
+/scripts/ @myf-bee
+/sdk/ @JinHai-CN
+/test/ @6ba3i
+/tools/ @myf-bee
+/web/ @cike8899
+
+# internal/ overrides; omitted subfolders inherit the same reviewer.
+/internal/agent/ @6ba3i
+/internal/agent/audio/ @JinHai-CN
+/internal/agent/chat/ @qinling0210
+/internal/agent/dsl/ @yuzhichang
+/internal/agent/retrievalbridge/ @buua436
+/internal/agent/runtime/ @yuzhichang
+/internal/agent/templates/ @JinHai-CN
+/internal/agent/tool/ @yuzhichang
+/internal/agentic_rag/ @wangq8
+/internal/binding/ @buua436
+/internal/channels/ @buua436
+/internal/compliance/ @wangq8
+/internal/dao/transaction/ @Lynn-Inf
+/internal/deepdoc/ @xugangqiang
+/internal/docguard/ @xugangqiang
+/internal/engine/infinity/ @qinling0210
+/internal/engine/internal/ @xugangqiang
+/internal/engine/kvrocks/ @xugangqiang
+/internal/engine/metafilter/ @xugangqiang
+/internal/engine/opensearch/ @xugangqiang
+/internal/engine/types/ @qinling0210
+/internal/engine/vastbase/ @xugangqiang
+/internal/handler/components_testpkg/ @yuzhichang
+/internal/harness/events/ @yingfeng
+/internal/harness/metrics/ @yingfeng
+/internal/harness/prebuilt/ @yingfeng
+/internal/harness/replay/ @yingfeng
+/internal/ingestion/ @xugangqiang
+/internal/ingestion/compilation/ @JinHai-CN
+/internal/ingestion/knowledge_compile/ @buua436
+/internal/ingestion/registry/ @JinHai-CN
+/internal/mcp/ @6ba3i
+/internal/mcp/client/ @xugangqiang
+/internal/modelcontext/ @buua436
+/internal/observability/ @xugangqiang
+/internal/parser/ @xugangqiang
+/internal/parser/chunk/ @JinHai-CN
+/internal/permission/ @buua436
+/internal/rag/ @qinling0210
+/internal/rag/prompts/ @yingfeng
+/internal/rag/res/ @JinHai-CN
+/internal/server/admin/ @wangq8
+/internal/server/api/ @xugangqiang
+/internal/server/bootstrap/ @xugangqiang
+/internal/server/config/ @xugangqiang
+/internal/server/deepdoc/ @xugangqiang
+/internal/server/ingestor/ @xugangqiang
+/internal/service/billing/ @yuzhichang
+/internal/service/dataset/ @wangq8
+/internal/service/document/ @buua436
+/internal/service/nav/ @qinling0210
+/internal/service/nlp/ @qinling0210
+/internal/service/wikisearch/ @yuzhichang
+/internal/tokenizer/ @qinling0210
+
+# web/ overrides; omitted subfolders inherit the same reviewer.
+/web/src/ee-stub/ @dcc123456
