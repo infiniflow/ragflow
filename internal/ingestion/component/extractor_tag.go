@@ -631,7 +631,7 @@ func detectTextLanguage(chunks []map[string]any) string {
 	return "English"
 }
 
-// roundInt mirrors Python's round() on a float, which is round-half-to-even
+// roundInt mirrors round() on a float, which is round-half-to-even
 // (banker's rounding): round(2.5) == 2 and round(3.5) == 4. The previous
 // int(f+0.5) form rounded halves away from zero and returned 3 for 2.5.
 func roundInt(f float64) int {
@@ -708,7 +708,7 @@ func llmTagChunk(
 	// system prompt embeds the full chunk text, the entire tag set and up
 	// to two full examples, so oversized chunks or tag files would
 	// otherwise be rejected by the provider (context length exceeded).
-	// Mirrors Python's message_fit_in in content_tagging (generator.py:331).
+	// Mirrors message_fit_in in content_tagging.
 	fitted, fitErr := fitExtractorMessages(ctx, db, llmID, msgs)
 	if fitErr != nil {
 		common.Warn("extractor tags: skipping LLM tagging, message fitting failed", zap.Error(fitErr))

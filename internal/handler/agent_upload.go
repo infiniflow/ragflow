@@ -56,6 +56,9 @@ const canvasNoAccessMessage = "Make sure you have permission to access the agent
 
 // UploadAgentFile POST /api/v1/agents/:canvas_id/upload
 func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
+	common.StartOperationLog(c, "upload_agent_files")
+	defer common.FinishOperationLog(c)
+
 	canvasID := c.Param("canvas_id")
 	if canvasID == "" {
 		common.RespondError(c, common.CodeArgumentError, "`canvas_id` is required.")
@@ -115,6 +118,9 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 			common.RespondError(c, common.CodeServerError, err.Error())
 			return
 		}
+		if id, ok := uploaded["id"].(string); ok {
+			common.SetOperationResource(c, "result_ids", []string{id})
+		}
 		common.RespondSuccess(c, uploaded, "success")
 		return
 	}
@@ -130,6 +136,13 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 		return
 	}
 
+	var resultIDs []string
+	for _, file := range results {
+		if id, ok := file["id"].(string); ok {
+			resultIDs = append(resultIDs, id)
+		}
+	}
+	common.SetOperationResource(c, "result_ids", resultIDs)
 	// Python parity: 1 file → single dict; >1 → list.
 	var payload any
 	if len(results) == 1 {

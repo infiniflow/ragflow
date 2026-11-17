@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/observability"
 
 	"go.uber.org/zap"
 )
@@ -51,6 +52,7 @@ func RerankByModel(
 	rankFeature map[string]float64,
 	language string,
 ) (sim []float64, tsim []float64, vsim []float64, err error) {
+	defer observability.BeginRetrieval("retrieval_rerank")(&err)
 	if chunks == nil || len(chunks) == 0 {
 		return []float64{}, []float64{}, []float64{}, nil
 	}
@@ -235,7 +237,7 @@ func RerankStandard(
 
 	// Get vector information
 	vectorSize := len(questionVector)
-	vectorColumn := getVectorColumnName(vectorSize)
+	vectorColumn := common.VectorColumnName(vectorSize)
 	zeroVector := make([]float64, vectorSize)
 
 	// Extract embeddings and tokens from search results
@@ -411,11 +413,6 @@ func ArgsortDescending(values []float64) []int {
 }
 
 // Helper functions
-
-// getVectorColumnName returns the vector column name based on dimension
-func getVectorColumnName(dim int) string {
-	return "q_" + strconv.Itoa(dim) + "_vec"
-}
 
 // extractVector extracts vector from chunk fields
 func extractVector(fields map[string]interface{}, column string, zeroVector []float64) []float64 {

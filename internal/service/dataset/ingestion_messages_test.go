@@ -121,9 +121,9 @@ func TestListSyncLogsReturnsOnlyCurrentlyLinkedDatasetConnectors(t *testing.T) {
 	insertCompilationOwnerKB(t, "kb-2", "user-1")
 
 	connectors := []entity.Connector{
-		{ID: "connector-1", TenantID: "user-1", Name: "linked", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
-		{ID: "connector-2", TenantID: "user-1", Name: "other", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
-		{ID: "connector-3", TenantID: "user-2", Name: "inaccessible", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-1", TenantID: "user-1", Name: "linked", Source: "rss", InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-2", TenantID: "user-1", Name: "other", Source: "rss", InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-3", TenantID: "user-2", Name: "inaccessible", Source: "rss", InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusDone)},
 	}
 	if err := db.Create(&connectors).Error; err != nil {
 		t.Fatalf("insert connectors: %v", err)

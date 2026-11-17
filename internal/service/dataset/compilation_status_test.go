@@ -60,7 +60,7 @@ func TestCompilationQueueCountsPreserveDuplicatesAndRouting(t *testing.T) {
 		}{
 			{"", 6}, {"Graph", 4}, {"Timeline", 3}, {"PageIndex", 2}, {"Wiki", 2},
 		} {
-			count, err := countCompilationStatusEntries(db, table, "kb", tc.kind)
+			count, err := countCompilationStatusEntries(t.Context(), db, table, "kb", tc.kind)
 			if err != nil || count != tc.want {
 				t.Fatalf("%s kind=%q count=%d want=%d err=%v", table, tc.kind, count, tc.want, err)
 			}

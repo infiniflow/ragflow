@@ -28,18 +28,19 @@ export function SessionList({
     removeTemporarySession,
   } = useSelectDerivedSessionList();
 
-  const { filteredData, handleSearchChange, searchKeyword } =
+  const { filteredData, handleSearchChange, searchKeyword, hasActiveSearch } =
     useClientSearch<IAgentLogResponse>({
       data: sessions,
       searchFields: ['name'],
     });
+  const sessionCount = hasActiveSearch ? filteredData.length : total;
 
   return (
     <section className="p-5 flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <h2 className="text-base font-bold">{t('explore.sessions')}</h2>
-          <span className="text-xs text-text-secondary">{total}</span>
+          <span className="text-xs text-text-secondary">{sessionCount}</span>
         </div>
         <Button variant="ghost" size="icon" onClick={addTemporarySession}>
           <Plus className="h-4 w-4" />

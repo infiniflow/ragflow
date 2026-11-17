@@ -35,9 +35,10 @@ import (
 )
 
 const (
-	reconcileInterval      = 10 * time.Second
-	initialStartRetryDelay = 10 * time.Second
-	maxStartRetryDelay     = 5 * time.Minute
+	reconcileInterval       = 10 * time.Second
+	initialStartRetryDelay  = 10 * time.Second
+	maxStartRetryDelay      = 5 * time.Minute
+	channelFinalSendTimeout = 30 * time.Second
 )
 
 type runningChannel struct {
@@ -265,6 +266,37 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 		channelService = service.NewChatChannelServiceWithAgentService(r.agentService)
 	}
 	ch.SetMessageHandler(func(ctx context.Context, msg core.IncomingMessage) error {
+		outgoing := core.OutgoingMessage{ChatID: msg.ChatID, ReplyToMessageID: msg.MessageID}
+
+		// A streaming channel owns its own message lifecycle: cumulative text goes
+		// to SendStream, and the bridge sends the complete answer if streaming fails.
+		var onDelta func(string)
+		var text chan string
+		var sent chan error
+		if streamer, ok := ch.(core.StreamingChannel); ok && streamer.StreamEnabled() {
+			text = make(chan string, 1)
+			sent = make(chan error, 1)
+			go func() {
+				sent <- streamer.SendStream(ctx, outgoing, text)
+			}()
+			onDelta = func(value string) {
+				// Keep only the newest cumulative snapshot; the channel must not
+				// build a backlog while the platform renders older text.
+				select {
+				case text <- value:
+				default:
+					select {
+					case <-text:
+					default:
+					}
+					select {
+					case text <- value:
+					default:
+					}
+				}
+			}
+		}
+
 		answer, err := channelService.HandleIncomingMessage(ctx, service.ChatChannelIncomingMessage{
 			Channel:   msg.Channel,
 			AccountID: msg.AccountID,
@@ -273,15 +305,34 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 			MessageID: msg.MessageID,
 			SenderID:  msg.SenderID,
 			Text:      msg.Text,
-		})
+		}, onDelta)
+
+		if text != nil {
+			// Streaming updates may have been coalesced. Make the final snapshot
+			// available before closing so a successful stream always has the full answer.
+			if answer != "" {
+				onDelta(answer)
+			}
+			close(text)
+			streamErr := <-sent
+			if streamErr == nil {
+				return err
+			}
+			if err == nil && answer == "" {
+				// The model produced nothing, so there is nothing to deliver.
+				return nil
+			}
+			common.Warn("chat channel stream failed, sending the answer as one message", zap.Error(streamErr), zap.String("channel", ch.ChannelID()), zap.String("account_id", accountID))
+		}
 		if err != nil || answer == "" {
 			return err
 		}
-		return ch.Send(ctx, core.OutgoingMessage{
-			ChatID:           msg.ChatID,
-			Text:             answer,
-			ReplyToMessageID: msg.MessageID,
-		})
+		// The turn's context may already be past its deadline, so the fallback send gets a
+		// context that cannot be cancelled by it.
+		sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), channelFinalSendTimeout)
+		defer cancel()
+		outgoing.Text = answer
+		return ch.Send(sendCtx, outgoing)
 	})
 	if err = ch.Start(ctx); err != nil {
 		return err

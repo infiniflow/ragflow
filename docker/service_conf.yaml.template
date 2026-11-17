@@ -51,9 +51,12 @@ es:
   username: '${ES_USER:-elastic}'
   password: '${ELASTIC_PASSWORD:-infini_rag_flow}'
 os:
-  hosts: 'http://${OS_HOST:-opensearch01}:9201'
+  hosts: 'http://${OS_HOST:-opensearch39}:9201'
   username: '${OS_USER:-admin}'
   password: '${OPENSEARCH_PASSWORD:-infini_rag_flow_OS_01}'
+  # Optional: skip TLS certificate verification for a self-signed development
+  # cluster. Leave it off (the default) for any HTTPS deployment.
+  # insecure_skip_verify: false
   # Optional hybrid (BM25 + KNN) search tuning. The connector self-provisions the
   # normalization search pipeline on start-up (requires OpenSearch >= 2.10).
   # hybrid_search_pipeline: 'ragflow_hybrid_pipeline'

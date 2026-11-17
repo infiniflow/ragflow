@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -179,7 +180,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	var req difyRetrievalRequest
 	if c.Request.Method == http.MethodGet {
 		if err := c.ShouldBindQuery(&req); err != nil {
-			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid query parameters")
+			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid query parameters: "+err.Error())
 			return
 		}
 		// Manually extract top_k and score_threshold from query (flat params, not nested)
@@ -201,7 +202,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		}
 	} else {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid request body")
+			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid request body: "+err.Error())
 			return
 		}
 	}
@@ -212,12 +213,16 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	if err := compliance.ValidateQuestion(ctx, req.Query); err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 	kb, err := h.kbSvc.GetKnowledgebaseByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			common.Respond(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
 		} else {
-			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, "failed to query knowledge base")
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, "failed to query knowledge base: "+err.Error())
 		}
 		return
 	}

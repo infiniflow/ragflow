@@ -43,6 +43,7 @@ func BoxToCropSpace(b pdf.TextBox, scale, cropOffX, cropOffY float64) pdf.TextBo
 
 // CopyBoxAnnotations copies the DLA/TSR annotation fields from src to dst.
 func CopyBoxAnnotations(dst, src *pdf.TextBox) {
+	dst.HasTableAnnotations = src.HasTableAnnotations
 	dst.R = src.R
 	dst.C = src.C
 	dst.RTop = src.RTop

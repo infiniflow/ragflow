@@ -216,6 +216,20 @@ export const useSaveSetting = (silent = false) => {
   return { data, loading, saveSetting: mutateAsync };
 };
 
+// The version endpoint returns either a bare string or `{ version: string }`
+// depending on the backend implementation. Normalize both so the sidebar
+// never attempts to render an object as a React child.
+const normalizeSystemVersion = (payload: unknown): string => {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+  if (payload && typeof payload === 'object' && 'version' in payload) {
+    const { version } = payload as { version?: unknown };
+    return typeof version === 'string' ? version : '';
+  }
+  return '';
+};
+
 export const useFetchSystemVersion = () => {
   const [version, setVersion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -225,7 +239,7 @@ export const useFetchSystemVersion = () => {
       setLoading(true);
       const { data } = await userService.getSystemVersion();
       if (data.code === 0) {
-        setVersion(data.data.version);
+        setVersion(normalizeSystemVersion(data.data));
         setLoading(false);
       }
     } catch (error) {
@@ -395,6 +409,11 @@ export const useDeleteTenantUser = () => {
       });
       if (data.code === 0) {
         message.success(t('message.deleted'));
+        // Refresh the member table; the tenant list also changes when the
+        // deleted user is the current user quitting a team.
+        queryClient.invalidateQueries({
+          queryKey: [UserSettingApiAction.ListTenantUser],
+        });
         queryClient.invalidateQueries({
           queryKey: [UserSettingApiAction.ListTenant],
         });

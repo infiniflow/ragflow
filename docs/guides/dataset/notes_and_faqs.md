@@ -4,7 +4,7 @@ title: Notes and FAQs
 sidebar_label: Notes and FAQs
 slug: /dataset_notes_and_faqs
 sidebar_custom_props: {
-  categoryIcon: LucideDatabaseZap
+  categoryIcon: LucideCircleHelp
 }
 ---
 

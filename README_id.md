@@ -82,6 +82,7 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2026-11-06 RAGFlow 1.0.0 dirilis.
 - 2026-09-29 RAGFlow 1.0.0-rc1 dirilis.
 
 - 2026-09-10 Menambahkan ingest konten situs web melalui sitemap.
@@ -165,7 +166,7 @@ Deployment lokal mendukung Docker dan menjalankan dari sumber. Docker cocok untu
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

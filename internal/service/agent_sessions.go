@@ -651,7 +651,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	}
 	if err := validateAgentChatModels(ctx, canvas.EffectiveTenantID(), dsl); err != nil {
 		if errors.Is(err, ErrAgentStorageError) {
-			return nil, common.CodeServerError, errors.New("Internal storage error while accessing the agent.")
+			return nil, common.CodeServerError, err
 		}
 		return nil, common.CodeDataError, err
 	}

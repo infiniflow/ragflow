@@ -3,9 +3,9 @@ package document
 import (
 	"mime/multipart"
 	"reflect"
-	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
@@ -28,9 +28,6 @@ func TestDedicatedDocumentParserID(t *testing.T) {
 		{"pptx routes to presentation", utility.FileTypeDOC, "deck.pptx", "presentation"},
 		{"legacy ppt routes to presentation", utility.FileTypeDOC, "deck.ppt", "presentation"},
 		{"pages routes to presentation", utility.FileTypeDOC, "deck.pages", "presentation"},
-		{"wps presentation dps routes to presentation", utility.FileTypePPT, "deck.dps", "presentation"},
-		{"wps presentation dpt routes to presentation", utility.FileTypePPT, "deck.dpt", "presentation"},
-		{"wps presentation dps is case-insensitive", utility.FileTypePPT, "DECK.DPS", "presentation"},
 		{"presentation extension is case-insensitive", utility.FileTypeDOC, "DECK.PPTX", "presentation"},
 		{"eml routes to email", utility.FileTypeDOC, "mail.eml", "email"},
 		{"msg routes to email", utility.FileTypeDOC, "mail.msg", "email"},
@@ -52,7 +49,7 @@ func TestDedicatedDocumentParserID(t *testing.T) {
 func TestConfigDeclaredFamily(t *testing.T) {
 	flat := entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
-			"pdf":                       map[string]any{"suffix": []any{"pdf"}},
+			"pdf":                       map[string]any{},
 			"text&code":                 map[string]any{},
 			"vlm":                       map[string]any{},
 			"enable_vision_enhancement": false,
@@ -112,8 +109,8 @@ func TestSelectionGovernsFamilyMissesAnUndeclaredFamily(t *testing.T) {
 func presentationParserConfig() entity.JSONMap {
 	return entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
-			"pdf":    map[string]any{"suffix": []any{"pdf"}},
-			"slides": map[string]any{"suffix": []any{"pptx", "ppt"}},
+			"pdf":    map[string]any{},
+			"slides": map[string]any{},
 		},
 	}
 }
@@ -121,11 +118,11 @@ func presentationParserConfig() entity.JSONMap {
 func generalParserConfig() entity.JSONMap {
 	return entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
-			"pdf":       map[string]any{"suffix": []any{"pdf"}},
+			"pdf":       map[string]any{},
 			"text&code": map[string]any{},
 			"docx":      map[string]any{},
-			"image":     map[string]any{"suffix": []any{"jpg"}},
-			"email":     map[string]any{"suffix": []any{"eml", "msg"}},
+			"image":     map[string]any{},
+			"email":     map[string]any{},
 		},
 	}
 }
@@ -133,8 +130,8 @@ func generalParserConfig() entity.JSONMap {
 func pictureParserConfig() entity.JSONMap {
 	return entity.JSONMap{
 		"Parser:ViewsCaptureLight": map[string]any{
-			"image": map[string]any{"suffix": []any{"jpg"}},
-			"video": map[string]any{"suffix": []any{"mp4"}},
+			"image": map[string]any{},
+			"video": map[string]any{},
 		},
 	}
 }
@@ -142,7 +139,7 @@ func pictureParserConfig() entity.JSONMap {
 func tableParserConfig() entity.JSONMap {
 	return entity.JSONMap{
 		"Parser:TableRoundStone": map[string]any{
-			"spreadsheet": map[string]any{"suffix": []any{"xlsx"}},
+			"spreadsheet": map[string]any{},
 			"text&code":   map[string]any{},
 		},
 	}
@@ -351,15 +348,6 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			wantFamilyIn: "slides",
 		},
 		{
-			name:         "wps presentation dps reaches its owner pipeline",
-			kbParser:     "general",
-			kbConfig:     generalParserConfig(),
-			filename:     "deck.dps",
-			filetype:     utility.FileTypePPT,
-			wantParserID: "presentation",
-			wantFamilyIn: "slides",
-		},
-		{
 			name:         "an unmappable visual extension still reaches picture",
 			kbParser:     "general",
 			kbConfig:     generalParserConfig(),
@@ -463,10 +451,10 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 
 	kbConfig := entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
-			"pdf":       map[string]any{"suffix": []any{"pdf"}},
+			"pdf":       map[string]any{},
 			"text&code": map[string]any{},
-			"image":     map[string]any{"ocr_enabled": true, "suffix": []any{"jpg"}},
-			"email":     map[string]any{"suffix": []any{"eml", "msg"}},
+			"image":     map[string]any{"ocr_enabled": true},
+			"email":     map[string]any{},
 		},
 		"GeneralChunker:SixApplesFall": map[string]any{"chunk_token_size": 512},
 		"metadata": map[string]any{
@@ -516,7 +504,7 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		t.Fatalf("pptx parser_id = %q, want presentation", parserID)
 	}
 	slidesSetup := parserFamilySetup(t, got[1], "slides")
-	if _, ok := slidesSetup["suffix"]; !ok {
+	if slidesSetup["parse_method"] != "DeepDOC" {
 		t.Fatalf("pptx slides setup = %#v, want the presentation pipeline defaults", slidesSetup)
 	}
 
@@ -763,7 +751,7 @@ func parserFamilySetup(t *testing.T, doc map[string]interface{}, family string) 
 		t.Fatalf("%v parser_config = %T, want map", doc["name"], doc["parser_config"])
 	}
 	for cpnID, raw := range cfg {
-		if !strings.HasPrefix(cpnID, "Parser:") {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		params, _ := raw.(map[string]interface{})

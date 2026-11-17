@@ -627,6 +627,7 @@ func TestResolveWebSearchProviderSelectsKeyedProviders(t *testing.T) {
 		{provider: "parallel", apiKeyName: "parallel_api_key", apiKey: "parallel-test"},
 		{provider: "search1api", apiKeyName: "search1api_api_key", apiKey: "search1api-test"},
 		{provider: "searchapi", apiKeyName: "searchapi_api_key", apiKey: "searchapi-test"},
+		{provider: "keirolabs", apiKeyName: "keirolabs_api_key", apiKey: "keirolabs-test"},
 	}
 
 	for _, tc := range cases {
@@ -939,6 +940,84 @@ func TestDecodeSearch1APIWebSearchResultsRejectsMalformedContainers(t *testing.T
 
 func TestDecodeSearch1APIWebSearchResultsAcceptsMissingResults(t *testing.T) {
 	results, err := decodeSearch1APIWebSearchResults([]byte(`{"searchParameters": {"query": "ragflow"}}`))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %#v, want empty", results)
+	}
+}
+
+func TestRetrieveKeirolabsWebSearchSendsBearerKeyAndUsesSnippets(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %q, want POST", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer keirolabs-test" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer keirolabs-test")
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"results": [
+				{"position": 1, "title": "No snippet", "url": "https://example.com/empty", "snippet": " \t\n", "domain": "example.com"},
+				{"position": 2, "title": "RAGFlow", "url": "https://example.com/ragflow", "snippet": "An open-source RAG engine.", "domain": "example.com", "score": 0.9}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveKeirolabsWebSearch(t.Context(), server.Client(), server.URL, "keirolabs-test", "What is RAGFlow?")
+	if err != nil {
+		t.Fatalf("retrieve Keirolabs web search: %v", err)
+	}
+	if got := requestBody["query"]; got != "What is RAGFlow?" {
+		t.Fatalf("query = %v, want %q", got, "What is RAGFlow?")
+	}
+	if got := requestBody["maxResults"]; got != float64(webSearchResultCount) {
+		t.Fatalf("maxResults = %v, want %d", got, webSearchResultCount)
+	}
+	assertWebSearchChunk(t, result, "keirolabs-https://example.com/ragflow", "RAGFlow", "An open-source RAG engine.")
+}
+
+func TestRetrieveKeirolabsWebSearchRejectsErrorStatuses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error": "Invalid API key"}`))
+	}))
+	defer server.Close()
+
+	if _, err := retrieveKeirolabsWebSearch(t.Context(), server.Client(), server.URL, "bad-key", "ragflow"); err == nil {
+		t.Fatal("error is nil")
+	}
+}
+
+func TestDecodeKeirolabsWebSearchResultsRejectsMalformedContainers(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "null response", body: `null`},
+		{name: "null results", body: `{"results":null}`},
+		{name: "object results", body: `{"results":{}}`},
+		{name: "string results", body: `{"results":"nope"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := decodeKeirolabsWebSearchResults([]byte(tc.body)); err == nil {
+				t.Fatal("error is nil")
+			}
+		})
+	}
+}
+
+func TestDecodeKeirolabsWebSearchResultsAcceptsMissingResults(t *testing.T) {
+	results, err := decodeKeirolabsWebSearchResults([]byte(`{}`))
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}

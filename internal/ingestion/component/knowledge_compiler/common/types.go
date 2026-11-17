@@ -302,7 +302,7 @@ func (p Param) PlanEnabled() bool {
 
 // KindToVariant maps a compilation_template.kind to the Go compiler Variant.
 //
-// The Python model uses richer kind values (mind_map, page_index,
+// The model uses richer kind values (mind_map, page_index
 // session_essence, session_graph, timeline, knowledge_graph, tree, wiki); the
 // Go port collapses them onto its variants. Per the agreed mapping:
 //
@@ -318,7 +318,7 @@ func (p Param) PlanEnabled() bool {
 // turns that into a hard failure rather than silently emitting uncompiled rows.
 //
 // Note: "datasetnav"/"dataset_nav" intentionally has NO mapping here — dataset
-// navigation is not an independent compile kind in Python; it is a by-product
+// navigation is not an independent compile kind in ; it is a by-product
 // written after tree/page_index compilation via internal/service datasetnav
 // (see tasks/agentic_search_port_plan.md).
 func KindToVariant(kind string) (Variant, error) {
@@ -451,13 +451,13 @@ func MetaStringSlice(meta map[string]any, key string) []string {
 // them would be unstable across runs — such chunks are rejected with an error.
 func VectorFromChunkMap(m map[string]any, dim int) ([]float32, error) {
 	if dim > 0 {
-		if v, ok := m[fmt.Sprintf("q_%d_vec", dim)]; ok {
+		if v, ok := m[appcommon.VectorColumnName(dim)]; ok {
 			return toFloat32Slice(v), nil
 		}
 	}
 	var keys []string
 	for k := range m {
-		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+		if appcommon.IsVectorColumn(k) {
 			keys = append(keys, k)
 		}
 	}

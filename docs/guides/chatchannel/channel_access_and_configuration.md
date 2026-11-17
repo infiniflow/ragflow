@@ -4,7 +4,7 @@ title: Channel Access and Configuration
 sidebar_label: Channel Access and Configuration
 slug: /channel_access_and_configuration
 sidebar_custom_props: {
-  categoryIcon: LucideMessagesSquare
+  categoryIcon: LucideSettings
 }
 ---
 

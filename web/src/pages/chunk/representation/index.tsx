@@ -13,7 +13,6 @@ import type {
   ClaimsPanelState,
   EvidencePanelState,
 } from './components/claim-list';
-import { RepresentationSelect } from './components/representation-select';
 import { useGraphEntitySearch } from './hooks/use-graph-entity-search';
 
 export type {
@@ -22,7 +21,9 @@ export type {
 } from './components/claim-list';
 
 interface RepresentationProps {
-  onNodeClick?: (node: ClickableNode) => void;
+  // The template select lives in the page's tab row, so the graph/entity
+  // search state is owned by the view switch above and passed down as one bag.
+  graphSearch: ReturnType<typeof useGraphEntitySearch>;
   // The claims / evidence panels belong to the artifact page's middle column,
   // not inside this tree view. The selection still lives here (it is driven by
   // node clicks), but the resolved content is published upward and the page
@@ -32,7 +33,7 @@ interface RepresentationProps {
 }
 
 function Representation({
-  onNodeClick,
+  graphSearch,
   onClaimsPanelChange,
   onEvidencePanelChange,
 }: RepresentationProps) {
@@ -57,9 +58,8 @@ function Representation({
     handleSelectEntity,
     handleNoMatchEnter,
     handleSearchKeywordChange,
-    handleTemplateChange,
     handleNodeClick,
-  } = useGraphEntitySearch(onNodeClick);
+  } = graphSearch;
 
   // Tree leaves carry a claim-count badge: clicking one opens its claims in the
   // artifact page's middle column, in addition to the usual chunk navigation.
@@ -197,11 +197,6 @@ function Representation({
   return (
     <section className="p-5 rounded-2xl h-full flex flex-col">
       <div className="flex items-center gap-2">
-        <RepresentationSelect
-          templates={templates}
-          value={selectedTemplateId}
-          onChange={handleTemplateChange}
-        />
         <div className="min-w-0">
           {isGraphKind ? (
             <SelectWithSearch

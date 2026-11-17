@@ -15,7 +15,25 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # untouched and merge conflicts against the EE branch are limited to this
 # single line plus the guarded hook call inside run_native_integration_tests.
 [[ -f "${SCRIPT_DIR}/build_ee.sh" ]] && source "${SCRIPT_DIR}/build_ee.sh"
+# Version-keyed native-lib resolution: each native lib sits under a
+# v<version>/ subdir of the user cache (~/ragflow-native-libs/<lib>/v<version>/),
+# so a single mounted cache holds several versions at once. The version numbers
+# come from go.mod (office_oxide / pdf_oxide), environments.go (ORT) and
+# native_lib_version.sh (pdfium) — see that file for the single source of truth.
+source "${SCRIPT_DIR}/tools/scripts/native_lib_version.sh"
+# ort_stamp.sh: pure helper that computes the relative, read-only-safe ORT
+# version-stamp symlink target (Fix #1/#2).
+source "${SCRIPT_DIR}/tools/scripts/ort_stamp.sh"
+# ort_present.sh: pure helper that decides whether the required ORT static lib
+# is already in the version+platform-keyed user cache (Fix: version/platform
+# aware presence gate).
+source "${SCRIPT_DIR}/tools/scripts/ort_present.sh"
 
+# Native static-lib user-cache root. Overridable via RAGFLOW_NATIVE_LIBS_DIR so
+# CI can mount the cache at a fixed host path (sep-tests.yml Slice 3); defaults
+# to ~/ragflow-native-libs. Captured once here and reused by every <lib>/v<version>
+# prefix below so the whole script agrees on a single cache root.
+NATIVE_LIBS_DIR="$(ragflow_native_libs_dir)"
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
@@ -43,31 +61,42 @@ if [ -n "$EXTRA_GO_TAGS" ]; then
 fi
 
 # Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
-# If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
-# and skips the network (download_dev_deps.py) fallback.
-SYSTEM_DEPS="/opt/ragflow-native-libs"
+# Each lib lives under a version-keyed subdir (v<version>/) placed there by
+# tools/scripts/download_dev_deps.py (idempotent, version-pinned) — run once by a
+# developer, or mounted in from the build host on CI. There is NO /opt pre-bake and
+# NO flat (version-less) fallback: a missing version dir means the cache is
+# incomplete and build.sh triggers the downloader itself (see setup_cgo_env).
 
-# office_oxide native library settings — static linking
-OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
-# Derived from go.mod (single source of truth: the Go module version). Matches
-# tools/scripts/download_dev_deps.py's office_oxide_url derivation. The pipeline exits 0
-# with an empty value when go.mod has no matching entry (no pipefail here), so
-# the empty case needs its own check: an empty version would slip past the
-# stale-lib comparison below and produce a broken .../lib/v link path.
-OFFICE_OXIDE_VERSION="$(grep -m1 -E '^[[:space:]]*github.com/yfedoseev/office_oxide/go[[:space:]]+v' "$PROJECT_ROOT/go.mod" | sed -E 's/.*v([0-9][^[:space:]]*).*/\1/')"
+# office_oxide native library settings — static linking. Version is derived from
+# go.mod (single source of truth, exactly as tools/scripts/download_dev_deps.py
+# derives it). An empty value (module absent from go.mod) would produce a broken
+# .../lib/v link path, so it is fatal. The prefix is set after the version, since
+# it embeds the version.
+OFFICE_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/office_oxide/go" "$PROJECT_ROOT")"
 if [ -z "$OFFICE_OXIDE_VERSION" ]; then
     echo -e "${RED}Error: could not read office_oxide version from go.mod${NC}" >&2; exit 1
 fi
+OFFICE_OXIDE_PREFIX="${NATIVE_LIBS_DIR}/office_oxide/v${OFFICE_OXIDE_VERSION}"
 
-# pdfium native library settings — static linking (kognitos/pdfium-static)
-# Pinned here (not grepped from the dev downloader) so build.sh stays tied to the
-# checked-out source tree and the Docker build needs no extra COPY of the script.
-PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
-PDFIUM_STATIC_VERSION="7809"
+# pdfium native library settings — static linking (kognitos/pdfium-static).
+# Version is read from the single source of truth tools/scripts/native_lib_version.sh
+# (pdfium_static_version), exactly as download_dev_deps.py does, so the bare build
+# number lives in exactly one place. An empty value is fatal.
+PDFIUM_STATIC_VERSION="$(pdfium_static_version "$PROJECT_ROOT")"
+if [ -z "$PDFIUM_STATIC_VERSION" ]; then
+    echo -e "${RED}Error: could not read pdfium version from native_lib_version.sh${NC}" >&2; exit 1
+fi
+PDFIUM_STATIC_PREFIX="${NATIVE_LIBS_DIR}/pdfium-static/v${PDFIUM_STATIC_VERSION}"
 
-# pdf_oxide native library settings — static linking (go-ffi tarball)
-PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
-PDF_OXIDE_VERSION="0.3.73"
+# pdf_oxide native library settings — static linking (go-ffi tarball). Version
+# is read from go.mod (single source of truth) instead of a hardcoded constant,
+# so bumping the dependency needs no build.sh edit. The empty case is fatal for
+# the same reason as office_oxide. The prefix is set after the version.
+PDF_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/pdf_oxide/go" "$PROJECT_ROOT")"
+if [ -z "$PDF_OXIDE_VERSION" ]; then
+    echo -e "${RED}Error: could not read pdf_oxide version from go.mod${NC}" >&2; exit 1
+fi
+PDF_OXIDE_PREFIX="${NATIVE_LIBS_DIR}/pdf_oxide/v${PDF_OXIDE_VERSION}"
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
@@ -75,7 +104,7 @@ PDF_OXIDE_VERSION="0.3.73"
 # is then resolved via dlopen(NULL) (the process-global symbol table, not the
 # executable's own path), so no libonnxruntime.so is needed at runtime.
 # Downloaded by tools/scripts/download_dev_deps.py into onnxruntime/static_lib.
-ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
+ONNXRUNTIME_STATIC_PREFIX="${NATIVE_LIBS_DIR}/onnxruntime/static_lib"
 
 # ── target platform detection ──────────────────────────────────────────
 # Defaults to the build host (uname), overridable with RAGFLOW_TARGET_OS /
@@ -155,27 +184,78 @@ ort_static_lib_prefix() {
     esac
 }
 
-# Copy a dependency from the system pre-seed directory to the user cache.
-# Returns 0 if the dep was copied or already exists in cache, 1 otherwise.
-_seed_from_system() {
-    local dep_name="$1"  # e.g. "pdfium-static", "pdf_oxide", "office_oxide"
-    local dep_dir="${HOME}/ragflow-native-libs/${dep_name}"
-    local sys_dir="${SYSTEM_DEPS}/${dep_name}"
+# ── native static library provisioning ──────────────────────────────────
+# The native .a files live in the version-keyed user cache
+# (~/ragflow-native-libs/<lib>/v<version>/), placed there by
+# tools/scripts/download_dev_deps.py — idempotently and version-pinned — which a
+# developer runs once, and which CI mounts in from the build host. There is NO
+# /opt pre-bake and NO flat (version-less) fallback any more: a missing version
+# dir means the cache is incomplete, so build.sh triggers the downloader itself
+# (controlled auto-download) rather than silently linking a stale or wrong lib.
 
-    echo "check if dep ${dep_name} exists in ${dep_dir} or ${sys_dir}"
-
-    if [ -d "$dep_dir" ]; then
-        echo "  ${dep_name} → ${dep_dir} (user cache)"
-        return 0  # already cached
+_pdfium_deps_present() {
+    local stamp="${PDFIUM_STATIC_PREFIX}/.ragflow_platform" cached_platform
+    [ -s "${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a" ] || return 1
+    if [ "$TARGET_OS" = "linux" ]; then
+        [ -s "${PDFIUM_STATIC_PREFIX}/lib/libc++.a" ] || return 1
+        [ -s "${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a" ] || return 1
     fi
-    if [ -d "$sys_dir" ]; then
-        echo "  ${dep_name} → ${sys_dir} (system)"
-        mkdir -p "$(dirname "$dep_dir")"
-        cp -r "$sys_dir" "$dep_dir"
+    # Preserve pre-provisioned caches without a stamp. A downloader-stamped
+    # cache must match the build target before it can be used.
+    if [ -f "$stamp" ]; then
+        IFS= read -r cached_platform < "$stamp" || return 1
+        [ "$cached_platform" = "${TARGET_OS}/${TARGET_ARCH}" ] || return 1
+    fi
+    return 0
+}
+
+# True when every native lib the Go build links is already in the versioned user
+# cache for the target platform. Used to skip the network entirely on an
+# already-provisioned host.
+_native_libs_present() {
+    if [ -z "$_TARGET_PLATFORM_DETECTED" ]; then
+        detect_target_platform
+        _TARGET_PLATFORM_DETECTED=1
+    fi
+    [ -f "${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a" ] || return 1
+    [ -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h" ] || return 1
+    _pdfium_deps_present || return 1
+    [ -f "${PDF_OXIDE_PREFIX}/lib/${TARGET_OS}_${TARGET_ARCH}/libpdf_oxide.a" ] || return 1
+    # ORT must match the SAME version+platform-keyed dir that check_onnxruntime_deps
+    # links (*/${ort_dir_prefix}${ort_version}*/lib/*.a). A shared cache holding
+    # only an OLD version or a DIFFERENT platform's ORT must be reported missing so
+    # the controlled auto-downloader runs, instead of being silently treated as
+    # present and failing only at link time.
+    local ort_version ort_dir_prefix
+    ort_version="$(deepdoc_ort_version "$PROJECT_ROOT")" || return 1
+    ort_dir_prefix="$(ort_static_lib_prefix)"
+    ragflow_ort_present "$ONNXRUNTIME_STATIC_PREFIX" "$ort_dir_prefix" "$ort_version" || return 1
+    return 0
+}
+
+# Controlled auto-download: if the versioned native libs are not yet in the user
+# cache, run the one-stop downloader ONCE. It is idempotent and version-pinned,
+# so it can only land the exact pinned .a — never a wrong version. Fail loud only
+# when the cache is still incomplete afterwards (a locked-down host with no
+# network and no pre-placed libs).
+_ensure_native_libs_installed() {
+    _native_libs_present && return 0
+    echo "One or more native static libraries are missing from the user cache;"
+    echo "  running downloader: uv run tools/scripts/download_dev_deps.py"
+    ( cd "$PROJECT_ROOT" && uv run tools/scripts/download_dev_deps.py ) || {
+        echo -e "${RED}Error: native library downloader failed.${NC}" >&2
+        exit 1
+    }
+    if _native_libs_present; then
         return 0
     fi
-    echo "  ${dep_name} not found in system or user cache"
-    return 1
+    echo -e "${RED}Error: native static libraries still missing after download.${NC}" >&2
+    echo "  Pre-place the version-keyed dirs manually on a locked-down host:" >&2
+    echo "    ${OFFICE_OXIDE_PREFIX}" >&2
+    echo "    ${PDFIUM_STATIC_PREFIX}" >&2
+    echo "    ${PDF_OXIDE_PREFIX}" >&2
+    echo "    ${ONNXRUNTIME_STATIC_PREFIX}" >&2
+    exit 1
 }
 
 # ── cl100k_base BPE table ─────────────────────────────────────────────
@@ -293,9 +373,49 @@ check_pcre2() {
     return 1
 }
 
+# A toolchain that is no longer installed must not poison the build. A removed
+# Homebrew LLVM, for example, leaves CC/CXX and -I/-L/LIBRARY_PATH entries
+# behind, and both cmake and cgo honour them — every compiler probe then fails
+# with an error that names neither the cause nor the fix. Drop what points at a
+# path that does not exist; a missing entry can never contribute anything.
+drop_stale_toolchain_env() {
+    local var value dir
+    for var in CC CXX; do
+        value="${!var}"
+        [ -n "$value" ] || continue
+        command -v "$value" >/dev/null 2>&1 && continue
+        echo -e "${YELLOW}Warning: $var=$value does not exist; falling back to the default compiler${NC}"
+        unset "$var"
+    done
+    for var in CPPFLAGS CFLAGS CXXFLAGS LDFLAGS; do
+        value="${!var}"
+        [ -n "$value" ] || continue
+        for dir in $(printf '%s\n' "$value" | tr ' ' '\n' | sed -nE 's/^-[IL](.*)$/\1/p'); do
+            [ -z "$dir" ] && continue
+            [ -e "$dir" ] && continue
+            echo -e "${YELLOW}Warning: $var points at the missing path $dir; ignoring $var${NC}"
+            unset "$var"
+            break
+        done
+    done
+    for var in LIBRARY_PATH CPATH; do
+        value="${!var}"
+        [ -n "$value" ] || continue
+        for dir in $(printf '%s' "$value" | tr ':' ' '); do
+            [ -z "$dir" ] && continue
+            [ -e "$dir" ] && continue
+            echo -e "${YELLOW}Warning: $var points at the missing path $dir; ignoring $var${NC}"
+            unset "$var"
+            break
+        done
+    done
+}
+
 # Check dependencies
 check_cpp_deps() {
     print_section "Checking c++ dependencies"
+
+    drop_stale_toolchain_env
 
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
     command -v clang++ >/dev/null 2>&1 || { echo -e "${RED}Error: clang++ is required but not installed.${NC}"; exit 1; }
@@ -318,6 +438,7 @@ check_cpp_deps() {
 check_go_deps() {
     print_section "Checking go dependencies"
 
+    drop_stale_toolchain_env
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
@@ -333,7 +454,7 @@ check_ort_version_consistency() {
     print_section "Checking ONNX Runtime version consistency"
 
     local env_go dockerfile
-    env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
+    env_go="$(deepdoc_ort_version "${PROJECT_ROOT}")"
     dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
 
     if [ -z "$env_go" ] || [ -z "$dockerfile" ]; then
@@ -366,8 +487,9 @@ check_ort_version_consistency() {
 # that lacks those custom slots links successfully and only fails at runtime.
 # The check below catches that by comparing the local release ZIP against the
 # published {asset}.sha256 sidecar (same source of truth the download scripts
-# use). Devs who ran a download script have the zip under deps/; CI
-# seeds from /opt and has no zip, where the bake is authoritative.
+# use). Devs who ran a download script have the zip under deps/; on CI the
+# version-keyed cache is mounted from the build host and no zip is present, so
+# the sha256 check is skipped there and the mounted cache seed is authoritative.
 check_onnxruntime_deps() {
     # Ensure TARGET_OS/TARGET_ARCH are resolved. ort_static_lib_prefix below
     # depends on them; without this guard an early call (before any other path
@@ -380,9 +502,7 @@ check_onnxruntime_deps() {
     fi
 
     local ort_version
-    ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
-        "${PROJECT_ROOT}/internal/common/environments.go" \
-        | sed -E 's/.*"([^"]+)".*/\1/')"
+    ort_version="$(deepdoc_ort_version "${PROJECT_ROOT}")"
     if [ -z "$ort_version" ]; then
         echo -e "${RED}Error: cannot parse DeepDocORTVersion from internal/common/environments.go${NC}" >&2
         return 1
@@ -400,6 +520,11 @@ check_onnxruntime_deps() {
     # another OS/arch, and the Python side legitimately keeps another ORT
     # version in the same prefix. Matching both is why coexisting version
     # dirs need no separate fail-fast guard here.
+    # The ORT static archives are resolved from the version-keyed user cache
+    # (~/ragflow-native-libs/onnxruntime/static_lib, which the downloader
+    # populates and CI mounts in). There is no /opt pre-bake to reseed from; an
+    # incomplete cache is filled by the controlled auto-download in setup_cgo_env.
+
     local ort_dir_prefix
     ort_dir_prefix="$(ort_static_lib_prefix)"
     while IFS= read -r f; do
@@ -432,7 +557,7 @@ check_onnxruntime_deps() {
         echo "  available: ${avail:-<none>}" >&2
         echo "  DeepDocORTVersion=${ort_version}; fetch it with:" >&2
         echo "    uv run tools/scripts/download_dev_deps.py" >&2
-        echo "  or pre-seed /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
+        echo "  or pre-seed ${NATIVE_LIBS_DIR}/onnxruntime (CI mounts the cache from the build host)." >&2
         return 1
     fi
 
@@ -495,7 +620,9 @@ check_onnxruntime_deps() {
 # Check office_oxide native library
 check_office_oxide_deps() {
     print_section "Checking office_oxide native library"
-    _seed_from_system "office_oxide" || true
+    # office_oxide is resolved from the version-keyed user cache
+    # (${OFFICE_OXIDE_PREFIX}). An incomplete cache is filled by the controlled
+    # auto-download in setup_cgo_env; there is no /opt pre-bake to recover from.
 
     local lib_file="liboffice_oxide.a"
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
@@ -516,28 +643,11 @@ check_office_oxide_deps() {
     if ! strings "$lib_path" 2>/dev/null | grep -Fxq "$OFFICE_OXIDE_VERSION"; then
         local found_version
         found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
-        echo -e "${YELLOW}office_oxide native lib version mismatch (required v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}); refreshing from download${NC}"
-        rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/deps/$(office_oxide_asset)"
-        if ! (cd "${PROJECT_ROOT}" && uv run tools/scripts/download_dev_deps.py); then
-            echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
-            echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
-            echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
-            echo "    rm -rf ~/ragflow-native-libs/office_oxide deps/$(office_oxide_asset)"
-            echo "    uv run tools/scripts/download_dev_deps.py"
-            exit 1
-        fi
-        lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
-        header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
-        if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
-            echo -e "${RED}Error: office_oxide native library not found after refresh${NC}"
-            exit 1
-        fi
-        if ! strings "$lib_path" 2>/dev/null | grep -Fxq "$OFFICE_OXIDE_VERSION"; then
-            found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
-            echo -e "${RED}Error: office_oxide native lib version mismatch after refresh${NC}"
-            echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
-            exit 1
-        fi
+        echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
+        echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
+        echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
+        echo "    uv run tools/scripts/download_dev_deps.py   # re-extracts into ${OFFICE_OXIDE_PREFIX}"
+        exit 1
     fi
 
     echo "✓ office_oxide v${OFFICE_OXIDE_VERSION} native library found at ${OFFICE_OXIDE_PREFIX}"
@@ -546,15 +656,17 @@ check_office_oxide_deps() {
 
 # Check pdfium static library.
 check_pdfium_deps() {
-    _seed_from_system "pdfium-static" || true
+    # pdfium is resolved from the version-keyed user cache
+    # (${PDFIUM_STATIC_PREFIX}). An incomplete cache is filled by the controlled
+    # auto-download in setup_cgo_env; there is no /opt pre-bake to recover from.
     local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
 
-    if [ -f "$lib_path" ]; then
+    if _pdfium_deps_present; then
         echo "  pdfium (static) → ${PDFIUM_STATIC_PREFIX}"
         return 0
     fi
 
-    echo "  pdfium (static) not found"
+    echo "  pdfium (static) missing or incompatible with ${TARGET_OS}/${TARGET_ARCH}"
     echo "  Expected: ${lib_path}"
     echo "  Run: uv run tools/scripts/download_dev_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/$(pdfium_asset) | tar xz -C ${PDFIUM_STATIC_PREFIX}"
@@ -604,7 +716,9 @@ pdf_oxide_validate_version() {
 }
 
 check_pdf_oxide_deps() {
-    _seed_from_system "pdf_oxide" || true
+    # pdf_oxide is resolved from the version-keyed user cache
+    # (${PDF_OXIDE_PREFIX}). An incomplete cache is filled by the controlled
+    # auto-download in setup_cgo_env; there is no /opt pre-bake to recover from.
     # Map platform to tarball-internal subdirectory (lib/<os>_<arch>/). Reuses
     # TARGET_OS/TARGET_ARCH set by detect_target_platform instead of re-deriving
     # from uname, so it stays consistent with the other check_*_deps helpers.
@@ -617,10 +731,10 @@ check_pdf_oxide_deps() {
     local lib_path="${PDF_OXIDE_PREFIX}/lib/${platform_subdir}/libpdf_oxide.a"
 
     if [ -f "$lib_path" ]; then
-        # Verify the on-disk lib matches the pinned version. _seed_from_system
-        # accepts an existing user-cache directory without inspecting it, so a
-        # lib left over from an earlier pin is reused silently and the upgrade
-        # becomes a no-op.
+        # Verify the on-disk lib matches the pinned version. The cache is
+        # version-keyed (${PDF_OXIDE_PREFIX}), so an earlier pin lives under a
+        # different v<version>/ dir and is never silently reused; this check is a
+        # defense-in-depth against a stale .a that somehow landed in this dir.
         #
         # The version marker "pdf_oxide <version>" is merged into Rust's string
         # constant pool (unlike office_oxide's standalone "0.1.9" line), so we
@@ -664,15 +778,111 @@ check_pdf_oxide_deps() {
     return 1
 }
 
+# Go 1.27+ scans every linker input named in #cgo LDFLAGS and rejects an ELF
+# archive whose members carry LLVM's SHT_LLVM_LINKER_OPTIONS section
+# (".linker-options", type 0x6fff4c01):
+#   "disallowed ELF embedded linker options section in #cgo LDFLAGS: ..."
+# clang-20 emits that section into every object of librag_tokenizer_c_api.a
+# (along with .llvm_addrsig, which Go permits), so strip it before any Go
+# build/test links the archive. Removing the section drops no code or symbols;
+# the dependencies it advertises are already listed explicitly in #cgo LDFLAGS
+# (-lstdc++ -lm -lpthread -lpcre2-8).
+# Idempotent: a no-op when the section is absent (gcc-built archives, or an
+# archive already stripped). Linux/ELF only; macOS objects are Mach-O.
+strip_tokenizer_linker_options() {
+    [ "$(uname -s)" = "Linux" ] || return 0
+    local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
+    [ -f "$tok_a" ] || return 0
+
+    # Detect before writing so a clean archive stays byte-for-byte untouched,
+    # and a missing objcopy is only fatal when the section is actually present.
+    # Without readelf, fall through to the strip: objcopy treats a section that
+    # is not there as a no-op, so a gcc-built archive stays valid.
+    if command -v readelf >/dev/null 2>&1; then
+        if ! readelf -S "$tok_a" 2>/dev/null | grep -q '\.linker-options'; then
+            return 0
+        fi
+    fi
+
+    local objcopy_bin=""
+    if command -v objcopy >/dev/null 2>&1; then
+        objcopy_bin=objcopy
+    elif command -v llvm-objcopy >/dev/null 2>&1; then
+        objcopy_bin=llvm-objcopy
+    else
+        echo -e "${RED}Error: librag_tokenizer_c_api.a contains .linker-options sections that Go 1.27+ rejects, but neither objcopy nor llvm-objcopy is installed.${NC}" >&2
+        return 1
+    fi
+    "$objcopy_bin" --remove-section=.linker-options "$tok_a"
+    echo -e "${GREEN}✓ Removed LLVM .linker-options sections from librag_tokenizer_c_api.a${NC}"
+}
+
+# Rewrite symbol names in a static archive from an "old new" map (objcopy's
+# --redefine-syms format). Linux uses GNU objcopy; macOS has no objcopy in the
+# base toolchain (llvm-objcopy ships only with a Homebrew LLVM install) and ld64
+# has no --allow-multiple-definition, so the same rename runs through the
+# in-tree Go rewriter instead — no LLVM toolchain required.
+rename_archive_symbols() {
+    local archive="$1" map="$2"
+    if [ "$(uname -s)" = "Darwin" ]; then
+        # Progress goes to stderr: callers capture this function's stdout as the
+        # archive path.
+        ( cd "$PROJECT_ROOT" && go run ./tools/machorename --redefine-syms="$map" "$archive" ) >&2
+        return
+    fi
+    local objcopy_bin=""
+    if command -v objcopy >/dev/null 2>&1; then
+        objcopy_bin=objcopy
+    elif command -v llvm-objcopy >/dev/null 2>&1; then
+        objcopy_bin=llvm-objcopy
+    else
+        echo -e "${RED}Error: objcopy not found; install binutils.${NC}" >&2
+        return 1
+    fi
+    "$objcopy_bin" --redefine-syms="$map" "$archive"
+}
+
 # Build C++ static library
 build_cpp() {
     print_section "Building C++ static library"
 
+    # A cache left behind by a compiler that has since been removed (e.g. a
+    # purged Homebrew LLVM) makes cmake abort before it can reconfigure itself.
+    # Start over in that case: a full rebuild is the only correct answer.
+    local cache="$BUILD_DIR/CMakeCache.txt" cached_compiler
+    if [ -f "$cache" ]; then
+        for cached_compiler in $(sed -nE 's/^CMAKE_(C|CXX)_COMPILER:FILEPATH=(.*)$/\2/p' "$cache"); do
+            if ! command -v "$cached_compiler" >/dev/null 2>&1; then
+                echo -e "${YELLOW}Warning: CMake cache points at a missing compiler ($cached_compiler); reconfiguring${NC}"
+                rm -rf "$BUILD_DIR"
+                break
+            fi
+        done
+    fi
+
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
 
+    # The tokenizer archive is linked into the Go binary, so it has to be built
+    # for the architecture Go produces. Deriving it from `go env GOARCH` keeps
+    # the two in step even when the shell runs under Rosetta (uname reports
+    # x86_64) or cmake itself is an Intel-only Homebrew build.
+    local cmake_args=(-DCMAKE_BUILD_TYPE=Release)
+    if [ "$(uname -s)" = "Darwin" ]; then
+        local goarch
+        goarch="$(go env GOARCH 2>/dev/null)"
+        [ -n "$goarch" ] && cmake_args+=("-DCMAKE_OSX_ARCHITECTURES=${goarch}")
+    fi
+    # Extra arguments for the C++ configure step, e.g. to point pcre2 at a
+    # specific static archive:
+    #   RAGFLOW_CMAKE_ARGS=-DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a bash build.sh
+    if [ -n "${RAGFLOW_CMAKE_ARGS:-}" ]; then
+        # shellcheck disable=SC2206 # deliberate word splitting of the flag list
+        cmake_args+=(${RAGFLOW_CMAKE_ARGS})
+    fi
+
     echo "Running cmake..."
-    cmake .. -DCMAKE_BUILD_TYPE=Release
+    cmake .. "${cmake_args[@]}"
 
     echo "Building librag_tokenizer_c_api.a..."
     local jobs
@@ -683,6 +893,8 @@ build_cpp() {
         echo -e "${RED}Error: Failed to build C++ static library${NC}"
         exit 1
     fi
+
+    strip_tokenizer_linker_options
 
     # Rename the tokenizer's bundled re2 symbols into a private namespace so they
     # never collide with onnxruntime's copy of re2 at final link time.
@@ -698,26 +910,20 @@ build_cpp() {
     # Renaming the tokenizer's re2 symbols into a private prefix gives each copy
     # its own namespace, so the tokenizer calls its own ABI-compatible re2 and
     # onnxruntime keeps calling its own. Verified to eliminate the crash.
+    #
+    # Both desktop linkers reject the duplicate symbols the two copies define
+    # (GNU ld only on request, ld64 never), so this rename is required on every
+    # platform: rename_archive_symbols() picks objcopy on Linux and the in-tree
+    # Go rewriter on macOS.
     local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
     local rename_map="$BUILD_DIR/re2_rename.map"
-    # GNU objcopy is standard on Linux; on macOS it is provided by LLVM as
-    # llvm-objcopy (brew install llvm). Prefer whichever is available.
-    local objcopy_bin=""
-    if command -v objcopy >/dev/null 2>&1; then
-        objcopy_bin=objcopy
-    elif command -v llvm-objcopy >/dev/null 2>&1; then
-        objcopy_bin=llvm-objcopy
-    fi
-    if [ -n "$objcopy_bin" ]; then
-        nm "$tok_a" \
-            | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_ZN3re2|_ZNK3re2|_ZTVN3re2|_ZTIN3re2|_ZTSN3re2/ { print $3" ragtokre2_"$3 }' \
-            | sort -u > "$rename_map"
-        if [ -s "$rename_map" ]; then
-            "$objcopy_bin" --redefine-syms="$rename_map" "$tok_a"
-            echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
-        fi
-    else
-        echo -e "${YELLOW}Warning: objcopy/llvm-objcopy not found, skipping re2 symbol rename (re2 collision with onnxruntime may cause SIGSEGV)${NC}"
+    # Mach-O prefixes C++ symbols with an extra underscore (__ZN3re2...).
+    nm "$tok_a" \
+        | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_?_Z(N|NK|TVN|TIN|TSN)3re2/ { print $3" ragtokre2_"$3 }' \
+        | sort -u > "$rename_map"
+    if [ -s "$rename_map" ]; then
+        rename_archive_symbols "$tok_a" "$rename_map" || exit 1
+        echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
     fi
 
     echo -e "${GREEN}✓ C++ static library built successfully${NC}"
@@ -798,12 +1004,12 @@ build_go() {
         echo "  at startup with a fatal 'no in-process DeepDoc backend serving'." >&2
         echo "  Fetch the static libs with:" >&2
         echo "    uv run tools/scripts/download_dev_deps.py" >&2
-        echo "  or pre-seed them at /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
+        echo "  or pre-seed them at ${NATIVE_LIBS_DIR}/onnxruntime (CI mounts the cache from the build host)." >&2
         echo "  This production binary must statically include ORT — there is no" >&2
         echo "  ORT-free build path. ORT ends up unlinked only via one of:" >&2
         echo "    - the ORT static_lib dir was never seeded: run" >&2
         echo "      'uv run tools/scripts/download_dev_deps.py', or pre-seed" >&2
-        echo "      /opt/ragflow-native-libs/onnxruntime as the CI image does;" >&2
+        echo "      ${NATIVE_LIBS_DIR}/onnxruntime as the CI mount does;" >&2
         echo "    - setup_cgo_env did not add libonnxruntime to CGO_LDFLAGS." >&2
         return 1
     fi
@@ -832,49 +1038,94 @@ build_go() {
     echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
 }
 
+# Print the path of a libpdf_oxide.a that links next to liboffice_oxide.a on
+# macOS. pdf_oxide bundles its own office_oxide and Rust runtime, and ld64 has
+# no --allow-multiple-definition, so the symbols both archives define are
+# renamed in a cached copy of pdf_oxide. Renaming covers definitions and
+# references alike, so pdf_oxide keeps calling its own copies.
+darwin_pdf_oxide_archive() {
+    local src="$1/libpdf_oxide.a"
+    local office_a="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+    local out_dir="${PROJECT_ROOT}/.cache/pdf_oxide/$(basename "$PDF_OXIDE_PREFIX")-office-$(basename "$OFFICE_OXIDE_PREFIX")/${TARGET_OS}_${TARGET_ARCH}"
+    local out="$out_dir/libpdf_oxide.a"
+    if [ -f "$out" ] && [ "$out" -nt "$src" ] && [ "$out" -nt "$office_a" ]; then
+        echo "$out"
+        return 0
+    fi
+    mkdir -p "$out_dir"
+    # liboffice_oxide.a holds Rust LLVM bitcode that nm cannot always read, so
+    # the shared set is taken from pdf_oxide alone: office_oxide's C API
+    # (office_*) and the Rust personality routine.
+    local rename_map="$out_dir/rename.map"
+    nm -g --defined-only "$src" 2>/dev/null \
+        | awk 'NF == 3 && ($3 ~ /^_office_/ || $3 == "_rust_eh_personality") { print $3" pdfoxide_"$3 }' \
+        | sort -u > "$rename_map"
+    cp "$src" "$out.tmp"
+    rename_archive_symbols "$out.tmp" "$rename_map" || { rm -f "$out.tmp"; return 1; }
+    mv "$out.tmp" "$out"
+    echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") pdf_oxide symbols shared with office_oxide${NC}" >&2
+    echo "$out"
+}
+
 # Configure CGO flags for native libraries (office_oxide, pdfium, pdf_oxide).
 # All three are statically linked — no LD_LIBRARY_PATH or -Wl,-rpath needed.
 setup_cgo_env() {
     detect_target_platform
 
+    # macOS links pcre2 from the static archive the CMake build stages next to
+    # the tokenizer archive (see the cgo directives in internal/binding): cgo
+    # cannot search library paths, so the path has to be a build artifact
+    # instead of a machine-specific Homebrew prefix.
+    if [ "$TARGET_OS" = "darwin" ] && [ ! -f "${BUILD_DIR}/libpcre2-8.a" ]; then
+        echo -e "${RED}Error: ${BUILD_DIR}/libpcre2-8.a is missing.${NC}" >&2
+        echo "  The macOS Go link takes pcre2 from the C++ build dir." >&2
+        echo "  Run 'bash build.sh --cpp' so CMake stages it there." >&2
+        return 1
+    fi
+
+    # --test/--go reuse the existing librag_tokenizer_c_api.a without rebuilding
+    # the C++ library. --cpp strips the clang-20 .linker-options section right
+    # after make, but a stale archive from an earlier build would still trip
+    # Go 1.27+'s cgo LDFLAGS check, so sanitize it on every path that links it.
+    strip_tokenizer_linker_options
+
+    # Controlled auto-download: fill any missing version-keyed native lib from
+    # the user cache before resolving individual libs. On an already-provisioned
+    # host (the common CI case, where the cache is mounted in) this is a no-op;
+    # on a fresh host it runs the one-stop downloader once. There is no /opt
+    # pre-bake and no flat fallback to recover from.
+    _ensure_native_libs_installed
+
     # ── office_oxide ──────────────────────────────────────────────────
     check_office_oxide_deps
 
-    # Go's build cache keys CGO_LDFLAGS as a string — it does NOT hash the
-    # file content of referenced .a archives. So swapping the .a in-place
-    # (same path) does NOT invalidate the cache, and `go build` silently
-    # reuses a stale binary linked against the old .a.
-    #
-    # Create a version-stamped symlink directory so the flag string
-    # includes the actual linked version. When the .a is upgraded, the
-    # path changes → Go cache key changes → automatic relink.
-    local office_oxide_lib_dir="${OFFICE_OXIDE_PREFIX}/lib"
-    local versioned_lib_dir="${office_oxide_lib_dir}/v${OFFICE_OXIDE_VERSION}"
-    mkdir -p "$versioned_lib_dir"
-    ln -sf "${office_oxide_lib_dir}/liboffice_oxide.a" \
-        "${versioned_lib_dir}/liboffice_oxide.a"
-
+    # The office_oxide prefix is already version-keyed
+    # (${OFFICE_OXIDE_PREFIX} = .../office_oxide/v<version>), so the linked path
+    # carries the version and Go's build cache (which keys CGO_LDFLAGS as a
+    # string, not the .a contents) automatically relinks when the version bumps.
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    export CGO_LDFLAGS="${versioned_lib_dir}/liboffice_oxide.a"
+    export CGO_LDFLAGS="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
 
     # ── pdfium ────────────────────────────────────────────────────────
     check_pdfium_deps || return 1
-    export CGO_LDFLAGS="$CGO_LDFLAGS ${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
+    local pdfium_link_dir
+    pdfium_link_dir="$(pdfium_static_link_dir "${PDFIUM_STATIC_PREFIX}/lib" "$TARGET_OS" "${PROJECT_ROOT}/.cache/pdfium")" || return 1
+    export CGO_LDFLAGS="$CGO_LDFLAGS \"${pdfium_link_dir}/libpdfium.a\""
     # Linux: Chromium-built objects use Clang's .eh_frame format which GNU ld
     # cannot merge. Use lld (LLVM linker) which handles them correctly.
     # --allow-multiple-definition: pdf_oxide and office_oxide are both Rust
     # staticlibs that embed the Rust runtime; linking them together produces
     # duplicate rust_eh_personality / compiler-rt builtins. Those duplicates are
     # ABI-IDENTICAL, so merging them is benign.
-    if [ "$(uname -s)" = "Linux" ]; then
+    if [ "$TARGET_OS" = "linux" ]; then
         if ! command -v ld.lld >/dev/null 2>&1; then
             echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld${NC}"
             echo "  lld is required to static-link Chromium-built pdfium (.eh_frame format)"
             return 1
         fi
         export CGO_LDFLAGS="$CGO_LDFLAGS \
-            ${PDFIUM_STATIC_PREFIX}/lib/libc++.a \
-            ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a \
+            \"${pdfium_link_dir}/libc++.a\" \
+            \"${pdfium_link_dir}/libc++abi.a\" \
             -fuse-ld=lld -Wl,--allow-multiple-definition"
         # The re2 regex-library collision between onnxruntime.a and
         # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
@@ -894,16 +1145,15 @@ setup_cgo_env() {
         linux_amd64|linux_arm64|darwin_amd64|darwin_arm64) ;;
         *) echo "pdf_oxide: unsupported platform: $pdf_oxide_subdir"; return 1 ;;
     esac
-    # Version-stamp the archive path so an in-place .a upgrade invalidates
-    # Go's build cache. See the office_oxide block above for why the raw path
-    # is not enough: the cache key hashes CGO_LDFLAGS as a string, not the
-    # contents of the archives it names.
+    # The pdf_oxide prefix is already version-keyed
+    # (${PDF_OXIDE_PREFIX} = .../pdf_oxide/v<version>), so the linked path
+    # carries the version and Go's build cache relinks on a version bump.
     local pdf_oxide_lib_dir="${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}"
-    local pdf_oxide_versioned_dir="${pdf_oxide_lib_dir}/v${PDF_OXIDE_VERSION}"
-    mkdir -p "$pdf_oxide_versioned_dir"
-    ln -sf "${pdf_oxide_lib_dir}/libpdf_oxide.a" \
-        "${pdf_oxide_versioned_dir}/libpdf_oxide.a"
-    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_versioned_dir}/libpdf_oxide.a"
+    local pdf_oxide_a="${pdf_oxide_lib_dir}/libpdf_oxide.a"
+    if [ "$TARGET_OS" = "darwin" ]; then
+        pdf_oxide_a="$(darwin_pdf_oxide_archive "$pdf_oxide_lib_dir")" || return 1
+    fi
+    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_a}"
 
     # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
     # Statically link libonnxruntime*.a into the binary. The org Go binding
@@ -930,11 +1180,10 @@ setup_cgo_env() {
     #     all unused objects and missing transitive dependencies), and exports
     #     it via -export_dynamic so runtime dlopen(NULL) resolves it.
     #
-    # Seed the static ORT archives from the system pre-bake (/opt, laid down
-    # by the CI runner image) into the user cache before the link check
-    # below. Mirrors the existing _seed_from_system calls for the other
-    # native libs so CI never downloads ORT at build/test time.
-    _seed_from_system "onnxruntime" || true
+    # The static ORT archives come from the version-keyed user cache (populated
+    # by download_dev_deps.py and mounted in on CI) — there is no /opt pre-bake.
+    # An incomplete cache is filled by the controlled auto-download at the top
+    # of setup_cgo_env.
     check_onnxruntime_deps || return 1
 
     # Version-stamp the archive paths so an in-place .a upgrade invalidates
@@ -944,15 +1193,22 @@ setup_cgo_env() {
     # linked binary. Stamp with the primary archive's sha256 so the flag string
     # changes when the content changes → automatic relink.
     local ort_version
-    ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
-        "${PROJECT_ROOT}/internal/common/environments.go" \
-        | sed -E 's/.*"([^"]+)".*/\1/')"
+    ort_version="$(deepdoc_ort_version "${PROJECT_ROOT}")"
     local ort_versioned_dir="${ONNXRUNTIME_STATIC_PREFIX}/v${ort_version}-${ORT_A_SHA256:0:16}"
-    mkdir -p "$ort_versioned_dir"
     local ort_a_versioned=""
-    local f
+    local f stamp needs_write want_target
     for f in $ORT_A_FILES; do
-        ln -sf "$f" "$ort_versioned_dir/$(basename "$f")"
+        # Relative, read-only-safe stamp (Fix #1/#2): the symlink target is
+        # relative to the versioned dir so it resolves under any cache mount, and
+        # the write is skipped when an existing link already points at the same
+        # archive (a read-only CI mount is then a no-op).
+        stamp="$(ragflow_ort_stamp_target "$ort_versioned_dir" "$f")"
+        needs_write="${stamp%%|*}"
+        want_target="${stamp#*|}"
+        if [ "$needs_write" = "yes" ]; then
+            mkdir -p "$ort_versioned_dir"
+            ln -sf "$want_target" "$ort_versioned_dir/$(basename "$f")"
+        fi
         ort_a_versioned="$ort_a_versioned $ort_versioned_dir/$(basename "$f")"
     done
 
@@ -1250,6 +1506,11 @@ DEPENDENCIES:
         - Debian/Ubuntu: libpcre2-dev
         - openSUSE/RHEL/Fedora: pcre2-devel
         - macOS (Homebrew): pcre2
+
+ENVIRONMENT:
+    RAGFLOW_GO_TAGS=ee      # build the enterprise sources
+    RAGFLOW_CMAKE_ARGS=...  # extra arguments for the C++ configure step, e.g.
+                            # -DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a
 EOF
 }
 

@@ -140,7 +140,7 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 			if bodyY > bodyTop {
 				bodyY += block.spaceBefore
 			}
-			if err := drawPDFTable(pdf, fonts, block.table, bodyX, &bodyY, bodyWidth, bodyBottom, opts.FontSize, newPage); err != nil {
+			if err := drawPDFTable(pdf, fonts, block.table, bodyX+block.indent, &bodyY, bodyWidth-block.indent, bodyBottom, opts.FontSize, newPage); err != nil {
 				return nil, err
 			}
 			bodyY += float64(opts.FontSize)
@@ -191,8 +191,12 @@ func markdownPDFBlocks(content string, baseSize int) []pdfBlock {
 	content = normalizeMarkdownTableSeparators(content)
 	source := []byte(content)
 	document := goldmark.New(goldmark.WithExtensions(extension.Table)).Parser().Parse(gmtext.NewReader(source))
-	blocks := make([]pdfBlock, 0, document.ChildCount())
-	for node := document.FirstChild(); node != nil; node = node.NextSibling() {
+	return pdfChildBlocks(document, source, baseSize)
+}
+
+func pdfChildBlocks(parent ast.Node, source []byte, baseSize int) []pdfBlock {
+	var blocks []pdfBlock
+	for node := parent.FirstChild(); node != nil; node = node.NextSibling() {
 		switch n := node.(type) {
 		case *ast.Heading:
 			sizes := [...]int{8, 6, 4, 2, 1, 0}
@@ -200,7 +204,7 @@ func markdownPDFBlocks(content string, baseSize int) []pdfBlock {
 				text: inlinePDFText(n, source), fontSize: baseSize + sizes[n.Level-1],
 				spaceBefore: float64(baseSize) * 0.6, spaceAfter: float64(baseSize) * 0.5,
 			})
-		case *ast.Paragraph:
+		case *ast.Paragraph, *ast.TextBlock:
 			blocks = append(blocks, pdfBlock{text: inlinePDFText(n, source), fontSize: baseSize, spaceAfter: float64(baseSize)})
 		case *ast.List:
 			index := n.Start
@@ -210,10 +214,24 @@ func markdownPDFBlocks(content string, baseSize int) []pdfBlock {
 					prefix = fmt.Sprintf("%d. ", index)
 					index++
 				}
-				blocks = append(blocks, pdfBlock{text: prefix + inlinePDFText(item, source), fontSize: baseSize, indent: 12, spaceAfter: float64(baseSize) * 0.35})
+				children := pdfChildBlocks(item, source, baseSize)
+				for i := range children {
+					children[i].indent += 12
+					if i == 0 && children[i].table == nil {
+						children[i].text = prefix + children[i].text
+					}
+				}
+				if len(children) > 0 {
+					children[len(children)-1].spaceAfter = float64(baseSize) * 0.35
+				}
+				blocks = append(blocks, children...)
 			}
 		case *ast.Blockquote:
-			blocks = append(blocks, pdfBlock{text: "| " + inlinePDFText(n, source), fontSize: baseSize, indent: 12, spaceAfter: float64(baseSize)})
+			children := pdfChildBlocks(n, source, baseSize)
+			for i := range children {
+				children[i].indent += 12
+			}
+			blocks = append(blocks, children...)
 		case *ast.CodeBlock:
 			blocks = append(blocks, pdfBlock{text: rawPDFBlockText(n, source), fontSize: baseSize, indent: 12, spaceAfter: float64(baseSize)})
 		case *ast.FencedCodeBlock:

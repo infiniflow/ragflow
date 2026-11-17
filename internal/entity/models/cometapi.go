@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -91,6 +92,38 @@ func (c *CometAPIModel) balanceURL(apiKey string) string {
 	query.Set("key", apiKey)
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
+}
+
+type redactedCometAPIRequestCause struct {
+	cause error
+}
+
+func (e redactedCometAPIRequestCause) Error() string { return "request failed" }
+
+func (e redactedCometAPIRequestCause) Unwrap() error { return e.cause }
+
+func redactCometAPIBalanceRequestError(err error) error {
+	var requestErr *url.Error
+	if !errors.As(err, &requestErr) {
+		return redactedCometAPIRequestCause{cause: err}
+	}
+
+	requestURL, parseErr := url.Parse(requestErr.URL)
+	if parseErr != nil {
+		return &url.Error{
+			Op:  requestErr.Op,
+			Err: redactedCometAPIRequestCause{cause: requestErr.Err},
+		}
+	}
+	query := requestURL.Query()
+	query.Del("key")
+	requestURL.RawQuery = query.Encode()
+
+	return &url.Error{
+		Op:  requestErr.Op,
+		URL: requestURL.String(),
+		Err: redactedCometAPIRequestCause{cause: requestErr.Err},
+	}
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
@@ -307,12 +340,12 @@ func (c *CometAPIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[
 
 	req, err := http.NewRequestWithContext(ctx, "GET", c.balanceURL(*apiConfig.ApiKey), nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", redactCometAPIBalanceRequestError(err))
 	}
 
 	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", redactCometAPIBalanceRequestError(err))
 	}
 	defer resp.Body.Close()
 

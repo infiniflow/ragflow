@@ -2178,7 +2178,7 @@ func TestGetDocumentPreview_EmptyFile(t *testing.T) {
 	}
 }
 
-func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
+func TestGetDocumentPreview_ReturnsStorageError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := &DocumentHandler{
 		documentService: &fakeDocumentService{},
@@ -2197,13 +2197,8 @@ func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
 		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
 	}
 	msg, _ := resp["message"].(string)
-	if msg != "Failed to load document preview" {
-		t.Fatalf("expected generic message, got %v", resp["message"])
-	}
-	// The storage detail (bucket/key, transport error) must stay in the
-	// server log, not in the client-visible message.
-	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "b/k") {
-		t.Fatalf("storage detail leaked to client: %v", resp["message"])
+	if !strings.Contains(msg, "Failed to load document preview:") || !strings.Contains(msg, "connection refused") || !strings.Contains(msg, "b/k") {
+		t.Fatalf("response missing underlying storage error: %v", resp["message"])
 	}
 }
 
@@ -2292,9 +2287,6 @@ func TestDownloadDocument_LookupErrorReturnsServerError(t *testing.T) {
 	if resp["message"] != "Failed to download document" {
 		t.Fatalf("unexpected client-visible error: %v", resp["message"])
 	}
-	if strings.Contains(w.Body.String(), "database connection failed") {
-		t.Fatal("database error detail leaked to the client")
-	}
 }
 
 func TestDownloadDocument_ServiceErrorReturnsServerError(t *testing.T) {
@@ -2319,11 +2311,8 @@ func TestDownloadDocument_ServiceErrorReturnsServerError(t *testing.T) {
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
 	}
-	if resp["message"] != "Failed to download document" {
+	if resp["message"] != "Failed to download document: database connection failed" {
 		t.Fatalf("unexpected client-visible error: %v", resp["message"])
-	}
-	if strings.Contains(w.Body.String(), "database connection failed") {
-		t.Fatal("database error detail leaked to the client")
 	}
 }
 

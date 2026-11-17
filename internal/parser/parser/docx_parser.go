@@ -111,7 +111,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// (mirrors Python parser.py:892-893 remove_toc_word).
 	if p.RemoveTOC {
 		outlines := extractDOCXOutlines(irJSON)
-		sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
+		sections = removeTOCWord(sections, outlines, isEnglishItems(sections, ""))
 	}
 	if len(sections) == 0 {
 		sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
