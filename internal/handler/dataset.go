@@ -31,6 +31,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
@@ -1143,6 +1144,10 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
 
 	searchService := h.searchDatasetsService
 	if searchService == nil {
@@ -1206,6 +1211,10 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		return
 	}
 	if err := validateSearchDatasetRequest(&req); err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}

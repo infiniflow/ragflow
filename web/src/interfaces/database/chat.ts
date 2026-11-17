@@ -67,6 +67,7 @@ export interface PromptConfig {
   brave_api_key?: string;
   exa_api_key?: string;
   firecrawl_api_key?: string;
+  keirolabs_api_key?: string;
   linkup_api_key?: string;
   parallel_api_key?: string;
   querit_api_key?: string;

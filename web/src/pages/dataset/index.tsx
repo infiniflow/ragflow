@@ -17,6 +17,15 @@ export default function DatasetWrapper() {
   const isCompilation = Boolean(
     useMatch(`${Routes.DatasetBase}${Routes.Compilation}/:id`),
   );
+  const isDatasetOverview = Boolean(
+    useMatch(`${Routes.DatasetBase}${Routes.DataSetOverview}/:id`),
+  );
+  const isDatasetFiles = Boolean(
+    useMatch(`${Routes.DatasetBase}${Routes.Files}/:id`),
+  );
+  const isDatasetTesting = Boolean(
+    useMatch(`${Routes.DatasetBase}${Routes.DatasetTesting}/:id`),
+  );
 
   useEffect(() => {
     setCollapsed(false);
@@ -58,7 +67,14 @@ export default function DatasetWrapper() {
             />
           )}
 
-          <div className="min-h-0 min-w-0 pt-3">
+          <div
+            className={cn(
+              'min-h-0 min-w-0',
+              isDatasetOverview || isDatasetFiles || isDatasetTesting
+                ? 'pt-2.5'
+                : 'pt-3',
+            )}
+          >
             <Outlet />
           </div>
         </article>

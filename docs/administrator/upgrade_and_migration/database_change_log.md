@@ -4,7 +4,7 @@ title: Database Change Log
 sidebar_label: Database Change Log
 slug: /database_change_log
 sidebar_custom_props: {
-  categoryIcon: LucideFileDiff
+  categoryIcon: LucideFileClock
 }
 ---
 

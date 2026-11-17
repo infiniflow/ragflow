@@ -35,8 +35,8 @@ import (
 )
 
 // Providers, endpoints and clients are listed alphabetically by provider id
-// (anysearch, brave, exa, firecrawl, linkup, parallel, querit, search1api, searchapi, serply,
-// tavily, youcom) so a new provider has exactly one obvious place in each list.
+// (anysearch, brave, exa, firecrawl, keirolabs, linkup, parallel, querit, search1api, searchapi,
+// serply, tavily, youcom) so a new provider has exactly one obvious place in each list.
 // Tavily's endpoint lives with its retrieval code in chat_pipeline.go, which is
 // why it has no entry here.
 const (
@@ -44,6 +44,7 @@ const (
 	webSearchProviderBrave      = "brave"
 	webSearchProviderExa        = "exa"
 	webSearchProviderFirecrawl  = "firecrawl"
+	webSearchProviderKeirolabs  = "keirolabs"
 	webSearchProviderLinkup     = "linkup"
 	webSearchProviderParallel   = "parallel"
 	webSearchProviderQuerit     = "querit"
@@ -58,6 +59,7 @@ const (
 	exaWebSearchEndpoint       = "https://api.exa.ai/search"
 	// v2 is Firecrawl's current search shape; the v1 endpoint is deprecated.
 	firecrawlWebSearchEndpoint  = "https://api.firecrawl.dev/v2/search"
+	keirolabsWebSearchEndpoint  = "https://api.keirolabs.cloud/api/v2/search/lite"
 	linkupWebSearchEndpoint     = "https://api.linkup.so/v1/search"
 	parallelWebSearchEndpoint   = "https://api.parallel.ai/v1/search"
 	queritWebSearchEndpoint     = "https://api.querit.ai/v1/search"
@@ -87,6 +89,7 @@ var (
 	braveWebSearchHTTPClient      = &http.Client{Timeout: 30 * time.Second}
 	exaWebSearchHTTPClient        = &http.Client{Timeout: 30 * time.Second}
 	firecrawlWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
+	keirolabsWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
 	linkupWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
 	parallelWebSearchHTTPClient   = &http.Client{Timeout: 30 * time.Second}
 	queritWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
@@ -144,6 +147,8 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		apiKeyField = "exa_api_key"
 	case webSearchProviderFirecrawl:
 		apiKeyField = "firecrawl_api_key"
+	case webSearchProviderKeirolabs:
+		apiKeyField = "keirolabs_api_key"
 	case webSearchProviderLinkup:
 		apiKeyField = "linkup_api_key"
 	case webSearchProviderParallel:
@@ -240,6 +245,14 @@ func retrieveWebSearchWithTavily(
 			ctx,
 			firecrawlWebSearchHTTPClient,
 			firecrawlWebSearchEndpoint,
+			provider.APIKey,
+			question,
+		)
+	case webSearchProviderKeirolabs:
+		return retrieveKeirolabsWebSearch(
+			ctx,
+			keirolabsWebSearchHTTPClient,
+			keirolabsWebSearchEndpoint,
 			provider.APIKey,
 			question,
 		)
@@ -739,6 +752,77 @@ func retrieveFirecrawlWebSearch(
 		})
 	}
 	return webSearchPayload("firecrawl", hits), nil
+}
+
+// --- Keirolabs --------------------------------------------------------------
+
+type keirolabsWebSearchResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet"`
+}
+
+func retrieveKeirolabsWebSearch(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	apiKey string,
+	query string,
+) (map[string]interface{}, error) {
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"query":      query,
+		"maxResults": webSearchResultCount,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("keirolabs: marshal request: %w", err)
+	}
+
+	responseBody, err := webSearchRequest(ctx, client, http.MethodPost, endpoint, map[string]string{
+		"Accept":        "application/json",
+		"Content-Type":  "application/json",
+		"Authorization": "Bearer " + apiKey,
+		"User-Agent":    "ragflow-web-search",
+	}, bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, fmt.Errorf("keirolabs: %w", err)
+	}
+	results, err := decodeKeirolabsWebSearchResults(responseBody)
+	if err != nil {
+		return nil, err
+	}
+
+	hits := make([]webSearchHit, 0, len(results))
+	for _, result := range results {
+		hits = append(hits, webSearchHit{
+			Title:   result.Title,
+			URL:     result.URL,
+			Content: result.Snippet,
+		})
+	}
+	return webSearchPayload("keirolabs", hits), nil
+}
+
+func decodeKeirolabsWebSearchResults(responseBody []byte) ([]keirolabsWebSearchResult, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("keirolabs: decode response: %w", err)
+	}
+	if envelope == nil {
+		return nil, fmt.Errorf("keirolabs: response must be an object")
+	}
+
+	resultsValue, exists := envelope["results"]
+	if !exists {
+		return []keirolabsWebSearchResult{}, nil
+	}
+	if strings.TrimSpace(string(resultsValue)) == "null" {
+		return nil, fmt.Errorf("keirolabs: response field results must be an array")
+	}
+	var results []keirolabsWebSearchResult
+	if err := json.Unmarshal(resultsValue, &results); err != nil {
+		return nil, fmt.Errorf("keirolabs: response field results must be an array: %w", err)
+	}
+	return results, nil
 }
 
 // --- Linkup -----------------------------------------------------------------

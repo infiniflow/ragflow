@@ -743,7 +743,7 @@ const SkillsPage: React.FC = () => {
                           {t('skills.spaceName') || 'Name'}
                         </TableHead>
                         <TableHead className="w-[160px]">
-                          {t('fileManager.uploadDate') || 'Upload Date'}
+                          {t('fileManager.uploadDate') || 'Uploaded at'}
                         </TableHead>
                         <TableHead className="w-[96px]">
                           {t('fileManager.size') || 'Size'}
