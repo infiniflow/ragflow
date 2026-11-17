@@ -108,4 +108,113 @@ func TestMinerUMarkdownResultKeepsContentListPageIdentity(t *testing.T) {
 	if len(items) != 1 || items[0]["text"] != "Second page" || items[0]["page_number"] != 2 {
 		t.Fatalf("items = %#v", items)
 	}
+	if got := int(numberValue(res.File["page_count"])); got != 2 {
+		t.Fatalf("page_count = %v, want 2 from the highest retained page", res.File["page_count"])
+	}
+}
+
+func TestMinerUMarkdownResultUsesDocVortexPageSize(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	structured, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = structured.Write([]byte(`{"pages":[{"page_idx":0,"blocks":[
+		{"type":"text","content":"Alpha body","bbox":[0.1,0.2,0.4,0.3]},
+		{"type":"image","bbox":[0.2,0.5,0.6,0.8]}
+	]}]}`))
+	middle, err := zw.Create("middle.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = middle.Write([]byte(`{"extensions":{"docvortex_layout":{"version":1,"pages":[
+		{"page_idx":0,"width_pt":1000,"height_pt":1000}
+	]}}}`))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{
+		Markdown: "Alpha body",
+		Zip:      buf.Bytes(),
+	})
+	if res.Err != nil {
+		t.Fatalf("docvortex result: %v", res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want paragraph and uncaptioned image: %#v", len(items), items)
+	}
+	if items[0]["text"] != "Alpha body" || items[0]["doc_type_kwd"] != "text" {
+		t.Fatalf("paragraph = %#v", items[0])
+	}
+	if items[1]["doc_type_kwd"] != "image" {
+		t.Fatalf("image = %#v", items[1])
+	}
+	positions, _ := items[1]["_pdf_positions"].([][]any)
+	if len(positions) != 1 || int(numberValue(positions[0][1])) != 200 || int(numberValue(positions[0][3])) != 500 {
+		t.Fatalf("image positions = %#v, want the 0-1 box scaled by width_pt/height_pt", items[1]["_pdf_positions"])
+	}
+}
+
+func TestMinerUMarkdownResultKeepsCodeNotesAndTextLevel(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[
+		{"type":"text","text":"Introduction","text_level":1,"page_idx":0},
+		{"type":"text","text":"Body","text_level":0,"page_idx":0},
+		{"type":"code","code_body":"print(1)","code_caption":["Listing"],"code_footnote":["Runs locally"],"page_idx":0}
+	]`))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{Zip: buf.Bytes()})
+	if res.Err != nil {
+		t.Fatalf("content list result: %v", res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 3 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0]["layout"] != "title" || items[0]["heading_level"] != 1 || items[0]["text"] != "Introduction" {
+		t.Fatalf("heading = %#v", items[0])
+	}
+	if items[1]["layout"] != "text" || items[1]["heading_level"] != nil || items[1]["text"] != "Body" {
+		t.Fatalf("body = %#v", items[1])
+	}
+	code := stringValue(items[2]["text"])
+	if items[2]["layout"] != "code" || !strings.Contains(code, "print(1)") || !strings.Contains(code, "Listing") || !strings.Contains(code, "Runs locally") {
+		t.Fatalf("code = %#v", items[2])
+	}
+
+	var structuredZip bytes.Buffer
+	zw = zip.NewWriter(&structuredZip)
+	structured, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = structured.Write([]byte(`{"pages":[{"page_idx":0,"blocks":[
+		{"type":"code","content":"print(1)","captions":[{"content":"Listing"}],"footnotes":[{"content":"Runs locally"}]}
+	]}]}`))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	structuredRes := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{Zip: structuredZip.Bytes()})
+	if structuredRes.Err != nil {
+		t.Fatalf("structured code: %v", structuredRes.Err)
+	}
+	structuredItems := ItemsToMaps(structuredRes.JSON)
+	if len(structuredItems) != 1 {
+		t.Fatalf("structured items = %#v", structuredItems)
+	}
+	structuredCode := stringValue(structuredItems[0]["text"])
+	if !strings.Contains(structuredCode, "print(1)") || !strings.Contains(structuredCode, "Listing") || !strings.Contains(structuredCode, "Runs locally") {
+		t.Fatalf("structured code = %#v", structuredItems[0])
+	}
 }

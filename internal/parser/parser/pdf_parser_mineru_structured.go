@@ -16,13 +16,13 @@ const minerUBoxScale = 1000.0
 // block type, and caption text stay on the block that produced them.
 // middle.json page sizes turn normalized boxes into PDF-point positions.
 // A zip without those JSON members returns nil so the caller can use markdown.
-func minerUItemsFromZip(zipBytes []byte) []map[string]any {
+func minerUItemsFromZip(zipBytes []byte) ([]map[string]any, int) {
 	if len(zipBytes) == 0 {
-		return nil
+		return nil, 0
 	}
 	reader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
-		return nil
+		return nil, 0
 	}
 	var contentList, structured, middle []byte
 	for _, file := range reader.File {
@@ -43,7 +43,7 @@ func minerUItemsFromZip(zipBytes []byte) []map[string]any {
 		}
 		body, readErr := readMinerUZipFile(file)
 		if readErr != nil {
-			return nil
+			return nil, 0
 		}
 		*dest = body
 	}
@@ -53,9 +53,9 @@ func minerUItemsFromZip(zipBytes []byte) []map[string]any {
 		items = minerUItemsFromStructured(structured, sizes)
 	}
 	if len(items) == 0 {
-		return nil
+		return nil, 0
 	}
-	return items
+	return items, minerUSourcePageCount(middle, structured, items)
 }
 
 func readMinerUZipFile(file *zip.File) ([]byte, error) {
@@ -76,8 +76,17 @@ func minerUPageSizes(middle []byte) map[int][2]float64 {
 			PageIdx  *int      `json:"page_idx"`
 			PageSize []float64 `json:"page_size"`
 		} `json:"pdf_info"`
+		Extensions struct {
+			DocVortexLayout struct {
+				Pages []struct {
+					PageIdx  *int    `json:"page_idx"`
+					WidthPt  float64 `json:"width_pt"`
+					HeightPt float64 `json:"height_pt"`
+				} `json:"pages"`
+			} `json:"docvortex_layout"`
+		} `json:"extensions"`
 	}
-	if err := json.Unmarshal(middle, &parsed); err != nil || len(parsed.PdfInfo) == 0 {
+	if err := json.Unmarshal(middle, &parsed); err != nil {
 		return nil
 	}
 	sizes := make(map[int][2]float64, len(parsed.PdfInfo))
@@ -91,10 +100,113 @@ func minerUPageSizes(middle []byte) map[int][2]float64 {
 		}
 		sizes[idx] = [2]float64{page.PageSize[0], page.PageSize[1]}
 	}
+	if len(sizes) > 0 {
+		return sizes
+	}
+	// MinerU 4 middle JSON omits pdf_info. Page size is already in PDF points.
+	for i, page := range parsed.Extensions.DocVortexLayout.Pages {
+		if page.WidthPt <= 0 || page.HeightPt <= 0 {
+			continue
+		}
+		idx := i
+		if page.PageIdx != nil && *page.PageIdx >= 0 {
+			idx = *page.PageIdx
+		}
+		sizes[idx] = [2]float64{page.WidthPt, page.HeightPt}
+	}
 	if len(sizes) == 0 {
 		return nil
 	}
 	return sizes
+}
+
+func minerUSourcePageCount(middle, structured []byte, items []map[string]any) int {
+	count := minerUHighestItemPage(items)
+	if extent := minerUJSONPageExtent(middle); extent > count {
+		count = extent
+	}
+	if extent := minerUStructuredPageExtent(structured); extent > count {
+		count = extent
+	}
+	return count
+}
+
+func minerUJSONPageExtent(raw []byte) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var parsed struct {
+		PdfInfo []struct {
+			PageIdx *int `json:"page_idx"`
+		} `json:"pdf_info"`
+		Extensions struct {
+			DocVortexLayout struct {
+				Pages []struct {
+					PageIdx *int `json:"page_idx"`
+				} `json:"pages"`
+			} `json:"docvortex_layout"`
+		} `json:"extensions"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return 0
+	}
+	extent := indexedPageExtent(len(parsed.PdfInfo), func(i int) (int, bool) {
+		idx := parsed.PdfInfo[i].PageIdx
+		if idx == nil || *idx < 0 {
+			return 0, false
+		}
+		return *idx, true
+	})
+	docVortex := indexedPageExtent(len(parsed.Extensions.DocVortexLayout.Pages), func(i int) (int, bool) {
+		idx := parsed.Extensions.DocVortexLayout.Pages[i].PageIdx
+		if idx == nil || *idx < 0 {
+			return 0, false
+		}
+		return *idx, true
+	})
+	return max(extent, docVortex)
+}
+
+func minerUStructuredPageExtent(raw []byte) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var doc struct {
+		Pages []struct {
+			PageIdx *int `json:"page_idx"`
+		} `json:"pages"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return 0
+	}
+	return indexedPageExtent(len(doc.Pages), func(i int) (int, bool) {
+		idx := doc.Pages[i].PageIdx
+		if idx == nil || *idx < 0 {
+			return 0, false
+		}
+		return *idx, true
+	})
+}
+
+func indexedPageExtent(length int, indexAt func(int) (int, bool)) int {
+	extent := length
+	for i := 0; i < length; i++ {
+		idx, ok := indexAt(i)
+		if ok && idx+1 > extent {
+			extent = idx + 1
+		}
+	}
+	return extent
+}
+
+func minerUHighestItemPage(items []map[string]any) int {
+	highest := 0
+	for _, item := range items {
+		if page := int(numberValue(item["page_number"])); page > highest {
+			highest = page
+		}
+	}
+	return highest
 }
 
 func minerUItemsFromContentList(raw []byte, sizes map[int][2]float64) []map[string]any {
@@ -179,6 +291,8 @@ func minerUStructuredBlock(pageIdx int, block map[string]any) map[string]any {
 	case "code":
 		item["type"] = "code"
 		item["code_body"] = content
+		item["code_caption"] = captions
+		item["code_footnote"] = footnotes
 	default:
 		item["type"] = "text"
 		if typ != "" {
@@ -207,9 +321,15 @@ func minerUContentItem(item map[string]any, sizes map[int][2]float64) map[string
 	text := minerUItemText(item, typ)
 	docType := "text"
 	layout := "text"
+	headingLevel := 0
 	switch typ {
 	case "title":
 		layout = "title"
+	case "text":
+		if lvl, ok := minerUInt(item["text_level"]); ok && lvl > 0 {
+			layout = "title"
+			headingLevel = lvl
+		}
 	case "list":
 		layout = "list"
 	case "code":
@@ -238,6 +358,9 @@ func minerUContentItem(item map[string]any, sizes map[int][2]float64) map[string
 	}
 	if hasPage && pageIdx >= 0 {
 		jsonItem["page_number"] = pageIdx + 1
+	}
+	if headingLevel > 0 {
+		jsonItem["heading_level"] = headingLevel
 	}
 	if len(positions) > 0 {
 		jsonItem["positions"] = positions
@@ -282,6 +405,7 @@ func minerUItemText(item map[string]any, typ string) string {
 			parts = append(parts, stringValue(item["text"]))
 		}
 		parts = append(parts, minerUStringList(item["code_caption"])...)
+		parts = append(parts, minerUStringList(item["code_footnote"])...)
 	default:
 		parts = append(parts, stringValue(item["text"]))
 	}

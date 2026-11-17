@@ -138,8 +138,8 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 
 func minerUMarkdownResult(ctx context.Context, filename string, parsed *models.MinerUV1Result) ParseResult {
 	if parsed != nil {
-		if items := minerUItemsFromZip(parsed.Zip); len(items) > 0 {
-			return pdfItemsToResult(filename, items, 0)
+		if items, pageCount := minerUItemsFromZip(parsed.Zip); len(items) > 0 {
+			return pdfItemsToResult(filename, items, pageCount)
 		}
 	}
 	content := ""
