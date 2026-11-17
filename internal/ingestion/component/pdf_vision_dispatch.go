@@ -570,7 +570,7 @@ func dispatchUnlimitedOCR2PDF(
 	}
 
 	if strings.TrimSpace(taskResult.Markdown) != "" {
-		res := normalizePDFMarkdown(ctx, filename, taskResult.Markdown, setup)
+		res := normalizePDFMarkdown(ctx, filename, taskResult.Markdown)
 		if res.File == nil {
 			res.File = map[string]any{}
 		}
@@ -608,7 +608,7 @@ func dispatchUnlimitedOCR2PDF(
 		}
 	}
 
-	return normalizePDFMarkdown(ctx, filename, taskResult.Markdown, setup), nil
+	return normalizePDFMarkdown(ctx, filename, taskResult.Markdown), nil
 }
 
 // pollUnlimitedOCRTaskResult queries task status periodically until Markdown and/or content_list is ready.
