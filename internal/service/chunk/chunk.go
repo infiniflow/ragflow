@@ -1170,9 +1170,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 			return updateChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize important keywords: %v", err)}
 		}
 		d["important_kwd"] = impKwd
-		// Full-text search and the reranker read important_tks, so it must be
-		// rewritten together with important_kwd (Python chunk_api.update_chunk
-		// and AddChunk do the same join with " ").
+		// Full-text search reads important_tks; refresh it alongside
+		// important_kwd using the same space join as AddChunk (Python
+		// chunk_api.update_chunk does the same).
 		d["important_tks"] = importantTks
 	}
 
