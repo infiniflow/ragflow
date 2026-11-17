@@ -71,6 +71,14 @@ const (
 	kosa8ExecWriteChunk = 6000
 	kosa8StartPoll      = time.Second
 	kosa8StartTimeout   = 5 * time.Minute
+	// A DELETE that fails with a network error, 429 or 5xx is tried
+	// kosa8DeleteAttempts times in all, with jittered exponential backoff.
+	kosa8DeleteAttempts   = 3
+	kosa8DeleteBackoff    = 500 * time.Millisecond
+	kosa8DeleteMaxBackoff = 3 * time.Second
+	// kosa8ExecEnvelope is the room a buffered exec answer gets beyond
+	// its escaped stdout and stderr: the exit status, keys and quotes.
+	kosa8ExecEnvelope = 64 << 10
 )
 
 // kosa8InWorkdir enters the working directory first: the exec API has
@@ -80,8 +88,15 @@ var kosa8InWorkdir = []string{"sh", "-c", `cd -- "$1" || exit 1; shift; exec "$@
 // kosa8Timed runs a command under the sandbox's own `timeout` (GNU or
 // busybox), for hosts that refuse timeout_s on a streamed exec. It runs
 // as a child of the shell, not in its place: the shell can be the
-// container's PID 1, and a PID 1 without a handler ignores SIGTERM.
-var kosa8Timed = []string{"sh", "-c", `t=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout "$t" "$@"; exit $?; fi; exec "$@"`, "ragflow"}
+// container's PID 1, and a PID 1 without a handler ignores SIGTERM. A
+// template without `timeout` gets kosa8NoTimeoutExit and
+// kosa8NoTimeoutMarker on stderr instead of an untimed run.
+var kosa8Timed = []string{"sh", "-c", `t=$1; shift; if ! command -v timeout >/dev/null 2>&1; then echo "` + kosa8NoTimeoutMarker + `" >&2; exit ` + strconv.Itoa(kosa8NoTimeoutExit) + `; fi; timeout "$t" "$@"; exit $?`, "ragflow"}
+
+const (
+	kosa8NoTimeoutMarker = "ragflow-kosa8: no timeout command in this sandbox"
+	kosa8NoTimeoutExit   = 127
+)
 
 // kosa8StreamGrace is how long past its timeout a streamed command is
 // waited for before the client gives up on it.
@@ -108,6 +123,8 @@ type Kosa8Provider struct {
 
 	// startPoll is how often a cold-booting sandbox is polled.
 	startPoll time.Duration
+	// deleteBackoff is the first wait before a failed DELETE is retried.
+	deleteBackoff time.Duration
 
 	mu          sync.RWMutex
 	initialized bool
@@ -174,6 +191,7 @@ func newKosa8ProviderFromConfig(cfg map[string]any) *Kosa8Provider {
 		maxArtifacts:     configInt(cfg, "max_artifacts", kosa8DefaultMaxArtifacts),
 		maxArtifactBytes: configInt(cfg, "max_artifact_bytes", kosa8DefaultArtifactBytes),
 		startPoll:        kosa8StartPoll,
+		deleteBackoff:    kosa8DeleteBackoff,
 		filesAPI:         true,
 		instances:        make(map[string]kosa8Instance),
 	}
@@ -428,7 +446,9 @@ func (p *Kosa8Provider) ExecuteCode(
 }
 
 // DestroyInstance deletes the sandbox. A sandbox that is already gone
-// counts as deleted, so the call is idempotent.
+// counts as deleted, so the call is idempotent. The instance is
+// forgotten only once the sandbox is deleted: after a failed DELETE a
+// later DestroyInstance tries again.
 func (p *Kosa8Provider) DestroyInstance(ctx context.Context, inst *SandboxInstance) error {
 	if !p.isInitialized() {
 		return errors.New("kosa8: provider not initialized")
@@ -436,16 +456,18 @@ func (p *Kosa8Provider) DestroyInstance(ctx context.Context, inst *SandboxInstan
 	if inst == nil || inst.InstanceID == "" {
 		return errors.New("kosa8: instance id required")
 	}
-	p.mu.Lock()
+	p.mu.RLock()
 	instance, ok := p.instances[inst.InstanceID]
-	delete(p.instances, inst.InstanceID)
-	p.mu.Unlock()
+	p.mu.RUnlock()
 	if !ok {
 		return nil
 	}
 	if err := p.deleteSandbox(ctx, instance.sandboxID); err != nil {
 		return fmt.Errorf("kosa8: delete sandbox %s: %w", instance.sandboxID, err)
 	}
+	p.mu.Lock()
+	delete(p.instances, inst.InstanceID)
+	p.mu.Unlock()
 	return nil
 }
 
@@ -460,13 +482,31 @@ func (p *Kosa8Provider) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
+// deleteSandbox deletes a sandbox, retrying a network error, 429 or 5xx.
+// A sandbox that is already gone (404 or 410) counts as deleted.
 func (p *Kosa8Provider) deleteSandbox(ctx context.Context, sandboxID string) error {
-	err := p.call(ctx, http.MethodDelete, p.sandboxPath(sandboxID), nil, nil)
-	var apiErr *kosa8APIError
-	if errors.As(err, &apiErr) && (apiErr.Status == http.StatusNotFound || apiErr.Status == http.StatusGone) {
-		return nil
+	var err error
+	for attempt := 1; ; attempt++ {
+		err = p.call(ctx, http.MethodDelete, p.sandboxPath(sandboxID), nil, nil)
+		var apiErr *kosa8APIError
+		if errors.As(err, &apiErr) && (apiErr.Status == http.StatusNotFound || apiErr.Status == http.StatusGone) {
+			return nil
+		}
+		if err == nil || attempt >= kosa8DeleteAttempts || !kosa8Transient(err) || ctx.Err() != nil {
+			return err
+		}
+		sleepCtx(ctx, backoff(p.deleteBackoff, kosa8DeleteMaxBackoff, attempt))
 	}
-	return err
+}
+
+// kosa8Transient reports whether a failed request may succeed if sent
+// again: a network error, HTTP 429 or a 5xx answer.
+func kosa8Transient(err error) bool {
+	var apiErr *kosa8APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Status == http.StatusTooManyRequests || apiErr.Status >= 500
+	}
+	return isRetryableNetError(err)
 }
 
 // writeFile writes through the files API, or through exec on a host
@@ -515,13 +555,37 @@ func (p *Kosa8Provider) exec(ctx context.Context, sandboxID string, argv []strin
 	}
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec+30)*time.Second)
 	defer cancel()
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.send(callCtx, http.MethodPost, p.sandboxPath(sandboxID)+"/exec", string(payload), "application/json")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, kosa8ErrorFrom(resp)
+	}
+	// The answer is bounded before it is decoded. JSON escapes one byte
+	// of output into at most six (\u00XX), so the cap allows six bytes
+	// per byte of max_output_bytes plus the envelope; ExecuteCode then
+	// checks the decoded size against max_output_bytes itself.
+	limit := p.bufferedExecLimit()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("kosa8: read exec answer: %w", err)
+	}
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("kosa8: execution output exceeded %d bytes", p.maxOutputBytes)
+	}
 	var answer struct {
 		Exit   *int   `json:"exit"`
 		Stdout string `json:"stdout"`
 		Stderr string `json:"stderr"`
 	}
-	if err := p.call(callCtx, http.MethodPost, p.sandboxPath(sandboxID)+"/exec", body, &answer); err != nil {
-		return nil, err
+	if err := json.Unmarshal(raw, &answer); err != nil {
+		return nil, fmt.Errorf("kosa8: decode exec answer: %w", err)
 	}
 	if answer.Exit == nil {
 		return nil, errors.New("kosa8: command ended without an exit status")
@@ -559,6 +623,9 @@ func (p *Kosa8Provider) execLong(ctx context.Context, sandboxID string, argv []s
 			return nil, &kosa8APIError{Status: http.StatusGatewayTimeout, Code: "exec_timeout", Message: "command did not end after its timeout"}
 		}
 		return nil, err
+	}
+	if res.exit == kosa8NoTimeoutExit && strings.Contains(res.stderr, kosa8NoTimeoutMarker) {
+		return nil, fmt.Errorf("kosa8: the sandbox template has no `timeout` command, which this kosa8 host needs to time a command longer than %d seconds; use a template that provides `timeout` (coreutils or busybox)", kosa8BufferedExecLimit)
 	}
 	// GNU timeout exits 124; busybox's ends the command with SIGTERM (143).
 	if (res.exit == 124 || res.exit == 143) && time.Since(started) >= deadline {
@@ -795,6 +862,13 @@ func kosa8ErrorFrom(resp *http.Response) error {
 		}
 	}
 	return apiErr
+}
+
+// bufferedExecLimit is the most bytes a buffered exec answer may have:
+// stdout and stderr of max_output_bytes in all, each byte escaped to at
+// most six, plus the envelope.
+func (p *Kosa8Provider) bufferedExecLimit() int64 {
+	return 6*int64(max(p.maxOutputBytes, 0)) + kosa8ExecEnvelope
 }
 
 func (p *Kosa8Provider) usesFilesAPI() bool {

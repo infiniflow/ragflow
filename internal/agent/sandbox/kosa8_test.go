@@ -48,7 +48,10 @@ type fakeKosa8 struct {
 	execAnswers  []func(w http.ResponseWriter, body map[string]any)
 	filesStatus  int
 	deleteStatus int
-	auth         string
+	// dropDeletes is how many DELETEs get their connection closed
+	// without an answer.
+	dropDeletes int
+	auth        string
 }
 
 func newFakeKosa8(t *testing.T) (*fakeKosa8, *httptest.Server) {
@@ -97,6 +100,13 @@ func (f *fakeKosa8) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, map[string]any{"sandbox": map[string]any{"id": "sbx_1", "state": state, "last_error": "no capacity"}})
 	case r.Method == http.MethodDelete && strings.Count(p, "/") == 3:
+		if f.dropDeletes > 0 {
+			f.dropDeletes--
+			if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+				_ = conn.Close()
+			}
+			return
+		}
 		if f.deleteStatus != 0 {
 			writeJSON(w, f.deleteStatus, map[string]any{"error": "not_found", "message": "gone"})
 			return
@@ -188,6 +198,7 @@ func newTestKosa8Provider(t *testing.T, srv *httptest.Server, extra map[string]a
 	}
 	p := newKosa8ProviderFromConfig(cfg)
 	p.startPoll = time.Millisecond
+	p.deleteBackoff = time.Millisecond
 	// httptest serves plain HTTP on 127.0.0.1, which Initialize allows.
 	if err := p.Initialize(context.Background()); err != nil {
 		t.Fatalf("Initialize: %v", err)
@@ -605,6 +616,203 @@ func TestKosa8Provider_AlreadyDeletedSandboxIsClean(t *testing.T) {
 	f.mu.Unlock()
 	if err := p.DestroyInstance(ctx, inst); err != nil {
 		t.Fatalf("DestroyInstance of a sandbox already gone: %v", err)
+	}
+	if got := f.countRequests("DELETE /v1/sandboxes/sbx_1"); got != 1 {
+		t.Errorf("DELETE requests = %d, want 1 (404 is not retried)", got)
+	}
+	if _, err := p.ExecuteCode(ctx, inst, "x", "python", 5, nil); err == nil || !strings.Contains(err.Error(), "unknown instance") {
+		t.Errorf("instance still known after a 404 delete: %v", err)
+	}
+}
+
+func (f *fakeKosa8) countRequests(want string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, r := range f.requests {
+		if r == want {
+			n++
+		}
+	}
+	return n
+}
+
+func TestKosa8Provider_FailedDeleteKeepsTheInstanceForRetry(t *testing.T) {
+	t.Parallel()
+	f, srv := newFakeKosa8(t)
+	p := newTestKosa8Provider(t, srv, nil)
+	ctx := context.Background()
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.deleteStatus = http.StatusServiceUnavailable
+	f.mu.Unlock()
+	if err := p.DestroyInstance(ctx, inst); err == nil || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("DestroyInstance with a failing DELETE: %v", err)
+	}
+	if got := f.countRequests("DELETE /v1/sandboxes/sbx_1"); got != kosa8DeleteAttempts {
+		t.Errorf("DELETE requests = %d, want %d (a 5xx is retried)", got, kosa8DeleteAttempts)
+	}
+	p.mu.RLock()
+	_, kept := p.instances[inst.InstanceID]
+	p.mu.RUnlock()
+	if !kept {
+		t.Fatal("instance forgotten although its sandbox was not deleted")
+	}
+
+	// A second destroy sends DELETE again and then forgets the instance.
+	f.mu.Lock()
+	f.deleteStatus = 0
+	f.mu.Unlock()
+	if err := p.DestroyInstance(ctx, inst); err != nil {
+		t.Fatalf("second DestroyInstance: %v", err)
+	}
+	if strings.Join(f.deleted, ",") != "sbx_1" {
+		t.Errorf("deleted = %v", f.deleted)
+	}
+	if err := p.DestroyInstance(ctx, inst); err != nil {
+		t.Fatalf("third DestroyInstance: %v", err)
+	}
+	if got := f.countRequests("DELETE /v1/sandboxes/sbx_1"); got != kosa8DeleteAttempts+1 {
+		t.Errorf("DELETE requests = %d, want %d (no DELETE once deleted)", got, kosa8DeleteAttempts+1)
+	}
+}
+
+func TestKosa8Provider_DeleteRetriesOnlyTransientFailures(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		status int
+		want   int
+	}{
+		{http.StatusTooManyRequests, kosa8DeleteAttempts},
+		{http.StatusInternalServerError, kosa8DeleteAttempts},
+		{http.StatusForbidden, 1},
+	} {
+		f, srv := newFakeKosa8(t)
+		p := newTestKosa8Provider(t, srv, nil)
+		ctx := context.Background()
+		inst, err := p.CreateInstance(ctx, "python")
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.mu.Lock()
+		f.deleteStatus = tc.status
+		f.mu.Unlock()
+		if err := p.DestroyInstance(ctx, inst); err == nil {
+			t.Errorf("HTTP %d: DestroyInstance succeeded", tc.status)
+		}
+		if got := f.countRequests("DELETE /v1/sandboxes/sbx_1"); got != tc.want {
+			t.Errorf("HTTP %d: DELETE requests = %d, want %d", tc.status, got, tc.want)
+		}
+	}
+}
+
+func TestKosa8Provider_DeleteRetriesNetworkErrors(t *testing.T) {
+	t.Parallel()
+	f, srv := newFakeKosa8(t)
+	p := newTestKosa8Provider(t, srv, nil)
+	ctx := context.Background()
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The first DELETE is cut off before an answer; the retry lands.
+	f.mu.Lock()
+	f.dropDeletes = 1
+	f.mu.Unlock()
+	if err := p.DestroyInstance(ctx, inst); err != nil {
+		t.Fatalf("DestroyInstance after a dropped connection: %v", err)
+	}
+	if strings.Join(f.deleted, ",") != "sbx_1" {
+		t.Errorf("deleted = %v", f.deleted)
+	}
+}
+
+func TestKosa8Provider_TemplateWithoutTimeoutFails(t *testing.T) {
+	t.Parallel()
+	f, srv := newFakeKosa8(t)
+	p := newTestKosa8Provider(t, srv, map[string]any{"timeout": 300})
+	ctx := context.Background()
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refuse := func(w http.ResponseWriter, _ map[string]any) {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "not_available", "message": "timeout_s on a streamed exec is not available on this sandbox's host yet"})
+	}
+	// What kosa8Timed prints and exits with when `timeout` is missing.
+	noTimeout := func(w http.ResponseWriter, _ map[string]any) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = fmt.Fprintf(w, "{\"stream\":\"stderr\",\"data\":%q}\n{\"done\":true,\"exit\":%d}\n",
+			base64.StdEncoding.EncodeToString([]byte(kosa8NoTimeoutMarker+"\n")), kosa8NoTimeoutExit)
+	}
+	f.mu.Lock()
+	f.execAnswers = []func(http.ResponseWriter, map[string]any){refuse, noTimeout}
+	f.mu.Unlock()
+	_, err = p.ExecuteCode(ctx, inst, "print('x')", "python", 200, nil)
+	if err == nil || !strings.Contains(err.Error(), "no `timeout` command") {
+		t.Fatalf("err = %v, want a missing-timeout error", err)
+	}
+	// The command is never run untimed: the wrapper has no other branch.
+	cmd := cmdOf(f.commands()[2])
+	if strings.Contains(cmd[2], "exec") || !strings.Contains(cmd[2], "exit 127") {
+		t.Errorf("fallback script = %q", cmd[2])
+	}
+}
+
+func TestKosa8Provider_OversizedBufferedAnswerIsRejectedBeforeDecoding(t *testing.T) {
+	t.Parallel()
+	f, srv := newFakeKosa8(t)
+	p := newTestKosa8Provider(t, srv, map[string]any{"max_output_bytes": 100})
+	ctx := context.Background()
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatal(err)
+	}
+	limit := p.bufferedExecLimit()
+	// Past the cap the body is not JSON at all: a decode would fail with
+	// a syntax error, so the size error shows the body was never decoded.
+	huge := func(w http.ResponseWriter, _ map[string]any) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"exit":0,"stdout":"`))
+		_, _ = w.Write([]byte(strings.Repeat("x", int(limit)) + "\x00not json"))
+	}
+	f.mu.Lock()
+	f.execAnswers = []func(http.ResponseWriter, map[string]any){huge}
+	f.mu.Unlock()
+	_, err = p.ExecuteCode(ctx, inst, "print('x')", "python", 5, nil)
+	if err == nil || !strings.Contains(err.Error(), "output exceeded 100 bytes") {
+		t.Fatalf("err = %v, want the output limit error", err)
+	}
+}
+
+func TestKosa8Provider_BufferedAnswerAllowsJSONEscaping(t *testing.T) {
+	t.Parallel()
+	f, srv := newFakeKosa8(t)
+	p := newTestKosa8Provider(t, srv, map[string]any{"max_output_bytes": 100})
+	ctx := context.Background()
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 100 control bytes escape to 600 (\u0001 each): within the cap, and
+	// exactly max_output_bytes once decoded.
+	escaped := strings.Repeat("\x01", 100)
+	f.mu.Lock()
+	f.execAnswers = []func(http.ResponseWriter, map[string]any){execOK(escaped, "", 0), execOK(escaped, "x", 0)}
+	f.mu.Unlock()
+	res, err := p.ExecuteCode(ctx, inst, "print('x')", "python", 5, nil)
+	if err != nil {
+		t.Fatalf("ExecuteCode with escaped output at the limit: %v", err)
+	}
+	if res.Stdout != escaped {
+		t.Errorf("stdout = %q", res.Stdout)
+	}
+	// One byte over max_output_bytes after decoding is still refused.
+	if _, err := p.ExecuteCode(ctx, inst, "print('x')", "python", 5, nil); err == nil || !strings.Contains(err.Error(), "output exceeded 100 bytes") {
+		t.Fatalf("err = %v, want the output limit error", err)
 	}
 }
 
