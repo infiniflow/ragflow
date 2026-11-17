@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { buttonVariants } from '@/components/ui/button';
 import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
 
 import { GenerableViewMode, ViewMode, ViewModeLabelKeyMap } from './constants';
@@ -32,11 +33,24 @@ export function CompilationEmptyState({
   return (
     <div className="flex-1 min-h-0 flex flex-col items-center justify-center border border-dashed border-border-button rounded-xl">
       {!showProgress ? (
-        <div className="flex flex-col items-center gap-4">
+        <div className="flex w-full max-w-xl flex-col items-center gap-4 p-6 text-center break-words">
           <p className="text-text-secondary text-lg">{t(TitleKeyMap[type])}</p>
           <p className="text-sm text-text-secondary">
-            {t('knowledgeCompilation.autoCompiled')}
+            {t('knowledgeCompilation.compilationPipelineRequired')}
           </p>
+          {type === ViewMode.LlmWiki && (
+            <p className="text-sm text-text-secondary">
+              {t('knowledgeCompilation.wikiTemplateRequired')}
+            </p>
+          )}
+          <a
+            className={buttonVariants({ variant: 'link' })}
+            href="https://ragflow.io/docs/knowledge_compilation/apply_knowledge_compilation_template"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t('knowledgeCompilation.compilationGuide')}
+          </a>
         </div>
       ) : (
         <CompileProgressBoard
