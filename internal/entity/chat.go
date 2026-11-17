@@ -73,6 +73,12 @@ type ChatListItem struct {
 	TenantAvatar *string `gorm:"column:tenant_avatar" json:"tenant_avatar,omitempty"`
 }
 
+// ChatSession source values, identifying which path created the session.
+const (
+	ChatSessionSourceChat    = "chat"
+	ChatSessionSourceChannel = "channel"
+)
+
 // ChatSession chat session model. Messages are hydrated from
 // the ordered message table.
 type ChatSession struct {
@@ -81,6 +87,7 @@ type ChatSession struct {
 	Name     *string         `gorm:"column:name;size:255;index" json:"name,omitempty"`
 	Message  json.RawMessage `gorm:"-" json:"message,omitempty"`
 	UserID   *string         `gorm:"column:user_id;size:255;index" json:"user_id,omitempty"`
+	Source   string          `gorm:"column:source;size:32" json:"source,omitempty"`
 	BaseModel
 }
 

@@ -585,7 +585,6 @@ func (s *AgentService) UpdateAgentTags(ctx context.Context, canvasID string, tag
 type CreateAgentSessionRequest struct {
 	AgentID  string
 	Name     string
-	Source   string
 	DSL      json.RawMessage
 	Messages json.RawMessage
 }
@@ -670,10 +669,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		return nil, common.CodeDataError, err
 	}
 	var namePtr = &name
-	var sourcePtr *string
-	if req.Source != "" {
-		sourcePtr = &req.Source
-	}
+	source := entity.AgentSessionSourceAgent
 
 	id := common.GenerateUUID()
 
@@ -687,7 +683,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		UserID:    userID,
 		ExpUserID: &userID,
 		Message:   messages,
-		Source:    sourcePtr,
+		Source:    &source,
 		DSL:       dsl,
 	}
 	if err := s.api4ConversationDAO.Create(ctx, dao.DB, row); err != nil {

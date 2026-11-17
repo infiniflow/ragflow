@@ -2680,7 +2680,10 @@ func (s *AgentService) createAgentRunSession(
 	if userID == "" {
 		return permission.ErrUnauthenticated
 	}
-	source := "agent"
+	source := entity.AgentSessionSourceAgent
+	if channelRun, _ := ctx.Value(channelAgentRunContextKey{}).(bool); channelRun {
+		source = entity.AgentSessionSourceChannel
+	}
 	name := deriveAgentSessionName(userInput)
 	if channelName := agentChannelNameFromContext(ctx); channelName != "" {
 		name = channelSessionName(name, channelName)
