@@ -40,6 +40,9 @@ type SearchRequest struct {
 	Offset int // Offset for pagination (0-based)
 	Limit  int // Limit for pagination
 
+	// ScanAll reads all filtered chunk rows with a scroll on Elasticsearch and OpenSearch.
+	ScanAll bool
+
 	// Source fields (for ES: fields to return)
 	SelectFields []string // List of field names to return
 

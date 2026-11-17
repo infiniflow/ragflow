@@ -408,3 +408,35 @@ func decodeSearchResponse(t *testing.T, rec *httptest.ResponseRecorder) map[stri
 	}
 	return body
 }
+
+func TestPublicRetrievalKnowledgeGraphOptIn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, flag := range []string{"", ",\"use_kg\":false", ",\"use_kg\":true"} {
+		fake := &fakeSearchDatasetsService{resp: &service.SearchDatasetsResponse{Total: 1}}
+		wantGraph := flag == ",\"use_kg\":true"
+		if wantGraph {
+			fake.resp.KnowledgeGraph = []service.KnowledgeGraphSearchResult{
+				{DatasetID: "ds-1", Templates: []service.DocumentStructureGraphTemplate{
+					{Entities: []service.StructureGraphNode{{"name": "Daisy", "source_chunk_ids": []string{"chunk-1"}}}},
+				}},
+			}
+		}
+		h := &DatasetsHandler{searchDatasetsService: fake}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/retrieval", strings.NewReader(
+			`{"question":"Daisy","dataset_ids":["ds-1"]`+flag+"}"))
+		req.Header.Set("Content-Type", "application/json")
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = req
+		c.Set("user", &entity.User{ID: "user-1"})
+		h.SearchDatasets(c)
+		body := decodeSearchResponse(t, rec)
+		data, ok := body["data"].(map[string]interface{})
+		if !ok || fake.req == nil || fake.req.UseKG == nil || *fake.req.UseKG != wantGraph {
+			t.Fatalf("flag %q: unexpected handler response or request: %v / %+v", flag, body, fake.req)
+		}
+		if _, present := data["knowledge_graph"]; present != wantGraph || data["total"] != float64(1) {
+			t.Fatalf("flag %q: unexpected retrieval payload %v", flag, data)
+		}
+	}
+}
