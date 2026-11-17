@@ -55,7 +55,7 @@ func minerUItemsFromZip(zipBytes []byte) ([]map[string]any, int) {
 	if len(items) == 0 {
 		return nil, 0
 	}
-	return items, minerUSourcePageCount(middle, structured, items)
+	return items, minerUSourcePageCount(contentList, middle, structured, items)
 }
 
 func readMinerUZipFile(file *zip.File) ([]byte, error) {
@@ -120,8 +120,11 @@ func minerUPageSizes(middle []byte) map[int][2]float64 {
 	return sizes
 }
 
-func minerUSourcePageCount(middle, structured []byte, items []map[string]any) int {
+func minerUSourcePageCount(contentList, middle, structured []byte, items []map[string]any) int {
 	count := minerUHighestItemPage(items)
+	if extent := minerUContentListPageExtent(contentList); extent > count {
+		count = extent
+	}
 	if extent := minerUJSONPageExtent(middle); extent > count {
 		count = extent
 	}
@@ -194,6 +197,25 @@ func indexedPageExtent(length int, indexAt func(int) (int, bool)) int {
 		idx, ok := indexAt(i)
 		if ok && idx+1 > extent {
 			extent = idx + 1
+		}
+	}
+	return extent
+}
+
+func minerUContentListPageExtent(raw []byte) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var rawItems []struct {
+		PageIdx *int `json:"page_idx"`
+	}
+	if err := json.Unmarshal(raw, &rawItems); err != nil {
+		return 0
+	}
+	extent := 0
+	for _, item := range rawItems {
+		if item.PageIdx != nil && *item.PageIdx >= 0 && *item.PageIdx+1 > extent {
+			extent = *item.PageIdx + 1
 		}
 	}
 	return extent

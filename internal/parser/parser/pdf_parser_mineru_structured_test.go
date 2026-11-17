@@ -113,6 +113,35 @@ func TestMinerUMarkdownResultKeepsContentListPageIdentity(t *testing.T) {
 	}
 }
 
+func TestMinerUMarkdownResultCountsSkippedContentListPages(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[
+		{"type":"text","text":"Only body","page_idx":0},
+		{"type":"header","text":"Running head","page_idx":4},
+		{"type":"page_number","text":"5","page_idx":4}
+	]`))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{Zip: buf.Bytes()})
+	if res.Err != nil {
+		t.Fatalf("content list result: %v", res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 1 || items[0]["text"] != "Only body" || items[0]["page_number"] != 1 {
+		t.Fatalf("items = %#v", items)
+	}
+	if got := int(numberValue(res.File["page_count"])); got != 5 {
+		t.Fatalf("page_count = %v, want 5 from the skipped header on page_idx 4", res.File["page_count"])
+	}
+}
+
 func TestMinerUMarkdownResultUsesDocVortexPageSize(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
