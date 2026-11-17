@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -80,18 +81,70 @@ func TestPerplexity_Info(t *testing.T) {
 	if err = json.Unmarshal(encoded, &decoded); err != nil {
 		t.Fatalf("decode Info schema: %v", err)
 	}
+	if info.Desc != perplexityToolDescription {
+		t.Errorf("Desc = %q, want perplexityToolDescription", info.Desc)
+	}
 	properties, ok := decoded["properties"].(map[string]any)
 	if !ok {
 		t.Fatalf("Info schema properties = %#v, want object", decoded["properties"])
 	}
-	for _, name := range []string{"query", "search_recency_filter", "max_results"} {
-		if _, ok = properties[name]; !ok {
+	// The schema comes from the perplexityArgs struct tags (BuildToolInfo), so
+	// pin every model-visible property: name, type, description and enum.
+	want := map[string]struct {
+		typ  string
+		desc string
+		enum []string
+	}{
+		"query": {typ: "string", desc: "Search query."},
+		"search_recency_filter": {
+			typ:  "string",
+			desc: `Restrict results by publication time: "hour", "day", "week", "month", "year", or "any" for no limit. Omit to use the node's recency setting.`,
+			enum: perplexityRecencyValues,
+		},
+		"max_results": {typ: "integer", desc: "Number of results to return, 1 to 20. Leave it out to use the Top N set on the node."},
+	}
+	if len(properties) != len(want) {
+		t.Errorf("schema has %d properties %v, want %d", len(properties), sortedKeys(properties), len(want))
+	}
+	for name, w := range want {
+		prop, ok := properties[name].(map[string]any)
+		if !ok {
 			t.Errorf("parameter %q missing", name)
+			continue
 		}
+		if got, _ := prop["type"].(string); got != w.typ {
+			t.Errorf("%s type = %q, want %q", name, got, w.typ)
+		}
+		if got, _ := prop["description"].(string); got != w.desc {
+			t.Errorf("%s description = %q, want %q", name, got, w.desc)
+		}
+		gotEnum, _ := prop["enum"].([]any)
+		if len(gotEnum) != len(w.enum) {
+			t.Errorf("%s enum = %v, want %v", name, gotEnum, w.enum)
+			continue
+		}
+		for i, v := range w.enum {
+			if gotEnum[i] != v {
+				t.Errorf("%s enum[%d] = %v, want %q (tag order must match perplexityRecencyValues)", name, i, gotEnum[i], v)
+			}
+		}
+	}
+	required, _ := decoded["required"].([]any)
+	if len(required) != 1 || required[0] != "query" {
+		t.Errorf("required = %v, want [query]", required)
 	}
 	if _, ok = properties["api_key"]; ok {
 		t.Error("api_key must not be model-visible")
 	}
+}
+
+func sortedKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func TestPerplexity_BuildRequest(t *testing.T) {

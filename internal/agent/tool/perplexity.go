@@ -61,13 +61,16 @@ var perplexitySearchTypes = []string{perplexitySearchTypeWeb, perplexitySearchTy
 
 var perplexityRecencyValues = []string{"any", "hour", "day", "week", "month", "year"}
 
-// perplexityArgs is the JSON shape the model sends into InvokableRun.
+// perplexityArgs is the JSON shape the model sends into InvokableRun and the
+// source of the model-visible schema built by BuildToolInfo (doc, required,
+// enum and type tags). The enum tag must list the same values in the same
+// order as perplexityRecencyValues; TestPerplexity_Info checks that.
 // max_results is decoded loosely: a missing, blank or non-numeric value means
 // "use the node's Top N" rather than failing the run.
 type perplexityArgs struct {
-	Query               string `json:"query"`
-	SearchRecencyFilter string `json:"search_recency_filter"`
-	MaxResults          any    `json:"max_results"`
+	Query               string `json:"query" doc:"Search query." required:"true"`
+	SearchRecencyFilter string `json:"search_recency_filter,omitempty" doc:"Restrict results by publication time: \"hour\", \"day\", \"week\", \"month\", \"year\", or \"any\" for no limit. Omit to use the node's recency setting." enum:"any,hour,day,week,month,year"`
+	MaxResults          any    `json:"max_results,omitempty" doc:"Number of results to return, 1 to 20. Leave it out to use the Top N set on the node." type:"integer"`
 }
 
 type perplexityDefaults struct {
@@ -137,28 +140,7 @@ func newPerplexityTool(h *HTTPHelper, apiKey string, defaults perplexityDefaults
 }
 
 func (p *PerplexityTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: perplexityToolName,
-		Desc: perplexityToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Search query.",
-				Required: true,
-			},
-			"search_recency_filter": {
-				Type:     schema.String,
-				Desc:     `Restrict results by publication time: "hour", "day", "week", "month", "year", or "any" for no limit. Omit to use the node's recency setting.`,
-				Enum:     perplexityRecencyValues,
-				Required: false,
-			},
-			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Number of results to return, 1 to 20. Leave it out to use the Top N set on the node.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(perplexityToolName, perplexityToolDescription, perplexityArgs{})
 }
 
 // Recoverable errors (bad arguments, missing API key, API or network failures)
