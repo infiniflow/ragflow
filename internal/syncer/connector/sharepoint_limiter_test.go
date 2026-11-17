@@ -105,11 +105,11 @@ func TestSharePointThrottlePausesOtherConnector(t *testing.T) {
 	b.limiter = a.limiter
 	b.accessToken, b.tokenExpiry = "token", time.Now().Add(time.Hour)
 	// One real HTTP attempt publishes cooldown even if its task stops afterwards.
-	_, _, _, err := a.graphRequestAttempt(t.Context(), server.URL+"/v1.0/throttled", "token", 1024, time.Second)
+	_, _, _, err := a.graphRequestAttempt(t.Context(), server.URL+"/v1.0/throttled", "token", 1024, sharepointRequestTimeout, time.Second)
 	if err == nil {
 		t.Fatal("expected throttle")
 	}
-	if _, err = b.doGraphRequest(t.Context(), server.URL+"/v1.0/other", 1024); err != nil {
+	if _, err = b.doGraphRequest(t.Context(), server.URL+"/v1.0/other", 1024, sharepointRequestTimeout); err != nil {
 		t.Fatal(err)
 	}
 	first, second := <-requests, <-requests

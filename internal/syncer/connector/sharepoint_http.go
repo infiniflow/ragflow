@@ -28,12 +28,12 @@ import (
 
 var errSharePointResponseTooLarge = errors.New("SharePoint API response exceeds maximum size")
 
-func (c *SharePointConnector) graphRequestAttempt(ctx context.Context, apiURL, token string, maxBody int64, backoff time.Duration) ([]byte, int, string, error) {
+func (c *SharePointConnector) graphRequestAttempt(ctx context.Context, apiURL, token string, maxBody int64, timeout, backoff time.Duration) ([]byte, int, string, error) {
 	if err := c.limiter.acquire(ctx); err != nil {
 		return nil, 0, "", err
 	}
 	defer c.limiter.release()
-	ctx, cancel := context.WithTimeout(ctx, sharepointRequestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {

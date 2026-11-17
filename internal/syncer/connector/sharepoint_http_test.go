@@ -17,6 +17,7 @@
 package connector
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -27,6 +28,46 @@ import (
 	"testing"
 	"time"
 )
+
+func TestSharePointRequestDeadlines(t *testing.T) {
+	c := mustSharePointConnector(t, "https://graph.microsoft.com", nil)
+	c.accessToken, c.tokenExpiry = "token", time.Now().Add(time.Hour)
+	if c.httpClient.Timeout != 0 {
+		t.Fatal("the HTTP client timeout can override the download deadline")
+	}
+	var deadline time.Time
+	c.httpClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		deadline, _ = r.Context().Deadline()
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+	})
+
+	var metadata map[string]any
+	before := time.Now()
+	if err := c.getJSON(t.Context(), c.graphBaseURL+"/items/file", &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if deadline.Before(before.Add(60*time.Second)) || deadline.After(time.Now().Add(60*time.Second)) {
+		t.Fatalf("metadata deadline = %v, want 60 seconds", deadline.Sub(before))
+	}
+
+	before = time.Now()
+	if _, err := c.downloadContent(t.Context(), "drive", "file"); err != nil {
+		t.Fatal(err)
+	}
+	if deadline.Before(before.Add(5*time.Minute)) || deadline.After(time.Now().Add(5*time.Minute)) {
+		t.Fatalf("download deadline = %v, want 5 minutes", deadline.Sub(before))
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	parentDeadline, _ := ctx.Deadline()
+	if _, err := c.downloadContent(ctx, "drive", "file"); err != nil {
+		t.Fatal(err)
+	}
+	if !deadline.Equal(parentDeadline) {
+		t.Fatalf("download deadline = %v, want parent deadline %v", deadline, parentDeadline)
+	}
+}
 
 func TestSharePointRetriesTruncatedBody(t *testing.T) {
 	for _, persistent := range []bool{false, true} {
@@ -45,7 +86,7 @@ func TestSharePointRetriesTruncatedBody(t *testing.T) {
 			defer server.Close()
 			c := mustSharePointConnector(t, server.URL, nil)
 			c.accessToken, c.tokenExpiry = "token", time.Now().Add(time.Hour)
-			body, err := c.doGraphRequest(t.Context(), server.URL+"/v1.0/drives/drive/items/file/content", 1024)
+			body, err := c.doGraphRequest(t.Context(), server.URL+"/v1.0/drives/drive/items/file/content", 1024, sharepointDownloadTimeout)
 			if persistent {
 				if !errors.Is(err, io.ErrUnexpectedEOF) || calls.Load() != sharepointRetryCount || len(body) != 0 {
 					t.Fatalf("body=%q error=%v attempts=%d", body, err, calls.Load())

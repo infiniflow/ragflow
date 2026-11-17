@@ -38,6 +38,7 @@ const (
 	sharepointGraphScope          = "https://graph.microsoft.com/.default"
 	sharepointDefaultBatchSize    = 2
 	sharepointRequestTimeout      = 60 * time.Second
+	sharepointDownloadTimeout     = 5 * time.Minute
 	sharepointRetryCount          = 4
 	sharepointRetryBaseDelay      = time.Second
 	sharepointTokenExpiryMargin   = 5 * time.Minute
@@ -88,7 +89,7 @@ func NewSharePointConnector(config map[string]any) (*SharePointConnector, error)
 		clientSecret: stringConfig(credentials["client_secret"]),
 		siteURL:      strings.TrimSpace(stringConfig(credentials["site_url"])),
 		batchSize:    batchSize,
-		httpClient:   &http.Client{Timeout: sharepointRequestTimeout},
+		httpClient:   &http.Client{},
 		tokenURL:     "",
 		graphBaseURL: sharepointGraphBase,
 	}
@@ -381,7 +382,7 @@ func (c *SharePointConnector) downloadContent(ctx context.Context, driveID, item
 
 // getJSON fetches and decodes one Graph JSON response.
 func (c *SharePointConnector) getJSON(ctx context.Context, apiURL string, out any) error {
-	body, err := c.doGraphRequest(ctx, apiURL, sharepointMaxJSONResponseSize)
+	body, err := c.doGraphRequest(ctx, apiURL, sharepointMaxJSONResponseSize, sharepointRequestTimeout)
 	if err != nil {
 		return err
 	}
@@ -390,12 +391,12 @@ func (c *SharePointConnector) getJSON(ctx context.Context, apiURL string, out an
 
 // getBytes fetches a raw Graph response body (file content).
 func (c *SharePointConnector) getBytes(ctx context.Context, apiURL string) ([]byte, error) {
-	return c.doGraphRequest(ctx, apiURL, sharepointMaxFileSize)
+	return c.doGraphRequest(ctx, apiURL, sharepointMaxFileSize, sharepointDownloadTimeout)
 }
 
 // doGraphRequest issues one authorized Graph GET, retrying transient failures
 // and refreshing an expired access token once on 401.
-func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string, maxBody int64) (data []byte, err error) {
+func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string, maxBody int64, timeout time.Duration) (data []byte, err error) {
 	defer func() { err = sharePointRequestError(apiURL, err) }()
 	if err := c.validateGraphURL(apiURL); err != nil {
 		return nil, err
@@ -408,7 +409,7 @@ func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string,
 	refreshed := false
 	delay := sharepointRetryBaseDelay
 	for attempt := 1; attempt <= sharepointRetryCount; attempt++ {
-		body, status, retryAfter, requestErr := c.graphRequestAttempt(ctx, apiURL, token, maxBody, delay)
+		body, status, retryAfter, requestErr := c.graphRequestAttempt(ctx, apiURL, token, maxBody, timeout, delay)
 		lastErr = requestErr
 		if status == http.StatusUnauthorized && !refreshed {
 			c.invalidateToken(token)

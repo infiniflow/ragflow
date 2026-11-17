@@ -69,7 +69,7 @@ func TestSharePointRetriesRespectDelay(t *testing.T) {
 			defer server.Close()
 			c := mustSharePointConnector(t, server.URL, nil)
 			c.accessToken, c.tokenExpiry = "token", time.Now().Add(time.Hour)
-			if _, err := c.doGraphRequest(t.Context(), server.URL+"/v1.0/test", 1024); err != nil {
+			if _, err := c.doGraphRequest(t.Context(), server.URL+"/v1.0/test", 1024, sharepointRequestTimeout); err != nil {
 				t.Fatal(err)
 			}
 			if calls.Load() != 2 || time.Duration(elapsed.Load()) < time.Second {
@@ -92,7 +92,7 @@ func TestSharePointRetryBackoff(t *testing.T) {
 	defer server.Close()
 	c := mustSharePointConnector(t, server.URL, nil)
 	c.accessToken, c.tokenExpiry = "token", time.Now().Add(time.Hour)
-	if _, err := c.doGraphRequest(t.Context(), server.URL+"/v1.0/test", 1024); err != nil {
+	if _, err := c.doGraphRequest(t.Context(), server.URL+"/v1.0/test", 1024, sharepointRequestTimeout); err != nil {
 		t.Fatal(err)
 	}
 	first, second, third := <-requests, <-requests, <-requests
@@ -113,7 +113,7 @@ func TestSharePointRetryWaitCancellation(t *testing.T) {
 	c.accessToken, c.tokenExpiry = "token", time.Now().Add(time.Hour)
 	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 	defer cancel()
-	_, err := c.doGraphRequest(ctx, server.URL+"/v1.0/test", 1024)
+	_, err := c.doGraphRequest(ctx, server.URL+"/v1.0/test", 1024, sharepointRequestTimeout)
 	if !errors.Is(err, context.DeadlineExceeded) || calls.Load() != 1 {
 		t.Fatalf("error = %v, calls = %d", err, calls.Load())
 	}
@@ -129,7 +129,7 @@ func TestSharePointRetryLimit(t *testing.T) {
 	defer server.Close()
 	c := mustSharePointConnector(t, server.URL, nil)
 	c.accessToken, c.tokenExpiry = "token", time.Now().Add(time.Hour)
-	_, err := c.doGraphRequest(t.Context(), server.URL+"/v1.0/test", 1024)
+	_, err := c.doGraphRequest(t.Context(), server.URL+"/v1.0/test", 1024, sharepointRequestTimeout)
 	var apiErr *sharePointAPIError
 	if !errors.As(err, &apiErr) || apiErr.status != http.StatusTooManyRequests || calls.Load() != sharepointRetryCount {
 		t.Fatalf("error = %v, calls = %d", err, calls.Load())
