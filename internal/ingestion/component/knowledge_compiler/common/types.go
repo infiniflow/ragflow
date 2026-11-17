@@ -199,15 +199,11 @@ func ParseParam(m map[string]any) (Param, error) {
 			return p, fmt.Errorf("knowledge_compiler: thinking must be a string")
 		}
 		switch strings.TrimSpace(thinking) {
-		case "", "default":
-			p.ChatSettings.ThinkingSet = true
 		case "enabled":
-			enabled := true
-			p.ChatSettings.Thinking = &enabled
+			p.ChatSettings.Thinking = new(true)
 			p.ChatSettings.ThinkingSet = true
-		case "disabled":
-			disabled := false
-			p.ChatSettings.Thinking = &disabled
+		case "", "default", "disabled":
+			p.ChatSettings.Thinking = new(false)
 			p.ChatSettings.ThinkingSet = true
 		default:
 			return p, fmt.Errorf("knowledge_compiler: unsupported thinking setting %q", thinking)

@@ -885,16 +885,15 @@ func (m *ChatModel) withDefaults(config *ChatConfig) *ChatConfig {
 	if config == nil {
 		config = &ChatConfig{}
 	}
+	if config.Thinking == nil {
+		config.Thinking = new(false)
+	}
 	if m.info == nil {
 		return config
 	}
 	if config.ModelClass == nil && m.info.ModelClass != "" {
 		modelClass := m.info.ModelClass
 		config.ModelClass = &modelClass
-	}
-	if config.Thinking == nil && m.info.Thinking != nil {
-		thinking := m.info.Thinking.DefaultValue
-		config.Thinking = &thinking
 	}
 	return config
 }

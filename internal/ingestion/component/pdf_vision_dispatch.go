@@ -445,7 +445,7 @@ func defaultIsMonkeyOCRv2LayoutModelID(ctx context.Context, db *gorm.DB, tenantI
 	if db == nil || strings.TrimSpace(modelID) == "" {
 		return false
 	}
-	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+	resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 	return err == nil && strings.EqualFold(resolved.driver.Name(), "monkeyocrv2")
 }
 
@@ -1634,7 +1634,7 @@ var resolveMonkeyOCRModelForDispatch = defaultResolveMonkeyOCRModelForDispatch
 func defaultResolveMonkeyOCRModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 	modelID = strings.TrimSpace(modelID)
 	if modelID != "" && !strings.Contains(modelID, "@") {
-		resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -1760,7 +1760,7 @@ var resolveMinerUModelForDispatch = defaultResolveMinerUModelForDispatch
 func defaultResolveMinerUModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 	modelID = strings.TrimSpace(modelID)
 	if modelID != "" && !strings.Contains(modelID, "@") {
-		resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -1793,7 +1793,7 @@ var resolvePaddleOCRModelForDispatch = defaultResolvePaddleOCRModelForDispatch
 
 func defaultResolvePaddleOCRModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 	if strings.TrimSpace(modelID) != "" && !strings.Contains(modelID, "@") {
-		resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -1846,7 +1846,7 @@ func defaultIsMiniCPMOCRModelSelector(ctx context.Context, db *gorm.DB, tenantID
 	if db == nil || tenantID == "" || selector == "" {
 		return false
 	}
-	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, selector)
+	resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, selector)
 	return err == nil && resolved.driver.Name() == "minicpm-ocr"
 }
 
@@ -3055,7 +3055,7 @@ var resolveSoMarkModelForDispatch = defaultResolveSoMarkModelForDispatch
 func defaultResolveSoMarkModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 	modelID = strings.TrimSpace(modelID)
 	if modelID != "" && !strings.Contains(modelID, "@") {
-		resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 		if err != nil {
 			return nil, "", nil, err
 		}

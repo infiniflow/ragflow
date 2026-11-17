@@ -311,6 +311,8 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 			common.RespondError(c, common.CodeDataError, "document not found")
 		case errors.Is(err, document.ErrPreviewFileEmpty):
 			common.RespondError(c, common.CodeDataError, "This file is empty.")
+		case errors.Is(err, document.ErrPreviewNotReady):
+			common.RespondError(c, common.CodeDataError, "Preview is not ready.")
 		default:
 			// Surface storage failures as server errors with their cause.
 			common.Error("GetDocumentPreview failed", err,
