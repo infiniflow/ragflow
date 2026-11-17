@@ -110,6 +110,38 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	}
 }
 
+// Outlook writes the encoded-words of a subject and a sender name in the
+// legacy charset of the mail: windows-1252 for Western Europe, iso-8859-2 for
+// Central Europe, koi8-r or windows-1251 for Russian. They reached the item
+// fields undecoded, as "=?windows-1252?Q?...?=".
+func TestEmailParser_EmlDecodesLegacyCharsetHeaders(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: =?iso-8859-2?Q?Pawe=B3_Kowalski?= <pawel@example.com>",
+		"To: =?koi8-r?B?8NLJ18XU?= <ivan@example.com>",
+		"Subject: =?windows-1252?Q?R=E9union_=93Budget_2025=94_=96_ordre_du_jour?=",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Body.",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"fields": []string{"from", "to", "subject", "body"}})
+	result := p.ParseWithResult(t.Context(), "legacy.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	item := result.JSON[0].ToMap()
+	for field, want := range map[string]string{
+		"from":    "Paweł Kowalski <pawel@example.com>",
+		"to":      "Привет <ivan@example.com>",
+		"subject": "Réunion “Budget 2025” – ordre du jour",
+	} {
+		if got, _ := item[field].(string); got != want {
+			t.Errorf("%s: got %q, want %q", field, got, want)
+		}
+	}
+}
+
 // A non-ASCII attachment name arrives as RFC 2047 encoded-words inside the
 // filename or name parameter, from Outlook, Gmail and Chinese mail clients
 // alike. Left encoded, the name had no extension and the attachment was not
@@ -169,6 +201,26 @@ func TestEmailParser_EmlParsesAttachmentsWithEncodedNames(t *testing.T) {
 	for _, want := range []string{"First", "Second", "Third", "Fourth", "Fifth"} {
 		if !strings.Contains(joined, want+" attachment text.") {
 			t.Errorf("%s attachment was not parsed; items: %q", want, texts)
+		}
+	}
+}
+
+// Three header charset labels the WHATWG lookup alone gets wrong: an ISO-8859-1
+// alias reads as windows-1252 like the label itself, a bare UTF-16 word honours
+// its byte order mark, and a charset WHATWG only knows as its replacement
+// decoder stays undecoded instead of turning into U+FFFD.
+func TestDecodeHeaderWord_CharsetLabelsBeyondTheWHATWGLookup(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"=?iso_8859-1?Q?=93Hi=94?=", "\u201cHi\u201d"},
+		{"=?iso8859-1?Q?=93Hi=94?=", "\u201cHi\u201d"},
+		{"=?l1?Q?=80?=", "\u20ac"},
+		{"=?UTF-16?B?/v8ASABp?=", "Hi"},
+		{"=?UTF-16?B?//5IAGkA?=", "Hi"},
+		{"=?UTF-16?B?AEgAaQ==?=", "Hi"},
+		{"=?iso-2022-kr?B?GyQpQw4hIQ8=?=", "=?iso-2022-kr?B?GyQpQw4hIQ8=?="},
+	} {
+		if got := decodeHeaderWord(tc.in); got != tc.want {
+			t.Errorf("decodeHeaderWord(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
@@ -1264,6 +1316,14 @@ func TestDecodeHeaderWord_Charsets(t *testing.T) {
 		{"euc-kr", encodedWord("euc-kr", []byte{0xC7, 0xD1, 0xB1, 0xB9}), "한국"},
 		{"iso-8859-1", encodedWord("iso-8859-1", []byte{'c', 'a', 'f', 0xE9}), "café"},
 		{"hz-gb-2312 keeps HZ escape decoding", encodedWord("hz-gb-2312", []byte("~{VPND~}")), "中文"},
+		// -- Outlook labels Western European subjects windows-1252, usually Q-encoded --
+		{"windows-1252", "=?Windows-1252?Q?Caf=E9_=93menu=94_=96_10_=80?=", "Café “menu” – 10 €"},
+		{"iso-8859-1 label reads Windows-1252 punctuation", encodedWord("iso-8859-1", []byte{0x93, 'Q', 'u', 'o', 't', 'e', 'd', 0x94}), "“Quoted”"},
+		{"latin1", encodedWord("latin1", []byte{0x85, 'f', 'r', 'i', 'a', 'n', 'd'}), "…friand"},
+		{"iso-8859-2", encodedWord("iso-8859-2", []byte{'Z', 'a', 0xBF, 0xF3, 0xB3, 0xE6}), "Zażółć"},
+		{"iso-8859-15", encodedWord("iso-8859-15", []byte{'1', '0', ' ', 0xA4}), "10 €"},
+		{"koi8-r", encodedWord("koi8-r", []byte{0xF0, 0xD2, 0xC9, 0xD7, 0xC5, 0xD4}), "Привет"},
+		{"windows-1251", encodedWord("windows-1251", []byte{0xCF, 0xF0, 0xE8, 0xE2, 0xE5, 0xF2}), "Привет"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
