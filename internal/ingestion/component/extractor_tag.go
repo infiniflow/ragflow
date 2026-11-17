@@ -20,6 +20,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/progress"
@@ -430,7 +431,7 @@ func (c *ExtractorComponent) runLLMTags(ctx context.Context, db *gorm.DB, in ext
 	if len(chunks) == 0 {
 		return nil
 	}
-	driver, model, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
+	driver, model, apiKey, baseURL, info, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 	if err != nil {
 		common.Warn("extractor tag: resolve model failed, skipping LLM tagging", zap.Error(err))
 	}
@@ -442,7 +443,7 @@ func (c *ExtractorComponent) runLLMTags(ctx context.Context, db *gorm.DB, in ext
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(chunks))
 	for _, chunk := range chunks {
 		f, err := extractorPool.Submit(ctx, func() error {
-			llmTagChunk(ctx, db, inv, chunk, indexed.allTags, examples, in.cache, in.llmID, in.modelID, driver, model, apiKey, baseURL, topN, indexed)
+			llmTagChunk(ctx, db, inv, chunk, indexed.allTags, examples, in.cache, in.llmID, in.modelID, driver, model, apiKey, baseURL, info, topN, indexed)
 			return nil
 		})
 		if err != nil {
@@ -651,6 +652,7 @@ func llmTagChunk(
 	examples []schema.TaggedChunk,
 	cache chunkcache.Store,
 	llmID, modelID, driver, model, apiKey, baseURL string,
+	info *models.ModelInfo,
 	topN int,
 	idx *MemoryTagIndex,
 ) {
@@ -726,6 +728,7 @@ func llmTagChunk(
 			BaseURL:     baseURL,
 			Messages:    msgs,
 			Temperature: &temperature,
+			ModelInfo:   info,
 		})
 		if err != nil {
 			common.Error("extractor tags: LLM call failed", err)

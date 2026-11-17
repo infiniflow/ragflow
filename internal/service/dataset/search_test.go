@@ -4,9 +4,12 @@ import (
 	"context"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 )
@@ -245,4 +248,57 @@ func (e *compilationSearchEngine) Search(_ context.Context, req *types.SearchReq
 		chunks = append(chunks, chunk)
 	}
 	return &types.SearchResult{Chunks: chunks, Total: int64(len(chunks))}, nil
+}
+
+func TestSearchDatasets_ModelContextWithTenantFallback(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	tenantID := "tenant-dataset-owner"
+	userID := "user-dataset-owner"
+	ensureDatasetTestMembership(t, userID, tenantID, string(permission.RoleOwner))
+
+	kb := entity.Knowledgebase{
+		ID:         "kb-test-search",
+		TenantID:   tenantID,
+		CreatedBy:  userID,
+		Name:       "Test KB",
+		Permission: string(entity.TenantPermissionMe),
+		Status:     sptr(string(entity.StatusValid)),
+	}
+	if err := db.Create(&kb).Error; err != nil {
+		t.Fatalf("create kb: %v", err)
+	}
+
+	svc := NewDatasetService()
+
+	// 1. Authenticated caller without an active tenant in context.
+	// Model resolution must fallback to tenantIDs[0] instead of failing with "tenant id is required".
+	ctxNoTenant := permission.WithUserID(t.Context(), userID)
+	nonExistentModel := "unknown-rerank-uuid"
+	req := &service.SearchDatasetsRequest{
+		DatasetIDs: []string{"kb-test-search"},
+		Question:   "test question",
+		RerankID:   &nonExistentModel,
+	}
+
+	_, err := svc.SearchDatasets(ctxNoTenant, req)
+	if err == nil {
+		t.Fatal("expected error for non-existent model")
+	}
+	if strings.Contains(err.Error(), "tenant id is required") {
+		t.Fatalf("model resolution must fallback to dataset tenant, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "no saved model row") && !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected model resolution error under dataset tenant, got: %v", err)
+	}
+
+	// 2. Direct unit test of WithTenantID contract.
+	if got := permission.TenantIDFromContext(permission.WithTenantID(ctxNoTenant, tenantID)); got != tenantID {
+		t.Errorf("WithTenantID fallback got %q, want %q", got, tenantID)
+	}
+	ctxCallerTenant := permission.WithIdentity(t.Context(), "user-caller", "tenant-caller")
+	if got := permission.TenantIDFromContext(permission.WithTenantID(ctxCallerTenant, tenantID)); got != "tenant-caller" {
+		t.Errorf("WithTenantID must preserve existing tenant, got %q, want %q", got, "tenant-caller")
+	}
 }

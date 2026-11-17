@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/tokenizer"
 
 	"github.com/cloudwego/eino/schema"
@@ -31,18 +32,27 @@ import (
 
 // stubInvoker is a programmable ChatInvoker used by these tests.
 type stubInvoker struct {
-	resp     *ChatInvokeResponse
-	err      error
-	captured *ChatInvokeRequest
-	calls    int
+	resp          *ChatInvokeResponse
+	responses     []*ChatInvokeResponse
+	err           error
+	captured      *ChatInvokeRequest
+	capturedCalls []ChatInvokeRequest
+	calls         int
 }
 
 func (s *stubInvoker) Invoke(_ context.Context, _ *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	s.calls++
 	cp := req
 	s.captured = &cp
+	s.capturedCalls = append(s.capturedCalls, cp)
 	if s.err != nil {
 		return nil, s.err
+	}
+	if len(s.responses) > 0 {
+		idx := s.calls - 1
+		if idx < len(s.responses) {
+			return s.responses[idx], nil
+		}
 	}
 	return s.resp, nil
 }
@@ -634,9 +644,17 @@ func TestCleanFormattedAnswer(t *testing.T) {
 // models.DummyModel ("not implemented"), which the test never calls.
 type streamingStubDriver struct {
 	models.DummyModel
+	capturedUsage *common.ModelUsage
 }
 
-func (d *streamingStubDriver) ChatStreamlyWithSender(_ context.Context, _ string, _ []models.Message, _ *models.APIConfig, _ *models.ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+func (d *streamingStubDriver) ChatWithMessages(_ context.Context, _ string, _ []models.Message, _ *models.APIConfig, _ *models.ChatConfig, usage *common.ModelUsage) (*models.ChatResponse, error) {
+	d.capturedUsage = usage
+	ans := "the answer"
+	return &models.ChatResponse{Answer: &ans}, nil
+}
+
+func (d *streamingStubDriver) ChatStreamlyWithSender(_ context.Context, _ string, _ []models.Message, _ *models.APIConfig, _ *models.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	d.capturedUsage = usage
 	think, answer := "thinking…", "the answer"
 	if err := sender(nil, &think); err != nil {
 		return err
@@ -683,5 +701,225 @@ func TestResolvedModelInvokerStreams(t *testing.T) {
 	// The assembled reply matches what Invoke would have returned.
 	if resp.Content != "the answer" || resp.Thinking != "thinking…" {
 		t.Errorf("assembled reply = (%q, %q), want (the answer, thinking…)", resp.Content, resp.Thinking)
+	}
+}
+
+func TestEinoChatInvoker_Stream_Attribution(t *testing.T) {
+	origDriver := newChatModelDriver
+	mockDriver := &streamingStubDriver{}
+	newChatModelDriver = func(driver, override string) (models.ModelDriver, error) {
+		return mockDriver, nil
+	}
+	t.Cleanup(func() { newChatModelDriver = origDriver })
+
+	inv := &einoChatInvoker{}
+	modelInfo := &models.ModelInfo{
+		Name:          "gpt-4o",
+		ProviderName:  "openai",
+		InstanceID:    "inst-stream-saved",
+		TenantID:      "tenant-stream-owner",
+		IsSavedConfig: true,
+	}
+
+	ctx := permission.WithIdentity(t.Context(), "user-caller-1", "tenant-caller-1")
+	req := ChatInvokeRequest{
+		Driver:    "openai",
+		ModelName: "gpt-4o",
+		ModelInfo: modelInfo,
+		Messages:  []schema.Message{{Role: schema.User, Content: "stream question"}},
+	}
+
+	_, err := inv.Stream(ctx, nil, req, func(delta string, isThink bool) error { return nil })
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	if mockDriver.capturedUsage == nil {
+		t.Fatal("driver received nil ModelUsage during streaming")
+	}
+	u := mockDriver.capturedUsage
+	if u.TenantID != "tenant-stream-owner" {
+		t.Errorf("got TenantID %q, want %q (must use saved model config tenant, not caller context)", u.TenantID, "tenant-stream-owner")
+	}
+	if u.InstanceID != "inst-stream-saved" {
+		t.Errorf("got InstanceID %q, want %q", u.InstanceID, "inst-stream-saved")
+	}
+	if u.ProviderName != "openai" {
+		t.Errorf("got ProviderName %q, want %q", u.ProviderName, "openai")
+	}
+	if !u.IsSavedConfig {
+		t.Errorf("got IsSavedConfig false, want true")
+	}
+	if u.UserID != "user-caller-1" {
+		t.Errorf("got UserID %q, want %q (actual caller)", u.UserID, "user-caller-1")
+	}
+}
+
+func TestResolvedModelInvoker_Stream_Attribution(t *testing.T) {
+	driver := &streamingStubDriver{}
+	modelName := "claude-3-5-sonnet"
+	modelInfo := &models.ModelInfo{
+		Name:          modelName,
+		ProviderName:  "anthropic",
+		InstanceID:    "inst-resolved-stream",
+		TenantID:      "tenant-resolved-owner",
+		IsSavedConfig: true,
+	}
+	cm := models.NewChatModelWithInfo(driver, &modelName, &models.APIConfig{}, modelInfo)
+	invoker := NewResolvedInvoker(cm)
+	streamer := invoker.(chat.StreamingInvoker)
+
+	ctx := permission.WithIdentity(t.Context(), "user-caller-2", "tenant-caller-2")
+	req := ChatInvokeRequest{
+		ModelName: modelName,
+		Messages:  []schema.Message{{Role: schema.User, Content: "stream question"}},
+	}
+
+	_, err := streamer.Stream(ctx, nil, req, func(delta string, isThink bool) error { return nil })
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	if driver.capturedUsage == nil {
+		t.Fatal("driver received nil ModelUsage during streaming")
+	}
+	u := driver.capturedUsage
+	if u.TenantID != "tenant-resolved-owner" {
+		t.Errorf("got TenantID %q, want %q", u.TenantID, "tenant-resolved-owner")
+	}
+	if u.InstanceID != "inst-resolved-stream" {
+		t.Errorf("got InstanceID %q, want %q", u.InstanceID, "inst-resolved-stream")
+	}
+	if u.ProviderName != "anthropic" {
+		t.Errorf("got ProviderName %q, want %q", u.ProviderName, "anthropic")
+	}
+	if !u.IsSavedConfig {
+		t.Errorf("got IsSavedConfig false, want true")
+	}
+	if u.UserID != "user-caller-2" {
+		t.Errorf("got UserID %q, want %q", u.UserID, "user-caller-2")
+	}
+}
+
+func TestResolvedModelInvoker_KeepsPinnedAttribution(t *testing.T) {
+	driver := &streamingStubDriver{}
+	modelName := "claude-3-5-sonnet"
+	pinnedInfo := &models.ModelInfo{
+		Name:          modelName,
+		ProviderName:  "anthropic",
+		InstanceID:    "inst-pinned",
+		TenantID:      "tenant-pinned-owner",
+		IsSavedConfig: true,
+	}
+	cm := models.NewChatModelWithInfo(driver, &modelName, &models.APIConfig{}, pinnedInfo)
+	invoker := NewResolvedInvoker(cm)
+
+	ctx := permission.WithIdentity(t.Context(), "user-caller", "tenant-caller")
+	spoofedInfo := &models.ModelInfo{
+		Name:          modelName,
+		ProviderName:  "openai",
+		InstanceID:    "inst-spoofed",
+		TenantID:      "tenant-spoofed-owner",
+		IsSavedConfig: true,
+	}
+	req := ChatInvokeRequest{
+		ModelName: modelName,
+		ModelInfo: spoofedInfo,
+		Messages:  []schema.Message{{Role: schema.User, Content: "test"}},
+	}
+
+	_, err := invoker.Invoke(ctx, nil, req)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if driver.capturedUsage == nil {
+		t.Fatal("driver received nil ModelUsage")
+	}
+	u := driver.capturedUsage
+	if u.TenantID != "tenant-pinned-owner" {
+		t.Errorf("got TenantID %q, want pinned %q", u.TenantID, "tenant-pinned-owner")
+	}
+	if u.InstanceID != "inst-pinned" {
+		t.Errorf("got InstanceID %q, want pinned %q", u.InstanceID, "inst-pinned")
+	}
+	if u.ProviderName != "anthropic" {
+		t.Errorf("got ProviderName %q, want pinned %q", u.ProviderName, "anthropic")
+	}
+}
+
+func TestLLM_Invoke_StructuredOutputRetry_PreservesModelInfo(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-struct",
+		UserID:       "tenant-struct",
+		TenantID:     "tenant-struct",
+		ProviderName: "DeepSeek",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-struct",
+		ProviderID:   "provider-struct",
+		InstanceName: "prod",
+		APIKey:       "inst-key",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	modelID := "4d2d824e7e5d11f1a845455b140cef91"
+	if err := db.Create(&entity.TenantModel{
+		ID:         modelID,
+		ProviderID: "provider-struct",
+		InstanceID: "instance-struct",
+		ModelName:  "deepseek-chat",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{
+		responses: []*ChatInvokeResponse{
+			{Content: "not json", Model: "deepseek-chat", Stopped: true},
+			{Content: `{"summary": "valid json"}`, Model: "deepseek-chat", Stopped: true},
+		},
+	}
+	withStubInvoker(t, stub)
+
+	c := NewLLMComponent(LLMParam{ModelID: modelID})
+	out, err := c.Invoke(stateWithTenant("tenant-struct"), db, map[string]any{
+		"user_prompt":      "please summarize",
+		"output_structure": map[string]any{"summary": "string"},
+	})
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if len(stub.capturedCalls) != 2 {
+		t.Fatalf("expected 2 invoker calls (initial + retry), got %d", len(stub.capturedCalls))
+	}
+	// Verify first call received resolved ModelInfo
+	firstInfo := stub.capturedCalls[0].ModelInfo
+	if firstInfo == nil {
+		t.Fatal("first call missing ModelInfo")
+	}
+	if firstInfo.InstanceID != "instance-struct" || firstInfo.TenantID != "tenant-struct" {
+		t.Errorf("first call ModelInfo = %+v, want instance-struct/tenant-struct", firstInfo)
+	}
+	// Verify second call (retry) ALSO preserved ModelInfo
+	retryInfo := stub.capturedCalls[1].ModelInfo
+	if retryInfo == nil {
+		t.Fatal("retry call missing ModelInfo; attribution dropped during structured output retry")
+	}
+	if retryInfo.InstanceID != "instance-struct" || retryInfo.TenantID != "tenant-struct" {
+		t.Errorf("retry call ModelInfo = %+v, want instance-struct/tenant-struct", retryInfo)
+	}
+	structured, ok := out["structured"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured output in out: %+v", out)
+	}
+	if structured["summary"] != "valid json" {
+		t.Errorf("structured[summary] = %v, want 'valid json'", structured["summary"])
 	}
 }

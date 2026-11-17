@@ -919,7 +919,7 @@ build_cpp() {
     local rename_map="$BUILD_DIR/re2_rename.map"
     # Mach-O prefixes C++ symbols with an extra underscore (__ZN3re2...).
     nm "$tok_a" \
-        | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_?_Z(N|NK|TVN|TIN|TSN)3re2/ { print $3" ragtokre2_"$3 }' \
+        | awk '$2 ~ /^[TDBRSWtdbrswiIVv]$/ && $3 ~ /^_?_Z(N|NK|TVN|TIN|TSN)3re2/ { print $3" ragtokre2_"$3 }' \
         | sort -u > "$rename_map"
     if [ -s "$rename_map" ]; then
         rename_archive_symbols "$tok_a" "$rename_map" || exit 1

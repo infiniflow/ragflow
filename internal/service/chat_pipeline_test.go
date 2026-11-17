@@ -216,6 +216,7 @@ func TestDecorateAnswer_TimerFormatAlwaysEmitted(t *testing.T) {
 		"",
 		nil,
 		false,
+		nil,
 	)
 	md := result.Prompt
 	for _, must := range []string{
@@ -254,6 +255,7 @@ func TestDecorateAnswer_ThinkMarkersPreserved(t *testing.T) {
 		"",
 		nil,
 		false,
+		nil,
 	)
 	if !strings.HasPrefix(result.Answer, "<think>reasoning</think>") {
 		t.Errorf("expected think block at start, got %q", result.Answer)
@@ -284,6 +286,7 @@ func TestDecorateAnswer_InvalidKeySuffix(t *testing.T) {
 		"",
 		nil,
 		false,
+		nil,
 	)
 	if !strings.Contains(result.Answer, "Please set LLM API-Key") {
 		t.Errorf("expected API-key hint, got %q", result.Answer)
@@ -311,6 +314,7 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 		"",
 		nil,
 		false,
+		nil,
 	)
 	if !strings.Contains(result.Answer, "[ID:12]") {
 		t.Errorf("canonical marker must survive decorateAnswer, got %q", result.Answer)
@@ -338,6 +342,7 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 		"",
 		nil,
 		false,
+		nil,
 	)
 	if result.Answer != "<think>Checking</think>see  in [2024] for details" {
 		t.Errorf("quote=false citation cleanup = %q", result.Answer)
@@ -378,6 +383,7 @@ func TestDecorateAnswer_RepairRunsWhenQuote(t *testing.T) {
 		"",
 		nil,
 		true,
+		nil,
 	)
 	if !strings.Contains(result.Answer, "[ID:12]") {
 		t.Errorf("quote=true must repair to [ID:12], got %q", result.Answer)
@@ -416,6 +422,7 @@ func TestDecorateAnswer_CitesThinkBlock(t *testing.T) {
 		"",
 		nil,
 		true,
+		nil,
 	)
 	if result.Reference == nil {
 		t.Fatal("a think-block citation must carry a reference")
@@ -453,6 +460,7 @@ func TestDecorateAnswer_PreCheckSkipsInsertCitations(t *testing.T) {
 		"",
 		nil,
 		false,
+		nil,
 	)
 	// Marker must be preserved (idempotent re-formatting only).
 	if strings.Count(result.Answer, "[ID:3]") < 1 {
@@ -837,6 +845,7 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 		"",
 		nil,
 		true,
+		nil,
 	)
 	chunks, ok := result.Reference["chunks"].([]map[string]interface{})
 	if !ok || len(chunks) == 0 {
@@ -859,7 +868,7 @@ func TestDecorateAnswer_QuoteDisabledKeepsChunks(t *testing.T) {
 		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Source"}},
 	}
 	result := s.decorateAnswer(t.Context(), "Answer", kb, "", nil, 0, timer,
-		nil, 0, false, nil, "", nil, "", nil, true)
+		nil, 0, false, nil, "", nil, "", nil, true, nil)
 	if _, has := result.Reference["doc_aggs"]; has {
 		t.Fatalf("disabled citations must drop doc_aggs: %#v", result.Reference)
 	}

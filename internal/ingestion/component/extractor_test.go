@@ -945,7 +945,7 @@ func TestIsBareTenantModelID(t *testing.T) {
 // TestResolveExtractorChatTarget_AtSplitFallback verifies the @ split fallback.
 func TestResolveExtractorChatTarget_AtSplitFallback(t *testing.T) {
 	ctx := t.Context()
-	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(
+	driver, modelName, apiKey, baseURL, _, err := resolveExtractorChatTarget(
 		ctx, dao.DB, "gpt-4o-mini@openai")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -964,7 +964,7 @@ func TestResolveExtractorChatTarget_AtSplitFallback(t *testing.T) {
 // TestResolveExtractorChatTarget_NoDriver verifies a non-@ plain string returns no driver.
 func TestResolveExtractorChatTarget_NoDriver(t *testing.T) {
 	ctx := t.Context()
-	driver, modelName, _, _, err := resolveExtractorChatTarget(
+	driver, modelName, _, _, _, err := resolveExtractorChatTarget(
 		ctx, dao.DB, "plain-name")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1215,7 +1215,7 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 // TestResolveExtractorChatTarget_EmptyLLMID verifies default fallback when llmID is empty.
 func TestResolveExtractorChatTarget_EmptyLLMID(t *testing.T) {
 	ctx := t.Context()
-	driver, modelName, _, _, err := resolveExtractorChatTarget(ctx, dao.DB, "")
+	driver, modelName, _, _, _, err := resolveExtractorChatTarget(ctx, dao.DB, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
