@@ -1133,7 +1133,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       agenticTemplateTooLong: '模板长度不能超过 32768 个字符',
       resetToDefault: '重置为默认',
       thinkingTip:
-        '仅控制官方模型供应商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
+        '默认关闭思考模式。如需使用，请选择开启，并确保模型支持思考模式。',
       quote: '显示引文',
       quoteTip: '是否应该显示原文出处？',
       selfRag: 'Self-RAG',
@@ -1874,6 +1874,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       mineruApiserver: 'MinerU API 服务器',
       mineruApiserverMessage: '请输入 MinerU API 服务器地址！',
       mineruApiserverPlaceholder: '例如：http://host.docker.internal:9987',
+      unlimitedOcrServerUrl: 'Unlimited-OCR-2 服务地址',
+      unlimitedOcrServerUrlMessage: '请输入 Unlimited-OCR-2 服务地址！',
+      unlimitedOcrServerUrlPlaceholder: '例如：http://127.0.0.1:18000',
       mineruApiToken: 'MinerU API Token',
       mineruApiTokenPlaceholder: 'mineru.net API 管理页创建的 Token',
       mineruApiTokenTip:

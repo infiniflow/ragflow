@@ -284,7 +284,7 @@ export function LlmSettingFieldItems({
               </FormLabel>
               <FormControl>
                 <Select
-                  value={field.value ?? 'default'}
+                  value={field.value ?? 'disabled'}
                   onValueChange={field.onChange}
                 >
                   <SelectTrigger className="flex-1 !m-0">

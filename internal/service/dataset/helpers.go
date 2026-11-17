@@ -155,6 +155,13 @@ func validateDatasetEmbeddingModel(embeddingModel string) error {
 		return nil
 	}
 
+	// A gp- model group reference resolves through the group picker at use
+	// time (verifyEmbeddingAvailability -> ResolveInfo), so it passes format
+	// validation here.
+	if _, ok := common.ParseGroupModelRef(embeddingModel); ok {
+		return nil
+	}
+
 	if !strings.Contains(embeddingModel, "@") {
 		return errors.New("embedding model identifier must follow <model_name>@<provider> format")
 	}

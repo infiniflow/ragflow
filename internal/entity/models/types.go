@@ -368,9 +368,12 @@ type OCRConfig struct {
 }
 
 type ParseFileConfig struct {
-	ParseMethod string `json:"parse_method"`
-	Backend     string `json:"backend"`
-	ServerURL   string `json:"server_url"`
+	ParseMethod       string `json:"parse_method"`
+	Backend           string `json:"backend"`
+	ServerURL         string `json:"server_url"`
+	CropMode          string `json:"crop_mode,omitempty"`
+	NoRepeatNgramSize int    `json:"no_repeat_ngram_size,omitempty"`
+	PageGuard         *bool  `json:"page_guard,omitempty"`
 }
 
 // usageTemplateResolver, when set, resolves the usage record a typed model
@@ -882,16 +885,15 @@ func (m *ChatModel) withDefaults(config *ChatConfig) *ChatConfig {
 	if config == nil {
 		config = &ChatConfig{}
 	}
+	if config.Thinking == nil {
+		config.Thinking = new(false)
+	}
 	if m.info == nil {
 		return config
 	}
 	if config.ModelClass == nil && m.info.ModelClass != "" {
 		modelClass := m.info.ModelClass
 		config.ModelClass = &modelClass
-	}
-	if config.Thinking == nil && m.info.Thinking != nil {
-		thinking := m.info.Thinking.DefaultValue
-		config.Thinking = &thinking
 	}
 	return config
 }

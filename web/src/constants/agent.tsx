@@ -70,6 +70,7 @@ export const initialLlmBaseValues = {
   frequency_penalty: 0.7,
   presence_penalty: 0.4,
   max_tokens: 256,
+  thinking: 'disabled' as const,
 };
 
 export enum AgentCategory {

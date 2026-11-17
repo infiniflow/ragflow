@@ -545,12 +545,7 @@ func defaultVisionChatInvoker(
 ) (*modelModule.ChatResponse, error) {
 	chatCtx, cancel := context.WithTimeout(ctx, visionChatTimeout)
 	defer cancel()
-	vision := true
-	config := &modelModule.ChatConfig{Vision: &vision}
-	if _, ok := driver.(*modelModule.OllamaModel); ok {
-		thinking := false
-		config.Thinking = &thinking
-	}
+	config := &modelModule.ChatConfig{Vision: new(true), Thinking: new(false)}
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 	finish := agentruntime.TrackIO(chatCtx, "Parser", "VLM", "operation=vision_enhancement")
 	resp, err := chatModel.ChatWithMessages(chatCtx, messages, config, nil)
