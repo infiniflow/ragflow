@@ -115,8 +115,9 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	if cropErr != nil {
 		return pdf.TableItem{}
 	}
-	cropOffX := math.Max(0, tm.Region.X0-util.TSRRegionMarginPx)
-	cropOffY := math.Max(0, tm.Region.Y0-util.TSRRegionMarginPx)
+	cropMarginX, cropMarginY := util.TSRCropMargin(tm.Region)
+	cropOffX := math.Max(0, tm.Region.X0-cropMarginX)
+	cropOffY := math.Max(0, tm.Region.Y0-cropMarginY)
 	autoRotate := p.Config.AutoRotateTables != nil && *p.Config.AutoRotateTables
 	bestAngle := 0
 	origW, origH := cropped.Bounds().Dx(), cropped.Bounds().Dy()

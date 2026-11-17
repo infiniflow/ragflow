@@ -132,25 +132,24 @@ func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 	}
 
 	// The cell must stay inside the cropped image. Crop bounds are derived
-	// from the shared TSRRegionMarginPx constant, so they track margin changes.
-	cropX0 := math.Max(0, match.Region.X0-util.TSRRegionMarginPx)
-	cropY0 := math.Max(0, match.Region.Y0-util.TSRRegionMarginPx)
-	cropX1 := math.Min(float64(pageImg.Bounds().Dx()), match.Region.X1+util.TSRRegionMarginPx)
-	cropY1 := math.Min(float64(pageImg.Bounds().Dy()), match.Region.Y1+util.TSRRegionMarginPx)
+	// from the shared TSRCropMargin helper, so they track margin changes.
+	cropMX, cropMY := util.TSRCropMargin(match.Region)
+	cropX0 := math.Max(0, match.Region.X0-cropMX)
+	cropY0 := math.Max(0, match.Region.Y0-cropMY)
+	cropX1 := math.Min(float64(pageImg.Bounds().Dx()), match.Region.X1+cropMX)
+	cropY1 := math.Min(float64(pageImg.Bounds().Dy()), match.Region.Y1+cropMY)
 	if got.X0 < cropX0-1 || got.Y0 < cropY0-1 || got.X1 > cropX1+1 || got.Y1 > cropY1+1 {
 		t.Errorf("cell (%.0f,%.0f,%.0f,%.0f) outside crop (%.0f,%.0f,%.0f,%.0f)",
 			got.X0, got.Y0, got.X1, got.Y1, cropX0, cropY0, cropX1, cropY1)
 	}
 }
 
-// TestProcessOneTable_CropOffUsesFixedMargin locks the parity contract that
-// the TSR crop offset is a fixed margin (TSRRegionMarginPx = 10pt * DlaScale =
-// 30px), not a proportional percentage of the region. processOneTable computes
-// cropOffX = max(0, region.X0 - TSRRegionMarginPx); for a region whose X0/Y0
-// lie beyond the margin the offsets must equal region.X - 30 (nonzero), which
-// is exactly the inverse of CropImageRegion's forward 30px expansion. The
-// pre-fix code used w*0.03/h*0.03 here, diverging from Python.
-func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
+// TestProcessOneTable_CropOffUsesProportionalMargin locks the parity contract
+// that the TSR crop offset is a 3% proportional margin (matching the reference
+// implementation w*0.03/h*0.03), NOT a fixed 30px margin. processOneTable
+// computes cropOff = max(0, region.X - w*0.03/h*0.03), the exact inverse of
+// CropImageRegion's forward expansion.
+func TestProcessOneTable_CropOffUsesProportionalMargin(t *testing.T) {
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
 
@@ -158,13 +157,11 @@ func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
 	boxes := []pdf.TextBox{
 		{X0: 10, X1: 60, Top: 10, Bottom: 30, Text: "cell", LayoutType: pdf.LayoutTypeTable},
 	}
-	// Region beyond TSRRegionMarginPx (30px), with distinct X/Y origins so a
-	// regression that uses the wrong origin for CropOffY is caught. Offset
-	// must be region.X - 30 (nonzero), not the old proportional w*0.03 and
-	// not clamped to 0.
-	const regionX0, regionY0 = 100.0, 140.0
+	// Region with distinct X/Y origins so a regression using the wrong origin
+	// for CropOffY is caught. Offset must be region.X - w*0.03 / h*0.03.
+	const regionX0, regionY0, regionX1, regionY1 = 100.0, 140.0, 210.0, 200.0
 	match := tbl.TableMatch{
-		Region: pdf.DLARegion{X0: regionX0, Y0: regionY0, X1: 210, Y1: 200, Label: pdf.LayoutTypeTable},
+		Region: pdf.DLARegion{X0: regionX0, Y0: regionY0, X1: regionX1, Y1: regionY1, Label: pdf.LayoutTypeTable},
 		BoxIdx: []int{0},
 	}
 	builder := &staticTableBuilder{
@@ -175,13 +172,13 @@ func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
 
 	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
 
-	const wantOffX = regionX0 - util.TSRRegionMarginPx // 100 - 30 = 70
-	const wantOffY = regionY0 - util.TSRRegionMarginPx // 140 - 30 = 110
-	if item.CropOffX != wantOffX {
-		t.Errorf("cropOffX = %v, want %v (region.X0 - fixed 30px margin)", item.CropOffX, wantOffX)
+	wantOffX := regionX0 - (regionX1-regionX0)*0.03
+	wantOffY := regionY0 - (regionY1-regionY0)*0.03
+	if math.Abs(item.CropOffX-wantOffX) > 1e-6 {
+		t.Errorf("cropOffX = %v, want %v (region.X0 - w*0.03)", item.CropOffX, wantOffX)
 	}
-	if item.CropOffY != wantOffY {
-		t.Errorf("cropOffY = %v, want %v (region.Y0 - fixed 30px margin)", item.CropOffY, wantOffY)
+	if math.Abs(item.CropOffY-wantOffY) > 1e-6 {
+		t.Errorf("cropOffY = %v, want %v (region.Y0 - h*0.03)", item.CropOffY, wantOffY)
 	}
 }
 

@@ -204,17 +204,20 @@ func TestParseMergesTableCaption(t *testing.T) {
 		{image.Rect(40, 120, 70, 140), "A", color.RGBA{B: 255, A: 255}},
 		{image.Rect(150, 120, 180, 140), "42", color.RGBA{R: 255, G: 255, A: 255}},
 	})
+	// TSR cells are in crop-local coordinates. The DLA region top is y=60 and
+	// the 3% proportional margin puts the crop origin at y=60-(160-60)*0.03=57,
+	// so cell rows are expressed relative to that origin (page y minus 57).
 	analyzer := &testAnalyzer{
 		boxes:   boxes,
 		texts:   texts,
 		regions: []deepdoctype.DLARegion{{X0: 0, Y0: 60, X1: 240, Y1: 160, Label: "table", Confidence: 0.9}},
 		cells: []deepdoctype.TSRCell{
-			{X0: 0, Y0: 0, X1: 240, Y1: 130, Label: "table"},
-			{X0: 10, Y0: 40, X1: 110, Y1: 110, Label: "table column"},
-			{X0: 110, Y0: 40, X1: 230, Y1: 110, Label: "table column"},
-			{X0: 10, Y0: 40, X1: 230, Y1: 60, Label: "table row"},
-			{X0: 10, Y0: 90, X1: 230, Y1: 110, Label: "table row"},
-			{X0: 10, Y0: 40, X1: 230, Y1: 60, Label: "table column header"},
+			{X0: 0, Y0: 0, X1: 240, Y1: 103, Label: "table"},
+			{X0: 10, Y0: 13, X1: 110, Y1: 83, Label: "table column"},
+			{X0: 110, Y0: 13, X1: 230, Y1: 83, Label: "table column"},
+			{X0: 10, Y0: 13, X1: 230, Y1: 33, Label: "table row"},
+			{X0: 10, Y0: 63, X1: 230, Y1: 83, Label: "table row"},
+			{X0: 10, Y0: 13, X1: 230, Y1: 33, Label: "table column header"},
 		},
 	}
 

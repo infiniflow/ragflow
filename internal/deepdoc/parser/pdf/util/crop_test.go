@@ -594,10 +594,9 @@ func TestCropSectionByDLA(t *testing.T) {
 	// Decode and verify.
 	decoded, _ := base64.StdEncoding.DecodeString(result)
 	img := decodePNG(t, decoded)
-	// The DLA figure region is (30,60)-(270,420). CropImageRegion now adds a
-	// fixed 30px margin (TSRRegionMarginPx = 10pt * ZM), so the crop is
-	// (0,30)-(300,450) → 300x420. The assertions below only check the crop is
-	// reasonably large, not exact pixels.
+	// The DLA figure region is (30,60)-(270,420). CropImageRegion adds a
+	// 3% proportional margin (~7px/11px), so the crop is ~226x382.
+	// Assertions only check the crop is reasonably large, not exact pixels.
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	t.Logf("cropSectionByDLA result: %dx%d", w, h)
 	if w < 200 || h < 300 {
@@ -690,31 +689,28 @@ func TestCropSectionByDLA_EmptyInputs(t *testing.T) {
 func TestCropImageRegion(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 200, 300))
 
-	t.Run("normal crop uses fixed 30px margin", func(t *testing.T) {
+	t.Run("normal crop uses 3% proportional margin", func(t *testing.T) {
 		r := pdf.DLARegion{X0: 10, Y0: 20, X1: 100, Y1: 150}
 		cropped, err := CropImageRegion(img, r)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		// Fixed margin = 10 PDF points * ZM(3) = 30px on each side (matches
-		// Python's MARGIN=10, NOT a proportional 3%). Region is 90x130px;
-		// expanded by 30px/side and clamped to the 200x300 image → 130x180.
-		if cropped.Bounds().Dx() != 130 || cropped.Bounds().Dy() != 180 {
-			t.Errorf("size %v, want 130x180 (fixed 30px margin)", cropped.Bounds())
+		// 3% margin: 90*0.03≈3px, 130*0.03≈4px → 95x137
+		if cropped.Bounds().Dx() != 95 || cropped.Bounds().Dy() != 137 {
+			t.Errorf("size %v, want 95x137 (3%% proportional margin)", cropped.Bounds())
 		}
 	})
 
-	t.Run("margin is fixed, not proportional", func(t *testing.T) {
-		// A small 40x40 region: a 3% margin adds only ~1.2px/side (→ 42x42),
-		// but the fixed 30px margin adds 30px/side (→ 100x100). This locks
-		// parity with Python, which uses a fixed MARGIN=10 points.
+	t.Run("margin is proportional, not fixed", func(t *testing.T) {
+		// A small 40x40 region: a 3% margin adds ~1.2px/side (→ 43x43 after int clamp),
+		// matching Python 0.26.4 w*0.03/h*0.03, NOT a fixed 30px margin.
 		r := pdf.DLARegion{X0: 50, Y0: 50, X1: 90, Y1: 90}
 		cropped, err := CropImageRegion(img, r)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if cropped.Bounds().Dx() != 100 || cropped.Bounds().Dy() != 100 {
-			t.Errorf("size %v, want 100x100 (fixed 30px margin, not 3%%)", cropped.Bounds())
+		if cropped.Bounds().Dx() != 43 || cropped.Bounds().Dy() != 43 {
+			t.Errorf("size %v, want 43x43 (3%% margin, not fixed 30px)", cropped.Bounds())
 		}
 	})
 
@@ -745,15 +741,27 @@ func TestCropImageRegion(t *testing.T) {
 	})
 }
 
-// TestTSRRegionMarginPx locks the parity contract with Python: the TSR crop
-// margin is a fixed 10 PDF points scaled by ZM (DlaScale=3) = 30px, NOT a
-// proportional percentage. Both CropImageRegion and the cropOff inverse map in
-// table_extract.go read this single constant, so the crop and the coordinate
-// mapping can never drift apart.
-func TestTSRRegionMarginPx(t *testing.T) {
-	const want = 10.0 * pdf.DlaScale // 10 points * ZM(3) = 30px
-	if TSRRegionMarginPx != want {
-		t.Errorf("TSRRegionMarginPx = %v, want %v (10pt * ZM)", TSRRegionMarginPx, want)
+// TestCropImageRegionUsesProportionalMargin locks the parity contract that the
+// TSR crop margin is proportional (w*0.03/h*0.03, matching the reference
+// implementation), NOT a fixed 30px margin. A 500x500 region yields a 15px
+// margin per side (530x530 crop); the old fixed 30px margin would yield 560x560.
+// This distinguishes the two contracts even when rendered output happens to match.
+func TestCropImageRegionUsesProportionalMargin(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 1000, 1000))
+	for y := 0; y < 1000; y++ {
+		for x := 0; x < 1000; x++ {
+			img.Set(x, y, color.RGBA{255, 255, 255, 255})
+		}
+	}
+	r := pdf.DLARegion{X0: 100, Y0: 100, X1: 600, Y1: 600}
+	cropped, err := CropImageRegion(img, r)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	wantW, wantH := 530, 530
+	gotW, gotH := cropped.Bounds().Dx(), cropped.Bounds().Dy()
+	if gotW != wantW || gotH != wantH {
+		t.Errorf("crop size = %dx%d, want %dx%d (3%% proportional margin, not fixed 30px)", gotW, gotH, wantW, wantH)
 	}
 }
 
