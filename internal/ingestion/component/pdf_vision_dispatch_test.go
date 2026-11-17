@@ -1254,3 +1254,102 @@ func TestMonkeyOCRv2AttachPositionsLeadingUnpositionedTable(t *testing.T) {
 		t.Fatalf("second table must keep its own section's page 2, got %#v", second)
 	}
 }
+
+func TestMonkeyOCRv1ZIPPreservesPositions(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	entry, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = entry.Write([]byte(`[
+        {
+            "type": "text",
+            "text": "First page",
+            "page_idx": 0,
+            "bbox": [10, 20, 110, 40]
+        },
+        {
+            "type": "text",
+            "text": "Second page",
+            "page_idx": 1,
+            "bbox": [20, 30, 120, 50]
+        }
+    ]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	sizes := map[int][2]float64{
+		0: {612, 792},
+		1: {612, 792},
+	}
+
+	result, err := monkeyOCRZIPToParseResult(
+		"test.pdf", buf.Bytes(), sizes,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.File["page_count"] != 2 {
+		t.Fatalf("expected 2 pages, got %v",
+			result.File["page_count"])
+	}
+
+	if result.File["parse_method"] != "monkeyocr" {
+		t.Fatalf("unexpected parse_method: %v",
+			result.File["parse_method"])
+	}
+
+	if len(result.JSON) != 2 {
+		t.Fatalf("expected 2 items, got %d",
+			len(result.JSON))
+	}
+
+	for i, item := range result.JSON {
+		data := item.ToMap()
+		expectedPage := i + 1
+
+		if data["page_number"] != expectedPage {
+			t.Errorf("item %d: page = %v, want %d",
+				i, data["page_number"], expectedPage)
+		}
+
+		positions, ok := data["_pdf_positions"].([][]any)
+		if !ok || len(positions) != 1 {
+			t.Fatalf("item %d: missing positions", i)
+		}
+
+		if positions[0][0] != expectedPage {
+			t.Errorf("item %d: position page = %v",
+				i, positions[0][0])
+		}
+
+		for j := 1; j <= 4; j++ {
+			coord, ok := positions[0][j].(float64)
+			if !ok || coord < 0 {
+				t.Errorf("item %d: invalid coordinate %d",
+					i, j)
+			}
+		}
+	}
+}
+
+func TestMonkeyOCRv1InvalidZIP(t *testing.T) {
+	_, err := monkeyOCRZIPToParseResult(
+		"test.pdf",
+		[]byte("invalid zip data"),
+		nil,
+	)
+
+	if err == nil {
+		t.Fatal("expected error for invalid ZIP")
+	}
+}
