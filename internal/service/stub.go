@@ -50,6 +50,39 @@ func (s *ModelFactory) pickGroupModel(_ context.Context, _, _ string, _ entity.M
 	return nil, fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
 }
 
+func authorizeNonOwnerModelConfiguration(context.Context, *entity.TenantModelProvider, *entity.TenantModelInstance, []*entity.TenantModel) error {
+	return errModelConfigUnavailable
+}
+
+func authorizeModelMetadataReadEE(_ context.Context, identity *modelIdentity) error {
+	if identity == nil || identity.providerEntity == nil {
+		return errModelConfigUnavailable
+	}
+	// resolveModelIdentity has already checked provider-read, instance-use,
+	// and model-use access before returning this metadata-only view.
+	return nil
+}
+
+func (m *ModelProviderService) listModelProvidersForTenantEE(ctx context.Context, query *gorm.DB, tenantID string) ([]*entity.TenantModelProvider, error) {
+	tenantOwner, err := m.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return m.modelProviderDAO.ListByTenantIDAndUserID(ctx, query, tenantID, tenantOwner.UserID)
+}
+
+func (*ModelProviderService) setModelOwnerInfoEE(context.Context, []map[string]interface{}, map[string]*entity.TenantModelProvider) error {
+	return nil
+}
+
+func (m *ModelProviderService) listReadableModelProvidersForUserEE(ctx context.Context, tenantID, userID string) ([]*entity.TenantModelProvider, error) {
+	return m.modelProviderDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, userID)
+}
+
+func queryScopeForAccessUser(ctx context.Context, checker *permission.Checker, query permission.ScopeQuery, _ string) (permission.QueryScope, error) {
+	return checker.QueryScope(ctx, query)
+}
+
 // EnrichMessage leaves the heartbeat unchanged in the community edition.
 func (h *AdminClient) EnrichMessage(message *common.BaseMessage) (*common.BaseMessage, error) {
 	return message, nil

@@ -55,10 +55,7 @@ func (h *SearchHandler) SetCompletionDependencies(modelFactory *service.ModelFac
 
 func getOwnerIDs(c *gin.Context) []string {
 	values := c.QueryArray("owner_ids")
-	if len(values) == 0 {
-		values = c.QueryArray("owner_id")
-	}
-	ownerIDs := make([]string, 0, len(values))
+	var ownerIDs []string
 	for _, value := range values {
 		for _, ownerID := range strings.Split(value, ",") {
 			ownerID = strings.TrimSpace(ownerID)
@@ -217,6 +214,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Convert to response format (same as Python get_json_result(data=search))
 	result := map[string]interface{}{
 		"id":            search.ID,
+		"user_id":       search.UserID,
 		"tenant_id":     search.TenantID,
 		"name":          search.Name,
 		"description":   search.Description,

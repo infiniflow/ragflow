@@ -18,7 +18,6 @@ import message from '@/components/ui/message';
 import { TenantRole } from '@/ee/constants/team';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
-import { ITenantInfo } from '@/interfaces/database/dataset';
 import { ILangfuseConfig } from '@/interfaces/database/system';
 import {
   ITenant,
@@ -59,11 +58,14 @@ export const enum UserSettingApiAction {
   FetchLangfuseConfig = 'fetchLangfuseConfig',
 }
 
-export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
+export const useFetchUserInfo = (
+  enabled = true,
+): ResponseGetType<IUserInfo> => {
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.UserInfo],
     initialData: {},
     gcTime: 0,
+    enabled,
     queryFn: async () => {
       const { data } = await userService.userInfo();
 
@@ -90,10 +92,14 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
  *   has no `/users/me/models`). Defaults to `true`, so existing callers are
  *   unchanged.
  */
-export const useFetchTenantData = (
-  enabled: boolean = true,
-): ResponseGetType<ITenantInfo> => {
-  const { data, isFetching: loading } = useQuery({
+export const useFetchTenantData = (enabled: boolean = true) => {
+  const {
+    data,
+    isFetching: loading,
+    isFetched,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: [UserSettingApiAction.TenantInfo],
     initialData: {},
     gcTime: 0,
@@ -107,7 +113,7 @@ export const useFetchTenantData = (
       return res ?? {};
     },
   });
-  return { data, loading };
+  return { data, loading, isFetched, isError, refetch };
 };
 
 export const useFetchTenantInfo = useFetchTenantData;

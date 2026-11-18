@@ -10,13 +10,13 @@ export const EmbeddingSelect = ({
   field,
   disabled = false,
   testId,
-  ownerTenantId,
+  resourceTenantId,
 }: {
   isEdit: boolean;
   field: FieldValues;
   disabled?: boolean;
   testId?: string;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const { checkKbEmbedding, checking } = useCheckKbEmbedding();
@@ -35,7 +35,7 @@ export const EmbeddingSelect = ({
             }
           }
         }}
-        ownerTenantId={ownerTenantId}
+        resourceTenantId={resourceTenantId}
         disabled={(disabled && !isEdit) || checking}
         value={field.value}
         placeholder={t('embeddingModelPlaceholder')}

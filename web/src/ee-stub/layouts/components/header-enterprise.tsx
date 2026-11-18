@@ -1,13 +1,10 @@
 /**
- * Enterprise slots inside the app header. The open-source build renders
+ * Enterprise slots inside the app shell. The open-source build renders
  * nothing here; the enterprise build replaces this file with the real
  * entries (tenant switcher, upgrade badge, support link, current-plan badge).
  */
 
-export function EnterpriseHeaderTenantSwitcher(_props: {
-  isCompact?: boolean;
-}) {
-  void _props;
+export function EnterpriseSidebarTenantSwitcher() {
   return null;
 }
 

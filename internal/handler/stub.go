@@ -92,3 +92,9 @@ func (h *ProviderHandler) RemoveModelFromGroup(c *gin.Context) {
 
 func (h *StatsHandler) GetModelStats(c *gin.Context) { eeNotImplemented(c, "GetModelStats") }
 func (h *StatsHandler) GetGroupStats(c *gin.Context) { eeNotImplemented(c, "GetGroupStats") }
+
+// eeDocAnalyzers is the provider hook consumed by docAnalyzers. This tree
+// contributes no additional backends, so it reports an empty list.
+func eeDocAnalyzers(_ context.Context) []DocAnalyzerInfo {
+	return nil
+}

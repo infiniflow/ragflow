@@ -245,6 +245,8 @@ func parseTemplate(filename string, raw []byte) (*BuiltinPipeline, error) {
 func builtinRefFromFilename(filename string) string {
 	name := strings.TrimSuffix(filename, filepath.Ext(filename))
 	name = strings.TrimPrefix(name, builtinTemplatePrefix)
+	// The optional edition suffix identifies the asset, not the parser_id.
+	name = strings.TrimSuffix(name, "_ee")
 	if name == filename || name == "" {
 		return ""
 	}

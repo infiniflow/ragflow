@@ -163,6 +163,8 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListEnvironments()
 	case TokenGroups:
 		return p.parseAPIListModelGroups()
+	case TokenFeatures:
+		return p.parseAPIListFeatures()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -172,6 +174,18 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 func (p *Parser) parseAPIListModelGroups() (*Command, error) {
 	cmd := NewCommand("api_list_model_groups")
 	p.nextToken() // consume GROUPS
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// LIST FEATURES;
+func (p *Parser) parseAPIListFeatures() (*Command, error) {
+	cmd := NewCommand("api_list_features")
+	p.nextToken() // consume FEATURES
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {

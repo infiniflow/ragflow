@@ -13,7 +13,7 @@ jest.mock('@/components/ui/message', () => ({
   default: { warning: jest.fn() },
 }));
 
-jest.mock('../../context', () => ({ useOwnerTenantId: () => 'tenant-1' }));
+jest.mock('../../context', () => ({ useResourceTenantId: () => 'tenant-1' }));
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),

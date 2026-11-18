@@ -188,6 +188,9 @@ var (
 	// preview response, so the sentinel text itself is never sent to
 	// clients.
 	ErrPreviewFileEmpty = errors.New("preview file empty")
+	// ErrPreviewNotReady marks a type whose preview artifact has not been
+	// generated yet, typically because ingestion is still running or failed.
+	ErrPreviewNotReady = errors.New("preview not ready")
 )
 
 var artifactForceAttachmentExtensions = map[string]struct{}{

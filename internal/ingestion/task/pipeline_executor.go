@@ -988,12 +988,6 @@ func recordPipelineLog(
 	if db == nil {
 		return errors.New("pipeline log database is required")
 	}
-	var dslMap entity.JSONMap
-	if strings.TrimSpace(input.DSL) == "" {
-		dslMap = entity.JSONMap{}
-	} else if err := json.Unmarshal([]byte(input.DSL), &dslMap); err != nil {
-		dslMap = entity.JSONMap{"raw": input.DSL}
-	}
 
 	// The task context contains the document snapshot loaded when the task
 	// started. Reload it here so the operation log reflects the final progress
@@ -1032,27 +1026,18 @@ func recordPipelineLog(
 	// operation-log creation path).
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
-	var pipelineID *string
 	if input.PipelineID != "" {
-		pipelineID = &input.PipelineID
-		if db != nil {
-			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
-				if canvas.Title != nil {
-					pipelineTitle = *canvas.Title
-				}
-				pipelineAvatar = canvas.Avatar
-			} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
-				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", input.PipelineID, err))
+		if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
+			if canvas.Title != nil {
+				pipelineTitle = *canvas.Title
 			}
+			pipelineAvatar = canvas.Avatar
+		} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
+			common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", input.PipelineID, err))
 		}
 	}
 
-	operationStatus := input.Status
-	statusValue := "1"
-	if doc.Status != nil && *doc.Status != "" {
-		statusValue = *doc.Status
-	}
-	if err := updateOpenLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
+	if err := updateOpenLogRow(ctx, db, input, pipelineTitle, pipelineAvatar, doc); err != nil {
 		return fmt.Errorf("advance pipeline log for document %s: %w", input.DocumentID, err)
 	}
 	return nil
@@ -1062,14 +1047,35 @@ func recordPipelineLog(
 // state, filling in the DSL, the pipeline identity, and the final progress
 // snapshot.
 //
+// operationStatus / pipelineID / dslMap are derived from input here so the
+// caller no longer passes the same data it already put into PipelineLogInput.
 // The row is targeted by PipelineLogID, so a superseded run whose row was
 // deleted with the task can never reach into the replacement run's row.
 // RowsAffected is not used to decide whether to create: once a target row is
 // known, the write is final — a lost CAS means another writer already finalized
 // this run or the row was dropped with a superseded run, and neither may
 // produce a second entry.
-func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) error {
+func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, pipelineTitle string, pipelineAvatar *string, doc entity.Document) error {
 	targetID := input.PipelineLogID
+
+	operationStatus := input.Status
+	statusValue := "1"
+	if doc.Status != nil && *doc.Status != "" {
+		statusValue = *doc.Status
+	}
+
+	var pipelineID *string
+	if input.PipelineID != "" {
+		pipelineID = &input.PipelineID
+	}
+
+	var dslMap entity.JSONMap
+	if strings.TrimSpace(input.DSL) == "" {
+		dslMap = entity.JSONMap{}
+	} else if err := json.Unmarshal([]byte(input.DSL), &dslMap); err != nil {
+		dslMap = entity.JSONMap{"raw": input.DSL}
+	}
+
 	updates := map[string]interface{}{
 		"operation_status": operationStatus,
 		"status":           statusValue,

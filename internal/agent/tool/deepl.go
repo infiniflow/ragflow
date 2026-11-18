@@ -36,9 +36,9 @@ const deeplToolDescription = "Translate text via the DeepL API. Returns translat
 
 // deeplParams is the JSON shape the model sends into InvokableRun.
 type deeplParams struct {
-	Text       string `json:"text"`
-	SourceLang string `json:"source_lang"`
-	TargetLang string `json:"target_lang"`
+	Text       string `json:"text" doc:"Text to translate." required:"true"`
+	SourceLang string `json:"source_lang,omitempty" doc:"Source language code (e.g. \"EN\", \"DE\"). Defaults to \"EN\"."`
+	TargetLang string `json:"target_lang,omitempty" doc:"Target language code (e.g. \"ZH\", \"EN-US\"). Defaults to \"ZH\"."`
 }
 
 // deeplTranslation is one element of the upstream `translations` array.
@@ -100,27 +100,7 @@ func (d *DeepLTool) resolveAPIKey() string {
 
 // Info returns the tool's metadata for the chat model.
 func (d *DeepLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: deeplToolName,
-		Desc: deeplToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"text": {
-				Type:     schema.String,
-				Desc:     "Text to translate.",
-				Required: true,
-			},
-			"source_lang": {
-				Type:     schema.String,
-				Desc:     `Source language code (e.g. "EN", "DE"). Defaults to "EN".`,
-				Required: false,
-			},
-			"target_lang": {
-				Type:     schema.String,
-				Desc:     `Target language code (e.g. "ZH", "EN-US"). Defaults to "ZH".`,
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(deeplToolName, deeplToolDescription, deeplParams{})
 }
 
 // buildDeepLFormBody composes the application/x-www-form-urlencoded

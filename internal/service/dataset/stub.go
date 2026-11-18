@@ -18,7 +18,14 @@
 
 package dataset
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
+
+func accessUserContext(ctx context.Context, _ string) (context.Context, bool) {
+	return ctx, false
+}
 
 // datasetTestExtraModels adds no tables beyond the community schema.
 func datasetTestExtraModels() []interface{} { return nil }

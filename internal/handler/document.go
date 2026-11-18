@@ -599,7 +599,8 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+	accessScope, err := documentReadAccessScope(ctx, datasetID)
+	if err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -609,6 +610,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, errMsg)
 		return
 	}
+	opts.AccessScope = &accessScope
 	opts, errMsg = h.applyDocumentMetadataFilter(c, opts)
 	if errMsg != "" {
 		common.RespondError(c, common.CodeDataError, errMsg)
@@ -698,6 +700,19 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		hasActiveTasks = true
 	}
 	common.RespondSuccess(c, gin.H{"total": total, "docs": docs, "has_active_tasks": hasActiveTasks}, "success")
+}
+
+func documentReadAccessScope(ctx context.Context, datasetID string) (permission.QueryScope, error) {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	datasetRef := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
+	if err := checker.CheckResource(ctx, datasetRef, permission.OperationRead); err != nil {
+		return permission.QueryScope{}, err
+	}
+	return checker.QueryScope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindDocument,
+		Parent:    datasetRef,
+		Operation: permission.OperationRead,
+	})
 }
 
 func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentListOptions, string) {
@@ -1628,7 +1643,8 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+	accessScope, err := documentReadAccessScope(ctx, datasetID)
+	if err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1637,8 +1653,21 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 	if docIDsParam := c.Query("doc_ids"); docIDsParam != "" {
 		docIDS = strings.Split(docIDsParam, ",")
 	}
+	query := accessScope.Apply(dao.DB.WithContext(ctx).Table("document")).Where("document.kb_id = ?", datasetID)
+	if len(docIDS) > 0 {
+		query = query.Where("document.id IN ?", docIDS)
+	}
+	var accessibleDocIDs []string
+	if err := query.Pluck("document.id", &accessibleDocIDs).Error; err != nil {
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, "Failed to get metadata summary"+err.Error())
+		return
+	}
+	if len(accessibleDocIDs) == 0 {
+		common.RespondSuccess(c, gin.H{"summary": map[string]interface{}{}}, "success")
+		return
+	}
 
-	summary, err := h.documentService.GetMetadataSummary(ctx, datasetID, docIDS)
+	summary, err := h.documentService.GetMetadataSummary(ctx, datasetID, accessibleDocIDs)
 	if err != nil {
 		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, "Failed to get metadata summary"+err.Error())
 		return
