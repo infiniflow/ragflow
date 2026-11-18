@@ -237,6 +237,7 @@ export interface IAgentForm {
   }>;
   mcp: Array<{
     mcp_id: string;
+    name?: string;
     tools: Record<string, Record<string, any>>;
   }>;
   outputs: {

@@ -19,10 +19,9 @@
 
     "jsx": "react-jsx",
 
-    "baseUrl": ".",
     "paths": {
-      "@/ee/*": ["src/ee-stub/*"],
-      "@/*": ["src/*"],
+      "@/ee/*": ["./src/ee-stub/*"],
+      "@/*": ["./src/*"],
       "@parent/*": ["../src/*"]
     },
 
