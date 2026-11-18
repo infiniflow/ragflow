@@ -96,6 +96,7 @@ export interface IAddedModel {
   tenant_name?: string;
   user_id?: string;
   nickname?: string;
+  features?: string[];
 }
 
 export interface IInstanceModel {
