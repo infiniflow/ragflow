@@ -15,9 +15,9 @@
 //
 
 // Package schema holds the wire-level *FromUpstream / *Param / *Outputs types
-// that flow between ingestion pipeline components. Each file mirrors the
-// Pydantic schema in rag/flow/<component>/schema.py (or, when none exists,
-// the runtime contract implied by the component's _invoke signature).
+// that flow between ingestion pipeline components. Each file describes the
+// runtime contract implied by the corresponding component's invocation
+// signature.
 //
 // Files in this package are pure data definitions. They depend on
 // ragflow/internal/common, ragflow/internal/entity, and
@@ -27,8 +27,8 @@ package schema
 
 // FileFromUpstream is the upstream payload consumed by the File component.
 //
-// Mirrors the runtime contract of rag/flow/file.py:File._invoke. There is no
-// dedicated Pydantic schema for File in the Python codebase, so the fields
+// Mirrors the runtime contract of File._invoke. There is no
+// dedicated Pydantic schema for File in the codebase, so the fields
 // below were derived from the keyword arguments File reads at runtime:
 //
 //	async def _invoke(self, **kwargs):
@@ -47,17 +47,17 @@ type FileFromUpstream struct {
 	// DocID is the canvas-bound document ID. When non-empty the File
 	// component resolves the binary via the document service; otherwise
 	// the File payload below is used. Optional in wire terms — the
-	// Python code branches on truthiness, so we use *string.
+	// code branches on truthiness, so we use *string
 	DocID *string `json:"doc_id,omitempty"`
 
 	// File is the optional list of file descriptors passed when no
-	// doc_id is bound. In Python: `file = kwargs.get("file")[0]`.
-	// Shape: `[]map[string]any` — same as rag/flow/parser's `file` field.
+	// doc_id is bound. The File component reads the descriptor list from
+	// exactly this field. Shape: `[]map[string]any`.
 	File []map[string]any `json:"file,omitempty"`
 }
 
 // Validate enforces the File component's wire-shape requirement: at
-// least one of DocID or File must be set. The Python code branches on
+// least one of DocID or File must be set. The code branches on
 // `_canvas._doc_id` vs. `kwargs.get("file")[0]`, which corresponds to
 // "one of the two upstream paths is wired".
 func (f *FileFromUpstream) Validate() error {
@@ -69,14 +69,14 @@ func (f *FileFromUpstream) Validate() error {
 
 // FileParam is the static configuration for the File component.
 //
-// Mirrors rag/flow/file.py:FileParam. The Python class has no fields
+// Mirrors FileParam. The class has no fields
 // beyond what ProcessParamBase provides (none stored on the instance), so
 // the Go struct is intentionally empty. It is kept as a distinct type so
 // Phase 2.1 can attach config knobs (e.g., a `with_blob` flag) without a
 // rename.
 type FileParam struct{}
 
-// Defaults returns a FileParam populated with the Python default values.
+// Defaults returns a FileParam populated with the default values
 // Today there are no fields; the constructor exists for forward
 // compatibility and to satisfy the "every type has a Defaults()"
 // convention adopted in this package.
@@ -86,7 +86,7 @@ func (FileParam) Defaults() FileParam { return FileParam{} }
 func (FileParam) Validate() error { return nil }
 
 // FileOutputs is the result of invoking the File component. It mirrors
-// the values File sets via `self.set_output(...)` in rag/flow/file.py:
+// the values File sets via `self.set_output(...)` in
 //
 //	set_output("name", doc.name)             # name
 //	set_output("file", file)                  # file  (full descriptor)
@@ -97,10 +97,10 @@ func (FileParam) Validate() error { return nil }
 type FileOutputs struct {
 	// Name is the resolved document/file name.
 	Name string `json:"name"`
-	// File is the upstream file descriptor (dict in Python). Optional —
-	// when invoked via doc_id the Python code does not re-emit it.
+	// File is the upstream file descriptor (dict in ). Optional
+	// when invoked via doc_id the code does not re-emit it
 	File map[string]any `json:"file,omitempty"`
 	// Error is set when the component short-circuits with an error
-	// message (Python: set_output("_ERROR", ...)).
+	// message (: set_output("_ERROR", ...))
 	Error string `json:"_ERROR,omitempty"`
 }

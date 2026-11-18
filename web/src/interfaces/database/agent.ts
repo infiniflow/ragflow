@@ -30,7 +30,7 @@ export interface ISwitchForm {
   no: string;
 }
 
-import { AgentCategory } from '@/constants/agent';
+import { AgentCategory, AgentSessionSource } from '@/constants/agent';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
 import { ICompilationTemplateGroup } from './compilation-template';
@@ -85,6 +85,31 @@ export declare interface IFlow {
   tags?: string;
 }
 
+export interface ICanvasPresenceUser {
+  user_id: string;
+  display_name: string;
+  active_tab_count: number;
+  last_seen_at: number;
+  permission: number;
+}
+
+export interface ICanvasPresenceResponse {
+  canvas_id: string;
+  online_user_count: number;
+  operator_permission?: number;
+  users: ICanvasPresenceUser[];
+}
+
+export interface ICanvasPresenceHeartbeatData {
+  ok: boolean;
+  code?: string;
+}
+
+export interface IPresencePayload {
+  canvas_id: string;
+  tab_id: string;
+  presence_session_id: string;
+}
 // GET /agents merges compilation template groups into the agent list when no
 // canvas_category is requested; every item carries this discriminator.
 export enum AgentListItemType {
@@ -304,7 +329,7 @@ export interface IAgentLogResponse {
   round: number;
   thumb_up: number;
   errors: string;
-  source: string;
+  source: AgentSessionSource | null;
   user_id: string;
   dsl: string;
   name: string;
@@ -375,4 +400,16 @@ export interface IWebhookTrace {
 export interface IAgentWebhookCredential {
   credential: string;
   webhook_url: string;
+}
+
+export interface IAgentVersionMetadata {
+  id: string;
+  name: string;
+  alias: string;
+}
+
+export interface IAgentVersionCatalogItem {
+  id: string;
+  name: string;
+  versions: IAgentVersionMetadata[];
 }

@@ -230,20 +230,42 @@ func TestOperatorAllowedChannelRejectsLinkLocalForAllSchemes(t *testing.T) {
 
 func TestWhatsAppDefaultGatewayExceptionIsPathScoped(t *testing.T) {
 	t.Setenv(channelAllowedHostsEnv, "")
+	originalLookup := common.LookupHost
+	t.Cleanup(func() { common.LookupHost = originalLookup })
+	common.LookupHost = func(host string) ([]string, error) {
+		if host == "host.docker.internal" {
+			return []string{"172.17.0.1"}, nil
+		}
+		return originalLookup(host)
+	}
 	policy := channelURLPolicy{
 		localBaseURL:    defaultGatewayBaseURL,
 		localPathPrefix: "/whatsapp/",
 	}
-	allowed, err := url.Parse("ws://127.0.0.1:3005/whatsapp/test/events/ws")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, err := resolveChannelDestination(allowed, policy, true); err != nil {
-		t.Fatalf("default WhatsApp gateway rejected: %v", err)
+	for _, testCase := range []struct {
+		name      string
+		scheme    string
+		websocket bool
+		path      string
+	}{
+		{name: "HTTP", scheme: "http", path: "/whatsapp/test/start"},
+		{name: "WebSocket", scheme: "ws", websocket: true, path: "/whatsapp/test/events/ws"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			allowed, err := url.Parse(testCase.scheme + "://host.docker.internal:3005" + testCase.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ip, _, err := resolveChannelDestination(allowed, policy, testCase.websocket); err != nil {
+				t.Fatalf("default WhatsApp gateway rejected: %v", err)
+			} else if ip != "172.17.0.1" {
+				t.Fatalf("default WhatsApp gateway resolved to %q, want pinned host gateway IP", ip)
+			}
+		})
 	}
 
 	for _, path := range []string{"/admin", "/whatsapp/../admin", "/whatsapp/%2e%2e/admin", "/whatsapp/%2fadmin"} {
-		disallowed, err := url.Parse("ws://127.0.0.1:3005" + path)
+		disallowed, err := url.Parse("ws://host.docker.internal:3005" + path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -251,12 +273,25 @@ func TestWhatsAppDefaultGatewayExceptionIsPathScoped(t *testing.T) {
 			t.Errorf("default WhatsApp exception accepted unsafe path %q", path)
 		}
 	}
+
+	for _, address := range []string{"93.184.216.34", "169.254.169.254"} {
+		common.LookupHost = func(string) ([]string, error) { return []string{address}, nil }
+		gateway, err := url.Parse("http://host.docker.internal:3005/whatsapp/test/start")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, err := resolveChannelDestination(gateway, policy, false); err == nil {
+			t.Errorf("default WhatsApp exception accepted non-private address %q", address)
+		}
+	}
 }
 
 func TestWhatsAppExplicitDefaultGatewayIsAllowed(t *testing.T) {
-	channel := newWhatsAppChannel(whatsappAccount{GatewayBaseURL: defaultGatewayBaseURL})
-	if !channel.allowDefaultGateway {
-		t.Fatal("explicit default gateway was not recognized as the built-in local gateway")
+	for _, gatewayURL := range []string{defaultGatewayBaseURL, dockerGatewayBaseURL} {
+		channel := newWhatsAppChannel(whatsappAccount{GatewayBaseURL: gatewayURL})
+		if !channel.allowDefaultGateway {
+			t.Errorf("explicit gateway %q was not recognized as the built-in WhatsApp gateway", gatewayURL)
+		}
 	}
 }
 

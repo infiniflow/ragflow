@@ -20,9 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"regexp"
 	"strings"
@@ -47,13 +49,15 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 	if config.LLM == nil {
 		return mindMapNode{}, fmt.Errorf("LLM not configured")
 	}
-	identity, err := service.ResolveIdentity(ctx)
-	if err != nil {
-		return mindMapNode{}, err
+	if permission.UserIDFromContext(ctx) == "" {
+		return mindMapNode{}, permission.ErrUnauthenticated
 	}
 	modelTenantID := config.ModelTenantID
 	if modelTenantID == "" {
-		modelTenantID = identity.TenantID
+		modelTenantID = permission.TenantIDFromContext(ctx)
+		if modelTenantID == "" {
+			modelTenantID = permission.UserIDFromContext(ctx)
+		}
 	}
 	retrievalReq := mindMapRetrievalRequest(config.Question, config.KbIDs, config.SearchID, config.SearchConfig)
 	ranks, err := config.ChunkSvc.RetrievalTest(ctx, retrievalReq)
@@ -72,11 +76,10 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 
 	// A stale search_config chat_id should not prevent mind-map generation;
 	// fall back to the tenant's configured default model.
-	identity.TenantID = modelTenantID
-	access := identity
-	chatModel, modelErr := config.LLM.NewChatModel(streamCtx, access, modelID)
+	modelCtx := permission.WithTenantID(streamCtx, modelTenantID)
+	chatModel, modelErr := config.LLM.NewChatModel(modelCtx, modelID)
 	if modelErr != nil {
-		chatModel, modelErr = config.LLM.NewDefaultChatModel(streamCtx, access)
+		chatModel, modelErr = config.LLM.NewDefaultChatModel(modelCtx)
 	}
 	if modelErr != nil {
 		return mindMapNode{}, modelErr

@@ -54,6 +54,7 @@ func (m *EmbeddingModel) Embed(ctx context.Context, req EmbedRequest, embeddingC
 	if m == nil || m.ModelDriver == nil {
 		return nil, fmt.Errorf("embedding model: driver is nil")
 	}
+	usage = usageFor(m.info, usage)
 	if len(req.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}

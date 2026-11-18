@@ -106,8 +106,7 @@ func NewKnowledgebaseDAO() *KnowledgebaseDAO {
 // a business rule answered by transaction.EmbeddingModelRef; what remains here
 // is the read itself, once per call, so callers resolving a batch of datasets
 // memoize through transaction.EmbeddingBaseNameResolver. An id that no longer
-// resolves falls back to the composite base name when embd_id holds one,
-// otherwise to the id itself so only exact matches group together.
+// resolves returns an empty name; the resolver applies the dataset fallback.
 func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) string {
 	id, raw := transaction.EmbeddingModelRef(kb)
 	if id == "" {
@@ -120,14 +119,14 @@ func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB,
 			}
 		}
 	}
-	if raw != "" && raw != id {
-		return common.BaseModelName(raw)
-	}
-	return id
+	return ""
 }
 
 // Create creates a new knowledge base record
 func (dao *KnowledgebaseDAO) Create(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) error {
+	if kb.UserID == "" {
+		kb.UserID = kb.CreatedBy
+	}
 	return db.WithContext(ctx).Create(kb).Error
 }
 
@@ -264,19 +263,20 @@ func (dao *KnowledgebaseDAO) ListByQuery(ctx context.Context, query *gorm.DB, ow
 	var total int64
 
 	query = query.WithContext(ctx).
-		Select(`knowledgebase.id, knowledgebase.avatar, knowledgebase.name,
+		Select(`knowledgebase.id, knowledgebase.avatar, knowledgebase.user_id, knowledgebase.created_by, knowledgebase.name,
 		knowledgebase.language, knowledgebase.description, knowledgebase.tenant_id,
 		knowledgebase.permission, knowledgebase.doc_num, knowledgebase.token_num,
 		knowledgebase.chunk_num, knowledgebase.similarity_threshold,
 		knowledgebase.vector_similarity_weight, knowledgebase.parser_id, knowledgebase.parser_config,
 		knowledgebase.pagerank, knowledgebase.embd_id,
 		knowledgebase.tenant_embd_id, knowledgebase.pipeline_id, knowledgebase.pipeline_version_id,
-		user.nickname, user.avatar as tenant_avatar, knowledgebase.update_time`).
-		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
+		owner.nickname, tenant.avatar as tenant_avatar, knowledgebase.update_time`).
+		Joins("LEFT JOIN user AS owner ON knowledgebase.user_id = owner.id").
+		Joins("LEFT JOIN user AS tenant ON knowledgebase.tenant_id = tenant.id").
 		Where("knowledgebase.status = ?", string(entity.StatusValid))
 
 	if len(ownerIDs) > 0 {
-		query = query.Where("knowledgebase.tenant_id IN ?", ownerIDs)
+		query = query.Where("knowledgebase.user_id IN ?", ownerIDs)
 	}
 
 	if name != "" {
@@ -316,7 +316,7 @@ func (dao *KnowledgebaseDAO) ListByQuery(ctx context.Context, query *gorm.DB, ow
 	return kbs, total, nil
 }
 
-// GetOwnerFilterByResourceIDs groups permission-filtered datasets by owner tenant.
+// GetOwnerFilterByResourceIDs groups permission-filtered datasets by resource owner.
 func (dao *KnowledgebaseDAO) GetOwnerFilterByResourceIDs(ctx context.Context, db *gorm.DB, resourceIDs []string) ([]*entity.DatasetOwnerFilter, error) {
 	owners := make([]*entity.DatasetOwnerFilter, 0)
 	if len(resourceIDs) == 0 {
@@ -324,10 +324,10 @@ func (dao *KnowledgebaseDAO) GetOwnerFilterByResourceIDs(ctx context.Context, db
 	}
 
 	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-		Select("knowledgebase.tenant_id as id, user.nickname as label, COUNT(knowledgebase.id) as count").
-		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
+		Select("knowledgebase.user_id as id, owner.nickname as label, COUNT(knowledgebase.id) as count").
+		Joins("LEFT JOIN user AS owner ON knowledgebase.user_id = owner.id").
 		Where("knowledgebase.id IN ? AND knowledgebase.status = ?", resourceIDs, string(entity.StatusValid)).
-		Group("knowledgebase.tenant_id, user.nickname").
+		Group("knowledgebase.user_id, owner.nickname").
 		Scan(&owners).Error
 
 	return owners, err

@@ -21,6 +21,7 @@ interface ChatBasicSettingProps {
   option?: Record<string, any>;
   hideName?: boolean;
   collapseOpen?: boolean;
+  accessUserId?: string;
   onCollapseOpenChange?: (open: boolean) => void;
 }
 
@@ -28,6 +29,7 @@ export default function ChatBasicSetting({
   prefix = '',
   hideName = false,
   collapseOpen,
+  accessUserId,
   onCollapseOpenChange,
 }: ChatBasicSettingProps) {
   const { t } = useTranslate('chat');
@@ -51,6 +53,7 @@ export default function ChatBasicSetting({
       )}
       <LlmSettingFieldItems
         prefix={llmSettingPrefix}
+        enabledPrefix={prefix}
         llmId={prefixName(prefix, 'llm_id')}
         showCollapse
         collapseOpen={collapseOpen}
@@ -77,6 +80,7 @@ export default function ChatBasicSetting({
       />
       <KnowledgeBaseFormField
         name={prefixName(prefix, 'dataset_ids')}
+        accessUserId={accessUserId}
       ></KnowledgeBaseFormField>
     </div>
   );

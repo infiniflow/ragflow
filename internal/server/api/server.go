@@ -23,26 +23,15 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
-	"ragflow/internal/agent/audio"
-	"ragflow/internal/agent/canvas"
-	"ragflow/internal/agent/retrievalbridge"
-	"ragflow/internal/agent/runtime"
-	agenttool "ragflow/internal/agent/tool"
-	agentic_rag "ragflow/internal/agentic_rag"
-	"ragflow/internal/channels"
-	modelModule "ragflow/internal/entity/models"
+
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
-	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
 	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/file"
-	"ragflow/internal/service/nav"
 	"ragflow/internal/service/nlp"
-	"ragflow/internal/service/wikisearch"
-	"ragflow/internal/tokenizer"
 	"strconv"
 	"strings"
 	"time"
@@ -50,41 +39,20 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
-	"ragflow/internal/ingestion/task"
-	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
 )
 
-func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
-	// Initialize tokenizer (rag_analyzer)
-	// tokenizer.Init fills DictPath from env var or default, so
-	// tokenizerCfg.DictPath carries the resolved path for downstream use.
-	tokenizerCfg := &tokenizer.PoolConfig{}
-	if err := tokenizer.Init(tokenizerCfg); err != nil {
-		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
-	}
-	defer tokenizer.Close()
-
-	// Fail fast if the cl100k_base BPE table is missing. NumTokensFromString /
-	// TrimContentToTokenLimit now panic rather than degrading silently, so this
-	// trades a mid-request panic for a clear startup failure.
-	if err := tokenizer.InitCL100KEncoder(); err != nil {
-		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
+func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+	if !kvrocks.IsEnabled() {
+		return fmt.Errorf("API requires Kvrocks for shared channel runtime status")
 	}
 
-	// Initialize global QueryBuilder using tokenizer's DictPath
-	// This ensures the Synonym uses the same wordnet directory as tokenizer
-	if err := nlp.InitQueryBuilderFromTokenizer(tokenizerCfg.DictPath); err != nil {
-		common.Fatal("Failed to initialize query builder", zap.Error(err))
-	}
-
-	if err := startServer(ctx, serverName, args); err != nil {
+	if err := startServer(ctx, serverName, args, services); err != nil {
 		return err
 	}
 
@@ -93,23 +61,19 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	return nil
 }
 
-func startServer(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs) error {
+// startServer owns the API listeners and background workers until ctx is canceled.
+func startServer(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs, agentServices *bootstrap.AgentServices) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	globalConfig := server.GetConfig()
-	serverMode := globalConfig.GetMode()
-	// Set Gin mode
-	if serverMode == "debug" {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
-	}
 
 	// Initialize service layer
 	userService := service.NewUserService()
 	userTenantService := service.NewUserTenantService()
 	documentService := document.NewDocumentService()
 	datasetsService := dataset.NewDatasetService()
-	metadataService := service.NewMetadataService()
+	metadataService := agentServices.MetadataService
 	chunkService := chunk.NewChunkService()
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
@@ -122,83 +86,13 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
 	fileService := file.NewFileService(documentService)
-	memoryService := service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()), service.WithMemoryMQEngine(engine.GetMessageQueueEngine()))
+	memoryService := agentServices.MemoryService
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
-	modelFactory := service.NewModelFactory()
-	modelCallService := service.NewModelCallService()
-
-	// Wire the real MemorySaver so the Message component can persist
-	// conversation turns to memory stores declared in the canvas DSL.
-	component.SetMemorySaver(service.NewMemorySaverAdapter(memoryService))
-	// Bind the relational handle and document engine into the production
-	// embedder and knowledge-compiler resolvers. The API process shares the
-	// task-package composition root with the ingestor: without these, the
-	// embedder resolver would read a nil db and fail at run time when the API
-	// process runs ingestion runs (e.g. in a combined --api --ingestor deploy
-	// where the ingestor bindings do not apply).
-	task.InitEmbedderResolver(dao.DB)
-	task.InitKnowledgeCompilerDeps(dao.DB, engine.Get())
-
-	// Initialize doc engine for skill search
+	modelFactory := agentServices.ModelFactory
+	modelCallService := agentServices.ModelCallService
 	docEngine := engine.Get()
 	documentDAO := dao.NewDocumentDAO()
-	retrievalEnhancer := retrievalbridge.NewEnhancer(docEngine, metadataService)
-	// Keep the concrete adapter: it is both the canvas/agent-tool backend and the
-	// target of the agentic-RAG bridge wired below. The bridge must hold it
-	// directly (not look it up in the registry) because the registry is shared —
-	// agenttool.SetRetrievalService and runtime.SetRetrievalService write the same
-	// singleton, so a bridge that resolved its target per call would find itself.
-	retrievalAdapter := agenttool.NewNLPRetrievalAdapterFromDeps(
-		docEngine,
-		documentDAO,
-		agenttool.RetrievalModelConstructors{
-			Embedding: func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error) {
-				access := service.Identity{TenantID: tenantID}
-				if strings.TrimSpace(modelRef) == "" {
-					return modelFactory.NewDefaultEmbeddingModel(ctx, access)
-				}
-				return modelFactory.NewEmbeddingModel(ctx, access, modelRef)
-			},
-			Chat: func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error) {
-				access := service.Identity{TenantID: tenantID}
-				if strings.TrimSpace(modelRef) == "" {
-					return modelFactory.NewDefaultChatModel(ctx, access)
-				}
-				return modelFactory.NewChatModel(ctx, access, modelRef)
-			},
-			Rerank: func(ctx context.Context, tenantID, modelRef string) (*modelModule.RerankModel, error) {
-				return modelFactory.NewRerankModel(ctx, service.Identity{TenantID: tenantID}, modelRef)
-			},
-		},
-		retrievalEnhancer,
-	)
-	agenttool.SetRetrievalService(retrievalAdapter)
-	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService, retrievalEnhancer))
-	common.Info("agent: retrieval service adapter installed")
-
-	// The smart-reasoning agent's corpus tools (internal/agentic_rag): regex
-	// pushdown and lexical BM25 over the same doc engine the retrieval adapter
-	// wraps. The locate tools resolve these services per call, so they must be
-	// registered before the server starts serving.
-	runtime.SetGrepService(agentic_rag.NewGrepAdapter(docEngine))
-	bm25Adapter := agentic_rag.NewBm25Adapter(docEngine)
-	bm25Adapter.SetQueryBuilder(nlp.GetQueryBuilder())
-	runtime.SetBm25Service(bm25Adapter)
-	common.Info("agent: smart-reasoning corpus services installed (grep + bm25)")
-
-	// The compiled-knowledge graph walk (graph_explore) resolves its service per
-	// call the same way. Without this registration GetKgService() returns the
-	// failing stub, so the tool could only ever report an infrastructure error.
-	// The seed encoder is left unset: the walk then seeds by keyword match on the
-	// entity rows, the documented fallback on a deployment without an embedder.
-	agentic_rag.SetKgService(agentic_rag.NewKgAdapter(docEngine))
-	common.Info("agent: smart-reasoning compiled-knowledge graph service installed")
-	// The smart-reasoning agent's corpus tools resolve the shared retrieval
-	// service per call, so the production adapter must be registered before the
-	// server starts serving.
-	runtime.SetRetrievalService(retrievalbridge.NewRuntimeAdapter(retrievalAdapter))
-	common.Info("agent: runtime retrieval service wired")
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
@@ -226,20 +120,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	mcpServerHandler := handler.NewMCPServerHandler(datasetsService, chatService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService, modelCallService)
-	// Install the agent service's Kvrocks-backed run infrastructure
-	// (CheckPointStore / StateSerializer / RunTracker). When Redis
-	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
-	// the constructors return errors, and we fall through to the
-	// in-memory / no-tracking path: the agent service treats nil
-	// options as the in-memory test path, so graceful degradation
-	// is a 1-line if-not-nil pass-through — no separate "boot" mode
-	// required.
-	agentOpts := buildAgentRunOptions()
-	agentService := service.NewAgentServiceWithOptions(
-		agentOpts.checkpointStore,
-		agentOpts.stateSerializer,
-		agentOpts.runTracker,
-	)
+	agentService := agentServices.AgentService
 	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
@@ -249,14 +130,6 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	botService := service.NewBotService(agentService)
 	botHandler := handler.NewBotHandler(botService)
 
-	// Wire the TTS synthesizer to the per-tenant model-provider
-	// dispatch. SynthesizeRequest is routed through
-	// ModelProviderService.AudioSpeech, which fans out to the
-	// tenant's configured TTS model driver. When the model
-	// provider is unconfigured, the synthesizer falls back to a
-	// no-op echo (the audio package contract), so this is always
-	// safe to call.
-	configureTTSSynthesizer(modelCallService)
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
@@ -287,28 +160,6 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	compilationTemplateHandler := handler.NewCompilationTemplateHandler(service.NewCompilationTemplateService())
 	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
 	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
-
-	// Install the production eino-based chat invoker as the shared chat default,
-	// so agentic-search runtime LLM calls work in production. Without this,
-	// chat.GetDefaultInvoker() stays nil and the runtime falls back gracefully.
-	component.InstallDefaultChatInvoker()
-
-	// Install the dataset-nav ES-backed service (internal/service/nav +
-	// internal/service/nlp). The embedder resolves the tenant's embedding model
-	// on demand so Search/UpsertDoc can embed queries/summaries automatically,
-	// and the cluster namer/merger resolves the tenant's default chat model the
-	// same way (see the ingestor's wrapping of SetNavMergeLLM).
-	apiNavService := nlp.NewNavService(service.NewNavEmbedder(modelFactory, ""))
-	apiNavService.SetNavMergeLLM(service.NewNavMergeLLM(modelFactory, ""))
-	nav.SetNavService(apiNavService)
-
-	// Install the compiled-wiki search service. It is backed directly by the
-	// document engine: QueryPages filters the tenant-scoped index to
-	// compile_kwd="wiki_page" (+ supported kinds) so ordinary source chunks are
-	// never relabeled as wiki pages, and BackfillChunks fetches original chunks
-	// by id. When the engine is unavailable the service degrades to empty so the
-	// agent falls back to hybrid search (no failing call).
-	wikisearch.SetService(wikisearch.NewEngineService(engine.Get()))
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -355,7 +206,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// login audit records, so gin's trust-everything default would let any
 	// caller pick its own address.
 	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
-		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+		return fmt.Errorf("configure trusted proxies: %w", err)
 	}
 
 	// Middleware
@@ -363,15 +214,18 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// HTTP request log captures every endpoint the router owns (including
 	// those registered by Setup itself). Registering it here would run
 	// it twice for those endpoints and double every access-log line.
-	ginEngine.Use(gin.Recovery())
+	ginEngine.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		if !c.Writer.Written() {
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprint(recovered))
+		}
+		c.Abort()
+	}))
 
 	// Setup routes
 	r.Setup(ginEngine)
 
-	_, err := channels.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("start chat-channel: %w", err)
-	}
+	cache := service.NewChatChannelRuntimeCache(kvrocks.Get().GetClient())
+	service.SetChatChannelRuntimeProvider(cache.Read)
 
 	apiServerConfig := globalConfig.GetAPIServerConfig()
 
@@ -436,10 +290,8 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 			WriteTimeout:      0, // SSE streams outlive individual tool deadlines
 			IdleTimeout:       120 * time.Second,
 		}
-		go func() {
-			common.Info(fmt.Sprintf("MCP server starting on %s", mcpSrv.Addr))
-			serve("MCP", mcpSrv, mcpListener)
-		}()
+		common.Info(fmt.Sprintf("MCP server starting on %s", mcpSrv.Addr))
+		go serve("MCP", mcpSrv, mcpListener)
 	}
 
 	common.Info(
@@ -452,22 +304,10 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
 	common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
 
-	// Initialize admin status (default: unavailable=1)
-	local.InitAdminStatus()
-
-	// Set log level
-	bootstrap.SetLogger(serverName, arguments)
-
-	// Initialize the ingestion lifecycle event sink (best-effort; stdout is
-	// always on, ingestor.log.path adds an optional rotated file). Flush it on shutdown.
-	bootstrap.SetIngestLog(serverName)
-	defer common.SyncIngestLog()
-
 	// Start server in a goroutine
 	go func() {
 		serve(serverName, srv, apiListener)
 	}()
-
 	// Start heartbeat reporter to admin server
 	if hb := bootstrap.StartHeartbeat(
 		common.ServerTypeAPI,
@@ -475,7 +315,17 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 		apiServerConfig.HTTPPort,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
+		defer hb.Wait()
 		defer hb.Stop()
+	}
+	if arguments.Ready != nil {
+		if err := arguments.Ready(); err != nil {
+			srv.Close()
+			if mcpSrv != nil {
+				mcpSrv.Close()
+			}
+			return fmt.Errorf("report API readiness: %w", err)
+		}
 	}
 
 	// Wait for either shutdown signal or serving failure.
@@ -489,7 +339,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	}
 	common.Info("Shutting down server...")
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer shutdownCancel()
 
 	if mcpCloser != nil {
@@ -514,73 +364,4 @@ func shutdownHTTPServer(ctx context.Context, name string, srv *http.Server) erro
 		return fmt.Errorf("shutdown %s server: %w", name, err)
 	}
 	return nil
-}
-
-// agentRunOptions bundles the three optional injection slots the
-// agent service accepts via NewAgentServiceWithOptions: the Redis-
-// backed CheckPointStore, StateSerializer, and RunTracker. The
-// fields stay nil when the underlying constructors fail (Redis
-// unreachable, etc.); the agent service treats nil as "in-memory
-// / no-tracking" so the server continues to serve traffic without
-// requiring Redis to be up.
-type agentRunOptions struct {
-	checkpointStore canvas.CheckPointStore
-	stateSerializer canvas.StateSerializer
-	runTracker      *canvas.RunTracker
-}
-
-// buildAgentRunOptions installs the Kvrocks-backed run infrastructure
-// when Redis is available. The Redis client is the one already
-// initialized at the top of main; the TTL is a conservative 24h for
-// both the checkpoint store and the run tracker. On any error
-// (Redis down at boot, constructor panic, nil-Redis fallback) we
-// log and return a zero-value struct — the agent service falls back
-// to the in-memory path transparently.
-func buildAgentRunOptions() agentRunOptions {
-	var out agentRunOptions
-	if !kvrocks.IsEnabled() || kvrocks.Get() == nil {
-		common.Info("agent: redis client not initialised; agent run infra in in-memory mode (no checkpoints, no run tracker)")
-		return out
-	}
-	cp := canvas.NewKvrocksCheckPointStore(24 * time.Hour)
-	out.checkpointStore = cp
-	// stateSerializer is intentionally left nil. eino's default
-	// InternalSerializer (used when no compose.WithSerializer is
-	// passed at compile time) already knows how to round-trip
-	// runtime.CanvasState because the runtime package registers
-	// it via compose.RegisterSerializableType[CanvasState] in
-	// init(). Overriding with RAGFlow's plain-JSON
-	// CanvasStateSerializer (json.Marshal/Unmarshal) produces
-	// bytes the InternalSerializer cannot decode on the resume
-	// pass — the UserFillUp two-node pattern surfaces this as
-	// "load checkpoint from store fail: cannot unmarshal object
-	// into Go struct field checkpoint.Channels of type
-	// compose.channel". Rely on eino's default instead.
-	rt := canvas.NewRunTracker(24 * time.Hour)
-	out.runTracker = rt
-	common.Info("agent: redis-backed run infra installed (24h TTL on checkpoint store + run tracker; eino default serializer)")
-	return out
-}
-
-// configureTTSSynthesizer installs the audio.ModelProviderFunc
-// that dispatches Synthesize requests through the project's
-// ModelProviderService. The model provider's AudioSpeech method
-// (internal/service/model_service.go) resolves the per-tenant TTS
-// model driver, sends the request upstream, and returns
-// synthesized audio bytes.
-//
-// The audio package's NewTTSDispatchFunc helper converts the
-// audio.SynthesizeRequest shape into the model's dispatch shape
-// (audioContent = req.Text, voice/lang → TTSConfig.Params,
-// ModelName from req.Engine). When the model provider is
-// unconfigured (nil dispatcher) the helper returns nil, which
-// reverts the audio package to its default stub.
-func configureTTSSynthesizer(modelCallService *service.ModelCallService) {
-	if modelCallService == nil {
-		common.Info("agent: model call service not initialised; TTS in no-op echo mode")
-		audio.SetModelProviderSynthesizer(nil)
-		return
-	}
-	audio.SetModelProviderSynthesizer(audio.NewTTSDispatchFunc(modelCallService))
-	common.Info("agent: TTS model-call dispatch installed (audio.Synthesize → ModelCallService.AudioSpeech)")
 }

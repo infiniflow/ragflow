@@ -131,7 +131,7 @@ func TestUniqueName_EnforcesCallerLimit(t *testing.T) {
 
 	if _, err := UniqueName(base, 128, onlyBaseTaken); err == nil {
 		t.Fatal("expected length validation error for generated name at caller limit")
-	} else if !strings.Contains(err.Error(), "large than") {
+	} else if !strings.Contains(err.Error(), "larger than") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -192,14 +192,59 @@ func TestNameAvailable_PropagatesLookupError(t *testing.T) {
 	}
 }
 
-func TestValidateName(t *testing.T) {
-	if err := ValidateName("  "); err == nil {
+func TestUniqueName_CountsRunesNotBytes(t *testing.T) {
+	// 128 CJK characters are 384 bytes but still fit a VARCHAR(128) column.
+	base := strings.Repeat("报", 128)
+	if _, err := UniqueName(base, 128, func(string) (bool, error) { return false, nil }); err != nil {
+		t.Fatalf("UniqueName rejected 128 CJK characters: %v", err)
+	}
+	if _, err := UniqueName(base+"告", 128, func(string) (bool, error) { return false, nil }); err == nil {
+		t.Fatal("expected 129 CJK characters to be rejected")
+	}
+}
+
+func TestUniqueFileName_CountsRunesNotBytes(t *testing.T) {
+	base := strings.Repeat("报", 251) + ".pdf" // 255 characters
+	if _, err := UniqueFileName(base, 255, func(string) (bool, error) { return false, nil }); err != nil {
+		t.Fatalf("UniqueFileName rejected 255 CJK characters: %v", err)
+	}
+	if _, err := UniqueFileName(strings.Repeat("报", 252)+".pdf", 255, func(string) (bool, error) { return false, nil }); err == nil {
+		t.Fatal("expected 256 characters to be rejected")
+	}
+}
+
+func TestValidateNameRunes(t *testing.T) {
+	if err := ValidateNameRunes("  ", 128); err == nil {
 		t.Fatal("expected empty name error")
 	}
-	if err := ValidateName(strings.Repeat("a", AppNameLimit+1)); err == nil {
+	if err := ValidateNameRunes(strings.Repeat("a", 128), 128); err != nil {
+		t.Fatalf("unexpected error at limit: %v", err)
+	}
+	if err := ValidateNameRunes(strings.Repeat("a", 129), 128); err == nil {
 		t.Fatal("expected length error")
 	}
-	if err := ValidateName("ok"); err != nil {
+	if err := ValidateNameRunes(" "+strings.Repeat("a", 128), 128); err == nil {
+		t.Fatal("expected whitespace to count toward the stored length")
+	}
+	if err := ValidateNameRunes(strings.Repeat("报", 128), 128); err != nil {
+		t.Fatalf("unexpected error for 128 CJK characters: %v", err)
+	}
+	if err := ValidateNameRunes("ok", 128); err != nil {
 		t.Fatalf("unexpected error for valid name: %v", err)
+	}
+}
+
+func TestValidateAliasRunes(t *testing.T) {
+	if err := ValidateAliasRunes("", 255); err != nil {
+		t.Fatalf("empty alias should be valid: %v", err)
+	}
+	if err := ValidateAliasRunes("   ", 255); err != nil {
+		t.Fatalf("whitespace alias should be valid: %v", err)
+	}
+	if err := ValidateAliasRunes(strings.Repeat("a", 255), 255); err != nil {
+		t.Fatalf("alias at limit should be valid: %v", err)
+	}
+	if err := ValidateAliasRunes(strings.Repeat("a", 256), 255); err == nil {
+		t.Fatal("expected alias length error")
 	}
 }

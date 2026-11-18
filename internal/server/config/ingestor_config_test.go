@@ -133,7 +133,7 @@ func TestParseIngestorConfigToleratesOutOfRangePageConcurrency(t *testing.T) {
 }
 
 // TestGetIngestorConcurrentWorkers pins the precedence
-// CLI > environment > config file > default(1) and the inclusive [1, 256]
+// environment > config file > default(1) and the inclusive [1, 256]
 // range guard on the FINAL value. An out-of-range or non-integer value at
 // any layer is a fatal startup error. An explicit zero or negative value at
 // the config layer is rejected (not silently defaulted), so an operator typo
@@ -147,24 +147,22 @@ func TestGetIngestorConcurrentWorkers(t *testing.T) {
 		configured int
 		set        bool   // true iff concurrent_workers was explicitly present in the config file
 		env        string // "" means leave unset
-		argValue   *int
 		want       int
 		wantErr    bool
 	}{
-		{"default", 0, false, "", nil, 1, false},
-		{"config only", 5, true, "", nil, 5, false},
-		{"env overrides config", 5, true, "8", nil, 8, false},
-		{"cli overrides env and config", 5, true, "8", intPtr(12), 12, false},
-		{"env invalid errors", 5, true, "notanint", nil, 0, true},
-		{"env only", 0, false, "9", nil, 9, false},
-		{"config above range errors", 300, true, "", nil, 0, true},
-		{"cli below range errors", 0, false, "", intPtr(0), 0, true},
-		{"cli above range errors", 0, false, "", intPtr(1000), 0, true},
+		{"default", 0, false, "", 1, false},
+		{"config only", 5, true, "", 5, false},
+		{"env overrides config", 5, true, "8", 8, false},
+		{"env invalid errors", 5, true, "notanint", 0, true},
+		{"env only", 0, false, "9", 9, false},
+		{"config above range errors", 300, true, "", 0, true},
+		{"env below range errors", 0, false, "0", 0, true},
+		{"env above range errors", 0, false, "1000", 0, true},
 		// Adversarial: an explicitly present zero/negative config value must be
 		// rejected, distinguishing "explicit 0" (set=true) from "absent" (set=false
 		// -> default 1). The old >0 guard silently defaulted both to 1.
-		{"config explicit zero errors", 0, true, "", nil, 0, true},
-		{"config negative errors", -5, true, "", nil, 0, true},
+		{"config explicit zero errors", 0, true, "", 0, true},
+		{"config negative errors", -5, true, "", 0, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -176,11 +174,11 @@ func TestGetIngestorConcurrentWorkers(t *testing.T) {
 			}
 			c.ingestor.ConcurrentWorkers = tc.configured
 			c.ingestor.ConcurrentWorkersSet = tc.set
-			got, err := c.GetIngestorConcurrentWorkers(tc.argValue)
+			got, err := c.GetIngestorConcurrentWorkers()
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("got nil error, want rejection (configured=%d env=%q argValue=%v)",
-						tc.configured, tc.env, tc.argValue)
+					t.Fatalf("got nil error, want rejection (configured=%d env=%q)",
+						tc.configured, tc.env)
 				}
 				return
 			}
@@ -188,19 +186,19 @@ func TestGetIngestorConcurrentWorkers(t *testing.T) {
 				t.Fatalf("unexpected error %v", err)
 			}
 			if got != tc.want {
-				t.Fatalf("got %d, want %d (configured=%d env=%q argValue=%v)",
-					got, tc.want, tc.configured, tc.env, tc.argValue)
+				t.Fatalf("got %d, want %d (configured=%d env=%q)",
+					got, tc.want, tc.configured, tc.env)
 			}
 		})
 	}
 }
 
 // TestGetIngestorPageConcurrency pins the precedence
-// CLI > environment > config file > default(2) and the inclusive [1, 16]
+// environment > config file > default(2) and the inclusive [1, 16]
 // range guard on the FINAL value. An out-of-range or non-integer value at
 // any layer is a fatal startup error. An explicit zero or negative value at
 // the config layer is rejected (not silently defaulted to 2), matching the
-// env/CLI behavior.
+// environment behavior.
 func TestGetIngestorPageConcurrency(t *testing.T) {
 	const envKey = common.EnvIngestorPageConcurrency
 
@@ -209,23 +207,21 @@ func TestGetIngestorPageConcurrency(t *testing.T) {
 		configured int
 		set        bool   // true iff page_concurrency was explicitly present in the config file
 		env        string // "" means leave unset
-		argValue   *int
 		want       int
 		wantErr    bool
 	}{
-		{"default", 0, false, "", nil, 2, false},
-		{"config only", 6, true, "", nil, 6, false},
-		{"env overrides config", 6, true, "8", nil, 8, false},
-		{"cli overrides env and config", 6, true, "8", intPtr(12), 12, false},
-		{"env invalid errors", 6, true, "notanint", nil, 0, true},
-		{"env only", 0, false, "9", nil, 9, false},
-		{"config above range errors", 20, true, "", nil, 0, true},
-		{"cli below range errors", 0, false, "", intPtr(0), 0, true},
+		{"default", 0, false, "", 2, false},
+		{"config only", 6, true, "", 6, false},
+		{"env overrides config", 6, true, "8", 8, false},
+		{"env invalid errors", 6, true, "notanint", 0, true},
+		{"env only", 0, false, "9", 9, false},
+		{"config above range errors", 20, true, "", 0, true},
+		{"env below range errors", 0, false, "0", 0, true},
 		// Adversarial: an explicitly present zero/negative config value must be
 		// rejected, distinguishing "explicit 0" (set=true) from "absent" (set=false
 		// -> default 2).
-		{"config explicit zero errors", 0, true, "", nil, 0, true},
-		{"config negative errors", -5, true, "", nil, 0, true},
+		{"config explicit zero errors", 0, true, "", 0, true},
+		{"config negative errors", -5, true, "", 0, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -236,11 +232,11 @@ func TestGetIngestorPageConcurrency(t *testing.T) {
 			}
 			c.ingestor.PageConcurrency = tc.configured
 			c.ingestor.PageConcurrencySet = tc.set
-			got, err := c.GetIngestorPageConcurrency(tc.argValue)
+			got, err := c.GetIngestorPageConcurrency()
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("got nil error, want rejection (configured=%d env=%q argValue=%v)",
-						tc.configured, tc.env, tc.argValue)
+					t.Fatalf("got nil error, want rejection (configured=%d env=%q)",
+						tc.configured, tc.env)
 				}
 				return
 			}
@@ -248,8 +244,8 @@ func TestGetIngestorPageConcurrency(t *testing.T) {
 				t.Fatalf("unexpected error %v", err)
 			}
 			if got != tc.want {
-				t.Fatalf("got %d, want %d (configured=%d env=%q argValue=%v)",
-					got, tc.want, tc.configured, tc.env, tc.argValue)
+				t.Fatalf("got %d, want %d (configured=%d env=%q)",
+					got, tc.want, tc.configured, tc.env)
 			}
 		})
 	}

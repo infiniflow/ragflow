@@ -50,8 +50,9 @@
 //
 // # Deliberately non-uniform health checks
 //
-// MinioStorage.Health is a lightweight liveness probe (client HealthCheck +
-// IsOnline, no writes). The s3Base health check uploads a probe object to
+// MinioStorage.Health sends HEAD /minio/health/live and requires HTTP 200
+// to confirm endpoint liveness without issuing S3 bucket requests. The
+// s3Base health check uploads a probe object to
 // <bucket or "health-check-bucket">/<prefix>/txtxtxtxt1, matching the
 // pre-migration Python S3 connector. The difference is intentional: a
 // write-based probe also verifies write permissions, but it requires them,

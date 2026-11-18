@@ -48,6 +48,7 @@ func TestBuildByName_CanvasComponentNames(t *testing.T) {
 		{name: "CodeExec", wantToolName: "execute_code"},
 		{name: "GoogleScholar", wantToolName: "google_scholar_search"},
 		{name: "KeenableSearch", wantToolName: "keenable_search"},
+		{name: "PerplexitySearch", wantToolName: "perplexity_search"},
 		{name: "QueritContents", wantToolName: "querit_contents"},
 		{name: "QueritSearch", wantToolName: "querit_search"},
 		{name: "Search1APICrawl", wantToolName: "search1api_crawl"},
@@ -109,6 +110,27 @@ func TestBuildAll_CanvasComponentNameUsesCanonicalParams(t *testing.T) {
 	}
 }
 
+// TestBuildByName_FunctionNameCollisionPrefersComponentName asserts that a
+// Retrieval node whose DSL function_name happens to match a registered tool
+// (e.g., "wikipedia") still builds the retrieval tool, not the registered one.
+// The retrieval tool advertises the DSL function_name as its agent-visible name.
+func TestBuildByName_FunctionNameCollisionPrefersComponentName(t *testing.T) {
+	built, err := BuildByName("wikipedia", map[string]any{
+		"component_name": "Retrieval",
+		"function_name":  "wikipedia",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	info, err := built.Info(t.Context())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if info.Name != "wikipedia" {
+		t.Errorf("tool name = %q, want retrieval advertised as the DSL function_name (collision must not build Wikipedia)", info.Name)
+	}
+}
+
 func TestBuildByName_QueritAliases(t *testing.T) {
 	for _, name := range []string{"querit", "querit_search", "queritsearch", "QueritSearch"} {
 		built, err := BuildByName(name, map[string]any{
@@ -160,6 +182,24 @@ func TestBuildByName_QueritContentsAliases(t *testing.T) {
 	}
 }
 
+func TestBuildByName_QueritContentsEmptyTimeoutUsesDefault(t *testing.T) {
+	for _, value := range []string{"", "  "} {
+		built, err := BuildByName("querit_contents", map[string]any{
+			"crawl_timeout": value,
+		})
+		if err != nil {
+			t.Fatalf("BuildByName with empty crawl_timeout %q: %v", value, err)
+		}
+		contents, ok := built.(*QueritContentsTool)
+		if !ok {
+			t.Fatalf("BuildByName returned %T, want *QueritContentsTool", built)
+		}
+		if contents.defaults.CrawlTimeout != 10 {
+			t.Fatalf("crawl timeout = %d, want default 10", contents.defaults.CrawlTimeout)
+		}
+	}
+}
+
 func TestBuildByName_YouComReadsCanvasParams(t *testing.T) {
 	// The canvas stores tool params under the lower-cased component name, and
 	// the node form also carries query/outputs keys the tool must ignore.
@@ -195,7 +235,7 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
-		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
+		"google_scholar", "google_scholar_search", "jin10", "keenable", "perplexity", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
@@ -288,7 +328,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
-		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
+		"google_scholar", "google_scholar_search", "jin10", "keenable", "perplexity", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",

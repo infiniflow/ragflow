@@ -50,9 +50,9 @@ var pubmedNewlinePattern = regexp.MustCompile(`\n+`)
 // the LLM; top_n and email are canvas-side params merged with constructor
 // defaults at runtime.
 type pubmedParams struct {
-	Query string `json:"query"`
-	TopN  int    `json:"top_n"`
-	Email string `json:"email"`
+	Query string `json:"query" doc:"The search keywords to execute with PubMed. The keywords should be the most important words or terms, including synonyms, from the original request." required:"true"`
+	TopN  int    `json:"top_n" schema:"-" component:"-"`
+	Email string `json:"email" schema:"-" component:"-"`
 }
 
 // pubmedResult is one PubMed reference rendered with the same fields and
@@ -108,30 +108,19 @@ func NewPubMedToolWithDefaults(h *HTTPHelper, defaults pubmedParams) *PubMedTool
 // Info exposes only query to the LLM. Node parameters belong to canvas setup,
 // not model-emitted runtime arguments.
 func (p *PubMedTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: pubmedToolName,
-		Desc: pubmedToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with PubMed. The keywords should be the most important words or terms, including synonyms, from the original request.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(pubmedToolName, pubmedToolDescription, pubmedParams{})
 }
 
 func (p *PubMedTool) ComponentSpec() ComponentSpec {
-	return ComponentSpec{
-		Inputs: map[string]string{"query": "PubMed search query."},
-		Outputs: map[string]string{
-			"formalized_content": "Rendered PubMed references for downstream prompts.",
-			"json":               "PubMed result list.",
-		},
-		InputForm: map[string]any{
-			"query": map[string]any{"name": "Query", "type": "line"},
-		},
+	spec := BuildComponentSpec(pubmedParams{})
+	spec.Outputs = map[string]string{
+		"formalized_content": "Rendered PubMed references for downstream prompts.",
+		"json":               "PubMed result list.",
 	}
+	spec.InputForm = map[string]any{
+		"query": map[string]any{"name": "Query", "type": "line"},
+	}
+	return spec
 }
 
 func buildPubMedESearchURL(query string, topN int, email string) string {

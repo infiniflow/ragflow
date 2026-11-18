@@ -63,6 +63,10 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to modify column types: %w", err)
 	}
 
+	if err := migrateColumnWidths(ctx, db); err != nil {
+		return fmt.Errorf("failed to widen columns: %w", err)
+	}
+
 	// Add case-insensitive unique constraint on knowledgebase (tenant_id, name)
 	if err := migrateKnowledgebaseNameUnique(ctx, db); err != nil {
 		return fmt.Errorf("failed to add unique index on knowledgebase (tenant_id, name): %w", err)
@@ -77,23 +81,28 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate general chunker parser configs: %w", err)
 	}
 
+	if err := migrateConnectorCredentials(ctx, db); err != nil {
+		return fmt.Errorf("failed to encrypt connector credentials: %w", err)
+	}
+
 	// Backfill the tenant model tables from the legacy tenant_llm table.
 	if err := migrateModelData(ctx, db); err != nil {
 		return fmt.Errorf("failed to migrate tenant model data: %w", err)
 	}
 
-	// Drop the unused tenant-level model group tables. Failover is configured
-	// per conversation instead, so nothing reads or writes these any more.
-	if err := dropModelGroupTables(ctx, db); err != nil {
-		return fmt.Errorf("failed to drop tenant model group tables: %w", err)
+	// Drop the tables left behind by the abandoned tenant-level model group
+	// feature. Failover is configured per conversation instead, so nothing
+	// read or wrote them any more.
+	if err := dropAbandonedModelGroupTables(ctx, db); err != nil {
+		return fmt.Errorf("failed to drop abandoned model group tables: %w", err)
 	}
 
 	common.Info("All manual migrations completed successfully")
 	return nil
 }
 
-// dropModelGroupTables removes tenant_model_group and
-// tenant_model_group_mapping.
+// dropAbandonedModelGroupTables removes tenant_model_group_mapping, and a
+// tenant_model_group table that still carries the abandoned feature's schema.
 //
 // The tables were created by AutoMigrate for a tenant-scoped failover-group
 // feature that was never shipped: no service read them, and the per-conversation
@@ -101,18 +110,98 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 // without this they would linger in every existing database with no way to remove
 // them. AutoMigrate cannot express a drop, hence the explicit migration.
 //
-// Guarded by HasTable so a database that never had them is a no-op, and
-// mapping-first because it references the group table.
-func dropModelGroupTables(ctx context.Context, db *gorm.DB) error {
+// The enterprise model-group feature now owns the tenant_model_group name
+// (entity.TenantModelGroup, auto-migrated together with tenant_model_group_map),
+// so the group table must never be dropped blindly. It is removed only when the
+// feature's map table is absent: the feature always creates both tables in one
+// auto-migrate pass, so their presence proves the table is live, while their
+// absence proves the table is the abandoned feature's leftover and safe to drop
+// before AutoMigrate recreates it with the current definition.
+func dropAbandonedModelGroupTables(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
-	for _, table := range []string{"tenant_model_group_mapping", "tenant_model_group"} {
-		if !migrator.HasTable(table) {
+	if migrator.HasTable("tenant_model_group_mapping") {
+		if err := migrator.DropTable("tenant_model_group_mapping"); err != nil {
+			return fmt.Errorf("drop tenant_model_group_mapping: %w", err)
+		}
+		common.Info("Dropped unused table", zap.String("table", "tenant_model_group_mapping"))
+	}
+	if migrator.HasTable("tenant_model_group") && !migrator.HasTable("tenant_model_group_map") {
+		if err := migrator.DropTable("tenant_model_group"); err != nil {
+			return fmt.Errorf("drop tenant_model_group: %w", err)
+		}
+		common.Info("Dropped unused table", zap.String("table", "tenant_model_group"))
+	}
+	return nil
+}
+
+// migrateColumnWidths widens columns whose values are copied from a wider
+// source or carry a new, longer format. It is idempotent: it reads the
+// current width and only issues DDL when the column is narrower than the
+// target.
+//
+// On MySQL, widening a VARCHAR column changes its length prefix and can
+// rebuild the table. Run it through the standalone --migrate action during a
+// maintenance window.
+func migrateColumnWidths(ctx context.Context, db *gorm.DB) error {
+	specs := []struct {
+		model  any
+		field  string
+		table  string
+		column string
+		width  int64
+	}{
+		{&entity.PipelineOperationLog{}, "PipelineTitle", "pipeline_operation_log", "pipeline_title", common.PipelineTitleLimit},
+		{&entity.Tenant{}, "Name", "tenant", "name", common.TenantNameLimit},
+		// The tenant_*id model-reference columns hold a tenant_model id or,
+		// since the model group feature, a gp-<group_id> reference that does
+		// not fit the legacy varchar(32) width.
+		{&entity.UserTenant{}, "TenantLLMID", "user_tenant", "tenant_llm_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantEmbdID", "user_tenant", "tenant_embd_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantASRID", "user_tenant", "tenant_asr_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantImg2TxtID", "user_tenant", "tenant_img2txt_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantRerankID", "user_tenant", "tenant_rerank_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantTTSID", "user_tenant", "tenant_tts_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantOCRID", "user_tenant", "tenant_ocr_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantDecisionID", "user_tenant", "tenant_decision_id", common.GroupModelRefWidth},
+		{&entity.Chat{}, "TenantLLMID", "dialog", "tenant_llm_id", common.GroupModelRefWidth},
+		{&entity.Chat{}, "TenantDecisionID", "dialog", "tenant_decision_id", common.GroupModelRefWidth},
+		{&entity.Chat{}, "TenantRerankID", "dialog", "tenant_rerank_id", common.GroupModelRefWidth},
+		{&entity.Knowledgebase{}, "TenantEmbdID", "knowledgebase", "tenant_embd_id", common.GroupModelRefWidth},
+		{&entity.Memory{}, "TenantEmbdID", "memory", "tenant_embd_id", common.GroupModelRefWidth},
+		{&entity.Memory{}, "TenantLLMID", "memory", "tenant_llm_id", common.GroupModelRefWidth},
+		{&entity.SkillSearchConfig{}, "TenantRerankID", "skill_search_configs", "tenant_rerank_id", common.GroupModelRefWidth},
+	}
+
+	migrator := db.WithContext(ctx).Migrator()
+	for _, spec := range specs {
+		if !migrator.HasTable(spec.model) {
 			continue
 		}
-		if err := migrator.DropTable(table); err != nil {
-			return fmt.Errorf("drop %s: %w", table, err)
+		types, err := migrator.ColumnTypes(spec.model)
+		if err != nil {
+			return fmt.Errorf("read %s columns: %w", spec.table, err)
 		}
-		common.Info("Dropped unused table", zap.String("table", table))
+		for _, ct := range types {
+			if ct.Name() != spec.column {
+				continue
+			}
+			length, ok := ct.Length()
+			if !ok {
+				// Dialects that cannot report a width are left to AutoMigrate.
+				break
+			}
+			if length >= spec.width {
+				break
+			}
+			if err := migrator.AlterColumn(spec.model, spec.field); err != nil {
+				return fmt.Errorf("widen %s.%s to %d: %w", spec.table, spec.column, spec.width, err)
+			}
+			common.Info("Widened column",
+				zap.String("table", spec.table),
+				zap.String("column", spec.column),
+				zap.Int64("width", spec.width))
+			break
+		}
 	}
 	return nil
 }
@@ -433,10 +522,9 @@ func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// migrateIngestionLogRunIdentity adds the columns and indexes that make each
-// ingestion event belong to one immutable pipeline-operation-log run. It is
-// deliberately explicit: the runtime startup path auto-migrates ingestion
-// tables and cannot be trusted to converge an existing schema safely.
+// migrateIngestionLogRunIdentity adds the run identity and pipeline version
+// columns. It is explicit because runtime AutoMigrate cannot be trusted to
+// converge an existing schema safely.
 func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
 	if migrator.HasTable(&entity.PipelineOperationLog{}) {
@@ -449,6 +537,13 @@ func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 		}
 		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run", "add pipeline_operation_log document/run index"); err != nil {
 			return err
+		}
+		if !migrator.HasColumn(&entity.PipelineOperationLog{}, "pipeline_version_id") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE pipeline_operation_log ADD COLUMN pipeline_version_id varchar(32) NULL",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add pipeline_operation_log.pipeline_version_id: %w", err)
+			}
 		}
 	}
 
@@ -619,14 +714,13 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 }
 
 // knowledgebaseParserConfigTargetVersion is the database version a completed
-// knowledgebase parser config cleanup brings the database to. It is stored in
-// system_settings under mysql_migration.database.version, the marker shared with
-// the other versioned steps, so work already performed by a previous run is
-// skipped.
-const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2"
+// ingestion/parser config migration brings the database to. It is stored in
+// the shared system_settings migration marker and precedes the tenant-model
+// max_tokens backfill.
+const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2.dev1"
 
 // removedParserConfigKeys are the top level knowledgebase parser config keys the
-// v1.0.0-rc2 step deletes. raptor and graphrag moved out of the dataset
+// cleanup deletes. raptor and graphrag moved out of the dataset
 // parser config, so the stored sections are dead data.
 var removedParserConfigKeys = []string{"raptor", "graphrag"}
 

@@ -36,13 +36,13 @@ type CompilationStatus struct {
 }
 
 // GetDatasetCompilationStatus returns the scheduling-row lifecycle state for a
-// dataset after verifying the calling user owns it. When no row exists the
+// dataset after verifying the caller can read it. When no row exists the
 // dataset has never had any compile work, so the state is idle.
-func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID, datasetID, kind string) (CompilationStatus, common.ErrorCode, error) {
+func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, datasetID, kind string) (CompilationStatus, common.ErrorCode, error) {
 	if datasetID == "" {
 		return CompilationStatus{}, common.CodeDataError, errors.New("dataset_id is required")
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return CompilationStatus{}, code, permissionErr
 	}
@@ -73,11 +73,11 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID
 		st.CurrentPhase = row.CurrentPhase
 		st.ProgressMsg = row.ProgressMsg
 		var err error
-		st.Inflight, err = countCompilationStatusEntries(tx, (entity.KnowledgeCompileInflight{}).TableName(), datasetID, normalizedKind)
+		st.Inflight, err = countCompilationStatusEntries(ctx, tx, (entity.KnowledgeCompileInflight{}).TableName(), datasetID, normalizedKind)
 		if err != nil {
 			return err
 		}
-		st.Backlog, err = countCompilationStatusEntries(tx, (entity.KnowledgeCompileBacklog{}).TableName(), datasetID, normalizedKind)
+		st.Backlog, err = countCompilationStatusEntries(ctx, tx, (entity.KnowledgeCompileBacklog{}).TableName(), datasetID, normalizedKind)
 		if err != nil {
 			return err
 		}
@@ -98,29 +98,21 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID
 	return st, common.CodeSuccess, nil
 }
 
-func countCompilationStatusEntries(db *gorm.DB, table, datasetID, kind string) (int, error) {
-	query := db.Table(table).Where("dataset_id = ?", datasetID)
+func countCompilationStatusEntries(ctx context.Context, db *gorm.DB, table, datasetID, kind string) (int, error) {
 	if kind == "" {
-		var count int64
-		err := query.Count(&count).Error
-		return int(count), err
+		return dao.CountKnowledgeCompileEntries(ctx, db, table, datasetID)
 	}
-	rows, err := query.Select("variants", "task_types").Rows()
+	entries, err := dao.ListKnowledgeCompileEntries(ctx, db, table, datasetID)
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
 	count := 0
-	for rows.Next() {
-		var entry entity.KnowledgeCompileEntry
-		if err := db.ScanRows(rows, &entry); err != nil {
-			return 0, err
-		}
+	for _, entry := range entries {
 		if compilationStatusEntryMatches(entry, kind) {
 			count++
 		}
 	}
-	return count, rows.Err()
+	return count, nil
 }
 
 func compilationStatusEntryMatches(entry entity.KnowledgeCompileEntry, kind string) bool {

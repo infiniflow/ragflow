@@ -6,9 +6,9 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/golden"
 	"ragflow/internal/ingestion/component/schema"
@@ -17,7 +17,7 @@ import (
 // chunkHasVector reports whether a compiled chunk carries any q_<dim>_vec embedding.
 func chunkHasVector(c schema.ChunkDoc) bool {
 	for k := range c.Extra {
-		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+		if appcommon.IsVectorColumn(k) {
 			return true
 		}
 	}

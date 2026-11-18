@@ -31,7 +31,7 @@ export const useSelectDerivedSessionList = () => {
       round: 0,
       thumb_up: 0,
       errors: '',
-      source: '',
+      source: null,
       user_id: '',
       dsl: '',
       is_new: true,

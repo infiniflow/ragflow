@@ -110,6 +110,7 @@ type branchEvents struct {
 // runSession holds per-execution mutable state for an agent run.
 type runSession struct {
 	mu           sync.Mutex
+	valuesInitMu sync.Mutex
 	Values       map[string]any
 	valuesMx     *sync.RWMutex
 	events       []*eventWrapEntry
@@ -125,6 +126,8 @@ func (s *runSession) shareValuesFrom(parent *runSession) {
 	if s == nil || parent == nil || s == parent {
 		return
 	}
+	s.ensureValues()
+	parent.ensureValues()
 	parent.valuesMx.RLock()
 	values := parent.Values
 	valuesMx := parent.valuesMx
@@ -138,8 +141,11 @@ func (s *runSession) ensureValues() {
 	if s == nil {
 		return
 	}
-	s.valuesMx.Lock()
-	defer s.valuesMx.Unlock()
+	s.valuesInitMu.Lock()
+	defer s.valuesInitMu.Unlock()
+	if s.valuesMx == nil {
+		s.valuesMx = &sync.RWMutex{}
+	}
 	if s.Values == nil {
 		s.Values = make(map[string]any)
 	}

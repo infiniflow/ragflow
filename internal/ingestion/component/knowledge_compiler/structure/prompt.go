@@ -8,8 +8,8 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// Prompt construction for the structure (graph) variant, mirroring Python
-// structure.py: `_struct_infer_type`, `_struct_render_fields`,
+// Prompt construction for the structure (graph) variant, mirroring
+// `_struct_infer_type`, `_struct_render_fields`
 // `_struct_render_type_fields` and `_struct_hypergraph_prompts`. All three
 // compile kinds (list / set / hypergraph) share the same two-stage
 // node → edge prompts and the {"items": [...]} response contract; they differ
@@ -24,7 +24,7 @@ const (
 	TypeHypergraph Type = "hypergraph"
 )
 
-// typeAliases mirrors Python's _STRUCT_TYPE_ALIASES: "graph" and
+// typeAliases mirrors _STRUCT_TYPE_ALIASES: "graph" and
 // "knowledge_graph" both mean the hypergraph compile.
 var typeAliases = map[string]Type{
 	"graph":           TypeHypergraph,
@@ -42,7 +42,7 @@ func normalizeKind(raw any) string {
 
 // InferType mirrors _struct_infer_type: explicit compile_type restricted to
 // the known compile kinds; then kind returned VERBATIM (aliases resolved) —
-// Python stamps arbitrary kinds ("timeline", "page_index") as the autotype;
+// stamps arbitrary kinds ("timeline", "page_index") as the autotype
 // then the legacy output.entities+output.relations shape; default "list".
 func InferType(parserConfig map[string]any) Type {
 	if t, ok := resolveTypeAlias(normalizeKind(common.Get(parserConfig, "compile_type"))); ok {
@@ -346,7 +346,7 @@ func EdgeUserPrompt(packedText string) string {
 
 // PackBatch renders one batch's chunks as [CHUNK_ID: id]...[END_CHUNK]
 // segments (mirrors _struct_process_batch) and returns the batch chunk ids in
-// order. Chunks without text are skipped, matching Python's isinstance check.
+// order. Chunks without text are skipped, matching isinstance check
 func PackBatch(batch []common.Chunk) (string, []string) {
 	segments := make([]string, 0, len(batch))
 	ids := make([]string, 0, len(batch))

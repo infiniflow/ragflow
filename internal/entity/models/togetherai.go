@@ -366,7 +366,7 @@ func (t *TogetherAIModel) Rerank(ctx context.Context, modelName *string, request
 }
 
 func (t *TogetherAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", t.Name())
 }
 
 func (t *TogetherAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
@@ -472,7 +472,7 @@ func (t *TogetherAIModel) TranscribeAudio(ctx context.Context, modelName *string
 }
 
 func (t *TogetherAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", t.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", t.Name())
 }
 
 func (t *TogetherAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
@@ -629,21 +629,21 @@ func (t *TogetherAIModel) AudioSpeechWithSender(ctx context.Context, modelName *
 }
 
 func (t *TogetherAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", t.Name())
 }
 
 func (t *TogetherAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", t.Name())
 }
 
 func (t *TogetherAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", t.Name())
 }
 
 func (t *TogetherAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", t.Name())
 }
 
 func (t *TogetherAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", t.Name())
 }

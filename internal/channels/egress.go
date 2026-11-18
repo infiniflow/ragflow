@@ -330,10 +330,26 @@ func resolveAllowedLocalChannelDestination(parsed *url.URL, policy channelURLPol
 		return "", "", "", false
 	}
 	baseHost, err := normalizeChannelHost(base.Hostname())
-	if err != nil || !isLocalChannelHost(baseHost) {
+	if err != nil {
 		return "", "", "", false
 	}
-	resolvedIP, err := lookupLoopbackChannelHost(base.Hostname())
+	actualHost, err := normalizeChannelHost(parsed.Hostname())
+	if err != nil {
+		return "", "", "", false
+	}
+	var resolvedIP string
+	switch {
+	case actualHost == baseHost && isLocalChannelHost(baseHost):
+		resolvedIP, err = lookupLoopbackChannelHost(base.Hostname())
+	case baseHost == "127.0.0.1" && base.Port() == "3005" && actualHost == "host.docker.internal":
+		var privateOnly bool
+		resolvedIP, privateOnly, err = lookupChannelHost(parsed.Hostname())
+		if err == nil && !privateOnly {
+			return "", "", "", false
+		}
+	default:
+		return "", "", "", false
+	}
 	if err != nil {
 		return "", "", "", false
 	}
@@ -346,8 +362,7 @@ func resolveAllowedLocalChannelDestination(parsed *url.URL, policy channelURLPol
 			expectedScheme = "wss"
 		}
 	}
-	actualHost, err := normalizeChannelHost(parsed.Hostname())
-	if err != nil || !strings.EqualFold(parsed.Scheme, expectedScheme) || actualHost != baseHost || channelURLPort(parsed) != channelURLPort(base) {
+	if !strings.EqualFold(parsed.Scheme, expectedScheme) || channelURLPort(parsed) != channelURLPort(base) {
 		return "", "", "", false
 	}
 	return actualHost, resolvedIP, channelURLPort(parsed), true

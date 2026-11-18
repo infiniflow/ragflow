@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -318,8 +319,11 @@ func TestTavily_BuildByNameUsesNodeDefaults(t *testing.T) {
 	built, err := BuildByName("tavily", map[string]any{
 		"api_key":                    "stored-key",
 		"search_depth":               "advanced",
+		"topic":                      "news",
 		"max_results":                float64(12),
 		"days":                       float64(7),
+		"include_domains":            []any{"example.com", "news.example"},
+		"exclude_domains":            []any{"blocked.example"},
 		"include_answer":             true,
 		"include_raw_content":        true,
 		"include_images":             true,
@@ -336,6 +340,9 @@ func TestTavily_BuildByNameUsesNodeDefaults(t *testing.T) {
 	}
 	if tavily.defaults.APIKey != "stored-key" || tavily.defaults.SearchDepth != "advanced" || tavily.defaults.MaxResults != 12 || tavily.defaults.Days != 7 {
 		t.Fatalf("defaults = %+v", tavily.defaults)
+	}
+	if tavily.defaults.Topic != "news" || !reflect.DeepEqual(tavily.defaults.IncludeDomains, []string{"example.com", "news.example"}) || !reflect.DeepEqual(tavily.defaults.ExcludeDomains, []string{"blocked.example"}) {
+		t.Fatalf("topic/domain defaults = %+v", tavily.defaults)
 	}
 	if !tavily.defaults.IncludeAnswer || !tavily.defaults.IncludeRawContent || !tavily.defaults.IncludeImages || !tavily.defaults.IncludeImageDescriptions {
 		t.Fatalf("boolean defaults = %+v", tavily.defaults)
@@ -357,12 +364,16 @@ func TestTavily_ExplicitFlagsOverrideNodeDefaults(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
 	tavily := newTavilyTool(helper, func() string { return "" }, tavilyParams{
 		APIKey: "stored-key", IncludeAnswer: true,
+		Topic: "news", IncludeDomains: []string{"example.com"}, ExcludeDomains: []string{"blocked.example"},
 	})
 	if _, err := tavily.InvokableRun(ctx, `{"query":"ragflow"}`); err != nil {
 		t.Fatalf("InvokableRun(node defaults): %v", err)
 	}
 	if gotBody["include_answer"] != true {
 		t.Fatalf("node default include_answer was not sent: %#v", gotBody)
+	}
+	if gotBody["topic"] != "news" || !reflect.DeepEqual(gotBody["include_domains"], []any{"example.com"}) || !reflect.DeepEqual(gotBody["exclude_domains"], []any{"blocked.example"}) {
+		t.Fatalf("node topic/domain defaults were not sent: %#v", gotBody)
 	}
 	if gotBody["include_raw_content"] != false || gotBody["include_images"] != false {
 		t.Fatalf("include_raw_content/images should default to false: %#v", gotBody)
@@ -415,11 +426,13 @@ func TestTavily_BuildByNameRejectsInvalidNodeDefaults(t *testing.T) {
 	cases := []map[string]any{
 		{"api_key": 1},
 		{"search_depth": "deep"},
+		{"topic": "finance"},
 		{"max_results": 0},
 		{"max_results": 21},
 		{"max_results": 1.5},
 		{"days": 0},
 		{"include_answer": "yes"},
+		{"include_domains": []any{map[string]any{"value": "example.com"}}},
 	}
 	for _, params := range cases {
 		if _, err := BuildByName("tavily", params); err == nil {

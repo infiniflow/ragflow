@@ -52,21 +52,37 @@ export const enum McpApiAction {
   TestMcpServer = 'testMcpServer',
 }
 
-export const useListMcpServer = (tenantId?: string, enabled = true) => {
+export const McpKeys = {
+  all: () => [McpApiAction.ListMcpServer] as const,
+  scoped: (
+    debouncedSearchString: string,
+    tenantId: string | undefined,
+    accessUserId: string | undefined,
+    pagination: { current: number; pageSize: number },
+  ) =>
+    [
+      ...McpKeys.all(),
+      { debouncedSearchString, tenantId, accessUserId, ...pagination },
+    ] as const,
+};
+
+export const useListMcpServer = (
+  tenantId?: string,
+  enabled = true,
+  accessUserId?: string,
+) => {
   const { searchString, setSearchString, handleInputChange } =
     useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const { data, isFetching: loading } = useQuery<IMcpServerListResponse>({
-    queryKey: [
-      McpApiAction.ListMcpServer,
-      {
-        debouncedSearchString,
-        tenantId,
-        ...pagination,
-      },
-    ],
+    queryKey: McpKeys.scoped(
+      debouncedSearchString,
+      tenantId,
+      accessUserId,
+      pagination,
+    ),
     initialData: { total: 0, mcp_servers: [] },
     gcTime: 0,
     enabled,
@@ -76,6 +92,7 @@ export const useListMcpServer = (tenantId?: string, enabled = true) => {
         page_size: pagination.pageSize,
         page: pagination.current,
         ...(tenantId ? { tenant_id: tenantId } : {}),
+        ...(accessUserId ? { access_user_id: accessUserId } : {}),
       });
       return data?.data;
     },
@@ -121,7 +138,7 @@ export const useCreateMcpServer = () => {
         message.success(i18n.t(`message.created`));
 
         queryClient.invalidateQueries({
-          queryKey: [McpApiAction.ListMcpServer],
+          queryKey: McpKeys.all(),
         });
       }
       return data.code;
@@ -145,7 +162,7 @@ export const useUpdateMcpServer = () => {
         message.success(i18n.t(`message.updated`));
 
         queryClient.invalidateQueries({
-          queryKey: [McpApiAction.ListMcpServer],
+          queryKey: McpKeys.all(),
         });
       }
       return data.code;
@@ -168,12 +185,12 @@ export const useDeleteMcpServer = () => {
         ids.map((id) => mcpServerService.delete({ mcp_id: id })),
       );
       const failed = results.find(({ data = {} }) => data.code !== 0);
-      const data = failed?.data ?? { code: 0, data: true };
+      const data = failed?.data ?? { code: 0 };
       if (!failed) {
         message.success(i18n.t(`message.deleted`));
 
         queryClient.invalidateQueries({
-          queryKey: [McpApiAction.ListMcpServer],
+          queryKey: McpKeys.all(),
         });
         markListItemsDeleted(ListDeletionKey.McpServerList);
       }
@@ -198,7 +215,7 @@ export const useImportMcpServer = () => {
         message.success(i18n.t(`message.operated`));
 
         queryClient.invalidateQueries({
-          queryKey: [McpApiAction.ListMcpServer],
+          queryKey: McpKeys.all(),
         });
       }
       return data;
