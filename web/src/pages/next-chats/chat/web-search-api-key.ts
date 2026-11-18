@@ -60,6 +60,7 @@ const webSearchApiKeyFields: Record<WebSearchProvider, string> = {
   [WebSearchProvider.Keirolabs]: 'keirolabs_api_key',
   [WebSearchProvider.Linkup]: 'linkup_api_key',
   [WebSearchProvider.Parallel]: 'parallel_api_key',
+  [WebSearchProvider.Perplexity]: 'perplexity_api_key',
   [WebSearchProvider.Querit]: 'querit_api_key',
   [WebSearchProvider.Search1API]: 'search1api_api_key',
   [WebSearchProvider.SearchApi]: 'searchapi_api_key',

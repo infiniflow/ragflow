@@ -35,8 +35,9 @@ import (
 )
 
 // Providers, endpoints and clients are listed alphabetically by provider id
-// (anysearch, brave, exa, firecrawl, keirolabs, linkup, parallel, querit, search1api, searchapi,
-// serply, tavily, youcom) so a new provider has exactly one obvious place in each list.
+// (anysearch, brave, exa, firecrawl, keirolabs, linkup, parallel, perplexity, querit,
+// search1api, searchapi, serply, tavily, youcom) so a new provider has exactly one
+// obvious place in each list.
 // Tavily's endpoint lives with its retrieval code in chat_pipeline.go, which is
 // why it has no entry here.
 const (
@@ -47,6 +48,7 @@ const (
 	webSearchProviderKeirolabs  = "keirolabs"
 	webSearchProviderLinkup     = "linkup"
 	webSearchProviderParallel   = "parallel"
+	webSearchProviderPerplexity = "perplexity"
 	webSearchProviderQuerit     = "querit"
 	webSearchProviderSearch1API = "search1api"
 	webSearchProviderSearchAPI  = "searchapi"
@@ -62,6 +64,7 @@ const (
 	keirolabsWebSearchEndpoint  = "https://api.keirolabs.cloud/api/v2/search/lite"
 	linkupWebSearchEndpoint     = "https://api.linkup.so/v1/search"
 	parallelWebSearchEndpoint   = "https://api.parallel.ai/v1/search"
+	perplexityWebSearchEndpoint = "https://api.perplexity.ai/search"
 	queritWebSearchEndpoint     = "https://api.querit.ai/v1/search"
 	search1apiWebSearchEndpoint = "https://api.search1api.com/search"
 	searchapiWebSearchEndpoint  = "https://www.searchapi.io/api/v1/search"
@@ -92,6 +95,7 @@ var (
 	keirolabsWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
 	linkupWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
 	parallelWebSearchHTTPClient   = &http.Client{Timeout: 30 * time.Second}
+	perplexityWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
 	queritWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
 	search1apiWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
 	searchapiWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
@@ -153,6 +157,8 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		apiKeyField = "linkup_api_key"
 	case webSearchProviderParallel:
 		apiKeyField = "parallel_api_key"
+	case webSearchProviderPerplexity:
+		apiKeyField = "perplexity_api_key"
 	case webSearchProviderQuerit:
 		apiKeyField = "querit_api_key"
 	case webSearchProviderSearch1API:
@@ -269,6 +275,14 @@ func retrieveWebSearchWithTavily(
 			ctx,
 			parallelWebSearchHTTPClient,
 			parallelWebSearchEndpoint,
+			provider.APIKey,
+			question,
+		)
+	case webSearchProviderPerplexity:
+		return retrievePerplexityWebSearch(
+			ctx,
+			perplexityWebSearchHTTPClient,
+			perplexityWebSearchEndpoint,
 			provider.APIKey,
 			question,
 		)
@@ -974,6 +988,108 @@ func retrieveParallelWebSearch(
 		})
 	}
 	return webSearchPayload("parallel", hits), nil
+}
+
+// --- Perplexity -------------------------------------------------------------
+
+type perplexityWebSearchResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet"`
+}
+
+func retrievePerplexityWebSearch(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	apiKey string,
+	query string,
+) (map[string]interface{}, error) {
+	// "web" is the Perplexity Search API's default ranking; it is sent
+	// explicitly so the request shape does not depend on a server-side default.
+	requestBody, _ := json.Marshal(map[string]interface{}{
+		"query":       query,
+		"max_results": webSearchResultCount,
+		"search_type": "web",
+	})
+
+	responseBody, err := webSearchRequest(ctx, client, http.MethodPost, endpoint, map[string]string{
+		"Accept":        "application/json",
+		"Authorization": "Bearer " + apiKey,
+		"Content-Type":  "application/json",
+		// Perplexity asks integrations to identify themselves so API usage can be
+		// attributed to the calling product.
+		"User-Agent":         "ragflow-web-search",
+		"X-Pplx-Integration": "ragflow",
+	}, bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, perplexityWebSearchError(err)
+	}
+	results, err := decodePerplexityWebSearchResults(responseBody)
+	if err != nil {
+		return nil, err
+	}
+
+	hits := make([]webSearchHit, 0, len(results))
+	for _, result := range results {
+		hits = append(hits, webSearchHit{
+			Title:   result.Title,
+			URL:     result.URL,
+			Content: result.Snippet,
+		})
+	}
+	return webSearchPayload("perplexity", hits), nil
+}
+
+// perplexityWebSearchError maps a webSearchRequest failure to a fixed message
+// that names the next step and never includes the endpoint, headers, or body.
+func perplexityWebSearchError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("perplexity: search canceled; run the query again to retry: %w", context.Canceled)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("perplexity: search timed out; retry: %w", context.DeadlineExceeded)
+	}
+	var status webSearchHTTPStatusError
+	if errors.As(err, &status) {
+		switch int(status) {
+		case http.StatusUnauthorized:
+			return fmt.Errorf("perplexity: authentication failed (401); update the API key")
+		case http.StatusUnprocessableEntity:
+			return fmt.Errorf("perplexity: request rejected (422); check the query and request parameters")
+		case http.StatusTooManyRequests:
+			return fmt.Errorf("perplexity: rate limited (429); retry later")
+		default:
+			return fmt.Errorf("perplexity: request failed (HTTP %d); check the API status and request settings before retrying", int(status))
+		}
+	}
+	return fmt.Errorf("perplexity: search request failed; verify the API key and network access, then retry")
+}
+
+// Missing results is empty; null or non-array results is invalid.
+// Dates are ignored because webSearchHit has no date fields.
+func decodePerplexityWebSearchResults(responseBody []byte) ([]perplexityWebSearchResult, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("perplexity: decode response: %w", err)
+	}
+	if envelope == nil {
+		return nil, fmt.Errorf("perplexity: response must be an object")
+	}
+
+	resultsValue, exists := envelope["results"]
+	if !exists {
+		return []perplexityWebSearchResult{}, nil
+	}
+	if strings.TrimSpace(string(resultsValue)) == "null" {
+		return nil, fmt.Errorf("perplexity: response field results must be an array")
+	}
+
+	var results []perplexityWebSearchResult
+	if err := json.Unmarshal(resultsValue, &results); err != nil {
+		return nil, fmt.Errorf("perplexity: response field results must be an array: %w", err)
+	}
+	return results, nil
 }
 
 type queritWebSearchResult struct {
