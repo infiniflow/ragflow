@@ -1352,6 +1352,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       parallelApiKeyTip:
         'When Parallel is selected, its search excerpts supplement dataset retrieval.',
       parallelApiKeyMessage: 'Please enter your Parallel API Key',
+      perplexityApiKeyTip:
+        'When Perplexity is selected, results from the Perplexity Search API supplement dataset retrieval.',
+      perplexityApiKeyMessage: 'Please enter your Perplexity API Key',
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',

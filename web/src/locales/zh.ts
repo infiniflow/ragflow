@@ -1233,6 +1233,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       linkupApiKeyMessage: '请输入你的 Linkup API Key',
       parallelApiKeyTip: '选择 Parallel 后，将使用其搜索摘录补充知识库检索。',
       parallelApiKeyMessage: '请输入你的 Parallel API Key',
+      perplexityApiKeyTip:
+        '选择 Perplexity 后，将使用 Perplexity Search API 的搜索结果补充知识库检索。',
+      perplexityApiKeyMessage: '请输入你的 Perplexity API Key',
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入 Querit API Key',
