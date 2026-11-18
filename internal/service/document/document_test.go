@@ -3190,6 +3190,24 @@ func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	}
 }
 
+func TestUpdateDatasetDocumentMissingDocumentReturnsDataError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+
+	svc := testDocumentService(t)
+	_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "missing-doc", &UpdateDatasetDocumentRequest{}, map[string]bool{})
+	if err == nil {
+		t.Fatal("expected missing-document error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err.Error() != "the dataset doesn't own the document" {
+		t.Fatalf("error = %q, want missing-document response", err.Error())
+	}
+}
+
 func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
