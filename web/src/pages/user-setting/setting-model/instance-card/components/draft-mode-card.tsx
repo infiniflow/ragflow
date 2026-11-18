@@ -46,6 +46,7 @@ export function DraftModeCard({
   modelInfoRef,
   draftName,
   setDraftName,
+  draftNameError,
   verifyTransform,
 }: DraftModeCardProps) {
   return (
@@ -53,6 +54,7 @@ export function DraftModeCard({
       <InstanceNameSection
         draftName={draftName}
         setDraftName={setDraftName}
+        error={draftNameError}
         handleDelete={handleDelete}
         handleSave={handleSave}
         saving={saving}
@@ -65,7 +67,7 @@ export function DraftModeCard({
         onSubmit={() => undefined}
         defaultValues={formDefaultValues}
         labelClassName="font-normal"
-        resetOptions={{ keepDirtyValues: true }}
+        resetOptions={{ keepDirtyValues: true, keepErrors: true }}
       />
 
       {providerName === LLMFactory.AIMLAPI && <AimlapiGetKeyButton />}

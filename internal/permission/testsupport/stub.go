@@ -23,3 +23,9 @@ import "gorm.io/gorm"
 func PrepareEnterprisePermissionFixture(_ *gorm.DB, _ string, _ ...string) error {
 	return nil
 }
+
+// GrantTestResourcePermission is a no-op in the community build, where the
+// enterprise permission table does not exist.
+func GrantTestResourcePermission(_ *gorm.DB, _, _, _, _ string, _ ...string) error {
+	return nil
+}

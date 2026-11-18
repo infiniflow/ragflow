@@ -477,6 +477,11 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-owner", members...); err != nil {
 		t.Fatalf("prepare document permission fixture: %v", err)
 	}
+	if accessible {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-owner", "document", "doc-1", "user-1", "read", "write"); err != nil {
+			t.Fatalf("grant document access: %v", err)
+		}
+	}
 
 	orig := dao.DB
 	dao.DB = db
