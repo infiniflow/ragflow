@@ -37,6 +37,7 @@ type IToolIcon =
   | Operator.SofyaSearch
   | Operator.Search1APISearch
   | Operator.Search1APICrawl
+  | Operator.Datacircle
   | Operator.Wikipedia
   | Operator.YahooFinance
   | Operator.WenCai

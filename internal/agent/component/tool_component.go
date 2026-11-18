@@ -138,6 +138,7 @@ var toolComponentRegistrations = []struct {
 	{componentName: "GitHub", toolName: "github"},
 	{componentName: "BGPT", toolName: "bgpt"},
 	{componentName: "ArXiv", toolName: "arxiv"},
+	{componentName: "Datacircle", toolName: "datacircle"},
 	{componentName: "DuckDuckGo", toolName: "duckduckgo"},
 	{componentName: "Email", toolName: "email"},
 	{componentName: "ExeSQL", toolName: "execute_sql"},

@@ -83,6 +83,8 @@ export function useAgentToolInitialValues() {
           );
         case Operator.Search1APICrawl:
           return { api_key: '' };
+        case Operator.Datacircle:
+          return pick(initialValues, 'sort', 'top_n');
 
         default:
           return initialValues;

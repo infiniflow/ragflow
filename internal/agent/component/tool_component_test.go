@@ -139,6 +139,13 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 			inputKey:  "query",
 		},
 		{
+			name:      "Datacircle",
+			toolName:  "Datacircle",
+			params:    map[string]any{"api": "Employee email", "sort": "price", "top_n": float64(3), "outputs": map[string]any{"formalized_content": map[string]any{}, "json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
 			name:      "KeenableSearch",
 			toolName:  "KeenableSearch",
 			params:    map[string]any{"api_key": "stored-key", "mode": "realtime", "top_n": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
@@ -318,7 +325,7 @@ func TestToolBackedComponentWenCaiInvoke(t *testing.T) {
 }
 
 func TestToolBackedComponentRegisteredBuildWorkflow(t *testing.T) {
-	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "Search1APICrawl", "Search1APISearch", "SearXNG", "SofyaSearch", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance", "YouComSearch"} {
+	for _, componentName := range []string{"ArXiv", "BGPT", "Datacircle", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "Search1APICrawl", "Search1APISearch", "SearXNG", "SofyaSearch", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance", "YouComSearch"} {
 		t.Run(componentName, func(t *testing.T) {
 			c := &canvas.Canvas{
 				Components: map[string]canvas.CanvasComponent{

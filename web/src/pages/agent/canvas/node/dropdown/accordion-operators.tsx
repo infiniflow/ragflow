@@ -97,6 +97,7 @@ export function AccordionOperators({
     Operator.SofyaSearch,
     Operator.Search1APISearch,
     Operator.Search1APICrawl,
+    Operator.Datacircle,
     Operator.DocGenerator,
   ]);
 

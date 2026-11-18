@@ -20,7 +20,7 @@ In the tables below, **No** means manual input is optional; keep any default sho
 | --- | --- | --- |
 | Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable, Sofya, Search1API | Retrieve web pages, news, public information, or content from specified sites. |
 | Academic search | Google Scholar, ArXiv, PubMed, BGPT | Retrieve papers, medical literature, and research materials. |
-| Data and financial queries | Execute SQL, Yahoo Finance, WenCai | Query databases, market data, or financial screening results. |
+| Data and financial queries | Execute SQL, Yahoo Finance, WenCai, Datacircle | Query databases, market data, financial screening results, or GTM API plans and prices. |
 | Content output | Email, Document Generator | Send emails or generate downloadable documents. |
 
 ## Web Page and Information Retrieval
@@ -635,6 +635,33 @@ The output contains a financial data list that matches the natural-language scre
 Configure the WenCai query service before using this component.
 
 :::
+
+### Datacircle
+
+Datacircle benchmarks GTM APIs, such as email finders, LinkedIn data, phone finders, enrichment, and web search, and lists every plan of each with its price per 1,000 calls and its score out of 100. Use it to find the best or the cheapest provider for a data need. It calls the open [Datacircle API](https://api.datacircle.dev/v1/openapi.json), which needs no API key. See [datacircle.dev](https://datacircle.dev) for every plan.
+
+With no API and no query, it lists every API with its best plan (`GET /apis`). Otherwise it searches the plans (`GET /plans`). When it is added to an Agent as a tool, the node settings are only defaults: the Agent picks the API, the query, and the order for each call.
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| query | string | No | `{sys.query}` | Words that must all appear in the provider's or the plan's name, such as a provider's name. |
+| api | string | No | Empty | The API whose plans to list, its name or slug, such as `Employee email` or `email-finder`. Leave it empty to list every API. |
+| sort | string | No | score | `score` puts the best plans first, `price` puts the lowest price per 1,000 first, and `provider` sorts by name. |
+| top_n | integer | No | 10 | Maximum number of plans, up to 50. |
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| API | email-finder |
+| Sort by | price |
+| Top N | 5 |
+
+#### Output Result
+
+The output lists the plans found, each with its provider, plan, score, price per 1,000, and a link to its page on datacircle.dev, or every API with its best plan. It can be summarized by the Agent or passed to subsequent nodes.
 
 ## Communication and External Systems
 
