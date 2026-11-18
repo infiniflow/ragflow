@@ -172,6 +172,20 @@ func (p *communityPolicy) QueryScope(ctx context.Context, query ScopeQuery) (Que
 	if query.Kind == ResourceKindModelProvider || query.Kind == ResourceKindModelInstance || query.Kind == ResourceKindModel {
 		return p.modelQueryScope(ctx, query)
 	}
+	if query.Kind == ResourceKindDocument && query.Operation == OperationRead &&
+		query.Parent.Kind == ResourceKindDataset && strings.TrimSpace(query.Parent.ID) != "" && query.Entry == nil {
+		source, ok := p.source.(*databaseSource)
+		if !ok || source.db == nil {
+			return QueryScope{}, false, nil
+		}
+		if err := p.CheckResource(ctx, query.Parent, OperationRead); err != nil {
+			return QueryScope{}, true, err
+		}
+		parentID := query.Parent.ID
+		return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
+			return query.Where("document.kb_id = ? AND document.status = ?", parentID, string(entity.StatusValid))
+		}}, true, nil
+	}
 	if query.Kind == ResourceKindMCPServer && query.Operation == OperationRead && query.Parent.ID == "" && query.Parent.Kind == "" && query.Entry == nil {
 		return p.mcpServerReadQueryScope(ctx, query.TenantID)
 	}

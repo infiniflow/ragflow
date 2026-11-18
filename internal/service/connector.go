@@ -383,27 +383,24 @@ func withDecryptedCredentials(connector *entity.Connector) (*entity.Connector, e
 	return connector, nil
 }
 
-// ListConnectors returns connectors belonging to a tenant the caller can use.
-func (s *ConnectorService) ListConnectors(ctx context.Context, requestedTenantID string) (*ListConnectorsResponse, error) {
+// ListConnectors returns connectors belonging to the requested user in the current tenant.
+func (s *ConnectorService) ListConnectors(ctx context.Context, accessUserID string) (*ListConnectorsResponse, error) {
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	if userID == "" {
 		return nil, permission.ErrUnauthenticated
 	}
-
-	tenantID := strings.TrimSpace(requestedTenantID)
-	if tenantID == "" {
-		var err error
-		tenantID, err = requireCurrentTenantID(ctx)
-		if errors.Is(err, permission.ErrMembershipNotFound) {
-			return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
+	tenantID, err := requireCurrentTenantID(ctx)
+	if errors.Is(err, permission.ErrMembershipNotFound) {
+		return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
+	}
+	if err != nil {
 		return nil, err
 	}
-	connectors, err := s.connectorDAO.ListByTenantID(ctx, dao.DB, tenantID)
+	accessUserID = strings.TrimSpace(accessUserID)
+	if accessUserID == "" {
+		accessUserID = userID
+	}
+	connectors, err := s.connectorDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, accessUserID)
 	if err != nil {
 		return nil, err
 	}

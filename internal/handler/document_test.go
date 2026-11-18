@@ -1917,7 +1917,7 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 	if fake.metadataKBID != "ds-1" {
 		t.Fatalf("expected kbID ds-1, got %q", fake.metadataKBID)
 	}
-	if len(fake.metadataDocIDs) != 2 || fake.metadataDocIDs[0] != "doc-1" || fake.metadataDocIDs[1] != "doc-2" {
+	if len(fake.metadataDocIDs) != 1 || fake.metadataDocIDs[0] != "doc-1" {
 		t.Fatalf("unexpected docIDs: %#v", fake.metadataDocIDs)
 	}
 

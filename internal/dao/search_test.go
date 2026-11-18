@@ -42,9 +42,9 @@ var searchOrderExpressions = []string{
 func seedOrderableSearches(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	searches := []entity.Search{
-		{ID: "s-1", TenantID: "t1", Name: "zulu", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(100)}},
-		{ID: "s-2", TenantID: "t1", Name: "mike", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(200)}},
-		{ID: "s-3", TenantID: "t1", Name: "alpha", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(300)}},
+		{ID: "s-1", UserID: "t1", TenantID: "t1", Name: "zulu", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(100)}},
+		{ID: "s-2", UserID: "t1", TenantID: "t1", Name: "mike", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(200)}},
+		{ID: "s-3", UserID: "t1", TenantID: "t1", Name: "alpha", CreatedBy: "t1", SearchConfig: entity.JSONMap{}, Status: stringPtr("1"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(300)}},
 	}
 	for i := range searches {
 		if err := db.Create(&searches[i]).Error; err != nil {
@@ -160,6 +160,7 @@ func seedSearchRowsWithCreateTime(t *testing.T, db *gorm.DB, tenantID string, co
 		createTime := int64(i * 100)
 		search := entity.Search{
 			ID:           fmt.Sprintf("s-%d", i),
+			UserID:       tenantID,
 			TenantID:     tenantID,
 			Name:         fmt.Sprintf("search-%d", i),
 			CreatedBy:    tenantID,
@@ -257,6 +258,7 @@ func TestSearchDAOListByResourceIDsKeepsOwnerFilter(t *testing.T) {
 		createTime := int64(100)
 		search := entity.Search{
 			ID:           "search-" + tenantID,
+			UserID:       tenantID,
 			TenantID:     tenantID,
 			Name:         "search " + tenantID,
 			CreatedBy:    tenantID,

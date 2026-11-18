@@ -665,6 +665,7 @@ func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum 
 	ensureTestTenantOwner(t, "user-1", tenantID)
 	kb := &entity.Knowledgebase{
 		ID:         id,
+		UserID:     "user-1",
 		TenantID:   tenantID,
 		Name:       "test-kb",
 		EmbdID:     "embd-1",
@@ -759,6 +760,7 @@ func insertTestDoc(t *testing.T, id, kbID string, tokenNum, chunkNum int64) {
 	doc := &entity.Document{
 		ID:           id,
 		KbID:         kbID,
+		UserID:       "user-1",
 		ParserID:     "naive",
 		ParserConfig: entity.JSONMap{},
 		CreatedBy:    "user-1",
@@ -2995,6 +2997,8 @@ func insertTestPreviewDoc(t *testing.T, db *gorm.DB, mockStorage *fakeUploadStor
 	doc := &entity.Document{
 		ID:           id,
 		KbID:         kbID,
+		UserID:       "user-1",
+		CreatedBy:    "user-1",
 		ParserID:     "naive",
 		ParserConfig: entity.JSONMap{},
 		Name:         &name,
@@ -3100,7 +3104,7 @@ func TestGetDocumentPreview_MissingObjectSurfacesStorageError(t *testing.T) {
 	loc := "doc.txt"
 	if err := db.Create(&entity.Document{
 		ID: "doc-prev-miss", KbID: "kb-prev-miss", ParserID: "naive",
-		ParserConfig: entity.JSONMap{}, Name: &name, Location: &loc,
+		UserID: "user-1", CreatedBy: "user-1", ParserConfig: entity.JSONMap{}, Name: &name, Location: &loc,
 		Suffix: "txt", Status: sptr("1"),
 	}).Error; err != nil {
 		t.Fatalf("insert test doc: %v", err)
@@ -5029,10 +5033,10 @@ func TestGetDocumentImageForDocumentAllowsIndexedSharedBucketImage(t *testing.T)
 	kbID := strings.Repeat("b", 32)
 	status := string(entity.StatusValid)
 	ensureTestTenantOwner(t, "user-1", "user-1")
-	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, UserID: "user-1", TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&entity.Document{ID: "doc-1", KbID: kbID, CreatedBy: "user-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: kbID, UserID: "user-1", CreatedBy: "user-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
 		t.Fatal(err)
 	}
 	imageID := "imagetemps-page-1.png"

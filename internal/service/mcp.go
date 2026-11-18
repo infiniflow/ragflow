@@ -88,6 +88,9 @@ type UpdateMCPServerRequest map[string]json.RawMessage
 // MCPServerListItem is an MCP server item in the list response.
 type MCPServerListItem struct {
 	ID                 string         `json:"id"`
+	UserID             string         `json:"user_id"`
+	TenantID           string         `json:"tenant_id"`
+	Nickname           string         `json:"nickname"`
 	Name               string         `json:"name"`
 	ServerType         string         `json:"server_type"`
 	URL                string         `json:"url"`
@@ -614,8 +617,15 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID strin
 		if variables == nil {
 			variables = entity.JSONMap{}
 		}
+		nickname := ""
+		if server.Nickname != nil {
+			nickname = *server.Nickname
+		}
 		items = append(items, &MCPServerListItem{
 			ID:                 server.ID,
+			UserID:             server.UserID,
+			TenantID:           server.TenantID,
+			Nickname:           nickname,
 			Name:               server.Name,
 			ServerType:         server.ServerType,
 			URL:                server.URL,

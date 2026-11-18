@@ -103,6 +103,7 @@ export interface IDialog {
   prompt_type: string;
   status: string;
   tenant_id: string;
+  user_id?: string;
   update_date: string;
   update_time: number;
   keywords_similarity_weight?: number;

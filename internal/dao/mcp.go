@@ -41,6 +41,11 @@ func (e *InvalidMCPServerOrderByError) Error() string {
 	return fmt.Sprintf("AttributeError(%q)", fmt.Sprintf("type object 'MCPServer' has no attribute '%s'", e.Field))
 }
 
+type MCPServerListRow struct {
+	entity.MCPServer
+	Nickname *string `gorm:"column:nickname"`
+}
+
 // NewMCPServerDAO creates an MCP server DAO.
 func NewMCPServerDAO() *MCPServerDAO {
 	return &MCPServerDAO{}
@@ -76,7 +81,7 @@ func (dao *MCPServerDAO) CreateMCPServer(ctx context.Context, db *gorm.DB, serve
 
 // ListMCPServers returns the authorized MCP server page and the total number
 // of authorized servers. Authorization is applied before counting and paging.
-func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenantID string, ids []string, keywords, orderby string, desc bool, page, pageSize int, authorize func(*gorm.DB) *gorm.DB) ([]*entity.MCPServer, int64, error) {
+func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenantID string, ids []string, keywords, orderby string, desc bool, page, pageSize int, authorize func(*gorm.DB) *gorm.DB) ([]*MCPServerListRow, int64, error) {
 	orderColumn, err := mcpServerOrderColumn(orderby)
 	if err != nil {
 		return nil, 0, err
@@ -101,23 +106,25 @@ func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenant
 		return nil, 0, err
 	}
 
-	query := baseQuery().Select("id", "name", "server_type", "url", "description", "variables", "create_date", "update_date")
+	query := baseQuery()
 	orderDirection := "ASC"
 	if desc {
 		orderDirection = "DESC"
 	}
 	query = query.Order(orderColumn + " " + orderDirection)
-	if orderColumn != "id" {
-		query = query.Order("id ASC")
+	if orderColumn != "mcp_server.id" {
+		query = query.Order("mcp_server.id ASC")
 	}
 	if page != 0 && pageSize != 0 {
 		start, stop := mcpServerPageRange(total, page, pageSize)
 		if stop <= start {
-			return []*entity.MCPServer{}, total, nil
+			return []*MCPServerListRow{}, total, nil
 		}
 		query = query.Offset(start).Limit(stop - start)
 	}
-	var servers []*entity.MCPServer
+	query = query.Joins("LEFT JOIN user AS owner ON mcp_server.user_id = owner.id").
+		Select("mcp_server.id, mcp_server.user_id, mcp_server.tenant_id, mcp_server.name, mcp_server.server_type, mcp_server.url, mcp_server.description, mcp_server.variables, mcp_server.create_date, mcp_server.update_date, owner.nickname")
+	var servers []*MCPServerListRow
 	if err := query.Find(&servers).Error; err != nil {
 		return nil, 0, err
 	}
@@ -171,17 +178,17 @@ func (dao *MCPServerDAO) UpdateMCPServer(ctx context.Context, db *gorm.DB, id, t
 func mcpServerOrderColumn(orderby string) (string, error) {
 	switch orderby {
 	case "id":
-		return "id", nil
+		return "mcp_server.id", nil
 	case "name":
-		return "name", nil
+		return "mcp_server.name", nil
 	case "server_type":
-		return "server_type", nil
+		return "mcp_server.server_type", nil
 	case "url":
-		return "url", nil
+		return "mcp_server.url", nil
 	case "update_time", "update_date":
-		return "update_date", nil
+		return "mcp_server.update_date", nil
 	case "create_time", "create_date":
-		return "create_date", nil
+		return "mcp_server.create_date", nil
 	default:
 		return "", &InvalidMCPServerOrderByError{Field: orderby}
 	}

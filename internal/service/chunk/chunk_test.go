@@ -2005,6 +2005,7 @@ func chunkTestContext(t *testing.T, userID, tenantID string, memberIDs ...string
 	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, members...); err != nil {
 		t.Fatalf("prepare permission fixture: %v", err)
 	}
+	grantChunkTeamDocumentPermissions(t, dao.DB, tenantID, userID)
 	return permission.WithIdentity(t.Context(), userID, tenantID)
 }
 
@@ -2053,6 +2054,7 @@ func insertChunkTestKB(t *testing.T, id, tenantID string) {
 	status := string(entity.StatusValid)
 	kb := &entity.Knowledgebase{
 		ID:           id,
+		UserID:       tenantID,
 		TenantID:     tenantID,
 		Name:         id,
 		EmbdID:       "embedding-model",
@@ -2068,6 +2070,17 @@ func insertChunkTestKB(t *testing.T, id, tenantID string) {
 
 func insertChunkTestDoc(t *testing.T, id, kbID string) {
 	t.Helper()
+	ownerUserID := "user-1"
+	var kb entity.Knowledgebase
+	if err := dao.DB.Select("user_id", "created_by").Where("id = ?", kbID).First(&kb).Error; err == nil {
+		if kb.UserID != "" {
+			ownerUserID = kb.UserID
+		} else if kb.CreatedBy != "" {
+			ownerUserID = kb.CreatedBy
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("load chunk test dataset owner: %v", err)
+	}
 
 	location := id + ".txt"
 	name := id + ".txt"
@@ -2075,11 +2088,12 @@ func insertChunkTestDoc(t *testing.T, id, kbID string) {
 	doc := &entity.Document{
 		ID:           id,
 		KbID:         kbID,
+		UserID:       ownerUserID,
 		ParserID:     string(entity.ParserTypeNaive),
 		ParserConfig: entity.JSONMap{},
 		SourceType:   string(entity.FileSourceLocal),
 		Type:         "txt",
-		CreatedBy:    "user-1",
+		CreatedBy:    ownerUserID,
 		Name:         &name,
 		Location:     &location,
 		ChunkNum:     7,

@@ -252,6 +252,9 @@ func (f *ModelFactory) ResolveInfo(ctx context.Context, modelType entity.ModelTy
 	if err != nil {
 		return nil, err
 	}
+	if err := authorizeModelMetadataReadEE(ctx, identity); err != nil {
+		return nil, err
+	}
 	target, err := modelTargetFromIdentity(identity, modelType)
 	if err != nil {
 		return nil, err
@@ -621,6 +624,9 @@ func (s *ModelFactory) ResolveModelType(ctx context.Context, modelRef string) ([
 	if err != nil {
 		return nil, err
 	}
+	if err := authorizeModelMetadataReadEE(ctx, identity); err != nil {
+		return nil, err
+	}
 	return modelTypesFromBitmask(identity.modelType), nil
 }
 
@@ -772,7 +778,7 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 		}
 	}
 	provider, instance := identity.providerEntity, identity.instanceEntity
-	if provider.TenantID != tenantID || provider.UserID != owner.UserID {
+	if provider.TenantID != tenantID {
 		return nil, fmt.Errorf("%w: tenant %s can use only its owner's model configuration", errModelConfigUnavailable, tenantID)
 	}
 	if instance.ProviderID != provider.ID {
@@ -784,20 +790,27 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 	if identity.modelEntity != nil && !strings.EqualFold(identity.modelEntity.Status, "active") {
 		return nil, fmt.Errorf("%w: tenant model %q is disabled", errModelConfigUnavailable, modelRef)
 	}
-	if userID != "" {
+	checkedModels := candidates
+	if requestedType != 0 || model != nil {
+		checkedModels = nil
+		if identity.modelEntity != nil {
+			checkedModels = []*entity.TenantModel{identity.modelEntity}
+		}
+	}
+	nonOwnerPermissionsChecked := false
+	if provider.UserID != owner.UserID {
+		if err := authorizeNonOwnerModelConfiguration(ctx, provider, instance, checkedModels); err != nil {
+			return nil, fmt.Errorf("%w: user %s cannot use model configuration owned by %s: %w", errModelConfigUnavailable, userID, provider.UserID, err)
+		}
+		nonOwnerPermissionsChecked = true
+	}
+	if userID != "" && !nonOwnerPermissionsChecked {
 		checker := permission.NewDatabaseChecker(dao.DB)
 		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID}, permission.OperationRead); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, userID, provider.ProviderName, err)
 		}
 		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID}, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, userID, instance.InstanceName, err)
-		}
-		checkedModels := candidates
-		if requestedType != 0 || model != nil {
-			checkedModels = nil
-			if identity.modelEntity != nil {
-				checkedModels = []*entity.TenantModel{identity.modelEntity}
-			}
 		}
 		for _, candidate := range checkedModels {
 			if !strings.EqualFold(candidate.Status, "active") {

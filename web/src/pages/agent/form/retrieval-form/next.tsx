@@ -35,7 +35,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { z } from 'zod';
 import { RetrievalFrom, initialRetrievalValues } from '../../constant';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
@@ -122,7 +122,6 @@ export function MemoryDatasetForm() {
           <MemoriesFormField
             label={t('header.memories')}
             required
-            canvasID={canvasID}
           ></MemoriesFormField>
           <UserIdFormField></UserIdFormField>
         </>
@@ -148,7 +147,7 @@ export function useHideKnowledgeGraphField(form: UseFormReturn<any>) {
 
 function RetrievalForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   const { id: canvasID } = useParams();
 
   const outputList = useMemo(() => {
@@ -202,7 +201,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
             {hideKnowledgeGraphField || (
               <>
                 <RerankFormFields
-                  ownerTenantId={ownerTenantId}
+                  resourceTenantId={resourceTenantId}
                 ></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>

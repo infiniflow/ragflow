@@ -295,9 +295,10 @@ func splitQueryValues(c *gin.Context, key string) []string {
 //
 // Query Parameters:
 //   - memory_type (optional): Memory type filter, supports repeated keys and comma-separated multiple types
-//   - tenant_id (optional): Tenant ID filter, supports repeated keys and comma-separated multiple IDs
+//   - owner_ids (optional): Resource owner user IDs, supports repeated keys and comma-separated IDs
 //   - storage_type (optional): Storage type filter
 //   - keywords (optional): Keyword search (fuzzy match on name)
+//   - access_user_id (optional): Also require the specified user's memory permissions
 //   - page (optional): Page number, default 1
 //   - page_size (optional): Items per page, default 30
 //
@@ -330,14 +331,12 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	// Parse memory_type parameter (repeated query keys and comma separation)
 	memoryTypes := splitQueryValues(c, "memory_type")
 
-	// Parse tenant_id parameter (repeated query keys and comma separation)
-	// If not specified, service will get all tenants associated with the user
-	tenantIDs := splitQueryValues(c, "tenant_id")
+	ownerIDs := splitQueryValues(c, "owner_ids")
 
 	ctx := c.Request.Context()
 
 	// Call service layer to get memory list
-	result, err := h.memoryService.ListMemories(ctx, tenantIDs, memoryTypes, storageType, keywords, page, pageSize, c.Query("canvas_id"))
+	result, err := h.memoryService.ListMemories(ctx, ownerIDs, memoryTypes, storageType, keywords, page, pageSize, c.Query("access_user_id"))
 	if err != nil {
 		code := common.CodeServerError
 		if errors.Is(err, permission.ErrUnauthenticated) || errors.Is(err, permission.ErrPermissionDenied) ||

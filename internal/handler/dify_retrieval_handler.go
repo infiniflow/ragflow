@@ -263,7 +263,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// actually supplied, and matched nothing, narrow the search to the
 	// no-match sentinel.
 	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs(ctx, []string{req.KnowledgeID})
-	docIDs := make([]string, 0)
+	var docIDs []string
 	if metaErr == nil && req.MetadataCondition != nil && len(req.MetadataCondition.Conditions) > 0 {
 		logic := req.MetadataCondition.Logic
 		if logic == "" {
@@ -274,6 +274,14 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		if len(docIDs) == 0 {
 			docIDs = []string{service.NoMatchDocIDSentinel}
 		}
+	}
+	docIDs, err = service.ListReadableDocumentIDs(ctx, []string{req.KnowledgeID}, docIDs)
+	if err != nil {
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to resolve readable documents: %v", err))
+		return
+	}
+	if len(docIDs) == 0 {
+		docIDs = []string{service.NoMatchDocIDSentinel}
 	}
 
 	// Hand the label result over unconditionally: an empty map says "issue no
@@ -287,17 +295,18 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// Keep 64 as the floor so a small top_k still ranks the same candidates.
 	rerankWindow := max(pageSize, 64)
 	sr := &nlp.RetrievalRequest{
-		Question:              req.Query,
-		TenantIDs:             []string{kb.TenantID},
-		KbIDs:                 []string{req.KnowledgeID},
-		DocIDs:                docIDs,
-		Page:                  1,
-		PageSize:              pageSize,
-		RerankCandidatesCount: &rerankWindow,
-		KNNTopK:               topK,
-		SimilarityThreshold:   scoreThreshold,
-		EmbeddingModel:        embModel,
-		Language:              entity.KnowledgebasesLanguage(kbs),
+		Question:                   req.Query,
+		TenantIDs:                  []string{kb.TenantID},
+		KbIDs:                      []string{req.KnowledgeID},
+		DocIDs:                     docIDs,
+		DocumentPermissionsChecked: true,
+		Page:                       1,
+		PageSize:                   pageSize,
+		RerankCandidatesCount:      &rerankWindow,
+		KNNTopK:                    topK,
+		SimilarityThreshold:        scoreThreshold,
+		EmbeddingModel:             embModel,
+		Language:                   entity.KnowledgebasesLanguage(kbs),
 	}
 	sr.RankFeature = &rankFeature
 

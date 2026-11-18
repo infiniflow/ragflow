@@ -57,6 +57,9 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 			if err := testsupport.PrepareEnterprisePermissionFixture(db, "owner", "owner", "member"); err != nil {
 				t.Fatalf("prepare permission fixture: %v", err)
 			}
+			if tt.name == "member team" {
+				grantChunkDocumentReadWrite(t, db, "owner", "member", "doc-1")
+			}
 			ctx := permission.WithIdentity(t.Context(), tt.userID, "owner")
 			for _, op := range []struct {
 				name string

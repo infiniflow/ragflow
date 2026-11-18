@@ -1049,8 +1049,11 @@ func (s *databaseSource) loadDatasets(ctx context.Context, ids []string) (map[st
 	return datasetsByID, ownerIDsByTenant, nil
 }
 
-func datasetResource(dataset *entity.Knowledgebase, ownerIDsByTenant map[string]string) Resource {
-	ownerUserID := ownerIDsByTenant[dataset.TenantID]
+func datasetResource(dataset *entity.Knowledgebase, _ map[string]string) Resource {
+	ownerUserID := strings.TrimSpace(dataset.UserID)
+	if ownerUserID == "" {
+		ownerUserID = strings.TrimSpace(dataset.CreatedBy)
+	}
 	visibility := VisibilityPrivate
 	switch dataset.Permission {
 	case string(entity.TenantPermissionMe):
@@ -1073,11 +1076,15 @@ func datasetResource(dataset *entity.Knowledgebase, ownerIDsByTenant map[string]
 
 func documentResource(document *entity.Document, dataset *entity.Knowledgebase, ownerIDsByTenant map[string]string) Resource {
 	datasetAccess := datasetResource(dataset, ownerIDsByTenant)
+	ownerUserID := strings.TrimSpace(document.UserID)
+	if ownerUserID == "" {
+		ownerUserID = strings.TrimSpace(document.CreatedBy)
+	}
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindDocument, ID: document.ID},
 		TenantID:          datasetAccess.TenantID,
 		CreatedBy:         document.CreatedBy,
-		OwnerUserID:       document.CreatedBy,
+		OwnerUserID:       ownerUserID,
 		Visibility:        datasetAccess.Visibility,
 		TenantRequirement: datasetAccess.TenantRequirement,
 		OwnerOperations:   datasetAccess.OwnerOperations,
@@ -1124,10 +1131,14 @@ func memoryResource(memory *entity.Memory) Resource {
 	if memory.Permissions == string(entity.TenantPermissionTeam) {
 		visibility = VisibilityTenant
 	}
+	ownerUserID := memory.UserID
+	if ownerUserID == "" {
+		ownerUserID = memory.TenantID
+	}
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindMemory, ID: memory.ID},
 		TenantID:          memory.TenantID,
-		OwnerUserID:       memory.TenantID,
+		OwnerUserID:       ownerUserID,
 		Visibility:        visibility,
 		TenantRequirement: TenantMember,
 		OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse},
@@ -1137,10 +1148,14 @@ func memoryResource(memory *entity.Memory) Resource {
 }
 
 func chatResource(chat *entity.Chat) Resource {
+	ownerUserID := strings.TrimSpace(chat.UserID)
+	if ownerUserID == "" {
+		ownerUserID = chat.TenantID
+	}
 	return Resource{
 		Ref:             ResourceRef{Kind: ResourceKindChat, ID: chat.ID},
 		TenantID:        chat.TenantID,
-		OwnerUserID:     chat.TenantID,
+		OwnerUserID:     ownerUserID,
 		Visibility:      VisibilityPrivate,
 		OwnerOperations: []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationRun, OperationUse},
 		Active:          chat.Status != nil && *chat.Status == string(entity.StatusValid),
@@ -1148,11 +1163,15 @@ func chatResource(chat *entity.Chat) Resource {
 }
 
 func searchAppResource(searchApp *entity.Search) Resource {
+	ownerUserID := strings.TrimSpace(searchApp.UserID)
+	if ownerUserID == "" {
+		ownerUserID = strings.TrimSpace(searchApp.CreatedBy)
+	}
 	return Resource{
 		Ref:             ResourceRef{Kind: ResourceKindSearchApp, ID: searchApp.ID},
 		TenantID:        searchApp.TenantID,
 		CreatedBy:       searchApp.CreatedBy,
-		OwnerUserID:     searchApp.CreatedBy,
+		OwnerUserID:     ownerUserID,
 		Visibility:      VisibilityPrivate,
 		OwnerOperations: []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse},
 		Active:          searchApp.Status != nil && *searchApp.Status == string(entity.StatusValid),

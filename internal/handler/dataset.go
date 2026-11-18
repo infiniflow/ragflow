@@ -132,6 +132,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 
 	keywords := c.Query("keywords")
 	parserID := c.Query("parser_id")
+	accessUserID := strings.TrimSpace(c.Query("access_user_id"))
 	var ownerIDs []string
 	for _, item := range c.QueryArray("owner_ids") {
 		for _, ownerID := range strings.Split(item, ",") {
@@ -192,6 +193,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		terms,
 		keywords,
 		ownerIDs,
+		accessUserID,
 		parserID,
 		ids,
 		c.Query("canvas_id"),
@@ -397,7 +399,7 @@ func pythonJSONTypeName(v interface{}) string {
 var listDatasetsAllowedParams = map[string]bool{
 	"id": true, "ids": true, "name": true, "page": true, "page_size": true,
 	"orderby": true, "desc": true, "sort": true, "include_parsing_status": true,
-	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
+	"keywords": true, "owner_ids": true, "access_user_id": true, "parser_id": true, "type": true,
 	"canvas_id": true,
 }
 

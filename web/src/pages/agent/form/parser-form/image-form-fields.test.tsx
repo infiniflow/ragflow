@@ -33,7 +33,7 @@ jest.mock('@/hooks/use-llm-request', () => ({
 }));
 
 jest.mock('../../context', () => ({
-  useOwnerTenantId: () => 'canvas-owner',
+  useResourceTenantId: () => 'canvas-owner',
 }));
 
 jest.mock('@/components/llm-select/llm-label', () => ({

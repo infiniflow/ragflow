@@ -16,6 +16,7 @@
 
 import LLMLabel, { MissingModelLabel } from '@/components/llm-select/llm-label';
 import { LlmIcon } from '@/components/svg-icon';
+import { ModelSharingBadge } from '@/ee/components/model-sharing-badge';
 import {
   FormControl,
   FormField,
@@ -25,7 +26,10 @@ import {
 } from '@/components/ui/form';
 import { ModelTypeProviderMap } from '@/constants/llm';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
-import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
+import {
+  useFetchTenantInfo,
+  useFetchUserInfo,
+} from '@/hooks/use-user-setting-request';
 import { IAddedModel } from '@/interfaces/database/llm';
 import { buildModelValue, getRealModelName } from '@/utils/llm-util';
 import { forwardRef, useCallback, useEffect, useMemo } from 'react';
@@ -66,6 +70,7 @@ export function buildModelTree(
     model: IAddedModel,
   ) => React.ReactNode,
   providers?: string[],
+  currentUserId?: string,
 ): TreeSelectNode[] {
   const filtered = filterAddedModels(allModels, modelTypes, providers);
 
@@ -116,11 +121,14 @@ export function buildModelTree(
                 imgClass="size-[22px] flex-shrink-0"
               />
               <span className="truncate">{modelName}</span>
-              {m.tenant_name && mTenantId !== tenantId && (
-                <span className="text-text-secondary bg-bg-card rounded-sm px-1 truncate flex-shrink-0">
-                  {m.tenant_name}
-                </span>
-              )}
+              <ModelSharingBadge
+                tenantName={m.tenant_name}
+                tenantId={mTenantId}
+                currentTenantId={tenantId}
+                userId={m.user_id}
+                nickname={m.nickname}
+                currentUserId={currentUserId}
+              />
             </span>
           ),
           data: {
@@ -152,7 +160,7 @@ export interface UseModelTreeOptions {
     node: TreeSelectNode,
     model: IAddedModel,
   ) => React.ReactNode;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
   /**
    * Set where the tenant endpoint is not part of the page's contract (e.g.
    * the admin gateway, which serves every tenant). Tenant labels are then
@@ -174,15 +182,17 @@ export function useModelTree({
   modelTypes = ModelTypeMap.llm_id,
   providers,
   renderLeafLabel,
-  ownerTenantId,
+  resourceTenantId,
   skipTenantInfo = false,
 }: UseModelTreeOptions = {}) {
   const {
     data: allAddedModels,
     isFetched,
     isError,
-  } = useFetchAllAddedModels(undefined, ownerTenantId);
+  } = useFetchAllAddedModels(undefined, resourceTenantId);
   const { data: tenantInfo } = useFetchTenantInfo(!skipTenantInfo);
+  const { data: userInfo } = useFetchUserInfo();
+  const currentUserId = skipTenantInfo ? undefined : userInfo?.id;
 
   const models = useMemo(
     () => filterAddedModels(allAddedModels, modelTypes, providers),
@@ -197,6 +207,7 @@ export function useModelTree({
         tenantInfo?.tenant_id,
         renderLeafLabel,
         providers,
+        currentUserId,
       ),
     [
       allAddedModels,
@@ -204,6 +215,7 @@ export function useModelTree({
       tenantInfo?.tenant_id,
       renderLeafLabel,
       providers,
+      currentUserId,
     ],
   );
 
@@ -227,7 +239,7 @@ export interface ModelTreeSelectProps {
   className?: string;
   renderSelected?: (node: TreeSelectNode | undefined) => React.ReactNode;
   testId?: string;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
   skipTenantInfo?: boolean;
 }
 
@@ -247,7 +259,7 @@ export const ModelTreeSelect = forwardRef<
     className,
     renderSelected,
     testId,
-    ownerTenantId,
+    resourceTenantId,
     skipTenantInfo = false,
   },
   ref,
@@ -271,7 +283,7 @@ export const ModelTreeSelect = forwardRef<
   } = useModelTree({
     modelTypes,
     providers: allowedProviders,
-    ownerTenantId,
+    resourceTenantId,
     skipTenantInfo,
   });
 
@@ -325,9 +337,12 @@ export const ModelTreeSelect = forwardRef<
   // the raw composite id.
   const renderMissingModel = useCallback(
     (missingValue: string) => (
-      <MissingModelLabel value={missingValue} ownerTenantId={ownerTenantId} />
+      <MissingModelLabel
+        value={missingValue}
+        resourceTenantId={resourceTenantId}
+      />
     ),
-    [ownerTenantId],
+    [resourceTenantId],
   );
 
   return (
@@ -366,7 +381,7 @@ export function ModelTreeSelectFormField({
 }: ModelTreeSelectFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
-  const { loading } = useFetchAllAddedModels(undefined, rest.ownerTenantId);
+  const { loading } = useFetchAllAddedModels(undefined, rest.resourceTenantId);
   const value = useWatch({ control: form.control, name });
 
   // `form` from context is a new object on every provider render, so it must

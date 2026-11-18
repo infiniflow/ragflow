@@ -50,7 +50,7 @@ func TestListMCPServersCountsAndPaginatesAfterSQLAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+	if err := db.AutoMigrate(&entity.User{}, &entity.MCPServer{}); err != nil {
 		t.Fatalf("migrate MCP server: %v", err)
 	}
 	for _, server := range []*entity.MCPServer{

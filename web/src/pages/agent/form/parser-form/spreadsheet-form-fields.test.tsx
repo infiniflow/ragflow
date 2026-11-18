@@ -29,7 +29,7 @@ jest.mock('@/hooks/common-hooks', () => ({
   useTranslate: () => ({ t: (key: string) => key }),
 }));
 
-jest.mock('../../context', () => ({ useOwnerTenantId: () => 'tenant-1' }));
+jest.mock('../../context', () => ({ useResourceTenantId: () => 'tenant-1' }));
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),

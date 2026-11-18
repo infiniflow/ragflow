@@ -95,15 +95,22 @@ func (s *UserTenantService) GetCurrentTenantInfo(ctx context.Context) (*TenantIn
 	return &TenantInfoResponse{
 		TenantID:  tenant.ID,
 		Name:      tenant.Name,
-		LLMID:     membership.LLMID,
-		EmbDID:    membership.EmbdID,
-		RerankID:  membership.RerankID,
-		ASRID:     membership.ASRID,
-		Img2TxtID: membership.Img2TxtID,
-		TTSID:     ptrStringValue(membership.TTSID),
+		LLMID:     preferredModelID(membership.TenantLLMID, membership.LLMID),
+		EmbDID:    preferredModelID(membership.TenantEmbdID, membership.EmbdID),
+		RerankID:  preferredModelID(membership.TenantRerankID, membership.RerankID),
+		ASRID:     preferredModelID(membership.TenantASRID, membership.ASRID),
+		Img2TxtID: preferredModelID(membership.TenantImg2TxtID, membership.Img2TxtID),
+		TTSID:     preferredModelID(membership.TenantTTSID, ptrStringValue(membership.TTSID)),
 		ParserIDs: tenant.ParserIDs,
 		Role:      membership.Role,
 	}, nil
+}
+
+func preferredModelID(tenantModelID *string, legacyModelID string) string {
+	if tenantModelID != nil && strings.TrimSpace(*tenantModelID) != "" {
+		return *tenantModelID
+	}
+	return legacyModelID
 }
 
 // UserTenantRelation represents a user-tenant relationship response.
