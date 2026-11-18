@@ -974,9 +974,8 @@ func shouldReportRefineProgress(completed, total int) bool {
 	return completed > 0 && total > 0 && (completed%wikiRefineProgressStep == 0 || completed == total)
 }
 
-// runRefinePage generates one page result from a normalized plan page. UPDATE
-// merge, evidence assembly, and source-context building are unchanged; this is
-// the per-page unit that runRefine fans out.
+// runRefinePage generates one page result, refining a draft over source batches
+// when the complete prompt would exceed the model's input budget.
 func (p *wikiPipeline) runRefinePage(
 	planItem wikiPlanPage,
 	allPlanSlugs []string,
@@ -987,9 +986,11 @@ func (p *wikiPipeline) runRefinePage(
 ) (wikiPageResult, error) {
 	evidence := assembleWikiPageEvidence(planItem, p.reduced.Claims, entityLookup, conceptLookup)
 	sourceChunkIDs := collectWikiEvidenceChunkIDs(evidence)
-	sourceContext := buildSourceContext(p.inputs.Chunks, sourceChunkIDs)
+	contextChunkIDs := sourceChunkIDs
+	sourceContext := buildSourceContext(p.inputs.Chunks, contextChunkIDs)
 	if strings.TrimSpace(sourceContext) == "" {
-		sourceContext = buildSourceContext(p.inputs.Chunks, p.reduced.sourceChunkIDs())
+		contextChunkIDs = p.reduced.sourceChunkIDs()
+		sourceContext = buildSourceContext(p.inputs.Chunks, contextChunkIDs)
 	}
 	available := make([]string, 0, len(allPlanSlugs))
 	for _, slug := range allPlanSlugs {
@@ -1008,40 +1009,77 @@ func (p *wikiPipeline) runRefinePage(
 			return wikiPageResult{}, err
 		}
 	}
-	existingSection := ""
 	existingRaw := ""
 	if existing != nil {
 		existingRaw = common.FirstNonEmpty(existing.ContentMDRaw, existing.ContentMD)
-		if strings.TrimSpace(existingRaw) != "" {
-			existingSection = "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + existingRaw + "\n"
-		}
 	}
-	user := renderWikiTemplate(wikiRefineWriterUserTemplate, map[string]string{
+	fields := map[string]string{
 		"action":           common.FirstNonEmpty(planItem.Action, "CREATE"),
 		"slug":             planItem.Slug,
 		"title":            common.FirstNonEmpty(planItem.Title, planItem.Slug),
 		"page_type":        common.FirstNonEmpty(planItem.PageType, "concept"),
 		"all_plan_slugs":   strings.Join(available, "\n"),
 		"related_kb_pages": formatWikiRelatedKB(planItem.RelatedKB, pageTitles),
-		"existing_section": existingSection,
-		"source_context":   sourceContext,
 		"evidence_count":   fmt.Sprintf("%d", len(evidence)),
 		"evidence_blocks":  formatWikiEvidenceBlocks(evidence),
-	})
-	resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
-		LLMID:        p.llmID,
-		SystemPrompt: buildWikiRefineWriterSystem(""),
-		UserPrompt:   user,
-	})
-	if err != nil {
-		return wikiPageResult{}, err
 	}
-	if resp == nil {
-		return wikiPageResult{}, fmt.Errorf("knowledge_compiler: wiki refine returned no response")
+	request := func(source, draft string) common.ChatRequest {
+		fields["source_context"] = source
+		fields["existing_section"] = ""
+		if strings.TrimSpace(draft) != "" {
+			fields["existing_section"] = "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + draft + "\n"
+		}
+		return common.ChatRequest{
+			LLMID: p.llmID, SystemPrompt: buildWikiRefineWriterSystem(""),
+			UserPrompt: renderWikiTemplate(wikiRefineWriterUserTemplate, fields),
+		}
 	}
-	contentRaw := strings.TrimSpace(common.FirstNonEmpty(resp.Content))
-	if contentRaw == "" {
-		contentRaw = "# " + common.FirstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
+	sources := []string{sourceContext}
+	if budgetErr := p.checkWikiRefineBudget(request(sourceContext, existingRaw)); budgetErr != nil {
+		inputBudget, outputReserve := p.wikiRefineTokenBudget()
+		// Subsequent rounds include the previous response as an UPDATE draft.
+		// Reserve its output allowance as well as the fixed prompt and evidence.
+		base := request("", existingRaw)
+		overhead := p.wikiRefineTokenCount(base.SystemPrompt + "\n" + base.UserPrompt)
+		sourceBudget := inputBudget - overhead - outputReserve - wikiRefineSafetyTokens
+		if p.deps.ModelContextLen <= 0 || sourceBudget <= 0 {
+			return wikiPageResult{}, budgetErr
+		}
+		sources = packWikiRefineSources(p.inputs.Chunks, contextChunkIDs, sourceBudget, p.deps.Tokenizer)
+		if len(sources) == 0 {
+			return wikiPageResult{}, budgetErr
+		}
+		// Reject an indivisible oversized source before generating any drafts.
+		for _, source := range sources {
+			if err := p.checkWikiRefineBudget(request(source, existingRaw)); err != nil {
+				return wikiPageResult{}, err
+			}
+		}
+	}
+	contentRaw := existingRaw
+	for i, source := range sources {
+		if err := p.ctx.Err(); err != nil {
+			return wikiPageResult{}, err
+		}
+		if i > 0 {
+			fields["action"] = "UPDATE"
+		}
+		req := request(source, contentRaw)
+		if err := p.checkWikiRefineBudget(req); err != nil {
+			return wikiPageResult{}, err
+		}
+		resp, err := p.deps.Chat.Chat(p.ctx, req)
+		if err != nil {
+			return wikiPageResult{}, err
+		}
+		if resp == nil {
+			return wikiPageResult{}, fmt.Errorf("knowledge_compiler: wiki REFINE returned no response")
+		}
+		if next := strings.TrimSpace(resp.Content); next != "" {
+			contentRaw = next
+		} else if contentRaw == "" || len(sources) == 1 {
+			contentRaw = "# " + common.FirstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
+		}
 	}
 	if strings.TrimSpace(existingRaw) != "" {
 		contentRaw, err = p.mergeWikiPageContent(existingRaw, contentRaw, planItem.Slug)
@@ -1539,11 +1577,15 @@ func (p *wikiPipeline) mergeWikiPageContent(existingMD, newMD, slug string) (str
 	}
 	fallback := conservativeMergeWikiMarkdown(existingMD, newMD)
 	user := fmt.Sprintf("Merge these two versions of wiki page `%s`:\n\n## EXISTING VERSION\n\n%s\n\n---\n\n## INCOMING VERSION\n\n%s\n\n---\n\nProduce the merged page now. Return only the markdown content.", slug, existingMD, newMD)
-	resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
+	req := common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: wikiRefineMergeSystem,
 		UserPrompt:   user,
-	})
+	}
+	if err := p.checkWikiRefineBudget(req); err != nil {
+		return "", err
+	}
+	resp, err := p.deps.Chat.Chat(p.ctx, req)
 	if err != nil {
 		return "", err
 	}

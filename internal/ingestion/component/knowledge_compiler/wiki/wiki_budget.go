@@ -1,9 +1,84 @@
 package wiki
 
-import "sort"
+import (
+	"fmt"
+	"sort"
+	"strings"
 
-// This file implements the PLAN-stage page-budget controls for the Go
-// wiki variant.
+	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+)
+
+// Leave room for chat framing in addition to the configured output allowance.
+const wikiRefineSafetyTokens = 64
+
+func (p *wikiPipeline) wikiRefineTokenCount(text string) int {
+	if p.deps.Tokenizer != nil {
+		return p.deps.Tokenizer.NumTokens(text)
+	}
+	return common.EstimateTokens(text)
+}
+
+func (p *wikiPipeline) wikiRefineTokenBudget() (input, output int) {
+	output = p.deps.ModelMaxOutput
+	if p.param.ChatSettings.MaxTokens != nil {
+		output = *p.param.ChatSettings.MaxTokens
+	}
+	if output <= 0 {
+		output = wikiPlanDefaultOutputTokens
+	}
+	return p.deps.ModelContextLen - output - wikiRefineSafetyTokens, output
+}
+
+func (p *wikiPipeline) checkWikiRefineBudget(req common.ChatRequest) error {
+	budget, output := p.wikiRefineTokenBudget()
+	estimated := p.wikiRefineTokenCount(req.SystemPrompt + "\n" + req.UserPrompt)
+	if p.deps.ModelContextLen <= 0 || budget <= 0 || estimated > budget {
+		return fmt.Errorf("knowledge_compiler: wiki REFINE token budget exceeded or unavailable: estimated_tokens=%d input_budget=%d context_window=%d output_reserve=%d", estimated, budget, p.deps.ModelContextLen, output)
+	}
+	return nil
+}
+
+// Pack the rendered source blocks, including chunk markers and separators.
+// PackBatches deliberately leaves oversized chunks intact; the caller checks
+// every complete prompt before dispatch and reports those as REFINE errors.
+func packWikiRefineSources(chunks []common.Chunk, ids []string, budget int, tok common.Tokenizer) []string {
+	var blocks []common.Chunk
+	if len(ids) == 0 {
+		for _, ch := range chunks {
+			if text := common.FirstNonEmpty(ch.Text, ch.Content); text != "" {
+				blocks = append(blocks, common.Chunk{Text: text + "\n\n"})
+			}
+		}
+	} else {
+		lookup := make(map[string]common.Chunk, len(chunks))
+		for i, ch := range chunks {
+			id := strings.TrimSpace(ch.ID)
+			if id == "" {
+				id = fmt.Sprintf("chunk-%d", i+1)
+			}
+			ch.ID = id
+			lookup[id] = ch
+		}
+		for _, id := range ids {
+			if ch, ok := lookup[id]; ok {
+				if text := buildSourceContext([]common.Chunk{ch}, []string{id}); text != "" {
+					blocks = append(blocks, common.Chunk{Text: text})
+				}
+			}
+		}
+	}
+	var sources []string
+	for _, batch := range common.PackBatches(blocks, budget, tok) {
+		var source strings.Builder
+		for _, ch := range batch {
+			source.WriteString(ch.Text)
+		}
+		sources = append(sources, source.String())
+	}
+	return sources
+}
+
+// The PLAN-stage page-budget controls below implement:
 //
 //   - a global target_page_count derived from item count (clamp(8, total//3, 60));
 //   - a dynamic max_page_count derived from the model's configured output cap that acts
