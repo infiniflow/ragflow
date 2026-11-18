@@ -40,6 +40,7 @@ import (
 	"io"
 	"math"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -410,14 +411,44 @@ func parseCSVTagSourceReader(r io.Reader, delimiter string) []schema.TagLabel {
 	return result
 }
 
-// csvTagSourceDelimiter mirrors 's .csv path: the delimiter is
-// TAB as soon as the file contains one, comma otherwise. docstring
-// asks for TAB-separated .csv, so the comma default must not be assumed.
+// csvTagSourceDelimiter returns comma when the file has no TAB. If the file
+// contains a TAB, it returns comma only when the first non-empty row has no
+// TAB, every non-empty row with a TAB has exactly two non-empty fields, and
+// two-field rows without a TAB outnumber all other non-empty rows. Otherwise
+// it returns TAB.
 func csvTagSourceDelimiter(data []byte) rune {
-	if bytes.Contains(data, []byte("\t")) {
-		return '\t'
+	if !bytes.Contains(data, []byte("\t")) {
+		return ','
 	}
-	return ','
+	reader := csv.NewReader(bytes.NewReader(data))
+	reader.FieldsPerRecord = -1
+	reader.LazyQuotes = true
+	tabFreePairs, otherRows := 0, 0
+	for {
+		// With LazyQuotes and no field count, Read fails only at io.EOF.
+		rec, err := reader.Read()
+		if err != nil {
+			break
+		}
+		values := stripEmptyFields(rec)
+		if len(values) == 0 {
+			continue
+		}
+		hasTab := slices.ContainsFunc(rec, func(f string) bool { return strings.Contains(f, "\t") })
+		firstRow := tabFreePairs+otherRows == 0
+		if hasTab && (firstRow || len(values) != 2) {
+			return '\t'
+		}
+		if len(values) == 2 && !hasTab {
+			tabFreePairs++
+		} else {
+			otherRows++
+		}
+	}
+	if tabFreePairs > otherRows {
+		return ','
+	}
+	return '\t'
 }
 
 // parseCSVQuoteAwareReader mirrors 's .csv path: the whole text
