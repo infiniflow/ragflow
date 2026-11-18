@@ -152,6 +152,74 @@ func TestApplyComponentScopedParserConfig_DatasetMetadataIsAuthoritative(t *test
 	}
 }
 
+func TestApplyComponentScopedParserConfig_RemovesFlatMetadataWithoutExtractor(t *testing.T) {
+	// Strict contract: a flat "metadata" transport key with no Extractor node to
+	// receive it is invalid input. The flat key is dropped and no Extractor node
+	// is auto-created — the scoping path carries no compatibility shim.
+	parserConfig := entity.JSONMap{
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+			},
+			"built_in_metadata": []any{},
+		},
+		"GeneralChunker:SixApplesFall": map[string]any{"chunk_token_size": float64(256)},
+	}
+
+	got := ApplyComponentScopedParserConfig(parserConfig, "tenant-llm")
+
+	if _, ok := got["metadata"]; ok {
+		t.Fatalf("flat top-level metadata must be removed, got %#v", got["metadata"])
+	}
+	if _, ok := got["Extractor:AutoExtractDefault"]; ok {
+		t.Fatalf("must not auto-create Extractor node, got %#v", got)
+	}
+	// The chunker node is untouched and the config stays component-scoped.
+	if _, ok := got["GeneralChunker:SixApplesFall"].(map[string]any); !ok {
+		t.Fatalf("expected chunker node preserved, got %#v", got["GeneralChunker:SixApplesFall"])
+	}
+}
+
+func TestApplyComponentScopedParserConfig_ScopesFlatMetadataOntoExistingExtractor(t *testing.T) {
+	// Realistic case: a DSL-derived config already has an Extractor node. The
+	// flat modular "metadata" transport key must be scoped onto that node (and
+	// the tenant llm_id filled in) and removed from the top level.
+	parserConfig := entity.JSONMap{
+		"Extractor:AutoExtractDefault": map[string]any{
+			"llm_id": "",
+		},
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+			},
+			"built_in_metadata": []any{},
+		},
+	}
+
+	got := ApplyComponentScopedParserConfig(parserConfig, "tenant-llm")
+
+	if _, ok := got["metadata"]; ok {
+		t.Fatalf("flat top-level metadata must be removed, got %#v", got["metadata"])
+	}
+	extractor, ok := got["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Extractor:AutoExtractDefault node, got %#v", got)
+	}
+	meta, ok := extractor["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata scoped onto Extractor node, got %#v", extractor["metadata"])
+	}
+	fields, _ := meta["metadata"].([]any)
+	if len(fields) != 1 || fields[0].(map[string]any)["key"] != "author" {
+		t.Fatalf("expected author field scoped, got %#v", meta["metadata"])
+	}
+	if extractor["llm_id"] != "tenant-llm" {
+		t.Fatalf("expected llm_id filled from tenant, got %#v", extractor["llm_id"])
+	}
+}
+
 func TestApplyComponentScopedParserConfig_PreservesNodeOnlyMetadata(t *testing.T) {
 	parserConfig := entity.JSONMap{
 		"Extractor:CanvasNode": map[string]any{

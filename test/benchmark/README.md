@@ -165,6 +165,56 @@ What this CLI can do
   - It is not a general admin CLI; there are no standalone "create-only" or
     "manage" commands. Use the reports to capture created IDs for reuse.
 
+## Interpreting failures and throughput
+
+Each measured request contributes one success or failure, including when using
+`--concurrency`. Connection failures, timeouts, non-2xx HTTP responses, invalid
+response payloads, and API errors are recorded as failed samples so the remaining
+iterations can run and produce a report. There are no automatic retries: a retry
+would hide the original failure and change the measured workload. Authentication
+and dataset/chat setup are outside the measured requests; setup failures still
+stop the command.
+
+A successful chat sample requires non-empty assistant content **and** a stream
+completion marker (`[DONE]` or a non-empty `finish_reason`). Receiving some text
+before an unexpected EOF is a failed, partial response. Partial text remains
+available with `--print-response`, but failed samples are excluded from both
+first-token and total-latency statistics. Completion measures protocol success,
+not answer quality: a `length` finish reason can still indicate an answer limited
+by the model's token budget. An empty retrieval result with `code: 0` is a
+successful API request, not evidence of good retrieval quality.
+
+Reports distinguish:
+
+| JSON field | Definition |
+| --- | --- |
+| `qps` | All measured requests / measured wall-clock duration |
+| `success_qps` | Successful requests / measured wall-clock duration |
+| `failure_rate` | Failed requests / all measured requests, in the range 0–1 |
+
+For example, if 10 measured requests finish in 5 seconds but only 6 succeed,
+`qps` is 2, `success_qps` is 1.2, and `failure_rate` is 0.4. Comparing only QPS
+can make a server that quickly rejects requests look faster than a healthy one.
+The text report shows the same distinction and renders failure rate as a
+percentage. If all requests fail, successful QPS is zero and successful latency
+statistics are unavailable (`null` in JSON / `n/a` in text).
+
+The command exits with status 1 if any measured request fails and 0 if all
+measured requests succeed. Unexpected programming errors are not converted into
+request failures.
+
+### Testing the benchmark client
+
+From the repository root, with the test dependencies installed:
+
+```sh
+uv run --group test pytest test/benchmark/tests
+```
+
+These tests use response fixtures and a loopback HTTP server. They also invoke
+the actual CLI with sequential and multiprocessing workloads. No RAGFlow server,
+database, model, or external credentials are required.
+
 Do I need the dataset ID?
   - If the CLI creates a dataset, it uses the returned dataset ID internally.
     You do not need to supply it for that same run.
@@ -252,7 +302,7 @@ upload/parse docs from test/benchmark/test_docs, run the benchmark, and clean up
 The both script runs retrieval then chat on the same dataset, then deletes it.
 
 - Make sure to run ```uv sync --python 3.13 --group test ``` before running the commands.
-- It is also necessary to run these commands prior to initializing your containers if you plan on using the built-in embedded model: ```echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env``` 
+- It is also necessary to run these commands prior to initializing your containers if you plan on using the built-in embedded model: ```echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env```
   and ```echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env```
 
 Chat only:

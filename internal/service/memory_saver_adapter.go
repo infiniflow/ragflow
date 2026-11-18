@@ -19,8 +19,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/agent/component"
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/permission"
 )
 
 // memorySaverAdapter bridges the component.MemorySaver interface to the
@@ -37,12 +40,51 @@ func NewMemorySaverAdapter(svc *MemoryService) component.MemorySaver {
 	return &memorySaverAdapter{svc: svc}
 }
 
-// Save implements component.MemorySaver. Agent message components already run
-// inside an authorized canvas, so this path queues the selected memories
-// directly instead of applying REST request access filtering.
+// Save checks the authenticated caller's access to each configured memory
+// before queueing the message. Internal runs without a request identity use
+// the identity carried by the canvas runtime state.
 func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveRequest) error {
 	if a == nil || a.svc == nil {
 		return fmt.Errorf("memory: saver adapter not initialised")
+	}
+	if len(req.MemoryIDs) > 0 {
+		state, stateErr := runtime.GetStateFromContext(ctx)
+		if stateErr != nil || state == nil {
+			return fmt.Errorf("%w: canvas runtime state is required to use memory from an agent", permission.ErrInvalidPermission)
+		}
+		canvasID, _ := state.GetSysString("canvas_id")
+		stateUserID, _ := state.GetSysString("user_id")
+		stateTenantID, _ := state.GetSysString("tenant_id")
+		canvasID = strings.TrimSpace(canvasID)
+		stateUserID = strings.TrimSpace(stateUserID)
+		stateTenantID = strings.TrimSpace(stateTenantID)
+		if canvasID == "" {
+			return fmt.Errorf("%w: canvas id is required to use memory from an agent", permission.ErrInvalidPermission)
+		}
+		contextUserID := permission.UserIDFromContext(ctx)
+		if contextUserID == "" {
+			if stateUserID == "" {
+				return permission.ErrUnauthenticated
+			}
+			tenantID := permission.TenantIDFromContext(ctx)
+			if tenantID == "" {
+				tenantID = stateTenantID
+			}
+			ctx = permission.WithIdentity(ctx, stateUserID, tenantID)
+		}
+		checker := permission.NewDatabaseChecker(a.svc.db)
+		entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
+		for _, memoryID := range req.MemoryIDs {
+			memoryID = strings.TrimSpace(memoryID)
+			if memoryID == "" {
+				continue
+			}
+			if err := checker.CheckDependency(ctx, entry,
+				permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID},
+				permission.OperationRun, permission.OperationUse); err != nil {
+				return fmt.Errorf("memory %q: %w", memoryID, err)
+			}
+		}
 	}
 	msg := MemoryMessage{
 		UserID:        req.UserID,

@@ -147,7 +147,7 @@ func (v *VariableAssignerComponent) GetInputForm() map[string]any {
 // assigned is returned at outputs["assignments"]; per-item errors (if
 // any) are returned at outputs["errors"].
 func (v *VariableAssignerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("VariableAssigner: %w", err)
 	}
@@ -276,11 +276,21 @@ func operate(state *runtime.CanvasState, oldVal any, op string, param any) (any,
 				if v, err := state.GetVar(s); err == nil && v != nil {
 					return v, ""
 				}
-				// also try template resolution against state for {{...}}
-				if strings.Contains(s, "{{") {
+				if runtime.VarRefPattern.MatchString(s) {
 					if resolved, err := runtime.ResolveTemplate(s, state); err == nil {
 						return resolved, ""
 					}
+				}
+			}
+			return param, ""
+		case bool:
+			// Accept yes/true and no/false spellings case-insensitively.
+			if s, ok := param.(string); ok {
+				switch strings.ToLower(s) {
+				case "yes", "true":
+					return true, ""
+				case "no", "false":
+					return false, ""
 				}
 			}
 			return param, ""
@@ -393,16 +403,16 @@ func operate(state *runtime.CanvasState, oldVal any, op string, param any) (any,
 func writeVar(state *runtime.CanvasState, ref string, v any) error {
 	switch {
 	case ref == "item":
-		state.Globals["__item__"] = v
+		state.SetGlobal("__item__", v)
 		return nil
 	case ref == "index":
-		state.Globals["__index__"] = v
+		state.SetGlobal("__index__", v)
 		return nil
 	case strings.HasPrefix(ref, "sys."):
-		state.Sys[strings.TrimPrefix(ref, "sys.")] = v
+		state.SetSys(strings.TrimPrefix(ref, "sys."), v)
 		return nil
 	case strings.HasPrefix(ref, "env."):
-		state.Env[strings.TrimPrefix(ref, "env.")] = v
+		state.SetEnv(strings.TrimPrefix(ref, "env."), v)
 		return nil
 	}
 	idx := strings.Index(ref, "@")

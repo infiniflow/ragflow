@@ -19,12 +19,10 @@ export interface Iknowledge {
   name: string;
   embedding_model?: string;
   chunk_method?: string;
-  parseType?: ParseType;
+  parse_type?: ParseType;
   pipeline_id?: string | null;
-  ext?: {
-    language?: string;
-    [key: string]: any;
-  };
+  language?: string;
+  [key: string]: any;
 }
 export const useSaveKnowledge = () => {
   const { visible: visible, hideModal, showModal } = useSetModalState();

@@ -193,6 +193,10 @@ func TestSplitWikiExtractByChunkDropsUnknownProvenance(t *testing.T) {
 			{Name: "Ghost", SourceChunkIDs: []string{"unknown"}},
 		},
 		Claims: []wikiClaim{{Statement: "shared", Subject: "Alpha"}},
+		Topics: []wikiTopic{
+			{Path: "Knowledge/Alpha", SourceChunkIDs: []string{"c1"}},
+			{Path: "Knowledge/Shared"},
+		},
 	}, []common.Chunk{{ID: "c1"}, {ID: "c2"}})
 
 	if got := len(parts["c1"].Entities); got != 1 {
@@ -206,5 +210,11 @@ func TestSplitWikiExtractByChunkDropsUnknownProvenance(t *testing.T) {
 	}
 	if got := len(parts["c2"].Claims); got != 1 {
 		t.Fatalf("c2 claims = %d, want source-less claim fallback", got)
+	}
+	if got := len(parts["c1"].Topics); got != 2 {
+		t.Fatalf("c1 topics = %d, want cited and source-less topics", got)
+	}
+	if got := len(parts["c2"].Topics); got != 1 || parts["c2"].Topics[0].Path != "Knowledge/Shared" {
+		t.Fatalf("c2 topics = %#v, want only source-less fallback", parts["c2"].Topics)
 	}
 }

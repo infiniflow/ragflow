@@ -17,7 +17,8 @@ export function useAgentToolInitialValues() {
             ...omit(initialValues, 'query'),
             description: '',
           };
-        case (Operator.TavilySearch, Operator.TavilyExtract):
+        case Operator.TavilySearch:
+        case Operator.TavilyExtract:
           return {
             api_key: '',
           };
@@ -68,6 +69,20 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'searxng_url', 'top_n');
         case Operator.KeenableSearch:
           return pick(initialValues, 'api_key', 'mode', 'site', 'top_n');
+        case Operator.YouComSearch:
+          return pick(initialValues, 'api_key', 'freshness', 'top_n');
+        case Operator.SofyaSearch:
+          return pick(initialValues, 'api_key', 'search_depth', 'top_n');
+        case Operator.Search1APISearch:
+          return pick(
+            initialValues,
+            'api_key',
+            'channel',
+            'search_service',
+            'top_n',
+          );
+        case Operator.Search1APICrawl:
+          return { api_key: '' };
 
         default:
           return initialValues;

@@ -1,4 +1,63 @@
-import { preprocessLaTeX } from '../chat';
+import { MessageType } from '@/constants/chat';
+import type { IReference } from '@/interfaces/database/chat';
+import {
+  buildMessageListWithUuid,
+  buildReferenceObject,
+  decodeAngleBracketEntities,
+  escapeUnmatchedAngleBrackets,
+  mergeAnswerChunk,
+  preprocessLaTeX,
+  replaceThinkToSection,
+  unescapeAngleBrackets,
+} from '../chat';
+
+describe('mergeAnswerChunk', () => {
+  it.each([
+    ['First fact. Second fact.', 'First fact.[ID:0] Second fact.[ID:1]'],
+    ['A fact.[ID:0-1]', 'A fact.[ID:0][ID:1]'],
+  ])('replaces %s with the final cited answer', (previous, answer) => {
+    expect(mergeAnswerChunk(previous, { answer, final: true })).toBe(answer);
+  });
+
+  it('keeps streamed thinking when replacing the visible answer', () => {
+    const streamed = [
+      { start_to_think: true },
+      { answer: 'Checking sources.' },
+      { end_to_think: true },
+      { answer: '## First fact. ' },
+      { answer: 'Second fact.' },
+    ].reduce(mergeAnswerChunk, '');
+    expect(streamed).toBe(
+      '<think>Checking sources.</think>\n\n## First fact. Second fact.',
+    );
+    const answer = mergeAnswerChunk(streamed, {
+      answer: '## First fact.[ID:0] Second fact.[ID:1]',
+      final: true,
+    });
+
+    expect(answer).toBe(
+      '<think>Checking sources.</think>\n\n## First fact.[ID:0] Second fact.[ID:1]',
+    );
+    expect(mergeAnswerChunk(answer, { answer, final: true })).toBe(answer);
+  });
+
+  it.each(['', undefined])(
+    'keeps the answer for an empty final chunk (%s)',
+    (answer) => {
+      const previous = '<think>Checking sources.</think>A fact.[ID:0]';
+      expect(mergeAnswerChunk(previous, { answer, final: true })).toBe(
+        previous,
+      );
+    },
+  );
+
+  it('accepts a single-shot final answer without duplicating a repeated one', () => {
+    const chunk = { answer: 'A fact.[ID:0]', final: true };
+    const answer = mergeAnswerChunk('', chunk);
+    expect(answer).toBe(chunk.answer);
+    expect(mergeAnswerChunk(answer, chunk)).toBe(answer);
+  });
+});
 
 describe('preprocessLaTeX', () => {
   it('converts block \\[ \\] to $$ $$', () => {
@@ -31,5 +90,121 @@ describe('preprocessLaTeX', () => {
     const content = 'First \\[ a \\] then \\[ b \\right] c \\]';
     const result = preprocessLaTeX(content);
     expect(result).toBe('First $$a$$ then $$ b \\right] c $$');
+  });
+
+  it('handles double-escaped inline LaTeX', () => {
+    expect(preprocessLaTeX('\\\\(\\\\Delta = b^2\\\\)')).toBe(
+      '$\\Delta = b^2$',
+    );
+  });
+
+  it('handles double-escaped block LaTeX', () => {
+    expect(preprocessLaTeX('\\\\[E = mc^2\\\\]')).toBe('$$E = mc^2$$');
+  });
+
+  it('decodes HTML entities', () => {
+    expect(preprocessLaTeX('a &lt; b &amp; c &gt; d')).toBe('a < b & c > d');
+  });
+
+  it('handles mixed double-escaped delimiters with HTML entities', () => {
+    expect(preprocessLaTeX('\\\\(x &lt; y\\\\)')).toBe('$x < y$');
+  });
+
+  it('passes through already correct single-escaped delimiters unchanged', () => {
+    expect(preprocessLaTeX('\\(x = 1\\)')).toBe('$x = 1$');
+  });
+});
+
+describe('decodeAngleBracketEntities', () => {
+  it('decodes the entities restored by unescapeAngleBrackets', () => {
+    expect(decodeAngleBracketEntities('a &lt; b &gt; c')).toBe('a < b > c');
+  });
+
+  it('round-trips raw angle brackets through the escape helpers', () => {
+    // Code renderers rely on this: unescapeAngleBrackets restores entities
+    // (so prose parsing keeps <, > as text), and code content is literal,
+    // so the entities must be decoded back at render time.
+    const original = 'if (a > b) return a - b < c;';
+    const escaped = unescapeAngleBrackets(
+      escapeUnmatchedAngleBrackets(original),
+    );
+    expect(escaped).toBe('if (a &gt; b) return a - b &lt; c;');
+    expect(decodeAngleBracketEntities(escaped)).toBe(original);
+  });
+
+  it('does not touch &amp; or double-encoded entities', () => {
+    expect(decodeAngleBracketEntities('a &amp; b &amp;gt; c')).toBe(
+      'a &amp; b &amp;gt; c',
+    );
+  });
+
+  it.each(['', 'no entities here'])('passes through %j unchanged', (input) => {
+    expect(decodeAngleBracketEntities(input)).toBe(input);
+  });
+});
+
+describe('replaceThinkToSection', () => {
+  it('drops an empty think section instead of rendering a bare strip', () => {
+    expect(replaceThinkToSection('<think></think>Here is the answer.')).toBe(
+      'Here is the answer.',
+    );
+  });
+
+  it('drops a whitespace-only think section', () => {
+    expect(replaceThinkToSection('<think>  \n </think>answer')).toBe('answer');
+  });
+
+  it('keeps a non-empty think section as a details block', () => {
+    expect(replaceThinkToSection('<think>some reasoning</think>answer')).toBe(
+      '<details class="think"><summary>Thinking...</summary>some reasoning</details>answer',
+    );
+  });
+
+  it('uses the provided summary for non-empty sections', () => {
+    expect(
+      replaceThinkToSection('<think>reasoning</think>', 'Deep thought'),
+    ).toBe(
+      '<details class="think"><summary>Deep thought</summary>reasoning</details>',
+    );
+  });
+
+  it('leaves text without think markers unchanged', () => {
+    expect(replaceThinkToSection('plain answer')).toBe('plain answer');
+  });
+});
+
+describe('message references', () => {
+  it('preserves persisted references when assigning message ids', () => {
+    const reference: IReference = { chunks: [], doc_aggs: [], total: 0 };
+    const messages = buildMessageListWithUuid([
+      { role: MessageType.Assistant, content: 'answer', reference },
+    ]);
+    expect(messages[0].id).toBeTruthy();
+    expect(messages[0].reference).toBe(reference);
+  });
+
+  it('maps persisted citations and documents for the agent renderer', () => {
+    const chunk = {
+      id: 'chunk',
+      content: null,
+      citation_id: 'citation',
+      document_id: 'document',
+      document_name: 'Document',
+      dataset_id: 'dataset',
+      image_id: '',
+      similarity: 1,
+      vector_similarity: 1,
+      term_similarity: 1,
+      positions: [],
+    };
+    const document = { doc_id: 'document', doc_name: 'Document', count: 1 };
+    const reference = buildReferenceObject({
+      chunks: [chunk],
+      doc_aggs: [document],
+      total: 1,
+    });
+    expect(reference.chunks.citation).toBe(chunk);
+    expect(reference.doc_aggs.document).toBe(document);
+    expect(buildReferenceObject()).toEqual({ chunks: {}, doc_aggs: {} });
   });
 });

@@ -16,7 +16,9 @@
 
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
+import escape from 'lodash/escape';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 import {
   getNodeColor as defaultGetNodeColor,
@@ -35,9 +37,17 @@ import { useGraphHighlight } from './use-graph-highlight';
 import { defaultMapNodeToValue } from './utils';
 
 const defaultGetNodeId = (node: IArtifactGraphEntity) => node.slug;
+/** Returns the entity description as the default plain-text tooltip. */
+const defaultGetNodeLabel = (node: IArtifactGraphEntity) =>
+  node.description ?? '';
 
 const nodeCanvasObjectMode = () => 'after' as const;
 
+/**
+ * Renders an interactive force graph with configurable node styles and labels.
+ * Escapes tooltip text and coordinates zoom-to-fit, hover and pinned-node
+ * highlighting, and mapped node-click callbacks.
+ */
 function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   data,
   show = true,
@@ -47,9 +57,13 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   ) => TNodeValue,
   getNodeId = defaultGetNodeId,
   getNodeColor = defaultGetNodeColor,
+  getNodeLabel = defaultGetNodeLabel,
   getNodeRadius = defaultGetNodeRadius,
   highlightNodeId,
+  totalEntities,
+  returnedEntities,
 }: ArtifactForceGraphProps<TNodeValue>) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods<ArtifactGraphNode> | undefined>(
     undefined,
@@ -108,10 +122,10 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     [],
   );
 
-  // Hover tooltip shows the entity description; empty string hides it
-  const getNodeLabel = useCallback(
-    (node: ArtifactGraphNode) => node.description ?? '',
-    [],
+  /** Escapes plain-text node labels for ForceGraph's HTML tooltip renderer. */
+  const getEscapedNodeLabel = useCallback(
+    (node: ArtifactGraphNode) => escape(getNodeLabel(node)),
+    [getNodeLabel],
   );
 
   // Empty label hides the tooltip, so relations without a type show nothing
@@ -123,7 +137,7 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   return (
     <div
       ref={containerRef}
-      className={cn('flex-1 min-h-0 h-full', !show && 'hidden')}
+      className={cn('relative flex-1 min-h-0 h-full', !show && 'hidden')}
     >
       {hasDimensions && (
         <ForceGraph2D
@@ -135,7 +149,7 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
           nodeColor={nodeColor}
           nodeVal={nodeVal}
           cooldownTicks={100}
-          nodeLabel={getNodeLabel}
+          nodeLabel={getEscapedNodeLabel}
           autoPauseRedraw={false}
           onEngineStop={handleEngineStop}
           onNodeClick={handleNodeClick}
@@ -146,6 +160,14 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
           linkWidth={getLinkWidth}
           linkLabel={getLinkLabel}
         />
+      )}
+      {totalEntities !== undefined && returnedEntities !== undefined && (
+        <div className="absolute top-2 right-2 z-10 rounded-md border border-border-button bg-bg-card px-2 py-1 text-xs text-text-secondary">
+          {t('knowledgeCompilation.graphEntityCount', {
+            returned: returnedEntities,
+            total: totalEntities,
+          })}
+        </div>
       )}
     </div>
   );

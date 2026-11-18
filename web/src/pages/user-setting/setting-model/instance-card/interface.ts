@@ -33,12 +33,12 @@ export type VerifyTransform = (values: Record<string, any>) => {
 };
 
 /**
- * Imperative save API exposed by each instance card (generic, Bedrock,
- * SoMark) so the parent page can drive a single batch save from the
- * top-of-page Save button.
+ * Imperative API exposed by each instance card (generic, Bedrock,
+ * SoMark) for tests and embedders that need to validate a card or
+ * inspect its save payload without clicking the header Save button.
  *
- * The card owns its form state and dirty tracking; the parent only needs
- * to validate, collect payloads, and dispatch the API calls.
+ * The card owns its form state, dirty tracking, and save request; the
+ * header Save button persists only its own instance.
  */
 export interface ProviderInstanceCardRef {
   /**
@@ -75,12 +75,9 @@ export interface InstanceSavePayload {
   /** True for a new (unsaved) instance, false for an existing one. */
   isDraft: boolean;
   /**
-   * Which save endpoint the parent should dispatch to:
-   *  - `'add'`: call `addProviderInstance` (drafts of any provider, plus
-   *    Bedrock saved cards which carry an `id` inside the
-   *    `addProviderInstance` body).
-   *  - `'update'`: call `updateProviderInstance` (generic saved cards,
-   *    whose payload matches `IUpdateProviderInstanceRequestBody`).
+   * Which save endpoint the card dispatches to:
+   *  - `'add'`: call `addProviderInstance` for drafts.
+   *  - `'update'`: call `updateProviderInstance` for saved cards.
    */
   apiKind: 'add' | 'update';
 }
@@ -97,8 +94,7 @@ export interface ProviderInstanceCardProps {
   /**
    * True when this card represents a freshly-added (unsaved) instance.
    * Renders the instance-name input section and treats all fields as
-   * editable. Saving is driven by the parent through the imperative
-   * ref API (see {@link ProviderInstanceCardRef}).
+   * editable. The card's own Save button persists it.
    */
   isDraft?: boolean;
   /**
@@ -107,6 +103,8 @@ export interface ProviderInstanceCardProps {
    * the component calls useDeleteProviderInstance internally.
    */
   onDelete?: () => void;
+  /** Called after the card's Save button persists this instance. */
+  onSaved?: (payload: InstanceSavePayload) => void;
   /**
    * When true, this card starts expanded and its instance details
    * are fetched on mount. Default `false` so additional cards stay
@@ -119,16 +117,23 @@ export interface ProviderInstanceCardProps {
 /**
  * Provider-specific credential fields that the backend expects bundled
  * *inside* `api_key` as an object rather than as top-level keys:
- *   api_key: { api_key, group_id?, api_version?, provider_order? }
+ *   api_key: { api_key?, ...providerCredentials }
  * - MiniMax        → group_id
  * - Azure OpenAI   → api_version
  * - OpenRouter     → provider_order
+ * - Bedrock        → auth_mode / AWS credentials / region
  * When none of these are present the api_key stays a bare string.
  */
 export const API_KEY_NESTED_FIELDS = [
   'group_id',
   'api_version',
   'provider_order',
+  'auth_mode',
+  'bedrock_ak',
+  'bedrock_sk',
+  'aws_role_arn',
+  'bedrock_api_key',
+  'bedrock_region',
 ] as const;
 
 export type ApiKeyNestedField = (typeof API_KEY_NESTED_FIELDS)[number];
@@ -147,6 +152,10 @@ export interface SavedModeCardProps {
   formRef: RefObject<DynamicFormRef>;
   handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
+  /** Persist this card's instance (header Save button). */
+  handleSave: () => Promise<void>;
+  /** True while the save request is in flight. */
+  saving: boolean;
   handleInstanceModelsEdited: () => void;
   providerName: string;
   /** Persisted instance name (from the backend). */
@@ -162,6 +171,7 @@ export interface SavedModeCardProps {
   instance: IProviderInstance;
   instanceDetailsLoaded: boolean;
   modelInfoRef: React.MutableRefObject<IModelInfo[]>;
+  onInstanceModelsStatusChange: (ready: boolean) => void;
   draftName: string;
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -176,6 +186,10 @@ export interface DraftModeCardProps {
   formRef: RefObject<DynamicFormRef>;
   handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
+  /** Persist this card's instance (header Save button). */
+  handleSave: () => Promise<void>;
+  /** True while the save request is in flight. */
+  saving: boolean;
   handleInstanceModelsEdited: () => void;
   providerName: string;
   instanceName: string;

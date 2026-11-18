@@ -22,41 +22,42 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
 	"net/mail"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/AkmalOt/gomsg"
-	"golang.org/x/text/encoding"
-	"golang.org/x/text/encoding/simplifiedchinese"
+	"go.uber.org/zap"
+	htmlcharset "golang.org/x/net/html/charset"
+	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 
+	"ragflow/internal/common"
+	charsetlib "ragflow/internal/parser/charset"
 	"ragflow/internal/utility"
 )
 
 // EmailParser parses .eml (RFC 5322 email) and .msg (Outlook OLE2) files
-// into structured JSON or plain-text output. Mirrors Python's _email()
-// method in rag/flow/parser/parser.py, whose .msg branch uses extract_msg.
+// into structured JSON output. Mirrors Python's _email() method in
+// rag/flow/parser/parser.py, whose .msg branch uses extract_msg.
 type EmailParser struct {
-	fields       []string
-	outputFormat string
+	fields []string
 }
 
+var defaultEmailFields = []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"}
+
 func NewEmailParser() *EmailParser {
-	return &EmailParser{}
+	return &EmailParser{fields: append([]string(nil), defaultEmailFields...)}
 }
 
 func (p *EmailParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.outputFormat = v
 	}
 	if raw, ok := setup["fields"]; ok {
 		switch list := raw.(type) {
@@ -72,7 +73,7 @@ func (p *EmailParser) ConfigureFromSetup(setup map[string]any) {
 		}
 	}
 	if len(p.fields) == 0 {
-		p.fields = []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"}
+		p.fields = append([]string(nil), defaultEmailFields...)
 	}
 }
 
@@ -100,8 +101,8 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 				if r := recover(); r != nil {
 					// Log so a genuine bug (e.g. a nil deref in parseMSG)
 					// is not silently masked as a "decode panicked" error.
-					log.Printf("email: .msg decode panicked for %q; skipping: %v", filename, r)
 					err = fmt.Errorf("email: .msg decode panicked: %v", r)
+					common.Error("email: .msg decode panicked, skipping", err, zap.String("file", filename))
 				}
 			}()
 			msg, err = parseMSG(data, p.fields)
@@ -111,12 +112,11 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		}
 		content = msg
 	} else {
-		content = parseEML(bytes.NewReader(data), p.fields)
-	}
-
-	outputFormat := p.outputFormat
-	if outputFormat == "" {
-		outputFormat = "text"
+		var err error
+		content, err = parseEMLWithError(bytes.NewReader(data), p.fields)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("email: .eml: %w", err)}
+		}
 	}
 
 	// Re-chunk attachments so their content becomes retrievable within the
@@ -124,68 +124,41 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	// naive_chunk). Each attachment is re-parsed by its file extension via
 	// the shared parser registry; a single unparseable/skipped attachment
 	// never breaks the whole email.
-	extraItems, attachmentText := p.rechunkEmailAttachments(ctx, content, depth)
+	extraItems := p.rechunkEmailAttachments(ctx, content, depth)
 
-	// attachments has been consumed by rechunkEmailAttachments (which
-	// re-parses each attachment by extension to make its content
-	// retrievable). It is otherwise dead weight: jsonItemsToPages copies
-	// every key into a schema.Page, but buildPagesFromBytes keeps only
-	// text+doc_type_kwd, so carrying the full attachment payloads through to
-	// the chunker would only bloat the intermediate pages before being
-	// discarded. Drop it from the result content.
+	// Attachments have been consumed by rechunkEmailAttachments, which
+	// re-parses each one by extension into a searchable item. Keeping their
+	// raw payloads in the parent item would only bloat the parser result.
 	delete(content, "attachments")
 
-	if outputFormat == "json" {
-		content["doc_type_kwd"] = "text"
-		items := []map[string]any{content}
-		items = append(items, extraItems...)
-		return ParseResult{
-			OutputFormat: "json",
-			File:         map[string]any{"name": filename},
-			JSON:         items,
-		}
+	content["doc_type_kwd"] = "text"
+	items := []map[string]any{content}
+	if headerText := searchableEmailHeaders(content); headerText != "" {
+		items = append(items, NewTextJSONItem(headerText).ToMap())
 	}
+	items = append(items, extraItems...)
+	return ParseResult{
+		File: map[string]any{"name": filename},
+		JSON: MapsToItems(items),
+	}
+}
 
-	// Text output: flatten fields into a single string.
+// searchableEmailHeaders returns the user-facing headers as a separate JSON
+// text item. The main email item keeps its structured fields and body; the
+// chunker indexes only item text, so headers need their own text item.
+func searchableEmailHeaders(content map[string]any) string {
 	var sb strings.Builder
-	for k, v := range content {
-		switch val := v.(type) {
-		case string:
-			sb.WriteString(k)
-			sb.WriteString(":")
-			sb.WriteString(val)
-			sb.WriteString("\n")
-		case map[string]any:
-			sb.WriteString(k)
-			sb.WriteString(":{")
-			for mk, mv := range val {
-				if ms, ok := mv.(string); ok {
-					sb.WriteString(mk)
-					sb.WriteString(":")
-					sb.WriteString(ms)
-					sb.WriteString(", ")
-				}
-			}
-			sb.WriteString("}\n")
-		case []string:
-			sb.WriteString(strings.Join(val, "\n"))
+	for _, key := range []string{"from", "to", "cc", "bcc", "date", "subject"} {
+		value, ok := content[key].(string)
+		if !ok || value == "" {
+			continue
 		}
-	}
-	// Attachment text (re-parsed by extension) replaces the old crude
-	// "filename:payload" flatten, so binary attachments no longer leak
-	// mojibake into the searchable (indexed) text. The raw attachment
-	// payloads themselves are dropped after rechunk (see parseEmail), so the
-	// JSON output path carries only the re-parsed attachment text, never the
-	// original payload bytes.
-	if attachmentText != "" {
-		sb.WriteString(attachmentText)
+		sb.WriteString(key)
+		sb.WriteString(":")
+		sb.WriteString(value)
 		sb.WriteString("\n")
 	}
-	return ParseResult{
-		OutputFormat: "text",
-		File:         map[string]any{"name": filename},
-		Text:         sb.String(),
-	}
+	return sb.String()
 }
 
 // -- field set helpers --
@@ -198,23 +171,81 @@ func targetFieldsSet(fields []string) map[string]bool {
 	return m
 }
 
+// -- header decoding (RFC 2047) --
+
+// rfc2047Decoder decodes RFC 2047 encoded-words (e.g. "=?utf-8?B?...?=") in
+// header values. utf-8 is handled natively by mime; the CharsetReader covers
+// the non-UTF-8 charsets via charsetEncoding, and every other WHATWG label
+// (windows-1250 to windows-1258, iso-8859-2 to iso-8859-16, koi8-r, ...) via
+// htmlcharset.Lookup, as decodeWithCharset does for mail bodies. Three labels
+// need more than that:
+//   - every ISO-8859-1 alias (iso_8859-1, iso8859-1, l1, ...) is read as
+//     windows-1252, like the label mime decodes itself (see latin1EncodedWordRe);
+//   - a bare utf-16 starts with a byte order mark and is big-endian without one
+//     (RFC 2781), where WHATWG reads it as little-endian and skips the mark;
+//   - WHATWG maps iso-2022-kr, iso-2022-cn and the like to its replacement
+//     decoder, which turns the whole word into U+FFFD, so those stay undecoded.
+var rfc2047Decoder = &mime.WordDecoder{
+	CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
+		htmlEnc, htmlName := htmlcharset.Lookup(charset)
+		if htmlName == "windows-1252" {
+			return transform.NewReader(input, htmlEnc.NewDecoder()), nil
+		}
+		if strings.EqualFold(strings.TrimSpace(charset), "utf-16") {
+			return transform.NewReader(input, unicode.UTF16(unicode.BigEndian, unicode.UseBOM).NewDecoder()), nil
+		}
+		if enc, ok := charsetlib.CharsetEncoding(charset); ok {
+			return transform.NewReader(input, enc.NewDecoder()), nil
+		}
+		if htmlEnc != nil && htmlName != "replacement" {
+			return transform.NewReader(input, htmlEnc.NewDecoder()), nil
+		}
+		return nil, fmt.Errorf("email: unsupported header charset %q", charset)
+	},
+}
+
+// latin1EncodedWordRe matches the charset of an RFC 2047 encoded-word
+// labelled ISO-8859-1, with an optional RFC 2231 language suffix. Go's mime
+// package decodes iso-8859-1 itself, byte for byte, without asking the
+// CharsetReader, so the curly quotes, dashes and euro sign that Outlook writes
+// under that label came out as C1 control characters.
+var latin1EncodedWordRe = regexp.MustCompile(`(?i)=\?(?:iso-8859-1|latin1)(\*[^?]*)?\?`)
+
+// decodeHeaderWord decodes any RFC 2047 encoded-words in a header value,
+// leaving undecodable values untouched. An ISO-8859-1 encoded-word is read as
+// windows-1252, as WHATWG specifies for that label and as the HTML path
+// already reads it; the two differ only in bytes 0x80-0x9F.
+func decodeHeaderWord(val string) string {
+	decoded, err := rfc2047Decoder.DecodeHeader(latin1EncodedWordRe.ReplaceAllString(val, "=?windows-1252$1?"))
+	if err != nil {
+		return val
+	}
+	return decoded
+}
+
 // -- .eml parsing (RFC 5322 with multipart support) --
 
-func parseEML(r io.Reader, fields []string) map[string]any {
+func parseEMLWithError(r io.Reader, fields []string) (map[string]any, error) {
 	target := targetFieldsSet(fields)
 	content := map[string]any{}
 
 	msg, err := mail.ReadMessage(r)
 	if err != nil {
-		content["error"] = fmt.Sprintf("email: parse error: %v", err)
-		return content
+		return nil, err
 	}
 
-	// Headers.
+	// Headers. net/mail does not decode RFC 2047 encoded-words, so decode
+	// each value explicitly; otherwise a non-ASCII subject/from arrives as
+	// an unreadable "=?utf-8?B?...?=" blob that chunk delimiters then shred
+	// at the "?" characters.
 	meta := map[string]any{}
 	for key, vals := range msg.Header {
 		keyLower := strings.ToLower(key)
-		val := strings.Join(vals, ", ")
+		decoded := make([]string, len(vals))
+		for i, v := range vals {
+			decoded[i] = decodeHeaderWord(v)
+		}
+		val := strings.Join(decoded, ", ")
 		switch keyLower {
 		case "from", "to", "cc", "bcc", "date", "subject":
 			if target[keyLower] {
@@ -241,7 +272,8 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 	// fields while attachments are still extracted when "attachments" is.
 	if target["body"] || needAttachments {
 		contentType := msg.Header.Get("Content-Type")
-		bodyText, bodyHTML, attachments := readMailBody(msg.Body, contentType, needAttachments)
+		cte := msg.Header.Get("Content-Transfer-Encoding")
+		bodyText, bodyHTML, attachments := readMailBody(msg.Body, contentType, cte, needAttachments)
 		// Always emit text/text_html when "body" is requested, to match the
 		// Python flow parser contract (rag/flow/parser/parser.py:_email),
 		// which sets both unconditionally (empty string for a missing part)
@@ -255,7 +287,7 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 		}
 	}
 
-	return content
+	return content, nil
 }
 
 // readMailBody reads the body of an email message, handling
@@ -263,7 +295,7 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 // types. Returns (textBody, htmlBody, attachments).
 // When collectAttachments is true, non-text parts with Content-Disposition
 // starting with "attachment" are collected.
-func readMailBody(body io.Reader, contentType string, collectAttachments bool) (string, string, []map[string]any) {
+func readMailBody(body io.Reader, contentType, cte string, collectAttachments bool) (string, string, []map[string]any) {
 	var attachments []map[string]any
 
 	mediaType, params, err := mime.ParseMediaType(contentType)
@@ -273,6 +305,7 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 
 	if !strings.HasPrefix(mediaType, "multipart/") {
 		raw, _ := io.ReadAll(body)
+		raw = decodeCTE(raw, cte)
 		decoded := decodeMailPayload(raw, params["charset"])
 		if mediaType == "text/html" {
 			return "", decoded, attachments
@@ -283,7 +316,7 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 	boundary := params["boundary"]
 	if boundary == "" {
 		raw, _ := io.ReadAll(body)
-		return decodeMailPayload(raw, ""), "", attachments
+		return decodeMailPayload(decodeCTE(raw, cte), ""), "", attachments
 	}
 
 	mr := multipart.NewReader(body, boundary)
@@ -300,7 +333,9 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 		partMedia, partParams, _ := mime.ParseMediaType(partCT)
 
 		if strings.HasPrefix(partMedia, "multipart/") {
-			t, h, nestedAttachments := readMailBody(part, partCT, collectAttachments)
+			// RFC 2045 6.4 forbids base64 and quoted-printable on a multipart
+			// entity, so a nested container is never CTE-decoded.
+			t, h, nestedAttachments := readMailBody(part, partCT, "", collectAttachments)
 			if t != "" {
 				textParts = append(textParts, t)
 			}
@@ -386,91 +421,36 @@ func isAttachmentPart(part *multipart.Part) bool {
 }
 
 // attachmentFilename extracts a filename from the part's
-// Content-Disposition or Content-Type headers.
+// Content-Disposition or Content-Type headers. Mail clients write a
+// non-ASCII name as RFC 2047 encoded-words inside the parameter, as in
+// filename="=?utf-8?B?...?=", and the mime package leaves them encoded. Such
+// a name has no file extension, so rechunkEmailAttachments skipped the
+// attachment; it is decoded here. The filename is decoded before
+// filepath.Base drops any directory from it, as part.FileName does, because a
+// base64 encoded-word can contain a "/".
 func attachmentFilename(part *multipart.Part) string {
-	if fn := part.FileName(); fn != "" {
-		return fn
+	if _, params, err := mime.ParseMediaType(part.Header.Get("Content-Disposition")); err == nil {
+		if fn := params["filename"]; fn != "" {
+			return filepath.Base(decodeHeaderWord(fn))
+		}
 	}
 	ct := part.Header.Get("Content-Type")
 	if ct != "" {
 		_, params, _ := mime.ParseMediaType(ct)
 		if name, ok := params["name"]; ok {
-			return name
+			return decodeHeaderWord(name)
 		}
 	}
 	return "attachment.bin"
 }
 
-// decodeMailPayload attempts multiple charset decodings.
-// Mirrors Python's _decode_payload with fallback chain:
-// utf-8 → gb2312 → gbk → gb18030 → latin1 → utf-8 (ignore).
+// decodeMailPayload attempts charset decoding using the unified DecodeToUTF8 helper.
 func decodeMailPayload(payload []byte, charset string) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	charsets := buildCharsetChain(charset)
-	for _, enc := range charsets {
-		if enc == "" {
-			// raw bytes → already fallthrough
-			return string(payload)
-		}
-		decoded, err := decodeWithCharset(payload, enc)
-		if err == nil {
-			return decoded
-		}
-	}
-	return string(payload)
-}
-
-func buildCharsetChain(declared string) []string {
-	chain := make([]string, 0, 7)
-	if declared != "" {
-		chain = append(chain, declared)
-	}
-	chain = append(chain, "utf-8", "gb2312", "gbk", "gb18030", "latin1")
-	return chain
-}
-
-func decodeWithCharset(payload []byte, charset string) (string, error) {
-	charset = strings.ToLower(strings.TrimSpace(charset))
-	switch charset {
-	case "utf-8", "utf8", "":
-		s := string(payload)
-		if !strings.ContainsRune(s, '\ufffd') {
-			return s, nil
-		}
-		return "", fmt.Errorf("invalid utf-8")
-	case "latin1", "iso-8859-1", "iso8859-1":
-		runes := make([]rune, len(payload))
-		for i, b := range payload {
-			runes[i] = rune(b)
-		}
-		return string(runes), nil
-	case "gb2312":
-		return decodeTransform(payload, simplifiedchinese.HZGB2312.NewDecoder())
-	case "gbk":
-		return decodeTransform(payload, simplifiedchinese.GBK.NewDecoder())
-	case "gb18030":
-		return decodeTransform(payload, simplifiedchinese.GB18030.NewDecoder())
-	}
-	// Unknown charset: treat as latin-1.
-	runes := make([]rune, len(payload))
-	for i, b := range payload {
-		runes[i] = rune(b)
-	}
-	return string(runes), nil
-}
-
-func decodeTransform(payload []byte, decoder *encoding.Decoder) (string, error) {
-	reader := transform.NewReader(bytes.NewReader(payload), decoder)
-	decoded, err := io.ReadAll(reader)
-	if err != nil {
-		return "", err
-	}
-	if !strings.ContainsRune(string(decoded), '\ufffd') {
-		return string(decoded), nil
-	}
-	return "", fmt.Errorf("decode produced replacement characters")
+	decoded, _ := charsetlib.DecodeToUTF8(payload, charset)
+	return string(decoded)
 }
 
 // parseMSG parses an Outlook .msg (OLE2 compound document) file using the
@@ -656,15 +636,16 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // attachment via naive_chunk and merges the resulting chunks into the same
 // document.
 //
-// KNOWN LIMITATION: re-chunk uses the default-config parser returned by
-// GetParser(ft) (and, for a nested email, only the top-level p.fields — no
-// tenant/setup language, parse_method, or OCR/VLM model). The extracted
-// attachment text may therefore differ from ingesting the same file as a
-// standalone document through the pipeline's tenant/setup-configured
-// parser. This is a deliberate, best-effort approximation for making
-// attachment content retrievable (the same simplification Python's
-// email.py naive_chunk makes), not a correctness bug; threading the full
-// tenant/setup config into re-chunk is intentionally out of scope here.
+// KNOWN LIMITATION: re-chunk uses the text-only, default-config parser
+// returned by GetTextOnlyParser (and, for a nested email, only the
+// top-level p.fields — no tenant/setup language, parse_method, or OCR/VLM
+// model). The extracted attachment text may therefore differ from ingesting
+// the same file as a standalone document through the pipeline's
+// tenant/setup-configured parser. This is a deliberate, best-effort
+// approximation for making attachment content retrievable (the same
+// simplification Python's email.py naive_chunk makes), not a correctness
+// bug; threading the full tenant/setup config into re-chunk is intentionally
+// out of scope here.
 //
 // Attachments whose extension has no text-oriented parser (images, audio,
 // video) are skipped: they carry no plain text in this pipeline and would
@@ -673,33 +654,30 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // without failing the whole email (mirrors email.py's per-attachment
 // try/except).
 //
-// The function returns both forms the caller needs:
-//   - extraItems: structured JSON items (one per non-empty text segment),
-//     each carrying only "text" and "doc_type_kwd", for the JSON output path.
-//   - text:       the concatenated attachment text, for the text output path.
+// The function returns structured JSON items (one per non-empty text
+// segment), each carrying only "text" and "doc_type_kwd".
 //
 // Re-chunking stops at one level of nesting: a nested email is parsed (so its
 // body becomes retrievable) but its own attachments are not re-chunked, to
 // avoid unbounded recursion through attachments-of-attachments.
 const maxRechunkPayloadBytes = 32 << 20 // 32 MiB
 
-func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) ([]map[string]any, string) {
+func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) []map[string]any {
 	if depth > 0 {
-		return nil, ""
+		return nil
 	}
 	// Honor task cancellation so a long attachment list does not keep
 	// re-parsing after the ingestion task has been stopped/aborted.
 	if ctx.Err() != nil {
-		return nil, ""
+		return nil
 	}
 
 	raw, ok := content["attachments"].([]map[string]any)
 	if !ok || len(raw) == 0 {
-		return nil, ""
+		return nil
 	}
 
 	var extra []map[string]any
-	var sb strings.Builder
 	for _, att := range raw {
 		fn, _ := att["filename"].(string)
 		payload, _ := att["payload"].(string)
@@ -734,21 +712,19 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			// Reuse the top-level field configuration (including "body") so a
 			// nested .eml/.msg is parsed for its body instead of with a fresh,
 			// unconfigured parser that would only emit metadata and index
-			// garbage. We always request JSON output for the nested parse so
-			// the extracted "text" field is returned clean (the text output
-			// path would otherwise also flatten metadata into the result).
+			// garbage.
 			ep := NewEmailParser()
-			ep.ConfigureFromSetup(map[string]any{
-				"fields":        p.fields,
-				"output_format": "json",
-			})
+			ep.ConfigureFromSetup(map[string]any{"fields": p.fields})
 			res, panicked = recoverParse(func() ParseResult {
 				return ep.parseEmail(ctx, fn, []byte(payload), depth+1)
 			})
 		} else {
-			np, err := GetParser(ft)
+			np, actual, err := GetTextOnlyParser(ft, []byte(payload))
 			if err != nil {
 				continue
+			}
+			if actual != ft {
+				common.Warn(fmt.Sprintf("email attachment %q: requested format %s; detected %s; continuing with the %s parser", fn, ft, actual, actual))
 			}
 			res, panicked = recoverParse(func() ParseResult {
 				return np.ParseWithResult(ctx, fn, []byte(payload))
@@ -759,24 +735,20 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			// a native CGO backend) panicked. Skip just this attachment so one
 			// bad file can't fail the whole email — mirrors the .msg
 			// parseMSG recover.
-			log.Printf("email: attachment %q re-parse panicked; skipping", fn)
+			common.Warn("email: attachment re-parse panicked, skipping", zap.String("file", fn))
 		}
 		if panicked || res.Err != nil {
 			continue
 		}
 
 		var texts []string
-		if res.OutputFormat == "json" && len(res.JSON) > 0 {
+		if len(res.JSON) > 0 {
 			for _, it := range res.JSON {
-				if t, ok := it["text"].(string); ok {
+				if t, ok := it.ToMap()["text"].(string); ok {
 					if t = strings.TrimSpace(t); t != "" {
 						texts = append(texts, t)
 					}
 				}
-			}
-		} else if res.Text != "" {
-			if t := strings.TrimSpace(res.Text); t != "" {
-				texts = append(texts, t)
 			}
 		}
 
@@ -785,11 +757,7 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 				"text":         t,
 				"doc_type_kwd": "text",
 			})
-			if sb.Len() > 0 {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(t)
 		}
 	}
-	return extra, sb.String()
+	return extra
 }

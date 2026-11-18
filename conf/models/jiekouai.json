@@ -13,7 +13,7 @@
   "models": [
     {
       "name": "deepseek-v4-flash",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -28,7 +28,7 @@
     },
     {
       "name": "deepseek-v4-pro",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -43,7 +43,7 @@
     },
     {
       "name": "zai-org/glm-4.5",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 96000,
       "model_types": [
         "chat"
@@ -58,7 +58,7 @@
     },
     {
       "name": "zai-org/glm-4.5v",
-      "content_length": 65536,
+      "context_length": 65536,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -73,7 +73,7 @@
     },
     {
       "name": "zai-org/glm-4.7",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -88,7 +88,7 @@
     },
     {
       "name": "zai-org/glm-4.7-flash",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -103,7 +103,7 @@
     },
     {
       "name": "zai-org/glm-5",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"

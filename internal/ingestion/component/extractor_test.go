@@ -150,7 +150,7 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks key missing or wrong shape: %T", out["chunks"])
 	}
@@ -164,6 +164,43 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	}
 	if out["output_format"] != "chunks" {
 		t.Errorf("output_format = %v, want chunks", out["output_format"])
+	}
+}
+
+func TestExtractorComponent_SkipsMediaChunksWithoutTextAndUsesContext(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "context summary"})
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID:   "gpt-4o-mini",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
+	}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{
+			{"image": "image-only"},
+			{"image": "context-image", "context_above": "The table shows", "context_below": "annual revenue."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("LLM calls = %d, want one call for the context-bearing media chunk", calls)
+	}
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
+	if !ok || len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want two input chunks", out["chunks"])
+	}
+	if _, exists := chunks[0]["summary"]; exists {
+		t.Errorf("image-only chunk received a summary: %#v", chunks[0]["summary"])
+	}
+	if chunks[1]["summary"] != "context summary" {
+		t.Errorf("context-bearing media summary = %#v, want context summary", chunks[1]["summary"])
+	}
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	request := stub.lastRequest()
+	if got := request.Messages[len(request.Messages)-1].Content; got != "The table shows annual revenue." {
+		t.Errorf("media extraction prompt = %q, want joined context", got)
 	}
 }
 
@@ -228,7 +265,7 @@ func TestExtractorComponent_Invoke_RetrySucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if s, _ := chunks[0]["summary"].(string); s != "recovered" {
 		t.Errorf("summary = %q, want recovered", s)
 	}
@@ -269,7 +306,7 @@ func TestExtractorComponent_Invoke_EmptyChunksReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks missing or wrong shape")
 	}
@@ -294,7 +331,7 @@ func TestExtractorComponent_Invoke_JSONListInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("chunks malformed: %v", out["chunks"])
 	}
@@ -413,6 +450,95 @@ func TestExtractorComponent_NewExtractorComponent_Happy(t *testing.T) {
 	ext := c.(*ExtractorComponent)
 	if !ext.Param.Summary.Enabled || ext.Param.LLMID != "openai/gpt-4o-mini" {
 		t.Errorf("unexpected params: %+v", ext.Param)
+	}
+}
+
+// TestExtractorComponent_ToggleDerivation covers the enabled-switch contract
+// for keywords/questions/tags: an explicit "enabled" key is authoritative,
+// a group without the key (legacy DSL) derives enabled from top_n > 0.
+func TestExtractorComponent_ToggleDerivation(t *testing.T) {
+	c, err := NewExtractorComponent(map[string]any{
+		// legacy group: no enabled key, top_n > 0 → on
+		"keywords": map[string]any{"top_n": 3},
+		// legacy group: no enabled key, top_n = 0 → off
+		"questions": map[string]any{"top_n": 0},
+		// new contract: explicit switch wins over a positive top_n
+		"tags": map[string]any{"enabled": false, "top_n": 5},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ext := c.(*ExtractorComponent)
+	if !ext.Param.Keywords.Enabled {
+		t.Errorf("legacy keywords top_n=3 should derive Enabled=true: %+v", ext.Param.Keywords)
+	}
+	if ext.Param.Questions.Enabled {
+		t.Errorf("legacy questions top_n=0 should derive Enabled=false: %+v", ext.Param.Questions)
+	}
+	if ext.Param.Tags.Enabled || ext.Param.Tags.TopN != 5 {
+		t.Errorf("explicit enabled=false must win over top_n=5 (kept for re-enable): %+v", ext.Param.Tags)
+	}
+
+	// Numeric enabled values are accepted like summary/metadata do.
+	c, err = NewExtractorComponent(map[string]any{
+		"keywords": map[string]any{"enabled": 1, "top_n": 2},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent numeric enabled: %v", err)
+	}
+	if !c.(*ExtractorComponent).Param.Keywords.Enabled {
+		t.Error("enabled: 1 should parse as true")
+	}
+}
+
+// TestExtractorComponent_ToggleOnWithoutTopNFails covers the contradictory
+// new-contract config: enabled=true with top_n < 1 must fail at canvas build
+// time for keywords/questions/tags alike.
+func TestExtractorComponent_ToggleOnWithoutTopNFails(t *testing.T) {
+	for _, group := range []string{"keywords", "questions", "tags"} {
+		for _, topN := range []any{0, -2} {
+			_, err := NewExtractorComponent(map[string]any{
+				group: map[string]any{"enabled": true, "top_n": topN},
+			})
+			if err == nil {
+				t.Errorf("%s enabled=true top_n=%v: expected error, got nil", group, topN)
+			} else if !strings.Contains(err.Error(), group+".enabled requires top_n >= 1") {
+				t.Errorf("%s enabled=true top_n=%v: unexpected error: %v", group, topN, err)
+			}
+		}
+		// enabled=true with top_n absent entirely is the same contradiction.
+		if _, err := NewExtractorComponent(map[string]any{
+			group: map[string]any{"enabled": true},
+		}); err == nil {
+			t.Errorf("%s enabled=true without top_n: expected error, got nil", group)
+		}
+	}
+}
+
+// TestExtractorComponent_Invoke_ToggleOffSkipsExtraction verifies a group
+// switched off (enabled=false) performs no LLM call even when top_n is set.
+func TestExtractorComponent_Invoke_ToggleOffSkipsExtraction(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "kw1, kw2"})
+
+	c, err := NewExtractorComponent(map[string]any{
+		"llm_id":   "gpt-4o-mini",
+		"keywords": map[string]any{"enabled": false, "top_n": 3},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	out, err := c.(*ExtractorComponent).Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "first doc"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 0 {
+		t.Errorf("LLM calls = %d, want 0 for a switched-off keywords group", calls)
+	}
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	if _, exists := chunks[0]["important_kwd"]; exists {
+		t.Errorf("switched-off keywords should not enrich the chunk: %#v", chunks[0])
 	}
 }
 
@@ -563,6 +689,49 @@ func TestExtractorComponent_runEnableMetadata_MergesIntoChunkMetadata(t *testing
 	}
 	if meta["category"] != "finance" || meta["region"] != "east" {
 		t.Errorf("metadata = %v, want category=finance region=east", meta)
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_DropsUndeclaredKeys verifies a model
+// that invents or re-cases a field cannot widen the dataset's metadata schema:
+// only keys from the declared field set survive.
+func TestExtractorComponent_runEnableMetadata_DropsUndeclaredKeys(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"category":"finance","authors":["李白"],"Category":"finance"}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
+	}
+	if meta["category"] != "finance" {
+		t.Errorf("metadata[category] = %v, want finance", meta["category"])
+	}
+	if _, leaked := meta["authors"]; leaked {
+		t.Errorf("undeclared key authors leaked into metadata: %v", meta)
+	}
+	if _, leaked := meta["Category"]; leaked {
+		t.Errorf("re-cased key Category leaked into metadata: %v", meta)
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_AllKeysUndeclared verifies a response
+// whose every key falls outside the declared set leaves existing metadata intact.
+func TestExtractorComponent_runEnableMetadata_AllKeysUndeclared(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"authors":["李白"]}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{"metadata": map[string]any{"preexisting": "keep"}}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
+	}
+	if len(meta) != 1 || meta["preexisting"] != "keep" {
+		t.Errorf("metadata = %v, want only preexisting=keep", meta)
 	}
 }
 
@@ -816,7 +985,7 @@ func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		LLMID:    "gpt-4o-mini",
-		Keywords: schema.KeywordExtractConfig{TopN: 3},
+		Keywords: schema.KeywordExtractConfig{Enabled: true, TopN: 3},
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "document content"}},
@@ -957,7 +1126,7 @@ func TestCleanLLMText(t *testing.T) {
 func TestExtractorComponent_callStructured(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `{"a": 1}`})
 	c := &ExtractorComponent{}
-	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured: %v", err)
 	}
@@ -967,7 +1136,7 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 
 	// Non-JSON response → (nil, nil), not an error.
 	withStubChatInvoker(t, stubResponse{Content: "this is not JSON"})
-	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured on non-JSON: %v", err)
 	}
@@ -980,12 +1149,20 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 func TestExtractorComponent_callStructured_MidTextThink(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `preamble<think>reasoning</think>{"a": 1}`})
 	c := &ExtractorComponent{}
-	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured: %v", err)
 	}
 	if got == nil || got["a"].(float64) != 1 {
 		t.Errorf("parsed = %v, want map with a=1", got)
+	}
+}
+
+func TestExtractorComponentRejectsEmptyLLMInput(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"unexpected": true}`})
+	c := &ExtractorComponent{}
+	if _, err := c.callRaw(t.Context(), nil, extractorInputs{llmID: "m"}, "system", " "); err == nil {
+		t.Fatal("callRaw accepted an empty chunk text")
 	}
 }
 
@@ -1001,8 +1178,8 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		LLMID:     "gpt-4o-mini",
-		Keywords:  schema.KeywordExtractConfig{TopN: 2},
-		Questions: schema.QuestionExtractConfig{TopN: 2},
+		Keywords:  schema.KeywordExtractConfig{Enabled: true, TopN: 2},
+		Questions: schema.QuestionExtractConfig{Enabled: true, TopN: 2},
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
@@ -1014,7 +1191,7 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %v", out["chunks"])
 	}
@@ -1191,7 +1368,7 @@ func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.Tenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.Tenant{}, &entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -1200,19 +1377,20 @@ func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 func seedExtractorContextModel(t *testing.T, db *gorm.DB, tenantLLMID string) {
 	t.Helper()
 	status := "1"
-	tenant := entity.Tenant{
-		ID:     "tenant-1",
-		LLMID:  "gpt-4o@openai",
-		Status: &status,
-	}
-	if tenantLLMID != "" {
-		tenant.TenantLLMID = &tenantLLMID
-	}
+	tenant := entity.Tenant{ID: "tenant-1", Status: &status}
 	if err := db.Create(&tenant).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
 	}
+	membership := entity.UserTenant{ID: "ut-tenant1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", Status: &status, LLMID: "gpt-4o@openai"}
+	if tenantLLMID != "" {
+		membership.TenantLLMID = &tenantLLMID
+	}
+	if err := db.Create(&membership).Error; err != nil {
+		t.Fatalf("create owner membership: %v", err)
+	}
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-openai",
+		UserID:       "tenant-1",
 		ProviderName: "OpenAI",
 		TenantID:     "tenant-1",
 	}).Error; err != nil {
@@ -1415,7 +1593,7 @@ func TestExtractorModularPromptsExecution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Hello world content"},
+			{"text": "Hello world content"},
 		},
 	}
 
@@ -1424,7 +1602,7 @@ func TestExtractorModularPromptsExecution(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1528,7 +1706,7 @@ func TestExtractorModularMetadataExecution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Written by Alice in 2026."},
+			{"text": "Written by Alice in 2026."},
 		},
 	}
 
@@ -1537,7 +1715,7 @@ func TestExtractorModularMetadataExecution(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1572,7 +1750,7 @@ func TestExtractorDefaultSummaryPromptInjection(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "This is a detailed paragraph about artificial intelligence."},
+			{"text": "This is a detailed paragraph about artificial intelligence."},
 		},
 	}
 
@@ -1581,7 +1759,7 @@ func TestExtractorDefaultSummaryPromptInjection(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1627,7 +1805,7 @@ func TestExtractorCustomSummarySystemPrompt(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Text to summarize."},
+			{"text": "Text to summarize."},
 		},
 	}
 
@@ -1636,7 +1814,7 @@ func TestExtractorCustomSummarySystemPrompt(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1685,7 +1863,7 @@ func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Content text."},
+			{"text": "Content text."},
 		},
 	}
 
@@ -1694,7 +1872,7 @@ func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1709,6 +1887,103 @@ func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
 	}
 	if reqs[1].Messages[0].Content != "Custom questions system prompt." {
 		t.Errorf("expected custom questions system prompt, got: %q", reqs[1].Messages[0].Content)
+	}
+}
+
+// TestExtractorTopNPlaceholderSubstitution verifies the {{ topn }} placeholder
+// in custom keyword/question system prompts is replaced with the configured
+// top_n, so the count slider stays authoritative when the frontend pre-fills
+// a prompt.
+func TestExtractorTopNPlaceholderSubstitution(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "alpha, beta"},
+		stubResponse{Content: "q1?\nq2?"},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n":         9,
+			"system_prompt": "Give the top {{ topn }} keywords.",
+		},
+		"questions": map[string]any{
+			"top_n":         7,
+			"system_prompt": "Propose {{topn}} questions.",
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Content text."},
+		},
+	}
+
+	if _, err := comp.Invoke(t.Context(), nil, in); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	reqs := stub.requests
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", len(reqs))
+	}
+
+	if got := reqs[0].Messages[0].Content; got != "Give the top 9 keywords." {
+		t.Errorf("expected keywords prompt with top_n=9 substituted, got: %q", got)
+	}
+	if got := reqs[1].Messages[0].Content; got != "Propose 7 questions." {
+		t.Errorf("expected questions prompt with top_n=7 substituted, got: %q", got)
+	}
+}
+
+// TestExtractorDefaultPromptsRenderTopN verifies the built-in keyword/question
+// prompts interpolate the configured top_n when no custom prompt is set.
+func TestExtractorDefaultPromptsRenderTopN(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "k1, k2"},
+		stubResponse{Content: "q1?"},
+	)
+
+	params := map[string]any{
+		"llm_id":    "llm-1",
+		"keywords":  map[string]any{"top_n": 4},
+		"questions": map[string]any{"top_n": 6},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Content text."},
+		},
+	}
+
+	if _, err := comp.Invoke(t.Context(), nil, in); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	reqs := stub.requests
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", len(reqs))
+	}
+
+	kwPrompt := reqs[0].Messages[0].Content
+	if !strings.Contains(kwPrompt, "top 4 important keywords/phrases") {
+		t.Errorf("expected built-in keywords prompt with top_n=4, got: %q", kwPrompt)
+	}
+	qPrompt := reqs[1].Messages[0].Content
+	if !strings.Contains(qPrompt, "top 6 important questions") {
+		t.Errorf("expected built-in questions prompt with top_n=6, got: %q", qPrompt)
+	}
+	if strings.Contains(kwPrompt, "{{") || strings.Contains(qPrompt, "{{") {
+		t.Errorf("expected no leftover placeholders, got keywords=%q questions=%q", kwPrompt, qPrompt)
 	}
 }
 
@@ -1729,7 +2004,7 @@ func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Some text."},
+			{"text": "Some text."},
 		},
 	}
 
@@ -1742,7 +2017,7 @@ func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 		t.Errorf("expected 0 LLM calls when summary is disabled, got %d", stub.Calls())
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1892,7 +2167,7 @@ func TestExtractorBuiltInDoesNotCallLLM(t *testing.T) {
 	if stub.calls.Load() != 0 {
 		t.Fatalf("built_in-only must not call LLM, got %d calls, requests=%v", stub.calls.Load(), stub.requests)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %v", out)
 	}
@@ -1927,7 +2202,126 @@ func TestExtractorEnabledFalseDoesNotCallLLM(t *testing.T) {
 	if stub.calls.Load() != 0 {
 		t.Fatalf("enabled=false must not call LLM, got %d", stub.calls.Load())
 	}
-	if chunks, _ := out["chunks"].([]map[string]any); len(chunks) != 1 {
+	if chunks, _ := schema.ChunkCarrierToMaps(out["chunks"]); len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+}
+
+func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "Bidding, Procurement"})
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n": 2,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{
+				"docnm_kwd": "Tender_Notice.pdf",
+				"text":      "General bidding notice content.",
+			},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+
+	kwds, ok := chunks[0]["important_kwd"].([]string)
+	if !ok || len(kwds) != 2 {
+		t.Fatalf("expected important_kwd populated with 2 keywords, got %v", chunks[0]["important_kwd"])
+	}
+
+	// Verify getChunkText on the resulting chunk merges extracted keywords and content without title pollution
+	chunkText := getChunkText(chunks[0])
+	if !strings.Contains(chunkText, "Bidding") || !strings.Contains(chunkText, "Procurement") || !strings.Contains(chunkText, "General bidding notice content.") {
+		t.Fatalf("expected chunk text to contain content and extracted keywords, got %q", chunkText)
+	}
+	if strings.Contains(chunkText, "Tender_Notice") {
+		t.Fatalf("expected chunk text to NOT contain title when content is present, got %q", chunkText)
+	}
+}
+
+func TestExtractor_LLMCacheKey(t *testing.T) {
+	k1 := extractorLLMCacheKey("keywords", "modelA", "prompt1", "text1")
+	k2 := extractorLLMCacheKey("keywords", "modelA", "prompt1", "text1")
+	if k1 != k2 {
+		t.Errorf("extractorLLMCacheKey should be deterministic: %s != %s", k1, k2)
+	}
+
+	// Task type isolation
+	kQuestions := extractorLLMCacheKey("questions", "modelA", "prompt1", "text1")
+	if k1 == kQuestions {
+		t.Errorf("Different task types must produce different keys: %s == %s", k1, kQuestions)
+	}
+
+	// Model isolation
+	kModelB := extractorLLMCacheKey("keywords", "modelB", "prompt1", "text1")
+	if k1 == kModelB {
+		t.Errorf("Different models must produce different keys: %s == %s", k1, kModelB)
+	}
+
+	// NUL separator collision test ("ab", "c") vs ("a", "bc")
+	kColl1 := extractorLLMCacheKey("k", "m", "ab", "c")
+	kColl2 := extractorLLMCacheKey("k", "m", "a", "bc")
+	if kColl1 == kColl2 {
+		t.Errorf("NUL separator should prevent collisions: %s == %s", kColl1, kColl2)
+	}
+}
+
+func TestExtractor_CallTextCached_NoRedis_FailOpen(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "Alpha, Beta"},
+		stubResponse{Content: "What is Alpha?\nWhat is Beta?"},
+		stubResponse{Content: "This is a summary without Redis."},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-test-noredis",
+		"keywords": map[string]any{
+			"top_n": 2,
+		},
+		"questions": map[string]any{
+			"top_n": 2,
+		},
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Sample text for fail open test."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if calls := stub.Calls(); calls != 3 {
+		t.Fatalf("Expected 3 LLM calls, got %d", calls)
+	}
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	ck := chunks[0]
+	if sum, ok := ck["summary"].(string); !ok || sum != "This is a summary without Redis." {
+		t.Errorf("got summary %v, want 'This is a summary without Redis.'", ck["summary"])
 	}
 }

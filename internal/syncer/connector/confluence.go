@@ -113,6 +113,9 @@ func (c *ConfluenceConnector) Validate(ctx context.Context) error {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return fmt.Errorf("Confluence wiki_base must use HTTP or HTTPS")
 	}
+	if err := validateConnectorURL(c.wikiBase); err != nil {
+		return err
+	}
 	if c.accessToken == "" {
 		return fmt.Errorf("Confluence access token is required")
 	}
@@ -173,9 +176,10 @@ func (c *ConfluenceConnector) OpenSync(ctx context.Context, request SyncRequest)
 		windowEnd:     end,
 		fromBeginning: request.FromBeginning,
 		pageCursor:    newConfluenceSearchCursor(c, c.pageCQL(request.WindowStart, end, request.FromBeginning), strings.Join(confluencePageExpansionFields, ",")),
-		nameCounts:    map[string]int{},
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -418,17 +422,19 @@ func (c *ConfluenceConnector) do(ctx context.Context, method, rawURL string) ([]
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, method, resolved, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
+	headers := map[string]string{"Accept": "application/json"}
 	if c.isCloud || c.username != "" {
-		req.SetBasicAuth(c.username, c.accessToken)
+		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.accessToken)
 	} else {
-		req.Header.Set("Authorization", "Bearer "+c.accessToken)
+		headers["Authorization"] = "Bearer " + c.accessToken
 	}
-	res, err := c.client.Do(req)
+	res, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  method,
+		RawURL:  resolved,
+		Headers: headers,
+		Timeout: confluenceRequestTimeout,
+		Base:    c.client,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -505,22 +511,31 @@ func (c *ConfluenceConnector) basePageCQL() string {
 
 func (c *ConfluenceConnector) pageCQL(start *time.Time, end time.Time, fromBeginning bool) string {
 	query := c.basePageCQL()
-	if !fromBeginning && start != nil && !start.IsZero() {
-		query += " and lastmodified >= '" + confluenceCQLTime(*start) + "'"
+	if !fromBeginning {
+		if lower := confluenceQueryLowerBound(start); lower != nil {
+			query += " and lastmodified >= '" + confluenceCQLTime(*lower) + "'"
+		}
 	}
 	if !end.IsZero() {
-		query += " and lastmodified <= '" + confluenceCQLTime(end) + "'"
+		// CQL timestamps carry minute granularity, so an inclusive `<=` on the
+		// truncated end drops everything updated in the rest of that minute and
+		// the next window's lower bound skips it for good. Bound with an
+		// exclusive comparison against the next minute tick; inConfluenceWindow
+		// drops the rows that lie past the window end.
+		query += " and lastmodified < '" + confluenceCQLTime(end.Add(time.Minute)) + "'"
 	}
 	return query + " order by lastmodified asc"
 }
 
 func (c *ConfluenceConnector) attachmentCQL(pageID string, start *time.Time, end time.Time, fromBeginning bool) string {
 	query := fmt.Sprintf("type=attachment and container='%s'", confluenceCQLQuote(pageID))
-	if !fromBeginning && start != nil && !start.IsZero() {
-		query += " and lastmodified >= '" + confluenceCQLTime(*start) + "'"
+	if !fromBeginning {
+		if lower := confluenceQueryLowerBound(start); lower != nil {
+			query += " and lastmodified >= '" + confluenceCQLTime(*lower) + "'"
+		}
 	}
 	if !end.IsZero() {
-		query += " and lastmodified <= '" + confluenceCQLTime(end) + "'"
+		query += " and lastmodified < '" + confluenceCQLTime(end.Add(time.Minute)) + "'"
 	}
 	return query + " order by lastmodified asc"
 }
@@ -541,8 +556,6 @@ type confluenceSyncSession struct {
 	resumeSourceID  string
 	resumeMatched   bool
 	resumeUpdatedAt *time.Time
-
-	nameCounts map[string]int
 }
 
 // NextBatch returns the next Confluence document batch, fetching pages,
@@ -555,7 +568,7 @@ func (s *confluenceSyncSession) NextBatch(ctx context.Context) (SyncBatch, error
 		doc, err := s.nextDocument(ctx)
 		if errors.Is(err, io.EOF) {
 			if s.resumeSourceID != "" && !s.resumeMatched {
-				return SyncBatch{}, fmt.Errorf("confluence sync resume checkpoint %q was not found in the source; refusing to discard unprocessed documents", s.resumeSourceID)
+				return SyncBatch{}, fmt.Errorf("confluence sync resume checkpoint %q was not found in the source: %w", s.resumeSourceID, ErrSyncResumeInvalid)
 			}
 			if len(documents) == 0 {
 				return SyncBatch{}, io.EOF
@@ -604,7 +617,7 @@ func (s *confluenceSyncSession) nextDocument(ctx context.Context) (*SourceDocume
 				return nil, err
 			}
 			if s.fromBeginning || inConfluenceWindow(doc.UpdatedAt, s.windowStart, s.windowEnd) {
-				doc.SemanticIdentifier = confluenceSemanticIdentifier(s.currentPage.Space.Name, s.currentPage.ancestorTitles(), s.currentPage.Title, s.nameCounts)
+				doc.SemanticIdentifier = confluenceSemanticIdentifier(s.currentPage.Space.Name, s.currentPage.ancestorTitles(), s.currentPage.Title)
 				return &doc, nil
 			}
 			continue
@@ -626,7 +639,7 @@ func (s *confluenceSyncSession) nextDocument(ctx context.Context) (*SourceDocume
 			continue
 		}
 		if s.fromBeginning || inConfluenceWindow(doc.UpdatedAt, s.windowStart, s.windowEnd) {
-			doc.SemanticIdentifier = confluenceSemanticIdentifier(firstNonEmpty(s.currentPage.Space.Name, attachment.Space.Name), nil, s.currentPage.Title+" / "+confluenceAttachmentTitle(attachment), s.nameCounts)
+			doc.SemanticIdentifier = confluenceSemanticIdentifier(firstNonEmpty(s.currentPage.Space.Name, attachment.Space.Name), s.currentPage.ancestorTitles(), s.currentPage.Title+" / "+confluenceAttachmentTitle(attachment))
 			return &doc, nil
 		}
 	}
@@ -640,19 +653,20 @@ func (s *confluenceSyncSession) includeResumed(doc SourceDocument) bool {
 		s.resumeMatched = true
 		return false
 	}
-	if s.resumeUpdatedAt != nil && doc.UpdatedAt.After(*s.resumeUpdatedAt) {
-		s.resumeMatched = true
-		return true
-	}
 	return false
 }
 
-func (s *confluenceSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *confluenceSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
 	}
-	s.resumeSourceID = firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	if sourceID == "" {
+		return fmt.Errorf("confluence sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	s.resumeSourceID = sourceID
 	s.resumeUpdatedAt = checkpoint.UpdatedAt
+	return nil
 }
 
 func confluenceSyncCheckpoint(doc SourceDocument) *SyncCheckpoint {
@@ -822,10 +836,24 @@ func inConfluenceWindow(updatedAt time.Time, start *time.Time, end time.Time) bo
 	if !end.IsZero() && updatedAt.After(end) {
 		return false
 	}
-	if start != nil && !updatedAt.After(*start) {
+	if lower := confluenceQueryLowerBound(start); lower != nil && updatedAt.Before(*lower) {
 		return false
 	}
 	return true
+}
+
+// confluenceQueryLowerBound is the `lastmodified >=` bound both CQL builders
+// emit. CQL only accepts minute precision, so a waterline inside a minute is
+// queried from the start of that minute. Page filtering has to use the same
+// bound: filtering at the unbuffered start drops rows the server already
+// returned, and since the previous run's upper bound is the very same minute,
+// a page updated between floor(start) and start is covered by neither run.
+func confluenceQueryLowerBound(start *time.Time) *time.Time {
+	if start == nil || start.IsZero() {
+		return nil
+	}
+	floor := start.UTC().Truncate(time.Minute)
+	return &floor
 }
 
 func parseConfluenceTime(value string) time.Time {
@@ -848,7 +876,7 @@ func parseConfluenceTime(value string) time.Time {
 	return time.Time{}
 }
 
-func confluenceSemanticIdentifier(space string, ancestors []string, title string, counts map[string]int) string {
+func confluenceSemanticIdentifier(space string, ancestors []string, title string) string {
 	title = firstNonEmpty(title, "Untitled")
 	parts := make([]string, 0, len(ancestors)+2)
 	if space != "" {
@@ -856,12 +884,7 @@ func confluenceSemanticIdentifier(space string, ancestors []string, title string
 	}
 	parts = append(parts, ancestors...)
 	parts = append(parts, title)
-	fullPath := strings.Join(parts, " / ")
-	counts[title]++
-	if counts[title] > 1 && fullPath != "" {
-		return fullPath
-	}
-	return title
+	return strings.Join(parts, " / ")
 }
 
 func confluenceHTMLText(raw string) string {

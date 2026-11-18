@@ -23,13 +23,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
+
+	"ragflow/internal/common"
 )
 
 const (
@@ -138,7 +138,9 @@ func (c *DropboxConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 		nameCounts: nameCounts,
 		batchSize:  positiveDropboxBatchSize(c.batchSize),
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -301,19 +303,23 @@ func (s *dropboxSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	batchSize := positiveDropboxBatchSize(s.batchSize)
 	documents := make([]SourceDocument, 0, batchSize)
 	var lastAccepted dropboxFileMetadata
-	for attempts := 0; attempts < batchSize && s.index < len(s.files); attempts++ {
-		file := s.files[s.index]
-		s.index++
+	nextIndex := s.index
+	for attempts := 0; attempts < batchSize && nextIndex < len(s.files); attempts++ {
+		file := s.files[nextIndex]
+		nextIndex++
 		lastAccepted = file
 		blob, err := s.connector.downloadFile(ctx, file.downloadPath())
-		if err != nil || len(blob) == 0 {
+		if err != nil {
+			// Do not commit any part of this batch: the runner ignores a
+			// batch returned with an error and retains its previous checkpoint.
+			return SyncBatch{}, fmt.Errorf("download Dropbox file %q: %w", file.sourceID(), err)
+		}
+		if len(blob) == 0 {
 			continue
 		}
 		documents = append(documents, s.connector.buildDocument(file, blob, s.nameCounts))
 	}
-	if len(documents) == 0 {
-		return SyncBatch{Checkpoint: dropboxSyncCheckpoint(lastAccepted)}, nil
-	}
+	s.index = nextIndex
 	return SyncBatch{Documents: documents, Checkpoint: dropboxSyncCheckpoint(lastAccepted)}, nil
 }
 
@@ -322,20 +328,21 @@ func (s *dropboxSyncSession) Close() error {
 	return nil
 }
 
-func (s *dropboxSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *dropboxSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
 	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	if sourceID == "" {
-		return
+		return fmt.Errorf("dropbox sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, file := range s.files {
 		if file.sourceID() == sourceID {
 			s.index = index + 1
-			return
+			return nil
 		}
 	}
+	return fmt.Errorf("dropbox resume anchor %q was not found in the current listing: %w", sourceID, ErrSyncResumeInvalid)
 }
 
 func dropboxSyncCheckpoint(file dropboxFileMetadata) *SyncCheckpoint {
@@ -557,10 +564,8 @@ func dropboxHTTPError(resp *http.Response) error {
 }
 
 func dropboxSizeThreshold() int64 {
-	if raw := strings.TrimSpace(os.Getenv("BLOB_STORAGE_SIZE_THRESHOLD")); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			return parsed
-		}
+	if n := common.GetEnvInt("BLOB_STORAGE_SIZE_THRESHOLD", 0); n > 0 {
+		return int64(n)
 	}
 	return defaultDropboxSizeThreshold
 }

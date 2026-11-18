@@ -23,8 +23,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/utility"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -325,26 +325,20 @@ func (dr *DeepResearcher) _research(
 		}(i, qp)
 	}
 
-	// Wait with context cancellation support.
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-ctx.Done():
-		// Sub-research goroutines invoke the progress callback, which
-		// writes to the caller's channel; do not orphan them. Draining
-		// here guarantees no callback fires after Research returns
-		// (mirrors Python's asyncio.gather cancellation semantics).
-		wg.Wait()
-		return retContent, ctx.Err()
+	if err := waitForDeepResearchWorkers(ctx, &wg); err != nil {
+		return retContent, err
 	}
 
 	// 7. Join results
 	return strings.Join(results, "\n"), nil
+}
+
+func waitForDeepResearchWorkers(ctx context.Context, workers *sync.WaitGroup) error {
+	// Sub-research goroutines invoke the progress callback, which
+	// writes to the caller's channel; do not orphan them. Draining
+	// here guarantees no callback fires after Research returns.
+	workers.Wait()
+	return ctx.Err()
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -439,7 +433,7 @@ func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, apiKey, query stri
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := tavilyDeepResearchHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tavily call: %w", err)
@@ -470,7 +464,7 @@ func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, apiKey, query stri
 	chunks := make([]map[string]interface{}, 0, len(apiResp.Results))
 	aggs := make([]interface{}, 0, len(apiResp.Results))
 	for _, r := range apiResp.Results {
-		id := utility.GenerateToken()
+		id := common.GenerateToken()
 		chunks = append(chunks, map[string]interface{}{
 			"chunk_id":            id,
 			"content_ltks":        tokenizeText(r.Content),
@@ -591,11 +585,12 @@ func (dr *DeepResearcher) genJSON(
 	result interface{},
 ) error {
 	maxRetry := 2
-	var lastAns, lastErr string
+	var lastAns string
+	var lastErr error
 
 	for attempt := 0; attempt < maxRetry; attempt++ {
 		userPrompt := "Output:\n"
-		if attempt > 0 && lastAns != "" && lastErr != "" {
+		if attempt > 0 && lastAns != "" && lastErr != nil {
 			// Append correction to user message on retry
 			userPrompt += fmt.Sprintf(
 				"\nGenerated JSON is as following:\n%s\nBut exception while loading:\n%s\nPlease reconsider and correct it.",
@@ -616,14 +611,14 @@ func (dr *DeepResearcher) genJSON(
 			repaired = resp
 		}
 		if err := json.Unmarshal([]byte(repaired), result); err != nil {
-			lastErr = err.Error()
+			lastErr = err
 			common.Warn("genJSON: JSON parse failed, retrying",
 				zap.Error(err), zap.Int("attempt", attempt))
 			continue
 		}
 		return nil
 	}
-	return fmt.Errorf("genJSON: failed after %d attempts: %s", maxRetry, lastErr)
+	return fmt.Errorf("genJSON: failed after %d attempts: %w", maxRetry, lastErr)
 }
 
 // sufficiencyCheck asks the LLM whether retrieved content is sufficient.
@@ -673,17 +668,11 @@ func (dr *DeepResearcher) chatOnce(
 	if dr.ChatModel == nil || dr.ChatModel.ModelDriver == nil {
 		return "", fmt.Errorf("DeepResearcher: no chat model configured")
 	}
-	modelName := ""
-	if dr.ChatModel.ModelName != nil {
-		modelName = *dr.ChatModel.ModelName
-	}
 	msgs := []modelModule.Message{
 		modelModule.Message{Role: "system", Content: systemPrompt},
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
-	resp, err := dr.ChatModel.ModelDriver.ChatWithMessages(
-		ctx, modelName, msgs, dr.ChatModel.APIConfig, cfg, nil,
-	)
+	resp, err := dr.ChatModel.ChatWithMessages(ctx, msgs, cfg, nil)
 	if err != nil {
 		return "", err
 	}
@@ -772,8 +761,13 @@ func kbPrompt(kbinfos map[string]interface{}, maxTokens int, hashID bool) []stri
 		cnt += drawNode("URL", getMapString(m, "url"))
 
 		if meta, ok := m["document_metadata"].(map[string]interface{}); ok {
-			for k, v := range meta {
-				cnt += drawNode(k, v)
+			keys := make([]string, 0, len(meta))
+			for k := range meta {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				cnt += drawNode(k, meta[k])
 			}
 		}
 

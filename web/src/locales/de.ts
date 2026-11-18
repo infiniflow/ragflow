@@ -194,6 +194,8 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       parserRequired: 'Chunk-Methode ist erforderlich',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Setzen Sie den Upload fort. Das System stellt diese Dateien anschließend automatisch auf eine unterstützte integrierte Parsing-Konfiguration um.',
       metadata: {
         fieldNameInvalid:
           'Feldname darf nur Buchstaben oder Unterstriche enthalten.',
@@ -309,7 +311,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       webCrawl: 'Web-Crawling',
       chunkNumber: 'Chunk-Anzahl',
       uploadDate: 'Hochladedatum',
-      chunkMethod: 'Chunk-Methode',
+      parsingMode: 'Parsing-Modus',
       enabled: 'Aktiviert',
       disabled: 'Deaktiviert',
       action: 'Aktion',
@@ -327,13 +329,13 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         'Führen Sie einen Abruftest durch, um zu prüfen, ob RAGFlow die beabsichtigten Inhalte für das LLM wiederherstellen kann.',
       similarityThreshold: 'Ähnlichkeitsschwelle',
       similarityThresholdTip:
-        'RAGFlow verwendet entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinus-Ähnlichkeit oder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Rerank-bewertung während des Abrufs. Dieser Parameter legt den Schwellenwert für Ähnlichkeiten zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einer Ähnlichkeitsbewertung unter diesem Schwellenwert wird von den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 0,2 festgelegt. Das bedeutet, dass nur Textblöcke mit einer hybriden Ähnlichkeitsbewertung von 20 oder höher abgerufen werden.',
+        'RAGFlow verwendet beim Abruf entweder eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichteter Vektorkosinusähnlichkeit oder, wenn ein Reranker-Modell ausgewählt ist, eine Kombination aus gewichteter Schlüsselwortähnlichkeit und gewichtetem Reranking-Score. Dieser Parameter legt den Schwellenwert für die Ähnlichkeit zwischen der Benutzeranfrage und den Chunks fest. Jeder Chunk mit einem Ähnlichkeitswert unter diesem Schwellenwert wird aus den Ergebnissen ausgeschlossen. Standardmäßig ist der Schwellenwert auf 20 festgelegt. Das bedeutet, dass nur Chunks mit einem hybriden Ähnlichkeitswert von 20 oder höher abgerufen werden. Wenn die Gewichtung der Vektorähnlichkeit auf 0 gesetzt ist, gilt dieser Schwellenwert nicht.',
       vectorSimilarityWeight: 'Schlüsselwortähnlichkeitsgewicht',
       vectorSimilarityWeightTip:
-        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Rerank-bewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
+        'Damit wird die Gewichtung der Vektorähnlichkeit im kombinierten Ähnlichkeitswert festgelegt, entweder in Verbindung mit der Vektorkosinusähnlichkeit oder dem Reranking-Score. Die Summe der beiden Gewichtungen muss 1,0 ergeben.',
       keywordSimilarityWeight: 'Schlüsselwortähnlichkeitsgewicht',
       keywordSimilarityWeightTip:
-        'Dies legt das Gewicht der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert fest, entweder in Verbindung mit der Vektorkosinus-Ähnlichkeit oder mit der Rerank-bewertung. Die Summe der beiden Gewichte muss 1,0 ergeben.',
+        'Damit wird die Gewichtung der Schlüsselwortähnlichkeit im kombinierten Ähnlichkeitswert festgelegt. Die Summe der Gewichtungen für Vektor- und Schlüsselwortähnlichkeit muss 1,0 ergeben.',
       testText: 'Testtext',
       testTextPlaceholder: 'Geben Sie hier Ihre Frage ein!',
       testingLabel: 'Testen',
@@ -350,6 +352,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       runningStatus2: 'ABGEBROCHEN',
       runningStatus3: 'ERFOLGREICH',
       runningStatus4: 'FEHLGESCHLAGEN',
+      runningStatusQueued: 'In Warteschlange',
       pageRanges: 'Seitenbereiche',
       pageRangesTip:
         'Bereich der zu analysierenden Seiten; Seiten außerhalb dieses Bereichs werden nicht verarbeitet.',
@@ -359,11 +362,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       toMessage: 'Endseitennummer fehlt (ausgeschlossen)',
       layoutRecognize: 'Dokumentenparser',
       layoutRecognizeTip:
-        'Verwendet ein visuelles Modell für die PDF-Layout-Analyse, um Dokumententitel, Textblöcke, Bilder und Tabellen effektiv zu lokalisieren. Wenn die einfache Option gewählt wird, wird nur der reine Text im PDF abgerufen. Bitte beachten Sie, dass diese Option derzeit NUR für PDF-Dokumente funktioniert. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/select_pdf_parser.',
-      taskPageSize: 'Aufgabenseitengröße',
-      taskPageSizeMessage: 'Bitte geben Sie die Größe der Aufgabenseite ein!',
-      taskPageSizeTip:
-        'Während der Layouterkennung wird eine PDF-Datei in Chunks aufgeteilt und parallel verarbeitet, um die Verarbeitungsgeschwindigkeit zu erhöhen. Dieser Parameter legt die Größe jedes Chunks fest. Eine größere Chunk-Größe verringert die Wahrscheinlichkeit, dass fortlaufender Text zwischen den Seiten aufgeteilt wird.',
+        'Verwendet ein visuelles Modell für die PDF-Layout-Analyse, um Dokumententitel, Textblöcke, Bilder und Tabellen effektiv zu lokalisieren. Wenn die einfache Option gewählt wird, wird nur der reine Text im PDF abgerufen. Bitte beachten Sie, dass diese Option derzeit NUR für PDF-Dokumente funktioniert. Weitere Informationen finden Sie unter https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
       addPage: 'Seite hinzufügen',
       greaterThan: 'Der aktuelle Wert muss größer als "bis" sein!',
       greaterThanPrevious:
@@ -392,15 +391,12 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       childrenDelimiter: 'Trennzeichen für Text',
       childrenDelimiterTip:
         'Ein Trennzeichen oder Separator kann aus einem oder mehreren Sonderzeichen bestehen. Bei mehreren Zeichen stellen Sie sicher, dass sie in Backticks (` `) eingeschlossen sind. Wenn Sie beispielsweise Ihre Trennzeichen so konfigurieren: \\n`##`;, dann werden Ihre Texte an Zeilenumbrüchen, doppelten Rautenzeichen (##) oder Semikolons getrennt.',
-      html4excel: 'Excel zu HTML',
-      html4excelTip:
-        'Verwenden Sie dies zusammen mit der General-Schnittmethode. Wenn deaktiviert, werden Tabellenkalkulationsdateien (XLSX, XLS (Excel 97-2003)) zeilenweise in Schlüssel-Wert-Paare analysiert. Wenn aktiviert, werden Tabellenkalkulationsdateien in HTML-Tabellen umgewandelt. Wenn die ursprüngliche Tabelle mehr als 12 Zeilen enthält, teilt das System sie automatisch alle 12 Zeilen in mehrere HTML-Tabellen auf. Für weitere Informationen siehe https://ragflow.io/docs/dev/enable_excel2html.',
       autoKeywords: 'Auto-Schlüsselwort',
       autoKeywordsTip:
-        'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren. Für weitere Informationen siehe https://ragflow.io/docs/dev/autokeyword_autoquestion.',
+        'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren. Für weitere Informationen siehe https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       autoQuestions: 'Auto-Frage',
       autoQuestionsTip:
-        'Um die Ranking-Ergebnisse zu verbessern, extrahieren Sie N Fragen für jeden Wissensdatenbank-Chunk mithilfe des im "Systemmodell-Setup" definierten Chatmodells. Beachten Sie, dass dies zusätzliche Token verbraucht. Die Ergebnisse können in der Chunk-Liste eingesehen und bearbeitet werden. Fehler bei der Fragenextraktion blockieren den Chunking-Prozess nicht; leere Ergebnisse werden dem ursprünglichen Chunk hinzugefügt. Für weitere Informationen siehe https://ragflow.io/docs/dev/autokeyword_autoquestion.',
+        'Um die Ranking-Ergebnisse zu verbessern, extrahieren Sie N Fragen für jeden Wissensdatenbank-Chunk mithilfe des im "Systemmodell-Setup" definierten Chatmodells. Beachten Sie, dass dies zusätzliche Token verbraucht. Die Ergebnisse können in der Chunk-Liste eingesehen und bearbeitet werden. Fehler bei der Fragenextraktion blockieren den Chunking-Prozess nicht; leere Ergebnisse werden dem ursprünglichen Chunk hinzugefügt. Für weitere Informationen siehe https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       redo: 'Möchten Sie die vorhandenen {{chunkNum}} Chunks löschen?',
       setMetaData: 'Metadaten festlegen',
       pleaseInputJson: 'Bitte JSON eingeben',
@@ -430,8 +426,9 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       reRankModelWaring: 'Das Rerank-Modell ist sehr zeitaufwendig.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       globalIndexModelTip:
-        'Wird verwendet, um Wissensgraphen, RAPTOR, Auto-Metadaten, Auto-Schlüsselwörter und Auto-Fragen zu generieren. Die Modellleistung beeinflusst die Generierungsqualität.',
+        'Wird verwendet, um Auto-Metadaten, Auto-Schlüsselwörter und Auto-Fragen zu generieren. Die Modellleistung beeinflusst die Generierungsqualität.',
       globalIndexModel: 'Indizierungsmodell',
       settings: 'Einstellungen',
       autoMetadataTip:
@@ -452,8 +449,8 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       paddleocrApiUrlPlaceholder:
         'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio-Zugriffstoken',
-      paddleocrAccessTokenTip: 'Zugriffstoken für die PaddleOCR-API (optional)',
-      paddleocrAccessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
+      paddleocrAccessTokenTip: 'Zugriffstoken für die PaddleOCR-API',
+      paddleocrAccessTokenPlaceholder: 'Ihr AI Studio-Token',
       paddleocrAlgorithm: 'PaddleOCR-Algorithmus',
       paddleocrAlgorithmTip:
         'Algorithmus, der für die PaddleOCR-Verarbeitung verwendet wird',
@@ -499,7 +496,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       dataFlowPlaceholder: 'Bitte wählen Sie eine Pipeline.',
       buildItFromScratch: 'Von Grund auf neu erstellen',
       dataFlow: 'Pipeline',
-      parseType: 'Art der Dateneingabe',
+      parsingMode: 'Parsing-Modus',
       manualSetup: 'Pipeline wählen',
       builtIn: 'eingebaute Dateneingabe',
       imageTableContextWindow: 'Kontextfenster für Bild und Tabelle',
@@ -524,8 +521,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         'Wenn auf "Team" gesetzt, können alle Teammitglieder die Wissensdatenbank verwalten.',
       chunkTokenNumberTip:
         'Legt den Token-Schwellenwert für einen Chunk fest. Ein Absatz mit weniger Tokens als dieser Schwellenwert wird mit dem folgenden Absatz kombiniert, bis die Token-Anzahl den Schwellenwert überschreitet, dann wird ein Chunk erstellt. Ein neuer Block wird nicht erstellt, es sei denn, ein Trennzeichen wird gefunden, auch wenn dieser Schwellenwert überschritten wird.',
-      chunkMethod: 'Chunk-Methode',
-      chunkMethodTip: 'Siehe Tipps auf der rechten Seite.',
       upload: 'Hochladen',
       english: 'Englisch',
       chinese: 'Chinesisch',
@@ -639,7 +634,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
 `,
       useRaptor: 'RAPTOR zur Verbesserung des Abrufs verwenden',
       useRaptorTip:
-        'RAPTOR für Multi-Hop-Frage-Antwort-Aufgaben aktivieren. Details unter https://ragflow.io/docs/dev/enable_raptor.',
+        'RAPTOR für Multi-Hop-Frage-Antwort-Aufgaben aktivieren. Details unter https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree.',
       prompt: 'Prompt',
       promptTip:
         'Verwenden Sie den Systemprompt, um die Aufgabe für das LLM zu beschreiben, festzulegen, wie es antworten soll, und andere verschiedene Anforderungen zu skizzieren. Der Systemprompt wird oft in Verbindung mit Schlüsseln (Variablen) verwendet, die als verschiedene Dateninputs für das LLM dienen. Verwenden Sie einen Schrägstrich `/` oder die (x)-Schaltfläche, um die zu verwendenden Schlüssel anzuzeigen.',
@@ -664,7 +659,7 @@ Das oben Genannte ist der Inhalt, den Sie zusammenfassen müssen.`,
       vietnamese: 'Vietnamesisch',
       pageRank: 'PageRank',
       pageRankTip:
-        'Sie können während des Abrufs bestimmten Wissensdatenbanken eine höhere PageRank-Bewertung zuweisen. Die entsprechende Bewertung wird zu den hybriden Ähnlichkeitswerten der abgerufenen Chunks aus diesen Wissensdatenbanken addiert, wodurch deren Ranking erhöht wird. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/set_page_rank.',
+        'Sie können während des Abrufs bestimmten Wissensdatenbanken eine höhere PageRank-Bewertung zuweisen. Die entsprechende Bewertung wird zu den hybriden Ähnlichkeitswerten der abgerufenen Chunks aus diesen Wissensdatenbanken addiert, wodurch deren Ranking erhöht wird. Weitere Informationen finden Sie unter https://ragflow.io/docs/dataset_configuration#basic-information.',
       tagName: 'Tag',
       frequency: 'Häufigkeit',
       searchTags: 'Tags durchsuchen',
@@ -681,14 +676,14 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
   <li>Sie müssen Tag-Sets in bestimmten Formaten hochladen, bevor Sie die Auto-Tag-Funktion ausführen.</li>
   <li>Die Auto-Schlüsselwort-Funktion ist vom LLM abhängig und verbraucht eine erhebliche Anzahl an Tokens.</li>
 </ul>
-<p>Siehe https://ragflow.io/docs/dev/use_tag_sets für Details.</p>
+<p>Siehe https://ragflow.io/docs/dataset_configuration#basic-information für Details.</p>
       `,
       topnTags: 'Top-N Tags',
       tags: 'Tags',
       addTag: 'Tag hinzufügen',
       useGraphRag: 'Wissensgraph extrahieren',
       useGraphRagTip:
-        'Erstellen Sie einen Wissensgraph über Dateiabschnitte der aktuellen Wissensbasis, um die Beantwortung von Fragen mit mehreren Schritten und verschachtelter Logik zu verbessern. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/construct_knowledge_graph.',
+        'Erstellen Sie einen Wissensgraph über Dateiabschnitte der aktuellen Wissensbasis, um die Beantwortung von Fragen mit mehreren Schritten und verschachtelter Logik zu verbessern. Weitere Informationen finden Sie unter https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph.',
       graphRagMethod: 'Methode',
       graphRagMethodTip: `
       Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehierungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
@@ -793,7 +788,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Nicht alle Chunks mit einem Ähnlichkeitswert über dem "Ähnlichkeitsschwellenwert" werden an das LLM gesendet. Dies wählt die "Top N" Chunks aus den abgerufenen aus.',
       variable: 'Variable',
       variableTip:
-        'In Kombination mit den APIs zur Verwaltung von Chat-Assistenten von RAGFlow können Variablen dazu beitragen, flexiblere System-Prompt-Strategien zu entwickeln. Die definierten Variablen werden von „System-Prompt“ als Teil der Prompts für das LLM verwendet. {knowledge} ist eine spezielle reservierte Variable, die Teile darstellt, die aus den angegebenen Wissensbasen abgerufen werden, und alle Variablen sollten in geschweiften Klammern {} im „System-Prompt“ eingeschlossen werden. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/set_chat_variables.',
+        'In Kombination mit den APIs zur Verwaltung von Chat-Assistenten von RAGFlow können Variablen dazu beitragen, flexiblere System-Prompt-Strategien zu entwickeln. Die definierten Variablen werden von „System-Prompt“ als Teil der Prompts für das LLM verwendet. {knowledge} ist eine spezielle reservierte Variable, die Teile darstellt, die aus den angegebenen Wissensbasen abgerufen werden, und alle Variablen sollten in geschweiften Klammern {} im „System-Prompt“ eingeschlossen werden. Weitere Informationen finden Sie unter https://ragflow.io/docs/chat_configuration#system-prompt.',
       add: 'Hinzufügen',
       key: 'Schlüssel',
       optional: 'Optional',
@@ -899,7 +894,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       tavilyApiKeyTip:
         'Wenn hier ein API-SCHLÜSSEL korrekt eingestellt ist, werden Tavily-basierte Websuchen verwendet, um den Abruf aus der Wissensdatenbank zu ergänzen.',
       tavilyApiKeyMessage: 'Bitte geben Sie Ihren Tavily-API-SCHLÜSSEL ein',
-      tavilyApiKeyHelp: 'Wie bekomme ich ihn?',
+      webSearchApiKeyHelp: 'Wie bekomme ich ihn?',
       crossLanguage: 'Sprachübergreifende Suche',
       crossLanguageTip:
         'Wählen Sie eine oder mehrere Sprachen für die sprachübergreifende Suche aus. Wenn keine Sprache ausgewählt ist, sucht das System mit der ursprünglichen Abfrage.',
@@ -918,9 +913,6 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       },
       cancel: 'Abbrechen',
       chatSetting: 'Chat-Einstellung',
-      tocEnhance: 'Inhaltsverzeichnis verbessern',
-      tocEnhanceTip:
-        'Während der Analyse des Dokuments wurden Inhaltsverzeichnisinformationen generiert (siehe Option "Inhaltsverzeichnis-Extraktion aktivieren" in der allgemeinen Methode). Dies ermöglicht es dem großen Modell, Inhaltsverzeichniselemente zurückzugeben, die für die Abfrage des Benutzers relevant sind, und diese Elemente zu verwenden, um verwandte Chunks abzurufen und diese Chunks während des Sortiervorgangs zu gewichten. Dieser Ansatz leitet sich von der Nachahmung der Verhaltenslogik ab, wie Menschen in Büchern nach Wissen suchen.',
       batchDeleteSessions: 'Stapel löschen',
       deleteSelectedConfirm: 'Die ausgewählten {count} Sitzung(en) löschen?',
       showChunkMetadata: 'Chunk-Metadaten anzeigen',
@@ -1014,6 +1006,10 @@ Beispiel: Virtual Hosted Style`,
         'Laden Sie das OAuth-JSON hoch, das von der Google Console generiert wurde. Wenn es nur Client-Anmeldeinformationen enthält, führen Sie die browserbasierte Überprüfung einmal durch, um langlebige Refresh-Token zu erstellen.',
       dropboxDescription:
         'Verbinden Sie Ihre Dropbox, um Dateien und Ordner von einem ausgewählten Konto zu synchronisieren.',
+      sitemapDescription:
+        'Verbinden Sie eine öffentliche sitemap.xml, um die aufgeführten Webseiten und PDF-Dokumente mit Ihrer Wissensdatenbank zu synchronisieren.',
+      azure_devopsDescription:
+        'Verbinden Sie Azure DevOps, um Repository-Dateien und Pull Requests zu synchronisieren.',
       bitbucketDescription:
         'Bitbucket verbinden, um PR-Inhalte zu synchronisieren.',
       zendeskDescription:
@@ -1212,19 +1208,19 @@ Beispiel: Virtual Hosted Style`,
         'Das Standard-Chat-LLM, das alle neu erstellten Wissensdatenbanken verwenden werden.',
       embeddingModel: 'Embedding-Modell',
       embeddingModelTip:
-        'Das Standard-Einbettungsmodell für jede neu erstellte Wissensdatenbank. Wenn Sie kein Einbettungsmodell in der Dropdown-Liste finden, prüfen Sie, ob Sie die RAGFlow Slim Edition verwenden (die keine Einbettungsmodelle enthält), oder überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standard-Einbettungsmodell für jede neu erstellte Wissensdatenbank. Wenn Sie kein Einbettungsmodell in der Dropdown-Liste finden, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       img2txtModel: 'Img2txt-Modell',
       img2txtModelTip:
-        'Das Standardmodell img2txt für jede neu erstellte Wissensdatenbank. Es beschreibt ein Bild oder Video. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standardmodell img2txt für jede neu erstellte Wissensdatenbank. Es beschreibt ein Bild oder Video. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       sequence2txtModel: 'Sequence2txt-Modell',
       sequence2txtModelTip:
-        'Das Standard-ASR-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden. Verwenden Sie dieses Modell, um Stimmen in entsprechenden Text zu übersetzen. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standard-ASR-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden. Verwenden Sie dieses Modell, um Stimmen in entsprechenden Text zu übersetzen. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       rerankModel: 'Rerank-Modell',
       rerankModelTip:
-        'Das Standard-Rerank-Modell zum Reranking von Textabschnitten. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standard-Rerank-Modell zum Reranking von Textabschnitten. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       ttsModel: 'TTS-Modell',
       ttsModelTip:
-        'Das Standard-Text-to-Speech-Modell. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standard-Text-to-Speech-Modell. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       workspace: 'Arbeitsbereich',
       upgrade: 'Upgrade',
       addLlmTitle: 'LLM hinzufügen',
@@ -1243,7 +1239,7 @@ Beispiel: Virtual Hosted Style`,
         apiUrlPlaceholder:
           'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio-Zugriffstoken',
-        accessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
+        accessTokenPlaceholder: 'Ihr AI Studio-Token',
         algorithm: 'PaddleOCR-Algorithmus',
         selectAlgorithm: 'Algorithmus auswählen',
         modelNamePlaceholder: 'Zum Beispiel: paddleocr-from-env-1',
@@ -1396,6 +1392,7 @@ Beispiel: Virtual Hosted Style`,
         tts: 'TTS',
         image2text: 'Img2txt',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
     },
     message: {
@@ -1555,7 +1552,7 @@ Beispiel: Virtual Hosted Style`,
       dataManipulation: 'Datenmanipulation',
       flow: 'Ablauf',
       dialog: 'Dialog',
-      cite: 'Zitieren',
+      cite: 'Zitate anzeigen',
       citeTip: 'Zitiertipp',
       name: 'Name',
       nameMessage: 'Bitte Namen eingeben',
@@ -2010,9 +2007,9 @@ Beispiel: Virtual Hosted Style`,
       jsonFormatTip:
         'Die vorgelagerte Komponente sollte einen JSON-String im folgenden Format bereitstellen:',
       toEmailTip: 'to_email: Empfänger-E-Mail (Erforderlich)',
-      ccEmailTip: 'cc_email: CC-E-Mail (Optional)',
-      subjectTip: 'subject: E-Mail-Betreff (Optional)',
-      contentTip: 'content: E-Mail-Inhalt (Optional)',
+      ccEmailTip: 'cc_email: CC-E-Mail',
+      subjectTip: 'subject: E-Mail-Betreff',
+      contentTip: 'content: E-Mail-Inhalt',
       jsonUploadTypeErrorMessage: 'Bitte laden Sie eine JSON-Datei hoch',
       jsonUploadContentErrorMessage: 'JSON-Dateifehler',
       iteration: 'Iteration',
@@ -2386,7 +2383,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       retrievalFrom: 'Abruf von',
       tocDataSource: 'Datenquelle',
       tags: 'Tags',
-      canvasCategory: 'Canvas-Kategorie',
+      agentCategory: 'Canvas-Kategorie',
       id: 'ID',
       logTitle: 'Titel',
     },
@@ -2572,9 +2569,9 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
         write: 'Schreiben',
         share: 'Teilen',
       },
-      serviceStatus: 'Dienststatus',
-      userManagement: 'Benutzerverwaltung',
-      registrationWhitelist: 'Registrierungs-Whitelist',
+      serviceStatus: 'Dienste',
+      userManagement: 'Benutzer',
+      registrationWhitelist: 'Whitelist',
       roles: 'Rollen',
       monitoring: 'Überwachung',
       back: 'Zurück',
@@ -2634,7 +2631,7 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       importWhitelist: 'Whitelist importieren (Excel)',
       importSelectExcelFile: 'Excel-Datei (.xlsx)',
       importOverwriteExistingEmails: 'Vorhandene E-Mails überschreiben',
-      importInvalidExcelFile: 'Bitte wählen Sie eine gültige Excel-Datei',
+      importValidExcelFile: 'Bitte wählen Sie eine gültige Excel-Datei',
       importFileRequired: 'Bitte wählen Sie eine Datei zum Importieren',
       importFileTips:
         'Datei muss eine einzelne Kopfzeilenspalte namens <code>email</code> enthalten.',
@@ -2646,7 +2643,6 @@ Wichtige strukturierte Informationen können sein: Namen, Daten, Orte, Ereigniss
       updateDate: 'Aktualisierungsdatum',
       permission: 'Berechtigung',
       agentTitle: 'Agententitel',
-      canvasCategory: 'Canvas-Kategorie',
       newRole: 'Neue Rolle',
       addNewRole: 'Neue Rolle hinzufügen',
       roleName: 'Rollenname',

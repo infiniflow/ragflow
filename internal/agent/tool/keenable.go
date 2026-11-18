@@ -18,13 +18,10 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	neturl "net/url"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -48,10 +45,10 @@ const keenableToolDescription = `Keenable is a web search API built for AI agent
 // deeper) or "realtime" (requires a server-configured key). top_n caps
 // how many results we keep from the upstream `results` array.
 type keenableParams struct {
-	Query string `json:"query"`
-	Site  string `json:"site"`
-	Mode  string `json:"mode"`
-	TopN  int    `json:"top_n"`
+	Query string `json:"query" doc:"Search keywords to execute with Keenable. The most important words/terms (and synonyms) from the original request." required:"true"`
+	Site  string `json:"site,omitempty" doc:"Optional. Restrict results to a single domain, e.g. 'techcrunch.com'. Defaults to '' (no filter)."`
+	Mode  string `json:"mode" schema:"-"`
+	TopN  int    `json:"top_n" schema:"-"`
 }
 
 // keenableRequestBody is the JSON body POSTed to the Keenable search
@@ -189,22 +186,7 @@ func resolveKeenableBaseURL(raw string) (string, error) {
 // is the short prose above; the parameter schema lists the model-emitted
 // fields with sane defaults documented inline.
 func (k *KeenableTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: keenableToolName,
-		Desc: keenableToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Search keywords to execute with Keenable. The most important words/terms (and synonyms) from the original request.",
-				Required: true,
-			},
-			"site": {
-				Type:     schema.String,
-				Desc:     "Optional. Restrict results to a single domain, e.g. 'techcrunch.com'. Defaults to '' (no filter).",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(keenableToolName, keenableToolDescription, keenableParams{})
 }
 
 // InvokableRun performs the Keenable search.
@@ -357,14 +339,13 @@ func buildKeenableReferences(envelope map[string]any) ([]map[string]any, []map[s
 		if !ok {
 			continue
 		}
-		content := truncateKeenableRunes(strings.TrimSpace(keenableValueString(result["description"])), 10000)
-		if content == "" || content == "None" {
+		content := truncateKeenableRunes(keenableResultContent(result), 10000)
+		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(keenableHashInt(content, 100000000), 10)
 		title := keenableValueString(result["title"])
 		resultURL := keenableValueString(result["url"])
-		displayID := strconv.FormatInt(keenableHashInt(documentID, 500), 10)
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -387,6 +368,18 @@ func buildKeenableReferences(envelope map[string]any) ([]map[string]any, []map[s
 	return chunks, docAggs
 }
 
+// keenableResultContent returns a result's page text. Keenable carries it in
+// "snippet" and often leaves "description" empty, so "description" is only
+// the fallback.
+func keenableResultContent(result map[string]any) string {
+	for _, field := range []string{"snippet", "description"} {
+		if content := keenableValueString(result[field]); content != "" && content != "None" {
+			return content
+		}
+	}
+	return ""
+}
+
 func renderKeenableReferences(chunks []map[string]any) string {
 	blocks := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -405,12 +398,6 @@ func keenableValueString(value any) string {
 		return "None"
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
-}
-
-func keenableHashInt(value string, modulus int64) int64 {
-	sum := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(sum[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateKeenableRunes(value string, limit int) string {

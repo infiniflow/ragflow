@@ -18,6 +18,7 @@ package knowledge_compile
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/engine/types"
@@ -26,10 +27,36 @@ import (
 
 type wikiMapStoreEngine struct {
 	fakeEngine
-	rows          map[string]map[string]interface{}
-	inserted      []map[string]interface{}
-	insertBase    string
-	insertDataset string
+	rows              map[string]map[string]interface{}
+	inserted          []map[string]interface{}
+	insertBase        string
+	insertDataset     string
+	engineType        string
+	chunkStoreExists  bool
+	chunkStoreChecks  int
+	createdStores     int
+	createdVectorSize int
+	createdLanguage   string
+}
+
+func (e *wikiMapStoreEngine) GetType() string {
+	if e.engineType != "" {
+		return e.engineType
+	}
+	return e.fakeEngine.GetType()
+}
+
+func (e *wikiMapStoreEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	e.chunkStoreChecks++
+	return e.chunkStoreExists, nil
+}
+
+func (e *wikiMapStoreEngine) CreateChunkStore(_ context.Context, _, _ string, vectorSize int, _, language string) error {
+	e.createdStores++
+	e.createdVectorSize = vectorSize
+	e.createdLanguage = language
+	e.chunkStoreExists = true
+	return nil
 }
 
 func (e *wikiMapStoreEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -56,27 +83,52 @@ func (e *wikiMapStoreEngine) Search(_ context.Context, req *types.SearchRequest)
 }
 
 func rowMatchesFilter(row map[string]interface{}, filter map[string]interface{}) bool {
-	if expected, ok := filter["available_int"].(int); ok {
-		if value, ok := row["available_int"].(int); !ok || value != expected {
-			return false
-		}
-	}
-	if mustNot, ok := filter["must_not"].(map[string]interface{}); ok {
-		if exists, ok := mustNot["exists"].(string); ok {
-			if _, present := row[exists]; present {
+	return matchesStoredCompilationRow(row, types.CompilationFilter(filter))
+}
+
+func matchesStoredCompilationRow(row, filter map[string]interface{}) bool {
+	for field, value := range filter {
+		switch field {
+		case "and":
+			for _, child := range types.FilterClauses(value) {
+				if !matchesStoredCompilationRow(row, child) {
+					return false
+				}
+			}
+		case "or":
+			matched := false
+			for _, child := range types.FilterClauses(value) {
+				matched = matched || matchesStoredCompilationRow(row, child)
+			}
+			if !matched {
 				return false
 			}
-		}
-	}
-	for _, field := range []string{"compile_kwd", "type_kwd"} {
-		if expected, ok := filter[field].(string); ok && mapStoreString(row[field]) != expected {
-			return false
+		case "must_not":
+			if matchesStoredCompilationRow(row, value.(map[string]interface{})) {
+				return false
+			}
+		case "exists":
+			if mapStoreString(row[value.(string)]) == "" {
+				return false
+			}
+		default:
+			if expected, ok := value.([]string); ok {
+				matched := false
+				for _, v := range expected {
+					matched = matched || mapStoreString(row[field]) == v
+				}
+				if !matched {
+					return false
+				}
+			} else if !reflect.DeepEqual(row[field], value) {
+				return false
+			}
 		}
 	}
 	return true
 }
 
-func (e *wikiMapStoreEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName, datasetID string) ([]string, error) {
+func (e *wikiMapStoreEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName, datasetID, _ string) ([]string, error) {
 	e.insertBase = baseName
 	e.insertDataset = datasetID
 	for _, chunk := range chunks {
@@ -95,7 +147,7 @@ func (e *wikiMapStoreEngine) InsertChunks(_ context.Context, chunks []map[string
 
 func TestWikiMapVersionStoreUsesNonSearchableDocStoreRows(t *testing.T) {
 	engine := &wikiMapStoreEngine{rows: map[string]map[string]interface{}{}}
-	store := NewWikiMapVersionStore(engine)
+	store := NewWikiMapVersionStoreWithVectorSizeResolver(nil, engine, nil)
 	version := kccommon.WikiMapVersion{
 		Key:                 "version-a",
 		TenantID:            "tenant-1",
@@ -118,7 +170,8 @@ func TestWikiMapVersionStoreUsesNonSearchableDocStoreRows(t *testing.T) {
 		"id":             "version-a",
 		"doc_id":         "wiki_map_cache:doc-1",
 		"kb_id":          "kb-1",
-		"compile_kwd":    wikiMapExtractCompileKWD,
+		"compile_kwd":    "wiki",
+		"type_kwd":       wikiMapExtractCompileKWD,
 		"available_int":  0,
 		"chunk_hash_kwd": "hash-a",
 	} {
@@ -156,5 +209,69 @@ func TestWikiMapVersionStoreUsesNonSearchableDocStoreRows(t *testing.T) {
 	}
 	if engine.lastSearchReq == nil || !reflect.DeepEqual(engine.lastSearchReq.KbIDs, []string{"kb-1"}) {
 		t.Fatalf("search KbIDs = %#v", engine.lastSearchReq)
+	}
+}
+
+func TestWikiMapVersionStoreSkipsExistingInfinityStoreBootstrap(t *testing.T) {
+	engine := &wikiMapStoreEngine{
+		rows:             map[string]map[string]interface{}{},
+		engineType:       "infinity",
+		chunkStoreExists: true,
+	}
+	resolverCalls := 0
+	store := NewWikiMapVersionStoreWithVectorSizeResolver(nil, engine, func(context.Context) (int, error) {
+		resolverCalls++
+		return 0, nil
+	})
+	version := kccommon.WikiMapVersion{
+		Key: "version-a", TenantID: "tenant-1", DatasetID: "kb-1",
+		DocumentID: "doc-1", ChunkID: "chunk-1", Payload: []byte(`{}`),
+	}
+
+	if err := store.PutWikiMapVersions(t.Context(), []kccommon.WikiMapVersion{version}); err != nil {
+		t.Fatalf("PutWikiMapVersions() error = %v", err)
+	}
+	if resolverCalls != 0 || engine.createdStores != 0 || engine.chunkStoreChecks != 1 {
+		t.Fatalf("bootstrap calls: resolver=%d create=%d checks=%d", resolverCalls, engine.createdStores, engine.chunkStoreChecks)
+	}
+}
+
+func TestWikiMapVersionStoreCreatesMissingInfinityStore(t *testing.T) {
+	engine := &wikiMapStoreEngine{rows: map[string]map[string]interface{}{}, engineType: "infinity"}
+	store := NewWikiMapVersionStoreWithVectorSizeResolver(nil, engine, func(context.Context) (int, error) {
+		return 768, nil
+	})
+	// The table is the dataset's chunk table, so it is created with the
+	// dataset language, which fixes Infinity's fulltext analyzer.
+	store.(*wikiMapVersionStore).resolveLanguage = func(_ context.Context, datasetID string) (string, error) {
+		if datasetID != "kb-1" {
+			t.Fatalf("language resolved for dataset %q", datasetID)
+		}
+		return "slovak", nil
+	}
+	version := kccommon.WikiMapVersion{
+		Key: "version-a", TenantID: "tenant-1", DatasetID: "kb-1",
+		DocumentID: "doc-1", ChunkID: "chunk-1", Payload: []byte(`{}`),
+	}
+
+	if err := store.PutWikiMapVersions(t.Context(), []kccommon.WikiMapVersion{version}); err != nil {
+		t.Fatalf("PutWikiMapVersions() error = %v", err)
+	}
+	if engine.createdStores != 1 || engine.createdVectorSize != 768 || engine.createdLanguage != "slovak" {
+		t.Fatalf("created store: count=%d vector_size=%d language=%q", engine.createdStores, engine.createdVectorSize, engine.createdLanguage)
+	}
+}
+
+func TestWikiMapActiveStateRequiresResolverOnlyWhenInfinityStoreMissing(t *testing.T) {
+	engine := &wikiMapStoreEngine{rows: map[string]map[string]interface{}{}, engineType: "infinity"}
+	store := NewWikiMapVersionStoreWithVectorSizeResolver(nil, engine, nil).(kccommon.WikiMapActiveStateStore)
+	state := kccommon.WikiMapActiveState{
+		Key: "active-a", TenantID: "tenant-1", DatasetID: "kb-1",
+		DocumentID: "doc-1", Payload: []byte(`{}`),
+	}
+
+	err := store.PutWikiMapActiveState(t.Context(), state)
+	if err == nil || !strings.Contains(err.Error(), "vector-size resolver is not configured") {
+		t.Fatalf("PutWikiMapActiveState() error = %v", err)
 	}
 }

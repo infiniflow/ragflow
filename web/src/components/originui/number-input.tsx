@@ -1,9 +1,10 @@
 import { cn } from '@/lib/utils';
-import { isNumber, omit, trim } from 'lodash';
+import { isNumber, omit, round, trim } from 'lodash';
 import { MinusIcon, PlusIcon } from 'lucide-react';
 import React, {
   FocusEventHandler,
   forwardRef,
+  KeyboardEventHandler,
   useCallback,
   useEffect,
   useMemo,
@@ -19,8 +20,36 @@ interface NumberInputProps {
   height?: number | string;
   min?: number;
   max?: number;
+  step?: number;
   hideIcons?: boolean;
+  integer?: boolean;
   inputClassName?: string;
+  precision?: number;
+}
+
+// Truncate on the decimal string instead of `Math.trunc(v * 10 ** decimals)`,
+// which loses precision on values such as 0.29 (0.29 * 100 === 28.999...).
+function limitDecimals(value: number, decimals: number) {
+  const [integerPart, fractionPart = ''] = String(value).split('.');
+  if (fractionPart.length <= decimals) {
+    return value;
+  }
+  return Number(
+    decimals === 0
+      ? integerPart
+      : `${integerPart}.${fractionPart.slice(0, decimals)}`,
+  );
+}
+
+// Keys that would introduce a fractional part or exponent notation in
+// integer mode; blocked on keydown so a decimal point can never be typed.
+const BlockedIntegerKeys = ['.', 'e', 'E', '+'];
+
+// Round a stepped value to the step's own decimal places, so float artifacts
+// (0.3 - 0.1 = 0.19999999999999998) never surface in the input.
+function roundToStepPrecision(value: number, step: number) {
+  const [, fractionPart = ''] = String(step).split('.');
+  return round(value, fractionPart.length);
 }
 
 const NumberInput = forwardRef<
@@ -35,8 +64,11 @@ const NumberInput = forwardRef<
     height,
     min = 0,
     max = Infinity,
+    step = 1,
     hideIcons = false,
+    integer = false,
     inputClassName,
+    precision = 2,
     ...props
   },
   ref,
@@ -55,8 +87,9 @@ const NumberInput = forwardRef<
 
   const handleDecrement = () => {
     if (isNumber(value) && value > min) {
-      setValue(value - 1);
-      onChange?.(value - 1);
+      const nextValue = Math.max(roundToStepPrecision(value - step, step), min);
+      setValue(nextValue);
+      onChange?.(nextValue);
     }
   };
 
@@ -64,11 +97,21 @@ const NumberInput = forwardRef<
     if (!isNumber(value)) {
       return;
     }
-    if (value > max - 1) {
+    const nextValue = roundToStepPrecision(value + step, step);
+    if (nextValue > max) {
       return;
     }
-    setValue(value + 1);
-    onChange?.(value + 1);
+    setValue(nextValue);
+    onChange?.(nextValue);
+  };
+
+  const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (
+      integer &&
+      (BlockedIntegerKeys.includes(e.key) || (e.key === '-' && min >= 0))
+    ) {
+      e.preventDefault();
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,13 +127,28 @@ const NumberInput = forwardRef<
     }
 
     if (!isNaN(newValue)) {
+      const limitedValue =
+        precision === undefined ? newValue : limitDecimals(newValue, precision);
+
+      // The state below may not change when extra decimals are dropped
+      // (0.12 -> 0.123 -> 0.12), so React would not re-render and the browser
+      // would keep showing the rejected digits. Write the DOM value directly.
+      if (limitedValue !== newValue) {
+        e.target.value = String(limitedValue);
+      }
+
+      // Pasted decimals bypass the keydown guard; reject them in integer
+      // mode instead of rounding silently.
+      if (integer && !Number.isInteger(newValue)) {
+        return;
+      }
       // Show the raw typed value as-is, even when it falls outside [min, max]
       // (e.g. deleting "1024" → "102" when min=512), so the controlled input
       // never snaps back mid-edit. Out-of-range values are not propagated to
       // the form; handleBlur clamps them into range on focus loss.
-      setValue(newValue);
-      if (newValue >= min && newValue <= max) {
-        onChange?.(newValue);
+      setValue(limitedValue);
+      if (limitedValue >= min && limitedValue <= max) {
+        onChange?.(limitedValue);
       }
     }
   };
@@ -151,7 +209,6 @@ const NumberInput = forwardRef<
           className,
         )}
         style={style}
-        ref={ref}
       >
         {hideIcons || (
           <button
@@ -167,6 +224,7 @@ const NumberInput = forwardRef<
           type="number"
           value={value}
           onChange={handleChange}
+          onKeyDown={handleKeyDown}
           onBlur={handleBlur}
           className={cn(
             'w-full flex-1 text-center bg-transparent focus-visible:outline-none number-input-hide-spin',
@@ -179,6 +237,8 @@ const NumberInput = forwardRef<
           )}
           style={style}
           min={min}
+          step={step}
+          ref={ref}
           {...omit(props, ['prefix', 'suffix'])}
         />
         {hideIcons || (

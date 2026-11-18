@@ -21,6 +21,7 @@ import { configResponsive } from 'ahooks';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ar';
 import 'dayjs/locale/tr';
+import 'dayjs/locale/uz';
 import 'dayjs/locale/zh-cn';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
@@ -30,10 +31,11 @@ import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
 import React from 'react';
 import { RouterProvider } from 'react-router';
+import StarModal from '@/ee/components/star-modal';
+import { routers } from '@/ee/merge-routes';
 import { ThemeProvider } from './components/theme-provider';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
-import { routers } from './routes';
 
 import 'react-photo-view/dist/react-photo-view.css';
 
@@ -85,6 +87,7 @@ function Root({ children }: React.PropsWithChildren) {
       <Sonner position="top-right" expand richColors closeButton />
 
       <Toaster />
+      <StarModal></StarModal>
     </>
   );
 }

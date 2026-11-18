@@ -192,7 +192,7 @@ func TestFault_ConcurrentModelCalls(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 5; i++ {
 		wg.Go(func() {
-			ctx := context.Background()
+			ctx := t.Context()
 			_, err := model.Generate(ctx, []Message{schema.UserMessage("conc")})
 			if err != nil {
 				t.Errorf("concurrent call: %v", err)

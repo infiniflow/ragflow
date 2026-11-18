@@ -1,14 +1,11 @@
 package service
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	taskpkg "ragflow/internal/ingestion/task"
 )
 
 // controllableHandle is a TaskHandle whose InProgress behavior is delegated,
@@ -22,32 +19,34 @@ func (h *controllableHandle) Ack() error                     { return nil }
 func (h *controllableHandle) Nack() error                    { return nil }
 func (h *controllableHandle) InProgress() error              { return h.inProgressFn() }
 
-// TestStartHeartbeat_TicksInProgressUntilStop: with a short interval the
-// heartbeat goroutine calls InProgress repeatedly; stop() halts it.
-func TestStartHeartbeat_TicksInProgressUntilStop(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
-	ingestor.heartbeatInterval = 2 * time.Millisecond
-
+// TestHeartbeat_TicksInProgressUntilStop: with a short interval the heartbeat
+// goroutine calls InProgress repeatedly; Stop halts it.
+func TestHeartbeat_TicksInProgressUntilStop(t *testing.T) {
 	handle := &fakeTaskHandle{}
-	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+	hb := NewHeartbeat("task-1", handle, 2*time.Millisecond)
+	hb.Start()
 
-	stop := ingestor.startHeartbeat(taskCtx)
-	time.Sleep(15 * time.Millisecond)
-	stop()
-
+	deadline := time.Now().Add(2 * time.Second)
+	for handle.inProgress.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
 	if handle.inProgress.Load() == 0 {
 		t.Fatal("expected InProgress heartbeats, got 0")
 	}
+
+	hb.Stop()
+	after := handle.inProgress.Load()
+	time.Sleep(10 * time.Millisecond)
+	if got := handle.inProgress.Load(); got != after {
+		t.Fatalf("InProgress calls continued after Stop: before=%d after=%d", after, got)
+	}
 }
 
-// TestStartHeartbeat_StopWaitsForInFlightInProgress: stop() must block until an
+// TestHeartbeat_StopWaitsForInFlightInProgress: Stop must block until an
 // in-flight InProgress call returns, so the caller can ack/nack with no
 // concurrent InProgress on the same message. Regression guard for the
-// close-without-wait heartbeat shutdown (problem 1).
-func TestStartHeartbeat_StopWaitsForInFlightInProgress(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
-	ingestor.heartbeatInterval = time.Millisecond
-
+// close-without-wait heartbeat shutdown.
+func TestHeartbeat_StopWaitsForInFlightInProgress(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var startedOnce sync.Once
@@ -58,21 +57,16 @@ func TestStartHeartbeat_StopWaitsForInFlightInProgress(t *testing.T) {
 			return nil
 		},
 	}
-	taskCtx := taskpkg.NewTaskContextForScheduling(
-		context.Background(),
-		&entity.IngestionTask{ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", Status: common.RUNNING},
-	)
-	taskCtx.Handle = h
-
-	stop := ingestor.startHeartbeat(taskCtx)
+	hb := NewHeartbeat("task-1", h, time.Millisecond)
+	hb.Start()
 	<-started // heartbeat goroutine is inside InProgress
 
 	stopDone := make(chan struct{})
-	go func() { stop(); close(stopDone) }()
+	go func() { hb.Stop(); close(stopDone) }()
 
 	select {
 	case <-stopDone:
-		t.Fatal("stop() returned before in-flight InProgress completed")
+		t.Fatal("Stop returned before in-flight InProgress completed")
 	case <-time.After(20 * time.Millisecond):
 	}
 
@@ -80,23 +74,46 @@ func TestStartHeartbeat_StopWaitsForInFlightInProgress(t *testing.T) {
 
 	select {
 	case <-stopDone:
-		// good: stop() returned only after InProgress completed
+		// good: Stop returned only after InProgress completed
 	case <-time.After(time.Second):
-		t.Fatal("stop() did not return after in-flight InProgress completed")
+		t.Fatal("Stop did not return after in-flight InProgress completed")
 	}
 }
 
-// TestStartHeartbeat_NoOpWhenNoHandle: with no MQ handle (standalone/test path)
-// startHeartbeat returns a no-op stop and starts no goroutine.
-func TestStartHeartbeat_NoOpWhenNoHandle(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
-	ingestor.heartbeatInterval = time.Millisecond
+// TestHeartbeat_NoOpWhenNoHandle: with no MQ handle, Start starts no goroutine
+// and Stop returns immediately (never blocks).
+func TestHeartbeat_NoOpWhenNoHandle(t *testing.T) {
+	hb := NewHeartbeat("task-1", nil, time.Millisecond)
+	hb.Start()
+	hb.Stop() // must not block or panic
+}
 
-	taskCtx := taskpkg.NewTaskContextForScheduling(
-		context.Background(),
-		&entity.IngestionTask{ID: "task-1"},
-	)
-	// taskCtx.Handle is nil
-	stop := ingestor.startHeartbeat(taskCtx)
-	stop() // must not block or panic
+// TestHeartbeat_StopBeforeStart: Stop before Start is a no-op and never blocks,
+// covering the "lease never started" path (e.g. a task context that admission
+// rejected before starting a heartbeat).
+func TestHeartbeat_StopBeforeStart(t *testing.T) {
+	hb := NewHeartbeat("task-1", &fakeTaskHandle{}, time.Millisecond)
+	done := make(chan struct{})
+	go func() { hb.Stop(); close(done) }()
+	select {
+	case <-done:
+		// good: returned immediately
+	case <-time.After(time.Second):
+		t.Fatal("Stop before Start blocked")
+	}
+}
+
+// TestHeartbeat_StopBeforeStartPreventsLaterStart ensures a stopped heartbeat
+// cannot launch a renewal goroutine afterwards.
+func TestHeartbeat_StopBeforeStartPreventsLaterStart(t *testing.T) {
+	handle := &fakeTaskHandle{}
+	hb := NewHeartbeat("task-1", handle, time.Millisecond)
+
+	hb.Stop()
+	hb.Start()
+	time.Sleep(10 * time.Millisecond)
+
+	if got := handle.inProgress.Load(); got != 0 {
+		t.Fatalf("InProgress calls after Stop then Start = %d, want 0", got)
+	}
 }

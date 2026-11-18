@@ -26,6 +26,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useCallback, useMemo, useState } from 'react';
 import { ChatChannelKey, useChatChannelInfo } from './constant';
+import { toChatChannelBinding } from './connect-target';
 import { IChatChannel, IChatChannelBase, IChatChannelInfo } from './interface';
 
 export const ChatChannelKeys = {
@@ -184,13 +185,11 @@ export const useConnectChatChannelDialog = () => {
 
   const { mutateAsync, isPending } = useMutation({
     mutationKey: ['connect-chat-channel-dialog'],
-    mutationFn: async (params: {
-      channelId: string;
-      dialogId: string | null;
-    }) => {
-      const { data } = await updateChatChannel(params.channelId, {
-        chat_id: params.dialogId,
-      });
+    mutationFn: async (params: { channelId: string; targetValue?: string }) => {
+      const { data } = await updateChatChannel(
+        params.channelId,
+        toChatChannelBinding(params.targetValue),
+      );
       if (data.code === 0) {
         message.success(t('message.operated'));
         queryClient.invalidateQueries({ queryKey: ChatChannelKeys.list() });

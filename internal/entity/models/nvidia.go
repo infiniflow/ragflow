@@ -49,7 +49,7 @@ func NewNvidiaModel(baseURL map[string]string, urlSuffix URLSuffix) *NvidiaModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 		catalogURL:    nvidiaCatalogURL,
 		hostedAPIHost: nvidiaHostedAPIHost,
@@ -85,7 +85,7 @@ func (n *NvidiaModel) resolveEndpoint(modelName string, apiConfig *APIConfig, su
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(suffix, "/")), nil
+	return joinURL(resolvedBaseURL, suffix), nil
 }
 
 func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -117,7 +117,7 @@ func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	if err != nil {
 		return nil, err
 	}
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -179,10 +179,16 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, request Embe
 		return nil, err
 	}
 
+	// Python NvidiaEmbed.encode sends input_type="passage" for documents and
+	// encode_queries sends "query"; the NIM API embeds each side differently.
+	inputType := "passage"
+	if request.Query {
+		inputType = "query"
+	}
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
 		"input":           request.Texts,
-		"input_type":      "query",
+		"input_type":      inputType,
 		"encoding_format": "float",
 		"truncate":        "END",
 	}
@@ -239,13 +245,11 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, request Embe
 
 // nvidiaRerankRequest mirrors the NIM /ranking request shape:
 // query is an object with a "text" field, passages is an array of
-// objects each with a "text" field. truncate=END matches the Python
-// NvidiaRerank reference at rag/llm/rerank_model.py.
+// objects each with a "text" field.
 type nvidiaRerankRequest struct {
 	Model    string             `json:"model"`
 	Query    nvidiaRerankText   `json:"query"`
 	Passages []nvidiaRerankText `json:"passages"`
-	Truncate string             `json:"truncate,omitempty"`
 	TopN     int                `json:"top_n"`
 }
 
@@ -304,7 +308,6 @@ func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, request Rer
 		Model:    *modelName,
 		Query:    nvidiaRerankText{Text: query},
 		Passages: passages,
-		Truncate: "END",
 		TopN:     topN,
 	}
 
@@ -360,30 +363,30 @@ func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, request Rer
 
 // TranscribeAudio transcribe audio
 func (n *NvidiaModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", n.Name())
 }
 
 func (n *NvidiaModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", n.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", n.Name())
 }
 
 // AudioSpeech convert text to audio
 func (n *NvidiaModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", n.Name())
 }
 
 func (n *NvidiaModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", n.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", n.Name())
 }
 
 // OCRFile OCR file
 func (n *NvidiaModel) OCRFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", n.Name())
 }
 
 // ParseFile parse file
 func (n *NvidiaModel) ParseFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", n.Name())
 }
 
 // ListModels calls /v1/models on the configured NVIDIA NIM base URL
@@ -733,7 +736,7 @@ func parseNvidiaModelList(modelList ModelList, provider *Provider) []ListModelRe
 }
 
 func (n *NvidiaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", n.Name())
 }
 
 // CheckConnection verifies that the configured NVIDIA NIM base URL
@@ -746,9 +749,13 @@ func (n *NvidiaModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 }
 
 func (n *NvidiaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", n.Name())
 }
 
 func (n *NvidiaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", n.Name())
+}
+
+func (n *NvidiaModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", n.Name())
 }

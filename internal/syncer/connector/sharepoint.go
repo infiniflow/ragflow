@@ -139,7 +139,9 @@ func (c *SharePointConnector) OpenSync(ctx context.Context, request SyncRequest)
 		drives:    drives,
 		batchSize: c.batchSize,
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -679,20 +681,26 @@ func (s *sharePointSyncSession) Close() error {
 	return nil
 }
 
-func (s *sharePointSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *sharePointSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
 	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	const prefix = "sharepoint_drive_"
-	if !strings.HasPrefix(sourceID, prefix) {
-		return
+	if sourceID == "" || !strings.HasPrefix(sourceID, prefix) {
+		return fmt.Errorf("sharepoint sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	driveID := strings.TrimPrefix(sourceID, prefix)
 	if driveID == "" {
-		return
+		return fmt.Errorf("sharepoint sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
-	s.resumeAfterDriveID = driveID
+	for _, drive := range s.drives {
+		if drive.ID == driveID {
+			s.resumeAfterDriveID = driveID
+			return nil
+		}
+	}
+	return fmt.Errorf("sharepoint resume drive %q was not found in the current listing: %w", driveID, ErrSyncResumeInvalid)
 }
 
 func (s *sharePointSyncSession) maxUpdatedAt(documents []SourceDocument) time.Time {

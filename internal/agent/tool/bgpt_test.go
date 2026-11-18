@@ -39,7 +39,7 @@ func TestBGPT_RequestAndRawResults(t *testing.T) {
 	defer srv.Close()
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
 	bgpt := NewBGPTToolWith(helper)
-	out, err := bgpt.InvokableRun(context.Background(), `{"query":"  cancer  ","top_n":3,"api_key":"key","days_back":30}`)
+	out, err := bgpt.InvokableRun(t.Context(), `{"query":"  cancer  ","top_n":3,"api_key":"key","days_back":30}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestBGPT_InfoAndNodeDefaults(t *testing.T) {
 func TestBGPT_EmptyQuery(t *testing.T) {
 	t.Parallel()
 
-	out, err := NewBGPTTool().InvokableRun(context.Background(), `{"query":""}`)
+	out, err := NewBGPTTool().InvokableRun(t.Context(), `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun(empty): %v", err)
 	}
@@ -115,7 +115,7 @@ func TestBGPT_ComponentReferencesAndOutputs(t *testing.T) {
 		"results_and_conclusions":                    "Improved outcomes",
 		"quality_score":                              float64(0.9),
 	}}}
-	chunks, docAggs := bgpt.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := bgpt.BuildReferences(t.Context(), envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 || chunks[0]["document_name"] != "Paper A" {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}

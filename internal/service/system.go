@@ -21,8 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
-	"ragflow/internal/entity"
+	"ragflow/internal/engine/kvrocks"
 	"time"
 
 	"ragflow/internal/dao"
@@ -33,28 +32,31 @@ import (
 
 // SystemService system service
 type SystemService struct {
-	systemSettingsDAO *dao.SystemSettingsDAO
 }
 
 // NewSystemService create system service
 func NewSystemService() *SystemService {
-	return &SystemService{
-		systemSettingsDAO: dao.NewSystemSettingsDAO(),
-	}
+	return &SystemService{}
 }
 
 // ConfigResponse system configuration response
 type ConfigResponse struct {
 	EnableRegister       bool `json:"registerEnabled"`
 	DisablePasswordLogin bool `json:"disablePasswordLogin"`
+	configExtras
 }
 
 // GetConfig get system configuration
-func (s *SystemService) GetConfig() (*ConfigResponse, error) {
+func (s *SystemService) GetConfig(ctx context.Context) (*ConfigResponse, error) {
 	cfg := server.GetConfig()
+	extras, err := loadConfigExtras(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &ConfigResponse{
 		EnableRegister:       cfg.EnableRegister(),
 		DisablePasswordLogin: cfg.DisablePasswordLogin(),
+		configExtras:         extras,
 	}, nil
 }
 
@@ -230,7 +232,7 @@ func (s *SystemService) getDatabaseStatus(ctx context.Context) ComponentStatus {
 
 func (s *SystemService) getRedisStatus(ctx context.Context) ComponentStatus {
 	startedAt := time.Now()
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return ComponentStatus{
 			"status":  "red",
@@ -254,7 +256,7 @@ func (s *SystemService) getRedisStatus(ctx context.Context) ComponentStatus {
 
 func (s *SystemService) getTaskExecutorHeartbeats(ctx context.Context) map[string][]interface{} {
 	heartbeatsByExecutor := map[string][]interface{}{}
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return heartbeatsByExecutor
 	}
@@ -328,7 +330,7 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 	}
 
 	redisOK, redisMeta := timedHealthCheck(func() error {
-		redisClient := redis.Get()
+		redisClient := kvrocks.Get()
 		if redisClient == nil || !redisClient.Health(ctx) {
 			return fmt.Errorf("redis is not healthy")
 		}
@@ -396,80 +398,6 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 // Healthz runs lightweight dependency checks for /api/v1/system/healthz.
 func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
 	return GetComponentsHealthz(ctx)
-}
-
-// ListAllVariables list all variables
-// Returns all system settings from database
-func (s *SystemService) ListAllVariables(ctx context.Context) ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetAll(ctx, dao.DB)
-	if err != nil {
-		return nil, err
-	}
-
-	return common.FormatSystemSettings(settings), nil
-}
-
-func (s *SystemService) ShowVariable(ctx context.Context, varName string) ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(settings) == 0 {
-		settings, err = s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, varName)
-		if err != nil {
-			return nil, err
-		}
-		if len(settings) == 0 {
-			return nil, fmt.Errorf("can't get setting: %s", varName)
-		}
-	}
-	return common.FormatSystemSettings(settings), nil
-}
-
-// SetVariable set variable
-// Creates or updates a system setting
-// If the setting exists, updates it; otherwise creates a new one
-func (s *SystemService) SetVariable(ctx context.Context, varName, varValue string) error {
-	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
-	if err != nil {
-		return err
-	}
-
-	if len(settings) == 1 {
-		setting := &settings[0]
-		if err = common.ValidateSystemSettingValue(*setting, varValue); err != nil {
-			return err
-		}
-		setting.Value = varValue
-		return s.systemSettingsDAO.UpdateByName(ctx, dao.DB, varName, setting)
-	} else if len(settings) > 1 {
-		return fmt.Errorf("can't update more than 1 setting: %s", varName)
-	}
-
-	dataType := common.InferSystemSettingDataType(varName)
-	newSetting := &entity.SystemSettings{
-		Name:     varName,
-		Value:    varValue,
-		Source:   "admin",
-		DataType: dataType,
-	}
-	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
-		return err
-	}
-	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)
-}
-
-// Config methods
-
-// ListAllConfigs list all configs
-// Returns all service configurations from the config file
-func (s *SystemService) ListAllConfigs() ([]map[string]interface{}, error) {
-	result, err := server.GetAllConfigs()
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 // Environment methods

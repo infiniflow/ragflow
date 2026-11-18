@@ -117,6 +117,8 @@ export interface ProviderConfig {
   llmFactory: string;
   /** Modal title */
   title: string;
+  /** Default name for a newly added provider instance */
+  defaultInstanceName?: string;
   /** Field list (in render order) */
   fields: FieldConfig[];
   /**
@@ -147,8 +149,8 @@ export interface ProviderConfig {
    * `base_url` fallback on top.
    *
    * When absent, the generic echo path runs: `unwrapApiKey` lifts the
-   * bare `api_key` plus `API_KEY_NESTED_FIELDS` (`group_id` /
-   * `api_version` / `provider_order`).
+   * bare `api_key` plus the provider-specific fields registered in
+   * `API_KEY_NESTED_FIELDS`.
    */
   echoTransform?: (instance: Record<string, any>) => Record<string, any>;
   /**

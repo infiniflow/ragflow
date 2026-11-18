@@ -42,6 +42,61 @@ func wikiEntityMerge(existing, incoming kccommon.Product) kccommon.Product {
 	return merged
 }
 
+// selectMergedWikiTopicPath chooses the materialized path with the strongest
+// source support when document pages with the same canonical slug disagree.
+// No additional metadata is persisted: the selected path remains the page's
+// single topic value.
+func selectMergedWikiTopicPath(products []kccommon.Product) string {
+	type support struct {
+		topic    string
+		docs     map[string]struct{}
+		chunks   map[string]struct{}
+		products int
+	}
+	byKey := make(map[string]*support)
+	for _, product := range products {
+		topic := productTopic(product)
+		key := topicKey(topic)
+		if key == "" {
+			continue
+		}
+		current := byKey[key]
+		if current == nil {
+			current = &support{topic: topic, docs: make(map[string]struct{}), chunks: make(map[string]struct{})}
+			byKey[key] = current
+		}
+		current.products++
+		docIDs := kccommon.MetaStringSlice(product.Meta, "source_doc_ids")
+		if len(docIDs) == 0 && product.DocID != "" {
+			docIDs = []string{product.DocID}
+		}
+		for _, docID := range docIDs {
+			if docID = strings.TrimSpace(docID); docID != "" {
+				current.docs[docID] = struct{}{}
+			}
+		}
+		for _, chunkID := range kccommon.MetaStringSlice(product.Meta, "source_chunk_ids") {
+			if chunkID = strings.TrimSpace(chunkID); chunkID != "" {
+				current.chunks[chunkID] = struct{}{}
+			}
+		}
+	}
+
+	var best *support
+	for _, candidate := range byKey {
+		if best == nil || len(candidate.docs) > len(best.docs) ||
+			(len(candidate.docs) == len(best.docs) && len(candidate.chunks) > len(best.chunks)) ||
+			(len(candidate.docs) == len(best.docs) && len(candidate.chunks) == len(best.chunks) && candidate.products > best.products) ||
+			(len(candidate.docs) == len(best.docs) && len(candidate.chunks) == len(best.chunks) && candidate.products == best.products && topicKey(candidate.topic) < topicKey(best.topic)) {
+			best = candidate
+		}
+	}
+	if best == nil {
+		return ""
+	}
+	return best.topic
+}
+
 func unionWikiMarkdown(left, right string) string {
 	left, right = strings.TrimSpace(left), strings.TrimSpace(right)
 	if left == "" {
@@ -120,13 +175,13 @@ func unionWikiProvenance(a, b map[string]any) map[string]any {
 	}
 	// The incoming page replaces current page metadata. Identity and creation
 	// time remain from the existing row.
-	for _, key := range []string{"summary", "kind"} {
+	for _, key := range []string{"summary", "kind", "content_md_raw"} {
 		if v, ok := b[key]; ok {
 			out[key] = v
 		}
 	}
-	out["source_doc_ids"] = unionStrs(metaStringSliceAny(a, "source_doc_ids"), metaStringSliceAny(b, "source_doc_ids"))
-	out["source_chunk_ids"] = unionStrs(metaStringSliceAny(a, "source_chunk_ids"), metaStringSliceAny(b, "source_chunk_ids"))
+	out["source_doc_ids"] = unionStrs(kccommon.MetaStringSlice(a, "source_doc_ids"), kccommon.MetaStringSlice(b, "source_doc_ids"))
+	out["source_chunk_ids"] = unionStrs(kccommon.MetaStringSlice(a, "source_chunk_ids"), kccommon.MetaStringSlice(b, "source_chunk_ids"))
 	if v, ok := b["entity_names"]; ok {
 		out["entity_names"] = v
 	}
@@ -156,24 +211,6 @@ func unionStrs(a, b []string) []string {
 		out = append(out, s)
 	}
 	return out
-}
-
-// metaStringSliceAny reads a []string from a meta map that may box the value as
-// []string or []any (engine/JSON round-trip does not guarantee a single type).
-func metaStringSliceAny(m map[string]any, key string) []string {
-	switch v := m[key].(type) {
-	case []string:
-		return v
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, e := range v {
-			if s, ok := e.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return nil
 }
 
 // isWikiGroup reports whether a merge group targets the wiki variant and needs

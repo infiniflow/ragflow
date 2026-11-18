@@ -51,7 +51,8 @@ func (p *wikiPipeline) addAffectedExtractTerms(extract wikiExtract) {
 		add(relation.To)
 	}
 	for _, topic := range extract.Topics {
-		add(topic)
+		add(topic.Path)
+		add(common.WikiTopicLeaf(topic.Path))
 	}
 }
 
@@ -94,6 +95,11 @@ func (p *wikiPipeline) selectAffectedPages(current []wikiPlanPage) {
 func (p *wikiPipeline) pageTouchesAffectedTerms(page wikiPlanPage) bool {
 	if topic := normalizedWikiTerm(page.Topic); topic != "" {
 		if _, ok := p.affectedTerms[topic]; ok {
+			return true
+		}
+	}
+	if leaf := normalizedWikiTerm(common.WikiTopicLeaf(page.Topic)); leaf != "" {
+		if _, ok := p.affectedTerms[leaf]; ok {
 			return true
 		}
 	}

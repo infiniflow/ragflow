@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { NodeProps, NodeResizeControl, Position } from '@xyflow/react';
 import { memo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
+import { useCanvasReadonly } from '../../context';
 import OperatorIcon from '@/components/operator-icon';
 import { CommonHandle, LeftEndHandle } from './handle';
 import NodeHeader from './node-header';
@@ -19,6 +20,8 @@ export function InnerIterationNode({
   isConnectable = true,
   selected,
 }: NodeProps<IIterationNode>) {
+  const readOnly = useCanvasReadonly();
+
   return (
     <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
       <section
@@ -29,23 +32,30 @@ export function InnerIterationNode({
           },
         )}
       >
-        <NodeResizeControl style={controlStyle} minWidth={100} minHeight={50}>
-          <ResizeIcon />
-        </NodeResizeControl>
-        <LeftEndHandle></LeftEndHandle>
+        {!readOnly && (
+          <NodeResizeControl
+            style={{ ...controlStyle, pointerEvents: 'auto' }}
+            minWidth={100}
+            minHeight={50}
+          >
+            <ResizeIcon />
+          </NodeResizeControl>
+        )}
+        <LeftEndHandle className="!pointer-events-auto"></LeftEndHandle>
         <CommonHandle
           id={NodeHandleId.Start}
           type="source"
           position={Position.Right}
           isConnectable={isConnectable}
           nodeId={id}
+          className="!pointer-events-auto"
         ></CommonHandle>
         <NodeHeader
           id={id}
           name={data.name}
           label={data.label}
           wrapperClassName={cn(
-            'bg-background-header-bar p-2 rounded-t-[10px] absolute w-full top-[-38px] left-[-0.3px] border-x border-t border-border-button',
+            'pointer-events-auto bg-background-header-bar p-2 rounded-t-[10px] absolute w-full top-[-38px] left-[-0.3px] border-x border-t border-border-button',
             {
               ['border-x border-t border-accent-primary']: selected,
             },

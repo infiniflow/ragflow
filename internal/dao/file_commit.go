@@ -47,7 +47,7 @@ func NewFileCommitDAO() *FileCommitDAO {
 // GetByID gets a file commit by ID
 func (dao *FileCommitDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.FileCommit, error) {
 	var commit entity.FileCommit
-	err := db.WithContext(ctx).Where("id = ?", id).First(&commit).Error
+	err := db.WithContext(ctx).Take(&commit, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func (dao *FileCommitItemDAO) ListByCommitID(ctx context.Context, db *gorm.DB, c
 // ListByFileID lists all commit items for a specific file (for version history)
 func (dao *FileCommitItemDAO) ListByFileID(ctx context.Context, db *gorm.DB, fileID string) ([]*entity.FileCommitItem, error) {
 	var items []*entity.FileCommitItem
-	err := db.WithContext(ctx).Where("file_id = ?", fileID).Order("create_time DESC").Find(&items).Error
+	err := db.WithContext(ctx).Where("file_id = ?", fileID).Order("create_time DESC, seq DESC").Find(&items).Error
 	return items, err
 }
 

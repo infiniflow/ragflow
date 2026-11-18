@@ -20,6 +20,7 @@ import AvatarNameDescription from '@/components/avatar-name-description';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import { MetadataFilter } from '@/components/metadata-filter';
+import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,12 +29,9 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormMessage,
 } from '@/components/ui/form';
-import { MultiSelect } from '@/components/ui/multi-select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
-import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import {
   useRevalidateStaleDatasetIds,
   useStaleDatasetFormSchema,
@@ -42,8 +40,8 @@ import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { useCallback, useEffect, useState } from 'react';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
   ISearchAppDetailProps,
@@ -52,6 +50,7 @@ import {
   useUpdateSearch,
 } from '../next-searches/hooks';
 import { RerankFormFields } from '@/components/rerank';
+import { resolveInitialLlmSetting } from './llm-setting-defaults';
 import {
   SearchSettingFormData,
   useRevalidatePersistedModels,
@@ -80,7 +79,7 @@ function SearchSetting({
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     searchSettingSchema,
     search_config?.kb_ids,
-    'search_config.kb_ids',
+    { fieldName: 'search_config.kb_ids' },
   );
   const formMethods = useForm<SearchSettingFormData>({
     resolver: zodResolver(formSchema),
@@ -101,24 +100,21 @@ function SearchSetting({
       description: data?.description || descriptionDefaultValue,
       search_config: {
         kb_ids: search_config?.kb_ids || [],
-        vector_similarity_weight:
-          search_config?.vector_similarity_weight ?? 0.3,
+        keywords_similarity_weight:
+          search_config?.keywords_similarity_weight ?? 0.7,
         web_search: search_config?.web_search || false,
         doc_ids: [],
         similarity_threshold: search_config?.similarity_threshold ?? 0.2,
         use_kg: false,
         rerank_id: search_config?.rerank_id || '',
         use_rerank: search_config?.rerank_id ? true : false,
-        top_k: search_config?.top_k || 1024,
+        rerank_candidates_count: search_config?.rerank_candidates_count ?? 100,
         summary: search_config?.summary || false,
         chat_id: search_config?.chat_id || '',
         llm_setting: {
           llm_id: search_config?.chat_id || '',
           parameter: llm_setting?.parameter || '',
-          temperature: llm_setting?.temperature || 0,
-          top_p: llm_setting?.top_p || 0,
-          frequency_penalty: llm_setting?.frequency_penalty || 0,
-          presence_penalty: llm_setting?.presence_penalty || 0,
+          ...resolveInitialLlmSetting(llm_setting),
         },
         chat_settingcross_languages: [],
         highlight: false,
@@ -126,14 +122,6 @@ function SearchSetting({
         related_search: search_config?.related_search || false,
         query_mindmap: search_config?.query_mindmap || false,
         meta_data_filter: search_config?.meta_data_filter,
-        reference_metadata: {
-          include: search_config?.reference_metadata?.include || false,
-          fields:
-            search_config?.reference_metadata?.fields &&
-            search_config.reference_metadata.fields.length > 0
-              ? search_config.reference_metadata.fields
-              : undefined,
-        },
       },
       temperatureEnabled: llm_setting?.temperature_enabled ?? true,
       topPEnabled: llm_setting?.top_p_enabled ?? true,
@@ -156,72 +144,11 @@ function SearchSetting({
     }
   }, [open]);
 
-  const { rerankModelEnabled, aiSummaryEnabled } = useRevalidatePersistedModels(
-    {
-      control: formMethods.control,
-      trigger: formMethods.trigger,
-      modelsFetched,
-    },
-  );
-
-  const selectedKbIds = useWatch({
+  const { rerankModelEnabled, llmRequired } = useRevalidatePersistedModels({
     control: formMethods.control,
-    name: 'search_config.kb_ids',
+    trigger: formMethods.trigger,
+    modelsFetched,
   });
-  const referenceMetadataEnabled = useWatch({
-    control: formMethods.control,
-    name: 'search_config.reference_metadata.include',
-  });
-  const { data: metadataKeys, loading: metadataKeysLoading } =
-    useFetchKnowledgeMetadataKeys(selectedKbIds || []);
-  const metadataFieldOptions = useMemo(() => {
-    return (metadataKeys || []).map((key) => ({
-      label: key,
-      value: key,
-    }));
-  }, [metadataKeys]);
-
-  useEffect(() => {
-    const currentFields = formMethods.getValues(
-      'search_config.reference_metadata.fields',
-    );
-    if (
-      referenceMetadataEnabled &&
-      Array.isArray(currentFields) &&
-      currentFields.length > 0 &&
-      metadataKeys
-    ) {
-      const validFields = currentFields.filter((field) =>
-        metadataKeys.includes(field),
-      );
-      if (validFields.length !== currentFields.length) {
-        formMethods.setValue(
-          'search_config.reference_metadata.fields',
-          validFields,
-        );
-      }
-    } else if (!referenceMetadataEnabled) {
-      formMethods.setValue(
-        'search_config.reference_metadata.fields',
-        undefined,
-      );
-    }
-  }, [
-    selectedKbIds,
-    metadataKeys,
-    metadataKeysLoading,
-    referenceMetadataEnabled,
-    formMethods,
-  ]);
-
-  // Reset top_k to 1024 only when user actively disables rerank (from true to false)
-  const prevRerankEnabled = useRef<boolean | undefined>(undefined);
-  useEffect(() => {
-    if (prevRerankEnabled.current === true && rerankModelEnabled === false) {
-      formMethods.setValue('search_config.top_k', 1024);
-    }
-    prevRerankEnabled.current = rerankModelEnabled;
-  }, [rerankModelEnabled, formMethods]);
 
   const { updateSearch } = useUpdateSearch();
   const [formSubmitLoading, setFormSubmitLoading] = useState(false);
@@ -250,7 +177,7 @@ function SearchSetting({
       void _maxTokensEnabled;
       const {
         llm_setting,
-        vector_similarity_weight,
+        keywords_similarity_weight,
         use_rerank,
         rerank_id,
         ...other_config
@@ -267,24 +194,13 @@ function SearchSetting({
         frequency_penalty_enabled: _frequencyPenaltyEnabled,
         presence_penalty_enabled: _presencePenaltyEnabled,
       } as IllmSettingProps;
-      const referenceMetadata = other_config.reference_metadata;
-      const normalizedReferenceMetadata = referenceMetadata
-        ? {
-            ...referenceMetadata,
-            ...(Array.isArray(referenceMetadata.fields) &&
-            referenceMetadata.fields.length === 0
-              ? { fields: undefined }
-              : {}),
-          }
-        : referenceMetadata;
 
       await updateSearch({
         ...other_formdata,
         search_config: {
           ...other_config,
-          reference_metadata: normalizedReferenceMetadata,
           chat_id: llm_setting.llm_id,
-          vector_similarity_weight,
+          keywords_similarity_weight,
           rerank_id: use_rerank ? rerank_id : '',
           llm_setting: { ...llmSetting },
         },
@@ -297,10 +213,24 @@ function SearchSetting({
       setFormSubmitLoading(false);
     }
   };
+
+  const handleValidSubmit = (formData: SearchSettingFormData) => {
+    onSubmit(formData as unknown as IUpdateSearchProps);
+  };
+
+  const handleInvalidSubmit = (errors: FieldErrors<SearchSettingFormData>) => {
+    console.error(errors, formMethods.getValues());
+  };
+
+  const handleSubmit = formMethods.handleSubmit(
+    handleValidSubmit,
+    handleInvalidSubmit,
+  );
+
   return (
     <div
       className={cn(
-        'text-text-primary border-l-0.5 p-4 pb-12',
+        'text-text-primary border-l-0.5 flex min-h-0 flex-col p-4',
         {
           'animate-fade-in-right': open,
           'animate-fade-out-right': !open,
@@ -309,28 +239,15 @@ function SearchSetting({
         className,
       )}
     >
-      <div className="flex justify-between items-center text-base mb-8">
+      <div className="mb-8 flex shrink-0 items-center justify-between text-base">
         <div className="text-text-primary">{t('search.searchSettings')}</div>
         <div onClick={() => setOpen(false)}>
           <X size={16} className="text-text-primary cursor-pointer" />
         </div>
       </div>
-      <div
-        style={{ maxHeight: 'calc(100dvh - 270px)' }}
-        className="overflow-y-auto scrollbar-auto p-1 text-text-secondary"
-      >
-        <Form {...formMethods}>
-          <form
-            onSubmit={formMethods.handleSubmit(
-              (data) => {
-                onSubmit(data as unknown as IUpdateSearchProps);
-              },
-              (error) => {
-                console.error(error, formMethods.getValues());
-              },
-            )}
-            className="space-y-6"
-          >
+      <Form {...formMethods}>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="scrollbar-auto min-h-0 flex-1 space-y-6 overflow-y-auto p-1 text-text-secondary">
             <AvatarNameDescription avatarField="avatar" />
 
             <KnowledgeBaseFormField
@@ -338,67 +255,16 @@ function SearchSetting({
               required
             ></KnowledgeBaseFormField>
             <MetadataFilter prefix="search_config."></MetadataFilter>
-            <FormField
-              control={formMethods.control}
-              name="search_config.reference_metadata.include"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={(value) => {
-                        field.onChange(value);
-                        if (!value) {
-                          formMethods.setValue(
-                            'search_config.reference_metadata.fields',
-                            undefined,
-                          );
-                        }
-                      }}
-                    />
-                  </FormControl>
-                  <FormLabel tooltip={t('chat.showChunkMetadataTip')}>
-                    {t('chat.showChunkMetadata')}
-                  </FormLabel>
-                </FormItem>
-              )}
-            />
-            {referenceMetadataEnabled && (
-              <FormField
-                control={formMethods.control}
-                name="search_config.reference_metadata.fields"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel tooltip={t('chat.metadataFieldsTip')}>
-                      {t('chat.metadataFields')}
-                    </FormLabel>
-                    <FormControl className="bg-bg-input">
-                      <MultiSelect
-                        options={metadataFieldOptions}
-                        onValueChange={field.onChange}
-                        showSelectAll={false}
-                        placeholder={t('common.pleaseSelect')}
-                        maxCount={20}
-                        defaultValue={
-                          Array.isArray(field.value) ? field.value : []
-                        }
-                        value={Array.isArray(field.value) ? field.value : []}
-                        name={field.name}
-                        ref={field.ref}
-                        onBlur={field.onBlur}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
             <SimilaritySliderFormField
               isTooltipShown
               similarityName="search_config.similarity_threshold"
-              similarityWeightName="search_config.vector_similarity_weight"
+              similarityWeightName="search_config.keywords_similarity_weight"
               numberInputClassName="rounded-sm"
             ></SimilaritySliderFormField>
+            <RerankCandidatesCountFormField
+              name="search_config.rerank_candidates_count"
+              defaultValue={100}
+            ></RerankCandidatesCountFormField>
             {/* Rerank Model */}
             <FormField
               control={formMethods.control}
@@ -417,9 +283,23 @@ function SearchSetting({
             />
             {rerankModelEnabled && (
               <>
-                <RerankFormFields prefix={'search_config.'}></RerankFormFields>
+                <RerankFormFields
+                  prefix={'search_config.'}
+                  required
+                ></RerankFormFields>
               </>
             )}
+            <LlmSettingFieldItems
+              prefix="search_config.llm_setting"
+              showCollapse
+              llmRequired={llmRequired}
+              showFields={[
+                'temperature',
+                'top_p',
+                'presence_penalty',
+                'frequency_penalty',
+              ]}
+            ></LlmSettingFieldItems>
             {/* AI Summary */}
             <FormField
               control={formMethods.control}
@@ -436,21 +316,6 @@ function SearchSetting({
                 </FormItem>
               )}
             />
-            {aiSummaryEnabled && (
-              // <LlmSettingFieldItems
-              //   prefix="search_config.llm_setting"
-              //   options={aiSummeryModelOptions}
-              // ></LlmSettingFieldItems>
-              <LlmSettingFieldItems
-                prefix="search_config.llm_setting"
-                showFields={[
-                  'temperature',
-                  'top_p',
-                  'presence_penalty',
-                  'frequency_penalty',
-                ]}
-              ></LlmSettingFieldItems>
-            )}
             {/* Feature Controls */}
             {/* <FormField
               control={formMethods.control}
@@ -498,35 +363,33 @@ function SearchSetting({
                 </FormItem>
               )}
             />
-            {/* Submit Button */}
-            <div className="flex justify-end"></div>
-            <div className="flex justify-end gap-2 absolute bottom-1 right-3 bg-bg-base w-[calc(100%-1em)] py-2">
-              <Button
-                type="reset"
-                variant={'transparent'}
-                onClick={() => {
-                  resetForm();
-                  setOpen(false);
-                }}
-              >
-                {t('search.cancelText')}
-              </Button>
-              <Button
-                data-testid="search-settings-save"
-                type="submit"
-                disabled={formSubmitLoading}
-              >
-                {formSubmitLoading && (
-                  <div className="size-4">
-                    <Spin size="small" />
-                  </div>
-                )}
-                {t('search.okText')}
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </div>
+          </div>
+          <div className="flex shrink-0 justify-end gap-2 bg-bg-base pt-2">
+            <Button
+              type="reset"
+              variant={'transparent'}
+              onClick={() => {
+                resetForm();
+                setOpen(false);
+              }}
+            >
+              {t('search.cancelText')}
+            </Button>
+            <Button
+              data-testid="search-settings-save"
+              type="submit"
+              disabled={formSubmitLoading}
+            >
+              {formSubmitLoading && (
+                <div className="size-4">
+                  <Spin size="small" />
+                </div>
+              )}
+              {t('search.okText')}
+            </Button>
+          </div>
+        </form>
+      </Form>
     </div>
   );
 }

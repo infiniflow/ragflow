@@ -199,7 +199,9 @@ func buildSearchExprs(ctx context.Context, embModel *modelModule.EmbeddingModel,
 		return []interface{}{matchText}
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, modelModule.EmbedRequest{Texts: []string{matchText.MatchingText}}, embModel.APIConfig, embeddingConfig, nil)
+	// Query: true — matchText is the search query (Python get_vector →
+	// encode_queries), not a document.
+	embeddings, err := embModel.Embed(ctx, modelModule.EmbedRequest{Texts: []string{matchText.MatchingText}, Query: true}, embeddingConfig, nil)
 	if err != nil || len(embeddings) == 0 {
 		return []interface{}{matchText}
 	}
@@ -210,7 +212,7 @@ func buildSearchExprs(ctx context.Context, embModel *modelModule.EmbeddingModel,
 
 // buildMatchDenseExpr constructs a MatchDenseExpr from an embedding vector.
 func buildMatchDenseExpr(vector []float64, topN int, similarity float64) *types.MatchDenseExpr {
-	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
+	vectorColumnName := common.VectorColumnName(len(vector))
 	return &types.MatchDenseExpr{
 		VectorColumnName:  vectorColumnName,
 		EmbeddingData:     vector,
@@ -243,7 +245,7 @@ func queryRewrite(ctx context.Context, chatModel *modelModule.ChatModel, questio
 			{Role: "system", Content: prompt},
 			{Role: "user", Content: "Output:"},
 		}
-		response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, nil, nil)
+		response, err := chatModel.ChatWithMessages(ctx, messages, nil, nil)
 		if err == nil && response != nil && response.Answer != nil {
 			result, parseErr := common.ParseQueryRewriteResponse(*response.Answer)
 			if parseErr == nil && result != nil {

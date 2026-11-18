@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -108,6 +109,147 @@ func TestSiliconflowChatWithMessagesExtractsResponseAndUsage(t *testing.T) {
 	}
 	if response.Usage == nil || response.Usage.PromptTokens != 3 || response.Usage.CompletionTokens != 5 || response.Usage.TotalTokens != 8 {
 		t.Fatalf("Usage=%#v, want prompt=3 completion=5 total=8", response.Usage)
+	}
+}
+
+func TestSiliconflowAudioSpeechSendsRequiredVoice(t *testing.T) {
+	withSSRFBypass(t)
+	var gotPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		voice, _ := gotPayload["voice"].(string)
+		if voice != "FunAudioLLM/CosyVoice2-0.5B:anna" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"code":20052,"message":"Voice or reference audio should be set","data":null}`))
+			return
+		}
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("mp3-bytes"))
+	}))
+	defer server.Close()
+
+	apiKey := "test-key"
+	modelName := "FunAudioLLM/CosyVoice2-0.5B"
+	text := "hello"
+	resp, err := NewSiliconflowModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: "audio/speech"},
+	).AudioSpeech(t.Context(), &modelName, &text, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err != nil {
+		t.Fatalf("AudioSpeech: %v", err)
+	}
+	if string(resp.Audio) != "mp3-bytes" {
+		t.Fatalf("Audio=%q, want mp3-bytes", resp.Audio)
+	}
+	want := map[string]any{
+		"model":           "FunAudioLLM/CosyVoice2-0.5B",
+		"input":           "hello",
+		"voice":           "FunAudioLLM/CosyVoice2-0.5B:anna",
+		"response_format": "mp3",
+		"sample_rate":     float64(32000),
+		"speed":           float64(1),
+		"gain":            float64(0),
+		"stream":          false,
+	}
+	for key, value := range want {
+		if gotPayload[key] != value {
+			t.Errorf("payload[%q]=%#v, want %#v", key, gotPayload[key], value)
+		}
+	}
+}
+
+func TestSiliconflowAudioSpeechParamsOverrideVoice(t *testing.T) {
+	withSSRFBypass(t)
+	var gotPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotPayload)
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("mp3-bytes"))
+	}))
+	defer server.Close()
+
+	apiKey := "test-key"
+	modelName := "FunAudioLLM/CosyVoice2-0.5B"
+	text := "hello"
+	resp, err := NewSiliconflowModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: "audio/speech"},
+	).AudioSpeech(t.Context(), &modelName, &text, &APIConfig{ApiKey: &apiKey},
+		&TTSConfig{Params: map[string]interface{}{"voice": "FunAudioLLM/CosyVoice2-0.5B:benjamin"}}, nil)
+	if err != nil {
+		t.Fatalf("AudioSpeech: %v", err)
+	}
+	if string(resp.Audio) != "mp3-bytes" {
+		t.Fatalf("Audio=%q, want mp3-bytes", resp.Audio)
+	}
+	if gotPayload["voice"] != "FunAudioLLM/CosyVoice2-0.5B:benjamin" {
+		t.Fatalf("voice=%#v, want the Params override", gotPayload["voice"])
+	}
+}
+
+func TestSiliconflowAudioSpeechErrorIncludesProviderAndBody(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":20052,"message":"Voice or reference audio should be set","data":null}`))
+	}))
+	defer server.Close()
+
+	apiKey := "test-key"
+	modelName := "FunAudioLLM/CosyVoice2-0.5B"
+	text := "hello"
+	_, err := NewSiliconflowModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: "audio/speech"},
+	).AudioSpeech(t.Context(), &modelName, &text, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for provider rejection")
+	}
+	for _, want := range []string{"SiliconFlow TTS API error", "400 Bad Request", "Voice or reference audio should be set"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want it to contain %q", err, want)
+		}
+	}
+}
+
+func TestSiliconflowAudioSpeechWithSenderSendsRequiredVoice(t *testing.T) {
+	withSSRFBypass(t)
+	var gotPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotPayload)
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("mp3-bytes"))
+	}))
+	defer server.Close()
+
+	apiKey := "test-key"
+	modelName := "FunAudioLLM/CosyVoice2-0.5B"
+	text := "hello"
+	var chunks []string
+	err := NewSiliconflowModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{TTS: "audio/speech"},
+	).AudioSpeechWithSender(t.Context(), &modelName, &text, &APIConfig{ApiKey: &apiKey}, nil, nil,
+		func(content *string, _ *string) error {
+			if content != nil {
+				chunks = append(chunks, *content)
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("AudioSpeechWithSender: %v", err)
+	}
+	if gotPayload["voice"] != "FunAudioLLM/CosyVoice2-0.5B:anna" {
+		t.Fatalf("voice=%#v, want model-qualified default voice", gotPayload["voice"])
+	}
+	if gotPayload["stream"] != true {
+		t.Fatalf("stream=%#v, want true", gotPayload["stream"])
+	}
+	if len(chunks) == 0 {
+		t.Fatal("expected streamed audio chunks")
 	}
 }
 

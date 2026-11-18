@@ -35,3 +35,20 @@ func TestMergeWikiProductsBySlugKeepsSingleDocumentPageContent(t *testing.T) {
 		t.Fatalf("dataset page identity not applied: doc_id=%q merged=%t", merged[0].DocID, merged[0].Merged)
 	}
 }
+
+func TestSelectMergedWikiTopicPathUsesSourceSupport(t *testing.T) {
+	products := []kccommon.Product{
+		{DocID: "doc-1", Meta: map[string]any{
+			"topic": "三国演义/人物/蜀汉人物", "source_doc_ids": []string{"doc-1"}, "source_chunk_ids": []string{"c1"},
+		}},
+		{DocID: "doc-2", Meta: map[string]any{
+			"topic": "三国演义 / 人物 / 蜀汉人物", "source_doc_ids": []string{"doc-2"}, "source_chunk_ids": []string{"c2"},
+		}},
+		{DocID: "doc-3", Meta: map[string]any{
+			"topic": "文学/人物", "source_doc_ids": []string{"doc-3"}, "source_chunk_ids": []string{"c3", "c4", "c5"},
+		}},
+	}
+	if got := selectMergedWikiTopicPath(products); got != "三国演义/人物/蜀汉人物" {
+		t.Fatalf("selected topic = %q, want path supported by two documents", got)
+	}
+}

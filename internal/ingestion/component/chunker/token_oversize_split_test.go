@@ -16,6 +16,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"strings"
 	"testing"
 )
@@ -59,7 +60,7 @@ func TestTokenChunker_OversizeUnitSplit(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
-			chunks, ok := out["chunks"].([]map[string]any)
+			chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 			if !ok {
 				t.Fatalf("chunks missing or wrong type: %T", out["chunks"])
 			}
@@ -128,7 +129,7 @@ func TestTokenChunker_OversizeUnitSplitAfterInBudgetUnit(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
-			chunks, ok := out["chunks"].([]map[string]any)
+			chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 			if !ok {
 				t.Fatalf("chunks missing or wrong type: %T", out["chunks"])
 			}
@@ -136,8 +137,10 @@ func TestTokenChunker_OversizeUnitSplitAfterInBudgetUnit(t *testing.T) {
 				t.Fatalf("want in-budget chunk + split pieces, got %d chunk(s)", len(chunks))
 			}
 			first, _ := chunks[0]["text"].(string)
-			if first != inBudget {
-				t.Fatalf("first chunk should be only the in-budget sentence %q, got %q", inBudget, first)
+			// The in-budget sentence keeps its retained trailing delimiter
+			// (lossless): "Hello world." + the "\n" it ended with.
+			if want := inBudget + "\n"; first != want {
+				t.Fatalf("first chunk should be only the in-budget sentence %q, got %q", want, first)
 			}
 			for i := 1; i < len(chunks); i++ {
 				text, _ := chunks[i]["text"].(string)

@@ -26,6 +26,8 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
+const wikiMapActiveStateSchemaVersion = "topic-path-v2"
+
 type wikiMapChunkVersion struct {
 	index       int
 	chunk       common.Chunk
@@ -43,7 +45,8 @@ func (p *wikiPipeline) runVersionedMap() error {
 	}
 	llmFingerprint := wikiMapHash(p.llmID)
 	p.activeStateKey = wikiMapHash(strings.Join([]string{
-		p.tenantID, p.datasetID, p.docID, templateFingerprint, llmFingerprint, "active",
+		p.tenantID, p.datasetID, p.docID, templateFingerprint, llmFingerprint,
+		wikiMapActiveStateSchemaVersion, "active",
 	}, "\x00"))
 	p.previousActiveState = wikiMapActiveSnapshot{Chunks: map[string]wikiMapActiveChunk{}}
 	if activeStore, ok := p.deps.WikiMapVersions.(common.WikiMapActiveStateStore); ok {
@@ -67,7 +70,7 @@ func (p *wikiPipeline) runVersionedMap() error {
 		if strings.TrimSpace(chunk.ID) == "" {
 			continue
 		}
-		contentHash := wikiMapHash(firstNonEmpty(chunk.Text, chunk.Content))
+		contentHash := wikiMapHash(common.FirstNonEmpty(chunk.Text, chunk.Content))
 		key := wikiMapHash(strings.Join([]string{
 			p.tenantID,
 			p.datasetID,
@@ -108,7 +111,7 @@ func (p *wikiPipeline) runVersionedMap() error {
 	}
 
 	batches := common.PackBatches(misses, wikiMapTokenBudget, p.deps.Tokenizer)
-	batchExtracts, err := runMapBatches(p.ctx, batches, p.mapBatch)
+	batchExtracts, err := runMapBatches(p.ctx, batches, p.deps.Progress.Sub(0, 6).Sub(0, 2), p.mapBatch)
 	if err != nil {
 		return err
 	}
@@ -156,7 +159,7 @@ func (p *wikiPipeline) runVersionedMap() error {
 		uncacheable = append(uncacheable, chunk)
 	}
 	uncacheableBatches := common.PackBatches(uncacheable, wikiMapTokenBudget, p.deps.Tokenizer)
-	uncachedExtracts, err := runMapBatches(p.ctx, uncacheableBatches, p.mapBatch)
+	uncachedExtracts, err := runMapBatches(p.ctx, uncacheableBatches, p.deps.Progress.Sub(0, 6).Sub(1, 2), p.mapBatch)
 	if err != nil {
 		return err
 	}
@@ -275,9 +278,14 @@ func splitWikiExtractByChunk(extract wikiExtract, batch []common.Chunk) map[stri
 			out[chunkID] = part
 		}
 	}
-	for chunkID, part := range out {
-		part.Topics = append(part.Topics, extract.Topics...)
-		out[chunkID] = part
+	for _, topic := range extract.Topics {
+		for _, chunkID := range wikiMapItemChunkIDs(topic.SourceChunkIDs, known) {
+			part := out[chunkID]
+			topicCopy := topic
+			topicCopy.SourceChunkIDs = []string{chunkID}
+			part.Topics = append(part.Topics, topicCopy)
+			out[chunkID] = part
+		}
 	}
 	return out
 }

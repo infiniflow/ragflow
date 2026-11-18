@@ -1,9 +1,11 @@
 package layout
 
 import (
+	"strings"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 func TestBoxesToSections_CrossPagePositionTag(t *testing.T) {
@@ -55,6 +57,32 @@ func TestBoxesToSections_SinglePageUnchanged(t *testing.T) {
 	}
 	if len(sections[0].Positions[0].PageNumbers) != 1 {
 		t.Errorf("single-page PageNumbers: got %v, want [0]", sections[0].Positions[0].PageNumbers)
+	}
+}
+
+// TestBoxesToSections_SinglePageTableWithPositions locks the legacy tag form
+// for a box that carries per-page Positions: a one-page section must emit
+// @@N, not the degenerate @@N-N that ExtractPositions reads as two pages.
+func TestBoxesToSections_SinglePageTableWithPositions(t *testing.T) {
+	box := pdf.TextBox{
+		X0: 10, X1: 300, Top: 40, Bottom: 90,
+		PageNumber: 1, HasPageNumber: true, Pages: []int{1},
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 10, Right: 300, Top: 40, Bottom: 90}},
+		Text:      "<table><tr><td>x</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+	}
+	sections := BoxesToSections([]pdf.TextBox{box}, map[int]float64{1: 800})
+	if len(sections) != 1 {
+		t.Fatalf("expected 1 section, got %d", len(sections))
+	}
+	if got, want := sections[0].PositionTag, "@@2\t10.0\t300.0\t40.0\t90.0##"; got != want {
+		t.Errorf("PositionTag: got %q, want %q", got, want)
+	}
+	parsed := util.ExtractPositions(sections[0].PositionTag)
+	if len(parsed) != 1 || len(parsed[0].PageNumbers) != 1 || parsed[0].PageNumbers[0] != 1 {
+		t.Errorf("tag must round-trip to one page: %+v", parsed)
+	}
+	if len(sections[0].Positions) != 1 {
+		t.Errorf("per-page positions must pass through: %+v", sections[0].Positions)
 	}
 }
 
@@ -230,89 +258,6 @@ func TestNormalizeSectionPositions_EmptySlice(t *testing.T) {
 	}
 }
 
-func TestSectionsToMarkdown_Title(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeTitle, Text: "标题", Image: ""},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "\n## 标题\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_FigureWithImage(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: "abc123"},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "\n![Image](data:image/png;base64,abc123)"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_FigureWithoutImage(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: ""},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "图1\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_Text(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeText, Text: "普通内容", Image: ""},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "普通内容\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_Table(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeTable, Text: "表格内容", Image: ""},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "表格内容\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_Mixed(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeTitle, Text: "标题", Image: ""},
-		{LayoutType: pdf.LayoutTypeText, Text: "内容", Image: ""},
-		{LayoutType: pdf.LayoutTypeFigure, Text: "图", Image: "img"},
-		{LayoutType: pdf.LayoutTypeTable, Text: "表格", Image: ""},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "\n## 标题\n内容\n\n![Image](data:image/png;base64,img)表格\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_EmptySlice(t *testing.T) {
-	got := SectionsToMarkdown([]pdf.Section{})
-	if got != "" {
-		t.Errorf("got %q, want empty string", got)
-	}
-}
-
-func TestSectionsToMarkdown_NilSlice(t *testing.T) {
-	got := SectionsToMarkdown(nil)
-	if got != "" {
-		t.Errorf("got %q, want empty string", got)
-	}
-}
-
 func TestSectionsToJSON_SingleSection(t *testing.T) {
 	sections := []pdf.Section{
 		{
@@ -386,7 +331,78 @@ func TestSectionsToJSON_NilSlice(t *testing.T) {
 	}
 }
 
-// TestCrossPageTableMerge verifies that mergeTablesAcrossPages merges
-// two TableItems on consecutive pages with overlapping X positions.
-// Python: _extract_table_figure merges cross-page tables by matching layoutno.
-// Spanning cells should be annotated with colspan/rowspan in the HTML output.
+func TestInlinePNGDataURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantURL string
+	}{
+		{
+			name:    "empty string returns empty",
+			input:   "",
+			wantURL: "",
+		},
+		{
+			name:    "whitespace string returns empty",
+			input:   "   ",
+			wantURL: "",
+		},
+		{
+			name:    "raw base64 gets png data URI prefix",
+			input:   "aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "raw base64 with surrounding whitespace gets trimmed and prefixed",
+			input:   "  aGVsbG8=  \n",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "already png data uri is preserved as is",
+			input:   "data:image/png;base64,aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "already jpeg data uri is preserved as is",
+			input:   "data:image/jpeg;base64,/9j/4AAQ",
+			wantURL: "data:image/jpeg;base64,/9j/4AAQ",
+		},
+		{
+			name:    "http url is preserved as is",
+			input:   "http://example.com/img.png",
+			wantURL: "http://example.com/img.png",
+		},
+		{
+			name:    "https url is preserved as is",
+			input:   "https://example.com/img.png",
+			wantURL: "https://example.com/img.png",
+		},
+		{
+			name:    "line-wrapped base64 with CRLF is normalized without CRLF",
+			input:   "aGVs\r\nbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "multi-line wrapped base64 with LF is normalized without LF",
+			input:   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk\n+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+			wantURL: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+		},
+		{
+			name:    "non-base64 invalid string is returned without mangling",
+			input:   "invalid!@#base64",
+			wantURL: "invalid!@#base64",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := InlinePNGDataURL(tc.input)
+			if got != tc.wantURL {
+				t.Errorf("InlinePNGDataURL(%q) = %q, want %q", tc.input, got, tc.wantURL)
+			}
+			if strings.HasPrefix(got, "data:image/png;base64,") && strings.ContainsAny(got, "\r\n") {
+				t.Errorf("InlinePNGDataURL(%q) contains CR/LF characters: %q", tc.input, got)
+			}
+		})
+	}
+}

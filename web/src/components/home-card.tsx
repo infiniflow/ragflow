@@ -60,11 +60,12 @@ export function HomeCard({
       data-testid={testId}
       data-agent-name={data.name}
       onClick={() => {
-        // navigateToSearch(data?.id);
         onClick?.();
       }}
-      tabIndex={0}
-      className="px-2.5 py-4 flex gap-2 items-start group h-full w-full hover:shadow-md"
+      tabIndex={onClick ? 0 : undefined}
+      className={`rounded-xl px-2.5 py-4 flex gap-2 items-start group h-full w-full${
+        onClick ? ' hover:shadow-md cursor-pointer' : ''
+      }`}
     >
       <div>
         <RAGFlowAvatar

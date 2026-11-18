@@ -2,6 +2,26 @@ package common
 
 import "testing"
 
+func TestParseParamThinkingSettings(t *testing.T) {
+	for _, thinking := range []string{"", "default", "disabled", "enabled"} {
+		t.Run(thinking, func(t *testing.T) {
+			p, err := ParseParam(map[string]any{
+				"compilation_template_id": "template-1",
+				"thinking":                thinking,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !p.ChatSettings.ThinkingSet || p.ChatSettings.Thinking == nil {
+				t.Fatal("thinking choice must set an explicit override")
+			}
+			if got, want := *p.ChatSettings.Thinking, thinking == "enabled"; got != want {
+				t.Errorf("thinking = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 // TestKindToVariant_WhitelistCoversAllValidKinds covers O2a: every whitelisted
 // template kind maps to a non-empty variant without error.
 func TestKindToVariant_WhitelistCoversAllValidKinds(t *testing.T) {
@@ -49,5 +69,26 @@ func TestKindToVariant_CanonicalForms(t *testing.T) {
 	}
 	if a != b || a != c {
 		t.Errorf("structure/knowledge_graph/graph should map to the same variant, got %q %q %q", a, b, c)
+	}
+}
+
+func TestKindToTaskTypePreservesFrontendCategories(t *testing.T) {
+	tests := map[string]string{
+		"wiki":            TaskTypeWiki,
+		"tree":            TaskTypeTree,
+		"knowledge_graph": TaskTypeGraph,
+		"mind_map":        TaskTypeMindmap,
+		"timeline":        TaskTypeTimeline,
+		"page_index":      TaskTypePageIndex,
+	}
+	for kind, want := range tests {
+		got, err := KindToTaskType(kind)
+		if err != nil {
+			t.Errorf("KindToTaskType(%q) unexpected error: %v", kind, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("KindToTaskType(%q) = %q, want %q", kind, got, want)
+		}
 	}
 }

@@ -35,16 +35,18 @@ const crawlerToolName = "web_crawler"
 
 const crawlerToolDescription = "Crawls a web page and returns its extracted text content and links."
 
+const maxCrawlerResponseBytes = 4 << 20
+
 // crawlerArgs is the JSON shape the model sends in. query is the
 // Python-compatible argument name; url is accepted for older Go
 // callers. max_depth and max_pages are accepted for API symmetry with
 // earlier Go callers, but the current implementation only supports
 // depth=0 (single page fetch).
 type crawlerArgs struct {
-	Query    string `json:"query"`
-	URL      string `json:"url,omitempty"`
-	MaxDepth int    `json:"max_depth,omitempty"`
-	MaxPages int    `json:"max_pages,omitempty"`
+	Query    string `json:"query" doc:"The absolute URL to crawl. Must include an http:// or https:// scheme." required:"true"`
+	URL      string `json:"url,omitempty" schema:"-"`
+	MaxDepth int    `json:"max_depth,omitempty" doc:"Recursion depth. 0 only; >0 returns an error."`
+	MaxPages int    `json:"max_pages,omitempty" doc:"Maximum number of pages to fetch. Ignored (single page)."`
 }
 
 func (a crawlerArgs) targetURL() string {
@@ -124,27 +126,7 @@ func (c *CrawlerTool) WithResolver(fn Resolver) *CrawlerTool {
 
 // Info returns the tool's metadata for the chat model.
 func (c *CrawlerTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: crawlerToolName,
-		Desc: crawlerToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The absolute URL to crawl. Must include an http:// or https:// scheme.",
-				Required: true,
-			},
-			"max_depth": {
-				Type:     schema.Integer,
-				Desc:     "Recursion depth. 0 only; >0 returns an error.",
-				Required: false,
-			},
-			"max_pages": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of pages to fetch. Ignored (single page).",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(crawlerToolName, crawlerToolDescription, crawlerArgs{})
 }
 
 // ErrCrawlerDepthUnsupported is returned when the caller asks for
@@ -205,10 +187,14 @@ func (c *CrawlerTool) InvokableRun(ctx context.Context, argumentsInJSON string, 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCrawlerResponseBytes+1))
 	if err != nil {
 		return crawlerStubResult(crawlerResult{URL: targetURL, Status: resp.StatusCode, Error: "read body: " + err.Error()}),
 			fmt.Errorf("crawler: read body: %w", err)
+	}
+	if len(body) > maxCrawlerResponseBytes {
+		err = errors.New("crawler: response too large")
+		return crawlerStubResult(crawlerResult{URL: targetURL, Status: resp.StatusCode, Error: err.Error()}), err
 	}
 
 	page, err := extractPage(body)

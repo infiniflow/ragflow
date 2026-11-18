@@ -89,10 +89,8 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
                   <Button
                     variant="delete"
                     size="icon-xs"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleClose(tag);
-                    }}
+                    type="button"
+                    onClick={() => handleClose(tag)}
                   >
                     <Trash2 className="size-[1em]" />
                   </Button>
@@ -119,7 +117,10 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             disabled={disabled}
             data-testid={inputTestId}
             onKeyDown={(e) => {
-              if (e?.key === 'Enter') {
+              // Ignore the Enter that confirms an IME (e.g. Chinese/Japanese)
+              // composition, otherwise the half-composed text is committed as a
+              // tag and the input closes before the user finishes typing.
+              if (e?.key === 'Enter' && !e.nativeEvent.isComposing) {
                 handleInputConfirm();
               }
             }}
@@ -132,6 +133,7 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             <Button
               variant="outline"
               size="icon"
+              type="button"
               onClick={showInput}
               disabled={disabled}
               data-testid={addButtonTestId}

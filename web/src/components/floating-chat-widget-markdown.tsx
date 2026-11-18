@@ -24,16 +24,21 @@ import {
 } from '@/hooks/use-document-request';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import {
-  currentReg,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  resolveCitationChunk,
   showImage,
 } from '@/utils/chat';
-import { citationMarkerReg } from '@/utils/citation-utils';
+import {
+  CitationKey,
+  citationMarkerReg,
+  citationWholeMarkerReg,
+} from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
@@ -42,7 +47,6 @@ import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
 import pipe from 'lodash/fp/pipe';
-import { Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Markdown from 'react-markdown';
@@ -62,13 +66,13 @@ import { Button } from './ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
-const getChunkIndex = (match: string) =>
-  parseCitationIndex(match.replace(/\[|\]/g, ''));
+const getChunkKey = (match: string) => parseCitationIndex(match);
 
 const FloatingChatWidgetMarkdown = ({
   reference,
   clickDocumentButton,
   content,
+  loading,
 }: {
   content: string;
   loading: boolean;
@@ -108,12 +112,21 @@ const FloatingChatWidgetMarkdown = ({
     ) =>
       () => {
         if (!documentId) return;
-        if (fileExtension !== 'pdf' && documentUrl) {
-          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
-          window.open(nextLink, '_blank');
-        } else if (clickDocumentButton) {
+        if (supportsSourceLocate(fileExtension) && clickDocumentButton) {
           clickDocumentButton(documentId, chunk);
+          return;
         }
+        if (!documentUrl) return;
+        // Web page documents carry their own url; opening the internal
+        // /document route for them lands on an empty page.
+        if (/^https?:\/\//i.test(documentUrl)) {
+          window.open(documentUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        window.open(
+          `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
+          '_blank',
+        );
       },
     [clickDocumentButton],
   );
@@ -134,8 +147,8 @@ const FloatingChatWidgetMarkdown = ({
   };
 
   const getReferenceInfo = useCallback(
-    (chunkIndex: number) => {
-      const chunkItem = reference?.chunks?.[chunkIndex];
+    (chunkKey: CitationKey) => {
+      const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
       if (!chunkItem) return null;
       const docAggsArray = Array.isArray(reference?.doc_aggs)
         ? reference.doc_aggs
@@ -164,8 +177,8 @@ const FloatingChatWidgetMarkdown = ({
   );
 
   const getPopoverContent = useCallback(
-    (chunkIndex: number) => {
-      const info = getReferenceInfo(chunkIndex);
+    (chunkKey: CitationKey) => {
+      const info = getReferenceInfo(chunkKey);
 
       if (!info) {
         return (
@@ -195,12 +208,14 @@ const FloatingChatWidgetMarkdown = ({
               <TooltipTrigger asChild>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className="w-24 h-24 object-contain rounded m-1 cursor-pointer"
                 />
               </TooltipTrigger>
               <TooltipContent side="left">
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className="max-w-[80vw] max-h-[60vh] rounded"
                 />
               </TooltipContent>
@@ -236,7 +251,9 @@ const FloatingChatWidgetMarkdown = ({
                         fileExtension,
                         documentUrl,
                       )}
-                      disabled={!documentUrl && fileExtension !== 'pdf'}
+                      disabled={
+                        !documentUrl && !supportsSourceLocate(fileExtension)
+                      }
                       style={{ whiteSpace: 'normal' }}
                     >
                       <span className="truncate">
@@ -245,7 +262,7 @@ const FloatingChatWidgetMarkdown = ({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {!documentUrl && fileExtension !== 'pdf'
+                    {!documentUrl && !supportsSourceLocate(fileExtension)
                       ? 'Document link unavailable'
                       : document.doc_name}
                   </TooltipContent>
@@ -261,17 +278,19 @@ const FloatingChatWidgetMarkdown = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      return reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
-        const info = getReferenceInfo(chunkIndex);
+      return reactStringReplace(text, citationWholeMarkerReg, (match, i) => {
+        const chunkKey = getChunkKey(match);
+        const info = getReferenceInfo(chunkKey);
 
         if (!info) {
           return (
             <Tooltip key={`err-tooltip-${i}`}>
               <TooltipTrigger asChild>
-                <Info className={styles.referenceIcon} />
+                <InfoCircleOutlined className={styles.referenceIcon} />
               </TooltipTrigger>
-              <TooltipContent>Reference unavailable</TooltipContent>
+              <TooltipContent>
+                {loading ? t('chat.searching') : 'Reference unavailable'}
+              </TooltipContent>
             </Tooltip>
           );
         }
@@ -284,6 +303,7 @@ const FloatingChatWidgetMarkdown = ({
             <Image
               key={`img-${i}`}
               id={imageId}
+              documentId={documentId}
               className="block object-contain max-w-full max-h-48 rounded my-2 cursor-pointer"
               onClick={handleDocumentButtonClick(
                 documentId,
@@ -305,14 +325,20 @@ const FloatingChatWidgetMarkdown = ({
                 collisionPadding={8}
                 className="max-h-[var(--radix-hover-card-content-available-height)]"
               >
-                {getPopoverContent(chunkIndex)}
+                {getPopoverContent(chunkKey)}
               </HoverCardContent>
             </HoverCardPrimitive.Portal>
           </HoverCard>
         );
       });
     },
-    [getPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [
+      getPopoverContent,
+      getReferenceInfo,
+      handleDocumentButtonClick,
+      loading,
+      t,
+    ],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));

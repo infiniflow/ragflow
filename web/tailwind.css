@@ -98,6 +98,18 @@
     --border-button: rgba(0, 0, 0, 0.1);
     /* Regulators, parsing, switches, variables */
     --accent-primary: 0 190 180;
+    /* Categorical graph fills shared by light and dark themes. */
+    --graph-node-1: #4e79a7;
+    --graph-node-2: #b96b1d;
+    --graph-node-3: #c44e52;
+    --graph-node-4: #268985;
+    --graph-node-5: #4e8638;
+    --graph-node-6: #9a7b00;
+    --graph-node-7: #9165a0;
+    --graph-node-8: #b55b89;
+    --graph-node-9: #8a6f55;
+    --graph-node-10: #677d8d;
+    --graph-node-other: #777777;
     /* Output Variables Box */
     --bg-accent: rgba(76, 164, 231, 0.05);
 

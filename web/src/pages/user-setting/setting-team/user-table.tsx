@@ -19,6 +19,7 @@ import {
   ConfirmDeleteDialogNode,
 } from '@/components/confirm-delete-dialog';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import { SearchHighlight } from '@/components/search-highlight';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,13 +30,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useListTenantUser } from '@/hooks/use-user-setting-request';
+import {
+  useFetchTenantInfo,
+  useListTenantUser,
+} from '@/hooks/use-user-setting-request';
 import { formatDate } from '@/utils/date';
 import { upperFirst } from 'lodash';
 import { ArrowDown, ArrowUp, ArrowUpDown, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { TenantRole } from '../constants';
+import { TenantMembershipStatus, TenantRole } from '../constants';
 import { useHandleDeleteUser } from './hooks';
 
 const ColorMap: Record<string, string> = {
@@ -48,12 +52,13 @@ const ColorMap: Record<string, string> = {
 };
 
 const UserTable = ({ searchUser }: { searchUser: string }) => {
-  const { data, loading } = useListTenantUser();
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const { data, loading } = useListTenantUser(tenantInfo.tenant_id);
+  //   const { handleDeleteTenantUser } = useHandleDeleteUser();
   const { deleteTenantUser } = useHandleDeleteUser();
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
   const { t } = useTranslation();
   const sortedData = useMemo(() => {
-    console.log('sortedData', data, searchUser);
     if (!data || data.length === 0) return data;
     let filtered = data;
     if (searchUser) {
@@ -140,20 +145,28 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
                       avatar={record.avatar}
                       name={record.nickname}
                     />
-                    {record.nickname}
+                    <SearchHighlight
+                      text={record.nickname}
+                      query={searchUser}
+                    />
                   </div>
                 </TableCell>
                 <TableCell className="p-4">
                   {formatDate(record.update_date)}
                 </TableCell>
-                <TableCell className="p-4">{record.email}</TableCell>
                 <TableCell className="p-4">
-                  {record.role === TenantRole.Normal && (
+                  <SearchHighlight text={record.email} query={searchUser} />
+                </TableCell>
+                <TableCell className="p-4">
+                  {record.status === TenantMembershipStatus.Invited ? (
+                    <Badge className={ColorMap[TenantRole.Invite]}>
+                      {upperFirst(TenantRole.Invite)}
+                    </Badge>
+                  ) : record.role === TenantRole.Normal ? (
                     <Badge className={ColorMap[record.role]}>
                       {upperFirst('Member')}
                     </Badge>
-                  )}
-                  {record.role !== TenantRole.Normal && (
+                  ) : (
                     <Badge className={ColorMap[record.role]}>
                       {upperFirst(record.role)}
                     </Badge>

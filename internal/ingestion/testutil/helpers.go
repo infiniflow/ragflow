@@ -64,10 +64,12 @@ func SetupTestDB(t *testing.T, tables ...any) *gorm.DB {
 		tables = []any{
 			&entity.IngestionTask{},
 			&entity.IngestionTaskLog{},
+			&entity.PipelineOperationLog{},
 			&entity.Task{},
 			&entity.Document{},
 			&entity.Knowledgebase{},
 			&entity.Tenant{},
+			&entity.UserTenant{},
 			&entity.File{},
 			&entity.File2Document{},
 		}
@@ -75,6 +77,9 @@ func SetupTestDB(t *testing.T, tables ...any) *gorm.DB {
 
 	if err = db.AutoMigrate(tables...); err != nil {
 		t.Fatalf("auto-migrate: %v", err)
+	}
+	if err = db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("auto-migrate user_tenant: %v", err)
 	}
 	return db
 }
@@ -160,12 +165,14 @@ func SeedTestData(t *testing.T, db *gorm.DB, opts ...TestDataOption) (string, st
 	}
 
 	// Create Tenant
-	if err := db.Create(&entity.Tenant{
-		ID:     cfg.tenantID,
-		LLMID:  "gpt-4",
-		Status: StrPtr("1"),
-	}).Error; err != nil {
+	if err := db.Create(&entity.Tenant{ID: cfg.tenantID, Status: StrPtr("1")}).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "owner-" + cfg.tenantID, UserID: cfg.tenantID, TenantID: cfg.tenantID, Role: "owner",
+		Status: StrPtr("1"), LLMID: "gpt-4",
+	}).Error; err != nil {
+		t.Fatalf("create tenant owner membership: %v", err)
 	}
 
 	// Create Knowledgebase
@@ -208,12 +215,27 @@ func SeedTestData(t *testing.T, db *gorm.DB, opts ...TestDataOption) (string, st
 	}
 
 	// Create IngestionTask
+	runCount := 1
+	runID := "run-" + cfg.taskID
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              runID,
+		DocumentID:      cfg.docID,
+		RunCount:        &runCount,
+		TenantID:        cfg.tenantID,
+		KbID:            cfg.kbID,
+		ParserID:        doc.ParserID,
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusRunning),
+	}).Error; err != nil {
+		t.Fatalf("create pipeline operation log: %v", err)
+	}
 	if err := db.Create(&entity.IngestionTask{
-		ID:         cfg.taskID,
-		UserID:     "u1",
-		DocumentID: cfg.docID,
-		DatasetID:  cfg.kbID,
-		Status:     common.RUNNING,
+		ID:            cfg.taskID,
+		UserID:        "u1",
+		DocumentID:    cfg.docID,
+		DatasetID:     cfg.kbID,
+		Status:        common.RUNNING,
+		PipelineLogID: &runID,
 	}).Error; err != nil {
 		t.Fatalf("create ingestion task: %v", err)
 	}

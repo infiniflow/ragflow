@@ -17,7 +17,6 @@
 package utility
 
 import (
-	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
 	"sync"
@@ -26,56 +25,6 @@ import (
 
 	"go.uber.org/zap"
 )
-
-type StatusMessage struct {
-	ID        int       `json:"id"`
-	Version   string    `json:"version"`
-	Timestamp time.Time `json:"timestamp"`
-	NodeName  string    `json:"node_name"`
-	ExtInfo   string    `json:"ext_info"`
-}
-
-func NewStatusMessage(id int, version string, nodeName string, extInfo string) *StatusMessage {
-	return &StatusMessage{
-		ID:        id,
-		Version:   version,
-		Timestamp: time.Now(),
-		NodeName:  nodeName,
-		ExtInfo:   extInfo,
-	}
-}
-
-func StatusMessageSending() {
-	// Construct status message
-	statusMessage := NewStatusMessage(0, "v1", "ragflow", "")
-
-	// Serialize to JSON
-	jsonData, err := json.Marshal(statusMessage)
-	if err != nil {
-		common.Error("Failed to marshal status message", err)
-		return
-	}
-
-	// Create HTTP client
-	client := NewHTTPClientBuilder().
-		WithHost("127.0.0.1").
-		WithPort(9381).
-		WithSSL(false).
-		WithTimeout(10 * time.Second).
-		Build()
-
-	// Send POST request
-	resp, err := client.PostJSON("/v1/admin/status", jsonData)
-	if err != nil {
-		common.Error("Error sending status message", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		common.Error("Failed to send status message", fmt.Errorf("status: %d", resp.StatusCode))
-	}
-}
 
 // ScheduledTask represents a periodic task
 type ScheduledTask struct {
@@ -109,6 +58,8 @@ func (t *ScheduledTask) Start() {
 	t.running = true
 	t.mu.Unlock()
 
+	t.runSafely()
+
 	go func(stop <-chan struct{}) {
 		ticker := time.NewTicker(t.Interval)
 		defer ticker.Stop()
@@ -140,7 +91,10 @@ func (t *ScheduledTask) runSafely() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			common.Fatal("Task panicked", zap.String("name", t.Name), zap.Any("recover", r))
+			// A periodic job must never take the whole service down: log the panic
+			// and let the next tick run. common.Fatal would call os.Exit(1), which
+			// turns one bad tick into an outage for every tenant on this process.
+			common.Error("Task panicked", fmt.Errorf("panic: %v", r), zap.String("name", t.Name), zap.Any("recover", r))
 		}
 	}()
 

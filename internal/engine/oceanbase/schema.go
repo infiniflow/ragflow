@@ -28,7 +28,8 @@ import (
 	"sync"
 	"time"
 
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/common"
+	"ragflow/internal/engine/kvrocks"
 )
 
 const (
@@ -48,7 +49,7 @@ var (
 	ddlLocks           sync.Map
 )
 
-var chunkColumns = []columnDefinition{
+var baseChunkColumns = []columnDefinition{
 	{"id", "VARCHAR(256) NOT NULL PRIMARY KEY"},
 	{"kb_id", "VARCHAR(256) NOT NULL"},
 	{"doc_id", "VARCHAR(256) NULL"},
@@ -74,6 +75,7 @@ var chunkColumns = []columnDefinition{
 	{"page_num_int", "ARRAY(INTEGER) NULL"},
 	{"top_int", "ARRAY(INTEGER) NULL"},
 	{"knowledge_graph_kwd", "VARCHAR(256) NULL"},
+	{"type_kwd", "VARCHAR(256) NULL"},
 	{"source_id", "ARRAY(VARCHAR(256)) NULL"},
 	{"entity_kwd", "VARCHAR(256) NULL"},
 	{"entity_type_kwd", "VARCHAR(256) NULL"},
@@ -94,6 +96,81 @@ var chunkColumns = []columnDefinition{
 	{"group_id", "VARCHAR(256) NULL"},
 	{"mom_id", "VARCHAR(256) NULL"},
 }
+
+// additiveChunkColumns are declared for tables created from now on. Existing
+// tables are not altered to gain them, so a chunk operation resolves them
+// against the live schema and falls back to the extra JSON column.
+var additiveChunkColumns = []columnDefinition{
+	// Fields conf/infinity_mapping.json declares that this engine had no column
+	// for. Readers select them by name, and an unknown name is rejected before
+	// any SQL is sent, so the list must follow the mapping. Scalars keep their
+	// keyword form, list-valued JSON fields become arrays so ARRAY_CONTAINS
+	// filters work, and object payloads stay JSON.
+	{"mom", "VARCHAR(256) NULL"},
+	{"name", "VARCHAR(256) NULL"},
+	{"name_kwd", "VARCHAR(256) NULL"},
+	{"important_kwd_empty_count", "INTEGER NULL"},
+	{"mention_count_int", "INTEGER NULL"},
+	{"rank_int", "INTEGER NULL"},
+	{"mom_with_weight", "TEXT NULL"},
+	{"toc_kwd", "VARCHAR(256) NULL"},
+	{"deleted_doc_id", "VARCHAR(256) NULL"},
+	{"compile_kwd", "VARCHAR(256) NULL"},
+	{"compilation_template_kind_kwd", "VARCHAR(256) NULL"},
+	{"plan_kwd", "VARCHAR(256) NULL"},
+	{"scope_kwd", "VARCHAR(256) NULL"},
+	{"source_chunk_ids", "ARRAY(VARCHAR(256)) NULL"},
+	{"source_doc_ids", "ARRAY(VARCHAR(256)) NULL"},
+	{"compilation_template_ids", "ARRAY(VARCHAR(256)) NULL"},
+	{"chunk_hash_kwd", "VARCHAR(256) NULL"},
+	{"input_hash_kwd", "VARCHAR(256) NULL"},
+	{"wiki_slug_kwd", "VARCHAR(256) NULL"},
+	{"summary_with_weight", "TEXT NULL"},
+	{"skill_with_weight", "TEXT NULL"},
+	{"skill_kwd", "VARCHAR(256) NULL"},
+	{"children_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"doc_ids_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"slug_kwd", "VARCHAR(256) NULL"},
+	{"title_kwd", "VARCHAR(256) NULL"},
+	{"topic_kwd", "VARCHAR(256) NULL"},
+	{"plan_group_kwd", "VARCHAR(256) NULL"},
+	{"generation_kwd", "VARCHAR(256) NULL"},
+	{"page_type_kwd", "VARCHAR(256) NULL"},
+	{"entity_names_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"entity_names", "ARRAY(VARCHAR(256)) NULL"},
+	{"outlinks_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"related_kb_pages_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"page_version_int", "INTEGER NULL"},
+	{"synthesis_version_int", "INTEGER NULL"},
+	{"claims", "JSON NULL"},
+	{"page_ids", "ARRAY(VARCHAR(256)) NULL"},
+	{"page_id", "VARCHAR(256) NULL"},
+	{"source_chunk_hashes", "JSON NULL"},
+	{"map_checksum", "VARCHAR(256) NULL"},
+	{"from_kwd", "VARCHAR(256) NULL"},
+	{"to_kwd", "VARCHAR(256) NULL"},
+	{"rechunk_kwd", "VARCHAR(256) NULL"},
+	{"rechunked_from_template_id", "VARCHAR(256) NULL"},
+	{"rechunked_from_chunk_ids", "ARRAY(VARCHAR(256)) NULL"},
+	{"superseded_by_chunk_id", "VARCHAR(256) NULL"},
+	{"doc_count_int", "INTEGER NULL"},
+	{"depth_int", "INTEGER NULL"},
+	{"parent_kwd", "VARCHAR(256) NULL"},
+	{"outlinks_int", "INTEGER NULL"},
+	{"token_num", "INTEGER NULL"},
+	{"aliases", "ARRAY(VARCHAR(256)) NULL"},
+	{"aliases_flat_kwd", "VARCHAR(256) NULL"},
+}
+
+var chunkColumns = append(append([]columnDefinition{}, baseChunkColumns...), additiveChunkColumns...)
+
+var optionalChunkColumns = func() map[string]bool {
+	optional := make(map[string]bool, len(additiveChunkColumns))
+	for _, column := range additiveChunkColumns {
+		optional[column.name] = true
+	}
+	return optional
+}()
 
 var chunkExtraColumns = selectColumnDefinitions(chunkColumns,
 	"_order_id",
@@ -148,7 +225,7 @@ var skillColumns = []columnDefinition{
 }
 
 var chunkIndexColumns = []string{
-	"kb_id", "doc_id", "available_int", "knowledge_graph_kwd", "entity_type_kwd", "removed_kwd",
+	"kb_id", "doc_id", "available_int", "knowledge_graph_kwd", "type_kwd", "entity_type_kwd", "removed_kwd",
 }
 
 var memoryIndexColumns = []string{"message_id", "memory_id", "status_int"}
@@ -158,7 +235,7 @@ var tokenizedFullTextFields = []string{"title_tks", "title_sm_tks", "important_t
 
 // CreateChunkStore creates or upgrades the legacy shared tenant table. The
 // dataset ID is a row-level discriminator for chunk and memory tables.
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	if err := validateIdentifier(baseName); err != nil {
 		return err
 	}
@@ -230,8 +307,12 @@ func (e *Engine) ensureTableWithLock(ctx context.Context, tableName string, colu
 		for _, column := range columns {
 			definitions = append(definitions, quoteIdentifier(column.name)+" "+column.typeSQL)
 		}
-		query := fmt.Sprintf("CREATE TABLE %s (%s) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ORGANIZATION=heap",
-			quoteIdentifier(tableName), strings.Join(definitions, ", "))
+		collation := "utf8mb4_unicode_ci"
+		if e.engineType == "seekdb" {
+			collation = "utf8mb4_general_ci"
+		}
+		query := fmt.Sprintf("CREATE TABLE %s (%s) DEFAULT CHARSET=utf8mb4 COLLATE=%s ORGANIZATION=heap",
+			quoteIdentifier(tableName), strings.Join(definitions, ", "), collation)
 		_, err := e.db.ExecContext(ctx, query)
 		return err
 	})
@@ -283,7 +364,7 @@ func (e *Engine) ensureVectorColumnAndIndex(ctx context.Context, tableName strin
 	if vectorSize <= 0 {
 		return nil
 	}
-	columnName := fmt.Sprintf("q_%d_vec", vectorSize)
+	columnName := common.VectorColumnName(vectorSize)
 	if err := e.withDDLLock(ctx, prefix+"add_vector_column_"+tableName+"_"+columnName, func() (bool, error) {
 		return e.columnExists(ctx, tableName, columnName)
 	}, func() error {
@@ -324,8 +405,15 @@ func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() 
 		}
 	}
 	timeout := time.Duration(timeoutSeconds) * time.Second
-	distributed := redis.NewDistributedLock(lockName, "", timeout, timeout)
-	if distributed != nil && !distributed.Acquire(ctx) {
+	distributed := kvrocks.NewDistributedLock(lockName, "", timeout, timeout)
+	acquired := false
+	if distributed != nil {
+		acquired, err = distributed.Acquire(ctx)
+		if err != nil {
+			return fmt.Errorf("acquire distributed DDL lock %s: %w", lockName, err)
+		}
+	}
+	if distributed != nil && !acquired {
 		deadline := time.NewTimer(timeout)
 		defer deadline.Stop()
 		ticker := time.NewTicker(time.Second)
@@ -345,7 +433,11 @@ func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() 
 				if exists {
 					return nil
 				}
-				if distributed.Acquire(ctx) {
+				acquired, err = distributed.Acquire(ctx)
+				if err != nil {
+					return fmt.Errorf("acquire distributed DDL lock %s: %w", lockName, err)
+				}
+				if acquired {
 					break waitForLock
 				}
 			}
@@ -388,6 +480,30 @@ func (e *Engine) columnExists(ctx context.Context, tableName, columnName string)
 		"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
 		e.dbName, tableName, columnName).Scan(&count)
 	return count > 0, err
+}
+
+// tableColumns reads a table's column set in one metadata query. Chunk schemas
+// grow additively, and an existing table is never altered to gain the added
+// columns, so a chunk operation resolves fields against this set and stores
+// what the table lacks in the extra JSON column. Callers read it once per
+// operation or batch rather than per row.
+func (e *Engine) tableColumns(ctx context.Context, tableName string) (map[string]bool, error) {
+	rows, err := e.db.QueryContext(ctx,
+		"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+		e.dbName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	columns := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		columns[name] = true
+	}
+	return columns, rows.Err()
 }
 
 func (e *Engine) indexExists(ctx context.Context, tableName, indexName string) (bool, error) {

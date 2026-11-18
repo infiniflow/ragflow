@@ -26,6 +26,7 @@ import {
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
+import message from '@/components/ui/message';
 import { Segmented } from '@/components/ui/segmented';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
@@ -34,8 +35,8 @@ import {
   useFetchProviderInstance,
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
-import { IProviderInstance } from '@/interfaces/database/llm';
-import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
+import type { IProviderInstance } from '@/interfaces/database/llm';
+import type { IModelInfo } from '@/interfaces/request/llm';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ListChevronsDownUp, ListChevronsUpDown, Trash2 } from 'lucide-react';
 import {
@@ -43,6 +44,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -51,22 +53,41 @@ import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { BedrockRegionList } from '../constants';
-import { VerifyResult } from '../hooks';
+import { useFetchInstanceNameSet, VerifyResult } from '../hooks';
 import { splitProviderPayload } from '../payload-utils';
 import {
+  InstanceSavePayload,
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
 } from './interface';
+import {
+  applySavedCredentialEdits,
+  SAVED_CREDENTIAL_MASK,
+  unwrapApiKey,
+  useInstanceSave,
+} from './hooks';
+import {
+  SavedProviderConfigFieldSet,
+  hasUnsavedProviderCredential,
+  pickSavedProviderConfigOverrides,
+} from './saved-provider-config';
+import { InstanceSaveButton } from './components/instance-save-button';
+import { SavedCredentialInput } from './saved-credential-input';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
 
-type AuthMode = 'access_key_secret' | 'iam_role' | 'assume_role';
+type AuthMode =
+  | 'access_key_secret'
+  | 'iam_role'
+  | 'assume_role'
+  | 'bedrock_api_key';
 
 type BedrockFormValues = {
   auth_mode: AuthMode;
   bedrock_ak?: string;
   bedrock_sk?: string;
   aws_role_arn?: string;
+  bedrock_api_key?: string;
   bedrock_region: string;
   llm_name: string;
   max_tokens: number;
@@ -78,22 +99,30 @@ interface BedrockInstanceCardProps {
   instance: IProviderInstance;
   isDraft?: boolean;
   onDelete?: () => void;
+  /** Called after the card's Save button persists this instance. */
+  onSaved?: (payload: InstanceSavePayload) => void;
   defaultOpen?: boolean;
 }
 
 /**
  * Inline instance card for AWS Bedrock. Renders Bedrock-specific fields
- * (auth_mode segmented, ak/sk/arn, region, model name, max tokens,
- * model_type) directly instead of going through the generic DynamicForm
- * path. All fields are editable from the start (no name-first lock);
- * the parent page's top Save button drives persistence through the
- * imperative ref API.
+ * (auth_mode segmented, credentials, region, and manual model settings)
+ * directly instead of going through the generic DynamicForm path. API key
+ * drafts discover models and persist them with the instance.
+ * The header Save button persists only this instance.
  */
 export const BedrockInstanceCard = forwardRef<
   ProviderInstanceCardRef,
   BedrockInstanceCardProps
 >(function BedrockInstanceCard(
-  { providerName, instance, isDraft = false, onDelete, defaultOpen = false },
+  {
+    providerName,
+    instance,
+    isDraft = false,
+    onDelete,
+    onSaved,
+    defaultOpen = false,
+  },
   ref,
 ) {
   const { t } = useTranslation();
@@ -101,6 +130,8 @@ export const BedrockInstanceCard = forwardRef<
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
   const [open, setOpen] = useState(isDraft || defaultOpen);
   const [draftName, setDraftName] = useState('');
+  const modelInfoRef = useRef<IModelInfo[]>([]);
+  const modelsLoadedRef = useRef(false);
 
   useEffect(() => {
     if (isDraft) {
@@ -108,42 +139,87 @@ export const BedrockInstanceCard = forwardRef<
     }
   }, [providerName, isDraft]);
 
+  const { data: instanceDetails, refetch: refetchInstanceDetails } =
+    useFetchProviderInstance(
+      isDraft ? '' : providerName,
+      isDraft ? '' : instance.id,
+    );
+
   const FormSchema = useMemo(
     () =>
       z
         .object({
           auth_mode: z
-            .enum(['access_key_secret', 'iam_role', 'assume_role'])
+            .enum([
+              'access_key_secret',
+              'iam_role',
+              'assume_role',
+              'bedrock_api_key',
+            ])
             .default('access_key_secret'),
           bedrock_ak: z.string().optional(),
           bedrock_sk: z.string().optional(),
           aws_role_arn: z.string().optional(),
+          bedrock_api_key: z.string().optional(),
           bedrock_region: z
             .string()
             .min(1, { message: tSetting('bedrockRegionMessage') }),
-          llm_name: z
-            .string()
-            .min(1, { message: tSetting('bedrockModelNameMessage') }),
-          max_tokens: z
-            .number({
-              required_error: tSetting('maxTokensMessage'),
-              invalid_type_error: tSetting('maxTokensInvalidMessage'),
-            })
-            .nonnegative({ message: tSetting('maxTokensMinMessage') }),
-          model_type: z
-            .array(z.enum(['chat', 'embedding']))
-            .min(1, { message: tSetting('modelTypeMessage') }),
+          llm_name: z.string(),
+          max_tokens: z.number({
+            required_error: tSetting('maxTokensMessage'),
+            invalid_type_error: tSetting('maxTokensInvalidMessage'),
+          }),
+          model_type: z.array(z.enum(['chat', 'embedding'])),
         })
         .superRefine((data, ctx) => {
-          if (data.auth_mode === 'access_key_secret') {
-            if (!data.bedrock_ak || !data.bedrock_ak.trim()) {
+          if (isDraft && data.auth_mode !== 'bedrock_api_key') {
+            if (!data.llm_name.trim()) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: tSetting('bedrockModelNameMessage'),
+                path: ['llm_name'],
+              });
+            }
+            if (data.model_type.length === 0) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: tSetting('modelTypeMessage'),
+                path: ['model_type'],
+              });
+            }
+            if (data.max_tokens < 0) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: tSetting('maxTokensMinMessage'),
+                path: ['max_tokens'],
+              });
+            }
+          }
+          const savedConfig = instanceDetails?.api_key_config ?? {};
+          const storedAuthMode = savedConfig.auth_mode;
+          const credentialStatus = instanceDetails?.credential_status ?? {};
+          const mayKeepStoredCredentials =
+            !isDraft && data.auth_mode === storedAuthMode;
+          const hasStoredBedrockAccessKeys =
+            mayKeepStoredCredentials &&
+            credentialStatus.bedrock_ak === true &&
+            credentialStatus.bedrock_sk === true;
+          const removingStoredAccessKeys =
+            hasStoredBedrockAccessKeys &&
+            data.bedrock_ak === '' &&
+            data.bedrock_sk === '';
+          if (
+            data.auth_mode === 'access_key_secret' &&
+            !removingStoredAccessKeys
+          ) {
+            if (!data.bedrock_ak?.trim()) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 message: tSetting('bedrockAKMessage'),
                 path: ['bedrock_ak'],
               });
             }
-            if (!data.bedrock_sk || !data.bedrock_sk.trim()) {
+            if (!data.bedrock_sk?.trim()) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 message: tSetting('bedrockSKMessage'),
@@ -152,7 +228,19 @@ export const BedrockInstanceCard = forwardRef<
             }
           }
           if (data.auth_mode === 'iam_role') {
-            if (!data.aws_role_arn || !data.aws_role_arn.trim()) {
+            const canKeepStoredRoleArn =
+              mayKeepStoredCredentials &&
+              credentialStatus.aws_role_arn === true &&
+              data.aws_role_arn === SAVED_CREDENTIAL_MASK;
+            const removingStoredRoleArn =
+              mayKeepStoredCredentials &&
+              credentialStatus.aws_role_arn === true &&
+              data.aws_role_arn === '';
+            if (
+              !data.aws_role_arn?.trim() &&
+              !canKeepStoredRoleArn &&
+              !removingStoredRoleArn
+            ) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 message: tSetting('awsRoleArnMessage'),
@@ -160,15 +248,23 @@ export const BedrockInstanceCard = forwardRef<
               });
             }
           }
+          if (
+            data.auth_mode === 'bedrock_api_key' &&
+            !data.bedrock_api_key?.trim() &&
+            !(
+              mayKeepStoredCredentials &&
+              credentialStatus.bedrock_api_key === true
+            )
+          ) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: tSetting('apiKeyMessage'),
+              path: ['bedrock_api_key'],
+            });
+          }
         }),
-    [tSetting],
+    [instanceDetails, isDraft, tSetting],
   );
-
-  const { data: instanceDetails, refetch: refetchInstanceDetails } =
-    useFetchProviderInstance(
-      isDraft ? '' : providerName,
-      isDraft ? '' : instance.id,
-    );
 
   // Lazily fetch full instance details only when the card is open.
   // Collapsed cards never hit /providers/<name>/instances/<instance_name>;
@@ -187,17 +283,29 @@ export const BedrockInstanceCard = forwardRef<
 
   const initialValues = useMemo<BedrockFormValues>(() => {
     const merged = { ...instance, ...(instanceDetails ?? {}) } as any;
-    const apiKey =
-      merged.api_key && typeof merged.api_key === 'object'
-        ? merged.api_key
-        : {};
+    const { nested: apiKey } = unwrapApiKey(merged.api_key_config);
+    const credentialStatus = merged.credential_status ?? {};
     return {
       auth_mode: (apiKey.auth_mode as AuthMode) ?? 'access_key_secret',
-      bedrock_ak: apiKey.bedrock_ak ?? '',
-      bedrock_sk: apiKey.bedrock_sk ?? '',
-      aws_role_arn: apiKey.aws_role_arn ?? '',
+      bedrock_ak:
+        credentialStatus.bedrock_ak === true
+          ? SAVED_CREDENTIAL_MASK
+          : (apiKey.bedrock_ak ?? ''),
+      bedrock_sk:
+        credentialStatus.bedrock_sk === true
+          ? SAVED_CREDENTIAL_MASK
+          : (apiKey.bedrock_sk ?? ''),
+      aws_role_arn:
+        credentialStatus.aws_role_arn === true
+          ? SAVED_CREDENTIAL_MASK
+          : (apiKey.aws_role_arn ?? ''),
+      bedrock_api_key:
+        credentialStatus.bedrock_api_key === true
+          ? SAVED_CREDENTIAL_MASK
+          : (apiKey.bedrock_api_key ?? ''),
       bedrock_region:
-        merged.region && merged.region !== 'default' ? merged.region : '',
+        apiKey.bedrock_region ??
+        (merged.region && merged.region !== 'default' ? merged.region : ''),
       llm_name: '',
       max_tokens: 8192,
       model_type: ['chat'],
@@ -209,13 +317,27 @@ export const BedrockInstanceCard = forwardRef<
     defaultValues: initialValues,
   });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Reset form when initial values change (e.g. instance details load).
-    form.reset(initialValues);
+    // ModelsSection reads the form in a passive effect, so credentials must
+    // be restored before child effects start model discovery.
+    form.reset(initialValues, { keepDirtyValues: true });
     // oxlint-disable-next-line react/exhaustive-deps
   }, [initialValues]);
 
   const authMode = useWatch({ control: form.control, name: 'auth_mode' });
+  const storedCredentialStatus = useMemo(
+    () => instanceDetails?.credential_status ?? {},
+    [instanceDetails?.credential_status],
+  );
+  const canKeepStoredCredentials =
+    !isDraft && authMode === instanceDetails?.api_key_config?.auth_mode;
+  const canKeepStoredBedrockAccessKeys =
+    canKeepStoredCredentials &&
+    storedCredentialStatus.bedrock_ak === true &&
+    storedCredentialStatus.bedrock_sk === true;
+  const canKeepStoredBedrockAPIKey =
+    canKeepStoredCredentials && storedCredentialStatus.bedrock_api_key === true;
 
   const regionOptions = useMemo(
     () => BedrockRegionList.map((x) => ({ value: x, label: tSetting(x) })),
@@ -224,12 +346,13 @@ export const BedrockInstanceCard = forwardRef<
 
   // Build a Bedrock-shaped payload for both submit and verify flows.
   const buildPayload = useCallback(
-    (values: BedrockFormValues, instanceName: string) => {
+    (values: BedrockFormValues, instanceName: string, forDraft: boolean) => {
       const cleaned: Record<string, any> = { ...values };
       const fieldsByMode: Record<AuthMode, string[]> = {
         access_key_secret: ['bedrock_ak', 'bedrock_sk'],
         iam_role: ['aws_role_arn'],
         assume_role: [],
+        bedrock_api_key: ['bedrock_api_key'],
       };
       (Object.keys(fieldsByMode) as AuthMode[]).forEach((mode) => {
         if (mode !== values.auth_mode) {
@@ -247,59 +370,137 @@ export const BedrockInstanceCard = forwardRef<
         model_type: values.model_type,
       };
       const { instancePayload, modelPayload } = splitProviderPayload(flat);
-      return {
-        ...instancePayload,
-        max_tokens: modelPayload.max_tokens,
-        model_info: [modelPayload],
-      } as IAddProviderInstanceRequestBody;
-    },
-    [providerName],
-  );
-
-  const { verifyProviderConnection } = useVerifyProviderConnection();
-  const handleVerify = useCallback(
-    async (params: any) => {
-      const isValid = await form.trigger();
-      if (!isValid) {
-        return {
-          isValid: false,
-          logs: tSetting('bedrockRegionMessage'),
-        } as VerifyResult;
-      }
-      const values = form.getValues();
-      const payload = buildPayload(
-        values,
-        draftName.trim() || instance.instance_name,
-      );
-      const { instancePayload, modelPayload } = splitProviderPayload({
-        ...payload,
-        ...values,
-        llm_factory: providerName,
-        instance_name: draftName.trim() || instance.instance_name,
-      });
-      const ret = await verifyProviderConnection({
-        provider_name: providerName,
-        api_key: JSON.stringify(instancePayload.api_key),
+      const credentialStatus = instanceDetails?.credential_status ?? {};
+      const payload: Record<string, any> = {
+        instance_name: instanceName,
+        api_key: applySavedCredentialEdits(
+          instancePayload.api_key,
+          values,
+          credentialStatus,
+        ),
         base_url: instancePayload.base_url,
         region: instancePayload.region,
-        model_info: [modelPayload],
-        ...params,
-      });
-      return {
-        isValid: ret.code === 0,
-        logs: ret.message,
-      } as VerifyResult;
+      };
+      if (forDraft) {
+        payload.llm_factory = providerName;
+      } else {
+        const storedAuthMode = instanceDetails?.api_key_config?.auth_mode;
+        if (storedAuthMode && storedAuthMode !== values.auth_mode) {
+          payload.clear_api_key = true;
+        }
+      }
+      if (forDraft && values.auth_mode !== 'bedrock_api_key') {
+        payload.max_tokens = modelPayload.max_tokens;
+        payload.model_info = [modelPayload];
+      } else {
+        payload.model_info = modelInfoRef.current;
+      }
+      return payload;
     },
     [
-      form,
+      instanceDetails?.api_key_config,
+      instanceDetails?.credential_status,
       providerName,
-      buildPayload,
-      draftName,
-      instance.instance_name,
-      verifyProviderConnection,
-      tSetting,
     ],
   );
+
+  const transformModelCredentials = useCallback(
+    (values: Record<string, any>) => {
+      const payload = buildPayload(
+        values as BedrockFormValues,
+        draftName.trim() || instance.instance_name,
+        false,
+      );
+      return {
+        apiKey: payload.api_key,
+        baseUrl: payload.base_url,
+        region: payload.region,
+      };
+    },
+    [buildPayload, draftName, instance.instance_name],
+  );
+
+  const getModelFormValues = useCallback(() => {
+    const values = form.getValues();
+    const credentials = transformModelCredentials(values);
+    return {
+      ...values,
+      api_key: credentials.apiKey,
+      base_url: credentials.baseUrl,
+    };
+  }, [form, transformModelCredentials]);
+
+  const { verifyProviderConnection } = useVerifyProviderConnection();
+  const handleVerify = useCallback(async () => {
+    const isValid = await form.trigger();
+    if (!isValid) {
+      return {
+        isValid: false,
+        logs: tSetting('bedrockRegionMessage'),
+      } as VerifyResult;
+    }
+    const values = form.getValues();
+    const payload = buildPayload(
+      values,
+      draftName.trim() || instance.instance_name,
+      isDraft,
+    );
+    const currentValues = values as Record<string, any>;
+    const credentialChanged = Object.entries(storedCredentialStatus).some(
+      ([field, configured]) =>
+        configured &&
+        !SavedProviderConfigFieldSet.has(field) &&
+        currentValues[field] !== undefined &&
+        currentValues[field] !== SAVED_CREDENTIAL_MASK,
+    );
+    const useSavedCredentials =
+      !isDraft &&
+      !payload.clear_api_key &&
+      !credentialChanged &&
+      !hasUnsavedProviderCredential(payload.api_key);
+    const canOverrideSavedCredentials =
+      useSavedCredentials && instanceDetails?.is_owner === true;
+    const savedConfigOverrides = canOverrideSavedCredentials
+      ? pickSavedProviderConfigOverrides(payload.api_key)
+      : {};
+    const ret = await verifyProviderConnection({
+      provider_name: providerName,
+      ...(!isDraft ? { instance_id: instance.id } : {}),
+      ...(payload.clear_api_key ? { clear_api_key: true } : {}),
+      ...(useSavedCredentials
+        ? {
+            use_saved_credentials: true,
+            ...(Object.keys(savedConfigOverrides).length > 0
+              ? { api_key_config: savedConfigOverrides }
+              : {}),
+            ...(canOverrideSavedCredentials
+              ? { base_url: payload.base_url, region: payload.region }
+              : {}),
+          }
+        : {
+            api_key: JSON.stringify(payload.api_key),
+            base_url: payload.base_url,
+            region: payload.region,
+          }),
+      model_info: payload.model_info,
+    });
+    return {
+      isValid: ret.code === 0,
+      logs: ret.message,
+    } as VerifyResult;
+  }, [
+    form,
+    providerName,
+    buildPayload,
+    draftName,
+    instance.instance_name,
+    instance.id,
+    instanceDetails?.is_owner,
+    storedCredentialStatus,
+    verifyProviderConnection,
+    tSetting,
+    isDraft,
+  ]);
 
   const { deleteProviderInstance } = useDeleteProviderInstance();
   const handleDelete = useCallback(async () => {
@@ -336,16 +537,23 @@ export const BedrockInstanceCard = forwardRef<
     }
     if (!instanceDetails && !instance.id) return;
     const baselineValues = initialValues;
-    const baseline = buildPayload(baselineValues, instance.instance_name);
+    const baseline = buildPayload(
+      baselineValues,
+      instance.instance_name,
+      false,
+    );
     const finalBaseline = {
       ...baseline,
+      provider_name: providerName,
       id: instanceDetails?.id || instance.id,
+      verify: false,
     };
     baselinePayloadRef.current = JSON.stringify(finalBaseline);
   }, [
     isDraft,
     initialValues,
     buildPayload,
+    providerName,
     instance.instance_name,
     instance.id,
     instanceDetails,
@@ -356,7 +564,7 @@ export const BedrockInstanceCard = forwardRef<
     if (isDraft) {
       if (!trimmed) return null;
       const values = form.getValues();
-      const payload = buildPayload(values, trimmed);
+      const payload = buildPayload(values, trimmed, true);
       return {
         payload,
         instanceName: trimmed,
@@ -365,17 +573,13 @@ export const BedrockInstanceCard = forwardRef<
         apiKind: 'add' as const,
       };
     }
-    // Skip cards the user hasn't actually edited. Collapsed cards
-    // never fetch `instanceDetails`, so their form is still on empty
-    // defaults - the signature check below would false-positive on
-    // defaulting differences. `form.formState.isDirty` tracks real
-    // user interaction.
-    if (!form.formState.isDirty) return null;
     const values = form.getValues();
-    const payload = buildPayload(values, instance.instance_name);
+    const payload = buildPayload(values, instance.instance_name, false);
     const finalPayload = {
       ...payload,
+      provider_name: providerName,
       id: instanceDetails?.id || instance.id,
+      verify: false,
     };
     const sig = JSON.stringify(finalPayload);
     if (sig === baselinePayloadRef.current) return null;
@@ -383,14 +587,13 @@ export const BedrockInstanceCard = forwardRef<
       payload: finalPayload,
       instanceName: instance.instance_name,
       isDraft: false,
-      // Bedrock saved cards update via `addProviderInstance` with an `id`
-      // (matches the legacy auto-save behaviour).
-      apiKind: 'add' as const,
+      apiKind: 'update' as const,
     };
   }, [
     isDraft,
     form,
     buildPayload,
+    providerName,
     instance.instance_name,
     instance.id,
     instanceDetails,
@@ -403,44 +606,96 @@ export const BedrockInstanceCard = forwardRef<
     }
   }, [getSavePayload]);
 
+  const markModelsEdited = useCallback(() => {
+    if (isDraft || !baselinePayloadRef.current) return;
+    try {
+      const baseline = JSON.parse(baselinePayloadRef.current) as Record<
+        string,
+        any
+      >;
+      baseline.model_info = modelInfoRef.current;
+      baselinePayloadRef.current = JSON.stringify(baseline);
+    } catch {
+      // ignore parse errors - baseline will be re-seeded on details reload
+    }
+  }, [isDraft]);
+
+  // Form validation shared by the header Save button and the
+  // imperative API.
+  const validate = useCallback(async () => {
+    if (isDraft && !draftNameRef.current.trim()) return false;
+    if (!isDraft && !modelsLoadedRef.current) {
+      message.error(tSetting('selectModelBeforeSave'));
+      return false;
+    }
+    if (
+      isDraft &&
+      authMode === 'bedrock_api_key' &&
+      modelInfoRef.current.length === 0
+    ) {
+      message.error(tSetting('selectModelBeforeSave'));
+      return false;
+    }
+    const isValid = await form.trigger();
+    return !!isValid;
+  }, [isDraft, authMode, form, tSetting]);
+
+  // The card header owns the Save button: each instance is persisted
+  // independently, straight from its own card.
+  const { instanceNameSet } = useFetchInstanceNameSet(
+    isDraft ? providerName : '',
+  );
+  const { save: handleSave, saving } = useInstanceSave({
+    isDraft,
+    getSavePayload,
+    validate,
+    markSaved,
+    existingNames: instanceNameSet,
+    onSaved,
+  });
+
   useImperativeHandle(
     ref,
     () => ({
-      validate: async () => {
-        if (isDraft && !draftNameRef.current.trim()) return false;
-        const isValid = await form.trigger();
-        return !!isValid;
-      },
+      validate,
       getSavePayload,
       markSaved,
     }),
-    [isDraft, form, getSavePayload, markSaved],
+    [validate, getSavePayload, markSaved],
   );
 
   // ──────────────── Field group rendered in both modes ────────────────
   const renderFields = () => (
     <Form {...form}>
       <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-        <RAGFlowFormItem
-          name="model_type"
-          label={tSetting('modelType')}
-          required
-        >
-          {(field) => (
-            <MultiSelect
-              options={buildModelTypeOptions(['chat', 'embedding'])}
-              placeholder={tSetting('modelTypeMessage')}
-              onValueChange={field.onChange}
-              defaultValue={field.value}
-              variant="inverted"
-              maxCount={100}
-            />
-          )}
-        </RAGFlowFormItem>
+        {isDraft && authMode !== 'bedrock_api_key' && (
+          <>
+            <RAGFlowFormItem
+              name="model_type"
+              label={tSetting('modelType')}
+              required
+            >
+              {(field) => (
+                <MultiSelect
+                  options={buildModelTypeOptions(['chat', 'embedding'])}
+                  placeholder={tSetting('modelTypeMessage')}
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                  variant="inverted"
+                  maxCount={100}
+                />
+              )}
+            </RAGFlowFormItem>
 
-        <RAGFlowFormItem name="llm_name" label={tSetting('modelName')} required>
-          <Input placeholder={tSetting('bedrockModelNameMessage')} />
-        </RAGFlowFormItem>
+            <RAGFlowFormItem
+              name="llm_name"
+              label={tSetting('modelName')}
+              required
+            >
+              <Input placeholder={tSetting('bedrockModelNameMessage')} />
+            </RAGFlowFormItem>
+          </>
+        )}
 
         <div>
           <RAGFlowFormItem name="auth_mode">
@@ -448,12 +703,18 @@ export const BedrockInstanceCard = forwardRef<
               <Segmented
                 value={field.value}
                 onChange={(value) => {
+                  if (isDraft && value !== field.value) {
+                    modelInfoRef.current = [];
+                  }
                   if (value !== 'access_key_secret') {
                     form.setValue('bedrock_ak', '');
                     form.setValue('bedrock_sk', '');
                   }
                   if (value !== 'iam_role') {
                     form.setValue('aws_role_arn', '');
+                  }
+                  if (value !== 'bedrock_api_key') {
+                    form.setValue('bedrock_api_key', '');
                   }
                   field.onChange(value);
                 }}
@@ -467,6 +728,10 @@ export const BedrockInstanceCard = forwardRef<
                     label: tSetting('awsAuthModeAssumeRole'),
                     value: 'assume_role',
                   },
+                  {
+                    label: tSetting('apiKey'),
+                    value: 'bedrock_api_key',
+                  },
                 ]}
               />
             )}
@@ -478,16 +743,38 @@ export const BedrockInstanceCard = forwardRef<
             <RAGFlowFormItem
               name="bedrock_ak"
               label={tSetting('awsAccessKeyId')}
-              required
+              required={!canKeepStoredBedrockAccessKeys}
             >
-              <Input placeholder={tSetting('bedrockAKMessage')} />
+              {(field) => (
+                <SavedCredentialInput
+                  {...field}
+                  maskedValue={instanceDetails?.credential_masks?.bedrock_ak}
+                  placeholder={tSetting(
+                    storedCredentialStatus.bedrock_ak === true
+                      ? 'credentialClearToRemove'
+                      : 'bedrockAKMessage',
+                  )}
+                  autoComplete="new-password"
+                />
+              )}
             </RAGFlowFormItem>
             <RAGFlowFormItem
               name="bedrock_sk"
               label={tSetting('awsSecretAccessKey')}
-              required
+              required={!canKeepStoredBedrockAccessKeys}
             >
-              <Input placeholder={tSetting('bedrockSKMessage')} />
+              {(field) => (
+                <SavedCredentialInput
+                  {...field}
+                  maskedValue={instanceDetails?.credential_masks?.bedrock_sk}
+                  placeholder={tSetting(
+                    storedCredentialStatus.bedrock_sk === true
+                      ? 'credentialClearToRemove'
+                      : 'bedrockSKMessage',
+                  )}
+                  autoComplete="new-password"
+                />
+              )}
             </RAGFlowFormItem>
           </>
         )}
@@ -496,10 +783,49 @@ export const BedrockInstanceCard = forwardRef<
           <RAGFlowFormItem
             name="aws_role_arn"
             label={tSetting('awsRoleArn')}
-            required
+            required={
+              !canKeepStoredCredentials ||
+              storedCredentialStatus.aws_role_arn !== true
+            }
           >
-            <Input placeholder={tSetting('awsRoleArnMessage')} />
+            {(field) => (
+              <SavedCredentialInput
+                {...field}
+                maskedValue={instanceDetails?.credential_masks?.aws_role_arn}
+                autoComplete="new-password"
+                placeholder={tSetting(
+                  storedCredentialStatus.aws_role_arn === true
+                    ? 'credentialClearToRemove'
+                    : 'awsRoleArnMessage',
+                )}
+              />
+            )}
           </RAGFlowFormItem>
+        )}
+
+        {authMode === 'bedrock_api_key' && (
+          <>
+            <RAGFlowFormItem
+              name="bedrock_api_key"
+              label={tSetting('apiKey')}
+              required={!canKeepStoredBedrockAPIKey}
+            >
+              {(field) => (
+                <SavedCredentialInput
+                  {...field}
+                  maskedValue={
+                    instanceDetails?.credential_masks?.bedrock_api_key
+                  }
+                  placeholder={tSetting(
+                    storedCredentialStatus.bedrock_api_key === true
+                      ? 'credentialClearToRemove'
+                      : 'apiKeyMessage',
+                  )}
+                  autoComplete="new-password"
+                />
+              )}
+            </RAGFlowFormItem>
+          </>
         )}
 
         {authMode === 'assume_role' && (
@@ -524,28 +850,32 @@ export const BedrockInstanceCard = forwardRef<
           )}
         </RAGFlowFormItem>
 
-        <RAGFlowFormItem
-          name="max_tokens"
-          label={tSetting('maxTokens')}
-          required
-        >
-          {(field) => (
-            <Input
-              type="number"
-              placeholder={tSetting('maxTokensTip')}
-              value={field.value}
-              onChange={(e) => field.onChange(Number(e.target.value))}
-            />
-          )}
-        </RAGFlowFormItem>
+        {isDraft && authMode !== 'bedrock_api_key' && (
+          <RAGFlowFormItem
+            name="max_tokens"
+            label={tSetting('maxTokens')}
+            required
+          >
+            {(field) => (
+              <Input
+                type="number"
+                placeholder={tSetting('maxTokensTip')}
+                value={field.value}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+              />
+            )}
+          </RAGFlowFormItem>
+        )}
       </form>
 
       {/* VerifyButton lives inside <Form> (FormProvider) so its
           internal useFormContext() resolves the form instance.
           Rendered outside <form> so it never triggers submission. */}
-      <div className="pt-3">
-        <VerifyButton onVerify={handleVerify} isAbsolute={false} />
-      </div>
+      {authMode !== 'bedrock_api_key' && (
+        <div className="pt-3">
+          <VerifyButton onVerify={handleVerify} isAbsolute={false} />
+        </div>
+      )}
     </Form>
   );
 
@@ -567,7 +897,7 @@ export const BedrockInstanceCard = forwardRef<
               <span className="text-destructive mr-0.5">*</span>
               {tSetting('instanceName')}
             </label>
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
               <Input
                 id="instance-name-input"
                 value={draftName}
@@ -580,13 +910,14 @@ export const BedrockInstanceCard = forwardRef<
                 <Button
                   variant="delete"
                   size="icon-sm"
-                  className="ml-2 shrink-0"
+                  className="shrink-0"
                   aria-label={tSetting('deleteInstance')}
                   data-testid="draft-delete"
                 >
                   <Trash2 className="size-4" />
                 </Button>
               </ConfirmDeleteDialog>
+              <InstanceSaveButton onSave={handleSave} saving={saving} />
             </div>
           </div>
 
@@ -594,21 +925,26 @@ export const BedrockInstanceCard = forwardRef<
 
           <div className="pt-3">
             <ModelsSection
+              key={authMode}
               providerName={providerName}
               instanceName={instance.instance_name || '__draft__'}
               instance={instance}
               hideActions={false}
               hideIfEmpty={false}
-              getFormValues={() => form.getValues()}
+              getFormValues={getModelFormValues}
+              verifyTransform={transformModelCredentials}
+              onInstanceModelsChange={(info) => {
+                modelInfoRef.current = info;
+              }}
             />
           </div>
         </div>
       ) : (
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger asChild>
-            <div className="flex items-center gap-1 w-full mb-5">
+            <div className="flex items-center gap-2 w-full mb-5">
               <div
-                className="group flex items-center flex-1 gap-2 px-2 mx-2 py-1 cursor-pointer bg-bg-input rounded-md"
+                className="group flex items-center flex-1 min-w-0 gap-2 px-2 mx-2 py-1 cursor-pointer bg-bg-input rounded-md"
                 data-testid="instance-name-row"
               >
                 <Button
@@ -643,6 +979,7 @@ export const BedrockInstanceCard = forwardRef<
                   <Trash2 className="size-4" />
                 </Button>
               </ConfirmDeleteDialog>
+              <InstanceSaveButton onSave={handleSave} saving={saving} />
             </div>
           </CollapsibleTrigger>
           <CollapsibleContent
@@ -652,16 +989,27 @@ export const BedrockInstanceCard = forwardRef<
             <div className="px-2 pb-4 flex flex-col gap-4">
               {renderFields()}
 
-              <div className="pt-3">
-                <ModelsSection
-                  providerName={providerName}
-                  instanceName={instance.instance_name || '__draft__'}
-                  instance={instance}
-                  hideActions={false}
-                  hideIfEmpty={false}
-                  getFormValues={() => form.getValues()}
-                />
-              </div>
+              {instanceDetails && (
+                <div className="pt-3">
+                  <ModelsSection
+                    providerName={providerName}
+                    instanceName={instance.instance_name || '__draft__'}
+                    instance={{ ...instance, ...(instanceDetails ?? {}) }}
+                    hideActions={false}
+                    hideIfEmpty={false}
+                    instanceDetailsLoaded
+                    getFormValues={getModelFormValues}
+                    verifyTransform={transformModelCredentials}
+                    onInstanceModelsChange={(info) => {
+                      modelInfoRef.current = info;
+                    }}
+                    onInstanceModelsEdited={markModelsEdited}
+                    onInstanceModelsStatusChange={(ready) => {
+                      modelsLoadedRef.current = ready;
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </CollapsibleContent>
         </Collapsible>

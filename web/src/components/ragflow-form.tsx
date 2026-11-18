@@ -16,6 +16,7 @@
 
 import {
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -34,6 +35,7 @@ type RAGFlowFormItemProps = {
   name: string;
   label?: ReactNode;
   tooltip?: ReactNode;
+  description?: ReactNode;
   children: ReactNode | ((field: ControllerRenderProps) => ReactNode);
   horizontal?: boolean;
   required?: boolean;
@@ -50,6 +52,7 @@ export function RAGFlowFormItem({
   name,
   label,
   tooltip,
+  description,
   children,
   horizontal = false,
   required = false,
@@ -111,6 +114,7 @@ export function RAGFlowFormItem({
                   ? cloneElement(children, { ...field })
                   : children}
             </FormControl>
+            {description && <FormDescription>{description}</FormDescription>}
             <FormMessage />
           </div>
         </FormItem>

@@ -2,9 +2,11 @@ package connector
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -49,7 +51,7 @@ func TestGoogleDriveConnectorOpenSyncUsesWindowFingerprintAndFetch(t *testing.T)
 
 	start := mustTime(t, "2026-01-02T00:00:00Z")
 	end := mustTime(t, "2026-01-04T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -80,7 +82,7 @@ func TestGoogleDriveConnectorOpenSyncUsesWindowFingerprintAndFetch(t *testing.T)
 	if !ok {
 		t.Fatalf("session does not implement Fetcher")
 	}
-	blob, err := fetcher.Fetch(context.Background(), *doc.FetchRef)
+	blob, err := fetcher.Fetch(t.Context(), *doc.FetchRef)
 	if err != nil {
 		t.Fatalf("Fetch failed: %v", err)
 	}
@@ -116,7 +118,7 @@ func TestGoogleDriveConnectorOpenSyncResumesWithinPage(t *testing.T) {
 		return googleDriveFilePage{Files: files}, nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -131,7 +133,7 @@ func TestGoogleDriveConnectorOpenSyncResumesWithinPage(t *testing.T) {
 		t.Fatalf("first checkpoint = %+v, want file-2", first.Checkpoint)
 	}
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -150,8 +152,8 @@ func TestGoogleDriveConnectorOpenSyncResumesWithinPage(t *testing.T) {
 	}
 }
 
-// TestGoogleDriveConnectorResumeUsesFilenameWhenOffsetChanged verifies page deletions resume from the current filename offset.
-func TestGoogleDriveConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
+// TestGoogleDriveConnectorResumeRejectsMissingRemoteAnchor verifies a deleted list item invalidates the saved anchor.
+func TestGoogleDriveConnectorResumeRejectsMissingRemoteAnchor(t *testing.T) {
 	connector, err := NewGoogleDriveConnector(map[string]any{
 		"my_drive_emails": "admin@example.com",
 		"batch_size":      2,
@@ -171,7 +173,7 @@ func TestGoogleDriveConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
 	connector.listFiles = func(ctx context.Context, userEmail string, request googleDriveListRequest) (googleDriveFilePage, error) {
 		return googleDriveFilePage{Files: files}, nil
 	}
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -195,19 +197,35 @@ func TestGoogleDriveConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
 		}
 		return googleDriveFilePage{Files: files}, nil
 	}
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
-	second, err := resumed.NextBatch(context.Background())
+	_, err = resumed.NextBatch(context.Background())
+	if err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+	if resumeListCalls == 0 {
+		t.Fatalf("resume should have listed the current remote page")
+	}
+}
+
+func TestGoogleDriveConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector, err := NewGoogleDriveConnector(map[string]any{
+		"my_drive_emails": "admin@example.com",
+		"batch_size":      2,
+		"credentials": map[string]any{
+			"google_primary_admin": "admin@example.com",
+			"google_tokens":        `{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		},
+	})
 	if err != nil {
-		t.Fatalf("resume NextBatch failed: %v", err)
+		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
 	}
-	if len(second.Documents) != 1 || second.Documents[0].SourceID != "https://drive.google.com/file/d/file-3" {
-		t.Fatalf("resume documents = %+v, want file-3", second.Documents)
-	}
-	if resumeListCalls != 1 {
-		t.Fatalf("resume list calls = %d, want one checkpoint page", resumeListCalls)
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
 }
 
@@ -248,7 +266,7 @@ func TestGoogleDriveSharedFolderScopesRecurse(t *testing.T) {
 		return nil, nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -258,6 +276,31 @@ func TestGoogleDriveSharedFolderScopesRecurse(t *testing.T) {
 	}
 	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "https://drive.google.com/file/d/child-file" {
 		t.Fatalf("unexpected recursive documents: %+v", batch.Documents)
+	}
+}
+
+// TestGoogleDriveSharedFolderOnlySkipsMyDrive verifies folder URLs without My Drive emails never widen to a whole My Drive.
+func TestGoogleDriveSharedFolderOnlySkipsMyDrive(t *testing.T) {
+	connector, err := NewGoogleDriveConnector(map[string]any{
+		"include_my_drives":  true,
+		"my_drive_emails":    "",
+		"shared_folder_urls": "https://drive.google.com/drive/folders/root-folder",
+		"credentials": map[string]any{
+			"google_primary_admin": "admin@example.com",
+			"google_tokens":        `{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
+	}
+
+	scopes, err := connector.buildScopes(t.Context())
+	if err != nil {
+		t.Fatalf("buildScopes failed: %v", err)
+	}
+	want := googleDriveScope{userEmail: "admin@example.com", corpora: "folder", folderID: "root-folder"}
+	if len(scopes) != 1 || scopes[0] != want {
+		t.Fatalf("scopes = %+v, want only %+v", scopes, want)
 	}
 }
 
@@ -292,7 +335,7 @@ func TestGoogleDriveRateLimitRetries(t *testing.T) {
 		}}}, nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -360,5 +403,136 @@ func googleDriveTestFile(id, name, modifiedTime string) googleDriveFile {
 		MimeType:     "text/plain",
 		ModifiedTime: modifiedTime,
 		WebViewLink:  "https://drive.google.com/file/d/" + id + "/view",
+	}
+}
+
+// TestGoogleDriveSessionsRequireCompleteSearch verifies partial listings fail both sessions.
+func TestGoogleDriveSessionsRequireCompleteSearch(t *testing.T) {
+	tests := []struct {
+		name                string
+		folderScope         bool
+		incompleteListing   string
+		incompletePageToken string
+		empty               bool
+		wantDocuments       int
+	}{
+		{name: "files first page", incompleteListing: "files"},
+		{name: "files middle page", incompleteListing: "files", incompletePageToken: "second"},
+		{name: "folders first page", folderScope: true, incompleteListing: "folders"},
+		{name: "folders middle page", folderScope: true, incompleteListing: "folders", incompletePageToken: "second"},
+		{name: "complete empty", empty: true},
+		{name: "complete files", wantDocuments: 2},
+		{name: "complete recursive folders", folderScope: true, wantDocuments: 3},
+	}
+	for _, mode := range []string{"sync", "prune"} {
+		for _, test := range tests {
+			t.Run(mode+"/"+test.name, func(t *testing.T) {
+				requests := 0
+				client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+					requests++
+					if request.Method != http.MethodGet || request.URL.Path != "/drive/v3/files" {
+						t.Fatalf("unexpected request: %s %s", request.Method, request.URL)
+					}
+					query := request.URL.Query()
+					if !strings.Contains(query.Get("fields"), "incompleteSearch") {
+						t.Errorf("list request must include incompleteSearch: %s", query.Get("fields"))
+					}
+					listing := "files"
+					if strings.HasPrefix(query.Get("q"), "mimeType = '") {
+						listing = "folders"
+					}
+					pageToken := query.Get("pageToken")
+					page := map[string]any{}
+					if !test.empty {
+						page["incompleteSearch"] = false
+						id := "first"
+						if listing == "folders" {
+							if strings.Contains(query.Get("q"), "'root' in parents") {
+								id = "child-" + id
+								if pageToken == "" {
+									page["nextPageToken"] = "second"
+								} else {
+									id = "child-second"
+								}
+							} else {
+								id = ""
+							}
+						} else if test.folderScope {
+							for _, folderID := range []string{"root", "child-first", "child-second"} {
+								if strings.Contains(query.Get("q"), "'"+folderID+"' in parents") {
+									id = folderID + "-file"
+								}
+							}
+						} else if pageToken == "" {
+							page["nextPageToken"] = "second"
+						} else {
+							id = "second"
+						}
+						if id != "" {
+							page["files"] = []map[string]string{{"id": id, "name": id + ".txt", "mimeType": "text/plain"}}
+						}
+					}
+					if listing == test.incompleteListing && pageToken == test.incompletePageToken {
+						page["incompleteSearch"] = true
+						// A terminal partial page is still not a complete snapshot.
+						delete(page, "nextPageToken")
+					}
+					recorder := httptest.NewRecorder()
+					if err := json.NewEncoder(recorder).Encode(page); err != nil {
+						t.Fatal(err)
+					}
+					return recorder.Result(), nil
+				})}
+				connector := &GoogleDriveConnector{httpClientForUser: func(context.Context, string) (*http.Client, error) {
+					return client, nil
+				}}
+				scope := googleDriveScope{userEmail: "admin@example.com", corpora: "user", includeSharedWithMe: true}
+				if test.folderScope {
+					scope.corpora = "folder"
+					scope.folderID = "root"
+				}
+				var next func(context.Context) (int, error)
+				if mode == "prune" {
+					session := &googleDrivePruneSession{connector: connector, scopes: []googleDriveScope{scope}, batchSize: 1}
+					next = func(ctx context.Context) (int, error) {
+						batch, err := session.NextBatch(ctx)
+						return len(batch.Documents), err
+					}
+				} else {
+					session := &googleDriveSyncSession{connector: connector, scopes: []googleDriveScope{scope}, batchSize: 1}
+					next = func(ctx context.Context) (int, error) {
+						batch, err := session.NextBatch(ctx)
+						return len(batch.Documents), err
+					}
+				}
+				documents := 0
+				for calls := 0; calls < 10; calls++ {
+					count, err := next(t.Context())
+					if test.incompleteListing != "" && err != nil {
+						if errors.Is(err, io.EOF) || !strings.Contains(err.Error(), "search") || !strings.Contains(err.Error(), "incomplete") {
+							t.Fatalf("partial snapshot ended with %v, want incomplete-search error", err)
+						}
+						if count != 0 {
+							t.Fatalf("failed batch returned %d documents", count)
+						}
+						if test.incompletePageToken != "" && requests < 2 {
+							t.Fatal("middle-page case did not reach pagination")
+						}
+						return
+					}
+					if errors.Is(err, io.EOF) {
+						if documents != test.wantDocuments {
+							t.Fatalf("documents = %d, want %d", documents, test.wantDocuments)
+						}
+						return
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					documents += count
+				}
+				t.Fatal("session did not terminate")
+			})
+		}
 	}
 }

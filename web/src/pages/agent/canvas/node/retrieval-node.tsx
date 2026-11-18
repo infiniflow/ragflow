@@ -12,6 +12,7 @@ import { get } from 'lodash';
 import { TriangleAlert } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { NodeHandleId, RetrievalFrom } from '../../constant';
 import { RetrievalFormSchemaType } from '../../form/retrieval-form/next';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
@@ -38,17 +39,24 @@ function InnerRetrievalNode({
 
   const persistedDatasetIds = isMemory ? [] : knowledgeBaseIds;
 
+  // Names resolve through resources usable by both the canvas owner and the
+  // current user.
+  const { id: canvasID } = useParams();
+
   // Resolve names/avatars for the persisted ids directly: the paginated
   // knowledge list can miss them (unloaded pages, emptied datasets filtered
   // out). Shares the byIds query with the staleness check below.
-  const { data: datasets } = useFetchDatasetsByIds(persistedDatasetIds);
+  const { data: datasets } = useFetchDatasetsByIds(
+    persistedDatasetIds,
+    canvasID,
+  );
 
   // Mirror the form's stale-dataset validation: a persisted id referencing a
   // dataset that has since been deleted or emptied of chunks is flagged on
   // the node as well. Stays empty while the lookup is in flight.
-  const { staleDatasetIds } = useStaleDatasetIds(persistedDatasetIds);
+  const { staleDatasetIds } = useStaleDatasetIds(persistedDatasetIds, canvasID);
 
-  const memoryList = useFetchAllMemoryList();
+  const memoryList = useFetchAllMemoryList(canvasID);
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>

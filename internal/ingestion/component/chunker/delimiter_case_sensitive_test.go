@@ -33,6 +33,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 )
 
@@ -185,7 +186,7 @@ func TestTokenChunker_BacktickEndSplitsOnlyAtLowercase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	got := make([]string, 0, len(chunks))
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)
@@ -194,8 +195,10 @@ func TestTokenChunker_BacktickEndSplitsOnlyAtLowercase(t *testing.T) {
 			got = append(got, text)
 		}
 	}
-	// Python's _split_text_by_pattern drops the matched delimiter and
-	// .strip()s each segment: "the" | "and End and END come"
+	// The custom (backtick) delimiter "end" is DROPPED (Python-compatible),
+	// so only the lowercase "end" matches and "End"/"END" stay intact inside
+	// the second segment. After trimming, the two segments are "the" and
+	// "and End and END come".
 	want := []string{"the", "and End and END come"}
 	if len(got) != len(want) {
 		t.Fatalf("chunks = %#v, want %#v", got, want)
@@ -223,7 +226,7 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	got := make([]string, 0, len(chunks))
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)
@@ -232,8 +235,8 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 			got = append(got, text)
 		}
 	}
-	// "B" + "a" glued → "Ba"; remainder "Ab". Python drops the matched
-	// delimiter and .strip()s, leaving "B" | "Ab".
+	// The custom (backtick) delimiter "a" is DROPPED (Python-compatible), so
+	// "BaAb" splits into "B" + "Ab".
 	want := []string{"B", "Ab"}
 	if len(got) != len(want) {
 		t.Fatalf("chunks = %#v, want %#v", got, want)

@@ -35,6 +35,7 @@ import (
 const (
 	defaultNotionBatchSize    = 32
 	defaultNotionFileMaxBytes = 100 * 1024 * 1024
+	notionRequestTimeout      = 60 * time.Second
 	notionAPIBaseURL          = "https://api.notion.com/v1"
 	notionVersion             = "2022-06-28"
 )
@@ -70,7 +71,7 @@ func NewNotionConnector(config map[string]any) (*NotionConnector, error) {
 		batchSize:       batchSize,
 		fileMaxBytes:    fileMaxBytes,
 		recursiveLookup: true,
-		httpClient:      &http.Client{Timeout: 60 * time.Second},
+		httpClient:      &http.Client{Timeout: notionRequestTimeout},
 		indexedPages:    map[string]bool{},
 		pagePathCache:   map[string]string{},
 	}, nil
@@ -112,11 +113,15 @@ func (c *NotionConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	}
 	c.indexedPages = map[string]bool{}
 	c.pagePathCache = map[string]string{}
+	resumeSourceID, err := notionResumeSourceID(request.Resume)
+	if err != nil {
+		return nil, err
+	}
 	session := &notionSyncSession{
 		connector:      c,
 		request:        request,
 		batchSize:      c.batchSize,
-		resumeSourceID: notionResumeSourceID(request.Resume),
+		resumeSourceID: resumeSourceID,
 		searchRequest: notionSearchRequest{
 			Filter:   map[string]any{"property": "object", "value": "page"},
 			PageSize: 100,
@@ -541,13 +546,18 @@ func (c *NotionConnector) file(ctx context.Context, rawURL string) ([]byte, erro
 	if c.downloadFile != nil {
 		return c.downloadFile(ctx, rawURL)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
+	timeout := notionRequestTimeout
+	if c.httpClient != nil && c.httpClient.Timeout > 0 {
+		timeout = c.httpClient.Timeout
 	}
-	response, err := c.httpClient.Do(request)
+	response, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  http.MethodGet,
+		RawURL:  rawURL,
+		Timeout: timeout,
+		Base:    c.httpClient,
+	})
 	if err != nil {
-		return nil, err
+		return nil, connectorUnsafeErr(err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -618,7 +628,7 @@ func (s *notionSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		pageDocs, err := s.nextPageDocuments(ctx)
 		if errors.Is(err, io.EOF) {
 			if s.resumeSourceID != "" && !s.resumeMatched {
-				return SyncBatch{}, fmt.Errorf("notion sync resume checkpoint %q was not found in the source; refusing to discard unprocessed documents", s.resumeSourceID)
+				return SyncBatch{}, fmt.Errorf("notion sync resume checkpoint %q was not found in the source: %w", s.resumeSourceID, ErrSyncResumeInvalid)
 			}
 			if len(documents) == 0 {
 				return SyncBatch{}, io.EOF
@@ -869,11 +879,15 @@ func notionSearchResultsOlderThanWindowStart(pages []notionPage, request SyncReq
 	return true
 }
 
-func notionResumeSourceID(checkpoint *SyncCheckpoint) string {
+func notionResumeSourceID(checkpoint *SyncCheckpoint) (string, error) {
 	if checkpoint == nil {
-		return ""
+		return "", nil
 	}
-	return firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	if sourceID == "" {
+		return "", fmt.Errorf("notion sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	return sourceID, nil
 }
 
 func includeNotionUpdatedAt(updatedAt time.Time, request SyncRequest) bool {

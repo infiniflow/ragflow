@@ -184,13 +184,13 @@ func TestUCloudAgentSandboxProvider_AllOpsBeforeInit(t *testing.T) {
 	p := newUCloudAgentSandboxProviderFromConfig(map[string]any{})
 	inst := &SandboxInstance{InstanceID: "x", Provider: ProviderUCloudAgentSandbox}
 
-	if _, err := p.CreateInstance(context.Background(), "python"); err == nil {
+	if _, err := p.CreateInstance(t.Context(), "python"); err == nil {
 		t.Error("CreateInstance before init: got nil error, want one")
 	}
-	if _, err := p.ExecuteCode(context.Background(), inst, "x", "python", 5, nil); err == nil {
+	if _, err := p.ExecuteCode(t.Context(), inst, "x", "python", 5, nil); err == nil {
 		t.Error("ExecuteCode before init: got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err == nil {
+	if err := p.DestroyInstance(t.Context(), inst); err == nil {
 		t.Error("DestroyInstance before init: got nil error, want one")
 	}
 	if err := p.HealthCheck(context.Background()); err == nil {
@@ -223,7 +223,7 @@ func TestUCloudAgentSandboxProvider_ExecuteCodeRejectsBadInputs(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := p.ExecuteCode(context.Background(), tc.inst, "x", tc.lang, tc.time, nil)
+			_, err := p.ExecuteCode(t.Context(), tc.inst, "x", tc.lang, tc.time, nil)
 			if err == nil {
 				t.Fatalf("got nil error, want one containing %q", tc.want)
 			}
@@ -240,13 +240,13 @@ func TestUCloudAgentSandboxProvider_DestroyInstanceRejectsEmptyID(t *testing.T) 
 	if err := p.Initialize(context.Background()); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	if err := p.DestroyInstance(context.Background(), nil); err == nil {
+	if err := p.DestroyInstance(t.Context(), nil); err == nil {
 		t.Error("DestroyInstance(nil): got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), &SandboxInstance{}); err == nil {
+	if err := p.DestroyInstance(t.Context(), &SandboxInstance{}); err == nil {
 		t.Error("DestroyInstance(empty id): got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), &SandboxInstance{InstanceID: "already-gone"}); err != nil {
+	if err := p.DestroyInstance(t.Context(), &SandboxInstance{InstanceID: "already-gone"}); err != nil {
 		t.Errorf("DestroyInstance(unknown id): %v, want idempotent success", err)
 	}
 }

@@ -27,14 +27,17 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest/observer"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/deepdoc/parser/pdf"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/storage"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // TestExecute_DebugViaEntry_HonorsPagesCap_Integration is the end-to-end
@@ -62,6 +65,18 @@ import (
 func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	requireTokenizerPool(t)
 	mustLoadTaskTestConfig(t)
+
+	// The production parse path must never degrade to a mock; install a
+	// test-only MockDocAnalyzer as the in-process DeepDoc backend via the
+	// public factory seam so the PDF pipeline runs without a real DeepDoc
+	// service or ONNX Runtime models. Reset to nil on cleanup (this test
+	// binary registers no real backend). The page-cap assertion below relies
+	// on pdfium reading the capped/uncapped number of pages — not on layout
+	// inference — so a mock analyzer preserves the behaviour under test.
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (doctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
 
 	origDB := dao.DB
 	realDB := mustOpenTaskTestDB(t)
@@ -127,7 +142,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 		CanvasCategory: "agent_canvas",
 		DSL:            canvasDSL,
 	}).Error; err != nil {
-		t.Fatalf("create user canvas: %v", err)
+		t.Fatalf("create user agent: %v", err)
 	}
 	t.Cleanup(func() { _ = realDB.Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error })
 
@@ -176,7 +191,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	defer func() { common.Logger = oldLogger }()
 
 	// Uncapped baseline: explicit pages=all → executor respects override.
-	uncappedExec, err := NewPipelineExecutor(newDebugCtx(allPages), canvasID, 0)
+	uncappedExec, err := NewPipelineExecutor(newDebugCtx(allPages), canvasID, 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor (uncapped): %v", err)
 	}
@@ -186,7 +201,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	}
 
 	// Capped: no pages override → executor injects [[1, debugPageCapPages]].
-	cappedExec, err := NewPipelineExecutor(newDebugCtx(nil), canvasID, 0)
+	cappedExec, err := NewPipelineExecutor(newDebugCtx(nil), canvasID, 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor (capped): %v", err)
 	}

@@ -1,16 +1,19 @@
 package layout
 
 import (
-	"log/slog"
 	"math"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // ---- Column assignment ----
@@ -142,17 +145,38 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 // RAG分词, 三国人物). Geometry (boxInsideTolerant) remains the actual
 // containment proof; whitespace normalization only makes the fragment check
 // robust to the char-vs-OCR space divergence.
+// dedupBucket groups box indices by (page, column) so the substring-overlap scan
+// only walks boxes that can actually be OCR double-detection fragments of one
+// another. The original O(n²) loop skipped every pair whose PageNumber or ColID
+// differed, so restricting each i to its own bucket is exactly equivalent while
+// cutting the inner-loop count from n² to Σ_bucket size²: OCR fragments always
+// share their container's page and column (see the ColID guard below), so no
+// valid comparison pair is lost.
+func dedupBucket(boxes []pdf.TextBox) map[[2]int][]int {
+	byPageCol := make(map[[2]int][]int, len(boxes))
+	for i, b := range boxes {
+		key := [2]int{b.PageNumber, b.ColID}
+		byPageCol[key] = append(byPageCol[key], i)
+	}
+	return byPageCol
+}
+
 func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 	drop := make([]bool, len(boxes))
-	// Precompute the whitespace-normalized text once per box. The inner loop
-	// compares every OCR pair, so recomputing norm there would make the O(n²)
-	// loop O(n²·len) in the worst case (a large scan document hits ~3k boxes).
+	// Precompute the whitespace-normalized text once per box. The pair scan
+	// still touches many OCR boxes, so recomputing norm per comparison would
+	// make the worst case O(bucketSize²·len).
 	norm := make([]string, len(boxes))
 	for i, b := range boxes {
 		if b.IsOCR {
 			norm[i] = dedupNormText(strings.TrimSpace(b.Text))
 		}
 	}
+	// Index boxes by (page, column) so each i only compares against same-page,
+	// same-column boxes instead of the whole slice — equivalent to the original
+	// per-pair PageNumber/ColID guards, but O(n) to build and Σ_bucket size² to
+	// scan.
+	byPageCol := dedupBucket(boxes)
 	for i := range boxes {
 		if drop[i] {
 			continue
@@ -166,15 +190,19 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 		if ai == "" {
 			continue
 		}
-		for j := range boxes {
-			if i == j || drop[j] || boxes[i].PageNumber != boxes[j].PageNumber || !boxes[j].IsOCR {
+		ni := norm[i]
+		// Candidates are the boxes sharing i's (page, column). The bucket keeps
+		// the original slice order, so the early `break` (i is a substring of a
+		// larger box) fires at the same point as in the unindexed loop.
+		for _, j := range byPageCol[[2]int{boxes[i].PageNumber, boxes[i].ColID}] {
+			if i == j || drop[j] || !boxes[j].IsOCR {
 				continue
 			}
 			aj := strings.TrimSpace(boxes[j].Text)
 			if aj == "" || ai == aj {
 				continue
 			}
-			ni, nj := norm[i], norm[j]
+			nj := norm[j]
 			// Never collapse a substring across columns. OCR double-detection
 			// fragments always share the SAME column as their container; a
 			// substring in a DIFFERENT column (e.g. the opposite column of a
@@ -231,6 +259,110 @@ func dedupNormText(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// FilterWatermarkBoxes drops single-character ASCII boxes whose text repeats
+// verbatim many times on the SAME page. This targets the "tiled watermark on a
+// rotated glyph string" pattern reported in #18145:
+//
+//   - Resume / template PDFs plant a watermark string (e.g. "ce1a60…ZH1c56f")
+//     repeated diagonally across the page. The string is rotated so each
+//     glyph fails the layout line-overlap check and ends up in its own
+//     single-character box.
+//   - Naive chunker then interleaves those garbage boxes into every chunk.
+//
+// This runs at the POST-PROCESS level (after char→box and OCR→box have both
+// converged into the same `[]pdf.TextBox` slice), so it covers both the
+// direct-text and OCR-merge code paths that the issue reproduces. An earlier
+// attempt to filter at the char-stage in `CharsToBoxes` was a dead branch
+// for the OCR-merge path and operated at the wrong granularity (multi-char
+// tokens), per the review on PR #18308.
+//
+// Scope is intentionally tight so legitimate content is never dropped:
+//
+//   - Only boxes whose Text is exactly one ASCII letter or digit, classified
+//     against raw Text (no normalization). This excludes multi-token
+//     repetition (e.g. repeated SKU "ABC123"), CJK glyphs (always ≥3 UTF-8
+//     bytes → len>1), punctuation, and whitespace.
+//   - Promoted only if the box's text appears ≥ watermarkBoxesMinOccurrences
+//     times on the page. A real "Q" or "1" appears at most once per page
+//     outside a watermark tiling.
+//   - Page-local, so a watermark on page 3 cannot affect page 1. This also
+//     keeps the O(n) cost bounded by page size.
+//
+// CJK is unconstrained: a single box's bytes may be ≥1 even when the rune
+// count is 1, so `len(box.Text) == 1` already excludes CJK fonts (which are
+// typically 3 bytes per glyph). A box that 姓名 — the canonical Chinese name
+// field — survives verbatim even when the rest of the document is contaminated.
+func FilterWatermarkBoxes(boxes []pdf.TextBox) []pdf.TextBox {
+	if len(boxes) == 0 {
+		return boxes
+	}
+	// Pass 1: per-page count of single-char ASCII boxes. Use the raw
+	// box.Text for both classification and the promotion key so no
+	// normalization collapses distinct bytes.
+	type key struct {
+		page int
+		text string
+	}
+	counts := make(map[key]int, len(boxes))
+	for _, b := range boxes {
+		if !isSingleAsciiAlnum(b.Text) {
+			continue
+		}
+		counts[key{b.PageNumber, b.Text}]++
+	}
+	// Promote any (page, text) that meets the watermark threshold.
+	promoted := make(map[key]struct{}, len(counts))
+	for k, n := range counts {
+		if n >= watermarkBoxesMinOccurrences {
+			promoted[k] = struct{}{}
+		}
+	}
+	if len(promoted) == 0 {
+		return boxes
+	}
+	// Pass 2: drop boxes whose (page, text) was promoted.
+	out := make([]pdf.TextBox, 0, len(boxes))
+	for _, b := range boxes {
+		if isSingleAsciiAlnum(b.Text) {
+			if _, drop := promoted[key{b.PageNumber, b.Text}]; drop {
+				continue
+			}
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+// watermarkBoxesMinOccurrences is the per-page repetition threshold for a
+// single-char ASCII box to be considered a watermark glyph. Legitimate short
+// content ("1.", "Q.", "A.") rarely appears more than once per page outside
+// of dense content (table rows, list items), and even there the same label
+// rarely reaches this threshold. A watermark tile places the same glyph at
+// 10+ x-intercepts across the page, so the threshold is set conservatively
+// above that floor to keep false-positive rate negligible.
+const watermarkBoxesMinOccurrences = 4
+
+// isSingleAsciiAlnum reports whether s is exactly one ASCII letter or digit
+// (no whitespace, no CJK, no punctuation, no multibyte UTF-8). Used by
+// FilterWatermarkBoxes to limit the watermark signal to the rotated-glyph
+// shape rather than the broader "any short token" case, which would
+// collide with repeated SKUs and part numbers.
+func isSingleAsciiAlnum(s string) bool {
+	if len(s) != 1 {
+		return false
+	}
+	c := s[0]
+	switch {
+	case c >= 'A' && c <= 'Z':
+		return true
+	case c >= 'a' && c <= 'z':
+		return true
+	case c >= '0' && c <= '9':
+		return true
+	}
+	return false
 }
 
 // dedupYTolerancePt tolerates a small Y-boundary overshoot of an OCR
@@ -368,7 +500,7 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 		processed := processPageBoxes(bxs, mh, mw, pageEnglish[pg])
 		result = append(result, processed...)
 	}
-	slog.Debug("vm result", "in", len(boxes), "out", len(result))
+	common.Debug("vm result", zap.Int("in", len(boxes)), zap.Int("out", len(result)))
 	return result
 }
 
@@ -422,23 +554,29 @@ func groupBoxesByPage(boxes []pdf.TextBox) (map[int][]int, []int) {
 
 // shouldMergeBoxes determines whether two boxes should be merged
 func shouldMergeBoxes(prev, curr *pdf.TextBox, mh, mw float64, isEnglish bool) bool {
+	if prev.LayoutType == pdf.LayoutTypeFigure || curr.LayoutType == pdf.LayoutTypeFigure {
+		return false
+	}
 	// Check layout number
 	if prev.LayoutNo != curr.LayoutNo {
-		slog.Debug("vm reject", "reason", "layoutNo", "prevLayout", prev.LayoutNo, "currLayout", curr.LayoutNo)
+		common.Debug("vm reject", zap.String("reason", "layoutNo"),
+			zap.String("prevLayout", prev.LayoutNo), zap.String("currLayout", curr.LayoutNo))
 		return false
 	}
 
 	// Check vertical gap
 	gap := curr.Top - prev.Bottom
 	if gap > mh*1.5 {
-		slog.Debug("vm reject", "reason", "gap", "gap", gap, "threshold", mh*1.5, "mh", mh)
+		common.Debug("vm reject", zap.String("reason", "gap"),
+			zap.Float64("gap", gap), zap.Float64("threshold", mh*1.5), zap.Float64("mh", mh))
 		return false
 	}
 
 	// Check horizontal overlap
 	ov := util.OverlapX(prev, curr)
 	if ov < 0.3 {
-		slog.Debug("vm reject", "reason", "ovX", "ov", ov, "threshold", 0.3)
+		common.Debug("vm reject", zap.String("reason", "ovX"),
+			zap.Float64("ov", ov), zap.Float64("threshold", 0.3))
 		return false
 	}
 
@@ -482,7 +620,7 @@ func mergeTwoBoxes(prev, curr pdf.TextBox) pdf.TextBox {
 	if r := []rune(currTrunc); len(r) > 40 {
 		currTrunc = string(r[:40])
 	}
-	slog.Debug("vm merge", "prev", prevTrunc, "curr", currTrunc)
+	common.Debug("vm merge", zap.String("prev", prevTrunc), zap.String("curr", currTrunc))
 
 	return prev
 }
@@ -539,6 +677,10 @@ func mergeColumnBoxes(sortedBoxes []pdf.TextBox, mh, mw float64, isEnglish bool)
 	out := make([]pdf.TextBox, 0, len(sortedBoxes))
 	for i := 0; i < len(sortedBoxes); i++ {
 		curr := sortedBoxes[i]
+		if curr.LayoutType == pdf.LayoutTypeFigure {
+			out = append(out, curr)
+			continue
+		}
 
 		// Skip cross-page suffixes (like previous page number)
 		if i > 0 && sortedBoxes[i-1].PageNumber < curr.PageNumber && pageNumSuffixPattern.MatchString(sortedBoxes[i-1].Text) {

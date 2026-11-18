@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -120,14 +120,26 @@ class Session(Base):
                 except json.JSONDecodeError:
                     continue  # Skip lines that are not valid JSON
 
-                event = json_data.get("event", None)
-                if event and event != "message":
-                    continue
+                if json_data.get("code", 0) != 0:
+                    raise Exception(json_data.get("message", "Unknown API error"))
 
-                if (self.__session_type == "agent" and event == "message_end") or (self.__session_type == "chat" and json_data.get("data") is True):
+                event = json_data.get("event", None)
+                if event:
+                    if self.__session_type == "agent" and event not in {"message", "message_end"}:
+                        continue
+                    if self.__session_type == "chat" and event != "message":
+                        continue
+
+                if self.__session_type == "chat" and json_data.get("data") is True:
                     return
                 if self.__session_type == "agent":
-                    yield self._structure_answer(json_data)
+                    message = self._structure_answer(json_data)
+                    if event == "message_end":
+                        message.content = ""
+                        if message.reference:
+                            yield message
+                        continue
+                    yield message
                 else:
                     yield self._structure_answer(json_data["data"])
         else:
@@ -135,19 +147,36 @@ class Session(Base):
                 json_data = res.json()
             except ValueError:
                 raise Exception(f"Invalid response {res}")
+            if json_data.get("code", 0) != 0:
+                raise Exception(json_data.get("message", "Unknown API error"))
             yield self._structure_answer(json_data["data"])
 
     def _structure_answer(self, json_data):
+        """Construct a Message object from streaming or non-streaming response payloads."""
         answer = ""
+        event = None
+        message_id = None
         if self.__session_type == "agent":
-            answer = json_data["data"]["content"]
+            event = json_data.get("event")
+            message_id = json_data.get("message_id")
+            if isinstance(json_data.get("data"), dict):
+                json_data = json_data["data"]
+            answer = json_data.get("content", "")
+            if not message_id:
+                message_id = json_data.get("id") or json_data.get("message_id")
         elif self.__session_type == "chat":
-            answer = json_data["answer"]
+            answer = json_data.get("answer", "")
+            message_id = json_data.get("id")
         reference = json_data.get("reference", {})
-        temp_dict = {"content": answer, "role": "assistant"}
+        temp_dict = {"id": message_id, "content": answer, "role": "assistant"}
         if reference and "chunks" in reference:
             chunks = reference["chunks"]
+            if isinstance(chunks, dict):
+                chunks = list(chunks.values())
             temp_dict["reference"] = chunks
+            if self.__session_type == "agent":
+                reference_count = len(chunks) if isinstance(chunks, list) else 0
+                logger.debug("Session.ask parsed agent references session_id=%s event=%s reference_count=%s", self.id, event, reference_count)
         message = Message(self.rag, temp_dict)
         return message
 

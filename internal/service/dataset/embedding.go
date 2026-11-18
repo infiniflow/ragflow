@@ -11,7 +11,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 
 	enginetypes "ragflow/internal/engine/types"
@@ -36,12 +37,13 @@ type embeddingCheckSample struct {
 // CheckEmbedding verifies that a candidate embedding model is compatible with a
 // dataset's existing vectors (the standard "switch embedding model" validation).
 // It is independent of the retired RunIndex/graph_rag_queue scheduling path.
-func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID string, req *service.CheckEmbeddingRequest) (*service.EmbeddingCheckResponse, common.ErrorCode, error) {
+func (d *DatasetService) CheckEmbedding(ctx context.Context, datasetID string, req *service.CheckEmbeddingRequest) (*service.EmbeddingCheckResponse, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
@@ -49,7 +51,7 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("invalid Dataset ID")
 		}
-		return nil, common.CodeServerError, errors.New("internal server error")
+		return nil, common.CodeServerError, fmt.Errorf("failed to get dataset %s: %w", datasetID, err)
 	}
 
 	if req == nil || strings.TrimSpace(req.EmbeddingID) == "" {
@@ -60,11 +62,10 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	driver, modelName, apiConfig, maxTokens, err := service.NewModelProviderService().ResolveModelConfig(ctx, kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
+	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, kb.TenantID), embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
-	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 
 	checkNum := defaultEmbeddingCheckNum
 	if req.CheckNum != nil {
@@ -95,11 +96,11 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 
 		rawChunk, err := d.docEngine.GetChunk(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), sample.ChunkID, []string{datasetID})
 		if err != nil {
-			continue
+			return nil, common.CodeServerError, fmt.Errorf("failed to get sampled chunk %s: %w", sample.ChunkID, err)
 		}
 		chunkMap := datasetMap(rawChunk)
 		if len(chunkMap) == 0 {
-			continue
+			return nil, common.CodeServerError, fmt.Errorf("sampled chunk %s was not found", sample.ChunkID)
 		}
 
 		title := datasetString(chunkMap["title_tks"])
@@ -191,7 +192,7 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to count chunks for dataset %s: %w", datasetID, err)
 	}
 	if totalResult == nil || totalResult.Total <= 0 {
 		return []embeddingCheckSample{}, nil
@@ -223,6 +224,7 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 
 	baseFields := []string{"docnm_kwd", "doc_id", "content_with_weight", "page_num_int", "position_int", "top_int"}
 	samples := make([]embeddingCheckSample, 0, n)
+	var lastSampleErr error
 	for _, offset := range offsets {
 		searchResult, err := d.docEngine.Search(ctx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
@@ -236,21 +238,24 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 			},
 		})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to sample chunk at offset %d for dataset %s: %w", offset, datasetID, err)
 		}
 		if searchResult == nil || len(searchResult.Chunks) == 0 {
+			lastSampleErr = fmt.Errorf("chunk search returned no result at offset %d for dataset %s", offset, datasetID)
 			continue
 		}
 		chunkID := datasetChunkID(searchResult.Chunks[0])
 		if chunkID == "" {
+			lastSampleErr = fmt.Errorf("sampled chunk at offset %d for dataset %s is missing an ID", offset, datasetID)
 			continue
 		}
 		fullChunk, err := d.docEngine.GetChunk(ctx, indexName, chunkID, []string{datasetID})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get sampled chunk %s: %w", chunkID, err)
 		}
 		chunkMap := datasetMap(fullChunk)
 		if len(chunkMap) == 0 {
+			lastSampleErr = fmt.Errorf("sampled chunk %s was not found in dataset %s", chunkID, datasetID)
 			continue
 		}
 		vectorField := datasetGuessVecField(chunkMap)
@@ -266,18 +271,18 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 			Position:          chunkMap["position_int"],
 			Top:               chunkMap["top_int"],
 			ContentWithWeight: datasetString(chunkMap["content_with_weight"]),
-			QuestionKeywords:  datasetStringSlice(chunkMap["question_keywords"]),
+			QuestionKeywords:  datasetStringSlice(chunkMap["question_kwd"]),
 		})
 	}
 
 	if len(samples) == 0 {
-		return nil, errors.New("no valid chunks with vectors found")
+		return nil, lastSampleErr
 	}
 	return samples, nil
 }
 
-func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID string, tenantID string) (bool, string) {
-	_, _, _, _, err := service.NewModelProviderService().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID, tenantID string) (bool, string) {
+	_, err := service.NewModelFactory().ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()
 	}

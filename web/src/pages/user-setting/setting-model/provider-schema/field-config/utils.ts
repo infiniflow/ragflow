@@ -24,9 +24,9 @@ export function capitalize(s: string): string {
 }
 
 /**
- * When model_type contains chat and vision=true, automatically add image2text
+ * When model_type contains chat and vision=true, automatically add vision.
  */
-export function applyChatToImage2Text(
+export function applyChatToVision(
   modelType: string[] | string | undefined,
   vision?: boolean,
 ): string[] {
@@ -36,18 +36,15 @@ export function applyChatToImage2Text(
       ? [modelType]
       : [];
   if (arr.includes('chat') && vision) {
-    return [...arr, 'image2text'];
+    return [...arr, 'vision'];
   }
   return arr;
 }
 
 /**
- * Parse a backend `api_key` value (which may be a JSON string, an
- * already-parsed object, or a bare string) into the underlying object.
- * Used by `echoTransform` implementations to lift provider-specific
- * credential fields that the backend persists nested inside `api_key`
- * (e.g. XunFei Spark's `spark_api_password`, PaddleOCR's nested config,
- * MinerU's full config bundle).
+ * Parse the backend's safe provider config object. `echoTransform`
+ * implementations use it to restore non-secret provider settings; secret
+ * fields are filtered by the backend before this data reaches the browser.
  *
  * Returns `undefined` for bare strings or unparseable input so callers
  * can fall back to empty values via `??`.
@@ -66,6 +63,44 @@ export function parseApiKeyAsObject(
     }
   }
   return obj && typeof obj === 'object' ? obj : undefined;
+}
+
+const credentialFieldPattern =
+  /(api[_-]?key|secret|token|password|credential|private|access[_-]?key|role[_-]?arn|_(ak|sk|sid|key)$)/i;
+
+function hasCredentialValue(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.some(hasCredentialValue);
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).some(
+      hasCredentialValue,
+    );
+  }
+  return Boolean(value);
+}
+
+/** Whether a provider credential payload contains a non-empty credential. */
+export function hasProviderCredentialInput(value: unknown): boolean {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object') {
+        return hasProviderCredentialInput(parsed);
+      }
+    } catch {
+      // A non-JSON string is a plain API key.
+    }
+    return true;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  return Object.entries(value as Record<string, unknown>).some(
+    ([key, fieldValue]) =>
+      credentialFieldPattern.test(key) && hasCredentialValue(fieldValue),
+  );
 }
 
 /**

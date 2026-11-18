@@ -28,11 +28,17 @@ func normalizeVisionLanguage(language string) string {
 	return language
 }
 
-func resolveVisionLanguage(inputs map[string]any, fallback string) string {
+// resolveVisionLanguage picks the language a caption answers in. An explicit
+// enhancement override wins; otherwise the knowledge base value applies, and
+// it is also what the tokenizer analyses with.
+func resolveVisionLanguage(inputs map[string]any, override string) string {
+	if language := strings.TrimSpace(override); language != "" {
+		return language
+	}
 	if language := strings.TrimSpace(getStringOr(inputs, "lang", "")); language != "" {
 		return language
 	}
-	return normalizeVisionLanguage(fallback)
+	return defaultVisionLanguage
 }
 
 func renderFigureVisionLanguage(prompt, language string) string {

@@ -41,7 +41,7 @@ func TestFault_NodeReturnsEmptyMap(t *testing.T) {
 	_ = sg.AddEdge("reader", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestFault_NodeReturnsNil(t *testing.T) {
 	_ = sg.AddEdge("nil_return", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestFault_RapidEngineCreation(t *testing.T) {
 				WithCheckpointer(ms),
 				WithConfig(cfg),
 			)
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "rapid"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "rapid"})
 			if err != nil {
 				t.Errorf("engine %d: %v", idx, err)
 			}
@@ -134,7 +134,7 @@ func TestFault_DeepErrorChain(t *testing.T) {
 	_ = sg.AddEdge(prev, constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(30))
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "deep"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "deep"})
 	if err == nil {
 		t.Fatal("expected error from chain")
 	}
@@ -168,7 +168,7 @@ func TestFault_MultipleInterrupts(t *testing.T) {
 		WithInterrupts("b"),
 	)
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected interrupt")
 	}
@@ -182,7 +182,7 @@ func TestFault_MultipleInterrupts(t *testing.T) {
 // thread doesn't corrupt data.
 func TestFault_CheckpointerRace_SameThread(t *testing.T) {
 	ms := checkpoint.NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "race-same-thread"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -222,7 +222,7 @@ func TestFault_ZeroMaxConcurrency(t *testing.T) {
 		WithRecursionLimit(10),
 		WithMaxConcurrency(0),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestFault_HighMaxConcurrency(t *testing.T) {
 		WithRecursionLimit(10),
 		WithMaxConcurrency(100),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestFault_HighMaxConcurrency(t *testing.T) {
 // the test infrastructure doesn't hang.
 func TestFault_RepeatedInterrupt(t *testing.T) {
 	engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestFault_RapidCreateCancel(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		wg.Go(func() {
 			engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(5))
-			ctx, cancel := context.WithTimeout(context.Background(), time.Microsecond)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Microsecond)
 			defer cancel()
 			_, _ = engine.RunSync(ctx, map[string]any{"value": "x"})
 		})
@@ -308,7 +308,7 @@ func TestFault_EngineReuseDifferentConfig(t *testing.T) {
 			WithRecursionLimit(10),
 			WithMaxConcurrency(mc),
 		)
-		_, err := engine.RunSync(context.Background(), map[string]any{"value": "cfg"})
+		_, err := engine.RunSync(t.Context(), map[string]any{"value": "cfg"})
 		if err != nil {
 			t.Fatalf("maxConcurrency=%d: %v", mc, err)
 		}
@@ -323,7 +323,7 @@ func TestFault_EngineReuseDifferentConfig(t *testing.T) {
 // sequentially on the same thread.
 func TestFault_MultipleCheckpointsSequential(t *testing.T) {
 	ms := checkpoint.NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "multi-cp-seq"
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
@@ -362,7 +362,7 @@ func TestFault_MultipleCheckpointsSequential(t *testing.T) {
 func TestFault_NodeModifiesStateInPlace(t *testing.T) {
 	// Use newSimpleGraph pattern which is known to work with the engine.
 	engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestFault_NodeModifiesStateInPlace(t *testing.T) {
 func TestFault_SimpleRoute(t *testing.T) {
 	// Use newSimpleGraph which is known to work.
 	engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestFault_SharedMemorySaver_MultipleEngines(t *testing.T) {
 				WithCheckpointer(ms),
 				WithConfig(cfg),
 			)
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "shared"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "shared"})
 			if err != nil {
 				t.Errorf("engine %d: %v", idx, err)
 			}
@@ -426,7 +426,7 @@ func TestFault_SharedMemorySaver_MultipleEngines(t *testing.T) {
 func BenchmarkFault_EngineReuseManyTimes(b *testing.B) {
 	sg := newBenchGraph()
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := b.Context()
 	input := map[string]any{"value": "bench"}
 
 	b.ResetTimer()

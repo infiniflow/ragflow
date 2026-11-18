@@ -8,7 +8,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
@@ -55,7 +55,7 @@ export function WenCaiFormWidgets() {
           <FormItem>
             <FormLabel>{t('flow.queryType')}</FormLabel>
             <FormControl>
-              <RAGFlowSelect {...field} options={wenCaiQueryTypeOptions} />
+              <SelectWithSearch {...field} options={wenCaiQueryTypeOptions} />
             </FormControl>
             <FormMessage />
           </FormItem>

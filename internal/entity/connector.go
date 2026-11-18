@@ -17,29 +17,67 @@
 package entity
 
 import (
+	"database/sql/driver"
 	"encoding/json"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 // Connector connector model
 type Connector struct {
-	ID            string     `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID      string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	Name          string     `gorm:"column:name;size:128;not null" json:"name"`
-	Source        string     `gorm:"column:source;size:128;not null;index" json:"source"`
-	InputType     string     `gorm:"column:input_type;size:128;not null;index" json:"input_type"`
-	Config        JSONMap    `gorm:"column:config;type:longtext;not null" json:"config"`
-	RefreshFreq   int64      `gorm:"column:refresh_freq;default:0" json:"refresh_freq"`
-	PruneFreq     int64      `gorm:"column:prune_freq;default:0" json:"prune_freq"`
-	TimeoutSecs   int64      `gorm:"column:timeout_secs;default:3600" json:"timeout_secs"`
-	IndexingStart *time.Time `gorm:"column:indexing_start;index" json:"indexing_start,omitempty"`
-	Status        string     `gorm:"column:status;size:16;not null;default:schedule;index" json:"status"`
+	ID            string          `gorm:"column:id;primaryKey;size:32" json:"id"`
+	UserID        string          `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
+	TenantID      string          `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	Name          string          `gorm:"column:name;size:128;not null" json:"name"`
+	Source        string          `gorm:"column:source;size:128;not null;index" json:"source"`
+	InputType     string          `gorm:"column:input_type;size:128;not null;index" json:"input_type"`
+	Config        ConnectorConfig `gorm:"column:config;type:longtext;not null" json:"config"`
+	RefreshFreq   int64           `gorm:"column:refresh_freq;default:0" json:"refresh_freq"`
+	PruneFreq     int64           `gorm:"column:prune_freq;default:0" json:"prune_freq"`
+	TimeoutSecs   int64           `gorm:"column:timeout_secs;default:3600" json:"timeout_secs"`
+	IndexingStart *time.Time      `gorm:"column:indexing_start;index" json:"indexing_start,omitempty"`
+	Status        string          `gorm:"column:status;size:16;not null;default:schedule;index" json:"status"`
 	BaseModel
 }
 
 // TableName specify table name
 func (Connector) TableName() string {
 	return "connector"
+}
+
+// ConnectorConfig is the connector config column. Writes encrypt config["credentials"] when
+// RAGFLOW_CONNECTOR_KEY is set. Reads keep it encrypted, so access checks and deletes work
+// without the key; callers that need the credentials call common.DecryptConnectorCredentials.
+type ConnectorConfig map[string]interface{}
+
+// Value implements driver.Valuer interface
+func (c ConnectorConfig) Value() (driver.Value, error) {
+	if c == nil {
+		return nil, nil
+	}
+	config, err := common.EncryptConnectorCredentials(c)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(config)
+}
+
+// Scan implements sql.Scanner interface
+func (c *ConnectorConfig) Scan(value interface{}) error {
+	if value == nil {
+		*c = nil
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return json.Unmarshal([]byte(value.(string)), c)
+	}
+	return json.Unmarshal(b, c)
+}
+
+func (c *ConnectorConfig) GormDataType() string {
+	return "longtext"
 }
 
 // MarshalJSON formats connector timestamps to match the Python API contract.
@@ -68,7 +106,7 @@ func (c Connector) MarshalJSON() ([]byte, error) {
 		Name:          c.Name,
 		Source:        c.Source,
 		InputType:     c.InputType,
-		Config:        c.Config,
+		Config:        JSONMap(c.Config),
 		RefreshFreq:   c.RefreshFreq,
 		PruneFreq:     c.PruneFreq,
 		TimeoutSecs:   c.TimeoutSecs,
@@ -105,21 +143,29 @@ func (Connector2Kb) TableName() string {
 
 // SyncLogs sync logs model
 type SyncLogs struct {
-	ID                   string        `gorm:"column:id;primaryKey;size:32" json:"id"`
-	ConnectorID          string        `gorm:"column:connector_id;size:32;index" json:"connector_id"`
-	TaskType             string        `gorm:"column:task_type;size:32;not null;default:sync;index" json:"task_type"`
-	Status               string        `gorm:"column:status;size:128;not null;index" json:"status"`
-	FromBeginning        *string       `gorm:"column:from_beginning;size:1" json:"from_beginning,omitempty"`
-	NewDocsIndexed       int64         `gorm:"column:new_docs_indexed;default:0" json:"new_docs_indexed"`
-	TotalDocsIndexed     int64         `gorm:"column:total_docs_indexed;default:0" json:"total_docs_indexed"`
-	DocsRemovedFromIndex int64         `gorm:"column:docs_removed_from_index;default:0" json:"docs_removed_from_index"`
-	ErrorMsg             string        `gorm:"column:error_msg;type:longtext;not null" json:"error_msg"`
-	ErrorCount           int64         `gorm:"column:error_count;default:0" json:"error_count"`
-	FullExceptionTrace   *string       `gorm:"column:full_exception_trace;type:longtext" json:"full_exception_trace,omitempty"`
-	TimeStarted          *time.Time    `gorm:"column:time_started;index" json:"time_started,omitempty"`
-	PollRangeStart       *FlexibleTime `gorm:"column:poll_range_start;type:varchar(255);index" json:"poll_range_start,omitempty"`
-	PollRangeEnd         *FlexibleTime `gorm:"column:poll_range_end;type:varchar(255);index" json:"poll_range_end,omitempty"`
-	KbID                 string        `gorm:"column:kb_id;size:32;not null;index" json:"kb_id"`
+	ID                   string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	ConnectorID          string  `gorm:"column:connector_id;size:32;index" json:"connector_id"`
+	TaskType             string  `gorm:"column:task_type;size:32;not null;default:sync;index" json:"task_type"`
+	Status               string  `gorm:"column:status;size:128;not null;index" json:"status"`
+	FromBeginning        *string `gorm:"column:from_beginning;size:1" json:"from_beginning,omitempty"`
+	NewDocsIndexed       int64   `gorm:"column:new_docs_indexed;default:0" json:"new_docs_indexed"`
+	TotalDocsIndexed     int64   `gorm:"column:total_docs_indexed;default:0" json:"total_docs_indexed"`
+	DocsRemovedFromIndex int64   `gorm:"column:docs_removed_from_index;default:0" json:"docs_removed_from_index"`
+	ErrorMsg             string  `gorm:"column:error_msg;type:longtext;not null" json:"error_msg"`
+	ErrorCount           int64   `gorm:"column:error_count;default:0" json:"error_count"`
+	// ErrorClass identifies the retry class of the most recent failure; it is
+	// empty before the task's first failure.
+	ErrorClass string `gorm:"column:error_class;size:32;default:''" json:"error_class"`
+	// RetryCount is the number of consecutive failures for ErrorClass. It
+	// resets to 1 whenever the failure class changes so one class's retries
+	// never consume another class's budget. ErrorCount keeps the total
+	// failure count for diagnostics.
+	RetryCount         int64         `gorm:"column:retry_count;default:0" json:"retry_count"`
+	FullExceptionTrace *string       `gorm:"column:full_exception_trace;type:longtext" json:"full_exception_trace,omitempty"`
+	TimeStarted        *time.Time    `gorm:"column:time_started;index" json:"time_started,omitempty"`
+	PollRangeStart     *FlexibleTime `gorm:"column:poll_range_start;type:varchar(255);index" json:"poll_range_start,omitempty"`
+	PollRangeEnd       *FlexibleTime `gorm:"column:poll_range_end;type:varchar(255);index" json:"poll_range_end,omitempty"`
+	KbID               string        `gorm:"column:kb_id;size:32;not null;index" json:"kb_id"`
 	BaseModel
 }
 

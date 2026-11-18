@@ -19,20 +19,50 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"ragflow/internal/common"
 )
 
 func newMWSTestDriver(serverURL string) (*MWSModel, *APIConfig) {
 	token := "token"
-	baseURL := serverURL + "/projects/test-project"
+	baseURL := "https://gpt.mwsapis.ru/projects/test-project"
 	driver := NewMWSModel(map[string]string{"default": baseURL}, URLSuffix{})
+	driver.baseModel.httpClient = &http.Client{
+		Transport:     mwsTestRoundTripper{serverURL: serverURL},
+		CheckRedirect: rejectMWSRedirect,
+	}
 	return driver, &APIConfig{ApiKey: &token, BaseURL: &baseURL}
+}
+
+type mwsTestRoundTripper struct {
+	serverURL string
+}
+
+func (t mwsTestRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	if err := validateMWSRequestURL(request.URL); err != nil {
+		return nil, err
+	}
+	targetURL, err := url.Parse(t.serverURL)
+	if err != nil {
+		return nil, err
+	}
+	request = request.Clone(request.Context())
+	target := *request.URL
+	target.Scheme = targetURL.Scheme
+	target.Host = targetURL.Host
+	request.URL = &target
+	request.Host = targetURL.Host
+	return http.DefaultTransport.RoundTrip(request)
 }
 
 func decodeMWSRequest(t *testing.T, request *http.Request) map[string]any {
@@ -68,6 +98,96 @@ func TestNormalizeMWSProjectURL(t *testing.T) {
 	if _, err = normalizeMWSProjectURL("https://gpt.mwsapis.ru/projects/demo/openai/v1"); err == nil {
 		t.Fatal("expected a non-root URL to be rejected")
 	}
+	for _, unsafeURL := range []string{
+		"http://gpt.mwsapis.ru/projects/demo",
+		"https://attacker.example/projects/demo",
+		"https://127.0.0.1/projects/demo",
+		"https://gpt.mwsapis.ru:8443/projects/demo",
+		"https://user:password@gpt.mwsapis.ru/projects/demo",
+		"https://gpt.mwsapis.ru/projects/../demo",
+	} {
+		if _, err = normalizeMWSProjectURL(unsafeURL); err == nil {
+			t.Errorf("expected unsafe URL %q to be rejected", unsafeURL)
+		}
+	}
+}
+
+func TestMWSHTTPClientRejectsPrivateDNSResult(t *testing.T) {
+	previousLookup := common.LookupHost
+	common.LookupHost = func(string) ([]string, error) { return []string{"127.0.0.1"}, nil }
+	t.Setenv(common.EnvAllowAnyHost, "")
+	t.Cleanup(func() {
+		common.LookupHost = previousLookup
+	})
+
+	request, err := http.NewRequest(http.MethodGet, "https://gpt.mwsapis.ru/projects/demo/openai/v1/models", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = newMWSHTTPClient().Do(request)
+	if err == nil || !strings.Contains(err.Error(), "non-public address") {
+		t.Fatalf("expected a private DNS result to be rejected, got %v", err)
+	}
+}
+
+type recordingMWSDialer struct {
+	network string
+	address string
+}
+
+func (d *recordingMWSDialer) DialContext(_ context.Context, network, address string) (net.Conn, error) {
+	d.network = network
+	d.address = address
+	return nil, errors.New("recorded dial")
+}
+
+func TestMWSDialContextUsesValidatedIP(t *testing.T) {
+	dialer := &recordingMWSDialer{}
+	ctx := context.WithValue(context.Background(), mwsDialTargetKey{}, mwsDialTarget{
+		hostname:   mwsAPIHost,
+		resolvedIP: "203.0.113.10",
+	})
+	_, err := newMWSDialContext(dialer)(ctx, "tcp", mwsAPIHost+":443")
+	if err == nil || err.Error() != "recorded dial" {
+		t.Fatalf("expected the dialer to be called, got %v", err)
+	}
+	if dialer.network != "tcp" || dialer.address != "203.0.113.10:443" {
+		t.Fatalf("dial target = %s %s, want tcp 203.0.113.10:443", dialer.network, dialer.address)
+	}
+
+	dialer.address = ""
+	if _, err = newMWSDialContext(dialer)(ctx, "tcp", "attacker.example:443"); err == nil {
+		t.Fatal("expected an unvalidated host to be rejected")
+	}
+	if dialer.address != "" {
+		t.Fatalf("unvalidated host reached dialer: %s", dialer.address)
+	}
+}
+
+func TestMWSHTTPClientDoesNotFollowRedirects(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests.Add(1)
+		http.Redirect(response, request, "https://attacker.example/collect", http.StatusFound)
+	}))
+	defer server.Close()
+
+	driver, _ := newMWSTestDriver(server.URL)
+	request, err := http.NewRequest(http.MethodGet, "https://gpt.mwsapis.ru/projects/demo/openai/v1/models", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := driver.baseModel.httpClient.Do(request)
+	if err != nil {
+		t.Fatalf("request should return the redirect response without following it: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusFound)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("server request count = %d, want 1", got)
+	}
 }
 
 func TestMWSListModelsUsesOpenAIEndpointAndFiltersTypes(t *testing.T) {
@@ -88,7 +208,7 @@ func TestMWSListModelsUsesOpenAIEndpointAndFiltersTypes(t *testing.T) {
 	defer server.Close()
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
-	models, err := driver.ListModels(context.Background(), apiConfig)
+	models, err := driver.ListModels(t.Context(), apiConfig)
 	if err != nil {
 		t.Fatalf("list models: %v", err)
 	}
@@ -131,7 +251,7 @@ func TestMWSChatSendsOnlyDocumentedFields(t *testing.T) {
 	topP := 0.9
 	stop := []string{"ignored"}
 	response, err := driver.ChatWithMessages(
-		context.Background(),
+		t.Context(),
 		"qwen3-32b",
 		[]Message{
 			{Role: "system", Content: "Be concise."},
@@ -178,7 +298,7 @@ func TestMWSChatStreamingUsesDocumentedFields(t *testing.T) {
 	config := &ChatConfig{Stream: &stream}
 	var chunks []string
 	err := driver.ChatStreamlyWithSender(
-		context.Background(),
+		t.Context(),
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "Hello"}},
 		apiConfig,
@@ -219,7 +339,7 @@ func TestMWSEmbedSendsOnlyDocumentedFieldsAndOrdersVectors(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-m3"
-	embeddings, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{"first", "second"}}, apiConfig, &EmbeddingConfig{Dimension: 256}, nil)
+	embeddings, err := driver.Embed(t.Context(), &modelName, EmbedRequest{Texts: []string{"first", "second"}}, apiConfig, &EmbeddingConfig{Dimension: 256}, nil)
 	if err != nil {
 		t.Fatalf("embed: %v", err)
 	}
@@ -250,7 +370,7 @@ func TestMWSRerankUsesCohereEndpointAndOriginalIndexOrder(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-reranker-v2-m3"
-	result, err := driver.Rerank(context.Background(), &modelName, RerankRequest{Query: "query", Documents: []string{"first", "second"}}, apiConfig, &RerankConfig{TopN: 1}, nil)
+	result, err := driver.Rerank(t.Context(), &modelName, RerankRequest{Query: "query", Documents: []string{"first", "second"}}, apiConfig, &RerankConfig{TopN: 1}, nil)
 	if err != nil {
 		t.Fatalf("rerank: %v", err)
 	}
@@ -270,7 +390,7 @@ func TestMWSRejectsEmptyTokenWithoutRequest(t *testing.T) {
 	empty := "  "
 	apiConfig.ApiKey = &empty
 	modelName := "bge-m3"
-	_, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{"text"}}, apiConfig, nil, nil)
+	_, err := driver.Embed(t.Context(), &modelName, EmbedRequest{Texts: []string{"text"}}, apiConfig, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected an API key error, got %v", err)
 	}
@@ -288,11 +408,11 @@ func TestMWSEmptyInputsDoNotSendRequests(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-m3"
-	embeddings, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{}}, apiConfig, nil, nil)
+	embeddings, err := driver.Embed(t.Context(), &modelName, EmbedRequest{Texts: []string{}}, apiConfig, nil, nil)
 	if err != nil || len(embeddings) != 0 {
 		t.Fatalf("empty embedding input: data=%#v err=%v", embeddings, err)
 	}
-	ranked, err := driver.Rerank(context.Background(), &modelName, RerankRequest{Query: "query", Documents: []string{}}, apiConfig, nil, nil)
+	ranked, err := driver.Rerank(t.Context(), &modelName, RerankRequest{Query: "query", Documents: []string{}}, apiConfig, nil, nil)
 	if err != nil || len(ranked.Data) != 0 {
 		t.Fatalf("empty rerank input: data=%#v err=%v", ranked, err)
 	}
@@ -309,9 +429,16 @@ func TestMWSErrorResponseIsReturned(t *testing.T) {
 
 	driver, apiConfig := newMWSTestDriver(server.URL)
 	modelName := "bge-m3"
-	_, err := driver.Embed(context.Background(), &modelName, EmbedRequest{Texts: []string{"text"}}, apiConfig, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "status 503") || !strings.Contains(err.Error(), "MWS unavailable") {
+	_, err := driver.Embed(t.Context(), &modelName, EmbedRequest{Texts: []string{"text"}}, apiConfig, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "status 503") || strings.Contains(err.Error(), "MWS unavailable") {
 		t.Fatalf("unexpected MWS error: %v", err)
+	}
+	var statusErr *APIStatusError
+	if !errors.As(err, &statusErr) || statusErr.Status != http.StatusServiceUnavailable {
+		t.Fatalf("expected status error, got %T: %v", err, err)
+	}
+	if !strings.Contains(statusErr.Body, "MWS unavailable") {
+		t.Fatalf("error body was not retained for internal diagnostics: %q", statusErr.Body)
 	}
 }
 

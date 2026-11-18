@@ -11,10 +11,13 @@ import (
 // fakeWriter is a Writer double that records the last WriteMergedStructure
 // buckets so a test can assert the grouping behavior without an engine.
 type fakeWriter struct {
-	buckets []StructureBucket
+	buckets               []StructureBucket
+	writeMergedCalls      int
+	projectWikiGraphCalls int
 }
 
 func (f *fakeWriter) WriteMerged(context.Context, string, string, []kccommon.Product) error {
+	f.writeMergedCalls++
 	return nil
 }
 func (f *fakeWriter) WriteMergedStructure(_ context.Context, _, _ string, buckets []StructureBucket) error {
@@ -34,13 +37,16 @@ func (f *fakeWriter) DeleteDocLevelForDocs(context.Context, string, string, []st
 func (f *fakeWriter) StripMergedSources(context.Context, string, string, []string) error {
 	return nil
 }
-func (f *fakeWriter) ProjectWikiGraph(context.Context, string, string) error { return nil }
-func (f *fakeWriter) DropWikiGraph(context.Context, string, string) error    { return nil }
+func (f *fakeWriter) ProjectWikiGraph(context.Context, string, string) error {
+	f.projectWikiGraphCalls++
+	return nil
+}
+func (f *fakeWriter) DropWikiGraph(context.Context, string, string) error { return nil }
 
-// TestMergeStructureDataset_GroupsByNameType covers G1: structure products are
-// bucketed by (name, type), descriptions folded, source ids unioned, and only
+// TestMergeStructureDataset_GroupsByName covers G1: structure products are
+// bucketed by name, descriptions folded, source ids unioned, and only
 // scope_kwd="dataset" structure rows written.
-func TestMergeStructureDataset_GroupsByNameType(t *testing.T) {
+func TestMergeStructureDataset_GroupsByName(t *testing.T) {
 	c := &Consumer{writer: &fakeWriter{}}
 	products := []kccommon.Product{
 		{Variant: kccommon.VariantStructure, DocID: "d1",
@@ -49,10 +55,10 @@ func TestMergeStructureDataset_GroupsByNameType(t *testing.T) {
 		{Variant: kccommon.VariantStructure, DocID: "d2",
 			Content: "Engine desc B",
 			Meta:    map[string]any{"name": "Engine", "entity_type": "component", "source_chunk_ids": []string{"c2"}}},
-		// different type -> separate bucket
+		// same name with a different type still belongs to the same graph node
 		{Variant: kccommon.VariantStructure, DocID: "d3",
-			Content: "Fuel desc",
-			Meta:    map[string]any{"name": "Fuel", "entity_type": "substance", "source_chunk_ids": []string{"c3"}}},
+			Content: "Engine desc C",
+			Meta:    map[string]any{"name": "Engine", "entity_type": "other", "source_chunk_ids": []string{"c3"}}},
 		// non-structure product ignored
 		{Variant: kccommon.VariantWiki, DocID: "d4", Content: "wiki page",
 			Meta: map[string]any{"name": "Ignored", "kind": "page"}},
@@ -61,29 +67,49 @@ func TestMergeStructureDataset_GroupsByNameType(t *testing.T) {
 		t.Fatalf("mergeStructureDataset: %v", err)
 	}
 	fw := c.writer.(*fakeWriter)
-	if len(fw.buckets) != 2 {
-		t.Fatalf("want 2 buckets (Engine + Fuel), got %d", len(fw.buckets))
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket (Engine), got %d", len(fw.buckets))
 	}
-	var engineBucket, fuelBucket *StructureBucket
+	var engineBucket *StructureBucket
 	for i := range fw.buckets {
 		switch fw.buckets[i].Name {
 		case "Engine":
 			engineBucket = &fw.buckets[i]
-		case "Fuel":
-			fuelBucket = &fw.buckets[i]
 		}
 	}
-	if engineBucket == nil || fuelBucket == nil {
+	if engineBucket == nil {
 		t.Fatalf("missing expected buckets: %+v", fw.buckets)
 	}
 	if engineBucket.Type != "component" {
 		t.Errorf("Engine type = %q, want component", engineBucket.Type)
 	}
-	if !strings.Contains(engineBucket.Description, "Engine desc A") || !strings.Contains(engineBucket.Description, "Engine desc B") {
+	if !strings.Contains(engineBucket.Description, "Engine desc A") || !strings.Contains(engineBucket.Description, "Engine desc B") || !strings.Contains(engineBucket.Description, "Engine desc C") {
 		t.Errorf("Engine descriptions not folded: %q", engineBucket.Description)
 	}
-	if len(engineBucket.SourceDocIDs) != 2 {
-		t.Errorf("Engine source doc union = %v, want [d1 d2]", engineBucket.SourceDocIDs)
+	if len(engineBucket.SourceDocIDs) != 3 {
+		t.Errorf("Engine source doc union = %v, want [d1 d2 d3]", engineBucket.SourceDocIDs)
+	}
+}
+
+func TestMergeStructureDataset_IsolatesTemplates(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	products := []kccommon.Product{
+		{Variant: kccommon.VariantStructure, DocID: "d1", TemplateID: "tpl1", Kind: "knowledge_graph", Content: "first", Meta: map[string]any{"name": "Engine", "entity_type": "component", "compile_kwd": "hypergraph"}},
+		{Variant: kccommon.VariantStructure, DocID: "d2", TemplateID: "tpl2", Kind: "knowledge_graph", Content: "second", Meta: map[string]any{"name": "engine", "entity_type": "system", "compile_kwd": "hypergraph"}},
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	buckets := c.writer.(*fakeWriter).buckets
+	if len(buckets) != 2 {
+		t.Fatalf("same-name entities from different templates must remain isolated: %+v", buckets)
+	}
+	seen := map[string]bool{}
+	for _, bucket := range buckets {
+		seen[bucket.TemplateID] = true
+	}
+	if !seen["tpl1"] || !seen["tpl2"] {
+		t.Fatalf("template identities were lost: %+v", buckets)
 	}
 }
 
@@ -93,6 +119,10 @@ func TestMergeStructureDataset_GroupsByNameType(t *testing.T) {
 func TestMergeStructureDataset_RelationsNotDropped(t *testing.T) {
 	c := &Consumer{writer: &fakeWriter{}}
 	products := []kccommon.Product{
+		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "entity A",
+			Meta: map[string]any{"kind": "entity", "name": "A"}},
+		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "entity B",
+			Meta: map[string]any{"kind": "entity", "name": "B"}},
 		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "rel desc",
 			Meta: map[string]any{"kind": "relation", "from": "A", "to": "B", "source_chunk_ids": []string{"c1"}}},
 		{Variant: kccommon.VariantStructure, DocID: "d2", Content: "rel desc 2",
@@ -102,15 +132,58 @@ func TestMergeStructureDataset_RelationsNotDropped(t *testing.T) {
 		t.Fatalf("mergeStructureDataset: %v", err)
 	}
 	fw := c.writer.(*fakeWriter)
-	if len(fw.buckets) != 1 {
-		t.Fatalf("want 1 relation bucket, got %d", len(fw.buckets))
+	if len(fw.buckets) != 3 {
+		t.Fatalf("want 2 entity buckets and 1 relation bucket, got %d", len(fw.buckets))
 	}
-	b := fw.buckets[0]
+	var b *StructureBucket
+	for i := range fw.buckets {
+		if fw.buckets[i].Type == "relation" {
+			b = &fw.buckets[i]
+			break
+		}
+	}
+	if b == nil {
+		t.Fatalf("missing relation bucket: %+v", fw.buckets)
+	}
 	if b.Type != "relation" || b.FromEntity != "A" || b.ToEntity != "B" {
 		t.Errorf("relation bucket = %+v, want Type=relation From=A To=B", b)
 	}
 	if len(b.SourceDocIDs) != 2 {
 		t.Errorf("relation source doc union = %v, want [d1 d2]", b.SourceDocIDs)
+	}
+}
+
+func TestMergeStructureDataset_NormalizesRelationIdentity(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	products := []kccommon.Product{
+		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "entity A",
+			Meta: map[string]any{"kind": "entity", "name": "A"}},
+		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "entity B",
+			Meta: map[string]any{"kind": "entity", "name": "B"}},
+		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "first",
+			Meta: map[string]any{"kind": "relation", "from": " A  ", "to": " B ", "relation_type": " Related  ", "source_chunk_ids": []string{"c1"}}},
+		{Variant: kccommon.VariantStructure, DocID: "d2", Content: "second",
+			Meta: map[string]any{"kind": "relation", "from": "a", "to": "b", "relation_type": "related", "source_chunk_ids": []string{"c2"}}},
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	buckets := c.writer.(*fakeWriter).buckets
+	if len(buckets) != 3 {
+		t.Fatalf("normalized relation identity should produce two entity buckets and one relation bucket, got %d: %v", len(buckets), buckets)
+	}
+	var relationBucket *StructureBucket
+	for i := range buckets {
+		if buckets[i].Type == "relation" {
+			relationBucket = &buckets[i]
+			break
+		}
+	}
+	if relationBucket == nil {
+		t.Fatalf("missing relation bucket: %+v", buckets)
+	}
+	if got := len(relationBucket.SourceDocIDs); got != 2 {
+		t.Fatalf("relation source docs = %v, want two docs", buckets[0].SourceDocIDs)
 	}
 }
 
@@ -141,14 +214,46 @@ func TestMergeStructureDataset_DescriptionIsPlainText(t *testing.T) {
 	}
 }
 
+func TestMergeStructureDataset_DescriptionFallbacks(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	products := []kccommon.Product{
+		{Variant: kccommon.VariantMindmap, DocID: "d1",
+			Content: `{"name":"Root","type":"mindmap"}`,
+			Meta:    map[string]any{"kind": "entity", "name": "Root", "entity_type": "mindmap"}},
+		{Variant: kccommon.VariantMindmap, DocID: "d1",
+			Content: `{"name":"Child","type":"mindmap"}`,
+			Meta:    map[string]any{"kind": "entity", "name": "Child", "entity_type": "mindmap"}},
+		{Variant: kccommon.VariantMindmap, DocID: "d1",
+			Content: `{"from":"Root","to":"Child","type":"related"}`,
+			Meta:    map[string]any{"kind": "relation", "from": "Root", "to": "Child", "relation_type": "related"}},
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 3 {
+		t.Fatalf("want two entity and one relation bucket, got %d", len(fw.buckets))
+	}
+	for _, b := range fw.buckets {
+		switch b.Type {
+		case "mindmap":
+			want := b.Name
+			if b.Description != want {
+				t.Errorf("entity %q fallback description = %q, want %q", b.Name, b.Description, want)
+			}
+		case "relation":
+			if b.Description != "Root related Child" {
+				t.Errorf("relation fallback description = %q, want %q", b.Description, "Root related Child")
+			}
+		default:
+			t.Errorf("unexpected bucket: %+v", b)
+		}
+	}
+}
+
 // TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind covers the
-// option-A alignment: the dataset row's compile_kwd is the doc row's inferred
-// compile type (autotype, e.g. "hypergraph"/"mindmap"), NOT the template kind.
-// The template kind travels on the separate TemplateKind field (stamped to
-// compilation_template_kind_kwd by WriteMergedStructure), which is what read/
-// delete paths match on. This mirrors Python _do_build (compile_kwd passes
-// through verbatim) + get_dataset_structure (matches template kind).
-func TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind(t *testing.T) {
+// Dataset rows retain the producing compilation kind, independent of extraction shape.
+func TestMergeStructureDataset_CompileKwdIsCanonicalKind(t *testing.T) {
 	c := &Consumer{writer: &fakeWriter{}}
 	products := []kccommon.Product{
 		{Variant: kccommon.VariantStructure, DocID: "d1", Kind: "knowledge_graph", TemplateID: "tpl-graph",
@@ -169,8 +274,8 @@ func TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind(t *testing.T)
 		b := fw.buckets[i]
 		switch b.Name {
 		case "Engine":
-			if b.CompileKwd != "hypergraph" {
-				t.Errorf("Engine compile_kwd = %q, want autotype \"hypergraph\" (not template kind)", b.CompileKwd)
+			if b.CompileKwd != "graph" {
+				t.Errorf("Engine compile_kwd = %q, want \"graph\"", b.CompileKwd)
 			}
 			if b.TemplateKind != "knowledge_graph" {
 				t.Errorf("Engine TemplateKind = %q, want \"knowledge_graph\"", b.TemplateKind)
@@ -179,8 +284,8 @@ func TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind(t *testing.T)
 				t.Errorf("Engine TemplateID = %q, want \"tpl-graph\"", b.TemplateID)
 			}
 		case "Fuel":
-			if b.CompileKwd != "mindmap" {
-				t.Errorf("Fuel compile_kwd = %q, want autotype \"mindmap\" (not template kind)", b.CompileKwd)
+			if b.CompileKwd != "mind_map" {
+				t.Errorf("Fuel compile_kwd = %q, want \"mind_map\"", b.CompileKwd)
 			}
 			if b.TemplateKind != "mind_map" {
 				t.Errorf("Fuel TemplateKind = %q, want \"mind_map\"", b.TemplateKind)
@@ -195,19 +300,25 @@ func TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind(t *testing.T)
 // TestDatasetLevelStructureID_StableAndCaseInsensitive covers G1: the id is
 // deterministic and case-insensitive on name so merges hit the same row.
 func TestDatasetLevelStructureID_StableAndCaseInsensitive(t *testing.T) {
-	a := datasetLevelStructureID("t1", "kb1", "Engine", "component", "timeline", "")
-	b := datasetLevelStructureID("t1", "kb1", "engine", "component", "timeline", "")
+	a := datasetLevelStructureID("t1", "kb1", "tpl1", "Engine", "component", "timeline", "")
+	b := datasetLevelStructureID("t1", "kb1", "tpl1", "engine", "component", "timeline", "")
 	if a != b {
 		t.Errorf("structure id should be case-insensitive on name: %q vs %q", a, b)
 	}
-	if a == datasetLevelStructureID("t1", "kb1", "Fuel", "component", "timeline", "") {
+	if a == datasetLevelStructureID("t1", "kb1", "tpl1", "Fuel", "component", "timeline", "") {
 		t.Errorf("different names must yield different ids")
 	}
-	if a == datasetLevelStructureID("t1", "kb1", "Engine", "component", "mindmap", "") {
+	if a == datasetLevelStructureID("t1", "kb1", "tpl1", "Engine", "component", "mindmap", "") {
 		t.Errorf("different compile kinds must yield different ids")
 	}
-	if datasetLevelStructureID("t1", "kb1", "A -> B", "relation", "graph", "causes") ==
-		datasetLevelStructureID("t1", "kb1", "A -> B", "relation", "graph", "contradicts") {
+	if a != datasetLevelStructureID("t1", "kb1", "tpl1", "Engine", "other", "timeline", "") {
+		t.Errorf("entity type must not change the dataset-level identity")
+	}
+	if a == datasetLevelStructureID("t1", "kb1", "tpl2", "Engine", "component", "timeline", "") {
+		t.Errorf("different templates must yield different ids")
+	}
+	if datasetLevelStructureID("t1", "kb1", "tpl1", "A -> B", "relation", "graph", "causes") ==
+		datasetLevelStructureID("t1", "kb1", "tpl1", "A -> B", "relation", "graph", "contradicts") {
 		t.Errorf("different relation types between the same endpoints must yield different ids")
 	}
 }
@@ -253,7 +364,7 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 		"id":                            "s1",
 		"doc_id":                        "d1",
 		"compile_kwd":                   "list",
-		"kc_payload":                    `{"entities":[]}`,
+		"content_with_weight":           `{"entities":[]}`,
 		"knowledge_graph_kwd":           "graph",
 		"name_kwd":                      "engine",
 		"source_chunk_ids":              []interface{}{"c1"},
@@ -278,7 +389,7 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 		"id":                            "t1",
 		"doc_id":                        "d1",
 		"compile_kwd":                   "tree",
-		"kc_payload":                    "overall summary",
+		"content_with_weight":           "overall summary",
 		"raptor_kwd":                    "root",
 		"source_chunk_ids":              []interface{}{"c1"},
 		"source_doc_ids":                []interface{}{"d1"},
@@ -290,5 +401,67 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 	}
 	if kind, _ := tp.Meta["kind"].(string); kind != "root" {
 		t.Errorf("tree Meta.kind = %q, want root (so nav dispatch can pick it)", kind)
+	}
+}
+
+func TestProductFromChunkMap_PreservesStructurePayloadFieldsThroughMerge(t *testing.T) {
+	rows := []map[string]interface{}{
+		{
+			"id": "entity-acme", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"name":" Acme Corp ","type":"organization","description":"Supplier"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "entity", "name_kwd": "acme corp",
+		},
+		{
+			"id": "entity-beta", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"text":"Beta Ltd","type":"organization","description":"Vendor"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "entity", "name_kwd": "beta ltd",
+		},
+		{
+			"id": "relation-supplies", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"from":"Acme Corp","to":"Beta Ltd","type":"supplies","description":"supply"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "relation",
+			"from_entity_kwd": " ACME CORP ", "to_entity_kwd": "BETA LTD ",
+		},
+		{
+			"id": "relation-owns", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"from":"Acme Corp","to":"Beta Ltd","type":"owns","description":"ownership"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "relation",
+			"from_entity_kwd": " ACME CORP ", "to_entity_kwd": "BETA LTD ",
+		},
+	}
+	products := make([]kccommon.Product, 0, len(rows))
+	for _, row := range rows {
+		product, ok := productFromChunkMap(row, "t1", kccommon.VariantStructure)
+		if !ok {
+			t.Fatalf("row %q should reconstruct", row["id"])
+		}
+		products = append(products, product)
+	}
+
+	c := &Consumer{writer: &fakeWriter{}}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	buckets := c.writer.(*fakeWriter).buckets
+	if len(buckets) != 4 {
+		t.Fatalf("want 2 entities and 2 typed relations, got %d: %+v", len(buckets), buckets)
+	}
+	entities := map[string]bool{}
+	relations := map[string]bool{}
+	for _, bucket := range buckets {
+		if bucket.Type == "relation" {
+			relations[bucket.RelationType] = true
+			if bucket.FromEntity != "Acme Corp" || bucket.ToEntity != "Beta Ltd" {
+				t.Errorf("relation endpoints = %q -> %q, want trimmed entity spellings", bucket.FromEntity, bucket.ToEntity)
+			}
+			continue
+		}
+		entities[bucket.Name] = true
+	}
+	if !entities["Acme Corp"] || !entities["Beta Ltd"] {
+		t.Errorf("entity display names = %v, want extracted spelling", entities)
+	}
+	if !relations["supplies"] || !relations["owns"] {
+		t.Errorf("relation types = %v, want supplies and owns", relations)
 	}
 }

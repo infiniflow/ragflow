@@ -48,15 +48,15 @@ const ChatApiKeyModal = ({
   return (
     <>
       <Dialog open onOpenChange={hideModal}>
-        <DialogContent className="max-w-[50vw]">
+        <DialogContent className="max-w-[50vw] max-h-[calc(100vh-8rem)] flex flex-col">
           <DialogHeader>
             <DialogTitle>{t('apiKey')}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 flex flex-col min-h-0">
             {listLoading ? (
               <div className="flex justify-center py-8">Loading...</div>
             ) : (
-              <Table>
+              <Table rootClassName="min-h-0 shrink">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Token</TableHead>
@@ -70,7 +70,7 @@ const ChatApiKeyModal = ({
                       <TableCell className="font-medium break-all">
                         {tokenItem.token}
                       </TableCell>
-                      <TableCell>{formatDate(tokenItem.create_date)}</TableCell>
+                      <TableCell>{formatDate(tokenItem.create_time)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <CopyToClipboard text={tokenItem.token} />
@@ -89,9 +89,10 @@ const ChatApiKeyModal = ({
               </Table>
             )}
             <Button
+              className="w-fit shrink-0"
               onClick={createToken}
               loading={creatingLoading}
-              disabled={tokenList?.length > 0}
+              disabled={tokenList?.length >= 16}
             >
               {t('createNewKey')}
             </Button>

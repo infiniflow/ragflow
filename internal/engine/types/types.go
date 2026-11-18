@@ -44,7 +44,8 @@ type SearchRequest struct {
 	SelectFields []string // List of field names to return
 
 	// Filtering
-	Filter map[string]interface{} // Filters for search
+	Filter             map[string]interface{} // Filters for search
+	IncludeUnavailable bool                   // Do not add the retrieval-only available_int=1 default
 
 	// Match expressions
 	MatchExprs []interface{} // List of match expressions: [matchText, matchDense, fusionExpr]
@@ -58,6 +59,38 @@ type SearchRequest struct {
 type SearchResult struct {
 	Chunks []map[string]interface{} // Search results
 	Total  int64                    // Total number of matches
+}
+
+// RegexpSearchRequest is a regex-match-only search over chunk content. It is
+// intentionally decoupled from SearchRequest (which carries text/dense/fusion
+// match expressions) because regex matching is a distinct retrieval mode with
+// no vector or text relevance scoring.
+type RegexpSearchRequest struct {
+	// TenantID is the single tenant whose chunks are searched. Multi-tenant
+	// regexp requests are unsupported.
+	TenantID string
+	// KbIDs are the knowledge base IDs to filter the search to.
+	KbIDs []string // Knowledge base IDs filter
+
+	// Pattern is the regex to match against chunk content. ES engines use
+	// Lucene regexp syntax; other engines may reject or fall back.
+	Pattern string
+
+	// Filter carries additional scope filters (e.g. available_int, doc_id).
+	Filter map[string]interface{}
+
+	// Sort, when set, orders the results by the given fields (e.g. a document's
+	// reading order: chunk_order_int, page_num_int, top_int) instead of the
+	// default _score.
+	Sort *OrderByExpr
+
+	// SelectFields limits the _source fields ES returns for each hit. When empty
+	// the full document is returned. Callers that only need doc_id, page_num_int
+	// and chunk_order_int (plus content) can narrow the payload this way.
+	SelectFields []string
+	// ReturnAll disables the default grep cap for scoped deep reads. It is an
+	// internal read mode; ordinary regexp searches remain capped at 30.
+	ReturnAll bool
 }
 
 // SearchMetadataResult unified search result for metadata indices

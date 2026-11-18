@@ -125,7 +125,7 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 	case TokenRemove:
 		return p.parseAdminRemoveCommands()
 	case TokenStop:
-		return p.parseAdminStopIngestionTasks()
+		return p.parseAdminStopCommands()
 	case TokenAdd:
 		return p.parseAdminAddCommand()
 	case TokenDelete:
@@ -176,9 +176,6 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseAPIResetCommands()
 	case TokenImport:
 		return p.parseAPIImport()
-	case TokenInsert:
-		// Use for development only
-		return p.parseDevInsertCommand()
 	case TokenRetrieve:
 		return p.parseAPIRetrieve()
 	case TokenParse:

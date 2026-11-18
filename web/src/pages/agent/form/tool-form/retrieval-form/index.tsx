@@ -4,7 +4,9 @@ import { FormContainer } from '@/components/form-container';
 import { MetadataFilter } from '@/components/metadata-filter';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
+import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 
+import { SwitchFormField } from '@/components/switch-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
 import {
@@ -14,31 +16,38 @@ import {
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
+import { omit } from 'lodash';
 import { useForm } from 'react-hook-form';
+import { useParams } from 'react-router';
 import { z } from 'zod';
 import { useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
-  EmptyResponseField,
   MemoryDatasetForm,
   RetrievalPartialSchema,
+  refineRetrievalBindings,
   useHideKnowledgeGraphField,
 } from '../../retrieval-form/next';
 import { useValues } from '../use-values';
 import { useWatchFormChange } from '../use-watch-change';
 
-export const FormSchema = z.object({
-  ...RetrievalPartialSchema,
-  description: z.string().optional(),
-});
+export const FormSchema = z
+  .object({
+    ...RetrievalPartialSchema,
+    description: z.string().optional(),
+  })
+  .superRefine(refineRetrievalBindings);
 
 const RetrievalForm = () => {
-  const defaultValues = useValues();
+  const defaultValues = omit(useValues(), 'top_k');
 
+  const ownerTenantId = useOwnerTenantId();
+  const { id: canvasID } = useParams();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
     defaultValues?.dataset_ids,
+    { canvasID },
   );
 
   const form = useForm({
@@ -53,8 +62,6 @@ const RetrievalForm = () => {
 
   useRevalidateStaleDatasetIds(form, datasetsFetched);
 
-  const ownerTenantId = useOwnerTenantId();
-
   return (
     <Form {...form}>
       <FormWrapper>
@@ -64,9 +71,9 @@ const RetrievalForm = () => {
           <FormContainer>
             <SimilaritySliderFormField
               similarityWeightName="keywords_similarity_weight"
-              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
+            <RerankCandidatesCountFormField></RerankCandidatesCountFormField>
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>
@@ -77,10 +84,14 @@ const RetrievalForm = () => {
               </>
             )}
 
-            <EmptyResponseField></EmptyResponseField>
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+                <SwitchFormField
+                  name="highlight"
+                  label={t('flow.highlight')}
+                  tooltip={t('flow.highlightTip')}
+                ></SwitchFormField>
               </>
             )}
           </FormContainer>

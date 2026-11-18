@@ -16,7 +16,59 @@
 
 package handler
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
+
+func TestCollectMindMapStream(t *testing.T) {
+	t.Run("joins successful chunks", func(t *testing.T) {
+		chunks := make(chan string, 2)
+		chunks <- "# Title"
+		chunks <- "\n## Section"
+		close(chunks)
+		streamErrs := make(chan error)
+		close(streamErrs)
+
+		got, err := collectMindMapStream(t.Context(), chunks, streamErrs)
+		if err != nil {
+			t.Fatalf("collect stream: %v", err)
+		}
+		if got != "# Title\n## Section" {
+			t.Fatalf("unexpected stream content: %q", got)
+		}
+	})
+
+	t.Run("returns asynchronous provider error after partial output", func(t *testing.T) {
+		providerErr := errors.New("provider stream failed")
+		chunks := make(chan string, 1)
+		chunks <- "# Partial"
+		close(chunks)
+		streamErrs := make(chan error, 1)
+		streamErrs <- providerErr
+		close(streamErrs)
+
+		_, err := collectMindMapStream(t.Context(), chunks, streamErrs)
+		if !errors.Is(err, providerErr) {
+			t.Fatalf("expected provider error, got %v", err)
+		}
+	})
+
+	t.Run("returns canceled context after channels close", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		chunks := make(chan string)
+		close(chunks)
+		streamErrs := make(chan error)
+		close(streamErrs)
+
+		_, err := collectMindMapStream(ctx, chunks, streamErrs)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", err)
+		}
+	})
+}
 
 // The mind map contract: when there is nothing to map, the backend returns an
 // honest empty tree (root with no children) and the frontend renders an empty

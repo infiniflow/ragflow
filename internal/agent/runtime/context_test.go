@@ -38,19 +38,19 @@ func TestAgentMessageCallbacksRunOutsideStateLocks(t *testing.T) {
 	}
 
 	var agentCtx context.Context
-	agentCtx = WithAgentMessageEmitter(context.Background(), func(string, string) {
+	agentCtx = WithAgentMessageEmitter(t.Context(), func(string, string) {
 		_ = AgentMessageEventsEmitted(agentCtx)
 	})
 	assertCompletes("Agent emitter", func() { EmitAgentMessage(agentCtx, "token", "") })
 
 	var sinkCtx context.Context
-	sinkCtx = WithAgentDeltaSink(context.Background(), func(string, string) {
+	sinkCtx = WithAgentDeltaSink(t.Context(), func(string, string) {
 		_ = DeferredAgentMessageEventsEmitted(sinkCtx)
 	})
 	assertCompletes("deferred sink", func() { EmitAgentMessage(sinkCtx, "token", "") })
 
 	var canvasCtx context.Context
-	canvasCtx = WithAgentMessageEmitter(context.Background(), func(string, string) {})
+	canvasCtx = WithAgentMessageEmitter(t.Context(), func(string, string) {})
 	canvasCtx = WithCanvasMessageEmitter(canvasCtx, func(string) {
 		_ = AgentMessageEventsEmitted(canvasCtx)
 	})
@@ -58,7 +58,7 @@ func TestAgentMessageCallbacksRunOutsideStateLocks(t *testing.T) {
 
 	var lifecycleCtx context.Context
 	lifecycleCtx = WithAgentMessageEmitterControl(
-		context.Background(),
+		t.Context(),
 		func(string, string) {},
 		func() bool {
 			_ = AgentMessageEventsEmitted(lifecycleCtx)
@@ -70,8 +70,25 @@ func TestAgentMessageCallbacksRunOutsideStateLocks(t *testing.T) {
 	assertCompletes("reset", func() { ResetAgentMessageEmission(lifecycleCtx) })
 }
 
+func TestGetStateFromContextReturnsCanvasState(t *testing.T) {
+	state := NewCanvasState("run", "session")
+	ctx := WithState(t.Context(), state)
+
+	got, err := GetStateFromContext(ctx)
+	if err != nil {
+		t.Fatalf("GetStateFromContext: %v", err)
+	}
+	if got != state {
+		t.Fatalf("GetStateFromContext returned %p, want %p", got, state)
+	}
+
+	if _, err := GetStateFromContext(t.Context()); err == nil {
+		t.Fatal("GetStateFromContext without state returned nil error")
+	}
+}
+
 func TestAgentMessageRunStateSurvivesInvocationReset(t *testing.T) {
-	ctx := WithAgentMessageEmitter(context.Background(), func(string, string) {})
+	ctx := WithAgentMessageEmitter(t.Context(), func(string, string) {})
 	EmitAgentMessage(ctx, "first", "")
 	ResetAgentMessageEmission(ctx)
 

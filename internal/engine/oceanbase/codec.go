@@ -25,9 +25,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
+
+	"go.uber.org/zap"
 )
+
+const importantKeywordMaxBytes = 256
 
 var vectorColumnPattern = regexp.MustCompile(`^q_(\d+)_vec$`)
 
@@ -35,10 +42,15 @@ var arrayColumns = map[string]bool{
 	"important_kwd": true, "question_kwd": true, "tag_kwd": true,
 	"position_int": true, "page_num_int": true, "top_int": true,
 	"source_id": true, "entities_kwd": true,
+	"source_chunk_ids": true, "source_doc_ids": true, "compilation_template_ids": true,
+	"doc_ids_kwd": true, "entity_names_kwd": true, "entity_names": true,
+	"outlinks_kwd": true, "related_kb_pages_kwd": true, "page_ids": true,
+	"rechunked_from_chunk_ids": true, "aliases": true, "children_kwd": true,
 }
 
 var jsonColumns = map[string]bool{
 	"tag_feas": true, "chunk_data": true, "metadata": true, "extra": true, "meta_fields": true,
+	"claims": true, "source_chunk_hashes": true,
 }
 
 var knownChunkColumns = func() map[string]bool {
@@ -61,8 +73,13 @@ var memoryColumnToField = map[string]string{
 	"content_ltks":     "content",
 }
 
-func normalizeChunk(document map[string]interface{}) (map[string]interface{}, error) {
-	result := make(map[string]interface{}, len(chunkColumns)+1)
+// normalizeChunk builds the row for a chunk table. tableColumns is the live
+// column set of the target table: a field the table has is written to its
+// column, anything else goes into the extra JSON column, which is where an
+// existing table keeps fields added to the schema after it was created.
+func normalizeChunk(document map[string]interface{}, tableColumns map[string]bool) (map[string]interface{}, error) {
+	document = normalizeImportantKeywordFields(document)
+	result := make(map[string]interface{}, len(tableColumns)+1)
 	extra := make(map[string]interface{})
 	if existing, ok := document["extra"].(map[string]interface{}); ok {
 		for key, value := range existing {
@@ -79,7 +96,7 @@ func normalizeChunk(document map[string]interface{}) (map[string]interface{}, er
 			result[key] = encoded
 			continue
 		}
-		if !knownChunkColumns[key] {
+		if !tableColumns[key] {
 			extra[key] = value
 			continue
 		}
@@ -103,6 +120,9 @@ func normalizeChunk(document map[string]interface{}) (map[string]interface{}, er
 		result[key] = encoded
 	}
 	for _, column := range chunkColumns {
+		if !tableColumns[column.name] {
+			continue
+		}
 		if _, ok := result[column.name]; ok {
 			continue
 		}
@@ -158,7 +178,7 @@ func normalizeMemory(document map[string]interface{}) (map[string]interface{}, e
 			if !ok || len(vector) == 0 {
 				continue
 			}
-			key = fmt.Sprintf("q_%d_vec", len(vector))
+			key = common.VectorColumnName(len(vector))
 			value = vector
 		}
 		if vectorColumnPattern.MatchString(key) {
@@ -258,6 +278,12 @@ func encodeColumnValue(columnName string, value interface{}) (interface{}, error
 			return string(encoded), err
 		}
 	}
+	if columnName == "important_kwd" {
+		normalized, _, _ := normalizeImportantKeywords(value)
+		// JSON escaping must not expand the VARCHAR value stored in each array element.
+		encoded, err := json.Marshal(normalized)
+		return string(encoded), err
+	}
 	if arrayColumns[columnName] {
 		return encodeArray(value)
 	}
@@ -269,6 +295,77 @@ func encodeColumnValue(columnName string, value interface{}) (interface{}, error
 		return string(encoded), err
 	}
 	return value, nil
+}
+
+func sanitizeImportantKeyword(keyword string) (string, bool) {
+	keyword = strings.TrimSpace(keyword)
+	if len(keyword) <= importantKeywordMaxBytes {
+		return keyword, false
+	}
+
+	length := 0
+	end := 0
+	for _, character := range keyword {
+		size := utf8.RuneLen(character)
+		if length+size > importantKeywordMaxBytes {
+			break
+		}
+		length += size
+		end += size
+	}
+	truncated := strings.TrimRightFunc(keyword[:end], unicode.IsSpace)
+	common.Warn(
+		"Sanitizing oversized OceanBase/SeekDB important keyword",
+		zap.Int("original_bytes", len(keyword)),
+		zap.Int("stored_bytes", len(truncated)),
+		zap.Int("limit_bytes", importantKeywordMaxBytes),
+	)
+	return truncated, true
+}
+
+func normalizeImportantKeywords(value interface{}) (interface{}, []string, bool) {
+	values, ok := interfaceSlice(value)
+	if !ok {
+		return value, nil, false
+	}
+
+	normalized := make([]interface{}, len(values))
+	textKeywords := make([]string, 0, len(values))
+	truncated := false
+	for i, item := range values {
+		text, ok := item.(string)
+		if !ok {
+			normalized[i] = item
+			continue
+		}
+		normalizedText, wasTruncated := sanitizeImportantKeyword(text)
+		normalized[i] = normalizedText
+		textKeywords = append(textKeywords, normalizedText)
+		truncated = truncated || wasTruncated
+	}
+	return normalized, textKeywords, truncated
+}
+
+func normalizeImportantKeywordFields(fields map[string]interface{}) map[string]interface{} {
+	keywords, ok := fields["important_kwd"]
+	if !ok {
+		return fields
+	}
+
+	normalizedKeywords, textKeywords, truncated := normalizeImportantKeywords(keywords)
+	if !truncated {
+		return fields
+	}
+
+	normalizedFields := copyMap(fields)
+	normalizedFields["important_kwd"] = normalizedKeywords
+	joinedKeywords := strings.Join(textKeywords, " ")
+	tokenizedKeywords, err := tokenizer.Tokenize(joinedKeywords)
+	if err != nil {
+		tokenizedKeywords = joinedKeywords
+	}
+	normalizedFields["important_tks"] = tokenizedKeywords
+	return normalizedFields
 }
 
 func encodeUpdateValue(kind, columnName string, value interface{}) (interface{}, error) {

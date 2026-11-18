@@ -16,32 +16,29 @@ import { IFile } from '@/interfaces/database/file-manager';
 import { isEmpty, uniqBy } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { isFolderType } from './util';
 
 export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
   const { t } = useTranslation();
 
   const { fetchList } = useFetchPureFileList();
 
-  const [treeValue, setTreeValue] = useState<number | string>('');
+  const [treeValue, setTreeValue] = useState<number | string>();
 
-  const [treeData, setTreeData] = useState([]);
+  const [treeData, setTreeData] = useState<TreeNodeType[]>([]);
 
   const onLoadData = useCallback(
     async ({ id }: TreeNodeType) => {
-      const ret = await fetchList(id as string);
+      const ret = await fetchList({ parentId: id as string });
       if (ret.code === 0) {
         setTreeData((tree) => {
+          const rootNodes: TreeNodeType[] = id
+            ? []
+            : [{ id: ret.data.parent_folder.id, parentId: '', title: '/' }];
           return uniqBy(
             tree.concat(
+              rootNodes,
               ret.data.files
-                .filter(
-                  (x: IFile) =>
-                    x.type === 'folder' &&
-                    !(
-                      isFolderType(x.type) && x.name.toLowerCase() === 'skills'
-                    ),
-                )
+                .filter((x: IFile) => x.type === 'folder')
                 .map((x: IFile) => ({
                   id: x.id,
                   parentId: x.parent_id,
@@ -72,6 +69,7 @@ export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
         </DialogHeader>
         <div>
           <AsyncTreeSelect
+            defaultExpandRoot
             treeData={treeData}
             value={treeValue}
             onChange={setTreeValue}

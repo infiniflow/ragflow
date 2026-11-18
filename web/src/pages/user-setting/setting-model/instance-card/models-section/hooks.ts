@@ -28,6 +28,14 @@ import {
 import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo, IProviderModelItem } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
+import { modelNameKey } from '@/utils/llm-util';
+import { hasProviderCredentialInput } from '../../provider-schema/field-config/utils';
+import { getProviderConfig } from '../../provider-schema/field-config/get-provider-config';
+import {
+  applySavedCredentialEdits,
+  buildApiKeyValue,
+  SAVED_CREDENTIAL_MASK,
+} from '../hooks';
 import {
   Dispatch,
   SetStateAction,
@@ -40,6 +48,11 @@ import {
 import { sortModelTypes } from '../available-models';
 import { useCustomModelFields } from '../use-custom-model-fields';
 import { ModelsSectionProps, VerifyStatus } from './interface';
+import {
+  SavedProviderConfigFieldSet,
+  SavedProviderConfigFields,
+  hasUnsavedProviderCredential,
+} from '../saved-provider-config';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -50,6 +63,22 @@ const TOOL_FEATURE_KEYS = ['is_tools', 'tool_call', 'tools', 'function_call'];
 
 /** Sentinel instance name used by draft (unsaved) provider cards. */
 export const DRAFT_INSTANCE_SENTINEL = '__draft__';
+
+/**
+ * Providers whose model listing is meaningful only when an api-key exists
+ * (typed into the draft form or returned with the saved instance details).
+ * Opening their cards without a key would fire a list request the upstream
+ * rejects, so — like VolcEngine — the auto-fetch waits for the key.
+ */
+export const API_KEY_GATED_LIST_PROVIDERS: string[] = [
+  LLMFactory.SystemOne,
+  LLMFactory.RAGcon,
+  LLMFactory.VolcEngine,
+  LLMFactory.Nace,
+  LLMFactory.DaoXE,
+  LLMFactory.RadeonCloud,
+  LLMFactory.DemonRoute,
+];
 
 // ---------------------------------------------------------------------------
 // Pure helpers (no React state, easy to test)
@@ -78,12 +107,20 @@ export const normalizeModelTypes = (raw: unknown): string[] =>
  * provider model items. `features` is forwarded via `extra` so the backend
  * can persist per-model flags such as `is_tools`.
  */
-export const buildModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
+export const buildModelInfo = (
+  items: IProviderModelItem[],
+  // New (draft) instances default every model to tool-calling enabled;
+  // an explicit per-model `extra.is_tools` below still overrides it.
+  defaultToolsEnabled = false,
+): IModelInfo[] =>
   items.map((m) => ({
     model_name: m.name,
     model_type: m.model_types ?? [],
     max_tokens: m.max_tokens ?? 0,
-    extra: { is_tools: hasToolFeature(m.features), ...(m.extra ?? {}) },
+    extra: {
+      is_tools: defaultToolsEnabled || hasToolFeature(m.features),
+      ...(m.extra ?? {}),
+    },
   }));
 
 /** Resolved credentials for catalog / verify / batch calls.
@@ -91,13 +128,37 @@ export const buildModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
  *  field (e.g. VolcEngine, Google Cloud) so the auto-fetch gate can
  *  distinguish "no base_url field" from "base_url field exists but is
  *  empty". */
-export type ResolvedCreds = { apiKey: string; baseUrl: string | undefined };
+export type ResolvedCreds = {
+  apiKey: string | object;
+  apiKeyConfig?: Record<string, unknown>;
+  baseUrl: string | undefined;
+  region?: string;
+  hasStoredCredentials?: boolean;
+  credentialChanged?: boolean;
+};
+
+function isVisibleSavedConfigField(
+  providerName: string,
+  field: { name: string; shouldRender?: string | ((values: any) => boolean) },
+  values: Record<string, any>,
+  hasSavedInstance: boolean,
+): boolean {
+  const shouldRender = field.shouldRender;
+  if (!shouldRender) return true;
+  if (typeof shouldRender === 'function') return shouldRender(values);
+  if (shouldRender === 'hideWhenInstanceExists') return !hasSavedInstance;
+  if (shouldRender === 'showGroupId') {
+    return providerName.toLowerCase() === LLMFactory.MiniMax.toLowerCase();
+  }
+  return true;
+}
 
 // ---------------------------------------------------------------------------
 // 1. useResolveCreds — resolve api_key / base_url from host form or instance
 // ---------------------------------------------------------------------------
 
 export function useResolveCreds(
+  providerName: string,
   instance: IProviderInstance | undefined,
   getFormValues: ModelsSectionProps['getFormValues'],
 ) {
@@ -106,11 +167,85 @@ export function useResolveCreds(
   // back to the persisted instance fields when no form getter is wired up.
   const resolveCreds = useCallback((): ResolvedCreds => {
     const fv = getFormValues?.() ?? {};
+    const credentialStatus = instance?.credential_status ?? {};
+    const savedConfig = instance?.api_key_config ?? {};
+    const providerFields = getProviderConfig(providerName).fields;
+    const visibleConfigFields = new Set(
+      providerFields
+        .filter(
+          (field) =>
+            SavedProviderConfigFieldSet.has(field.name) &&
+            isVisibleSavedConfigField(
+              providerName,
+              field,
+              fv,
+              Boolean(instance?.id),
+            ),
+        )
+        .map((field) => field.name),
+    );
+    const apiKeyConfig: Record<string, unknown> = {};
+    for (const field of SavedProviderConfigFields) {
+      if (!visibleConfigFields.has(field)) continue;
+      if (!Object.prototype.hasOwnProperty.call(fv, field)) continue;
+      const value = fv[field];
+      if (value === SAVED_CREDENTIAL_MASK) continue;
+      if (value === '' || value === undefined || value === null) {
+        const savedValue = savedConfig[field];
+        if (
+          savedValue !== undefined &&
+          savedValue !== null &&
+          savedValue !== ''
+        ) {
+          apiKeyConfig[field] = null;
+        }
+        continue;
+      }
+      apiKeyConfig[field] = value;
+    }
+    if (providerName === LLMFactory.Bedrock) {
+      let bedrockConfig: unknown = buildApiKeyValue(fv, credentialStatus);
+      if (
+        bedrockConfig &&
+        typeof bedrockConfig === 'object' &&
+        'api_key' in bedrockConfig
+      ) {
+        bedrockConfig = (bedrockConfig as Record<string, unknown>).api_key;
+      }
+      if (bedrockConfig && typeof bedrockConfig === 'object') {
+        for (const field of ['auth_mode', 'aws_role_arn', 'bedrock_region']) {
+          const value = (bedrockConfig as Record<string, unknown>)[field];
+          if (value === undefined || value === SAVED_CREDENTIAL_MASK) continue;
+          const savedValue = savedConfig[field];
+          if (value === '' || value === null) {
+            if (
+              savedValue !== undefined &&
+              savedValue !== null &&
+              savedValue !== ''
+            ) {
+              apiKeyConfig[field] = null;
+            }
+            continue;
+          }
+          apiKeyConfig[field] = value;
+        }
+      }
+    }
     return {
-      apiKey: (fv.api_key as string) ?? instance?.api_key ?? '',
+      apiKey: (buildApiKeyValue(fv, credentialStatus) as string | object) ?? '',
+      apiKeyConfig,
       baseUrl: (fv.base_url as string) ?? instance?.base_url,
+      region: (fv.region as string) ?? instance?.region,
+      hasStoredCredentials: instance?.api_key_configured === true,
+      credentialChanged: Object.entries(credentialStatus).some(
+        ([field, configured]) =>
+          configured &&
+          !SavedProviderConfigFieldSet.has(field) &&
+          fv[field] !== undefined &&
+          fv[field] !== SAVED_CREDENTIAL_MASK,
+      ),
     };
-  }, [getFormValues, instance]);
+  }, [getFormValues, instance, providerName]);
 
   return { resolveCreds };
 }
@@ -125,12 +260,23 @@ interface UseModelsCatalogArgs {
   hideActions: boolean;
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
+  instance?: IProviderInstance;
 
-  apiKeyValue: string;
+  apiKeyValue: ResolvedCreds['apiKey'];
 
   baseUrlValue: string | undefined;
 
+  regionValue?: ResolvedCreds['region'];
+
   instanceDetailsLoaded?: boolean;
+
+  /**
+   * Invoked with the freshly fetched items after every successful catalog
+   * fetch (mount auto-fetch and manual "List models" clicks). Used by
+   * draft cards to auto-merge new models while skipping names the user
+   * has already removed.
+   */
+  onCatalogFetched?: (items: IProviderModelItem[]) => void;
 }
 
 export function useModelsCatalog({
@@ -139,9 +285,12 @@ export function useModelsCatalog({
   hideActions,
   resolveCreds,
   instanceModels,
+  instance,
   apiKeyValue,
   baseUrlValue,
+  regionValue,
   instanceDetailsLoaded,
+  onCatalogFetched,
 }: UseModelsCatalogArgs) {
   const { listProviderModels } = useListProviderModels();
   const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
@@ -151,17 +300,20 @@ export function useModelsCatalog({
   const catalogOverridesRef = useRef(catalogOverrides);
   const [manualListLoading, setManualListLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
+  const onCatalogFetchedRef = useRef(onCatalogFetched);
+  onCatalogFetchedRef.current = onCatalogFetched;
 
   const applyCatalogOverrides = useCallback((items: IProviderModelItem[]) => {
     const overrides = catalogOverridesRef.current;
-    const names = new Set<string>();
+    const keys = new Set<string>();
     const merged = items.map((item) => {
-      names.add(item.name);
-      const override = overrides[item.name];
+      const key = modelNameKey(item.name);
+      keys.add(key);
+      const override = overrides[key];
       return override ? { ...item, ...override, name: item.name } : item;
     });
-    Object.entries(overrides).forEach(([name, override]) => {
-      if (!names.has(name)) {
+    Object.entries(overrides).forEach(([key, override]) => {
+      if (!keys.has(key)) {
         merged.push(override);
       }
     });
@@ -170,29 +322,33 @@ export function useModelsCatalog({
 
   const updateCatalogModel = useCallback(
     (name: string, item: IProviderModelItem) => {
+      const key = modelNameKey(name);
       setCatalogOverrides((prev) => {
         const next = {
           ...prev,
-          [name]: { ...(prev[name] ?? {}), ...item, name },
+          [key]: { ...(prev[key] ?? {}), ...item, name },
         };
         catalogOverridesRef.current = next;
         return next;
       });
       setCatalog((prev) => {
-        if (!prev.some((m) => m.name === name)) {
+        if (!prev.some((m) => modelNameKey(m.name) === key)) {
           return [...prev, { ...item, name }];
         }
-        return prev.map((m) => (m.name === name ? { ...m, ...item, name } : m));
+        return prev.map((m) =>
+          modelNameKey(m.name) === key ? { ...m, ...item, name } : m,
+        );
       });
     },
     [],
   );
 
   const clearCatalogOverride = useCallback((name: string) => {
+    const key = modelNameKey(name);
     setCatalogOverrides((prev) => {
-      if (!prev[name]) return prev;
+      if (!prev[key]) return prev;
       const next = { ...prev };
-      delete next[name];
+      delete next[key];
       catalogOverridesRef.current = next;
       return next;
     });
@@ -202,22 +358,53 @@ export function useModelsCatalog({
   // The result is merged into `catalog`; the displayed list then becomes
   // the union of catalog + instance models.
   const handleListModels = async () => {
-    const { apiKey, baseUrl } = resolveCreds();
-    if (providerName === LLMFactory.VolcEngine && !apiKey) {
+    const {
+      apiKey,
+      apiKeyConfig,
+      baseUrl,
+      region,
+      hasStoredCredentials,
+      credentialChanged,
+    } = resolveCreds();
+    if (
+      providerName === LLMFactory.VolcEngine &&
+      !hasUnsavedProviderCredential(apiKey) &&
+      !hasStoredCredentials
+    ) {
       setHasFetched(true);
       return;
     }
     setManualListLoading(true);
     try {
+      const useStoredCredentials =
+        instanceName &&
+        instanceName !== DRAFT_INSTANCE_SENTINEL &&
+        !hasUnsavedProviderCredential(apiKey) &&
+        !credentialChanged;
+      const canOverrideSavedCredentials =
+        useStoredCredentials && instance?.is_owner === true;
       const ret = await listProviderModels({
         provider_name: providerName,
-        api_key: apiKey as any,
-        base_url: baseUrl,
+        ...(!useStoredCredentials ? { api_key: apiKey as any } : {}),
+        ...(canOverrideSavedCredentials &&
+        apiKeyConfig &&
+        Object.keys(apiKeyConfig).length > 0
+          ? { api_key_config: apiKeyConfig }
+          : {}),
+        ...(!useStoredCredentials || canOverrideSavedCredentials
+          ? { base_url: baseUrl, region }
+          : {}),
+        ...(useStoredCredentials ? { use_saved_credentials: true } : {}),
+        ...(instanceName && instanceName !== DRAFT_INSTANCE_SENTINEL
+          ? { instance_name: instanceName }
+          : {}),
       });
       if (ret?.code === 0) {
-        setCatalog(
-          applyCatalogOverrides((ret.data as IProviderModelItem[]) ?? []),
+        const merged = applyCatalogOverrides(
+          (ret.data as IProviderModelItem[]) ?? [],
         );
+        setCatalog(merged);
+        onCatalogFetchedRef.current?.(merged);
       }
       setHasFetched(true);
     } catch {
@@ -228,7 +415,8 @@ export function useModelsCatalog({
   };
 
   // Auto-fetch the provider's available-models catalog when this section
-  // mounts (effectively "when the card is expanded"). For VolcEngine we
+  // mounts (effectively "when the card is expanded"). For VolcEngine and the
+  // providers in API_KEY_GATED_LIST_PROVIDERS (SystemOne, RAGcon, Nace) we
   // wait until an api_key is available (typed in the draft form or loaded
   // from instance details). For providers whose form includes a
   // `base_url` field (e.g. Ollama, Xinference, LocalAI) we defer until a
@@ -236,29 +424,47 @@ export function useModelsCatalog({
   // to know which server to query. For every other provider we fetch on
   // mount regardless.
   //
-  // The credential check is performed INSIDE the effect (not in the deps)
-  // because for saved cards the form is reset by
-  // `useFormResetOnDetailsLoad` in a parent effect that runs BEFORE this
-  // one. Reading `resolveCreds()` at effect time picks up the freshly
-  // reset `base_url` / `api_key` values, whereas reading them during
-  // render would see the stale (pre-reset) values and defer forever.
-
-  const requiresApiKey = providerName === LLMFactory.VolcEngine;
+  // The credential check is performed INSIDE the effect (not in the deps).
+  // Saved instances wait for their details and form reset before this reads
+  // current endpoint and region values.
 
   const hasAutoFetchedRef = useRef(false);
   useEffect(() => {
     if (hasAutoFetchedRef.current) return;
     if (hideActions) return;
     if (!providerName) return;
+    if (
+      providerName === LLMFactory.Bedrock &&
+      instanceName === DRAFT_INSTANCE_SENTINEL
+    )
+      return;
 
     const creds = resolveCreds();
+    const apiKeyConfig =
+      typeof creds.apiKey === 'object' && creds.apiKey !== null
+        ? (creds.apiKey as Record<string, unknown>)
+        : undefined;
+    const requiresApiKey =
+      API_KEY_GATED_LIST_PROVIDERS.includes(providerName) ||
+      (providerName === LLMFactory.Bedrock &&
+        apiKeyConfig?.auth_mode === 'bedrock_api_key');
+    const hasApiKey =
+      hasProviderCredentialInput(creds.apiKey) ||
+      (creds.hasStoredCredentials && !creds.credentialChanged);
+    const waitingForInstanceDetails =
+      instanceName !== DRAFT_INSTANCE_SENTINEL && !instanceDetailsLoaded;
     const hasBaseUrlField = creds.baseUrl !== undefined;
     const ready =
-      (!requiresApiKey || !!creds.apiKey) &&
+      !waitingForInstanceDetails &&
+      (!requiresApiKey || hasApiKey) &&
       (!hasBaseUrlField || !!creds.baseUrl);
     if (!ready) return;
-    hasAutoFetchedRef.current = true;
-    handleListModels();
+    const frame = requestAnimationFrame(() => {
+      if (hasAutoFetchedRef.current) return;
+      hasAutoFetchedRef.current = true;
+      handleListModels();
+    });
+    return () => cancelAnimationFrame(frame);
     // oxlint-disable-next-line react/exhaustive-deps
   }, [
     providerName,
@@ -266,6 +472,7 @@ export function useModelsCatalog({
     hideActions,
     apiKeyValue,
     baseUrlValue,
+    regionValue,
     instanceDetailsLoaded,
   ]);
 
@@ -295,6 +502,10 @@ export function useModelsCatalog({
 interface UseModelsDerivedArgs {
   catalog: IProviderModelItem[];
   instanceModels: IInstanceModel[] | undefined;
+  /** True while the saved instance model query is fetching. */
+  instanceModelsLoading: boolean;
+  /** True only when the saved instance model query completed successfully. */
+  instanceModelsSucceeded: boolean;
   /**
    * Locally-added models for a draft (unsaved) instance. The hook uses
    * this list as the "instance models" source when `isDraftInstance` is
@@ -306,7 +517,7 @@ interface UseModelsDerivedArgs {
   /**
    * True when this card represents a draft instance (no backend id yet).
    * Picks between `instanceModels` (saved) and `draftModels` (draft) as
-   * the source for `instanceItems` / `addedSet`.
+   * the source for `instanceItems` / `isModelAdded`.
    */
   isDraftInstance: boolean;
   onInstanceModelsChange: ModelsSectionProps['onInstanceModelsChange'];
@@ -316,6 +527,8 @@ interface UseModelsDerivedArgs {
 export function useModelsDerived({
   catalog,
   instanceModels,
+  instanceModelsLoading,
+  instanceModelsSucceeded,
   draftModels,
   isDraftInstance,
   onInstanceModelsChange,
@@ -325,7 +538,7 @@ export function useModelsDerived({
     const map = new Map<string, string[]>();
     catalog.forEach((m) => {
       if (Array.isArray(m.features) && m.features.length > 0) {
-        map.set(m.name, m.features);
+        map.set(modelNameKey(m.name), m.features);
       }
     });
     return map;
@@ -348,7 +561,8 @@ export function useModelsDerived({
       const model_types = normalizeModelTypes(
         im.model_types ?? im.model_type ?? [],
       );
-      const catalogFeats = catalogFeatures.get(im.name) ?? im.features ?? null;
+      const catalogFeats =
+        catalogFeatures.get(modelNameKey(im.name)) ?? im.features ?? null;
       const features =
         im.is_tools && !hasToolFeature(catalogFeats)
           ? [...(catalogFeats ?? []), 'is_tools']
@@ -363,18 +577,21 @@ export function useModelsDerived({
     });
   }, [sourceItems, catalogFeatures]);
 
-  // Union of instance models + catalog, keyed by `name`. Instance entries
-  // win on conflict so that editing an already-added model loads the
+  // Union of instance models + catalog, keyed by the normalized name (see
+  // `modelNameKey`) — the catalog and an upstream listing can spell the same
+  // model with different case, and both must collapse into one row. Instance
+  // entries win on conflict so that editing an already-added model loads the
   // instance-specific values (e.g. a user-customised `max_tokens`) rather
   // than the upstream catalog defaults; catalog entries are only used to
   // fill in models that have not been added yet. Instance set is listed
   // first so already-added models stay at the top on the initial render.
   const models: IProviderModelItem[] = useMemo(() => {
     const byName = new Map<string, IProviderModelItem>();
-    instanceItems.forEach((m) => byName.set(m.name, m));
+    instanceItems.forEach((m) => byName.set(modelNameKey(m.name), m));
     catalog.forEach((m) => {
-      if (!byName.has(m.name)) {
-        byName.set(m.name, m);
+      const key = modelNameKey(m.name);
+      if (!byName.has(key)) {
+        byName.set(key, m);
       }
     });
     return Array.from(byName.values());
@@ -382,10 +599,17 @@ export function useModelsDerived({
 
   // Mirror of `instanceItems` names - drives the +/- toggle on each row
   // and the batch-toggle button. For drafts this is the local "added"
-  // set; for saved cards it tracks what the backend has persisted.
+  // set; for saved cards it tracks what the backend has persisted. Keyed
+  // by normalized name so a row the catalog spells differently from the
+  // saved model still reads as added.
   const addedSet = useMemo(
-    () => new Set(sourceItems.map((m: any) => m.name)),
+    () => new Set(sourceItems.map((m: any) => modelNameKey(m.name))),
     [sourceItems],
+  );
+
+  const isModelAdded = useCallback(
+    (name: string) => addedSet.has(modelNameKey(name)),
+    [addedSet],
   );
 
   // Keep the latest callbacks in refs so the effect below only fires
@@ -403,38 +627,30 @@ export function useModelsDerived({
     onEditedRef.current = onInstanceModelsEdited;
   });
 
-  // Track the previous set of instance model names so we can tell
-  // "patch" (same names, different data) apart from "add/remove"
-  // (different names). Only the patch case needs to fire the host-side
-  // baseline-update callback so the next blur auto-save short-circuits.
-  const prevNamesRef = useRef<Set<string>>(new Set());
-
   // Push the latest per-instance model list up to the host so its
-  // auto-save can include `model_info` in the payload. When the change
-  // is purely a patch (same names, different data), also notify the
-  // host via `onInstanceModelsEdited` so it can absorb the model_info
-  // diff into its last-saved baseline — without this signal, the next
-  // blur would signature-mismatch and fire a redundant PUT carrying
-  // the already-PATCH-saved model_info. Adds/removes intentionally
-  // skip this signal so the next blur still carries the updated list
-  // into PUT (the standard sync path for the instance's model_info).
+  // save payload can include `model_info`.
   useEffect(() => {
-    const currentNames = new Set(instanceItems.map((m) => m.name));
-    const prevNames = prevNamesRef.current;
-    const isPatch =
-      currentNames.size > 0 &&
-      currentNames.size === prevNames.size &&
-      Array.from(currentNames).every((n) => prevNames.has(n));
+    onChangeRef.current?.(buildModelInfo(instanceItems, isDraftInstance));
+  }, [instanceItems, isDraftInstance]);
 
-    onChangeRef.current?.(buildModelInfo(instanceItems));
-    if (isPatch) {
+  // Saved instance models come from the backend, both after the initial
+  // query and after mutation-driven refetches. Once that authoritative
+  // snapshot is ready, absorb it into the host's saved baseline so an
+  // unchanged card does not look dirty solely because model_info loaded
+  // after the instance details. Draft models remain local and must still
+  // be included in the first save.
+  useEffect(() => {
+    if (!isDraftInstance && !instanceModelsLoading && instanceModelsSucceeded) {
       onEditedRef.current?.();
     }
+  }, [
+    instanceItems,
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+  ]);
 
-    prevNamesRef.current = currentNames;
-  }, [instanceItems]);
-
-  return { instanceItems, models, addedSet };
+  return { instanceItems, models, isModelAdded };
 }
 
 // ---------------------------------------------------------------------------
@@ -472,26 +688,8 @@ interface UseModelVerifyArgs {
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
   instance?: IProviderInstance;
-  /**
-   * Host card's current form values. Required when `verifyTransform` is
-   * supplied so the transform can map provider-specific field names
-   * (e.g. PaddleOCR's `paddleocr_api_url`) onto the structured `api_key`
-   * object the verify endpoint expects.
-   */
   getFormValues?: () => Record<string, any>;
-  /**
-   * Provider-specific transform that maps form values onto the verify
-   * payload's `api_key` / `base_url` / `region`. When present it takes
-   * precedence over the generic `resolveCreds()` mapping. The
-   * `modelInfo` it returns is ignored - per-model verify always sends
-   * only the single model being verified.
-   */
-  verifyTransform?: (values: Record<string, any>) => {
-    apiKey: string | object | Record<string, any>;
-    baseUrl?: string;
-    region?: string;
-    modelInfo?: IModelInfo[];
-  };
+  verifyTransform?: ModelsSectionProps['verifyTransform'];
 }
 
 /**
@@ -518,11 +716,22 @@ function buildVerifyArgs(
   let apiKey: string | object;
   let baseUrl: string | undefined;
   let region: string | undefined;
+  const formValues = getFormValues?.() ?? {};
 
+  const credentialStatus = instance?.credential_status ?? {};
+  const verifyValues = { ...formValues };
+  for (const [field, configured] of Object.entries(credentialStatus)) {
+    if (configured && verifyValues[field] === SAVED_CREDENTIAL_MASK) {
+      verifyValues[field] = '';
+    }
+  }
   if (verifyTransform) {
-    const formValues = getFormValues?.() ?? {};
-    const transformed = verifyTransform(formValues);
-    apiKey = transformed.apiKey;
+    const transformed = verifyTransform(verifyValues);
+    apiKey = applySavedCredentialEdits(
+      transformed.apiKey,
+      formValues,
+      credentialStatus,
+    ) as string | object;
     baseUrl = transformed.baseUrl;
     region = transformed.region;
   } else {
@@ -531,6 +740,22 @@ function buildVerifyArgs(
     baseUrl = creds.baseUrl;
   }
 
+  const resolvedCreds = resolveCreds();
+  const credentialChanged =
+    resolvedCreds.credentialChanged === true ||
+    Object.entries(credentialStatus).some(
+      ([field, configured]) =>
+        configured &&
+        !SavedProviderConfigFieldSet.has(field) &&
+        formValues[field] !== undefined &&
+        formValues[field] !== SAVED_CREDENTIAL_MASK,
+    );
+
+  const useSavedCredentials =
+    Boolean(instance?.id) &&
+    !credentialChanged &&
+    !hasUnsavedProviderCredential(apiKey);
+
   // `api_key` is typed `string` on the service signature, but
   // providers with a `verifyTransform` may legitimately produce an
   // object (e.g. PaddleOCR's nested config). The backend accepts
@@ -538,11 +763,19 @@ function buildVerifyArgs(
   // verify path in `useVerifyProvider`.
   return {
     provider_name: providerName,
-    api_key: apiKey as any,
-    base_url: baseUrl,
+    ...(!useSavedCredentials ? { api_key: apiKey as any } : {}),
+    ...(useSavedCredentials &&
+    instance?.is_owner === true &&
+    resolvedCreds.apiKeyConfig &&
+    Object.keys(resolvedCreds.apiKeyConfig).length > 0
+      ? { api_key_config: resolvedCreds.apiKeyConfig }
+      : {}),
+    ...(!useSavedCredentials || instance?.is_owner === true
+      ? { base_url: baseUrl, region }
+      : {}),
     model_info: modelInfo,
-    ...(region ? { region } : {}),
     ...(instance?.id ? { instance_id: instance.id } : {}),
+    ...(useSavedCredentials ? { use_saved_credentials: true } : {}),
   };
 }
 
@@ -676,7 +909,7 @@ interface UseModelMutationsArgs {
   instance: IProviderInstance | undefined;
   instanceItems: IProviderModelItem[];
   filteredModels: IProviderModelItem[];
-  addedSet: Set<string>;
+  isModelAdded: (name: string) => boolean;
   setCatalog: Dispatch<SetStateAction<IProviderModelItem[]>>;
   clearCatalogOverride: (name: string) => void;
   /**
@@ -699,7 +932,7 @@ export function useModelMutations({
   instance,
   instanceItems,
   filteredModels,
-  addedSet,
+  isModelAdded,
   setCatalog,
   clearCatalogOverride,
   addDraftModel,
@@ -716,8 +949,8 @@ export function useModelMutations({
   const allFilteredAdded = useMemo(
     () =>
       filteredModels.length > 0 &&
-      filteredModels.every((m) => addedSet.has(m.name)),
-    [filteredModels, addedSet],
+      filteredModels.every((m) => isModelAdded(m.name)),
+    [filteredModels, isModelAdded],
   );
 
   const handleAddModel = async (model: IProviderModelItem) => {
@@ -759,7 +992,9 @@ export function useModelMutations({
     // unioned `models` list immediately. Server-side persistence happens
     // via `addInstanceModel` below (when there is a real instance).
     setCatalog((prev) =>
-      prev.some((m) => m.name === item.name) ? prev : [...prev, item],
+      prev.some((m) => modelNameKey(m.name) === modelNameKey(item.name))
+        ? prev
+        : [...prev, item],
     );
     if (hideActions || isDraftInstance) {
       // For drafts the catalog entry alone is not enough — we also need
@@ -793,21 +1028,23 @@ export function useModelMutations({
     if (filteredModels.length === 0) return;
 
     const byName = new Map<string, IProviderModelItem>();
-    instanceItems.forEach((m) => byName.set(m.name, m));
+    instanceItems.forEach((m) => byName.set(modelNameKey(m.name), m));
 
     let nextModels: IProviderModelItem[];
     if (allFilteredAdded) {
-      const drop = new Set(filteredModels.map((m) => m.name));
-      nextModels = Array.from(byName.values()).filter((m) => !drop.has(m.name));
+      const drop = new Set(filteredModels.map((m) => modelNameKey(m.name)));
+      nextModels = Array.from(byName.values()).filter(
+        (m) => !drop.has(modelNameKey(m.name)),
+      );
     } else {
-      filteredModels.forEach((m) => byName.set(m.name, m));
+      filteredModels.forEach((m) => byName.set(modelNameKey(m.name), m));
       nextModels = Array.from(byName.values());
     }
 
     if (isDraftInstance) {
       setDraftModelsList?.(nextModels);
       filteredModels.forEach((m) => {
-        if (!addedSet.has(m.name)) {
+        if (!isModelAdded(m.name)) {
           clearCatalogOverride(m.name);
         }
       });
@@ -822,10 +1059,10 @@ export function useModelMutations({
       api_key: apiKey,
       base_url: baseUrl,
       region: instance?.region ?? 'default',
-      model_info: buildModelInfo(nextModels),
+      model_info: buildModelInfo(nextModels, isDraftInstance),
     });
     filteredModels.forEach((m) => {
-      if (!addedSet.has(m.name)) {
+      if (!isModelAdded(m.name)) {
         clearCatalogOverride(m.name);
       }
     });
@@ -848,7 +1085,7 @@ export function useModelMutations({
 interface UseModelEditArgs {
   providerName: string;
   instanceName: string;
-  addedSet: Set<string>;
+  isModelAdded: (name: string) => boolean;
   isDraftInstance?: boolean;
   updateCatalogModel: (name: string, item: IProviderModelItem) => void;
   clearCatalogOverride: (name: string) => void;
@@ -858,7 +1095,7 @@ interface UseModelEditArgs {
 export function useModelEdit({
   providerName,
   instanceName,
-  addedSet,
+  isModelAdded,
   isDraftInstance,
   updateCatalogModel,
   clearCatalogOverride,
@@ -937,48 +1174,25 @@ export function useModelEdit({
 
   // Persist edits to an existing model. For drafts the backend has no
   // instance yet, so we update the local `draftModels` list instead of
-  // calling PATCH. For saved cards the instance-models cache is patched
-  // so the UI reflects the new values immediately, before the PATCH's
-  // invalidation refetches.
+  // calling PATCH. For saved cards the cache changes only after the backend
+  // accepts the edit; the PATCH hook then refetches the complete snapshot.
   const handleEditSubmit = async (item: IProviderModelItem) => {
     if (!editingModel) return;
     const targetName = editingModel.name;
 
-    if (isDraftInstance && updateDraftModel && addedSet.has(targetName)) {
+    if (isDraftInstance && updateDraftModel && isModelAdded(targetName)) {
       updateDraftModel(item);
       setEditingModel(null);
       return;
     }
 
-    if (!addedSet.has(targetName)) {
+    if (!isModelAdded(targetName)) {
       updateCatalogModel(targetName, item);
       setEditingModel(null);
       return;
     }
 
-    queryClient.setQueryData<IInstanceModel[]>(
-      LlmKeys.instanceModels(providerName, instanceName),
-      (prev) => {
-        if (!prev) return prev;
-        const idx = prev.findIndex((m) => m.name === targetName);
-        if (idx === -1) return prev;
-        const next = [...prev];
-        const existing = next[idx];
-        next[idx] = {
-          ...existing,
-          max_tokens: item.max_tokens ?? 0,
-          model_type: item.model_types ?? [],
-          is_tools: hasToolFeature(item.features),
-          extra: {
-            is_tools: hasToolFeature(item.features),
-            ...(item.extra ?? {}),
-          },
-        };
-        return next;
-      },
-    );
-
-    await patchInstanceModel({
+    const data = await patchInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
       model_name: targetName,
@@ -986,6 +1200,31 @@ export function useModelEdit({
       model_type: item.model_types ?? [],
       extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
     });
+    if (data.code === 0) {
+      queryClient.setQueryData<IInstanceModel[]>(
+        LlmKeys.instanceModels(providerName, instanceName),
+        (prev) => {
+          if (!prev) return prev;
+          const idx = prev.findIndex(
+            (m) => modelNameKey(m.name) === modelNameKey(targetName),
+          );
+          if (idx === -1) return prev;
+          const next = [...prev];
+          const existing = next[idx];
+          next[idx] = {
+            ...existing,
+            max_tokens: item.max_tokens ?? 0,
+            model_type: item.model_types ?? [],
+            is_tools: hasToolFeature(item.features),
+            extra: {
+              is_tools: hasToolFeature(item.features),
+              ...(item.extra ?? {}),
+            },
+          };
+          return next;
+        },
+      );
+    }
     clearCatalogOverride(targetName);
     setEditingModel(null);
   };

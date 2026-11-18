@@ -35,7 +35,7 @@ export function JsonValidator({
   const [validationResult, setValidationResult] =
     useState<ValidationResult | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
-  const debounceTimerRef = useRef<number | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
   const schemaMonacoRef = useRef<typeof Monaco | null>(null);
   const {

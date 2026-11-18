@@ -23,6 +23,15 @@ import (
 	"ragflow/internal/entity"
 )
 
+// DebugChunkCapDefault is the number of leading chunks a canvas-debug
+// (dataflow dry-run) keeps for preview when the pipeline contains a chunker
+// node. The debug run is a fast, side-effect-free check, so it surfaces only
+// the first few chunks rather than the whole document. The cap travels via
+// run inputs → CanvasState.Globals → the chunker decorator (globals.DebugChunkCap),
+// and is injected by the executor only in the debug branch. An explicit
+// caller-supplied cap is respected (see injectDebugChunkCap).
+const DebugChunkCapDefault = 3
+
 // NewDebugTaskContext builds an in-memory TaskContext for a canvas-debug
 // (dataflow dry-run) request. The returned context is intentionally
 // side-effect free:

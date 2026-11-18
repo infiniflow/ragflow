@@ -17,6 +17,7 @@
 package sandbox
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -34,7 +35,6 @@ func newSelfManagedForTest(endpoint string) *SelfManagedProvider {
 	return &SelfManagedProvider{
 		endpoint:     endpoint,
 		timeout:      5 * time.Second,
-		poolSize:     3,
 		helper:       NewHTTPClient(HTTPConfig{}),
 		healthHelper: NewHTTPClient(HTTPConfig{Timeout: 2 * time.Second}),
 	}
@@ -204,6 +204,56 @@ func TestSelfManaged_ExecuteCode(t *testing.T) {
 	}
 	if got, ok := result.Metadata["structured_result"].(map[string]any); !ok || got["value"] != json.Number("2") {
 		t.Errorf("structured_result = %#v, want value 2 from HTTP result field", result.Metadata["structured_result"])
+	}
+}
+
+func TestSelfManaged_ExecuteCode_SendsBearerToken(t *testing.T) {
+	t.Parallel()
+	var capturedAuth string
+	var authSeen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth, authSeen = r.Header.Get("Authorization"), true
+		handleRun(t, w, r, "ok", "")
+	}))
+	defer srv.Close()
+	ctx := t.Context()
+
+	p := newSelfManagedForTest(srv.URL)
+	p.apiToken = "unit-test-shared-secret"
+	p.initialized = true
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	if _, err := p.ExecuteCode(ctx, inst, "def main(): return 1", "python", 5, nil); err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	if !authSeen || capturedAuth != "Bearer unit-test-shared-secret" {
+		t.Errorf("Authorization header = %q (seen=%v), want %q", capturedAuth, authSeen, "Bearer unit-test-shared-secret")
+	}
+}
+
+func TestSelfManaged_ExecuteCode_OmitsAuthHeaderWithoutToken(t *testing.T) {
+	t.Parallel()
+	var authSeen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, authSeen = r.Header["Authorization"]
+		handleRun(t, w, r, "ok", "")
+	}))
+	defer srv.Close()
+	ctx := t.Context()
+
+	p := newSelfManagedForTest(srv.URL)
+	p.initialized = true
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	if _, err := p.ExecuteCode(ctx, inst, "def main(): return 1", "python", 5, nil); err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	if authSeen {
+		t.Errorf("Authorization header unexpectedly present")
 	}
 }
 
@@ -501,4 +551,251 @@ func handleRunWithResult(t *testing.T, w http.ResponseWriter, _ *http.Request, s
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// Retired keys in stored settings must not affect connection settings.
+func TestNewSelfManagedProviderFromConfig_LegacySettings(t *testing.T) {
+	t.Parallel()
+	p := newSelfManagedProviderFromConfig(map[string]any{
+		"endpoint":    "https://manager.example:9385/",
+		"timeout":     float64(20), // JSON-decoded seconds
+		"max_retries": float64(5),
+		"pool_size":   float64(9),
+		"api_token":   "settings-secret",
+	})
+	if p.helper.maxAttempts != 1 {
+		t.Errorf("execution maxAttempts = %d, want 1", p.helper.maxAttempts)
+	}
+	if p.endpoint != "https://manager.example:9385" {
+		t.Errorf("endpoint = %q, want trailing slash stripped", p.endpoint)
+	}
+	if p.timeout != 20*time.Second {
+		t.Errorf("timeout = %v, want 20s", p.timeout)
+	}
+	if p.apiToken != "settings-secret" {
+		t.Errorf("apiToken = %q, want settings-secret", p.apiToken)
+	}
+}
+
+// TestNewSelfManagedProviderFromConfig_ApiTokenResolution pins the token
+// resolution contract shared with the Python provider: an explicit settings
+// value wins, and an absent/empty settings value falls back to
+// SANDBOX_EXECUTOR_MANAGER_API_TOKEN. Cannot use t.Parallel() with t.Setenv.
+func TestNewSelfManagedProviderFromConfig_ApiTokenResolution(t *testing.T) {
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "env-secret")
+
+	fromEnv := newSelfManagedProviderFromConfig(map[string]any{
+		"endpoint": "https://manager.example:9385",
+	})
+	if fromEnv.apiToken != "env-secret" {
+		t.Errorf("apiToken = %q, want env fallback value", fromEnv.apiToken)
+	}
+
+	fromSettings := newSelfManagedProviderFromConfig(map[string]any{
+		"endpoint":  "https://manager.example:9385",
+		"api_token": "settings-secret",
+	})
+	if fromSettings.apiToken != "settings-secret" {
+		t.Errorf("apiToken = %q, want settings value to win over env", fromSettings.apiToken)
+	}
+
+	blankSettingsWins := newSelfManagedProviderFromConfig(map[string]any{
+		"endpoint":  "https://manager.example:9385",
+		"api_token": "   ",
+	})
+	if blankSettingsWins.apiToken != "env-secret" {
+		t.Errorf("apiToken = %q, want blank settings value to fall back to env", blankSettingsWins.apiToken)
+	}
+}
+
+// TestSelfManaged_ExecuteCode_TokenFromCanonicalSettingsPropagation is the
+// end-to-end version of the bearer-token test: the provider is built from
+// the real lowercase persisted settings JSON (not by setting apiToken
+// directly), and the fake executor manager asserts the Authorization header
+// that /run actually receives.
+func TestSelfManaged_ExecuteCode_TokenFromCanonicalSettingsPropagation(t *testing.T) {
+	t.Parallel()
+	var capturedAuth string
+	var authSeen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/run":
+			capturedAuth, authSeen = r.Header.Get("Authorization"), true
+			handleRun(t, w, r, "ok", "")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	ctx := t.Context()
+
+	// The exact JSON shape the admin panel persists for sandbox.self_managed.
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(`{
+		"endpoint": "`+srv.URL+`",
+		"timeout": 5,
+		"max_retries": 3,
+		"pool_size": 3,
+		"api_token": "settings-shared-secret"
+	}`), &settings); err != nil {
+		t.Fatalf("unmarshal settings: %v", err)
+	}
+	p := newSelfManagedProviderFromConfig(settings)
+	if err := p.Initialize(ctx); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	if _, err := p.ExecuteCode(ctx, inst, "def main(): return 1", "python", 5, nil); err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	if !authSeen || capturedAuth != "Bearer settings-shared-secret" {
+		t.Errorf("Authorization header = %q (seen=%v), want Bearer settings-shared-secret", capturedAuth, authSeen)
+	}
+}
+
+// TestNewSelfManagedProvider_EnvOnlyFallbacks pins the environment-only
+// configuration path: with an empty settings map, every SANDBOX_* variable
+// (including the pool size, which previously lost its env fallback) reaches
+// the provider. Cannot use t.Parallel() with t.Setenv.
+func TestNewSelfManagedProvider_EnvOnlyFallbacks(t *testing.T) {
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_URL", "https://env.example:9385")
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_TIMEOUT", "15s")
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "11")
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_MAX_RETRIES", "6")
+	t.Setenv("SANDBOX_BASE_PYTHON_IMAGE", "reg.example.com/envpy:2")
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "env-only-secret")
+
+	p := newSelfManagedProviderFromEnv()
+	if p.endpoint != "https://env.example:9385" {
+		t.Errorf("endpoint = %q, want env value", p.endpoint)
+	}
+	if p.timeout != 15*time.Second {
+		t.Errorf("timeout = %v, want 15s from env", p.timeout)
+	}
+	if p.baseImages["python"] != "reg.example.com/envpy:2" {
+		t.Errorf("python baseImage = %q, want env value", p.baseImages["python"])
+	}
+	if p.apiToken != "env-only-secret" {
+		t.Errorf("apiToken = %q, want env value", p.apiToken)
+	}
+	if p.helper.maxAttempts != 1 {
+		t.Errorf("execution maxAttempts = %d, want 1", p.helper.maxAttempts)
+	}
+}
+
+// TestNewSelfManagedProviderFromConfig_SettingsBeatEnv pins precedence:
+// persisted settings values win over the environment for the same field.
+// Cannot use t.Parallel() with t.Setenv.
+func TestNewSelfManagedProviderFromConfig_SettingsBeatEnv(t *testing.T) {
+	t.Setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "11")
+	t.Setenv("SANDBOX_BASE_PYTHON_IMAGE", "reg.example.com/envpy:2")
+
+	p := newSelfManagedProviderFromConfig(map[string]any{
+		"pool_size":         float64(4),
+		"base_python_image": "reg.example.com/settingspy:3",
+	})
+	if p.baseImages["python"] != "reg.example.com/settingspy:3" {
+		t.Errorf("python baseImage = %q, want settings value to beat env", p.baseImages["python"])
+	}
+}
+
+// selfManagedErrorServer answers /run with the given status and body size,
+// padding the body with a recognisable filler byte.
+func selfManagedErrorServer(t *testing.T, status, bodyBytes int, filler byte) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+		if bodyBytes == 0 {
+			return
+		}
+		chunk := bytes.Repeat([]byte{filler}, 32*1024)
+		for written := 0; written < bodyBytes; {
+			n := min(len(chunk), bodyBytes-written)
+			if _, err := w.Write(chunk[:n]); err != nil {
+				return
+			}
+			written += n
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func selfManagedRunFailing(t *testing.T, srv *httptest.Server) error {
+	t.Helper()
+	p := newSelfManagedForTest(srv.URL)
+	p.initialized = true // bypass probe, as the other self_managed tests do
+	_, err := p.ExecuteCode(t.Context(), &SandboxInstance{
+		InstanceID: "x", Provider: ProviderSelfManaged,
+	}, "print(1)", "python", 10, nil)
+	if err == nil {
+		t.Fatal("ExecuteCode succeeded, want an error from the non-200 response")
+	}
+	return err
+}
+
+// TestSelfManaged_ErrorBodyIsBounded is the regression test for the failure
+// path draining the executor_manager's body without a limit. That endpoint is
+// operator-configured and reached over the network, so a compromised or
+// misbehaving one could otherwise make this process buffer — and then log —
+// an arbitrarily large body. Before the fix a 32 MiB body produced a 32 MiB
+// error string.
+func TestSelfManaged_ErrorBodyIsBounded(t *testing.T) {
+	const flood = 32 << 20
+	srv := selfManagedErrorServer(t, http.StatusInternalServerError, flood, 'E')
+	err := selfManagedRunFailing(t, srv)
+
+	// Budget for the quoted body plus the error prefix and the truncation
+	// marker; anything larger means the drain is still unbounded.
+	const overhead = 256
+	if got := len(err.Error()); got > selfManagedMaxErrorBody+overhead {
+		t.Errorf("error carries %d bytes for a %d-byte body, want at most %d: the drain is unbounded",
+			got, flood, selfManagedMaxErrorBody+overhead)
+	}
+	if !strings.Contains(err.Error(), "truncated") {
+		t.Error("error does not report that the body was truncated, so a cut body reads as complete")
+	}
+	if !strings.Contains(err.Error(), "returned 500") {
+		t.Errorf("error = %v, want it to keep the status code", err)
+	}
+}
+
+// TestSelfManaged_SmallErrorBodyIsPreserved keeps the bound from mangling the
+// ordinary case: a body at or under the cap is quoted verbatim with no
+// truncation marker.
+func TestSelfManaged_SmallErrorBodyIsPreserved(t *testing.T) {
+	const bodyBytes = 4096
+	srv := selfManagedErrorServer(t, http.StatusBadGateway, bodyBytes, 'S')
+	err := selfManagedRunFailing(t, srv)
+
+	if strings.Contains(err.Error(), "truncated") {
+		t.Errorf("error = %v, want no truncation marker for a %d-byte body", err, bodyBytes)
+	}
+	if !strings.Contains(err.Error(), strings.Repeat("S", bodyBytes)) {
+		t.Errorf("error = %v, want the whole body quoted", err)
+	}
+	if !strings.Contains(err.Error(), "returned 502") {
+		t.Errorf("error = %v, want it to keep the status code", err)
+	}
+}
+
+// TestSelfManaged_ErrorBodyExactlyAtCapIsNotTruncated pins the boundary: a
+// body exactly at the cap is complete, so the "> cap" test must not fire on
+// the extra byte the drain reads to detect overflow.
+func TestSelfManaged_ErrorBodyExactlyAtCapIsNotTruncated(t *testing.T) {
+	srv := selfManagedErrorServer(t, http.StatusInternalServerError, selfManagedMaxErrorBody, 'B')
+	err := selfManagedRunFailing(t, srv)
+
+	if strings.Contains(err.Error(), "truncated") {
+		t.Errorf("error = %v, want no truncation for a body exactly at the cap", err)
+	}
+	if !strings.Contains(err.Error(), strings.Repeat("B", selfManagedMaxErrorBody)) {
+		t.Error("error does not carry the whole body at exactly the cap")
+	}
 }

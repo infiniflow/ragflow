@@ -3,7 +3,9 @@ package pipeline
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+	"testing/fstest"
 )
 
 func TestRegistryLoadsSummaries(t *testing.T) {
@@ -58,8 +60,35 @@ func TestRegistryRefsMatchList(t *testing.T) {
 	if len(refs) != 2 {
 		t.Fatalf("len(Refs()) = %d, want 2", len(refs))
 	}
-	if refs[0] != "book" || refs[1] != "general" {
-		t.Fatalf("refs = %#v, want sorted builtin refs", refs)
+	if refs[0] != "general" || refs[1] != "book" {
+		t.Fatalf("refs = %#v, want Python-compatible builtin order", refs)
+	}
+}
+
+func TestRegistryCanonicalOrderAppendsUnknownTemplates(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	for _, id := range []string{"email", "book", "general", "qa", "manual", "table", "paper", "laws", "presentation", "picture", "one", "audio", "custom"} {
+		mustWrite("ingestion_pipeline_"+id+".json", `{"title":{"en":"`+id+`"},"dsl":{"components":{}}}`)
+	}
+
+	r, err := NewRegistryFromDir(dir)
+	if err != nil {
+		t.Fatalf("NewRegistryFromDir: %v", err)
+	}
+	want := []string{"general", "qa", "manual", "table", "paper", "book", "laws", "presentation", "picture", "one", "audio", "email", "custom"}
+	if got := r.Refs(); len(got) != len(want) {
+		t.Fatalf("Refs() length = %d, want %d (%#v)", len(got), len(want), want)
+	} else {
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("Refs()[%d] = %q, want %q; full order %#v", i, got[i], want[i], got)
+			}
+		}
 	}
 }
 
@@ -237,5 +266,53 @@ func TestLoadBuiltinDSL_UnknownFails(t *testing.T) {
 	_, err := LoadBuiltinDSL("nonexistent")
 	if err == nil {
 		t.Fatal("LoadBuiltinDSL(nonexistent) = nil, want error")
+	}
+}
+
+func TestRegistryDiscoversTemplatesWithEditionSuffix(t *testing.T) {
+	registry, err := NewRegistryFromFS(fstest.MapFS{
+		"ingestion_pipeline_general.json":  {Data: []byte(`{"title":{"en":"General"},"dsl":{"components":{}}}`)},
+		"ingestion_pipeline_zeta_ee.json":  {Data: []byte(`{"title":{"en":"Zeta"},"dsl":{"components":{}}}`)},
+		"ingestion_pipeline_alpha_ee.json": {Data: []byte(`{"title":{"en":"Alpha"},"description":{"en":"Additional pipeline"},"dsl":{"components":{"File":{}}}}`)},
+		"ingestion_pipeline_book.json":     {Data: []byte(`{"title":{"en":"Book"},"dsl":{"components":{}}}`)},
+	}, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"general", "book", "alpha", "zeta"}
+	if got := registry.Refs(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Refs() = %v, want %v", got, want)
+	}
+	list := registry.List()
+	if list.Total != 4 || len(list.BuiltinPipelines) != 4 {
+		t.Fatalf("List() = %#v", list)
+	}
+	wantMeta := BuiltinPipelineMeta{ParserID: "alpha", Title: "Alpha", Description: "Additional pipeline", Filename: "ingestion_pipeline_alpha_ee.json"}
+	if got := list.BuiltinPipelines[2]; !reflect.DeepEqual(*got, wantMeta) {
+		t.Fatalf("listed metadata = %#v, want %#v", got, wantMeta)
+	}
+	got, ok := registry.Get("alpha")
+	if !ok {
+		t.Fatal("normalized parser_id alpha is not registered")
+	}
+	if _, ok := got.DSL["components"].(map[string]any)["File"]; !ok {
+		t.Fatalf("additional template lost DSL: %#v", got.DSL)
+	}
+	if registry.IsValid("alpha_ee") {
+		t.Fatal("edition suffix leaked into the public parser_id")
+	}
+}
+
+func TestRegistryRejectsDuplicateNormalizedParserIDs(t *testing.T) {
+	for _, ref := range []string{"general", "extra"} {
+		t.Run(ref, func(t *testing.T) {
+			_, err := NewRegistryFromFS(fstest.MapFS{
+				"ingestion_pipeline_" + ref + ".json":    {Data: []byte(`{"title":{"en":"Original"},"dsl":{"components":{}}}`)},
+				"ingestion_pipeline_" + ref + "_ee.json": {Data: []byte(`{"title":{"en":"Replacement"},"dsl":{"components":{}}}`)},
+			}, ".")
+			if err == nil {
+				t.Fatal("two files defining the same parser_id were accepted")
+			}
+		})
 	}
 }

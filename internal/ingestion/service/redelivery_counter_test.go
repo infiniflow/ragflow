@@ -92,7 +92,7 @@ func TestRunTask_RedeliveryOfCompletedTaskCountsOnce(t *testing.T) {
 	defer cleanup()
 	_, kbID, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = applyResult(ingestor, docID, kbID)
 
 	// First delivery: parse succeeds, counters applied once, task -> COMPLETED.
@@ -115,15 +115,18 @@ func TestRunTask_RedeliveryAfterIncompleteRunCountsOnce(t *testing.T) {
 	defer cleanup()
 	_, kbID, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = applyResult(ingestor, docID, kbID)
 
 	// Prior run: counters applied, but the task never completed (crash before
 	// MarkCompleted) - the task row is left RUNNING, so the broker redelivers.
 	applyResult(ingestor, docID, kbID)(context.Background(), nil)
 
-	// Redelivery of the still-RUNNING task: re-runs and completes.
-	if terminal := ingestor.runTask(context.Background(), rcMsg(taskID, docID, kbID)); !terminal {
+	// Redelivery prepares the still-RUNNING task before re-running the pipeline.
+	// Preparation must preserve the counts already included in the KB aggregate.
+	msg := rcMsg(taskID, docID, kbID)
+	ingestor.ingestionTaskSvc.PrepareValidatedRun(context.Background(), msg)
+	if terminal := ingestor.runTask(context.Background(), msg); !terminal {
 		t.Fatalf("expected the redelivery run to complete (terminal=true)")
 	}
 

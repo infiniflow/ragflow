@@ -14,7 +14,7 @@
   "models": [
     {
       "name": "deepseek-v3.2",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -25,7 +25,7 @@
     },
     {
       "name": "deepseek-v4-flash",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -40,7 +40,7 @@
     },
     {
       "name": "deepseek-v4-pro",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -55,7 +55,7 @@
     },
     {
       "name": "qwen3-32b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -66,7 +66,7 @@
     },
     {
       "name": "qwen3-4b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -77,7 +77,7 @@
     },
     {
       "name": "ernie-5.0",
-      "content_length": 121856,
+      "context_length": 121856,
       "max_output": 8192,
       "model_types": [
         "vision"

@@ -83,22 +83,23 @@ func TestExtractAllComponentParams(t *testing.T) {
 	if parser.ComponentName != "Parser" {
 		t.Errorf("Parser.ComponentName = %q, want %q", parser.ComponentName, "Parser")
 	}
-	// ParamsDefaults must contain "setups", must NOT contain "outputs".
-	if _, ok := parser.ParamsDefaults["setups"]; !ok {
-		t.Errorf("Parser.ParamsDefaults missing key %q", "setups")
+	// ParamsDefaults must be flat: file families at the top level, with the
+	// legacy nested "setups" group lifted and "outputs" excluded.
+	if _, ok := parser.ParamsDefaults["setups"]; ok {
+		t.Errorf("Parser.ParamsDefaults should NOT contain %q (flattened)", "setups")
 	}
 	if _, ok := parser.ParamsDefaults["outputs"]; ok {
 		t.Errorf("Parser.ParamsDefaults should NOT contain %q (excluded)", "outputs")
 	}
-	if setups, ok := parser.ParamsDefaults["setups"].(map[string]any); !ok {
-		t.Errorf("Parser.ParamsDefaults[\"setups\"] is not a map: %T", parser.ParamsDefaults["setups"])
-	} else {
-		if _, ok := setups["pdf"]; !ok {
-			t.Errorf("Parser setups missing key %q", "pdf")
-		}
-		if _, ok := setups["spreadsheet"]; !ok {
-			t.Errorf("Parser setups missing key %q", "spreadsheet")
-		}
+	pdf, ok := parser.ParamsDefaults["pdf"].(map[string]any)
+	if !ok {
+		t.Fatalf("Parser.ParamsDefaults[\"pdf\"] is not a map: %T", parser.ParamsDefaults["pdf"])
+	}
+	if pdf["parse_method"] != "deepdoc" {
+		t.Errorf("Parser pdf parse_method = %v, want deepdoc", pdf["parse_method"])
+	}
+	if _, ok := parser.ParamsDefaults["spreadsheet"]; !ok {
+		t.Errorf("Parser ParamsDefaults missing key %q", "spreadsheet")
 	}
 
 	// --- Tokenizer ---
@@ -129,6 +130,42 @@ func TestExtractAllComponentParams(t *testing.T) {
 	}
 }
 
+func TestExtractAllComponentParams_ParserFlatSetupsPassThrough(t *testing.T) {
+	// A canvas saved by the Go frontend already stores the Parser params in
+	// the flat shape; extraction must pass them through unchanged.
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Parser:Flat": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parser",
+					"params": map[string]any{
+						"outputs": map[string]any{},
+						"pdf":     map[string]any{"parse_method": "deepdoc"},
+					},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	schemas, err := ExtractAllComponentParams(dslJSON)
+	if err != nil {
+		t.Fatalf("ExtractAllComponentParams: %v", err)
+	}
+	if len(schemas) != 1 {
+		t.Fatalf("expected 1 component, got %d", len(schemas))
+	}
+	params := schemas[0].ParamsDefaults
+	if _, ok := params["pdf"]; !ok {
+		t.Error("flat pdf family missing from ParamsDefaults")
+	}
+	if _, ok := params["setups"]; ok {
+		t.Error("flat params must not gain a \"setups\" key")
+	}
+}
+
 func TestExtractAllComponentParams_EmptyDSL(t *testing.T) {
 	dsl := map[string]any{
 		"components": map[string]any{},
@@ -156,6 +193,20 @@ func TestExtractAllComponentParams_MissingComponents(t *testing.T) {
 	_, err := ExtractAllComponentParams(dslJSON)
 	if err == nil {
 		t.Error("expected error for DSL missing components")
+	}
+}
+
+func TestExtractAllComponentParams_RejectsUnscopedComponentIDs(t *testing.T) {
+	for _, id := range []string{"Extractor", "extractor_0", "parser_0"} {
+		dslJSON := []byte(`{"components":{"` + id + `":{"obj":{"component_name":"Extractor","params":{}}}}}`)
+		if _, err := ExtractAllComponentParams(dslJSON); err == nil {
+			t.Errorf("ExtractAllComponentParams(%q) expected error for unscoped component ID", id)
+		}
+	}
+	// File is the one bare component ID used by built-in ingestion templates.
+	dslJSON := []byte(`{"components":{"File":{"obj":{"component_name":"File","params":{}}}}}`)
+	if _, err := ExtractAllComponentParams(dslJSON); err != nil {
+		t.Fatalf("ExtractAllComponentParams(File): %v", err)
 	}
 }
 
@@ -266,5 +317,77 @@ func TestExtractAllComponentParams_DisallowMultipleExtractors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "at most 1 Extractor") {
 		t.Errorf("expected at most 1 Extractor error message, got: %v", err)
+	}
+}
+
+// TestComponentParamsDefaults_DeepCopyIndependent guards the deep-copy contract
+// of ComponentParamsDefaults: mutating nested values in a returned map must not
+// leak into a later call's result. Each call must return a fresh deep structure,
+// never an aliased reference shared with a prior or future call. This locks the
+// call site's reliance on common.DeepCopyValue for nested map/slice copying.
+func TestComponentParamsDefaults_DeepCopyIndependent(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Parser:P1": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parser",
+					"params": map[string]any{
+						"nested": map[string]any{"k": "v"},
+						"list":   []any{"a", "b"},
+					},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+
+	first, err := ComponentParamsDefaults(dslJSON)
+	if err != nil {
+		t.Fatalf("ComponentParamsDefaults: %v", err)
+	}
+	// Mutate a nested map and a nested slice in the returned structure.
+	first["Parser:P1"]["nested"].(map[string]any)["k"] = "MUTATED"
+	first["Parser:P1"]["list"].([]any)[0] = "MUTATED"
+
+	second, err := ComponentParamsDefaults(dslJSON)
+	if err != nil {
+		t.Fatalf("ComponentParamsDefaults (2nd): %v", err)
+	}
+	nested, ok := second["Parser:P1"]["nested"].(map[string]any)
+	if !ok {
+		t.Fatalf("nested not a map: %T", second["Parser:P1"]["nested"])
+	}
+	if nested["k"] != "v" {
+		t.Errorf("second call leaked mutation: nested.k = %q, want %q", nested["k"], "v")
+	}
+	list, ok := second["Parser:P1"]["list"].([]any)
+	if !ok {
+		t.Fatalf("list not a slice: %T", second["Parser:P1"]["list"])
+	}
+	if list[0] != "a" {
+		t.Errorf("second call leaked mutation: list[0] = %v, want %q", list[0], "a")
+	}
+}
+
+// TestComponentParamsDefaults_EmptyComponents guards the empty/edge contract: a
+// DSL with no components yields a non-nil empty result and no error.
+func TestComponentParamsDefaults_EmptyComponents(t *testing.T) {
+	dsl := map[string]any{"components": map[string]any{}}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	got, err := ComponentParamsDefaults(dslJSON)
+	if err != nil {
+		t.Fatalf("ComponentParamsDefaults: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("empty components: len = %d, want 0", len(got))
+	}
+	if got == nil {
+		t.Error("empty components: got nil, want non-nil empty map")
 	}
 }

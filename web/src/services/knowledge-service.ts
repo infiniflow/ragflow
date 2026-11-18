@@ -37,9 +37,7 @@ const {
   documentIngest,
   listTagByKnowledgeIds,
   listPipelines,
-  setMeta,
   getMeta,
-  getMetaKeys,
   retrievalTestShare,
 } = api;
 
@@ -64,20 +62,12 @@ const methods = {
     url: documentThumbnails,
     method: 'get',
   },
-  setMeta: {
-    url: setMeta,
-    method: 'post',
-  },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
     method: 'get',
   },
   getMeta: {
     url: getMeta,
-    method: 'get',
-  },
-  getMetaKeys: {
-    url: getMetaKeys,
     method: 'get',
   },
   retrievalTestShare: {
@@ -87,10 +77,6 @@ const methods = {
   listPipelines: {
     url: listPipelines,
     method: 'get',
-  },
-  pipelineRerun: {
-    url: api.pipelineRerun,
-    method: 'post',
   },
 };
 
@@ -115,6 +101,42 @@ const mapChunkToLegacy = (chunk: Record<string, any>) => ({
   positions: chunk.positions || chunk.position_int || [],
 });
 
+const mapChunkToRetrieval = (chunk: Record<string, any>) => ({
+  ...chunk,
+  id: chunk.id || chunk.chunk_id,
+  content: chunk.content ?? chunk.content_with_weight,
+  document_id: chunk.document_id || chunk.doc_id,
+  document_keyword: chunk.document_keyword || chunk.docnm_kwd || chunk.doc_name,
+  dataset_id: chunk.dataset_id || chunk.kb_id,
+  important_keywords: chunk.important_keywords || chunk.important_kwd || [],
+  questions: chunk.questions || chunk.question_kwd || [],
+});
+
+const mapRetrievalResponse = (response: any) => {
+  if (response.data?.code === 0) {
+    response.data.data = {
+      ...response.data.data,
+      chunks: (response.data.data?.chunks || []).map(mapChunkToRetrieval),
+    };
+  }
+  return response;
+};
+
+const toLegacyMetadataFilter = (condition?: Record<string, any>) => {
+  if (!condition?.conditions?.length) {
+    return undefined;
+  }
+  return {
+    method: 'manual',
+    logic: condition.logic,
+    manual: condition.conditions.map((item: Record<string, any>) => ({
+      key: item.name,
+      op: item.comparison_operator,
+      value: item.value,
+    })),
+  };
+};
+
 const mapDocumentToLegacy = (doc: Record<string, any>) => ({
   ...doc,
   chunk_num: doc.chunk_num ?? doc.chunk_count,
@@ -135,6 +157,7 @@ const mapChunkPayloadToRest = (payload: Record<string, any>) => ({
       ? undefined
       : payload.available_int === 1),
   image_base64: payload.image_base64,
+  image_update_mode: payload.image_update_mode,
 });
 
 const getAvailableParam = (available?: number) => {
@@ -157,9 +180,43 @@ const chunkService = {
     delete rest.dataset_id;
     delete rest.kb_id;
     delete rest.knowledge_id;
-    return request.post(api.retrievalTest, {
-      data: { ...rest, dataset_ids: datasetIds },
+    const data = {
+      dataset_ids: datasetIds,
+      document_ids: rest.document_ids ?? rest.doc_ids,
+      question: rest.question,
+      page: rest.page,
+      page_size: rest.page_size ?? rest.size,
+      similarity_threshold: rest.similarity_threshold,
+      keywords_similarity_weight: rest.keywords_similarity_weight,
+      top_k: rest.top_k,
+      knn_top_k: rest.knn_top_k,
+      knn_num_candidates: rest.knn_num_candidates,
+      rerank_candidates_count: rest.rerank_candidates_count,
+      rerank_id: rest.rerank_id,
+      search_id: rest.search_id,
+      keyword: rest.keyword,
+      highlight: rest.highlight,
+      cross_languages: rest.cross_languages,
+      meta_data_filter: rest.meta_data_filter,
+      chat_id: rest.chat_id,
+      use_kg: rest.use_kg,
+      include_knowledge_compilation: rest.include_knowledge_compilation,
+    };
+    const response = await request.post(api.retrievalTest, {
+      data,
     });
+    return mapRetrievalResponse(response);
+  },
+  retrievalTestShare: async (params: Record<string, any>) => {
+    const response = await baseKbService.retrievalTestShare({
+      ...params,
+      doc_ids: params.doc_ids ?? params.document_ids,
+      size: params.size ?? params.page_size,
+      meta_data_filter:
+        params.meta_data_filter ??
+        toLegacyMetadataFilter(params.metadata_condition),
+    });
+    return mapRetrievalResponse(response);
   },
   chunkList: async (params: Record<string, any>) => {
     const datasetId = getDatasetId(params);
@@ -201,8 +258,17 @@ const chunkService = {
     const datasetId = getDatasetId(payload);
     const documentId = getDocumentId(payload);
     const chunkId = payload.chunk_id || payload.id;
+    // Editing a chunk image replaces the picture the chunk already holds.
+    // The API defaults to append, which would stack the new image below the
+    // old one, so an upload without an explicit mode must ask for replace.
+    const imageUpdateMode =
+      payload.image_update_mode ??
+      (payload.image_base64 ? 'replace' : undefined);
     return request.patch(api.chunkDetail(datasetId, documentId, chunkId), {
-      data: mapChunkPayloadToRest(payload),
+      data: {
+        ...mapChunkPayloadToRest(payload),
+        image_update_mode: imageUpdateMode,
+      },
     });
   },
   getChunk: async (params: Record<string, any>) => {
@@ -249,8 +315,7 @@ const kbService = {
 export const getKbDetail = async (datasetId: string) => {
   const response = await request.get(api.getKbDetail(datasetId));
   // The /api/v1/datasets/<id> endpoint returns chunk_count/document_count,
-  // but legacy consumers (e.g. the GraphRAG/Raptor "magic wand" enable check
-  // in dataset/index.tsx) read chunk_num/doc_num. Normalize both shapes.
+  // but legacy consumers read chunk_num/doc_num. Normalize both shapes.
   if (response.data?.code === 0 && response.data.data) {
     const d = response.data.data;
     response.data.data = {
@@ -282,14 +347,23 @@ export function deleteKnowledgeGraph(knowledgeId: string) {
 }
 
 export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
-  request.get(api.kbList, { params });
+  request.get(api.kbList, {
+    params: params
+      ? { ...params, owner_ids: params.owner_ids?.join(',') }
+      : params,
+  });
 
 // Fetch datasets by a set of IDs via the `ids` query param (comma-joined).
 // Used to echo back already-selected datasets whose names are not present
-// in the first page of the paginated list.
-export const listDatasetByIds = (ids: string[]) =>
+// in the first page of the paginated list. `canvasID` limits results to
+// datasets usable by both the canvas owner and the current user.
+export const listDatasetByIds = (ids: string[], canvasID?: string) =>
   request.get(api.kbList, {
-    params: { ids: ids.join(','), page_size: ids.length },
+    params: {
+      ids: ids.join(','),
+      page_size: ids.length,
+      ...(canvasID ? { canvas_id: canvasID } : {}),
+    },
   });
 
 export const datasetFilter = () => request.get(api.datasetFilter);
@@ -304,18 +378,52 @@ export const traceIndex = (datasetId: string, indexType: string) =>
   request.get(api.traceIndex(datasetId, indexType));
 
 // getDatasetCompilationStatus reads the Go scheduler compile-status contract
-// (GET /datasets/:id/compilation/status), used by API_PROXY_SCHEME=go/hybrid to
-// replace the legacy traceIndex task-progress endpoint. Route it through the
+// (GET /datasets/:id/compilation/status), used on the Go backend to
+// replace the legacy traceIndex task-progress endpoint. The `kind` query param
+// scopes the status to one compile type, mirroring the per-type scoping the
+// Python branch gets from traceIndex's `type=` param. Route it through the
 // service-layer proxy (registerNextServer -> next-request) like the rest of the
 // *-service.ts HTTP proxies.
 const compilationStatusProxy = registerNextServer({
   getDatasetCompilationStatus: {
-    url: (datasetId: string) => api.compilationStatus(datasetId),
+    url: ({ datasetId }: { datasetId: string }) =>
+      api.compilationStatus(datasetId),
     method: 'get',
   },
 } as const);
-export const getDatasetCompilationStatus = (datasetId: string) =>
-  compilationStatusProxy.getDatasetCompilationStatus(datasetId);
+export const getDatasetCompilationStatus = (datasetId: string, kind: string) =>
+  compilationStatusProxy.getDatasetCompilationStatus(
+    { datasetId, params: { kind } },
+    true,
+  );
+
+const datasetParserConfigProxy = registerNextServer({
+  applyDatasetParserConfig: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      `/api/v1/datasets/${datasetId}/documents/apply-parser-config`,
+    method: 'post',
+  },
+});
+
+export const applyDatasetParserConfig = (datasetId: string) =>
+  datasetParserConfigProxy.applyDatasetParserConfig(
+    { datasetId, skipGlobalErrorNotification: true },
+    true,
+  );
+
+const stopAllDocumentsProxy = registerNextServer({
+  stopAllDocuments: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      api.stopAllDocuments(datasetId),
+    method: 'post',
+  },
+});
+
+export const stopAllDocuments = (datasetId: string, runStatuses: string[]) =>
+  stopAllDocumentsProxy.stopAllDocuments(
+    { datasetId, data: { cancel_all: true, run_statuses: runStatuses } },
+    true,
+  );
 
 // Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (
@@ -325,13 +433,11 @@ export const listDocument = (
   if (!params || !params.id) {
     throw new Error('params and params.id are required');
   }
-  // Extract page, page_size, and ext.keywords from params
-  const { page, page_size, ext } = params;
-  // Merge: page, page_size, keywords (from ext), body, and remaining params
+  const { page, page_size, keywords } = params;
   const mergedParams = {
     page,
     page_size,
-    keywords: ext?.keywords,
+    keywords,
     ...body,
   };
   return request.get(api.getDocumentList(params.id), { params: mergedParams });
@@ -432,6 +538,12 @@ export const listPipelineDatasetLogs = (
 
 export const getPipelineDetail = (datasetId: string, logId: string) =>
   request.get(api.getPipelineDetail(datasetId, logId));
+
+export const listIngestionMessages = (
+  datasetId: string,
+  logId: string,
+  params?: Record<string, any>,
+) => request.get(api.listIngestionMessages(datasetId, logId), { params });
 
 export const getKnowledgeBasicInfo = (datasetId: string) =>
   request.get(api.getKnowledgeBasicInfo(datasetId));

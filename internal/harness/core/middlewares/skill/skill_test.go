@@ -37,7 +37,7 @@ func TestBeforeAgent_InlineSkill(t *testing.T) {
 		},
 	})
 	rc := &core.ReActAgentContext{Instruction: "Base instruction", Tools: make([]core.Tool, 0)}
-	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
+	_, newRc, err := mw.BeforeAgent(t.Context(), rc)
 	if err != nil {
 		t.Fatalf("BeforeAgent: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestBeforeAgent_ForkSkill(t *testing.T) {
 		},
 	})
 	rc := &core.ReActAgentContext{Instruction: "Base", Tools: make([]core.Tool, 0)}
-	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
+	_, newRc, err := mw.BeforeAgent(t.Context(), rc)
 	if err != nil {
 		t.Fatalf("BeforeAgent: %v", err)
 	}

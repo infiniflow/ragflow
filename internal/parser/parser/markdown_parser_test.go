@@ -1,12 +1,16 @@
 package parser
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
@@ -20,18 +24,201 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want at least one item")
 	}
 	// Verify heading
-	if got, _ := res.JSON[0]["text"].(string); got != "Hello" {
-		t.Fatalf("first item text = %q, want %q", got, "Hello")
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != "# Hello" {
+		t.Fatalf("first item text = %q, want %q", got, "# Hello")
 	}
-	if got, _ := res.JSON[0]["ck_type"].(string); got != "heading" {
-		t.Fatalf("first item ck_type = %q, want %q", got, "heading")
+	if got, _ := res.JSON[0].ToMap()["layout"].(string); got != "heading" {
+		t.Fatalf("first item layout = %q, want %q", got, "heading")
+	}
+}
+
+func TestMarkdownParser_BlockquoteKeepsItsBlocksApart(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	for _, tc := range []struct {
+		md   string
+		want string
+	}{
+		{"> First quote\n>\n> Second quote\n", "First quote\nSecond quote"},
+		{"> One\n>\n> Two\n>\n> Three\n", "One\nTwo\nThree"},
+		{"> Intro\n>\n> - item one\n> - item two\n", "Intro\nitem one\nitem two"},
+	} {
+		res := p.ParseWithResult(t.Context(), "test.md", []byte(tc.md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", tc.md, res.Err)
+		}
+		if len(res.JSON) != 1 {
+			t.Fatalf("ParseWithResult(%q) returned %d items, want 1", tc.md, len(res.JSON))
+		}
+		if got, _ := res.JSON[0].ToMap()["text"].(string); got != tc.want {
+			t.Fatalf("ParseWithResult(%q) text = %q, want %q", tc.md, got, tc.want)
+		}
+	}
+}
+
+// A UTF-8 BOM in front of the first heading must not demote it to a paragraph.
+func TestMarkdownParser_ParseWithResult_UTF8BOM(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "bom.md", []byte("\xef\xbb\xbf# Hello\n\nBody.\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != "# Hello" {
+		t.Fatalf("first item text = %q, want %q", got, "# Hello")
+	}
+	if got, _ := res.JSON[0].ToMap()["layout"].(string); got != "heading" {
+		t.Fatalf("first item layout = %q, want %q", got, "heading")
+	}
+}
+
+// TestMarkdownParser_ListItemsKeepWordBoundaries pins the shape of a list in the parsed output:
+// one item per entry, marker included, and no gluing between entries.
+//
+// A list marker is structure, not a leaf: the marker lives on the list node (bullets on the item)
+// and the entry's own text carries no marker and no trailing newline. Emitting the list as a single
+// blob therefore glued the last word of one entry to the first word of the next ("GamesChina"),
+// which destroys the word boundaries the tokenizer and the retrieval index depend on - a query for
+// "China" can no longer match the merged token. Python's _markdown keeps one item per entry with the
+// marker, so this pins the same shape.
+func TestMarkdownParser_ListItemsKeepWordBoundaries(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	md := "See also\n\n* China at the Asian Games\n* China at the Paralympics\n"
+	res := p.ParseWithResult(ctx, "list.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var lists []string
+	for _, item := range ItemsToMaps(res.JSON) {
+		if ck, _ := item["layout"].(string); ck == "list" {
+			text, _ := item["text"].(string)
+			lists = append(lists, text)
+		}
+	}
+	if len(lists) != 2 {
+		t.Fatalf("want one item per list entry, got %d: %#v", len(lists), lists)
+	}
+	for i, want := range []string{"* China at the Asian Games", "* China at the Paralympics"} {
+		if lists[i] != want {
+			t.Errorf("list item %d = %q, want %q", i, lists[i], want)
+		}
+		if strings.Contains(lists[i], "GamesChina") {
+			t.Errorf("list entries are glued together: %q", lists[i])
+		}
+	}
+}
+
+// TestMarkdownParser_OrderedListKeepsNumbers covers the ordered branch of the marker
+// reconstruction: the number and its delimiter live on the list node, so they have to be rebuilt
+// from Start/Delimiter instead of being read off a leaf.
+//
+// Two of the three cases start above 1 on purpose. A list that starts at 1 cannot tell "kept the
+// numbers the source wrote" from "renumbered from 1", and this test used to run nothing but
+// "1."/"2." - it passed while the parser renumbered every ordered list in a real corpus (a
+// 2,244-entry list whose source numbers start at 996 was indexed as 1..N, which removes the source
+// numbers from the index and made them count as unserved words).
+func TestMarkdownParser_OrderedListKeepsNumbers(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	cases := []struct {
+		name string
+		md   string
+		want []string
+	}{
+		{
+			name: "starts at ten",
+			md:   "10. a\n11. b\n",
+			want: []string{"10. a", "11. b"},
+		},
+		{
+			name: "starts in the thousands",
+			md:   "996. first entry\n\n997. second entry\n\n998. third entry\n",
+			want: []string{"996. first entry", "997. second entry", "998. third entry"},
+		},
+		{
+			name: "starts at one",
+			md:   "1. first item\n2. second item\n",
+			want: []string{"1. first item", "2. second item"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := p.ParseWithResult(ctx, "ordered.md", []byte(tc.md))
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			var lists []string
+			for _, item := range ItemsToMaps(res.JSON) {
+				if ck, _ := item["layout"].(string); ck == "list" {
+					text, _ := item["text"].(string)
+					lists = append(lists, text)
+				}
+			}
+			if len(lists) != len(tc.want) {
+				t.Fatalf("want %d items, got %d: %#v", len(tc.want), len(lists), lists)
+			}
+			for i := range tc.want {
+				if lists[i] != tc.want[i] {
+					t.Errorf("ordered item %d = %q, want %q", i, lists[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestMarkdownParser_TableKeepsCellsBeyondTheHeader covers the deliberate deviation from GFM.
+//
+// A row may legitimately carry more cells than its header - an unescaped '|' inside a cell,
+// e.g. a Wikipedia image spec "150x150px|alt=..." - and GFM ignores every cell beyond the
+// header's column count, so the tail of such a row (the Year and Description columns of a
+// World Heritage list) never reaches the index. Measured on the production index that cost
+// 514 documents and 18,185 words no query could reach; the header is padded to the widest row
+// instead. Fails on the old behaviour: the sentinel below is dropped.
+func TestMarkdownParser_TableKeepsCellsBeyondTheHeader(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	const sentinel = "DESCRIPTIONSENTINEL"
+	md := "| Site | Image | Year |\n" +
+		"|---|---|---|\n" +
+		"| Aachen Cathedral | 150x150px|alt=A Gothic building | 1978 | " + sentinel + " died in 814 |\n"
+	res := p.ParseWithResult(ctx, "table.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var joined strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		joined.WriteString(renderedText(item))
+		joined.WriteString("\n")
+	}
+	out := joined.String()
+	// The unescaped '|' inside the image cell becomes a cell boundary of its own, so the
+	// assertions are on cell contents: everything the row said has to be somewhere in the
+	// output, which is exactly what the column-count padding buys.
+	for _, want := range []string{"Aachen Cathedral", "150x150px", "alt=A Gothic building", "1978", sentinel} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table cell content %q is missing from the parsed output:\n%s", want, out)
+		}
 	}
 }
 
@@ -61,7 +248,10 @@ func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
 	}
 	// Find the image item
 	found := false
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
+		if text, _ := item["text"].(string); strings.Contains(text, pixelB64) {
+			t.Errorf("data URI payload leaked into text: %q", text)
+		}
 		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
 			found = true
 			if img, ok := item["image"].(string); !ok || img != pixelB64 {
@@ -75,6 +265,99 @@ func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
 	}
 }
 
+func TestMarkdownParser_PreservesUnresolvedImageReferences(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := "Before\n\n![figure](images/fig-1.png)\n\n![](images/bare.png)\n\n" +
+		"| A | B |\n|---|---|\n| x | ![table](images/table.png) |\n"
+	res := p.ParseWithResult(t.Context(), "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	var textItems []string
+	var table *entity.TableData
+	for _, item := range ItemsToMaps(res.JSON) {
+		if td, ok := item["table"].(*entity.TableData); ok {
+			table = td
+			continue
+		}
+		if text, _ := item["text"].(string); text != "" {
+			textItems = append(textItems, text)
+		}
+	}
+	texts := strings.Join(textItems, "\n")
+	if !strings.Contains(texts, "![figure](images/fig-1.png)") {
+		t.Errorf("image path missing from text items: %q", texts)
+	}
+	if !strings.Contains(texts, "![](images/bare.png)") {
+		t.Errorf("alt-less image reference missing from text items: %q", texts)
+	}
+	if table == nil {
+		t.Fatal("table item missing")
+	}
+	if got := table.Grid[1][1].Text; got != "![table](images/table.png)" {
+		t.Errorf("table image cell = %q, want the Markdown reference", got)
+	}
+}
+
+func TestMarkdownParser_TableDataURIWithLeadingSpace(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := "| A | B |\n|---|---|\n| x | <img src=\" data:image/png;base64,aGVsbG8=\" alt=\"blob\"> |\n"
+	res := p.ParseWithResult(t.Context(), "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		if table, ok := item["table"].(*entity.TableData); ok {
+			if got := table.Grid[1][1].Text; got != "blob" {
+				t.Errorf("table data URI cell = %q, want alt text only", got)
+			}
+			if strings.Contains(table.Grid[1][1].Text, "aGVsbG8=") {
+				t.Errorf("encoded data URI payload leaked into table text: %q", table.Grid[1][1].Text)
+			}
+			return
+		}
+	}
+	t.Fatal("table item missing")
+}
+
+func TestMarkdownParser_ResolvedRemoteImageKeepsAltOnly(t *testing.T) {
+	allowLoopbackImages(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("fake-png-data"))
+	}))
+	defer server.Close()
+
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := p.ParseWithResult(t.Context(), "test.md", []byte("![remote]("+server.URL+"/image.png)\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	foundImage := false
+	for _, item := range ItemsToMaps(res.JSON) {
+		if text, _ := item["text"].(string); strings.Contains(text, server.URL) {
+			t.Errorf("resolved remote URL leaked into text: %q", text)
+		}
+		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
+			foundImage = true
+		}
+	}
+	if !foundImage {
+		t.Fatal("resolved remote image item missing")
+	}
+}
+
 func TestMarkdownParser_ParseWithResult_NoImage(t *testing.T) {
 	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
@@ -83,7 +366,7 @@ func TestMarkdownParser_ParseWithResult_NoImage(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
 			t.Fatal("unexpected image item in text-only markdown")
 		}
@@ -106,17 +389,18 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 		t.Fatalf("len(JSON) = %d, want 3 (leading paragraph, table, note)", len(res.JSON))
 	}
 	tableCount, inlineTableCount := 0, 0
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		kd, _ := item["doc_type_kwd"].(string)
 		text, _ := item["text"].(string)
 		switch kd {
 		case "table":
 			tableCount++
-			if ck, _ := item["ck_type"].(string); ck != "table" {
-				t.Errorf("table item ck_type = %q, want \"table\"", ck)
+			td, ok := item["table"].(*entity.TableData)
+			if !ok || td == nil {
+				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
-			if !strings.Contains(text, "<table") {
-				t.Errorf("table item text is not raw <table> HTML: %q", text)
+			if !tableRowsContain(td, "Check item") {
+				t.Errorf("table item rows missing header label: %+v", td.CellTexts())
 			}
 		case "text":
 			if strings.Contains(text, "<table") {
@@ -137,25 +421,100 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 	}
 }
 
+// TestMarkdownParser_ParseWithResult_DollarIsCurrencyNotMath guards the
+// regression that made a 13.8k-character billing report parse into 1.4k
+// characters: CommonExtensions enables MathJax, so `$...$` spans became
+// ast.Math nodes whose payload is not a Text child, and the text walker
+// dropped them. With two far-apart `$` that deletes everything in between.
+// A `$` in an ingested document is far more often a price than it is math, so
+// the text must survive verbatim, dollar signs included.
+func TestMarkdownParser_ParseWithResult_DollarIsCurrencyNotMath(t *testing.T) {
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
+	md := "# Report\n\nFunding was provided by a $4,800 grant from the Sanctuary.\n\n" +
+		"Costs: 224.50 theodolite, 48.70 binoculars, $3.75 internet.\n\n" +
+		"Remaining funds for Winter 2002: $193.92\n"
+	res := p.ParseWithResult(ctx, "report.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var sb strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		sb.WriteString(text)
+		sb.WriteString("\n")
+	}
+	got := sb.String()
+	// Every sentence of the source has to survive; the price table sentence is
+	// the one sitting between two '$' and used to be deleted whole.
+	for _, want := range []string{
+		"Funding was provided by a $4,800 grant from the Sanctuary.",
+		"Costs: 224.50 theodolite, 48.70 binoculars, $3.75 internet.",
+		"Remaining funds for Winter 2002: $193.92",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("parsed text lost %q\n--- got ---\n%s", want, got)
+		}
+	}
+	// `$$...$$` display math must stay literal text as well.
+	mdDisplay := "Totals are shown as $$4,606.17 in the audit.\n"
+	resDisplay := p.ParseWithResult(ctx, "totals.md", []byte(mdDisplay))
+	if resDisplay.Err != nil {
+		t.Fatalf("ParseWithResult: %v", resDisplay.Err)
+	}
+	var sbDisplay strings.Builder
+	for _, item := range ItemsToMaps(resDisplay.JSON) {
+		text, _ := item["text"].(string)
+		sbDisplay.WriteString(text)
+	}
+	if !strings.Contains(sbDisplay.String(), "4,606.17 in the audit") {
+		t.Errorf("display math span was dropped: %q", sbDisplay.String())
+	}
+}
+
+// TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives guards the second
+// text-loss mechanism found in the same walker: inline raw HTML is an
+// ast.HTMLSpan whose payload (markup and the text inside it) lives on the node
+// literal, with no child Text nodes. A 664k-character report lost 397k
+// characters across 14 such spans.
+func TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives(t *testing.T) {
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
+	// No blank line around the <table>, so gomarkdown keeps it inline inside
+	// the paragraph (an HTMLSpan) instead of a block-level HTMLBlock.
+	md := "Lead-in sentence before the table. " +
+		"<table><tr><td>theodolite</td><td>224.50</td></tr>" +
+		"<tr><td>binoculars</td><td>48.70</td></tr></table> " +
+		"Trailing sentence after the table.\n"
+	res := p.ParseWithResult(ctx, "report.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var sb strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		sb.WriteString(renderedText(item))
+		sb.WriteString("\n")
+	}
+	got := sb.String()
+	for _, want := range []string{
+		"Lead-in sentence before the table.",
+		"Trailing sentence after the table.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("parsed text lost %q\n--- got ---\n%s", want, got)
+		}
+	}
+	// The table content must survive in the structured item.
+	if !strings.Contains(got, "binoculars") {
+		t.Errorf("inline raw HTML payload was dropped: %q", got)
+	}
+}
+
 func TestMarkdownParser_ConfigureFromSetup(t *testing.T) {
 	p, _ := NewMarkdownParser(GoMarkdown)
-	p.ConfigureFromSetup(map[string]any{
-		"parse_method":          "deepdoc",
-		"output_format":         "json",
-		"vlm":                   map[string]any{"llm_id": "gpt-4-vision"},
-		"flatten_media_to_text": false,
-	})
+	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
 	if p.ParseMethod != "deepdoc" {
 		t.Fatalf("ParseMethod = %q, want %q", p.ParseMethod, "deepdoc")
-	}
-	if p.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want %q", p.OutputFormat, "json")
-	}
-	if p.VLM == nil {
-		t.Fatal("VLM is nil; want map")
-	}
-	if id, _ := p.VLM["llm_id"].(string); id != "gpt-4-vision" {
-		t.Fatalf("VLM[llm_id] = %q, want %q", id, "gpt-4-vision")
 	}
 }
 
@@ -167,58 +526,27 @@ func TestMarkdownParser_ConfigureFromSetup_NilSafe(t *testing.T) {
 	}
 }
 
-// TestMarkdownParser_FlattenMediaToText verifies that when
-// flatten_media_to_text is true, image items are emitted with
-// doc_type_kwd="text" (mirroring Python parser.py:1034). When false,
-// image items keep doc_type_kwd="image".
-func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
-	ctx := t.Context()
-	pixelB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
-	md := "Some text with an image\n![test](data:image/png;base64," + pixelB64 + ")\n"
-
-	cases := []struct {
-		name        string
-		flatten     bool
-		wantDocType string
-	}{
-		{"flatten=false keeps image", false, "image"},
-		{"flatten=true forces text", true, "text"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			p, _ := NewMarkdownParser(GoMarkdown)
-			p.ConfigureFromSetup(map[string]any{"flatten_media_to_text": tc.flatten})
-			if p.FlattenMediaToText != tc.flatten {
-				t.Fatalf("FlattenMediaToText field = %v, want %v", p.FlattenMediaToText, tc.flatten)
-			}
-			res := p.ParseWithResult(ctx, "test.md", []byte(md))
-			if res.Err != nil {
-				t.Fatalf("ParseWithResult: %v", res.Err)
-			}
-			for _, item := range res.JSON {
-				if kd, _ := item["doc_type_kwd"].(string); kd != tc.wantDocType {
-					t.Errorf("doc_type_kwd = %q, want %q (item text=%q)",
-						kd, tc.wantDocType, item["text"])
-				}
-			}
-		})
-	}
-}
-
 func TestResolveImageURL_DataURI(t *testing.T) {
 	b64 := base64.StdEncoding.EncodeToString([]byte("fakeimage"))
-	result, found := resolveImageURL("data:image/png;base64," + b64)
+	budget := newLimitedMediaBudgetForTest(t, len("fakeimage"), int64(len("fakeimage")), 2)
+	result, raw, omitted, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64, budget)
 	if !found {
 		t.Fatal("expected image found for data URI")
 	}
-	if result != b64 {
+	if result != b64 || raw != nil {
 		t.Fatalf("got %q, want %q", result, b64)
+	}
+	if omitted || len(budget.Warnings()) != 0 {
+		t.Fatalf("first image omitted=%v warnings=%v", omitted, budget.Warnings())
+	}
+	if included, keepWalking := includeMediaForTest(budget, []byte("x")); included || !keepWalking {
+		t.Fatalf("payload after the exact byte cap = (%v, %v), want (false, true)", included, keepWalking)
 	}
 }
 
 func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 	// Local / relative paths are not fetched (security); resolution fails.
-	if _, found := resolveImageURL("./local/image.png"); found {
+	if _, _, _, found := resolveImageURL(context.Background(), "./local/image.png", newMediaBudgetForTest()); found {
 		t.Fatal("expected no image resolved for a local path")
 	}
 }
@@ -226,10 +554,8 @@ func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 func TestResolveImageURL_HTTPImage(t *testing.T) {
 	// httptest servers bind loopback, which the SSRF guard rejects by
 	// default. Allow loopback for this test so the HTTP fetch path is
-	// exercised (production keeps ssrfAllowLoopback == false).
-	prev := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	defer func() { ssrfAllowLoopback = prev }()
+	// exercised (production keeps the loopback rejection).
+	allowLoopbackImages(t)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -237,13 +563,57 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	result, found := resolveImageURL(ts.URL + "/image.png")
+	budget := newLimitedMediaBudgetForTest(t, len("fake-png-bytes"), int64(len("fake-png-bytes")), 2)
+	encoded, result, omitted, found := resolveImageURL(context.Background(), ts.URL+"/image.png", budget)
 	if !found {
 		t.Fatal("expected image found for HTTP URL")
 	}
-	expectedB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-bytes"))
-	if result != expectedB64 {
-		t.Fatalf("got %q, want %q", result, expectedB64)
+	if encoded != "" || string(result) != "fake-png-bytes" {
+		t.Fatalf("got encoded=%q raw=%q, want raw image bytes", encoded, result)
+	}
+	if omitted || len(budget.Warnings()) != 0 {
+		t.Fatalf("first image omitted=%v warnings=%v", omitted, budget.Warnings())
+	}
+	if included, keepWalking := includeMediaForTest(budget, []byte("x")); included || !keepWalking {
+		t.Fatalf("payload after the exact byte cap = (%v, %v), want (false, true)", included, keepWalking)
+	}
+}
+
+func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
+	allowLoopbackImages(t)
+
+	var fetches atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fetches.Add(1)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("abc"))
+	}))
+	defer server.Close()
+
+	markdown := "![first](" + server.URL + "/1)\n\n" +
+		"![second](" + server.URL + "/2)\n\n" +
+		"![third](" + server.URL + "/3)\n"
+	doc := markdownNew().Parse([]byte(markdown))
+	budget := newLimitedMediaBudgetForTest(t, 4, 4, 2)
+	var items []map[string]any
+	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, true, &htmlWalkState{budget: budget}); unresolved != 0 {
+		t.Fatalf("unresolved images = %d, want 0", unresolved)
+	}
+	if got := fetches.Load(); got != 2 {
+		t.Fatalf("remote fetches = %d, want 2 before the item limit", got)
+	}
+	if len(items) != 3 || items[0]["image"] != base64.StdEncoding.EncodeToString([]byte("abc")) {
+		t.Fatalf("first image was not retained: %+v", items)
+	}
+	for _, index := range []int{1, 2} {
+		if items[index]["image"] != nil || items[index]["media_omitted"] != true {
+			t.Fatalf("image %d = %+v, want omitted payload", index, items[index])
+		}
+	}
+	warnings := strings.Join(budget.Warnings(), "\n")
+	if !strings.Contains(warnings, "omitted 1 embedded image payload(s) after reaching the 4-byte run image budget") ||
+		!strings.Contains(warnings, "stopped extracting embedded images after the 2-item run limit") {
+		t.Fatalf("warnings = %q, want run byte and item limit warnings", warnings)
 	}
 }
 
@@ -259,7 +629,7 @@ func TestFindBlockImage(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	var imgItems, textItems int
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "image":
 			imgItems++
@@ -279,28 +649,28 @@ func TestFindBlockImage(t *testing.T) {
 
 	// A document with no image must not produce any image item.
 	noImg := p.ParseWithResult(ctx, "b.md", []byte("# T\n\nNo images here.\n"))
-	for _, item := range noImg.JSON {
+	for _, item := range ItemsToMaps(noImg.JSON) {
 		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
 			t.Fatal("unexpected image item in text-only markdown")
 		}
 	}
 }
 
-func TestFetchImageAsBase64_RejectsCredentials(t *testing.T) {
-	_, err := fetchImageAsBase64("https://user:pass@example.com/img.png")
+func TestFetchImage_RejectsCredentials(t *testing.T) {
+	_, err := fetchImage(context.Background(), "https://user:pass@example.com/img.png")
 	if err == nil {
 		t.Fatal("expected error for URL with credentials")
 	}
 }
 
-func TestFetchImageAsBase64_InvalidURL(t *testing.T) {
+func TestFetchImage_InvalidURL(t *testing.T) {
 	withSSRFBypass(t)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer ts.Close()
 
-	_, err := fetchImageAsBase64(ts.URL + "/nonexistent.png")
+	_, err := fetchImage(context.Background(), ts.URL+"/nonexistent.png")
 	if err == nil {
 		t.Fatal("expected error for 404 response")
 	}
@@ -321,18 +691,18 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	// Title, Intro, table item, Trailing = 4.
+	// # Title, Intro, table item, Trailing = 4.
 	if len(res.JSON) != 4 {
 		t.Fatalf("len(JSON) = %d, want 4 (one per top-level block, table as one item)", len(res.JSON))
 	}
 	var all strings.Builder
 	sawTitle, sawTrailing, sawTableItem, sawInlineTable := false, false, false, false
 	tableCount := 0
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		all.WriteString(text)
 		all.WriteString("\n")
-		if text == "Title" {
+		if text == "# Title" {
 			sawTitle = true
 		}
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
@@ -344,11 +714,8 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 		case "table":
 			sawTableItem = true
 			tableCount++
-			if !strings.Contains(text, "<table") {
-				t.Fatalf("table item text is not raw <table> HTML: %q", text)
-			}
-			if ck, _ := item["ck_type"].(string); ck != "table" {
-				t.Fatalf("table item ck_type = %q, want \"table\"", ck)
+			if _, ok := item["table"].(*entity.TableData); !ok {
+				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
 		}
 	}
@@ -392,7 +759,7 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 
 	var tableText string
 	tableIdx, beforeIdx, afterIdx, inlineTableCount, tableCount := -1, -1, -1, 0, 0
-	for i, item := range res.JSON {
+	for i, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "text":
@@ -406,14 +773,11 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 				afterIdx = i
 			}
 		case "table":
-			tableText = text
+			tableText = renderedText(item)
 			tableIdx = i
 			tableCount++
-			if !strings.Contains(text, "<table") {
-				t.Fatalf("table item text is not raw <table> HTML: %q", text)
-			}
-			if ck, _ := item["ck_type"].(string); ck != "table" {
-				t.Fatalf("table item ck_type = %q, want \"table\"", ck)
+			if _, ok := item["table"].(*entity.TableData); !ok {
+				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
 		}
 	}
@@ -445,8 +809,8 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 }
 
 // TestMarkdownParser_NonTableHTMLBlockNotTable guards against the blanket
-// ck_type:"table" bug: a raw HTML block that is NOT a <table> (e.g. <div>,
-// <style>) must be emitted as ordinary text with no ck_type, so downstream
+// raw-table bug: a raw HTML block that is NOT a <table> (e.g. <div>,
+// <style>) must be emitted as ordinary text with no layout, so downstream
 // consumers (chunker) do not mistake it for a table.
 func TestMarkdownParser_NonTableHTMLBlockNotTable(t *testing.T) {
 	ctx := t.Context()
@@ -456,12 +820,9 @@ func TestMarkdownParser_NonTableHTMLBlockNotTable(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		if strings.Contains(text, "<div") || strings.Contains(text, "<style") {
-			if ck, ok := item["ck_type"].(string); ok && ck == "table" {
-				t.Fatalf("non-table HTML block wrongly tagged ck_type:\"table\": %q", text)
-			}
 			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
 				t.Fatalf("non-table HTML block wrongly tagged doc_type_kwd:\"table\": %q", text)
 			}
@@ -471,8 +832,8 @@ func TestMarkdownParser_NonTableHTMLBlockNotTable(t *testing.T) {
 
 // TestMarkdownParser_TableInCodeFenceNotRendered guards against a regression
 // where pipe rows INSIDE a fenced code block would be mis-identified as a GFM
-// table and rewritten into <table> HTML, corrupting the code. renderMarkdownTablesInline
-// tracks fence state (inFence) so the table detector must skip lines inside a fence.
+// table, corrupting the code. The block parser consumes fences before
+// processing their contents as table candidates.
 func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
@@ -482,7 +843,7 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	// No table item may be emitted — the pipe rows live inside a code block.
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
 			t.Fatalf("code-fence pipe rows wrongly emitted as table item: %q", item["text"])
 		}
@@ -490,7 +851,7 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 	// The code block item must retain the raw pipe text and must NOT contain
 	// any <table> markup.
 	sawCode := false
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		if strings.Contains(text, "| A | B |") {
 			sawCode = true
@@ -504,8 +865,77 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 	}
 }
 
+// TestMarkdownParser_IndentedTables covers pipe tables that do not start in column 0. GFM
+// allows up to three spaces of indentation before each line of a table, so such a table at the
+// top level is still a table. Tables inside list items keep the parser's own handling, and four
+// spaces or a tab at the top level make an indented code block, which must stay code.
+func TestMarkdownParser_IndentedTables(t *testing.T) {
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
+	for _, md := range []string{
+		" | a | b |\n |---|---|\n | one | two |\n",
+		"  | a | b |\n  |---|---|\n  | one | two |\n",
+		"   | a | b |\n   |---|---|\n   | one | two |\n",
+		" | a | b |\n   |---|---|\n  | one | two |\n",
+		"- item\n\n | a | b |\n   |---|---|\n  | one | two |\n",
+		"Intro\n | a | b |\n |---|---|\n | one | two |\n",
+		"- item\n\n  | a | b |\n  |---|---|\n  | one | two |\n",
+		"- item\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"- item\n\n\t| a | b |\n\t|---|---|\n\t| one | two |\n",
+		"- outer\n  - inner\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"10. Step\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+	} {
+		res := p.ParseWithResult(ctx, "test.md", []byte(md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", md, res.Err)
+		}
+		tables := 0
+		for _, item := range ItemsToMaps(res.JSON) {
+			text, _ := item["text"].(string)
+			if strings.Contains(text, "|---|") {
+				t.Fatalf("ParseWithResult(%q): table rows left in the text: %q", md, text)
+			}
+			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
+				tables++
+				td, ok := item["table"].(*entity.TableData)
+				if !ok || td == nil || !tableRowsContain(td, "one") {
+					t.Fatalf("ParseWithResult(%q): table item without its rows: %#v", md, item)
+				}
+			}
+		}
+		if tables != 1 {
+			t.Fatalf("ParseWithResult(%q): table items = %d, want 1", md, tables)
+		}
+	}
+
+	// The text before a table in the same paragraph stays, and a table may have no body rows.
+	res := p.ParseWithResult(ctx, "test.md", []byte("Intro\n | a | b |\n |---|---|\n | one | two |\n"))
+	if items := ItemsToMaps(res.JSON); len(items) != 2 || items[0]["text"] != "Intro" {
+		t.Fatalf("intro before an indented table: %#v", items)
+	}
+	res = p.ParseWithResult(ctx, "test.md", []byte(" | a | b |\n |---|---\n"))
+	if items := ItemsToMaps(res.JSON); len(items) != 1 || items[0]["doc_type_kwd"] != "table" {
+		t.Fatalf("indented header-only table: %#v", items)
+	}
+
+	for _, md := range []string{
+		"Code:\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"Code:\n\n\t| a | b |\n\t|---|---|\n\t| one | two |\n",
+	} {
+		res := p.ParseWithResult(ctx, "test.md", []byte(md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", md, res.Err)
+		}
+		for _, item := range ItemsToMaps(res.JSON) {
+			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
+				t.Fatalf("ParseWithResult(%q): an indented code block became a table item", md)
+			}
+		}
+	}
+}
+
 // TestMarkdownParser_RawHTMLTableHandled covers a user-written raw <table> HTML
-// block (not a GFM pipe table). renderMarkdownTablesInline only rewrites GFM
+// block (not a GFM pipe table). The table hook only pads GFM
 // pipe tables, so the raw <table> passes through and is caught by isTableHTML
 // as an HTMLBlock, producing a single doc_type_kwd:"table" item in document
 // order. There must be NO redundant inlined doc_type_kwd:"text" copy.
@@ -519,7 +949,7 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 	}
 	sawInlined, sawTableItem := false, false
 	tableCount := 0
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "text":
@@ -529,11 +959,8 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 		case "table":
 			sawTableItem = true
 			tableCount++
-			if !strings.Contains(text, "<table") {
-				t.Fatalf("raw table item text is not raw <table> HTML: %q", text)
-			}
-			if ck, _ := item["ck_type"].(string); ck != "table" {
-				t.Fatalf("raw table item ck_type = %q, want \"table\"", ck)
+			if _, ok := item["table"].(*entity.TableData); !ok {
+				t.Fatalf("raw table item missing *entity.TableData: %#v", item)
 			}
 		}
 	}
@@ -564,12 +991,12 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 
 	var tableItemIdx []int
 	var titleIdx, middleIdx, endIdx = -1, -1, -1
-	for i, item := range res.JSON {
+	for i, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "text":
 			switch text {
-			case "Title":
+			case "# Title":
 				titleIdx = i
 			case "Middle.":
 				middleIdx = i
@@ -592,8 +1019,8 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 	if !(titleIdx < tableItemIdx[0] && tableItemIdx[0] < middleIdx && middleIdx < tableItemIdx[1] && tableItemIdx[1] < endIdx) {
 		t.Fatalf("table order wrong: tables=%v title=%d middle=%d end=%d", tableItemIdx, titleIdx, middleIdx, endIdx)
 	}
-	t1, _ := res.JSON[tableItemIdx[0]]["text"].(string)
-	t2, _ := res.JSON[tableItemIdx[1]]["text"].(string)
+	t1 := renderedText(res.JSON[tableItemIdx[0]].ToMap())
+	t2 := renderedText(res.JSON[tableItemIdx[1]].ToMap())
 	if !strings.Contains(t1, "x") || !strings.Contains(t1, "y") {
 		t.Fatalf("first table item missing x/y cells: %q", t1)
 	}
@@ -650,18 +1077,304 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 			// filterTableDivergence additionally drops the inlined <table> markup that
 			// Python keeps as a "text" item, so only non-table prose is compared.
 			ignore := AcceptedDivergences(gd.Meta)
-			goText := filterTableDivergence(res.JSON, ignore)
+			goText := filterTableDivergence(ItemsToMaps(res.JSON), ignore)
 			pyText := filterTableDivergence(gd.Items, ignore)
 
 			// filterTableDivergence drops the table from the prose comparison;
 			// the table-equivalence guard below (assertTablesEquivalent) checks
 			// the table cell content still matches Python, so a collapse or
 			// dropped column on either side is caught independently.
-			assertTablesEquivalent(t, res.JSON, gd.Items)
+			assertTablesEquivalent(t, ItemsToMaps(res.JSON), gd.Items)
 
 			if ok, diff := CompareAlignment(goText, pyText, MarkdownAlignOptions(DefaultMarkdownDelimiter)); !ok {
 				t.Fatalf("markdown parser not aligned with Python golden:%s", diff)
 			}
 		})
+	}
+}
+
+// tableRowsContain reports whether any cell of the structured table contains
+// the substring want, so table-contract tests can assert cell content without
+// depending on the legacy HTML markup shape.
+func tableRowsContain(td *entity.TableData, want string) bool {
+	for _, row := range td.CellTexts() {
+		for _, cell := range row {
+			if strings.Contains(cell, want) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// TestMarkdownParser_RemoveTOC_Chinese verifies that Markdown TOC sections are filtered
+// when remove_toc is enabled, mirroring HTML and DOCX behavior.
+func TestMarkdownParser_RemoveTOC_Chinese(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# 前言
+
+前言内容。
+
+# 目录
+
+* 第一章 概述
+* 第二章 架构
+
+# 第一章 概述
+
+第一章正文内容。
+
+# 第二章 架构
+
+第二章正文内容。
+`
+
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.Contains(text, "目录") {
+			t.Errorf("TOC heading %q was not removed", text)
+		}
+		if text == "* 第一章 概述" || text == "* 第二章 架构" {
+			t.Errorf("TOC entry %q was not removed", text)
+		}
+	}
+
+	wantTexts := map[string]bool{
+		"# 前言":     false,
+		"前言内容。":    false,
+		"# 第一章 概述": false,
+		"第一章正文内容。": false,
+		"# 第二章 架构": false,
+		"第二章正文内容。": false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected text %q was unexpectedly removed", text)
+		}
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_English verifies that English Markdown TOC sections
+// are filtered when remove_toc is enabled.
+func TestMarkdownParser_RemoveTOC_English(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# Overview
+
+Project overview.
+
+# Table of Contents
+
+* Chapter 1 Getting Started
+* Chapter 2 Deep Dive
+
+# Chapter 1 Getting Started
+
+First chapter content.
+
+# Chapter 2 Deep Dive
+
+Second chapter content.
+`
+
+	res := p.ParseWithResult(ctx, "test_en.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.Contains(strings.ToLower(text), "table of contents") {
+			t.Errorf("TOC heading %q was not removed", text)
+		}
+		if text == "* Chapter 1 Getting Started" || text == "* Chapter 2 Deep Dive" {
+			t.Errorf("TOC entry %q was not removed", text)
+		}
+	}
+
+	wantTexts := map[string]bool{
+		"# Overview":                  false,
+		"Project overview.":           false,
+		"# Chapter 1 Getting Started": false,
+		"First chapter content.":      false,
+		"# Chapter 2 Deep Dive":       false,
+		"Second chapter content.":     false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected text %q was unexpectedly removed", text)
+		}
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_DisabledByDefault verifies that TOC content is preserved
+// when remove_toc is disabled or omitted.
+func TestMarkdownParser_RemoveTOC_DisabledByDefault(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+
+	md := `# 目录
+
+* 第一章 概述
+* 第二章 架构
+
+# 第一章 概述
+
+第一章正文内容。
+`
+
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	foundHeading := false
+	foundEntry := false
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.Contains(text, "目录") {
+			foundHeading = true
+		}
+		if text == "* 第一章 概述" {
+			foundEntry = true
+		}
+	}
+	if !foundHeading {
+		t.Errorf("expected TOC heading to be preserved by default")
+	}
+	if !foundEntry {
+		t.Errorf("expected TOC entry to be preserved by default")
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_OrderedList verifies that TOC entries formatted as
+// ordered lists (1. ..., 2. ...) are stripped when remove_toc is enabled.
+func TestMarkdownParser_RemoveTOC_OrderedList(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# Contents
+
+1. Introduction
+2. Installation
+
+# Introduction
+
+Welcome to the project.
+
+# Installation
+
+Run npm install.
+`
+
+	res := p.ParseWithResult(ctx, "test_ordered.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.EqualFold(text, "# Contents") || strings.EqualFold(text, "Contents") {
+			t.Errorf("TOC heading %q was not removed", text)
+		}
+		if strings.HasPrefix(text, "1. Introduction") || strings.HasPrefix(text, "2. Installation") {
+			t.Errorf("TOC entry %q was not removed", text)
+		}
+	}
+
+	wantTexts := map[string]bool{
+		"# Introduction":          false,
+		"Welcome to the project.": false,
+		"# Installation":          false,
+		"Run npm install.":        false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected body text %q was unexpectedly removed", text)
+		}
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_PreservesAcknowledgments verifies that standalone
+// 致谢 / Acknowledgments headings and their content are NOT treated as TOCs.
+func TestMarkdownParser_RemoveTOC_PreservesAcknowledgments(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# 致谢
+
+感谢所有开源贡献者的付出。
+
+# Acknowledgments
+
+We thank all contributors for their support.
+`
+
+	res := p.ParseWithResult(ctx, "test_ack.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	wantTexts := map[string]bool{
+		"# 致谢": false,
+		"感谢所有开源贡献者的付出。":                                false,
+		"# Acknowledgments":                            false,
+		"We thank all contributors for their support.": false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected acknowledgment text %q was unexpectedly removed", text)
+		}
 	}
 }

@@ -4,205 +4,304 @@ import (
 	"testing"
 )
 
-func TestValidateParseTypeMode_Nil(t *testing.T) {
-	_, _, err := ValidateParseTypeMode(nil, nil, nil)
-	if err == nil || err.Error() != "parse_type is required" {
+func pi(v int) *int       { return &v }
+func ps(v string) *string { return &v }
+
+// All fields absent -> selection block omitted, no error, nil selection.
+func TestFromRequest_AllAbsent(t *testing.T) {
+	sel, err := FromRequest(nil, nil, nil)
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if sel != nil {
+		t.Fatalf("expected nil selection, got %#v", sel)
 	}
 }
 
-func TestValidateParseTypeMode_InvalidZero(t *testing.T) {
-	v := 0
-	_, _, err := ValidateParseTypeMode(&v, nil, nil)
+// Whitespace-only ids with no parse_type are treated as absent.
+func TestFromRequest_BlankIDsNoType(t *testing.T) {
+	sel, err := FromRequest(nil, ps("   "), ps("\t"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sel != nil {
+		t.Fatalf("expected nil selection, got %#v", sel)
+	}
+}
+
+// An id without parse_type must be rejected (explicit discriminator required).
+func TestFromRequest_ParserIDWithoutType(t *testing.T) {
+	sel, err := FromRequest(nil, ps("general"), nil)
+	if err == nil || err.Error() != "parse_type is required" {
+		t.Fatalf("expected 'parse_type is required', got %v", err)
+	}
+	if sel != nil {
+		t.Fatalf("expected nil selection, got %#v", sel)
+	}
+}
+
+func TestFromRequest_PipelineIDWithoutType(t *testing.T) {
+	sel, err := FromRequest(nil, nil, ps("canvas-1"))
+	if err == nil || err.Error() != "parse_type is required" {
+		t.Fatalf("expected 'parse_type is required', got %v", err)
+	}
+	if sel != nil {
+		t.Fatalf("expected nil selection, got %#v", sel)
+	}
+}
+
+// Both ids without parse_type must be rejected.
+func TestFromRequest_BothIDsWithoutType(t *testing.T) {
+	sel, err := FromRequest(nil, ps("general"), ps("canvas-1"))
+	if err == nil || err.Error() != "parse_type is required" {
+		t.Fatalf("expected 'parse_type is required', got %v", err)
+	}
+	if sel != nil {
+		t.Fatalf("expected nil selection, got %#v", sel)
+	}
+}
+
+func TestFromRequest_InvalidZero(t *testing.T) {
+	sel, err := FromRequest(pi(0), nil, nil)
 	if err == nil || err.Error() != "invalid parse_type: 0 (must be 1 or 2)" {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if sel != nil {
+		t.Fatalf("expected nil selection, got %#v", sel)
+	}
 }
 
-func TestValidateParseTypeMode_InvalidThree(t *testing.T) {
-	v := 3
-	_, _, err := ValidateParseTypeMode(&v, nil, nil)
+func TestFromRequest_InvalidThree(t *testing.T) {
+	sel, err := FromRequest(pi(3), nil, nil)
 	if err == nil || err.Error() != "invalid parse_type: 3 (must be 1 or 2)" {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if sel != nil {
+		t.Fatalf("expected nil selection, got %#v", sel)
+	}
 }
 
-func TestValidateParseTypeMode_BuiltinMissingParserID(t *testing.T) {
+func TestFromRequest_BuiltinMissingParserID(t *testing.T) {
 	t.Run("nil parserID", func(t *testing.T) {
-		pt := 1
-		_, _, err := ValidateParseTypeMode(&pt, nil, nil)
+		sel, err := FromRequest(pi(1), nil, nil)
 		if err == nil || err.Error() != "parser_id is required when parse_type is BuiltIn" {
 			t.Fatalf("unexpected error: %v", err)
+		}
+		if sel != nil {
+			t.Fatalf("expected nil selection, got %#v", sel)
 		}
 	})
 	t.Run("empty parserID", func(t *testing.T) {
-		pt := 1
-		empty := ""
-		_, _, err := ValidateParseTypeMode(&pt, &empty, nil)
+		sel, err := FromRequest(pi(1), ps(""), nil)
 		if err == nil || err.Error() != "parser_id is required when parse_type is BuiltIn" {
 			t.Fatalf("unexpected error: %v", err)
+		}
+		if sel != nil {
+			t.Fatalf("expected nil selection, got %#v", sel)
 		}
 	})
 	t.Run("whitespace parserID", func(t *testing.T) {
-		pt := 1
-		ws := "  "
-		_, _, err := ValidateParseTypeMode(&pt, &ws, nil)
+		sel, err := FromRequest(pi(1), ps("  "), nil)
 		if err == nil || err.Error() != "parser_id is required when parse_type is BuiltIn" {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		if sel != nil {
+			t.Fatalf("expected nil selection, got %#v", sel)
+		}
 	})
 }
 
-func TestValidateParseTypeMode_BuiltinOK(t *testing.T) {
-	pt := 1
-	pid := "laws"
-	builtin, pipeline, err := ValidateParseTypeMode(&pt, &pid, nil)
-	if err != nil {
+// BuiltIn mode must not carry a pipeline_id (mode/id mismatch).
+func TestFromRequest_BuiltinWithPipelineID(t *testing.T) {
+	sel, err := FromRequest(pi(1), ps("general"), ps("canvas-1"))
+	if err == nil || err.Error() != "pipeline_id must not be set when parse_type is BuiltIn" {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !builtin || pipeline {
-		t.Fatalf("expected builtin=true pipeline=false, got builtin=%v pipeline=%v", builtin, pipeline)
+	if sel != nil {
+		t.Fatalf("expected nil selection, got %#v", sel)
 	}
 }
 
-func TestValidateParseTypeMode_PipelineMissingPipelineID(t *testing.T) {
+func TestFromRequest_BuiltinOK(t *testing.T) {
+	sel, err := FromRequest(pi(1), ps("  laws  "), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sel == nil || !sel.IsBuiltIn() || sel.IsPipeline() {
+		t.Fatalf("expected builtin selection, got %#v", sel)
+	}
+	if sel.ParserID != "laws" {
+		t.Fatalf("expected trimmed parser_id 'laws', got %q", sel.ParserID)
+	}
+	if sel.PipelineID != "" {
+		t.Fatalf("expected empty pipeline_id, got %q", sel.PipelineID)
+	}
+}
+
+func TestFromRequest_PipelineMissingPipelineID(t *testing.T) {
 	t.Run("nil pipelineID", func(t *testing.T) {
-		pt := 2
-		_, _, err := ValidateParseTypeMode(&pt, nil, nil)
+		sel, err := FromRequest(pi(2), nil, nil)
 		if err == nil || err.Error() != "pipeline_id is required when parse_type is Pipeline" {
 			t.Fatalf("unexpected error: %v", err)
+		}
+		if sel != nil {
+			t.Fatalf("expected nil selection, got %#v", sel)
 		}
 	})
 	t.Run("empty pipelineID", func(t *testing.T) {
-		pt := 2
-		empty := ""
-		_, _, err := ValidateParseTypeMode(&pt, nil, &empty)
+		sel, err := FromRequest(pi(2), nil, ps(""))
 		if err == nil || err.Error() != "pipeline_id is required when parse_type is Pipeline" {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		if sel != nil {
+			t.Fatalf("expected nil selection, got %#v", sel)
+		}
 	})
 }
 
-func TestValidateParseTypeMode_PipelineOK(t *testing.T) {
-	pt := 2
-	pipe := "abc123"
-	builtin, pipeline, err := ValidateParseTypeMode(&pt, nil, &pipe)
+// Pipeline mode must not carry a parser_id (mode/id mismatch).
+func TestFromRequest_PipelineWithParserID(t *testing.T) {
+	sel, err := FromRequest(pi(2), ps("general"), ps("canvas-1"))
+	if err == nil || err.Error() != "parser_id must not be set when parse_type is Pipeline" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sel != nil {
+		t.Fatalf("expected nil selection, got %#v", sel)
+	}
+}
+
+func TestFromRequest_PipelineOK(t *testing.T) {
+	sel, err := FromRequest(pi(2), nil, ps("  canvas-1  "))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if builtin || !pipeline {
-		t.Fatalf("expected builtin=false pipeline=true, got builtin=%v pipeline=%v", builtin, pipeline)
+	if sel == nil || !sel.IsPipeline() || sel.IsBuiltIn() {
+		t.Fatalf("expected pipeline selection, got %#v", sel)
+	}
+	if sel.PipelineID != "canvas-1" {
+		t.Fatalf("expected trimmed pipeline_id 'canvas-1', got %q", sel.PipelineID)
+	}
+	if sel.ParserID != "" {
+		t.Fatalf("expected empty parser_id, got %q", sel.ParserID)
 	}
 }
 
-func TestResolveParseMode_BuiltinIgnoresPipelineID(t *testing.T) {
-	pt := 1
-	parserID := "manual"
-	pipelineID := "should-be-ignored"
-	cur := ParseModeState{ParserID: "naive", PipelineID: strPtr("prior-canvas")}
-	isPipeline, effParserID, effPipelineID := ResolveParseMode(&pt, &parserID, &pipelineID, cur)
-	if isPipeline {
-		t.Fatalf("isPipeline = true, want false (builtin mode)")
-	}
-	if effParserID != "manual" {
-		t.Fatalf("effParserID = %q, want manual", effParserID)
-	}
-	if effPipelineID != nil {
-		t.Fatalf("effPipelineID = %v, want nil (canvas cleared)", effPipelineID)
-	}
-}
-
-// TestResolveParseMode_PipelineIgnoresParserID reproduces the comment-3 bug
-// contract: parse_type=2 must ignore a dirty req.ParserID and keep isPipeline
-// true so parser_config is cleaned against the canvas DSL, not the builtin DSL.
-func TestResolveParseMode_PipelineIgnoresParserID(t *testing.T) {
-	pt := 2
-	parserID := "should-be-ignored"
-	pipelineID := "1234567890abcdef1234567890abcdef"
-	cur := ParseModeState{ParserID: "naive", PipelineID: nil}
-	isPipeline, effParserID, effPipelineID := ResolveParseMode(&pt, &parserID, &pipelineID, cur)
-	if !isPipeline {
-		t.Fatalf("isPipeline = false, want true (pipeline mode)")
-	}
-	if effParserID != "naive" {
-		t.Fatalf("effParserID = %q, want current naive (parser_id not applicable in pipeline mode)", effParserID)
-	}
-	if effPipelineID == nil || *effPipelineID != pipelineID {
-		t.Fatalf("effPipelineID = %v, want %q", effPipelineID, pipelineID)
-	}
-}
-
-func TestResolveParseMode_BuiltinFallsBackToCurrentParserID(t *testing.T) {
-	pt := 1
-	cur := ParseModeState{ParserID: "naive", PipelineID: strPtr("prior-canvas")}
-	isPipeline, effParserID, effPipelineID := ResolveParseMode(&pt, nil, nil, cur)
+// Effective() for BuiltIn returns no pipeline_id.
+func TestParserSelection_EffectiveBuiltIn(t *testing.T) {
+	sel := &ParserSelection{Mode: ParseModeBuiltIn, ParserID: "general"}
+	isPipeline, parserID, pipelineID := sel.Effective()
 	if isPipeline {
 		t.Fatalf("isPipeline = true, want false")
 	}
-	if effParserID != "naive" {
-		t.Fatalf("effParserID = %q, want naive", effParserID)
+	if parserID != "general" {
+		t.Fatalf("parserID = %q, want general", parserID)
 	}
-	if effPipelineID != nil {
-		t.Fatalf("effPipelineID = %v, want nil", effPipelineID)
+	if pipelineID != nil {
+		t.Fatalf("pipelineID = %v, want nil", pipelineID)
 	}
 }
 
-func TestResolveParseMode_PipelineFallsBackToCurrentPipelineID(t *testing.T) {
-	pt := 2
-	cur := ParseModeState{ParserID: "naive", PipelineID: strPtr("prior-canvas")}
-	isPipeline, effParserID, effPipelineID := ResolveParseMode(&pt, nil, nil, cur)
+// Effective() for Pipeline returns the canvas id; the builtin parser_id is
+// ignored by the canvas DSL loader but is preserved for completeness.
+func TestParserSelection_EffectivePipeline(t *testing.T) {
+	sel := &ParserSelection{Mode: ParseModePipeline, ParserID: "general", PipelineID: "canvas-1"}
+	isPipeline, parserID, pipelineID := sel.Effective()
 	if !isPipeline {
 		t.Fatalf("isPipeline = false, want true")
 	}
-	if effParserID != "naive" {
-		t.Fatalf("effParserID = %q, want naive", effParserID)
+	if parserID != "general" {
+		t.Fatalf("parserID = %q, want general", parserID)
 	}
-	if effPipelineID == nil || *effPipelineID != "prior-canvas" {
-		t.Fatalf("effPipelineID = %v, want prior-canvas", effPipelineID)
+	if pipelineID == nil || *pipelineID != "canvas-1" {
+		t.Fatalf("pipelineID = %v, want canvas-1", pipelineID)
 	}
 }
 
-// TestResolveParseMode_NilParseTypeInheritsCurrent covers the "only
-// parser_config changed" path: no mode switch, inherit current state.
-func TestResolveParseMode_NilParseTypeInheritsCurrent(t *testing.T) {
-	t.Run("current is pipeline", func(t *testing.T) {
-		cur := ParseModeState{ParserID: "naive", PipelineID: strPtr("canvas-1")}
-		isPipeline, effParserID, effPipelineID := ResolveParseMode(nil, nil, nil, cur)
-		if !isPipeline {
-			t.Fatalf("isPipeline = false, want true")
-		}
-		if effParserID != "naive" {
-			t.Fatalf("effParserID = %q, want naive", effParserID)
-		}
-		if effPipelineID == nil || *effPipelineID != "canvas-1" {
-			t.Fatalf("effPipelineID = %v, want canvas-1", effPipelineID)
-		}
-	})
-	t.Run("current is builtin", func(t *testing.T) {
-		cur := ParseModeState{ParserID: "manual", PipelineID: nil}
-		isPipeline, effParserID, effPipelineID := ResolveParseMode(nil, nil, nil, cur)
-		if isPipeline {
-			t.Fatalf("isPipeline = true, want false")
-		}
-		if effParserID != "manual" {
-			t.Fatalf("effParserID = %q, want manual", effParserID)
-		}
-		if effPipelineID != nil {
-			t.Fatalf("effPipelineID = %v, want nil", effPipelineID)
-		}
-	})
-	t.Run("incremental parser_id update applied", func(t *testing.T) {
-		cur := ParseModeState{ParserID: "naive", PipelineID: nil}
-		newParser := "laws"
-		isPipeline, effParserID, effPipelineID := ResolveParseMode(nil, &newParser, nil, cur)
-		if isPipeline {
-			t.Fatalf("isPipeline = true, want false")
-		}
-		if effParserID != "laws" {
-			t.Fatalf("effParserID = %q, want laws", effParserID)
-		}
-		if effPipelineID != nil {
-			t.Fatalf("effPipelineID = %v, want nil", effPipelineID)
-		}
-	})
+// CurrentSelection derives pipeline mode from a non-empty persisted pipeline_id.
+func TestCurrentSelection_Pipeline(t *testing.T) {
+	pid := "canvas-1"
+	sel := CurrentSelection("general", &pid)
+	if !sel.IsPipeline() {
+		t.Fatalf("expected pipeline selection, got %#v", sel)
+	}
+	if sel.ParserID != "general" || sel.PipelineID != "canvas-1" {
+		t.Fatalf("unexpected selection: %#v", sel)
+	}
+}
+
+func TestCurrentSelection_BuiltIn(t *testing.T) {
+	sel := CurrentSelection("general", nil)
+	if !sel.IsBuiltIn() {
+		t.Fatalf("expected builtin selection, got %#v", sel)
+	}
+	if sel.PipelineID != "" {
+		t.Fatalf("expected empty pipeline_id, got %q", sel.PipelineID)
+	}
+}
+
+func TestCurrentSelection_BuiltInEmptyPipelineID(t *testing.T) {
+	empty := ""
+	sel := CurrentSelection("general", &empty)
+	if !sel.IsBuiltIn() {
+		t.Fatalf("expected builtin selection, got %#v", sel)
+	}
+}
+
+// Resolve(create): current == nil requires a non-nil selection.
+func TestResolve_CreateRequiresSelection(t *testing.T) {
+	_, err := Resolve(nil, nil)
+	if err == nil || err.Error() != "parse_type is required" {
+		t.Fatalf("expected 'parse_type is required', got %v", err)
+	}
+}
+
+// Resolve(create): current == nil, sel present -> returns sel.
+func TestResolve_CreateWithSelection(t *testing.T) {
+	sel := &ParserSelection{Mode: ParseModeBuiltIn, ParserID: "general"}
+	eff, err := Resolve(nil, sel)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if eff != sel {
+		t.Fatalf("expected sel returned, got %#v", eff)
+	}
+}
+
+// Resolve(update): sel == nil keeps the current selection (PATCH omit).
+func TestResolve_UpdateOmitKeepsCurrent(t *testing.T) {
+	current := CurrentSelection("general", nil)
+	eff, err := Resolve(current, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if eff != current {
+		t.Fatalf("expected current kept, got %#v", eff)
+	}
+}
+
+// Resolve(update): sel overrides current (mode switch).
+func TestResolve_UpdateSwitchesMode(t *testing.T) {
+	current := CurrentSelection("general", nil)
+	pid := "canvas-1"
+	sel := &ParserSelection{Mode: ParseModePipeline, ParserID: "general", PipelineID: pid}
+	eff, err := Resolve(current, sel)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if eff != sel || !eff.IsPipeline() {
+		t.Fatalf("expected pipeline sel returned, got %#v", eff)
+	}
+}
+
+// Resolve(update): sel overrides current (same-mode id change).
+func TestResolve_UpdateSameModeNewID(t *testing.T) {
+	current := CurrentSelection("general", nil)
+	sel := &ParserSelection{Mode: ParseModeBuiltIn, ParserID: "laws"}
+	eff, err := Resolve(current, sel)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if eff != sel || eff.ParserID != "laws" {
+		t.Fatalf("expected builtin laws, got %#v", eff)
+	}
 }

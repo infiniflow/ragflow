@@ -1,9 +1,10 @@
 export interface ITestRetrievalRequestBody {
   question: string;
+  page_size: number;
+  rerank_candidates_count: number;
   similarity_threshold: number;
-  vector_similarity_weight: number;
+  keywords_similarity_weight: number;
   rerank_id?: string;
-  top_k?: number;
   use_kg?: boolean;
   highlight?: boolean;
   kb_id?: string[];
@@ -27,11 +28,11 @@ export interface IFetchKnowledgeListRequestParams {
   id?: string;
   page?: number;
   page_size?: number;
-  ext?: {
-    keywords?: string;
-    owner_ids?: string[];
-    parser_id?: string;
-  };
+  keywords?: string;
+  owner_ids?: string[];
+  parser_id?: string;
+  // Filter to datasets usable by both the canvas owner and the current user.
+  canvas_id?: string;
 }
 
 export interface IFetchDocumentListRequestBody {

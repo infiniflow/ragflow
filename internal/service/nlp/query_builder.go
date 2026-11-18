@@ -45,6 +45,30 @@ type QueryBuilder struct {
 	synonym     *Synonym
 }
 
+// Precompiled regexes. Compiling these per-call on the retrieval hot path
+// (Go's regexp.MustCompile / regexp.MatchString has no cache) wastes a full
+// parse+compile on every token/term. All patterns below are compile-time
+// constants, so they are compiled once at package init.
+var (
+	reEngAlpha       = regexp.MustCompile(`^[a-zA-Z]+$`)
+	reSubSpecialChar = regexp.MustCompile(`([:{}/\[\]\-\*\?"\(\)\|\+~\^])`)
+	reStopWordsZH    = regexp.MustCompile(`(?i)是*(怎么办|什么样的|哪家|一下|那家|请问|啥样|咋样了|什么时候|何时|何地|何人|是否|是不是|多少|哪里|怎么|哪儿|怎么样|如何|哪些|是啥|啥是|啊|吗|呢|吧|咋|什么|有没有|呀|谁|哪位|哪个)是*`)
+	reStopWordsEN1   = regexp.MustCompile(`(?i)(^| )(what|who|how|which|where|why)('re|'s)? `)
+	reStopWordsEN2   = regexp.MustCompile(`(?i)(^| )('s|'re|is|are|were|was|do|does|did|don't|doesn't|didn't|has|have|be|there|you|me|your|my|mine|just|please|may|i|should|would|wouldn't|will|won't|done|go|for|with|so|the|a|an|by|i'm|it's|he's|she's|they|they're|you're|as|by|on|in|at|up|out|down|of|to|or|and|if) `)
+	reEngZhNum       = regexp.MustCompile(`([A-Za-z]+[0-9]*)([\x{4e00}-\x{9fa5}]+)`)
+	reEngZh          = regexp.MustCompile(`([A-Za-z])([\x{4e00}-\x{9fa5}]+)`)
+	reZhEngNum       = regexp.MustCompile(`([\x{4e00}-\x{9fa5}]+)([A-Za-z]+[0-9]*)`)
+	reZhEng          = regexp.MustCompile(`([\x{4e00}-\x{9fa5}]+)([A-Za-z])`)
+	reSimpleToken    = regexp.MustCompile(`^[0-9a-z\.\+#_\*-]+$`)
+	rePunct          = regexp.MustCompile(`[ :|\r\n\t,，.。?？/\` + "`" + `!！&^%()\[\]{}<>*~'"\\]+`)
+	reCleanQuote     = regexp.MustCompile(`[ \"'^]+`)
+	reSingleChar     = regexp.MustCompile(`^[a-z0-9]$`)
+	reLeadSign       = regexp.MustCompile(`^[\+\-]+`)
+	reQuerySpecial   = regexp.MustCompile(`[.^+\(\)-]`)
+	reSpecialChar    = regexp.MustCompile(`[,\.\/;'\[\]\\\` + "`" + `~!@#$%\^&\*\(\)=\+_<>\?:"\{\}\|，。；'‘’【】、！￥……（）——《》？："""-]+`)
+	reCleanTerm      = regexp.MustCompile(`[ \"']+`)
+)
+
 // InitQueryBuilder initializes the global QueryBuilder with the given wordnet directory.
 // It should be called during the initialization phase of main.go, after tokenizer.Init.
 // The wordnetDir is typically filepath.Join(tokenizer.Config.DictPath, "wordnet")
@@ -108,7 +132,7 @@ func (qb *QueryBuilder) IsChinese(line string) bool {
 	}
 	nonAlpha := 0
 	for _, f := range fields {
-		matched, _ := regexp.MatchString(`^[a-zA-Z]+$`, f)
+		matched := reEngAlpha.MatchString(f)
 		if !matched {
 			nonAlpha++
 		}
@@ -118,27 +142,41 @@ func (qb *QueryBuilder) IsChinese(line string) bool {
 
 // SubSpecialChar escapes special characters for use in queries.
 func (qb *QueryBuilder) SubSpecialChar(line string) string {
-	// Regex matches : { } / [ ] - * " ( ) | + ~ ^ and prepends backslash
-	re := regexp.MustCompile(`([:{}/\[\]\-\*"\(\)\|\+~\^])`)
-	return re.ReplaceAllString(line, `\$1`)
+	// Strip single quotes first so Infinity's lexer does not treat them as
+	// string delimiters, then escape : { } / [ ] - * ? " ( ) | + ~ ^ and trim.
+	// Reference: common/query_base.py sub_special_char
+	line = strings.ReplaceAll(line, "'", "")
+	return strings.TrimSpace(reSubSpecialChar.ReplaceAllString(line, `\$1`))
+}
+
+// cleanSynonym tokenizes a synonym and strips single quotes so it can be
+// embedded in a full-text query. WordNet returns e.g. "cat-o'-nine-tails"
+// for "cat", and a raw single quote breaks the Infinity query parser.
+// Reference: rag/nlp/query.py question(), rag_tokenizer.tokenize(s).replace("'", "")
+func cleanSynonym(s string) string {
+	tokenized, err := tokenizer.Tokenize(s)
+	if err != nil {
+		tokenized = s
+	}
+	return strings.TrimSpace(strings.ReplaceAll(tokenized, "'", ""))
 }
 
 // RmWWW removes common stop words and question words from queries.
 func (qb *QueryBuilder) RmWWW(txt string) string {
+	// Compiled regex + replacement pairs for Chinese and English stop words.
 	patterns := []struct {
-		regex string
-		repl  string
+		re   *regexp.Regexp
+		repl string
 	}{
 		// Chinese stop words
-		{`是*(怎么办|什么样的|哪家|一下|那家|请问|啥样|咋样了|什么时候|何时|何地|何人|是否|是不是|多少|哪里|怎么|哪儿|怎么样|如何|哪些|是啥|啥是|啊|吗|呢|吧|咋|什么|有没有|呀|谁|哪位|哪个)是*`, ""},
+		{reStopWordsZH, ""},
 		// English stop words (case-insensitive)
-		{`(^| )(what|who|how|which|where|why)('re|'s)? `, " "},
-		{`(^| )('s|'re|is|are|were|was|do|does|did|don't|doesn't|didn't|has|have|be|there|you|me|your|my|mine|just|please|may|i|should|would|wouldn't|will|won't|done|go|for|with|so|the|a|an|by|i'm|it's|he's|she's|they|they're|you're|as|by|on|in|at|up|out|down|of|to|or|and|if) `, " "},
+		{reStopWordsEN1, " "},
+		{reStopWordsEN2, " "},
 	}
 	original := txt
 	for _, p := range patterns {
-		re := regexp.MustCompile(`(?i)` + p.regex)
-		txt = re.ReplaceAllString(txt, p.repl)
+		txt = p.re.ReplaceAllString(txt, p.repl)
 	}
 	if txt == "" {
 		txt = original
@@ -149,20 +187,16 @@ func (qb *QueryBuilder) RmWWW(txt string) string {
 // AddSpaceBetweenEngZh adds spaces between English letters and Chinese characters to improve tokenization.
 func (qb *QueryBuilder) AddSpaceBetweenEngZh(txt string) string {
 	// (ENG/ENG+NUM) + ZH: e.g., "ABC123中文" -> "ABC123 中文"
-	re1 := regexp.MustCompile(`([A-Za-z]+[0-9]*)([\x{4e00}-\x{9fa5}]+)`)
-	txt = re1.ReplaceAllString(txt, "$1 $2")
+	txt = reEngZhNum.ReplaceAllString(txt, "$1 $2")
 
 	// ENG + ZH: e.g., "ABC中文" -> "ABC 中文"
-	re2 := regexp.MustCompile(`([A-Za-z])([\x{4e00}-\x{9fa5}]+)`)
-	txt = re2.ReplaceAllString(txt, "$1 $2")
+	txt = reEngZh.ReplaceAllString(txt, "$1 $2")
 
 	// ZH + (ENG/ENG+NUM): e.g., "中文ABC123" -> "中文 ABC123"
-	re3 := regexp.MustCompile(`([\x{4e00}-\x{9fa5}]+)([A-Za-z]+[0-9]*)`)
-	txt = re3.ReplaceAllString(txt, "$1 $2")
+	txt = reZhEngNum.ReplaceAllString(txt, "$1 $2")
 
 	// ZH + ENG: e.g., "中文ABC" -> "中文 ABC"
-	re4 := regexp.MustCompile(`([\x{4e00}-\x{9fa5}]+)([A-Za-z])`)
-	txt = re4.ReplaceAllString(txt, "$1 $2")
+	txt = reZhEng.ReplaceAllString(txt, "$1 $2")
 	return txt
 }
 
@@ -202,17 +236,21 @@ func (qb *QueryBuilder) NeedFineGrainedTokenize(tk string) bool {
 	if utf8.RuneCountInString(tk) < 3 {
 		return false
 	}
-	if matched, _ := regexp.MatchString(`^[0-9a-z\.\+#_\*-]+$`, tk); matched {
+	if reSimpleToken.MatchString(tk) {
 		return false
 	}
 	return true
 }
 
 // Question builds a full-text query expression based on input text.
-// References Python FulltextQueryer.question method.
-func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*types.MatchTextExpr, []string) {
+// References Python FulltextQueryer.question method. language is the dataset
+// language ("" = English) the query is tokenized with, so query tokens match
+// index tokens.
+func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64, language string) (*types.MatchTextExpr, []string) {
 	// originalQuery stores the original input text for later use in query expression.
 	originalQuery := txt
+
+	tok := tokenizer.New(language)
 
 	// Add space between English and Chinese
 	txtWithSpaces := qb.AddSpaceBetweenEngZh(txt)
@@ -228,10 +266,8 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 
 	// Replace punctuation and special characters with space
 	// Reference: rag/nlp/query.py L44-48
-	// re is the regex pattern for matching punctuation and special characters.
-	re := regexp.MustCompile(`[ :|\r\n\t,，.。?？/\` + "`" + `!！&^%()\[\]{}<>*~'"\\]+`)
 	// txtCleaned is the text after removing punctuation and special characters.
-	txtCleaned := re.ReplaceAllString(txtSimplified, " ")
+	txtCleaned := rePunct.ReplaceAllString(txtSimplified, " ")
 
 	// Remove stop words
 	txtNoStopWords := qb.RmWWW(txtCleaned)
@@ -246,7 +282,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 		txtFinal := qb.RmWWW(txtNoStopWords)
 
 		// Tokenize using rag_tokenizer
-		tokenized, err := tokenizer.Tokenize(txtFinal)
+		tokenized, err := tok.Tokenize(txtFinal)
 		if err != nil {
 			// If tokenizer fails, use simple split
 			tokenized = txtFinal
@@ -265,7 +301,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 		// Calculate term weights using TermWeightDealer
 		// Reference: rag/nlp/query.py L56
 		// tws holds the term weight list for each token.
-		tws := qb.termWeight.Weights(tks, false)
+		tws := qb.termWeight.Weights(tks, false, language)
 
 		// Clean tokens and filter
 		// Reference: rag/nlp/query.py L57-60
@@ -280,11 +316,11 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 			w := tw.Weight
 
 			// Clean token: remove special chars
-			tk = regexp.MustCompile(`[ \"'^]+`).ReplaceAllString(tk, "")
+			tk = reCleanQuote.ReplaceAllString(tk, "")
 			// Remove single alphanumeric chars
-			tk = regexp.MustCompile(`^[a-z0-9]$`).ReplaceAllString(tk, "")
+			tk = reSingleChar.ReplaceAllString(tk, "")
 			// Remove leading +/-
-			tk = regexp.MustCompile(`^[\+\-]+`).ReplaceAllString(tk, "")
+			tk = reLeadSign.ReplaceAllString(tk, "")
 			tk = strings.TrimSpace(tk)
 
 			if tk == "" {
@@ -310,14 +346,17 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 				// Format synonyms with weight boost: term^weight
 				var synParts []string
 				for _, syn := range tkSyns {
-					syn = strings.TrimSpace(syn)
+					syn = cleanSynonym(syn)
 					if syn != "" {
+						// Do not escape here. Python's English branch embeds the
+						// cleaned synonym as-is; SubSpecialChar would also escape '-',
+						// which WordNet synonyms contain constantly.
 						synParts = append(synParts, fmt.Sprintf(`"%s"^%.4f`, syn, tw.w/4.0))
+						// Extend keywords with cleaned synonyms
+						keywords = append(keywords, syn)
 					}
 				}
 				syns[i] = strings.Join(synParts, " ")
-				// Extend keywords with synonyms
-				keywords = append(keywords, tkSyns...)
 			} else {
 				syns[i] = ""
 			}
@@ -331,7 +370,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 			tk := tw.tk
 			w := tw.w
 			// Skip tokens with special regex chars
-			if matched, _ := regexp.MatchString(`[.^+\(\)-]`, tk); matched {
+			if reQuerySpecial.MatchString(tk) {
 				continue
 			}
 			// Format: (token^weight synonym)
@@ -400,7 +439,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 
 		// Get term weights
 		// termWeightList holds term weights for the current segment.
-		termWeightList := qb.termWeight.Weights([]string{segment}, true)
+		termWeightList := qb.termWeight.Weights([]string{segment}, true, language)
 
 		// Lookup synonyms
 		// syns are synonyms for the current segment.
@@ -428,7 +467,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 			// sm holds fine‑grained tokens for the current term.
 			var sm []string
 			if qb.NeedFineGrainedTokenize(term) {
-				fineGrained, err := tokenizer.FineGrainedTokenize(term)
+				fineGrained, err := tok.FineGrainedTokenize(term)
 				if err == nil && fineGrained != "" {
 					sm = strings.Fields(fineGrained)
 				}
@@ -437,10 +476,8 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 			// Clean special characters from sm
 			// cleanSm holds cleaned fine‑grained tokens with special characters removed.
 			var cleanSm []string
-			// specialCharRe is the regex pattern for matching special characters.
-			specialCharRe := regexp.MustCompile(`[,\.\/;'\[\]\\\` + "`" + `~!@#$%\^&\*\(\)=\+_<>\?:"\{\}\|，。；'‘’【】、！￥……（）——《》？："""-]+`)
 			for _, m := range sm {
-				m = specialCharRe.ReplaceAllString(m, "")
+				m = reSpecialChar.ReplaceAllString(m, "")
 				m = qb.SubSpecialChar(m)
 				if len([]rune(m)) > 1 {
 					cleanSm = append(cleanSm, m)
@@ -451,7 +488,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 			// Add to keywords if under limit
 			if len(keywords) < 32 {
 				// cleanTk is the term with quotes and spaces removed.
-				cleanTk := regexp.MustCompile(`[ \"']+`).ReplaceAllString(term, "")
+				cleanTk := reCleanTerm.ReplaceAllString(term, "")
 				if cleanTk != "" {
 					keywords = append(keywords, cleanTk)
 				}
@@ -479,7 +516,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 				if s == "" {
 					continue
 				}
-				fg, err := tokenizer.FineGrainedTokenize(s)
+				fg, err := tok.FineGrainedTokenize(s)
 				if err == nil && fg != "" {
 					// Quote if contains space
 					if strings.Contains(fg, " ") {
@@ -523,7 +560,9 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 		// termParts collects query parts for each term in the segment.
 		var termParts []string
 		for _, termWeight := range terms {
-			termParts = append(termParts, fmt.Sprintf("(%s)^%.1f", termWeight.term, termWeight.weight))
+			// %v, not %.1f: the reference (rag/nlp/query.py:152) writes the raw
+			// weight, and one decimal flattens every weight below 0.05 to ^0.0.
+			termParts = append(termParts, fmt.Sprintf("(%s)^%v", termWeight.term, termWeight.weight))
 		}
 		// tmsStr is the query string for the current segment.
 		tmsStr := strings.Join(termParts, " ")
@@ -531,7 +570,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 		// Add proximity query if multiple tokens
 		if len(termWeightList) > 1 {
 			// tokenized is the tokenized version of the segment.
-			tokenized, _ := tokenizer.Tokenize(segment)
+			tokenized, _ := tok.Tokenize(segment)
 			if tokenized != "" {
 				tmsStr += fmt.Sprintf(` ("%s"~2)^1.5`, tokenized)
 			}
@@ -544,7 +583,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 			for _, s := range syns {
 				s = qb.SubSpecialChar(s)
 				if s != "" {
-					tokenized, _ := tokenizer.Tokenize(s)
+					tokenized, _ := tok.Tokenize(s)
 					if tokenized != "" {
 						synParts = append(synParts, fmt.Sprintf(`"%s"`, tokenized))
 					}
@@ -557,8 +596,6 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 
 		if tmsStr != "" {
 			qs = append(qs, tmsStr)
-		} else {
-			fmt.Println("tmsStr is empty")
 		}
 	}
 

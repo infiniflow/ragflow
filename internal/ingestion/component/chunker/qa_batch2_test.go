@@ -18,6 +18,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"strings"
 	"testing"
 )
@@ -34,7 +35,7 @@ func qaInvoke(t *testing.T, inputs map[string]any) []map[string]any {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("Invoke did not return []map chunks: %#v", out["chunks"])
 	}
@@ -53,7 +54,7 @@ func TestQAChunker_DefaultLangIsChinese(t *testing.T) {
 	if len(chunks) == 0 {
 		t.Fatalf("no chunks produced")
 	}
-	cw := chunks[0]["content_with_weight"].(string)
+	cw := chunks[0]["text"].(string)
 	if !contains(cw, "问题：") || !contains(cw, "回答：") {
 		t.Errorf("empty lang should default to Chinese prefixes, got %q", cw)
 	}
@@ -131,7 +132,7 @@ func TestQAChunker_CarriesImageAndPositions(t *testing.T) {
 		t.Errorf("QA chunk lost upstream _pdf_positions")
 	}
 	// The prefix-stripped content must still be present.
-	cw, _ := c["content_with_weight"].(string)
+	cw, _ := c["text"].(string)
 	if !contains(cw, "A") {
 		t.Errorf("QA content missing answer: %q", cw)
 	}
