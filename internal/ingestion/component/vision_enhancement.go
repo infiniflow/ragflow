@@ -254,7 +254,12 @@ func maybeDispatchVisionEnhancement(
 			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		}
 		if err == nil {
-			prompt, err = figureVisionPromptBuilder(language)
+			prompt = strings.TrimSpace(vision.systemPrompt)
+			if prompt == "" {
+				prompt, err = figureVisionPromptBuilder(language)
+			} else {
+				prompt += "\n\n" + visionResponseLanguageInstruction(language)
+			}
 			vlmReady = err == nil && driver != nil
 		}
 		resolveErr = err
