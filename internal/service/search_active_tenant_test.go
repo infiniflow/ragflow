@@ -39,7 +39,7 @@ func TestPrepareCompletionKeepsActiveTenantIdentity(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("PrepareCompletion() code = %v, want success", code)
 	}
-	if plan.Identity != (Identity{UserID: "user-1", TenantID: "team-1"}) {
-		t.Fatalf("Identity = %+v, want user-1 in team-1", plan.Identity)
+	if plan.TenantID != "team-1" {
+		t.Fatalf("TenantID = %q, want team-1", plan.TenantID)
 	}
 }

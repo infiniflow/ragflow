@@ -487,7 +487,7 @@ func TestFullQuestionStripsCitationMarkersFromHistory(t *testing.T) {
 // ##n$$ markers.
 func TestConvertMessagesToEinoStripsCitationMarkers(t *testing.T) {
 	s := &ChatPipelineService{}
-	out := s.convertMessagesToEino(t.Context(), "user-1", "chat", []map[string]interface{}{
+	out := s.convertMessagesToEino(t.Context(), "chat", []map[string]interface{}{
 		{"role": "user", "content": "Which acts were approved? ##2$$"},
 		{"role": "assistant", "content": "Act 12 [ID:0] and act 14 [ID:3] were approved."},
 		{"role": "user", "content": "And who signed them?"},

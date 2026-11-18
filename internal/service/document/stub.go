@@ -22,6 +22,7 @@ import (
 	"context"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -29,3 +30,16 @@ import (
 // grantDocumentOwnerEE grants nothing: the community edition has no document
 // permission records.
 func grantDocumentOwnerEE(context.Context, *gorm.DB, *entity.Document) error { return nil }
+
+// dedicatedParserExtension lets the enterprise edition bind a file type to its
+// own built-in pipeline. The community build registers no such binding, so the
+// community routing in dedicatedDocumentParserID is unchanged.
+func dedicatedParserExtension(utility.FileType, string) string { return "" }
+
+// preparePreviewPresentationEE is a no-op outside the enterprise edition.
+func preparePreviewPresentationEE(context.Context, *entity.Document, string) ([]byte, string, bool, error) {
+	return nil, "", false, nil
+}
+
+// cleanupPreviewArtifactsEE is a no-op outside the enterprise edition.
+func cleanupPreviewArtifactsEE(context.Context, *entity.Document) {}

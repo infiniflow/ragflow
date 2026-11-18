@@ -39,6 +39,7 @@ import (
 	"ragflow/internal/permission"
 	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
+	"ragflow/internal/utility"
 )
 
 // TestParseAgentLogs pins the contract between GetAgentLogs and the
@@ -124,7 +125,7 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
 		t.Fatalf("prepare agent log permission fixture: %v", err)
 	}
-	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
@@ -189,7 +190,7 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 	// Present key -> data must be the array, with File first and END last.
 	present := run("msg1")
 	if code, _ := present["code"].(float64); int(code) != int(common.CodeSuccess) {
-		t.Fatalf("present code=%v want 0 body=%s", code, mustJSON(present))
+		t.Fatalf("present code=%v want 0 body=%s", code, utility.MustJSON(present))
 	}
 	dataRaw, _ := json.Marshal(present["data"])
 	trimmed := strings.TrimSpace(string(dataRaw))
@@ -210,7 +211,7 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 	// Missing key -> data must be an empty object (Python parity), code 0.
 	missing := run("missing")
 	if code, _ := missing["code"].(float64); int(code) != int(common.CodeSuccess) {
-		t.Fatalf("missing code=%v want 0 body=%s", code, mustJSON(missing))
+		t.Fatalf("missing code=%v want 0 body=%s", code, utility.MustJSON(missing))
 	}
 	dataRawMissing, _ := json.Marshal(missing["data"])
 	if strings.TrimSpace(string(dataRawMissing)) != "{}" {
@@ -258,7 +259,7 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
 		t.Fatalf("prepare agent log permission fixture: %v", err)
 	}
-	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
@@ -313,7 +314,7 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 			t.Fatalf("decode (msg=%s): %v body=%s", messageID, err, w.Body.String())
 		}
 		if code, _ := resp["code"].(float64); int(code) != int(common.CodeSuccess) {
-			t.Fatalf("code=%v want 0 body=%s", code, mustJSON(resp))
+			t.Fatalf("code=%v want 0 body=%s", code, utility.MustJSON(resp))
 		}
 		dataRaw, _ := json.Marshal(resp["data"])
 		var arr []map[string]interface{}
@@ -325,12 +326,12 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 
 	good := call("msg-good")
 	if !clientConsidersComplete(good) {
-		t.Fatalf("expected client to consider run complete for non-empty END message; arr=%s", mustJSON(good))
+		t.Fatalf("expected client to consider run complete for non-empty END message; arr=%s", utility.MustJSON(good))
 	}
 
 	bad := call("msg-bad")
 	if clientConsidersComplete(bad) {
-		t.Fatalf("client must NOT consider run complete for empty END message (would poll forever); arr=%s", mustJSON(bad))
+		t.Fatalf("client must NOT consider run complete for empty END message (would poll forever); arr=%s", utility.MustJSON(bad))
 	}
 }
 
@@ -440,7 +441,7 @@ func TestRespondWithDebugResult_Shape(t *testing.T) {
 		t.Fatalf("decode: %v body=%s", err, w.Body.String())
 	}
 	if code, _ := resp["code"].(float64); int(code) != int(common.CodeSuccess) {
-		t.Fatalf("code=%v want 0 body=%s", code, mustJSON(resp))
+		t.Fatalf("code=%v want 0 body=%s", code, utility.MustJSON(resp))
 	}
 	data, ok := resp["data"].(map[string]interface{})
 	if !ok {
@@ -493,12 +494,7 @@ func TestRespondWithDebugResult_Shape(t *testing.T) {
 	}
 }
 
-// TestRespondWithDebugResult_ErrorCarriesMessageID pins that a run failure
-// still surfaces the polling key: the response must keep a non-success code
-// (the existing contract forbids masking errors as success) BUT the error
-// envelope's data must carry message_id so the front-end can poll the failure
-// timeline that DebugLogSink.Flush already wrote to Redis.
-func TestRespondWithDebugResult_ErrorCarriesMessageID(t *testing.T) {
+func TestRespondWithDebugResult_ErrorOmitsData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	w := httptest.NewRecorder()
@@ -508,15 +504,14 @@ func TestRespondWithDebugResult_ErrorCarriesMessageID(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v body=%s", err, w.Body.String())
 	}
-	if code, _ := resp["code"].(float64); int(code) == int(common.CodeSuccess) {
-		t.Fatalf("error case must not be success: %v", resp)
+	if code, _ := resp["code"].(float64); int(code) != int(common.CodeServerError) {
+		t.Fatalf("code=%v want %d", resp["code"], common.CodeServerError)
 	}
-	data, ok := resp["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("error envelope data must be an object carrying message_id: %v", resp)
+	if _, ok := resp["data"]; ok {
+		t.Fatalf("error envelope must omit data: %v", resp)
 	}
-	if data["message_id"] != "m-err" {
-		t.Fatalf("error envelope data.message_id=%v want m-err", data["message_id"])
+	if resp["message"] != "boom" {
+		t.Fatalf("message=%v want boom", resp["message"])
 	}
 }
 
@@ -663,7 +658,7 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
 		t.Fatalf("prepare agent log permission fixture: %v", err)
 	}
-	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
 	mr, err := miniredis.Run()
@@ -722,7 +717,7 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 		t.Fatalf("decode read response: %v body=%s", err, w.Body.String())
 	}
 	if code, _ := resp["code"].(float64); int(code) != int(common.CodeSuccess) {
-		t.Fatalf("read code=%v want 0 body=%s", code, mustJSON(resp))
+		t.Fatalf("read code=%v want 0 body=%s", code, utility.MustJSON(resp))
 	}
 	dataRaw, _ := json.Marshal(resp["data"])
 	trimmed := strings.TrimSpace(string(dataRaw))

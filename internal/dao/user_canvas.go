@@ -184,6 +184,18 @@ func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID str
 	return canvases, err
 }
 
+// ListMetadataByIDs loads only the fields needed by the version catalog.
+func (dao *UserCanvasDAO) ListMetadataByIDs(ctx context.Context, db *gorm.DB, canvasIDs []string, category string) ([]entity.UserCanvas, error) {
+	if len(canvasIDs) == 0 {
+		return []entity.UserCanvas{}, nil
+	}
+	var canvases []entity.UserCanvas
+	err := db.WithContext(ctx).Select("id", "title").
+		Where("id IN ? AND canvas_category = ?", canvasIDs, category).
+		Order("create_time DESC").Order("id ASC").Find(&canvases).Error
+	return canvases, err
+}
+
 // UserCanvasListItem is the joined row returned by ListByIDs.
 type UserCanvasListItem struct {
 	ID                 string  `gorm:"column:id"`
@@ -217,14 +229,15 @@ func (dao *UserCanvasDAO) ListByIDs(ctx context.Context, db *gorm.DB, canvasIDs,
 		user_canvas.permission,
 		user_canvas.user_id,
 		COALESCE(NULLIF(user_canvas.tenant_id, ''), user_canvas.user_id) AS tenant_id,
-		user.nickname,
-		user.avatar AS tenant_avatar,
+		owner.nickname,
+		tenant.avatar AS tenant_avatar,
 		user_canvas.canvas_type,
 		user_canvas.canvas_category,
 		user_canvas.tags,
 		user_canvas.create_time,
 		user_canvas.update_time`).
-		Joins("LEFT JOIN user ON user_canvas.user_id = user.id").
+		Joins("LEFT JOIN user AS owner ON user_canvas.user_id = owner.id").
+		Joins("LEFT JOIN user AS tenant ON COALESCE(NULLIF(user_canvas.tenant_id, ''), user_canvas.user_id) = tenant.id").
 		Where("user_canvas.id IN ?", canvasIDs)
 	if len(ownerIDs) > 0 {
 		base = base.Where("user_canvas.user_id IN ?", ownerIDs)

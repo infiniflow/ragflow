@@ -62,6 +62,7 @@ export interface IProviderInstance {
   status: string;
   /** Whether the current user owns this model instance. */
   is_owner?: boolean;
+  operator_permission?: number;
   /** Whether the server has a credential configured for this instance. */
   api_key_configured?: boolean;
   /** Safe provider configuration values; secret values are never returned. */
@@ -93,6 +94,9 @@ export interface IAddedModel {
   instance_name: string;
   tenant_id?: string;
   tenant_name?: string;
+  user_id?: string;
+  nickname?: string;
+  features?: string[];
 }
 
 export interface IInstanceModel {
@@ -131,4 +135,5 @@ export interface IDefaultModel {
   model_name: string;
   model_provider: string;
   model_type: string;
+  tenant_id?: string;
 }

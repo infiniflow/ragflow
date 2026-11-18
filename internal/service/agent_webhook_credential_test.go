@@ -40,8 +40,8 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 	}
 
 	svc := NewAgentWebhookCredentialService(db)
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "caller-1", TenantID: tenantID})
-	firstToken, err := svc.Issue(ctx, permission.Subject{UserID: "caller-1", TenantID: tenantID}, canvas)
+	ctx := permission.WithIdentity(t.Context(), "caller-1", tenantID)
+	firstToken, err := svc.Issue(ctx, canvas)
 	if err != nil {
 		t.Fatalf("issue credential: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 		t.Fatalf("resolved principal = (%q, %q), want (caller-1, %q)", resolved.UserID, resolved.TenantID, tenantID)
 	}
 
-	secondToken, err := svc.Issue(ctx, permission.Subject{UserID: "caller-1", TenantID: tenantID}, canvas)
+	secondToken, err := svc.Issue(ctx, canvas)
 	if err != nil {
 		t.Fatalf("rotate credential: %v", err)
 	}
@@ -103,10 +103,13 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 	if _, err := svc.Resolve(ctx, canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
 		t.Fatalf("removed member token resolution error = %v, want invalid credential", err)
 	}
-	if err := svc.Revoke(ctx, canvas.ID, "caller-1"); err != nil {
+	if err := svc.Revoke(permission.WithIdentity(t.Context(), "", ""), canvas.ID); !errors.Is(err, permission.ErrUnauthenticated) {
+		t.Fatalf("revoke without authenticated user error = %v, want unauthenticated", err)
+	}
+	if err := svc.Revoke(ctx, canvas.ID); err != nil {
 		t.Fatalf("revoke credential: %v", err)
 	}
-	if err := svc.Revoke(ctx, canvas.ID, "caller-1"); err != nil {
+	if err := svc.Revoke(ctx, canvas.ID); err != nil {
 		t.Fatalf("repeat revoke: %v", err)
 	}
 	if _, err := svc.Resolve(ctx, canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {

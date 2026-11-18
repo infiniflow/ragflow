@@ -63,12 +63,6 @@
                                 "subject",
                                 "body",
                                 "attachments"
-                            ],
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "eml"
                             ]
                         }
                     }
@@ -246,10 +240,7 @@
                                         "body",
                                         "attachments"
                                     ],
-                                    "fileFormat": "email",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "email"
                                 }
                             ]
                         },

@@ -43,15 +43,15 @@ func TestMessageDraftRoundTripAndExecution(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			title := "Message " + tt.name
 			ctx := serviceTestContext(t, "user-1", "user-1")
-			row, code, err := svc.CreateAgent(ctx, "user-1", &CreateAgentRequest{Title: &title, DSL: messageDraftDSL(tt.params)})
+			row, code, err := svc.CreateAgent(ctx, &CreateAgentRequest{Title: &title, DSL: messageDraftDSL(tt.params)})
 			if err != nil || code != common.CodeSuccess {
 				t.Fatalf("create: code=%v err=%v", code, err)
 			}
 			for range 2 {
-				if err := svc.UpdateAgent(ctx, "user-1", row.ID, map[string]any{"dsl": messageDraftDSL(tt.params)}); err != nil {
+				if err := svc.UpdateAgent(ctx, row.ID, map[string]any{"dsl": messageDraftDSL(tt.params)}); err != nil {
 					t.Fatalf("save: %v", err)
 				}
-				saved, err := svc.GetAgent(ctx, "user-1", row.ID)
+				saved, err := svc.GetAgent(ctx, row.ID)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -85,11 +85,11 @@ func TestMessageDraftRoundTripAndExecution(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), "content does not support empty") {
 					t.Fatalf("compile error=%v", err)
 				}
-				if err := svc.UpdateAgent(t.Context(), "user-1", row.ID, map[string]any{"dsl": messageDraftDSL(tt.params), "release": true}); err == nil {
-					t.Fatal("release accepted incomplete Message")
+				if err := svc.UpdateAgent(ctx, row.ID, map[string]any{"dsl": messageDraftDSL(tt.params), "release": true}); err == nil || !strings.Contains(err.Error(), "content does not support empty") {
+					t.Fatalf("release validation error = %v, want incomplete Message error", err)
 				}
-				if _, err := svc.PublishAgent(t.Context(), "user-1", row.ID, &PublishAgentRequest{DSL: messageDraftDSL(tt.params)}); err == nil {
-					t.Fatal("publish accepted incomplete Message")
+				if _, err := svc.PublishAgent(ctx, row.ID, &PublishAgentRequest{DSL: messageDraftDSL(tt.params)}); err == nil || !strings.Contains(err.Error(), "content does not support empty") {
+					t.Fatalf("publish validation error = %v, want incomplete Message error", err)
 				}
 				return
 			}

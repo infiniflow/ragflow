@@ -827,41 +827,41 @@ func (r *ReplicateModel) Rerank(ctx context.Context, modelName *string, request 
 }
 
 func (r *ReplicateModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", r.Name())
 }
 
 func (r *ReplicateModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", r.Name())
 }
 
 func (r *ReplicateModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", r.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", r.Name())
 }
 
 func (r *ReplicateModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", r.Name())
 }
 
 func (r *ReplicateModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", r.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", r.Name())
 }
 
 func (r *ReplicateModel) OCRFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", r.Name())
 }
 
 func (r *ReplicateModel) ParseFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", r.Name())
 }
 
 func (r *ReplicateModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", r.Name())
 }
 
 func (r *ReplicateModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", r.Name())
 }
 
 func (r *ReplicateModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", r.Name())
 }

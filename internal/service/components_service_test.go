@@ -14,11 +14,8 @@
 //  limitations under the License.
 //
 
-// Phase 4 of plan port-rag-flow-pipeline-to-go.md — service-level
-// tests for ComponentsService. The handler tests verify the HTTP
-// envelope; these verify the projection layer in isolation. They
-// share the same blank-import trick to register factories into
-// runtime.DefaultRegistry.
+// Tests verify catalog projection, category filtering and stable ordering
+// against the registered agent and ingestion components.
 package service
 
 import (
@@ -61,10 +58,7 @@ func TestComponentsService_List_FilterIngestion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List(Ingestion) returned error: %v", err)
 	}
-	wantNames := []string{
-		"extractor", "file", "generalchunker", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
-		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker", "titlechunker", "tokenchunker", "tokenizer",
-	}
+	wantNames := runtime.DefaultRegistry.NamesByCategory(runtime.CategoryIngestion)
 	assertComponentNameSet(t, "ingestion", namesOf(got), wantNames)
 }
 
@@ -84,10 +78,10 @@ func TestComponentsService_List_FilterIngestionAndShared(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List(Ingestion,Shared) returned error: %v", err)
 	}
-	wantNames := []string{
-		"extractor", "file", "generalchunker", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
-		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker", "titlechunker", "tokenchunker", "tokenizer",
-	}
+	wantNames := append(
+		runtime.DefaultRegistry.NamesByCategory(runtime.CategoryIngestion),
+		runtime.DefaultRegistry.NamesByCategory(runtime.CategoryShared)...,
+	)
 	assertComponentNameSet(t, "ingestion+shared", namesOf(got), wantNames)
 }
 
@@ -103,10 +97,7 @@ func TestComponentsService_List_FilterDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List(Ingestion x3) returned error: %v", err)
 	}
-	wantNames := []string{
-		"extractor", "file", "generalchunker", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
-		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker", "titlechunker", "tokenchunker", "tokenizer",
-	}
+	wantNames := runtime.DefaultRegistry.NamesByCategory(runtime.CategoryIngestion)
 	if len(got) != len(wantNames) {
 		t.Errorf("duplicate category produced %d rows, want %d", len(got), len(wantNames))
 	}
@@ -146,9 +137,12 @@ func namesOf(ds []ComponentDescriptor) []string {
 	return out
 }
 
-// assertComponentNameSet compares two name slices as sets (order-insensitive).
+// assertComponentNameSet checks the names and requires sorted output.
 func assertComponentNameSet(t *testing.T, label string, got, want []string) {
 	t.Helper()
+	if !sort.StringsAreSorted(got) {
+		t.Errorf("%s: component names are not sorted: %v", label, got)
+	}
 	gotSorted := append([]string(nil), got...)
 	sort.Strings(gotSorted)
 	wantSorted := append([]string(nil), want...)

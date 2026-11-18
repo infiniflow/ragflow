@@ -363,10 +363,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       layoutRecognize: 'Dokumentenparser',
       layoutRecognizeTip:
         'Verwendet ein visuelles Modell für die PDF-Layout-Analyse, um Dokumententitel, Textblöcke, Bilder und Tabellen effektiv zu lokalisieren. Wenn die einfache Option gewählt wird, wird nur der reine Text im PDF abgerufen. Bitte beachten Sie, dass diese Option derzeit NUR für PDF-Dokumente funktioniert. Weitere Informationen finden Sie unter https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Aufgabenseitengröße',
-      taskPageSizeMessage: 'Bitte geben Sie die Größe der Aufgabenseite ein!',
-      taskPageSizeTip:
-        'Während der Layouterkennung wird eine PDF-Datei in Chunks aufgeteilt und parallel verarbeitet, um die Verarbeitungsgeschwindigkeit zu erhöhen. Dieser Parameter legt die Größe jedes Chunks fest. Eine größere Chunk-Größe verringert die Wahrscheinlichkeit, dass fortlaufender Text zwischen den Seiten aufgeteilt wird.',
       addPage: 'Seite hinzufügen',
       greaterThan: 'Der aktuelle Wert muss größer als "bis" sein!',
       greaterThanPrevious:
@@ -395,9 +391,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       childrenDelimiter: 'Trennzeichen für Text',
       childrenDelimiterTip:
         'Ein Trennzeichen oder Separator kann aus einem oder mehreren Sonderzeichen bestehen. Bei mehreren Zeichen stellen Sie sicher, dass sie in Backticks (` `) eingeschlossen sind. Wenn Sie beispielsweise Ihre Trennzeichen so konfigurieren: \\n`##`;, dann werden Ihre Texte an Zeilenumbrüchen, doppelten Rautenzeichen (##) oder Semikolons getrennt.',
-      html4excel: 'Excel zu HTML',
-      html4excelTip:
-        'Verwenden Sie dies zusammen mit der General-Schnittmethode. Wenn deaktiviert, werden Tabellenkalkulationsdateien (XLSX, XLS (Excel 97-2003)) zeilenweise in Schlüssel-Wert-Paare analysiert. Wenn aktiviert, werden Tabellenkalkulationsdateien in HTML-Tabellen umgewandelt. Wenn die ursprüngliche Tabelle mehr als 12 Zeilen enthält, teilt das System sie automatisch alle 12 Zeilen in mehrere HTML-Tabellen auf. Für weitere Informationen siehe https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.',
       autoKeywords: 'Auto-Schlüsselwort',
       autoKeywordsTip:
         'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren. Für weitere Informationen siehe https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
@@ -456,8 +449,8 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       paddleocrApiUrlPlaceholder:
         'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio-Zugriffstoken',
-      paddleocrAccessTokenTip: 'Zugriffstoken für die PaddleOCR-API (optional)',
-      paddleocrAccessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
+      paddleocrAccessTokenTip: 'Zugriffstoken für die PaddleOCR-API',
+      paddleocrAccessTokenPlaceholder: 'Ihr AI Studio-Token',
       paddleocrAlgorithm: 'PaddleOCR-Algorithmus',
       paddleocrAlgorithmTip:
         'Algorithmus, der für die PaddleOCR-Verarbeitung verwendet wird',
@@ -1246,7 +1239,7 @@ Beispiel: Virtual Hosted Style`,
         apiUrlPlaceholder:
           'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio-Zugriffstoken',
-        accessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
+        accessTokenPlaceholder: 'Ihr AI Studio-Token',
         algorithm: 'PaddleOCR-Algorithmus',
         selectAlgorithm: 'Algorithmus auswählen',
         modelNamePlaceholder: 'Zum Beispiel: paddleocr-from-env-1',
@@ -1602,6 +1595,19 @@ Beispiel: Virtual Hosted Style`,
         'Eine Komponente, die das LLM auffordert, Antworten zu generieren. Stellen Sie sicher, dass der Prompt korrekt eingestellt ist.',
       categorizeDescription:
         'Eine Komponente, die das LLM verwendet, um Benutzereingaben in vordefinierte Kategorien zu klassifizieren. Stellen Sie sicher, dass Sie für jede Kategorie den Namen, die Beschreibung und Beispiele sowie die entsprechende nächste Komponente angeben.',
+      scoredSwitchQuestionRequired:
+        'Jede zusätzliche Frage braucht eine Anweisung',
+      scoredSwitchLevelMinimum: 'Fügen Sie mindestens zwei Stufen hinzu',
+      scoredSwitchFieldMinimum: 'Fügen Sie mindestens ein Feld hinzu',
+      scoredSwitchFieldNameInvalid:
+        'Der Feldname muss mit einem Buchstaben oder Unterstrich beginnen',
+      scoredSwitchListItemsRequired: 'Eine Liste braucht einen Eintragstyp',
+      scoredSwitchEstimateBoundsRequired:
+        'Eine Schätzung braucht ein Minimum und ein Maximum',
+      scoredSwitchForecastRequired:
+        'Eine Prognose braucht einen Horizont und ein Intervall',
+      scoredSwitchDecimalsRange:
+        'Dezimalstellen müssen zwischen 0 und 6 liegen',
       relevantDescription:
         'Eine Komponente, die das LLM verwendet, um zu beurteilen, ob die vorgelagerte Ausgabe für die neueste Anfrage des Benutzers relevant ist. Stellen Sie sicher, dass Sie die nächste Komponente für jedes Beurteilungsergebnis angeben.',
       rewriteQuestionDescription:
@@ -2014,9 +2020,9 @@ Beispiel: Virtual Hosted Style`,
       jsonFormatTip:
         'Die vorgelagerte Komponente sollte einen JSON-String im folgenden Format bereitstellen:',
       toEmailTip: 'to_email: Empfänger-E-Mail (Erforderlich)',
-      ccEmailTip: 'cc_email: CC-E-Mail (Optional)',
-      subjectTip: 'subject: E-Mail-Betreff (Optional)',
-      contentTip: 'content: E-Mail-Inhalt (Optional)',
+      ccEmailTip: 'cc_email: CC-E-Mail',
+      subjectTip: 'subject: E-Mail-Betreff',
+      contentTip: 'content: E-Mail-Inhalt',
       jsonUploadTypeErrorMessage: 'Bitte laden Sie eine JSON-Datei hoch',
       jsonUploadContentErrorMessage: 'JSON-Dateifehler',
       iteration: 'Iteration',

@@ -613,10 +613,6 @@ export default {
       layoutRecognize: 'PDF parseri',
       layoutRecognizeTip:
         'PDF maketini tahlil qilish uchun vizual modeldan foydalanib, hujjat sarlavhalari, matn bloklari, rasmlari va jadvallarini aniq joylashtiradi. Naive varianti tanlansa, PDFdan faqat oddiy matn olinadi. E’tibor bering, bu variant hozircha FAQAT PDF hujjatlari uchun ishlaydi.',
-      taskPageSize: 'Vazifa sahifa hajmi',
-      taskPageSizeMessage: 'Iltimos, vazifa sahifa hajmini kiriting!',
-      taskPageSizeTip:
-        'Maketni aniqlash paytida PDF fayli bo‘laklarga bo‘linadi va qayta ishlash tezligini oshirish uchun parallel qayta ishlanadi. Bu parametr har bir bo‘lak hajmini belgilaydi. Kattaroq bo‘lak hajmi sahifalar orasidagi uzluksiz matnni bo‘lib yuborish ehtimolini kamaytiradi.',
       addPage: 'Sahifa qo‘shish',
       greaterThan: 'Joriy qiymat "gacha" qiymatidan katta bo‘lishi kerak!',
       greaterThanPrevious:
@@ -648,9 +644,6 @@ export default {
       delimiterPreviewEmpty:
         'Ajratgichlar yo‘q — matn faqat hajm bo‘yicha bo‘laklanadi.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: 'Excel’dan HTML’ga',
-      html4excelTip:
-        'Umumiy bo‘laklash usuli bilan ishlatiladi. O‘chirilganda, to‘plamdagi elektron jadvallar (XLSX yoki XLS (Excel 97-2003)) kalit-qiymat juftliklariga tahlil qilinadi. Yoqilganda, ular HTML jadvallarga tahlil qilinadi va agar original jadval 12 qatordan ko‘p bo‘lsa, har 12 qatorda bo‘linadi. Tafsilotlar uchun https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration ga qarang.',
       autoKeywords: 'Ajratib olinadigan kalit so‘zlar soni',
       autoKeywordsTip:
         'Har bir bo‘lak uchun N ta kalit so‘zni avtomatik ajratib olib, ushbu kalit so‘zlarni o‘z ichiga olgan so‘rovlar uchun ularning reytingini oshiradi. ‘Sozlash’da belgilangan indekslash modeli tomonidan qo‘shimcha tokenlar sarflanishini yodda tuting. Bo‘lak uchun qo‘shilgan kalit so‘zlarni bo‘laklar ro‘yxatidan tekshirishingiz yoki yangilashingiz mumkin. Tafsilotlar uchun https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration ga qarang.',
@@ -707,9 +700,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'masalan, https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio Access Token',
-      paddleocrAccessTokenTip: 'PaddleOCR API uchun access token (ixtiyoriy)',
-      paddleocrAccessTokenPlaceholder:
-        'Sizning AI Studio tokeningiz (ixtiyoriy)',
+      paddleocrAccessTokenTip: 'PaddleOCR API uchun access token',
+      paddleocrAccessTokenPlaceholder: 'Sizning AI Studio tokeningiz',
       paddleocrAlgorithm: 'PaddleOCR algoritmi',
       paddleocrAlgorithmTip: 'PaddleOCR tahlili uchun ishlatiladigan algoritm',
       paddleocrSelectAlgorithm: 'Algoritmni tanlash',
@@ -1264,22 +1256,10 @@ export default {
       dataSourceFieldTenantId: 'Tenant ID',
       dataSourceFieldClientId: 'Client ID',
       dataSourceFieldClientSecret: 'Client Secret',
-      dataSourceFieldFolderPathOptional: 'Papka yo‘li (ixtiyoriy)',
+      dataSourceFieldFolderPathOptional: 'Papka yo‘li',
       dataSourceFieldBatchSize: 'Partiya hajmi',
-      dataSourceFieldFeishuAppId: 'Feishu app ID',
-      dataSourceFieldFeishuAppSecret: 'Feishu app kaliti (secret)',
-      dataSourceFieldWikiSpaceId: 'Wiki maydon ID',
-      dataSourceFieldRootNodeToken: 'Wiki ildiz tugmasi tokeni',
-      dataSourceFieldIncludeExtensions: 'Ruxsat etilgan fayl kengaytmalari',
-      dataSourceFieldIncludeKeywords: 'Majburiy fayl nomi kalit so‘zlari',
-      dataSourceFieldExcludeKeywords:
-        'Istisno qilinadigan fayl nomi kalit so‘zlari',
-      dataSourceFieldMaxFileSizeBytes: 'Maksimal fayl hajmi (bayt)',
-      dataSourceValidationFeishuBatchSize:
-        'Partiya hajmi 1 dan 10 gacha bo‘lishi kerak',
       dataSourceFieldMailFolder: 'Pochta papkasi',
-      dataSourceFieldMailboxUserIds:
-        'Pochta qutilari foydalanuvchi ID’lari (ixtiyoriy)',
+      dataSourceFieldMailboxUserIds: 'Pochta qutilari foydalanuvchi ID’lari',
       dataSourceFieldInstanceUrl: 'Instansiya URL',
       dataSourceFieldObjects: 'Obyektlar',
       dataSourceFieldApiVersion: 'API versiyasi',
@@ -1290,7 +1270,7 @@ export default {
       dataSourceFieldContainerUrl: 'Konteyner URL',
       dataSourceFieldSasToken: 'SAS Token',
       dataSourceFieldContainerName: 'Konteyner nomi',
-      dataSourceFieldPrefixOptional: 'Prefiks (ixtiyoriy)',
+      dataSourceFieldPrefixOptional: 'Prefiks',
       dataSourceFieldFeedUrl: 'Feed URL',
       dataSourceFieldSitemapUrl: 'Sitemap URL',
       dataSourceFieldUrlFilter: 'URL filtri (regex)',
@@ -1552,8 +1532,6 @@ export default {
         'Bilim olish uchun Notion’dan sahifa va ma’lumotlar bazalarini sinxronlang.',
       google_driveDescription:
         'Google Drive’ingizni OAuth orqali ulang va aniq papkalar yoki drivelarni sinxronlang.',
-      feishu_wikiDescription:
-        'Feishu Wiki subtreesidan yuklab olinadigan fayl tugmalarini sinxronlash.',
       gmailDescription:
         'Email sinxronlash uchun Gmail’ingizni OAuth orqali ulang.',
       webdavDescription:
@@ -2016,14 +1994,6 @@ export default {
       apiKeyTip:
         'API Key mos LLM provayderida ro‘yxatdan o‘tish orqali olinishi mumkin.',
       aimlapiGetKey: 'API kalitini olish',
-      aimlapiCheckStatus: 'Holatni tekshirish',
-      aimlapiAwaitingConsent: 'AI/ML API oynasida tasdiqlanishi kutilmoqda…',
-      aimlapiKeyAdded: 'AI/ML API kalitingiz yaratildi va yuqorida qo‘shildi.',
-      aimlapiAuthDenied: 'Ruxsat rad etildi. Iltimos, qayta urinib ko‘ring.',
-      aimlapiAuthExpired:
-        'So‘rov muddati tugadi. Iltimos, qayta urinib ko‘ring.',
-      aimlapiAuthFailed:
-        'Kirish amalga oshmadi. Iltimos, qayta urinib ko‘ring.',
       showMoreModels: 'Modellarni ko‘rish',
       hideModels: 'Modellarni yashirish',
       baseUrl: 'Base URL',
@@ -2049,10 +2019,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'masalan, https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio Access Token',
-      paddleocrAccessTokenMessage:
-        'PaddleOCR API uchun access token (ixtiyoriy)',
-      paddleocrAccessTokenPlaceholder:
-        'Sizning AI Studio tokeningiz (ixtiyoriy)',
+      paddleocrAccessTokenMessage: 'PaddleOCR API uchun access token',
+      paddleocrAccessTokenPlaceholder: 'Sizning AI Studio tokeningiz',
       paddleocrAlgorithm: 'PaddleOCR algoritmi',
       paddleocrAlgorithmMessage: 'Iltimos, PaddleOCR algoritmini tanlang',
       paddleocrSelectAlgorithm: 'Algoritmni tanlash',
@@ -2134,7 +2102,7 @@ export default {
         apiUrlPlaceholder:
           'Misol uchun: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio Access Token',
-        accessTokenPlaceholder: 'Sizning AI Studio tokeningiz (ixtiyoriy)',
+        accessTokenPlaceholder: 'Sizning AI Studio tokeningiz',
         algorithm: 'PaddleOCR algoritmi',
         selectAlgorithm: 'Algoritmni tanlash',
         modelNamePlaceholder: 'Misol uchun: paddleocr-from-env-1',
@@ -2569,13 +2537,6 @@ export default {
     },
     flow: {
       exportCurrentPage: 'Joriy sahifani eksport qilish',
-      preprocess: {
-        preprocess: 'Oldindan qayta ishlash',
-        mainContent: 'Asosiy kontent',
-        abstract: 'Annotatsiya',
-        author: 'Muallif',
-        sectionTitle: 'Bo‘lim sarlavhasi',
-      },
       tags: 'Teglar',
       agentCategory: 'Canvas toifasi',
       editTags: 'Teglarni tahrirlash',
@@ -2689,9 +2650,6 @@ export default {
       oneChunkTitle: 'Eslatma',
       oneChunkDescription:
         'Tahlil qilingan barcha bo‘limlar tartib bilan bitta bo‘lakka birlashtiriladi.',
-      flattenMediaToText: 'Vizual modelni o‘chirish',
-      flattenMediaToTextTip:
-        'Rasm va jadval bo‘limlarini oddiy matn sifatida qarab, vizual yaxshilashni o‘tkazib yuboradi.',
       enableChildrenDelimiters: 'Qidiruv uchun bola bo‘laklar ishlatiladi',
       merge: 'Birlashtirish',
       split: 'Bo‘lish',
@@ -2780,6 +2738,17 @@ export default {
         'LLMdan javoblar generatsiya qilishni so‘raydigan komponent. Prompt to‘g‘ri belgilanganiga ishonch hosil qiling.',
       categorizeDescription:
         'LLM yordamida foydalanuvchi kirishlarini oldindan belgilangan toifalarga tasniflaydigan komponent. Har bir toifa uchun nom, tavsif va misollarni, hamda mos keyingi komponentni belgilang.',
+      scoredSwitchQuestionRequired:
+        'Har bir qo‘shimcha savol uchun ko‘rsatma kerak',
+      scoredSwitchLevelMinimum: 'Kamida ikkita daraja qo‘shing',
+      scoredSwitchFieldMinimum: 'Kamida bitta maydon qo‘shing',
+      scoredSwitchFieldNameInvalid:
+        'Maydon nomi harf yoki pastki chiziq bilan boshlanishi kerak',
+      scoredSwitchListItemsRequired: 'Ro‘yxat uchun element turi kerak',
+      scoredSwitchEstimateBoundsRequired:
+        'Baholash uchun eng past va eng yuqori qiymat kerak',
+      scoredSwitchForecastRequired: 'Bashorat uchun ufqlik va oraliq kerak',
+      scoredSwitchDecimalsRange: 'O‘nliklar 0 dan 6 gacha bo‘lishi kerak',
       relevantDescription:
         'LLM yordamida yuqoridagi chiqish foydalanuvchining oxirgi so‘roviga tegishlimi yoki yo‘qligini baholaydigan komponent. Har bir hakamlik natijasi uchun keyingi komponentni belgilang.',
       rewriteQuestionDescription:
@@ -3239,9 +3208,9 @@ export default {
       jsonFormatTip:
         'Yuqoridagi komponent quyidagi formatda JSON satrini ta’minlashi kerak:',
       toEmailTip: 'to_email: Qabul qiluvchi pochtasi (Majburiy)',
-      ccEmailTip: 'cc_email: Nusxa pochtasi (Ixtiyoriy)',
-      subjectTip: 'subject: Email mavzusi (Ixtiyoriy)',
-      contentTip: 'content: Email kontenti (Ixtiyoriy)',
+      ccEmailTip: 'cc_email: Nusxa pochtasi',
+      subjectTip: 'subject: Email mavzusi',
+      contentTip: 'content: Email kontenti',
       jsonUploadTypeErrorMessage: 'Iltimos, json faylini yuklang',
       jsonUploadContentErrorMessage: 'json fayl xatosi',
       nameExists: 'Nom allaqachon mavjud',

@@ -101,8 +101,8 @@ func TestDatasetsHandlerListIngestionLogsDatasourceLogType(t *testing.T) {
 	insertIngestionMessagesHandlerKB(t, db, "kb-1", "user-1")
 
 	connectors := []entity.Connector{
-		{ID: "connector-1", TenantID: "user-1", Name: "configured", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
-		{ID: "connector-2", TenantID: "user-1", Name: "unlinked", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-1", TenantID: "user-1", Name: "configured", Source: "rss", InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-2", TenantID: "user-1", Name: "unlinked", Source: "rss", InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusDone)},
 	}
 	if err := db.Create(&connectors).Error; err != nil {
 		t.Fatalf("insert connectors: %v", err)
@@ -152,7 +152,7 @@ func newIngestionMessagesHandlerRouter() *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/datasets/:dataset_id/ingestions/:log_id/messages", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
-		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 		h.ListIngestionMessages(c)
 	})
 	return r
@@ -164,7 +164,7 @@ func newIngestionLogsHandlerRouter() *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/datasets/:dataset_id/ingestions", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
-		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 		h.ListIngestionLogs(c)
 	})
 	return r

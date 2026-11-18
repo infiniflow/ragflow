@@ -78,8 +78,9 @@ type TenantInfoResponse struct {
 }
 
 // GetCurrentTenantInfo returns the active tenant with the user's membership settings.
-func (s *UserTenantService) GetCurrentTenantInfo(ctx context.Context, userID string) (*TenantInfoResponse, error) {
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+func (s *UserTenantService) GetCurrentTenantInfo(ctx context.Context) (*TenantInfoResponse, error) {
+	userID := permission.UserIDFromContext(ctx)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -94,15 +95,22 @@ func (s *UserTenantService) GetCurrentTenantInfo(ctx context.Context, userID str
 	return &TenantInfoResponse{
 		TenantID:  tenant.ID,
 		Name:      tenant.Name,
-		LLMID:     membership.LLMID,
-		EmbDID:    membership.EmbdID,
-		RerankID:  membership.RerankID,
-		ASRID:     membership.ASRID,
-		Img2TxtID: membership.Img2TxtID,
-		TTSID:     ptrStringValue(membership.TTSID),
+		LLMID:     preferredModelID(membership.TenantLLMID, membership.LLMID),
+		EmbDID:    preferredModelID(membership.TenantEmbdID, membership.EmbdID),
+		RerankID:  preferredModelID(membership.TenantRerankID, membership.RerankID),
+		ASRID:     preferredModelID(membership.TenantASRID, membership.ASRID),
+		Img2TxtID: preferredModelID(membership.TenantImg2TxtID, membership.Img2TxtID),
+		TTSID:     preferredModelID(membership.TenantTTSID, ptrStringValue(membership.TTSID)),
 		ParserIDs: tenant.ParserIDs,
 		Role:      membership.Role,
 	}, nil
+}
+
+func preferredModelID(tenantModelID *string, legacyModelID string) string {
+	if tenantModelID != nil && strings.TrimSpace(*tenantModelID) != "" {
+		return *tenantModelID
+	}
+	return legacyModelID
 }
 
 // UserTenantRelation represents a user-tenant relationship response.
@@ -132,10 +140,10 @@ func (s *UserTenantService) GetUserTenantRelationByUserIDWithContext(ctx context
 	return result, nil
 }
 
-var defaultModelTypeNames = [...]string{"chat", "embedding", "rerank", "asr", "vision", "tts", "ocr", "decision"}
+var defaultModelTypeNames = [...]string{"chat", "embedding", "rerank", "asr", "vision", "tts", "ocr", "decision", "scoring"}
 
 // SetModelSettings validates and updates default models on the user's active tenant membership.
-func (s *UserTenantService) SetModelSettings(ctx context.Context, userID string, req *SetModelSettingsRequest) (common.ErrorCode, error) {
+func (s *UserTenantService) SetModelSettings(ctx context.Context, req *SetModelSettingsRequest) (common.ErrorCode, error) {
 	if req == nil || (req.Raw != nil && req.DefaultModel != nil) {
 		return common.CodeArgumentError, fmt.Errorf("provide either model settings or one default model selection")
 	}
@@ -167,7 +175,8 @@ func (s *UserTenantService) SetModelSettings(ctx context.Context, userID string,
 	if err != nil {
 		return common.CodeArgumentError, err
 	}
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	userID := permission.UserIDFromContext(ctx)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return common.CodeForbidden, err
 	}
@@ -211,7 +220,7 @@ func (s *UserTenantService) SetModelSettings(ctx context.Context, userID string,
 			continue
 		}
 
-		info, err := factory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, modelType, modelRef)
+		info, err := factory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, modelRef)
 		if err != nil {
 			switch {
 			case errors.Is(err, permission.ErrPermissionDenied), errors.Is(err, permission.ErrResourceNotFound), errors.Is(err, permission.ErrMembershipNotFound):
@@ -254,7 +263,7 @@ func modelSettingField(key string) (string, string, bool) {
 			continue
 		}
 		if key == legacyField || key == idField {
-			nullable := key == idField || legacyField == "tts_id" || legacyField == "ocr_id" || legacyField == "decision_id"
+			nullable := key == idField || legacyField == "tts_id" || legacyField == "ocr_id" || legacyField == "decision_id" || legacyField == "scoring_id"
 			return legacyField, idField, nullable
 		}
 	}
@@ -317,6 +326,8 @@ func defaultModelFields(modelType string) (string, string, entity.ModelType, err
 		return "ocr_id", "tenant_ocr_id", entity.ModelTypeOCR, nil
 	case "decision":
 		return "decision_id", "tenant_decision_id", entity.ModelTypeDecision, nil
+	case "scoring":
+		return "scoring_id", "tenant_scoring_id", entity.ModelTypeScoring, nil
 	default:
 		return "", "", 0, fmt.Errorf("model type %s is invalid", modelType)
 	}
@@ -330,8 +341,9 @@ func ptrStringValue(value *string) string {
 }
 
 // ListDefaultModels returns the models configured on the user's current tenant membership.
-func (s *UserTenantService) ListDefaultModels(ctx context.Context, userID string) ([]ModelItem, error) {
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+func (s *UserTenantService) ListDefaultModels(ctx context.Context) ([]ModelItem, error) {
+	userID := permission.UserIDFromContext(ctx)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -353,6 +365,7 @@ func (s *UserTenantService) ListDefaultModels(ctx context.Context, userID string
 		{modelType: "ocr", modelName: ptrStringValue(membership.OCRID), modelID: membership.TenantOCRID},
 		{modelType: "tts", modelName: ptrStringValue(membership.TTSID), modelID: membership.TenantTTSID},
 		{modelType: "decision", modelName: ptrStringValue(membership.DecisionID), modelID: membership.TenantDecisionID},
+		{modelType: "scoring", modelName: ptrStringValue(membership.ScoringID), modelID: membership.TenantScoringID},
 	}
 	factory := NewModelFactory()
 	result := make([]ModelItem, 0, len(models))
@@ -368,7 +381,7 @@ func (s *UserTenantService) ListDefaultModels(ctx context.Context, userID string
 		if err != nil {
 			continue
 		}
-		info, err := factory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, modelType, modelRef)
+		info, err := factory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, modelRef)
 		if err != nil || info == nil {
 			continue
 		}

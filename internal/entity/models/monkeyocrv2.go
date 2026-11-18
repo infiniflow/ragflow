@@ -95,5 +95,5 @@ func monkeyOCRv2BaseURLFromAPIKey(apiConfig *APIConfig) string {
 }
 
 func (m *MonkeyOCRv2Model) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", m.Name())
 }

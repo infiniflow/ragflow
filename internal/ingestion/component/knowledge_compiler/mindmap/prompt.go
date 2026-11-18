@@ -7,9 +7,9 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// mindMapExtractionPrompt is based on MIND_MAP_EXTRACTION_PROMPT
-// (rag/graphrag/general/mind_map_prompt.py), extended with the JSON tree and
-// source-chunk provenance contract. It is the SYSTEM message; the user turn is
+// mindMapExtractionPrompt is based on MIND_MAP_EXTRACTION_PROMPT, extended
+// with the JSON tree and source-chunk provenance contract. It is the SYSTEM
+// message; the user turn is
 // the fixed string "Output:" (see userMessage).
 const mindMapExtractionPrompt = `
 - Role: You're a talent text processor to summarize a piece of text into a mind map.
@@ -35,12 +35,12 @@ const mindMapExtractionPrompt = `
 `
 
 // userMessage is the fixed user turn appended after the rendered system
-// prompt (Python: [{"role": "user", "content": "Output:"}]).
+// prompt (: [{"role": "user", "content": "Output:"}])
 const userMessage = "Output:"
 
 // mindmapMaxLength stands in for chat_mdl.max_length — the ChatInvoker seam
 // does not expose the model window, so the batch budget uses the same
-// conservative constant the other variants use. Python derives the budget as
+// conservative constant the other variants use. derives the budget as
 // max(max_length*0.8, max_length-512).
 const mindmapMaxLength = 4096
 
@@ -55,7 +55,7 @@ func batchBudget() int {
 }
 
 // renderPrompt mirrors perform_variable_replacements for the single
-// {input_text} variable (prompt_variables is empty at the Python call site).
+// {input_text} variable (prompt_variables is empty at the call site)
 func renderPrompt(text string) string {
 	return strings.ReplaceAll(mindMapExtractionPrompt, "{input_text}", text)
 }

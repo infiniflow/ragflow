@@ -97,7 +97,7 @@ func newCompilationStatusHandlerRouter() *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/datasets/:dataset_id/compilation/status", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
-		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 		h.GetCompilationStatus(c)
 	})
 	return r

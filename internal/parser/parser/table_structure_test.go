@@ -98,7 +98,7 @@ func TestMarkdownTableImageTimeoutDoesNotConsumeBudget(t *testing.T) {
 	doc := markdownNew().Parse([]byte("| A | B |\n|---|---|\n| Logo | ![logo](http://127.0.0.1/logo.png) |\n"))
 	budget := newMediaBudgetForTest()
 	var items []map[string]any
-	unresolved := walkMarkdownBlocksWithImages(ctx, doc, &items, false, true, &htmlWalkState{budget: budget})
+	unresolved := walkMarkdownBlocksWithImages(ctx, doc, &items, true, &htmlWalkState{budget: budget})
 	if budget.Count() != 0 || unresolved != 0 {
 		t.Fatalf("timed out image consumed budget: attempts=%d unresolved=%d", budget.Count(), unresolved)
 	}
@@ -252,8 +252,20 @@ func TestPPTXTableOnlySlideIsNotEmpty(t *testing.T) {
 	}
 }
 
-func TestOfficeTableRetainsDefaultHeaderCount(t *testing.T) {
+func TestOfficeTableUsesRepeatedHeaderFlags(t *testing.T) {
 	ir := `{"sections":[{"elements":[{"type":"table","rows":[{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]}]},{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H2"}]}]}]}]}]}]}`
+	items := buildDOCXJSONSections(ir, nil)
+	if len(items) != 1 {
+		t.Fatalf("items=%#v", items)
+	}
+	td := items[0]["table"].(*entity.TableData)
+	if td.HeaderRows != 2 || len(td.Grid) != 2 {
+		t.Fatalf("table=%+v, want two rows and two repeated header rows", td)
+	}
+}
+
+func TestOfficeTableDefaultsToOneHeaderWithoutFlags(t *testing.T) {
+	ir := `{"sections":[{"elements":[{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]}]},{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H2"}]}]}]}]}]}]}`
 	items := buildDOCXJSONSections(ir, nil)
 	if len(items) != 1 {
 		t.Fatalf("items=%#v", items)

@@ -106,7 +106,6 @@ export const enum KnowledgeApiAction {
   FetchWikiCommits = 'fetchWikiCommits',
   FetchWikiCommit = 'fetchWikiCommit',
   FetchMetadata = 'fetchMetadata',
-  FetchMetadataKeys = 'fetchMetadataKeys',
   FetchKnowledgeList = 'fetchKnowledgeList',
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
   ClearWiki = 'clearWiki',
@@ -876,18 +875,8 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
 
 export function useFetchKnowledgeMetadataKeys(kbIds: string[] = []) {
   const sortedKbIds = useMemo(() => [...kbIds].sort(), [kbIds]);
-  const { data, isFetching: loading } = useQuery<string[]>({
-    queryKey: [KnowledgeApiAction.FetchMetadataKeys, sortedKbIds],
-    initialData: [],
-    enabled: sortedKbIds.length > 0,
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await kbService.getMetaKeys({
-        kb_ids: sortedKbIds.join(','),
-      });
-      return data?.data ?? [];
-    },
-  });
+  const { data: metadata, loading } = useFetchKnowledgeMetadata(sortedKbIds);
+  const data = useMemo(() => Object.keys(metadata), [metadata]);
 
   return { data, loading };
 }
@@ -975,6 +964,8 @@ export const KnowledgeListKeys = {
     keywords: string,
     pageSize: number,
     canvasID?: string,
+    ownerIDs?: string[],
+    accessUserID?: string,
   ) =>
     [
       KnowledgeApiAction.FetchKnowledgeList,
@@ -982,9 +973,17 @@ export const KnowledgeListKeys = {
       keywords,
       pageSize,
       canvasID,
+      ownerIDs,
+      accessUserID,
     ] as const,
-  byIds: (ids: string[], canvasID?: string) =>
-    [KnowledgeApiAction.FetchKnowledgeList, 'byIds', ids, canvasID] as const,
+  byIds: (ids: string[], canvasID?: string, accessUserID?: string) =>
+    [
+      KnowledgeApiAction.FetchKnowledgeList,
+      'byIds',
+      ids,
+      canvasID,
+      accessUserID,
+    ] as const,
 };
 
 export const useFetchKnowledgeList = (
@@ -992,6 +991,8 @@ export const useFetchKnowledgeList = (
   keywords = '',
   pageSize: number = KNOWLEDGE_LIST_PAGE_SIZE,
   canvasID?: string,
+  ownerIDs?: string[],
+  accessUserID?: string,
 ): {
   list: IDataset[];
   loading: boolean;
@@ -1007,6 +1008,8 @@ export const useFetchKnowledgeList = (
         keywords,
         pageSize,
         canvasID,
+        ownerIDs,
+        accessUserID,
       ),
       gcTime: 0,
       initialPageParam: 1,
@@ -1017,6 +1020,8 @@ export const useFetchKnowledgeList = (
           page_size: pageSize,
           ...(keywords ? { keywords } : {}),
           ...(canvasID ? { canvas_id: canvasID } : {}),
+          ...(ownerIDs?.length ? { owner_ids: ownerIDs } : {}),
+          ...(accessUserID ? { access_user_id: accessUserID } : {}),
         });
         return {
           items: (data?.data ?? []) as IDataset[],
@@ -1073,22 +1078,33 @@ export const useFetchKnowledgeList = (
  * users pick variables alongside datasets); those are not resolvable ids and
  * are dropped before the request is built.
  */
-export const useFetchDatasetsByIds = (ids: string[], canvasID?: string) => {
+export const useFetchDatasetsByIds = (
+  ids: string[],
+  canvasID?: string,
+  accessUserID?: string,
+) => {
   const sortedIds = useMemo(
     () => Array.from(new Set(ids.filter(isDatasetId))).sort(),
     [ids],
   );
   const { data, isFetching: loading } = useQuery<IDataset[]>({
-    queryKey: KnowledgeListKeys.byIds(sortedIds, canvasID),
+    queryKey: KnowledgeListKeys.byIds(sortedIds, canvasID, accessUserID),
     enabled: sortedIds.length > 0,
     gcTime: 0,
     // Keep the previous result across id-list changes in the same canvas, but
     // never show resources from a different canvas while its lookup is in
     // flight.
     placeholderData: (previousData, previousQuery) =>
-      previousQuery?.queryKey[3] === canvasID ? previousData : undefined,
+      previousQuery?.queryKey[3] === canvasID &&
+      previousQuery?.queryKey[4] === accessUserID
+        ? previousData
+        : undefined,
     queryFn: async () => {
-      const { data } = await listDatasetByIds(sortedIds, canvasID);
+      const { data } = await listDatasetByIds(
+        sortedIds,
+        canvasID,
+        accessUserID,
+      );
       return (data?.data ?? []) as IDataset[];
     },
   });
@@ -1105,6 +1121,7 @@ export const useFetchDatasetsByIds = (ids: string[], canvasID?: string) => {
 export const useStaleDatasetIds = (
   datasetIds?: string[],
   canvasID?: string,
+  accessUserID?: string,
 ) => {
   // Variable references (e.g. `sys.query`) never resolve to datasets, so
   // exclude them up front instead of letting them fall out of the lookup
@@ -1116,6 +1133,7 @@ export const useStaleDatasetIds = (
   const { data: datasets, loading } = useFetchDatasetsByIds(
     persistedIds,
     canvasID,
+    accessUserID,
   );
 
   const staleDatasetIds = useMemo(() => {

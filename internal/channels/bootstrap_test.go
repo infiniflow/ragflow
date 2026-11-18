@@ -26,8 +26,74 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"ragflow/internal/channels/core"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 )
+
+func TestStartIsolatesMalformedChannelAndKeepsReconciling(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&entity.ChatChannel{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.ChatChannel{
+		ID: "invalid", TenantID: "tenant", Name: "invalid", Channel: "telegram",
+		Config: entity.JSONMap{}, Status: 1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	runtime, err := Start(ctx, nil)
+	if err != nil {
+		t.Fatalf("Start() error = %v, want isolated channel failure", err)
+	}
+	defer runtime.Stop()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		runtime.mu.Lock()
+		failure, ok := runtime.failed["invalid"]
+		if ok {
+			cancel()
+			runtime.mu.Unlock()
+			if failure.attempts != 1 {
+				t.Fatalf("failed channel attempts = %d, want 1", failure.attempts)
+			}
+			break
+		}
+		runtime.mu.Unlock()
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			t.Fatal("background reconciliation did not record channel failure")
+		}
+	}
+}
+
+func TestStartReturnsDatabaseFailure(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalDB := dao.DB
+	dao.DB = db
+	defer func() { dao.DB = originalDB }()
+	if _, err := Start(t.Context(), nil); err == nil {
+		t.Fatal("Start() succeeded without the channel table")
+	}
+}
 
 func TestStartRetryDelay(t *testing.T) {
 	tests := []struct {
@@ -217,5 +283,67 @@ func TestWhatsAppRetireChatWorkerRequiresCurrentEmptyWorker(t *testing.T) {
 	}
 	if _, ok := ch.workers["chat-1"]; ok {
 		t.Fatal("empty retired worker remains in ownership map")
+	}
+}
+
+func TestRuntimeStopWaitsForAdapterCleanup(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&entity.ChatChannel{}); err != nil {
+		t.Fatal(err)
+	}
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+	runtime := NewRuntime()
+	adapter := &shutdownChannel{stopping: make(chan struct{}), release: make(chan struct{})}
+	runtime.running["account"] = runningChannel{channel: adapter}
+	ctx, cancel := context.WithCancel(t.Context())
+	go runtime.Run(ctx)
+	cancel()
+	stopped := make(chan struct{})
+	go func() { runtime.Stop(); close(stopped) }()
+	select {
+	case <-adapter.stopping:
+	case <-time.After(5 * time.Second):
+		t.Fatal("adapter cleanup never started")
+	}
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned before adapter cleanup")
+	default:
+	}
+	close(adapter.release)
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop did not finish after adapter cleanup")
+	}
+	if adapter.canceled {
+		t.Fatal("adapter cleanup received a canceled context")
+	}
+}
+
+type shutdownChannel struct {
+	stopping chan struct{}
+	release  chan struct{}
+	canceled bool
+}
+
+func (*shutdownChannel) ChannelID() string                                { return "test" }
+func (*shutdownChannel) AccountID() string                                { return "account" }
+func (*shutdownChannel) SetMessageHandler(core.MessageHandler)            {}
+func (*shutdownChannel) Start(context.Context) error                      { return nil }
+func (*shutdownChannel) Send(context.Context, core.OutgoingMessage) error { return nil }
+func (c *shutdownChannel) Stop(ctx context.Context) error {
+	c.canceled = ctx.Err() != nil
+	close(c.stopping)
+	select {
+	case <-c.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }

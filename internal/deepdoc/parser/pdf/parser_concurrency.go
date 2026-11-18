@@ -220,7 +220,16 @@ func (p *Parser) inferDLA(ctx context.Context, doc pdf.DocAnalyzer, pageImg imag
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
+	finish := p.trackModelCall(ctx, "DLA")
+	defer finish()
 	return doc.DLA(ctx, pageImg)
+}
+
+func (p *Parser) trackModelCall(ctx context.Context, operation string) func() {
+	if p == nil || p.Config.OnModelCall == nil {
+		return func() {}
+	}
+	return p.Config.OnModelCall(ctx, operation)
 }
 
 // reportPageInferenceFailure logs one page-local inference failure (DLA, TSR or
@@ -242,6 +251,8 @@ func (p *Parser) inferTSR(ctx context.Context, tb pdf.TableBuilder, cropped imag
 	if tb == nil {
 		return nil, nil
 	}
+	finish := p.trackModelCall(ctx, "TSR")
+	defer finish()
 	return tb.DetectCells(ctx, cropped)
 }
 
@@ -251,6 +262,8 @@ func (p *Parser) inferOCRDetect(ctx context.Context, doc pdf.DocAnalyzer, pageIm
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
+	finish := p.trackModelCall(ctx, "OCRDetect")
+	defer finish()
 	return doc.OCRDetect(ctx, pageImg)
 }
 
@@ -260,6 +273,8 @@ func (p *Parser) inferOCRRecognize(ctx context.Context, doc pdf.DocAnalyzer, cro
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
+	finish := p.trackModelCall(ctx, "OCRRecognize")
+	defer finish()
 	return doc.OCRRecognize(ctx, cropped)
 }
 
@@ -289,6 +304,8 @@ func (p *Parser) inferOCRRecognizeBatch(ctx context.Context, doc pdf.DocAnalyzer
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
+	finish := p.trackModelCall(ctx, "OCRRecognize")
+	defer finish()
 	return br.OCRRecognizeBatch(ctx, crops)
 }
 
