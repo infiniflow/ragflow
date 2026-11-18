@@ -395,6 +395,17 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 	return resp, common.CodeSuccess, nil
 }
 
+func activeTaskStatusLabel(status string) string {
+	switch status {
+	case common.CREATED, common.SCHEDULED:
+		return "Queued"
+	case common.RUNNING, common.STOPPING:
+		return "Parsing"
+	default:
+		return status
+	}
+}
+
 // validateDocumentModifiable rejects configuration edits while the document is
 // actively parsing or scheduled.
 func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *entity.Document) (common.ErrorCode, error) {
@@ -414,7 +425,7 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	switch {
 	case common.IsActiveTaskStatus(task.Status):
 		return common.CodeDataError, fmt.Errorf(
-			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", task.Status)
+			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", activeTaskStatusLabel(task.Status))
 	case common.IsTerminalTaskStatus(task.Status):
 		return common.CodeSuccess, nil
 	default:
