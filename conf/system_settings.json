@@ -1,6 +1,12 @@
 {
   "system_settings": [
     {
+      "name": "api_key.max_count",
+      "source": "variable",
+      "data_type": "integer",
+      "value": "16"
+    },
+    {
       "name": "enable_whitelist",
       "source": "variable",
       "data_type": "bool",
