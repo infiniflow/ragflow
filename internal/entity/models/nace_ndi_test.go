@@ -996,14 +996,16 @@ func TestNaceNDIPageSelection(t *testing.T) {
 }
 
 // NDI fails a job whose page_ranges run far past the last page with
-// ocr_failed (at no charge). The whole document is then parsed once on the
-// same upload and filtered to the selection, and both jobs and the upload are
-// deleted. Any other failure, and a failing whole-document parse, is
-// returned as it is.
+// ocr_failed "No renderable pages" (at no charge). The whole document is then
+// parsed once on the same upload and filtered to the selection, and both jobs
+// and the upload are deleted. Any other failure (another code, or ocr_failed
+// with another message), and a failing whole-document parse, is returned as
+// it is.
 func TestNaceOCRFileFallsBackOnOCRFailed(t *testing.T) {
 	fixture := readNaceNDIFixture(t)
-	failed := func(code string) string {
-		return `{"job_id":"job_1","status":"failed","error":{"code":"` + code + `","message":"No renderable pages in document.pdf."}}`
+	const noPages = "No renderable pages in document.pdf."
+	failed := func(jobID, code, message string) string {
+		return `{"job_id":"` + jobID + `","status":"failed","error":{"code":"` + code + `","message":"` + message + `"}}`
 	}
 	run := func(t *testing.T, reply func(n int, ranges any) string) (*naceNDIFake, *OCRFileResponse, []any, error) {
 		withFastNaceNDI(t)
@@ -1025,7 +1027,7 @@ func TestNaceOCRFileFallsBackOnOCRFailed(t *testing.T) {
 
 	fake, resp, sent, err := run(t, func(n int, ranges any) string {
 		if n == 1 {
-			return failed("ocr_failed")
+			return failed("job_ranges", "ocr_failed", noPages)
 		}
 		return string(fixture)
 	})
@@ -1041,27 +1043,35 @@ func TestNaceOCRFileFallsBackOnOCRFailed(t *testing.T) {
 	if len(resp.Warnings) != 1 || !strings.Contains(resp.Warnings[0], "NDI could not parse the selected pages (ocr_failed), so the whole document was parsed and billed") {
 		t.Fatalf("warnings=%v", resp.Warnings)
 	}
-	if fake.called("DELETE /v1/documents/jobs/job_1") != 2 || fake.called("POST /v1/documents/upload-grants") != 1 || fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1") != 1 {
+	if fake.called("DELETE /v1/documents/jobs/job_ranges") != 1 || fake.called("DELETE /v1/documents/jobs/job_1") != 1 || fake.called("POST /v1/documents/upload-grants") != 1 || fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1") != 1 {
 		t.Fatalf("calls=%v", fake.calls)
 	}
 
-	// A selection wholly outside the document fails with invalid_request:
-	// it is returned, with no second parse.
-	fake, _, sent, err = run(t, func(n int, ranges any) string { return failed("invalid_request") })
-	if err == nil || !strings.Contains(err.Error(), "job job_1 failed: invalid_request") || len(sent) != 1 {
-		t.Fatalf("err=%v sent=%v", err, sent)
-	}
-	if fake.called("DELETE /v1/documents/jobs/job_1") != 1 || fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1") != 1 {
-		t.Fatalf("calls=%v", fake.calls)
+	// A selection wholly outside the document fails with invalid_request,
+	// and ocr_failed may have other causes: either is returned, with no
+	// second parse.
+	for code, message := range map[string]string{"invalid_request": "Pages 2-3 are outside the document, which has 1 page.", "ocr_failed": "OCR engine error."} {
+		fake, _, sent, err = run(t, func(n int, ranges any) string { return failed("job_ranges", code, message) })
+		if err == nil || !strings.Contains(err.Error(), "job job_ranges failed: "+code+": "+message) || len(sent) != 1 {
+			t.Fatalf("%s: err=%v sent=%v", code, err, sent)
+		}
+		if fake.called("DELETE /v1/documents/jobs/job_ranges") != 1 || fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1") != 1 {
+			t.Fatalf("%s: calls=%v", code, fake.calls)
+		}
 	}
 
 	// The whole-document parse fails as well: its error is returned, and
 	// both jobs and the upload are deleted.
-	fake, _, sent, err = run(t, func(n int, ranges any) string { return failed("ocr_failed") })
+	fake, _, sent, err = run(t, func(n int, ranges any) string {
+		if n == 1 {
+			return failed("job_ranges", "ocr_failed", noPages)
+		}
+		return failed("job_1", "ocr_failed", noPages)
+	})
 	if err == nil || !strings.Contains(err.Error(), "job job_1 failed: ocr_failed") || len(sent) != 2 || sent[1] != nil {
 		t.Fatalf("err=%v sent=%v", err, sent)
 	}
-	if fake.called("DELETE /v1/documents/jobs/job_1") != 2 || fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1") != 1 {
+	if fake.called("DELETE /v1/documents/jobs/job_ranges") != 1 || fake.called("DELETE /v1/documents/jobs/job_1") != 1 || fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1") != 1 {
 		t.Fatalf("calls=%v", fake.calls)
 	}
 }
@@ -1626,7 +1636,7 @@ func TestNaceNDIFixtureSpans(t *testing.T) {
 	}
 }
 
-// A 429 or 503 waits the Retry-After it gives (seconds or an HTTP date) when
+// A 429, 503 or 529 waits the Retry-After it gives (seconds or an HTTP date) when
 // that is at most naceNDIMaxRetryAfter and ends before the run's deadline;
 // otherwise the usual backoff applies.
 func TestNaceNDIRetryWait(t *testing.T) {
@@ -1656,63 +1666,118 @@ func TestNaceNDIRetryWait(t *testing.T) {
 		t.Errorf("no Retry-After: %v", got)
 	}
 
-	// The refused call keeps the Retry-After of a 429 or 503 only.
-	for status, want := range map[int]time.Duration{http.StatusTooManyRequests: 7 * time.Second, http.StatusServiceUnavailable: 7 * time.Second, http.StatusBadGateway: 0} {
+	// The refused call keeps the Retry-After of a 429, 503 or 529
+	// (service_disabled) only, and each of them is sent again.
+	for status, want := range map[int]time.Duration{http.StatusTooManyRequests: 7 * time.Second, http.StatusServiceUnavailable: 7 * time.Second, 529: 7 * time.Second, http.StatusBadGateway: 0} {
 		client := &http.Client{Transport: naceNDIRoundTripper(func(req *http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"busy"}}`)), Header: http.Header{"Retry-After": {"7"}}}, nil
 		})}
 		req, _ := http.NewRequest(http.MethodGet, "https://api.example.com/v1/documents/jobs/job_1", nil)
 		var apiErr *naceNDIError
-		if err := naceNDIDo(client, req, &struct{}{}); !errors.As(err, &apiErr) || apiErr.RetryAfter != want {
+		if err := naceNDIDo(client, req, &struct{}{}); !errors.As(err, &apiErr) || apiErr.RetryAfter != want || !naceNDITransient(err) {
 			t.Errorf("status %d: err=%v", status, err)
 		}
 	}
 }
 
 // A file deletion answered 202 (still deleting) is sent again until NDI
-// confirms it with 200, 204 or a 404; one that stays unconfirmed past the
-// cleanup timeout is reported.
+// confirms it with 200, 204 or a 404. A check that fails transiently does
+// not end the checks; one that fails otherwise does. Each check is sent once,
+// and the checks end naceNDIDeleteConfirmTimeout after the first DELETE: a
+// Retry-After past that point gives one last check halfway to it, and a
+// deletion still in progress then is reported.
 func TestNaceNDIDeleteFileWaitsForDeletion(t *testing.T) {
 	withFastNaceNDI(t)
 	key := "test-key"
 	for name, tc := range map[string]struct {
 		answers []int
+		// retryAfter is sent with each 202 and 503.
+		retryAfter string
+		// window replaces naceNDIDeleteConfirmTimeout when set.
+		window  time.Duration
 		want    int
+		wantErr string
 	}{
-		"deleted after two checks": {[]int{202, 202, 200}, 3},
-		"gone after a check":       {[]int{202, 404}, 2},
-		"no content":               {[]int{204}, 1},
+		"deleted after two checks":             {answers: []int{202, 202, 200}, want: 3},
+		"gone after a check":                   {answers: []int{202, 404}, want: 2},
+		"no content":                           {answers: []int{204}, want: 1},
+		"503 twice while deleting":             {answers: []int{202, 503, 503, 200}, want: 4},
+		"refused while deleting":               {answers: []int{202, 403}, want: 2, wantErr: "status 403"},
+		"Retry-After past the window":          {answers: []int{202, 200}, retryAfter: "3600", window: 200 * time.Millisecond, want: 2},
+		"503 with Retry-After past the window": {answers: []int{202, 503, 200}, retryAfter: "20", window: 200 * time.Millisecond, want: 2, wantErr: "status 503"},
+		"still deleting when the window ends":  {answers: []int{202}, window: time.Nanosecond, want: 1, wantErr: "deletion not confirmed: still in progress"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			if tc.window > 0 {
+				previous := naceNDIDeleteConfirmTimeout
+				naceNDIDeleteConfirmTimeout = tc.window
+				t.Cleanup(func() { naceNDIDeleteConfirmTimeout = previous })
+			}
 			fake := newNaceNDIFake(t)
 			fake.deleteFile = func(w http.ResponseWriter, n int) {
-				switch status := tc.answers[min(n, len(tc.answers))-1]; status {
+				status := tc.answers[min(n, len(tc.answers))-1]
+				if tc.retryAfter != "" && (status == http.StatusAccepted || status == http.StatusServiceUnavailable) {
+					w.Header().Set("Retry-After", tc.retryAfter)
+				}
+				switch status {
 				case http.StatusAccepted:
 					writeNaceNDIJob(w, status, `{"status":"deleting"}`)
 				case http.StatusNotFound:
 					writeNaceNDIJob(w, status, `{"error":{"code":"file_not_found","message":"no such file"}}`)
+				case http.StatusServiceUnavailable, http.StatusForbidden:
+					writeNaceNDIJob(w, status, `{"error":{"code":"refused","message":"refused"}}`)
 				case http.StatusNoContent:
 					w.WriteHeader(status)
 				default:
 					writeNaceNDIJob(w, status, `{"status":"deleted"}`)
 				}
 			}
-			if err := fake.driver().ndiDelete(t.Context(), &APIConfig{ApiKey: &key}, fake.server.URL+"/v1/documents/workspaces/ws_1/files/file_1", true); err != nil {
-				t.Fatalf("ndiDelete: %v", err)
+			start := time.Now()
+			err := fake.driver().ndiDelete(t.Context(), &APIConfig{ApiKey: &key}, fake.server.URL+"/v1/documents/workspaces/ws_1/files/file_1", true)
+			elapsed := time.Since(start)
+			if (tc.wantErr == "" && err != nil) || (tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr))) {
+				t.Fatalf("ndiDelete: err=%v, want %q", err, tc.wantErr)
 			}
 			if got := fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1"); got != tc.want {
 				t.Fatalf("file deletes=%d, want %d; calls=%v", got, tc.want, fake.calls)
 			}
+			// No check or wait passes the window, so a Retry-After far past
+			// it (20 s, 3600 s) does not hold the cleanup.
+			if tc.window > 0 && elapsed >= 2*tc.window+time.Second {
+				t.Fatalf("ndiDelete took %v, window %v", elapsed, tc.window)
+			}
 		})
 	}
+}
 
+// The checks of a file deletion also end with the cleanup context: a check
+// that does not answer before naceNDICleanupTimeout ends gives "not
+// confirmed" with the cause, and the delete returns soon after the timeout.
+func TestNaceNDIDeleteFileStopsAtCleanupTimeout(t *testing.T) {
+	withFastNaceNDI(t)
 	previous := naceNDICleanupTimeout
-	naceNDICleanupTimeout = 50 * time.Millisecond
+	naceNDICleanupTimeout = 200 * time.Millisecond
 	t.Cleanup(func() { naceNDICleanupTimeout = previous })
+	release := make(chan struct{})
 	fake := newNaceNDIFake(t)
-	fake.deleteFile = func(w http.ResponseWriter, n int) { writeNaceNDIJob(w, http.StatusAccepted, `{"status":"deleting"}`) }
+	t.Cleanup(func() { close(release) })
+	fake.deleteFile = func(w http.ResponseWriter, n int) {
+		if n > 1 {
+			<-release
+		}
+		writeNaceNDIJob(w, http.StatusAccepted, `{"status":"deleting"}`)
+	}
+	key := "test-key"
+	start := time.Now()
 	err := fake.driver().ndiDelete(t.Context(), &APIConfig{ApiKey: &key}, fake.server.URL+"/v1/documents/workspaces/ws_1/files/file_1", true)
-	if err == nil || !strings.Contains(err.Error(), "deletion not confirmed") || fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1") < 2 {
-		t.Fatalf("err=%v calls=%d", err, fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1"))
+	elapsed := time.Since(start)
+	if err == nil || !strings.Contains(err.Error(), "deletion not confirmed") || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ndiDelete: err=%v, want not confirmed with a deadline error", err)
+	}
+	if got := fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1"); got != 2 {
+		t.Fatalf("file deletes=%d, want 2; calls=%v", got, fake.calls)
+	}
+	if elapsed >= naceNDICleanupTimeout+time.Second {
+		t.Fatalf("ndiDelete took %v, cleanup timeout %v", elapsed, naceNDICleanupTimeout)
 	}
 }

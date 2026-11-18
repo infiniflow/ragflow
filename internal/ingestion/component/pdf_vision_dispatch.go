@@ -122,8 +122,7 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		monkeySelector = method
 	}
 	isMonkeyMatch := strings.EqualFold(strings.TrimSpace(method), "monkeyocrv2") ||
-		strings.HasPrefix(layoutLower, "monkeyocrv2") ||
-		strings.Contains(layoutLower, "@monkeyocrv2")
+		selectorNamesParser(layoutLower, true, parserPrefix("monkeyocrv2"))
 	isMonkeyByUUID := false
 	if !isMonkeyMatch && tenantID != "" && strings.TrimSpace(monkeySelector) != "" && !parser.IsPDFParseMethod(monkeySelector) {
 		isMonkeyByUUID = isMonkeyOCRv2LayoutModelID(ctx, db, tenantID, monkeySelector)
@@ -142,16 +141,14 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	methodLower := strings.ToLower(strings.TrimSpace(method))
 
 	// Unlimited-OCR-2 dispatch: parse_method "unlimited-ocr-2" or "unlimited_ocr",
-	// a layout_recognizer naming Unlimited-OCR-2, or a composite selector.
-	isUnlimitedOCRMatch := strings.EqualFold(strings.TrimSpace(method), "unlimited-ocr-2") ||
-		strings.EqualFold(strings.TrimSpace(method), "unlimited-ocr") ||
-		strings.EqualFold(strings.TrimSpace(method), "unlimited_ocr") ||
-		strings.Contains(layoutLower, "unlimited-ocr") ||
-		strings.Contains(layoutLower, "unlimited_ocr") ||
-		strings.Contains(layoutLower, "@unlimited-ocr-2") ||
-		strings.Contains(methodLower, "@unlimited-ocr-2") ||
-		strings.Contains(layoutLower, "@unlimited-ocr") ||
-		strings.Contains(methodLower, "@unlimited-ocr")
+	// a layout_recognizer naming Unlimited-OCR-2 (either spelling, anywhere
+	// in its model or provider segment), or a parse_method composite selector
+	// whose provider is Unlimited-OCR-2.
+	isUnlimitedOCRMatch := methodLower == "unlimited-ocr-2" || methodLower == "unlimited-ocr" || methodLower == "unlimited_ocr" ||
+		selectorNamesParser(methodLower, false, parserPrefix("unlimited-ocr")) ||
+		selectorNamesParser(layoutLower, true, func(segment string) bool {
+			return strings.Contains(strings.ReplaceAll(segment, "_", "-"), "unlimited-ocr")
+		})
 	unlimitedOCRSelector := layout
 	if strings.TrimSpace(unlimitedOCRSelector) == "" {
 		unlimitedOCRSelector = method
@@ -178,10 +175,12 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	}
 
 	// MinerU dispatch: parse_method "mineru", a layout_recognizer naming
-	// MinerU, a composite model@instance@provider selector whose provider is
-	// MinerU in either field, or a bare tenant model UUID (in either field)
-	// that resolves to a MinerU OCR model.
-	isMinerUMatch := namesMinerU(methodLower, false) || namesMinerU(layoutLower, true)
+	// MinerU (in its model or provider segment), a parse_method composite
+	// selector whose provider is MinerU, or a bare tenant model UUID (in
+	// either field) that resolves to a MinerU OCR model.
+	isMinerUMatch := methodLower == "mineru" ||
+		selectorNamesParser(methodLower, false, parserPrefix("mineru")) ||
+		selectorNamesParser(layoutLower, true, parserPrefix("mineru"))
 	minerUSelector := layout
 	if strings.TrimSpace(minerUSelector) == "" {
 		minerUSelector = method
@@ -240,16 +239,16 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		return res, true, err
 	}
 
-	// PaddleOCR dispatch: parse_method "paddleocr", a layout_recognizer whose
-	// provider/selectors name PaddleOCR, or a bare tenant model UUID (in
-	// either parse_method or layout_recognizer) that resolves to a PaddleOCR
-	// OCR model. A bare UUID carries no provider spelling in the string, so it
-	// is resolved first - mirroring get_composite_model_name_by_id +
-	// normalize_layout_recognizer chain, which converts the raw model UUID
-	// into model@instance@provider before choosing the dispatch path.
-	isPaddleOCRMatch := strings.EqualFold(strings.TrimSpace(method), "paddleocr") ||
-		strings.HasPrefix(layoutLower, "paddleocr") ||
-		strings.Contains(layoutLower, "@paddleocr")
+	// PaddleOCR dispatch: parse_method "paddleocr", a layout_recognizer naming
+	// PaddleOCR in its model or provider segment, or a bare tenant model UUID
+	// (in either parse_method or layout_recognizer) that resolves to a
+	// PaddleOCR OCR model. A bare UUID carries no provider
+	// spelling in the string, so it is resolved first - mirroring
+	// get_composite_model_name_by_id + normalize_layout_recognizer chain,
+	// which converts the raw model UUID into model@instance@provider before
+	// choosing the dispatch path.
+	isPaddleOCRMatch := methodLower == "paddleocr" ||
+		selectorNamesParser(layoutLower, true, parserPrefix("paddleocr"))
 	// The UUID may be placed in either parse_method or layout_recognizer;
 	// probe the non-empty one (layout takes precedence, then parse_method).
 	// The selector is used only for the UUID probe: a string-matched
@@ -285,16 +284,15 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	}
 
 	// SoMark dispatch: parse_method "somark", a layout_recognizer naming
-	// SoMark, or a bare tenant model UUID (in either parse_method or
-	// layout_recognizer) that resolves to a SoMark OCR model. A resolved
-	// tenant instance overrides the parser's setup/env SoMark configuration
-	// with the instance's base URL and API key and runs the same SoMark
-	// parser path; when the tenant has no SoMark instance the branch falls
-	// through so the setup/env-driven parser path (SOMARK_BASE_URL et al.)
-	// keeps working unchanged.
-	isSoMarkMatch := strings.EqualFold(strings.TrimSpace(method), "somark") ||
-		strings.HasPrefix(layoutLower, "somark") ||
-		strings.Contains(layoutLower, "@somark")
+	// SoMark in its model or provider segment, or a bare tenant model UUID
+	// (in either parse_method or layout_recognizer) that resolves to a
+	// SoMark OCR model. A resolved tenant instance overrides the
+	// parser's setup/env SoMark configuration with the instance's base URL
+	// and API key and runs the same SoMark parser path; when the tenant has
+	// no SoMark instance the branch falls through so the setup/env-driven
+	// parser path (SOMARK_BASE_URL et al.) keeps working unchanged.
+	isSoMarkMatch := methodLower == "somark" ||
+		selectorNamesParser(layoutLower, true, parserPrefix("somark"))
 	soMarkSelector := layout
 	if strings.TrimSpace(soMarkSelector) == "" {
 		soMarkSelector = method
@@ -1636,7 +1634,7 @@ func isMonkeyOCRPDFSelector(method, layoutLower string) bool {
 	if methodLower == "monkeyocr" || strings.HasSuffix(methodLower, "@monkeyocr") {
 		return true
 	}
-	return strings.HasPrefix(layoutLower, "monkeyocr") || strings.Contains(layoutLower, "@monkeyocr")
+	return selectorNamesParser(layoutLower, true, parserPrefix("monkeyocr"))
 }
 
 var resolveMonkeyOCRModelForDispatch = defaultResolveMonkeyOCRModelForDispatch
@@ -3038,17 +3036,24 @@ func isMinerUDriver(driver modelModule.ModelDriver) bool {
 // VLM path.
 var isMinerULayoutModelID = defaultIsMinerULayoutModelID
 
-// namesMinerU reports whether a lower-case parse_method or layout_recognizer
-// value names MinerU. A composite model@instance@provider selector is decided
-// by its provider (MinerU or MinerU.Net), so another provider's model on an
-// instance named "mineru..." is not taken. Any other value names MinerU when
-// it is "mineru", or, for a layout_recognizer (prefix), starts with it.
-func namesMinerU(value string, prefix bool) bool {
-	if strings.Contains(value, "@") {
-		_, _, provider, err := common.ParseCompositeModelName(value)
-		return err == nil && strings.HasPrefix(provider, "mineru")
+// selectorNamesParser reports whether a lower-case parse_method or
+// layout_recognizer value names a parser: whether match accepts the provider
+// segment of a composite model@instance@provider selector or, with model,
+// its model segment (the whole value when it has no "@"). The instance
+// segment is a name the tenant chooses and is never read, so another
+// provider's model on an instance named like a parser (such as
+// "ndi-parse-low@paddleocr-prod@Nace") is not taken.
+func selectorNamesParser(value string, model bool, match func(string) bool) bool {
+	if !strings.Contains(value, "@") {
+		return model && match(value)
 	}
-	return value == "mineru" || (prefix && strings.HasPrefix(value, "mineru"))
+	name, _, provider, err := common.ParseCompositeModelName(value)
+	return err == nil && (match(provider) || (model && match(name)))
+}
+
+// parserPrefix matches a selector segment that starts with prefix.
+func parserPrefix(prefix string) func(string) bool {
+	return func(segment string) bool { return strings.HasPrefix(segment, prefix) }
 }
 
 func defaultIsMinerULayoutModelID(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {

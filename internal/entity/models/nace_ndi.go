@@ -66,9 +66,11 @@ const (
 	naceNDIZeroRetentionCode        = "wait_required_for_zero_retention"
 	naceNDIZeroRetentionWaitSeconds = 60
 
-	// naceNDIOCRFailedCode is the error of a job whose page_ranges run far
-	// past the last page.
-	naceNDIOCRFailedCode = "ocr_failed"
+	// NDI fails a job whose page_ranges run far past the last page with the
+	// code naceNDIOCRFailedCode and a message that starts with
+	// naceNDINoPagesMessage ("No renderable pages in <file>.").
+	naceNDIOCRFailedCode  = "ocr_failed"
+	naceNDINoPagesMessage = "No renderable pages"
 
 	naceNDIMaxPollInterval = 10 * time.Second
 	// naceNDIMaxAttempts bounds the sends of one request: the first and two
@@ -78,7 +80,10 @@ const (
 	// naceNDIMaxRetryAfter is the longest Retry-After honoured; a longer one
 	// falls back to the usual backoff.
 	naceNDIMaxRetryAfter = 30 * time.Second
-	naceNDIUploadTTL     = 600
+	// naceNDIStatusOverloaded is NDI's 529 (service_disabled: the API is
+	// paused), which carries a Retry-After like 429 and 503.
+	naceNDIStatusOverloaded = 529
+	naceNDIUploadTTL        = 600
 	// naceNDIResponseHeaderTimeout is the default wait for an answer's
 	// headers; a held read takes up to 25 s and a held create up to 60 s.
 	// LLM_HTTP_RESPONSE_HEADER_TIMEOUT cannot set it below
@@ -111,11 +116,18 @@ const (
 var (
 	naceNDIPollInterval = time.Second
 	naceNDIRetryDelay   = time.Second
-	// naceNDICleanupTimeout bounds the cleanup of one job or file.
+	// naceNDICleanupTimeout bounds the deletion of one job or file, so the
+	// cleanup after a parse (the job, then the uploaded file) takes at most
+	// twice this when NDI does not answer.
 	naceNDICleanupTimeout = 30 * time.Second
 	// naceNDIDeletePollDelay is the pause before a file deletion answered 202
 	// without Retry-After is checked again.
 	naceNDIDeletePollDelay = time.Second
+	// naceNDIDeleteConfirmTimeout bounds the checks of a file deletion
+	// answered 202, counted from the first DELETE. NDI finishes an accepted
+	// deletion on its own, so the checks only confirm it for the log; with a
+	// prompt 202 the file deletion ends within this time.
+	naceNDIDeleteConfirmTimeout = 10 * time.Second
 )
 
 // naceNDIAPITransport sends every NDI API call (upload grant, parse job
@@ -184,7 +196,8 @@ type naceNDIError struct {
 	Message   string
 	Retryable bool
 	RequestID string
-	// RetryAfter is the wait a 429 or 503 asked for; 0 when it gave none.
+	// RetryAfter is the wait a 429, 503 or 529 asked for; 0 when it gave
+	// none.
 	RetryAfter time.Duration
 	// Err is the failure that kept the error body from being read.
 	Err error
@@ -356,10 +369,11 @@ func (m *NaceModel) OCRFile(ctx context.Context, modelName *string, content []by
 
 	job, err := m.ndiParse(ctx, apiConfig, parseURL, source, mode, selection.Send)
 	// NDI fails a job whose page_ranges run far past the last page with
-	// ocr_failed, at no charge. The whole document is then parsed once and
-	// filtered to the selection.
+	// ocr_failed "No renderable pages", at no charge. Only then is the whole
+	// document parsed (and billed) once and filtered to the selection; any
+	// other failure is returned.
 	var ended *naceNDIJobEnded
-	if selection.Send != nil && errors.As(err, &ended) && ended.code == naceNDIOCRFailedCode {
+	if selection.Send != nil && errors.As(err, &ended) && ended.code == naceNDIOCRFailedCode && strings.HasPrefix(ended.message, naceNDINoPagesMessage) {
 		common.Warn("Nace NDI: the selected pages failed to parse; parsing the whole document", zap.Error(err))
 		selection.Send, selection.Whole = nil, "NDI could not parse the selected pages (ocr_failed)"
 		job, err = m.ndiParse(ctx, apiConfig, parseURL, source, mode, nil)
@@ -795,8 +809,8 @@ func (m *NaceModel) ndiWait(ctx context.Context, apiConfig *APIConfig, job *nace
 // cancelled.
 type naceNDIJobEnded struct {
 	text string
-	// code is the error code of a failed job.
-	code string
+	// code and message are the error of a failed job.
+	code, message string
 }
 
 func (e *naceNDIJobEnded) Error() string { return e.text }
@@ -815,7 +829,7 @@ func naceNDIJobFailure(job *naceNDIJob) error {
 		}
 		detail += message
 	}
-	return &naceNDIJobEnded{text: fmt.Sprintf("job %s failed: %s", job.JobID, detail), code: job.Error.Code}
+	return &naceNDIJobEnded{text: fmt.Sprintf("job %s failed: %s", job.JobID, detail), code: job.Error.Code, message: job.Error.Message}
 }
 
 // ndiDeleteJob deletes the parse job: it cancels a running job and erases a
@@ -839,16 +853,21 @@ func (m *NaceModel) ndiDeleteFile(ctx context.Context, apiConfig *APIConfig, fil
 }
 
 // ndiDelete runs after ctx may have ended, so it uses a detached context
-// bounded by its own timeout. A transient failure is retried once. With
-// confirm, a deletion answered 202 (still deleting) is sent again after
-// Retry-After (or naceNDIDeletePollDelay) until NDI confirms it (200, 204, or
-// 404 once it was in progress) or the timeout ends.
+// bounded by naceNDICleanupTimeout; the DELETE is sent at most twice in it.
+// With confirm, a deletion answered 202 (still deleting) is checked again,
+// one send per check, after Retry-After (or naceNDIDeletePollDelay) until NDI
+// confirms it (200, 204, or 404 after the 202). A check that fails
+// transiently does not end the checks. Every check and wait ends
+// naceNDIDeleteConfirmTimeout after the first DELETE was sent: when the
+// asked wait reaches that point, it waits half the time left and
+// sends one last check. So one ndiDelete ends within naceNDICleanupTimeout.
 func (m *NaceModel) ndiDelete(ctx context.Context, apiConfig *APIConfig, target string, confirm bool) error {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), naceNDICleanupTimeout)
 	defer cancel()
-	for pending := false; ; pending = true {
-		var reply naceNDIDeleteReply
-		err := m.ndiCall(cleanupCtx, m.ndiClient(), naceNDIDeleteAttempts, func(ctx context.Context) (*http.Request, error) {
+	checkCtx, cancelChecks := context.WithTimeout(cleanupCtx, naceNDIDeleteConfirmTimeout)
+	defer cancelChecks()
+	send := func(ctx context.Context, attempts int) (reply naceNDIDeleteReply, err error) {
+		err = m.ndiCall(ctx, m.ndiClient(), attempts, func(ctx context.Context) (*http.Request, error) {
 			req, err := http.NewRequestWithContext(ctx, http.MethodDelete, target, nil)
 			if err != nil {
 				return nil, err
@@ -856,26 +875,50 @@ func (m *NaceModel) ndiDelete(ctx context.Context, apiConfig *APIConfig, target 
 			m.baseModel.applyAuth(req, apiConfig)
 			return req, nil
 		}, &reply)
-		var apiErr *naceNDIError
-		if pending && errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
-			return nil
-		}
-		if pending && err != nil && cleanupCtx.Err() != nil {
-			return fmt.Errorf("deletion not confirmed: still in progress after %v", naceNDICleanupTimeout)
-		}
-		if err != nil || !confirm || reply.status != http.StatusAccepted {
-			return err
-		}
+		return reply, err
+	}
+	reply, err := send(cleanupCtx, naceNDIDeleteAttempts)
+	if err != nil || !confirm || reply.status != http.StatusAccepted {
+		return err
+	}
+	deadline, _ := checkCtx.Deadline()
+	for last := false; !last; {
 		wait := reply.retryAfter
+		var apiErr *naceNDIError
+		if errors.As(err, &apiErr) {
+			wait = apiErr.RetryAfter
+		}
 		if wait <= 0 {
 			wait = naceNDIDeletePollDelay
 		}
-		select {
-		case <-time.After(wait):
-		case <-cleanupCtx.Done():
-			return fmt.Errorf("deletion not confirmed: still in progress after %v", naceNDICleanupTimeout)
+		left := time.Until(deadline)
+		if left <= 0 {
+			break
+		}
+		if wait >= left {
+			wait, last = left/2, true
+		}
+		time.Sleep(wait)
+		reply, err = send(checkCtx, 1)
+		switch {
+		case err == nil && reply.status != http.StatusAccepted:
+			return nil
+		case errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound:
+			return nil
+		case err != nil && !naceNDITransient(err) && checkCtx.Err() == nil:
+			return err
 		}
 	}
+	return naceNDIUnconfirmed(err)
+}
+
+// naceNDIUnconfirmed reports a file deletion that NDI accepted (202) but did
+// not confirm in time; err is the failure of the last check, if any.
+func naceNDIUnconfirmed(err error) error {
+	if err != nil {
+		return fmt.Errorf("deletion not confirmed: %w", err)
+	}
+	return fmt.Errorf("deletion not confirmed: still in progress after %v", naceNDIDeleteConfirmTimeout)
 }
 
 // naceNDIDeleteReply keeps the status and Retry-After of a DELETE answer.
@@ -907,7 +950,7 @@ func (m *NaceModel) ndiCall(ctx context.Context, client *http.Client, attempts i
 }
 
 // naceNDIRetryWait is the pause before sending a failed request again: the
-// Retry-After of a 429 or 503 when it is at most naceNDIMaxRetryAfter and
+// Retry-After of a 429, 503 or 529 when it is at most naceNDIMaxRetryAfter and
 // ends before ctx does, else a backoff of attempt times naceNDIRetryDelay.
 func naceNDIRetryWait(ctx context.Context, err error, attempt int) time.Duration {
 	var apiErr *naceNDIError
@@ -944,7 +987,8 @@ func naceNDIDo(client *http.Client, req *http.Request, out any) error {
 			return &naceNDIError{Status: resp.StatusCode, Message: "failed to read error response", Err: readErr}
 		}
 		apiErr := naceNDIErrorFrom(resp.StatusCode, body)
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
+		switch resp.StatusCode {
+		case http.StatusTooManyRequests, http.StatusServiceUnavailable, naceNDIStatusOverloaded:
 			apiErr.RetryAfter = naceNDIRetryAfter(resp.Header.Get("Retry-After"), time.Now())
 		}
 		if apiErr.RequestID != "" {

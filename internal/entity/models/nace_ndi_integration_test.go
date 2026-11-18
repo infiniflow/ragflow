@@ -19,30 +19,53 @@ package models
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 )
 
 // naceNDIRecorder records the method, path and status of every request the
-// driver sends to the API, so the test can check what was deleted.
+// driver sends to the API, and the job id of every parse job created, so the
+// test can check what was deleted.
 type naceNDIRecorder struct {
-	base http.RoundTripper
-	mu   sync.Mutex
-	log  []string
+	base    http.RoundTripper
+	mu      sync.Mutex
+	log     []string
+	created []string
 }
 
 func (r *naceNDIRecorder) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := r.base.RoundTrip(req)
-	if err == nil {
-		r.mu.Lock()
-		r.log = append(r.log, fmt.Sprintf("%s %s %d", req.Method, req.URL.Path, resp.StatusCode))
-		r.mu.Unlock()
+	if err != nil {
+		return resp, err
 	}
-	return resp, err
+	jobID := ""
+	if req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/documents/parse") && resp.StatusCode >= 200 && resp.StatusCode <= 299 {
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		if readErr != nil {
+			return nil, readErr
+		}
+		var job struct {
+			JobID string `json:"job_id"`
+		}
+		_ = json.Unmarshal(body, &job)
+		jobID = job.JobID
+	}
+	r.mu.Lock()
+	r.log = append(r.log, fmt.Sprintf("%s %s %d", req.Method, req.URL.Path, resp.StatusCode))
+	if jobID != "" {
+		r.created = append(r.created, jobID)
+	}
+	r.mu.Unlock()
+	return resp, nil
 }
 
 // naceNDISyntheticPDF builds a one-page PDF with a title and two text lines.
@@ -79,8 +102,8 @@ func naceNDISyntheticPDF() []byte {
 //   - pages 1-600 are more than one parse accepts (500 pages), so the whole
 //     document is parsed without page_ranges and filtered locally;
 //   - pages 1-300 are sent as page_ranges; NDI fails a range that far past the
-//     last page with ocr_failed, so the driver parses the whole document once
-//     more and keeps the selected pages.
+//     last page with ocr_failed "No renderable pages", so the driver parses
+//     the whole document once more and keeps the selected pages.
 //
 // It runs two billed low-effort parses of one page (the failed job is not
 // billed), so it needs NACE_NDI_LIVE_INTEGRATION=1 and NACE_API_KEY;
@@ -130,30 +153,39 @@ func TestNaceOCRFileLive(t *testing.T) {
 				t.Logf("block label=%s box=%.3f text=%q", block.Label, block.BBox, block.Text)
 			}
 
-			// A job DELETE answers 2xx when done. A file DELETE confirms the
-			// deletion only with 200 ("deleted"); 202 ("deleting") is
-			// accepted, not confirmed.
-			seen := map[string]int{}
+			// Every parse job created (a create retried after a 429 or 503
+			// creates none) is deleted with a 2xx. The deletion of the uploaded
+			// file is confirmed when its last answer is 200 or 204, or 404 after
+			// a 202 ("deleting"); a deletion that ends on 202 is not confirmed.
+			created, deleted := map[string]bool{}, map[string]bool{}
+			for _, id := range recorder.created {
+				created[id] = true
+			}
+			var fileAnswers []string
 			for _, entry := range recorder.log {
 				t.Log(entry)
 				fields := strings.Fields(entry)
-				if len(fields) != 3 {
+				if len(fields) != 3 || fields[0] != http.MethodDelete {
 					continue
 				}
-				switch {
-				case fields[0] == http.MethodPost && strings.HasSuffix(fields[1], "/documents/parse"):
-					seen["parse"]++
-				case fields[0] != http.MethodDelete:
-				case strings.Contains(fields[1], "/documents/jobs/") && strings.HasPrefix(fields[2], "2"):
-					seen["job"]++
-				case strings.Contains(fields[1], "/documents/workspaces/") && fields[2] == "200":
-					seen["file"]++
-				case strings.Contains(fields[1], "/documents/workspaces/") && fields[2] == "202":
-					t.Errorf("the file deletion was accepted (202 deleting) but not confirmed")
+				if _, id, ok := strings.Cut(fields[1], "/documents/jobs/"); ok && strings.HasPrefix(fields[2], "2") {
+					deleted[id] = true
+				}
+				if strings.Contains(fields[1], "/documents/workspaces/") {
+					fileAnswers = append(fileAnswers, fields[2])
 				}
 			}
-			if seen["parse"] != tc.parses || seen["job"] != tc.parses || seen["file"] != 1 {
-				t.Fatalf("want %d parse jobs, each deleted, and the uploaded file deleted: %v", tc.parses, recorder.log)
+			if len(created) != tc.parses {
+				t.Errorf("want %d parse jobs, got %v", tc.parses, recorder.created)
+			}
+			for id := range created {
+				if !deleted[id] {
+					t.Errorf("parse job %s was not deleted", id)
+				}
+			}
+			last := len(fileAnswers) - 1
+			if last < 0 || !(fileAnswers[last] == "200" || fileAnswers[last] == "204" || (fileAnswers[last] == "404" && slices.Contains(fileAnswers[:last], "202"))) {
+				t.Errorf("the deletion of the uploaded file was not confirmed: %v", fileAnswers)
 			}
 		})
 	}
