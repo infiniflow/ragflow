@@ -87,7 +87,7 @@
 /internal/harness/prebuilt/ @yingfeng
 /internal/harness/replay/ @yingfeng
 /internal/ingestion/ @xugangqiang
-/internal/ingestion/compilation/ @xugangqiang
+/internal/ingestion/compilation/ @buua436
 /internal/ingestion/component/ @xugangqiang
 /internal/ingestion/knowledge_compile/ @buua436
 /internal/ingestion/registry/ @6ba3i
