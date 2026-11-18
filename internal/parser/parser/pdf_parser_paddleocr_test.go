@@ -34,6 +34,31 @@ func TestPaddleOCRBlockPosition(t *testing.T) {
 	}
 }
 
+// A Normalized page gives boxes as page fractions: they scale by the PDF page
+// size alone, with no aspect-ratio check against image dimensions.
+func TestPaddleOCRBlockPositionNormalized(t *testing.T) {
+	page := models.OCRPage{Index: 1, Normalized: true}
+	for _, tc := range []struct {
+		name string
+		box  []float64
+		want []any
+	}{
+		{"rectangle", []float64{0.25, 0.5, 0.75, 0.75}, []any{2, float64(75), float64(225), float64(200), float64(300)}},
+		{"clip", []float64{-0.25, 0.5, 1.25, 1.5}, []any{2, float64(0), float64(300), float64(200), float64(400)}},
+		{"zero", []float64{0.5, 0.5, 0.5, 0.75}, nil},
+		{"missing", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := paddleOCRBlockPosition(page, tc.box, [2]float64{300, 400}); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got=%v want=%v", got, tc.want)
+			}
+		})
+	}
+	if got := paddleOCRBlockPosition(page, []float64{0.25, 0.5, 0.75, 0.75}, [2]float64{}); got != nil {
+		t.Fatalf("no PDF geometry: got=%v", got)
+	}
+}
+
 func TestPaddleOCRPDFResultDropsUnlocatedMedia(t *testing.T) {
 	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
 	if err != nil {

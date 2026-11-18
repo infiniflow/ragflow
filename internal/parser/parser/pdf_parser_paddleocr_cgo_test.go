@@ -44,6 +44,23 @@ func TestPaddleOCRPDFResultPageGeometry(t *testing.T) {
 	}
 }
 
+// Normalized boxes land in PDF points of their own page: page 3 of the
+// fixture is 300x400 points.
+func TestPaddleOCRPDFResultNormalizedPageGeometry(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 2, Normalized: true, Blocks: []models.OCRBlock{{Text: "body", Label: "text", BBox: []float64{0.25, 0.5, 0.75, 0.75}}}}}}
+	result := OCRPDFResult(t.Context(), "Nace", "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 1 {
+		t.Fatalf("result=%+v", result)
+	}
+	if got := result.JSON[0].ToMap()["positions"]; !reflect.DeepEqual(got, [][]any{{3, float64(75), float64(225), float64(200), float64(300)}}) {
+		t.Fatalf("positions=%v", got)
+	}
+}
+
 func TestPaddleOCRPDFResultLocatesUnstructuredTableText(t *testing.T) {
 	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
 	if err != nil {

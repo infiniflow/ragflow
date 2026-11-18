@@ -10,6 +10,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const defaultMaxRerankTokens = 8196
@@ -126,20 +127,32 @@ type TTSResponse struct {
 
 // OCRPage retains the source image dimensions and reading-order blocks.
 // Index is the zero-based source PDF page index, including blank pages.
+// A Normalized page gives block boxes as fractions (0-1) of the page instead
+// of source-image pixels, and leaves Width and Height zero.
 type OCRPage struct {
-	Index  int        `json:"index"`
-	Width  float64    `json:"width"`
-	Height float64    `json:"height"`
-	Blocks []OCRBlock `json:"blocks"`
+	Index      int        `json:"index"`
+	Width      float64    `json:"width"`
+	Height     float64    `json:"height"`
+	Normalized bool       `json:"normalized,omitempty"`
+	Blocks     []OCRBlock `json:"blocks"`
 }
 
-// OCRBlock carries a layout region in source-image pixels. BBox is
-// [left, top, right, bottom]; an absent box is unlocated. Drivers normalize
-// provider coordinates to this rectangle before returning blocks.
+// OCRBlock carries a layout region in source-image pixels, or in page
+// fractions on a Normalized page. BBox is [left, top, right, bottom]; an
+// absent box is unlocated. Drivers normalize provider coordinates to this
+// rectangle before returning blocks.
 type OCRBlock struct {
 	Text  string    `json:"text"`
 	Label string    `json:"label,omitempty"`
 	BBox  []float64 `json:"bbox,omitempty"`
+}
+
+// OCRBlockBody is the part of a block's text that the PDF projection
+// (parser.OCRPDFResult) indexes: the text without image markup, trimmed. The
+// projection drops a block whose body is empty unless it is a media region
+// with a usable position.
+func OCRBlockBody(text string) string {
+	return strings.TrimSpace(utility.StripMarkdownImages(text))
 }
 
 type OCRFileResponse struct {
