@@ -69,6 +69,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "seafile", NewSeaFileConnector)
 	registerBuiltIn(registry, "bigquery", NewBigQueryConnector)
 	registerBuiltIn(registry, "zotero", NewZoteroConnector)
+	registerEeBuiltIns(registry)
 }
 
 // newS3SourceConnector selects the client for the bucket type stored under an S3 source.

@@ -27,7 +27,8 @@ import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import {
   eeDataSourceDefaultValues,
-  eeDataSourceFormFields,
+  eeDataSourceFeatureVisibility,
+  generateEeDataSourceFormFields,
   generateEeDataSourceInfo,
 } from '@/ee/pages/user-setting/data-source/ee-extensions';
 import { IDataSourceInfoMap } from '../interface';
@@ -201,6 +202,7 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.BIGQUERY]: {
     syncDeletedFiles: true,
   },
+  ...eeDataSourceFeatureVisibility,
 };
 
 const isDataSourceFeatureVisible = (
@@ -2225,7 +2227,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
-  ...eeDataSourceFormFields,
+  ...generateEeDataSourceFormFields(t),
 });
 
 export const DataSourceFormDefaultValues = {
