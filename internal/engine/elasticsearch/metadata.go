@@ -621,10 +621,13 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 		queryBody["query"] = map[string]interface{}{"match_all": map[string]interface{}{}}
 	}
 
-	// Add sorting if order_by specified
+	// Add sorting if order_by specified. parseOrderByExpr keeps an `id`
+	// entry (the metadata mapping declares `id` as keyword), which is the
+	// cursor the search_after walk below needs; esoscommon.ParseOrderByExpr
+	// drops it.
 	hasExplicitSort := false
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
-		sort := esoscommon.ParseOrderByExpr(req.OrderBy)
+		sort := parseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
 			queryBody["sort"] = sort
 			hasExplicitSort = true
