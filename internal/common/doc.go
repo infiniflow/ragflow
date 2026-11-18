@@ -44,4 +44,11 @@
 // A file is never admitted merely because "many packages might use it". Reach
 // alone is not ownership. If a symbol would have exactly one caller today,
 // rule 1 wins regardless of hypothetical future reach.
+//
+// Two entries are deliberate dependency-inversion seams, not rule violations:
+// allow_private_host.go and model_assets.go are consumed through this leaf by
+// domain packages (agent, tokenizer, syncer, service). Moving them into a
+// server-level package would invert that dependency, so they stay here on
+// purpose. An existing upward-facing seam is a legitimate reason to keep a
+// cross-layer contract in this package.
 package common

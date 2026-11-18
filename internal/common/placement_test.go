@@ -89,8 +89,10 @@ func isAllowedCommonFile(name string) bool {
 	return allowedCommonFiles[name]
 }
 
-// commonProductionGoFiles returns the non-test Go files in the current
+// commonProductionGoFiles returns the production Go files in the current
 // package directory (the test binary runs with cwd set to internal/common).
+// Test files and edition overlay files are excluded: overlays belong to a
+// separate tree and cannot be registered in this package's allowlist.
 func commonProductionGoFiles(t *testing.T) []string {
 	t.Helper()
 	entries, err := os.ReadDir(".")
@@ -100,7 +102,7 @@ func commonProductionGoFiles(t *testing.T) []string {
 	var files []string
 	for _, e := range entries {
 		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, "_ee.go") {
 			continue
 		}
 		files = append(files, name)
@@ -148,6 +150,55 @@ func TestAllowlistHasNoGhostEntries(t *testing.T) {
 	for f := range allowedCommonFiles {
 		if !physical[f] {
 			t.Errorf("allowlisted file %q does not exist in internal/common", f)
+		}
+	}
+}
+
+// TestEditionOverlayFilesAreIgnoredByGuard reproduces a tree where an
+// edition-specific overlay file is physically present in internal/common.
+// Such a file is owned by a separate tree; the guard must not demand an
+// allowlist entry for a file this tree cannot register.
+func TestEditionOverlayFilesAreIgnoredByGuard(t *testing.T) {
+	const probe = "zz_guard_probe_ee.go"
+	if _, err := os.Stat(probe); err == nil {
+		t.Fatalf("probe path %q already exists; refusing to overwrite it", probe)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("stat probe path: %v", err)
+	}
+	if err := os.WriteFile(probe, []byte("package common\n"), 0o644); err != nil {
+		t.Fatalf("write probe file: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Remove(probe); err != nil && !os.IsNotExist(err) {
+			t.Errorf("remove probe file: %v", err)
+		}
+	})
+
+	files := commonProductionGoFiles(t)
+	for _, f := range files {
+		if f == probe {
+			t.Errorf("guard treated overlay file %q as a production common file; it is owned by a separate tree and must be excluded", probe)
+		}
+	}
+
+	// Distinguishing condition: filtering must not drop genuine production files.
+	if len(files) != len(allowedCommonFiles) {
+		t.Errorf("guard returned %d files but allowlist has %d entries; filtering must not drop genuine production files", len(files), len(allowedCommonFiles))
+	}
+}
+
+// TestDocRecordsInvertedSeamExceptions guards the documented rationale for the
+// two low-fan-in files that remain in common as dependency-inversion seams.
+// Without an explicit note, a future reader would treat them as rule violations.
+func TestDocRecordsInvertedSeamExceptions(t *testing.T) {
+	doc, err := os.ReadFile("doc.go")
+	if err != nil {
+		t.Fatalf("read doc.go: %v", err)
+	}
+	text := string(doc)
+	for _, name := range []string{"allow_private_host.go", "model_assets.go"} {
+		if !strings.Contains(text, name) {
+			t.Errorf("doc.go must record why %s remains in common as a dependency-inversion seam", name)
 		}
 	}
 }
