@@ -1031,9 +1031,9 @@ func TestDatabaseCheckerAuthorizesConnectorsAndSyncTasks(t *testing.T) {
 	valid := string(entity.StatusValid)
 	invited := entity.TenantMembershipStatusInvited
 	connectors := []entity.Connector{
-		{ID: "personal-connector", TenantID: "team-member", Name: "Personal", Source: "rest", InputType: "poll", Config: entity.ConnectorConfig{}, Status: "5"},
-		{ID: "team-connector", TenantID: "team-tenant", Name: "Team", Source: "rest", InputType: "poll", Config: entity.ConnectorConfig{}, Status: "5"},
-		{ID: "other-connector", TenantID: "other-tenant", Name: "Other", Source: "rest", InputType: "poll", Config: entity.ConnectorConfig{}, Status: "5"},
+		{ID: "personal-connector", UserID: "team-member", TenantID: "team-tenant", Name: "Personal", Source: "rest", InputType: "poll", Config: entity.ConnectorConfig{}, Status: "5"},
+		{ID: "team-connector", UserID: "team-owner", TenantID: "team-tenant", Name: "Team", Source: "rest", InputType: "poll", Config: entity.ConnectorConfig{}, Status: "5"},
+		{ID: "other-connector", UserID: "other-user", TenantID: "other-tenant", Name: "Other", Source: "rest", InputType: "poll", Config: entity.ConnectorConfig{}, Status: "5"},
 	}
 	for i := range connectors {
 		if err := db.Create(&connectors[i]).Error; err != nil {
@@ -1288,5 +1288,76 @@ func TestDatabaseCheckerAuthorizesMCPServersAndSkillSpaces(t *testing.T) {
 		}); !errors.Is(err, ErrInvalidPermission) {
 			t.Errorf("Scope(%s with parent) error = %v, want invalid permission", kind, err)
 		}
+	}
+}
+
+func TestModelInstanceUseScopeMatchesTenantMemberAccess(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("migrate model permission tables: %v", err)
+	}
+
+	valid := string(entity.StatusValid)
+	memberships := []entity.UserTenant{
+		{ID: "owner-membership", UserID: "owner", TenantID: "tenant-1", Role: string(RoleOwner), Status: &valid},
+		{ID: "member-membership", UserID: "member", TenantID: "tenant-1", Role: string(RoleNormal), Status: &valid},
+	}
+	for i := range memberships {
+		if err := db.Create(&memberships[i]).Error; err != nil {
+			t.Fatalf("create membership %q: %v", memberships[i].ID, err)
+		}
+	}
+	provider := entity.TenantModelProvider{ID: "provider-1", UserID: "owner", TenantID: "tenant-1", ProviderName: "test"}
+	instance := entity.TenantModelInstance{ID: "instance-1", ProviderID: provider.ID, InstanceName: "default", APIKey: "{}"}
+	model := entity.TenantModel{ID: "model-1", ProviderID: provider.ID, InstanceID: instance.ID, ModelName: "test-model", Status: "active"}
+	for _, row := range []any{&provider, &instance, &model} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("create model permission fixture: %v", err)
+		}
+	}
+
+	ctx := WithIdentity(context.Background(), "member", "tenant-1")
+	checker := newCommunityDatabaseChecker(db)
+	for _, test := range []struct {
+		name      string
+		kind      ResourceKind
+		id        string
+		operation Operation
+		wantErr   error
+	}{
+		{name: "provider read", kind: ResourceKindModelProvider, id: provider.ID, operation: OperationRead},
+		{name: "instance use", kind: ResourceKindModelInstance, id: instance.ID, operation: OperationUse},
+		{name: "model use", kind: ResourceKindModel, id: model.ID, operation: OperationUse},
+		{name: "instance config remains private", kind: ResourceKindModelInstance, id: instance.ID, operation: OperationRead, wantErr: ErrPermissionDenied},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := checker.CheckResource(ctx, ResourceRef{Kind: test.kind, ID: test.id}, test.operation)
+			if test.wantErr == nil && err != nil {
+				t.Fatalf("CheckResource() error = %v, want nil", err)
+			}
+			if test.wantErr != nil && !errors.Is(err, test.wantErr) {
+				t.Fatalf("CheckResource() error = %v, want %v", err, test.wantErr)
+			}
+		})
+	}
+
+	instanceScope, err := checker.QueryScope(ctx, ScopeQuery{Kind: ResourceKindModelInstance, Operation: OperationUse})
+	if err != nil {
+		t.Fatalf("model instance use query scope: %v", err)
+	}
+	var instanceIDs []string
+	if err := instanceScope.Apply(db.Model(&entity.TenantModelInstance{})).Pluck("id", &instanceIDs).Error; err != nil {
+		t.Fatalf("list usable instances: %v", err)
+	}
+	if len(instanceIDs) != 1 || instanceIDs[0] != instance.ID {
+		t.Fatalf("usable instances = %v, want [%s]", instanceIDs, instance.ID)
 	}
 }

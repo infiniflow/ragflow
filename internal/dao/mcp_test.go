@@ -72,6 +72,13 @@ func TestListMCPServersCountsAndPaginatesAfterSQLAuthorization(t *testing.T) {
 	if total != 2 || len(servers) != 1 || servers[0].ID != "mcp-c" {
 		t.Fatalf("ListMCPServers() = (total %d, %#v), want total 2 and page [mcp-c]", total, servers)
 	}
+	servers, total, err = NewMCPServerDAO().ListMCPServers(context.Background(), db, "tenant-1", []string{"mcp-b"}, "", "name", false, 0, 0, authorize)
+	if err != nil {
+		t.Fatalf("ListMCPServers() with ID filter: %v", err)
+	}
+	if total != 1 || len(servers) != 1 || servers[0].ID != "mcp-b" {
+		t.Fatalf("ID-filtered ListMCPServers() = (total %d, %#v), want mcp-b", total, servers)
+	}
 }
 
 func TestMCPServerPageRangeMatchesSliceBounds(t *testing.T) {

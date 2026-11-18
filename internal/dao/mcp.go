@@ -93,7 +93,7 @@ func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenant
 	baseQuery := func() *gorm.DB {
 		query := db.WithContext(ctx).Model(&entity.MCPServer{}).Where("tenant_id = ?", tenantID)
 		if len(ids) > 0 {
-			query = query.Where("id IN ?", ids)
+			query = query.Where("mcp_server.id IN ?", ids)
 		}
 		if keywords != "" {
 			query = query.Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")

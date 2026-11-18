@@ -61,12 +61,15 @@ type ConnectorDatasetListItem struct {
 }
 
 // ListByTenantIDAndUserID returns connector summaries owned by a user in a tenant.
-func (dao *ConnectorDAO) ListByTenantIDAndUserID(ctx context.Context, db *gorm.DB, tenantID, userID string) ([]*ConnectorListItem, error) {
+func (dao *ConnectorDAO) ListByTenantIDAndUserID(ctx context.Context, db *gorm.DB, tenantID, userID string, authorize func(*gorm.DB) *gorm.DB) ([]*ConnectorListItem, error) {
+	if authorize == nil {
+		return nil, fmt.Errorf("connector list requires an authorization scope")
+	}
 	connectors := make([]*ConnectorListItem, 0)
-	err := db.WithContext(ctx).Model(&entity.Connector{}).
+	query := db.WithContext(ctx).Model(&entity.Connector{}).
 		Select("id", "name", "source", "status").
-		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
-		Find(&connectors).Error
+		Where("tenant_id = ? AND user_id = ?", tenantID, userID)
+	err := authorize(query).Find(&connectors).Error
 
 	if err != nil {
 		return nil, err

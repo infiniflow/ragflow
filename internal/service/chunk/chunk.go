@@ -1098,6 +1098,9 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, datasetID, documentID s
 	if doc.KbID != datasetID {
 		return fmt.Errorf("document does not belong to this dataset")
 	}
+	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
+		return err
+	}
 
 	for _, cid := range chunkIDs {
 		indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
@@ -1314,6 +1317,9 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 
 	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, permission.OperationUpdate)
 	if err != nil {
+		return 0, err
+	}
+	if err = service.CheckDocumentAccess(ctx, req.DocID, doc.KbID, permission.OperationUpdate); err != nil {
 		return 0, err
 	}
 	targetTenantID := kb.TenantID

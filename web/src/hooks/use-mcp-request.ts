@@ -52,7 +52,11 @@ export const enum McpApiAction {
   TestMcpServer = 'testMcpServer',
 }
 
-export const useListMcpServer = (tenantId?: string, enabled = true) => {
+export const useListMcpServer = (
+  tenantId?: string,
+  enabled = true,
+  accessUserId?: string,
+) => {
   const { searchString, setSearchString, handleInputChange } =
     useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -64,6 +68,7 @@ export const useListMcpServer = (tenantId?: string, enabled = true) => {
       {
         debouncedSearchString,
         tenantId,
+        accessUserId,
         ...pagination,
       },
     ],
@@ -76,6 +81,7 @@ export const useListMcpServer = (tenantId?: string, enabled = true) => {
         page_size: pagination.pageSize,
         page: pagination.current,
         ...(tenantId ? { tenant_id: tenantId } : {}),
+        ...(accessUserId ? { access_user_id: accessUserId } : {}),
       });
       return data?.data;
     },

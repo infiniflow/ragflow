@@ -167,6 +167,9 @@ export const useFetchAllAddedModels = (
     gcTime: 0,
     queryFn: async () => {
       const params: IListAllModelsRequestParams = {};
+      if (modelResourceTenantId) {
+        params.tenant_id = modelResourceTenantId;
+      }
       if (modelType) {
         params.type = modelType;
       }

@@ -1212,11 +1212,16 @@ func chatChannelResource(channel *entity.ChatChannel) Resource {
 }
 
 func connectorResource(connector *entity.Connector) Resource {
+	ownerUserID := connector.UserID
+	if ownerUserID == "" {
+		// In the community edition the legacy tenant ID is also the owner ID.
+		ownerUserID = connector.TenantID
+	}
 	ownerOperations := []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse}
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindConnector, ID: connector.ID},
 		TenantID:          connector.TenantID,
-		OwnerUserID:       connector.TenantID,
+		OwnerUserID:       ownerUserID,
 		Visibility:        VisibilityTenant,
 		TenantRequirement: TenantMember,
 		OwnerOperations:   ownerOperations,

@@ -134,9 +134,10 @@ func modelInstanceResource(instance *entity.TenantModelInstance, provider *entit
 		Ref:               ResourceRef{Kind: ResourceKindModelInstance, ID: instance.ID},
 		TenantID:          provider.TenantID,
 		OwnerUserID:       provider.UserID,
-		Visibility:        VisibilityPrivate,
+		Visibility:        VisibilityTenant,
 		TenantRequirement: TenantMember,
 		OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationUse},
+		TenantOperations:  []Operation{OperationUse},
 		Active:            true,
 	}
 }

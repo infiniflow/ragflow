@@ -213,7 +213,7 @@ export function useModelTree({
     accessUserId,
   );
   const { data: tenantInfo } = useFetchTenantInfo(!skipTenantInfo);
-  const { data: userInfo } = useFetchUserInfo();
+  const { data: userInfo } = useFetchUserInfo(!skipTenantInfo);
   const currentUserId = skipTenantInfo ? undefined : userInfo?.id;
 
   const models = useMemo(

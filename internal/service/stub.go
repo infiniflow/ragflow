@@ -54,14 +54,12 @@ func authorizeNonOwnerModelConfiguration(context.Context, *entity.TenantModelPro
 	return errModelConfigUnavailable
 }
 
-func authorizeModelMetadataReadEE(ctx context.Context, identity *modelIdentity) error {
+func authorizeModelMetadataReadEE(_ context.Context, identity *modelIdentity) error {
 	if identity == nil || identity.providerEntity == nil {
 		return errModelConfigUnavailable
 	}
-	userID := permission.UserIDFromContext(ctx)
-	if userID != "" && identity.providerEntity.UserID != userID {
-		return errModelConfigUnavailable
-	}
+	// resolveModelIdentity has already checked provider-read, instance-use,
+	// and model-use access before returning this metadata-only view.
 	return nil
 }
 

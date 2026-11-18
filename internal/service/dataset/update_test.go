@@ -596,9 +596,12 @@ func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.
 	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
 	embeddingModelID := "aabbccdd11223344aabbccdd11223344"
 	insertDatasetUpdateTenantModel(t, embeddingModelID, "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
+	ensureDatasetTestMembership(t, "caller-1", "tenant-1", "normal")
+	ensureDatasetTestMembership(t, "caller-1", "caller-tenant", "owner")
 
 	permission := string(entity.TenantPermissionTeam)
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", service.UpdateDatasetRequest{
+	ctx := withDatasetTestContext(t.Context(), "caller-1", "caller-tenant")
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{
 		Permission:     &permission,
 		EmbeddingModel: &embeddingModelID,
 	})
@@ -609,7 +612,7 @@ func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.
 		t.Fatalf("expected success code, got %d", code)
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), db, "kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get dataset: %v", err)
 	}

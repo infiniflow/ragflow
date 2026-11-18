@@ -54,6 +54,8 @@ export const CompilationTemplateGroupKeys = {
       CompilationTemplateGroupApiAction.FetchCompilationTemplateGroup,
       id,
     ] as const,
+  scoped: (tenantId?: string, accessUserId?: string) =>
+    [...CompilationTemplateGroupKeys.all(), tenantId, accessUserId] as const,
   all: () =>
     [CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups] as const,
 };
@@ -220,11 +222,10 @@ export const useFetchAllCompilationTemplateGroups = (accessUserId?: string) => {
     isFetched,
     isError,
   } = useQuery<ICompilationTemplateGroup[]>({
-    queryKey: [
-      ...CompilationTemplateGroupKeys.all(),
+    queryKey: CompilationTemplateGroupKeys.scoped(
       contextTenantId,
       groupAccessUserId,
-    ],
+    ),
     initialData: [],
     gcTime: 0,
     queryFn: async () => {

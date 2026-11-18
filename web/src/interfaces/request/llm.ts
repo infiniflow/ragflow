@@ -63,6 +63,7 @@ export interface IEditInstanceModelRequestBody {
 }
 
 export interface IListAllModelsRequestParams {
+  tenant_id?: string;
   type?: string;
   owner_ids?: string[];
   access_user_id?: string;
