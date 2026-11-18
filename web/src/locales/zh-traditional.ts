@@ -719,6 +719,7 @@ export default {
       workspace: '工作空間',
       upgrade: '升級',
       addLlmTitle: '添加Llm',
+      noChangesToSave: '沒有修改，無需保存',
       modelName: '模型名稱',
       modelID: '模型ID',
       modelUid: '模型uid',

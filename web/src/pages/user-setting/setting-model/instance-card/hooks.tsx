@@ -630,16 +630,19 @@ export function useInstanceSave({
 
   const save = useCallback(async () => {
     if (saving) return;
-    const payload = getSavePayload();
-    if (!payload) return;
-    if (isDraft && existingNames?.has(payload.instanceName)) {
-      message.error(tSetting('instanceNameExists'));
-      return;
-    }
-    if (!(await validate())) return;
-
     setSaving(true);
     try {
+      if (!(await validate())) return;
+      const payload = getSavePayload();
+      if (!payload) {
+        message.info(tSetting('noChangesToSave'));
+        return;
+      }
+      if (isDraft && existingNames?.has(payload.instanceName)) {
+        message.error(tSetting('instanceNameExists'));
+        return;
+      }
+
       const ret =
         payload.apiKind === 'add'
           ? await addProviderInstance(payload.payload as any)
