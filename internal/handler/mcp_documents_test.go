@@ -19,16 +19,11 @@ import (
 
 type mcpDocumentStub struct {
 	list     func(context.Context, dao.DocumentListOptions, int, int) ([]*entity.DocumentListItem, int64, error)
-	get      func(context.Context, string) (*document.DocumentResponse, error)
 	metadata func(context.Context, string) (map[string]interface{}, error)
 }
 
 func (s mcpDocumentStub) ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, size int) ([]*entity.DocumentListItem, int64, error) {
 	return s.list(ctx, opts, page, size)
-}
-
-func (s mcpDocumentStub) GetDocumentByID(ctx context.Context, id string) (*document.DocumentResponse, error) {
-	return s.get(ctx, id)
 }
 
 func (s mcpDocumentStub) GetDocumentMetadataByID(ctx context.Context, id string) (map[string]interface{}, error) {
@@ -111,8 +106,11 @@ func TestMCPListChunksParseStatusAndPaging(t *testing.T) {
 	setupDocumentPermissionDB(t, true)
 	ctx := permission.WithIdentity(t.Context(), "user-1", "tenant-owner")
 	status := common.UNSTART
-	documents := mcpDocumentStub{get: func(context.Context, string) (*document.DocumentResponse, error) {
-		return &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner", IngestionStatus: status}, nil
+	documents := mcpDocumentStub{list: func(_ context.Context, opts dao.DocumentListOptions, page, size int) ([]*entity.DocumentListItem, int64, error) {
+		if opts.KbID != "kb-owner" || !reflect.DeepEqual(opts.DocIDs, []string{"doc-1"}) || !opts.DocIDFilterApplied || opts.AccessScope == nil || page != 1 || size != 1 {
+			t.Fatalf("document selection = %+v, page=%d size=%d", opts, page, size)
+		}
+		return []*entity.DocumentListItem{{ID: "doc-1", KbID: "kb-owner", IngestionStatus: &status}}, 1, nil
 	}}
 	for _, status = range []string{common.UNSTART, common.RUNNING, common.FAILED, common.STOPPED} {
 		_, err := mcpListChunks(ctx, documents, nil, mcp.ListChunksRequest{DatasetID: "kb-owner", DocumentID: "doc-1"})
@@ -163,5 +161,78 @@ func TestMCPDocumentToolsValidateArguments(t *testing.T) {
 	}
 	if _, _, err := mcpDocumentPage(int(^uint(0)>>1), 100); err == nil {
 		t.Fatal("overflowing pagination offset accepted")
+	}
+}
+
+func TestMCPListChunksUsesDocumentListStatus(t *testing.T) {
+	for _, tt := range []struct {
+		name, run, taskStatus, wantStatus string
+		withTask                          bool
+	}{
+		{name: "completed without task", run: "3", wantStatus: common.COMPLETED},
+		{name: "unstarted without task", run: "0", wantStatus: common.UNSTART},
+		{name: "failed without task", run: "4", wantStatus: common.FAILED},
+		{name: "new task running", run: "3", withTask: true, taskStatus: common.RUNNING, wantStatus: common.RUNNING},
+		{name: "new task failed", run: "3", withTask: true, taskStatus: common.FAILED, wantStatus: common.FAILED},
+		{name: "empty task status", run: "3", withTask: true, wantStatus: common.UNSTART},
+		{name: "new task completed", run: "0", withTask: true, taskStatus: common.COMPLETED, wantStatus: common.COMPLETED},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			setupDocumentPermissionDB(t, true)
+			if err := dao.DB.AutoMigrate(&entity.File{}, &entity.File2Document{}, &entity.UserCanvas{}, &entity.IngestionTask{}); err != nil {
+				t.Fatal(err)
+			}
+			// Keep the old column out of the Go model, as in the real list query.
+			if err := dao.DB.Exec("ALTER TABLE document ADD COLUMN run TEXT").Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := dao.DB.Table("document").Where("id = ?", "doc-1").UpdateColumn("run", tt.run).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := dao.DB.Create(&entity.File{ID: "file-1", ParentID: "root", TenantID: "tenant-owner", CreatedBy: "owner-user", Name: "contract.pdf", Type: "pdf"}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := dao.DB.Create(&entity.File2Document{ID: "link-1", FileID: sptr("file-1"), DocumentID: sptr("doc-1")}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if tt.withTask {
+				if err := dao.DB.Create(&entity.IngestionTask{ID: "task-1", UserID: "owner-user", DocumentID: "doc-1", DatasetID: "kb-owner", Status: tt.taskStatus}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			ctx := permission.WithIdentity(t.Context(), "user-1", "tenant-owner")
+			documents := document.NewDocumentService()
+			rows, total, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: "kb-owner"}, 1, 1)
+			if err != nil || total != 1 || len(rows) != 1 || stringValue(rows[0].IngestionStatus) != tt.wantStatus {
+				t.Fatalf("document list: rows=%+v total=%d err=%v, want %s", rows, total, err, tt.wantStatus)
+			}
+			called := false
+			chunks := mcpChunkStub(func(context.Context, *service.ListChunksRequest) (*service.ListChunksResponse, error) {
+				called = true
+				return &service.ListChunksResponse{Chunks: []map[string]any{}, Doc: map[string]any{"id": "doc-1"}}, nil
+			})
+			_, err = mcpListChunks(ctx, documents, chunks, mcp.ListChunksRequest{DatasetID: "kb-owner", DocumentID: "doc-1"})
+			if tt.wantStatus == common.COMPLETED {
+				if err != nil || !called {
+					t.Fatalf("completed document rejected: called=%t err=%v", called, err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "ingestion_status: "+tt.wantStatus) || called {
+				t.Fatalf("parse guard: called=%t err=%v, want %s", called, err, tt.wantStatus)
+			}
+			if tt.name == "completed without task" {
+				if err := dao.DB.Create(&entity.Knowledgebase{ID: "kb-other", TenantID: "tenant-owner", Name: "other", CreatedBy: "owner-user", Permission: string(entity.TenantPermissionTeam), Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+					t.Fatal(err)
+				}
+				for _, req := range []mcp.ListChunksRequest{
+					{DatasetID: "kb-owner", DocumentID: "missing"},
+					{DatasetID: "kb-other", DocumentID: "doc-1"},
+				} {
+					called = false
+					if _, err := mcpListChunks(ctx, documents, chunks, req); !errors.Is(err, permission.ErrResourceNotFound) || called {
+						t.Fatalf("unlisted document: request=%+v called=%t err=%v", req, called, err)
+					}
+				}
+			}
+		})
 	}
 }
