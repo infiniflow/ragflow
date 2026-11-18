@@ -17,7 +17,7 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialCompilationValues } from '../../constant/pipeline';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
@@ -53,15 +53,13 @@ const CompilationForm = ({
   externalErrors,
 }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialCompilationValues, node);
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   const FormSchema = useFormSchema();
   const { formSchema: groupFormSchema, templateGroupsFetched } =
-    useUnavailableCompilationTemplateGroupFormSchema(FormSchema, {
-      ownerTenantId,
-    });
+    useUnavailableCompilationTemplateGroupFormSchema(FormSchema);
   const { formSchema, modelsFetched } = useUnavailableModelFormSchema(
     groupFormSchema,
-    { ownerTenantId },
+    { resourceTenantId },
   );
 
   const form = useForm<CompilationFormSchemaType>({
@@ -87,12 +85,9 @@ const CompilationForm = ({
   return (
     <Form {...form}>
       <FormWrapper>
-        <CompilationTemplateFormField
-          name="compilation_template_group_id"
-          ownerTenantId={ownerTenantId}
-        ></CompilationTemplateFormField>
+        <CompilationTemplateFormField name="compilation_template_group_id"></CompilationTemplateFormField>
         <LlmSettingFieldItems
-          ownerTenantId={ownerTenantId}
+          resourceTenantId={resourceTenantId}
         ></LlmSettingFieldItems>
       </FormWrapper>
       {!hideOutputs && (

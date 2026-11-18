@@ -86,8 +86,13 @@ describe('useMemoryFormSchema', () => {
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
       ['chat', 'vision'],
       undefined,
+      undefined,
     );
-    expect(mockUseModelValidIds).toHaveBeenCalledWith(['embedding'], undefined);
+    expect(mockUseModelValidIds).toHaveBeenCalledWith(
+      ['embedding'],
+      undefined,
+      undefined,
+    );
   });
 
   it('accepts only direct models in the owner-scoped schema', () => {
@@ -106,10 +111,12 @@ describe('useMemoryFormSchema', () => {
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
       ['chat', 'vision'],
       'tenant-1',
+      undefined,
     );
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
       ['embedding'],
       'tenant-1',
+      undefined,
     );
   });
 

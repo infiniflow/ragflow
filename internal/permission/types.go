@@ -243,12 +243,15 @@ type Scope struct {
 type ScopeQuery struct {
 	// TenantID optionally selects a tenant boundary for the query. It does not
 	// change the authenticated identity carried by the context.
-	TenantID  string
-	Kind      ResourceKind
-	Parent    ResourceRef
-	Operation Operation
-	Entry     *ResourceRef
-	EntryOp   Operation
+	TenantID string
+	// OwnerUserID optionally intersects visibility with the resource owner's
+	// permissions. Policies may ignore it when owner-aware sharing is unsupported.
+	OwnerUserID string
+	Kind        ResourceKind
+	Parent      ResourceRef
+	Operation   Operation
+	Entry       *ResourceRef
+	EntryOp     Operation
 }
 
 // Source loads normalized permission facts. GetResources must return the

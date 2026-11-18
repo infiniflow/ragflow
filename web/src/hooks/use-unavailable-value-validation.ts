@@ -74,18 +74,24 @@ export function useUnavailableValueFormSchema<T extends z.ZodTypeAny>(
 
 /**
  * Availability check for a model field (default `llm_id`), validated against
- * the models visible under `ownerTenantId` (the current user's own when
- * omitted): a shared canvas runs with the owner's models, while an imported
- * dsl.json makes the importer the owner — references pointing anywhere else
- * get flagged.
+ * the resource tenant and access-user scope. A shared canvas uses its owner's
+ * resources, while imported DSL references use the importing user's scope.
  */
 export function useUnavailableModelFormSchema<T extends z.ZodTypeAny>(
   schema: T,
   {
     fieldName = 'llm_id',
     modelTypes = ModelTypeMap.llm_id,
+    resourceTenantId,
+    accessUserId,
     ownerTenantId,
-  }: { fieldName?: string; modelTypes?: string[]; ownerTenantId?: string } = {},
+  }: {
+    fieldName?: string;
+    modelTypes?: string[];
+    resourceTenantId?: string;
+    accessUserId?: string;
+    ownerTenantId?: string;
+  } = {},
 ) {
   const { t } = useTranslation();
   const {
@@ -93,7 +99,11 @@ export function useUnavailableModelFormSchema<T extends z.ZodTypeAny>(
     isFetched: directModelsFetched,
     isSettled: modelsFetched,
     getPendingMessage,
-  } = useModelValidIds(modelTypes, ownerTenantId);
+  } = useModelValidIds(
+    modelTypes,
+    resourceTenantId ?? ownerTenantId,
+    accessUserId,
+  );
 
   const { formSchema } = useUnavailableValueFormSchema(schema, {
     fieldName,
@@ -108,10 +118,10 @@ export function useUnavailableModelFormSchema<T extends z.ZodTypeAny>(
 
 /**
  * Availability check for a compilation template group field (default
- * `compilation_template_group_id`), validated against the groups visible
- * under `ownerTenantId`. Groups resolve per tenant at run time, so a group
- * referenced by an imported dsl.json only exists under its original author's
- * tenant and gets flagged.
+ * `compilation_template_group_id`), validated against the groups owned by
+ * `accessUserId` (the current user when omitted). Groups resolve within the
+ * active tenant at run time, so an imported dsl.json reference only exists
+ * under its original author's account and gets flagged.
  */
 export function useUnavailableCompilationTemplateGroupFormSchema<
   T extends z.ZodTypeAny,
@@ -119,12 +129,12 @@ export function useUnavailableCompilationTemplateGroupFormSchema<
   schema: T,
   {
     fieldName = 'compilation_template_group_id',
-    ownerTenantId,
-  }: { fieldName?: string; ownerTenantId?: string } = {},
+    accessUserId,
+  }: { fieldName?: string; accessUserId?: string } = {},
 ) {
   const { t } = useTranslation();
   const { validIds, isFetched: templateGroupsFetched } =
-    useCompilationTemplateGroupValidIds(ownerTenantId);
+    useCompilationTemplateGroupValidIds(accessUserId);
 
   const { formSchema } = useUnavailableValueFormSchema(schema, {
     fieldName,

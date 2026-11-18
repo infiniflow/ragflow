@@ -1,4 +1,8 @@
 import { DynamicForm } from '@/components/dynamic-form';
+import {
+  ModelResourceAccessUserIdContext,
+  ModelResourceTenantIdContext,
+} from '@/hooks/use-llm-request';
 import { Button } from '@/components/ui/button';
 import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
@@ -28,6 +32,7 @@ export default function MemoryMessage() {
   const { data } = useFetchMemoryBaseConfiguration();
   const { formSchema, modelsFetched, modelsEditable } = useMemoryFormSchema(
     data?.tenant_id,
+    data?.user_id,
   );
   const form = useForm<IMemory>({
     resolver: zodResolver(formSchema),
@@ -80,38 +85,45 @@ export default function MemoryMessage() {
       ></TopTitle>
       <div className="flex gap-14 flex-1 min-h-0">
         <MemorySettingProvider data={data}>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(() => {})} className="space-y-6 ">
-              <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
-                <section className="space-y-5 text-text-secondary !space-y-10">
-                  <div className="text-base font-medium text-text-primary">
-                    {t('knowledgeConfiguration.baseInfo')}
-                  </div>
-                  <BasicInfo></BasicInfo>
-                  <Divider />
-                  <MemoryModelForm />
-                  <AdvancedSettingsForm />
-                </section>
-              </div>
-              <div className="text-right items-center flex justify-end gap-3 w-[768px]">
-                <Button
-                  type="reset"
-                  className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
-                  onClick={() => {
-                    form.reset();
-                  }}
+          <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
+            <ModelResourceAccessUserIdContext.Provider value={data?.user_id}>
+              <Form {...form}>
+                <form
+                  onSubmit={form.handleSubmit(() => {})}
+                  className="space-y-6 "
                 >
-                  {t('knowledgeConfiguration.cancel')}
-                </Button>
-                <DynamicForm.SavingButton
-                  submitLoading={loading}
-                  submitFunc={(value) => {
-                    onSubmit(value as IMemory);
-                  }}
-                ></DynamicForm.SavingButton>
-              </div>
-            </form>
-          </Form>
+                  <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
+                    <section className="space-y-5 text-text-secondary !space-y-10">
+                      <div className="text-base font-medium text-text-primary">
+                        {t('knowledgeConfiguration.baseInfo')}
+                      </div>
+                      <BasicInfo></BasicInfo>
+                      <Divider />
+                      <MemoryModelForm />
+                      <AdvancedSettingsForm />
+                    </section>
+                  </div>
+                  <div className="text-right items-center flex justify-end gap-3 w-[768px]">
+                    <Button
+                      type="reset"
+                      className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
+                      onClick={() => {
+                        form.reset();
+                      }}
+                    >
+                      {t('knowledgeConfiguration.cancel')}
+                    </Button>
+                    <DynamicForm.SavingButton
+                      submitLoading={loading}
+                      submitFunc={(value) => {
+                        onSubmit(value as IMemory);
+                      }}
+                    ></DynamicForm.SavingButton>
+                  </div>
+                </form>
+              </Form>
+            </ModelResourceAccessUserIdContext.Provider>
+          </ModelResourceTenantIdContext.Provider>
         </MemorySettingProvider>
       </div>
     </section>

@@ -49,7 +49,9 @@ jest.mock('@/components/message-history-window-size-item', () => ({
 jest.mock('../../constant', () => ({
   initialCategorizeValues: { outputs: {} },
 }));
-jest.mock('../../context', () => ({ useOwnerTenantId: () => 'canvas-owner' }));
+jest.mock('../../context', () => ({
+  useResourceTenantId: () => 'canvas-owner',
+}));
 jest.mock('../../store', () => ({
   __esModule: true,
   default: (select: any) => select({ updateNodeForm: mockUpdateNodeForm }),

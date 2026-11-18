@@ -160,18 +160,22 @@ describe('useUnavailableModelFormSchema', () => {
     expect(result.current.modelsFetched).toBe(false);
   });
 
-  it('validates against the given owner tenant', () => {
+  it('validates against the resource tenant and access user', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(['m1']),
       isFetched: true,
     });
     renderHook(() =>
-      useUnavailableModelFormSchema(Schema, { ownerTenantId: 'owner-1' }),
+      useUnavailableModelFormSchema(Schema, {
+        resourceTenantId: 'tenant-1',
+        accessUserId: 'user-1',
+      }),
     );
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
       ['chat', 'vision'],
-      'owner-1',
+      'tenant-1',
+      'user-1',
     );
   });
 });
@@ -240,7 +244,7 @@ describe('useUnavailableCompilationTemplateGroupFormSchema', () => {
     });
     renderHook(() =>
       useUnavailableCompilationTemplateGroupFormSchema(TemplateSchema, {
-        ownerTenantId: 'owner-1',
+        accessUserId: 'owner-1',
       }),
     );
 

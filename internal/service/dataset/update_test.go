@@ -592,16 +592,16 @@ func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.
 		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
 		t.Fatalf("update kb permission: %v", err)
 	}
-	insertDatasetUpdateTeamMember(t, "user-1", "tenant-1")
-	grantDatasetTestResource(t, "tenant-1", "kb", "kb-1", "user-1", "write")
 	insertDatasetUpdateModelProvider(t, "provider-1", "tenant-1", "ZHIPU-AI")
 	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
 	embeddingModelID := "aabbccdd11223344aabbccdd11223344"
 	insertDatasetUpdateTenantModel(t, embeddingModelID, "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
-	enableDatasetTestModelAccess(t, "tenant-1", "user-1", "instance-1")
+	ensureDatasetTestMembership(t, "caller-1", "tenant-1", "normal")
+	ensureDatasetTestMembership(t, "caller-1", "caller-tenant", "owner")
 
 	permission := string(entity.TenantPermissionTeam)
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "user-1", "tenant-1"), "kb-1", service.UpdateDatasetRequest{
+	ctx := withDatasetTestContext(t.Context(), "caller-1", "caller-tenant")
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{
 		Permission:     &permission,
 		EmbeddingModel: &embeddingModelID,
 	})
@@ -612,7 +612,7 @@ func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.
 		t.Fatalf("expected success code, got %d", code)
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID(withDatasetTestContext(t.Context(), "user-1", "tenant-1"), db, "kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get dataset: %v", err)
 	}
@@ -1075,6 +1075,7 @@ func insertDatasetUpdateKB(t *testing.T, id, tenantID, name string) {
 
 	kb := &entity.Knowledgebase{
 		ID:           id,
+		UserID:       tenantID,
 		TenantID:     tenantID,
 		Name:         name,
 		EmbdID:       "BAAI/bge-large-zh-v1.5@Builtin",
