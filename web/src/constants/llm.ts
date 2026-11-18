@@ -132,6 +132,7 @@ export enum LLMFactory {
   Wiro = 'Wiro AI',
   Crusoe = 'Crusoe',
   HopBase = 'HopBase',
+  GreenNode = 'GreenNode',
 }
 
 // Please lowercase the file name
@@ -245,6 +246,7 @@ export const IconMap = {
   [LLMFactory.Wiro]: 'wiro',
   [LLMFactory.Crusoe]: 'crusoe',
   [LLMFactory.HopBase]: 'hopbase',
+  [LLMFactory.GreenNode]: 'greennode',
 };
 
 /**
