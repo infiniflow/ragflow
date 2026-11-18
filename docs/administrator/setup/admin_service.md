@@ -23,41 +23,17 @@ bash build.sh --all
 
 Use `bash build.sh --go` for subsequent Go-only rebuilds after the C++ bindings have already been built.
 
-Before proceeding, run `./bin/ragflow_server --admin --help` to check that the binary can load and parse the Admin arguments. This command prints help and exits; it does not start the Admin Service or test its dependencies. If it exits with status `139` without printing help, see the [build troubleshooting notes](../../develop/launch_ragflow_from_source.md#1-get-the-source-and-build-dependencies).
-
-Complete the standalone database migration before starting any server mode. Run the migration once for this startup; do not attach `--migrate` to `--admin`, `--api`, or `--ingestor`:
+Run `./bin/ragflow_server --help` to verify the binary starts and lists its options.
 
 ```bash
-./bin/ragflow_server --migrate
+./bin/ragflow_server
 ```
 
-Start each process in a separate terminal, in this order. The source-development commands below use `RAGFLOW_DEV_MODE=true` to bypass the code and database version downgrade check; this setting does not run migrations or change the schema. Do not set it in production:
+The OSS server migrates the database, starts Admin and initializes the superuser,
+then starts API, Ingestor, Syncer and Chatter. No mode or initialization flags
+are needed. Admin defaults to port `9381` and API to `9380`.
 
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
-```
-
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
-```
-
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
-```
-
-If file synchronization is enabled, also start:
-
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
-```
-
-To initialize the default superuser when starting Admin, add `--init-superuser` to the Admin command. Do this only when initial account setup is required.
-
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
-```
-
-If no superuser exists, this option creates `admin@ragflow.io`. Set
+If no superuser exists, startup creates `admin@ragflow.io`. Set
 `DEFAULT_SUPERUSER_PASSWORD` or `ADMIN_DEFAULT_PASSWORD` before initialization
 to choose its initial password. If neither variable is set, RAGFlow generates
 a random password and writes it to `logs/admin_bootstrap_password.txt`.
@@ -69,7 +45,9 @@ For processes on another host, set `admin.host` and `admin.http_port` in their s
 
 ## Start with Docker Compose
 
-For the Go deployment, use `docker/docker-compose.yml` and its `.env` file. The `ragflow-cpu` service already passes `--enable-adminserver` and `--init-superuser` to the Go entrypoint. The entrypoint runs migrations before starting the server processes; it then starts Admin before the API server and ingestor. Its optional syncer starts earlier, so its heartbeat may appear only after Admin becomes available.
+For the Go deployment, use `docker/docker-compose.yml` and its `.env` file.
+The entrypoint starts the supervised server, which owns migration, superuser
+initialization and service startup in the same order as a host-run server.
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml --profile cpu up -d
@@ -86,7 +64,7 @@ The API server is published on host port `9380` by default. Use
 `ADMIN_SVR_HTTP_PORT` and `SVR_HTTP_PORT` to change the corresponding published
 host ports.
 
-Use the Go Compose entry point documented in [Go Docker deployment](../../../docker/README.md). Initialize the first superuser with `--init-superuser` only when initial account setup is required.
+Use the Go Compose entry point documented in [Go Docker deployment](../../../docker/README.md). The server initializes the first superuser automatically.
 
 ## Check health and service registration
 

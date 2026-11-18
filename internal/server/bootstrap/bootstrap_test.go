@@ -70,7 +70,7 @@ func TestResolveServerNamePortIgnoredForNonHTTPModes(t *testing.T) {
 	}
 }
 
-// TestResolveServerNameNameOverrideWins verifies an explicit --name overrides
+// TestResolveServerNameNameOverrideWins verifies an explicit configured name overrides
 // the derived default for every known mode.
 func TestResolveServerNameNameOverrideWins(t *testing.T) {
 	for _, mode := range []string{"api", "admin", "ingestor", "syncer", "chatter", "deepdoc", "migrate"} {
@@ -84,7 +84,7 @@ func TestResolveServerNameNameOverrideWins(t *testing.T) {
 	}
 }
 
-// TestResolveServerNameEmptyNameOverride: an explicit empty --name (pointer to
+// TestResolveServerNameEmptyNameOverride: an explicit empty configured name (pointer to
 // "") must be honored as an empty name, not fall through to the default. This
 // mirrors the original precedence where a non-nil pointer always wins.
 func TestResolveServerNameEmptyNameOverride(t *testing.T) {
@@ -114,7 +114,7 @@ func TestResolveServerNameUnknownModeErrors(t *testing.T) {
 }
 
 // TestResolveServerNameWorkerModesStableNoUUID guards the contract that
-// ingestor/syncer/deepdoc without --name resolve to the stable "<mode>_server"
+// ingestor/syncer/deepdoc without configured name resolve to the stable "<mode>_server"
 // literal. The historical code had a UUID branch keyed on `if serverName == ""`
 // that was dead (the name was already pre-filled), so those servers must never
 // get a per-boot UUID suffix in their log filename. This test fails (and must

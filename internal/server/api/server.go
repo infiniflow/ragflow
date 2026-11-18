@@ -24,7 +24,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 
-	"ragflow/internal/channels"
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
@@ -50,8 +49,8 @@ import (
 )
 
 func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
-	if args.DisableChatChannels && !kvrocks.IsEnabled() {
-		return fmt.Errorf("API with disabled chat channels requires Kvrocks for shared channel runtime status")
+	if !kvrocks.IsEnabled() {
+		return fmt.Errorf("API requires Kvrocks for shared channel runtime status")
 	}
 	closeTokenizer, err := bootstrap.InitializeAgentTokenizer()
 	if err != nil {
@@ -239,16 +238,8 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// Setup routes
 	r.Setup(ginEngine)
 
-	if arguments.DisableChatChannels {
-		cache := service.NewChatChannelRuntimeCache(kvrocks.Get().GetClient())
-		service.SetChatChannelRuntimeProvider(cache.Read)
-	} else {
-		channelRuntime, err := channels.Start(ctx, agentService)
-		if err != nil {
-			return fmt.Errorf("start chat-channel: %w", err)
-		}
-		defer channelRuntime.Stop()
-	}
+	cache := service.NewChatChannelRuntimeCache(kvrocks.Get().GetClient())
+	service.SetChatChannelRuntimeProvider(cache.Read)
 
 	apiServerConfig := globalConfig.GetAPIServerConfig()
 
@@ -343,6 +334,15 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	go func() {
 		serve(serverName, srv, apiListener)
 	}()
+	if arguments.Ready != nil {
+		if err := arguments.Ready(); err != nil {
+			srv.Close()
+			if mcpSrv != nil {
+				mcpSrv.Close()
+			}
+			return fmt.Errorf("report API readiness: %w", err)
+		}
+	}
 
 	// Start heartbeat reporter to admin server
 	if hb := bootstrap.StartHeartbeat(

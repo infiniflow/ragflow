@@ -131,7 +131,7 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	// Resolve the per-document page concurrency (N) from CLI > env > config >
 	// default(2) and register it with the shared page worker pool. Fail fast on
 	// an out-of-range value.
-	pageConcurrency, err := server.GetConfig().GetIngestorPageConcurrency(arguments.IngestorPageConcurrency)
+	pageConcurrency, err := server.GetConfig().GetIngestorPageConcurrency()
 	if err != nil {
 		return err
 	}

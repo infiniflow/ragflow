@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"ragflow/internal/utility"
 	"time"
@@ -58,7 +59,7 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	if args.InitSuperUser {
 		// Initialize default admin user
 		if err := adminService.InitDefaultAdmin(); err != nil {
-			common.Error("Failed to initialize default admin user", err)
+			return fmt.Errorf("initialize default admin user: %w", err)
 		}
 	}
 
@@ -93,6 +94,11 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 		Addr:    addr,
 		Handler: ginEngine,
 	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen admin server on %s: %w", addr, err)
+	}
+	defer listener.Close()
 	// Print RAGFlow Admin logo
 	common.Info("" +
 		"\n        ____  ___   ______________                 ___       __          _     \n" +
@@ -114,15 +120,26 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	defer stopMetrics()
 
 	// Start HTTP server in a goroutine
+	serveErr := make(chan error, 1)
 	go func() {
 		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", adminConfig.HTTPPort))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			common.Fatal("Failed to start server", zap.Error(err))
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
 		}
 	}()
+	if args.Ready != nil {
+		if err := args.Ready(); err != nil {
+			srv.Close()
+			return fmt.Errorf("report admin readiness: %w", err)
+		}
+	}
 
 	// Wait for shutdown signal from main's signal.NotifyContext
-	<-ctx.Done()
+	var runErr error
+	select {
+	case <-ctx.Done():
+	case runErr = <-serveErr:
+	}
 
 	common.Info("Received shutdown signal")
 	common.Info("Shutting down RAGFlow HTTP server...")
@@ -137,5 +154,5 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	}
 
 	common.Info("Admin HTTP server exited")
-	return nil
+	return runErr
 }

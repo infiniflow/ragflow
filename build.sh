@@ -1412,30 +1412,8 @@ run() {
 
     cd "$PROJECT_ROOT"
 
-    # admin_server must be running before ragflow_server, otherwise ragflow_server's
-    # heartbeats to admin will error out (see internal/development.md).
-    print_section "Starting admin server (background)"
-    "$RAGFLOW_SERVER_BINARY" --admin &
-    ADMIN_PID=$!
-    # One trap for both background services: a second `trap ... EXIT INT TERM`
-    # would replace this one rather than add to it, leaving admin_server holding
-    # port 9381 after the foreground server exits. INGESTOR_PID is cleared first
-    # so a value inherited from the environment cannot be signalled during the
-    # window before the ingestor starts.
-    INGESTOR_PID=""
-    trap 'kill "$ADMIN_PID" ${INGESTOR_PID:+"$INGESTOR_PID"} 2>/dev/null || true' EXIT INT TERM
-
-    # Give admin_server a moment to bind its listening port (9381) before
-    # ragflow_server starts sending heartbeats to it.
-    sleep 1
-
-    print_section "Starting ingestor (background)"
-    "$RAGFLOW_SERVER_BINARY" --ingestor &
-    INGESTOR_PID=$!
-    sleep 1
-
-    print_section "Starting RAGFlow server (foreground)"
-    "$RAGFLOW_SERVER_BINARY" --api
+    print_section "Starting RAGFlow server"
+    "$RAGFLOW_SERVER_BINARY" "$@"
 }
 
 # Show help
@@ -1624,7 +1602,7 @@ main() {
             check_go_deps
             build_cpp
             build_go
-            run
+            run "${args[@]:1}"
             ;;
         --help|-h)
             show_help

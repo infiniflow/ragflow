@@ -125,9 +125,9 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// writes available_int=0 compiled chunks; they just won't be merged until
 	// the consumer is available.
 	ingestorCfg := globalConfig.GetIngestorConfig()
-	// Resolve the ingestor worker count (K) from CLI > env > config > default(1)
+	// Resolve the ingestor worker count (K) from env > config > default(1)
 	// and fail fast on an out-of-range value.
-	workers, err := globalConfig.GetIngestorConcurrentWorkers(args.IngestorConcurrentWorkers)
+	workers, err := globalConfig.GetIngestorConcurrentWorkers()
 	if err != nil {
 		return err
 	}

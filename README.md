@@ -272,43 +272,18 @@ For document-engine changes, configuration updates, restarting services, and ret
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-5. Migrate the database:
+5. Start RAGFlow:
 
    ```bash
-   ./bin/ragflow_server --migrate
+   ./bin/ragflow_server
    ```
 
-6. Start the four services in four separate terminals:
+   The OSS server migrates the database, starts Admin and initializes the
+   superuser, then starts API, Ingestor, Syncer, and Chatter. Admin listens on
+   `9381` and API on `9380` by default. Stop the parent process to stop all services.
+   Configure service settings in `conf/service_conf.yaml` or environment variables.
 
-   Terminal 1: start Admin on port `9381`.
-
-   ```bash
-   ./bin/ragflow_server --admin
-   ```
-
-   ```bash
-   ./bin/ragflow_server --ingestor
-   ```
-
-   Terminal 3: start Syncer.
-
-   ```bash
-   ./bin/ragflow_server --syncer
-   ```
-
-   Terminal 4: start API on port `9380`.
-
-   ```bash
-   ./bin/ragflow_server --api
-   ```
-
-   The startup modes work as follows:
-
-   - `--migrate`: Runs database migrations and exits when complete.
-   - `--admin`: Starts the Admin service for management and initialization operations.
-   - `--ingestor`: Starts the Ingestor service for data ingestion and parsing tasks.
-   - `--syncer`: Starts the Syncer service for external data source synchronization tasks.
-   - `--api`: Starts the API service for the Web UI and SDKs.
+6. Inspect the available options with `./bin/ragflow_server --help`.
 
 7. Only when developing the frontend, install Node.js and npm, then start the React frontend:
 
