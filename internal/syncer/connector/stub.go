@@ -18,6 +18,6 @@
 
 package connector
 
-// registerEeBuiltIns registers the connectors that only the enterprise build
+// registerEnterpriseBuiltIns registers the connectors that only the enterprise build
 // ships; the community build registers none of them.
-func registerEeBuiltIns(_ *Registry) {}
+func registerEnterpriseBuiltIns(_ *Registry) {}

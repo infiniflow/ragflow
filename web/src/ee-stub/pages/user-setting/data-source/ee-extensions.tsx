@@ -38,7 +38,7 @@ export const eeDataSourceDefaultValues: Record<
 > = {};
 
 /** Feature switches contributed by enterprise connectors. */
-export const eeDataSourceFeatureVisibility: Record<string, any> = {};
+export const EeDataSourceFeatureVisibility: Record<string, any> = {};
 
 /** Fields the detail page must lock once a connector has been created. */
 export const shouldDisableEeDataSourceField = (_fieldName: string): boolean =>

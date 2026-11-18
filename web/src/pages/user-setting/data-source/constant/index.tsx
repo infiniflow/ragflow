@@ -27,7 +27,7 @@ import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import {
   eeDataSourceDefaultValues,
-  eeDataSourceFeatureVisibility,
+  EeDataSourceFeatureVisibility,
   generateEeDataSourceFormFields,
   generateEeDataSourceInfo,
 } from '@/ee/pages/user-setting/data-source/ee-extensions';
@@ -198,7 +198,7 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.BIGQUERY]: {
     syncDeletedFiles: true,
   },
-  ...eeDataSourceFeatureVisibility,
+  ...EeDataSourceFeatureVisibility,
 };
 
 const isDataSourceFeatureVisible = (

@@ -442,13 +442,19 @@ export const RenderField = ({
                 }
               : fieldProps;
             return (
-              <Segmented
-                {...finalFieldProps}
-                options={field.options || []}
-                className="w-full"
-                itemClassName="flex-1 justify-center"
-                disabled={field.disabled}
-              />
+              <div
+                className={cn(
+                  'w-full',
+                  field.disabled && 'pointer-events-none opacity-50',
+                )}
+              >
+                <Segmented
+                  {...finalFieldProps}
+                  options={field.options || []}
+                  className="w-full"
+                  itemClassName="flex-1 justify-center"
+                />
+              </div>
             );
           }}
         </RAGFlowFormItem>

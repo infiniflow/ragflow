@@ -75,7 +75,6 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
           rounded = 'default',
           sizeType = 'default',
           buttonSize = 'default',
-          disabled,
         },
         ref,
       ) {
@@ -99,7 +98,6 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
               'flex items-center p-1 gap-2 bg-bg-card',
               segmentedVariants.round[rounded],
               segmentedVariants.size[sizeType],
-              disabled && 'opacity-50 cursor-not-allowed',
               className,
             )}
           >
@@ -113,7 +111,6 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
                   type="button"
                   size={buttonSize}
                   variant="static"
-                  disabled={disabled || (isObject && option.disabled)}
                   className={cn(
                     selectedValue === actualValue && 'text-text-primary',
                     itemClassName,
@@ -157,7 +154,6 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
           rounded = 'default',
           sizeType = 'default',
           buttonSize = 'default',
-          disabled,
         },
         ref,
       ) {
@@ -180,7 +176,6 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
               'flex items-center p-1 gap-2 bg-bg-card',
               segmentedVariants.round[rounded],
               segmentedVariants.size[sizeType],
-              disabled && 'opacity-50 cursor-not-allowed',
               className,
             )}
           >
@@ -194,7 +189,6 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
                   type="button"
                   size={buttonSize}
                   variant="static"
-                  disabled={disabled || (isObject && option.disabled)}
                   className={cn(
                     {
                       'text-text-primary bg-bg-base':
