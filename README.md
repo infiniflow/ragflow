@@ -350,3 +350,17 @@ See the [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/1224
 ## 🙌 Contributing
 
 RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://ragflow.io/docs/dev/contributing) first.
+
+## 🤝 Sponsors
+
+<div align="center">
+  <a href="https://coderabbit.link/ragflow">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/sponsors/coderabbit-dark.svg" />
+      <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/sponsors/coderabbit-light.svg" />
+      <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/sponsors/coderabbit-light.svg" alt="CodeRabbit" width="360" />
+    </picture>
+  </a>
+  <br />
+  <sub>Code reviews powered by CodeRabbit</sub>
+</div>
