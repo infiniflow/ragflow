@@ -252,7 +252,7 @@ func TestMinerUMarkdownResultKeepsCodeNotesAndTextLevel(t *testing.T) {
 	}
 }
 
-func TestMinerUMarkdownResultKeepsImageOnlyEquations(t *testing.T) {
+func TestMinerUMarkdownResultDropsTextlessEquations(t *testing.T) {
 	for _, tc := range []struct{ name, member, content string }{
 		{"structured", "structured_content.json", `{"pages":[{"page_idx":0,"blocks":[
             {"type":"text","content":"Alpha body"},
@@ -266,46 +266,59 @@ func TestMinerUMarkdownResultKeepsImageOnlyEquations(t *testing.T) {
         ]`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			zw := zip.NewWriter(&buf)
-			member, err := zw.Create(tc.member)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := member.Write([]byte(tc.content)); err != nil {
-				t.Fatal(err)
-			}
-			middle, err := zw.Create("middle.json")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := middle.Write([]byte(`{"pdf_info":[{"page_idx":0,"page_size":[1000,1000]}]}`)); err != nil {
-				t.Fatal(err)
-			}
-			if err := zw.Close(); err != nil {
-				t.Fatal(err)
-			}
-			result := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{Markdown: "Alpha body", Zip: buf.Bytes()})
-			if result.Err != nil {
-				t.Fatal(result.Err)
-			}
+			result := minerUZipResult(t, tc.member, tc.content, "Alpha body")
 			items := ItemsToMaps(result.JSON)
-			if len(items) != 2 {
-				t.Fatalf("items = %#v, want paragraph and positioned equation only", items)
-			}
-			equation := items[1]
-			if equation["layout"] != "equation" || equation["page_number"] != 1 || stringValue(equation["text"]) != "" {
-				t.Fatalf("equation = %#v", equation)
-			}
-			positions, _ := equation["_pdf_positions"].([][]any)
-			if len(positions) != 1 || len(positions[0]) < 5 {
-				t.Fatalf("equation positions = %#v, want one positioned region", equation["_pdf_positions"])
-			}
-			for index, want := range []int{1, 100, 500, 200, 400} {
-				if got := int(numberValue(positions[0][index])); got != want {
-					t.Fatalf("equation position[%d] = %d, want %d", index, got, want)
-				}
+			if len(items) != 1 || items[0]["text"] != "Alpha body" || items[0]["layout"] == "equation" {
+				t.Fatalf("items = %#v, want the paragraph only", items)
 			}
 		})
 	}
+
+	t.Run("equation text is kept", func(t *testing.T) {
+		result := minerUZipResult(t, "content_list.json", `[
+			{"type":"equation","text":"E = mc^2","page_idx":0,"bbox":[100,200,500,400]}
+		]`, "")
+		items := ItemsToMaps(result.JSON)
+		if len(items) != 1 || items[0]["layout"] != "equation" || items[0]["text"] != "E = mc^2" {
+			t.Fatalf("equation = %#v", items)
+		}
+	})
+
+	t.Run("equation only falls back to markdown", func(t *testing.T) {
+		result := minerUZipResult(t, "content_list.json", `[
+			{"type":"equation","text":"","page_idx":0,"bbox":[100,200,500,400]}
+		]`, "E = mc^2")
+		items := ItemsToMaps(result.JSON)
+		if len(items) == 0 || !strings.Contains(stringValue(items[0]["text"]), "E = mc^2") || items[0]["layout"] == "equation" {
+			t.Fatalf("items = %#v, want the markdown formula", items)
+		}
+	})
+}
+
+func minerUZipResult(t *testing.T, memberName, content, markdown string) ParseResult {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	member, err := zw.Create(memberName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := member.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	middle, err := zw.Create("middle.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := middle.Write([]byte(`{"pdf_info":[{"page_idx":0,"page_size":[1000,1000]}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	result := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{Markdown: markdown, Zip: buf.Bytes()})
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	return result
 }

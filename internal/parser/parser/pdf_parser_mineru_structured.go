@@ -370,7 +370,9 @@ func minerUContentItem(item map[string]any, sizes map[int][2]float64) map[string
 	if text == "" && len(positions) == 0 {
 		return nil
 	}
-	if (typ == "table" || typ == "text" || typ == "title" || typ == "list" || typ == "code" || typ == "") && text == "" {
+	// A textless equation is not retrievable. Keeping it blocks markdown
+	// fallback, and the general chunker drops empty text before cropping.
+	if (typ == "table" || typ == "text" || typ == "title" || typ == "list" || typ == "code" || typ == "equation" || typ == "") && text == "" {
 		return nil
 	}
 	jsonItem := map[string]any{
