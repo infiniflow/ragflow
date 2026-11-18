@@ -13,6 +13,7 @@ jest.mock('@/components/ui/message', () => ({
 }));
 
 jest.mock('react-i18next', () => ({
+  ...jest.requireActual('react-i18next'),
   useTranslation: () => ({
     t: (key: string) => {
       const labels: Record<string, string> = {
@@ -30,6 +31,10 @@ jest.mock('@/hooks/use-llm-request', () => ({
     isFetched: true,
     isError: false,
   })),
+}));
+
+jest.mock('@/hooks/use-user-setting-request', () => ({
+  useFetchTenantInfo: () => ({ data: {} }),
 }));
 
 jest.mock('../../context', () => ({
