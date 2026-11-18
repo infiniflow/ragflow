@@ -30,14 +30,15 @@ import (
 	"ragflow/internal/entity"
 )
 
-// TestTenantModelInstanceAPIKeyColumnIsUnsizedText pins the MySQL migration
+// TestTenantModelInstanceAPIKeyColumnIsBoundedVarchar pins the MySQL migration
 // type of tenant_model_instance.api_key. The column used to be declared
 // varchar(512), so saving a provider key longer than 512 characters failed at
-// the database layer with MySQL Error 1406 (#22422), while tenant_llm.api_key
-// is already TEXT. AutoMigrate derives the column type from the entity tag, so
-// asserting the dialector's full data type guards both the cap removal and the
-// widening of existing installations.
-func TestTenantModelInstanceAPIKeyColumnIsUnsizedText(t *testing.T) {
+// the database layer with MySQL Error 1406 (#22422). Per the maintainer review
+// of #22424 the replacement is a bounded varchar(4096), not TEXT: long keys
+// must fit, but the column keeps a declared maximum. AutoMigrate derives the
+// column type from the entity tag, so asserting the dialector's full data type
+// guards both the bound change and the widening of existing installations.
+func TestTenantModelInstanceAPIKeyColumnIsBoundedVarchar(t *testing.T) {
 	db, _ := openMySQLSpecMock(t)
 
 	s, err := schema.Parse(&entity.TenantModelInstance{}, &sync.Map{}, db.NamingStrategy)
@@ -49,15 +50,12 @@ func TestTenantModelInstanceAPIKeyColumnIsUnsizedText(t *testing.T) {
 		t.Fatal("api_key column missing from TenantModelInstance schema")
 	}
 
-	if field.Size != 0 {
-		t.Fatalf("api_key must not carry a length cap, schema size = %d", field.Size)
-	}
 	fullType := db.Migrator().FullDataTypeOf(field).SQL
-	if !strings.HasPrefix(fullType, "text") {
-		t.Fatalf("mysql full data type for api_key = %q, want the unsized text form", fullType)
+	if fullType != "varchar(4096) NOT NULL" {
+		t.Fatalf("mysql full data type for api_key = %q, want the bounded varchar(4096) NOT NULL form", fullType)
 	}
-	if strings.Contains(fullType, "varchar") || strings.Contains(fullType, "512") {
-		t.Fatalf("mysql full data type for api_key = %q, must not stay a sized varchar", fullType)
+	if strings.Contains(fullType, "512") || strings.Contains(fullType, "text") {
+		t.Fatalf("mysql full data type for api_key = %q, must be neither the legacy varchar(512) nor TEXT", fullType)
 	}
 }
 
@@ -103,17 +101,18 @@ func expectSchemaLookups(mock sqlmock.Sqlmock, table, column, liveType, isNullab
 // TestTenantModelInstanceAPIKeyWidenedBeforeBackfill pins the pre-backfill
 // widening of tenant_model_instance.api_key. migrateModelData — whose base
 // step copies tenant_llm keys into the column — runs before AutoMigrate, so
-// the revision that turned the entity column into TEXT also has to widen
-// tables that still hold the legacy varchar(512): otherwise a long provider
-// key fails the backfill INSERT (strict mode Error 1406, aborting startup)
-// before AutoMigrate ever reaches the column. The spec must issue the ALTER
-// exactly once on the narrow shape and no DDL once converged.
+// the revision that lifts the 512-character cap also has to widen tables that
+// still hold the legacy varchar(512): otherwise a long provider key fails the
+// backfill INSERT (strict mode Error 1406, aborting startup) before
+// AutoMigrate ever reaches the column. The spec must issue the ALTER exactly
+// once on the narrow shape, to the bounded varchar(4096) target, and no DDL
+// once converged.
 func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
 	db, mock := openMySQLSpecMock(t)
 
 	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(512)", "NO")
 	mock.ExpectExec(
-		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key text NOT NULL`,
+		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key varchar\(4096\) NOT NULL`,
 	).WillReturnResult(sqlmock.NewResult(0, 0))
 
 	if err := applyColumnSpec(context.Background(), db, tenantModelInstanceAPIKeyColumnSpec); err != nil {
@@ -124,7 +123,7 @@ func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
 	}
 
 	// Converged shape: the ALTER must not repeat on later startups.
-	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "text", "NO")
+	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(4096)", "NO")
 	if err := applyColumnSpec(context.Background(), db, tenantModelInstanceAPIKeyColumnSpec); err != nil {
 		t.Fatalf("applyColumnSpec on the converged column: %v", err)
 	}
@@ -136,7 +135,7 @@ func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
 // TestTenantModelInstanceAPIKeySpecSkipsFreshInstalls pins the guards: on a
 // database whose tenant_model_instance table does not exist yet (a fresh or
 // pre-split install), the spec must leave the schema untouched — the table is
-// created later with the text column already in place.
+// created later with the varchar(4096) column already in place.
 func TestTenantModelInstanceAPIKeySpecSkipsFreshInstalls(t *testing.T) {
 	db, mock := openMySQLSpecMock(t)
 
@@ -154,5 +153,85 @@ func TestTenantModelInstanceAPIKeySpecSkipsFreshInstalls(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("a missing table must trigger no catalog column reads or DDL: %v", err)
+	}
+}
+
+// expectTableProbe mocks the catalog reads the mysql dialector issues for one
+// Migrator().HasTable probe: the current-database resolution and the
+// information_schema.tables lookup, reporting whether the table is present.
+func expectTableProbe(mock sqlmock.Sqlmock, table string, present bool) {
+	count := 0
+	if present {
+		count = 1
+	}
+	mock.ExpectQuery(`SELECT DATABASE\(\)`).
+		WillReturnRows(sqlmock.NewRows([]string{"DATABASE()"}).AddRow("test"))
+	mock.ExpectQuery(`SELECT SCHEMA_NAME from Information_schema.SCHEMATA`).
+		WithArgs("test%", "test").
+		WillReturnRows(sqlmock.NewRows([]string{"SCHEMA_NAME"}).AddRow("test"))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM information_schema.tables`).
+		WithArgs("test", table, "BASE TABLE").
+		WillReturnRows(sqlmock.NewRows([]string{"count(*)"}).AddRow(count))
+}
+
+// expectLegacyIndexCatalogRead mocks the INFORMATION_SCHEMA.STATISTICS lookup
+// dropIndexIfExists performs for the legacy composite unique index, and
+// reports whether the catalog says the index is present.
+func expectLegacyIndexCatalogRead(mock sqlmock.Sqlmock, present bool) {
+	count := 0
+	if present {
+		count = 1
+	}
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM INFORMATION_SCHEMA.STATISTICS`).
+		WithArgs("tenant_model_instance", "idx_api_key_provider_id").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(count))
+}
+
+// TestLegacyModelInstanceAPIKeyIndexDropped pins that the legacy composite
+// unique index idx_api_key_provider_id (provider_id, api_key) is removed: the
+// releases between #14423 and #15460 declared it through the entity's
+// uniqueIndex tags, and while it is in place the api_key widening makes MySQL
+// rebuild a key whose utf8mb4 length exceeds the 3072-byte InnoDB limit — the
+// ALTER fails and the upgrade cannot start (review of #22424).
+func TestLegacyModelInstanceAPIKeyIndexDropped(t *testing.T) {
+	db, mock := openMySQLSpecMock(t)
+
+	expectTableProbe(mock, "tenant_model_instance", true)
+	expectLegacyIndexCatalogRead(mock, true)
+	mock.ExpectExec(`ALTER TABLE tenant_model_instance DROP INDEX idx_api_key_provider_id`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	if err := dropLegacyTenantModelInstanceAPIKeyIndex(context.Background(), db); err != nil {
+		t.Fatalf("dropLegacyTenantModelInstanceAPIKeyIndex with the legacy index present: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sqlmock expectations: %v", err)
+	}
+}
+
+// TestLegacyModelInstanceAPIKeyIndexDropSkipsMissingIndexAndTable pins the
+// guards: without the index (a database created outside the #14423–#15460
+// window, or already migrated) only the catalog read runs and no DDL is
+// issued, and without the table the step touches nothing at all.
+func TestLegacyModelInstanceAPIKeyIndexDropSkipsMissingIndexAndTable(t *testing.T) {
+	db, mock := openMySQLSpecMock(t)
+
+	expectTableProbe(mock, "tenant_model_instance", true)
+	expectLegacyIndexCatalogRead(mock, false)
+
+	if err := dropLegacyTenantModelInstanceAPIKeyIndex(context.Background(), db); err != nil {
+		t.Fatalf("dropLegacyTenantModelInstanceAPIKeyIndex with the index already gone: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("a missing index must trigger no DDL: %v", err)
+	}
+
+	expectTableProbe(mock, "tenant_model_instance", false)
+
+	if err := dropLegacyTenantModelInstanceAPIKeyIndex(context.Background(), db); err != nil {
+		t.Fatalf("dropLegacyTenantModelInstanceAPIKeyIndex on a missing table: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("a missing table must trigger no catalog reads or DDL: %v", err)
 	}
 }
