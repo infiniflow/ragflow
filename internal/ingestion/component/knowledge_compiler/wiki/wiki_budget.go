@@ -11,11 +11,19 @@ import (
 // Leave room for chat framing in addition to the configured output allowance.
 const wikiRefineSafetyTokens = 64
 
-func (p *wikiPipeline) wikiRefineTokenCount(text string) int {
-	if p.deps.Tokenizer != nil {
-		return p.deps.Tokenizer.NumTokens(text)
+type wikiRefineTokenizer struct{ common.Tokenizer }
+
+func (t wikiRefineTokenizer) NumTokens(text string) int {
+	if t.Tokenizer != nil {
+		return t.Tokenizer.NumTokens(text)
 	}
-	return common.EstimateTokens(text)
+	// The production resolver may not supply a model tokenizer. A byte bound
+	// avoids the undercount of bytes/4 for numbers, code, and non-English text.
+	return len(text)
+}
+
+func (p *wikiPipeline) wikiRefineTokenCount(text string) int {
+	return (wikiRefineTokenizer{p.deps.Tokenizer}).NumTokens(text)
 }
 
 func (p *wikiPipeline) wikiRefineTokenBudget() (input, output int) {
@@ -41,7 +49,7 @@ func (p *wikiPipeline) checkWikiRefineBudget(req common.ChatRequest) error {
 // Pack the rendered source blocks, including chunk markers and separators.
 // PackBatches deliberately leaves oversized chunks intact; the caller checks
 // every complete prompt before dispatch and reports those as REFINE errors.
-func packWikiRefineSources(chunks []common.Chunk, ids []string, budget int, tok common.Tokenizer) []string {
+func wikiRefineSourceBlocks(chunks []common.Chunk, ids []string) []common.Chunk {
 	var blocks []common.Chunk
 	if len(ids) == 0 {
 		for _, ch := range chunks {
@@ -67,15 +75,30 @@ func packWikiRefineSources(chunks []common.Chunk, ids []string, budget int, tok 
 			}
 		}
 	}
-	var sources []string
-	for _, batch := range common.PackBatches(blocks, budget, tok) {
-		var source strings.Builder
-		for _, ch := range batch {
-			source.WriteString(ch.Text)
-		}
-		sources = append(sources, source.String())
+	return blocks
+}
+
+func joinWikiRefineSources(batch []common.Chunk) string {
+	var source strings.Builder
+	for _, ch := range batch {
+		source.WriteString(ch.Text)
 	}
-	return sources
+	return source.String()
+}
+
+// Replace placeholders once so literal placeholders inside a draft or source
+// cannot become new substitutions in the rendered prompt.
+func renderWikiRefineTemplate(template string, fields map[string]string) string {
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, 0, 2*len(keys))
+	for _, key := range keys {
+		pairs = append(pairs, "{"+key+"}", fields[key])
+	}
+	return strings.NewReplacer(pairs...).Replace(template)
 }
 
 // The PLAN-stage page-budget controls below implement:

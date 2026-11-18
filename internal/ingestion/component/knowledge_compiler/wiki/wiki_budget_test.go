@@ -20,7 +20,10 @@ func TestPackWikiRefineSources_PreservesSourceFormatting(t *testing.T) {
 		{ID: "last", Content: "source three"},
 	}
 	for _, ids := range [][]string{nil, {"last", "chunk-2", "missing", "empty", "first"}} {
-		batches := packWikiRefineSources(chunks, ids, 40, refineByteTokenizer{})
+		var batches []string
+		for _, batch := range common.PackBatches(wikiRefineSourceBlocks(chunks, ids), 40, wikiRefineTokenizer{}) {
+			batches = append(batches, joinWikiRefineSources(batch))
+		}
 		if got, want := strings.Join(batches, ""), buildSourceContext(chunks, ids); got != want {
 			t.Fatalf("ids=%v: packed source = %q, want %q", ids, got, want)
 		}

@@ -168,8 +168,7 @@ func TestShouldReportRefineProgress(t *testing.T) {
 	}
 }
 
-// Counting bytes makes the budget tests deterministic and proves that the
-// injected tokenizer, rather than the fallback estimate, bounds each request.
+// Counting bytes makes the budget tests deterministic.
 type refineByteTokenizer struct{}
 
 func (refineByteTokenizer) NumTokens(text string) int { return len(text) }
@@ -319,5 +318,129 @@ func TestRunRefinePage_RechecksGrowingDraft(t *testing.T) {
 	assertRefineBudgetError(t, err)
 	if calls != 1 {
 		t.Fatalf("calls = %d, want only the first batch before the draft outgrows the budget", calls)
+	}
+}
+
+func refineSourcePipeline(count, size int) *wikiPipeline {
+	p := refinePipeline()
+	p.deps.ModelContextLen = 8192
+	p.deps.ModelMaxOutput = 4096
+	p.inputs.Chunks = nil
+	var ids []string
+	for i := 0; i < count; i++ {
+		id := fmt.Sprintf("c%03d", i)
+		ids = append(ids, id)
+		p.inputs.Chunks = append(p.inputs.Chunks, common.Chunk{ID: id, Text: strings.Repeat("1", size)})
+	}
+	p.reduced.Entities[0].SourceChunkIDs = ids
+	p.reduced.Claims[0].SourceChunkIDs = ids
+	return p
+}
+
+func TestRunRefinePage_NoTokenizerUsesConservativeBound(t *testing.T) {
+	p := refineSourcePipeline(400, 1080)
+	p.deps.ModelContextLen = 128000
+	p.deps.ModelMaxOutput = 2048
+	marker := regexp.MustCompile(`\[CHUNK_ID ([^\]]+)\]`)
+	calls, chunks := 0, 0
+	p.deps.Chat = chatFunc(func(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+		calls++
+		if len(req.SystemPrompt)+1+len(req.UserPrompt)+2048+wikiRefineSafetyTokens > 128000 {
+			t.Fatal("nil-tokenizer path dispatched an oversized request")
+		}
+		chunks += len(marker.FindAllStringSubmatch(req.UserPrompt, -1))
+		return &common.ChatResponse{Content: "# Alpha\n\nIntegrated evidence."}, nil
+	})
+	if _, err := refineTestPage(p); err != nil {
+		t.Fatal(err)
+	}
+	if calls < 2 || chunks != 400 {
+		t.Fatalf("calls/chunks = %d/%d, want multiple requests containing all 400 chunks", calls, chunks)
+	}
+}
+
+func TestRunRefinePage_SmallWindowBatchesWithActualDraft(t *testing.T) {
+	p := refineSourcePipeline(4, 1400)
+	calls := 0
+	const draft = "# Alpha\n\nKeep `{source_context}` and `{title}` literal."
+	p.deps.Chat = chatFunc(func(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+		calls++
+		if calls > 1 && !strings.Contains(req.UserPrompt, draft) {
+			t.Fatal("template substitution changed a literal placeholder in the draft")
+		}
+		if err := p.checkWikiRefineBudget(req); err != nil {
+			t.Fatal(err)
+		}
+		return &common.ChatResponse{Content: draft}, nil
+	})
+	if _, err := refineTestPage(p); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 4 {
+		t.Fatalf("calls = %d, want four source batches in the 8k window", calls)
+	}
+}
+
+func TestRunRefinePage_RepackagesRemainingSourcesAsDraftGrows(t *testing.T) {
+	// Measure the ordinary fixed prompt independently of the batching path.
+	probe := refinePipeline()
+	probe.deps.ModelMaxOutput = 512
+	var fixed int
+	probe.deps.Chat = chatFunc(func(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+		fixed = len(req.SystemPrompt) + 1 + len(req.UserPrompt) - len(buildSourceContext(probe.inputs.Chunks, []string{"c1"}))
+		return &common.ChatResponse{Content: "# Alpha"}, nil
+	})
+	if _, err := refineTestPage(probe); err != nil {
+		t.Fatal(err)
+	}
+	p := refineSourcePipeline(4, 700)
+	p.deps.ModelMaxOutput = 512
+	blocks := wikiRefineSourceBlocks(p.inputs.Chunks, p.reduced.Claims[0].SourceChunkIDs)
+	p.deps.ModelContextLen = fixed + 2*len(blocks[0].Text) + 10 + 512 + wikiRefineSafetyTokens
+	marker := regexp.MustCompile(`\[CHUNK_ID ([^\]]+)\]`)
+	var sizes []int
+	p.deps.Chat = chatFunc(func(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+		if err := p.checkWikiRefineBudget(req); err != nil {
+			t.Fatal(err)
+		}
+		sizes = append(sizes, len(marker.FindAllStringSubmatch(req.UserPrompt, -1)))
+		return &common.ChatResponse{Content: "# Alpha\n\n" + strings.Repeat("x", 503)}, nil
+	})
+	if _, err := refineTestPage(p); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sizes, []int{2, 1, 1}) {
+		t.Fatalf("batch sizes = %v, want [2 1 1] as the draft consumes input space", sizes)
+	}
+}
+
+func TestRunRefinePage_BlankBatchDoesNotPublishPartialPage(t *testing.T) {
+	for _, blankRound := range []int{1, 2, 3} {
+		t.Run(fmt.Sprint(blankRound), func(t *testing.T) {
+			p := refineSourcePipeline(3, 1400)
+			calls := 0
+			p.deps.Chat = chatFunc(func(context.Context, common.ChatRequest) (*common.ChatResponse, error) {
+				calls++
+				if calls == blankRound {
+					return &common.ChatResponse{Content: " \n\t"}, nil
+				}
+				return &common.ChatResponse{Content: "# Alpha\n\nPartial draft."}, nil
+			})
+			page, err := refineTestPage(p)
+			if err == nil || !strings.Contains(err.Error(), "REFINE returned empty content") || page.ContentRaw != "" || calls != blankRound {
+				t.Fatalf("blank round %d: page=%q error=%v calls=%d", blankRound, page.ContentRaw, err, calls)
+			}
+		})
+	}
+}
+
+func TestRunRefinePage_SingleBlankReplyKeepsPlaceholder(t *testing.T) {
+	p := refinePipeline()
+	p.deps.Chat = chatFunc(func(context.Context, common.ChatRequest) (*common.ChatResponse, error) {
+		return &common.ChatResponse{Content: " \n\t"}, nil
+	})
+	page, err := refineTestPage(p)
+	if err != nil || !strings.Contains(page.ContentRaw, "Page generation produced no content.") {
+		t.Fatalf("single blank reply: page=%q error=%v", page.ContentRaw, err)
 	}
 }

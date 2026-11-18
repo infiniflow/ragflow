@@ -1031,42 +1031,56 @@ func (p *wikiPipeline) runRefinePage(
 		}
 		return common.ChatRequest{
 			LLMID: p.llmID, SystemPrompt: buildWikiRefineWriterSystem(""),
-			UserPrompt: renderWikiTemplate(wikiRefineWriterUserTemplate, fields),
+			UserPrompt: renderWikiRefineTemplate(wikiRefineWriterUserTemplate, fields),
 		}
 	}
-	sources := []string{sourceContext}
+	pending := []common.Chunk{{Text: sourceContext}}
+	batched := false
 	if budgetErr := p.checkWikiRefineBudget(request(sourceContext, existingRaw)); budgetErr != nil {
-		inputBudget, outputReserve := p.wikiRefineTokenBudget()
-		// Subsequent rounds include the previous response as an UPDATE draft.
-		// Reserve its output allowance as well as the fixed prompt and evidence.
-		base := request("", existingRaw)
-		overhead := p.wikiRefineTokenCount(base.SystemPrompt + "\n" + base.UserPrompt)
-		sourceBudget := inputBudget - overhead - outputReserve - wikiRefineSafetyTokens
-		if p.deps.ModelContextLen <= 0 || sourceBudget <= 0 {
+		if err := p.checkWikiRefineBudget(request("", existingRaw)); err != nil {
 			return wikiPageResult{}, budgetErr
 		}
-		sources = packWikiRefineSources(p.inputs.Chunks, contextChunkIDs, sourceBudget, p.deps.Tokenizer)
-		if len(sources) == 0 {
+		pending = wikiRefineSourceBlocks(p.inputs.Chunks, contextChunkIDs)
+		if len(pending) == 0 {
 			return wikiPageResult{}, budgetErr
 		}
 		// Reject an indivisible oversized source before generating any drafts.
-		for _, source := range sources {
-			if err := p.checkWikiRefineBudget(request(source, existingRaw)); err != nil {
+		for _, block := range pending {
+			if err := p.checkWikiRefineBudget(request(block.Text, existingRaw)); err != nil {
 				return wikiPageResult{}, err
 			}
 		}
+		batched = true
 	}
 	contentRaw := existingRaw
-	for i, source := range sources {
+	for round := 0; len(pending) > 0; round++ {
 		if err := p.ctx.Err(); err != nil {
 			return wikiPageResult{}, err
 		}
-		if i > 0 {
+		if round > 0 {
 			fields["action"] = "UPDATE"
 		}
-		req := request(source, contentRaw)
-		if err := p.checkWikiRefineBudget(req); err != nil {
-			return wikiPageResult{}, err
+		batch := pending
+		if batched {
+			inputBudget, _ := p.wikiRefineTokenBudget()
+			base := request("", contentRaw)
+			overhead := p.wikiRefineTokenCount(base.SystemPrompt + "\n" + base.UserPrompt)
+			// Repack against the actual draft, including its wrapper. The input
+			// budget already reserves space for the next response and framing.
+			batch = common.PackBatches(pending, inputBudget-overhead, wikiRefineTokenizer{p.deps.Tokenizer})[0]
+		}
+		var req common.ChatRequest
+		for {
+			req = request(joinWikiRefineSources(batch), contentRaw)
+			if err := p.checkWikiRefineBudget(req); err != nil {
+				if len(batch) == 1 {
+					return wikiPageResult{}, err
+				}
+				// Token counts need not be additive at source boundaries.
+				batch = batch[:len(batch)-1]
+				continue
+			}
+			break
 		}
 		resp, err := p.deps.Chat.Chat(p.ctx, req)
 		if err != nil {
@@ -1077,9 +1091,12 @@ func (p *wikiPipeline) runRefinePage(
 		}
 		if next := strings.TrimSpace(resp.Content); next != "" {
 			contentRaw = next
-		} else if contentRaw == "" || len(sources) == 1 {
+		} else if batched {
+			return wikiPageResult{}, fmt.Errorf("knowledge_compiler: wiki REFINE returned empty content for source batch %d", round+1)
+		} else {
 			contentRaw = "# " + common.FirstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
 		}
+		pending = pending[len(batch):]
 	}
 	if strings.TrimSpace(existingRaw) != "" {
 		contentRaw, err = p.mergeWikiPageContent(existingRaw, contentRaw, planItem.Slug)
