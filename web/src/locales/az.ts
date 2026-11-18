@@ -1754,8 +1754,6 @@ Nümunə: Virtual host üslubu`,
         'Axtarış üçün dəyişikliklərin qəbulu sorğularını və problemləri sinxronlaşdırmaq məqsədilə GitHub-u qoşun.',
       airtableDescription:
         'Airtable-a qoşulun və təyin edilmiş iş sahəsindəki müəyyən cədvəldən faylları sinxronlaşdırın.',
-      dingtalkAITableDescription:
-        'Dingtalk AI Table-a qoşulun və müəyyən cədvəldəki qeydləri sinxronlaşdırın.',
       gitlabDescription:
         'Repozitoriyaları, problemləri, birləşdirmə sorğularını və əlaqəli sənədləri sinxronlaşdırmaq üçün GitLab-ı qoşun.',
       asanaDescription:

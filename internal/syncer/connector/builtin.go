@@ -50,7 +50,6 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "r2", NewR2Connector)
 	registerBuiltIn(registry, "s3", newS3SourceConnector)
 	registerBuiltIn(registry, "s3_compatible", NewS3CompatibleConnector)
-	registerBuiltIn(registry, "dingtalk_ai_table", NewDingTalkAITableConnector)
 	registerBuiltIn(registry, "imap", NewIMAPConnector)
 	registerBuiltIn(registry, "jira", NewJiraConnector)
 	registerBuiltIn(registry, "outlook", NewOutlookConnector)

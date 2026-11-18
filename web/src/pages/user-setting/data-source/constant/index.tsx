@@ -65,7 +65,6 @@ export enum DataSourceKey {
   AIRTABLE = 'airtable',
   ASANA = 'asana',
   IMAP = 'imap',
-  DINGTALK_AI_TABLE = 'dingtalk_ai_table',
   SEAFILE = 'seafile',
   MYSQL = 'mysql',
   POSTGRESQL = 'postgresql',
@@ -143,9 +142,6 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.AIRTABLE]: {
-    syncDeletedFiles: true,
-  },
-  [DataSourceKey.DINGTALK_AI_TABLE]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.WEBDAV]: {
@@ -334,11 +330,6 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Airtable',
       description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
       icon: <SvgIcon name={'data-source/airtable'} width={38} />,
-    },
-    [DataSourceKey.DINGTALK_AI_TABLE]: {
-      name: 'Dingtalk AI Table',
-      description: t(`setting.dingtalkAITableDescription`),
-      icon: <SvgIcon name={'data-source/dingtalk-ai-table'} width={38} />,
     },
     [DataSourceKey.GITLAB]: {
       name: 'GitLab',
@@ -1296,26 +1287,6 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     {
       label: t('setting.dataSourceFieldTableNameOrId'),
       name: 'config.table_name_or_id',
-      type: FormFieldType.Text,
-      required: true,
-    },
-  ],
-  [DataSourceKey.DINGTALK_AI_TABLE]: [
-    {
-      label: t('setting.dataSourceFieldAccessToken'),
-      name: 'config.credentials.access_token',
-      type: FormFieldType.Password,
-      required: true,
-    },
-    {
-      label: t('setting.dataSourceFieldBaseId'),
-      name: 'config.table_id',
-      type: FormFieldType.Text,
-      required: true,
-    },
-    {
-      label: t('setting.dataSourceFieldOperatorId'),
-      name: 'config.operator_id',
       type: FormFieldType.Text,
       required: true,
     },
@@ -2494,17 +2465,6 @@ export const DataSourceFormDefaultValues = {
       table_name_or_id: '',
       credentials: {
         airtable_access_token: '',
-      },
-    },
-  },
-  [DataSourceKey.DINGTALK_AI_TABLE]: {
-    name: '',
-    source: DataSourceKey.DINGTALK_AI_TABLE,
-    config: {
-      table_id: '',
-      operator_id: '',
-      credentials: {
-        access_token: '',
       },
     },
   },

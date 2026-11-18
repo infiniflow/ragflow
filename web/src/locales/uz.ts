@@ -1642,8 +1642,6 @@ export default {
         'Olish uchun GitHub’dan pull request va issue’larni sinxronlang.',
       airtableDescription:
         'Airtable’ga ulaning va belgilangan workspace’dagi aniq jadvaldan fayllarni sinxronlang.',
-      dingtalkAITableDescription:
-        'Dingtalk AI Table’ga ulaning va aniq jadvaldan yozuvlarni sinxronlang.',
       gitlabDescription:
         'GitLab’ni ulab, repositorylar, issue’lar, merge requestlar va tegishli hujjatlarni sinxronlang.',
       asanaDescription:
