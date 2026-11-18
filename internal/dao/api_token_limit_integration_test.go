@@ -61,6 +61,50 @@ func TestAPITokenLimitConcurrentMySQL(t *testing.T) {
 	if err := db.AutoMigrate(&entity.Tenant{}, &entity.APIToken{}, &entity.SystemSettings{}); err != nil {
 		t.Fatal(err)
 	}
+	if !t.Run("atomic default seed", func(t *testing.T) {
+		seed := entity.SystemSettings{Name: "api_key.max_count", Value: "16", Source: "variable", DataType: "integer"}
+		existing := entity.SystemSettings{Name: "API_KEY.MAX_COUNT", Value: "37", Source: "admin", DataType: "integer"}
+		if err := db.Create(&existing).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := insertMissingSystemSettings(t.Context(), db, []entity.SystemSettings{seed}); err != nil {
+			t.Fatal(err)
+		}
+		var stored entity.SystemSettings
+		if err := db.Where("name = ?", seed.Name).Take(&stored).Error; err != nil {
+			t.Fatal(err)
+		}
+		if stored.Name != existing.Name || stored.Value != existing.Value || stored.Source != existing.Source || stored.DataType != existing.DataType {
+			t.Fatalf("existing setting overwritten: got %+v, want %+v", stored, existing)
+		}
+		if err := db.Where("name = ?", seed.Name).Delete(&entity.SystemSettings{}).Error; err != nil {
+			t.Fatal(err)
+		}
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for range 16 {
+			wg.Go(func() {
+				<-start
+				if err := insertMissingSystemSettings(t.Context(), db, []entity.SystemSettings{seed}); err != nil {
+					t.Errorf("concurrent seed: %v", err)
+				}
+			})
+		}
+		close(start)
+		wg.Wait()
+		var rows []entity.SystemSettings
+		if err := db.Where("name = ?", seed.Name).Find(&rows).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 || rows[0].Value != "16" {
+			t.Fatalf("unexpected seeded rows: %+v", rows)
+		}
+		if err := db.Where("name = ?", seed.Name).Delete(&entity.SystemSettings{}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}) {
+		return
+	}
 	if err := db.Create(&entity.Tenant{ID: "tenant-1", ParserIDs: ""}).Error; err != nil {
 		t.Fatal(err)
 	}
