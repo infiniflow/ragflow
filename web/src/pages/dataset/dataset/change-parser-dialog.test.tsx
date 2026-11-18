@@ -1,3 +1,4 @@
+import { IngestionTaskStatus } from '@/constants/knowledge';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import {
@@ -159,10 +160,12 @@ function Harness({
   builtin = false,
   chunkCount = 0,
   versionId = '',
+  ingestionStatus,
 }: {
   builtin?: boolean;
   chunkCount?: number;
   versionId?: string;
+  ingestionStatus?: string;
 }) {
   const state = useChangeDocumentParser();
   const openDialog = () => {
@@ -173,6 +176,7 @@ function Harness({
       chunk_method: builtin ? 'general' : '',
       pipeline_id: builtin ? '' : 'pipeline',
       pipeline_version_id: versionId,
+      ingestion_status: ingestionStatus,
       parser_config: builtin
         ? {}
         : {
@@ -220,6 +224,7 @@ function renderHarness(props: {
   builtin?: boolean;
   chunkCount?: number;
   versionId?: string;
+  ingestionStatus?: string;
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -230,6 +235,31 @@ function renderHarness(props: {
     </QueryClientProvider>,
   );
 }
+
+it.each([
+  IngestionTaskStatus.CREATED,
+  IngestionTaskStatus.SCHEDULED,
+  IngestionTaskStatus.RUNNING,
+  IngestionTaskStatus.STOPPING,
+])('disables saving while the document is %s', (ingestionStatus) => {
+  renderHarness({ builtin: true, ingestionStatus });
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+  const saveButton = screen.getByRole('button', { name: 'common.save' });
+  expect(saveButton).toBeDisabled();
+  fireEvent.click(saveButton);
+  expect(mockSave).not.toHaveBeenCalled();
+});
+
+it('keeps saving enabled after parsing has completed', () => {
+  renderHarness({
+    builtin: true,
+    ingestionStatus: IngestionTaskStatus.COMPLETED,
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+  expect(screen.getByRole('button', { name: 'common.save' })).toBeEnabled();
+});
 
 it('keeps existing chunks when re-parsing is declined after saving', async () => {
   renderHarness({ builtin: true, chunkCount: 5 });
