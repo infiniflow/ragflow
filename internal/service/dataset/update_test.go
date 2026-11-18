@@ -598,9 +598,10 @@ func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.
 	insertDatasetUpdateTenantModel(t, embeddingModelID, "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 	ensureDatasetTestMembership(t, "caller-1", "tenant-1", "normal")
 	ensureDatasetTestMembership(t, "caller-1", "caller-tenant", "owner")
+	enableDatasetTestModelAccess(t, "tenant-1", "caller-1", "instance-1")
 
 	permission := string(entity.TenantPermissionTeam)
-	ctx := withDatasetTestContext(t.Context(), "caller-1", "caller-tenant")
+	ctx := withDatasetTestContext(t.Context(), "caller-1", "tenant-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{
 		Permission:     &permission,
 		EmbeddingModel: &embeddingModelID,
