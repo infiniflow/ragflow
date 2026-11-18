@@ -95,7 +95,7 @@ func newMWSHTTPClient() *http.Client {
 	transport.DialContext = newMWSDialContext(dialer)
 
 	return &http.Client{
-		Transport:     common.NewProviderLoggingTransport(&mwsSSRFTransport{base: transport}),
+		Transport:     common.NewProviderLoggingTransport(common.NewRetryTransport(&mwsSSRFTransport{base: transport})),
 		CheckRedirect: rejectMWSRedirect,
 	}
 }

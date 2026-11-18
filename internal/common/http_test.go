@@ -351,14 +351,18 @@ func responseHeaderTimeoutOf(t *testing.T, client *http.Client) time.Duration {
 	if !ok {
 		t.Fatalf("client transport = %T, want *providerLoggingTransport", client.Transport)
 	}
+	retry, ok := logging.base.(*retryTransport)
+	if !ok {
+		t.Fatalf("logging transport wraps %T, want *retryTransport", logging.base)
+	}
 	var inner http.RoundTripper
-	switch tr := logging.base.(type) {
+	switch tr := retry.base.(type) {
 	case *schemeSafeTransport:
 		inner = tr.base
 	case *strictSSRFTransport:
 		inner = tr.base
 	default:
-		t.Fatalf("inner transport = %T, want scheme-safe or SSRF transport", logging.base)
+		t.Fatalf("inner transport = %T, want scheme-safe or SSRF transport", retry.base)
 	}
 	transport, ok := inner.(*http.Transport)
 	if !ok {

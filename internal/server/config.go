@@ -121,6 +121,14 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse ingestor config error: %w", err)
 	}
 
+	err = globalConfig.ParseLLMConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse llm config error: %w", err)
+	}
+	if err = common.SetLLMMaxRetries(globalConfig.GetLLMConfig().MaxRetries); err != nil {
+		return fmt.Errorf("apply llm config error: %w", err)
+	}
+
 	err = globalConfig.ParseSyncerConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse syncer config error: %w", err)

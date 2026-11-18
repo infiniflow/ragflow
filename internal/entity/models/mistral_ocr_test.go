@@ -508,6 +508,7 @@ func TestMistralOCRFileDeletesUploadWhenOCRFails(t *testing.T) {
 
 func TestMistralOCRFileDeletesUploadWhenSignedURLFails(t *testing.T) {
 	withSSRFBypass(t)
+	withoutProviderRetries(t)
 	rec := &mistralOCRRecorder{signedURLStatus: http.StatusInternalServerError}
 	srv := newMistralOCRServer(t, rec, http.StatusOK, mistralOCRResponseFixture)
 	defer srv.Close()

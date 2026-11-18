@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"ragflow/internal/common"
 )
 
 func FormatSystemSetting(setting SystemSettings) map[string]interface{} {
@@ -41,6 +43,9 @@ func FormatSystemSettings(settings []SystemSettings) []map[string]interface{} {
 }
 
 func ValidateSystemSettingValue(setting SystemSettings, value string) error {
+	if setting.Name == common.SettingLLMMaxRetries {
+		return validateLLMMaxRetriesSetting(value)
+	}
 	dataType := strings.ToLower(setting.DataType)
 	switch dataType {
 	case "string":
@@ -63,7 +68,23 @@ func ValidateSystemSettingValue(setting SystemSettings, value string) error {
 	return nil
 }
 
+// validateLLMMaxRetriesSetting accepts an integer in the supported retry range,
+// or an empty value that hands the choice back to the configured default.
+func validateLLMMaxRetriesSetting(value string) error {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("invalid integer value for %s: %s", common.SettingLLMMaxRetries, value)
+	}
+	return common.ValidateLLMMaxRetries(n)
+}
+
 func InferSystemSettingDataType(name string) string {
+	if name == common.SettingLLMMaxRetries {
+		return "integer"
+	}
 	if name == "sandbox.provider_type" {
 		return "string"
 	}

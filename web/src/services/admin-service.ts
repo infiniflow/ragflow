@@ -155,6 +155,8 @@ const {
 
   adminGetSystemVersion,
 
+  adminShowVariable,
+  adminSetVariable,
   adminListSandboxProviders,
   adminGetSandboxProviderSchema,
   adminGetSandboxConfig,
@@ -293,6 +295,21 @@ export const importWhitelistFromExcel = (file: File) => {
 
 export const getSystemVersion = () =>
   request.get<ResponseData<{ version: string }>>(adminGetSystemVersion);
+
+// System variables. llm.max_retries is the administrator's override of how
+// often a failed model-provider call is retried; an empty value clears it.
+const LlmMaxRetriesVariable = 'llm.max_retries';
+
+export const getLlmMaxRetries = () =>
+  request.get<ResponseData<AdminService.Variable[]>>(
+    adminShowVariable(LlmMaxRetriesVariable),
+  );
+
+export const setLlmMaxRetries = (value: number | null) =>
+  request.put<ResponseData<never>>(adminSetVariable, {
+    var_name: LlmMaxRetriesVariable,
+    var_value: value === null ? '' : value,
+  });
 
 // Sandbox settings APIs
 export const listSandboxProviders = () =>

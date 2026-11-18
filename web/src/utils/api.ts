@@ -526,6 +526,11 @@ const apiEndpoints = {
 
   adminGetSystemVersion: `${restAPIv1}/admin/version`,
 
+  // System variables; the name travels base64-encoded in the path.
+  adminShowVariable: (name: string) =>
+    `${restAPIv1}/admin/variables/${encodeURIComponent(btoa(name))}`,
+  adminSetVariable: `${restAPIv1}/admin/variables`,
+
   // Sandbox settings
   adminListSandboxProviders: `${restAPIv1}/admin/sandbox/providers`,
   adminGetSandboxProviderSchema: (providerId: string) =>

@@ -16,6 +16,7 @@
 
 import { cn } from '@/lib/utils';
 import { Check, Loader2, RefreshCcw, TriangleAlert } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ModelVerifyButtonProps, VerifyStatus } from '../interface';
 
 /** Icon + color for a single verify status. */
@@ -47,7 +48,10 @@ export function ModelVerifyButton({
   onVerify,
   modelName,
 }: ModelVerifyButtonProps) {
+  const { t } = useTranslation();
   const cfg = VERIFY_ICON[status];
+  const actionLabel =
+    status === 'error' ? t('common.retry') : t('setting.Verify');
   return (
     <button
       type="button"
@@ -57,7 +61,8 @@ export function ModelVerifyButton({
       )}
       onClick={onVerify}
       disabled={status === 'loading'}
-      aria-label={`Verify ${modelName}`}
+      aria-label={`${actionLabel} ${modelName}`}
+      title={status === 'error' ? actionLabel : undefined}
     >
       {cfg.icon}
     </button>

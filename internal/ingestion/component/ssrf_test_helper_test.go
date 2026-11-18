@@ -15,3 +15,13 @@ func withSSRFBypass(t *testing.T) {
 	t.Helper()
 	t.Setenv(common.EnvAllowAnyHost, "true")
 }
+
+// withoutProviderRetries turns off provider-call retries for a test that counts
+// the requests a failing stub receives, restoring the default in t.Cleanup.
+func withoutProviderRetries(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() { _ = common.SetLLMMaxRetries(common.DefaultLLMMaxRetries) })
+	if err := common.SetLLMMaxRetries(0); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -37,6 +37,7 @@ import { ISearchAppDetailProps } from '../next-searches/hooks';
 import PdfDrawer from './document-preview-modal';
 import ExpandableContent from './expandable-content';
 import { ISearchReturnProps } from './hooks';
+import RetryableError from '@/components/retryable-error';
 import './index.less';
 import MarkdownContent from './markdown-content';
 import MindMapSheet from './mindmap-sheet';
@@ -52,6 +53,8 @@ export default function SearchingView({
   handleTestChunk,
   setSelectedDocumentIds,
   answer,
+  answerError,
+  retryAnswer,
   sendingLoading,
   relatedQuestions,
   isFirstRender,
@@ -202,6 +205,13 @@ export default function SearchingView({
                       </ExpandableContent>
                     </div>
                   )
+                )}
+                {answerError && !sendingLoading && (
+                  <RetryableError
+                    className="mt-3"
+                    message={answerError}
+                    onRetry={retryAnswer}
+                  />
                 )}
                 {answer.answer && !sendingLoading && (
                   <div className="w-full border-b border-border-default/80 my-6"></div>

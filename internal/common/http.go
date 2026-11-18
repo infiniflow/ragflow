@@ -120,6 +120,7 @@ func newSSRFHTTPClient() *http.Client {
 
 	var rt http.RoundTripper = t
 	rt = &strictSSRFTransport{base: rt}
+	rt = NewRetryTransport(rt)
 	rt = NewProviderLoggingTransport(rt)
 	return &http.Client{Transport: rt}
 }
@@ -144,6 +145,7 @@ func newSchemeSafeHTTPClient() *http.Client {
 
 	var rt http.RoundTripper = t
 	rt = &schemeSafeTransport{base: rt}
+	rt = NewRetryTransport(rt)
 	rt = NewProviderLoggingTransport(rt)
 	return &http.Client{Transport: rt}
 }

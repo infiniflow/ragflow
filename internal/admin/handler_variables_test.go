@@ -230,3 +230,82 @@ func TestSetVariableRejectsMalformedBody(t *testing.T) {
 		t.Fatalf("message = %q, want it to name the malformed body", response.Message)
 	}
 }
+
+func TestSetVariableLLMMaxRetries(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name        string
+		seeded      bool
+		body        string
+		wantCode    common.ErrorCode
+		wantStored  string
+		wantMessage string
+	}{
+		{name: "lower bound", seeded: true, body: `{"var_name":"llm.max_retries","var_value":0}`, wantCode: common.CodeSuccess, wantStored: "0"},
+		{name: "upper bound", seeded: true, body: `{"var_name":"llm.max_retries","var_value":10}`, wantCode: common.CodeSuccess, wantStored: "10"},
+		{name: "string number", seeded: true, body: `{"var_name":"llm.max_retries","var_value":"5"}`, wantCode: common.CodeSuccess, wantStored: "5"},
+		{name: "empty string clears the override", seeded: true, body: `{"var_name":"llm.max_retries","var_value":""}`, wantCode: common.CodeSuccess, wantStored: ""},
+		{name: "created when the seed row is missing", body: `{"var_name":"llm.max_retries","var_value":2}`, wantCode: common.CodeSuccess, wantStored: "2"},
+		{name: "negative", seeded: true, body: `{"var_name":"llm.max_retries","var_value":-1}`, wantCode: common.CodeServerError, wantMessage: "llm max retries -1 out of range [0, 10]"},
+		{name: "above the maximum", seeded: true, body: `{"var_name":"llm.max_retries","var_value":11}`, wantCode: common.CodeServerError, wantMessage: "llm max retries 11 out of range [0, 10]"},
+		{name: "fraction", seeded: true, body: `{"var_name":"llm.max_retries","var_value":2.5}`, wantCode: common.CodeServerError, wantMessage: "invalid integer value for llm.max_retries: 2.5"},
+		{name: "text", seeded: true, body: `{"var_name":"llm.max_retries","var_value":"many"}`, wantCode: common.CodeServerError, wantMessage: "invalid integer value for llm.max_retries: many"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler, db := setupSetVariableHandler(t)
+			const previous = "3"
+			if tt.seeded {
+				seed := entity.SystemSettings{Name: common.SettingLLMMaxRetries, DataType: "integer", Source: "variable", Value: previous}
+				if err := db.Create(&seed).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			response := putVariable(t, handler, tt.body)
+			if response.Code != int(tt.wantCode) {
+				t.Fatalf("code = %d, want %d; message = %s", response.Code, tt.wantCode, response.Message)
+			}
+			if tt.wantMessage != "" && response.Message != tt.wantMessage {
+				t.Fatalf("message = %q, want %q", response.Message, tt.wantMessage)
+			}
+
+			var stored entity.SystemSettings
+			err := db.Where("name = ?", common.SettingLLMMaxRetries).First(&stored).Error
+			if tt.wantCode != common.CodeSuccess {
+				if err != nil || stored.Value != previous {
+					t.Fatalf("a rejected value must leave the stored one alone: value = %q, err = %v", stored.Value, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("load stored setting: %v", err)
+			}
+			if stored.Value != tt.wantStored || stored.DataType != "integer" {
+				t.Fatalf("stored = %q (%s), want %q (integer)", stored.Value, stored.DataType, tt.wantStored)
+			}
+		})
+	}
+}
+
+// The admin variables endpoints sit behind AuthMiddleware, which only lets
+// superusers through; a request without credentials never reaches the handler.
+func TestVariablesRequireAdminAuthentication(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	NewRouter(&Handler{}).Setup(engine)
+
+	for _, method := range []string{http.MethodGet, http.MethodPut} {
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, httptest.NewRequest(method, "/api/v1/admin/variables", strings.NewReader(`{"var_name":"llm.max_retries","var_value":1}`)))
+
+		var response setVariableResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatalf("%s: decode response: %v; body = %s", method, err, recorder.Body.String())
+		}
+		if response.Code != int(common.CodeUnauthorized) {
+			t.Errorf("%s: code = %d, want %d", method, response.Code, common.CodeUnauthorized)
+		}
+	}
+}

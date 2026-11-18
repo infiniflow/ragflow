@@ -39,13 +39,20 @@ type APIStatusError struct {
 	Status   int
 	Body     string
 	hideBody bool
+	// Attempts is how many requests were sent before giving up; 0 when the call
+	// was not retried.
+	Attempts int
 }
 
 func (e *APIStatusError) Error() string {
-	if e.hideBody {
-		return fmt.Sprintf("API request failed with status %d", e.Status)
+	msg := fmt.Sprintf("API request failed with status %d", e.Status)
+	if !e.hideBody {
+		msg += ": " + e.Body
 	}
-	return fmt.Sprintf("API request failed with status %d: %s", e.Status, e.Body)
+	if e.Attempts > 1 {
+		msg += fmt.Sprintf(" (gave up after %d attempts)", e.Attempts)
+	}
+	return msg
 }
 
 type BaseModel struct {
@@ -251,7 +258,7 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody, Attempts: common.RetryAttempts(resp)}
 	}
 
 	body, err = readModelResponseBody(resp.Body)
@@ -286,7 +293,7 @@ func (b *BaseModel) doGetRequest(ctx context.Context, url string, apiConfig *API
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody, Attempts: common.RetryAttempts(resp)}
 	}
 
 	body, err := readModelResponseBody(resp.Body)
@@ -319,7 +326,7 @@ func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *
 		if err != nil {
 			return fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
+		return &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody, Attempts: common.RetryAttempts(resp)}
 	}
 
 	return handler(resp.Body)

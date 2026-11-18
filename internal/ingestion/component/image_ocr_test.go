@@ -75,6 +75,7 @@ func (r *imageOCRRequests) list() []imageOCRRequest {
 func imageOCRFixture(t *testing.T, provider string, fail bool) (*gorm.DB, *imageOCRRequests) {
 	t.Helper()
 	withSSRFBypass(t)
+	withoutProviderRetries(t)
 	requests := &imageOCRRequests{}
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
