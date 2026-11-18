@@ -1,13 +1,13 @@
 ---
 sidebar_position: 2
-title: Using Chat conversations
-sidebar_label: Using Chat conversations
+title: Using Chat Conversations
+sidebar_label: Using Chat Conversations
 slug: /using_chat_conversations
 sidebar_custom_props:
   categoryIcon: LucideMessagesSquare
 ---
 
-# Using Chat conversations
+# Using Chat Conversations
 
 After entering a Chat, users can ask questions in different conversations. The conversation list appears on the left, the current conversation appears in the center, and the message input box appears at the bottom.
 

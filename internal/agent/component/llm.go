@@ -102,13 +102,7 @@ type LLMParam struct {
 	// (2 seconds). Matches Python's `delay_after_error` param.
 	DelayAfterError time.Duration
 
-	// Thinking mirrors the python `thinking` Agent LLM setting
-	// (PR #15446). When set to "enabled" or "disabled", the LLM
-	// driver is told to turn its reasoning mode on/off
-	// (provider-specific; see chat_model.py for Qwen/Kimi/GLM
-	// policy). Empty string means "system default" — the LLM
-	// driver decides, which today means Qwen3 is sent
-	// `enable_thinking=false` unless overridden.
+	// Thinking enables reasoning only when explicitly set to "enabled".
 	Thinking string
 }
 
@@ -127,7 +121,7 @@ type LLMInput struct {
 	OutputStructure          map[string]any
 	Driver                   string
 	APIKey                   string
-	Thinking                 string // "enabled" | "disabled" | ""
+	Thinking                 string // "enabled" | "disabled"
 }
 
 // LLMOutput mirrors the outputs map (per plan §2.11.3 row 5):
@@ -224,18 +218,7 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 	}
-	// Propagate the agent-level Thinking setting to the driver so
-	// providers like DeepSeek can send thinking: {type: "disabled"}
-	// and prevent chain-of-thought from leaking into the answer.
-	// Mirrors the Python agent/component/llm.py behaviour.
-	switch req.Thinking {
-	case "enabled":
-		t := true
-		chatCfg.Thinking = &t
-	case "disabled":
-		f := false
-		chatCfg.Thinking = &f
-	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	einoMsgs := toEinoMessages(req.Messages)
 	infos, choice := toolOptions(req.Tools, req.ToolChoice)
@@ -391,14 +374,7 @@ func (e *einoChatInvoker) Stream(ctx context.Context, _ *gorm.DB, req ChatInvoke
 	apiKey := req.APIKey
 	cm := models.NewChatModel(d, &bareModel, &models.APIConfig{ApiKey: &apiKey})
 	chatCfg := &models.ChatConfig{Temperature: req.Temperature, TopP: req.TopP, MaxTokens: req.MaxTokens}
-	switch req.Thinking {
-	case "enabled":
-		t := true
-		chatCfg.Thinking = &t
-	case "disabled":
-		f := false
-		chatCfg.Thinking = &f
-	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
 
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	if infos, choice := toolOptions(req.Tools, req.ToolChoice); len(infos) > 0 {
@@ -547,14 +523,7 @@ func (c *resolvedModelInvoker) resolvedChatWrapper(modelName string, req ChatInv
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 	}
-	switch req.Thinking {
-	case "enabled":
-		t := true
-		chatCfg.Thinking = &t
-	case "disabled":
-		f := false
-		chatCfg.Thinking = &f
-	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	infos, choice := toolOptions(req.Tools, req.ToolChoice)
 	if len(infos) > 0 {
@@ -1523,15 +1492,10 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 	}
 	gateSampler(inputs, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 	if v, ok := stringFrom(inputs, "thinking"); ok {
-		// Forward any non-empty, non-"default" value to match the
-		// lenient Python gate: hasattr(self,"thinking") and
-		// self.thinking and self.thinking != "default".
-		// Downstream (einoChatInvoker) only acts on "enabled" /
-		// "disabled" and silently ignores unknown values, so
-		// this is safe.
-		if v != "" && v != "default" {
-			p.Thinking = v
-		}
+		p.Thinking = v
+	}
+	if p.Thinking == "" || p.Thinking == "default" {
+		p.Thinking = "disabled"
 	}
 	return p
 }

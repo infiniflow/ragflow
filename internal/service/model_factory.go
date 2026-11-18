@@ -42,6 +42,7 @@ type modelTarget struct {
 	ProviderName  string
 	InstanceID    string
 	InstanceName  string
+	GroupID       string
 	Driver        modelModule.ModelDriver
 	APIConfig     *modelModule.APIConfig
 	ModelInfo     *modelModule.Model
@@ -96,13 +97,31 @@ func NewModelFactory() *ModelFactory {
 	}
 }
 
+// usageTemplateAttacher, when set, pre-fills the construction-time usage
+// identity (tenant, user, provider, instance, model, group) on the model
+// info, which the typed models reuse whenever a call site passes nil usage so
+// every call produces an attributable usage row without each call site
+// building one. Enterprise editions install the attacher at startup; the
+// community build leaves it unset.
+var usageTemplateAttacher func(ctx context.Context, apiConfig *modelModule.APIConfig, info *modelModule.ModelInfo)
+
+// attachUsageTemplate applies the installed attacher, if any.
+func attachUsageTemplate(ctx context.Context, apiConfig *modelModule.APIConfig, info *modelModule.ModelInfo) {
+	if usageTemplateAttacher == nil {
+		return
+	}
+	usageTemplateAttacher(ctx, apiConfig, info)
+}
+
 // NewChatModel resolves a chat model in the Tenant scope carried by ctx.
 func (f *ModelFactory) NewChatModel(ctx context.Context, modelRef string) (*modelModule.ChatModel, error) {
 	target, err := f.resolveConfig(ctx, entity.ModelTypeChat, modelRef)
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewChatModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewChatModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, info), nil
 }
 
 // NewDefaultChatModel constructs the tenant's configured default chat model.
@@ -111,7 +130,9 @@ func (f *ModelFactory) NewDefaultChatModel(ctx context.Context) (*modelModule.Ch
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewChatModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewChatModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, info), nil
 }
 
 // NewEmbeddingModel resolves and constructs an embedding model.
@@ -120,7 +141,9 @@ func (f *ModelFactory) NewEmbeddingModel(ctx context.Context, modelRef string) (
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewEmbeddingModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewEmbeddingModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), info), nil
 }
 
 // NewDefaultEmbeddingModel constructs the tenant's configured default embedding model.
@@ -129,7 +152,9 @@ func (f *ModelFactory) NewDefaultEmbeddingModel(ctx context.Context) (*modelModu
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewEmbeddingModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewEmbeddingModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), info), nil
 }
 
 // NewRerankModel resolves and constructs a rerank model.
@@ -138,7 +163,9 @@ func (f *ModelFactory) NewRerankModel(ctx context.Context, modelRef string) (*mo
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewRerankModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewRerankModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), info), nil
 }
 
 // NewDefaultRerankModel constructs the tenant's configured default rerank model.
@@ -147,7 +174,9 @@ func (f *ModelFactory) NewDefaultRerankModel(ctx context.Context) (*modelModule.
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewRerankModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), modelInfoFromTarget(target)), nil
+	info := modelInfoFromTarget(target)
+	attachUsageTemplate(ctx, target.APIConfig, info)
+	return modelModule.NewRerankModelWithInfo(target.Driver, &target.ModelName, target.APIConfig, inputTokenLimit(target), info), nil
 }
 
 // NewOCRModel resolves and constructs an OCR model.
@@ -223,6 +252,9 @@ func (f *ModelFactory) ResolveInfo(ctx context.Context, modelType entity.ModelTy
 	if err != nil {
 		return nil, err
 	}
+	if err := authorizeModelMetadataReadEE(ctx, identity); err != nil {
+		return nil, err
+	}
 	target, err := modelTargetFromIdentity(identity, modelType)
 	if err != nil {
 		return nil, err
@@ -258,6 +290,7 @@ func modelInfoFromTarget(target *modelTarget) *modelModule.ModelInfo {
 		ProviderName:  target.ProviderName,
 		InstanceID:    target.InstanceID,
 		InstanceName:  target.InstanceName,
+		GroupID:       target.GroupID,
 		ModelTypes:    modelTypes,
 		ContextLength: target.ContextLength,
 		MaxOutput:     target.MaxOutput,
@@ -572,6 +605,8 @@ func defaultModelRefs(membership *entity.UserTenant, modelType entity.ModelType)
 		return ptrStringValue(membership.OCRID), ptrStringValue(membership.TenantOCRID)
 	case entity.ModelTypeDecision:
 		return ptrStringValue(membership.DecisionID), ptrStringValue(membership.TenantDecisionID)
+	case entity.ModelTypeScoring:
+		return ptrStringValue(membership.ScoringID), ptrStringValue(membership.TenantScoringID)
 	default:
 		return "", ""
 	}
@@ -591,6 +626,9 @@ func (s *ModelFactory) ResolveModelType(ctx context.Context, modelRef string) ([
 	if err != nil {
 		return nil, err
 	}
+	if err := authorizeModelMetadataReadEE(ctx, identity); err != nil {
+		return nil, err
+	}
 	return modelTypesFromBitmask(identity.modelType), nil
 }
 
@@ -600,6 +638,7 @@ type modelIdentity struct {
 	providerEntity *entity.TenantModelProvider
 	instanceEntity *entity.TenantModelInstance
 	modelType      entity.ModelType
+	groupID        string
 }
 
 func toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName string) bool {
@@ -662,10 +701,14 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 	}
 	var model *entity.TenantModel
 	var err error
-	if groupID, ok := common.ParseGroupModelRef(modelRef); ok {
+	var groupID string
+	if parsedGroupID, ok := common.ParseGroupModelRef(modelRef); ok {
 		// A gp-<group_id> reference resolves through the group's failover
 		// picker instead of a single saved row. Enterprise-only; the community
-		// stub rejects the reference.
+		// stub rejects the reference. The group is carried into the resolved
+		// target so usage records can tell group-mediated calls from direct
+		// model calls.
+		groupID = parsedGroupID
 		model, err = s.pickGroupModel(ctx, tenantID, groupID, requestedType)
 		if err != nil {
 			return nil, err
@@ -683,7 +726,7 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 	if err != nil {
 		return nil, err
 	}
-	identity := &modelIdentity{modelEntity: model}
+	identity := &modelIdentity{modelEntity: model, groupID: groupID}
 	var candidates []*entity.TenantModel
 	if model != nil {
 		identity.modelName = model.ModelName
@@ -737,7 +780,7 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 		}
 	}
 	provider, instance := identity.providerEntity, identity.instanceEntity
-	if provider.TenantID != tenantID || provider.UserID != owner.UserID {
+	if provider.TenantID != tenantID {
 		return nil, fmt.Errorf("%w: tenant %s can use only its owner's model configuration", errModelConfigUnavailable, tenantID)
 	}
 	if instance.ProviderID != provider.ID {
@@ -749,20 +792,27 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 	if identity.modelEntity != nil && !strings.EqualFold(identity.modelEntity.Status, "active") {
 		return nil, fmt.Errorf("%w: tenant model %q is disabled", errModelConfigUnavailable, modelRef)
 	}
-	if userID != "" {
+	checkedModels := candidates
+	if requestedType != 0 || model != nil {
+		checkedModels = nil
+		if identity.modelEntity != nil {
+			checkedModels = []*entity.TenantModel{identity.modelEntity}
+		}
+	}
+	nonOwnerPermissionsChecked := false
+	if provider.UserID != owner.UserID {
+		if err := authorizeNonOwnerModelConfiguration(ctx, provider, instance, checkedModels); err != nil {
+			return nil, fmt.Errorf("%w: user %s cannot use model configuration owned by %s: %w", errModelConfigUnavailable, userID, provider.UserID, err)
+		}
+		nonOwnerPermissionsChecked = true
+	}
+	if userID != "" && !nonOwnerPermissionsChecked {
 		checker := permission.NewDatabaseChecker(dao.DB)
 		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID}, permission.OperationRead); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, userID, provider.ProviderName, err)
 		}
 		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID}, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, userID, instance.InstanceName, err)
-		}
-		checkedModels := candidates
-		if requestedType != 0 || model != nil {
-			checkedModels = nil
-			if identity.modelEntity != nil {
-				checkedModels = []*entity.TenantModel{identity.modelEntity}
-			}
 		}
 		for _, candidate := range checkedModels {
 			if !strings.EqualFold(candidate.Status, "active") {
@@ -874,6 +924,7 @@ func modelTargetFromIdentity(identity *modelIdentity, modelType entity.ModelType
 		ProviderName:  providerEntity.ProviderName,
 		InstanceID:    instanceEntity.ID,
 		InstanceName:  instanceEntity.InstanceName,
+		GroupID:       identity.groupID,
 		ModelInfo:     modelInfo,
 		ContextLength: contextLengthFromModelInfo(modelInfo),
 		MaxOutput:     maxOutputFromModelInfo(modelInfo),
@@ -910,6 +961,7 @@ func modelTypesFromBitmask(modelType entity.ModelType) []entity.ModelType {
 		entity.ModelTypeTTS,
 		entity.ModelTypeOCR,
 		entity.ModelTypeDecision,
+		entity.ModelTypeScoring,
 	} {
 		if modelType.Has(candidate) {
 			modelTypes = append(modelTypes, candidate)

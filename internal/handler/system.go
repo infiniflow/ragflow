@@ -145,6 +145,8 @@ type SetLogLevelRequest struct {
 // compatibility — only `level` is enforced by binding; `pkg_name`
 // is accepted but ignored.
 func (h *SystemHandler) SetLogLevel(c *gin.Context) {
+	common.StartOperationLog(c, "set_system_log_level")
+	defer common.FinishOperationLog(c)
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, "pkg_name and level are required: "+err.Error())

@@ -292,8 +292,10 @@ func buildProvider(t ProviderType) (SandboxProvider, error) {
 		return newTenkiProviderFromEnv(), nil
 	case ProviderUCloudAgentSandbox:
 		return newUCloudAgentSandboxProviderFromEnv(), nil
+	case ProviderKosa8:
+		return newKosa8ProviderFromEnv(), nil
 	default:
-		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki, ucloud_agent_sandbox)", t)
+		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki, ucloud_agent_sandbox, kosa8)", t)
 	}
 }
 
@@ -315,7 +317,9 @@ func buildProviderFromConfig(t ProviderType, cfg map[string]any) (SandboxProvide
 		return newTenkiProviderFromConfig(cfg), nil
 	case ProviderUCloudAgentSandbox:
 		return newUCloudAgentSandboxProviderFromConfig(cfg), nil
+	case ProviderKosa8:
+		return newKosa8ProviderFromConfig(cfg), nil
 	default:
-		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki, ucloud_agent_sandbox)", t)
+		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki, ucloud_agent_sandbox, kosa8)", t)
 	}
 }

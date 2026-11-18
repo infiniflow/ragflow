@@ -48,6 +48,46 @@ func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
 }
 
+// GetEnvBool reads a boolean setting, falling back to def when the variable is
+// unset, blank, or not a boolean. strconv.ParseBool already accepts
+// 1/t/T/TRUE/True/true and 0/f/FALSE/False/false, so malformed values degrade
+// to the default rather than to a fixed zero/false — the caller's def is the
+// only fallback, in either direction.
+func GetEnvBool(key string, def bool) bool {
+	raw := strings.TrimSpace(GetEnv(key))
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+// SplitCommaList reads a comma-separated list, trimming each entry and dropping
+// empty ones. An unset, blank, or separators-only value returns nil so call
+// sites that branch on `if list == nil` keep distinguishing "no list" from
+// "empty list". Entries surrounded by whitespace are trimmed before the
+// empty-check, so "a, ,b" yields [a b], not [a " " b].
+func SplitCommaList(key string) []string {
+	raw := strings.TrimSpace(GetEnv(key))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // getEnvDuration reads a duration setting such as "90s" or "5m", falling back to
 // def when the variable is unset, malformed, or non-positive. A zero or
 // negative value would remove the deadline instead of tightening it, so it is
@@ -89,9 +129,11 @@ var SandboxArtifactContentTypes = map[string]string{
 	".html": "text/html",
 }
 
+// IsLLMDebugEnabled reports whether LLM_DEBUG is set to a true boolean. Kept as
+// a named entry point so call sites read by intent; it is a thin wrapper over
+// GetEnvBool(EnvLLMDebug, false).
 func IsLLMDebugEnabled() bool {
-	enabled, err := strconv.ParseBool(strings.TrimSpace(GetEnv(EnvLLMDebug)))
-	return err == nil && enabled
+	return GetEnvBool(EnvLLMDebug, false)
 }
 
 // environment variables
@@ -134,6 +176,12 @@ const (
 	EnvTenkiImage                        = "TENKI_IMAGE"
 	EnvTenkiTimeout                      = "TENKI_TIMEOUT"
 	EnvTenkiAllowOutbound                = "TENKI_ALLOW_OUTBOUND"
+	EnvKosa8APIKey                       = "KOSA8_API_KEY"
+	EnvKosa8APIURL                       = "KOSA8_API_URL"
+	EnvKosa8PythonTemplate               = "KOSA8_PYTHON_TEMPLATE"
+	EnvKosa8NodeTemplate                 = "KOSA8_NODE_TEMPLATE"
+	EnvKosa8Timeout                      = "KOSA8_TIMEOUT"
+	EnvKosa8AllowInternet                = "KOSA8_ALLOW_INTERNET"
 	EnvUCloudSandboxAPIKey               = "UCLOUD_SANDBOX_API_KEY"
 	EnvUCloudSandboxRegion               = "UCLOUD_SANDBOX_REGION"
 	EnvUCloudSandboxDomain               = "UCLOUD_SANDBOX_DOMAIN"
@@ -237,6 +285,9 @@ const (
 	EnvMonkeyOCRServerURL                = "MONKEYOCR_SERVER_URL"
 	EnvMonkeyOCRBackend                  = "MONKEYOCR_BACKEND"
 	EnvMonkeyOCRDeleteOutput             = "MONKEYOCR_DELETE_OUTPUT"
+	EnvUnlimitedOCRServerURL             = "UNLIMITED_OCR_SERVER_URL"
+	EnvUnlimitedOCRAPIServer             = "UNLIMITED_OCR_APISERVER"
+	EnvUnlimitedOCRTimeout               = "UNLIMITED_OCR_TIMEOUT"
 	EnvOpenDataLoaderAPIServer           = "OPENDATALOADER_APISERVER"
 	EnvOpenDataLoaderAPIKey              = "OPENDATALOADER_API_KEY"
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
@@ -323,6 +374,12 @@ const (
 	// ingestor.page_concurrency config key and is itself overridden by the
 	// --ingestor-page-concurrency CLI flag.
 	EnvIngestorPageConcurrency = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
+	// EnvIngestorTier restricts which ingestion lanes an ingestor consumes
+	// (high/medium/low). It is overridden by the --ingestor-tier CLI flag and
+	// defaults to the default (low) lane when unset. The accepted values are
+	// edition-specific: the community build accepts only the default lane, the
+	// enterprise build accepts its full high/medium/low set.
+	EnvIngestorTier = "RAGFLOW_INGESTOR_TIER"
 	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
 	// in-process inference (0 = all cores). It overrides the
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
@@ -575,6 +632,36 @@ func HasModelFiles(dir string) bool {
 		}
 	}
 	return true
+}
+
+// DeepDocModelDir resolves the directory holding the in-process (Go) DeepDoc
+// weights. It is the single source of truth shared by the DeepDoc server boot
+// path and any runtime probe (e.g. the /system/doc-analyzers availability
+// check) so the two never disagree about where the weights live.
+//
+// Resolution order:
+//  1. the explicit DEEPDOC_MODEL_DIR env, when set;
+//  2. the first MODEL_ASSETS_DIR candidate that actually contains the
+//     required weights (see HasModelFiles / DeepDocModelFiles);
+//  3. the repo-default internal/rag/res/deepdoc layout;
+//  4. as a last resort the canonical default, so a missing-weights error
+//     message points at the conventional location.
+func DeepDocModelDir() string {
+	if v := strings.TrimSpace(GetEnv(EnvDeepDocModelDir)); v != "" {
+		return v
+	}
+	wd, _ := os.Getwd()
+	candidates := append([]string(nil), ModelAssetCandidates("huggingface.co/InfiniFlow/deepdoc")...)
+	candidates = append(candidates,
+		filepath.Join(wd, "internal", "rag", "res", "deepdoc"),
+		filepath.Join(wd, "huggingface.co", "InfiniFlow", "deepdoc"),
+	)
+	for _, c := range candidates {
+		if HasModelFiles(c) {
+			return c
+		}
+	}
+	return filepath.Join(wd, "internal", "rag", "res", "deepdoc")
 }
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)

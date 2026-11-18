@@ -168,6 +168,14 @@ type CreateCommitRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{workspace_id}/commits [post]
 func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
+	operation := "create_file_commit"
+	if c.Param("dataset_id") != "" {
+		operation = "create_dataset_commit"
+	}
+	common.StartOperationLog(c, operation)
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "folder_id", commitFolderID(c))
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
@@ -192,6 +200,11 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	fileIDs := make([]string, 0, len(req.Files))
+	for _, change := range req.Files {
+		fileIDs = append(fileIDs, change.FileID)
+	}
+	common.SetOperationResource(c, "file_ids", fileIDs)
 	commit, err := h.commitService.CreateCommit(ctx, folderID, user.ID, req.Message, req.Files)
 	if err != nil {
 		// A delete change for a file that is still in the folder, or a rename
@@ -210,6 +223,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "commit_id", commit.ID)
 	ct := int64(0)
 	if commit.CreateTime != nil {
 		ct = *commit.CreateTime

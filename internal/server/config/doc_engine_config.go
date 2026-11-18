@@ -41,6 +41,12 @@ type OpenSearchConfig struct {
 	// default; enable it only for a development cluster with a self-signed
 	// certificate.
 	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"`
+	// CACertPath is the optional path to a PEM CA certificate bundle to trust.
+	CACertPath string `mapstructure:"ca_cert_path"`
+	// ClientCertPath is the optional path to a PEM client certificate for mTLS.
+	ClientCertPath string `mapstructure:"client_cert_path"`
+	// ClientKeyPath is the optional path to a PEM client private key for mTLS.
+	ClientKeyPath string `mapstructure:"client_key_path"`
 }
 
 // OceanBaseConfig mirrors the existing oceanbase/seekdb service_conf.yaml
@@ -387,28 +393,31 @@ func (c *Config) parseOpenSearchConfig(v *viper.Viper) {
 	c.docEngine.OpenSearch.Username = "admin"
 	c.docEngine.OpenSearch.Password = "infini_rag_flow_OS_01"
 
-	if !v.IsSet("os") {
-		return
+	// Fully qualified parent keys, not v.Sub("os"): Sub drops the root
+	// AutomaticEnv (env prefix/replacer), and IsSet("os") cannot see
+	// child environment variables, so an env-only deployment
+	// (RAGFLOW_OS_HOSTS, ... with no YAML section) would silently keep
+	// every default.
+	if v.IsSet("os.hosts") {
+		c.docEngine.OpenSearch.Hosts = v.GetString("os.hosts")
 	}
-	sub := v.Sub("os")
-	if sub == nil {
-		return
+	if v.IsSet("os.username") {
+		c.docEngine.OpenSearch.Username = v.GetString("os.username")
 	}
-
-	if sub.IsSet("hosts") {
-		c.docEngine.OpenSearch.Hosts = sub.GetString("hosts")
+	if v.IsSet("os.password") {
+		c.docEngine.OpenSearch.Password = v.GetString("os.password")
 	}
-
-	if sub.IsSet("username") {
-		c.docEngine.OpenSearch.Username = sub.GetString("username")
+	if v.IsSet("os.insecure_skip_verify") {
+		c.docEngine.OpenSearch.InsecureSkipVerify = v.GetBool("os.insecure_skip_verify")
 	}
-
-	if sub.IsSet("password") {
-		c.docEngine.OpenSearch.Password = sub.GetString("password")
+	if v.IsSet("os.ca_cert_path") {
+		c.docEngine.OpenSearch.CACertPath = v.GetString("os.ca_cert_path")
 	}
-
-	if sub.IsSet("insecure_skip_verify") {
-		c.docEngine.OpenSearch.InsecureSkipVerify = sub.GetBool("insecure_skip_verify")
+	if v.IsSet("os.client_cert_path") {
+		c.docEngine.OpenSearch.ClientCertPath = v.GetString("os.client_cert_path")
+	}
+	if v.IsSet("os.client_key_path") {
+		c.docEngine.OpenSearch.ClientKeyPath = v.GetString("os.client_key_path")
 	}
 }
 
@@ -417,12 +426,20 @@ func (c *Config) GetOpenSearchConfig() OpenSearchConfig {
 }
 
 func (o OpenSearchConfig) ExportConfigs() map[string]interface{} {
-	var osConfigs map[string]interface{}
-	osConfigs = make(map[string]interface{})
+	osConfigs := make(map[string]interface{})
 	osConfigs["hosts"] = o.Hosts
 	osConfigs["username"] = o.Username
 	osConfigs["password"] = o.Password
 	osConfigs["insecure_skip_verify"] = o.InsecureSkipVerify
+	if o.CACertPath != "" {
+		osConfigs["ca_cert_path"] = o.CACertPath
+	}
+	if o.ClientCertPath != "" {
+		osConfigs["client_cert_path"] = o.ClientCertPath
+	}
+	if o.ClientKeyPath != "" {
+		osConfigs["client_key_path"] = o.ClientKeyPath
+	}
 	return osConfigs
 }
 

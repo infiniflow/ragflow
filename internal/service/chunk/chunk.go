@@ -283,9 +283,16 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	}
 
 	// Apply meta_data_filter to get filtered doc_ids (filter by metadata before retrieval)
-	docIDs := make([]string, len(req.DocIDs))
-	copy(docIDs, req.DocIDs)
-	if filter != nil {
+	candidateDocIDs, datasetProductIDs := nlp.SplitRetrievalDocIDs([]string(req.Datasets), req.DocIDs)
+	docIDs, getErr := service.ListReadableDocumentIDs(ctx, []string(req.Datasets), candidateDocIDs)
+	if getErr != nil {
+		return nil, fmt.Errorf("failed to resolve readable documents: %w", getErr)
+	}
+	if len(docIDs) == 0 && len(datasetProductIDs) == 0 {
+		emptyLabels := map[string]float64{}
+		return &service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels, Total: 0}, nil
+	}
+	if filter != nil && len(docIDs) > 0 {
 		// Get flattened metadata
 		metadataSvc := service.NewMetadataService()
 		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(ctx, []string(req.Datasets))
@@ -295,11 +302,18 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			common.Info("metadata filter conditions", zap.Any("filter", filter))
 			// nil means no metadata narrowing: search the caller's scope
 			// unfiltered rather than scoping to nothing.
-			if filteredDocIDs := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets)); filteredDocIDs != nil {
+			if filteredDocIDs := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, docIDs, []string(req.Datasets)); filteredDocIDs != nil {
 				docIDs = filteredDocIDs
 			}
 			common.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
 		}
+	}
+	for _, datasetProductID := range datasetProductIDs {
+		docIDs = append(docIDs, datasetProductID)
+	}
+	if len(docIDs) == 0 {
+		emptyLabels := map[string]float64{}
+		return &service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels, Total: 0}, nil
 	}
 
 	// Apply cross_languages and keyword extraction with tenant default chat model
@@ -408,21 +422,22 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	similarityThreshold, vectorSimilarityWeight, topK := resolveSearchbotRetrievalParams(req, searchConfig)
 
 	retrievalReq := &nlp.RetrievalRequest{
-		TenantIDs:              tenantIDs,
-		Question:               modifiedQuestion,
-		KbIDs:                  []string(req.Datasets),
-		DocIDs:                 docIDs,
-		Page:                   common.CoalesceInt(req.Page, common.DefaultPage),
-		PageSize:               common.CoalesceInt(req.Size, common.DefaultPageSize),
-		RerankCandidatesCount:  &rerankCandidatesCount,
-		KNNTopK:                &topK,
-		SimilarityThreshold:    &similarityThreshold,
-		VectorSimilarityWeight: &vectorSimilarityWeight,
-		RerankModel:            rerankModel,
-		RankFeature:            &labels,
-		EmbeddingModel:         embeddingModel,
-		Highlight:              req.Highlight,
-		Language:               entity.KnowledgebasesLanguage(kbRecords),
+		TenantIDs:                  tenantIDs,
+		Question:                   modifiedQuestion,
+		KbIDs:                      []string(req.Datasets),
+		DocIDs:                     docIDs,
+		DocumentPermissionsChecked: true,
+		Page:                       common.CoalesceInt(req.Page, common.DefaultPage),
+		PageSize:                   common.CoalesceInt(req.Size, common.DefaultPageSize),
+		RerankCandidatesCount:      &rerankCandidatesCount,
+		KNNTopK:                    &topK,
+		SimilarityThreshold:        &similarityThreshold,
+		VectorSimilarityWeight:     &vectorSimilarityWeight,
+		RerankModel:                rerankModel,
+		RankFeature:                &labels,
+		EmbeddingModel:             embeddingModel,
+		Highlight:                  req.Highlight,
+		Language:                   entity.KnowledgebasesLanguage(kbRecords),
 	}
 
 	// Call RetrievalService to perform retrieval
@@ -581,6 +596,9 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest) (*
 	}
 	if doc.KbID != req.DatasetID {
 		return nil, fmt.Errorf("document does not belong to this dataset")
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: doc.ID}, permission.OperationRead); err != nil {
+		return nil, err
 	}
 
 	// The lookup stays inside the dataset named in the route, and the row must
@@ -832,6 +850,9 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest)
 	if err != nil {
 		return nil, err
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: doc.ID}, permission.OperationRead); err != nil {
+		return nil, err
+	}
 	targetTenantID := kb.TenantID
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
@@ -1077,6 +1098,9 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, datasetID, documentID s
 	if doc.KbID != datasetID {
 		return fmt.Errorf("document does not belong to this dataset")
 	}
+	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
+		return err
+	}
 
 	for _, cid := range chunkIDs {
 		indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
@@ -1120,6 +1144,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	}
 	if doc.KbID != req.DatasetID {
 		return fmt.Errorf("document does not belong to this dataset")
+	}
+	if err := service.CheckDocumentAccess(ctx, req.DocumentID, req.DatasetID, permission.OperationUpdate); err != nil {
+		return err
 	}
 
 	// Fetch existing chunk first
@@ -1295,6 +1322,9 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	if err != nil {
 		return 0, err
 	}
+	if err = service.CheckDocumentAccess(ctx, req.DocID, doc.KbID, permission.OperationUpdate); err != nil {
+		return 0, err
+	}
 	targetTenantID := kb.TenantID
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
@@ -1402,6 +1432,10 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, req.DocumentID, req.DatasetID)
 	if err != nil || doc == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("you don't own the document %s", req.DocumentID)}
+	}
+	if err := service.CheckDocumentAccess(ctx, req.DocumentID, req.DatasetID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, addChunkError{code: code, message: permissionErr.Error(), cause: permissionErr}
 	}
 
 	content := strings.TrimSpace(req.Content)
@@ -1526,7 +1560,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: err.Error()}
 	}
-	chunkData[fmt.Sprintf("q_%d_vec", len(mergedVec))] = mergedVec
+	chunkData[common.VectorColumnName(len(mergedVec))] = mergedVec
 
 	ctx, cancel := context.WithTimeout(ctx, 600*time.Second)
 	defer cancel()

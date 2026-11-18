@@ -212,7 +212,7 @@ func buildSearchExprs(ctx context.Context, embModel *modelModule.EmbeddingModel,
 
 // buildMatchDenseExpr constructs a MatchDenseExpr from an embedding vector.
 func buildMatchDenseExpr(vector []float64, topN int, similarity float64) *types.MatchDenseExpr {
-	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
+	vectorColumnName := common.VectorColumnName(len(vector))
 	return &types.MatchDenseExpr{
 		VectorColumnName:  vectorColumnName,
 		EmbeddingData:     vector,

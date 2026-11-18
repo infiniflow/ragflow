@@ -50,6 +50,8 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 
 // CreateKey accepts an empty request body and binds the new key to the caller's tenant.
 func (h *SystemHandler) CreateKey(c *gin.Context) {
+	common.StartOperationLog(c, "create_api_key")
+	defer common.FinishOperationLog(c)
 	ctx := c.Request.Context()
 	code, err := currentAPIKeyOwner(c)
 	if err != nil {
@@ -68,6 +70,10 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	// Create key
 	key, err := h.systemService.CreateAPIKey(ctx, &req)
 	if err != nil {
+		if errors.Is(err, dao.ErrAPITokenLimitReached) {
+			common.Respond(c, http.StatusBadRequest, 400, nil, err.Error())
+			return
+		}
 		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to create key: "+err.Error())
 		return
 	}
@@ -77,6 +83,8 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 
 // DeleteKey requires a tenant identity before deleting the requested key.
 func (h *SystemHandler) DeleteKey(c *gin.Context) {
+	common.StartOperationLog(c, "delete_api_key")
+	defer common.FinishOperationLog(c)
 	ctx := c.Request.Context()
 	code, err := currentAPIKeyOwner(c)
 	if err != nil {

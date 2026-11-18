@@ -59,6 +59,49 @@ pdfium_static_version() {
     printf '%s\n' "7809"
 }
 
+# Give cgo immutable archive paths that change when any linked PDFium archive
+# changes, even under the same version. Keep these copies in the project's
+# writable cache so a pre-provisioned native dependency cache can be read-only.
+pdfium_static_link_dir() (
+    local source_dir="$1" target_os="$2" cache_dir="$3/archives"
+    local -a archives=(libpdfium.a) hash_command=(sha256sum)
+    if [ "$target_os" = "linux" ]; then
+        archives+=(libc++.a libc++abi.a)
+    fi
+    command -v sha256sum >/dev/null || hash_command=(shasum -a 256)
+
+    local hashes digest link_dir
+    hashes="$(cd "$source_dir" && "${hash_command[@]}" "${archives[@]}")" || return 1
+    digest="$(printf '%s\n' "$hashes" | "${hash_command[@]}")" || return 1
+    digest="${digest%% *}"
+    link_dir="$cache_dir/$digest"
+    if [ ! -d "$link_dir" ]; then
+        mkdir -p "$cache_dir" || return 1
+        local staging staged_dir archive staged_hashes
+        staging="$(mktemp -d "$cache_dir/.pdfium.XXXXXX")" || return 1
+        trap 'rm -rf -- "$staging"' EXIT
+        trap 'rm -rf -- "$staging"; exit 130' INT
+        trap 'rm -rf -- "$staging"; exit 143' TERM
+        staged_dir="$staging/$digest"
+        mkdir "$staged_dir" || return 1
+        for archive in "${archives[@]}"; do
+            cp "$source_dir/$archive" "$staged_dir/$archive" || return 1
+        done
+        staged_hashes="$(cd "$staged_dir" && "${hash_command[@]}" "${archives[@]}")" || return 1
+        if [ "$staged_hashes" != "$hashes" ]; then
+            echo "PDFium archives changed while preparing linker inputs. Retry the build." >&2
+            return 1
+        fi
+        # Rename into the cache parent in one operation. The published directory
+        # is outside the attempt's cleanup, and another build may publish first.
+        if ! mv -f "$staged_dir" "$cache_dir/" 2>/dev/null && [ ! -d "$link_dir" ]; then
+            echo "Could not publish the PDFium linker cache at $link_dir" >&2
+            return 1
+        fi
+    fi
+    printf '%s\n' "$link_dir"
+)
+
 # deepdoc_ort_version <repo_root>
 # Reads the ONNX Runtime version the in-process (Go) DeepDoc backend links from
 # <repo_root>/internal/common/environments.go's DeepDocORTVersion const.

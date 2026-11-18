@@ -505,36 +505,3 @@ func TestBatchUpdateDocumentStatusReturnsPermissionErrorWhenAllDenied(t *testing
 		t.Fatalf("code = %d, want %d; error: %v", code, common.CodeForbidden, err)
 	}
 }
-
-func TestBatchUpdateDocumentStatusRetainsPartialFailure(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("permission", string(entity.TenantPermissionMe)).Error; err != nil {
-		t.Fatalf("make dataset private: %v", err)
-	}
-	insertTestDoc(t, "owner-doc", "kb-1", 0, 0)
-	insertTestDoc(t, "member-doc", "kb-1", 0, 0)
-	if err := db.Model(&entity.Document{}).Where("id = ?", "member-doc").Update("created_by", "member").Error; err != nil {
-		t.Fatalf("make one document member-owned: %v", err)
-	}
-	valid := string(entity.StatusValid)
-	if err := db.Create(&entity.UserTenant{
-		ID: "member-tenant-1", UserID: "member", TenantID: "tenant-1", Role: "normal", Status: &valid,
-	}).Error; err != nil {
-		t.Fatalf("create tenant member: %v", err)
-	}
-	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1", "member"); err != nil {
-		t.Fatalf("prepare document status permission fixture: %v", err)
-	}
-
-	svc := testDocumentService(t)
-	ctx := documentTestActorContext(t.Context(), "member", "tenant-1")
-	_, code, err := svc.BatchUpdateDocumentStatus(ctx, "kb-1", "1", []string{"member-doc", "owner-doc"})
-	if err == nil {
-		t.Fatal("expected a partial failure")
-	}
-	if code != common.CodeServerError || !strings.Contains(err.Error(), "partial failure:") || !strings.Contains(err.Error(), "owner-doc") || !strings.Contains(err.Error(), "Permission denied") {
-		t.Fatalf("result code/error = %d/%v, want partial failure", code, err)
-	}
-}

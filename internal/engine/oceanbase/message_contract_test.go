@@ -38,7 +38,7 @@ func TestMemoryMessageIDsDecodeAsIntegers(t *testing.T) {
 		stored string
 		want   int64
 	}{{"42", 42}, {"9223372036854775807", 9223372036854775807}} {
-		row := decodeLogicalRow(map[string]interface{}{"message_id": tc.stored}, "memory")
+		row := decodeLogicalRow(map[string]interface{}{"message_id": tc.stored}, "memory", nil)
 		if row["message_id"] != tc.want {
 			t.Fatalf("message_id = %#v, want %d", row["message_id"], tc.want)
 		}
@@ -46,7 +46,7 @@ func TestMemoryMessageIDsDecodeAsIntegers(t *testing.T) {
 }
 
 func TestMemoryContentIncludesUnsetForgetTime(t *testing.T) {
-	row := decodeLogicalRow(map[string]interface{}{"message_id": "42", "content_ltks": "content"}, "memory")
+	row := decodeLogicalRow(map[string]interface{}{"message_id": "42", "content_ltks": "content"}, "memory", nil)
 	if value, ok := row["forget_at"]; !ok || value != nil {
 		t.Fatalf("unset forget_at = %#v, present=%v", value, ok)
 	}

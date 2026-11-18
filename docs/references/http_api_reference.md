@@ -1643,6 +1643,10 @@ Failure:
 
 Starts, cancels, or reruns ingestion for documents. Use this endpoint for documents in datasets configured with an ingestion pipeline.
 
+:::note
+Each document is ingested with the parser selection stored on its own record: its `parser_id`, or the pipeline and pinned version captured when parser settings were last applied to it. This is not necessarily the dataset's current parsing mode. After changing the dataset's parsing mode, call `POST /api/v1/datasets/{dataset_id}/documents/apply-parser-config` to update the dataset's existing documents. Otherwise, ingestion continues with each document's previously saved selection.
+:::
+
 #### Request
 
 - Method: POST
@@ -2688,14 +2692,16 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"anysearch"`, `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"anysearch"`, `"brave"`, `"exa"`, `"firecrawl"`, `"keirolabs"`, `"linkup"`, `"parallel"`, `"perplexity"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
   - `"anysearch_api_key"`: `string` The optional [AnySearch](https://anysearch.com/console/api-keys) API key. Set `web_search_provider` to `"anysearch"` when using this field. Omit it or leave it blank for anonymous search; service limits apply.
   - `"tavily_api_key"`: `string`
   - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
   - `"exa_api_key"`: `string` The Exa API key. Set `web_search_provider` to `"exa"` when using this field.
   - `"firecrawl_api_key"`: `string` The [Firecrawl](https://www.firecrawl.dev/search) API key. Set `web_search_provider` to `"firecrawl"` when using this field. See the [Firecrawl Search API reference](https://docs.firecrawl.dev/api-reference/endpoint/search) for details.
+  - `"keirolabs_api_key"`: `string` The [Keirolabs](https://www.keirolabs.cloud) API key. Set `web_search_provider` to `"keirolabs"` when using this field.
   - `"linkup_api_key"`: `string` The Linkup API key. Set `web_search_provider` to `"linkup"` when using this field.
   - `"parallel_api_key"`: `string` The Parallel API key. Set `web_search_provider` to `"parallel"` when using this field.
+  - `"perplexity_api_key"`: `string` The [Perplexity](https://www.perplexity.ai/account/api/keys) API key. Set `web_search_provider` to `"perplexity"` when using this field. Results come from the Perplexity Search API. See the [Perplexity Search API documentation](https://docs.perplexity.ai/docs/search/quickstart) for details.
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
   - `"search1api_api_key"`: `string` The [Search1API](https://s1.dev) API key. Set `web_search_provider` to `"search1api"` when using this field. See the [Search1API documentation](https://s1.dev/docs/basic/search) for details.
   - `"searchapi_api_key"`: `string` The [SearchApi](https://www.searchapi.io) API key. Set `web_search_provider` to `"searchapi"` when using this field. Results come from its Google engine. See the [SearchApi Google documentation](https://www.searchapi.io/docs/google) for details.

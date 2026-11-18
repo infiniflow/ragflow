@@ -27,6 +27,7 @@ The page supports:
 | **E2B** | [Configure E2B](../../sandbox/configure_ssh_and_cloud_providers.md#configure-e2b) |
 | **Tenki** | [Configure Tenki](../../sandbox/configure_ssh_and_cloud_providers.md#configure-tenki) |
 | **UCloud Agent Sandbox** | [Configure UCloud Agent Sandbox](../../sandbox/configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox) |
+| **kosa8** | [Configure kosa8](../../sandbox/configure_ssh_and_cloud_providers.md#configure-kosa8) |
 | **Local** | Execute code directly on the current host process. |
 
 ![Sandbox provider selection including Local](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_sandbox_provider.jpg)

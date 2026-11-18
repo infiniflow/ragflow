@@ -67,11 +67,7 @@ export const useSaveGraph = (
           params.alias = alias;
         }
 
-        const result = await saveAgent(params);
-        if (result?.code !== undefined && result.code !== 0) {
-          message.error(result.message || i18n.t('message.requestError'));
-        }
-        return result;
+        return await saveAgent(params);
       } catch (error) {
         message.error(
           error instanceof Error && error.message
@@ -94,6 +90,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { resolveValidIds } = useModelValidIds(
     ModelTypeMap.llm_id,
     agent?.tenant_id,
+    agent?.user_id,
   );
 
   const handleRun = useCallback(

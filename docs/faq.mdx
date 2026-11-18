@@ -35,7 +35,7 @@ RAGFlow provides an end-to-end RAG platform that goes beyond basic document chun
 
 For self-hosted deployments, open **User settings** on a desktop-sized screen. The RAGFlow version number is displayed at the bottom-left of the settings page. It is hidden on narrow screens and is not displayed in RAGFlow Cloud (`cloud.ragflow.io`).
 
-If you build RAGFlow from source, the Go admin and ingestor log their versions at startup. The server also prints its version with `bin/ragflow_server --api --version`.
+If you build RAGFlow from source, the Go admin and ingestor log their versions at startup. The server also prints its version with `bin/ragflow_server --version`.
 
 For example, `v0.27.1-14-g6daae7f2` means 14 commits after the `v0.27.1` tag, at a commit whose abbreviated ID is `6daae7f2`. The actual value comes from the packaged `VERSION` file or, when that file is absent, from `git describe`; it may be a tag alone or `unknown` if neither source supplies a version.
 
@@ -356,7 +356,7 @@ For a Go Compose deployment:
    ```
 6. Check the service state and logs, then call `/api/v1/system/healthz` through the configured web endpoint to verify the dependencies.
 
-The Go Compose entrypoint runs the standalone `ragflow_server --migrate` action before starting the server processes. Starting `ragflow_server --api`, `--admin`, or `--ingestor` directly does not run the complete migration sequence. Keep the backup until the upgrade has been verified, and do not enable `RAGFLOW_DEV_MODE` in production to bypass downgrade protection. Never add `-v` to `docker compose down` unless you intend to delete the deployment's volumes.
+The OSS server runs migrations automatically before starting services. The enterprise Compose deployment uses a separate `ragflow_server --migrate` action; individual enterprise service modes do not run the complete migration sequence. Keep the backup until the upgrade has been verified, and do not enable `RAGFLOW_DEV_MODE` in production to bypass downgrade protection. Never add `-v` to `docker compose down` unless you intend to delete the deployment's volumes.
 
 ---
 
@@ -535,7 +535,7 @@ Use the following environment variables when MinerU is not configured directly i
 3. Set `MINERU_BACKEND` to specify the backend sent with the parse request.
 4. Optionally set `MINERU_TIMEOUT` (seconds or duration string like `1h`) to bound the parse request.
 
-For native ingestion pipeline component parsing (`dispatchMinerUPDF`), `mineru_timeout` or `mineru_timeout_seconds` in the parser setup overrides this timeout; zero or negative values fall back to the default 30 minutes. Note that the legacy `PDFParser` path (`pdf_parser_mineru.go`) continues to use `mineru_timeout_seconds` with a 30s poll interval default.
+Both native ingestion component parsing (`dispatchMinerUPDF`) and the legacy `PDFParser` path (`pdf_parser_mineru.go`) honor `MINERU_TIMEOUT` (as well as setup overrides `mineru_timeout` / `mineru_timeout_seconds`), ensuring a unified timeout knob across all MinerU execution modes (cloud, V1, and legacy polling). Non-default durations are safely clamped within 1s to 24h.
 
 :::tip NOTE
 For other environment variables supported by MinerU itself, see the [MinerU environment variable documentation](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).

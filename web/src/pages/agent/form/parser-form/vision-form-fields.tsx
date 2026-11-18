@@ -14,7 +14,7 @@ import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { useCallback } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { ParserFormSchemaType } from './schema';
 
 type VisionEnhancementSwitchProps = {
@@ -70,7 +70,7 @@ function VisionEnhancementSwitch({
 // base language, which still drives tokenization and retrieval.
 export function VisionEnhancementFormFields() {
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   const crossLanguageOptions = useCrossLanguageOptions();
   const enabled = useWatch({ name: 'enable_vision_enhancement' });
 
@@ -97,7 +97,7 @@ export function VisionEnhancementFormFields() {
           label={t('chat.model')}
           modelTypes={ModelTypeMap.img2txt_id}
           allowClear
-          ownerTenantId={ownerTenantId}
+          resourceTenantId={resourceTenantId}
         />
       )}
       {enabled && (

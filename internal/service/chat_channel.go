@@ -16,6 +16,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,12 +28,14 @@ import (
 
 	"go.uber.org/zap"
 
-	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service/billing"
+
+	"gorm.io/gorm"
 )
 
 type ChatChannelService struct {
@@ -68,7 +72,7 @@ type ChatChannelIncomingMessage struct {
 }
 
 // ChatChannelRuntimeProvider reads runtime metadata for one live chat-channel instance.
-type ChatChannelRuntimeProvider func(channelID string) (map[string]any, bool)
+type ChatChannelRuntimeProvider func(context.Context, *entity.ChatChannel) (map[string]any, bool)
 
 var (
 	chatChannelRuntimeProviderMu sync.RWMutex
@@ -111,6 +115,12 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, name, channe
 		return nil, err
 	}
 	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "chat", permission.ActionWrite); err != nil {
+		return nil, err
+	}
+	if allowed, err := billing.Get().APIAuthAllowed(ctx, tenantID); !allowed {
+		if err == nil {
+			err = errors.New("access is not allowed")
+		}
 		return nil, err
 	}
 	chatID, agentID = normalizedChannelTarget(chatID), normalizedChannelTarget(agentID)
@@ -181,6 +191,13 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, channelID st
 			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, err
+	}
+
+	if allowed, err := billing.Get().APIAuthAllowed(ctx, channel.TenantID); !allowed {
+		if err == nil {
+			err = errors.New("access is not allowed")
+		}
+		return nil, common.CodeForbidden, err
 	}
 
 	updates := map[string]interface{}{}
@@ -278,12 +295,22 @@ func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, channelI
 		return nil, common.CodeDataError, errors.New("runtime snapshot is only available for WhatsApp")
 	}
 
+	if conn.Status != 1 {
+		return waitingRuntimeSnapshotMap(channelID), common.CodeSuccess, nil
+	}
 	if provider := getChatChannelRuntimeProvider(); provider != nil {
-		if snapshot, ok := provider(channelID); ok {
+		if snapshot, ok := provider(ctx, conn); ok {
 			return snapshot, common.CodeSuccess, nil
 		}
 	}
 	return waitingRuntimeSnapshotMap(channelID), common.CodeSuccess, nil
+}
+
+// ChatChannelRuntimeFingerprint identifies the configuration that owns a runtime snapshot.
+func ChatChannelRuntimeFingerprint(channel string, credential map[string]any) string {
+	payload, _ := json.Marshal(map[string]any{"channel": channel, "credential": credential})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
 }
 
 // HandleIncomingMessage routes one external channel message through the bound RAGFlow dialog.
@@ -329,6 +356,15 @@ func (s *ChatChannelService) handleIncomingMessage(ctx context.Context, msg Chat
 	if channel.Status != 1 {
 		return "", nil
 	}
+	if channel.AgentID == nil && (channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "") {
+		return "", nil
+	}
+	if allowed, err := billing.Get().APIAuthAllowed(ctx, channel.TenantID); !allowed {
+		if err == nil {
+			err = errors.New("access is not allowed")
+		}
+		return err.Error(), nil
+	}
 	ownerCtx := permission.WithIdentity(ctx, channel.TenantID, channel.TenantID)
 	if err := validateChannelBinding(ownerCtx, channel.ChatID, channel.AgentID); err != nil {
 		return "", err
@@ -338,10 +374,6 @@ func (s *ChatChannelService) handleIncomingMessage(ctx context.Context, msg Chat
 		defer cancel()
 		return s.handleChannelAgentMessage(ctx, channel, msg, onDelta)
 	}
-	if channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "" {
-		return "", nil
-	}
-
 	dialog, err := s.chatDAO.GetByID(ctx, dao.DB, *channel.ChatID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {

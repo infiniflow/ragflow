@@ -62,6 +62,8 @@ import {
 
 import { EMPTY_DATA, createFuzzySearchFn, getSortIcon } from './utils';
 
+import { formatDate } from '@/utils/date';
+
 import dayjs from 'dayjs';
 import useCreateEmailForm from './forms/email-form';
 import useImportExcelForm, {
@@ -178,9 +180,11 @@ function AdminWhitelist() {
       }),
       columnHelper.accessor('create_date', {
         header: t('admin.createDate'),
+        cell: ({ row }) => formatDate(row.original.create_time),
       }),
       columnHelper.accessor('update_date', {
         header: t('admin.updateDate'),
+        cell: ({ row }) => formatDate(row.original.update_time),
       }),
       columnHelper.display({
         id: 'actions',

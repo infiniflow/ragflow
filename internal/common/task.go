@@ -47,6 +47,17 @@ func SubjectForTier(tier Tier) (string, error) {
 	return subjectForTier(tier)
 }
 
+// ParseIngestorTier validates and normalizes a user-supplied ingestor tier
+// string (e.g. from --ingestor-tier or RAGFLOW_INGESTOR_TIER) into a Tier.
+// The accepted values are edition-specific: the community build resolves only
+// the default/low lane, while the enterprise build accepts its full
+// high/medium/low set. Both delegate to the build-tagged parseIngestorTier so
+// the shared signature never hard-codes an edition's tier names, and an unknown
+// value is an error rather than a silent fallback to the default tier.
+func ParseIngestorTier(s string) (Tier, error) {
+	return parseIngestorTier(s)
+}
+
 const (
 	// MaxManualPullMessages is the largest task batch the administrative queue
 	// pull endpoint accepts.
