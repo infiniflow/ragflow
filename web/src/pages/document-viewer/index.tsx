@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import message from '@/components/ui/message';
 import { DocPreviewer } from '@/components/document-preview/doc-preview';
 import { EpubPreviewer } from '@/components/document-preview/epub-preview';
@@ -41,7 +42,7 @@ const DocumentViewer = () => {
       });
       const filename =
         parseContentDispositionFilename(
-          response.headers['content-disposition'],
+          response.response.headers.get('content-disposition') ?? undefined,
         ) || (ext ? `${documentId}.${ext}` : documentId);
       downloadFileFromBlob(response.data, filename);
     } catch {
@@ -96,13 +97,9 @@ const DocumentViewer = () => {
     return (
       <section className="w-full h-full">
         <div className="flex h-full items-center justify-center">
-          <button
-            type="button"
-            onClick={handleDownload}
-            className="appearance-none border-0 bg-transparent p-0 text-text-primary underline"
-          >
+          <Button variant="link" onClick={handleDownload}>
             {t('common.downloadFile')}
-          </button>
+          </Button>
         </div>
       </section>
     );
