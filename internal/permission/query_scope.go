@@ -19,6 +19,8 @@ import (
 	"context"
 	"strings"
 
+	"ragflow/internal/entity"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -52,9 +54,9 @@ func (s QueryScope) Intersect(other QueryScope) QueryScope {
 	}}
 }
 
-// ListReadableDocumentIDs returns the requested documents visible to the
-// current user in the given datasets. A nil candidate list means all readable
-// documents; a non-nil empty list matches no documents.
+// ListReadableDocumentIDs returns the requested enabled documents visible to
+// the current user in the given datasets. A nil candidate list means all
+// readable documents; a non-nil empty list matches no documents.
 func ListReadableDocumentIDs(ctx context.Context, db *gorm.DB, datasetIDs, candidateIDs []string) ([]string, error) {
 	if candidateIDs != nil && len(candidateIDs) == 0 {
 		return []string{}, nil
@@ -81,7 +83,7 @@ func ListReadableDocumentIDs(ctx context.Context, db *gorm.DB, datasetIDs, candi
 		if err != nil {
 			return nil, err
 		}
-		query := db.WithContext(ctx).Table("document").Select("document.id").Where("document.kb_id = ?", datasetID)
+		query := db.WithContext(ctx).Table("document").Select("document.id").Where("document.kb_id = ? AND document.status = ?", datasetID, string(entity.StatusValid))
 		if candidateIDs != nil {
 			query = query.Where("document.id IN ?", candidateIDs)
 		}

@@ -183,7 +183,7 @@ func (p *communityPolicy) QueryScope(ctx context.Context, query ScopeQuery) (Que
 		}
 		parentID := query.Parent.ID
 		return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
-			return query.Where("document.kb_id = ? AND document.status = ?", parentID, string(entity.StatusValid))
+			return query.Where("document.kb_id = ?", parentID)
 		}}, true, nil
 	}
 	if query.Kind == ResourceKindMCPServer && query.Operation == OperationRead && query.Parent.ID == "" && query.Parent.Kind == "" && query.Entry == nil {

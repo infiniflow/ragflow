@@ -211,6 +211,81 @@ func TestDatabaseCheckerRejectsPrivateDatasetForOtherTenantMember(t *testing.T) 
 	}
 }
 
+func TestDisabledDocumentRemainsReadableWithinDataset(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate permission tables: %v", err)
+	}
+
+	valid := string(entity.StatusValid)
+	disabled := "0"
+	ownerID := "owner-1"
+	tenantID := "tenant-1"
+	dataset := entity.Knowledgebase{
+		ID: "dataset-1", UserID: ownerID, TenantID: tenantID, Name: "dataset",
+		EmbdID: "embedding", Permission: string(entity.TenantPermissionMe), Status: &valid,
+	}
+	document := entity.Document{
+		ID: "document-1", KbID: dataset.ID, UserID: ownerID, CreatedBy: ownerID,
+		Status: &disabled, ParserConfig: entity.JSONMap{},
+	}
+	membership := entity.UserTenant{
+		ID: "owner-membership", UserID: ownerID, TenantID: tenantID,
+		Role: string(RoleOwner), Status: &valid,
+	}
+	if err := db.Create(&dataset).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	if err := db.Create(&document).Error; err != nil {
+		t.Fatalf("create disabled document: %v", err)
+	}
+	if err := db.Create(&membership).Error; err != nil {
+		t.Fatalf("create owner membership: %v", err)
+	}
+
+	checker := newCommunityDatabaseChecker(db)
+	ctx := WithIdentity(context.Background(), ownerID, tenantID)
+	ref := ResourceRef{Kind: ResourceKindDocument, ID: document.ID}
+	if err := checker.CheckResource(ctx, ref, OperationRead); err != nil {
+		t.Fatalf("CheckResource(disabled document) error = %v, want nil", err)
+	}
+
+	scope, err := checker.Scope(ctx, ScopeQuery{
+		Kind: ResourceKindDocument, Parent: ResourceRef{Kind: ResourceKindDataset, ID: dataset.ID}, Operation: OperationRead,
+	})
+	if err != nil {
+		t.Fatalf("Scope(disabled document) error = %v", err)
+	}
+	if len(scope.ResourceIDs) != 1 || scope.ResourceIDs[0] != document.ID {
+		t.Fatalf("Scope(disabled document) IDs = %v, want [%s]", scope.ResourceIDs, document.ID)
+	}
+
+	queryScope, err := checker.QueryScope(ctx, ScopeQuery{
+		Kind: ResourceKindDocument, Parent: ResourceRef{Kind: ResourceKindDataset, ID: dataset.ID}, Operation: OperationRead,
+	})
+	if err != nil {
+		t.Fatalf("QueryScope(disabled document) error = %v", err)
+	}
+	var ids []string
+	if err := queryScope.Apply(db.Table("document")).Pluck("document.id", &ids).Error; err != nil {
+		t.Fatalf("list documents in query scope: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != document.ID {
+		t.Fatalf("QueryScope(disabled document) IDs = %v, want [%s]", ids, document.ID)
+	}
+
+	retrievalIDs, err := ListReadableDocumentIDs(ctx, db, []string{dataset.ID}, nil)
+	if err != nil {
+		t.Fatalf("ListReadableDocumentIDs(disabled document) error = %v", err)
+	}
+	if len(retrievalIDs) != 0 {
+		t.Fatalf("ListReadableDocumentIDs(disabled document) = %v, want no retrieval candidates", retrievalIDs)
+	}
+}
+
 func TestDatabaseCheckerScopesDatasetsToMembershipAndVisibility(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

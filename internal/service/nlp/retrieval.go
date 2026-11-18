@@ -83,6 +83,53 @@ type RetrievalRequest struct {
 	Language string
 }
 
+// SplitRetrievalDocIDs separates explicitly selected dataset products from
+// ordinary document IDs. An empty document selection includes each selected
+// dataset's products alongside its readable documents.
+func SplitRetrievalDocIDs(datasetIDs, requestedIDs []string) (documentIDs, datasetProductIDs []string) {
+	datasetSet := make(map[string]struct{}, len(datasetIDs))
+	for _, datasetID := range datasetIDs {
+		if datasetID != "" {
+			datasetSet[datasetID] = struct{}{}
+		}
+	}
+
+	if len(requestedIDs) == 0 {
+		seenProducts := make(map[string]struct{}, len(datasetIDs))
+		for _, datasetID := range datasetIDs {
+			if datasetID == "" {
+				continue
+			}
+			if _, seen := seenProducts[datasetID]; !seen {
+				datasetProductIDs = append(datasetProductIDs, datasetID)
+				seenProducts[datasetID] = struct{}{}
+			}
+		}
+		return nil, datasetProductIDs
+	}
+
+	documentIDs = make([]string, 0, len(requestedIDs))
+	seenDocuments := make(map[string]struct{}, len(requestedIDs))
+	seenProducts := make(map[string]struct{}, len(requestedIDs))
+	for _, requestedID := range requestedIDs {
+		if requestedID == "" {
+			continue
+		}
+		if _, isDatasetProduct := datasetSet[requestedID]; isDatasetProduct {
+			if _, seen := seenProducts[requestedID]; !seen {
+				datasetProductIDs = append(datasetProductIDs, requestedID)
+				seenProducts[requestedID] = struct{}{}
+			}
+			continue
+		}
+		if _, seen := seenDocuments[requestedID]; !seen {
+			documentIDs = append(documentIDs, requestedID)
+			seenDocuments[requestedID] = struct{}{}
+		}
+	}
+	return documentIDs, datasetProductIDs
+}
+
 // RetrievalResult result from retrieval search
 type RetrievalResult struct {
 	Chunks  []map[string]interface{}
@@ -119,22 +166,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
 	if !req.DocumentPermissionsChecked && permission.UserIDFromContext(ctx) != "" && len(req.KbIDs) > 0 {
-		var candidateDocIDs []string
-		var datasetProductIDs []string
-		if len(req.DocIDs) > 0 {
-			kbIDs := make(map[string]struct{}, len(req.KbIDs))
-			for _, kbID := range req.KbIDs {
-				kbIDs[kbID] = struct{}{}
-			}
-			candidateDocIDs = make([]string, 0, len(req.DocIDs))
-			for _, docID := range req.DocIDs {
-				if _, isDatasetProduct := kbIDs[docID]; isDatasetProduct {
-					datasetProductIDs = append(datasetProductIDs, docID)
-					continue
-				}
-				candidateDocIDs = append(candidateDocIDs, docID)
-			}
-		}
+		candidateDocIDs, datasetProductIDs := SplitRetrievalDocIDs(req.KbIDs, req.DocIDs)
 		readableDocIDs, err := permission.ListReadableDocumentIDs(ctx, dao.DB, req.KbIDs, candidateDocIDs)
 		if err != nil {
 			return nil, fmt.Errorf("resolve readable documents: %w", err)

@@ -1126,12 +1126,12 @@ func (e *orderedUpdateChunkTestEngine) UpdateChunks(ctx context.Context, conditi
 }
 
 func TestAddChunkSuccess(t *testing.T) {
-	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, documentID, datasetID)
+	ctx := chunkTestContext(t, userID, userID)
 
 	// The document already holds source chunks whose highest order is 9; the
 	// lookup page also carries rows the lookup must ignore (a parent-range value
@@ -1293,12 +1293,12 @@ func TestAddChunkSuccess(t *testing.T) {
 // supplied it, and is echoed back in the response when present. Issue
 // #20138 documented that the Go path was silently dropping the field.
 func TestAddChunkPersistsTagKwdOnlyWhenProvided(t *testing.T) {
-	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, documentID, datasetID)
+	ctx := chunkTestContext(t, userID, userID)
 
 	makeService := func() (*ChunkService, *addChunkTestEngine) {
 		engine := &addChunkTestEngine{}
@@ -1407,11 +1407,11 @@ func TestAddChunkPersistsTagKwdOnlyWhenProvided(t *testing.T) {
 }
 
 func TestAddChunkValidationErrors(t *testing.T) {
-	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	insertChunkTestKB(t, "kb-1", "user-1")
 	insertChunkTestDoc(t, "doc-1", "kb-1")
+	ctx := chunkTestContext(t, "user-1", "user-1")
 
 	svc := &ChunkService{
 		docEngine:   &addChunkTestEngine{},
@@ -1457,12 +1457,12 @@ func TestAddChunkValidationErrors(t *testing.T) {
 }
 
 func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
-	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, documentID, datasetID)
+	ctx := chunkTestContext(t, userID, userID)
 
 	storeCalls := 0
 	svc := &ChunkService{
@@ -1540,12 +1540,12 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 }
 
 func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
-	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, documentID, datasetID)
+	ctx := chunkTestContext(t, userID, userID)
 
 	var incrementCalls int
 	engine := &addChunkTestEngine{}

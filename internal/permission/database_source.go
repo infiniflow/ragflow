@@ -505,7 +505,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, kind ResourceKind
 			return nil, fmt.Errorf("%w: documents require a dataset parent scope", ErrInvalidPermission)
 		}
 		if err := s.db.WithContext(ctx).Model(&entity.Document{}).
-			Where("kb_id = ? AND status = ?", parent.ID, string(entity.StatusValid)).
+			Where("kb_id = ?", parent.ID).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
@@ -998,7 +998,7 @@ func (s *databaseSource) loadDocuments(ctx context.Context, ids []string) (map[s
 		return documentsByID, nil
 	}
 	query := s.db.WithContext(ctx).Model(&entity.Document{}).
-		Where("id IN ? AND status = ?", ids, string(entity.StatusValid))
+		Where("id IN ?", ids)
 	if s.lockRows {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
@@ -1090,7 +1090,7 @@ func documentResource(document *entity.Document, dataset *entity.Knowledgebase, 
 		OwnerOperations:   datasetAccess.OwnerOperations,
 		TenantOperations:  datasetAccess.TenantOperations,
 		CreatorOperations: datasetAccess.CreatorOperations,
-		Active:            datasetAccess.Active && document.Status != nil && *document.Status == string(entity.StatusValid),
+		Active:            datasetAccess.Active,
 	}
 }
 

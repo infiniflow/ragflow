@@ -283,15 +283,12 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	}
 
 	// Apply meta_data_filter to get filtered doc_ids (filter by metadata before retrieval)
-	var docIDs []string
-	if len(req.DocIDs) > 0 {
-		docIDs = append([]string(nil), req.DocIDs...)
-	}
-	docIDs, getErr = service.ListReadableDocumentIDs(ctx, []string(req.Datasets), docIDs)
+	candidateDocIDs, datasetProductIDs := nlp.SplitRetrievalDocIDs([]string(req.Datasets), req.DocIDs)
+	docIDs, getErr := service.ListReadableDocumentIDs(ctx, []string(req.Datasets), candidateDocIDs)
 	if getErr != nil {
 		return nil, fmt.Errorf("failed to resolve readable documents: %w", getErr)
 	}
-	if len(docIDs) == 0 {
+	if len(docIDs) == 0 && len(datasetProductIDs) == 0 {
 		emptyLabels := map[string]float64{}
 		return &service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels, Total: 0}, nil
 	}
@@ -310,6 +307,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			}
 			common.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
 		}
+	}
+	for _, datasetProductID := range datasetProductIDs {
+		docIDs = append(docIDs, datasetProductID)
 	}
 	if len(docIDs) == 0 {
 		emptyLabels := map[string]float64{}
@@ -1145,6 +1145,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	if doc.KbID != req.DatasetID {
 		return fmt.Errorf("document does not belong to this dataset")
 	}
+	if err := service.CheckDocumentAccess(ctx, req.DocumentID, req.DatasetID, permission.OperationUpdate); err != nil {
+		return err
+	}
 
 	// Fetch existing chunk first
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
@@ -1429,6 +1432,10 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, req.DocumentID, req.DatasetID)
 	if err != nil || doc == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("you don't own the document %s", req.DocumentID)}
+	}
+	if err := service.CheckDocumentAccess(ctx, req.DocumentID, req.DatasetID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, addChunkError{code: code, message: permissionErr.Error(), cause: permissionErr}
 	}
 
 	content := strings.TrimSpace(req.Content)
