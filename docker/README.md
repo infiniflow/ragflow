@@ -35,6 +35,33 @@ The binary selects one mode; `--api --chatter` does not launch both processes.
 Run one channel owner per deployment: starting standalone chatter alongside an API
 with embedded channels enabled would connect each channel twice.
 
+### Running each service in its own container
+
+By default, the entrypoint runs the database migrations before it starts any
+service other than the Ingestor. When the services run in separate containers
+(for example, separate Kubernetes pods), run the migrations once in an init
+container or Job and start the services with `--skip-migrations`:
+
+```bash
+# Init container or Job: run all database migrations and exit.
+bash docker/entrypoint.sh --init-model-provider-tables
+# API (with nginx), leaving chat channels to the chatter container.
+bash docker/entrypoint.sh --skip-migrations --disable-ingestor --disable-syncer --disable-chat-channels
+# Chat channels.
+bash docker/entrypoint.sh --skip-migrations --disable-api-server --disable-ingestor --disable-syncer --chatter
+# Data source syncer.
+bash docker/entrypoint.sh --skip-migrations --disable-api-server --disable-ingestor
+# Ingestors.
+bash docker/entrypoint.sh --disable-api-server --disable-syncer --ingestors=2
+# Admin server.
+bash docker/entrypoint.sh --skip-migrations --disable-api-server --disable-ingestor --disable-syncer --enable-adminserver
+```
+
+`--disable-chat-channels` passes the same flag to the API server; use it only when
+a chatter container runs in the same deployment. Services started with
+`--skip-migrations` neither run nor wait for the migrations: start them after the
+migration has completed, and run it from only one container at a time.
+
 <details open>
 <summary><b>📗 Table of Contents</b></summary>
 

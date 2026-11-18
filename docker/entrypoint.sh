@@ -15,7 +15,9 @@ function usage() {
     echo "  --disable-ingestor                       Disables ingestor."
     echo "  --disable-syncer                         Disables data source syncer."
     echo "  --chatter                                Runs chat channels in a separate process alongside enabled services."
-    echo "  --init-model-provider-tables             Run model provider table migrations and exit."
+    echo "  --disable-chat-channels                  Disables the chat channels service completely."
+    echo "  --skip-migrations                        Starts the services without running database migrations first."
+    echo "  --init-model-provider-tables             Runs all database migrations and exits."
     echo "  --init-superuser                         Initializes the superuser."
     echo "  --ingestors=<num>                        Number of ingestors to run."
 
@@ -24,6 +26,8 @@ function usage() {
     echo "  $0 --disable-ingestor"
     echo "  $0 --disable-api-server --ingestors=2"
     echo "  $0 --init-superuser"
+    echo "  $0 --init-model-provider-tables"
+    echo "  $0 --skip-migrations --disable-ingestor --disable-syncer --disable-chat-channels"
     exit 1
 }
 
@@ -32,6 +36,8 @@ ENABLE_API_SERVER=1 # Default to enable web server
 ENABLE_INGESTOR=1  # Default to enable ingestor
 ENABLE_DATASYNC=1
 ENABLE_CHATTER=0
+DISABLE_CHAT_CHANNELS=0
+SKIP_MIGRATIONS=0
 
 INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
 INIT_MODEL_PROVIDER_TABLES=0
@@ -56,6 +62,14 @@ for arg in "$@"; do
       ENABLE_CHATTER=1
       shift
       ;;
+    --disable-chat-channels)
+      DISABLE_CHAT_CHANNELS=1
+      shift
+      ;;
+    --skip-migrations)
+      SKIP_MIGRATIONS=1
+      shift
+      ;;
     --enable-adminserver)
       ENABLE_ADMIN_SERVER=1
       shift
@@ -77,6 +91,11 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 && "${SKIP_MIGRATIONS}" -eq 1 ]]; then
+    echo "--init-model-provider-tables and --skip-migrations cannot be combined."
+    usage
+fi
 
 # -----------------------------------------------------------------------------
 # Replace env variables in the service_conf.yaml file
@@ -116,15 +135,16 @@ function run_go_migrations() {
     if [[ "$db_type" == "gaussdb" || "$db_type" == "gauss" ]]; then
         # The Go migrations emit MySQL-only SQL and cannot run against a GaussDB
         # metadata database.
-        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        echo "Skipping MySQL-specific database migrations for DB_TYPE=${DB_TYPE:-mysql}."
         return 0
     fi
-    echo "Running model provider table migrations..."
+    echo "Running database migrations..."
     bin/ragflow_server --migrate
 }
 
-# Whether any Go server mode will run. These are the processes that used to
-# carry --migrate, so the standalone migration must run before them.
+# Whether a Go server mode other than the ingestor will run. The standalone
+# migration runs before them; an ingestor-only container relies on another
+# container to migrate.
 function go_backend_enabled() {
     if [[ "${ENABLE_DATASYNC}" -eq 1 || "${ENABLE_CHATTER}" -eq 1 ]]; then
         return 0
@@ -153,17 +173,17 @@ run_with_restart() {
   done
 }
 
-# --init-model-provider-tables keeps its documented "run migrations and exit"
-# meaning: it migrates and exits without booting any server.
+# --init-model-provider-tables runs all migrations and exits without booting any
+# server, e.g. as a Kubernetes init container or Job.
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
     run_go_migrations
-    echo "Model provider table migrations finished. Exiting."
+    echo "Database migrations finished. Exiting."
     exit 0
 fi
 
-# Otherwise migrate once up front, before any Go server mode boots. --migrate is
-# a standalone action, so it is no longer attached to --api/--admin/--syncer.
-if go_backend_enabled; then
+# Otherwise migrate once up front, before any Go server mode boots, unless the
+# migrations run elsewhere (--skip-migrations).
+if [[ "${SKIP_MIGRATIONS}" -eq 0 ]] && go_backend_enabled; then
     run_go_migrations
 fi
 
@@ -178,7 +198,7 @@ if [[ "${ENABLE_API_SERVER}" -eq 1 ]]; then
 
     echo "Starting RAGFlow go server..."
     API_ARGS=()
-    if [[ "${ENABLE_CHATTER}" -eq 1 ]]; then
+    if [[ "${ENABLE_CHATTER}" -eq 1 || "${DISABLE_CHAT_CHANNELS}" -eq 1 ]]; then
         API_ARGS+=(--disable-chat-channels)
     fi
     run_with_restart "RAGFlow go server" bin/ragflow_server --api "${API_ARGS[@]}" &
