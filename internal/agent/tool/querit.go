@@ -18,14 +18,11 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -37,11 +34,12 @@ import (
 )
 
 const (
-	queritToolName        = "querit_search"
-	queritToolDescription = "Search the web via the Querit API and return the complete search response."
-	queritEndpoint        = "https://api.querit.ai/v1/search"
-	queritMaxAttempts     = 3
-	queritPromptMaxTokens = 200000
+	queritToolName         = "querit_search"
+	queritToolDescription  = "Search the web via the Querit API and return the complete search response."
+	queritEndpoint         = "https://api.querit.ai/v1/search"
+	queritMaxAttempts      = 3
+	queritPromptMaxTokens  = 200000
+	queritMaxResponseBytes = 4 << 20
 )
 
 var (
@@ -52,15 +50,15 @@ var (
 )
 
 type queritParams struct {
-	APIKey          string   `json:"api_key"`
-	Query           string   `json:"query"`
-	Count           int      `json:"count"`
-	ChunksPerDoc    *int     `json:"chunks_per_doc"`
-	SiteInclude     []string `json:"site_include"`
-	SiteExclude     []string `json:"site_exclude"`
-	TimeRange       string   `json:"time_range"`
-	CountryInclude  []string `json:"country_include"`
-	LanguageInclude []string `json:"language_include"`
+	APIKey          string   `json:"api_key,omitempty" schema:"-"`
+	Query           string   `json:"query" doc:"Search query." required:"true"`
+	Count           int      `json:"count,omitempty" doc:"Maximum number of documents to return. Defaults to 10 and must be at least 1."`
+	ChunksPerDoc    *int     `json:"chunks_per_doc,omitempty" doc:"Number of snippets per document. Defaults to 3 and must be between 1 and 3."`
+	SiteInclude     []string `json:"site_include,omitempty" doc:"Sites that search results must include."`
+	SiteExclude     []string `json:"site_exclude,omitempty" doc:"Sites that search results must exclude."`
+	TimeRange       string   `json:"time_range,omitempty" doc:"Relative time range such as d7, w1, m3, or y1, or YYYY-MM-DDtoYYYY-MM-DD."`
+	CountryInclude  []string `json:"country_include,omitempty" doc:"Countries that search results must include."`
+	LanguageInclude []string `json:"language_include,omitempty" doc:"Languages that search results must include."`
 }
 
 type queritRequest struct {
@@ -152,56 +150,7 @@ func defaultQueritEnvKey() string { return common.GetEnv(common.EnvQueritAPIKey)
 // Info returns the arguments that a chat model may provide. Credentials stay
 // in node configuration or the environment and are never exposed to the model.
 func (q *QueritTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: queritToolName,
-		Desc: queritToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Search query.",
-				Required: true,
-			},
-			"count": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of documents to return. Defaults to 10 and must be at least 1.",
-				Required: false,
-			},
-			"chunks_per_doc": {
-				Type:     schema.Integer,
-				Desc:     "Number of snippets per document. Defaults to 3 and must be between 1 and 3.",
-				Required: false,
-			},
-			"site_include": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Sites that search results must include.",
-				Required: false,
-			},
-			"site_exclude": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Sites that search results must exclude.",
-				Required: false,
-			},
-			"time_range": {
-				Type:     schema.String,
-				Desc:     "Relative time range such as d7, w1, m3, or y1, or YYYY-MM-DDtoYYYY-MM-DD.",
-				Required: false,
-			},
-			"country_include": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Countries that search results must include.",
-				Required: false,
-			},
-			"language_include": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Languages that search results must include.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(queritToolName, queritToolDescription, queritParams{})
 }
 
 // InvokableRun performs a Querit search. All expected operational failures are
@@ -248,44 +197,61 @@ func (q *QueritTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 	if err != nil {
 		return queritErrorJSON(fmt.Errorf("encode request: %w", err), apiKey), nil
 	}
+	raw, requestErr := doQueritRequest(ctx, q.helper, q.retryWait, queritEndpoint, body, apiKey)
+	if requestErr != nil {
+		return queritErrorJSON(requestErr, apiKey), nil
+	}
+	if _, err := decodeQueritResponse(raw); err != nil {
+		return queritErrorJSON(err, apiKey), nil
+	}
+	return string(raw), nil
+}
+
+func doQueritRequest(
+	ctx context.Context,
+	helper *HTTPHelper,
+	retryWait func(context.Context, int) bool,
+	endpoint string,
+	body []byte,
+	apiKey string,
+) ([]byte, error) {
 	for attempt := 1; attempt <= queritMaxAttempts; attempt++ {
-		resp, requestErr := q.helper.Do(
+		resp, err := helper.Do(
 			ctx,
 			http.MethodPost,
-			queritEndpoint,
+			endpoint,
 			string(body),
 			"application/json",
 			map[string]string{"Authorization": "Bearer " + apiKey},
 		)
-		if requestErr != nil {
-			return queritErrorJSON(fmt.Errorf("request failed: %w", requestErr), apiKey), nil
+		if err != nil {
+			return nil, fmt.Errorf("request failed: %w", err)
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
-			if attempt == queritMaxAttempts || !q.retryWait(ctx, attempt) {
-				return queritErrorJSON(fmt.Errorf("upstream returned %d after %d attempts", resp.StatusCode, attempt), apiKey), nil
+			if attempt == queritMaxAttempts || !retryWait(ctx, attempt) {
+				return nil, fmt.Errorf("upstream returned %d after %d attempts", resp.StatusCode, attempt)
 			}
 			continue
 		}
 		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
-			return queritErrorJSON(fmt.Errorf("upstream returned %d", resp.StatusCode), apiKey), nil
+			return nil, fmt.Errorf("upstream returned %d", resp.StatusCode)
 		}
 
-		raw, readErr := io.ReadAll(resp.Body)
+		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, queritMaxResponseBytes+1))
 		_ = resp.Body.Close()
 		if readErr != nil {
-			return queritErrorJSON(fmt.Errorf("read response: %w", readErr), apiKey), nil
+			return nil, fmt.Errorf("read response: %w", readErr)
 		}
-		if _, err := decodeQueritResponse(raw); err != nil {
-			return queritErrorJSON(err, apiKey), nil
+		if len(raw) > queritMaxResponseBytes {
+			return nil, fmt.Errorf("response too large")
 		}
-		return string(raw), nil
+		return raw, nil
 	}
-
-	return queritErrorJSON(fmt.Errorf("request exhausted retries"), apiKey), nil
+	return nil, fmt.Errorf("request exhausted retries")
 }
 
 func mergeQueritParams(defaults, runtimeParams queritParams, provided map[string]json.RawMessage) queritParams {
@@ -318,6 +284,14 @@ func mergeQueritParams(defaults, runtimeParams queritParams, provided map[string
 }
 
 func validateQueritParams(params queritParams) error {
+	if err := ValidateSearchFilters(map[string]any{
+		"site_include":     params.SiteInclude,
+		"site_exclude":     params.SiteExclude,
+		"country_include":  params.CountryInclude,
+		"language_include": params.LanguageInclude,
+	}, false); err != nil {
+		return err
+	}
 	if params.Count < 1 {
 		return fmt.Errorf("count must be at least 1")
 	}
@@ -360,21 +334,9 @@ func buildQueritRequest(params queritParams) queritRequest {
 }
 
 func decodeQueritResponse(raw []byte) (map[string]any, error) {
-	var decoded any
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
-	decoder.UseNumber()
-	if err := decoder.Decode(&decoded); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("decode response: expected exactly one JSON value")
-		}
-		return nil, fmt.Errorf("decode response: trailing content: %w", err)
-	}
-	response, ok := decoded.(map[string]any)
-	if !ok || response == nil {
-		return nil, fmt.Errorf("decode response: expected a JSON object")
+	response, err := decodeQueritJSONObject(raw)
+	if err != nil {
+		return nil, err
 	}
 	resultsValue, exists := response["results"]
 	if !exists {
@@ -390,6 +352,26 @@ func decodeQueritResponse(raw []byte) (map[string]any, error) {
 	}
 	if _, ok := resultValue.([]any); !ok {
 		return nil, fmt.Errorf("decode response: results.result must be a JSON array")
+	}
+	return response, nil
+}
+
+func decodeQueritJSONObject(raw []byte) (map[string]any, error) {
+	var decoded any
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("decode response: expected exactly one JSON value")
+		}
+		return nil, fmt.Errorf("decode response: trailing content: %w", err)
+	}
+	response, ok := decoded.(map[string]any)
+	if !ok || response == nil {
+		return nil, fmt.Errorf("decode response: expected a JSON object")
 	}
 	return response, nil
 }
@@ -459,8 +441,7 @@ func (q *QueritTool) BuildReferences(_ context.Context, response map[string]any)
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(queritHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(queritHashInt(documentID, 500), 10)
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -547,12 +528,6 @@ func queritPromptField(value any) string {
 	return queritNewlinePattern.ReplaceAllString(queritText(value), " ")
 }
 
-func queritHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
-}
-
 func truncateQueritRunes(value string, limit int) string {
 	if limit <= 0 {
 		return ""
@@ -588,9 +563,13 @@ func queritStringSlice(value any) ([]string, bool) {
 }
 
 func queritErrorJSON(err error, apiKeys ...string) string {
-	message := "querit_search: unknown error"
+	return queritToolErrorJSON(queritToolName, err, apiKeys...)
+}
+
+func queritToolErrorJSON(toolName string, err error, apiKeys ...string) string {
+	message := toolName + ": unknown error"
 	if err != nil {
-		message = "querit_search: " + err.Error()
+		message = toolName + ": " + err.Error()
 	}
 	for _, apiKey := range apiKeys {
 		if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
@@ -599,7 +578,7 @@ func queritErrorJSON(err error, apiKeys ...string) string {
 	}
 	raw, marshalErr := json.Marshal(map[string]any{"_ERROR": message})
 	if marshalErr != nil {
-		return `{"_ERROR":"querit_search: marshal error"}`
+		return fmt.Sprintf(`{"_ERROR":%q}`, toolName+": marshal error")
 	}
 	return string(raw)
 }

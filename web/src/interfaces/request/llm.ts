@@ -38,13 +38,6 @@ export interface IAddProviderRequestBody {
 export type IAddProviderInstanceRequestBody = IAddLlmRequestBody & {
   instance_name: string;
   region?: string;
-  /**
-   * Optional id of an existing instance. When present the backend
-   * treats the call as an update of that row (rather than a create),
-   * which is what the inline "blur-save" flow on saved instance cards
-   * needs.
-   */
-  id?: string;
 };
 
 export interface IDeleteProviderInstanceRequestBody {
@@ -71,7 +64,7 @@ export interface IEditInstanceModelRequestBody {
 
 export interface IListAllModelsRequestParams {
   type?: string;
-  owner_tenant_id?: string;
+  tenant_id?: string;
 }
 
 export interface IUpdateModelStatusRequestBody {
@@ -105,12 +98,10 @@ export interface IUpdateProviderInstanceRequestBody {
   provider_name: string;
   instance_name: string;
   id: string;
-  /**
-   * Either a plain API-key string, or — for providers that need an
-   * extra credential such as MiniMax's `group_id` — an object bundling
-   * the key with those fields: `{ api_key, group_id }`.
-   */
+  /** Plain API key or a provider credential/configuration object. Blank
+   * credential values keep the saved value; use clear_api_key to remove it. */
   api_key?: string | Record<string, any>;
+  clear_api_key?: boolean;
   base_url?: string;
   region?: string;
   model_info?: IModelInfo[];
@@ -121,12 +112,14 @@ export type ISetDefaultModelRequestBody =
   | {
       model_type: string;
       model_id: string;
+      tenant_id?: string;
     }
   | {
       model_type: string;
       model_provider: string;
       model_instance: string;
       model_name: string;
+      tenant_id?: string;
     };
 
 /**
@@ -154,8 +147,20 @@ export interface IProviderModelItem {
  */
 export interface IListProviderModelsRequestBody {
   provider_name: string;
-  api_key?: string;
+  api_key?: string | object;
   base_url?: string;
   region?: string;
   model_info?: IModelInfo[];
+  use_saved_credentials?: boolean;
+  api_key_config?: Record<string, unknown>;
+  /**
+   * Identifies the saved instance whose credentials should be used while the
+   * server applies the current form's non-secret configuration and endpoint.
+   */
+  instance_name?: string;
+  /**
+   * Returns failures to the caller instead of raising the global notification,
+   * so they can be explained next to the form.
+   */
+  skipGlobalErrorNotification?: boolean;
 }

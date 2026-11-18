@@ -48,7 +48,7 @@ func TestEnterprise_500NodeChain(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	result, err := cg.Invoke(ctx, map[string]any{})
@@ -104,7 +104,7 @@ func TestEnterprise_200FanInFanOut(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	result, err := cg.Invoke(ctx, map[string]any{})
@@ -144,7 +144,7 @@ func TestEnterprise_1000NodeChain(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 
 	result, err := cg.Invoke(ctx, map[string]any{})
@@ -177,7 +177,7 @@ func TestEnterprise_IdempotentInvoke(t *testing.T) {
 	}
 
 	input := map[string]any{"value": "test"}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	r1, err1 := cg.Invoke(ctx, input)
 	r2, err2 := cg.Invoke(ctx, input)
@@ -244,7 +244,7 @@ func TestEnterprise_NestedSubGraph(t *testing.T) {
 		t.Fatalf("outer Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := cg.Invoke(ctx, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -314,7 +314,7 @@ func TestEnterprise_ConditionalEdge_MultiWay(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := cg.Invoke(ctx, map[string]any{"route": "b"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -362,7 +362,7 @@ func TestEnterprise_LargeState(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := cg.Invoke(ctx, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -398,7 +398,7 @@ func TestEnterprise_ConcurrentStream(t *testing.T) {
 
 	for i := 0; i < numStreams; i++ {
 		wg.Go(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			outputCh, errCh := cg.Stream(ctx, map[string]any{"value": "concurrent"}, types.StreamModeValues)
 			for range outputCh {
@@ -448,7 +448,7 @@ func TestEnterprise_PartialFailureDegradation(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	_, err = cg.Invoke(ctx, map[string]any{})
 	if err == nil {
@@ -478,7 +478,7 @@ func TestEnterprise_SchemaEvolution(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := cg.Invoke(ctx, map[string]any{"version": "v0"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -518,7 +518,7 @@ func TestEnterprise_MapReduceChain(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := cg.Invoke(ctx, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -583,7 +583,7 @@ func TestEnterprise_DAGWithConditionalEdge(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := cg.Invoke(ctx, map[string]any{"flag": true})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -626,7 +626,7 @@ func TestEnterprise_MultiThreadCheckpoint(t *testing.T) {
 		wg.Add(1)
 		go func(tid string) {
 			defer wg.Done()
-			ctx := context.Background()
+			ctx := t.Context()
 			cfg := &types.RunnableConfig{
 				Configurable: map[string]interface{}{
 					constants.ConfigKeyThreadID: tid,

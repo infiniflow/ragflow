@@ -6,6 +6,7 @@ import {
   metadataValueTypeEnum,
 } from '../constant';
 import { IManageValuesProps, IMetaDataTableData } from '../interface';
+import message from '@/components/ui/message';
 
 export const useManageValues = (props: IManageValuesProps) => {
   const {
@@ -115,6 +116,7 @@ export const useManageValues = (props: IManageValuesProps) => {
 
   const handleSave = useCallback(() => {
     if (type === MetadataType.Setting && valueError.field) {
+      message.error(valueError.field);
       return;
     }
     if (isAddValueMode) {

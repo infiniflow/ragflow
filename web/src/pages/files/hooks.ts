@@ -4,7 +4,8 @@ import { TableRowSelection } from '@/interfaces/antd-compat';
 import { IFile } from '@/interfaces/database/file-manager';
 import { ConnectFileToKnowledgeMode } from '@/interfaces/request/file-manager';
 import { useCallback, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
+import { isFolderType } from './util';
 
 export const useGetFolderId = () => {
   const [searchParams] = useSearchParams();
@@ -118,7 +119,7 @@ export const useHandleConnectToKnowledge = () => {
       } else {
         setRecord(documents);
         setDocumentIds([documents.id]);
-        setMode('replace');
+        setMode(isFolderType(documents.type) ? 'add' : 'replace');
       }
 
       showConnectToKnowledgeModal();
@@ -139,18 +140,3 @@ export const useHandleConnectToKnowledge = () => {
 export type UseHandleConnectToKnowledgeReturnType = ReturnType<
   typeof useHandleConnectToKnowledge
 >;
-
-export const useHandleBreadcrumbClick = () => {
-  const navigate = useNavigate();
-
-  const handleBreadcrumbClick = useCallback(
-    (path?: string) => {
-      if (path) {
-        navigate(path);
-      }
-    },
-    [navigate],
-  );
-
-  return { handleBreadcrumbClick };
-};

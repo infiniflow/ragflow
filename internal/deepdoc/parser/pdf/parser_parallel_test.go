@@ -5,12 +5,18 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"image"
 	"image/png"
 	"reflect"
 	"sync"
 	"testing"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -74,7 +80,7 @@ func TestParser_RunPageWorkers_DeterministicOrder(t *testing.T) {
 	p := NewParser(pdf.DefaultParserConfig())
 
 	pages := []int{0, 1, 2, 3, 4, 5, 6, 7}
-	results, err := p.runPageWorkers(context.Background(), eng, pages,
+	results, err := p.runPageWorkers(t.Context(), eng, pages,
 		mock, NewTableBuilderFor(mock))
 	if err != nil {
 		t.Fatalf("runPageWorkers: %v", err)
@@ -89,6 +95,51 @@ func TestParser_RunPageWorkers_DeterministicOrder(t *testing.T) {
 	}
 }
 
+func TestDefaultPageWorkersMatchPageConcurrency(t *testing.T) {
+	if got := defaultPageWorkerCount(); got != PageConcurrency() {
+		t.Fatalf("defaultPageWorkerCount() = %d, want PageConcurrency() = %d", got, PageConcurrency())
+	}
+}
+
+// TestDeepDocConcurrencyShare pins the process budget rule: DeepDoc inference
+// may have at most DeepDocConcurrency() Runs in flight, and that budget is the
+// configurable value (default 4) set at server start, not derived from
+// GOMAXPROCS.
+func TestDeepDocConcurrencyShare(t *testing.T) {
+	orig := DeepDocConcurrency()
+	t.Cleanup(func() { SetDeepDocConcurrency(orig) })
+
+	SetDeepDocConcurrency(4)
+	if got := DeepDocConcurrency(); got != 4 {
+		t.Fatalf("default DeepDocConcurrency() = %d, want 4", got)
+	}
+	SetDeepDocConcurrency(11)
+	if got := DeepDocConcurrency(); got != 11 {
+		t.Fatalf("DeepDocConcurrency() = %d, want 11 after SetDeepDocConcurrency(11)", got)
+	}
+}
+
+// TestSetPageWorkerPoolSizeHonorsRequestedSize pins the setter's contract: the
+// page worker pool resizes to the requested size, which is independent of the
+// process inference budget (workers beyond the budget simply queue rendered
+// bitmaps while they wait for an inference slot, so a larger pool does not
+// over-subscribe inference). A non-positive request is floored to 1.
+func TestSetPageWorkerPoolSizeHonorsRequestedSize(t *testing.T) {
+	orig := PageWorkerPoolStats().DesiredWorkers
+	t.Cleanup(func() { parserPageWorkerPool().Resize(orig) })
+
+	budget := DeepDocConcurrency()
+	SetPageWorkerPoolSize(budget + 8)
+	if got := PageWorkerPoolStats().DesiredWorkers; got != budget+8 {
+		t.Fatalf("worker pool resized to %d, want %d (no budget clamp)", got, budget+8)
+	}
+
+	SetPageWorkerPoolSize(0)
+	if got := PageWorkerPoolStats().DesiredWorkers; got != 1 {
+		t.Fatalf("worker pool resized to %d, want 1 (floored from 0)", got)
+	}
+}
+
 func TestParser_RunPageWorkers_PoolSize4_DeterministicOrder(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true}
 	eng := makeMultiPageEngine(8)
@@ -96,7 +147,7 @@ func TestParser_RunPageWorkers_PoolSize4_DeterministicOrder(t *testing.T) {
 	p := NewParser(pdf.DefaultParserConfig())
 
 	pages := []int{0, 1, 2, 3, 4, 5, 6, 7}
-	results, err := p.runPageWorkers(context.Background(), eng, pages,
+	results, err := p.runPageWorkers(t.Context(), eng, pages,
 		mock, NewTableBuilderFor(mock))
 	if err != nil {
 		t.Fatalf("runPageWorkers: %v", err)
@@ -130,7 +181,7 @@ func TestParser_RunPageWorkers_StableAcrossPoolSizes(t *testing.T) {
 		p := NewParser(pdf.DefaultParserConfig())
 
 		pages := []int{0, 1, 2, 3}
-		results, err := p.runPageWorkers(context.Background(), eng, pages,
+		results, err := p.runPageWorkers(t.Context(), eng, pages,
 			mock, NewTableBuilderFor(mock))
 		if err != nil {
 			t.Fatalf("poolSize=%d: runPageWorkers: %v", par, err)
@@ -161,7 +212,7 @@ func TestParser_ParseRaw_PoolSizeEquivalence(t *testing.T) {
 	for i, par := range []int{1, 3} {
 		setPoolSize(t, par)
 		p := NewParser(pdf.DefaultParserConfig())
-		r, err := p.ParseRaw(context.Background(), eng, mock)
+		r, err := p.ParseRaw(t.Context(), eng, mock)
 		if err != nil {
 			t.Fatalf("poolSize=%d: ParseRaw: %v", par, err)
 		}
@@ -204,7 +255,7 @@ func TestParser_ProcessPage_UnifiedPath(t *testing.T) {
 			OCRTexts: []pdf.OCRText{{Text: "Hello", Confidence: 0.9}},
 		}
 		p := NewParser(pdf.DefaultParserConfig())
-		r := p.processPage(context.Background(), eng, 0, mock, NewTableBuilderFor(mock))
+		r := p.processPage(t.Context(), eng, 0, mock, NewTableBuilderFor(mock))
 		if r.Err != nil {
 			t.Fatalf("processPage: %v", r.Err)
 		}
@@ -233,7 +284,7 @@ func TestParser_ProcessPage_UnifiedPath(t *testing.T) {
 			OCRTexts: []pdf.OCRText{{Text: "OCR result", Confidence: 0.9}},
 		}
 		p := NewParser(pdf.DefaultParserConfig())
-		r := p.processPage(context.Background(), eng, 0, mock, NewTableBuilderFor(mock))
+		r := p.processPage(t.Context(), eng, 0, mock, NewTableBuilderFor(mock))
 		if r.Err != nil {
 			t.Fatalf("processPage: %v", r.Err)
 		}
@@ -252,7 +303,7 @@ func TestParser_ProcessPage_UnifiedPath(t *testing.T) {
 			OCRTexts: []pdf.OCRText{{Text: "scan OCR", Confidence: 0.9}},
 		}
 		p := NewParser(pdf.DefaultParserConfig())
-		r := p.processPage(context.Background(), eng, 0, mock, NewTableBuilderFor(mock))
+		r := p.processPage(t.Context(), eng, 0, mock, NewTableBuilderFor(mock))
 		if r.Err != nil {
 			t.Fatalf("processPage: %v", r.Err)
 		}
@@ -277,6 +328,41 @@ func TestParser_RunPageWorkers_CancellationHonored(t *testing.T) {
 		mock, NewTableBuilderFor(mock))
 	if err == nil {
 		t.Error("expected non-nil error from cancelled context")
+	}
+}
+
+// TestReportPageInferenceFailure_CancelledContextStaysAtDebug verifies the
+// per-page inference logger distinguishes a stop from a fault. Cancelling a run
+// terminates every in-flight ONNX Run, whose error (the runtime's terminate-flag
+// text, or ctx.Err()) must not produce one warning per page — it keeps a debug
+// trail instead; a failure raised on a live context still warns.
+func TestReportPageInferenceFailure_CancelledContextStaysAtDebug(t *testing.T) {
+	prevLogger := common.Logger
+	defer func() { common.Logger = prevLogger }()
+	core, logs := observer.New(zapcore.DebugLevel)
+	common.Logger = zap.New(core)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reportPageInferenceFailure(ctx, "DLA failed", 7,
+		errors.New("Error running network: Exiting due to terminate flag being set to true."))
+	entries := logs.TakeAll()
+	if len(entries) != 1 || entries[0].Level != zapcore.DebugLevel ||
+		entries[0].Message != "DLA failed" {
+		t.Fatalf("cancelled page inference failure left no debug trail: %+v", entries)
+	}
+	if got := entries[0].ContextMap()["page"]; got != int64(7) {
+		t.Fatalf("debug entry lost the page number: %v", got)
+	}
+
+	reportPageInferenceFailure(context.Background(), "DLA failed", 7, errors.New("output shape mismatch"))
+	entries = logs.TakeAll()
+	if len(entries) != 1 || entries[0].Level != zapcore.WarnLevel ||
+		entries[0].Message != "DLA failed" {
+		t.Fatalf("live page inference failure was not warned: %+v", entries)
+	}
+	if got := entries[0].ContextMap()["page"]; got != int64(7) {
+		t.Fatalf("warning lost the page number: %v", got)
 	}
 }
 
@@ -307,7 +393,7 @@ func TestParser_ProcessPages_CrossPageTableMerge(t *testing.T) {
 	for _, par := range []int{1, 4} {
 		setPoolSize(t, par)
 		p := NewParser(pdf.DefaultParserConfig())
-		result, err := p.ParseRaw(context.Background(), eng, mock)
+		result, err := p.ParseRaw(t.Context(), eng, mock)
 		if err != nil {
 			t.Fatalf("poolSize=%d: ParseRaw: %v", par, err)
 		}
@@ -336,7 +422,7 @@ func TestParser_PageParallel_DeterministicOrder_MockEngine(t *testing.T) {
 	runParse := func(par int) *pdf.ParseResult {
 		setPoolSize(t, par)
 		p := NewParser(pdf.DefaultParserConfig())
-		r, err := p.ParseRaw(context.Background(), eng, mock)
+		r, err := p.ParseRaw(t.Context(), eng, mock)
 		if err != nil {
 			t.Fatalf("poolSize=%d: ParseRaw: %v", par, err)
 		}
@@ -377,7 +463,7 @@ func TestParser_ParseRaw_RetryZoomReplacesPageImageAndZoom(t *testing.T) {
 	}
 	mock := &MockDocAnalyzer{Healthy: true}
 
-	result, err := p.ParseRaw(context.Background(), eng, mock)
+	result, err := p.ParseRaw(t.Context(), eng, mock)
 	if err != nil {
 		t.Fatalf("ParseRaw: %v", err)
 	}
@@ -408,7 +494,7 @@ func TestParser_ParseRaw_RetryZoomUsesHigherDPIForOCR(t *testing.T) {
 	}
 	analyzer := &recordingAnalyzer{}
 
-	result, err := p.ParseRaw(context.Background(), eng, analyzer)
+	result, err := p.ParseRaw(t.Context(), eng, analyzer)
 	if err != nil {
 		t.Fatalf("ParseRaw: %v", err)
 	}
@@ -485,13 +571,15 @@ func sortPages(pages []int) {
 }
 
 // setPoolSize resizes the process-wide page worker pool for the duration of
-// a test and restores the prior size afterwards. With Config.Parallelism
-// removed, the pool worker count is the only page-concurrency knob.
+// a test and restores the prior size afterwards. It drives the pool directly
+// instead of going through SetPageWorkerPoolSize, whose public contract clamps
+// the size to the process inference budget; tests need to exercise sizes on
+// either side of that bound.
 func setPoolSize(t *testing.T, n int) {
 	t.Helper()
 	orig := PageWorkerPoolStats().DesiredWorkers
-	SetPageWorkerPoolSize(n)
-	t.Cleanup(func() { SetPageWorkerPoolSize(orig) })
+	parserPageWorkerPool().Resize(n)
+	t.Cleanup(func() { parserPageWorkerPool().Resize(orig) })
 }
 
 // imageHash produces a stable PNG-content fingerprint for an image so

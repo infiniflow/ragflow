@@ -38,7 +38,7 @@ func NewN1NModel(baseURL map[string]string, urlSuffix URLSuffix) *N1NModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -56,8 +56,7 @@ func (n *N1NModel) endpointURL(region, suffix string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(suffix, "/")), nil
+	return joinURL(baseURL, suffix), nil
 }
 
 func n1nRegion(apiConfig *APIConfig) string {
@@ -120,7 +119,7 @@ func (n *N1NModel) ChatWithMessages(ctx context.Context, modelName string, messa
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends a streaming chat completion.
@@ -181,12 +180,12 @@ type n1nEmbeddingRequest struct {
 }
 
 // Embed turns a list of texts into embedding vectors
-func (n *N1NModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (n *N1NModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	apiKey := *apiConfig.ApiKey
@@ -201,7 +200,7 @@ func (n *N1NModel) Embed(ctx context.Context, modelName *string, texts []string,
 
 	reqBody := n1nEmbeddingRequest{
 		Model: *modelName,
-		Input: texts,
+		Input: request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody.Dimensions = embeddingConfig.Dimension
@@ -230,15 +229,15 @@ func (n *N1NModel) Embed(ctx context.Context, modelName *string, texts []string,
 	}
 
 	var parsed n1nEmbeddingResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
+	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	filled := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	filled := make([]bool, len(request.Texts))
 	for _, item := range parsed.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			return nil, fmt.Errorf("n1n: embedding response index %d out of range for %d inputs", item.Index, len(texts))
+		if item.Index < 0 || item.Index >= len(request.Texts) {
+			return nil, fmt.Errorf("n1n: embedding response index %d out of range for %d inputs", item.Index, len(request.Texts))
 		}
 		if filled[item.Index] {
 			return nil, fmt.Errorf("n1n: duplicate embedding index %d in response", item.Index)
@@ -275,11 +274,12 @@ type n1nRerankRequest struct {
 
 // Rerank scores a query against a list of documents using
 // n1n.ai's /v1/rerank endpoint (Cohere-shaped response).
-func (n *N1NModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (n *N1NModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -404,42 +404,43 @@ func (n *N1NModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) er
 }
 
 func (n *N1NModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", n.Name())
 }
 
-// TranscribeAudio: n1n.ai exposes /v1/audio/transcriptions
 func (n *N1NModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", n.Name())
 }
 
 func (n *N1NModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", n.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", n.Name())
 }
 
-// AudioSpeech: n1n.ai exposes /v1/audio/speech
 func (n *N1NModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", n.Name())
 }
 
 func (n *N1NModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", n.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", n.Name())
 }
 
 // OCRFile is not exposed by the n1n.ai API.
 func (n *N1NModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", n.Name())
 }
 
 // ParseFile is not exposed by the n1n.ai API.
 func (n *N1NModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", n.Name())
 }
 
-// ListTasks: n1n.ai has /v1/contents/generations/tasks
 func (n *N1NModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", n.Name())
 }
 
 func (n *N1NModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", n.Name())
+}
+
+func (n *N1NModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", n.Name())
 }

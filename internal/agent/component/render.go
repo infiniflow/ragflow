@@ -26,7 +26,7 @@
 //                  become <a href="..." download="...">filename</a>
 //   - "markdown" — pass through verbatim; downloads become
 //                  [filename](url) links. Python also passes
-//                  markdown through with light normalization; we
+//                  Markdown through with light normalization; we
 //                  match that for parity.
 //   - "plain"    — strip HTML tags (best-effort) and present
 //                  downloads as "filename (url)" lines. Default
@@ -44,6 +44,8 @@ import (
 	"html"
 	"regexp"
 	"strings"
+
+	"github.com/cloudwego/eino/compose"
 )
 
 // OutputFormat is the value type of the `output_format` field on
@@ -65,14 +67,17 @@ const (
 // entry. Mirrors agent/component/message.py:_is_download_info
 // (the {doc_id, filename, mime_type} tuple).
 type DownloadInfo struct {
-	DocID                        string `json:"doc_id"`
-	Filename                     string `json:"filename"`
-	MimeType                     string `json:"mime_type"`
-	URL                          string `json:"url,omitempty"`
-	Content                      string `json:"content,omitempty"`
-	Size                         int    `json:"size,omitempty"`
-	PreviewURL                   string `json:"preview_url,omitempty"`
-	IncludeDownloadInfoInContent bool   `json:"include_download_info_in_content,omitempty"`
+	DocID      string `json:"doc_id"`
+	Filename   string `json:"filename"`
+	MimeType   string `json:"mime_type"`
+	URL        string `json:"url,omitempty"`
+	Content    string `json:"content,omitempty"`
+	Size       int    `json:"size,omitempty"`
+	PreviewURL string `json:"preview_url,omitempty"`
+}
+
+func init() {
+	_ = compose.RegisterSerializableType[DownloadInfo]("component.DownloadInfo")
 }
 
 // RenderRequest is the renderer input. Text is the resolved
@@ -173,7 +178,7 @@ func joinPlain(body, dlBlock string) string {
 // plain renderer. It removes paired and unpaired tags without
 // attempting to keep attribute content. This matches the
 // pragmatic behaviour in Python's `_stringify_message_value`
-// fallback path: "if markdown → use as-is, if plain → strip tags".
+// fallback path: "if Markdown → use as-is, if plain → strip tags".
 var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
 
 // StripHTMLTags removes HTML tags from s. Used by callers that
@@ -324,9 +329,6 @@ func downloadFromMap(m map[string]any) DownloadInfo {
 		d.Size = int(f)
 	} else if i, ok := m["size"].(int); ok {
 		d.Size = i
-	}
-	if b, ok := m["include_download_info_in_content"].(bool); ok {
-		d.IncludeDownloadInfoInContent = b
 	}
 	return d
 }

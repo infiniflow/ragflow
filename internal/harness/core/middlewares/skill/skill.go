@@ -160,7 +160,7 @@ func parseSkill(content string) *Config {
 		if len(parts) == 2 {
 			front := strings.TrimSpace(parts[0])
 			body := strings.TrimSpace(parts[1])
-			for _, line := range strings.Split(front, "\n") {
+			for line := range strings.SplitSeq(front, "\n") {
 				line = strings.TrimSpace(line)
 				if strings.HasPrefix(line, "name:") {
 					cfg.Name = strings.TrimSpace(line[5:])

@@ -1,0 +1,32 @@
+{
+  "name": "API-Route",
+  "url": {
+    "default": "https://global.api-route.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "apiroute",
+  "models": [
+    {
+      "name": "claude-3-7-sonnet-20250219",
+      "context_length": 200000,
+      "max_tokens": 8192,
+      "type": "chat"
+    },
+    {
+      "name": "gpt-4o",
+      "context_length": 128000,
+      "max_tokens": 4096,
+      "type": "chat"
+    },
+    {
+      "name": "text-embedding-3-small",
+      "context_length": 8191,
+      "max_tokens": 0,
+      "type": "embedding"
+    }
+  ]
+}

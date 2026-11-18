@@ -18,12 +18,13 @@
 //
 // Pipeline (KnowledgeCompiler, per document) writes compiled chunks with
 // available_int=0. Its completion/deletion is recorded by appending a
-// BacklogEntry to the KB's durable MySQL scheduling row
-// (knowledge_compile_docs), then waking idle workers over NATS. A cluster of
+// BacklogEntry to knowledge_compile_docs_backlog under the KB's scheduling row
+// lock (knowledge_compile_docs), then waking idle workers over NATS. A cluster of
 // competing workers claims a closed batch (backlog -> inflight) per KB, runs
 // dataset-level dedup on that batch, and writes the merged dataset-level
-// products with available_int=1. The MySQL row — not the broker — is the
-// scheduling system of record and the source of same-KB serialization.
+// products with available_int=1. The MySQL scheduling row and its backlog and
+// inflight tables are the scheduling system of record; the row lock serializes
+// same-KB processing.
 package knowledge_compile
 
 import (
@@ -44,17 +45,18 @@ type EventType string
 const (
 	EventTypeCompleted EventType = "doc_completed"
 	EventTypeDeleted   EventType = "doc_deleted"
+	EventTypeEnabled   EventType = "doc_enabled"
+	EventTypeDisabled  EventType = "doc_disabled"
 )
 
-// KCCompileEvent is the payload published when a document's pipeline finishes
-// (doc_completed) or is deleted (doc_deleted). It is intentionally decoupled
+// KCCompileEvent is the payload published when a document's pipeline finishes,
+// its availability changes, or it is deleted. It is intentionally decoupled
 // from common.TaskMessage because the consumer reads the raw JSON body.
 type KCCompileEvent struct {
 	TenantID  string `json:"tenant_id"`
 	DatasetID string `json:"dataset_id"` // the KB scope
 	DocID     string `json:"doc_id"`     // the contributing document
 	EventType string `json:"event_type"` // EventType value
-	Seq       uint64 `json:"seq"`        // per-doc monotonic sequence, for out-of-order correction
 	Timestamp int64  `json:"ts"`
 }
 
@@ -104,21 +106,46 @@ func DefaultPublisher() Publisher { return defaultPublisher }
 func DefaultClaimer() Claimer { return defaultClaimer }
 
 // PublishCompleted records a doc_completed event: it appends the doc to the
-// KB's durable MySQL backlog and wakes idle workers over NATS. It is a no-op
-// when no Publisher has been installed (e.g. DB unavailable). A failure is
+// KB's durable MySQL backlog and wakes idle workers over NATS. variants carries
+// the doc-level compile types (tree/structure/wiki/mindmap) produced by this
+// doc so the consumer can dispatch to the matching dataset-level path. It is a
+// no-op when no Publisher has been installed (e.g. DB unavailable). A failure is
 // returned so callers can log but never fail the pipeline on it.
-func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, seq uint64) error {
+func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, variants, taskTypes []string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeCompleted), seq)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeCompleted), variants, taskTypes)
 }
 
 // PublishDeleted records a doc_deleted event the same way (Publish handles the
-// append + notify pairing).
-func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string, seq uint64) error {
+// append + notify pairing). variants and taskTypes identify the document-level
+// artifacts that were removed before the event was published.
+func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string, variants, taskTypes []string) error {
+	// A deletion event without artifact variants cannot be scoped safely. Do not
+	// enqueue it: the consumer treats empty routing metadata as a legacy
+	// all-variants event, which could rebuild unrelated dataset artifacts.
+	if defaultPublisher == nil || len(variants) == 0 {
+		return nil
+	}
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), variants, taskTypes)
+}
+
+// PublishEnabled records that a document with compiled products became
+// available again and must be merged into dataset-level products.
+func PublishEnabled(ctx context.Context, tenantID, datasetID, docID string, variants, taskTypes []string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), seq)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeEnabled), variants, taskTypes)
+}
+
+// PublishDisabled records that a document with compiled products became
+// unavailable. The consumer retracts only its dataset-level contributions;
+// document-level compiled rows remain available for a later re-enable.
+func PublishDisabled(ctx context.Context, tenantID, datasetID, docID string, variants, taskTypes []string) error {
+	if defaultPublisher == nil {
+		return nil
+	}
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDisabled), variants, taskTypes)
 }

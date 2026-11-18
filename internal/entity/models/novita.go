@@ -39,7 +39,7 @@ func NewNovitaModel(baseURL map[string]string, urlSuffix URLSuffix) *NovitaModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -61,12 +61,10 @@ func (n *NovitaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	url, err := n.baseModel.EndpointURL(apiConfig, n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -80,7 +78,7 @@ func (n *NovitaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via
@@ -104,12 +102,10 @@ func (n *NovitaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return err
 	}
 
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	url, err := n.baseModel.EndpointURL(apiConfig, n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	if chatModelConfig != nil {
@@ -306,12 +302,10 @@ func (n *NovitaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	url, err := n.baseModel.EndpointURL(apiConfig, n.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -375,12 +369,12 @@ type novitaEmbeddingResponse struct {
 // Embed turns a list of texts into embedding vectors using the Novita
 // /v3/embeddings endpoint. The output has one vector per input, in the
 // same order the inputs were given.
-func (n *NovitaModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (n *NovitaModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -388,16 +382,14 @@ func (n *NovitaModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	url, err := n.baseModel.EndpointURL(apiConfig, n.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -439,11 +431,11 @@ func (n *NovitaModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	filled := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	filled := make([]bool, len(request.Texts))
 	for _, item := range parsed.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			return nil, fmt.Errorf("novita: response index %d out of range for %d inputs", item.Index, len(texts))
+		if item.Index < 0 || item.Index >= len(request.Texts) {
+			return nil, fmt.Errorf("novita: response index %d out of range for %d inputs", item.Index, len(request.Texts))
 		}
 		if filled[item.Index] {
 			return nil, fmt.Errorf("novita: duplicate embedding index %d in response", item.Index)
@@ -489,11 +481,12 @@ type novitaRerankResponse struct {
 // /openai/v1/rerank endpoint and returns one RerankResult per scored
 // document in the API's ranking order. Caller may sort by Index to
 // recover original input order.
-func (n *NovitaModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (n *NovitaModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -509,7 +502,7 @@ func (n *NovitaModel) Rerank(ctx context.Context, modelName *string, query strin
 	if n.baseModel.URLSuffix.Rerank == "" {
 		return nil, fmt.Errorf("novita: no rerank URL suffix configured")
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Rerank)
+	url := joinURL(baseURL, n.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -589,11 +582,10 @@ func (n *NovitaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 		return nil, err
 	}
 
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	url, err := n.baseModel.EndpointURL(apiConfig, n.baseModel.URLSuffix.Balance)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Balance)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -603,7 +595,7 @@ func (n *NovitaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -655,35 +647,39 @@ func (n *NovitaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 }
 
 func (n *NovitaModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", n.Name())
 }
 
 func (n *NovitaModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", n.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", n.Name())
 }
 
 func (n *NovitaModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", n.Name())
 }
 
 func (n *NovitaModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", n.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", n.Name())
 }
 
 // OCRFile OCR file
 func (n *NovitaModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", n.Name())
 }
 
 // ParseFile parse file
 func (n *NovitaModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", n.Name())
 }
 
 func (n *NovitaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", n.Name())
 }
 
 func (n *NovitaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", n.Name())
+}
+
+func (n *NovitaModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", n.Name())
 }

@@ -14,7 +14,6 @@
  *  limitations under the License.
  */
 
-import { LinkifyText } from '@/components/linkify-text';
 import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
 import {
   Tooltip,
@@ -57,9 +56,7 @@ function ModelFieldItem({
         {label}
         {tooltip && (
           <Tooltip>
-            <TooltipContent>
-              <LinkifyText>{tooltip}</LinkifyText>
-            </TooltipContent>
+            <TooltipContent>{tooltip}</TooltipContent>
             <TooltipTrigger>
               <CircleQuestionMark
                 size={12}
@@ -140,6 +137,15 @@ function SystemSetting() {
         label: t('ttsModel'),
         value: defaultModelDictionary.tts_id ?? '',
         tooltip: t('ttsModelTip'),
+      },
+      {
+        // The decision model judges whether a retrieved passage is worth
+        // putting in front of the chat model. It sits next to the chat model
+        // because it is chosen the same way and independently of it.
+        id: 'decision_id',
+        label: t('decisionModel'),
+        value: defaultModelDictionary.decision_id ?? '',
+        tooltip: t('decisionModelTip'),
       },
     ];
   }, [defaultModelDictionary, t]);

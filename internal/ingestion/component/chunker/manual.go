@@ -1,0 +1,210 @@
+//	Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//	Licensed under the Apache License, Version 2.0 (the "License");
+//	you may not use this file except in compliance with the License.
+//	You may obtain a copy of the License at
+//
+//	    http://www.apache.org/licenses/LICENSE-2.0
+//
+//	Unless required by applicable law or agreed to in writing, software
+//	distributed under the License is distributed on an "AS IS" BASIS,
+//	WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//	See the License for the specific language governing permissions and
+//	limitations under the License.
+//
+// ManualChunker groups adjacent records by heading after sorting PDF records
+// by page, top and left. Records with parser-established order or without
+// coordinates retain their input positions. Geometry is the ordering fallback
+// when the producer has not declared an authoritative reading sequence.
+package chunker
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/parser/parser"
+
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+)
+
+// ManualChunkerComponent is the standalone manual-layout chunker. It shares
+// the GroupTitleChunker grouping body (chunkFromRecords) and only differs by
+// the optional physical-position pre-sort.
+type ManualChunkerComponent struct {
+	name  string
+	param titleChunkerParam
+}
+
+// NewManualChunker constructs the component. It accepts the same heading-level
+// params as TitleChunker (method is pinned to "group"); the position resort is
+// automatic based on whether the upstream payload carries coordinates.
+func NewManualChunker(params map[string]any) (runtime.Component, error) {
+	// method, chunk_token_cap, and include_heading_content are pinned for
+	// ManualChunker. The chunker's entire value-add is the physical-position
+	// resort inside the group method, so method must stay "group". The cap
+	// and the heading-content flag are title-chunker-family params that the
+	// group path does not honour (see chunkFromRecords: it passes tokenCap=0
+	// and only the hierarchy path reads include_heading_content). The
+	// operator form is not promised to apply them; we strip them here
+	// instead of accepting and silently ignoring them downstream. See issue
+	// #20139.
+	conf := map[string]any{"method": "group", "chunk_token_cap": 0}
+	dropped := make([]string, 0, 3)
+	for k, v := range params {
+		switch k {
+		case "method", "chunk_token_cap", "include_heading_content":
+			dropped = append(dropped, k)
+			continue
+		}
+		conf[k] = v
+	}
+	if len(dropped) > 0 {
+		common.Warn("ManualChunker: ignoring operator-form params that do not apply to this chunker",
+			zap.Strings("dropped", dropped))
+	}
+	p := defaultsTitle()
+	if err := p.Update(conf); err != nil {
+		return nil, fmt.Errorf("ManualChunker: %w", err)
+	}
+	if err := p.TitleChunkerParam.Validate(); err != nil {
+		return nil, fmt.Errorf("ManualChunker: %w", err)
+	}
+	return &ManualChunkerComponent{
+		name:  ComponentNameManualChunker,
+		param: p,
+	}, nil
+}
+
+func (c *ManualChunkerComponent) Inputs() map[string]string  { return ChunkerInputs }
+func (c *ManualChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
+
+func (c *ManualChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	// `name` is read from the workflow-wide Globals bag (seeded at
+	// pipeline start, published by the File component), not from the
+	// upstream output map.
+	name := globals.GlobalOrInput(ctx, inputs, "name", "")
+	if name == "" {
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        "ManualChunker: missing required upstream field \"name\"",
+		}, nil
+	}
+	return c.invoke(ctx, db, withName(inputs, name))
+}
+
+// invoke decodes the upstream payload once, extracts the records, and runs
+// the shared group pipeline after a physical-position resort.
+func (c *ManualChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	upstream, err := decodeChunkerFromUpstream(inputs)
+	if err != nil {
+		return inputErrorOutput(err), nil
+	}
+	records := extractLineRecords(upstream)
+	if len(records) == 0 {
+		return emptyOutputs(), nil
+	}
+	// Coordinate-free payloads (docx, plain text) need no resort — and
+	// skipping it keeps the output identical to GroupTitleChunker.
+	if hasPdfPositions(records) {
+		sortRecordsByPosition(records)
+	}
+	// ManualChunker is exempt from the title-family token cap (#18455): it
+	// does not inherit BaseTitleChunker, so it always passes tokenCap=0.
+	return chunkFromRecords(ctx, db, upstream, &c.param, records, 0)
+}
+
+// hasPdfPositions reports whether any record carries a PDF coordinate matrix
+// (either the structured `_pdf_positions` or the legacy `positions` form).
+func hasPdfPositions(records []lineRecord) bool {
+	for _, r := range records {
+		if len(r.pdfPositions) > 0 || len(r.positions) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// sortRecordsByPosition re-orders records into physical reading order
+// (page, then top, then left) using a stable sort, so records that share a
+// key keep their original relative order. Records with explicit parser order
+// or without coordinates act as immovable barriers: they retain their input
+// positions and are never compared against positioned records.
+//
+// The slice is split into maximal contiguous runs of positioned records and
+// each run is sorted independently. This is required because a single
+// sort.SliceStable over a MIXED slice (some records with coordinates, some
+// without) is not a strict weak ordering: a coordinate-free record B sits
+// incomparable between two positioned records A and C, yet A and C remain
+// comparable — breaking equivalence-class transitivity and making the sort
+// undefined behaviour. Segmenting on coordinate-free records keeps each sort
+// a valid strict weak ordering while preserving the documented behaviour that
+// coordinate-free records keep their input order (see hasPdfPositions gate).
+func sortRecordsByPosition(records []lineRecord) {
+	runStart := -1
+	flush := func(end int) {
+		if runStart < 0 {
+			return
+		}
+		sort.SliceStable(records[runStart:end], func(i, j int) bool {
+			ar, _ := firstPositionRow(records[runStart+i])
+			br, _ := firstPositionRow(records[runStart+j])
+			return pdfPosRowLess(ar, br)
+		})
+		runStart = -1
+	}
+	for i := 0; i <= len(records); i++ {
+		positioned := i < len(records) && !records[i].preserveOrder
+		if positioned {
+			_, positioned = firstPositionRow(records[i])
+		}
+		if positioned {
+			if runStart < 0 {
+				runStart = i
+			}
+		} else {
+			flush(i)
+		}
+	}
+}
+
+// firstPositionRow returns the first PDF coordinate 5-tuple
+// [page,left,right,top,bottom] of a record's coordinate matrix, or
+// (nil, false) when the record carries no usable coordinates. It reads the
+// structured `_pdf_positions` key first and falls back to the legacy
+// `positions` key. Callers (pdfPosRowLess) index offsets 0/1/3, so we enforce
+// len(row) >= 5 here.
+//
+// The matrix is decoded through parser.PDFPositionRowsFromJSON, so the matrix
+// form and the legacy flat 5-tuple are both understood and the chunker shares
+// one position decoder with the parser boundary and the crop path.
+func firstPositionRow(r lineRecord) ([]float64, bool) {
+	var raw json.RawMessage
+	switch {
+	case len(r.pdfPositions) > 0:
+		raw = r.pdfPositions
+	case len(r.positions) > 0:
+		raw = r.positions
+	default:
+		return nil, false
+	}
+	rows := parser.PDFPositionRowsFromJSON(raw)
+	if len(rows) == 0 {
+		return nil, false
+	}
+	return rows[0], true
+}
+
+// init registers ManualChunker under CategoryIngestion.
+func init() {
+	MustRegisterChunker(ComponentNameManualChunker)
+}

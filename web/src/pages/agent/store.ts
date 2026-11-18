@@ -38,6 +38,12 @@ import {
   mapEdgeMouseEvent,
 } from './utils';
 import { deleteAllDownstreamAgentsAndTool } from './utils/delete-node';
+import {
+  CollapsedBottomHandles,
+  filterBottomSubtreeNodeIds,
+  filterCollapsedHiddenIds,
+  toggleCollapsedBottomHandle,
+} from './utils/filter-downstream-nodes';
 
 type IAgentTool = IAgentForm['tools'][number];
 
@@ -142,8 +148,25 @@ export type RFState = {
   edges: Edge[];
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
+  // Collapsed bottom handles per node: nodeId -> collapsed handle ids
+  collapsedBottomHandles: CollapsedBottomHandles;
   clickedNodeId: string; // currently selected node
   clickedToolId: string; // currently selected tool id
+  // Set by the canvas checklist to focus a node from outside the canvas
+  // (select + center, and open its form unless the issue is an orphan step);
+  // consumed and cleared by AgentCanvas. The nonce retriggers the effect when
+  // the same node is focused twice in a row.
+  nodeFocusRequest: {
+    nodeId: string;
+    toolId?: string;
+    openForm: boolean;
+    nonce: number;
+  } | null;
+  requestNodeFocus: (
+    nodeId: string,
+    options?: { toolId?: string; openForm?: boolean },
+  ) => void;
+  clearNodeFocusRequest: () => void;
   onNodesChange: OnNodesChange<RAGFlowNodeType>;
   onEdgesChange: OnEdgesChange;
   onEdgeMouseEnter?: EdgeMouseHandler<Edge>;
@@ -186,7 +209,6 @@ export type RFState = {
   getParentIdById: (id?: string | null) => string | undefined;
   updateNodeName: (id: string, name: string) => void;
   generateNodeName: (name: string) => string;
-  generateAgentToolName: (id: string, name: string) => string;
   generateAgentToolId: (prefix: string) => string;
   getAllAgentTools: () => IAgentTool[];
   getAgentToolById: GetAgentToolByIdFunc;
@@ -200,8 +222,14 @@ export type RFState = {
   ) => void; // Deleting a condition of a classification operator will delete the related edge
   findAgentToolNodeById: (id: string | null) => string | undefined;
   selectNodeIds: (nodeIds: string[]) => void;
+  toggleBottomCollapse: (nodeId: string, handleId: NodeHandleId) => void;
   hasDownstreamNode: (nodeId: string) => boolean;
   hasUpstreamNode: (nodeId: string) => boolean;
+  // Nodes whose form the user has actually edited this session. The save gate
+  // only validates these, so a node carrying stale DSL from an older version
+  // never blocks a save the user did not cause.
+  editedNodeFormIds: string[];
+  markNodeFormEdited: (nodeId: string) => void;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -212,8 +240,18 @@ const useGraphStore = create<RFState>()(
       edges: [] as Edge[],
       selectedNodeIds: [] as string[],
       selectedEdgeIds: [] as string[],
+      collapsedBottomHandles: {} as CollapsedBottomHandles,
       clickedNodeId: '',
       clickedToolId: '',
+      editedNodeFormIds: [] as string[],
+      markNodeFormEdited: (nodeId: string) => {
+        if (get().editedNodeFormIds.includes(nodeId)) {
+          return;
+        }
+        set((state) => {
+          state.editedNodeFormIds.push(nodeId);
+        });
+      },
       onNodesChange: (changes) => {
         set({
           nodes: applyNodeChanges(changes, get().nodes),
@@ -612,32 +650,24 @@ const useGraphStore = create<RFState>()(
       setClickedNodeId: (id?: string) => {
         set({ clickedNodeId: id });
       },
+      nodeFocusRequest: null,
+      requestNodeFocus: (nodeId, options) => {
+        set({
+          nodeFocusRequest: {
+            nodeId,
+            toolId: options?.toolId,
+            openForm: options?.openForm ?? true,
+            nonce: Date.now(),
+          },
+        });
+      },
+      clearNodeFocusRequest: () => {
+        set({ nodeFocusRequest: null });
+      },
       generateNodeName: (name: string) => {
         const { nodes } = get();
 
         return generateNodeNamesWithIncreasingIndex(name, nodes);
-      },
-      generateAgentToolName: (id: string, name: string) => {
-        const node = get().nodes.find((x) => x.id === id) as RAGFlowNodeType;
-
-        if (!node) {
-          return '';
-        }
-
-        const tools = (node.data.form!.tools as any[]).filter(
-          (x) => x.component_name === name,
-        );
-        const lastIndex = tools.length
-          ? (tools
-              .map((x) => {
-                const idx = x.name.match(/(\d+)$/)?.[1];
-                return idx && isNaN(idx) ? -1 : Number(idx);
-              })
-              .sort((a, b) => a - b)
-              .at(-1) ?? -1)
-          : -1;
-
-        return `${name}_${lastIndex + 1}`;
       },
       generateAgentToolId: (prefix: string) => {
         const allAgentToolIds = get()
@@ -736,6 +766,47 @@ const useGraphStore = create<RFState>()(
             selected: nodeIds.includes(node.id),
           })),
         );
+      },
+      toggleBottomCollapse: (nodeId, handleId) => {
+        const { edges, collapsedBottomHandles } = get();
+        if (filterBottomSubtreeNodeIds(edges, nodeId, handleId).length === 0) {
+          return;
+        }
+        const nextCollapsed = toggleCollapsedBottomHandle(
+          collapsedBottomHandles,
+          nodeId,
+          handleId,
+        );
+        const { hiddenNodeIds, hiddenEdgeIds } = filterCollapsedHiddenIds(
+          edges,
+          nextCollapsed,
+        );
+
+        set((state) => {
+          state.collapsedBottomHandles = nextCollapsed;
+          for (const node of state.nodes) {
+            if (hiddenNodeIds.has(node.id)) {
+              node.hidden = true;
+              node.selected = false;
+            } else if (node.hidden) {
+              node.hidden = false;
+            }
+          }
+          for (const edge of state.edges) {
+            if (hiddenEdgeIds.has(edge.id)) {
+              edge.hidden = true;
+              edge.selected = false;
+            } else if (edge.hidden) {
+              edge.hidden = false;
+            }
+          }
+          state.selectedNodeIds = state.selectedNodeIds.filter(
+            (x) => !hiddenNodeIds.has(x),
+          );
+          state.selectedEdgeIds = state.selectedEdgeIds.filter(
+            (x) => !hiddenEdgeIds.has(x),
+          );
+        });
       },
       hasDownstreamNode: (nodeId) => {
         const { edges } = get();

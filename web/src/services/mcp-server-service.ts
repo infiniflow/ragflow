@@ -1,4 +1,20 @@
-import { IPaginationRequestBody } from '@/interfaces/request/base';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { IMcpServerListRequestBody } from '@/interfaces/request/mcp';
 import api from '@/utils/api';
 import request from '@/utils/request';
 
@@ -18,10 +34,12 @@ const mcpServerService = {
   export: ({ mcp_id }: { mcp_id: string }) =>
     request.get(api.exportMcpServer(mcp_id)),
   test: (params: Record<string, any>) =>
-    request.post(api.testMcpServer(params.name || 'preview'), { data: params }),
+    request.post(api.testMcpServer(params.mcp_id || 'preview'), {
+      data: params,
+    }),
 };
 
 export default mcpServerService;
 
-export const listMcpServers = (params?: IPaginationRequestBody, body?: any) =>
-  request.get(api.listMcpServer, { params: { ...params, ...(body || {}) } });
+export const listMcpServers = (params?: IMcpServerListRequestBody) =>
+  request.get(api.listMcpServer, { params });

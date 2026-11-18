@@ -15,15 +15,16 @@
   "models": [
     {
       "name": "command-a-plus-05-2026",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 65536,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ]
     },
     {
       "name": "command-a-03-2025",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -31,7 +32,7 @@
     },
     {
       "name": "command-r7b-12-2024",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -39,7 +40,7 @@
     },
     {
       "name": "command-a-translate-08-2025",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -47,7 +48,7 @@
     },
     {
       "name": "command-a-reasoning-08-2025",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -55,15 +56,16 @@
     },
     {
       "name": "command-a-vision-07-2025",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ]
     },
     {
       "name": "command-r-plus-08-2024",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -71,7 +73,7 @@
     },
     {
       "name": "command-r-08-2024",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -117,35 +119,40 @@
       "max_tokens": 131072,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 96
     },
     {
       "name": "embed-english-v3.0",
       "max_tokens": 512,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 96
     },
     {
       "name": "embed-english-light-v3.0",
       "max_tokens": 512,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 96
     },
     {
       "name": "embed-multilingual-v3.0",
       "max_tokens": 512,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 96
     },
     {
       "name": "embed-multilingual-light-v3.0",
       "max_tokens": 512,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 96
     },
     {
       "name": "cohere-transcribe-03-2026",

@@ -14,16 +14,9 @@
 //  limitations under the License.
 //
 
-// CSVParser renders CSV data as HTML tables, matching the spreadsheet
-// family output_format == "html" convention from ParserParam.Defaults().
-//
-// Mirrors Python's deepdoc/parser/excel_parser.py:RAGFlowExcelParser.html():
-//   - CSV data is rendered as an HTML <table> with <caption> "Data".
-//   - The first row is treated as the header (<th>).
-//   - Illegal control characters are replaced with spaces.
-//   - Large sheets are split into chunks of chunk_rows data rows, each
-//     chunk being a self-contained <table> with its own <caption> and
-//     repeated header row.
+// CSVParser emits ordered spreadsheet row items in structured JSON.
+// Illegal control characters are replaced with spaces; final chunking is
+// owned by GeneralChunker.
 //
 // It implements the ParseResultProducer contract so the dispatch seam in
 // parser_dispatch.go routes .csv files through the structured path.
@@ -34,25 +27,30 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"html"
-	"regexp"
 	"strings"
+	"unicode/utf8"
+
+	"ragflow/internal/parser/charset"
 )
 
-// Go port of Python's ILLEGAL_CHARACTERS_RE from
-// deepdoc/parser/excel_parser.py.
-// Pattern: [\000-\010]|[\013-\014]|[\016-\037]
-// Matches all control chars except TAB (\x09), LF (\x0A), CR (\x0D).
-var csvIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`)
-
-const csvDefaultChunkRows = 256
 const csvSheetName = "Data"
 
-// CSVParser reads RFC-4180 CSV data and emits HTML <table> payloads.
+// csvDelimiters are the separators a spreadsheet actually writes into a file
+// named ".csv". Excel writes the list separator of the machine's locale, which
+// is a semicolon across most of Europe, and a tab separated export is routinely
+// saved as .csv. Mirrors CSV_DELIMITERS in deepdoc/parser/excel_parser.py.
+var csvDelimiters = []rune{',', ';', '\t', '|'}
+
+// How much of the file the separator detection looks at. A separator that
+// holds for the first rows holds for the file.
+const (
+	csvSampleBytes = 64 * 1024
+	csvSampleRows  = 20
+)
+
+// CSVParser reads RFC-4180 CSV data and emits structured table JSON items.
 type CSVParser struct {
 	ParseMethod                    string
-	OutputFormat                   string
-	ChunkRows                      int
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -61,7 +59,6 @@ type CSVParser struct {
 
 func NewCSVParser() *CSVParser {
 	return &CSVParser{
-		ChunkRows:                      csvDefaultChunkRows,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}
@@ -78,22 +75,7 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
-	if v, ok := setup["chunk_rows"]; ok {
-		switch n := v.(type) {
-		case float64:
-			p.ChunkRows = int(n)
-		case int:
-			p.ChunkRows = n
-		case int64:
-			p.ChunkRows = int(n)
-		}
-		if p.ChunkRows <= 0 {
-			p.ChunkRows = csvDefaultChunkRows
-		}
-	}
+	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
@@ -108,21 +90,18 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-// ParseWithResult implements ParseResultProducer. It reads CSV rows
-// and renders them as HTML <table> chunks with <caption>, header row
-// repeated per chunk, and illegal-character filtering — mirroring
-// Python's RAGFlowExcelParser.html().
+// ParseWithResult implements ParseResultProducer. It reads CSV rows and emits
+// a header item followed by ordered data-row items.
 // When TCADP parse_method is configured, the file is dispatched to
 // the Tencent Cloud Document Parsing API.
 func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseSpreadsheetWithTCADP(
-			filename, data, "CSV",
+		return parseWithTCADP(
+			ctx, filename, data, "CSV",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
-			p.OutputFormat,
 		)
 	case "", "csv":
 		// Continue with the local CSV parser.
@@ -133,122 +112,128 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		// for CSV processing.
 	}
 
-	text := string(data)
+	decoded, encName := charset.DecodeToUTF8(data, "text/csv")
+	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
 		return ParseResult{
-			OutputFormat: "html",
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
-				"encoding": "utf-8",
+				"encoding": encName,
+				"format":   "csv",
+				"sheets":   1,
 			},
-			HTML: "<table><caption>" + csvSheetName + "</caption><tr><td></td></tr></table>",
 		}
 	}
 
-	reader := csv.NewReader(strings.NewReader(text))
-	reader.LazyQuotes = true
-	reader.TrimLeadingSpace = true
-	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.
-
-	records, err := reader.ReadAll()
+	records, err := newCSVReader(text, detectCSVDelimiter(text)).ReadAll()
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("csv parse: %w", err)}
 	}
 
 	// Clean illegal control characters from all cells.
-	records = cleanCSVRecords(records)
+	records = trimTrailingEmptyColumns(cleanIllegalControlChars(records))
 
-	chunkRows := p.ChunkRows
-	if chunkRows <= 0 {
-		chunkRows = csvDefaultChunkRows
+	dataRows := make([]int, len(records)-1)
+	for i := range dataRows {
+		dataRows[i] = i + 2
 	}
-
+	// One wire shape for csv as for xlsx: a single segmented HTML table with
+	// row-aligned positions (csv has no in-cell image anchors).
+	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil, nil)
 	return ParseResult{
-		OutputFormat: "html",
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
-			"encoding": "utf-8",
+			"encoding": encName,
+			"format":   "csv",
+			"sheets":   1,
 		},
-		HTML: recordsToHTMLTableChunks(records, chunkRows),
+		JSON: MapsToItems(items),
 	}
 }
 
-// cleanCSVRecords replaces illegal control characters in all cells
-// with a single space, matching Python's ILLEGAL_CHARACTERS_RE.
-func cleanCSVRecords(records [][]string) [][]string {
-	out := make([][]string, len(records))
-	for i, row := range records {
-		out[i] = make([]string, len(row))
-		for j, cell := range row {
-			out[i][j] = csvIllegalCharsRe.ReplaceAllString(cell, " ")
+// newCSVReader reads text with the given separator, leniently, the same way for
+// the separator detection and for the rows themselves.
+func newCSVReader(text string, comma rune) *csv.Reader {
+	reader := csv.NewReader(strings.NewReader(text))
+	reader.Comma = comma
+	reader.LazyQuotes = true
+	// TrimLeadingSpace also trims a tab when the tab is the separator, which
+	// would swallow the empty field in "Widget\t\t12".
+	reader.TrimLeadingSpace = comma != '\t'
+	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.
+	return reader
+}
+
+// detectCSVDelimiter returns the separator text was written with, defaulting
+// to a comma. encoding/csv reads with a comma by default, and reading a
+// semicolon separated export that way does not fail: every row becomes a
+// single column holding the whole line, separators included.
+func detectCSVDelimiter(text string) rune {
+	sample, truncated := text, false
+	if len(text) > csvSampleBytes {
+		cut := csvSampleBytes
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		sample, truncated = text[:cut], true
+	}
+	best, bestColumns := ',', 0
+	for _, delimiter := range csvDelimiters {
+		if columns := consistentColumnCount(sample, delimiter, truncated); columns > bestColumns {
+			best, bestColumns = delimiter, columns
 		}
 	}
-	return out
+	return best
 }
 
-// recordsToHTMLTableChunks renders CSV records as one or more
-// self-contained HTML <table> chunks. The first row is always the
-// header (<th>). Data rows are split into chunks of chunkRows,
-// each chunk being a complete <table> with <caption> and a repeated
-// header row. Chunks are joined with newlines.
+// consistentColumnCount returns the columns per row under delimiter, or 0 when
+// the rows disagree. A separator the file was not written with either does not
+// occur at all (one column) or occurs by accident, and then the rows do not
+// line up. Requiring the same count on every row is what keeps a comma inside a
+// sentence, or a semicolon inside a quoted field, from being read as a
+// separator.
 //
-// Mirrors Python's RAGFlowExcelParser.html() chunking:
-//
-//	chunks = (n_data_rows + chunk_rows - 1) // chunk_rows
-func recordsToHTMLTableChunks(records [][]string, chunkRows int) string {
-	if len(records) == 0 {
-		return "<table><caption>" + csvSheetName + "</caption></table>"
-	}
-
-	// Build the header row once — repeated in every chunk.
-	headerHTML := buildCSVHeaderRow(records[0])
-	dataRows := records[1:]
-	nData := len(dataRows)
-
-	if nData == 0 {
-		// Only a header row exists.
-		return "<table><caption>" + csvSheetName + "</caption>\n" + headerHTML + "\n</table>"
-	}
-
-	nChunks := (nData + chunkRows - 1) / chunkRows
-	var b strings.Builder
-	for ci := 0; ci < nChunks; ci++ {
-		start := ci * chunkRows
-		end := start + chunkRows
-		if end > nData {
-			end = nData
+// When truncated is set, the sample is a prefix of a longer file, so the row it
+// ends in stops wherever the read did, between two fields or inside a quoted
+// one. That row is left out rather than counted as having fewer columns, also
+// when it is the last of the csvSampleRows rows sampled.
+func consistentColumnCount(sample string, delimiter rune, truncated bool) int {
+	reader := newCSVReader(sample, delimiter)
+	var rows [][]string
+	for len(rows) < csvSampleRows {
+		row, err := reader.Read()
+		if err != nil {
+			break
 		}
-
-		b.WriteString("<table><caption>")
-		b.WriteString(csvSheetName)
-		b.WriteString("</caption>\n")
-		b.WriteString(headerHTML)
-
-		for _, row := range dataRows[start:end] {
-			b.WriteString("<tr>")
-			for _, cell := range row {
-				b.WriteString("<td>")
-				b.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-				b.WriteString("</td>")
-			}
-			b.WriteString("</tr>\n")
+		if !isBlankCSVRow(row) {
+			rows = append(rows, row)
 		}
-		b.WriteString("</table>\n")
 	}
-	return b.String()
+	if truncated && len(rows) > 1 && reader.InputOffset() == int64(len(sample)) {
+		rows = rows[:len(rows)-1]
+	}
+	count := 0
+	for _, row := range rows {
+		if count != 0 && len(row) != count {
+			return 0
+		}
+		count = len(row)
+	}
+	if count > 1 {
+		return count
+	}
+	return 0
 }
 
-// buildCSVHeaderRow renders the first row as an HTML <th> header row.
-func buildCSVHeaderRow(row []string) string {
-	var b strings.Builder
-	b.WriteString("<tr>")
+// isBlankCSVRow reports whether every cell of row is empty or whitespace; such
+// a row says nothing about the separator.
+func isBlankCSVRow(row []string) bool {
 	for _, cell := range row {
-		b.WriteString("<th>")
-		b.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-		b.WriteString("</th>")
+		if strings.TrimSpace(cell) != "" {
+			return false
+		}
 	}
-	b.WriteString("</tr>\n")
-	return b.String()
+	return true
 }

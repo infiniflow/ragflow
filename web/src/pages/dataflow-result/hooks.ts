@@ -27,6 +27,7 @@ import {
   TimelineNodeType,
 } from './constant';
 import { IChunk, IDslComponent, IPipelineFileLogDetail } from './interface';
+import { buildPipelineFileLogDetailQueryKey } from './query-key';
 
 export const useFetchPipelineFileLogDetail = ({
   isAgent = false,
@@ -42,16 +43,17 @@ export const useFetchPipelineFileLogDetail = ({
   const logId = searchParams.get('id') || id;
   const knowledgeId = searchParams.get('knowledgeId') || '';
 
-  let queryKey: (string | number)[] = [];
-  if (typeof refreshCount === 'number') {
-    queryKey = ['fetchLogDetail', refreshCount];
-  }
+  const queryKey = buildPipelineFileLogDetailQueryKey({
+    knowledgeId,
+    logId,
+    refreshCount,
+  });
 
   const { data, isFetching: loading } = useQuery<IPipelineFileLogDetail>({
     queryKey,
     initialData: {} as IPipelineFileLogDetail,
     gcTime: 0,
-    enabled: !isAgent,
+    enabled: !isAgent && isEdit && Boolean(knowledgeId && logId),
     queryFn: async () => {
       if (isEdit && knowledgeId && logId) {
         const { data } = await getPipelineDetail(knowledgeId, logId);
@@ -176,49 +178,6 @@ export const useUpdateChunk = () => {
   };
 };
 
-export const useRerunDataflow = ({
-  data,
-}: {
-  data: IPipelineFileLogDetail;
-}) => {
-  const [isChange, setIsChange] = useState(false);
-
-  const { mutateAsync: handleReRunFunc, isPending: loading } = useMutation({
-    mutationKey: ['pipelineRerun', data],
-    mutationFn: async (newData: { value: IDslComponent; key: string }) => {
-      const newDsl = {
-        ...data.dsl,
-        components: {
-          ...data.dsl.components,
-          [newData.key]: newData.value,
-        },
-      };
-
-      // this Data provided to the interface
-      const params = {
-        id: data.id,
-        dsl: newDsl,
-        component_id: newData.key,
-      };
-      const { data: result } = await kbService.pipelineRerun(params);
-      if (result.code === 0) {
-        message.success(t('message.operated'));
-        // queryClient.invalidateQueries({
-        //   queryKey: [type],
-        // });
-      }
-      return result;
-    },
-  });
-
-  return {
-    loading,
-    isChange,
-    setIsChange,
-    handleReRunFunc,
-  };
-};
-
 export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
   const timelineNodes: TimelineNode[] = useMemo(() => {
     const nodes: Array<
@@ -289,7 +248,6 @@ export const useGetPipelineResultSearchParams = () => {
   const is_read_only = currentQueryParameters.get(
     PipelineResultSearchParams.IsReadOnly,
   ) as 'true' | 'false';
-  console.log('is_read_only', is_read_only);
   return {
     type: currentQueryParameters.get(PipelineResultSearchParams.Type) || '',
     documentId:
@@ -307,6 +265,14 @@ export const useGetPipelineResultSearchParams = () => {
       ) || '',
     createdBy:
       currentQueryParameters.get(PipelineResultSearchParams.CreatedBy) || '',
+    documentName:
+      currentQueryParameters.get(PipelineResultSearchParams.DocumentName) || '',
+    documentSize:
+      currentQueryParameters.get(PipelineResultSearchParams.DocumentSize) || '',
+    documentCreatedAt:
+      currentQueryParameters.get(
+        PipelineResultSearchParams.DocumentCreatedAt,
+      ) || '',
   };
 };
 

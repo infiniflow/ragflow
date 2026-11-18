@@ -1,45 +1,18 @@
-export const fileIconMap = {
-  aep: 'aep.svg',
-  ai: 'ai.svg',
-  avi: 'avi.svg',
-  css: 'css.svg',
-  csv: 'csv.svg',
-  dmg: 'dmg.svg',
-  doc: 'doc.svg',
-  docx: 'docx.svg',
-  eps: 'eps.svg',
-  exe: 'exe.svg',
-  fig: 'fig.svg',
-  gif: 'gif.svg',
-  html: 'html.svg',
-  indd: 'indd.svg',
-  java: 'java.svg',
-  jpeg: 'jpeg.svg',
-  jpg: 'jpg.svg',
-  js: 'js.svg',
-  json: 'json.svg',
-  md: 'md.svg',
-  mdx: 'mdx.svg',
-  mkv: 'mkv.svg',
-  mp3: 'mp3.svg',
-  mp4: 'mp4.svg',
-  mpeg: 'mpeg.svg',
-  pdf: 'pdf.svg',
-  png: 'png.svg',
-  ppt: 'ppt.svg',
-  pptx: 'pptx.svg',
-  psd: 'psd.svg',
-  rss: 'rss.svg',
-  sql: 'sql.svg',
-  svg: 'svg.svg',
-  tiff: 'tiff.svg',
-  txt: 'txt.svg',
-  wav: 'wav.svg',
-  webp: 'webp.svg',
-  xls: 'xls.svg',
-  xlsx: 'xlsx.svg',
-  xml: 'xml.svg',
-};
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 
 // TODO: Use standard BCP 47 language tag and display names
 export const LanguageList = [
@@ -59,6 +32,8 @@ export const LanguageList = [
   'Arabic',
   'Turkish',
   'Dutch',
+  'Slovak',
+  'Czech',
 ];
 export const LanguageMap = {
   English: 'English',
@@ -78,6 +53,8 @@ export const LanguageMap = {
   Arabic: 'العربية',
   Turkish: 'Türkçe',
   Dutch: 'Nederlands',
+  Slovak: 'Slovenčina',
+  Czech: 'Čeština',
 };
 
 export enum LanguageAbbreviation {
@@ -98,6 +75,8 @@ export enum LanguageAbbreviation {
   Tr = 'tr',
   Ko = 'ko',
   Nl = 'nl',
+  Az = 'az',
+  Uz = 'uz',
 }
 
 export const LanguageAbbreviationMap = {
@@ -118,6 +97,8 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.Tr]: 'Türkçe',
   [LanguageAbbreviation.Ko]: '한국어',
   [LanguageAbbreviation.Nl]: 'Nederlands',
+  [LanguageAbbreviation.Az]: 'Azərbaycanca',
+  [LanguageAbbreviation.Uz]: 'O‘zbekcha',
 };
 
 export const LanguageTranslationMap = {
@@ -148,6 +129,8 @@ export const LanguageTranslationMap = {
   Arabic: 'ar',
   Turkish: 'tr',
   Dutch: 'nl',
+  Slovak: 'sk',
+  Czech: 'cs',
 };
 
 export enum FileMimeType {
@@ -191,6 +174,39 @@ export const Images = [
   'ico',
 ];
 
+export const AudioExtensions = [
+  'mp3',
+  'wav',
+  'wave',
+  'aac',
+  'flac',
+  'ogg',
+  'oga',
+  'm4a',
+  'wma',
+  'aiff',
+  'aif',
+  'au',
+  'midi',
+  'opus',
+  'ape',
+  'amr',
+];
+
+export const VideoExtensions = [
+  'mp4',
+  'avi',
+  'mov',
+  'mkv',
+  'wmv',
+  'flv',
+  'mpeg',
+  'mpg',
+  'asf',
+  'rm',
+  'rmvb',
+];
+
 // Without FileViewer
 export const ExceptiveType = [
   'xlsx',
@@ -202,6 +218,9 @@ export const ExceptiveType = [
   'txt',
   'csv',
   'pptx',
+  'html',
+  'htm',
+  'epub',
   ...Images,
 ];
 
@@ -220,3 +239,5 @@ export enum ThemeEnum {
   Light = 'light',
   System = 'system',
 }
+
+export const DESCRIPTION_MAX_LENGTH = 512;

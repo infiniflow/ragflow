@@ -14,23 +14,47 @@
 //  limitations under the License.
 //
 
+// node_body_timeout_test.go — pins the cancellation-only execution context
+// contract of realComponentBody. The framework imposes no wall-clock deadline
+// on component execution (see realComponentBodyWithOptions), so a component
+// only stops when its parent context is cancelled; there is no timeout wrap to
+// test any more. These tests assert cancellation propagation and the
+// pass-through of fast components.
+
 package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
-	"time"
 
 	"ragflow/internal/agent/runtime"
 
 	"gorm.io/gorm"
 )
 
-// blockingComponent is a runtime.Component whose Invoke blocks until ctx
-// is cancelled. Used to test the per-component timeout wrapper in
-// realComponentBody.
+// blockingComponent is a runtime.Component whose Invoke blocks until ctx is
+// cancelled.
 type blockingComponent struct{}
+
+type failingComponent struct {
+	output map[string]any
+}
+
+func (f *failingComponent) Name() string { return "failing" }
+
+func (f *failingComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
+	return f.output, errors.New("boom")
+}
+
+func (f *failingComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func (f *failingComponent) Inputs() map[string]string  { return nil }
+func (f *failingComponent) Outputs() map[string]string { return nil }
 
 func (b *blockingComponent) Name() string { return "blocking" }
 
@@ -46,53 +70,15 @@ func (b *blockingComponent) Stream(_ context.Context, _ map[string]any) (<-chan 
 func (b *blockingComponent) Inputs() map[string]string  { return nil }
 func (b *blockingComponent) Outputs() map[string]string { return nil }
 
-// TestRealComponentBody_RespectsTimeout verifies that a component whose
-// Invoke blocks longer than the configured timeout causes the body to
-// return a wrapped context.DeadlineExceeded error.
-//
-// The call itself runs under context.Background(); a separate watchdog
-// goroutine fails the test if the inner timeout never fires. That keeps
-// the assertion semantic (the returned error must wrap
-// context.DeadlineExceeded) without letting an outer test context
-// manufacture the same error type and create a false positive.
-func TestRealComponentBody_RespectsTimeout(t *testing.T) {
-	t.Setenv("COMPONENT_EXEC_TIMEOUT", "1")
-
-	comp := &blockingComponent{}
-	body := realComponentBody("test-cpn", "TestBlocking", comp)
-	if body == nil {
-		t.Fatalf("realComponentBody returned nil")
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		_, err := body(context.Background(), map[string]any{"x": 1})
-		done <- err
-	}()
-
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatalf("expected error, got nil")
-		}
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Errorf("expected context.DeadlineExceeded wrapped error, got: %v", err)
-		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("body did not return within 15s — timeout wrap is broken or call is hanging")
-	}
-}
-
-// TestRealComponentBody_RespectsParentCancellation verifies that when
-// the parent context is already cancelled, the body surfaces a wrapped
-// context.Canceled error rather than a timeout (or a generic wrap).
+// TestRealComponentBody_RespectsParentCancellation verifies that when the
+// parent context is already cancelled, the body surfaces a wrapped
+// context.Canceled error. With no framework deadline, parent cancellation is
+// the only mechanism that stops a long-running component.
 func TestRealComponentBody_RespectsParentCancellation(t *testing.T) {
-	t.Setenv("COMPONENT_EXEC_TIMEOUT", "60")
-
 	comp := &blockingComponent{}
-	body := realComponentBody("test-cpn", "TestBlocking", comp)
+	body := realComponentBody("test-cpn", "TestBlocking", "", comp)
 
-	parentCtx, cancel := context.WithCancel(context.Background())
+	parentCtx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
 
 	_, err := body(parentCtx, map[string]any{"x": 1})
@@ -102,19 +88,121 @@ func TestRealComponentBody_RespectsParentCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled wrapped error, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), `component "test-cpn" invoke`) {
+		t.Errorf("error = %q, want component ID fallback", err)
+	}
 }
 
-// TestRealComponentBody_NoTimeoutWhenFast verifies that a component
-// returning immediately does not incur any timeout-induced latency or
-// error wrapping.
+func TestRealComponentBody_UsesDisplayNameInError(t *testing.T) {
+	body := realComponentBody("CodeExec:SweetMooseTalk", "CodeExec", "Analyze sales", &failingComponent{})
+
+	_, err := body(t.Context(), nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), `component "Analyze sales" invoke`) {
+		t.Errorf("error = %q, want display name", err)
+	}
+	if strings.Contains(err.Error(), "CodeExec:SweetMooseTalk") {
+		t.Errorf("error = %q, should not contain component ID when display name is set", err)
+	}
+}
+
+func TestWithStateBracket_PersistsToolInvocationsOnComponentError(t *testing.T) {
+	invocations := []map[string]any{{"tool_name": "search"}}
+	state := runtime.NewCanvasState("run-agent", "session-agent")
+	events := make(chan RunEvent, 2)
+	ctx := WithRunMeta(WithState(t.Context(), state), &RunMeta{Events: events})
+	component := &failingComponent{output: map[string]any{"tool_invocations": invocations}}
+	body := withStateBracket("agent_0", "Agent", realComponentBody("agent_0", "Agent", "Agent", component))
+
+	if _, err := body(ctx, nil); err == nil {
+		t.Fatal("expected component error")
+	}
+	<-events // node_started
+	finished := <-events
+	if finished.Type != "node_finished" {
+		t.Fatalf("event type = %q, want node_finished", finished.Type)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(finished.Data), &payload); err != nil {
+		t.Fatalf("unmarshal node_finished: %v", err)
+	}
+	outputs, ok := payload["outputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("node_finished outputs = %T, want map", payload["outputs"])
+	}
+	got, ok := outputs["tool_invocations"].([]any)
+	if !ok || len(got) != 1 {
+		t.Fatalf("node_finished tool_invocations = %#v, want one invocation", outputs["tool_invocations"])
+	}
+	if got[0].(map[string]any)["tool_name"] != "search" {
+		t.Fatalf("node_finished invocation = %#v, want search", got[0])
+	}
+}
+
+func TestBuildWorkflow_PersistsOutputsAndFinishesNodeOnComponentError(t *testing.T) {
+	previousFactory := runtime.DefaultFactory()
+	runtime.SetDefaultFactory(func(string, map[string]any) (runtime.Component, error) {
+		return &failingComponent{output: map[string]any{
+			"tool_invocations": []map[string]any{{"tool_name": "search"}},
+		}}, nil
+	})
+	t.Cleanup(func() { runtime.SetDefaultFactory(previousFactory) })
+
+	compiled, err := Compile(t.Context(), &Canvas{Components: map[string]CanvasComponent{
+		"agent_0": {Obj: CanvasComponentObj{ComponentName: "Agent", Params: map[string]any{}}},
+	}})
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	state := runtime.NewCanvasState("run-agent-error", "session-agent-error")
+	events := make(chan RunEvent, 4)
+	ctx := WithRunMeta(WithState(t.Context(), state), &RunMeta{Events: events})
+	if _, err := compiled.Workflow.Invoke(ctx, map[string]any{}); err == nil {
+		t.Fatal("expected workflow error")
+	}
+
+	got, stateErr := state.GetVar("agent_0@tool_invocations")
+	invocations, ok := got.([]map[string]any)
+	if stateErr != nil || !ok || len(invocations) != 1 {
+		t.Fatalf("tool_invocations = %#v, state error = %v; want one recorded invocation", got, stateErr)
+	}
+	finishedCount := 0
+	persisted := false
+	for len(events) > 0 {
+		event := <-events
+		if event.Type != "node_finished" {
+			continue
+		}
+		finishedCount++
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(event.Data), &payload); err != nil {
+			t.Fatalf("unmarshal node_finished: %v", err)
+		}
+		outputs, _ := payload["outputs"].(map[string]any)
+		if invocations, ok := outputs["tool_invocations"].([]any); ok && len(invocations) == 1 {
+			persisted = true
+			if nodeErr, ok := payload["error"].(string); !ok || !strings.Contains(nodeErr, "boom") {
+				t.Errorf("node_finished error = %v, want component failure", payload["error"])
+			}
+		}
+	}
+	if finishedCount != 1 {
+		t.Errorf("node_finished events = %d, want 1", finishedCount)
+	}
+	if !persisted {
+		t.Fatal("node_finished event did not include tool_invocations")
+	}
+}
+
+// TestRealComponentBody_NoTimeoutWhenFast verifies that a component returning
+// immediately does not incur any timeout-induced latency or error wrapping.
 func TestRealComponentBody_NoTimeoutWhenFast(t *testing.T) {
-	t.Setenv("COMPONENT_EXEC_TIMEOUT", "60")
-
-	// Stub component that returns immediately.
 	comp := &echoComponent{}
-	body := realComponentBody("test-cpn", "TestEcho", comp)
+	body := realComponentBody("test-cpn", "TestEcho", "", comp)
 
-	out, err := body(context.Background(), map[string]any{"x": 1})
+	out, err := body(t.Context(), map[string]any{"x": 1})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -126,38 +214,8 @@ func TestRealComponentBody_NoTimeoutWhenFast(t *testing.T) {
 	}
 }
 
-// TestComponentTimeout_Default verifies the default is 600s when the env
-// var is unset.
-func TestComponentTimeout_Default(t *testing.T) {
-	t.Setenv("COMPONENT_EXEC_TIMEOUT", "")
-	if got := componentTimeout(); got != 600*time.Second {
-		t.Errorf("default timeout: got %s, want 600s", got)
-	}
-}
-
-// TestComponentTimeout_HonoursEnv verifies a valid env value is parsed.
-func TestComponentTimeout_HonoursEnv(t *testing.T) {
-	t.Setenv("COMPONENT_EXEC_TIMEOUT", "42")
-	if got := componentTimeout(); got != 42*time.Second {
-		t.Errorf("env timeout: got %s, want 42s", got)
-	}
-}
-
-// TestComponentTimeout_InvalidEnvFallsBack verifies that non-numeric or
-// non-positive env values fall back to the default — invalid input must
-// never widen the timeout silently.
-func TestComponentTimeout_InvalidEnvFallsBack(t *testing.T) {
-	for _, v := range []string{"abc", "0", "-5"} {
-		t.Setenv("COMPONENT_EXEC_TIMEOUT", v)
-		if got := componentTimeout(); got != 600*time.Second {
-			t.Errorf("invalid env %q: got %s, want default 600s", v, got)
-		}
-	}
-}
-
-// echoComponent is a minimal runtime.Component used by the no-timeout test.
-// It returns the input map unchanged plus a __cpn_id__ tag (the body will
-// overwrite the tag, but that's fine).
+// echoComponent is a minimal runtime.Component used by the no-timeout test. It
+// returns the input map unchanged plus a __cpn_id__ tag.
 type echoComponent struct{}
 
 func (e *echoComponent) Name() string { return "echo" }
@@ -180,5 +238,6 @@ func (e *echoComponent) Outputs() map[string]string { return nil }
 // Compile-time check that the stubs satisfy the interface.
 var (
 	_ runtime.Component = (*blockingComponent)(nil)
+	_ runtime.Component = (*failingComponent)(nil)
 	_ runtime.Component = (*echoComponent)(nil)
 )

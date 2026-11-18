@@ -1,12 +1,24 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import { TruncatedText } from '@/components/truncated-text';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { formatDate } from '@/utils/date';
-import { ElementType, ReactNode, useRef, useState } from 'react';
+import { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface IProps {
@@ -30,48 +42,6 @@ function Time({ time }: { time: string | number | undefined }) {
   return <p className="text-sm truncate">{formatDate(time)}</p>;
 }
 
-function TruncatedText({
-  as: Tag = 'div',
-  className,
-  children,
-  tooltip,
-  testId,
-}: {
-  as?: ElementType;
-  className?: string;
-  children?: ReactNode;
-  tooltip?: ReactNode;
-  testId?: string;
-}) {
-  const ref = useRef<HTMLElement>(null);
-  const [open, setOpen] = useState(false);
-
-  if (tooltip == null) {
-    return (
-      <Tag ref={ref} className={className} data-testid={testId}>
-        {children}
-      </Tag>
-    );
-  }
-
-  return (
-    <Tooltip
-      open={open}
-      onOpenChange={(next) => {
-        const el = ref.current;
-        setOpen(next && el !== null && el.scrollWidth > el.clientWidth);
-      }}
-    >
-      <TooltipTrigger asChild>
-        <Tag ref={ref} className={className} data-testid={testId} tabIndex={0}>
-          {children}
-        </Tag>
-      </TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 export function HomeCard({
   data,
   onClick,
@@ -90,11 +60,12 @@ export function HomeCard({
       data-testid={testId}
       data-agent-name={data.name}
       onClick={() => {
-        // navigateToSearch(data?.id);
         onClick?.();
       }}
-      tabIndex={0}
-      className="px-2.5 py-4 flex gap-2 items-start group h-full w-full hover:shadow-md"
+      tabIndex={onClick ? 0 : undefined}
+      className={`rounded-xl px-2.5 py-4 flex gap-2 items-start group h-full w-full${
+        onClick ? ' hover:shadow-md cursor-pointer' : ''
+      }`}
     >
       <div>
         <RAGFlowAvatar

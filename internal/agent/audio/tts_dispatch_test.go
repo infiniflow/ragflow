@@ -16,7 +16,7 @@
 
 // tts_dispatch_test.go — verifies that NewTTSDispatchFunc translates
 // an audio.Synthesize request into the correct
-// ModelProviderService.AudioSpeech call shape and surfaces the
+// tenant-aware model-call dispatch shape and surfaces the
 // model's audio bytes back to the audio package as a
 // SynthesizeResponse.
 
@@ -31,7 +31,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// fakeTTSDispatcher records every AudioSpeech invocation and
+// fakeTTSDispatcher records every tenant-aware audio speech invocation and
 // returns canned responses. Lives only in the test file.
 type fakeTTSDispatcher struct {
 	// Canned return values.
@@ -40,36 +40,27 @@ type fakeTTSDispatcher struct {
 	err  error
 
 	// Recorded inputs.
-	gotProviderName *string
-	gotInstanceName *string
-	gotModelName    *string
-	gotModelID      *string
+	gotModelRef     string
 	gotUserID       string
 	gotAudioContent *string
-	gotAPIConfig    *modelModule.APIConfig
 	gotTTSConfig    *modelModule.TTSConfig
 }
 
-func (f *fakeTTSDispatcher) AudioSpeech(
+func (f *fakeTTSDispatcher) AudioSpeechForTenant(
 	ctx context.Context,
-	providerName, instanceName, modelName, modelID *string,
-	userID string,
+	modelRef, tenantID string,
 	audioContent *string,
-	apiConfig *modelModule.APIConfig,
-	modelConfig *modelModule.TTSConfig,
+	config *modelModule.TTSConfig,
 ) (*modelModule.TTSResponse, common.ErrorCode, error) {
-	f.gotProviderName = providerName
-	f.gotInstanceName = instanceName
-	f.gotModelName = modelName
-	f.gotModelID = modelID
-	f.gotUserID = userID
+	f.gotModelRef = modelRef
+	f.gotUserID = tenantID
 	f.gotAudioContent = audioContent
-	f.gotAPIConfig = apiConfig
-	f.gotTTSConfig = modelConfig
+	f.gotTTSConfig = config
 	return f.resp, f.code, f.err
 }
 
 func TestNewTTSDispatchFunc_HappyPath(t *testing.T) {
+	ctx := t.Context()
 	fake := &fakeTTSDispatcher{
 		resp: &modelModule.TTSResponse{Audio: []byte("mp3bytes")},
 		code: common.CodeSuccess,
@@ -78,7 +69,7 @@ func TestNewTTSDispatchFunc_HappyPath(t *testing.T) {
 	if fn == nil {
 		t.Fatal("NewTTSDispatchFunc returned nil for non-nil dispatcher")
 	}
-	resp, err := fn(context.Background(), ModelProviderRequest{
+	resp, err := fn(ctx, ModelProviderRequest{
 		TenantID:  "tenant-1",
 		ModelName: "tts-fish",
 		Text:      "hello world",
@@ -102,20 +93,8 @@ func TestNewTTSDispatchFunc_HappyPath(t *testing.T) {
 	if fake.gotAudioContent == nil || *fake.gotAudioContent != "hello world" {
 		t.Errorf("audioContent = %v, want pointer to %q", fake.gotAudioContent, "hello world")
 	}
-	if fake.gotModelName == nil || *fake.gotModelName != "tts-fish" {
-		t.Errorf("modelName = %v, want pointer to %q", fake.gotModelName, "tts-fish")
-	}
-	if fake.gotProviderName != nil {
-		t.Errorf("providerName = %v, want nil (resolved by name)", fake.gotProviderName)
-	}
-	if fake.gotInstanceName != nil {
-		t.Errorf("instanceName = %v, want nil (resolved by name)", fake.gotInstanceName)
-	}
-	if fake.gotModelID != nil {
-		t.Errorf("modelID = %v, want nil (looked up by name)", fake.gotModelID)
-	}
-	if fake.gotAPIConfig != nil {
-		t.Errorf("apiConfig = %v, want nil (no per-request config)", fake.gotAPIConfig)
+	if fake.gotModelRef != "tts-fish" {
+		t.Errorf("modelRef = %q, want %q", fake.gotModelRef, "tts-fish")
 	}
 	if fake.gotTTSConfig == nil || fake.gotTTSConfig.Params["voice"] != "en-US-Aria" {
 		t.Errorf("ttsConfig.Params[voice] = %v, want %q", fake.gotTTSConfig, "en-US-Aria")
@@ -126,24 +105,57 @@ func TestNewTTSDispatchFunc_HappyPath(t *testing.T) {
 }
 
 func TestNewTTSDispatchFunc_EmptyModelName(t *testing.T) {
+	ctx := t.Context()
 	fake := &fakeTTSDispatcher{
 		resp: &modelModule.TTSResponse{Audio: []byte("x")},
 		code: common.CodeSuccess,
 	}
 	fn := NewTTSDispatchFunc(fake)
-	_, err := fn(context.Background(), ModelProviderRequest{
+	_, err := fn(ctx, ModelProviderRequest{
 		TenantID: "t1",
 		Text:     "no model hint",
 	})
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
-	if fake.gotModelName != nil {
-		t.Errorf("modelName = %v, want nil for empty ModelName (let the dispatcher default)", fake.gotModelName)
+	if fake.gotModelRef != "" {
+		t.Errorf("modelRef = %q, want empty for default selection", fake.gotModelRef)
+	}
+}
+
+func TestNewTTSDispatchFunc_PseudoEngineFallsBackToDefault(t *testing.T) {
+	// "gtts" / "edge-tts" are the boolean auto_play UI toggle's engine
+	// selectors, not tenant model names. Passing them as modelName made
+	// the real ModelProviderService dereference nil provider/instance
+	// pointers and panic. The dispatch must leave modelName nil for them
+	// so the dispatcher resolves the tenant's default TTS model.
+	for _, engine := range []string{"gtts", "edge-tts", "custom"} {
+		t.Run(engine, func(t *testing.T) {
+			fake := &fakeTTSDispatcher{
+				resp: &modelModule.TTSResponse{Audio: []byte("x")},
+				code: common.CodeSuccess,
+			}
+			fn := NewTTSDispatchFunc(fake)
+			_, err := fn(t.Context(), ModelProviderRequest{
+				TenantID:  "t1",
+				ModelName: engine,
+				Text:      "hi",
+			})
+			if err != nil {
+				t.Fatalf("dispatch: %v", err)
+			}
+			if fake.gotModelRef != "" {
+				t.Errorf("modelRef = %q, want empty for built-in engine %q", fake.gotModelRef, engine)
+			}
+			if fake.gotTTSConfig == nil || fake.gotTTSConfig.Format != "mp3" {
+				t.Errorf("ttsConfig = %+v, want Format mp3", fake.gotTTSConfig)
+			}
+		})
 	}
 }
 
 func TestNewTTSDispatchFunc_EmptyVoiceAndLang(t *testing.T) {
+	ctx := t.Context()
 	// Voice and Lang empty → TTSConfig.Params should be nil (not
 	// an empty map) so the model's default voice/lang take effect.
 	fake := &fakeTTSDispatcher{
@@ -151,7 +163,7 @@ func TestNewTTSDispatchFunc_EmptyVoiceAndLang(t *testing.T) {
 		code: common.CodeSuccess,
 	}
 	fn := NewTTSDispatchFunc(fake)
-	_, err := fn(context.Background(), ModelProviderRequest{TenantID: "t1", Text: "hi"})
+	_, err := fn(ctx, ModelProviderRequest{TenantID: "t1", Text: "hi"})
 	if err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
@@ -164,10 +176,11 @@ func TestNewTTSDispatchFunc_EmptyVoiceAndLang(t *testing.T) {
 }
 
 func TestNewTTSDispatchFunc_DispatcherError(t *testing.T) {
+	ctx := t.Context()
 	sentinel := errors.New("dispatch boom")
 	fake := &fakeTTSDispatcher{err: sentinel}
 	fn := NewTTSDispatchFunc(fake)
-	_, err := fn(context.Background(), ModelProviderRequest{TenantID: "t1", Text: "hi"})
+	_, err := fn(ctx, ModelProviderRequest{TenantID: "t1", Text: "hi"})
 	if err == nil {
 		t.Fatal("expected error from dispatcher, got nil")
 	}
@@ -177,18 +190,20 @@ func TestNewTTSDispatchFunc_DispatcherError(t *testing.T) {
 }
 
 func TestNewTTSDispatchFunc_NonSuccessCode(t *testing.T) {
+	ctx := t.Context()
 	fake := &fakeTTSDispatcher{
 		resp: &modelModule.TTSResponse{Audio: []byte("ignored")},
 		code: common.CodeNotFound,
 	}
 	fn := NewTTSDispatchFunc(fake)
-	_, err := fn(context.Background(), ModelProviderRequest{TenantID: "t1", Text: "hi"})
+	_, err := fn(ctx, ModelProviderRequest{TenantID: "t1", Text: "hi"})
 	if err == nil {
 		t.Fatal("expected error for non-CodeSuccess, got nil")
 	}
 }
 
 func TestNewTTSDispatchFunc_EmptyAudioFromModel(t *testing.T) {
+	ctx := t.Context()
 	// Some buggy model drivers return nil error + nil TTSResponse
 	// (or empty audio). The dispatch must surface that as the
 	// ErrSynthesizeEmpty sentinel so the audio package's caller
@@ -209,7 +224,7 @@ func TestNewTTSDispatchFunc_EmptyAudioFromModel(t *testing.T) {
 				code: common.CodeSuccess,
 			}
 			fn := NewTTSDispatchFunc(fake)
-			_, err := fn(context.Background(), ModelProviderRequest{TenantID: "t1", Text: "hi"})
+			_, err := fn(ctx, ModelProviderRequest{TenantID: "t1", Text: "hi"})
 			if !errors.Is(err, ErrSynthesizeEmpty) {
 				t.Errorf("err = %v, want ErrSynthesizeEmpty", err)
 			}

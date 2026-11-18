@@ -17,13 +17,48 @@
 package config
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/spf13/viper"
 )
 
 type DocEngineConfig struct {
-	ES       ElasticsearchConfig `mapstructure:"es"`
-	Infinity InfinityConfig      `mapstructure:"infinity"`
-	SereneDB SereneDBConfig      `mapstructure:"serenedb"`
+	ES         ElasticsearchConfig `mapstructure:"es"`
+	OpenSearch OpenSearchConfig    `mapstructure:"os"`
+	Infinity   InfinityConfig      `mapstructure:"infinity"`
+	OceanBase  OceanBaseConfig     `mapstructure:"oceanbase"`
+	SeekDB     OceanBaseConfig     `mapstructure:"seekdb"`
+	SereneDB   SereneDBConfig      `mapstructure:"serenedb"`
+	Vastbase   VastbaseConfig      `mapstructure:"vastbase"`
+}
+
+type OpenSearchConfig struct {
+	Hosts    string `mapstructure:"hosts"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	// InsecureSkipVerify disables TLS certificate verification. It is off by
+	// default; enable it only for a development cluster with a self-signed
+	// certificate.
+	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"`
+}
+
+// OceanBaseConfig mirrors the existing oceanbase/seekdb service_conf.yaml
+// structure used by the Python connector.
+type OceanBaseConfig struct {
+	Scheme string                    `mapstructure:"scheme"`
+	Config OceanBaseConnectionConfig `mapstructure:"config"`
+}
+
+// OceanBaseConnectionConfig contains the MySQL-protocol connection settings
+// used by both OceanBase and SeekDB document engines.
+type OceanBaseConnectionConfig struct {
+	DBName         string `mapstructure:"db_name"`
+	User           string `mapstructure:"user"`
+	Password       string `mapstructure:"password"`
+	Host           string `mapstructure:"host"`
+	Port           int    `mapstructure:"port"`
+	MaxConnections int    `mapstructure:"max_connections"`
 }
 
 // ElasticsearchConfig Elasticsearch configuration
@@ -55,11 +90,80 @@ type SereneDBConfig struct {
 	SSLMode string `mapstructure:"ssl_mode"`
 }
 
+// VastbaseConfig Vastbase G100 configuration. Vastbase is PostgreSQL-wire
+// based (database/sql + lib/pq). DBCompatibility selects the compatibility
+// mode of the instance: "PG" (pgvector-style <=> cosine distance, GIN
+// to_tsvector full-text index) or "B" (Oracle-flavored <+> distance operator,
+// per-column ADD INDEX USING "fulltext").
+type VastbaseConfig struct {
+	Host            string `mapstructure:"host"`
+	Port            int    `mapstructure:"port"`
+	User            string `mapstructure:"user"`
+	Password        string `mapstructure:"password"`
+	DBName          string `mapstructure:"db_name"`
+	DBCompatibility string `mapstructure:"dbcompatibility"`
+	// SSLMode is the lib/pq sslmode. Empty is not a plaintext license: the
+	// engine decides by host — disable on loopback or unix sockets,
+	// verify-full on every other TCP host. Plaintext to a non-loopback host
+	// (e.g. the bundled docker network) must set this explicitly.
+	SSLMode string `mapstructure:"ssl_mode"`
+}
+
+// ParseDocEngineConfig reads every document-engine section from the
+// service configuration into the doc engine settings.
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 	c.parseInfinityConfig(v)
 	c.parseElasticsearchConfig(v)
+	c.parseOpenSearchConfig(v)
+	c.parseOceanBaseConfig(v, "oceanbase", &c.docEngine.OceanBase)
+	c.parseOceanBaseConfig(v, "seekdb", &c.docEngine.SeekDB)
 	c.parseSereneDBConfig(v)
+	c.parseVastbaseConfig(v)
 	return nil
+}
+
+func (c *Config) parseVastbaseConfig(v *viper.Viper) {
+	// Default Vastbase config. SSLMode stays empty (unset): buildDSN picks
+	// disable for loopback hosts and verify-full for everything else, so a
+	// remote Host without an explicit ssl_mode never degrades to cleartext.
+	c.docEngine.Vastbase.Host = "vastbase"
+	c.docEngine.Vastbase.Port = 5432
+	c.docEngine.Vastbase.User = "ragflow"
+	c.docEngine.Vastbase.Password = "Infini_Rag@123"
+	c.docEngine.Vastbase.DBName = "ragflow"
+	c.docEngine.Vastbase.DBCompatibility = "PG"
+
+	// Fully qualified parent keys, not v.Sub("vastbase"): Sub drops the root
+	// AutomaticEnv (env prefix/replacer), and IsSet("vastbase") cannot see
+	// child environment variables, so an env-only deployment
+	// (RAGFLOW_VASTBASE_HOST, ... with no YAML section) would silently keep
+	// every default.
+	if v.IsSet("vastbase.host") {
+		c.docEngine.Vastbase.Host = v.GetString("vastbase.host")
+	}
+	if v.IsSet("vastbase.port") {
+		c.docEngine.Vastbase.Port = v.GetInt("vastbase.port")
+	}
+	if v.IsSet("vastbase.user") {
+		c.docEngine.Vastbase.User = v.GetString("vastbase.user")
+	}
+	if v.IsSet("vastbase.password") {
+		c.docEngine.Vastbase.Password = v.GetString("vastbase.password")
+	}
+	if v.IsSet("vastbase.db_name") {
+		c.docEngine.Vastbase.DBName = v.GetString("vastbase.db_name")
+	}
+	if v.IsSet("vastbase.dbcompatibility") {
+		c.docEngine.Vastbase.DBCompatibility = v.GetString("vastbase.dbcompatibility")
+	}
+	if v.IsSet("vastbase.ssl_mode") {
+		c.docEngine.Vastbase.SSLMode = v.GetString("vastbase.ssl_mode")
+	}
+
+	c.docEngine.Vastbase.DBCompatibility = strings.ToUpper(strings.TrimSpace(c.docEngine.Vastbase.DBCompatibility))
+	if c.docEngine.Vastbase.DBCompatibility != "B" {
+		c.docEngine.Vastbase.DBCompatibility = "PG"
+	}
 }
 
 func (c *Config) parseSereneDBConfig(v *viper.Viper) {
@@ -99,6 +203,105 @@ func (c *Config) parseSereneDBConfig(v *viper.Viper) {
 
 	if sub.IsSet("ssl_mode") {
 		c.docEngine.SereneDB.SSLMode = sub.GetString("ssl_mode")
+	}
+}
+
+func (c *Config) parseOceanBaseConfig(v *viper.Viper, key string, target *OceanBaseConfig) {
+	defaultPassword := c.database.MySQL.Password
+	target.Scheme = "oceanbase"
+	target.Config = OceanBaseConnectionConfig{
+		DBName:         "test",
+		User:           "root@test",
+		Password:       defaultPassword,
+		Host:           "localhost",
+		Port:           2881,
+		MaxConnections: 300,
+	}
+	if key == "seekdb" {
+		target.Config.DBName = "ragflow_doc"
+		target.Config.User = "root"
+	}
+
+	if !v.IsSet(key) {
+		return
+	}
+	sub := v.Sub(key)
+	if sub == nil {
+		return
+	}
+	if sub.IsSet("scheme") {
+		target.Scheme = sub.GetString("scheme")
+	}
+	connection := sub.Sub("config")
+	if connection == nil {
+		return
+	}
+	if connection.IsSet("db_name") {
+		target.Config.DBName = connection.GetString("db_name")
+	}
+	if connection.IsSet("user") {
+		target.Config.User = connection.GetString("user")
+	}
+	if connection.IsSet("password") {
+		target.Config.Password = connection.GetString("password")
+	}
+	if connection.IsSet("host") {
+		target.Config.Host = connection.GetString("host")
+	}
+	if connection.IsSet("port") {
+		target.Config.Port = connection.GetInt("port")
+	}
+	if connection.IsSet("max_connections") {
+		target.Config.MaxConnections = connection.GetInt("max_connections")
+	}
+}
+
+// ResolveOceanBaseConnection returns the effective existing configuration for
+// an OceanBase-family document engine. With scheme=mysql, Python takes the
+// endpoint and credentials from the mysql section while retaining db_name from
+// the nested oceanbase/seekdb config; Go intentionally follows that contract.
+func (c *Config) ResolveOceanBaseConnection(engineType string) (OceanBaseConnectionConfig, error) {
+	var configured OceanBaseConfig
+	switch strings.ToLower(engineType) {
+	case "oceanbase":
+		configured = c.docEngine.OceanBase
+	case "seekdb":
+		configured = c.docEngine.SeekDB
+	default:
+		return OceanBaseConnectionConfig{}, fmt.Errorf("not an OceanBase-family engine: %s", engineType)
+	}
+
+	resolved := configured.Config
+	if strings.EqualFold(configured.Scheme, "mysql") {
+		mysqlConfig := c.database.MySQL
+		resolved.User = mysqlConfig.User
+		resolved.Password = mysqlConfig.Password
+		resolved.Host = mysqlConfig.Host
+		resolved.Port = mysqlConfig.Port
+		resolved.MaxConnections = mysqlConfig.MaxConnections
+	}
+	return resolved, nil
+}
+
+func (c *Config) GetOceanBaseConfig() OceanBaseConfig {
+	return c.docEngine.OceanBase
+}
+
+func (c *Config) GetSeekDBConfig() OceanBaseConfig {
+	return c.docEngine.SeekDB
+}
+
+func (o OceanBaseConfig) ExportConfigs() map[string]interface{} {
+	return map[string]interface{}{
+		"scheme": o.Scheme,
+		"config": map[string]interface{}{
+			"db_name":         o.Config.DBName,
+			"user":            o.Config.User,
+			"password":        o.Config.Password,
+			"host":            o.Config.Host,
+			"port":            o.Config.Port,
+			"max_connections": o.Config.MaxConnections,
+		},
 	}
 }
 
@@ -179,6 +382,50 @@ func (e ElasticsearchConfig) ExportConfigs() map[string]interface{} {
 	return esConfigs
 }
 
+func (c *Config) parseOpenSearchConfig(v *viper.Viper) {
+	c.docEngine.OpenSearch.Hosts = "http://localhost:1201"
+	c.docEngine.OpenSearch.Username = "admin"
+	c.docEngine.OpenSearch.Password = "infini_rag_flow_OS_01"
+
+	if !v.IsSet("os") {
+		return
+	}
+	sub := v.Sub("os")
+	if sub == nil {
+		return
+	}
+
+	if sub.IsSet("hosts") {
+		c.docEngine.OpenSearch.Hosts = sub.GetString("hosts")
+	}
+
+	if sub.IsSet("username") {
+		c.docEngine.OpenSearch.Username = sub.GetString("username")
+	}
+
+	if sub.IsSet("password") {
+		c.docEngine.OpenSearch.Password = sub.GetString("password")
+	}
+
+	if sub.IsSet("insecure_skip_verify") {
+		c.docEngine.OpenSearch.InsecureSkipVerify = sub.GetBool("insecure_skip_verify")
+	}
+}
+
+func (c *Config) GetOpenSearchConfig() OpenSearchConfig {
+	return c.docEngine.OpenSearch
+}
+
+func (o OpenSearchConfig) ExportConfigs() map[string]interface{} {
+	var osConfigs map[string]interface{}
+	osConfigs = make(map[string]interface{})
+	osConfigs["hosts"] = o.Hosts
+	osConfigs["username"] = o.Username
+	osConfigs["password"] = o.Password
+	osConfigs["insecure_skip_verify"] = o.InsecureSkipVerify
+	return osConfigs
+}
+
 func (c *Config) IsElasticConfigured() bool {
 	return c.docEngine.ES.Hosts != ""
 }
@@ -198,6 +445,23 @@ func (i InfinityConfig) ExportConfigs() map[string]interface{} {
 	return infinityConfigs
 }
 
+// GetSereneDBConfig returns the SereneDB doc engine connection settings.
 func (c *Config) GetSereneDBConfig() SereneDBConfig {
 	return c.docEngine.SereneDB
+}
+
+func (c *Config) GetVastbaseConfig() VastbaseConfig {
+	return c.docEngine.Vastbase
+}
+
+func (v VastbaseConfig) ExportConfigs() map[string]interface{} {
+	return map[string]interface{}{
+		"host":            v.Host,
+		"port":            v.Port,
+		"user":            v.User,
+		"password":        v.Password,
+		"db_name":         v.DBName,
+		"dbcompatibility": v.DBCompatibility,
+		"ssl_mode":        v.SSLMode,
+	}
 }

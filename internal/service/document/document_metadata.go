@@ -25,7 +25,7 @@ func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, d
 		return nil, err
 	}
 
-	searchResult, err := s.metadataSvc.SearchMetadata(kbID, tenantID, docIDs, 1000)
+	searchResult, err := s.metadataSvc.SearchMetadata(ctx, kbID, tenantID, docIDs, 1000)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID stri
 	}
 
 	// Delete metadata using the document engine
-	err = s.docEngine.DeleteMetadataKeys(nil, docID, doc.KbID, keys, tenantID)
+	err = s.docEngine.DeleteMetadataKeys(ctx, docID, doc.KbID, keys, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to delete metadata: %w", err)
 	}
@@ -106,7 +106,7 @@ func (s *DocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID s
 	}
 
 	// Delete entire document metadata
-	_, err = s.docEngine.DeleteMetadata(nil, condition, tenantID)
+	_, err = s.docEngine.DeleteMetadata(ctx, condition, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to delete document metadata: %w", err)
 	}
@@ -127,7 +127,7 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 		return nil, err
 	}
 
-	searchResult, err := s.metadataSvc.SearchMetadata(doc.KbID, tenantID, []string{docID}, 1)
+	searchResult, err := s.metadataSvc.SearchMetadata(ctx, doc.KbID, tenantID, []string{docID}, 1)
 	if err != nil {
 		return nil, err
 	}

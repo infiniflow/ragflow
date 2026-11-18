@@ -16,6 +16,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,8 +30,8 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 )
 
 const (
@@ -54,7 +55,7 @@ var ttsSegmentSplitRegex = regexp.MustCompile("[，。/《》？；：！\\n\\r:
 func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -63,30 +64,55 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 
 	var req chatAudioSpeechRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
-	if h.llm == nil {
-		common.ErrorWithCode(c, common.CodeServerError, "TTS service not available")
+	if h.modelFactory == nil {
+		common.RespondError(c, common.CodeServerError, "TTS service not available")
 		return
 	}
 
-	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(ctx, user.ID, entity.ModelTypeTTS)
+	ttsModel, err := h.modelFactory.NewDefaultTTSModel(permission.WithTenantID(ctx, user.ID))
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
+	}
+
+	modelName, providerName := "", ""
+	if info := ttsModel.Info(); info != nil {
+		modelName, providerName = info.Name, info.ProviderName
+	}
+	writeAudioHeaders := func(mediaType string) {
+		c.Header("Content-Type", mediaType)
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+		c.Header("X-Accel-Buffering", "no")
+		c.Writer.WriteHeader(http.StatusOK)
 	}
 
 	segments := ttsSegmentSplitRegex.Split(req.Text, -1)
 	headerWritten := false
+	// mediaType locks the media type of the first successfully synthesized
+	// segment; later segments of a different type are skipped so the
+	// response never mixes encodings under a single Content-Type.
+	mediaType := ""
+	// WAV segments cannot be concatenated byte-wise (each carries its own
+	// RIFF header), so they are accumulated as raw PCM and re-wrapped into
+	// a single WAV before being written.
+	var wavFmt *wavFormat
+	var wavPCM []byte
+	var firstSynthErr error
 	for i, seg := range segments {
 		seg = strings.TrimSpace(seg)
 		if seg == "" {
 			continue
 		}
-		resp, err := driver.AudioSpeech(ctx, &modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"}, nil)
+		resp, err := ttsModel.Speech(ctx, &seg, &modelModule.TTSConfig{Format: "mp3"}, nil)
 		if err != nil {
+			if firstSynthErr == nil {
+				firstSynthErr = err
+			}
 			common.Warn("chat TTS synthesis failed",
 				zap.Int("segmentIndex", i),
 				zap.Int("segmentLen", len(seg)),
@@ -96,14 +122,41 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		if resp == nil || len(resp.Audio) == 0 {
 			continue
 		}
+		segMediaType := resp.MediaType
+		if segMediaType == "" {
+			segMediaType = "audio/mpeg"
+		}
+		if mediaType == "" {
+			mediaType = segMediaType
+		} else if segMediaType != mediaType {
+			common.Warn("chat TTS segment media type differs from the first segment, skipping",
+				zap.Int("segmentIndex", i),
+				zap.String("segmentMediaType", segMediaType),
+				zap.String("mediaType", mediaType))
+			continue
+		}
+		if segMediaType == "audio/wav" {
+			format, pcm, werr := splitWAV(resp.Audio)
+			if werr != nil {
+				common.Warn("chat TTS wav segment unparsable",
+					zap.Int("segmentIndex", i),
+					zap.Error(werr))
+				continue
+			}
+			if wavFmt == nil {
+				wavFmt = format
+			} else if !bytes.Equal(wavFmt.fmtChunk, format.fmtChunk) {
+				common.Warn("chat TTS wav segment format differs from the first segment, skipping",
+					zap.Int("segmentIndex", i))
+				continue
+			}
+			wavPCM = append(wavPCM, pcm...)
+			continue
+		}
 		if !headerWritten {
 			// Commit the audio headers only once the first chunk is available,
 			// so a fully failed synthesis can still return a JSON error status.
-			c.Header("Content-Type", "audio/mpeg")
-			c.Header("Cache-Control", "no-cache")
-			c.Header("Connection", "keep-alive")
-			c.Header("X-Accel-Buffering", "no")
-			c.Writer.WriteHeader(http.StatusOK)
+			writeAudioHeaders(mediaType)
 			headerWritten = true
 		}
 		if _, werr := c.Writer.Write(resp.Audio); werr != nil {
@@ -111,8 +164,20 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		}
 		c.Writer.Flush()
 	}
+	if wavFmt != nil && !headerWritten {
+		writeAudioHeaders("audio/wav")
+		headerWritten = true
+		if _, werr := c.Writer.Write(buildWAV(wavFmt, wavPCM)); werr != nil {
+			return
+		}
+		c.Writer.Flush()
+	}
 	if !headerWritten {
-		common.ErrorWithCode(c, common.CodeServerError, "TTS synthesis produced no audio")
+		if firstSynthErr != nil {
+			common.RespondError(c, common.CodeServerError, fmt.Sprintf("TTS synthesis failed for model %s (%s): %v", modelName, providerName, firstSynthErr))
+			return
+		}
+		common.RespondError(c, common.CodeServerError, fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, providerName))
 	}
 }
 
@@ -146,12 +211,12 @@ var chatAudioAllowedExtsList = func() string {
 func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
-	if h.llm == nil {
-		common.ErrorWithCode(c, common.CodeServerError, "ASR service not available")
+	if h.modelFactory == nil {
+		common.RespondError(c, common.CodeServerError, "ASR service not available")
 		return
 	}
 
@@ -160,11 +225,11 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 	// rejected instead of being drained into memory or spooled to disk.
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatAudioUploadMaxBytes)
 	if cl := c.Request.ContentLength; cl > chatAudioUploadMaxBytes {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "request body too large.")
+		common.RespondError(c, common.CodeArgumentError, "request body too large.")
 		return
 	}
 	if err := c.Request.ParseMultipartForm(chatAudioUploadMaxBytes); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "invalid multipart form: "+err.Error())
+		common.RespondError(c, common.CodeArgumentError, "invalid multipart form: "+err.Error())
 		return
 	}
 	defer func() {
@@ -175,21 +240,20 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Missing 'file' in multipart form-data")
+		common.RespondError(c, common.CodeArgumentError, "Missing 'file' in multipart form-data: "+err.Error())
 		return
 	}
 
 	suffix := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	if _, ok := chatAudioAllowedExts[suffix]; suffix == "" || !ok {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-			fmt.Sprintf("Unsupported audio format: %s. Allowed: %s", suffix, chatAudioAllowedExtsList))
+		common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("Unsupported audio format: %s. Allowed: %s", suffix, chatAudioAllowedExtsList))
 		return
 	}
 
 	// Save the uploaded file to a temporary location so the model driver can read it.
 	tmpFile, err := os.CreateTemp("", "*"+suffix)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, "Failed to create temp audio file: "+err.Error())
+		common.RespondError(c, common.CodeServerError, "Failed to create temp audio file: "+err.Error())
 		return
 	}
 	tmpPath := tmpFile.Name()
@@ -197,19 +261,19 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 	defer func() { _ = os.Remove(tmpPath) }()
 
 	if err := c.SaveUploadedFile(fileHeader, tmpPath); err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, "Failed to save audio file: "+err.Error())
+		common.RespondError(c, common.CodeServerError, "Failed to save audio file: "+err.Error())
 		return
 	}
 
-	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(ctx, user.ID, entity.ModelTypeSpeech2Text)
+	asrModel, err := h.modelFactory.NewDefaultASRModel(permission.WithTenantID(ctx, user.ID))
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	streamMode := strings.ToLower(c.PostForm("stream")) == "true"
 	if streamMode {
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -236,7 +300,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 			return nil
 		}
 
-		if err = driver.TranscribeAudioWithSender(ctx, &modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil, sender); err != nil {
+		if err = asrModel.TranscribeWithSender(ctx, &tmpPath, &modelModule.ASRConfig{}, nil, sender); err != nil {
 			errEvent := map[string]interface{}{"event": "error", "text": err.Error()}
 			data, _ := json.Marshal(errEvent)
 			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data))
@@ -254,15 +318,15 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil)
+	resp, err := asrModel.Transcribe(ctx, &tmpPath, &modelModule.ASRConfig{}, nil)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 	if resp == nil {
-		common.ErrorWithCode(c, common.CodeServerError, "empty transcription response")
+		common.RespondError(c, common.CodeServerError, "empty transcription response")
 		return
 	}
 
-	common.SuccessWithData(c, map[string]string{"text": resp.Text}, "success")
+	common.RespondSuccess(c, map[string]string{"text": resp.Text}, "success")
 }

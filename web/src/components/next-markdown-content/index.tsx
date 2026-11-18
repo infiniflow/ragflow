@@ -1,8 +1,29 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
-import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
+import { SafeImg } from '@/components/safe-img';
+import {
+  MarkdownRemarkPlugins,
+  MarkdownRemarkPluginsLite,
+} from '@/constants/markdown-remark-plugins';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import request from '@/utils/request';
 import DOMPurify from 'dompurify';
@@ -11,6 +32,7 @@ import Markdown, { defaultUrlTransform } from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -18,15 +40,24 @@ import { useTranslation } from 'react-i18next';
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
 import {
+  buildCitationDisplayMap,
   currentReg,
+  decodeAngleBracketEntities,
+  escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  resolveCitationChunk,
+  unescapeAngleBrackets,
 } from '@/utils/chat';
-import { citationMarkerReg } from '@/utils/citation-utils';
+import {
+  citationWholeMarkerReg,
+  type CitationKey,
+} from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
@@ -45,23 +76,24 @@ import {
 import message from '../ui/message';
 import styles from './index.module.less';
 
-const getChunkIndex = (match: string) => parseCitationIndex(match);
+const getChunkKey = (match: string) => parseCitationIndex(match);
 
 const isArtifactUrl = (url?: string) =>
   Boolean(url && url.includes('/api/v1/documents/artifact/'));
 
-const fetchArtifactBlob = async (url: string): Promise<Blob> => {
-  const response = await request(url, {
+const fetchArtifactResponse = (url: string) =>
+  request(url, {
     method: 'GET',
     responseType: 'blob',
   });
 
-  return response.data as Blob;
-};
+const fetchArtifactBlob = async (url: string): Promise<Blob> =>
+  (await fetchArtifactResponse(url)).data as Blob;
 
 const getArtifactName = (url?: string, fallback?: string) =>
   fallback || url?.split('/').pop()?.split('?')[0] || 'artifact';
 
+/** Downloads attachment responses and previews other artifact blobs. */
 function ArtifactLink({
   href,
   className,
@@ -75,7 +107,19 @@ function ArtifactLink({
     async (e: React.MouseEvent<HTMLAnchorElement>) => {
       e.preventDefault();
       try {
-        const blob = await fetchArtifactBlob(href);
+        const response = await fetchArtifactResponse(href);
+        const blob = response.data as Blob;
+        const contentDisposition = response.response.headers.get(
+          'content-disposition',
+        );
+        if (
+          typeof contentDisposition === 'string' &&
+          /^\s*attachment(?:;|$)/i.test(contentDisposition)
+        ) {
+          downloadFileFromBlob(blob, getArtifactName(href));
+          return;
+        }
+
         const objectUrl = URL.createObjectURL(blob);
         window.open(objectUrl, '_blank', 'noopener,noreferrer');
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000);
@@ -162,17 +206,27 @@ function MarkdownContent({
   clickDocumentButton,
   content,
   loading,
+  disableMath = false,
 }: {
   content: string;
   loading: boolean;
   reference?: IReferenceObject;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
+  /**
+   * When true, disables LaTeX math rendering (remark-math + rehype-katex).
+   * Use this for user-generated content where `$` should be treated as literal text.
+   */
+  disableMath?: boolean;
 }) {
   const { t } = useTranslation();
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
+    // Escape standalone < and > outside matched <...> tags
+    // so DOMPurify doesn't strip them as HTML.
+    const safeContent = escapeUnmatchedAngleBrackets(content);
+
+    let text = DOMPurify.sanitize(safeContent, {
       ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
@@ -184,12 +238,27 @@ function MarkdownContent({
     const thinkSummary = loading
       ? `${t('chat.thinking')}...`
       : t('chat.thought');
-    return pipe(
-      (value: string) => replaceThinkToSection(value, thinkSummary),
-      replaceRetrievingToSection,
-      preprocessLaTeX,
-    )(nextText);
+    return unescapeAngleBrackets(
+      pipe(
+        (value: string) => replaceThinkToSection(value, thinkSummary),
+        replaceRetrievingToSection,
+        preprocessLaTeX,
+        // Entity decoding can expose a line-leading > after the first escape.
+        escapeUnmatchedAngleBrackets,
+      )(nextText),
+    );
   }, [content, loading, t]);
+
+  // Scope the display numbering to the whole message: each text node only
+  // sees its own markers, so a per-node map restarts at 0 every time and
+  // every distinct [ID:xxx] in a long answer renders as [1]. Building once
+  // from the rendered source (which keeps [n]/[ID:xxx] markers through the
+  // sanitize/latex/section pipeline) makes the numbers unique across the
+  // message while the tooltip still resolves chunks by the marker itself.
+  const citationDisplayMap = useMemo(
+    () => buildCitationDisplayMap(contentWithCursor),
+    [contentWithCursor],
+  );
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -200,18 +269,25 @@ function MarkdownContent({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
-        if (!isPdf) {
-          if (!documentUrl) {
-            return;
-          }
-          window.open(documentUrl, '_blank');
-        } else {
-          clickDocumentButton?.(documentId, chunk);
+        if (supportsSourceLocate(fileExtension) && clickDocumentButton) {
+          clickDocumentButton(documentId, chunk);
+          return;
         }
+        if (!documentUrl) return;
+        // Web page documents carry their own url; opening the internal
+        // /document route for them lands on an empty page.
+        if (/^https?:\/\//i.test(documentUrl)) {
+          window.open(documentUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        window.open(
+          `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
+          '_blank',
+        );
       },
     [clickDocumentButton],
   );
@@ -234,9 +310,10 @@ function MarkdownContent({
   };
 
   const getReferenceInfo = useCallback(
-    (chunkIndex: number) => {
-      const chunks = reference?.chunks ?? {};
-      const chunkItem = chunks[chunkIndex];
+    (chunkKey: CitationKey) => {
+      // The marker itself selects the chunk: a numeric key indexes the
+      // payload, an agent [ID:<chunkId>] key matches the chunk's own id.
+      const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
 
       const documentList = Object.values(reference?.doc_aggs ?? {});
       const document = documentList.find(
@@ -262,7 +339,7 @@ function MarkdownContent({
   );
 
   const renderPopoverContent = useCallback(
-    (chunkIndex: number) => {
+    (chunkKey: CitationKey) => {
       const {
         documentUrl,
         fileThumbnail,
@@ -271,21 +348,29 @@ function MarkdownContent({
         chunkItem,
         documentId,
         document,
-      } = getReferenceInfo(chunkIndex);
+      } = getReferenceInfo(chunkKey);
+
+      // The citation chip already gates on the chunk being found; this narrows
+      // chunkItem for the handlers below.
+      if (!chunkItem) {
+        return null;
+      }
 
       return (
-        <div key={chunkItem?.id} className="flex gap-2">
+        <div key={chunkItem.id} className="flex gap-2">
           {imageId && (
             <HoverCard>
               <HoverCardTrigger>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceChunkImage}
                 ></Image>
               </HoverCardTrigger>
               <HoverCardContent>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={cn(styles.referenceImagePreview)}
                 ></Image>
               </HoverCardContent>
@@ -318,7 +403,7 @@ function MarkdownContent({
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
-                    fileExtension === 'pdf',
+                    fileExtension,
                     documentUrl,
                   )}
                   className="text-ellipsis text-wrap"
@@ -336,36 +421,72 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      const replacedText = reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+      // Chip numbers follow each unique marker's first occurrence in the
+      // full message (citationDisplayMap), so the same citation always
+      // renders as the same [N] chip and distinct citations get distinct
+      // numbers across paragraphs and list items. That numbering is
+      // display-only: the chunk behind a marker is resolved from the marker
+      // itself (position for numeric markers, chunk id for agent
+      // [ID:<chunkId>] markers), never from the display position — the
+      // payload ships in retrieval order, which is unrelated to the order
+      // the answer cites passages in.
+      const replacedText = reactStringReplace(
+        text,
+        citationWholeMarkerReg,
+        (match) => {
+          const chunkKey = getChunkKey(match);
+          const displayIndex = citationDisplayMap.get(chunkKey) ?? 0;
+          const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
+          // The reference lands at message_end, after the answer stream, so an
+          // unresolved marker keeps its chip while loading. Afterwards it
+          // stays as literal text rather than pointing at the wrong chunk.
+          if (!chunkItem && !loading) {
+            return match;
+          }
 
-        return (
-          <HoverCard key={i}>
-            <HoverCardTrigger>
-              <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                Fig. {chunkIndex + 1}
-              </bdi>
-            </HoverCardTrigger>
-            <HoverCardContent className="max-w-3xl">
-              {renderPopoverContent(chunkIndex)}
-            </HoverCardContent>
-          </HoverCard>
-        );
-      });
+          return (
+            <HoverCard key={`${String(chunkKey)}-${displayIndex}`}>
+              <HoverCardTrigger>
+                <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
+                  [{displayIndex + 1}]
+                </bdi>
+              </HoverCardTrigger>
+              {chunkItem && (
+                <HoverCardPrimitive.Portal>
+                  <HoverCardContent className="max-w-3xl">
+                    {renderPopoverContent(chunkKey)}
+                  </HoverCardContent>
+                </HoverCardPrimitive.Portal>
+              )}
+            </HoverCard>
+          );
+        },
+      );
 
       return replacedText;
     },
-    [renderPopoverContent],
+    [citationDisplayMap, loading, reference?.chunks, renderPopoverContent],
   );
 
-  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+  const dir = getDirAttribute(content?.replace(currentReg, ''));
   const showLoadingDots = useLoadingPause(loading, content);
 
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
-        remarkPlugins={MarkdownRemarkPlugins}
+        rehypePlugins={
+          disableMath
+            ? [rehypeRaw, RehypeSanitizeAssistantMarkdown, rehypeWrapReference]
+            : [
+                rehypeRaw,
+                RehypeSanitizeAssistantMarkdown,
+                rehypeWrapReference,
+                rehypeKatex,
+              ]
+        }
+        remarkPlugins={
+          disableMath ? MarkdownRemarkPluginsLite : MarkdownRemarkPlugins
+        }
         urlTransform={(url, key) => {
           if (
             key === 'src' &&
@@ -394,7 +515,7 @@ function MarkdownContent({
                 </a>
               );
             },
-            img({ src, alt, ...props }: any) {
+            img({ src, alt, title }: any) {
               if (isArtifactUrl(src)) {
                 return (
                   <ArtifactImage
@@ -404,21 +525,16 @@ function MarkdownContent({
                   />
                 );
               }
-              return (
-                <span className={styles.artifactImageWrapper}>
-                  <img
-                    src={src}
-                    alt={alt || ''}
-                    className={styles.artifactImage}
-                    {...omit(props, 'node')}
-                  />
-                </span>
-              );
+              return <SafeImg src={src} alt={alt} title={title} />;
             },
             code(props: any) {
               const { children, className, ...rest } = props;
               const restProps = omit(rest, 'node');
               const match = /language-(\w+)/.exec(className || '');
+              // Code content is literal for react-markdown, so the &lt;/&gt;
+              // entities restored by unescapeAngleBrackets survive parsing;
+              // decode them back.
+              const codeText = decodeAngleBracketEntities(String(children));
               return match ? (
                 <SyntaxHighlighter
                   {...restProps}
@@ -426,14 +542,14 @@ function MarkdownContent({
                   language={match[1]}
                   wrapLongLines
                 >
-                  {String(children).replace(/\n$/, '')}
+                  {codeText.replace(/\n$/, '')}
                 </SyntaxHighlighter>
               ) : (
                 <code
                   {...restProps}
                   className={classNames(className, 'text-wrap')}
                 >
-                  {children}
+                  {codeText}
                 </code>
               );
             },

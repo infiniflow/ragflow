@@ -1,0 +1,1518 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//
+
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/types"
+)
+
+// Structure-graph query constants.
+const (
+	graphKeywordCandidates = 16   // keyword candidate rows
+	graphExpansionCap      = 4096 // hub-node expansion cap
+)
+
+var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids"}
+var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids"}
+var graphAllFields = []string{
+	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
+	"from_entity_kwd", "to_entity_kwd", "type_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
+	"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
+}
+
+// StructureGraphNode is a projected entity in the structure graph response.
+type StructureGraphNode map[string]interface{}
+
+// StructureGraphRelation is a projected relation in the structure graph response.
+type StructureGraphRelation map[string]interface{}
+
+// DocumentStructureGraphTemplate is one per-template bucket in the response.
+type DocumentStructureGraphTemplate struct {
+	TemplateID   string                   `json:"template_id"`
+	TemplateName string                   `json:"template_name"`
+	Kind         string                   `json:"kind"`
+	Entities     []StructureGraphNode     `json:"entities"`
+	Relations    []StructureGraphRelation `json:"relations"`
+}
+
+// DocumentStructureGraphResponse mirrors Python's {"templates": [...]}.
+type DocumentStructureGraphResponse struct {
+	TotalEntities    int                              `json:"total_entities"`
+	ReturnedEntities int                              `json:"returned_entities"`
+	Templates        []DocumentStructureGraphTemplate `json:"templates"`
+}
+
+// graphRowSearch runs one raw-row search over the tenant's document index.
+func graphRowSearch(ctx context.Context, tenantID, datasetID string, selectFields []string, filter map[string]interface{}, orderBy *types.OrderByExpr, offset, limit int, matchExprs []interface{}) (map[string]map[string]interface{}, int64, error) {
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return nil, 0, fmt.Errorf("document engine is not initialized")
+	}
+	merged := make(map[string]interface{}, len(filter)+1)
+	for k, v := range filter {
+		merged[k] = v
+	}
+	merged["kb_id"] = []string{datasetID}
+	if limit < 1 {
+		limit = 1
+	}
+	res, err := docEngine.Search(ctx, &types.SearchRequest{
+		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+		KbIDs:        []string{datasetID},
+		Offset:       offset,
+		Limit:        limit,
+		SelectFields: selectFields,
+		Filter:       merged,
+		OrderBy:      orderBy,
+		MatchExprs:   matchExprs,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if res == nil {
+		return nil, 0, nil
+	}
+	byID := make(map[string]map[string]interface{}, len(res.Chunks))
+	for _, c := range res.Chunks {
+		id := firstStringValue(c["id"])
+		if id != "" {
+			byID[id] = c
+		}
+	}
+	return byID, res.Total, nil
+}
+
+// graphLoadPayload parses content_with_weight into a dict.
+func graphLoadPayload(row map[string]interface{}) map[string]interface{} {
+	raw := firstStringValue(row["content_with_weight"])
+	if raw == "" {
+		return nil
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return nil
+	}
+	return m
+}
+
+func graphIsInvalidSentinel(v string) bool {
+	if v == "" {
+		return true
+	}
+	lv := strings.ToLower(v)
+	for _, bad := range []string{"unknown", "none", "null", "nan", "n/a", "undefined", "other"} {
+		if lv == bad {
+			return true
+		}
+	}
+	return false
+}
+
+// projectEntity mirrors _struct_graph_entity + project_entity.
+func projectEntity(row map[string]interface{}) StructureGraphNode {
+	payload := graphLoadPayload(row)
+	if payload == nil {
+		return nil
+	}
+	name := ""
+	for _, k := range []string{"name", "text", "term", "title"} {
+		if v, ok := payload[k].(string); ok && strings.TrimSpace(v) != "" {
+			name = strings.TrimSpace(v)
+			break
+		}
+	}
+	if name == "" || graphIsInvalidSentinel(name) {
+		return nil
+	}
+	typ := "other"
+	if v, ok := payload["type"].(string); ok && strings.TrimSpace(v) != "" {
+		typ = strings.TrimSpace(v)
+	}
+	var aliases []string
+	switch a := payload["aliases"].(type) {
+	case string:
+		if strings.TrimSpace(a) != "" {
+			aliases = []string{strings.TrimSpace(a)}
+		}
+	case []interface{}:
+		for _, e := range a {
+			if s, ok := e.(string); ok && strings.TrimSpace(s) != "" {
+				aliases = append(aliases, strings.TrimSpace(s))
+			}
+		}
+	case []string:
+		for _, s := range a {
+			if strings.TrimSpace(s) != "" {
+				aliases = append(aliases, strings.TrimSpace(s))
+			}
+		}
+	}
+	desc := ""
+	for _, k := range []string{"description", "definition_excerpt"} {
+		if v, ok := payload[k].(string); ok {
+			desc = strings.TrimSpace(v)
+			if desc != "" {
+				break
+			}
+		}
+	}
+	chunkIDs := graphSourceChunkIDs(payload, row)
+	node := StructureGraphNode{
+		"aliases":          aliases,
+		"mention_count":    1,
+		"name":             name,
+		"source_chunk_ids": chunkIDs,
+		"type":             typ,
+		"description":      desc,
+	}
+	if mc, ok := graphMentionCount(row); ok {
+		node["mention_count"] = mc
+	}
+	return node
+}
+
+func graphSourceChunkIDs(payload, row map[string]interface{}) []string {
+	var out []string
+	add := func(v interface{}) {
+		switch x := v.(type) {
+		case []string:
+			for _, s := range x {
+				if s != "" {
+					out = append(out, s)
+				}
+			}
+		case []interface{}:
+			for _, e := range x {
+				if s, ok := e.(string); ok && s != "" {
+					out = append(out, s)
+				}
+			}
+		case string:
+			if x != "" {
+				out = append(out, x)
+			}
+		}
+	}
+	if raw, ok := payload["source_chunk_ids"]; ok {
+		add(raw)
+	} else {
+		add(row["source_chunk_ids"])
+	}
+	// dedup order-preserving
+	seen := map[string]bool{}
+	dedup := out[:0]
+	for _, s := range out {
+		if !seen[s] {
+			seen[s] = true
+			dedup = append(dedup, s)
+		}
+	}
+	return dedup
+}
+
+func graphMentionCount(row map[string]interface{}) (int, bool) {
+	v := row["mention_count_int"]
+	if l, ok := v.([]interface{}); ok {
+		if len(l) > 0 {
+			v = l[0]
+		} else {
+			return 0, false
+		}
+	}
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return int(i), true
+		}
+	}
+	return 0, false
+}
+
+// projectRelation mirrors _struct_graph_relation + project_relation.
+func projectRelation(row map[string]interface{}) StructureGraphRelation {
+	payload := graphLoadPayload(row)
+	src, tgt := "", ""
+	if payload != nil {
+		for _, k := range []string{"source", "src", "from"} {
+			if v, ok := payload[k].(string); ok {
+				src = strings.TrimSpace(v)
+				if src != "" {
+					break
+				}
+			}
+		}
+		for _, k := range []string{"target", "tgt", "to"} {
+			if v, ok := payload[k].(string); ok {
+				tgt = strings.TrimSpace(v)
+				if tgt != "" {
+					break
+				}
+			}
+		}
+	}
+	typ := "related"
+	if payload != nil {
+		if v, ok := payload["type"].(string); ok && strings.TrimSpace(v) != "" {
+			typ = strings.TrimSpace(v)
+		}
+	}
+	if src == "" || tgt == "" || graphIsInvalidSentinel(src) || graphIsInvalidSentinel(tgt) {
+		// Fall back to the authoritative *_entity_kwd columns.
+		fallbackSrc := strings.TrimSpace(firstStringValue(row["from_entity_kwd"]))
+		fallbackTgt := strings.TrimSpace(firstStringValue(row["to_entity_kwd"]))
+		if fallbackSrc != "" && fallbackTgt != "" {
+			return StructureGraphRelation{"from": fallbackSrc, "to": fallbackTgt, "type": typ}
+		}
+		return nil
+	}
+	return StructureGraphRelation{"from": src, "to": tgt, "type": typ}
+}
+
+// dedupEntities preserves the first entity for each lowercased name.
+func dedupEntities(entities []StructureGraphNode) []StructureGraphNode {
+	var out []StructureGraphNode
+	seen := map[string]bool{}
+	for _, e := range entities {
+		name := strings.ToLower(strings.TrimSpace(graphStr(e["name"])))
+		key := name
+		if name == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, e)
+	}
+	return out
+}
+
+func entityResponseID(entity StructureGraphNode) string {
+	for _, f := range []string{"id", "name", "slug"} {
+		if v, ok := entity[f].(string); ok && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+func endpointTerms(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return common.DeduplicateSorted([]string{value, strings.ToLower(value)})
+}
+
+// normalizeRelationEndpoints aligns relation endpoints to returned entity ids.
+// Matching ignores case and internal whitespace, so an endpoint that differs
+// from the entity name only by the space character (e.g. U+0020 vs U+3000) is
+// still aligned instead of being dropped by the exact-name lookup downstream.
+func normalizeRelationEndpoints(entities []StructureGraphNode, relations []StructureGraphRelation) []StructureGraphRelation {
+	if len(entities) == 0 || len(relations) == 0 {
+		return relations
+	}
+	lookup := map[string]string{}
+	ambiguous := map[string]bool{}
+	for _, entity := range entities {
+		respID := entityResponseID(entity)
+		if respID == "" {
+			continue
+		}
+		for _, f := range []string{"id", "name", "slug"} {
+			v, ok := entity[f].(string)
+			if !ok || strings.TrimSpace(v) == "" {
+				continue
+			}
+			key := normalizeEndpointKey(v)
+			if cur, exists := lookup[key]; exists && cur != respID {
+				ambiguous[key] = true
+				continue
+			}
+			lookup[key] = respID
+		}
+	}
+	for k := range ambiguous {
+		delete(lookup, k)
+	}
+	normalized := make([]StructureGraphRelation, 0, len(relations))
+	for _, rel := range relations {
+		item := make(StructureGraphRelation, len(rel)+2)
+		for k, v := range rel {
+			item[k] = v
+		}
+		for _, f := range []string{"from", "to"} {
+			if v, ok := item[f].(string); ok {
+				if mapped, found := lookup[normalizeEndpointKey(v)]; found {
+					item[f] = mapped
+				}
+			}
+		}
+		normalized = append(normalized, item)
+	}
+	return normalized
+}
+
+// normalizeEndpointKey is the case- and whitespace-insensitive match key for
+// entity names / relation endpoints: any run of Unicode spaces (including
+// U+3000) folds to one ASCII space. Mirrors the compiler's normalizedEntityName.
+func normalizeEndpointKey(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// rowHasEnabledSource mirrors _row_has_enabled_source.
+func rowHasEnabledSource(row map[string]interface{}, excludedDocIDs map[string]bool) bool {
+	if len(excludedDocIDs) == 0 {
+		return true
+	}
+	sourceIDs := map[string]bool{}
+	flatten := func(v interface{}) {
+		var walk func(interface{})
+		walk = func(x interface{}) {
+			switch val := x.(type) {
+			case string:
+				t := strings.TrimSpace(val)
+				if t == "" {
+					return
+				}
+				var parsed []interface{}
+				if json.Unmarshal([]byte(t), &parsed) == nil {
+					for _, p := range parsed {
+						walk(p)
+					}
+					return
+				}
+				sourceIDs[t] = true
+			case []interface{}:
+				for _, e := range val {
+					walk(e)
+				}
+			case []string:
+				for _, s := range val {
+					walk(s)
+				}
+			default:
+				if s, ok := x.(string); ok && s != "" {
+					sourceIDs[s] = true
+				}
+			}
+		}
+		walk(v)
+	}
+	for _, f := range []string{"doc_ids_kwd", "source_doc_ids"} {
+		if v, ok := row[f]; ok && v != nil {
+			flatten(v)
+		}
+	}
+	if len(sourceIDs) > 0 {
+		for id := range sourceIDs {
+			if !excludedDocIDs[id] {
+				return true
+			}
+		}
+		return false
+	}
+	flatten(row["doc_id"])
+	if len(sourceIDs) > 0 {
+		for id := range sourceIDs {
+			if !excludedDocIDs[id] {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+func graphStr(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// buildBucket returns every entity/relation row in the bucket, emitted in source
+// (reading) order. The graph is returned whole — no sampling — so a page_index
+// or tree keeps every title and include edge it needs to nest correctly.
+func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, datasetID string, scope map[string]interface{}, excludedDocIDs map[string]bool) ([]StructureGraphNode, []StructureGraphRelation, error) {
+	excludedDocIDs = excludedDocIDsOrEmpty(excludedDocIDs)
+	bothCond := copyFilter(scope)
+	bothCond["knowledge_graph_kwd"] = []string{"entity", "relation"}
+
+	// Count, then fetch the whole bucket in one request at the exact limit. That
+	// lets the engine walk the result set in a single cursor pass (search_after
+	// past index.max_result_window) instead of re-skipping from the start on
+	// every offset page. Asc("id") is the stable cursor search_after needs.
+	_, total, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id"}, bothCond, nil, 0, 1, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	fieldMap := map[string]map[string]interface{}{}
+	if total > 0 {
+		orderBy := (&types.OrderByExpr{}).Asc("id")
+		fieldMap, _, err = graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, orderBy, 0, int(total), nil)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// fieldMap is keyed by id (the engine returns rows in a map), so ranging it
+	// would discard the requested Asc("id") order. Walk the ids in sorted order
+	// to fix a deterministic base: the stable source-position sort below then
+	// orders by reading position, and equal/absent positions keep THIS id order
+	// instead of map iteration order.
+	ids := make([]string, 0, len(fieldMap))
+	for id := range fieldMap {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	rows := make([]map[string]interface{}, 0, len(fieldMap))
+	for _, id := range ids {
+		row := fieldMap[id]
+		if !rowHasEnabledSource(row, excludedDocIDs) {
+			continue
+		}
+		rows = append(rows, row)
+	}
+	sourceOrder, err := s.structureSourceOrder(ctx, tenantID, datasetID, rows)
+	if err != nil {
+		// Ordering is cosmetic; never fail the graph read on the auxiliary lookup.
+		common.Error("structure graph: source-order lookup failed", err)
+		sourceOrder = nil
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		oi, oki := structureRowSourceOrder(rows[i], sourceOrder)
+		oj, okj := structureRowSourceOrder(rows[j], sourceOrder)
+		if oki != okj {
+			return oki
+		}
+		if oki && oi != oj {
+			return oi < oj
+		}
+		return false
+	})
+
+	// Initialize as empty (non-nil) slices so a bucket with entities but no
+	// relations serializes "relations": [] instead of null — the frontend
+	// adapters (adaptKnowledgeGraphToForceGraph et al.) call .filter() on
+	// relations without a null guard (mirror Python, which always returns []).
+	entities := make([]StructureGraphNode, 0, len(rows))
+	relations := make([]StructureGraphRelation, 0, len(rows))
+	for _, row := range rows {
+		kg := firstStringValue(row["type_kwd"])
+		if kg == "" {
+			kg = firstStringValue(row["knowledge_graph_kwd"])
+		}
+		if kg == "relation" {
+			if edge := projectRelation(row); edge != nil {
+				relations = append(relations, edge)
+			}
+		} else {
+			if node := projectEntity(row); node != nil {
+				entities = append(entities, node)
+			}
+		}
+	}
+	entities = dedupEntities(entities)
+	relations = normalizeRelationEndpoints(entities, relations)
+	return entities, relations, nil
+}
+
+// structureSourceOrder maps each referenced source chunk id to its reading order
+// (chunk_order_int), so buildBucket can emit rows in source order. Unresolvable
+// ids are absent from the returned map (nil when the bucket references none).
+func (s *DatasetArtifactService) structureSourceOrder(ctx context.Context, tenantID, datasetID string, rows []map[string]interface{}) (map[string]int, error) {
+	ids := make([]string, 0)
+	seen := map[string]bool{}
+	for _, row := range rows {
+		for _, id := range graphSourceChunkIDs(nil, row) {
+			if id != "" && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	// One fetch at the exact id count; Asc("id") keeps the engine's cursor
+	// pagination (search_after) available past index.max_result_window.
+	page, _, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id", "chunk_order_int"},
+		map[string]interface{}{"id": ids}, (&types.OrderByExpr{}).Asc("id"), 0, len(ids), nil)
+	if err != nil {
+		return nil, err
+	}
+	order := make(map[string]int, len(page))
+	for id, row := range page {
+		// intValue cannot distinguish an absent field from 0, so gate on
+		// presence: chunk 0 is a valid reading order.
+		if raw, ok := row["chunk_order_int"]; ok && raw != nil {
+			order[id] = intValue(raw)
+		}
+	}
+	return order, nil
+}
+
+// structureRowSourceOrder is a row's source position: the smallest
+// chunk_order_int among its source_chunk_ids (false when none resolve).
+func structureRowSourceOrder(row map[string]interface{}, order map[string]int) (int, bool) {
+	best, found := 0, false
+	for _, id := range graphSourceChunkIDs(nil, row) {
+		v, ok := order[id]
+		if !ok {
+			continue
+		}
+		if !found || v < best {
+			best, found = v, true
+		}
+	}
+	return best, found
+}
+
+func copyFilter(in map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func excludedDocIDsOrEmpty(in map[string]bool) map[string]bool {
+	if in == nil {
+		return map[string]bool{}
+	}
+	return in
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// compilationTemplateKind normalizes a template kind (mirror Python
+// _compilation_template_kind).
+func compilationTemplateKind(kind string) string {
+	k := strings.ToLower(strings.TrimSpace(kind))
+	switch k {
+	case "page_index", "pageindex":
+		return "page_index"
+	case "wiki", "wiki_page":
+		return "wiki"
+	case "raptor":
+		return "raptor"
+	}
+	return k
+}
+
+// templateDisplayKind prefers the compilation template's own kind for the
+// response, falling back to the kind keywords stored on the entity rows. The
+// stored row keyword canonicalizes to "graph" (CanonicalCompilationKind)
+// while the normal-mode bucket answers the template kind ("knowledge_graph"),
+// which is the dialect the frontend renderer keys off — a keyword no-match
+// shell built with the row kind flips the UI to "unsupported representation".
+func templateDisplayKind(rowKind, templateKind string) string {
+	if templateKind != "" {
+		return templateKind
+	}
+	return rowKind
+}
+
+// ErrInvalidStructureKind is returned when the request kind does not resolve to a
+// supported dataset-structure kind. Handlers use errors.Is to map it to
+// CodeArgumentError (400) while treating every other service error as a server
+// fault (500).
+var ErrInvalidStructureKind = errors.New("invalid structure kind")
+
+// datasetStructureSupported mirrors the writer's engine guard: only Infinity,
+// Elasticsearch, and OpenSearch resolve the dataset-structure filter keys
+// (scope_kwd + knowledge_graph_kwd). The writer keeps a private copy in the
+// knowledge_compile package; this service-side copy keeps the API delete path
+// in agreement without exporting an ingestion-internal helper across package
+// boundaries.
+func datasetStructureSupported() bool {
+	switch engine.GetEngineType() {
+	case "infinity", "elasticsearch", "opensearch", "":
+		return true
+	default:
+		return false
+	}
+}
+
+// errDatasetStructureUnsupported returns a visible error naming the engine.
+func errDatasetStructureUnsupported() error {
+	return fmt.Errorf("dataset structure graph unsupported on doc engine %q", engine.GetEngineType())
+}
+
+// resolveDatasetStructureKind maps a user-facing dataset-structure kind to the
+// stored top-level kind (mirror Python _DATASET_STRUCTURE_KIND_ALIASES). It is
+// DELIBERATELY separate from compilationTemplateKind: that helper folds
+// knowledge_graph→timeline, which would merge distinct dataset kinds, and it
+// lacks the graph→knowledge_graph / mindmap→mind_map aliases (Python's
+// dataset_api_service.py L1803-1805 documents exactly why it does not reuse the
+// general normalizer). Returns "" for an invalid kind (caller maps that to
+// 400 ARGUMENT_ERROR, never "return all").
+func resolveDatasetStructureKind(kind string) string {
+	k := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(kind, "-", "_")))
+	switch k {
+	case "graph", "knowledge_graph":
+		return "knowledge_graph"
+	case "mindmap", "mind_map":
+		// Align with Python _DATASET_STRUCTURE_KIND_ALIASES: resolve the
+		// user-facing "mindmap" to the canonical compilation kind
+		// "mind_map" (the template kind, which is what read/delete paths match on).
+		return "mind_map"
+	case "timeline":
+		return "timeline"
+	case "session_essence":
+		return "session_essence"
+	case "session_graph":
+		return "session_graph"
+	}
+	return ""
+}
+
+// structureKindForBucket returns the normalized kind used for tree/page_index
+// hierarchy handling.
+func structureKindForBucket(kind string) string {
+	k := compilationTemplateKind(kind)
+	if k == "page_index" {
+		return "page_index"
+	}
+	return strings.ReplaceAll(k, "-", "_")
+}
+
+// DocumentStructureGraphInput is the parsed request for GetDocumentGraph.
+type DocumentStructureGraphInput struct {
+	TenantID   string
+	DatasetID  string
+	DocumentID string
+	GraphType  string
+	Keywords   string
+}
+
+// GetDocumentGraph returns the per-template structure graph of a document,
+// mirroring Python get_document_structure_graph (normal + keywords modes).
+func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in DocumentStructureGraphInput) (*DocumentStructureGraphResponse, error) {
+	templateIDs := []string{}
+	templateMeta := map[string]map[string]interface{}{}
+
+	resp := &DocumentStructureGraphResponse{Templates: []DocumentStructureGraphTemplate{}}
+	entityCountFilter := map[string]interface{}{
+		"doc_id":              []string{in.DocumentID},
+		"knowledge_graph_kwd": []string{"entity"},
+	}
+	_, entityTotal, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, []string{"id"}, entityCountFilter, nil, 0, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp.TotalEntities = int(entityTotal)
+
+	// keywords mode: name/BM25 matching → matched entities' subgraph.
+	if in.Keywords != "" {
+		bucketMeta, entities, relations, err := s.keywordSubgraph(ctx, in.TenantID, in.DatasetID, in.DocumentID, in.Keywords, templateMeta, nil)
+		if err != nil {
+			return nil, err
+		}
+		if bucketMeta == nil || (len(entities) == 0 && len(relations) == 0) {
+			if err := s.discoverDocumentGraphTemplateMeta(ctx, in.TenantID, in.DatasetID, in.DocumentID, &templateIDs, templateMeta); err != nil {
+				return nil, err
+			}
+			resp.Templates = buildDocumentGraphTemplateShells(templateIDs, templateMeta)
+			return resp, nil
+		}
+		resp.Templates = append(resp.Templates, DocumentStructureGraphTemplate{
+			TemplateID:   graphStr(bucketMeta["template_id"]),
+			TemplateName: graphStr(bucketMeta["template_name"]),
+			Kind:         graphStr(bucketMeta["kind"]),
+			Entities:     entities,
+			Relations:    relations,
+		})
+		resp.ReturnedEntities = len(entities)
+		return resp, nil
+	}
+
+	// normal mode: discover buckets from the authoritative entity/relation
+	// rows. The structure compiler no longer emits a synthetic graph row;
+	// page metadata only so large documents cannot hide later buckets.
+	metaFields := []string{"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
+	metaRows := map[string]map[string]interface{}{}
+	const pageSize = 1000
+	for offset := 0; ; offset += pageSize {
+		page, _, searchErr := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields,
+			map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"entity", "relation"}}, nil, offset, pageSize, nil)
+		if searchErr != nil {
+			return nil, searchErr
+		}
+		if len(page) == 0 {
+			break
+		}
+		for id, row := range page {
+			metaRows[id] = row
+		}
+		if len(page) < pageSize {
+			break
+		}
+	}
+	bucketMetas := map[string]map[string]interface{}{}
+	bucketScopes := map[string]map[string]interface{}{}
+	templateDAO := dao.NewCompilationTemplateDAO()
+	for _, row := range metaRows {
+		// Resolve template metadata from the persisted graph row. The template
+		// name is loaded only as display metadata; the row remains authoritative
+		// for whether the template exists in this document.
+		templateID := rowTemplateID(row)
+		if templateID != "" {
+			if _, known := templateMeta[templateID]; !known {
+				template, loadErr := templateDAO.GetTemplate(ctx, dao.DB, in.TenantID, templateID)
+				if loadErr == nil && template != nil {
+					templateMeta[templateID] = map[string]interface{}{
+						"template_id":   templateID,
+						"template_name": template.Name,
+						"kind":          template.Kind,
+					}
+				}
+			}
+		}
+		meta, scope := resolveGraphBucket(row, templateMeta, in.DocumentID)
+		bid := graphStr(meta["template_id"])
+		if bid != "" && !containsStr(templateIDs, bid) {
+			templateIDs = append(templateIDs, bid)
+		}
+		if _, ok := bucketMetas[bid]; !ok {
+			bucketMetas[bid] = meta
+			bucketScopes[bid] = scope
+		}
+	}
+	grouped := map[string]DocumentStructureGraphTemplate{}
+	for bid, meta := range bucketMetas {
+		entities, relations, err := s.buildBucket(ctx, in.TenantID, in.DatasetID, bucketScopes[bid], nil)
+		if err != nil {
+			return nil, err
+		}
+		if len(entities) == 0 && len(relations) == 0 {
+			continue
+		}
+		grouped[bid] = DocumentStructureGraphTemplate{
+			TemplateID:   graphStr(meta["template_id"]),
+			TemplateName: graphStr(meta["template_name"]),
+			Kind:         graphStr(meta["kind"]),
+			Entities:     entities,
+			Relations:    relations,
+		}
+	}
+
+	// Order: discovered templates first, then any buckets not seen in the scan.
+	orderedIDs := []string{}
+	for _, tid := range templateIDs {
+		if _, ok := grouped[tid]; ok && !containsStr(orderedIDs, tid) {
+			orderedIDs = append(orderedIDs, tid)
+		}
+	}
+	for bid := range grouped {
+		if !containsStr(orderedIDs, bid) {
+			orderedIDs = append(orderedIDs, bid)
+		}
+	}
+	for _, bid := range orderedIDs {
+		if g, ok := grouped[bid]; ok && (len(g.Entities) > 0 || len(g.Relations) > 0) {
+			resp.Templates = append(resp.Templates, g)
+			resp.ReturnedEntities += len(g.Entities)
+		}
+	}
+	return resp, nil
+}
+
+func containsStr(list []string, v string) bool {
+	for _, e := range list {
+		if e == v {
+			return true
+		}
+	}
+	return false
+}
+
+func buildDocumentGraphTemplateShells(templateIDs []string, templateMeta map[string]map[string]interface{}) []DocumentStructureGraphTemplate {
+	templates := make([]DocumentStructureGraphTemplate, 0, len(templateIDs))
+	for _, templateID := range templateIDs {
+		meta := templateMeta[templateID]
+		if meta == nil {
+			continue
+		}
+		templateName := graphStr(meta["template_name"])
+		if templateName == "" {
+			templateName = templateID
+		}
+		templates = append(templates, DocumentStructureGraphTemplate{
+			TemplateID:   templateID,
+			TemplateName: templateName,
+			Kind:         graphStr(meta["kind"]),
+			Entities:     []StructureGraphNode{},
+			Relations:    []StructureGraphRelation{},
+		})
+	}
+	return templates
+}
+
+func (s *DatasetArtifactService) discoverDocumentGraphTemplateMeta(ctx context.Context, tenantID, datasetID, documentID string, templateIDs *[]string, templateMeta map[string]map[string]interface{}) error {
+	if templateIDs == nil || templateMeta == nil {
+		return nil
+	}
+	seen := make(map[string]bool, len(*templateIDs))
+	for _, templateID := range *templateIDs {
+		seen[templateID] = true
+	}
+	templateDAO := dao.NewCompilationTemplateDAO()
+	fields := []string{"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
+	filter := map[string]interface{}{
+		"doc_id":              []string{documentID},
+		"knowledge_graph_kwd": []string{"entity", "relation"},
+	}
+	for offset := 0; ; offset += 1000 {
+		rows, total, err := graphRowSearch(ctx, tenantID, datasetID, fields, filter, nil, offset, 1000, nil)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			templateID := rowTemplateID(row)
+			kind := types.CompilationKind(row)
+			if kind == "" {
+				kind = firstStringValue(row["compile_kwd"])
+			}
+			if templateID == "" {
+				compileKind := firstStringValue(row["compile_kwd"])
+				if compileKind == "" {
+					continue
+				}
+				templateID = "legacy:" + compileKind
+			}
+			if seen[templateID] {
+				continue
+			}
+
+			templateName := templateID
+			if !strings.HasPrefix(templateID, "legacy:") {
+				if template, loadErr := templateDAO.GetTemplate(ctx, dao.DB, tenantID, templateID); loadErr == nil && template != nil {
+					templateName = template.Name
+					kind = templateDisplayKind(kind, template.Kind)
+				}
+			} else {
+				templateName = "Legacy (" + strings.TrimPrefix(templateID, "legacy:") + ")"
+			}
+			if templateName == "" {
+				templateName = templateID
+			}
+			templateMeta[templateID] = map[string]interface{}{
+				"template_id":   templateID,
+				"template_name": templateName,
+				"kind":          kind,
+			}
+			*templateIDs = append(*templateIDs, templateID)
+			seen[templateID] = true
+		}
+		if int64(offset+1000) >= total || len(rows) == 0 {
+			break
+		}
+	}
+	return nil
+}
+
+// DatasetStructureGraphInput is the parsed request for the dataset-scope
+// structure graph endpoint (GET /datasets/:id/artifacts/structure).
+// Kind is REQUIRED (mirrors Python dataset_api.py:715): missing or invalid →
+// 400 ARGUMENT_ERROR.
+type DatasetStructureGraphInput struct {
+	TenantID  string
+	DatasetID string
+	Kind      string
+	// Keywords selects the matching entity subgraph when non-empty.
+	Keywords string
+}
+
+// DatasetStructureGraphResponse mirrors Python get_dataset_structure's
+// {"kind": ..., "templates": [...]}.
+type DatasetStructureGraphResponse struct {
+	Kind              string                           `json:"kind"`
+	TotalEntities     int                              `json:"total_entities"`
+	TotalRelations    int                              `json:"total_relations"`
+	ReturnedEntities  int                              `json:"returned_entities"`
+	ReturnedRelations int                              `json:"returned_relations"`
+	Templates         []DocumentStructureGraphTemplate `json:"templates"`
+}
+
+// GetDatasetStructure returns dataset-scope entity/relation graphs for the
+// requested compilation kind, optionally narrowed by keyword matching.
+func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in DatasetStructureGraphInput) (*DatasetStructureGraphResponse, error) {
+	resolved := resolveDatasetStructureKind(in.Kind)
+	if resolved == "" {
+		return nil, fmt.Errorf("%w: %q", ErrInvalidStructureKind, in.Kind)
+	}
+	if !datasetStructureSupported() {
+		return nil, errDatasetStructureUnsupported()
+	}
+	resp := &DatasetStructureGraphResponse{Kind: resolved, Templates: []DocumentStructureGraphTemplate{}}
+
+	// Discover templates from dataset entity rows of the requested kind.
+	templateIDs := map[string]struct{}{}
+	// "id" must be projected: graphRowSearch keys its result map by the row id,
+	// and Infinity only returns fields listed in SelectFields (it does not
+	// synthesize id), so omitting it silently drops every row (review Major).
+	// The resolved kind is pushed into the filter so the engine applies the
+	// predicate instead of scanning all entity rows and discarding them in Go.
+	metaFields := []string{"id", "compile_kwd", "compilation_template_kind_kwd", "compilation_template_ids"}
+	entityCountFilter := map[string]interface{}{
+		"knowledge_graph_kwd": []string{"entity"},
+		"scope_kwd":           []string{"dataset"},
+		"compile_kwd":         []string{types.CanonicalCompilationKind(resolved)},
+	}
+	_, entityTotal, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, []string{"id"}, entityCountFilter, nil, 0, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	relationCountFilter := map[string]interface{}{
+		"knowledge_graph_kwd": []string{"relation"},
+		"scope_kwd":           []string{"dataset"},
+		"compile_kwd":         []string{types.CanonicalCompilationKind(resolved)},
+	}
+	_, relationTotal, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, []string{"id"}, relationCountFilter, nil, 0, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp.TotalEntities = int(entityTotal)
+	resp.TotalRelations = int(relationTotal)
+	for offset := 0; ; offset += 1000 {
+		rows, total, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields, entityCountFilter, nil, offset, 1000, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			tkind := types.CompilationKind(row)
+			if tkind == "" || resolveDatasetStructureKind(tkind) != resolved {
+				continue
+			}
+			tid := rowTemplateID(row)
+			if tid != "" {
+				templateIDs[tid] = struct{}{}
+			}
+		}
+		if int64(offset+1000) >= total || len(rows) == 0 {
+			break
+		}
+	}
+
+	if keywords := strings.TrimSpace(in.Keywords); keywords != "" {
+		if len(templateIDs) == 0 {
+			return resp, nil
+		}
+		ids := make([]string, 0, len(templateIDs))
+		for tid := range templateIDs {
+			ids = append(ids, tid)
+		}
+		sort.Strings(ids)
+		templateDAO := dao.NewCompilationTemplateDAO()
+		for _, tid := range ids {
+			templateMeta := map[string]map[string]interface{}{}
+			template, loadErr := templateDAO.GetTemplate(ctx, dao.DB, in.TenantID, tid)
+			if loadErr == nil && template != nil {
+				templateMeta[tid] = map[string]interface{}{
+					"template_id":   tid,
+					"template_name": template.Name,
+					"kind":          template.Kind,
+				}
+			}
+			bucketMeta, entities, relations, err := s.keywordSubgraph(ctx, in.TenantID, in.DatasetID, "", keywords, templateMeta, map[string]interface{}{
+				"scope_kwd":                []string{"dataset"},
+				"compilation_template_ids": []string{tid},
+				"compile_kwd":              []string{types.CanonicalCompilationKind(resolved)},
+				"knowledge_graph_kwd":      []string{"entity"},
+			})
+			if err != nil {
+				return nil, err
+			}
+			if bucketMeta == nil || (len(entities) == 0 && len(relations) == 0) {
+				continue
+			}
+			resp.Templates = append(resp.Templates, DocumentStructureGraphTemplate{
+				TemplateID:   graphStr(bucketMeta["template_id"]),
+				TemplateName: graphStr(bucketMeta["template_name"]),
+				Kind:         graphStr(bucketMeta["kind"]),
+				Entities:     entities,
+				Relations:    relations,
+			})
+			resp.ReturnedEntities += len(entities)
+			resp.ReturnedRelations += len(relations)
+		}
+		return resp, nil
+	}
+
+	// Read each template's dataset entity/relation rows.
+	for tid := range templateIDs {
+		scope := map[string]interface{}{
+			"scope_kwd":                []string{"dataset"},
+			"compilation_template_ids": []string{tid},
+			"compile_kwd":              []string{types.CanonicalCompilationKind(resolved)},
+		}
+		entities, relations, err := s.buildBucket(ctx, in.TenantID, in.DatasetID, scope, nil)
+		if err != nil {
+			return nil, err
+		}
+		if len(entities) == 0 && len(relations) == 0 {
+			continue
+		}
+		resp.Templates = append(resp.Templates, DocumentStructureGraphTemplate{
+			TemplateID:   tid,
+			TemplateName: tid,
+			Kind:         resolved,
+			Entities:     entities,
+			Relations:    relations,
+		})
+		resp.ReturnedEntities += len(entities)
+		resp.ReturnedRelations += len(relations)
+	}
+
+	return resp, nil
+}
+
+// resolveGraphBucket mirrors Python _resolve_bucket.
+func resolveGraphBucket(row map[string]interface{}, templateMeta map[string]map[string]interface{}, documentID string) (map[string]interface{}, map[string]interface{}) {
+	compileKwd := firstStringValue(row["compile_kwd"])
+	kindVal := types.CompilationKind(row)
+	if kindVal == "" {
+		kindVal = compileKwd
+	}
+	tid := rowTemplateID(row)
+	if tid != "" {
+		kindNorm := compilationTemplateKind(kindVal)
+		meta := templateMeta[tid]
+		// Only a unique kind match can substitute a missing template meta; an
+		// empty kindNorm must never match (review Major — the previous nil
+		// round-trip stored a nil entry that the kind-only loop then matched).
+		if meta == nil && kindNorm != "" {
+			kindMatches := []map[string]interface{}{}
+			for _, m := range templateMeta {
+				if compilationTemplateKind(graphStr(m["kind"])) == kindNorm {
+					kindMatches = append(kindMatches, m)
+				}
+			}
+			if len(kindMatches) == 1 {
+				meta = kindMatches[0]
+			}
+		}
+		bucketName := graphStr(meta["template_name"])
+		if bucketName == "" {
+			bucketName = tid
+		}
+		bucketKind := graphStr(meta["kind"])
+		if bucketKind == "" {
+			bucketKind = kindVal
+		}
+		bucket := map[string]interface{}{
+			"template_id":   tid,
+			"template_name": bucketName,
+			"kind":          bucketKind,
+		}
+		scope := graphBucketScope(documentID, map[string]interface{}{
+			"compilation_template_ids": []string{tid},
+		})
+		return bucket, scope
+	}
+	bucketID := "legacy:" + compileKwd
+	legacyBucket := map[string]interface{}{
+		"template_id":   bucketID,
+		"template_name": "Legacy (" + compileKwd + ")",
+		"kind":          kindVal,
+	}
+	legacyScope := graphBucketScope(documentID, map[string]interface{}{
+		"compile_kwd": []string{compileKwd},
+		"must_not":    map[string]interface{}{"exists": "compilation_template_ids"},
+	})
+	return legacyBucket, legacyScope
+}
+
+func graphBucketScope(documentID string, scope map[string]interface{}) map[string]interface{} {
+	if strings.TrimSpace(documentID) != "" {
+		scope["doc_id"] = []string{documentID}
+	} else {
+		scope["scope_kwd"] = []string{"dataset"}
+	}
+	return scope
+}
+
+func rowTemplateID(row map[string]interface{}) string {
+	switch v := row["compilation_template_ids"].(type) {
+	case []interface{}:
+		for _, e := range v {
+			if s, ok := e.(string); ok && strings.TrimSpace(s) != "" {
+				return strings.TrimSpace(s)
+			}
+		}
+	case []string:
+		for _, s := range v {
+			if strings.TrimSpace(s) != "" {
+				return strings.TrimSpace(s)
+			}
+		}
+	case string:
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+func toNodeSlice(in []interface{}) []StructureGraphNode {
+	var out []StructureGraphNode
+	for _, e := range in {
+		if m, ok := e.(map[string]interface{}); ok {
+			out = append(out, StructureGraphNode(m))
+		}
+	}
+	return out
+}
+
+func toRelationSlice(in []interface{}) []StructureGraphRelation {
+	var out []StructureGraphRelation
+	for _, e := range in {
+		if m, ok := e.(map[string]interface{}); ok {
+			out = append(out, StructureGraphRelation(m))
+		}
+	}
+	return out
+}
+
+var graphTextQueryRE = regexp.MustCompile(`[ :|\r\n\t,，。？?/\x60!！&^%()\[\]{}<>*~'"\\=]+`)
+
+func nameMatchesQuery(node StructureGraphNode, query string) bool {
+	name := strings.ToLower(strings.TrimSpace(graphStr(node["name"])))
+	q := strings.ToLower(query)
+	if name == "" || q == "" {
+		return false
+	}
+	if strings.Contains(name, q) {
+		return true
+	}
+	terms := strings.Fields(q)
+	if len(terms) == 0 {
+		return false
+	}
+	for _, t := range terms {
+		if !strings.Contains(name, t) {
+			return false
+		}
+	}
+	return true
+}
+
+// keywordSubgraph mirrors sgc.keyword_subgraph (lexical lookup and ancestor
+// walk).
+func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, datasetID, documentID, keywords string, templateMeta map[string]map[string]interface{}, baseEntityCond map[string]interface{}) (map[string]interface{}, []StructureGraphNode, []StructureGraphRelation, error) {
+	if baseEntityCond == nil {
+		baseEntityCond = map[string]interface{}{
+			"doc_id":              []string{documentID},
+			"knowledge_graph_kwd": []string{"entity"},
+		}
+	}
+	if templateMeta == nil {
+		templateMeta = map[string]map[string]interface{}{}
+	}
+	templateMetaLoaded := make(map[string]bool, len(templateMeta))
+	for templateID := range templateMeta {
+		templateMetaLoaded[templateID] = true
+	}
+	templateDAO := dao.NewCompilationTemplateDAO()
+	resolveBucket := func(row map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
+		templateID := rowTemplateID(row)
+		if templateID != "" && !templateMetaLoaded[templateID] {
+			// Resolve the display metadata from the persisted template id so
+			// keyword searches expose the user-visible name instead of the id.
+			templateMetaLoaded[templateID] = true
+			if template, err := templateDAO.GetTemplate(ctx, dao.DB, tenantID, templateID); err == nil && template != nil {
+				templateMeta[templateID] = map[string]interface{}{
+					"template_id":   templateID,
+					"template_name": template.Name,
+					"kind":          template.Kind,
+				}
+			}
+		}
+		return resolveGraphBucket(row, templateMeta, documentID)
+	}
+	topFields := append(append([]string{}, graphEntityFields...), "compilation_template_ids", "compile_kwd", "compilation_template_kind_kwd")
+
+	textQuery := strings.TrimSpace(graphTextQueryRE.ReplaceAllString(keywords, " "))
+	var candidates []struct {
+		row  map[string]interface{}
+		node StructureGraphNode
+	}
+	validTop := func(rows map[string]map[string]interface{}) []struct {
+		row  map[string]interface{}
+		node StructureGraphNode
+	} {
+		var out []struct {
+			row  map[string]interface{}
+			node StructureGraphNode
+		}
+		for _, row := range rows {
+			if !rowHasEnabledSource(row, map[string]bool{}) {
+				continue
+			}
+			if node := projectEntity(row); node != nil && strings.TrimSpace(graphStr(node["name"])) != "" {
+				out = append(out, struct {
+					row  map[string]interface{}
+					node StructureGraphNode
+				}{row, node})
+			}
+		}
+		return out
+	}
+	candidateSeen := map[string]bool{}
+	appendCandidate := func(candidate struct {
+		row  map[string]interface{}
+		node StructureGraphNode
+	}) {
+		name := strings.ToLower(strings.Join(strings.Fields(graphStr(candidate.node["name"])), " "))
+		template := rowTemplateID(candidate.row)
+		if template == "" {
+			template = types.CompilationKind(candidate.row)
+		}
+		if template == "" {
+			template = firstStringValue(candidate.row["compile_kwd"])
+		}
+		key := template + "\x00" + name
+		if name == "" {
+			key = firstStringValue(candidate.row["id"])
+		}
+		if key != "" {
+			if candidateSeen[key] {
+				return
+			}
+			candidateSeen[key] = true
+		}
+		candidates = append(candidates, candidate)
+	}
+	if textQuery != "" {
+		// name_kwd is a keyword field and only supports exact filtering in the
+		// common engine abstraction. Scan the scoped entity rows instead so
+		// prefix/contains matches are not limited by the BM25 candidate cap.
+		for offset := 0; ; offset += 1000 {
+			nameMap, total, err := graphRowSearch(ctx, tenantID, datasetID, topFields, baseEntityCond, nil, offset, 1000, nil)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			for _, candidate := range validTop(nameMap) {
+				if nameMatchesQuery(candidate.node, textQuery) {
+					appendCandidate(candidate)
+				}
+			}
+			if int64(offset+1000) >= total || len(nameMap) == 0 {
+				break
+			}
+		}
+	}
+	if len(candidates) == 0 && textQuery != "" {
+		// If no entity name matches, fall back to BM25 over the serialized
+		// entity content (including descriptions and other payload fields).
+		textExpr := &types.MatchTextExpr{
+			Fields:       []string{"content_ltks^10", "content_sm_ltks"},
+			MatchingText: textQuery,
+			TopN:         graphKeywordCandidates,
+			ExtraOptions: map[string]interface{}{"original_query": keywords},
+		}
+		topMap, _, err := graphRowSearch(ctx, tenantID, datasetID, topFields, baseEntityCond, nil, 0, graphKeywordCandidates, []interface{}{textExpr})
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		for _, candidate := range validTop(topMap) {
+			appendCandidate(candidate)
+		}
+	}
+	// Prefer detail entities over title-typed ancestors.
+	detailCandidates := candidates[:0]
+	for _, c := range candidates {
+		if strings.ToLower(strings.TrimSpace(graphStr(c.node["type"]))) != "title" {
+			detailCandidates = append(detailCandidates, c)
+		}
+	}
+	if len(detailCandidates) > 0 {
+		candidates = detailCandidates
+	}
+
+	if len(candidates) == 0 {
+		return nil, nil, nil, nil
+	}
+
+	scopeForTemplate := func(row map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
+		return resolveBucket(row)
+	}
+	bucketMeta, scope := scopeForTemplate(candidates[0].row)
+	bucketID := graphStr(bucketMeta["template_id"])
+
+	matchedNodes := []StructureGraphNode{}
+	for _, c := range candidates {
+		cMeta, _ := scopeForTemplate(c.row)
+		if graphStr(cMeta["template_id"]) == bucketID {
+			matchedNodes = append(matchedNodes, c.node)
+		}
+	}
+	if len(matchedNodes) == 0 {
+		return nil, nil, nil, nil
+	}
+	structureKind := structureKindForBucket(graphStr(bucketMeta["kind"]))
+
+	var relations []StructureGraphRelation
+	seenRel := map[string]bool{}
+	neighborNamesLower := map[string]bool{}
+	matchedNames := map[string]bool{}
+	for _, n := range matchedNodes {
+		if name := strings.ToLower(strings.TrimSpace(graphStr(n["name"]))); name != "" {
+			matchedNames[name] = true
+		}
+	}
+	if structureKind != "tree" && structureKind != "page_index" {
+		for _, matchedNode := range matchedNodes {
+			matchedName := strings.TrimSpace(graphStr(matchedNode["name"]))
+			terms := endpointTerms(matchedName)
+			for _, field := range []string{"from_entity_kwd", "to_entity_kwd"} {
+				cond := copyFilter(scope)
+				cond["knowledge_graph_kwd"] = []string{"relation"}
+				cond[field] = terms
+				relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, 0, graphExpansionCap, nil)
+				if err != nil {
+					return nil, nil, nil, err
+				}
+				for _, row := range relMap {
+					if !rowHasEnabledSource(row, map[string]bool{}) {
+						continue
+					}
+					if edge := projectRelation(row); edge != nil {
+						key := graphStr(edge["from"]) + "\x00" + graphStr(edge["to"]) + "\x00" + graphStr(edge["type"])
+						if seenRel[key] {
+							continue
+						}
+						seenRel[key] = true
+						relations = append(relations, edge)
+						for _, endpoint := range []string{graphStr(edge["from"]), graphStr(edge["to"])} {
+							if ep := strings.TrimSpace(endpoint); ep != "" && !matchedNames[strings.ToLower(ep)] {
+								neighborNamesLower[strings.ToLower(ep)] = true
+							}
+						}
+					}
+					if len(relations) >= graphExpansionCap {
+						break
+					}
+				}
+				if len(relations) >= graphExpansionCap {
+					break
+				}
+			}
+			if len(relations) >= graphExpansionCap {
+				break
+			}
+		}
+	}
+
+	// Ancestor walk for tree/page_index.
+	if (structureKind == "tree" || structureKind == "page_index") && len(relations) < graphExpansionCap {
+		ancestorFrontier := map[string]bool{}
+		seenAncestors := map[string]bool{}
+		for n := range matchedNames {
+			ancestorFrontier[n] = true
+			seenAncestors[n] = true
+		}
+		for len(ancestorFrontier) > 0 && len(relations) < graphExpansionCap {
+			nextFrontier := map[string]bool{}
+			cond := copyFilter(scope)
+			cond["knowledge_graph_kwd"] = []string{"relation"}
+			cond["to_entity_kwd"] = sortedKeys(ancestorFrontier)
+			relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, 0, graphExpansionCap-len(relations), nil)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			for _, row := range relMap {
+				if !rowHasEnabledSource(row, map[string]bool{}) {
+					continue
+				}
+				if edge := projectRelation(row); edge != nil {
+					key := graphStr(edge["from"]) + "\x00" + graphStr(edge["to"]) + "\x00" + graphStr(edge["type"])
+					if seenRel[key] {
+						continue
+					}
+					seenRel[key] = true
+					relations = append(relations, edge)
+					parent := strings.ToLower(strings.TrimSpace(graphStr(edge["from"])))
+					if parent != "" && !seenAncestors[parent] {
+						seenAncestors[parent] = true
+						nextFrontier[parent] = true
+					}
+					if len(relations) >= graphExpansionCap {
+						break
+					}
+				}
+			}
+			ancestorFrontier = nextFrontier
+			for n := range nextFrontier {
+				neighborNamesLower[n] = true
+			}
+		}
+	}
+
+	entities := append([]StructureGraphNode{}, matchedNodes...)
+	if len(neighborNamesLower) > 0 {
+		cond := copyFilter(scope)
+		cond["knowledge_graph_kwd"] = []string{"entity"}
+		cond["name_kwd"] = sortedKeys(neighborNamesLower)
+		nbMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, nil, 0, graphExpansionCap, nil)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		for _, row := range nbMap {
+			if !rowHasEnabledSource(row, map[string]bool{}) {
+				continue
+			}
+			if n := projectEntity(row); n != nil {
+				entities = append(entities, n)
+			}
+		}
+	}
+	entities = dedupEntities(entities)
+	if structureKind == "tree" || structureKind == "page_index" {
+		entityNames := map[string]bool{}
+		for _, e := range entities {
+			if n := strings.ToLower(strings.TrimSpace(graphStr(e["name"]))); n != "" {
+				entityNames[n] = true
+			}
+		}
+		var filtered []StructureGraphRelation
+		for _, r := range relations {
+			if entityNames[strings.ToLower(strings.TrimSpace(graphStr(r["from"])))] && entityNames[strings.ToLower(strings.TrimSpace(graphStr(r["to"])))] {
+				filtered = append(filtered, r)
+			}
+		}
+		relations = filtered
+	}
+	return bucketMeta, entities, normalizeRelationEndpoints(entities, relations), nil
+}

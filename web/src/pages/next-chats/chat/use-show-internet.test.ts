@@ -1,73 +1,40 @@
+import { renderHook } from '@testing-library/react';
 import { WebSearchProvider } from '@/constants/chat';
-import type { PromptConfig } from '@/interfaces/database/chat';
-import { getWebSearchApiKey, getWebSearchProvider } from './web-search-api-key';
+import { useShowInternet } from './use-show-internet';
 
-describe('getWebSearchProvider', () => {
-  it('does not select a provider for a new unconfigured dialog', () => {
-    expect(getWebSearchProvider({} as PromptConfig)).toBeUndefined();
+const mockFetchChat = jest.fn();
+jest.mock('@/hooks/use-chat-request', () => ({
+  useFetchChat: () => mockFetchChat(),
+}));
+
+describe('saved provider Internet visibility', () => {
+  it('follows reloaded keyless AnySearch settings and a cleared selection', () => {
+    mockFetchChat.mockReturnValue({
+      data: {
+        prompt_config: {
+          web_search_provider: WebSearchProvider.AnySearch,
+          anysearch_api_key: '',
+        },
+      },
+    });
+    const { result, rerender } = renderHook(useShowInternet);
+    expect(result.current).toBe(true);
+
+    mockFetchChat.mockReturnValue({
+      data: {
+        prompt_config: {
+          web_search_provider: '',
+          anysearch_api_key: 'retained-key',
+          tavily_api_key: 'retained-other-key',
+        },
+      },
+    });
+    rerender();
+    expect(result.current).toBe(false);
   });
 
-  it('selects Tavily for a legacy dialog with a Tavily key', () => {
-    const promptConfig = {
-      tavily_api_key: 'tvly-test',
-    } as PromptConfig;
-
-    expect(getWebSearchProvider(promptConfig)).toBe(WebSearchProvider.Tavily);
-  });
-});
-
-describe('getWebSearchApiKey', () => {
-  it('uses Tavily for dialogs saved before provider selection existed', () => {
-    const promptConfig = {
-      tavily_api_key: 'tvly-test',
-    } as PromptConfig;
-
-    expect(getWebSearchApiKey(promptConfig)).toBe('tvly-test');
-  });
-
-  it('uses only the selected Querit key', () => {
-    const promptConfig = {
-      web_search_provider: WebSearchProvider.Querit,
-      querit_api_key: 'querit-test',
-      tavily_api_key: 'tvly-test',
-    } as PromptConfig;
-
-    expect(getWebSearchApiKey(promptConfig)).toBe('querit-test');
-  });
-
-  it('does not fall back to Tavily when Querit is selected without a key', () => {
-    const promptConfig = {
-      web_search_provider: WebSearchProvider.Querit,
-      tavily_api_key: 'tvly-test',
-    } as PromptConfig;
-
-    expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
-  });
-
-  it('treats a whitespace-only key as unconfigured', () => {
-    const promptConfig = {
-      web_search_provider: WebSearchProvider.Querit,
-      querit_api_key: '   ',
-    } as PromptConfig;
-
-    expect(getWebSearchApiKey(promptConfig)).toBe('');
-  });
-
-  it('does not fall back to Tavily for an unsupported provider', () => {
-    const promptConfig = {
-      web_search_provider: 'unsupported',
-      tavily_api_key: 'tvly-test',
-    } as unknown as PromptConfig;
-
-    expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
-  });
-
-  it('treats a non-string key as unconfigured', () => {
-    const promptConfig = {
-      web_search_provider: WebSearchProvider.Querit,
-      querit_api_key: 123,
-    } as unknown as PromptConfig;
-
-    expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
+  it('hides Internet until saved settings arrive', () => {
+    mockFetchChat.mockReturnValue({ data: undefined });
+    expect(renderHook(useShowInternet).result.current).toBe(false);
   });
 });

@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -91,6 +90,7 @@ func TestGitHub_BuildURL(t *testing.T) {
 
 func TestGitHub_ParseResponse(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotContentType, gotAPIVersion, gotPerPage string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +111,7 @@ func TestGitHub_ParseResponse(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewGitHubToolWithDefaults(helper, githubParams{TopN: 17})
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"query":"ragflow"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -149,14 +149,15 @@ func TestGitHub_ParseResponse(t *testing.T) {
 
 func TestGitHub_EmptyQueryReturnsEmptyResults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewGitHubTool()
-	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	out, err := tool.InvokableRun(ctx, `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun(empty query): %v", err)
 	}
 	var envelope githubEnvelope
-	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+	if err = json.Unmarshal([]byte(out), &envelope); err != nil {
 		t.Fatalf("decode empty result: %v", err)
 	}
 	if len(envelope.Results) != 0 || envelope.Error != "" {
@@ -181,19 +182,19 @@ func TestGitHub_BuildByNameUsesPythonNodeParams(t *testing.T) {
 	if github.defaults.TopN != 17 {
 		t.Errorf("defaults.TopN = %d, want 17", github.defaults.TopN)
 	}
-	if _, err := BuildByName("github", map[string]any{"top_n": 100}); err != nil {
+	if _, err = BuildByName("github", map[string]any{"top_n": 100}); err != nil {
 		t.Errorf("BuildByName(github) rejected GitHub's maximum top_n: %v", err)
 	}
-	if _, err := BuildByName("github", map[string]any{"top_n": 0}); err == nil {
+	if _, err = BuildByName("github", map[string]any{"top_n": 0}); err == nil {
 		t.Fatal("BuildByName(github) accepted non-positive top_n")
 	}
-	if _, err := BuildByName("github", map[string]any{"top_n": 1.5}); err == nil {
+	if _, err = BuildByName("github", map[string]any{"top_n": 1.5}); err == nil {
 		t.Fatal("BuildByName(github) accepted fractional top_n")
 	}
-	if _, err := BuildByName("github", map[string]any{"top_n": "10"}); err == nil {
+	if _, err = BuildByName("github", map[string]any{"top_n": "10"}); err == nil {
 		t.Fatal("BuildByName(github) accepted string top_n")
 	}
-	if _, err := BuildByName("github", map[string]any{"top_n": 101}); err == nil {
+	if _, err = BuildByName("github", map[string]any{"top_n": 101}); err == nil {
 		t.Fatal("BuildByName(github) accepted top_n above GitHub's per_page limit")
 	}
 	ignored, err := BuildByName("github", map[string]any{"max_results": 5})
@@ -220,6 +221,7 @@ func TestGitHub_ComponentContractMatchesPython(t *testing.T) {
 }
 
 func TestGitHub_ReferencesAndOutputsPreserveRawResults(t *testing.T) {
+	ctx := t.Context()
 	github := NewGitHubTool()
 	results := []any{map[string]any{
 		"name":        "ragflow",
@@ -234,7 +236,7 @@ func TestGitHub_ReferencesAndOutputsPreserveRawResults(t *testing.T) {
 	}
 	envelope := map[string]any{"results": results}
 
-	chunks, docAggs := github.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := github.BuildReferences(ctx, envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}
@@ -269,9 +271,10 @@ func TestGitHub_LimitReferencesKeepsBoundaryChunk(t *testing.T) {
 
 func TestGitHub_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewGitHubTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}

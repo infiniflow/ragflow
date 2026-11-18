@@ -18,13 +18,11 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
+	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -51,18 +49,18 @@ var tavilyNewlinePattern = regexp.MustCompile(`\n+`)
 // api_key may be omitted when the env var TAVILY_API_KEY is set; the tool
 // resolves it from the environment in that case.
 type tavilyParams struct {
-	APIKey                   string   `json:"api_key"`
-	Query                    string   `json:"query"`
-	MaxResults               int      `json:"max_results"`
-	SearchDepth              string   `json:"search_depth"`
-	Topic                    string   `json:"topic"`
-	Days                     int      `json:"days"`
-	IncludeAnswer            bool     `json:"include_answer"`
-	IncludeRawContent        bool     `json:"include_raw_content"`
-	IncludeImages            bool     `json:"include_images"`
-	IncludeImageDescriptions bool     `json:"include_image_descriptions"`
-	IncludeDomains           []string `json:"include_domains"`
-	ExcludeDomains           []string `json:"exclude_domains"`
+	APIKey                   string   `json:"api_key,omitempty" schema:"-"`
+	Query                    string   `json:"query" doc:"Search query" required:"true"`
+	MaxResults               int      `json:"max_results,omitempty" schema:"-"`
+	SearchDepth              string   `json:"search_depth,omitempty" schema:"-"`
+	Topic                    string   `json:"topic,omitempty" doc:"Search topic: \"general\" (default) or \"news\"."`
+	Days                     int      `json:"days,omitempty" schema:"-"`
+	IncludeAnswer            bool     `json:"include_answer,omitempty" schema:"-"`
+	IncludeRawContent        bool     `json:"include_raw_content,omitempty" schema:"-"`
+	IncludeImages            bool     `json:"include_images,omitempty" schema:"-"`
+	IncludeImageDescriptions bool     `json:"include_image_descriptions,omitempty" schema:"-"`
+	IncludeDomains           []string `json:"include_domains,omitempty" doc:"Domains that search results must include."`
+	ExcludeDomains           []string `json:"exclude_domains,omitempty" doc:"Domains that search results must exclude."`
 }
 
 // tavilyRequestBody is the JSON body POSTed to the Tavily /search endpoint.
@@ -95,10 +93,10 @@ type tavilyEnvelope struct {
 }
 
 type tavilyExtractParams struct {
-	APIKey       string `json:"api_key"`
-	URLs         any    `json:"urls"`
-	ExtractDepth string `json:"extract_depth"`
-	Format       string `json:"format"`
+	APIKey       string `json:"api_key,omitempty" schema:"-"`
+	URLs         any    `json:"urls" type:"array" doc:"The URLs to extract content from." required:"true"`
+	ExtractDepth string `json:"extract_depth,omitempty" doc:"Extraction depth: \"basic\" (default) or \"advanced\"."`
+	Format       string `json:"format,omitempty" doc:"Output format: \"markdown\" (default) or \"text\"."`
 }
 
 type tavilyExtractRequestBody struct {
@@ -214,64 +212,16 @@ func newTavilyExtractTool(h *HTTPHelper, envKey func() string, defaults tavilyEx
 // defaultTavilyEnvKey is the production env-key resolver. Pulled out
 // as a named function (not a var) so tests cannot accidentally
 // mutate it via package-var assignment.
-func defaultTavilyEnvKey() string { return common.GetEnv(common.EnvTavilyApiKey) }
+func defaultTavilyEnvKey() string { return common.GetEnv(common.EnvTavilyAPIKey) }
 
 // Info returns the tool's metadata for the chat model.
 func (t *TavilyTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: tavilyToolName,
-		Desc: tavilyToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Search query",
-				Required: true,
-			},
-			"topic": {
-				Type:     schema.String,
-				Desc:     `Search topic: "general" (default) or "news".`,
-				Required: false,
-			},
-			"include_domains": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Domains that search results must include.",
-				Required: false,
-			},
-			"exclude_domains": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Domains that search results must exclude.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(tavilyToolName, tavilyToolDescription, tavilyParams{})
 }
 
 // Info returns the Tavily Extract tool metadata for the chat model.
 func (t *TavilyExtractTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: tavilyExtractToolName,
-		Desc: "Extract web page content from one or more specified URLs using Tavily Extract.",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"urls": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "The URLs to extract content from.",
-				Required: true,
-			},
-			"extract_depth": {
-				Type:     schema.String,
-				Desc:     `Extraction depth: "basic" (default) or "advanced".`,
-				Required: false,
-			},
-			"format": {
-				Type:     schema.String,
-				Desc:     `Output format: "markdown" (default) or "text".`,
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(tavilyExtractToolName, "Extract web page content from one or more specified URLs using Tavily Extract.", tavilyExtractParams{})
 }
 
 // tavilyEndpoint is the Tavily /search URL. Exposed as a package var so
@@ -303,6 +253,12 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 	var provided map[string]json.RawMessage
 	_ = json.Unmarshal([]byte(argsJSON), &provided)
 	p = mergeTavilyParams(t.defaults, p, provided)
+	if err := ValidateSearchFilters(map[string]any{
+		"include_domains": p.IncludeDomains,
+		"exclude_domains": p.ExcludeDomains,
+	}, false); err != nil {
+		return tavilyErrJSON(fmt.Errorf("tavily: %w", err)), nil
+	}
 
 	apiKey := p.APIKey
 	if apiKey == "" {
@@ -312,9 +268,7 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 		return tavilyErrJSON(fmt.Errorf("tavily: api_key is required (or set TAVILY_API_KEY)")), nil
 	}
 
-	// Match the Python implementation: always disable images and raw content.
 	p.IncludeImages = false
-	p.IncludeRawContent = false
 
 	body, _ := json.Marshal(tavilyRequestBody{
 		Query:                    p.Query,
@@ -436,14 +390,14 @@ func buildTavilyReferences(envelope map[string]any) ([]map[string]any, []map[str
 			content = tavilyText(item["content"])
 		}
 		content = tavilyDataImagePattern.ReplaceAllString(content, "")
+		content = rewriteTavilyImageURLs(content, tavilyText(item["url"]))
 		content = truncateTavilyRunes(content, 10000)
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(tavilyHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(tavilyHashInt(documentID, 500), 10)
 		title := tavilyText(item["title"])
 		resultURL := tavilyText(item["url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		score := item["score"]
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
@@ -465,6 +419,23 @@ func buildTavilyReferences(envelope map[string]any) ([]map[string]any, []map[str
 		})
 	}
 	return chunks, docAggs
+}
+
+var tavilyMarkdownImagePattern = regexp.MustCompile(`(!\[[^]]*\]\()([^\s)]+)(\))`)
+
+func rewriteTavilyImageURLs(content, pageURL string) string {
+	base, err := url.Parse(pageURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return content
+	}
+	return tavilyMarkdownImagePattern.ReplaceAllStringFunc(content, func(image string) string {
+		parts := tavilyMarkdownImagePattern.FindStringSubmatch(image)
+		ref, err := url.Parse(parts[2])
+		if err != nil || ref.Scheme != "" || ref.Host != "" || strings.HasPrefix(parts[2], "data:") {
+			return image
+		}
+		return parts[1] + base.ResolveReference(ref).String() + parts[3]
+	})
 }
 
 func renderTavilyReferences(chunks []map[string]any, maxTokens int) string {
@@ -501,12 +472,6 @@ func tavilyText(value any) string {
 
 func tavilyPromptField(value any) string {
 	return tavilyNewlinePattern.ReplaceAllString(tavilyText(value), " ")
-}
-
-func tavilyHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateTavilyRunes(value string, limit int) string {

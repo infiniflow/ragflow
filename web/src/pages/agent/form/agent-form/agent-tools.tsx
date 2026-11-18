@@ -78,7 +78,7 @@ export function ToolCard({
 type ActionButtonProps<T> = {
   record: T;
   deleteRecord(record: T): void;
-  edit: MouseEventHandler<HTMLOrSVGElement>;
+  edit?: MouseEventHandler<HTMLOrSVGElement>;
 };
 
 function ActionButton<T>({ deleteRecord, record, edit }: ActionButtonProps<T>) {
@@ -89,15 +89,17 @@ function ActionButton<T>({ deleteRecord, record, edit }: ActionButtonProps<T>) {
   // Wrapping into buttons to solve the issue that clicking icon occasionally not jumping to corresponding form
   return (
     <div className="flex items-center gap-4 text-text-secondary">
-      <Button
-        variant="transparent"
-        size="icon"
-        className="size-3.5 !bg-transparent !border-none"
-        data-tool={record}
-        onClick={edit}
-      >
-        <PencilLine className="size-full" />
-      </Button>
+      {edit && (
+        <Button
+          variant="transparent"
+          size="icon"
+          className="size-3.5 !bg-transparent !border-none"
+          data-tool={record}
+          onClick={edit}
+        >
+          <PencilLine className="size-full" />
+        </Button>
+      )}
 
       <Button
         variant="transparent"
@@ -147,7 +149,11 @@ export function AgentTools() {
             <ActionButton
               record={id || component_name}
               deleteRecord={deleteNodeTool(id)}
-              edit={handleEdit}
+              edit={
+                component_name === Operator.Code
+                  ? undefined // Code has no config form to edit
+                  : handleEdit
+              }
             />
           </ToolCard>
         ))}

@@ -17,10 +17,11 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -29,6 +30,7 @@ import (
 
 func TestTavily_BuildRequest(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotPath, gotAuth, gotCT, gotMethod string
 	var gotBody map[string]any
@@ -44,14 +46,14 @@ func TestTavily_BuildRequest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Point the hard-coded tavily endpoint at the test server via a
+	// Point the hard-coded tavily endpoint at the test server via
 	// transport that rewrites the host. Avoids the global-package-var
 	// race that breaks parallel tests.
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewTavilyToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"query":"ragflow","api_key":"key-xyz","max_results":3,"search_depth":"advanced","include_raw_content":true,"include_images":true}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -81,16 +83,14 @@ func TestTavily_BuildRequest(t *testing.T) {
 	if gotBody["search_depth"] != "advanced" {
 		t.Errorf("body.search_depth = %v, want advanced", gotBody["search_depth"])
 	}
-	// include_raw_content and include_images are always forced to false
-	// to match the Python implementation (avoids bloating the context
-	// with base64 image data).
-	if gotBody["include_raw_content"] != false || gotBody["include_images"] != false {
-		t.Errorf("include flags = raw:%v images:%v, want false/false (forced)", gotBody["include_raw_content"], gotBody["include_images"])
+	if gotBody["include_raw_content"] != true || gotBody["include_images"] != false {
+		t.Errorf("include flags = raw:%v images:%v, want true/false", gotBody["include_raw_content"], gotBody["include_images"])
 	}
 }
 
 func TestTavily_ParseResponse(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -108,7 +108,7 @@ func TestTavily_ParseResponse(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewTavilyToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"query":"x","api_key":"k"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -134,11 +134,12 @@ func TestTavily_ParseResponse(t *testing.T) {
 
 func TestTavily_RequiresAPIKey(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	// envKey always returns "" so we know the failure is from the
 	// missing api_key, not from a stray process env var.
 	tool := NewTavilyToolWithEnvKey(NewHTTPHelper(), func() string { return "" })
-	out, err := tool.InvokableRun(context.Background(), `{"query":"x"}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"x"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun should not return a Go error for missing api_key: %v", err)
 	}
@@ -147,8 +148,42 @@ func TestTavily_RequiresAPIKey(t *testing.T) {
 	}
 }
 
+func TestTavily_UpstreamErrors(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{"unauthorized", http.StatusUnauthorized, `{}`, "upstream returned 401"},
+		{"invalid JSON", http.StatusOK, `{`, "decode response"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
+			out, err := NewTavilyToolWith(helper).InvokableRun(t.Context(), `{"query":"ragflow","api_key":"key","include_raw_content":true}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var envelope tavilyEnvelope
+			if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(envelope.Error, tc.want) || len(envelope.Results) != 0 {
+				t.Fatalf("error envelope = %#v, want %q and no results", envelope, tc.want)
+			}
+		})
+	}
+}
+
 func TestTavily_APIKeyFromEnv(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +196,7 @@ func TestTavily_APIKeyFromEnv(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewTavilyToolWithEnvKey(helper, func() string { return "from-env" })
-	if _, err := tool.InvokableRun(context.Background(), `{"query":"x"}`); err != nil {
+	if _, err := tool.InvokableRun(ctx, `{"query":"x"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if gotAuth != "Bearer from-env" {
@@ -171,9 +206,10 @@ func TestTavily_APIKeyFromEnv(t *testing.T) {
 
 func TestTavily_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewTavilyTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -187,15 +223,16 @@ func TestTavily_Info(t *testing.T) {
 
 func TestTavily_InfoArraySchemasIncludeStringItems(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
-	info, err := NewTavilyTool().Info(context.Background())
+	info, err := NewTavilyTool().Info(ctx)
 	if err != nil {
 		t.Fatalf("Tavily Info: %v", err)
 	}
 	assertToolArrayItemType(t, info, "include_domains")
 	assertToolArrayItemType(t, info, "exclude_domains")
 
-	extractInfo, err := NewTavilyExtractTool().Info(context.Background())
+	extractInfo, err := NewTavilyExtractTool().Info(ctx)
 	if err != nil {
 		t.Fatalf("Tavily Extract Info: %v", err)
 	}
@@ -233,14 +270,15 @@ func assertToolArrayItemType(t *testing.T, info *schema.ToolInfo, fieldName stri
 
 func TestTavily_EmptyQueryReturnsEmptyResults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tavily := NewTavilyToolWithEnvKey(NewHTTPHelper(), func() string { return "" })
-	out, err := tavily.InvokableRun(context.Background(), `{"query":""}`)
+	out, err := tavily.InvokableRun(ctx, `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun(empty query): %v", err)
 	}
 	var envelope tavilyEnvelope
-	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+	if err = json.Unmarshal([]byte(out), &envelope); err != nil {
 		t.Fatalf("decode empty result: %v", err)
 	}
 	if len(envelope.Results) != 0 || envelope.Error != "" {
@@ -250,24 +288,28 @@ func TestTavily_EmptyQueryReturnsEmptyResults(t *testing.T) {
 
 func TestTavily_PreservesRawResults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"results":[{"url":"https://a.example","title":"A","content":"alpha","score":0.9,"custom":{"request_id":"kept"}}]}`))
+		_, _ = w.Write([]byte(`{"results":[{"url":"https://a.example","title":"A","content":"alpha","raw_content":"full article","score":0.9,"custom":{"request_id":"kept"}}]}`))
 	}))
 	defer srv.Close()
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
-	out, err := NewTavilyToolWith(helper).InvokableRun(context.Background(), `{"query":"x","api_key":"k"}`)
+	out, err := NewTavilyToolWith(helper).InvokableRun(ctx, `{"query":"x","api_key":"k"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	var envelope tavilyEnvelope
-	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+	if err = json.Unmarshal([]byte(out), &envelope); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	custom, ok := envelope.Results[0]["custom"].(map[string]any)
 	if !ok || custom["request_id"] != "kept" {
 		t.Fatalf("raw result fields were lost: %#v", envelope.Results[0])
+	}
+	if envelope.Results[0]["raw_content"] != "full article" {
+		t.Fatalf("raw_content was lost: %#v", envelope.Results[0])
 	}
 }
 
@@ -277,8 +319,11 @@ func TestTavily_BuildByNameUsesNodeDefaults(t *testing.T) {
 	built, err := BuildByName("tavily", map[string]any{
 		"api_key":                    "stored-key",
 		"search_depth":               "advanced",
+		"topic":                      "news",
 		"max_results":                float64(12),
 		"days":                       float64(7),
+		"include_domains":            []any{"example.com", "news.example"},
+		"exclude_domains":            []any{"blocked.example"},
 		"include_answer":             true,
 		"include_raw_content":        true,
 		"include_images":             true,
@@ -296,6 +341,9 @@ func TestTavily_BuildByNameUsesNodeDefaults(t *testing.T) {
 	if tavily.defaults.APIKey != "stored-key" || tavily.defaults.SearchDepth != "advanced" || tavily.defaults.MaxResults != 12 || tavily.defaults.Days != 7 {
 		t.Fatalf("defaults = %+v", tavily.defaults)
 	}
+	if tavily.defaults.Topic != "news" || !reflect.DeepEqual(tavily.defaults.IncludeDomains, []string{"example.com", "news.example"}) || !reflect.DeepEqual(tavily.defaults.ExcludeDomains, []string{"blocked.example"}) {
+		t.Fatalf("topic/domain defaults = %+v", tavily.defaults)
+	}
 	if !tavily.defaults.IncludeAnswer || !tavily.defaults.IncludeRawContent || !tavily.defaults.IncludeImages || !tavily.defaults.IncludeImageDescriptions {
 		t.Fatalf("boolean defaults = %+v", tavily.defaults)
 	}
@@ -303,6 +351,7 @@ func TestTavily_BuildByNameUsesNodeDefaults(t *testing.T) {
 
 func TestTavily_ExplicitFlagsOverrideNodeDefaults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -315,21 +364,59 @@ func TestTavily_ExplicitFlagsOverrideNodeDefaults(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
 	tavily := newTavilyTool(helper, func() string { return "" }, tavilyParams{
 		APIKey: "stored-key", IncludeAnswer: true,
+		Topic: "news", IncludeDomains: []string{"example.com"}, ExcludeDomains: []string{"blocked.example"},
 	})
-	if _, err := tavily.InvokableRun(context.Background(), `{"query":"ragflow"}`); err != nil {
+	if _, err := tavily.InvokableRun(ctx, `{"query":"ragflow"}`); err != nil {
 		t.Fatalf("InvokableRun(node defaults): %v", err)
 	}
 	if gotBody["include_answer"] != true {
 		t.Fatalf("node default include_answer was not sent: %#v", gotBody)
 	}
-	if gotBody["include_raw_content"] != false || gotBody["include_images"] != false {
-		t.Fatalf("include_raw_content/images should be forced false: %#v", gotBody)
+	if gotBody["topic"] != "news" || !reflect.DeepEqual(gotBody["include_domains"], []any{"example.com"}) || !reflect.DeepEqual(gotBody["exclude_domains"], []any{"blocked.example"}) {
+		t.Fatalf("node topic/domain defaults were not sent: %#v", gotBody)
 	}
-	if _, err := tavily.InvokableRun(context.Background(), `{"query":"ragflow","include_answer":false}`); err != nil {
+	if gotBody["include_raw_content"] != false || gotBody["include_images"] != false {
+		t.Fatalf("include_raw_content/images should default to false: %#v", gotBody)
+	}
+	if _, err := tavily.InvokableRun(ctx, `{"query":"ragflow","include_answer":false}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if gotBody["include_answer"] != false {
 		t.Fatalf("explicit false include_answer was not preserved: %#v", gotBody)
+	}
+}
+
+func TestTavily_RawContentOverridesNodeDefaults(t *testing.T) {
+	t.Parallel()
+	for _, nodeDefault := range []bool{false, true} {
+		for _, override := range []string{"", `,"include_raw_content":false`, `,"include_raw_content":true`} {
+			t.Run(fmt.Sprintf("default=%t/override=%s", nodeDefault, override), func(t *testing.T) {
+				var gotBody tavilyRequestBody
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+						t.Error(err)
+					}
+					_, _ = w.Write([]byte(`{"results":[]}`))
+				}))
+				defer srv.Close()
+				built, err := BuildByName("tavily", map[string]any{"api_key": "stored-key", "include_raw_content": nodeDefault})
+				if err != nil {
+					t.Fatal(err)
+				}
+				tavily := built.(*TavilyTool)
+				tavily.helper = NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
+				if _, err := tavily.InvokableRun(t.Context(), `{"query":"ragflow"`+override+`}`); err != nil {
+					t.Fatal(err)
+				}
+				want := nodeDefault
+				if override != "" {
+					want = strings.HasSuffix(override, "true")
+				}
+				if gotBody.IncludeRawContent != want {
+					t.Fatalf("include_raw_content = %t, want %t", gotBody.IncludeRawContent, want)
+				}
+			})
+		}
 	}
 }
 
@@ -339,11 +426,13 @@ func TestTavily_BuildByNameRejectsInvalidNodeDefaults(t *testing.T) {
 	cases := []map[string]any{
 		{"api_key": 1},
 		{"search_depth": "deep"},
+		{"topic": "finance"},
 		{"max_results": 0},
 		{"max_results": 21},
 		{"max_results": 1.5},
 		{"days": 0},
 		{"include_answer": "yes"},
+		{"include_domains": []any{map[string]any{"value": "example.com"}}},
 	}
 	for _, params := range cases {
 		if _, err := BuildByName("tavily", params); err == nil {
@@ -354,6 +443,7 @@ func TestTavily_BuildByNameRejectsInvalidNodeDefaults(t *testing.T) {
 
 func TestTavily_ComponentReferencesAndOutputs(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tavily := NewTavilyTool()
 	spec := tavily.ComponentSpec()
@@ -373,7 +463,7 @@ func TestTavily_ComponentReferencesAndOutputs(t *testing.T) {
 		"score":       float64(0.75),
 		"custom":      "preserved",
 	}}}
-	chunks, docAggs := tavily.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := tavily.BuildReferences(ctx, envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}
@@ -398,6 +488,7 @@ func TestTavily_ComponentReferencesAndOutputs(t *testing.T) {
 
 func TestTavilyExtract_BuildRequest(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotPath, gotAuth, gotMethod string
 	var gotBody map[string]any
@@ -413,7 +504,7 @@ func TestTavilyExtract_BuildRequest(t *testing.T) {
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
 	tool := NewTavilyExtractToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"urls":"https://a.example, https://b.example","api_key":"key-xyz","extract_depth":"advanced","format":"text"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -444,6 +535,7 @@ func TestTavilyExtract_BuildRequest(t *testing.T) {
 
 func TestTavilyExtract_ParseResponse(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -453,7 +545,7 @@ func TestTavilyExtract_ParseResponse(t *testing.T) {
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
 	tool := NewTavilyExtractToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(), `{"urls":["https://a.example/"],"api_key":"k"}`)
+	out, err := tool.InvokableRun(ctx, `{"urls":["https://a.example/"],"api_key":"k"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -478,9 +570,10 @@ func TestTavilyExtract_ParseResponse(t *testing.T) {
 
 func TestTavilyExtract_RequiresAPIKey(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewTavilyExtractToolWithEnvKey(NewHTTPHelper(), func() string { return "" })
-	out, err := tool.InvokableRun(context.Background(), `{"urls":["https://a.example/"]}`)
+	out, err := tool.InvokableRun(ctx, `{"urls":["https://a.example/"]}`)
 	if err != nil {
 		t.Fatalf("InvokableRun should not return a Go error for missing api_key: %v", err)
 	}
@@ -491,9 +584,10 @@ func TestTavilyExtract_RequiresAPIKey(t *testing.T) {
 
 func TestTavilyExtract_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewTavilyExtractTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -571,6 +665,7 @@ func TestTavilyExtract_BuildByNameAcceptsNodeDefaults(t *testing.T) {
 
 func TestTavilyExtract_UsesNodeDefaults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotAuth string
 	var gotBody map[string]any
@@ -589,7 +684,7 @@ func TestTavilyExtract_UsesNodeDefaults(t *testing.T) {
 		ExtractDepth: "advanced",
 		Format:       "text",
 	})
-	if _, err := tavily.InvokableRun(context.Background(), `{"unrelated":"ignored"}`); err != nil {
+	if _, err := tavily.InvokableRun(ctx, `{"unrelated":"ignored"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if gotAuth != "Bearer stored-key" {

@@ -170,3 +170,479 @@ func TestParseAddModelWithDimensions(t *testing.T) {
 		})
 	}
 }
+
+func TestParseListSyncLogs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected *Command
+		wantErr  bool
+	}{
+		{
+			name:  "LIST SYNC_LOGS",
+			input: "LIST SYNC_LOGS;",
+			expected: &Command{
+				Type:   "api_list_sync_logs",
+				Params: map[string]interface{}{},
+			},
+		},
+		{
+			name:  "LIST SYNC_LOGS FROM dataset_id",
+			input: "LIST SYNC_LOGS FROM 'kb-1';",
+			expected: &Command{
+				Type: "api_list_sync_logs",
+				Params: map[string]interface{}{
+					"dataset_id": "kb-1",
+				},
+			},
+		},
+		{
+			name:  "LIST DATASET name SYNC_LOGS",
+			input: "LIST DATASET 'my dataset' SYNC_LOGS;",
+			expected: &Command{
+				Type: "api_list_sync_logs",
+				Params: map[string]interface{}{
+					"dataset_name": "my dataset",
+				},
+			},
+		},
+		{
+			name:  "LIST SYNC_LOGS WITH page and page_size",
+			input: "LIST SYNC_LOGS WITH PAGE 2 PAGE_SIZE 50;",
+			expected: &Command{
+				Type: "api_list_sync_logs",
+				Params: map[string]interface{}{
+					"page":      2,
+					"page_size": 50,
+				},
+			},
+		},
+		{
+			name:  "LIST SYNC_LOGS FROM dataset_id WITH page",
+			input: "LIST SYNC_LOGS FROM 'kb-1' WITH PAGE 3;",
+			expected: &Command{
+				Type: "api_list_sync_logs",
+				Params: map[string]interface{}{
+					"dataset_id": "kb-1",
+					"page":       3,
+				},
+			},
+		},
+		{
+			name:  "LIST DATASET name SYNC_LOGS WITH page_size",
+			input: "LIST DATASET 'my dataset' SYNC_LOGS WITH PAGE_SIZE 20;",
+			expected: &Command{
+				Type: "api_list_sync_logs",
+				Params: map[string]interface{}{
+					"dataset_name": "my dataset",
+					"page_size":    20,
+				},
+			},
+		},
+		{
+			name:    "unknown WITH option",
+			input:   "LIST SYNC_LOGS WITH FOO 1;",
+			wantErr: true,
+		},
+		{
+			name:    "non-integer WITH option",
+			input:   "LIST SYNC_LOGS WITH PAGE 'x';",
+			wantErr: true,
+		},
+		{
+			name:    "comma-separated WITH options",
+			input:   "LIST SYNC_LOGS WITH PAGE 2, PAGE_SIZE 50;",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Parse() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != tt.expected.Type {
+				t.Errorf("Command Type = %v, expected = %v", cmd.Type, tt.expected.Type)
+			}
+
+			gotDatasetID, _ := cmd.Params["dataset_id"].(string)
+			expectedDatasetID, _ := tt.expected.Params["dataset_id"].(string)
+			if gotDatasetID != expectedDatasetID {
+				t.Errorf("dataset_id = %v, expected = %v", gotDatasetID, expectedDatasetID)
+			}
+
+			gotDatasetName, _ := cmd.Params["dataset_name"].(string)
+			expectedDatasetName, _ := tt.expected.Params["dataset_name"].(string)
+			if gotDatasetName != expectedDatasetName {
+				t.Errorf("dataset_name = %v, expected = %v", gotDatasetName, expectedDatasetName)
+			}
+
+			gotPage, _ := cmd.Params["page"].(int)
+			expectedPage, _ := tt.expected.Params["page"].(int)
+			if gotPage != expectedPage {
+				t.Errorf("page = %v, expected = %v", gotPage, expectedPage)
+			}
+
+			gotPageSize, _ := cmd.Params["page_size"].(int)
+			expectedPageSize, _ := tt.expected.Params["page_size"].(int)
+			if gotPageSize != expectedPageSize {
+				t.Errorf("page_size = %v, expected = %v", gotPageSize, expectedPageSize)
+			}
+		})
+	}
+}
+
+func TestParseAPIShowModelStats(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedParams map[string]interface{}
+		wantErr        bool
+	}{
+		{
+			name:           "default to today",
+			input:          "SHOW MODEL STATS;",
+			expectedParams: map[string]interface{}{},
+		},
+		{
+			name:           "last 7 days",
+			input:          "SHOW MODEL STATS DAYS 7;",
+			expectedParams: map[string]interface{}{"days": 7},
+		},
+		{
+			name:           "absolute range",
+			input:          "SHOW MODEL STATS FROM '2024-01-01' TO '2024-01-31';",
+			expectedParams: map[string]interface{}{"start": "2024-01-01", "end": "2024-01-31"},
+		},
+		{
+			name:           "provider filter",
+			input:          "SHOW MODEL STATS DAYS 7 'openai';",
+			expectedParams: map[string]interface{}{"days": 7, "provider": "openai"},
+		},
+		{
+			name:           "provider + instance filter",
+			input:          "SHOW MODEL STATS DAYS 7 'openai' 'prod';",
+			expectedParams: map[string]interface{}{"days": 7, "provider": "openai", "instance": "prod"},
+		},
+		{
+			name:           "provider + instance + model filter",
+			input:          "SHOW MODEL STATS DAYS 7 'openai' 'prod' 'gpt-4o';",
+			expectedParams: map[string]interface{}{"days": 7, "provider": "openai", "instance": "prod", "model": "gpt-4o"},
+		},
+		{
+			name:           "group by date",
+			input:          "SHOW MODEL STATS DAYS 7 BY DATE;",
+			expectedParams: map[string]interface{}{"days": 7, "by": "date"},
+		},
+		{
+			name:           "group by model",
+			input:          "SHOW MODEL STATS DAYS 7 BY MODEL;",
+			expectedParams: map[string]interface{}{"days": 7, "by": "model"},
+		},
+		{
+			name:           "group by instance",
+			input:          "SHOW MODEL STATS DAYS 7 BY INSTANCE;",
+			expectedParams: map[string]interface{}{"days": 7, "by": "instance"},
+		},
+		{
+			name:           "group by provider",
+			input:          "SHOW MODEL STATS DAYS 7 BY PROVIDER;",
+			expectedParams: map[string]interface{}{"days": 7, "by": "provider"},
+		},
+		{
+			name:           "provider filter + group by date",
+			input:          "SHOW MODEL STATS DAYS 30 'openai' BY DATE;",
+			expectedParams: map[string]interface{}{"days": 30, "provider": "openai", "by": "date"},
+		},
+		{
+			name:           "provider + instance filter + group by model",
+			input:          "SHOW MODEL STATS DAYS 30 'openai' 'prod' BY MODEL;",
+			expectedParams: map[string]interface{}{"days": 30, "provider": "openai", "instance": "prod", "by": "model"},
+		},
+		{
+			name:           "provider + instance + model filter + group by date",
+			input:          "SHOW MODEL STATS DAYS 30 'openai' 'prod' 'gpt-4o' BY DATE;",
+			expectedParams: map[string]interface{}{"days": 30, "provider": "openai", "instance": "prod", "model": "gpt-4o", "by": "date"},
+		},
+		{
+			name:           "absolute range + provider filter + group by instance",
+			input:          "SHOW MODEL STATS FROM '2024-01-01' TO '2024-01-31' 'azure' BY INSTANCE;",
+			expectedParams: map[string]interface{}{"start": "2024-01-01", "end": "2024-01-31", "provider": "azure", "by": "instance"},
+		},
+		{
+			name:           "absolute range + group by provider",
+			input:          "SHOW MODEL STATS FROM '2024-01-01' TO '2024-01-31' BY PROVIDER;",
+			expectedParams: map[string]interface{}{"start": "2024-01-01", "end": "2024-01-31", "by": "provider"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Parse() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != "api_show_model_stats" {
+				t.Fatalf("Command Type = %v, expected api_show_model_stats", cmd.Type)
+			}
+
+			if !reflect.DeepEqual(cmd.Params, tt.expectedParams) {
+				t.Errorf("Params = %#v, expected %#v", cmd.Params, tt.expectedParams)
+			}
+		})
+	}
+}
+
+func TestParseAPIShowGroupStats(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedParams map[string]interface{}
+		wantErr        bool
+	}{
+		{
+			name:           "default to today, all groups total",
+			input:          "SHOW GROUP STATS;",
+			expectedParams: map[string]interface{}{},
+		},
+		{
+			name:           "last 7 days, all groups total",
+			input:          "SHOW GROUP STATS DAYS 7;",
+			expectedParams: map[string]interface{}{"days": 7},
+		},
+		{
+			name:           "absolute range, all groups total",
+			input:          "SHOW GROUP STATS FROM '2024-01-01' TO '2024-01-31';",
+			expectedParams: map[string]interface{}{"start": "2024-01-01", "end": "2024-01-31"},
+		},
+		{
+			name:           "specific group, last 7 days total",
+			input:          "SHOW GROUP STATS DAYS 7 'rag-default';",
+			expectedParams: map[string]interface{}{"days": 7, "group": "rag-default"},
+		},
+		{
+			name:           "specific group, by date",
+			input:          "SHOW GROUP STATS DAYS 30 'rag-default' BY DATE;",
+			expectedParams: map[string]interface{}{"days": 30, "group": "rag-default", "by": "date"},
+		},
+		{
+			name:           "specific group, by model",
+			input:          "SHOW GROUP STATS DAYS 30 'rag-default' BY MODEL;",
+			expectedParams: map[string]interface{}{"days": 30, "group": "rag-default", "by": "model"},
+		},
+		{
+			name:           "all groups, by date",
+			input:          "SHOW GROUP STATS DAYS 30 BY DATE;",
+			expectedParams: map[string]interface{}{"days": 30, "by": "date"},
+		},
+		{
+			name:           "all groups, by group",
+			input:          "SHOW GROUP STATS DAYS 30 BY GROUP;",
+			expectedParams: map[string]interface{}{"days": 30, "by": "group"},
+		},
+		{
+			name:           "all groups, by model",
+			input:          "SHOW GROUP STATS DAYS 30 BY MODEL;",
+			expectedParams: map[string]interface{}{"days": 30, "by": "model"},
+		},
+		{
+			name:           "whole month, by group",
+			input:          "SHOW GROUP STATS FROM '2024-01-01' TO '2024-01-31' BY GROUP;",
+			expectedParams: map[string]interface{}{"start": "2024-01-01", "end": "2024-01-31", "by": "group"},
+		},
+		{
+			name:           "whole month, specific group by date",
+			input:          "SHOW GROUP STATS FROM '2024-01-01' TO '2024-01-31' 'rag-default' BY DATE;",
+			expectedParams: map[string]interface{}{"start": "2024-01-01", "end": "2024-01-31", "group": "rag-default", "by": "date"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Parse() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != "api_show_group_stats" {
+				t.Fatalf("Command Type = %v, expected api_show_group_stats", cmd.Type)
+			}
+
+			if !reflect.DeepEqual(cmd.Params, tt.expectedParams) {
+				t.Errorf("Params = %#v, expected %#v", cmd.Params, tt.expectedParams)
+			}
+		})
+	}
+}
+
+func TestParseAPIShowGroup(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedParams map[string]interface{}
+	}{
+		{
+			name:           "show a specific group",
+			input:          "SHOW GROUP 'rag-default';",
+			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+		},
+		{
+			name:           "show a specific group without trailing semicolon",
+			input:          "SHOW GROUP 'rag-default'",
+			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != "api_show_model_group" {
+				t.Fatalf("Command Type = %v, expected api_show_model_group", cmd.Type)
+			}
+
+			if !reflect.DeepEqual(cmd.Params, tt.expectedParams) {
+				t.Errorf("Params = %#v, expected %#v", cmd.Params, tt.expectedParams)
+			}
+		})
+	}
+}
+
+func TestParseAPIDeleteGroup(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedParams map[string]interface{}
+	}{
+		{
+			name:           "delete a specific group",
+			input:          "DELETE GROUP 'rag-default';",
+			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+		},
+		{
+			name:           "delete a specific group without trailing semicolon",
+			input:          "DELETE GROUP 'rag-default'",
+			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != "api_delete_model_group" {
+				t.Fatalf("Command Type = %v, expected api_delete_model_group", cmd.Type)
+			}
+
+			if !reflect.DeepEqual(cmd.Params, tt.expectedParams) {
+				t.Errorf("Params = %#v, expected %#v", cmd.Params, tt.expectedParams)
+			}
+		})
+	}
+}
+
+func TestParseAPIListGroups(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedParams map[string]interface{}
+	}{
+		{
+			name:           "list all groups",
+			input:          "LIST GROUPS;",
+			expectedParams: map[string]interface{}{},
+		},
+		{
+			name:           "list all groups without trailing semicolon",
+			input:          "LIST GROUPS",
+			expectedParams: map[string]interface{}{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != "api_list_model_groups" {
+				t.Fatalf("Command Type = %v, expected api_list_model_groups", cmd.Type)
+			}
+
+			if !reflect.DeepEqual(cmd.Params, tt.expectedParams) {
+				t.Errorf("Params = %#v, expected %#v", cmd.Params, tt.expectedParams)
+			}
+		})
+	}
+}
+
+func TestParseAPICreateGroup(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedParams map[string]interface{}
+	}{
+		{
+			name:           "create a group",
+			input:          "CREATE GROUP 'rag-default';",
+			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+		},
+		{
+			name:           "create a group without trailing semicolon",
+			input:          "CREATE GROUP 'rag-default'",
+			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != "api_create_model_group" {
+				t.Fatalf("Command Type = %v, expected api_create_model_group", cmd.Type)
+			}
+
+			if !reflect.DeepEqual(cmd.Params, tt.expectedParams) {
+				t.Errorf("Params = %#v, expected %#v", cmd.Params, tt.expectedParams)
+			}
+		})
+	}
+}

@@ -16,6 +16,7 @@ type Position = doctype.Position
 type Section = doctype.Section
 type TableItem = doctype.TableItem
 type TSRCell = doctype.TSRCell
+type VHPageSpan = doctype.VHPageSpan
 type DLARegion = doctype.DLARegion
 type OCRBox = doctype.OCRBox
 type OCRText = doctype.OCRText
@@ -44,6 +45,8 @@ const (
 	LayoutTypeHeader      = doctype.LayoutTypeHeader
 	DLALabelFigureCaption = doctype.DLALabelFigureCaption
 	DLALabelTableCaption  = doctype.DLALabelTableCaption
+
+	GarbageLayoutScoreThreshold = doctype.GarbageLayoutScoreThreshold
 )
 
 // ── Re-export functions and variables ──────────────────────────────────────
@@ -52,4 +55,5 @@ var (
 	CollectFigures      = doctype.CollectFigures
 	DefaultParserConfig = doctype.DefaultParserConfig
 	IsCJK               = doctype.IsCJK
+	GarbageLayoutTypes  = doctype.GarbageLayoutTypes
 )

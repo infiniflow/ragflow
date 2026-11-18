@@ -5,11 +5,10 @@ import {
 } from '@/hooks/use-knowledge-request';
 import { IConnector } from '@/interfaces/database/dataset';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
-import { checkEmbedding } from '@/services/knowledge-service';
 import {
   getOperatorType,
-  transformApiConfigToForm,
   transformFormConfigToApi,
+  transformSavedParserConfigToForm,
 } from '@/utils/pipeline-operator';
 import { pick } from 'lodash';
 import {
@@ -20,9 +19,7 @@ import {
   useMemo,
 } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { useParams, useSearchParams } from 'react-router';
-import { z } from 'zod';
-import { formSchema } from './form-schema';
+import { DatasetSettingFormValues } from './form-schema';
 
 export function useHasParsedDocument(isEdit?: boolean) {
   const { data: knowledgeDetails } = useFetchDatasetPipelineConfiguration({
@@ -31,26 +28,8 @@ export function useHasParsedDocument(isEdit?: boolean) {
   return knowledgeDetails.chunk_count > 0;
 }
 
-export const useHandleKbEmbedding = () => {
-  const { id } = useParams();
-  const [searchParams] = useSearchParams();
-  const knowledgeBaseId = searchParams.get('id') || id;
-  const handleChange = useCallback(
-    async ({ embed_id }: { embed_id: string }) => {
-      const res = await checkEmbedding(knowledgeBaseId || '', {
-        embd_id: embed_id,
-      });
-      return res.data;
-    },
-    [knowledgeBaseId],
-  );
-  return {
-    handleChange,
-  };
-};
-
 export const useFetchDatasetSettingOnMount = (
-  form: UseFormReturn<z.infer<typeof formSchema>>,
+  form: UseFormReturn<DatasetSettingFormValues>,
 ) => {
   const { data: knowledgeDetails, loading } =
     useFetchDatasetPipelineConfiguration();
@@ -68,30 +47,9 @@ export const useFetchDatasetSettingOnMount = (
   }, [knowledgeDetails?.connectors, dataSourceInfo]);
 
   useEffect(() => {
-    const parserConfig = knowledgeDetails.parser_config as
-      | Record<string, any>
-      | undefined;
-    let formParserConfig: Record<string, any> | undefined = parserConfig;
-
-    // Convert parser_config to form format if in pipeline mode
-    if (
-      parserConfig &&
-      typeof parserConfig === 'object' &&
-      !Array.isArray(parserConfig)
-    ) {
-      const keys = Object.keys(parserConfig);
-      const hasPipelineKeys = keys.some((key) => key.includes(':'));
-      if (hasPipelineKeys) {
-        formParserConfig = {};
-        for (const [operatorId, config] of Object.entries(parserConfig)) {
-          const operatorType = getOperatorType(operatorId);
-          formParserConfig[operatorId] = transformApiConfigToForm(
-            operatorType,
-            config as Record<string, any>,
-          );
-        }
-      }
-    }
+    const formParserConfig = transformSavedParserConfigToForm(
+      knowledgeDetails.parser_config as Record<string, any> | undefined,
+    );
 
     const formValues = {
       ...pick(knowledgeDetails, [
@@ -103,8 +61,7 @@ export const useFetchDatasetSettingOnMount = (
         'pagerank',
         'avatar',
         'pipeline_id',
-        'pipeline_name',
-        'pipeline_avatar',
+        'pipeline_version_id',
         'parser_id',
       ]),
       embedding_model: knowledgeDetails.embedding_model,
@@ -112,8 +69,11 @@ export const useFetchDatasetSettingOnMount = (
       parse_type: knowledgeDetails.pipeline_id
         ? ParseType.Pipeline
         : ParseType.BuiltIn,
+      // Backfill the pinned version (design section 5/C2); an absent pin
+      // renders as the empty (track latest) form value.
+      pipeline_version_id: knowledgeDetails.pipeline_version_id ?? '',
       parser_config: formParserConfig,
-    } as z.infer<typeof formSchema>;
+    } as DatasetSettingFormValues;
     form.reset(formValues);
   }, [form, knowledgeDetails, sourceData]);
 
@@ -124,15 +84,22 @@ export const useSaveDatasetSetting = () => {
   const { saveKnowledgeConfiguration, loading } = useUpdateKnowledge();
 
   const handleSave = useCallback(
-    async (values: z.infer<typeof formSchema>) => {
+    async (values: DatasetSettingFormValues) => {
       const payload = { ...values };
 
-      // Apply forward transforms to parser_config if in pipeline mode
+      // Apply forward transforms to parser_config if in pipeline mode. Each node
+      // (e.g. Extractor:AutoExtractDefault) already carries its own modular
+      // metadata, so no flat top-level `metadata`/`parent_child` key is emitted
+      // — the Go backend requires component-scoped keys. Skip any non-operator
+      // (flat, key-without-":") entries that may linger from a stale form copy.
       if (payload.parser_config) {
         const transformedConfig: Record<string, any> = {};
         for (const [operatorId, config] of Object.entries(
           payload.parser_config,
         )) {
+          if (!operatorId.includes(':')) {
+            continue;
+          }
           const operatorType = getOperatorType(operatorId);
           transformedConfig[operatorId] = transformFormConfigToApi(
             operatorType,
@@ -144,6 +111,9 @@ export const useSaveDatasetSetting = () => {
 
       if (payload.parse_type === ParseType.BuiltIn) {
         payload.pipeline_id = undefined;
+        // A version pin only exists for a dataflow pipeline; drop it in
+        // built-in mode so no stale canvas version is submitted.
+        payload.pipeline_version_id = undefined;
       } else {
         payload.parser_id = undefined;
       }

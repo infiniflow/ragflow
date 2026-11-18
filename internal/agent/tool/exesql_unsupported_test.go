@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"errors"
 	"testing"
 )
@@ -27,9 +26,10 @@ import (
 // database/sql driver, so InvokableRun should fail at sql.Open with an
 // unknown-driver error rather than the old unsupported-db sentinel.
 func TestExeSQL_TrinoDriverMissing(t *testing.T) {
+	ctx := t.Context()
 	conn := exesqlConnParams{DBType: "trino", Host: "1.1.1.1", Port: 8080, Database: "d", Username: "u"}
 	tool := NewExeSQLTool(conn)
-	_, err := tool.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+	_, err := tool.InvokableRun(ctx, `{"sql":"SELECT 1"}`)
 	if err == nil {
 		t.Fatal("expected driver error for trino")
 	}
@@ -40,9 +40,10 @@ func TestExeSQL_TrinoDriverMissing(t *testing.T) {
 
 // TestExeSQL_IBMDB2Unsupported: same as above for IBM DB2.
 func TestExeSQL_IBMDB2Unsupported(t *testing.T) {
+	ctx := t.Context()
 	conn := exesqlConnParams{DBType: "ibm db2", Host: "1.1.1.1", Port: 50000, Database: "d", Username: "u"}
 	tool := NewExeSQLTool(conn)
-	_, err := tool.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+	_, err := tool.InvokableRun(ctx, `{"sql":"SELECT 1"}`)
 	if err == nil {
 		t.Fatal("expected ErrExeSQLUnsupportedDB for ibm db2")
 	}
@@ -57,9 +58,10 @@ func TestExeSQL_IBMDB2Unsupported(t *testing.T) {
 // follow-up should normalize the error. The regression guard here
 // is "doesn't panic, returns a non-nil error".
 func TestExeSQL_UnknownDB(t *testing.T) {
+	ctx := t.Context()
 	conn := exesqlConnParams{DBType: "fake-db", Host: "1.1.1.1", Port: 1234, Database: "d", Username: "u"}
 	tool := NewExeSQLTool(conn)
-	_, err := tool.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+	_, err := tool.InvokableRun(ctx, `{"sql":"SELECT 1"}`)
 	if err == nil {
 		t.Fatal("expected error for unknown db_type")
 	}

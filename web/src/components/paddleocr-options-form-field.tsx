@@ -1,19 +1,24 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { LLMFactory } from '@/constants/llm';
-import { buildOptions } from '@/utils/form';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-
-const algorithmOptions = buildOptions([
-  'PaddleOCR-VL-1.6',
-  'PaddleOCR-VL-1.5',
-  'PaddleOCR-VL',
-  'PP-OCRv6',
-  'PP-OCRv5',
-  'PP-StructureV3',
-]);
 
 export function PaddleOCROptionsFormField({
   namePrefix = 'parser_config',
@@ -70,7 +75,7 @@ export function PaddleOCROptionsFormField({
         )}
         tooltip={t(
           'knowledgeConfiguration.paddleocrAccessTokenTip',
-          'Access token for PaddleOCR API (optional)',
+          'Access token for PaddleOCR API',
         )}
         horizontal={true}
       >
@@ -80,28 +85,6 @@ export function PaddleOCROptionsFormField({
             placeholder={t(
               'knowledgeConfiguration.paddleocrAccessTokenPlaceholder',
             )}
-          />
-        )}
-      </RAGFlowFormItem>
-
-      <RAGFlowFormItem
-        name={buildName('paddleocr_algorithm')}
-        label={t(
-          'knowledgeConfiguration.paddleocrAlgorithm',
-          'PaddleOCR Algorithm',
-        )}
-        tooltip={t(
-          'knowledgeConfiguration.paddleocrAlgorithmTip',
-          'Algorithm to use for PaddleOCR parsing',
-        )}
-        horizontal={true}
-      >
-        {(field) => (
-          <RAGFlowSelect
-            value={field.value || undefined}
-            onChange={field.onChange}
-            options={algorithmOptions}
-            placeholder={t('common.selectPlaceholder', 'Select value')}
           />
         )}
       </RAGFlowFormItem>

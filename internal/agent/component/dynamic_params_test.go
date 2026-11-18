@@ -1,0 +1,139 @@
+package component
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestValidateDynamicEntries(t *testing.T) {
+	valid := dslWithComponents(
+		componentDSL("DataOperations", map[string]any{
+			"select_keys":   []any{"title"},
+			"remove_keys":   []any{"internal"},
+			"filter_values": []any{map[string]any{"key": "status", "operator": "eq", "value": "published"}},
+		}),
+		componentDSL("Agent", map[string]any{"tools": []any{"web_search"}}),
+		// Invoke rows take their value from either a reference or a
+		// literal, so a row may carry only one of the two.
+		componentDSL("Invoke", map[string]any{"variables": []any{
+			map[string]any{"key": "query", "ref": "Begin@query", "value": "query"},
+			map[string]any{"key": "question", "ref": "Begin@query", "value": ""},
+			map[string]any{"key": "top_k", "ref": "", "value": "12"},
+			map[string]any{"key": "limit", "ref": "", "value": 10},
+			map[string]any{"key": "enabled", "ref": "", "value": false},
+		}}),
+		// A null variables value carries no rows, same as an omitted one.
+		componentDSL("Invoke", map[string]any{"variables": nil}),
+		componentDSL("VariableAggregator", map[string]any{"groups": []any{map[string]any{
+			"group_name": "answer",
+			"variables":  []any{map[string]any{"value": "LLM@content"}},
+		}}}),
+		componentDSL("Loop", map[string]any{
+			"loop_variables":             []any{map[string]any{"variable": "count", "value": 0}},
+			"loop_termination_condition": []any{map[string]any{"variable": "count", "operator": "gte", "value": 3}},
+		}),
+		componentDSL("UserFillUp", map[string]any{"inputs": map[string]any{
+			"choice": map[string]any{"options": []any{"one", "two"}},
+		}}),
+		componentDSL("Iteration", map[string]any{"outputs": map[string]any{
+			"result": map[string]any{"type": "string", "ref": "Iteration@result"},
+		}}),
+		componentDSL("Message", map[string]any{"text": "hello"}),
+		componentDSL("Compiler", map[string]any{"compilation_template_group_id": "group-1"}),
+		// Whitespace-only delimiters are legitimate split tokens: the web
+		// form's default row is "\n" (a real newline) and the delimiter
+		// input converts a typed "\n"/"\t" into the raw control character
+		// before saving. They must not be rejected as empty entries.
+		componentDSL("TokenChunker", map[string]any{
+			"delimiter_mode":      "delimiter",
+			"delimiters":          []any{"\n"},
+			"children_delimiters": []any{"\t"},
+		}),
+	)
+
+	if err := ValidateDynamicEntries(valid); err != nil {
+		t.Fatalf("valid DSL rejected: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		component map[string]any
+		want      string
+	}{
+		{"string array", componentDSL("DataOperations", map[string]any{"select_keys": []any{"title", " "}}), "select_keys"},
+		{"tool name", componentDSL("Agent", map[string]any{"tools": []any{"web_search", ""}}), "tools"},
+		{"filter operator", componentDSL("DataOperations", map[string]any{"filter_values": []any{map[string]any{"key": "status", "operator": "", "value": "published"}}}), "filter_values[0]"},
+		{"invoke variable", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "", "ref": "Begin@query", "value": "query"}}}), "variables[0]"},
+		{"invoke variable without source", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "query", "ref": "", "value": ""}}}), "variables[0]"},
+		{"invoke variable with nil literal", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "query", "ref": "", "value": nil}}}), "variables[0]"},
+		{"invoke variable row not a map", componentDSL("Invoke", map[string]any{"variables": []any{"query"}}), "variables[0]"},
+		{"invoke variable nil row", componentDSL("Invoke", map[string]any{"variables": []any{nil}}), "variables[0]"},
+		{"invoke variable without key", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"ref": "Begin@query", "value": ""}}}), "variables[0]"},
+		{"invoke variable with numeric key", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": 42, "ref": "Begin@query", "value": ""}}}), "variables[0]"},
+		{"invoke variables not an array", componentDSL("Invoke", map[string]any{"variables": "query"}), "variables must be an array"},
+		{"invoke variables object", componentDSL("Invoke", map[string]any{"variables": map[string]any{"key": "query"}}), "variables must be an array"},
+		{"invoke variable without source after valid row", componentDSL("Invoke", map[string]any{"variables": []any{
+			map[string]any{"key": "query", "ref": "Begin@query", "value": ""},
+			map[string]any{"key": "top_k", "ref": "", "value": " "},
+		}}), "variables[1]"},
+		{"malformed group", componentDSL("VariableAggregator", map[string]any{"groups": []any{"not a group"}}), "groups[0]"},
+		{"aggregated variable", componentDSL("VariableAggregator", map[string]any{"groups": []any{map[string]any{"group_name": "answer", "variables": []any{map[string]any{"value": ""}}}}}), "groups[0].variables[0]"},
+		{"malformed aggregated variable", componentDSL("VariableAggregator", map[string]any{"groups": []any{map[string]any{"group_name": "answer", "variables": []any{nil}}}}), "groups[0].variables[0]"},
+		{"loop variable", componentDSL("Loop", map[string]any{"loop_variables": []any{map[string]any{"variable": ""}}}), "loop_variables[0]"},
+		{"loop operator", componentDSL("Loop", map[string]any{"loop_termination_condition": []any{map[string]any{"variable": "count", "operator": "", "value": 3}}}), "loop_termination_condition[0]"},
+		{"iteration output", componentDSL("Iteration", map[string]any{"outputs": map[string]any{"result": map[string]any{"ref": ""}}}), "outputs.result"},
+		{"input option", componentDSL("UserFillUp", map[string]any{"inputs": map[string]any{"choice": map[string]any{"options": []any{"one", ""}}}}), "inputs.choice.options"},
+		{"empty delimiter entry", componentDSL("TokenChunker", map[string]any{"delimiters": []any{"ok", ""}}), "delimiters"},
+		{"empty children delimiter entry", componentDSL("TokenChunker", map[string]any{"children_delimiters": []any{""}}), "children_delimiters"},
+		{"empty message text", componentDSL("Message", map[string]any{"text": " \t "}), "Message"},
+		{"empty message content", componentDSL("Message", map[string]any{"content": []any{""}}), "Message"},
+		{"missing message content", componentDSL("Message", map[string]any{}), "Message"},
+		{"blank message row after valid row", componentDSL("Message", map[string]any{"content": []any{"hello", " "}}), "Message"},
+		{"missing compilation template", componentDSL("Compiler", map[string]any{}), "Compilation Template Group does not support empty value"},
+		{"empty compilation template", componentDSL("Compiler", map[string]any{"compilation_template_group_id": " "}), "Compilation Template Group does not support empty value"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			draftErr := ValidateDraftDynamicEntries(dslWithComponents(test.component))
+			invokeDraft := test.component["component_name"] == "Invoke"
+			switch test.name {
+			case "invoke variable row not a map", "invoke variable nil row", "invoke variable with numeric key", "invoke variables not an array", "invoke variables object":
+				invokeDraft = false
+			}
+			if test.component["component_name"] == "Message" || test.component["component_name"] == "Agent" || test.component["component_name"] == "DataOperations" || test.component["component_name"] == "Compiler" || test.component["component_name"] == "Loop" || test.component["component_name"] == "Iteration" || test.component["component_name"] == "TokenChunker" || invokeDraft || test.name == "input option" || test.name == "aggregated variable" {
+				if draftErr != nil {
+					t.Fatalf("draft rejected unfinished entries: %v", draftErr)
+				}
+			} else if draftErr == nil || !strings.Contains(draftErr.Error(), test.want) {
+				t.Fatalf("draft validation changed: %v, want %q", draftErr, test.want)
+			}
+			err := ValidateDynamicEntries(dslWithComponents(test.component))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("ValidateDynamicEntries() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func dslWithComponents(components ...map[string]any) map[string]any {
+	items := make(map[string]any, len(components))
+	for i, component := range components {
+		items[string(rune('a'+i))] = map[string]any{"obj": component}
+	}
+	return map[string]any{"components": items}
+}
+
+func componentDSL(name string, params map[string]any) map[string]any {
+	return map[string]any{"component_name": name, "params": params}
+}
+
+func TestMessageDSLFactoryRejectsIncompleteContent(t *testing.T) {
+	for _, params := range []map[string]any{
+		nil, {}, {"text": ""}, {"content": []string{}}, {"content": []string{"hello", ""}},
+	} {
+		if _, err := New("Message", params); err == nil || !strings.Contains(err.Error(), "content does not support empty") {
+			t.Fatalf("factory accepted %#v: %v", params, err)
+		}
+	}
+}

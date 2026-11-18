@@ -14,10 +14,10 @@
 //  limitations under the License.
 //
 
-// Package chunker holds the ingestion chunker components: TokenChunker,
-// TitleChunker, GroupTitleChunker, HierarchyTitleChunker. The four
-// components share the same upstream payload (schema.ChunkerFromUpstream)
-// and the same output shape (schema.ChunkerOutputs).
+// Package chunker holds the ingestion chunker components. The variants share
+// the same upstream payload (schema.ChunkerFromUpstream) and the same output
+// shape (schema.ChunkerOutputs); each registers via MustRegisterChunker from
+// its own file.
 //
 // The package is intentionally separate from internal/agent/component/
 // (the agent canvas) and from internal/ingestion/component/schema/
@@ -27,15 +27,20 @@ package chunker
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
 
 // MustRegisterChunker registers a single chunker component under
-// CategoryIngestion. The four chunker files each carry exactly one
+// CategoryIngestion. Each chunker file carries exactly one
 // init() that calls this with the registered component's name; the
 // factory body resolves the typed constructor via newChunkerByName
 // (in common.go).
@@ -57,28 +62,99 @@ func MustRegisterChunker(name string) {
 
 // imageUploadDecorator wraps a chunker component. Before upload it writes
 // ck["id"] (the single source of chunk identity) for every chunk; then it runs
-// uploadChunkImages which reads ck["id"] and uploads any raw image bytes.
+// uploadChunkMedia which reads ck["id"] and uploads raw or deferred images.
 type imageUploadDecorator struct {
 	inner runtime.Component
 }
 
+// Invoke runs the wrapped chunker, stamps deterministic chunk ids, and uploads
+// any remaining inline or deferred media before the chunks leave the component.
 func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	out, err := d.inner.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
-	if !ok || len(chunks) == 0 {
+	// Chunkers report input-shape failures through _ERROR instead of a Go
+	// error (the legacy flow contract). This decorator is the pipeline-facing
+	// component, so promote that envelope to a real error: otherwise the run
+	// continues with an empty chunk list and a malformed input looks like an
+	// empty document.
+	if msg, _ := out["_ERROR"].(string); strings.TrimSpace(msg) != "" {
+		return nil, errors.New(msg)
+	}
+	// Accept the legacy []map[string]any carrier verbatim (no round-trip, so
+	// the id-stamp/upload logic below sees the exact maps the chunker emitted).
+	// The typed []ChunkDoc carrier is normalized via GetChunks, which also
+	// bridges []any-of-map, so this choke point no longer silently skips the
+	// whole id-stamp/upload pass on a carrier-type mismatch.
+	var chunks []map[string]any
+	switch v := out["chunks"].(type) {
+	case []map[string]any:
+		chunks = v
+	default:
+		if typed, ok := schema.GetChunks(out); ok {
+			chunks = schema.ChunkDocsToMaps(typed)
+			// Write the normalized carrier back so the in-place id-stamp and
+			// image-drop mutations below propagate to the emitted envelope
+			// (the legacy []map[string]any path shares the reference already).
+			out["chunks"] = chunks
+		}
+	}
+	if len(chunks) == 0 {
 		return out, nil
 	}
+
+	// Canvas-debug (dry-run) chunk cap: when set (>=1), keep only the leading
+	// N chunks for preview. This is the single choke point every chunker
+	// variant flows through, so the cap applies regardless of variant, and it
+	// also limits downstream compiler/tokenizer work in the debug run — the
+	// intended cost saving. Truncation happens FIRST, before any per-chunk
+	// work below: dropped chunks get no id computation and no image upload /
+	// byte dropping, so a chunk can never be persisted to storage and then
+	// discarded by this cap. No chunker node (or cap == 0) → untouched.
+	if chunkCap := globals.DebugChunkCap(ctx); chunkCap > 0 && len(chunks) > chunkCap {
+		chunks = chunks[:chunkCap]
+		out["chunks"] = chunks
+	}
+
 	kbID, docID := resolveImageUploadContext(ctx, inputs)
 
 	// Compute and write the deterministic chunk id (component.ChunkID) for
 	// every chunk. This happens here — before any upload — so uploadChunkImage
-	// can read ck["id"] without deriving it itself. Downstream, the persist
-	// stage reuses the same formula as a fallback when ck["id"] is absent.
+	// can read ck["id"] without deriving it itself. The id formula itself
+	// lives in canonicalChunkID (common.go); this loop only re-derives it as
+	// a fallback for chunks whose id was not already stamped upstream.
+	//
+	// A chunk id may already be stamped (by the streamed crop-upload path,
+	// or from title-family media positions and finalized headings). Reuse it so
+	// the identity is not re-derived after upload; both routes derive it through
+	// the shared helpers, so the crop-time key and this id are identical and
+	// cannot diverge. For chunks that bypassed crop, fall back to deriving
+	// it here from the already-finalized text — a captionless image folds
+	// its payload identity in (mediaChunkIdentity), so distinct images in
+	// one document never share an id.
 	for _, ck := range chunks {
-		text, _ := ck["text"].(string)
+		if id, ok := ck["id"]; ok && id != "" {
+			continue
+		}
+		text, err := requireChunkText(ck)
+		if err != nil {
+			return nil, err
+		}
+		if text == "" {
+			docType, _ := ck["doc_type_kwd"].(string)
+			matrix := chunkPositionMatrix(ck)
+			if isMediaDocType(docType) && len(matrix) > 0 {
+				text = mediaTextIdentity("", true, matrix)
+			} else {
+				image, _ := ck["image"].(string)
+				imgID, _ := ck["img_id"].(string)
+				text = mediaChunkIdentity(image, imgID, entity.MediaRefFromAny(ck["media_ref"]))
+			}
+		} else {
+			docType, _ := ck["doc_type_kwd"].(string)
+			text = mediaTextIdentity(text, isMediaDocType(docType), chunkPositionMatrix(ck))
+		}
 		ck["id"] = common.ChunkID(docID, text)
 	}
 
@@ -88,35 +164,39 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// persist run); in debug we drop the raw bytes so they are not held in
 	// memory until a persist stage that will never run.
 	if kbID != "" {
-		if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
+		if _, err := uploadChunkMedia(ctx, chunks, ChunkImageUploader, kbID, docID); err != nil {
 			return nil, err
 		}
 	} else {
 		for _, ck := range chunks {
 			delete(ck, "image")
+			delete(ck, "media_ref")
 		}
 	}
 	return out, nil
 }
 
 // ChunkerInputs is the static, registered input descriptor shared
-// by all four chunker variants.
+// by all chunker variants.
 var ChunkerInputs = map[string]string{
 	"text":          "Plain-text input. The chunker slices this into downstream chunks.",
-	"content":       "Alias for \"text\".",
 	"chunks":        "Optional upstream chunk list (structured JSON form).",
-	"name":          "Source document name. Required by the upstream payload convention.",
+	"name":          "Source document name. Not required on the payload: when absent it is read from the workflow-wide globals bag (CanvasState.Globals) via globals.GlobalOrInput.",
+	"file_type":     "Canonical parser routing extension used by GeneralChunker.",
 	"_created_time": "Optional upstream timestamp (RFC3339Nano, s).",
 	"_elapsed_time": "Optional upstream elapsed time (s).",
 }
 
 // ChunkerOutputs is the static, registered output descriptor shared
-// by all four chunker variants.
+// by all chunker variants.
+//
+// Note: this map is the component's emitted output only. Run-level metadata
+// that downstream components still need — name, tenant_id, kb_id — is NOT
+// re-emitted here; it lives in the workflow-wide CanvasState.Globals bag and
+// is read directly from ctx (see runtime.CanvasState.Globals and
+// globals.GlobalOrInput). Do not add those keys here.
 var ChunkerOutputs = map[string]string{
 	"output_format": "Always \"chunks\" on success.",
 	"chunks":        "list[object]: per-chunk map (text + optional meta keys).",
-	"name":          "Source document name, carried forward from upstream (pass-through) when present — Tokenizer consumes it for title embedding.",
-	"tenant_id":     "Carried forward from upstream (pass-through) when present — Tokenizer consumes it to resolve the embedding model.",
-	"kb_id":         "Carried forward from upstream (pass-through) when present — Tokenizer consumes it to resolve the embedding model.",
 	"_ERROR":        "Set only on validation failure.",
 }

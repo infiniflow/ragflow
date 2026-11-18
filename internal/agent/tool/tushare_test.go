@@ -17,14 +17,18 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
+
+// defaultTushareEndpoint snapshots the package endpoint before any test swaps
+// it out, so the HTTPS assertion is not affected by parallel test mutations.
+var defaultTushareEndpoint = tushareEndpoint
 
 func TestTushare_BuildRequest(t *testing.T) {
 	t.Parallel()
@@ -88,6 +92,7 @@ func TestTushare_BuildRequest(t *testing.T) {
 
 func TestTushare_ParseResponse(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var (
 		gotMethod  string
@@ -120,9 +125,9 @@ func TestTushare_ParseResponse(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
-	tool := NewTushareToolWith(helper)
+	tool := newTushareTool(helper, tushareParams{Token: "T-test"})
 
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"token":"T-test","api_name":"stock_basic","params":{"list_status":"L"}}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -169,9 +174,10 @@ func TestTushare_ParseResponse(t *testing.T) {
 
 func TestTushare_RejectsMissingToken(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewTushareTool()
-	_, err := tool.InvokableRun(context.Background(),
+	_, err := tool.InvokableRun(ctx,
 		`{"api_name":"stock_basic"}`)
 	if err == nil {
 		t.Fatal("expected error for missing token")
@@ -179,13 +185,69 @@ func TestTushare_RejectsMissingToken(t *testing.T) {
 	if !strings.Contains(err.Error(), "token") {
 		t.Errorf("err = %v, want to mention token", err)
 	}
+	if !strings.Contains(err.Error(), "not configured on the node") {
+		t.Errorf("err = %v, want to name the node-level configuration", err)
+	}
+}
+
+// TestTushare_ModelSuppliedTokenIsIgnored pins the credential channel: the
+// token comes from the node's tool_params and a model-supplied value must not
+// reach upstream.
+func TestTushare_ModelSuppliedTokenIsIgnored(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	var gotBodyRaw []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBodyRaw, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"data":{"fields":[],"items":[]}}`))
+	}))
+	defer srv.Close()
+
+	prev := tushareEndpoint
+	tushareEndpoint = srv.URL
+	t.Cleanup(func() { tushareEndpoint = prev })
+
+	helper := NewHTTPHelper().WithClient(&http.Client{
+		Transport: rewriteHostTransport(srv.URL),
+	})
+	tool := newTushareTool(helper, tushareParams{Token: "node-token"})
+
+	if _, err := tool.InvokableRun(ctx,
+		`{"token":"model-token","api_name":"stock_basic"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+
+	var sentReq tushareRequest
+	if err := json.Unmarshal(gotBodyRaw, &sentReq); err != nil {
+		t.Fatalf("server saw malformed request body: %v (raw=%s)", err, gotBodyRaw)
+	}
+	if sentReq.Token != "node-token" {
+		t.Errorf("server saw token = %q, want the node-level node-token", sentReq.Token)
+	}
+}
+
+func TestTushare_DefaultEndpointIsHTTPS(t *testing.T) {
+	t.Parallel()
+
+	// Other tests substitute tushareEndpoint with an httptest URL, so compare
+	// against the package default captured before any test could mutate it.
+	parsed, err := url.Parse(defaultTushareEndpoint)
+	if err != nil {
+		t.Fatalf("parse tushareEndpoint: %v", err)
+	}
+	if parsed.Scheme != "https" {
+		t.Errorf("tushareEndpoint scheme = %q, want https", parsed.Scheme)
+	}
 }
 
 func TestTushare_RejectsMissingAPIName(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
-	tool := NewTushareTool()
-	_, err := tool.InvokableRun(context.Background(),
+	tool := newTushareTool(nil, tushareParams{Token: "T-abc"})
+	_, err := tool.InvokableRun(ctx,
 		`{"token":"T-abc"}`)
 	if err == nil {
 		t.Fatal("expected error for missing api_name")
@@ -197,6 +259,7 @@ func TestTushare_RejectsMissingAPIName(t *testing.T) {
 
 func TestTushare_UpstreamErrorCode(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -211,9 +274,9 @@ func TestTushare_UpstreamErrorCode(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
-	tool := NewTushareToolWith(helper)
+	tool := newTushareTool(helper, tushareParams{Token: "T-abc"})
 
-	_, err := tool.InvokableRun(context.Background(),
+	_, err := tool.InvokableRun(ctx,
 		`{"token":"T-abc","api_name":"premium_only"}`)
 	if err == nil {
 		t.Fatal("expected error for non-zero code, got nil")
@@ -225,9 +288,10 @@ func TestTushare_UpstreamErrorCode(t *testing.T) {
 
 func TestTushare_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewTushareTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -236,5 +300,35 @@ func TestTushare_Info(t *testing.T) {
 	}
 	if !strings.Contains(info.Desc, "Tushare") {
 		t.Errorf("Desc = %q, want to mention Tushare", info.Desc)
+	}
+	schema, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("Info schema: %v", err)
+	}
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatalf("marshal Info schema: %v", err)
+	}
+	var decoded struct {
+		Properties map[string]any `json:"properties"`
+		Required   []string       `json:"required"`
+	}
+	if err = json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode Info schema: %v", err)
+	}
+	if _, hasToken := decoded.Properties["token"]; hasToken {
+		t.Error("schema still exposes token; the credential must come from the node config")
+	}
+	if _, ok := decoded.Properties["api_name"]; !ok {
+		t.Error("schema must keep api_name")
+	}
+	found := false
+	for _, name := range decoded.Required {
+		if name == "api_name" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("schema required = %v, want api_name", decoded.Required)
 	}
 }

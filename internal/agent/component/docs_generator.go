@@ -43,6 +43,7 @@ import (
 
 	iow "ragflow/internal/agent/component/io"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
@@ -73,21 +74,20 @@ var validOutputFormats = map[string]bool{
 	"txt":      true,
 	"markdown": true,
 	"html":     true,
-	"md":       true, // alias for markdown
+	"md":       true, // alias for Markdown
 }
 
 // docsGeneratorParam is the static DSL param surface.
 type docsGeneratorParam struct {
-	OutputFormat                 string `json:"output_format"`
-	Content                      string `json:"content"`
-	Filename                     string `json:"filename"`
-	HeaderText                   string `json:"header_text"`
-	FooterText                   string `json:"footer_text"`
-	WatermarkText                string `json:"watermark_text"`
-	AddPageNumbers               bool   `json:"add_page_numbers"`
-	AddTimestamp                 bool   `json:"add_timestamp"`
-	FontSize                     int    `json:"font_size"`
-	IncludeDownloadInfoInContent bool   `json:"include_download_info_in_content"`
+	OutputFormat   string `json:"output_format"`
+	Content        string `json:"content"`
+	Filename       string `json:"filename"`
+	HeaderText     string `json:"header_text"`
+	FooterText     string `json:"footer_text"`
+	WatermarkText  string `json:"watermark_text"`
+	AddPageNumbers bool   `json:"add_page_numbers"`
+	AddTimestamp   bool   `json:"add_timestamp"`
+	FontSize       int    `json:"font_size"`
 }
 
 // Update copies a fresh params map into the receiver.
@@ -134,14 +134,11 @@ func (p *docsGeneratorParam) Update(conf map[string]any) error {
 	} else {
 		p.FontSize = defaultDocsFontSize
 	}
-	if v, ok := boolFrom(conf, "include_download_info_in_content"); ok {
-		p.IncludeDownloadInfoInContent = v
-	}
 	return nil
 }
 
 // Check validates the param. FontSize must be ≥ 12; output_format must
-// be one of pdf / docx / txt / markdown / html.
+// be one of pdf / docx / txt / Markdown / html.
 func (p *docsGeneratorParam) Check() error {
 	if !validOutputFormats[strings.ToLower(strings.TrimSpace(p.OutputFormat))] {
 		return &ParamError{
@@ -161,16 +158,15 @@ func (p *docsGeneratorParam) Check() error {
 // AsDict returns the param as a plain map.
 func (p *docsGeneratorParam) AsDict() map[string]any {
 	return map[string]any{
-		"output_format":                    p.OutputFormat,
-		"content":                          p.Content,
-		"filename":                         p.Filename,
-		"header_text":                      p.HeaderText,
-		"footer_text":                      p.FooterText,
-		"watermark_text":                   p.WatermarkText,
-		"add_page_numbers":                 p.AddPageNumbers,
-		"add_timestamp":                    p.AddTimestamp,
-		"font_size":                        p.FontSize,
-		"include_download_info_in_content": p.IncludeDownloadInfoInContent,
+		"output_format":    p.OutputFormat,
+		"content":          p.Content,
+		"filename":         p.Filename,
+		"header_text":      p.HeaderText,
+		"footer_text":      p.FooterText,
+		"watermark_text":   p.WatermarkText,
+		"add_page_numbers": p.AddPageNumbers,
+		"add_timestamp":    p.AddTimestamp,
+		"font_size":        p.FontSize,
 	}
 }
 
@@ -282,7 +278,7 @@ func (d *DocsGenerator) Invoke(ctx context.Context, db *gorm.DB, inputs map[stri
 		})
 		mime = "text/markdown; charset=utf-8"
 	case "html":
-		payload = iow.WriteHTML(param.Content, iow.HTMLOptions{
+		payload = iow.WriteHTML(markdownToHTML(param.Content), iow.HTMLOptions{
 			HeaderText:    param.HeaderText,
 			FooterText:    param.FooterText,
 			WatermarkText: param.WatermarkText,
@@ -306,14 +302,13 @@ func (d *DocsGenerator) Invoke(ctx context.Context, db *gorm.DB, inputs map[stri
 	previewURL := utility.AgentAttachmentPreviewPath(docID, extWithoutDot, mime)
 	downloadURL := agentAttachmentDownloadPath(docID, extWithoutDot, mime, safeName)
 	downloadInfo := map[string]any{
-		"doc_id":                           docID,
-		"filename":                         safeName,
-		"mime_type":                        mime,
-		"size":                             size,
-		"url":                              downloadURL,
-		"download":                         downloadURL,
-		"preview_url":                      previewURL,
-		"include_download_info_in_content": param.IncludeDownloadInfoInContent,
+		"doc_id":      docID,
+		"filename":    safeName,
+		"mime_type":   mime,
+		"size":        size,
+		"url":         downloadURL,
+		"download":    downloadURL,
+		"preview_url": previewURL,
 	}
 	downloadJSON, err := json.Marshal(downloadInfo)
 	if err != nil {
@@ -321,17 +316,16 @@ func (d *DocsGenerator) Invoke(ctx context.Context, db *gorm.DB, inputs map[stri
 	}
 
 	return map[string]any{
-		"doc_id":                           docID,
-		"filename":                         safeName,
-		"mime_type":                        mime,
-		"size":                             size,
-		"bytes":                            payload,
-		"download":                         string(downloadJSON),
-		"download_info":                    downloadInfo,
-		"preview_url":                      previewURL,
-		"stored":                           stored,
-		"include_download_info_in_content": param.IncludeDownloadInfoInContent,
-		"created":                          time.Now().UTC().Format(time.RFC3339),
+		"doc_id":        docID,
+		"filename":      safeName,
+		"mime_type":     mime,
+		"size":          size,
+		"bytes":         payload,
+		"download":      string(downloadJSON),
+		"download_info": downloadInfo,
+		"preview_url":   previewURL,
+		"stored":        stored,
+		"created":       time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
 
@@ -348,11 +342,15 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 			}
 		}
 	}
-	if !strings.Contains(content, "{{") {
-		return stripThinking(content), nil
+	if !strings.Contains(content, "{") {
+		// The think cut itself is the greedy re.sub(r"^.*</think>", "", s,
+		// re.DOTALL) pattern (as in generator.py). The unconditional trim —
+		// applied even when no think block is present — mirrors Python's
+		// _strip_thinking, which always .strip()s the exported content.
+		return strings.TrimSpace(common.StripThinkTrailing(content)), nil
 	}
 
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -363,22 +361,15 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 	if err != nil {
 		return "", fmt.Errorf("resolve content template: %w", err)
 	}
-	return stripThinking(resolved), nil
-}
-
-func stripThinking(content string) string {
-	if idx := strings.LastIndex(content, "</think>"); idx >= 0 {
-		return strings.TrimSpace(content[idx+len("</think>"):])
-	}
-	return content
+	return strings.TrimSpace(common.StripThinkTrailing(resolved)), nil
 }
 
 func storeAgentAttachment(ctx context.Context, docID string, payload []byte) (bool, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return false, nil
 	}
-	tenantID, _ := state.Sys["tenant_id"].(string)
+	tenantID, _ := state.GetSysString("tenant_id")
 	tenantID = strings.TrimSpace(tenantID)
 	if tenantID == "" {
 		return false, nil
@@ -479,38 +470,29 @@ func formatExtension(format string) string {
 
 // sanitizeFilename applies the plan §2.11.5 helper: strip forbidden
 // chars, collapse whitespace, cap the base at 180 chars, and append the
-// conventional extension when missing. Returns "file.<ext>" when the
-// resulting base is empty.
+// conventional extension when missing. The whole name is then cut to the
+// 255-byte filename limit on a rune boundary, keeping the extension.
+// Returns "file.<ext>" when the resulting base is empty.
 func sanitizeFilename(raw, ext string) string {
-	const forbidden = `\/:*?"<>|`
 	const maxBase = 180
-	trimmed := strings.TrimSpace(raw)
-	// Strip control characters first; they're never valid in filenames.
-	var b strings.Builder
-	for _, r := range trimmed {
-		if r < 0x20 || r == 0x7f {
-			continue
-		}
-		if strings.ContainsRune(forbidden, r) {
-			r = '_'
-		}
-		b.WriteRune(r)
-	}
-	base := strings.Join(strings.Fields(b.String()), "_")
-	if len(base) > maxBase {
-		base = base[:maxBase]
+	const maxBytes = 255
+	// Delegate control-char stripping and forbidden-char mapping to the
+	// shared component; collapse whitespace to a single underscore.
+	base := strings.Join(strings.Fields(utility.SanitizeFileNameComponent(raw)), "_")
+	if runes := []rune(base); len(runes) > maxBase {
+		base = string(runes[:maxBase])
 	}
 	if base == "" {
 		return "file" + ext
 	}
 	if ext != "" && !strings.HasSuffix(strings.ToLower(base), strings.ToLower(ext)) {
-		return base + ext
+		base += ext
 	}
-	return base
+	return utility.TruncateFilename(base, maxBytes)
 }
 
 // renderTXT / renderMarkdown / renderHTML live in
-// internal/agent/component/io/{txt,markdown,html}_writer.go so
+// internal/agent/component/io/{txt,Markdown,html}_writer.go so
 // every per-format writer lives in its own file under io/,
 // matching the pdf_writer.go / docx_writer.go packaging.
 

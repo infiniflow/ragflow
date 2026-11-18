@@ -67,7 +67,8 @@ RAGFLOW_COLUMNS = {
     "metadata": {"ob_type": "JSON", "nullable": True, "is_json": True},
     "extra": {"ob_type": "JSON", "nullable": True, "is_json": True},
     # New columns
-    "_order_id": {"ob_type": "Integer", "nullable": True},
+    "_order_id": {"ob_type": "Integer", "nullable": True, "default": 0},
+    "chunk_order_int": {"ob_type": "Integer", "nullable": True, "default": 0},
     "group_id": {"ob_type": "String(256)", "nullable": True},
     "mom_id": {"ob_type": "String(256)", "nullable": True},
 }
@@ -326,20 +327,7 @@ class RAGFlowDataConverter:
                 return json.dumps([value], ensure_ascii=False)
 
         if isinstance(value, list):
-            # Clean array values
-            cleaned = []
-            for item in value:
-                if isinstance(item, str):
-                    # Clean special characters
-                    cleaned_str = item.strip()
-                    cleaned_str = cleaned_str.replace("\\", "\\\\")
-                    cleaned_str = cleaned_str.replace("\n", "\\n")
-                    cleaned_str = cleaned_str.replace("\r", "\\r")
-                    cleaned_str = cleaned_str.replace("\t", "\\t")
-                    cleaned.append(cleaned_str)
-                else:
-                    cleaned.append(item)
-            return json.dumps(cleaned, ensure_ascii=False)
+            return json.dumps(value, ensure_ascii=False)
 
         # Single value - wrap in array
         return json.dumps([value], ensure_ascii=False)

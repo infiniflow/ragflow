@@ -1,7 +1,6 @@
 package providers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -66,7 +65,7 @@ func TestAnthropicModel_Generate(t *testing.T) {
 		"api_base": server.URL,
 	})
 
-	msg, err := m.Generate(context.Background(), []*schema.Message{
+	msg, err := m.Generate(t.Context(), []*schema.Message{
 		schema.UserMessage("hello"),
 	})
 	if err != nil {
@@ -107,7 +106,7 @@ func TestAnthropicModel_ToolCalls(t *testing.T) {
 		"api_base": server.URL,
 	})
 
-	msg, err := m.Generate(context.Background(), []*schema.Message{
+	msg, err := m.Generate(t.Context(), []*schema.Message{
 		schema.UserMessage("search"),
 	})
 	if err != nil {
@@ -164,7 +163,7 @@ func TestOpenAIModel_Generate(t *testing.T) {
 		"api_base": server.URL,
 	})
 
-	msg, err := m.Generate(context.Background(), []*schema.Message{
+	msg, err := m.Generate(t.Context(), []*schema.Message{
 		schema.UserMessage("hello"),
 	})
 	if err != nil {
@@ -207,7 +206,7 @@ func TestOpenAIModel_ToolCalls(t *testing.T) {
 		"api_base": server.URL,
 	})
 
-	msg, err := m.Generate(context.Background(), []*schema.Message{
+	msg, err := m.Generate(t.Context(), []*schema.Message{
 		schema.UserMessage("weather"),
 	})
 	if err != nil {
@@ -250,7 +249,7 @@ func TestProfileWithAnthropicProvider(t *testing.T) {
 		BaseSystemPrompt: profile.StrPtr("Test mode."),
 	})
 
-	agent, err := profile.NewAgent(context.Background(), &profile.AgentConfig{
+	agent, err := profile.NewAgent(t.Context(), &profile.AgentConfig{
 		ModelSpec:          "anthropic:claude-sonnet-4-6",
 		HarnessProfileName: "test-harness",
 	})
@@ -262,7 +261,7 @@ func TestProfileWithAnthropicProvider(t *testing.T) {
 	}
 
 	runner := core.NewTypedRunner(core.RunnerConfig[*schema.Message]{Agent: agent})
-	iter := runner.Run(context.Background(), []*schema.Message{schema.UserMessage("test")})
+	iter := runner.Run(t.Context(), []*schema.Message{schema.UserMessage("test")})
 	var final string
 	for {
 		ev, ok := iter.Next()

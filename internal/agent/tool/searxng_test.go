@@ -17,14 +17,12 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -59,6 +57,7 @@ func TestSearXNGBuildURLMatchesPythonQuery(t *testing.T) {
 }
 
 func TestSearXNGInvokableRunPreservesRawResultsAndTopN(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -83,7 +82,7 @@ func TestSearXNGInvokableRunPreservesRawResultsAndTopN(t *testing.T) {
 	defaults.SearXNGURL = server.URL
 	defaults.TopN = 2
 	searchTool := newLocalSearXNGTool(t, defaults)
-	out, err := searchTool.InvokableRun(context.Background(), `{"query":"  ragflow search  ","searxng_url":"http://127.0.0.1:1"}`)
+	out, err := searchTool.InvokableRun(ctx, `{"query":"  ragflow search  ","searxng_url":"http://127.0.0.1:1"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -106,9 +105,10 @@ func TestSearXNGInvokableRunPreservesRawResultsAndTopN(t *testing.T) {
 }
 
 func TestSearXNGInfoMatchesPythonModelSchema(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
-	info, err := NewSearXNGTool().Info(context.Background())
+	info, err := NewSearXNGTool().Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -138,6 +138,7 @@ func TestSearXNGInfoMatchesPythonModelSchema(t *testing.T) {
 }
 
 func TestSearXNGEmptyTryRunInputsSkipRequest(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	searchTool := NewSearXNGTool()
@@ -151,12 +152,12 @@ func TestSearXNGEmptyTryRunInputsSkipRequest(t *testing.T) {
 		`{"query":"   ","searxng_url":"https://example.com"}`,
 		`{"query":"ragflow"}`,
 	} {
-		out, err := searchTool.InvokableRun(context.Background(), args)
+		out, err := searchTool.InvokableRun(ctx, args)
 		if err != nil {
 			t.Fatalf("InvokableRun(%s): %v", args, err)
 		}
 		var envelope searxngEnvelope
-		if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 || envelope.Error != "" {
+		if err = json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 || envelope.Error != "" {
 			t.Fatalf("InvokableRun(%s) = %s, want empty results", args, out)
 		}
 	}
@@ -202,6 +203,7 @@ func TestSearXNGBuildByNameRejectsInvalidNodeParams(t *testing.T) {
 
 func TestSearXNGComponentContractReferencesAndOutputs(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewSearXNGTool()
 	spec := tool.ComponentSpec()
@@ -225,17 +227,13 @@ func TestSearXNGComponentContractReferencesAndOutputs(t *testing.T) {
 		map[string]any{"title": "RAGFlow\nDocs", "url": "https://ragflow.io", "content": content, "engine": "bing", "score": 0.9},
 		map[string]any{"title": "Empty", "url": "https://example.com", "content": ""},
 	}}
-	chunks, docAggs := tool.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := tool.BuildReferences(ctx, envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}
 	cleaned := "RAGFlow content  remains"
-	documentID := hashSearXNGString(cleaned, 100000000)
-	referenceID := hashSearXNGString(strconv.Itoa(documentID), 500)
-	if documentID != 93760153 || referenceID != 491 {
-		t.Fatalf("hash parity = %d/%d, want Python 93760153/491", documentID, referenceID)
-	}
-	if chunks[0]["document_id"] != strconv.Itoa(documentID) || chunks[0]["id"] != strconv.Itoa(referenceID) || chunks[0]["content"] != cleaned {
+	documentID, referenceID := referenceIDs("https://ragflow.io", cleaned)
+	if chunks[0]["document_id"] != documentID || chunks[0]["id"] != referenceID || chunks[0]["content"] != cleaned {
 		t.Fatalf("reference chunk = %#v", chunks[0])
 	}
 
@@ -246,7 +244,7 @@ func TestSearXNGComponentContractReferencesAndOutputs(t *testing.T) {
 	}
 	formalized := outputs["formalized_content"].(string)
 	for _, want := range []string{
-		"ID: " + strconv.Itoa(referenceID),
+		"ID: " + referenceID,
 		"Title: RAGFlow Docs",
 		"URL: https://ragflow.io",
 		"Content:\n" + cleaned,
@@ -283,6 +281,7 @@ func TestRenderSearXNGReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
 
 func TestSearXNGDoesNotRetryFailedRequest(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -294,7 +293,7 @@ func TestSearXNGDoesNotRetryFailedRequest(t *testing.T) {
 	defaults := defaultSearXNGParams()
 	defaults.SearXNGURL = server.URL
 	searchTool := newLocalSearXNGTool(t, defaults)
-	if _, err := searchTool.InvokableRun(context.Background(), `{"query":"single attempt"}`); err == nil {
+	if _, err := searchTool.InvokableRun(ctx, `{"query":"single attempt"}`); err == nil {
 		t.Fatal("InvokableRun succeeded, want upstream error")
 	}
 	if calls.Load() != 1 {
@@ -304,11 +303,12 @@ func TestSearXNGDoesNotRetryFailedRequest(t *testing.T) {
 
 func TestSearXNGSSRFGuardRejectsLoopback(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	defaults := defaultSearXNGParams()
 	defaults.SearXNGURL = "http://127.0.0.1:4000"
 	searchTool := newSearXNGToolWithDefaults(nil, defaults)
-	out, err := searchTool.InvokableRun(context.Background(), `{"query":"metadata"}`)
+	out, err := searchTool.InvokableRun(ctx, `{"query":"metadata"}`)
 	if err == nil || !errors.Is(err, ErrSSRFBlocked) {
 		t.Fatalf("err = %v, want ErrSSRFBlocked", err)
 	}

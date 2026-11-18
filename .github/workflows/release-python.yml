@@ -1,0 +1,128 @@
+name: release-python
+
+on:
+  push:
+    tags:
+      - "v*.*.*"             # normal release
+
+permissions:
+  contents: write
+  actions: read
+  checks: read
+  statuses: read
+
+# https://docs.github.com/en/actions/using-jobs/using-concurrency
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    if: github.event.base_ref == 'refs/heads/0.27.x'
+    runs-on: ubuntu-24.04
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+
+    steps:
+      - name: Ensure workspace ownership
+        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      # https://github.com/actions/checkout/blob/v6/README.md
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Prepare release metadata
+        id: release
+        run: |
+          RELEASE_TAG=${GITHUB_REF#refs/tags/}
+          if [[ ${RELEASE_TAG} == v* ]]; then
+            PRERELEASE=false
+          else
+            PRERELEASE=true
+          fi
+          echo "Workflow triggered by tag: ${RELEASE_TAG}"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> ${GITHUB_ENV}
+          echo "PRERELEASE=${PRERELEASE}" >> ${GITHUB_ENV}
+          echo "release_tag=${RELEASE_TAG}" >> ${GITHUB_OUTPUT}
+          echo "prerelease=${PRERELEASE}" >> ${GITHUB_OUTPUT}
+
+  release-python:
+    needs:
+      - prepare
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - name: Ensure workspace ownership
+        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      # https://github.com/actions/checkout/blob/v6/README.md
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build and push image
+        run: |
+          sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
+          sudo docker build -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
+          # sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
+          sudo docker push infiniflow/ragflow:${RELEASE_TAG}
+          # sudo docker push infiniflow/ragflow:latest
+
+      - name: Build and push ragflow-sdk
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd sdk/python && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Build and push ragflow-cli
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd admin/client && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
+
+  github-release:
+    needs:
+      - prepare
+      - release-python
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+
+    steps:
+      - name: Ensure workspace ownership
+        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      # https://github.com/actions/checkout/blob/v6/README.md
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      # Creating a GitHub Release auto-attaches the "Source code (zip)" and
+      # "Source code (tar.gz)" archives for the tagged commit.
+      # make_latest=false keeps this release off the "Latest" badge so an
+      # existing release keeps that marker.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          gh api repos/${{ github.repository }}/releases \
+            -f tag_name="${RELEASE_TAG}" \
+            -f name="${RELEASE_TAG}" \
+            -f make_latest=false \
+            -F generate_release_notes=true \
+            $([ "${PRERELEASE}" = "true" ] && echo "-F prerelease=true")

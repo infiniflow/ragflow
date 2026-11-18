@@ -10,6 +10,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
 import { File } from 'lucide-react';
 import { useCallback } from 'react';
@@ -90,18 +91,22 @@ export function DataflowTimeline({ traceList }: DataflowTimelineProps) {
                             key={idx}
                             className="text-text-secondary text-xs space-x-2 py-2.5 !m-0"
                           >
-                            <span>{x.datetime}</span>
+                            <span className="whitespace-nowrap">
+                              {formatDate(x.timestamp * 1000)}
+                            </span>
                             {item.component_id !== 'END' && (
                               <span
-                                className={cn({
+                                className={cn('break-all', {
                                   'text-state-error':
                                     x.message.startsWith('[ERROR]'),
+                                  'text-state-warning':
+                                    x.message.startsWith('[WARN]'),
                                 })}
                               >
                                 {x.message}
                               </span>
                             )}
-                            <span>
+                            <span className="whitespace-nowrap">
                               {x.elapsed_time.toString().slice(0, 6)}s
                             </span>
                           </section>

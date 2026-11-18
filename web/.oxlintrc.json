@@ -24,6 +24,7 @@
     "typescript/no-non-null-assertion": "off",
     "react/react-in-jsx-scope": "off",
     "react/no-unescaped-entities": "warn",
-    "no-console": ["warn", { "allow": ["warn", "error"] }]
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-unused-vars": ["warn", { "fix": { "imports": "safe-fix" } }]
   }
 }

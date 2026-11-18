@@ -66,6 +66,105 @@ func TestCanvasState_MarshalUnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestCanvasState_UnmarshalInitializesMutableState(t *testing.T) {
+	t.Parallel()
+
+	var state CanvasState
+	if err := json.Unmarshal([]byte(`{"outputs":null,"sys":null,"env":null,"retrieval":null,"globals":null}`), &state); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	state.SetVar("message_0", "content", "hello")
+	state.RecordOutput("message_0", "result", map[string]any{"ok": true})
+	state.SetGlobal("flag", true)
+
+	if got := state.Outputs["message_0"]["content"]; got != "hello" {
+		t.Fatalf("SetVar after restore = %#v, want hello", got)
+	}
+	if got := state.Outputs["message_0"]["result"]; got == nil {
+		t.Fatal("RecordOutput after restore did not persist")
+	}
+	if got, ok := state.GetGlobal("flag"); !ok || got != true {
+		t.Fatalf("SetGlobal after restore = %#v, %v; want true, true", got, ok)
+	}
+}
+
+func TestCanvasStateRestoreReplacesNamespaces(t *testing.T) {
+	for _, raw := range []string{`{}`, `{"outputs":null,"sys":null,"env":null,"retrieval":null,"globals":null}`} {
+		t.Run(raw, func(t *testing.T) {
+			state := NewCanvasState("old-run", "old-session")
+			state.SetVar("old", "value", true)
+			state.Sys["old"] = true
+			state.Env["old"] = true
+			state.Retrieval["old"] = true
+			state.SetGlobal("old", true)
+			state.CancelFlag.Store(true)
+			if err := json.Unmarshal([]byte(raw), state); err != nil {
+				t.Fatal(err)
+			}
+			if state.Outputs == nil || len(state.Outputs) != 0 {
+				t.Fatalf("outputs = %#v, want empty writable map", state.Outputs)
+			}
+			for name, namespace := range map[string]map[string]any{
+				"sys": state.Sys, "env": state.Env, "retrieval": state.Retrieval, "globals": state.Globals,
+			} {
+				if namespace == nil || len(namespace) != 0 {
+					t.Fatalf("%s = %#v, want empty writable map", name, namespace)
+				}
+			}
+			if state.CancelFlag.Load() || state.RunID != "" || state.SessionID != "" {
+				t.Fatal("restore retained prior cancellation or identity")
+			}
+		})
+	}
+}
+
+func TestCanvasStateMergeAndReplaceNamespaces(t *testing.T) {
+	state := NewCanvasState("run", "session")
+	state.MergeNamespaces(
+		map[string]any{"query": "hello"},
+		map[string]any{"region": "test"},
+		map[string]any{"item": 1},
+	)
+	state.MergeNamespaces(map[string]any{"user_id": "user", "query": "updated"}, nil, nil)
+
+	sys, env, globals := state.SnapshotNamespaces()
+	if sys["query"] != "updated" || sys["user_id"] != "user" || env["region"] != "test" || globals["item"] != 1 {
+		t.Fatalf("merged namespaces = %#v, %#v, %#v", sys, env, globals)
+	}
+
+	replacement := map[string]any{"query": "replacement"}
+	state.ReplaceNamespaces(replacement, nil, nil)
+	replacement["query"] = "mutated"
+
+	sys, env, globals = state.SnapshotNamespaces()
+	if sys["query"] != "replacement" || len(sys) != 1 {
+		t.Fatalf("replaced sys = %#v", sys)
+	}
+	if env == nil || globals == nil || len(env) != 0 || len(globals) != 0 {
+		t.Fatalf("replaced empty namespaces = %#v, %#v", env, globals)
+	}
+}
+
+func TestCanvasStateWritesNullOutputBuckets(t *testing.T) {
+	for _, method := range []string{"SetVar", "RecordOutput"} {
+		t.Run(method, func(t *testing.T) {
+			var state CanvasState
+			if err := json.Unmarshal([]byte(`{"outputs":{"node":null}}`), &state); err != nil {
+				t.Fatal(err)
+			}
+			if method == "SetVar" {
+				state.SetVar("node", "value", "result")
+			} else {
+				state.RecordOutput("node", "value", "result")
+			}
+			if got, _ := state.GetVar("node@value"); got != "result" {
+				t.Fatalf("value = %#v, want result", got)
+			}
+		})
+	}
+}
+
 func TestCanvasStateCheckpointPreservesCurrentUserMarker(t *testing.T) {
 	t.Parallel()
 	src := NewCanvasState("run-checkpoint", "task-checkpoint")
@@ -243,6 +342,38 @@ func TestCanvasState_EnsureSysDate(t *testing.T) {
 	}
 }
 
+func TestCanvasState_SeedIdentity(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("r", "t")
+	state.SeedIdentity("user-1", "tenant-1")
+	if got := state.Sys["user_id"]; got != "user-1" {
+		t.Fatalf("sys.user_id = %v, want user-1", got)
+	}
+	if got := state.Sys["tenant_id"]; got != "tenant-1" {
+		t.Fatalf("sys.tenant_id = %v, want tenant-1", got)
+	}
+
+	// Empty values must not materialize empty-string keys.
+	state = NewCanvasState("r", "t")
+	state.SeedIdentity("", "")
+	if _, ok := state.Sys["user_id"]; ok {
+		t.Fatal("empty user_id should not be written")
+	}
+	if _, ok := state.Sys["tenant_id"]; ok {
+		t.Fatal("empty tenant_id should not be written")
+	}
+
+	// A second call overwrites the previously seeded identity.
+	state.SeedIdentity("user-2", "tenant-2")
+	if got := state.Sys["user_id"]; got != "user-2" {
+		t.Fatalf("sys.user_id = %v, want user-2", got)
+	}
+	if got := state.Sys["tenant_id"]; got != "tenant-2" {
+		t.Fatalf("sys.tenant_id = %v, want tenant-2", got)
+	}
+}
+
 func TestCanvasState_SetRetrievalReferencesMergesCalls(t *testing.T) {
 	t.Parallel()
 
@@ -288,6 +419,79 @@ func TestCanvasState_SetRetrievalReferencesMergesCalls(t *testing.T) {
 	}
 	if _, ok := docAggs[""]; ok {
 		t.Error("doc_aggs retained an empty document name")
+	}
+}
+
+// TestCanvasState_SetRetrievalReferencesKeepsSameTitleDifferentIDs covers two
+// search hits that share a title but point at different URLs. Keying doc_aggs
+// by document name would drop the second source; the chunk and its doc_agg must
+// both survive so the citation card can resolve the document.
+func TestCanvasState_SetRetrievalReferencesKeepsSameTitleDifferentIDs(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("run-1", "task-1")
+	state.SetRetrievalReferences(
+		[]map[string]any{{"id": "chunk-1", "document_id": "doc-1"}},
+		[]map[string]any{{"doc_name": "Same Title", "doc_id": "doc-1", "url": "https://a.example", "count": 1}},
+	)
+	state.SetRetrievalReferences(
+		[]map[string]any{{"id": "chunk-2", "document_id": "doc-2"}},
+		[]map[string]any{{"doc_name": "Same Title", "doc_id": "doc-2", "url": "https://b.example", "count": 1}},
+	)
+	// A repeated id keeps the first aggregate, preserving the previous
+	// first-writer-wins behavior.
+	state.SetRetrievalReferences(nil, []map[string]any{
+		{"doc_name": "Same Title", "doc_id": "doc-1", "url": "https://duplicate.example", "count": 9},
+	})
+
+	docAggs := state.GetRetrievalDocAggs()
+	if len(docAggs) != 2 {
+		t.Fatalf("doc_aggs length = %d, want 2", len(docAggs))
+	}
+	if got := docAggs["doc-1"]["url"]; got != "https://a.example" {
+		t.Errorf("doc-1 url = %v, want the first aggregate", got)
+	}
+	if got := docAggs["doc-2"]["url"]; got != "https://b.example" {
+		t.Errorf("doc-2 url = %v, want the second aggregate", got)
+	}
+
+	reference := state.GetRetrievalReference()
+	list, _ := reference["doc_aggs"].([]any)
+	if len(list) != 2 {
+		t.Fatalf("reference doc_aggs length = %d, want 2", len(list))
+	}
+	// Same document name sorts by document id, so doc-1 precedes doc-2.
+	for i, want := range []string{"doc-1", "doc-2"} {
+		agg, _ := list[i].(map[string]any)
+		if got := agg["doc_id"]; got != want {
+			t.Errorf("doc_aggs[%d].doc_id = %v, want %s", i, got, want)
+		}
+	}
+}
+
+// TestCanvasState_SetRetrievalReferencesDedupesLegacyCheckpointKeys covers a
+// checkpoint restored from the previous storage scheme, where doc_aggs were
+// keyed by document name. Merging by the aggregate's fields must not append a
+// second copy of the same document.
+func TestCanvasState_SetRetrievalReferencesDedupesLegacyCheckpointKeys(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("run-1", "task-1")
+	state.Retrieval["doc_aggs"] = map[string]any{
+		"Same Title": map[string]any{
+			"doc_name": "Same Title",
+			"doc_id":   "doc-1",
+			"url":      "https://a.example",
+		},
+	}
+	state.SetRetrievalReferences(nil, []map[string]any{
+		{"doc_name": "Same Title", "doc_id": "doc-1", "url": "https://duplicate.example"},
+	})
+
+	reference := state.GetRetrievalReference()
+	list, _ := reference["doc_aggs"].([]any)
+	if len(list) != 1 {
+		t.Fatalf("reference doc_aggs length = %d, want 1 after legacy merge", len(list))
 	}
 }
 

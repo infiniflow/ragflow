@@ -250,7 +250,7 @@ func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
 		if body["response_format"] != "wav" {
 			t.Errorf("response_format=%v, want wav", body["response_format"])
 		}
-		if body["speed"] != float64(1.25) {
+		if body["speed"] != 1.25 {
 			t.Errorf("speed=%v, want 1.25", body["speed"])
 		}
 
@@ -320,6 +320,95 @@ func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "voice is required") {
 		t.Fatalf("err=%v, want voice is required", err)
+	}
+}
+
+func TestOpenAIChatWithMessagesBoundsErrorResponseBody(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, strings.Repeat("x", int(maxModelErrorBodyBytes)+1))
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	_, err := newOpenAIForTest(srv.URL).ChatWithMessages(
+		ctx,
+		"gpt-4o-mini",
+		[]Message{{Role: "user", Content: "hello"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "API request failed with status 502") {
+		t.Fatalf("err=%v, want status 502", err)
+	}
+	if !strings.Contains(err.Error(), "failed to read error response") {
+		t.Fatalf("err=%v, want failed to read error response", err)
+	}
+	if !strings.Contains(err.Error(), "response body exceeds") {
+		t.Fatalf("err=%v, want response body exceeds", err)
+	}
+}
+
+func TestOpenAIListModelsBoundsErrorResponseBody(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, strings.Repeat("x", int(maxModelErrorBodyBytes)+1))
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	_, err := newOpenAIForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "API request failed with status 502") {
+		t.Fatalf("err=%v, want status 502", err)
+	}
+	if !strings.Contains(err.Error(), "failed to read error response") {
+		t.Fatalf("err=%v, want failed to read error response", err)
+	}
+	if !strings.Contains(err.Error(), "response body exceeds") {
+		t.Fatalf("err=%v, want response body exceeds", err)
+	}
+}
+
+func TestOpenAIAudioSpeechBoundsErrorResponseBody(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, strings.Repeat("x", int(maxModelErrorBodyBytes)+1))
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "tts-1"
+	input := "hello"
+
+	_, err := newOpenAIForTest(srv.URL).AudioSpeech(
+		ctx,
+		&model,
+		&input,
+		&APIConfig{ApiKey: &apiKey},
+		&TTSConfig{Params: map[string]interface{}{"voice": "alloy"}},
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "failed to read error response body") {
+		t.Fatalf("err=%v, want failed to read error response body", err)
+	}
+	if !strings.Contains(err.Error(), "response body exceeds") {
+		t.Fatalf("err=%v, want response body exceeds", err)
 	}
 }
 

@@ -42,7 +42,7 @@ func NewSiliconflowModel(baseURL map[string]string, urlSuffix URLSuffix) *Silico
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -65,11 +65,10 @@ func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -87,7 +86,7 @@ func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName strin
 	if err != nil {
 		return nil, err
 	}
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -100,11 +99,10 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
@@ -139,37 +137,41 @@ type siliconflowEmbeddingResponse struct {
 	} `json:"usage"`
 }
 
-// siliconflowMaxBatchSize is the per-request input limit documented at
-const siliconflowMaxBatchSize = 32
-
 // Embed embeds a list of texts into embeddings
-func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-	if len(texts) > siliconflowMaxBatchSize {
-		return nil, fmt.Errorf("siliconflow supports a maximum of %d inputs per request", siliconflowMaxBatchSize)
+	// Per-request input cap: resolved from the provider capability (batch_size
+	// added to all_models.json by #17877/#17878) and falling back to a safe
+	// default. This defends against callers that bypass batch splitting upstream.
+	var modelNameStr string
+	if modelName != nil {
+		modelNameStr = *modelName
+	}
+	maxBatch := GetEmbeddingBatchSize(modelNameStr)
+	if len(request.Texts) > maxBatch {
+		return nil, fmt.Errorf("siliconflow supports a maximum of %d inputs per request", maxBatch)
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), s.baseModel.URLSuffix.Embedding)
 
 	apiKey := *apiConfig.ApiKey
 
 	reqBody := map[string]interface{}{
 		"model": modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -206,6 +208,14 @@ func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, texts [
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		// Carry Retry-After in the message when the provider sends one: a
+		// TPM-limited provider knows when the quota window refills, and the
+		// retry layer in internal/ingestion/task/embedder.go would otherwise
+		// have to guess a delay that is either too short (another 429) or far
+		// longer than necessary.
+		if retryAfter := strings.TrimSpace(resp.Header.Get("Retry-After")); retryAfter != "" {
+			return nil, fmt.Errorf("SILICONFLOW API error: %s, retry-after: %s, body: %s", resp.Status, retryAfter, string(body))
+		}
 		return nil, fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
 	}
 
@@ -234,11 +244,10 @@ func (s *SiliconflowModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 		return nil, err
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -298,12 +307,10 @@ func (s *SiliconflowModel) Balance(ctx context.Context, apiConfig *APIConfig) (m
 		return nil, err
 	}
 
-	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Balance)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), s.baseModel.URLSuffix.Balance)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -408,11 +415,12 @@ type SiliconflowRerankRequest struct {
 }
 
 // Rerank calculates similarity scores between query and documents
-func (s *SiliconflowModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (s *SiliconflowModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -442,11 +450,10 @@ func (s *SiliconflowModel) Rerank(ctx context.Context, modelName *string, query 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), s.baseModel.URLSuffix.Rerank)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -504,11 +511,10 @@ func (s *SiliconflowModel) TranscribeAudio(ctx context.Context, modelName *strin
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -617,7 +623,34 @@ func (s *SiliconflowModel) TranscribeAudio(ctx context.Context, modelName *strin
 }
 
 func (s *SiliconflowModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", s.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", s.Name())
+}
+
+// siliconflowTTSRequestBody mirrors rag/llm/tts_model.py SILICONFLOWTTS._build_payload:
+// /v1/audio/speech requires voice as "{model}:{voice_name}" and only synthesizes
+// mp3 at 32000 or 44100 Hz, so the defaults pin the payload to a shape the
+// provider accepts. ttsConfig.Params overrides any field; Format overrides
+// response_format last.
+func siliconflowTTSRequestBody(modelName, audioContent string, ttsConfig *TTSConfig, stream bool) map[string]interface{} {
+	reqBody := map[string]interface{}{
+		"model":           modelName,
+		"input":           audioContent,
+		"voice":           fmt.Sprintf("%s:anna", modelName),
+		"response_format": "mp3",
+		"sample_rate":     32000,
+		"speed":           1,
+		"gain":            0,
+		"stream":          stream,
+	}
+	if ttsConfig != nil {
+		for key, value := range ttsConfig.Params {
+			reqBody[key] = value
+		}
+		if ttsConfig.Format != "" {
+			reqBody["response_format"] = ttsConfig.Format
+		}
+	}
+	return reqBody
 }
 
 // AudioSpeech convert text to audio
@@ -630,28 +663,12 @@ func (s *SiliconflowModel) AudioSpeech(ctx context.Context, modelName *string, a
 		return nil, fmt.Errorf("audio content is empty")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
-	reqBody := map[string]interface{}{
-		"model":  *modelName,
-		"input":  *audioContent,
-		"stream": false,
-	}
-
-	if ttsConfig != nil && ttsConfig.Params != nil {
-		for key, value := range ttsConfig.Params {
-			reqBody[key] = value
-		}
-	}
-	if ttsConfig != nil && ttsConfig.Format != "" {
-		reqBody["response_format"] = ttsConfig.Format
-	}
-
-	jsonData, err := json.Marshal(reqBody)
+	jsonData, err := json.Marshal(siliconflowTTSRequestBody(*modelName, *audioContent, ttsConfig, false))
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -679,7 +696,7 @@ func (s *SiliconflowModel) AudioSpeech(ctx context.Context, modelName *string, a
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s - %s", resp.Status, string(body))
+		return nil, fmt.Errorf("SiliconFlow TTS API error: %s - %s", resp.Status, string(body))
 	}
 
 	return &TTSResponse{Audio: body}, nil
@@ -694,28 +711,12 @@ func (s *SiliconflowModel) AudioSpeechWithSender(ctx context.Context, modelName 
 		return fmt.Errorf("audio content is empty")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
-	reqBody := map[string]interface{}{
-		"model":  *modelName,
-		"input":  *audioContent,
-		"stream": true,
-	}
-
-	if ttsConfig != nil && ttsConfig.Params != nil {
-		for key, value := range ttsConfig.Params {
-			reqBody[key] = value
-		}
-	}
-	if ttsConfig != nil && ttsConfig.Format != "" {
-		reqBody["response_format"] = ttsConfig.Format
-	}
-
-	jsonData, err := json.Marshal(reqBody)
+	jsonData, err := json.Marshal(siliconflowTTSRequestBody(*modelName, *audioContent, ttsConfig, true))
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -766,18 +767,22 @@ func (s *SiliconflowModel) AudioSpeechWithSender(ctx context.Context, modelName 
 
 // OCRFile OCR file
 func (s *SiliconflowModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", s.Name())
 }
 
 // ParseFile parse file
 func (s *SiliconflowModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", s.Name())
 }
 
 func (s *SiliconflowModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", s.Name())
 }
 
 func (s *SiliconflowModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", s.Name())
+}
+
+func (s *SiliconflowModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", s.Name())
 }

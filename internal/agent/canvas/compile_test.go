@@ -17,7 +17,6 @@ package canvas
 
 import (
 	"bytes"
-	"context"
 	"sort"
 	"strings"
 	"testing"
@@ -64,14 +63,16 @@ func TestCompile_LogsWhenLegacyNodesPresent(t *testing.T) {
 				Downstream: []string{"Body:1"},
 			},
 			"Body:1": {
-				Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "body"}},
 			},
 		},
 	}
 
+	ctx := t.Context()
+
 	// Compile may return an error from downstream BuildWorkflow —
 	// we ignore it; the assertion is on the log line.
-	_, _ = Compile(context.Background(), c)
+	_, _ = Compile(ctx, c)
 
 	got := buf.String()
 	if !strings.Contains(got, "LoopItem/IterationItem") {
@@ -110,14 +111,15 @@ func TestCompile_NoLogOnCleanCanvas(t *testing.T) {
 		},
 	}
 
+	ctx := t.Context()
 	// We don't fail on Compile's own error (it may fail for many
 	// reasons unrelated to legacy names); the assertion is on the
 	// absence of the legacy log line.
-	_, _ = Compile(context.Background(), c)
+	_, _ = Compile(ctx, c)
 
 	got := buf.String()
 	if strings.Contains(got, "LoopItem/IterationItem") {
-		t.Errorf("unexpected legacy-node log on clean canvas: %q", got)
+		t.Errorf("unexpected legacy-node log on clean agent: %q", got)
 	}
 }
 
@@ -181,7 +183,8 @@ func TestCompile_RejectsUserFillUpInResumeMode(t *testing.T) {
 			"end":   {Obj: CanvasComponentObj{ComponentName: "Answer", Params: map[string]any{}}},
 		},
 	}
-	_, err := Compile(context.Background(), c, WithInterruptAfterNonTerminalCpn())
+	ctx := t.Context()
+	_, err := Compile(ctx, c, WithInterruptAfterNonTerminalCpn())
 	if err == nil {
 		t.Fatal("expected Compile to reject UserFillUp in resume mode, got nil error")
 	}
@@ -191,25 +194,23 @@ func TestCompile_RejectsUserFillUpInResumeMode(t *testing.T) {
 }
 
 // TestCompile_PropagatesCheckPointID verifies Compile stores the stable id
-// on the returned CompiledCanvas. The assertion only fires when the canvas
-// actually compiles end-to-end in this environment (component factories /
-// DB may be unavailable in unit scope) — matching the repo convention in
-// the other Compile tests that ignore compile errors. The option-side
-// contract is independently covered by TestWithCheckPointID_OptionSetsField.
+// on the returned CompiledCanvas. Compilation constructs components but does
+// not invoke them, so this test requires the canvas to compile successfully.
 func TestCompile_PropagatesCheckPointID(t *testing.T) {
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
 			"begin":    {Obj: CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}}},
 			"llm:0":    {Obj: CanvasComponentObj{ComponentName: "LLM", Params: map[string]any{}}, Downstream: []string{"answer:0"}},
-			"answer:0": {Obj: CanvasComponentObj{ComponentName: "Answer", Params: map[string]any{}}},
+			"answer:0": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer"}}},
 		},
 	}
-	compiled, err := Compile(context.Background(), c, WithCheckPointID("task-9"))
+	ctx := t.Context()
+	compiled, err := Compile(ctx, c, WithCheckPointID("task-9"))
 	if err != nil {
-		t.Skipf("skipping propagation assertion: canvas did not compile in unit scope: %v", err)
+		t.Fatalf("Compile: %v", err)
 	}
 	if compiled == nil {
-		t.Skip("skipping propagation assertion: nil CompiledCanvas")
+		t.Fatal("Compile returned nil CompiledCanvas")
 	}
 	if compiled.CheckPointID != "task-9" {
 		t.Errorf("CompiledCanvas.CheckPointID = %q, want %q", compiled.CheckPointID, "task-9")

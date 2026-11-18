@@ -3,6 +3,7 @@ package table
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
@@ -36,6 +37,12 @@ func regionOverlapsBox(region pdf.DLARegion, box pdf.TextBox, scale float64) boo
 // Each table region is matched if at least one box overlaps it (>40% of box
 // area) or if there are no boxes at all (image-only PDF), matching Python's
 // _table_transformer_job which processes every table DLA region.
+//
+// Figure-layout boxes are skipped: AnnotateBoxLayouts appends one full-extent
+// geometry box per figure/equation region, and a nested/double-detected
+// table+figure pair would otherwise pull the whole figure extent into the
+// table's BoxIdx (and from there into Positions, boxInCrop and R/C
+// annotations, causing HTML cross-region and NoMerge mislabels).
 func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float64) []TableMatch {
 	var matches []TableMatch
 	for _, r := range regions {
@@ -44,6 +51,9 @@ func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float
 		}
 		var matched []int
 		for i, b := range boxes {
+			if b.LayoutType == pdf.LayoutTypeFigure {
+				continue
+			}
 			if regionOverlapsBox(r, b, scale) {
 				matched = append(matched, i)
 			}
@@ -57,62 +67,296 @@ func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float
 
 // ── layout annotation ──────────────────────────────────────────────────
 
-// annotateBoxLayouts sets LayoutType and LayoutNo on each box, matching
+// annRegion is a layout region in PDF space, used internally by
+// AnnotateBoxLayouts. It carries the fields needed for cleanup, sort, and
+// annotation bookkeeping.
+type annRegion struct {
+	x0, y0, x1, y1 float64
+	label          string
+	score          float64
+	typeIndex      int
+}
+
+// regionIntersect returns the intersection area of two regions, or 0.
+func regionIntersect(a, b annRegion) float64 {
+	ix0 := math.Max(a.x0, b.x0)
+	iy0 := math.Max(a.y0, b.y0)
+	ix1 := math.Min(a.x1, b.x1)
+	iy1 := math.Min(a.y1, b.y1)
+	if ix0 < ix1 && iy0 < iy1 {
+		return (ix1 - ix0) * (iy1 - iy0)
+	}
+	return 0
+}
+
+// regionArea returns the area of a region, or 0 if degenerate.
+func regionArea(a annRegion) float64 {
+	w := a.x1 - a.x0
+	h := a.y1 - a.y0
+	if w <= 0 || h <= 0 {
+		return 0
+	}
+	return w * h
+}
+
+// overlapRatio returns intersection / area(a), matching
+// Recognizer.overlapped_area with ratio=True (recognizer.py:106-122).
+func overlapRatio(a, b annRegion) float64 {
+	ar := regionArea(a)
+	if ar <= 0 {
+		return 0
+	}
+	return regionIntersect(a, b) / ar
+}
+
+// annNotOverlapped mirrors recognizer.py:126-127 (annRegion variant).
+func annNotOverlapped(a, b annRegion) bool {
+	return a.x1 < b.x0 || a.x0 > b.x1 || a.y1 < b.y0 || a.y0 > b.y1
+}
+
+func imin(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// sortYFirstly orders regions top-to-bottom (and left-to-right within a
+// vertical threshold), matching Recognizer.sort_Y_firstly (recognizer.py:54)
+// which LayoutRecognizer.__call__ applies before annotation
+// (layout_recognizer.py:99).
+func sortYFirstly(regs []annRegion) {
+	if len(regs) == 0 {
+		return
+	}
+	avgH := 0.0
+	for _, r := range regs {
+		avgH += r.y1 - r.y0
+	}
+	thr := avgH / float64(len(regs)) / 2
+	sort.SliceStable(regs, func(i, j int) bool {
+		di := regs[i].y0 - regs[j].y0
+		if di < -thr {
+			return true
+		}
+		if di > thr {
+			return false
+		}
+		return regs[i].x0 < regs[j].x0
+	})
+}
+
+// cleanupLayouts de-duplicates overlapping same-type regions, matching
+// Recognizer.layouts_cleanup (recognizer.py:124) called by
+// LayoutRecognizer.__call__ at layout_recognizer.py:100. A pair of same-type
+// regions whose overlap exceeds thr (0.7) in either direction collapses to a
+// single region: the higher-score one, or - when scores are absent - the one
+// covering more text-box area. far=2 limits comparison to nearby regions.
+func cleanupLayouts(regs []annRegion, boxes []pdf.TextBox) []annRegion {
+	const far = 2
+	const thr = 0.7
+	i := 0
+	for i+1 < len(regs) {
+		j := i + 1
+		for j < imin(i+far, len(regs)) && (regs[j].label != regs[i].label || annNotOverlapped(regs[i], regs[j])) {
+			j++
+		}
+		if j >= imin(i+far, len(regs)) {
+			i++
+			continue
+		}
+		if overlapRatio(regs[i], regs[j]) < thr && overlapRatio(regs[j], regs[i]) < thr {
+			i++
+			continue
+		}
+		// Collapse the pair. Python layouts_cleanup keeps the HIGHER-score
+		// region; on equal scores it keeps the later one (j) via pop(i).
+		// Match that exactly so equal-confidence pairs converge with Python.
+		drop := j
+		if regs[i].score > 0 && regs[j].score > 0 {
+			if regs[i].score > regs[j].score {
+				drop = j
+			} else {
+				drop = i
+			}
+		} else {
+			areaI, areaJ := 0.0, 0.0
+			for _, b := range boxes {
+				tb := annRegion{x0: b.X0, y0: b.Top, x1: b.X1, y1: b.Bottom}
+				if !annNotOverlapped(tb, regs[i]) {
+					areaI += regionIntersect(tb, regs[i])
+				}
+				if !annNotOverlapped(tb, regs[j]) {
+					areaJ += regionIntersect(tb, regs[j])
+				}
+			}
+			if areaJ > areaI {
+				drop = i
+			}
+		}
+		regs = append(regs[:drop], regs[drop+1:]...)
+	}
+	return regs
+}
+
+// nmsDLARegions suppresses overlapping raw DLA regions within each label.
+// Figure and table captions share a group so competing labels for the same
+// region are resolved by confidence before annotation's type priority applies.
+// The highest-confidence detection wins when IoU exceeds iouThresh, using
+// the +1 overlap convention from Python's operators.py:685-688.
+func nmsDLARegions(regions []pdf.DLARegion, iouThresh float64) []pdf.DLARegion {
+	if len(regions) == 0 {
+		return regions
+	}
+	byLabel := map[string][]int{}
+	for i, r := range regions {
+		label := r.Label
+		if label == pdf.DLALabelTableCaption {
+			label = pdf.DLALabelFigureCaption
+		}
+		byLabel[label] = append(byLabel[label], i)
+	}
+	suppressed := make([]bool, len(regions))
+	for _, idxs := range byLabel {
+		// Highest confidence first (greedy NMS keeps the top box). On equal
+		// confidence, break the tie by original index so the result is
+		// deterministic for identical inputs — otherwise the same PDF could
+		// keep a different region (and emit different LayoutNo) on each run.
+		sort.SliceStable(idxs, func(a, b int) bool {
+			ca, cb := regions[idxs[a]].Confidence, regions[idxs[b]].Confidence
+			if ca != cb {
+				return ca > cb
+			}
+			return idxs[a] < idxs[b]
+		})
+		for k := 0; k < len(idxs); k++ {
+			i := idxs[k]
+			if suppressed[i] {
+				continue
+			}
+			for m := k + 1; m < len(idxs); m++ {
+				j := idxs[m]
+				if suppressed[j] {
+					continue
+				}
+				if nmsIoU(regions[i], regions[j]) > iouThresh {
+					suppressed[j] = true
+				}
+			}
+		}
+	}
+	out := make([]pdf.DLARegion, 0, len(regions))
+	for i, r := range regions {
+		if !suppressed[i] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// nmsIoU computes IoU using the +1 overlap convention from operators.py:685-688
+// (w = max(0, x22-x11+1), h = max(0, y22-y11+1)) while area uses no +1. This
+// must match Python exactly so borderline suppressions (around the 0.45 threshold)
+// align.
+func nmsIoU(a, b pdf.DLARegion) float64 {
+	w := math.Max(0, math.Min(a.X1, b.X1)-math.Max(a.X0, b.X0)+1)
+	h := math.Max(0, math.Min(a.Y1, b.Y1)-math.Max(a.Y0, b.Y0)+1)
+	inter := w * h
+	areaA := (a.X1 - a.X0) * (a.Y1 - a.Y0)
+	areaB := (b.X1 - b.X0) * (b.Y1 - b.Y0)
+	if areaA <= 0 || areaB <= 0 {
+		return 0
+	}
+	return inter / (areaA + areaB - inter)
+}
+
+// AnnotateBoxLayouts sets LayoutType and LayoutNo on each box, matching
 // Python's LayoutRecognizer.__call__ which assigns layout types in priority
-// order (footer→header→…→equation) with an overlap threshold of 40% of the
+// order (footer->header->...->equation) with an overlap threshold of 40% of the
 // box's area.
 //
-// Python: _layouts_rec (pdf_parser.py:827) → LayoutRecognizer.__call__ →
+// Python: _layouts_rec (pdf_parser.py:827) -> LayoutRecognizer.__call__ ->
 //
 //	for lt in priority_order: findLayout(lt)
 //
 // Each findLayout(ty): for each unannotated box, find the DLA region of
-// type ty with max overlap ≥ 0.4 × box_area.  First type to match wins.
+// type ty with max overlap >= 0.4 * box_area.  First type to match wins.
 //
 // CID-pattern boxes (e.g. "(cid:123)") are skipped as garbage.
-// annotateBoxLayouts assigns LayoutType and LayoutNo to boxes based on DLA
+// AnnotateBoxLayouts assigns LayoutType and LayoutNo to boxes based on DLA
 // regions.  Returns the filtered slice (Python pops CID-garbled boxes and
-// garbage-layout boxes at wrong positions — Go mirrors with compact).
-// Also creates synthetic figure boxes for unmatched figure/equation regions.
-func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float64, pageImgHeight float64) []pdf.TextBox {
+// garbage-layout boxes at wrong positions - Go mirrors with compact).
+// Also creates a complete geometry box for every figure/equation region.
+//
+// Before annotation, regions are de-duplicated (layouts_cleanup) and sorted
+// top-to-bottom (sort_Y_firstly), and figure and equation regions receive
+// separate geometry namespaces (figure-N /
+// equation-N) so they never collide.
+// FilteredDLARegions returns the DLA regions after NMS, the
+// confidence filter, Y-sort, and cleanup — i.e. the exact set fed to
+// annotation. It mirrors Python's page_layout (layout_recognizer.py:84-100):
+//   - nmsDLARegions(0.45), with figure/table captions competing by confidence
+//   - keep if score >= 0.4 OR type not garbage    == layout_recognizer.py:97
+//   - sortYFirstly                                == layout_recognizer.py:99 (sort_Y_firstly)
+//   - cleanupLayouts                              == layout_recognizer.py:100 (layouts_cleanup)
+//
+// Regions are returned in image-pixel space (no scale division) so callers
+// that only need the region set — e.g. the parity harness dumping post-filter
+// regions for comparison with Python's page_layout — get a stable comparison
+// point regardless of render DPI. cleanupLayouts only consults boxes when both
+// compared regions have score 0, which never happens for real DLA output, so
+// passing nil boxes from the harness is safe.
+func FilteredDLARegions(regions []pdf.DLARegion, boxes []pdf.TextBox) []pdf.DLARegion {
+	regions = nmsDLARegions(regions, 0.45)
 	if len(regions) == 0 {
+		return nil
+	}
+	kept := regions[:0]
+	for _, r := range regions {
+		if r.Confidence >= pdf.GarbageLayoutScoreThreshold || !pdf.GarbageLayoutTypes[r.Label] {
+			kept = append(kept, r)
+		}
+	}
+	ars := make([]annRegion, len(kept))
+	for i, r := range kept {
+		ars[i] = annRegion{x0: r.X0, y0: r.Y0, x1: r.X1, y1: r.Y1, label: r.Label, score: r.Confidence}
+	}
+	sortYFirstly(ars)
+	ars = cleanupLayouts(ars, boxes)
+	out := make([]pdf.DLARegion, len(ars))
+	for i, a := range ars {
+		out[i] = pdf.DLARegion{X0: a.x0, Y0: a.y0, X1: a.x1, Y1: a.y1, Label: a.label, Confidence: a.score}
+	}
+	return out
+}
+
+func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float64, pageImgHeight float64) []pdf.TextBox {
+	// NMS, confidence filter, Y-sort, and cleanup — the exact region set fed
+	// to annotation. This mirrors Python's layout_recognizer.py:84-100
+	// (filter + sort_Y_firstly + layouts_cleanup) and is the same pipeline the
+	// parity harness uses (via FilteredDLARegions) to dump post-filter regions
+	// comparable with Python's page_layout.
+	filtered := FilteredDLARegions(regions, boxes)
+	if len(filtered) == 0 {
 		return boxes
 	}
 
-	// Scale all regions to PDF space once.
-	type scaledRegion struct {
-		x0, y0, x1, y1 float64
-		label          string
-	}
-	scaled := make([]scaledRegion, len(regions))
-	for i, r := range regions {
-		scaled[i] = scaledRegion{
+	// Scale filtered regions from image-pixel space to PDF space.
+	cands := make([]annRegion, 0, len(filtered))
+	for _, r := range filtered {
+		cands = append(cands, annRegion{
 			x0: r.X0 / scale, y0: r.Y0 / scale,
 			x1: r.X1 / scale, y1: r.Y1 / scale,
-			label: r.Label,
-		}
+			label: r.Label, score: r.Confidence,
+		})
 	}
 
-	// DLA confidence filter — matches Python's `score >= 0.4`.
-	regionOK := make([]bool, len(regions))
-	for i, r := range regions {
-		regionOK[i] = r.Confidence >= 0.4 || !isGarbageLayoutType(r.Label)
-	}
-
-	// Pre-compute per-type index for each region (Python: matched index within
-	// filtered layouts_of_type list). "text" regions get 0,1,2... independent
-	// of "figure" regions.
-	typeIndex := make([]int, len(regions))
+	// Per-type index in the cleaned, Y-sorted list (Python: ii in lts_).
 	typeCounters := make(map[string]int)
-	for j, r := range scaled {
-		if regionOK[j] {
-			typeIndex[j] = typeCounters[r.label]
-			typeCounters[r.label]++
-		}
+	for j := range cands {
+		cands[j].typeIndex = typeCounters[cands[j].label]
+		typeCounters[cands[j].label]++
 	}
-
-	// Track visited regions (Python: layout["visited"] = True).
-	visited := make([]bool, len(regions))
 
 	// Marks for Python-style pop removal.
 	dropped := make([]bool, len(boxes))
@@ -139,9 +383,10 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 				continue
 			}
 			bestOverlap := 0.0
+			bestRegionOverlap := 0.0
 			bestJ := -1
-			for j, r := range scaled {
-				if r.label != ty || !regionOK[j] {
+			for j, r := range cands {
+				if r.label != ty {
 					continue
 				}
 				ix0 := math.Max(r.x0, boxes[i].X0)
@@ -149,20 +394,31 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 				ix1 := math.Min(r.x1, boxes[i].X1)
 				iy1 := math.Min(r.y1, boxes[i].Bottom)
 				if ix0 < ix1 && iy0 < iy1 {
-					ov := (ix1 - ix0) * (iy1 - iy0) / boxArea
-					if ov > bestOverlap {
+					inter := (ix1 - ix0) * (iy1 - iy0)
+					ov := inter / boxArea // fraction of the box covered (Python's ov)
+					rArea := (r.x1 - r.x0) * (r.y1 - r.y0)
+					ovRegion := 0.0
+					if rArea > 0 {
+						ovRegion = inter / rArea // fraction of the region covered (Python's _ov)
+					}
+					// Mirror Python's (ov, _ov) tuple comparison
+					// (recognizer.py:255-269): primary key is the box
+					// coverage ratio; on a tie the region-coverage ratio
+					// wins (prefer the region the box sits more "inside"
+					// of); on a full tie keep the first (topmost) region.
+					if ov > bestOverlap || (ov == bestOverlap && ovRegion > bestRegionOverlap) {
 						bestOverlap = ov
+						bestRegionOverlap = ovRegion
 						bestJ = j
 					}
 				}
 			}
 			if bestJ >= 0 && bestOverlap >= 0.4 {
-				// Garbage layout not at page edge → pop (Python: bxs.pop(i)).
-				if isGarbageLayoutType(ty) && pageImgHeight > 0 && !garbageKeepFeat(ty, boxes[i], pageImgHeight/scale) {
+				// Garbage layout not at page edge -> pop (Python: bxs.pop(i)).
+				if pdf.GarbageLayoutTypes[ty] && pageImgHeight > 0 && !garbageKeepFeat(ty, boxes[i], pageImgHeight/scale) {
 					dropped[i] = true
 					continue
 				}
-				visited[bestJ] = true
 				// Python: equation mapped to "figure" for layout_type
 				if ty == pdf.LayoutTypeEquation {
 					boxes[i].LayoutType = pdf.LayoutTypeFigure
@@ -170,7 +426,7 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 					boxes[i].LayoutType = ty
 				}
 				// Python: f"{layout_type}-{matched}" where matched is per-type index
-				boxes[i].LayoutNo = fmt.Sprintf("%s-%d", ty, typeIndex[bestJ])
+				boxes[i].LayoutNo = fmt.Sprintf("%s-%d", ty, cands[bestJ].typeIndex)
 			}
 		}
 	}
@@ -195,50 +451,37 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 	}
 	boxes = compacted
 
-	// Synthetic figure boxes for unmatched figure/equation regions (Python:
-	// dla_cli.py:187-195). Use a fresh per-type counter for synthetic boxes.
-	synthIdx := 0
-	for j, r := range scaled {
-		if !regionOK[j] || visited[j] {
-			continue
-		}
-		if r.label != pdf.LayoutTypeFigure && r.label != pdf.LayoutTypeEquation {
+	// Keep one geometry box per figure/equation, independently of its text.
+	// ConsolidateFigures combines it with matching labels after text cleanup.
+	for j := range cands {
+		if cands[j].label != pdf.LayoutTypeFigure && cands[j].label != pdf.LayoutTypeEquation {
 			continue
 		}
 		boxes = append(boxes, pdf.TextBox{
-			X0:         r.x0,
-			X1:         r.x1,
-			Top:        r.y0,
-			Bottom:     r.y1,
-			Text:       "",
-			LayoutType: pdf.LayoutTypeFigure,
-			LayoutNo:   fmt.Sprintf("figure-%d", synthIdx),
+			X0:           cands[j].x0,
+			X1:           cands[j].x1,
+			Top:          cands[j].y0,
+			Bottom:       cands[j].y1,
+			Text:         "",
+			LayoutType:   pdf.LayoutTypeFigure,
+			LayoutNo:     fmt.Sprintf("%s-%d", cands[j].label, cands[j].typeIndex),
+			FigureBounds: &pdf.Position{Left: cands[j].x0, Top: cands[j].y0, Right: cands[j].x1, Bottom: cands[j].y1},
 		})
-		synthIdx++
 	}
 
 	return boxes
 }
 
 // ── garbage layout helpers ────────────────────────────────────────────
-// garbageLayoutTypes matches Python's self.garbage_layouts.
-var garbageLayoutTypes = map[string]bool{
-	pdf.LayoutTypeFooter: true, pdf.LayoutTypeHeader: true, pdf.LayoutTypeReference: true,
-}
-
-func isGarbageLayoutType(ty string) bool {
-	return garbageLayoutTypes[ty]
-}
-
-// garbageKeepFeat matches Python's keep_feats in LayoutRecognizer.__call__:
-// footer near page bottom (>90% of page height) or header near page top (<10%)
-// are real page decorations — keep them.  Others are DLA noise.
+// garbageKeepFeat keeps likely false-positive garbage labels.
 func garbageKeepFeat(ty string, box pdf.TextBox, pageImgHeight float64) bool {
 	switch ty {
 	case pdf.LayoutTypeFooter:
 		return box.Bottom < pageImgHeight*0.9
 	case pdf.LayoutTypeHeader:
 		return box.Top > pageImgHeight*0.1
+	case pdf.LayoutTypeReference:
+		return IsCaptionBox(box.Text, "")
 	}
 	return false
 }
@@ -262,9 +505,10 @@ func WriteTableAnnotations(boxes []pdf.TextBox, boxIdx []int, cells []pdf.TSRCel
 		}
 	}
 	annotGrid := tb.GroupCells(tableCells)
-	AnnotateTableBoxes(tblBoxes, annotGrid)
+	AnnotateBoxesWithGridAndRows(tblBoxes, annotGrid, AnnotationRowBands(tableCells))
 	for k, idx := range boxIdx {
 		bp := &tblBoxes[k]
+		boxes[idx].HasTableAnnotations = bp.HasTableAnnotations
 		boxes[idx].R = bp.R
 		boxes[idx].RTop = bp.RTop / scale
 		boxes[idx].RBott = bp.RBott / scale

@@ -1,0 +1,35 @@
+{
+  "case_id": "token__text_token_liveness",
+  "chunks": [
+    {
+      "text": "RAGFlow is an open-source retrieval-augmented generation engine.\nIt ingests documents of many types and splits them into chunks.\n"
+    },
+    {
+      "text": "Each chunk is embedded and stored in a vector database for retrieval.\nThe chunker honours document structure such as headings and tables.\n"
+    },
+    {
+      "text": "Long paragraphs are divided so each chunk fits a token budget.\nOverlap between chunks preserves context across boundaries.\n"
+    },
+    {
+      "text": "Retrieval returns the most relevant chunks for a user question.\nThe generator then composes an answer from those chunks.\nEvaluation measures faithfulness and answer relevance.\n"
+    },
+    {
+      "text": "Users tune chunk size to balance recall and precision.\nSmaller chunks improve recall but increase storage cost.\nLarger chunks keep more context but may dilute relevance.\n"
+    },
+    {
+      "text": "The system supports many languages and encodings.\nDeep parsing extracts text from PDF images and scans.\nTables are recognised and preserved as structured chunks.\n"
+    },
+    {
+      "text": "Images can be described and attached to neighbouring text.\nThe API exposes dataset, document, and chat endpoints.\nA web UI lets users manage knowledge bases visually.\n"
+    },
+    {
+      "text": "Batch ingestion processes large corpora efficiently.\nConcurrency limits protect the embedding service.\nCaching avoids re-embedding unchanged content.\nLogging records ingestion progress and errors.\n"
+    },
+    {
+      "text": "Metrics help operators spot slow components.\nConfiguration controls parsers and chunking strategies.\nTemplates encode common ingestion pipelines.\nThe engine scales horizontally behind a load balancer.\n"
+    },
+    {
+      "text": "Security isolates tenant data by document id.\nAuditing tracks who accessed which knowledge base.\nPlugins extend parsing for proprietary formats."
+    }
+  ]
+}

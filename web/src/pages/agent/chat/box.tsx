@@ -8,29 +8,28 @@ import MarkdownContent from '@/components/next-markdown-content';
 import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { VirtualMessageList } from '@/components/virtual-message-list';
 import {
   useFetchAgent,
   useUploadAgentFileWithProgress,
 } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
-import { buildMessageUuidWithRole } from '@/utils/chat';
-import { memo, useCallback, useContext, useEffect } from 'react';
+import { memo, useCallback, useContext, useEffect, useRef } from 'react';
 import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
 import { useAwaitComponentData } from '../hooks/use-chat-logic';
 import { useIsTaskMode } from '../hooks/use-get-begin-query';
-import { useGetFileIcon } from './use-get-file-icon';
 
 function AgentChatBox() {
   const { data: canvasInfo, refetch } = useFetchAgent();
   const {
     value,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     sendLoading,
     derivedMessages,
     handleInputChange,
-    handlePressEnter,
+    handlePressEnter: sendAgentPressEnter,
     stopOutputMessage,
     sendFormMessage,
     findReferenceByMessageId,
@@ -40,7 +39,6 @@ function AgentChatBox() {
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
-  useGetFileIcon();
   const { data: userInfo } = useFetchUserInfo();
   const { uploadAgentFile, loading } = useUploadAgentFileWithProgress();
 
@@ -64,6 +62,31 @@ function AgentChatBox() {
 
   const isTaskMode = useIsTaskMode();
 
+  const handlePressEnter = useCallback(() => {
+    sendAgentPressEnter();
+  }, [sendAgentPressEnter]);
+
+  const inputWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Keep the message list anchored to its bottom edge while the input box
+  // changes height (drag-to-resize or autosize), so history shifts up/down
+  // together with the input instead of being covered by it.
+  useEffect(() => {
+    const wrapper = inputWrapperRef.current;
+    const container = messageContainerRef.current;
+    if (!wrapper || !container) return;
+    let previousHeight = wrapper.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const delta = wrapper.clientHeight - previousHeight;
+      previousHeight = wrapper.clientHeight;
+      if (delta !== 0) {
+        container.scrollTop += delta;
+      }
+    });
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, [messageContainerRef]);
+
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
       async (files, options) => {
@@ -76,73 +99,72 @@ function AgentChatBox() {
   return (
     <>
       <section className="flex flex-1 flex-col px-5 min-h-0 pb-4">
-        <div className="flex-1 overflow-auto" ref={messageContainerRef}>
-          <div>
-            {!sendLoading && <div data-testid="agent-run-idle" />}
-            {/* <Spin spinning={sendLoading}> */}
-            {derivedMessages?.map((message, i) => {
-              return (
-                <MessageItem
-                  loading={
-                    message.role === MessageType.Assistant &&
-                    sendLoading &&
-                    derivedMessages.length - 1 === i
-                  }
-                  key={buildMessageUuidWithRole(message)}
-                  nickname={userInfo.nickname}
-                  avatar={userInfo.avatar}
-                  avatarDialog={canvasInfo.avatar}
-                  item={message}
-                  reference={findReferenceByMessageId(message.id)}
-                  clickDocumentButton={clickDocumentButton}
-                  index={i}
-                  showLikeButton={false}
-                  sendLoading={sendLoading}
-                >
-                  {message.role === MessageType.Assistant &&
-                    derivedMessages.length - 1 === i && (
-                      <DebugContent
-                        parameters={buildInputList(message)}
-                        message={message}
-                        ok={handleOk(message)}
-                        isNext={false}
-                        btnText={'Submit'}
-                      ></DebugContent>
-                    )}
-                  {message.role === MessageType.Assistant &&
-                    derivedMessages.length - 1 !== i && (
+        <div className="flex-1 overflow-auto min-h-0" ref={messageContainerRef}>
+          {!sendLoading && <div data-testid="agent-run-idle" />}
+          <VirtualMessageList
+            className="w-full"
+            items={derivedMessages}
+            virtualizer={virtualizer}
+            renderItem={(message, i) => (
+              <MessageItem
+                loading={
+                  message.role === MessageType.Assistant &&
+                  sendLoading &&
+                  derivedMessages.length - 1 === i
+                }
+                nickname={userInfo.nickname}
+                avatar={userInfo.avatar}
+                avatarDialog={canvasInfo.avatar}
+                item={message}
+                reference={findReferenceByMessageId(message.id)}
+                clickDocumentButton={clickDocumentButton}
+                index={i}
+                showLikeButton={false}
+                sendLoading={sendLoading && derivedMessages.length - 1 === i}
+              >
+                {message.role === MessageType.Assistant &&
+                  derivedMessages.length - 1 === i && (
+                    <DebugContent
+                      parameters={buildInputList(message)}
+                      message={message}
+                      ok={handleOk(message)}
+                      isNext={false}
+                      btnText={'Submit'}
+                    ></DebugContent>
+                  )}
+                {message.role === MessageType.Assistant &&
+                  derivedMessages.length - 1 !== i && (
+                    <div>
+                      <MarkdownContent
+                        content={message?.data?.tips}
+                        loading={false}
+                      ></MarkdownContent>
                       <div>
-                        <MarkdownContent
-                          content={message?.data?.tips}
-                          loading={false}
-                        ></MarkdownContent>
-                        <div>
-                          {buildInputList(message)?.map((item) => item.value)}
-                        </div>
+                        {buildInputList(message)?.map((item) => item.value)}
                       </div>
-                    )}
-                </MessageItem>
-              );
-            })}
-            {/* </Spin> */}
-          </div>
-          <div ref={scrollRef} />
+                    </div>
+                  )}
+              </MessageItem>
+            )}
+          />
         </div>
         {isTaskMode || (
-          <NextMessageInput
-            value={value}
-            sendLoading={sendLoading}
-            disabled={isWaiting}
-            sendDisabled={sendLoading || isWaiting}
-            isUploading={loading || isWaiting}
-            resize="vertical"
-            onPressEnter={handlePressEnter}
-            onInputChange={handleInputChange}
-            stopOutputMessage={stopOutputMessage}
-            onUpload={handleUploadFile}
-            removeFile={removeFile}
-            conversationId=""
-          />
+          <div ref={inputWrapperRef}>
+            <NextMessageInput
+              value={value}
+              sendLoading={sendLoading}
+              disabled={isWaiting}
+              sendDisabled={sendLoading || isWaiting}
+              isUploading={loading || isWaiting}
+              resize="vertical"
+              onPressEnter={handlePressEnter}
+              onInputChange={handleInputChange}
+              stopOutputMessage={stopOutputMessage}
+              onUpload={handleUploadFile}
+              removeFile={removeFile}
+              conversationId=""
+            />
+          </div>
         )}
       </section>
       {visible && (

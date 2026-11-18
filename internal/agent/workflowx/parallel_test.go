@@ -54,18 +54,19 @@ func buildParallelIncSub(t *testing.T) *compose.Workflow[int, int] {
 // output slice preserves input order under the default sequential
 // path.
 func TestParallel_OrderPreservation_Sequential(t *testing.T) {
+	ctx := t.Context()
 	outer := compose.NewWorkflow[[]int, []int]()
-	node, err := AddParallelNode(context.Background(), outer, "par", buildParallelIncSub(t))
+	node, err := AddParallelNode(ctx, outer, "par", buildParallelIncSub(t))
 	if err != nil {
 		t.Fatalf("AddParallelNode: %v", err)
 	}
 	node.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	got, err := compiled.Invoke(context.Background(), []int{1, 2, 3, 4, 5})
+	got, err := compiled.Invoke(ctx, []int{1, 2, 3, 4, 5})
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -86,8 +87,9 @@ func TestParallel_OrderPreservation_Sequential(t *testing.T) {
 // the per-item index, so outputs[i] is always the result of
 // running on inputs[i].
 func TestParallel_OrderPreservation_Concurrent(t *testing.T) {
+	ctx := t.Context()
 	outer := compose.NewWorkflow[[]int, []int]()
-	node, err := AddParallelNode(context.Background(), outer, "par",
+	node, err := AddParallelNode(ctx, outer, "par",
 		buildParallelIncSub(t),
 		WithParallelMaxConcurrency(8),
 	)
@@ -96,12 +98,12 @@ func TestParallel_OrderPreservation_Concurrent(t *testing.T) {
 	}
 	node.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 	inputs := []int{10, 20, 30, 40, 50, 60, 70, 80}
-	got, err := compiled.Invoke(context.Background(), inputs)
+	got, err := compiled.Invoke(ctx, inputs)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -120,12 +122,13 @@ func TestParallel_OrderPreservation_Concurrent(t *testing.T) {
 // Modulo garbage collection, runtime.NumGoroutine() before and
 // after must match.
 func TestParallel_Sequential_ZeroGoroutineSpawns(t *testing.T) {
+	ctx := t.Context()
 	// Warm up to make any lazy goroutines settle.
 	_ = runtime.NumGoroutine()
 	before := runtime.NumGoroutine()
 
 	outer := compose.NewWorkflow[[]int, []int]()
-	node, err := AddParallelNode(context.Background(), outer, "par",
+	node, err := AddParallelNode(ctx, outer, "par",
 		buildParallelIncSub(t),
 		WithParallelMaxConcurrency(0),
 	)
@@ -134,14 +137,14 @@ func TestParallel_Sequential_ZeroGoroutineSpawns(t *testing.T) {
 	}
 	node.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
 	// Do the actual work twice so any one-shot goroutines from
 	// the eino engine settle.
-	_, err = compiled.Invoke(context.Background(), []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
+	_, err = compiled.Invoke(ctx, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -157,11 +160,12 @@ func TestParallel_Sequential_ZeroGoroutineSpawns(t *testing.T) {
 // MaxConcurrency(1) also runs entirely on the calling goroutine.
 // The plan §"Concurrency policy" treats 0 and 1 as the same path.
 func TestParallel_Sequential_OneGoroutineSpawns(t *testing.T) {
+	ctx := t.Context()
 	_ = runtime.NumGoroutine()
 	before := runtime.NumGoroutine()
 
 	outer := compose.NewWorkflow[[]int, []int]()
-	node, err := AddParallelNode(context.Background(), outer, "par",
+	node, err := AddParallelNode(ctx, outer, "par",
 		buildParallelIncSub(t),
 		WithParallelMaxConcurrency(1),
 	)
@@ -170,12 +174,12 @@ func TestParallel_Sequential_OneGoroutineSpawns(t *testing.T) {
 	}
 	node.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
+	_, err = compiled.Invoke(ctx, []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -185,9 +189,8 @@ func TestParallel_Sequential_OneGoroutineSpawns(t *testing.T) {
 	}
 }
 
-// TestParallel_Concurrent_UsesSemaphoreFanout asserts that
-// MaxConcurrency(N) drives the fan-out path (i>=1 items run
-// via the semaphore-bounded goroutine fan-out). The eino
+// TestParallel_Concurrent_BoundedFanout asserts that
+// MaxConcurrency(N) drives the fan-out path. The eino
 // Workflow runtime internally serialises Invoke calls on a
 // single compiled runnable, so we cannot directly observe
 // in-flight workers from outside; instead we drive
@@ -196,14 +199,12 @@ func TestParallel_Sequential_OneGoroutineSpawns(t *testing.T) {
 // closes, and (c) the order in which the results arrive is
 // still index-keyed (so the bounded fan-out did not lose
 // per-item attribution).
-func TestParallel_Concurrent_UsesSemaphoreFanout(t *testing.T) {
+func TestParallel_Concurrent_BoundedFanout(t *testing.T) {
 	var calls atomic.Int32
 	runner := testCountingRunnable{
 		fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
 			calls.Add(1)
-			// Tiny sleep so the semaphore workers have a
-			// chance to interleave with the main-goroutine
-			// item 0.
+			// Tiny sleep so workers have a chance to interleave.
 			time.Sleep(time.Millisecond)
 			return in, nil
 		},
@@ -219,7 +220,7 @@ func TestParallel_Concurrent_UsesSemaphoreFanout(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ch := runParallelFanout(context.Background(), "par", runner, items, indices, opts, bridge)
+		ch := runParallelFanout(t.Context(), "par", runner, items, indices, opts, bridge)
 		for r := range ch {
 			// Each result must carry its original index
 			// (the order-preservation contract under
@@ -243,10 +244,154 @@ func TestParallel_Concurrent_UsesSemaphoreFanout(t *testing.T) {
 	}
 }
 
+func TestParallel_Concurrent_FirstItemDoesNotBlockAdmission(t *testing.T) {
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	release := sync.OnceFunc(func() { close(releaseFirst) })
+	defer release()
+	runner := testCountingRunnable{fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
+		if in == 0 {
+			close(firstStarted)
+			<-releaseFirst
+		} else if in == 1 {
+			close(secondStarted)
+		}
+		return in, nil
+	}}
+	opts := getParallelOptions([]ParallelOption{WithParallelMaxConcurrency(2), WithParallelEnableSubCheckpoint(false)})
+	ch := make(chan (<-chan parallelTaskResult), 1)
+	go func() {
+		ch <- runParallelFanout(t.Context(), "par", runner, []int{0, 1}, []int{0, 1}, opts, newParallelBridgeState(nil))
+	}()
+	select {
+	case <-firstStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first item did not start")
+	}
+	select {
+	case <-secondStarted:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("second item was blocked behind first")
+	}
+	release()
+	select {
+	case results := <-ch:
+		for range results {
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("fanout did not return")
+	}
+}
+
+func TestParallel_Concurrent_BoundsWaitingGoroutines(t *testing.T) {
+	const count = 512
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	releaseRest := make(chan struct{})
+	releaseFirstOnce := sync.OnceFunc(func() { close(releaseFirst) })
+	defer releaseFirstOnce()
+	release := sync.OnceFunc(func() { close(releaseRest) })
+	defer release()
+	runner := testCountingRunnable{fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
+		if in == 0 {
+			close(firstStarted)
+			<-releaseFirst
+		} else {
+			<-releaseRest
+		}
+		return in, nil
+	}}
+	items := make([]int, count)
+	indices := make([]int, count)
+	for i := range items {
+		items[i], indices[i] = i, i
+	}
+	opts := getParallelOptions([]ParallelOption{WithParallelMaxConcurrency(2), WithParallelEnableSubCheckpoint(false)})
+	before := runtime.NumGoroutine()
+	ch := make(chan (<-chan parallelTaskResult), 1)
+	go func() {
+		ch <- runParallelFanout(t.Context(), "par", runner, items, indices, opts, newParallelBridgeState(nil))
+	}()
+	select {
+	case <-firstStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first item did not start")
+	}
+	releaseFirstOnce()
+	var results <-chan parallelTaskResult
+	select {
+	case results = <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fanout did not return")
+	}
+	if got := runtime.NumGoroutine(); got > before+50 {
+		t.Errorf("fanout started %d extra goroutines for concurrency 2", got-before)
+	}
+	release()
+	for range results {
+	}
+}
+
+func TestParallel_Concurrent_CancelSkipsQueuedItems(t *testing.T) {
+	const count = 128
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	started := make(chan struct{}, 2)
+	var calls atomic.Int32
+	runner := testCountingRunnable{fn: func(ctx context.Context, in int, _ ...compose.Option) (int, error) {
+		calls.Add(1)
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-ctx.Done()
+		return 0, ctx.Err()
+	}}
+	items := make([]int, count)
+	indices := make([]int, count)
+	for i := range items {
+		items[i], indices[i] = i, i
+	}
+	opts := getParallelOptions([]ParallelOption{WithParallelMaxConcurrency(2), WithParallelEnableSubCheckpoint(false)})
+	results := make(chan (<-chan parallelTaskResult), 1)
+	go func() {
+		results <- runParallelFanout(ctx, "par", runner, items, indices, opts, newParallelBridgeState(nil))
+	}()
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("both workers did not start")
+		}
+	}
+	cancel()
+	var got <-chan parallelTaskResult
+	select {
+	case got = <-results:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fanout did not return after cancellation")
+	}
+	seen := 0
+	for result := range got {
+		seen++
+		if !errors.Is(result.err, context.Canceled) {
+			t.Errorf("item %d: got %v, want cancellation", result.index, result.err)
+		}
+	}
+	if seen >= count {
+		t.Errorf("cancellation reported all %d items instead of stopping admission", seen)
+	}
+	if got := calls.Load(); got > 2 {
+		t.Errorf("invoked %d items after cancellation with concurrency 2", got)
+	}
+}
+
 // TestParallel_SingleItemError_Wrapped asserts the "item %d: %w"
-// wrapping contract. The lambda must return the wrapped error,
+// wrapping  The lambda must return the wrapped error,
 // other items must be drained.
 func TestParallel_SingleItemError_Wrapped(t *testing.T) {
+	ctx := t.Context()
 	underlying := errors.New("boom-2")
 	var calls atomic.Int32
 	sub := compose.NewWorkflow[int, int]()
@@ -261,7 +406,7 @@ func TestParallel_SingleItemError_Wrapped(t *testing.T) {
 	node.AddInput(compose.START)
 	sub.End().AddInput("op")
 
-	compiled, err := sub.Compile(context.Background())
+	compiled, err := sub.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile sub: %v", err)
 	}
@@ -271,7 +416,7 @@ func TestParallel_SingleItemError_Wrapped(t *testing.T) {
 		WithParallelEnableSubCheckpoint(false),
 	})
 	bridge := newParallelBridgeState(nil)
-	_, err = runParallelInvoke(context.Background(), "par", compiled, []int{1, 2, 3}, opts, bridge)
+	_, err = runParallelInvoke(ctx, "par", compiled, []int{1, 2, 3}, opts, bridge)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -293,6 +438,7 @@ func TestParallel_SingleItemError_Wrapped(t *testing.T) {
 // single CompositeInterrupt carrying every per-item interrupt
 // error.
 func TestParallel_AllItemsInterrupt_CompositeInterrupt(t *testing.T) {
+	ctx := t.Context()
 	sub := compose.NewWorkflow[int, int]()
 	lambda := compose.InvokableLambda(func(ctx context.Context, in int) (int, error) {
 		was, _, _ := compose.GetInterruptState[int](ctx)
@@ -306,7 +452,7 @@ func TestParallel_AllItemsInterrupt_CompositeInterrupt(t *testing.T) {
 	sub.End().AddInput("op")
 
 	outer := compose.NewWorkflow[[]int, []int]()
-	pNode, err := AddParallelNode(context.Background(), outer, "par", sub,
+	pNode, err := AddParallelNode(ctx, outer, "par", sub,
 		WithParallelMaxConcurrency(0),
 		WithParallelCheckpointIDBuilder(func(_ string, idx int) string {
 			return "all-int-cp:" + itoa(idx)
@@ -317,11 +463,11 @@ func TestParallel_AllItemsInterrupt_CompositeInterrupt(t *testing.T) {
 	}
 	pNode.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	_, err = compiled.Invoke(context.Background(), []int{10, 20, 30})
+	_, err = compiled.Invoke(ctx, []int{10, 20, 30})
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
@@ -340,6 +486,7 @@ func TestParallel_AllItemsInterrupt_CompositeInterrupt(t *testing.T) {
 // loader checks first (test-only). This lets us inspect the
 // encoded payload without a real eino checkpoint store.
 func TestParallel_MixedCompletedAndInterrupted_StateStructure(t *testing.T) {
+	ctx := t.Context()
 	var completedCalls atomic.Int32
 	sub := compose.NewWorkflow[int, int]()
 	lambda := compose.InvokableLambda(func(ctx context.Context, in int) (int, error) {
@@ -354,7 +501,7 @@ func TestParallel_MixedCompletedAndInterrupted_StateStructure(t *testing.T) {
 	node.AddInput(compose.START)
 	sub.End().AddInput("op")
 
-	compiled, err := sub.Compile(context.Background())
+	compiled, err := sub.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile sub: %v", err)
 	}
@@ -366,7 +513,7 @@ func TestParallel_MixedCompletedAndInterrupted_StateStructure(t *testing.T) {
 		}),
 	})
 	bridge := newParallelBridgeState(nil)
-	_, err = runParallelInvoke(context.Background(), "par", compiled, []int{0, 1, 2}, opts, bridge)
+	_, err = runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts, bridge)
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
@@ -385,7 +532,7 @@ func TestParallel_MixedCompletedAndInterrupted_StateStructure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	st, isResume, err := loadParallelSnapshot(injectResumeState(context.Background(), payload))
+	st, isResume, err := loadParallelSnapshot(injectResumeState(ctx, payload))
 	if err != nil {
 		t.Fatalf("loadSnapshot: %v", err)
 	}
@@ -434,6 +581,7 @@ func TestParallel_BuildPendingIndices_UsesCompletedComplement(t *testing.T) {
 // resume payload with an index in neither CompletedResults nor
 // InterruptedIndices is rejected as ErrParallelResumeStateInvalid.
 func TestParallel_LoadSnapshot_RejectsPartitionHole(t *testing.T) {
+	ctx := t.Context()
 	payload, err := encodeParallelState(ParallelInterruptState{
 		OriginalInputsJSON: []byte(`[1,2,3]`),
 		CompletedResults:   map[int]any{0: 2},
@@ -443,7 +591,7 @@ func TestParallel_LoadSnapshot_RejectsPartitionHole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	_, _, err = loadParallelSnapshot(injectResumeState(context.Background(), payload))
+	_, _, err = loadParallelSnapshot(injectResumeState(ctx, payload))
 	if err == nil {
 		t.Fatal("expected resume state error, got nil")
 	}
@@ -455,9 +603,75 @@ func TestParallel_LoadSnapshot_RejectsPartitionHole(t *testing.T) {
 	}
 }
 
+// TestParallel_InvokeRejectsInputCountMismatch ensures a malformed
+// checkpoint cannot make the fan-out index beyond the restored inputs.
+func TestParallel_InvokeRejectsInputCountMismatch(t *testing.T) {
+	ctx := t.Context()
+	payload, err := encodeParallelState(ParallelInterruptState{
+		OriginalInputsJSON: []byte(`[1,2]`),
+		CompletedResults:   map[int]any{0: 2},
+		InterruptedIndices: []int{1, 2},
+		TotalCount:         3,
+	})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	runner := testCountingRunnable{fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
+		return in, nil
+	}}
+	_, err = runParallelInvoke(
+		injectResumeState(ctx, payload),
+		"par",
+		runner,
+		[]int{1, 2},
+		getParallelOptions(nil),
+		newParallelBridgeState(nil),
+	)
+	if err == nil {
+		t.Fatal("expected resume state error, got nil")
+	}
+	if !errors.Is(err, ErrParallelResumeStateInvalid) {
+		t.Fatalf("errors.Is(err, ErrParallelResumeStateInvalid) = false; err=%v", err)
+	}
+	if !strings.Contains(err.Error(), "does not match restored input count") {
+		t.Errorf("err %q must mention restored input count", err.Error())
+	}
+}
+
+func TestParallel_ResumeBuilderFailureSkipsItemInvocation(t *testing.T) {
+	cloneErr := errors.New("state clone failed")
+	payload, err := encodeParallelState(ParallelInterruptState{
+		OriginalInputsJSON: []byte(`[1,2]`),
+		CompletedResults:   map[int]any{0: 10},
+		InterruptedIndices: []int{1},
+		TotalCount:         2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	sub := testCountingRunnable{fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
+		calls.Add(1)
+		return in, nil
+	}}
+	opts := getParallelOptions([]ParallelOption{
+		WithParallelContextBuilder(func(ctx context.Context, _ any, _ int) (context.Context, error) {
+			return ctx, cloneErr
+		}),
+	})
+	_, err = runParallelInvoke(injectResumeState(t.Context(), payload), "par", sub, nil, opts, newParallelBridgeState(nil))
+	if !errors.Is(err, cloneErr) {
+		t.Fatalf("resume error = %v, want state clone failure", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("sub invoked %d times after state clone failure", calls.Load())
+	}
+}
+
 // TestParallel_EmptyInput_NoSubInvoke asserts that an empty input
 // slice returns []O{}, nil without invoking the inner sub-workflow.
 func TestParallel_EmptyInput_NoSubInvoke(t *testing.T) {
+	ctx := t.Context()
 	var calls atomic.Int32
 	sub := compose.NewWorkflow[int, int]()
 	lambda := compose.InvokableLambda(func(_ context.Context, in int) (int, error) {
@@ -469,17 +683,17 @@ func TestParallel_EmptyInput_NoSubInvoke(t *testing.T) {
 	sub.End().AddInput("op")
 
 	outer := compose.NewWorkflow[[]int, []int]()
-	pNode, err := AddParallelNode(context.Background(), outer, "par", sub)
+	pNode, err := AddParallelNode(ctx, outer, "par", sub)
 	if err != nil {
 		t.Fatalf("AddParallelNode: %v", err)
 	}
 	pNode.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	got, err := compiled.Invoke(context.Background(), []int{})
+	got, err := compiled.Invoke(ctx, []int{})
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -497,8 +711,9 @@ func TestParallel_EmptyInput_NoSubInvoke(t *testing.T) {
 // TestParallel_OuterStreamUnsupported asserts that calling Stream
 // on the outer parallel node returns the documented v1 error.
 func TestParallel_OuterStreamUnsupported(t *testing.T) {
+	ctx := t.Context()
 	outer := compose.NewWorkflow[[]int, []int]()
-	node, err := AddParallelNode(context.Background(), outer, "par",
+	node, err := AddParallelNode(ctx, outer, "par",
 		buildParallelIncSub(t),
 	)
 	if err != nil {
@@ -506,11 +721,11 @@ func TestParallel_OuterStreamUnsupported(t *testing.T) {
 	}
 	node.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	_, err = compiled.Stream(context.Background(), []int{1, 2, 3})
+	_, err = compiled.Stream(ctx, []int{1, 2, 3})
 	if err == nil {
 		t.Fatal("expected stream unsupported error, got nil")
 	}
@@ -526,6 +741,7 @@ func TestParallel_OuterStreamUnsupported(t *testing.T) {
 // panics to errors before they reach this layer; to assert
 // our own recover, we use a hand-rolled testRunnable.
 func TestParallel_PanicRecoveredAsItemError(t *testing.T) {
+	ctx := t.Context()
 	runner := testCountingRunnable{
 		fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
 			if in == 1 {
@@ -539,7 +755,7 @@ func TestParallel_PanicRecoveredAsItemError(t *testing.T) {
 		WithParallelEnableSubCheckpoint(false),
 	})
 	bridge := newParallelBridgeState(nil)
-	_, err := runParallelInvoke(context.Background(), "par", runner, []int{0, 1, 2}, opts, bridge)
+	_, err := runParallelInvoke(ctx, "par", runner, []int{0, 1, 2}, opts, bridge)
 	if err == nil {
 		t.Fatal("expected panic-as-error, got nil")
 	}
@@ -558,6 +774,7 @@ func TestParallel_PanicRecoveredAsItemError(t *testing.T) {
 // verify the builder is invoked on the first run with the
 // expected per-index arguments.
 func TestParallel_StableCheckpointIDAcrossResume(t *testing.T) {
+	ctx := t.Context()
 	type call struct {
 		key   string
 		index int
@@ -574,7 +791,7 @@ func TestParallel_StableCheckpointIDAcrossResume(t *testing.T) {
 	sub.End().AddInput("op")
 
 	bridge := newParallelBridgeState(nil)
-	compiled, err := sub.Compile(context.Background(),
+	compiled, err := sub.Compile(ctx,
 		compose.WithCheckPointStore(bridge.store()),
 	)
 	if err != nil {
@@ -590,7 +807,7 @@ func TestParallel_StableCheckpointIDAcrossResume(t *testing.T) {
 			return "stable-cp:" + nodeKey + ":" + itoa(idx)
 		}),
 	})
-	_, err = runParallelInvoke(context.Background(), "par", compiled, []int{0, 1, 2}, opts, bridge)
+	_, err = runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts, bridge)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}

@@ -6,15 +6,15 @@ import {
 import { Docagg } from '@/interfaces/database/chat';
 import { IArtifact, IWikiCommit } from '@/interfaces/database/dataset';
 import { downloadMarkdownFile } from '@/utils/file-util';
+import type { WikiPageType } from '@/utils/wiki-link-util';
 import { useCallback, useEffect, useMemo } from 'react';
 
-import type { WikiPageType } from '../utils/parse-wiki-link';
 import { useCommitArtifact } from './use-commit-artifact';
 import { useWikiEditor } from './use-wiki-editor';
 import { useWikiLinkNavigation } from './use-wiki-link-navigation';
 
 type UseWikiDetailContentOptions = {
-  selectedArtifact: IArtifact | null;
+  selectedArtifact: IArtifact;
   selectedVersion: IWikiCommit | null;
   onSelectVersion: (version: IWikiCommit | null) => void;
   onSelectArtifact: (artifact: IArtifact) => void;
@@ -58,7 +58,7 @@ export function useWikiDetailContent({
   // before onSelectArtifact(), so currentEntry.slug already matches by the
   // time this effect runs and we bail out.
   useEffect(() => {
-    if (isVersionView || !selectedArtifact) return;
+    if (isVersionView) return;
     if (currentEntry?.slug === selectedArtifact.slug) return;
 
     reset({
@@ -69,9 +69,9 @@ export function useWikiDetailContent({
     // oxlint-disable-next-line react/exhaustive-deps
   }, [
     isVersionView,
-    selectedArtifact?.slug,
-    selectedArtifact?.title,
-    selectedArtifact?.page_type,
+    selectedArtifact.slug,
+    selectedArtifact.title,
+    selectedArtifact.page_type,
     currentEntry?.slug,
     reset,
   ]);
@@ -83,7 +83,7 @@ export function useWikiDetailContent({
   const title =
     currentEntry?.title ||
     pageData?.title ||
-    selectedArtifact?.title ||
+    selectedArtifact.title ||
     currentEntry?.slug ||
     '';
 
@@ -98,12 +98,11 @@ export function useWikiDetailContent({
   const previousEntryTitle = previousEntry?.title || previousEntry?.slug;
 
   const editorKey = isVersionView
-    ? `${selectedArtifact?.slug}@${selectedVersion?.id}`
-    : (selectedArtifact?.slug ?? '');
+    ? `${selectedArtifact.slug}@${selectedVersion?.id}`
+    : selectedArtifact.slug;
 
   const handleMarkdownLinkClick = useCallback(
     (pageType: WikiPageType, slug: string) => {
-      if (isVersionView) return;
       if (currentEntry?.slug === slug && currentEntry?.pageType === pageType)
         return;
 
@@ -122,14 +121,7 @@ export function useWikiDetailContent({
       push({ slug, title: '', pageType });
       onSelectArtifact({ slug, page_type: pageType, title: '' });
     },
-    [
-      push,
-      onSelectArtifact,
-      isVersionView,
-      currentEntry,
-      pageData,
-      updateCurrentTitle,
-    ],
+    [push, onSelectArtifact, currentEntry, pageData, updateCurrentTitle],
   );
 
   const handleBack = useCallback(() => {
@@ -160,11 +152,11 @@ export function useWikiDetailContent({
     }
   }, [handleMarkAsSaved, isVersionView, onSelectVersion]);
 
-  const { isOpen, open, close, form, handleConfirm, isUpdating } =
+  const { isOpen, open, setIsOpen, form, handleConfirm, isUpdating } =
     useCommitArtifact({
       editedContent,
-      pageType: currentEntry?.pageType ?? selectedArtifact?.page_type ?? '',
-      slug: currentEntry?.slug ?? selectedArtifact?.slug ?? '',
+      pageType: currentEntry?.pageType ?? selectedArtifact.page_type ?? '',
+      slug: currentEntry?.slug ?? selectedArtifact.slug,
       onSuccess: handleCommitSuccess,
     });
 
@@ -207,7 +199,7 @@ export function useWikiDetailContent({
     referenceDocuments,
     isOpen,
     open,
-    close,
+    setIsOpen,
     form,
     handleConfirm,
     isUpdating,

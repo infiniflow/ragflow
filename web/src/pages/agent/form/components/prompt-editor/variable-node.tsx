@@ -73,14 +73,14 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 
   decorate(): ReactNode {
     let content: ReactNode = (
-      <div className="text-accent-primary">{this.__label}</div>
+      <div className="shrink-0 text-accent-primary">{this.__label}</div>
     );
     if (this.__parentLabel) {
       content = (
         <div className="flex items-center gap-1 text-text-primary">
           <div className="contents after:content-['/'] after:text-text-disabled">
-            {this.__icon}
-            {this.__parentLabel}
+            {this.__icon && <span className="shrink-0">{this.__icon}</span>}
+            <span className="min-w-0 break-words">{this.__parentLabel}</span>
           </div>
 
           {content}

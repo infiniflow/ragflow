@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { DagreLayout } from '@antv/layout';
 import { Graph, type EdgeMetadata, type NodeMetadata } from '@antv/x6';
 import { useEffect, useRef } from 'react';
@@ -55,9 +71,13 @@ export function useX6Graph(
     const dagreLayout = new DagreLayout({
       type: 'dagre',
       rankdir: 'LR',
-      ranksep: 240,
-      nodesep: 200,
-      edgeMinLen: 2,
+      // DagreLayout does not read each node's own width/height; without
+      // nodeSize it treats every node as 0x0, so ranksep/nodesep end up
+      // being node-center distances and nodes overlap their edges.
+      nodeSize: (node) => [node.width, node.height],
+      // With real node sizes these are border-to-border gaps.
+      ranksep: 80,
+      nodesep: 120,
       controlPoints: false,
     });
 

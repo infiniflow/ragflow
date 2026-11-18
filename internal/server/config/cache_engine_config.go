@@ -24,12 +24,15 @@ import (
 	"github.com/spf13/viper"
 )
 
+// CacheEngineConfig holds the Go services' cache/queue backend settings. The Go
+// stack always talks to Kvrocks (a RocksDB-backed, Redis-protocol store) so it
+// is not subject to the in-memory maxmemory cap that Valkey/Redis enforces.
 type CacheEngineConfig struct {
-	Redis RedisConfig `mapstructure:"redis"`
+	Kvrocks KvrocksConfig `mapstructure:"kvrocks"`
 }
 
-// RedisConfig Redis configuration
-type RedisConfig struct {
+// KvrocksConfig connection settings for the Kvrocks backend.
+type KvrocksConfig struct {
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
 	Username string `mapstructure:"username"`
@@ -41,8 +44,11 @@ func (c *Config) ParseCacheEngineConfig(v *viper.Viper) error {
 	cacheEngineType := c.general.CacheEngine
 	var err error
 	switch cacheEngineType {
-	case "redis":
-		err = c.parseRedisConfig(v)
+	// The Go stack connects to Kvrocks. "redis" is accepted for backwards
+	// compatibility with the shared service_conf.yaml.template (its `redis:`
+	// section still drives the Python/Valkey path); both map to Kvrocks here.
+	case "redis", "kvrocks":
+		err = c.parseKvrocksConfig(v)
 	default:
 		return fmt.Errorf("cache engine type %s is not supported", cacheEngineType)
 	}
@@ -50,18 +56,18 @@ func (c *Config) ParseCacheEngineConfig(v *viper.Viper) error {
 	return err
 }
 
-func (c *Config) parseRedisConfig(v *viper.Viper) error {
-	// Default Redis config
-	c.cacheEngine.Redis.Host = "localhost"
-	c.cacheEngine.Redis.Port = 6379
-	c.cacheEngine.Redis.DB = 1
-	c.cacheEngine.Redis.Username = ""
-	c.cacheEngine.Redis.Password = "infini_rag_flow"
+func (c *Config) parseKvrocksConfig(v *viper.Viper) error {
+	// Sensible defaults; deployed values come from the `kvrocks` section.
+	c.cacheEngine.Kvrocks.Host = "kvrocks"
+	c.cacheEngine.Kvrocks.Port = 6379
+	c.cacheEngine.Kvrocks.DB = 1
+	c.cacheEngine.Kvrocks.Username = ""
+	c.cacheEngine.Kvrocks.Password = "infini_rag_flow"
 
-	if !v.IsSet("redis") {
+	if !v.IsSet("kvrocks") {
 		return nil
 	}
-	sub := v.Sub("redis")
+	sub := v.Sub("kvrocks")
 	if sub == nil {
 		return nil
 	}
@@ -71,48 +77,47 @@ func (c *Config) parseRedisConfig(v *viper.Viper) error {
 		// Handle host:port format (e.g., "localhost:6379")
 		host, portStr, err := net.SplitHostPort(hostStr)
 		if err != nil {
-			return fmt.Errorf("error address format of Redis: %s", hostStr)
+			return fmt.Errorf("error address format of Kvrocks: %s", hostStr)
 		}
 
 		if host == "" {
-			return fmt.Errorf("empty host of Redis configuration")
+			return fmt.Errorf("empty host of Kvrocks configuration")
 		}
-		c.cacheEngine.Redis.Host = host
+		c.cacheEngine.Kvrocks.Host = host
 
 		if portStr != "" {
 			var port int
 			if port, err = strconv.Atoi(portStr); err == nil {
-				c.cacheEngine.Redis.Port = port
+				c.cacheEngine.Kvrocks.Port = port
 			}
 		}
 	}
 
 	if sub.IsSet("db") {
-		c.cacheEngine.Redis.DB = sub.GetInt("db")
+		c.cacheEngine.Kvrocks.DB = sub.GetInt("db")
 	}
 
 	if sub.IsSet("username") {
-		c.cacheEngine.Redis.Username = sub.GetString("username")
+		c.cacheEngine.Kvrocks.Username = sub.GetString("username")
 	}
 
 	if sub.IsSet("password") {
-		c.cacheEngine.Redis.Password = sub.GetString("password")
+		c.cacheEngine.Kvrocks.Password = sub.GetString("password")
 	}
 
 	return nil
 }
 
-func (c *Config) GetRedisConfig() RedisConfig {
-	return c.cacheEngine.Redis
+func (c *Config) GetKvrocksConfig() KvrocksConfig {
+	return c.cacheEngine.Kvrocks
 }
 
-func (r RedisConfig) ExportConfigs() map[string]interface{} {
-	var redisConfigs map[string]interface{}
-	redisConfigs = make(map[string]interface{})
-	redisConfigs["host"] = r.Host
-	redisConfigs["port"] = r.Port
-	redisConfigs["username"] = r.Username
-	redisConfigs["password"] = r.Password
-	redisConfigs["db"] = r.DB
-	return redisConfigs
+func (r KvrocksConfig) ExportConfigs() map[string]interface{} {
+	kvrocksConfigs := make(map[string]interface{})
+	kvrocksConfigs["host"] = r.Host
+	kvrocksConfigs["port"] = r.Port
+	kvrocksConfigs["username"] = r.Username
+	kvrocksConfigs["password"] = r.Password
+	kvrocksConfigs["db"] = r.DB
+	return kvrocksConfigs
 }

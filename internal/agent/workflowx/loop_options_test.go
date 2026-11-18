@@ -179,6 +179,7 @@ func TestOptions_CheckpointBuilder_NilIgnored(t *testing.T) {
 // We use a counter sub-workflow and check that the run option is
 // observed on each call by counting sub-invocations.
 func TestOptions_RunOptionsForwarded(t *testing.T) {
+	ctx := t.Context()
 	var counter atomic.Int64
 	sub := buildSubCounter(t, &counter)
 
@@ -186,7 +187,7 @@ func TestOptions_RunOptionsForwarded(t *testing.T) {
 		return next >= 3, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(10),
 	)
 	if err != nil {
@@ -194,11 +195,11 @@ func TestOptions_RunOptionsForwarded(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	if _, err := compiled.Invoke(context.Background(), 0); err != nil {
+	if _, err := compiled.Invoke(ctx, 0); err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
 	if got := counter.Load(); got != 3 {
@@ -212,8 +213,9 @@ func TestOptions_RunOptionsForwarded(t *testing.T) {
 // store is wired in, subsequent sub-workflow invocations have
 // access to it. The store is exercised via a simple key lookup.
 func TestOptions_CompileOptionsForwarded(t *testing.T) {
+	ctx := t.Context()
 	store := newInMemoryStore()
-	_ = store.Set(context.Background(), "k", []byte("v"))
+	_ = store.Set(ctx, "k", []byte("v"))
 
 	sub := compose.NewWorkflow[int, int]()
 	lambda := compose.InvokableLambda(func(ctx context.Context, in int) (int, error) {
@@ -233,7 +235,7 @@ func TestOptions_CompileOptionsForwarded(t *testing.T) {
 		return next >= 2, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(5),
 		WithLoopCompileOptions(compose.WithCheckPointStore(store)),
 	)
@@ -242,11 +244,11 @@ func TestOptions_CompileOptionsForwarded(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	out, err := compiled.Invoke(context.Background(), 0)
+	out, err := compiled.Invoke(ctx, 0)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -258,6 +260,7 @@ func TestOptions_CompileOptionsForwarded(t *testing.T) {
 // TestOptions_NilChecks verifies that AddLoopNode rejects nil
 // inputs up front, before any compile work happens.
 func TestOptions_NilChecks(t *testing.T) {
+	ctx := t.Context()
 	sub := buildSubIncrement(t)
 	shouldQuit := func(_ context.Context, _, _, _ int) (bool, error) {
 		return true, nil
@@ -269,15 +272,15 @@ func TestOptions_NilChecks(t *testing.T) {
 		fn   func() error
 	}{
 		{"nil outer", func() error {
-			_, err := AddLoopNode(context.Background(), nil, "loop", sub, shouldQuit)
+			_, err := AddLoopNode(ctx, nil, "loop", sub, shouldQuit)
 			return err
 		}},
 		{"nil sub", func() error {
-			_, err := AddLoopNode(context.Background(), outer, "loop", nil, shouldQuit)
+			_, err := AddLoopNode(ctx, outer, "loop", nil, shouldQuit)
 			return err
 		}},
 		{"nil shouldQuit", func() error {
-			_, err := AddLoopNode(context.Background(), outer, "loop", sub, nil)
+			_, err := AddLoopNode(ctx, outer, "loop", sub, nil)
 			return err
 		}},
 	}
@@ -299,19 +302,20 @@ func TestOptions_NilChecks(t *testing.T) {
 // We construct a sub-workflow with no start node so compile fails
 // deterministically.
 func TestOptions_CompileFailureIsolated(t *testing.T) {
+	ctx := t.Context()
 	sub := compose.NewWorkflow[int, int]() // no nodes; compile will fail
 	shouldQuit := func(_ context.Context, _, _, _ int) (bool, error) {
 		return true, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	_, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit)
+	_, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit)
 	if err == nil {
 		t.Fatal("expected compile error, got nil")
 	}
 	// The outer workflow should still be empty. Re-compiling it
 	// must fail with "start node not set", proving the loop
 	// didn't silently add a placeholder node.
-	_, err = outer.Compile(context.Background())
+	_, err = outer.Compile(ctx)
 	if err == nil || !strings.Contains(err.Error(), "start node not set") {
 		t.Errorf("outer workflow not in expected state: %v", err)
 	}

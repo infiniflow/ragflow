@@ -31,6 +31,10 @@
                 "obj": {
                     "component_name": "Parser",
                     "params": {
+                        "enable_vision_enhancement": false,
+                        "vlm": {
+                            "llm_id": ""
+                        },
                         "outputs": {
                             "html": {
                                 "type": "string",
@@ -59,13 +63,6 @@
                                 "subject",
                                 "body",
                                 "attachments"
-                            ],
-                            "output_format": "text",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "eml"
                             ]
                         }
                     }
@@ -83,7 +80,7 @@
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "token_size",
+                        "delimiter_mode": "delimiter",
                         "delimiters": [
                             "\n",
                             "!",
@@ -130,20 +127,25 @@
                 "obj": {
                     "component_name": "Extractor",
                     "params": {
-                        "field_name": "",
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
-                        "auto_keywords": 0,
-                        "auto_questions": 0,
                         "llm_id": "",
-                        "auto_tags": 0,
-                        "tag_file_id": "",
-                        "enable_metadata": 0,
-                        "metadata": []
+                        "keywords": {
+                            "top_n": 0
+                        },
+                        "questions": {
+                            "top_n": 0
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": false
+                        },
+                        "metadata": {
+                            "enabled": false,
+                            "metadata": [],
+                            "built_in_metadata": []
+                        }
                     }
                 }
             }
@@ -190,7 +192,7 @@
                     },
                     "id": "File",
                     "measured": {
-                        "height": 50,
+                        "height": 49,
                         "width": 200
                     },
                     "position": {
@@ -204,6 +206,10 @@
                 {
                     "data": {
                         "form": {
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
+                            },
                             "outputs": {
                                 "html": {
                                     "type": "string",
@@ -234,26 +240,22 @@
                                         "body",
                                         "attachments"
                                     ],
-                                    "fileFormat": "email",
-                                    "output_format": "text",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "email"
                                 }
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_email_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:BirdsFlutterHigh",
                     "measured": {
-                        "height": 57,
+                        "height": 73,
                         "width": 200
                     },
                     "position": {
                         "x": 316.99524094206413,
-                        "y": 195.39629819663406
+                        "y": 188
                     },
                     "selected": true,
                     "sourcePosition": "right",
@@ -265,7 +267,7 @@
                         "form": {
                             "children_delimiters": [],
                             "chunk_token_size": 512,
-                            "delimiter_mode": "token_size",
+                            "delimiter_mode": "delimiter",
                             "delimiters": [
                                 {
                                     "value": "\n"
@@ -293,16 +295,16 @@
                             "overlapped_percent": 0
                         },
                         "label": "TokenChunker",
-                        "name": "Token Chunker_email_0"
+                        "name": "Email Chunker"
                     },
                     "id": "TokenChunker:WarmBreadSmells",
                     "measured": {
-                        "height": 74,
+                        "height": 73,
                         "width": 200
                     },
                     "position": {
                         "x": 616.9952409420641,
-                        "y": 195.39629819663406
+                        "y": 188
                     },
                     "selected": false,
                     "sourcePosition": "right",
@@ -321,16 +323,16 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_email_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:NiceWordsSpoken",
                     "measured": {
-                        "height": 114,
+                        "height": 113,
                         "width": 200
                     },
                     "position": {
-                        "x": 916.9952409420641,
-                        "y": 195.39629819663406
+                        "x": 1216.9952409420641,
+                        "y": 168
                     },
                     "sourcePosition": "right",
                     "targetPosition": "left",
@@ -339,13 +341,17 @@
                 {
                     "id": "Extractor:AutoExtractDefault",
                     "type": "contextNode",
+                    "measured": {
+                        "height": 59,
+                        "width": 200
+                    },
                     "position": {
-                        "x": 796.9952409420641,
-                        "y": 195.39629819663406
+                        "x": 916.9952409420641,
+                        "y": 195
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

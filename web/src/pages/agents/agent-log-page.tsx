@@ -18,9 +18,8 @@ import {
   IAgentLogMessage,
   IAgentLogResponse,
 } from '@/interfaces/database/agent';
-import { IReferenceObject } from '@/interfaces/database/chat';
 import { formatDate } from '@/utils/date';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { DateRange } from '../../components/originui/calendar/index';
@@ -50,6 +49,11 @@ const getEndOfToday = (): Date => {
 const AgentLogPage: React.FC = () => {
   const { t } = useTranslation();
   const { navigateToAgents, navigateToAgent } = useNavigatePage();
+  // Zero-arg wrapper: passing navigateToAgents straight to onClick would feed
+  // the click event into its canvasCategory parameter.
+  const handleBackToAgents = useCallback(() => {
+    navigateToAgents();
+  }, [navigateToAgents]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const { id: canvasId } = useParams();
   const init = {
@@ -80,9 +84,7 @@ const AgentLogPage: React.FC = () => {
       dataIndex: 'title',
       key: 'title',
       render: (_text: string, record: IAgentLogResponse) => (
-        <span>
-          {record?.message?.length ? record?.message[0]?.content : ''}
-        </span>
+        <span>{record.name}</span>
       ),
     },
     {
@@ -106,8 +108,8 @@ const AgentLogPage: React.FC = () => {
       dataIndex: 'update_date',
       key: 'update_date',
       sortable: true,
-      render(text: string) {
-        return formatDate(text);
+      render(_text: string, record: IAgentLogResponse) {
+        return formatDate(record.update_time);
       },
     },
     {
@@ -115,8 +117,8 @@ const AgentLogPage: React.FC = () => {
       dataIndex: 'create_date',
       key: 'create_date',
       sortable: true,
-      render(text: string) {
-        return formatDate(text);
+      render(_text: string, record: IAgentLogResponse) {
+        return formatDate(record.create_time);
       },
     },
     {
@@ -174,21 +176,24 @@ const AgentLogPage: React.FC = () => {
     });
   };
 
-  const handleSearch = (overrides: Partial<typeof searchParams> = {}) => {
-    setSearchParams((pre) => {
-      return {
-        ...pre,
-        from_date: currentDate.from as Date,
-        to_date: currentDate.to as Date,
-        page: pagination.current,
-        page_size: pagination.pageSize,
-        orderby: sortConfig?.orderby || '',
-        desc: sortConfig?.desc as boolean,
-        keywords: keywords,
-        ...overrides,
-      };
-    });
-  };
+  const handleSearch = useCallback(
+    (overrides: Partial<typeof searchParams> = {}) => {
+      setSearchParams((pre) => {
+        return {
+          ...pre,
+          from_date: currentDate.from as Date,
+          to_date: currentDate.to as Date,
+          page: pagination.current,
+          page_size: pagination.pageSize,
+          orderby: sortConfig?.orderby || '',
+          desc: sortConfig?.desc as boolean,
+          keywords: keywords,
+          ...overrides,
+        };
+      });
+    },
+    [currentDate, pagination, sortConfig, keywords],
+  );
 
   const handleClickSearch = () => {
     const sameParams =
@@ -206,7 +211,7 @@ const AgentLogPage: React.FC = () => {
   };
   useEffect(() => {
     handleSearch();
-  }, [pagination.current, pagination.pageSize, sortConfig]);
+  }, [pagination.current, pagination.pageSize, sortConfig, handleSearch]);
   // handle sort
   const handleSort = (key: string) => {
     let desc = false;
@@ -217,7 +222,7 @@ const AgentLogPage: React.FC = () => {
   };
 
   const handleReset = () => {
-    setSearchParams(init);
+    setSearchParams({ ...init, page_size: pagination.pageSize });
     setKeywords(init.keywords);
     setCurrentDate({ from: init.from_date, to: init.to_date });
   };
@@ -249,7 +254,7 @@ const AgentLogPage: React.FC = () => {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToAgents}>
+              <BreadcrumbLink onClick={handleBackToAgents}>
                 {t('flow.agent')}
               </BreadcrumbLink>
             </BreadcrumbItem>
@@ -273,7 +278,7 @@ const AgentLogPage: React.FC = () => {
           <div className="flex justify-end space-x-2 mb-4 text-foreground">
             <div className="flex items-center space-x-2">
               <Button onClick={onExportClick} loading={exportLoading}>
-                {t('flow.export')}
+                {t('flow.exportCurrentPage')}
               </Button>
               <span>{`${t('flow.id')}/${t('flow.logTitle')}`}</span>
               <SearchInput
@@ -316,7 +321,7 @@ const AgentLogPage: React.FC = () => {
         <div className="border rounded-md overflow-auto">
           {/* <div className="max-h-[500px] overflow-y-auto w-full"> */}
           <Table rootClassName="max-h-[calc(100vh-200px)]">
-            <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
+            <TableHeader className="sticky top-0 bg-bg-title z-10 shadow-sm">
               <TableRow>
                 {columns.map((column) => (
                   <TableHead
@@ -368,7 +373,9 @@ const AgentLogPage: React.FC = () => {
                       <TableCell key={column.dataIndex}>
                         {column.render
                           ? column.render(
-                              item[column.dataIndex as keyof IAgentLogResponse],
+                              item[
+                                column.dataIndex as keyof IAgentLogResponse
+                              ] as string,
                               item,
                             )
                           : (item[
@@ -407,7 +414,6 @@ const AgentLogPage: React.FC = () => {
       <AgentLogDetailModal
         isOpen={openModal}
         message={modalData?.message as IAgentLogMessage[]}
-        reference={modalData?.reference as unknown as IReferenceObject}
         onClose={() => setOpenModal(false)}
       />
     </div>

@@ -80,7 +80,7 @@ func (m *mockT) Fatal(args ...any) {
 // TestFinalTextContains verifies the FinalTextContains scorer.
 func TestFinalTextContains(t *testing.T) {
 	scorer := FinalTextContains("hello")
-	err := scorer(context.Background(), &EvalResult{
+	err := scorer(t.Context(), &EvalResult{
 		Messages: []*schema.Message{
 			{Role: schema.RoleAssistant, Content: "Hello, World!"},
 		},
@@ -90,7 +90,7 @@ func TestFinalTextContains(t *testing.T) {
 	}
 
 	// Should fail.
-	err = scorer(context.Background(), &EvalResult{
+	err = scorer(t.Context(), &EvalResult{
 		Messages: []*schema.Message{
 			{Role: schema.RoleAssistant, Content: "Goodbye"},
 		},
@@ -103,7 +103,7 @@ func TestFinalTextContains(t *testing.T) {
 // TestFinalTextExcludes verifies the FinalTextExcludes scorer.
 func TestFinalTextExcludes(t *testing.T) {
 	scorer := FinalTextExcludes("forbidden")
-	err := scorer(context.Background(), &EvalResult{
+	err := scorer(t.Context(), &EvalResult{
 		Messages: []*schema.Message{
 			{Role: schema.RoleAssistant, Content: "clean output"},
 		},
@@ -112,7 +112,7 @@ func TestFinalTextExcludes(t *testing.T) {
 		t.Errorf("expected pass, got: %v", err)
 	}
 
-	err = scorer(context.Background(), &EvalResult{
+	err = scorer(t.Context(), &EvalResult{
 		Messages: []*schema.Message{
 			{Role: schema.RoleAssistant, Content: "forbidden content"},
 		},
@@ -125,7 +125,7 @@ func TestFinalTextExcludes(t *testing.T) {
 // TestToolCalled verifies the ToolCalled scorer.
 func TestToolCalled(t *testing.T) {
 	scorer := ToolCalled("web_search")
-	err := scorer(context.Background(), &EvalResult{
+	err := scorer(t.Context(), &EvalResult{
 		Messages: []*schema.Message{
 			{Role: schema.RoleAssistant, ToolCalls: []schema.ToolCall{
 				{Function: schema.ToolCallFunction{Name: "read_file"}},
@@ -139,7 +139,7 @@ func TestToolCalled(t *testing.T) {
 		t.Errorf("expected pass, got: %v", err)
 	}
 
-	err = scorer(context.Background(), &EvalResult{
+	err = scorer(t.Context(), &EvalResult{
 		Messages: []*schema.Message{
 			{Role: schema.RoleAssistant, Content: "no tools called"},
 		},
@@ -152,7 +152,7 @@ func TestToolCalled(t *testing.T) {
 // TestSteps verifies the Steps scorer.
 func TestSteps(t *testing.T) {
 	scorer := Steps(3)
-	err := scorer(context.Background(), &EvalResult{
+	err := scorer(t.Context(), &EvalResult{
 		Messages: []*schema.Message{
 			{Role: schema.RoleAssistant},
 			{Role: schema.RoleTool},
@@ -165,7 +165,7 @@ func TestSteps(t *testing.T) {
 		t.Errorf("expected pass, got: %v", err)
 	}
 
-	err = scorer(context.Background(), &EvalResult{
+	err = scorer(t.Context(), &EvalResult{
 		Messages: []*schema.Message{
 			{Role: schema.RoleAssistant},
 		},
@@ -182,13 +182,13 @@ func TestFileContentEquals(t *testing.T) {
 	os.WriteFile(path, []byte("hello world"), 0644)
 
 	scorer := FileContentEquals(path, "hello world")
-	err := scorer(context.Background(), &EvalResult{})
+	err := scorer(t.Context(), &EvalResult{})
 	if err != nil {
 		t.Errorf("expected pass, got: %v", err)
 	}
 
 	scorer = FileContentEquals(path, "wrong content")
-	err = scorer(context.Background(), &EvalResult{})
+	err = scorer(t.Context(), &EvalResult{})
 	if err == nil {
 		t.Error("expected failure for content mismatch")
 	}
@@ -201,13 +201,13 @@ func TestFileContains(t *testing.T) {
 	os.WriteFile(path, []byte("hello world foo bar"), 0644)
 
 	scorer := FileContains(path, "foo")
-	err := scorer(context.Background(), &EvalResult{})
+	err := scorer(t.Context(), &EvalResult{})
 	if err != nil {
 		t.Errorf("expected pass, got: %v", err)
 	}
 
 	scorer = FileContains(path, "notfound")
-	err = scorer(context.Background(), &EvalResult{})
+	err = scorer(t.Context(), &EvalResult{})
 	if err == nil {
 		t.Error("expected failure for missing content")
 	}
@@ -216,12 +216,12 @@ func TestFileContains(t *testing.T) {
 // TestAgentError verifies the AgentError scorer.
 func TestAgentError(t *testing.T) {
 	scorer := AgentError()
-	err := scorer(context.Background(), &EvalResult{Err: nil})
+	err := scorer(t.Context(), &EvalResult{Err: nil})
 	if err != nil {
 		t.Errorf("expected pass for no error, got: %v", err)
 	}
 
-	err = scorer(context.Background(), &EvalResult{Err: core.ErrCancelTimeout})
+	err = scorer(t.Context(), &EvalResult{Err: core.ErrCancelTimeout})
 	if err == nil {
 		t.Error("expected failure when error present")
 	}
@@ -230,20 +230,20 @@ func TestAgentError(t *testing.T) {
 // TestAgentErrorContains verifies the AgentErrorContains scorer.
 func TestAgentErrorContains(t *testing.T) {
 	scorer := AgentErrorContains("cancel")
-	err := scorer(context.Background(), &EvalResult{
+	err := scorer(t.Context(), &EvalResult{
 		Err: core.ErrCancelTimeout,
 	})
 	if err != nil {
 		t.Errorf("expected pass, got: %v", err)
 	}
 
-	err = scorer(context.Background(), &EvalResult{Err: nil})
+	err = scorer(t.Context(), &EvalResult{Err: nil})
 	if err == nil {
 		t.Error("expected failure when no error expected")
 	}
 
 	// Should fail for non-matching substring.
-	err = scorer(context.Background(), &EvalResult{Err: core.ErrExecutionEnded})
+	err = scorer(t.Context(), &EvalResult{Err: core.ErrExecutionEnded})
 	if err == nil {
 		t.Error("expected failure for non-matching substring")
 	}
@@ -321,7 +321,7 @@ func TestRun_MultipleCases(t *testing.T) {
 		Model: model,
 	}).WithName("multi_eval")
 
-	report := Run(context.Background(), &EvalConfig{
+	report := Run(t.Context(), &EvalConfig{
 		Model: model,
 		Agent: agent,
 		Cases: []EvalCase{
@@ -341,7 +341,7 @@ func TestRun_MultipleCases(t *testing.T) {
 
 // TestRun_Parallel verifies parallel execution with independent per-case agents.
 func TestRun_Parallel(t *testing.T) {
-	report := Run(context.Background(), &EvalConfig{
+	report := Run(t.Context(), &EvalConfig{
 		MaxConcurrency: 4,
 		Cases: []EvalCase{
 			{

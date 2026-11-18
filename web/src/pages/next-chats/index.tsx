@@ -1,11 +1,13 @@
 import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
-import ListFilterBar from '@/components/list-filter-bar';
+import { NavGroupListFilterBar } from '@/layouts/components/nav-group-list-filter-bar';
+import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useFetchChatList } from '@/hooks/use-chat-request';
 import { buildOwnersFilter } from '@/utils/list-filter-util';
@@ -17,6 +19,7 @@ import { useSearchParams } from 'react-router';
 import { ChatCard } from './chat-card';
 import { useCreateChatDialog } from './hooks/use-create-chat';
 import { useRenameChat } from './hooks/use-rename-chat';
+import { useShowPrivilegeDialog } from '@/ee/pages/next-chats/use-show-privilege-dialog';
 
 export default function ChatList() {
   const {
@@ -25,13 +28,16 @@ export default function ChatList() {
     pagination,
     handleInputChange,
     searchString,
+    setSearchString,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
     loading,
   } = useFetchChatList();
   const { t } = useTranslation();
-  const { t: tc } = useTranslation('common');
-  const owners = [buildOwnersFilter(data?.chats ?? [], undefined, tc('owner'))];
+  const owners = [
+    buildOwnersFilter(data?.chats ?? [], undefined, t('common.owner')),
+  ];
   const {
     initialChatName,
     chatRenameVisible,
@@ -54,7 +60,13 @@ export default function ChatList() {
     },
     [setPagination],
   );
-  useGoToPreviousPageOnEmpty(data?.chats?.length, loading);
+  useGoToPreviousPageOnEmpty(data?.chats?.length, loading, {
+    deletionKey: ListDeletionKey.ChatList,
+    searchString,
+    setSearchString,
+    filterValue,
+    setFilterValue,
+  });
 
   const handleShowCreateModal = useCallback(() => {
     showCreateChatModal();
@@ -69,6 +81,13 @@ export default function ChatList() {
       setSearchParams(searchParams);
     }
   }, [isCreate, handleShowCreateModal, searchParams, setSearchParams]);
+
+  const {
+    handleShowPrivilegeModal,
+    privilegeRecord,
+    hidePrivilegeModal,
+    privilegeModalVisible,
+  } = useShowPrivilegeDialog();
 
   const renameDialogProps = useMemo(() => {
     if (chatRenameVisible) {
@@ -105,86 +124,73 @@ export default function ChatList() {
 
   return (
     <>
-      {loading && !data.chats?.length ? (
-        <article
-          className="size-full flex items-center justify-center"
-          data-testid="chats-list"
-        >
-          <Spin size="large" />
-        </article>
-      ) : data.chats?.length || searchString ? (
-        <article
-          className="size-full min-w-0 flex flex-col"
-          data-testid="chats-list"
-        >
-          <header className="mb-4 min-w-0 px-5 pt-8">
-            <ListFilterBar
-              title={t('chat.chatApps')}
-              icon="chats"
-              onSearchChange={handleInputChange}
-              searchString={searchString}
-              filters={owners}
-              value={filterValue}
-              onChange={handleFilterSubmit}
-            >
-              <Button data-testid="create-chat" onClick={handleShowCreateModal}>
-                <Plus className="size-[1em]" />
-                {t('chat.createChat')}
-              </Button>
-            </ListFilterBar>
-          </header>
+      <article
+        className="size-full min-w-0 flex flex-col"
+        data-testid="chats-list"
+      >
+        <header className="mb-5 min-w-0 px-5 pt-5">
+          <NavGroupListFilterBar
+            onSearchChange={handleInputChange}
+            searchString={searchString}
+            filters={owners}
+            value={filterValue}
+            onChange={handleFilterSubmit}
+          >
+            <Button data-testid="create-chat" onClick={handleShowCreateModal}>
+              <Plus className="size-[1em]" />
+              {t('chat.createChat')}
+            </Button>
+          </NavGroupListFilterBar>
+        </header>
 
-          {data.chats?.length ? (
-            <>
-              <CardContainer className="flex-1 overflow-auto px-5">
-                {data.chats.map((x) => (
-                  <ChatCard
-                    key={x.id}
-                    data={x}
-                    showChatRenameModal={showChatRenameModal}
-                  />
-                ))}
-              </CardContainer>
-
-              <footer className="mt-4 px-5 pb-5">
-                <RAGFlowPagination
-                  {...pick(pagination, 'current', 'pageSize')}
-                  total={pagination.total}
-                  onChange={handlePageChange}
+        {loading && !data?.chats?.length ? (
+          <div className="flex flex-1 items-center justify-center">
+            <Spin size="large" />
+          </div>
+        ) : data?.chats?.length ? (
+          <>
+            <CardContainer className="flex-1 overflow-auto px-5">
+              {data?.chats.map((x) => (
+                <ChatCard
+                  key={x.id}
+                  data={x}
+                  showChatRenameModal={showChatRenameModal}
+                  showPrivilegeModal={handleShowPrivilegeModal(x)}
                 />
-              </footer>
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <EmptyAppCard
-                showIcon
-                size="large"
-                className="w-[480px] p-14"
-                isSearch
-                type={EmptyCardType.Chat}
-                testId="chats-empty-create"
+              ))}
+            </CardContainer>
+
+            <footer className="mt-4 px-5 pb-5">
+              <RAGFlowPagination
+                {...pick(pagination, 'current', 'pageSize')}
+                total={pagination.total}
+                onChange={handlePageChange}
               />
-            </div>
-          )}
-        </article>
-      ) : (
-        <article
-          className="size-full flex items-center justify-center"
-          data-testid="chats-list"
-        >
-          <EmptyAppCard
-            showIcon
-            size="large"
-            className="w-[480px] p-14"
-            type={EmptyCardType.Chat}
-            onClick={() => handleShowCreateModal()}
-            testId="chats-empty-create"
-          />
-        </article>
-      )}
+            </footer>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <EmptyAppCard
+              showIcon
+              size="large"
+              className="w-[480px] p-14"
+              isSearch={Boolean(searchString)}
+              type={EmptyCardType.Chat}
+              onClick={searchString ? undefined : handleShowCreateModal}
+              testId="chats-empty-create"
+            />
+          </div>
+        )}
+      </article>
 
       {renameDialogProps && (
         <RenameDialog {...renameDialogProps}></RenameDialog>
+      )}
+      {privilegeModalVisible && (
+        <PrivilegeManagementDialog
+          hideModal={hidePrivilegeModal}
+          initialValues={privilegeRecord}
+        ></PrivilegeManagementDialog>
       )}
     </>
   );

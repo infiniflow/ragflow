@@ -28,7 +28,8 @@ import (
 func TestStubMemorySaver_DefaultReturnsError(t *testing.T) {
 	SetMemorySaver(nil)
 	saver := GetMemorySaver()
-	err := saver.Save(context.Background(), MemorySaveRequest{
+	ctx := t.Context()
+	err := saver.Save(ctx, MemorySaveRequest{
 		MemoryIDs: []string{"m1"},
 		AgentID:   "a1",
 	})
@@ -48,7 +49,8 @@ func TestSetMemorySaver_Roundtrip(t *testing.T) {
 	if got != custom {
 		t.Fatalf("saver not registered")
 	}
-	if err := got.Save(context.Background(), MemorySaveRequest{
+	ctx := t.Context()
+	if err := got.Save(ctx, MemorySaveRequest{
 		MemoryIDs:     []string{"m1"},
 		AgentResponse: "hi",
 	}); err != nil {

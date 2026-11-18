@@ -11,12 +11,13 @@
     "embedding": "compatible-mode/v1/embeddings",
     "rerank": "compatible-api/v1/reranks",
     "models": "compatible-mode/v1/models",
-    "tts": "compatible-mode/v1/audio/speech"
+    "tts": "api/v1/services/aigc/multimodal-generation/generation",
+    "asr": "api/v1/services/aigc/multimodal-generation/generation"
   },
   "models": [
     {
       "name": "qwen-flash",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -30,11 +31,12 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 10
     },
     {
       "name": "qwen3-vl-plus",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "vision",
@@ -43,12 +45,6 @@
       "tools": {
         "support": true
       }
-    },
-    {
-      "name": "qwen-tts-flash",
-      "model_types": [
-        "tts"
-      ]
     },
     {
       "name": "qwen-asr-flash",
@@ -67,7 +63,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 10
     },
     {
       "name": "qwen3-rerank",

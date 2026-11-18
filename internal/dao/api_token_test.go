@@ -37,7 +37,7 @@ func setupAPI4ConversationTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.API4Conversation{}); err != nil {
+	if err := db.AutoMigrate(&entity.API4Conversation{}, &entity.API4ConversationMessage{}, &entity.API4ConversationReference{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -46,13 +46,13 @@ func setupAPI4ConversationTestDB(t *testing.T) *gorm.DB {
 
 func createAPI4ConversationForDAOTest(t *testing.T, id, agentID string) {
 	t.Helper()
-	if err := DB.Create(&entity.API4Conversation{
-		ID:        id,
-		DialogID:  agentID,
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-	}).Error; err != nil {
+	ctx := t.Context()
+	if err := NewAPI4ConversationDAO().Create(ctx, DB, &entity.API4Conversation{
+		ID:       id,
+		DialogID: agentID,
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+	}); err != nil {
 		t.Fatalf("failed to create api conversation %s: %v", id, err)
 	}
 }
@@ -64,7 +64,7 @@ func TestAPI4ConversationDAOGetBySessionID(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
 	ctx := t.Context()
-	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "session-1", "agent-1")
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "session-1", "agent-1", true)
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestAPI4ConversationDAOGetBySessionIDWrongAgent(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
 	ctx := t.Context()
-	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "session-1", "agent-2")
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "session-1", "agent-2", true)
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestAPI4ConversationDAOGetBySessionIDNoRows(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
 	ctx := t.Context()
-	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "missing-session", "agent-1")
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "missing-session", "agent-1", true)
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}

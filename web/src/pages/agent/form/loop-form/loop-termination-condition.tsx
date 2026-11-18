@@ -195,10 +195,11 @@ export function LoopTerminationCondition({
                 <Input type="number" />
               </RAGFlowFormItem>
             ) : (
+              // No wrapping RAGFlowFormItem here: QueryVariable's own
+              // FormField registers valueFieldAlias and shows its errors.
               <QueryVariable
                 types={[JsonSchemaDataType.Number]}
                 hideLabel
-                pureQuery
                 name={valueFieldAlias}
                 className="flex-1 min-w-0"
               ></QueryVariable>

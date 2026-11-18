@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,129 +13,148 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
+from uuid import uuid4
 
 import pytest
-from ragflow_sdk import RAGFlow
-from configs import INVALID_API_TOKEN, HOST_ADDRESS, SDK_UNAUTHORIZED_ERROR_MESSAGE
+from ragflow_sdk import Memory, RAGFlow
+
+pytestmark = pytest.mark.integration
 
 
-class TestAuthorization:
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "invalid_auth, expected_message",
-        [
-            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-        ],
-    )
-    def test_auth_invalid(self, invalid_auth, expected_message):
-        client = RAGFlow(invalid_auth, HOST_ADDRESS)
-        with pytest.raises(Exception) as exception_info:
-            client.list_memory()
-        assert str(exception_info.value) == expected_message, str(exception_info.value)
+def ids(result):
+    assert result["code"] == 0, result
+    assert isinstance(result["total_count"], int), result
+    assert all(isinstance(memory, Memory) for memory in result["memory_list"])
+    return {memory.id for memory in result["memory_list"]}
 
 
-class TestCapability:
-    @pytest.mark.p3
-    def test_capability(self, client):
-        count = 100
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(client.list_memory) for _ in range(count)]
-        responses = list(as_completed(futures))
-        assert len(responses) == count, responses
-        assert all(future.result()["code"] == 0 for future in futures)
+@pytest.mark.parametrize("invalid_auth", [None, "invalid-api-token"])
+def test_auth_invalid(integration_settings, invalid_auth):
+    rag = RAGFlow(invalid_auth, integration_settings["base_url"])
+    with pytest.raises(Exception, match="^Invalid access token$"):
+        rag.list_memory()
 
 
-@pytest.mark.usefixtures("add_memory_func")
-class TestMemoryList:
-    @pytest.mark.p2
-    def test_params_unset(self, client):
-        res = client.list_memory()
-        assert len(res["memory_list"]) == 3, str(res)
-        assert res["total_count"] == 3, str(res)
+def test_capability(client, memory_group):
+    prefix, memories = memory_group
+    expected = {memory.id for memory in memories}
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(client.list_memory, keywords=prefix) for _ in range(6)]
+        for future in futures:
+            result = future.result()
+            assert ids(result) == expected
+            assert result["total_count"] == len(expected)
 
-    @pytest.mark.p2
-    def test_params_empty(self, client):
-        res = client.list_memory(**{})
-        assert len(res["memory_list"]) == 3, str(res)
-        assert res["total_count"] == 3, str(res)
 
-    @pytest.mark.p1
-    @pytest.mark.parametrize(
-        "params, expected_page_size",
-        [
-            ({"page": 1, "page_size": 10}, 3),
-            ({"page": 2, "page_size": 10}, 0),
-            ({"page": 1, "page_size": 2}, 2),
-            ({"page": 2, "page_size": 2}, 1),
-            ({"page": 5, "page_size": 10}, 0),
-        ],
-        ids=["normal_first_page", "beyond_max_page", "normal_last_partial_page", "normal_middle_page", "full_data_single_page"],
-    )
-    def test_page(self, client, params, expected_page_size):
-        # have added 3 memories in fixture
-        res = client.list_memory(**params)
-        assert len(res["memory_list"]) == expected_page_size, str(res)
-        assert res["total_count"] == 3, str(res)
+def test_params_unset(client, memory_group):
+    _, memories = memory_group
+    result = client.list_memory()
+    assert {memory.id for memory in memories} <= ids(result)
+    assert len(result["memory_list"]) <= 50
+    assert result["total_count"] >= len(memories)
 
-    @pytest.mark.p2
-    def test_filter_memory_type(self, client):
-        res = client.list_memory(**{"memory_type": ["semantic"]})
-        for memory in res["memory_list"]:
-            assert "semantic" in memory.memory_type, str(memory)
 
-    @pytest.mark.p2
-    def test_filter_multi_memory_type(self, client):
-        res = client.list_memory(**{"memory_type": ["episodic", "procedural"]})
-        for memory in res["memory_list"]:
-            assert "episodic" in memory.memory_type or "procedural" in memory.memory_type, str(memory)
+@pytest.mark.parametrize("page,page_size,expected_count", [(1, 10, 3), (2, 10, 0), (1, 2, 2), (2, 2, 1), (5, 10, 0)])
+def test_page(client, memory_group, page, page_size, expected_count):
+    prefix, memories = memory_group
+    result = client.list_memory(keywords=prefix, page=page, page_size=page_size)
+    returned = ids(result)
+    assert len(result["memory_list"]) == len(returned) == expected_count
+    assert returned <= {memory.id for memory in memories}
+    assert result["total_count"] == len(memories)
 
-    @pytest.mark.p2
-    def test_filter_storage_type(self, client):
-        res = client.list_memory(**{"storage_type": "table"})
-        for memory in res["memory_list"]:
-            assert memory.storage_type == "table", str(memory)
 
-    @pytest.mark.p2
-    def test_match_keyword(self, client):
-        res = client.list_memory(**{"keywords": "s"})
-        for memory in res["memory_list"]:
-            assert "s" in memory.name, str(memory)
+def test_filter_memory_type(client, memory_group):
+    prefix, memories = memory_group
+    result = client.list_memory(keywords=prefix, memory_type="semantic")
+    assert ids(result) == {memories[1].id}
+    assert result["total_count"] == 1
+    assert result["memory_list"][0].memory_type == ["raw", "semantic"]
 
-    @pytest.mark.p1
-    def test_get_config(self, client):
-        memory_list = client.list_memory()
-        assert len(memory_list["memory_list"]) > 0, str(memory_list)
-        memory = memory_list["memory_list"][0]
-        memory_id = memory.id
-        memory_config = memory.get_config()
-        assert memory_config.id == memory_id, memory_config
-        for field in [
-            "name",
-            "avatar",
-            "tenant_id",
-            "owner_name",
-            "memory_type",
-            "storage_type",
-            "embd_id",
-            "llm_id",
-            "permissions",
-            "description",
-            "memory_size",
-            "forgetting_policy",
-            "temperature",
-            "system_prompt",
-            "user_prompt",
-        ]:
-            assert hasattr(memory, field), memory_config
 
-    @pytest.mark.p2
-    def test_get_config_invalid_memory_id_raises(self, client):
-        memory_list = client.list_memory()
-        assert len(memory_list["memory_list"]) > 0, str(memory_list)
-        memory = memory_list["memory_list"][0]
-        memory.id = "missing-memory-id-for-config"
-        with pytest.raises(Exception) as exception_info:
-            memory.get_config()
-        assert str(exception_info.value), exception_info
+@pytest.mark.parametrize("types", [["semantic", "procedural"], "semantic,procedural"])
+def test_filter_multi_memory_type(client, memory_group, types):
+    prefix, memories = memory_group
+    result = client.list_memory(keywords=prefix, memory_type=types)
+    assert ids(result) == {memories[1].id, memories[2].id}
+    assert result["total_count"] == 2
+
+
+@pytest.mark.parametrize("storage_type,expected", [("table", 3), ("unknown", 0)])
+def test_filter_storage_type(client, memory_group, storage_type, expected):
+    prefix, memories = memory_group
+    result = client.list_memory(keywords=prefix, storage_type=storage_type)
+    assert ids(result) == ({memory.id for memory in memories} if expected else set())
+    assert result["total_count"] == expected
+    assert all(memory.storage_type == storage_type for memory in result["memory_list"])
+
+
+def test_match_keyword(client, memory_group):
+    prefix, memories = memory_group
+    result = client.list_memory(keywords=f"{prefix}-1")
+    assert ids(result) == {memories[1].id}
+    assert result["total_count"] == 1
+    assert result["memory_list"][0].name == f"{prefix}-1"
+
+
+def test_get_config(client, memory):
+    changed = {"description": "persisted config", "memory_size": 1048576, "temperature": 0.7, "avatar": "data:image/png;base64,aGVsbG8=", "user_prompt": "User prompt"}
+    memory.update(changed)
+    fetched = Memory(client, {"id": memory.id}).get_config()
+    assert fetched.id == memory.id
+    for field, value in changed.items():
+        assert getattr(fetched, field) == value
+    for field in ("name", "tenant_id", "memory_type", "storage_type", "embd_id", "llm_id", "permissions", "forgetting_policy", "system_prompt"):
+        assert getattr(fetched, field) == getattr(memory, field)
+    payload = client.get(f"/memories/{memory.id}/config").json()
+    assert payload["code"] == 0, payload
+    assert fetched.owner_name == payload["data"].get("owner_name")
+
+
+def test_get_config_invalid_memory_id_raises(client):
+    with pytest.raises(Exception, match="^Resource not found$"):
+        Memory(client, {"id": uuid4().hex}).get_config()
+
+
+@pytest.mark.parametrize("multiple", [False, True])
+def test_tenant_filter(client, memory_group, multiple):
+    prefix, memories = memory_group
+    tenant = memories[0].tenant_id
+    result = client.list_memory(keywords=prefix, tenant_id=[tenant, uuid4().hex] if multiple else tenant)
+    assert ids(result) == {memory.id for memory in memories}
+    assert result["total_count"] == len(memories)
+    assert all(memory.tenant_id == tenant for memory in result["memory_list"])
+    absent = client.list_memory(keywords=prefix, tenant_id=uuid4().hex)
+    assert ids(absent) == set()
+    assert absent["total_count"] == 0
+
+
+@pytest.mark.parametrize("params", [{"page": 0}, {"page": -1}, {"page": "bad"}, {"page_size": 0}, {"page_size": -1}, {"page_size": "bad"}])
+def test_invalid_pagination_uses_defaults(client, memory_group, params):
+    prefix, memories = memory_group
+    result = client.list_memory(keywords=prefix, **params)
+    assert ids(result) == {memory.id for memory in memories}
+    assert result["total_count"] == len(memories)
+
+
+def test_unknown_memory_type(client, memory_group):
+    prefix, _ = memory_group
+    result = client.list_memory(keywords=prefix, memory_type="unknown")
+    assert ids(result) == set()
+    assert result["total_count"] == 0
+
+
+def test_pages_partition_owned_memories(client, memory_group):
+    prefix, memories = memory_group
+    first = ids(client.list_memory(keywords=prefix, page=1, page_size=2))
+    second = ids(client.list_memory(keywords=prefix, page=2, page_size=2))
+    assert not first & second
+    assert first | second == {memory.id for memory in memories}
+
+
+@pytest.mark.parametrize("invalid_auth", [None, "invalid-api-token"])
+def test_get_config_unauthorized(memory, integration_settings, invalid_auth):
+    rag = RAGFlow(invalid_auth, integration_settings["base_url"])
+    with pytest.raises(Exception, match="^Invalid access token$"):
+        Memory(rag, {"id": memory.id}).get_config()

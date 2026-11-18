@@ -3,12 +3,279 @@ package models
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
-	"ragflow/internal/common"
+	"reflect"
 	"testing"
 
+	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/common"
 )
+
+func TestChatThinkingDefaultsAcrossInvocationPaths(t *testing.T) {
+	for _, thinking := range []*bool{nil, new(false), new(true)} {
+		for _, path := range []string{"chat", "stream", "eino generate", "eino stream", "tools", "tools stream"} {
+			t.Run(fmt.Sprintf("%s/thinking=%v", path, thinking), func(t *testing.T) {
+				driver := &captureToolDriver{resp: &ChatResponse{Answer: new("done")}}
+				chat := NewChatModelWithInfo(driver, new("chat"), &APIConfig{}, &ModelInfo{
+					Thinking: &ModelThinking{DefaultValue: true},
+				})
+				cfg := &ChatConfig{Thinking: thinking}
+				messages := []Message{{Role: "user", Content: "hi"}}
+				sender := func(*string, *string) error { return nil }
+				var err error
+				switch path {
+				case "chat":
+					_, err = chat.ChatWithMessages(t.Context(), messages, cfg, nil)
+				case "stream":
+					err = chat.ChatStreamlyWithSender(t.Context(), messages, cfg, nil, sender)
+				case "eino generate":
+					_, err = NewEinoChatModel(chat, cfg).Generate(t.Context(), []*schema.Message{schema.UserMessage("hi")})
+				case "eino stream":
+					var stream *schema.StreamReader[*schema.Message]
+					stream, err = NewEinoChatModel(chat, cfg).Stream(t.Context(), []*schema.Message{schema.UserMessage("hi")})
+					if err == nil {
+						defer stream.Close()
+						for {
+							_, err = stream.Recv()
+							if err != nil {
+								break
+							}
+						}
+						if errors.Is(err, io.EOF) {
+							err = nil
+						}
+					}
+				case "tools":
+					chat.ToolConfig = &ToolConfig{Tools: "[]"}
+					_, _, err = chat.ChatWithTools(t.Context(), "", messages, cfg)
+				case "tools stream":
+					chat.ToolConfig = &ToolConfig{Tools: "[]"}
+					_, err = chat.ChatStreamlyWithTools(t.Context(), "", messages, cfg, sender)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := thinking != nil && *thinking
+				if driver.lastConfig == nil || driver.lastConfig.Thinking == nil || *driver.lastConfig.Thinking != want {
+					t.Fatalf("driver config = %+v, want thinking %v", driver.lastConfig, want)
+				}
+			})
+		}
+	}
+}
+
+func TestEinoChatModelRequiresExecuteCodeTool(t *testing.T) {
+	name := "chat"
+	base := NewChatModel(&streamSentinelDriver{}, &name, &APIConfig{})
+	model := NewEinoChatModel(base, nil)
+	bound, err := model.WithTools([]*schema.ToolInfo{{Name: "execute_code"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := bound.(*EinoChatModel).chatConfigForGenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ToolChoice == nil || *cfg.ToolChoice != "required" {
+		t.Fatalf("ToolChoice = %v, want required", cfg.ToolChoice)
+	}
+	choice, ok := cfg.ToolChoiceValue.(map[string]any)
+	if !ok || choice["type"] != "function" {
+		t.Fatalf("ToolChoiceValue = %#v, want named function choice", cfg.ToolChoiceValue)
+	}
+}
+
+func TestEinoChatModelAllowsFinalAnswerAfterToolResult(t *testing.T) {
+	name := "chat"
+	driver := &captureToolDriver{resp: &ChatResponse{}}
+	model := NewEinoChatModel(NewChatModel(driver, &name, &APIConfig{}), nil)
+	bound, err := model.WithTools([]*schema.ToolInfo{{Name: "execute_code"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bound.Generate(t.Context(), []*schema.Message{
+		schema.UserMessage("make a chart"),
+		{Role: schema.Tool, ToolCallID: "call-1", Content: "done"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if driver.lastConfig.ToolChoice == nil || *driver.lastConfig.ToolChoice != "auto" || driver.lastConfig.ToolChoiceValue != nil {
+		t.Fatalf("tool result choice = %#v / %#v, want auto / nil", driver.lastConfig.ToolChoice, driver.lastConfig.ToolChoiceValue)
+	}
+}
+
+// TestEinoChatModelErrorNamesTheModel pins the user-visible shape of a provider
+// failure on BOTH paths: the chat paths render it as `**ERROR**: <err>`, so the
+// message must lead with the model the user configured and keep the provider's
+// own words — not the wrapper's internal "models: EinoChatModel.Generate(…)"
+// path, which put the cause after noise. The stream path is covered as well
+// because a plain (tool-less) turn reports its failures through it, not through
+// Generate.
+func TestEinoChatModelErrorNamesTheModel(t *testing.T) {
+	sentinel := errors.New("minimax API error: insufficient balance")
+	modelName := "MiniMax-M3"
+	model := NewEinoChatModel(
+		NewChatModel(&failingDriver{captureToolDriver: &captureToolDriver{}, err: sentinel}, &modelName, &APIConfig{}), nil)
+	msgs := []*schema.Message{schema.UserMessage("hi")}
+
+	cases := []struct {
+		path string
+		fail func() error
+	}{
+		{"Generate", func() error {
+			_, err := model.Generate(t.Context(), msgs)
+			return err
+		}},
+		{"Stream", func() error {
+			stream, err := model.Stream(t.Context(), msgs)
+			if err != nil {
+				return err
+			}
+			_, recvErr := stream.Recv()
+			return recvErr
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			err := tc.fail()
+			if err == nil {
+				t.Fatalf("%s: want the provider's error", tc.path)
+			}
+			if got, want := err.Error(), modelName+": "+sentinel.Error(); got != want {
+				t.Fatalf("error = %q, want %q", got, want)
+			}
+			// The provider's error stays wrapped so callers can still inspect it.
+			if !errors.Is(err, sentinel) {
+				t.Errorf("errors.Is(err, sentinel) = false, got %v", err)
+			}
+		})
+	}
+}
+
+// TestEinoChatModelAppliesExplicitToolChoice pins that WithToolChoice actually
+// reaches the driver's configuration (its doc promises exactly that): a keyword
+// choice travels as the plain string with no object value, a named tool travels
+// in the OpenAI object form, and either overrides the execute_code default.
+func TestEinoChatModelAppliesExplicitToolChoice(t *testing.T) {
+	cases := []struct {
+		name       string
+		tools      []*schema.ToolInfo
+		choice     string
+		callOpts   []einomodel.Option
+		wantChoice string
+		wantValue  map[string]any // nil for the keyword forms
+	}{
+		{
+			name:       "keyword none overrides the execute_code default",
+			tools:      []*schema.ToolInfo{{Name: "execute_code"}},
+			choice:     "none",
+			wantChoice: "none",
+		},
+		{
+			name:       "explicit required without execute_code",
+			tools:      []*schema.ToolInfo{{Name: "rag"}},
+			choice:     "required",
+			wantChoice: "required",
+		},
+		{
+			name:       "named tool uses the object form",
+			tools:      []*schema.ToolInfo{{Name: "rag"}, {Name: "summarize_document"}},
+			choice:     "summarize_document",
+			wantChoice: "summarize_document",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "summarize_document"},
+			},
+		},
+		{
+			name:       "web search uses the object form",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}, {Name: "search_bm25_chunks"}},
+			choice:     "web_search",
+			wantChoice: "web_search",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "web_search"},
+			},
+		},
+		{
+			name:       "per-call web search overrides initial none",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}, {Name: "search_chunks"}},
+			choice:     "none",
+			callOpts:   []einomodel.Option{einomodel.WithToolChoice(schema.ToolChoiceForced, "web_search")},
+			wantChoice: "web_search",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "web_search"},
+			},
+		},
+		{
+			name:       "per-call auto releases initial web search",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}},
+			choice:     "web_search",
+			callOpts:   []einomodel.Option{einomodel.WithToolChoice(schema.ToolChoiceAllowed)},
+			wantChoice: "auto",
+		},
+		{
+			name:       "per-call none clears the named function",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}},
+			choice:     "web_search",
+			callOpts:   []einomodel.Option{einomodel.WithToolChoice(schema.ToolChoiceForbidden)},
+			wantChoice: "none",
+		},
+		{
+			name:       "no explicit choice keeps the execute_code default",
+			tools:      []*schema.ToolInfo{{Name: "execute_code"}},
+			wantChoice: "required",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "execute_code"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			modelName := "chat"
+			model := NewEinoChatModel(NewChatModel(&captureToolDriver{}, &modelName, &APIConfig{}), nil)
+			bound, err := model.WithTools(tc.tools)
+			if err != nil {
+				t.Fatalf("WithTools: %v", err)
+			}
+			wrapper := bound.(*EinoChatModel)
+			if tc.choice != "" {
+				wrapper = wrapper.WithToolChoice(tc.choice)
+			}
+			cfg, err := wrapper.chatConfigForGenerate()
+			if err != nil {
+				t.Fatalf("chatConfigForGenerate: %v", err)
+			}
+			if tc.choice != "" {
+				opts := append([]einomodel.Option{einomodel.WithTools(tc.tools)}, tc.callOpts...)
+				cfg, err = wrapper.chatConfigWithOptsTools(cfg, opts)
+				if err != nil {
+					t.Fatalf("chatConfigWithOptsTools: %v", err)
+				}
+			}
+			if cfg.ToolChoice == nil {
+				t.Fatalf("ToolChoice = nil, want %q", tc.wantChoice)
+			}
+			if *cfg.ToolChoice != tc.wantChoice {
+				t.Fatalf("ToolChoice = %q, want %q", *cfg.ToolChoice, tc.wantChoice)
+			}
+			if tc.wantValue == nil {
+				if cfg.ToolChoiceValue != nil {
+					t.Errorf("ToolChoiceValue = %#v, want nil for a keyword choice", cfg.ToolChoiceValue)
+				}
+				return
+			}
+			if got, ok := cfg.ToolChoiceValue.(map[string]any); !ok || !reflect.DeepEqual(got, tc.wantValue) {
+				t.Errorf("ToolChoiceValue = %#v, want %#v", cfg.ToolChoiceValue, tc.wantValue)
+			}
+		})
+	}
+}
 
 func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
 	modelName := "chat"
@@ -16,7 +283,7 @@ func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
 	base := NewChatModel(driver, &modelName, &APIConfig{})
 	model := NewEinoChatModel(base, &ChatConfig{})
 
-	stream, err := model.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	stream, err := model.Stream(t.Context(), []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -64,7 +331,7 @@ func TestEinoChatModelGenerateSendsBoundTools(t *testing.T) {
 			Name: "search_my_dateset",
 			Desc: "Search datasets.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"query": &schema.ParameterInfo{Type: schema.String, Required: true},
+				"query": {Type: schema.String, Required: true},
 			}),
 		},
 	})
@@ -72,7 +339,7 @@ func TestEinoChatModelGenerateSendsBoundTools(t *testing.T) {
 		t.Fatalf("WithTools: %v", err)
 	}
 
-	msg, err := bound.Generate(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	msg, err := bound.Generate(t.Context(), []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -95,6 +362,59 @@ func TestEinoChatModelGenerateSendsBoundTools(t *testing.T) {
 	}
 	if msg.ToolCalls[0].Function.Name != "search_my_dateset" || msg.ToolCalls[0].Function.Arguments != `{"query":"hello"}` {
 		t.Fatalf("tool call = %#v, want search_my_dateset query call", msg.ToolCalls[0])
+	}
+}
+
+// TestEinoChatModelGenerateHonorsOptsTools verifies the per-call
+// model.WithTools option (how eino's ChatModelAgent binds tools) reaches the
+// driver. Without this, the ReAct loop's model requests would carry no tool
+// definitions and the model would never emit tool_calls.
+func TestEinoChatModelGenerateHonorsOptsTools(t *testing.T) {
+	apiKey := "key"
+	modelName := "chat"
+	driver := &captureToolDriver{
+		resp: &ChatResponse{
+			ToolCalls: []map[string]interface{}{
+				{
+					"id": "call-1", "type": "function",
+					"function": map[string]interface{}{
+						"name": "search_my_dateset", "arguments": `{"query":"hello"}`,
+					},
+				},
+			},
+		},
+	}
+	base := NewChatModel(driver, &modelName, &APIConfig{ApiKey: &apiKey})
+	// NOTE: no WithTools binding — tools arrive only via the call option.
+	m := NewEinoChatModel(base, nil)
+
+	toolInfo := &schema.ToolInfo{
+		Name: "search_my_dateset",
+		Desc: "Search datasets.",
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"query": {Type: schema.String, Required: true},
+		}),
+	}
+	msg, err := m.Generate(context.Background(),
+		[]*schema.Message{schema.UserMessage("hello")},
+		einomodel.WithTools([]*schema.ToolInfo{toolInfo}),
+	)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if driver.lastConfig == nil || driver.lastConfig.Tools == nil {
+		t.Fatal("Generate did not send opts-provided tools to driver")
+	}
+	tools, ok := driver.lastConfig.Tools.([]map[string]any)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("driver tools = %#v, want one OpenAI-style tool", driver.lastConfig.Tools)
+	}
+	fn, _ := tools[0]["function"].(map[string]any)
+	if fn["name"] != "search_my_dateset" {
+		t.Fatalf("tool function name = %#v, want search_my_dateset", fn["name"])
+	}
+	if len(msg.ToolCalls) != 1 || msg.ToolCalls[0].Function.Name != "search_my_dateset" {
+		t.Fatalf("msg tool calls = %#v, want search_my_dateset", msg.ToolCalls)
 	}
 }
 
@@ -122,7 +442,7 @@ func TestEinoChatModelStreamWithToolsYieldsToolCalls(t *testing.T) {
 			Name: "search_my_dateset",
 			Desc: "Search datasets.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"query": &schema.ParameterInfo{Type: schema.String, Required: true},
+				"query": {Type: schema.String, Required: true},
 			}),
 		},
 	})
@@ -130,7 +450,7 @@ func TestEinoChatModelStreamWithToolsYieldsToolCalls(t *testing.T) {
 		t.Fatalf("WithTools: %v", err)
 	}
 
-	stream, err := bound.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	stream, err := bound.Stream(t.Context(), []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -171,7 +491,7 @@ func TestEinoChatModelStreamWithToolsStreamsFinalAnswer(t *testing.T) {
 		t.Fatalf("WithTools: %v", err)
 	}
 
-	stream, err := bound.Stream(context.Background(), []*schema.Message{
+	stream, err := bound.Stream(t.Context(), []*schema.Message{
 		schema.UserMessage("hello"),
 		{
 			Role:       schema.Tool,
@@ -188,6 +508,12 @@ func TestEinoChatModelStreamWithToolsStreamsFinalAnswer(t *testing.T) {
 	}
 	if msg == nil || msg.Content != answer {
 		t.Fatalf("stream message = %#v, want final answer content", msg)
+	}
+	if driver.streamCalls != 1 || driver.generateCalls != 0 {
+		t.Fatalf("stream/generate calls = %d/%d, want 1/0", driver.streamCalls, driver.generateCalls)
+	}
+	if driver.lastConfig.ToolChoice == nil || *driver.lastConfig.ToolChoice != "auto" || driver.lastConfig.ToolChoiceValue != nil {
+		t.Fatalf("tool result choice = %#v / %#v, want auto / nil", driver.lastConfig.ToolChoice, driver.lastConfig.ToolChoiceValue)
 	}
 }
 
@@ -222,12 +548,29 @@ func TestToInternalMessagesPreservesToolMessages(t *testing.T) {
 }
 
 type captureToolDriver struct {
-	resp       *ChatResponse
-	lastConfig *ChatConfig
+	resp          *ChatResponse
+	lastConfig    *ChatConfig
+	generateCalls int
+	streamCalls   int
 }
 
 type streamSentinelDriver struct {
 	*captureToolDriver
+}
+
+// failingDriver rejects every chat call with a fixed error, standing in for a
+// provider that refuses the request (an exhausted quota, bad credentials).
+type failingDriver struct {
+	*captureToolDriver
+	err error
+}
+
+func (d *failingDriver) ChatWithMessages(context.Context, string, []Message, *APIConfig, *ChatConfig, *common.ModelUsage) (*ChatResponse, error) {
+	return nil, d.err
+}
+
+func (d *failingDriver) ChatStreamlyWithSender(context.Context, string, []Message, *APIConfig, *ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
+	return d.err
 }
 
 func (d *streamSentinelDriver) ChatStreamlyWithSender(ctx context.Context, _ string, _ []Message, _ *APIConfig, _ *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
@@ -247,10 +590,12 @@ func (d *captureToolDriver) NewInstance(baseURL map[string]string) ModelDriver {
 func (d *captureToolDriver) Name() string                                      { return "capture" }
 func (d *captureToolDriver) ChatWithMessages(ctx context.Context, _ string, _ []Message, _ *APIConfig, cfg *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	d.lastConfig = cfg
+	d.generateCalls++
 	return d.resp, nil
 }
 func (d *captureToolDriver) ChatStreamlyWithSender(ctx context.Context, _ string, _ []Message, _ *APIConfig, cfg *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
 	d.lastConfig = cfg
+	d.streamCalls++
 	if d.resp == nil {
 		return nil
 	}
@@ -264,10 +609,10 @@ func (d *captureToolDriver) ChatStreamlyWithSender(ctx context.Context, _ string
 	}
 	return nil
 }
-func (d *captureToolDriver) Embed(ctx context.Context, _ *string, _ []string, _ *APIConfig, _ *EmbeddingConfig, _ *common.ModelUsage) ([]EmbeddingData, error) {
+func (d *captureToolDriver) Embed(ctx context.Context, _ *string, _ EmbedRequest, _ *APIConfig, _ *EmbeddingConfig, _ *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) Rerank(ctx context.Context, _ *string, _ string, _ []string, _ *APIConfig, _ *RerankConfig, _ *common.ModelUsage) (*RerankResponse, error) {
+func (d *captureToolDriver) Rerank(ctx context.Context, _ *string, _ RerankRequest, _ *APIConfig, _ *RerankConfig, _ *common.ModelUsage) (*RerankResponse, error) {
 	return nil, nil
 }
 func (d *captureToolDriver) TranscribeAudio(ctx context.Context, _ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ *common.ModelUsage) (*ASRResponse, error) {
@@ -300,4 +645,125 @@ func (d *captureToolDriver) ListTasks(ctx context.Context, _ *APIConfig) ([]List
 }
 func (d *captureToolDriver) ShowTask(ctx context.Context, _ string, _ *APIConfig) (*TaskResponse, error) {
 	return nil, nil
+}
+func (u *captureToolDriver) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, nil
+}
+
+// TestToInternalMessagesConvertsMultiModalContent guards the eino→driver
+// boundary: UserInputMultiContent must become OpenAI-style content blocks
+// ([]interface{} of {type:text} / {type:image_url}) on Message.Content,
+// otherwise image parts produced by the component layer are silently
+// dropped before the request reaches any driver.
+func TestToInternalMessagesConvertsMultiModalContent(t *testing.T) {
+	uri := "data:image/png;base64,iVBORw0KGgo="
+	internal := toInternalMessages([]*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "describe the image"},
+				{Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{URL: &uri},
+					}},
+			},
+		},
+	})
+	if len(internal) != 1 {
+		t.Fatalf("len(internal) = %d, want 1", len(internal))
+	}
+	blocks, ok := internal[0].Content.([]interface{})
+	if !ok {
+		t.Fatalf("Content type = %T, want []interface{} content blocks", internal[0].Content)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("len(blocks) = %d, want 2", len(blocks))
+	}
+	textBlock, ok := blocks[0].(map[string]interface{})
+	if !ok || textBlock["type"] != "text" || textBlock["text"] != "describe the image" {
+		t.Fatalf("text block = %#v, want {type:text, text:describe the image}", blocks[0])
+	}
+	imageBlock, ok := blocks[1].(map[string]interface{})
+	if !ok || imageBlock["type"] != "image_url" {
+		t.Fatalf("image block = %#v, want type image_url", blocks[1])
+	}
+	imageURL, ok := imageBlock["image_url"].(map[string]interface{})
+	if !ok || imageURL["url"] != uri {
+		t.Fatalf("image_url = %#v, want url %q", imageBlock["image_url"], uri)
+	}
+}
+
+// TestToInternalMessagesReassemblesBase64Image: parts that carry Base64Data
+// instead of a URL are reassembled into a data URI.
+func TestToInternalMessagesReassemblesBase64Image(t *testing.T) {
+	b64 := "aGVsbG8="
+	internal := toInternalMessages([]*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{
+							Base64Data: &b64,
+							MIMEType:   "image/jpeg",
+						},
+					}},
+			},
+		},
+	})
+	blocks, ok := internal[0].Content.([]interface{})
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("Content = %#v, want one content block", internal[0].Content)
+	}
+	imageBlock, ok := blocks[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("block = %#v, want map", blocks[0])
+	}
+	imageURL, ok := imageBlock["image_url"].(map[string]interface{})
+	if !ok || imageURL["url"] != "data:image/jpeg;base64,aGVsbG8=" {
+		t.Fatalf("image_url = %#v, want reassembled data URI", imageBlock["image_url"])
+	}
+}
+
+// TestToInternalMessagesUnsupportedPartsFallBackToString: when every part is
+// of an unsupported type, Content stays the plain string.
+func TestToInternalMessagesUnsupportedPartsFallBackToString(t *testing.T) {
+	internal := toInternalMessages([]*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "plain",
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeAudioURL},
+			},
+		},
+	})
+	if content, ok := internal[0].Content.(string); !ok || content != "plain" {
+		t.Fatalf("Content = %#v, want string %q", internal[0].Content, "plain")
+	}
+}
+
+// TestToolCallsFromInternalSetsIndex: the streamed tool-calls message reaches
+// stream consumers as ONE complete chunk carrying every parallel call, and
+// those consumers merge chunks by Index (nil reads as 0). Without an Index,
+// a whole parallel batch collapses into a single call — the last ID wins and
+// the other calls' results are orphaned on replay (MiniMax:
+// `tool result's tool id(X) not found`).
+func TestToolCallsFromInternalSetsIndex(t *testing.T) {
+	calls := []map[string]interface{}{
+		{"id": "call_a_1", "type": "function", "function": map[string]interface{}{"name": "t1", "arguments": "{}"}},
+		{"id": "call_a_2", "type": "function", "function": map[string]interface{}{"name": "t2", "arguments": "{}"}},
+		{"id": "call_a_3", "type": "function", "function": map[string]interface{}{"name": "t3", "arguments": "{}"}},
+	}
+	out := toolCallsFromInternal(calls)
+	if len(out) != 3 {
+		t.Fatalf("len = %d, want 3", len(out))
+	}
+	for i, tc := range out {
+		if tc.Index == nil || *tc.Index != i {
+			t.Fatalf("call %d Index = %v, want %d", i, tc.Index, i)
+		}
+		if tc.ID != fmt.Sprintf("call_a_%d", i+1) {
+			t.Fatalf("call %d ID = %q", i, tc.ID)
+		}
+	}
 }

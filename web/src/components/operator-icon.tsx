@@ -1,12 +1,28 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import queritLogo from '@/assets/querit.png';
+import search1apiLogo from '@/assets/search1api.png';
 import { cn } from '@/lib/utils';
 import {
   Columns3Cog,
   FileCode,
   FileText,
-  Globe,
   HousePlus,
   Infinity as InfinityIcon,
   LogOut,
@@ -56,9 +72,14 @@ export const SVGIconMap = {
   [Operator.BGPT]: 'bgpt',
   [Operator.SearXNG]: 'searxng',
   [Operator.KeenableSearch]: 'keenable',
+  [Operator.YouComSearch]: 'youcom',
+  [Operator.SofyaSearch]: 'sofya',
   [Operator.TavilyExtract]: 'tavily',
   [Operator.TavilySearch]: 'tavily',
+  [Operator.QueritContents]: 'querit',
   [Operator.QueritSearch]: 'querit',
+  [Operator.Search1APISearch]: 'search1api',
+  [Operator.Search1APICrawl]: 'search1api',
   [Operator.Wikipedia]: 'wikipedia',
   [Operator.YahooFinance]: 'yahoo-finance',
   [Operator.WenCai]: 'wencai',
@@ -69,11 +90,11 @@ export const LucideIconMap = {
   [Operator.Loop]: InfinityIcon,
   [Operator.ExitLoop]: LogOut,
   [Operator.DocGenerator]: FileText,
-  [Operator.Browser]: Globe,
   [Operator.Compiler]: Columns3Cog,
   [Operator.File]: LucideFile,
   [Operator.Parser]: LucideFilePlay,
   [Operator.Tokenizer]: LucideListPlus,
+  [Operator.GeneralChunker]: LucideBlocks,
   [Operator.TokenChunker]: LucideBlocks,
   [Operator.TitleChunker]: LucideHeading,
   [Operator.Extractor]: LucideFileStack,
@@ -107,10 +128,20 @@ const OperatorIcon = ({ name, className }: IProps) => {
   const svgIcon = SVGIconMap[name as keyof typeof SVGIconMap];
   const LucideIcon = LucideIconMap[name as keyof typeof LucideIconMap];
 
-  if (name === Operator.QueritSearch) {
+  if (name === Operator.QueritContents || name === Operator.QueritSearch) {
     return (
       <img
         src={queritLogo}
+        alt=""
+        className={cn('size-5 object-contain', className)}
+      />
+    );
+  }
+
+  if (name === Operator.Search1APISearch || name === Operator.Search1APICrawl) {
+    return (
+      <img
+        src={search1apiLogo}
         alt=""
         className={cn('size-5 object-contain', className)}
       />

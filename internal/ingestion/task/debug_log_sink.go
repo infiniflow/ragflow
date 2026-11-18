@@ -23,10 +23,11 @@ import (
 	"time"
 
 	"ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/utility"
 )
 
-// DebugLogTTL is the Redis expiry for a debug-run log. It mirrors the Python
-// pipeline's 30-minute update TTL (rag/flow/pipeline.py callback: set_obj(...,
+// DebugLogTTL is the Redis expiry for a debug-run log. It mirrors the
+// pipeline's 30-minute update TTL ( callback: set_obj(
 // 60*30)); the Go side writes the log once at the end of the synchronous run.
 const DebugLogTTL = 30 * time.Minute
 
@@ -68,8 +69,8 @@ const (
 )
 
 // debugLogEntry is one component's row in the front-end Log box: a component id
-// plus an ordered list of trace lines. It matches the Python pipeline callback
-// shape exactly (rag/flow/pipeline.py) so GetAgentLogs can return it verbatim
+// plus an ordered list of trace lines. It matches the pipeline callback
+// shape exactly so GetAgentLogs can return it verbatim
 // and the front-end (useFetchMessageTrace) can read it unchanged.
 type debugLogEntry struct {
 	ComponentID string       `json:"component_id"`
@@ -84,9 +85,8 @@ type debugTrace struct {
 	ElapsedTime float64 `json:"elapsed_time"`
 	// Dsl carries the debug-run result (per-component outputs) on the END
 	// marker's single trace entry, so the front-end "View result" page can
-	// render parsed chunks. It mirrors Python's END marker `dsl`
-	// (rag/flow/pipeline.py:98). Nil/empty when unset, in which case
-	// encoding/json omits it (json:"omitempty").
+	// render parsed chunks. It mirrors the END marker `dsl`. Nil/empty when
+	// unset, in which case encoding/json omits it (json:"omitempty").
 	Dsl json.RawMessage `json:"dsl,omitempty"`
 }
 
@@ -113,7 +113,7 @@ type DebugLogSink struct {
 	// runOutput is the raw pipeline run output map (output["state"][<id>] is
 	// each component's outputs), handed over together with resultDSL. Flush
 	// uses it to build the END marker's message (the last component's output
-	// JSON) exactly like Python does. Nil until SetResult is called.
+	// JSON) exactly like does. Nil until SetResult is called
 	runOutput map[string]any
 }
 
@@ -150,7 +150,7 @@ func (s *DebugLogSink) SetResult(dsl map[string]any, output map[string]any) {
 
 // OnComponentProgress maps one component lifecycle event to a trace line and
 // merges it into the running array. Consecutive events for the same component
-// append to that component's trace (matching the Python callback's merge
+// append to that component's trace (matching the callback's merge
 // behaviour); a new component opens a fresh array element.
 func (s *DebugLogSink) OnComponentProgress(_ context.Context, ev pipeline.ProgressEvent) {
 	now := time.Now()
@@ -170,7 +170,7 @@ func (s *DebugLogSink) OnComponentProgress(_ context.Context, ev pipeline.Progre
 		message = "[ERROR] " + message
 	}
 	// Clamp the message so a runaway component cannot blow up the stored entry.
-	message = truncateRunes(message, maxMessageRunes)
+	message = utility.TruncateRunes(message, maxMessageRunes)
 
 	entry := debugTrace{
 		Progress:    progress,
@@ -230,8 +230,8 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 	if finalErr != nil {
 		endMsg = "[ERROR] " + finalErr.Error()
 	} else if msg := endOutputMessage(entries, s.runOutput); msg != "" {
-		// Mirror Python's END marker message: a JSON dump of the last
-		// component's output (rag/flow/pipeline.py:171). The front-end
+		// Mirror END marker message: a JSON dump of the last
+		// component's output. The front-end
 		// "Export JSON" button JSON.parses this message
 		// (use-download-output.ts findEndOutput), so a plain-text sentinel
 		// would leave the button permanently disabled.
@@ -267,14 +267,14 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 }
 
 // endOutputMessage builds the END marker's message for a successful run: the
-// JSON dump of the last executed component's output, mirroring Python's
+// JSON dump of the last executed component's output, mirroring
 // `json.dumps(self.get_component_obj(self.path[-1]).output())`
-// (rag/flow/pipeline.py:171). The last executed component is the sink's final
+// (the last executed component's output). The last executed component is the sink's final
 // entry (path[-1] always emits its exit progress last). Raw embedding vectors
-// are stripped (deepCopyStrip) so the Redis log stays at Python-scale size.
+// are stripped (deepCopy(out, true)) so the Redis log stays at -scale size
 // Returns "" when no output is available; the caller then keeps the
 // plain-text fallback and the front-end export button stays disabled (empty
-// output, matching Python's isEmpty check).
+// output, matching isEmpty check)
 func endOutputMessage(entries []debugLogEntry, runOutput map[string]any) string {
 	if len(entries) == 0 || len(runOutput) == 0 {
 		return ""
@@ -284,24 +284,11 @@ func endOutputMessage(entries []debugLogEntry, runOutput map[string]any) string 
 	if !ok || len(out) == 0 {
 		return ""
 	}
-	b, err := json.Marshal(deepCopyStrip(out))
+	b, err := json.Marshal(deepCopy(out, true))
 	if err != nil {
 		return ""
 	}
 	return string(b)
-}
-
-// truncateRunes returns s truncated to at most max runes, preserving the original
-// bytes when shorter. Mirrors internal/service/agent_sessions.go's truncateRunes.
-func truncateRunes(s string, max int) string {
-	if max <= 0 {
-		return ""
-	}
-	r := []rune(s)
-	if len(r) <= max {
-		return s
-	}
-	return string(r[:max])
 }
 
 // trimToPayloadBudget collapses the middle of the log (keeping the first few

@@ -1,0 +1,373 @@
+//
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+package document
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"ragflow/internal/common"
+	"regexp"
+	"strings"
+
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/service"
+	"ragflow/internal/storage"
+	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
+)
+
+var syncFilenameUnsafeRE = regexp.MustCompile(`[\\/:*?"<>|]+`)
+
+func syncDocumentParseContext(ctx context.Context, taskContext service.SyncTaskContext) (context.Context, error) {
+	userID := strings.TrimSpace(taskContext.Connector.UserID)
+	if userID == "" {
+		return nil, fmt.Errorf("connector %s has no owner user_id", taskContext.Connector.ID)
+	}
+	tenantID := strings.TrimSpace(taskContext.Connector.TenantID)
+	if tenantID == "" {
+		return nil, fmt.Errorf("connector %s has no tenant_id", taskContext.Connector.ID)
+	}
+	return permission.WithIdentity(ctx, userID, tenantID), nil
+}
+
+// Upsert stores one normalized source document.
+func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpsertInput) (service.DocumentUpsertResult, error) {
+	if input.DocumentID == "" {
+		return service.DocumentUpsertResult{}, fmt.Errorf("document id is empty")
+	}
+
+	// get base info
+	kb := &input.TaskContext.Knowledgebase
+	tenantID := input.TaskContext.Connector.TenantID
+	// return normalized filename
+	filename := syncDocumentFilename(input.SourceDocument.SemanticIdentifier, input.SourceDocument.Extension, input.SourceDocument.SourceID)
+	filetype := utility.FilenameType(filename)
+	if filetype == utility.FileTypeOTHER {
+		return service.DocumentUpsertResult{}, fmt.Errorf("document type %q is not supported", filename)
+	}
+
+	// get storage
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return service.DocumentUpsertResult{}, fmt.Errorf("storage not initialized")
+	}
+
+	// get content hash
+	contentHash := input.SourceDocument.Fingerprint
+	if contentHash == "" {
+		contentHash = contentHashHex(input.SourceDocument.Blob)
+	}
+	// Serialize publication and all dependent side effects, including the
+	// unchanged-revision path. A final fingerprint CAS cannot undo stale
+	// metadata written by an earlier concurrent revision.
+	unlock, err := acquireSyncDocumentLock(ctx, input.DocumentID)
+	if err != nil {
+		return service.DocumentUpsertResult{}, err
+	}
+	defer unlock()
+
+	// if the 'file' is existing
+	existing, err := s.documentDAO.GetByID(ctx, dao.DB, input.DocumentID)
+	if err != nil && !errorsIsRecordNotFound(err) {
+		return service.DocumentUpsertResult{}, err
+	}
+	if existing != nil && existing.ContentHash != nil && *existing.ContentHash == contentHash {
+		if err := s.ensureSyncDocumentPostWrite(ctx, input, existing); err != nil {
+			return service.DocumentUpsertResult{}, err
+		}
+		return service.DocumentUpsertResult{DocID: input.DocumentID, Action: service.DocumentActionSkipped}, nil
+	}
+
+	// store location
+	location := syncDocumentStagedLocation(input.SourceType, input.DocumentID, filename)
+	cleanupLocation := true
+	defer func() {
+		if cleanupLocation {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupBatchTimeout)
+			defer cancel()
+			// A downstream failure can leave the staged key published. Only
+			// remove it when the database confirms it is no longer referenced.
+			current, lookupErr := s.documentDAO.GetByID(cleanupCtx, dao.DB, input.DocumentID)
+			if lookupErr != nil && !errorsIsRecordNotFound(lookupErr) {
+				return
+			}
+			if current != nil && current.Location != nil && *current.Location == location {
+				return
+			}
+			_ = storageImpl.Remove(cleanupCtx, kb.ID, location)
+		}
+	}()
+	if err = storageImpl.Put(ctx, kb.ID, location, input.SourceDocument.Blob); err != nil {
+		cleanupLocation = false
+		return service.DocumentUpsertResult{}, err
+	}
+
+	// not existing, insert a new 'file'
+	if existing == nil {
+		result, insertErr := s.insertSyncDocument(ctx, input, filename, location, string(filetype), contentHash, tenantID)
+		if insertErr == nil {
+			cleanupLocation = false
+		}
+		return result, insertErr
+	}
+	// just update the file
+	result, updateErr := s.updateSyncDocument(ctx, input, existing, filename, location, string(filetype), contentHash)
+	if updateErr == nil {
+		cleanupLocation = false
+	}
+	return result, updateErr
+}
+
+// insertSyncDocument inserts a new synced document and file-manager link.
+func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.DocumentUpsertInput, filename, location, filetype, contentHash, tenantID string) (service.DocumentUpsertResult, error) {
+	// base info
+	kb := &input.TaskContext.Knowledgebase
+	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
+	if err != nil {
+		return service.DocumentUpsertResult{}, err
+	}
+
+	// create the 'doc'
+	selection, parserConfig := resolveDocumentParser(ctx, kb, filename, utility.FileType(filetype), kb.ParserConfig)
+	doc := s.newDatasetDocument(kb, tenantID, filename, "", filetype, selection, parserConfig, input.SourceType, int64(len(input.SourceDocument.Blob)), input.SourceDocument.Blob)
+	if ownerID := strings.TrimSpace(kb.CreatedBy); ownerID != "" {
+		doc.CreatedBy = ownerID
+		doc.UserID = ownerID
+	}
+	doc.ID = input.DocumentID
+	// A fingerprint is acknowledged only after all dependent work succeeds.
+	doc.ContentHash = nil
+
+	// put 'file' in mysql `document`
+	if err = s.InsertDocument(ctx, doc); err != nil {
+		return service.DocumentUpsertResult{}, err
+	}
+	if err = s.publishSyncDocument(ctx, doc, location); err != nil {
+		return service.DocumentUpsertResult{}, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
+	}
+	// link 'file' 2 'file_system'
+	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
+		return service.DocumentUpsertResult{}, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
+	}
+	// write metadata and do `auto_parse` (or not)
+	if err = s.afterSyncDocumentUpsert(ctx, input, doc, false, contentHash); err != nil {
+		return service.DocumentUpsertResult{}, err
+	}
+
+	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionAdded}, nil
+}
+
+// updateSyncDocument updates an existing synced document and file-manager row.
+func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document, filename, location, filetype, contentHash string) (service.DocumentUpsertResult, error) {
+	suffix := strings.TrimPrefix(strings.ToLower(filepath.Ext(filename)), ".")
+	updates := map[string]any{
+		"name":        filename,
+		"size":        int64(len(input.SourceDocument.Blob)),
+		"type":        filetype,
+		"suffix":      suffix,
+		"source_type": input.SourceType,
+	}
+	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, updates); err != nil {
+		return service.DocumentUpsertResult{}, err
+	}
+
+	doc.Name = &filename
+	doc.Size = int64(len(input.SourceDocument.Blob))
+	doc.Type = filetype
+	doc.Suffix = suffix
+	doc.SourceType = input.SourceType
+
+	if err := s.publishSyncDocument(ctx, doc, location); err != nil {
+		return service.DocumentUpsertResult{}, err
+	}
+	// update new updated file
+	if err := s.updateSyncDocumentFile(ctx, input, doc); err != nil {
+		return service.DocumentUpsertResult{}, err
+	}
+	// write metadata and do `auto_parse`
+	if err := s.afterSyncDocumentUpsert(ctx, input, doc, true, contentHash); err != nil {
+		return service.DocumentUpsertResult{}, err
+	}
+	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionUpdated}, nil
+}
+
+// publishSyncDocument publishes the staged object key after the document row exists.
+func (s *DocumentService) publishSyncDocument(ctx context.Context, doc *entity.Document, location string) error {
+	// Invalidate the old fingerprint atomically with the location change so
+	// runners and connectors cannot skip an incompletely processed revision.
+	contentHash := ""
+	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+		"location":     location,
+		"content_hash": contentHash,
+	}); err != nil {
+		return err
+	}
+	doc.Location = &location
+	doc.ContentHash = &contentHash
+	return nil
+}
+
+// afterSyncDocumentUpsert writes metadata and optionally enqueues parsing.
+func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document, rerun bool, contentHash string) error {
+	// write metadata
+	if len(input.SourceDocument.Metadata) > 0 && s.docEngine != nil {
+		if err := s.SetDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata); err != nil {
+			return err
+		}
+	}
+	// do auto_parse if enabled
+	if input.AutoParse {
+		parseCtx, err := syncDocumentParseContext(ctx, input.TaskContext)
+		if err != nil {
+			return err
+		}
+		if err := s.StartParseDocuments(parseCtx, doc, &input.TaskContext.Knowledgebase, StartParseOptions{RerunWithDelete: rerun}); err != nil {
+			return err
+		}
+	}
+	// Defend against non-sync writers replacing the document while metadata
+	// or parsing was being prepared. Never acknowledge another blob's hash.
+	ackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupBatchTimeout)
+	defer cancel()
+	result := dao.DB.WithContext(ackCtx).Model(&entity.Document{}).
+		Where("id = ? AND location = ?", doc.ID, doc.Location).
+		Updates(map[string]interface{}{"content_hash": contentHash})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("synced document %s changed before its fingerprint was committed", doc.ID)
+	}
+	doc.ContentHash = &contentHash
+	return nil
+}
+
+// ensureSyncDocumentPostWrite retries dependent work before an unchanged document is skipped.
+func (s *DocumentService) ensureSyncDocumentPostWrite(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document) error {
+	if err := s.updateSyncDocumentFile(ctx, input, doc); err != nil {
+		return err
+	}
+	if len(input.SourceDocument.Metadata) > 0 && s.docEngine != nil {
+		if err := s.SetDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata); err != nil {
+			return err
+		}
+	}
+	if !input.AutoParse {
+		return nil
+	}
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	if err != nil {
+		return err
+	}
+	if task != nil {
+		return nil
+	}
+	parseCtx, err := syncDocumentParseContext(ctx, input.TaskContext)
+	if err != nil {
+		return err
+	}
+	return s.StartParseDocuments(parseCtx, doc, &input.TaskContext.Knowledgebase, StartParseOptions{})
+}
+
+// updateSyncDocumentFile updates the file-manager row linked to a synced document.
+func (s *DocumentService) updateSyncDocumentFile(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document) error {
+	mappings, err := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	if err != nil {
+		return err
+	}
+
+	// no updates
+	if len(mappings) == 0 || mappings[0].FileID == nil {
+		kbFolder, folderErr := s.ensureKBFolder(ctx, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID)
+		if folderErr != nil {
+			return folderErr
+		}
+		return s.addFileFromKB(ctx, doc, kbFolder.ID, input.TaskContext.Knowledgebase.TenantID)
+	}
+
+	name := ""
+	if doc.Name != nil {
+		name = *doc.Name
+	}
+
+	location := ""
+	if doc.Location != nil {
+		location = *doc.Location
+	}
+
+	return s.fileDAO.UpdateByID(ctx, dao.DB, *mappings[0].FileID, map[string]interface{}{
+		"name":     name,
+		"location": location,
+		"size":     doc.Size,
+		"type":     doc.Type,
+	})
+}
+
+// syncDocumentFilename returns a bounded filename for a synced source document.
+func syncDocumentFilename(name, extension, fallback string) string {
+	name = strings.TrimSpace(syncFilenameUnsafeRE.ReplaceAllString(name, "_"))
+	if name == "" {
+		name = strings.TrimSpace(syncFilenameUnsafeRE.ReplaceAllString(fallback, "_"))
+	}
+	if name == "" {
+		name = "document"
+	}
+
+	extension = strings.TrimSpace(extension)
+	if extension == "" {
+		extension = ".txt"
+	}
+
+	if !strings.HasPrefix(extension, ".") {
+		extension = "." + extension
+	}
+	if !strings.HasSuffix(strings.ToLower(name), strings.ToLower(extension)) {
+		name += extension
+	}
+
+	if len(name) <= 255 {
+		return name
+	}
+
+	ext := filepath.Ext(name)
+	baseLimit := 255 - len(ext)
+	if baseLimit < 1 {
+		return name[:255]
+	}
+
+	return name[:baseLimit] + ext
+}
+
+// syncDocumentStagedLocation returns a unique object-storage key for unpublished synced content.
+func syncDocumentStagedLocation(sourceType, docID, filename string) string {
+	ext := filepath.Ext(filename)
+	sourceType = strings.Trim(strings.ReplaceAll(sourceType, "/", "_"), "_")
+	if sourceType == "" {
+		sourceType = "sync"
+	}
+	return fmt.Sprintf("sync/%s/.staged/%s/%s%s", sourceType, common.GenerateToken(), docID, ext)
+}
+
+// errorsIsRecordNotFound reports whether an error is GORM's not-found error.
+func errorsIsRecordNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
+}

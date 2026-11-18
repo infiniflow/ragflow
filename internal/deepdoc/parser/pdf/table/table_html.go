@@ -1,60 +1,11 @@
 package table
 
 import (
-	"fmt"
 	"html"
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
-
-func RowsToHTML(rows [][]pdf.TSRCell, caption string, headerRows map[int]bool, spanInfo map[[2]int][2]int, covered map[[2]int]bool) string {
-	var b strings.Builder
-	b.WriteString("<table>")
-	if caption != "" {
-		b.WriteString("<caption>")
-		b.WriteString(html.EscapeString(caption))
-		b.WriteString("</caption>")
-	}
-	for ri, row := range rows {
-		b.WriteString("<tr>")
-		for ci, cell := range row {
-			if covered[[2]int{ri, ci}] {
-				continue
-			}
-			tag := "td"
-			if headerRows[ri] {
-				tag = "th"
-			}
-			b.WriteString("<")
-			b.WriteString(tag)
-			sp := ""
-			if s, ok := spanInfo[[2]int{ri, ci}]; ok {
-				if s[0] > 1 {
-					sp = fmt.Sprintf("colspan=%d", s[0])
-				}
-				if s[1] > 1 {
-					if sp != "" {
-						sp += " "
-					}
-					sp += fmt.Sprintf("rowspan=%d", s[1])
-				}
-			}
-			if sp != "" {
-				b.WriteString(" ")
-				b.WriteString(sp)
-			}
-			b.WriteString(" >")
-			b.WriteString(html.EscapeString(cell.Text))
-			b.WriteString("</")
-			b.WriteString(tag)
-			b.WriteString(">")
-		}
-		b.WriteString("</tr>")
-	}
-	b.WriteString("</table>")
-	return b.String()
-}
 
 // SimpleRowsToHTML converts plain string-based table data to an HTML table.
 // The first row is treated as a header (<th>).  Used by DOCX, XLSX, PPTX,
@@ -96,13 +47,22 @@ func SimpleRowsToHTML(rows [][]string) string {
 	return b.String()
 }
 
+// RowsToStrings converts a grid to a string matrix. Cells covered by a span
+// (Label contains "covered") are omitted, matching Python's rendered output,
+// which drops covered cells entirely (HTML <td> skipped; desc_table sees
+// tbl[r][c] = None) — so a covered cell never appears in the row. Span-free
+// grids are unaffected.
 func RowsToStrings(rows [][]pdf.TSRCell) [][]string {
 	out := make([][]string, len(rows))
 	for ri, row := range rows {
-		out[ri] = make([]string, len(row))
-		for ci, c := range row {
-			out[ri][ci] = c.Text
+		var cells []string
+		for _, c := range row {
+			if strings.Contains(c.Label, "covered") {
+				continue
+			}
+			cells = append(cells, c.Text)
 		}
+		out[ri] = cells
 	}
 	return out
 }

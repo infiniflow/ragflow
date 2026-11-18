@@ -1,14 +1,29 @@
-import dayjs from 'dayjs';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 
-export function formatDate(date: any, format?: string) {
-  const thisFormat = format || 'DD/MM/YYYY HH:mm:ss';
+import dayjs, { type ConfigType } from 'dayjs';
+
+export function formatDate(date: ConfigType) {
   if (!date) {
     return '';
   }
-  return dayjs(date).format(thisFormat);
+  return dayjs(date).format('YYYY-MM-DD HH:mm:ss');
 }
 
-export function formatTime(date: any) {
+export function formatTime(date: ConfigType) {
   if (!date) {
     return '';
   }
@@ -27,14 +42,14 @@ export function lastWeek() {
   return formatDate(dayjs().subtract(1, 'weeks'));
 }
 
-export function formatPureDate(date: any) {
+export function formatPureDate(date: ConfigType) {
   if (!date) {
     return '';
   }
-  return dayjs(date).format('DD/MM/YYYY');
+  return dayjs(date).format('YYYY-MM-DD');
 }
 
-export function formatStandardDate(date: any) {
+export function formatStandardDate(date: ConfigType) {
   if (!date) {
     return '';
   }
@@ -43,6 +58,13 @@ export function formatStandardDate(date: any) {
     return '';
   }
   return parsedDate.format('YYYY-MM-DD');
+}
+
+export function formatIsoDateTime(timestamp_ms: number): string {
+  if (!timestamp_ms) {
+    return '';
+  }
+  return dayjs(timestamp_ms).format('YYYY-MM-DDTHH:mm:ssZ');
 }
 
 export function formatSecondsToHumanReadable(seconds: number): string {
@@ -56,9 +78,9 @@ export function formatSecondsToHumanReadable(seconds: number): string {
   const s = seconds % 60;
   const formattedSeconds = s === 0 ? '0' : s.toFixed(3).replace(/\.?0+$/, '');
   const parts = [];
-  if (h > 0) parts.push(`${h}h `);
-  if (m > 0) parts.push(`${m}m `);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
   if (s || parts.length === 0) parts.push(`${formattedSeconds}s`);
 
-  return parts.join('');
+  return parts.join(' ');
 }

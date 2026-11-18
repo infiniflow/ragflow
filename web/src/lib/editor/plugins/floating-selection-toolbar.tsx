@@ -189,6 +189,26 @@ export default function FloatingSelectionToolbar() {
   ];
 
   const [showHeadingMenu, setShowHeadingMenu] = useState(false);
+  // Dropdown open direction: true = open upward when not enough space below
+  const [headingMenuUp, setHeadingMenuUp] = useState(false);
+  const [codeMenuUp, setCodeMenuUp] = useState(false);
+
+  // Recompute dropdown direction whenever a menu opens, based on toolbar's
+  // position relative to the viewport. If there's not enough space below the
+  // toolbar to fit the menu, open it upward instead.
+  useEffect(() => {
+    if (!barRef.current) return;
+    const rect = barRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    // Heading menu: 6 items (~26px each) + padding
+    if (showHeadingMenu) {
+      setHeadingMenuUp(spaceBelow < 6 * 26 + 12);
+    }
+    if (showCodeLang) {
+      // Code menu already caps at maxHeight 200
+      setCodeMenuUp(spaceBelow < 220);
+    }
+  }, [showHeadingMenu, showCodeLang]);
 
   if (!show) return null;
 
@@ -260,9 +280,10 @@ export default function FloatingSelectionToolbar() {
           <div
             style={{
               position: 'absolute',
-              top: '100%',
               left: 0,
-              marginTop: 4,
+              ...(headingMenuUp
+                ? { bottom: '100%', marginBottom: 4 }
+                : { top: '100%', marginTop: 4 }),
               background: 'var(--nim-bg)',
               border: '1px solid var(--nim-border)',
               borderRadius: 6,
@@ -339,10 +360,11 @@ export default function FloatingSelectionToolbar() {
           <div
             style={{
               position: 'absolute',
-              top: '100%',
               left: '50%',
               transform: 'translateX(-50%)',
-              marginTop: 4,
+              ...(codeMenuUp
+                ? { bottom: '100%', marginBottom: 4 }
+                : { top: '100%', marginTop: 4 }),
               background: 'var(--nim-bg)',
               border: '1px solid var(--nim-border)',
               borderRadius: 6,
@@ -424,19 +446,19 @@ export default function FloatingSelectionToolbar() {
       >
         &lt;/&gt;
       </button>
-      <div
+      {/* <div
         style={{
           width: 1,
           height: 16,
           background: 'var(--nim-border)',
           margin: '0 3px',
         }}
-      />
+      /> */}
 
       {/* Link */}
-      <button style={btnStyle} onClick={toggleLink} title="Link">
+      {/* <button style={btnStyle} onClick={toggleLink} title="Link">
         🔗
-      </button>
+      </button> */}
     </div>
   );
 }

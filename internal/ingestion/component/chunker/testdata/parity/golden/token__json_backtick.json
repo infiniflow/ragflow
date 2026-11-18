@@ -1,0 +1,21 @@
+{
+ "case_id": "token__json_backtick",
+ "chunks": [
+  {
+   "doc_type_kwd": "text",
+   "text": "first segment line one"
+  },
+  {
+   "doc_type_kwd": "text",
+   "text": "first segment line two"
+  },
+  {
+   "doc_type_kwd": "text",
+   "text": "second segment line one"
+  },
+  {
+   "doc_type_kwd": "text",
+   "text": "second segment line two"
+  }
+ ]
+}

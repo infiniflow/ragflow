@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 export enum KnowledgeRouteKey {
   Dataset = 'dataset',
   Testing = 'testing',
@@ -14,6 +30,9 @@ export enum RunningStatus {
   DONE = 'DONE', // need to refresh
   FAIL = 'FAIL', // need to refresh
   SCHEDULE = 'SCHEDULE',
+  // Go ingestion only: the task is enqueued but not started yet
+  // (ingestion_status CREATED / SCHEDULED).
+  QUEUED = 'QUEUED',
 }
 
 export enum RunningStatusOld {
@@ -25,20 +44,33 @@ export enum RunningStatusOld {
   SCHEDULE = '5',
 }
 
+export enum IngestionTaskStatus {
+  // Go backend only: no ingestion task exists yet (e.g. freshly uploaded).
+  UNSTART = 'UNSTART',
+  CREATED = 'CREATED',
+  SCHEDULED = 'SCHEDULED',
+  RUNNING = 'RUNNING',
+  STOPPING = 'STOPPING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  STOPPED = 'STOPPED',
+}
+
 export const RunningStatusMap = {
-  [RunningStatus.UNSTART]: 'Pending',
+  [RunningStatus.UNSTART]: 'Unstarted',
   [RunningStatus.RUNNING]: 'Running',
-  [RunningStatus.CANCEL]: 'Cancel',
+  [RunningStatus.CANCEL]: 'Canceled',
   [RunningStatus.DONE]: 'Success',
   [RunningStatus.FAIL]: 'Failed',
-  [RunningStatus.SCHEDULE]: 'Schedule',
+  [RunningStatus.SCHEDULE]: 'Scheduled',
+  [RunningStatus.QUEUED]: 'Queued',
 
-  [RunningStatusOld.UNSTART]: 'Pending',
+  [RunningStatusOld.UNSTART]: 'Unstarted',
   [RunningStatusOld.RUNNING]: 'Running',
-  [RunningStatusOld.CANCEL]: 'Cancel',
+  [RunningStatusOld.CANCEL]: 'Canceled',
   [RunningStatusOld.DONE]: 'Success',
   [RunningStatusOld.FAIL]: 'Failed',
-  [RunningStatusOld.SCHEDULE]: 'Schedule',
+  [RunningStatusOld.SCHEDULE]: 'Scheduled',
 };
 
 export enum ModelVariableType {
@@ -120,12 +152,17 @@ export enum ParseType {
 export enum ProcessingType {
   knowledgeGraph = 'Graph',
   raptor = 'RAPTOR',
-  artifact = 'Artifact',
+  artifact = 'wiki',
   skill = 'Skill',
   mindmap = 'Mindmap',
   timeline = 'Timeline',
   sessionEssence = 'Session_Essence',
   sessionGraph = 'Session_Graph',
+  // Task types written by the Go knowledge-compile pipeline
+  // (kccommon.TaskType*); they intentionally match the frontend categories.
+  wiki = 'Wiki',
+  tree = 'Tree',
+  pageIndex = 'PageIndex',
 }
 
 export const ProcessingTypeMap = {

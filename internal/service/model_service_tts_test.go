@@ -1,0 +1,93 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package service
+
+import (
+	"strings"
+	"testing"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+)
+
+// insertTTSTestTenant inserts a tenant and owner membership; ttsID may be nil (no default
+// TTS model configured).
+func insertTTSTestTenant(t *testing.T, id string, ttsID *string) {
+	t.Helper()
+	name := "tts-test-tenant"
+	row := &entity.Tenant{
+		ID:        id,
+		Name:      &name,
+		ParserIDs: "naive",
+	}
+	if err := dao.DB.Create(row).Error; err != nil {
+		t.Fatalf("insert test tenant: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "owner-" + id, UserID: id, TenantID: id, Role: "owner", Status: sptr(string(entity.StatusValid)),
+		LLMID: "glm-4-flash@ZHIPU-AI", EmbdID: "BAAI/bge-m3@ZHIPU-AI", TTSID: ttsID,
+	}).Error; err != nil {
+		t.Fatalf("insert test owner membership: %v", err)
+	}
+}
+
+// TestAudioSpeech_NoSelectionNoDefaultTTS covers the agent Message
+// auto_play path: no model id and no provider/instance/model names. When
+// the tenant has no default TTS model the call must return the typed
+// "no default tts model is set" error instead of panicking on a nil
+// provider-name dereference.
+func TestAudioSpeech_NoSelectionNoDefaultTTS(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	pushServiceDB(t, testDB)
+	insertTTSTestTenant(t, "tenant-1", nil)
+
+	svc := NewModelCallService()
+	text := "hello"
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
+	resp, code, err := svc.AudioSpeech(ctx, "", &text, nil)
+	if err == nil {
+		t.Fatalf("expected error for missing default TTS model, got resp=%v", resp)
+	}
+	if !strings.Contains(err.Error(), "no default tts model is set") {
+		t.Fatalf("err = %v, want it to mention 'no default tts model is set'", err)
+	}
+	if code != common.CodeNotFound {
+		t.Errorf("code = %d, want %d", code, common.CodeNotFound)
+	}
+	if resp != nil {
+		t.Errorf("resp = %v, want nil", resp)
+	}
+}
+
+// TestResolveDefaultModelConfig_NilTTSPointer verifies the tenant
+// default-model resolution is nil-safe when the tts_id column is NULL
+// (the reporter's configuration: every default set except TTS).
+func TestResolveDefaultModelConfig_NilTTSPointer(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	pushServiceDB(t, testDB)
+	insertTTSTestTenant(t, "tenant-2", nil)
+
+	_, err := NewModelFactory().resolveDefaultConfig(permission.WithTenantID(t.Context(), "tenant-2"), entity.ModelTypeTTS)
+	if err == nil {
+		t.Fatal("expected error for nil tts_id, got nil")
+	}
+	if !strings.Contains(err.Error(), "no default tts model is set") {
+		t.Fatalf("err = %v, want 'no default tts model is set'", err)
+	}
+}

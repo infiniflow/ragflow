@@ -17,13 +17,33 @@ package knowledge_compile
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/service/file"
+	"ragflow/internal/service/nav"
+
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
+
+// errEngineNotConfigured is returned by the engine-backed reader, writer, and
+// contribution store when they were assembled without a doc engine. The
+// consumer's storage dependencies are injected by the server assembly point
+// (see WithDocEngine); an unconfigured consumer fails loudly on its first
+// storage access instead of silently reading zero products or acking writes
+// that never happened.
+var errEngineNotConfigured = errors.New("knowledge_compile: doc engine is not configured; wire ingestion.Deps.Engine at the server assembly point")
 
 // Consumer is the dataset-level post-processing worker (§11.5). Multiple
 // instances compete on the MySQL scheduling rows; each KB is processed by at
@@ -32,10 +52,18 @@ import (
 // broker — is the scheduling system of record and the source of same-KB
 // serialization.
 type Consumer struct {
-	scheduler Claimer
-	reader    Reader
-	writer    Writer
-	factory   DeduperFactory
+	scheduler     Claimer
+	reader        Reader
+	writer        Writer
+	factory       DeduperFactory
+	contributions wikiContributionStore
+
+	// storageConfigured is set by WithStorage and records that the consumer was
+	// assembled with an injected doc engine + db. An unconfigured consumer fails
+	// fast on its first storage access (errEngineNotConfigured); callers can
+	// assert this flag before relying on merges so a wiring regression is caught
+	// at assembly rather than as a silently-acked empty batch.
+	storageConfigured bool
 
 	ttl            time.Duration
 	heartbeat      time.Duration
@@ -44,30 +72,89 @@ type Consumer struct {
 	mergeThreshold float64 // KNN similarity threshold for "existing merged row is a duplicate"
 
 	mu    sync.Mutex
-	seqs  map[string]map[string]uint64 // dataset -> docID -> last applied seq (per-doc out-of-order guard)
-	tombs map[string]map[string]uint64 // dataset -> docID -> delete event seq (tombstone)
+	tombs map[string]map[string]uint64 // dataset -> docID -> delete marker (tombstone)
+
+	// rebuildPause suppresses local claims while this consumer rebuilds a dataset.
+	rebuildPause map[string]bool
+
+	// db is the injected MySQL handle (wired by WithStorage). It backs the doc
+	// enumeration used by RebuildDataset and the dataset compile log. A consumer
+	// assembled without WithStorage has a nil db and its storage paths no-op,
+	// which decouples the consumer from Provision's call ordering and from the
+	// package-level kcDB global.
+	db *gorm.DB
+
+	// docEngine is the injected doc engine (wired by WithStorage). It is kept on
+	// the Consumer (mirroring db) so the assembly point can assert the exact
+	// engine reached the reader/writer, not just that WithStorage ran.
+	docEngine engine.DocEngine
+
+	// docLister enumerates every doc id in a KB so a rewrite can republish them.
+	docLister func(ctx context.Context, tenant, kb string) ([]string, error)
+}
+
+// rewriteScheduler is the subset of the scheduler API a dataset rewrite needs,
+// satisfied by *mysqlScheduler (and FakeScheduler in tests). Using a narrow
+// interface keeps the Claimer surface unchanged.
+type rewriteScheduler interface {
+	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants, taskTypes []string) error
+	CancelInflight(ctx context.Context, datasetID, token string) error
 }
 
 // NewConsumer constructs a Consumer driven by the given Claimer. Tests pass a
 // FakeScheduler and override the Reader/Writer/Deduper via options.
+//
+// The default reader, writer, and contribution store are unconfigured: the
+// production assembly point passes WithDocEngine(ingestion.Deps.Engine). A
+// consumer that reaches storage without it fails fast (errEngineNotConfigured)
+// rather than silently processing an empty dataset.
 func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 	c := &Consumer{
 		scheduler:      scheduler,
-		reader:         engineReader{eng: engine.Get()},
-		writer:         engineWriter{eng: engine.Get()},
+		reader:         engineReader{},
+		writer:         engineWriter{commitService: file.NewFileCommitService()},
 		factory:        defaultDeduperFactory,
+		contributions:  newWikiContributionStore(nil),
 		ttl:            2 * time.Minute,
 		heartbeat:      20 * time.Second,
 		pollInterval:   2 * time.Second,
 		sweepInterval:  30 * time.Second,
-		mergeThreshold: 0.99,
-		seqs:           map[string]map[string]uint64{},
+		mergeThreshold: 0.85,
 		tombs:          map[string]map[string]uint64{},
+		rebuildPause:   map[string]bool{},
+	}
+	// docLister reads the injected db at call time (see defaultDocLister), so it
+	// reflects whatever WithStorage configured after construction.
+	c.docLister = func(ctx context.Context, tenant, kb string) ([]string, error) {
+		return c.defaultDocLister(ctx, tenant, kb)
 	}
 	for _, o := range opts {
 		o(c)
 	}
 	return c
+}
+
+// IsStorageConfigured reports whether the consumer was assembled with a doc
+// engine + db via WithStorage. The production ingestor must build it that way;
+// an unconfigured consumer fails fast on storage access, so this flag lets the
+// assembly point assert wiring before any batch is processed.
+func (c *Consumer) IsStorageConfigured() bool {
+	return c.storageConfigured
+}
+
+// StorageEngine returns the doc engine injected via WithStorage. It is exposed
+// so the assembly point can assert the exact engine the ingestor threads
+// through (not a zero value) actually reached the reader/writer — IsStorageConfigured
+// alone only reports that WithStorage ran, not that the deps propagated.
+func (c *Consumer) StorageEngine() engine.DocEngine {
+	return c.docEngine
+}
+
+// StorageDB returns the database handle injected via WithStorage. See
+// StorageEngine for why the injected value (not just the configured flag) is
+// observable.
+func (c *Consumer) StorageDB() *gorm.DB {
+	return c.db
 }
 
 // Run is one owned worker loop (Option E §11.5/§11.7): it wakes on NATS notify
@@ -133,6 +220,18 @@ func (c *Consumer) tryClaimAndProcess(ctx context.Context) {
 func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	datasetID := cr.DatasetID
 
+	c.mu.Lock()
+	paused := c.rebuildPause[datasetID]
+	c.mu.Unlock()
+	if paused {
+		return
+	}
+	logTaskTypes := taskTypesForEntries(cr.Entries)
+	if err := c.startDatasetCompileLog(ctx, cr.TenantID, datasetID, cr.Token, cr.Entries); err != nil {
+		common.Warn("knowledge_compile: failed to create dataset ingestion log",
+			zap.String("dataset_id", datasetID), zap.Error(err))
+	}
+
 	// Heartbeat refreshes the claim TTL while we process; a failed touch means
 	// the lease was taken over (or reclaimed) and we must abort without acking.
 	stopHb := make(chan struct{})
@@ -163,17 +262,25 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	var batchErr error
 	go func() {
 		defer close(done)
-		batchErr = c.processBatch(ctx, cr.TenantID, datasetID, cr.Entries)
+		batchErr = c.processBatch(ctx, cr.TenantID, datasetID, cr.Token, cr.Entries, logTaskTypes)
 	}()
 
 	select {
 	case <-ctx.Done():
 		close(stopHb)
 		<-done
+		if err := c.finishDatasetCompileLog(context.WithoutCancel(ctx), cr.Token, logTaskTypes, common.STOPPED, "Knowledge compilation stopped during shutdown", -1); err != nil {
+			common.Warn("knowledge_compile: failed to finalize stopped dataset ingestion log",
+				zap.String("dataset_id", datasetID), zap.Error(err))
+		}
 		return // graceful shutdown: leave inflight for reclamation, do not ack
 	case <-hbFailed:
 		close(stopHb)
 		<-done
+		if err := c.finishDatasetCompileLog(context.WithoutCancel(ctx), cr.Token, logTaskTypes, common.STOPPED, "Knowledge compilation lease was lost and will be retried", -1); err != nil {
+			common.Warn("knowledge_compile: failed to finalize stopped dataset ingestion log",
+				zap.String("dataset_id", datasetID), zap.Error(err))
+		}
 		return // lease lost: do not ack; sweeper/redelivery reprocesses (idempotent)
 	case <-done:
 		close(stopHb)
@@ -183,134 +290,528 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	// must leave the claimed batch in the backlog for reclamation/retry rather
 	// than silently dropping it (C5: never ack what we failed to merge).
 	if batchErr != nil {
+		if errors.Is(batchErr, errClaimSuperseded) {
+			return
+		}
+		common.Error("knowledge_compile: batch processing failed, leaving batch for retry",
+			batchErr,
+			zap.String("dataset_id", datasetID),
+			zap.Int("entries", len(cr.Entries)))
+		if err := c.scheduler.SetError(ctx, datasetID, cr.Token, batchErr.Error()); err != nil {
+			common.Warn("knowledge_compile: failed to record error_msg",
+				zap.String("dataset_id", datasetID), zap.Error(err))
+		}
+		if err := c.finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.FAILED, batchErr.Error(), -1); err != nil {
+			common.Warn("knowledge_compile: failed to finalize dataset ingestion log",
+				zap.String("dataset_id", datasetID), zap.Error(err))
+		}
 		return
 	}
 	if _, err := c.scheduler.Ack(ctx, datasetID, cr.Token, cr.Entries); err != nil {
-		_ = err
+		common.Warn("knowledge_compile: ack failed",
+			zap.String("dataset_id", datasetID), zap.Error(err))
+		if logErr := c.finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.FAILED, "Failed to acknowledge completed knowledge compilation: "+err.Error(), -1); logErr != nil {
+			common.Warn("knowledge_compile: failed to finalize dataset ingestion log",
+				zap.String("dataset_id", datasetID), zap.Error(logErr))
+		}
+		return
 	}
+	if err := c.finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.COMPLETED, "Knowledge compilation completed", 1); err != nil {
+		common.Warn("knowledge_compile: failed to finalize dataset ingestion log",
+			zap.String("dataset_id", datasetID), zap.Error(err))
+	}
+}
+
+func (c *Consumer) reportProgress(ctx context.Context, tenant, datasetID, token string, taskTypes []string, progress float64, phase, message string) {
+	if err := c.scheduler.UpdateProgress(ctx, datasetID, token, progress, phase, message); err != nil {
+		common.Warn("knowledge_compile: failed to update progress",
+			zap.String("dataset_id", datasetID),
+			zap.String("phase", phase),
+			zap.Error(err))
+	}
+	if err := c.updateDatasetCompileLog(ctx, token, taskTypes, progress, message); err != nil {
+		common.Warn("knowledge_compile: failed to update dataset ingestion log",
+			zap.String("dataset_id", datasetID), zap.String("phase", phase), zap.Error(err))
+	}
+	common.Info("knowledge_compile: progress",
+		zap.String("dataset_id", datasetID),
+		zap.String("tenant_id", tenant),
+		zap.Float64("progress", progress),
+		zap.String("phase", phase),
+		zap.String("message", message))
+}
+
+var errClaimSuperseded = errors.New("knowledge_compile: claim superseded by rewrite")
+
+// withWriteLock runs a destructive side effect fn under the scheduler's
+// per-dataset write/rebuild lock, verifying the claim token inside the lock
+// immediately before fn. This closes the TOCTOU gap between cancellation and a
+// writer side effect: a cancelled worker cannot write after the rebuild clears
+// storage, and a rebuild cannot interleave while fn runs.
+func (c *Consumer) withWriteLock(ctx context.Context, kb, token string, fn func() error) error {
+	return c.scheduler.WithDatasetLock(ctx, kb, func(currentToken string) error {
+		if currentToken != token {
+			return errClaimSuperseded
+		}
+		return fn()
+	})
+}
+
+// RebuildDataset performs a full incremental rewrite of a KB's dataset-level
+// merged products (W1/W2/W5/W6). The order is fixed to close both the
+// enumerate-then-clear race (M19/C-race) AND the cross-process stale-write
+// window:
+//  1. set the rewrite pause (in-process only; clears via defer on every path);
+//  2. CancelInflight invalidates any in-flight claim before clearing storage.
+//     Each worker compares its claim token under the write lock and therefore
+//     cannot write after cancellation;
+//  3. DeleteMerged + DropWikiGraph clear the old merged + graph state INSIDE the
+//     same per-dataset row lock (WithDatasetLock). This is what actually closes
+//     the TOCTOU gap: the generation check + write of every worker run under this
+//     lock, so the rebuild's clear either runs after any in-flight worker write
+//     has finished (it is later removed by the clear) or after a stale worker has
+//     self-dropped — a worker can never repopulate cleared state with old results
+//     because it cannot hold the lock concurrently with the clear;
+//  4. enumerate every doc and republish;
+//  5. clear the local pause.
+//
+// mode is "incremental" or "rewrite"; today both take the same clean-and-rebuild
+// path, with mode retained for future differential strategies.
+func (c *Consumer) RebuildDataset(ctx context.Context, tenant, kb, mode string) error {
+	rs, ok := c.scheduler.(rewriteScheduler)
+	if !ok {
+		return fmt.Errorf("knowledge_compile: scheduler %T does not support rewrite", c.scheduler)
+	}
+
+	// 1. pause the rewrite window. The pause is cleared by a deferred cleanup so a
+	// failure mid-rebuild (DeleteMerged/DropWikiGraph/CancelInflight/Bump/Publish)
+	// can never leave the dataset permanently paused (which would drop every
+	// future claim). Partially published docs are retried on the next claim.
+	c.mu.Lock()
+	c.rebuildPause[kb] = true
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.rebuildPause[kb] = false
+		c.mu.Unlock()
+	}()
+
+	// 2. Cancel any in-flight claim before clearing storage. A worker that was
+	// already running observes its revoked claim token inside withWriteLock and
+	// returns without writing.
+	if err := rs.CancelInflight(ctx, kb, ""); err != nil {
+		return fmt.Errorf("knowledge_compile: rebuild cancel inflight: %w", err)
+	}
+
+	// 3. clear old merged + graph state (structural filter is the source of
+	// truth; no per-doc rows are touched) under the per-dataset row lock. This
+	// guarantees mutual exclusion with every worker's destructive write (which
+	// runs under the same lock via withWriteLock): the clear either waits for an
+	// in-flight worker write to finish (then removes its old-generation result)
+	// or runs after stale workers have self-dropped. A worker cannot hold the
+	// lock while the clear runs, so it can never repopulate cleared state with
+	// old results.
+	if err := c.scheduler.WithDatasetLock(ctx, kb, func(_ string) error {
+		// B4/B1b: a full rebuild clears EVERY variant the consumer manages
+		// (wiki merged rows, structure scope_kwd="dataset" rows, and the nav
+		// tree rows) via the fixed full-set clean (empty variants), not just the
+		// wiki rows that DeleteMerged removes — otherwise removed-template ghost
+		// rows survive. DropWikiGraph additionally sweeps the legacy wiki graph.
+		if derr := c.writer.DeleteMergedForVariant(ctx, tenant, kb, nil); derr != nil {
+			return derr
+		}
+		if derr := c.writer.DropWikiGraph(ctx, tenant, kb); derr != nil {
+			return derr
+		}
+		return c.contributions.ClearDataset(ctx, tenant, kb)
+	}); err != nil {
+		return fmt.Errorf("knowledge_compile: rebuild clear all variants + graph: %w", err)
+	}
+
+	// 4. enumerate every doc and republish. Per B1, the republished events must
+	// carry the doc's compile variants so the consumer can route to the correct
+	// dataset-level path (a nil/empty Variants would fall back to the legacy
+	// unified path and tree nav could not be rebuilt). The variants are recovered
+	// from the doc-level compiled products' canonical compilation kind
+	// via the shared variant mapping.
+	docs, err := c.docLister(ctx, tenant, kb)
+	if err != nil {
+		return fmt.Errorf("knowledge_compile: rebuild list docs: %w", err)
+	}
+	// Recover each document's compile variants from its compiled products. The
+	// read is batched (LoadDocProductsByDocs) and processed in bounded chunks so
+	// the in-flight product set never exceeds one batch (docProductsBatchSize)
+	// instead of the entire KB — the previous loop loaded one document at a time
+	// and released it; a single full-KB batch read would have retained every
+	// document's products (including vectors) until recovery finished.
+	variantsByDoc, err := c.recoverDocVariantsBatch(ctx, tenant, kb, docs)
+	if err != nil {
+		return fmt.Errorf("knowledge_compile: rebuild recover variants: %w", err)
+	}
+	for _, docID := range docs {
+		vr := variantsByDoc[docID]
+		if len(vr.variants) == 0 {
+			// Documents without compiled products do not contribute to any
+			// dataset-level variant and must not enqueue an empty completion
+			// event that falls back to the legacy all-products path.
+			continue
+		}
+		if perr := rs.Publish(ctx, tenant, kb, docID, string(EventTypeCompleted), vr.variants, vr.taskTypes); perr != nil {
+			return fmt.Errorf("knowledge_compile: rebuild republish %s: %w", docID, perr)
+		}
+	}
+
+	// 6. resweep: the deferred cleanup clears the pause so any claim arriving
+	// post-enumeration is processed (and stale ones self-drop in processClaim).
+	common.Info("knowledge_compile: dataset rebuild complete",
+		zap.String("dataset_id", kb),
+		zap.String("mode", mode),
+		zap.Int("docs", len(docs)))
+	return nil
+}
+
+// defaultDocLister enumerates every doc id in a KB via the Document DAO. When
+// no DB was provisioned (nil c.db) it returns no docs (a rewrite becomes a
+// no-op clean). The handle comes from WithStorage, not the package global kcDB.
+func (c *Consumer) defaultDocLister(ctx context.Context, tenant, kb string) ([]string, error) {
+	if c.db == nil {
+		return nil, nil
+	}
+	return dao.NewDocumentDAO().ListIDsByKBIDWithOptions(ctx, c.db, dao.DocumentListOptions{KbID: kb})
+}
+
+// recoverDocTypesFrom maps a document's already-loaded compiled products to its
+// variant and frontend task-type sets. Splitting the mapping from the read lets
+// the rebuild path reuse a single batch read (LoadDocProductsByDocs) instead of
+// one read per document.
+func recoverDocTypesFrom(products []kccommon.Product) ([]string, []string, error) {
+	seenVariants := map[string]struct{}{}
+	seenTaskTypes := map[string]struct{}{}
+	var variants []string
+	for _, p := range products {
+		// Use the compilation kind restored by the reader.
+		if p.Kind != "" {
+			v, err := kccommon.KindToVariant(p.Kind)
+			if err != nil {
+				// O2a hard failure: do not continue with an incomplete variant set.
+				return nil, nil, fmt.Errorf("knowledge_compile: recover variants kind %q: %w", p.Kind, err)
+			}
+			if _, dup := seenVariants[string(v)]; !dup {
+				seenVariants[string(v)] = struct{}{}
+				variants = append(variants, string(v))
+			}
+			taskType, taskTypeErr := kccommon.KindToTaskType(p.Kind)
+			if taskTypeErr != nil {
+				taskType = kccommon.VariantToTaskType(v)
+			}
+			if taskType != "" {
+				seenTaskTypes[taskType] = struct{}{}
+			}
+			continue
+		}
+		// Fallback: the product's reverse-mapped variant (already whitelist-valid).
+		if p.Variant == "" {
+			// No authoritative kind and no reverse-mapped variant: this is a
+			// legacy/unknown row. Skip it so we never republish an empty variant
+			// (which the consumer cannot route and defeats "nil = legacy").
+			continue
+		}
+		if _, dup := seenVariants[string(p.Variant)]; !dup {
+			seenVariants[string(p.Variant)] = struct{}{}
+			variants = append(variants, string(p.Variant))
+		}
+		if taskType := kccommon.VariantToTaskType(p.Variant); taskType != "" {
+			seenTaskTypes[taskType] = struct{}{}
+		}
+	}
+	sort.Strings(variants)
+	taskTypes := sortedTaskTypes(seenTaskTypes)
+	return variants, taskTypes, nil
+}
+
+// docVariantResult holds the recovered compile variants and frontend task types
+// for one document.
+type docVariantResult struct {
+	variants  []string
+	taskTypes []string
+}
+
+// recoverDocVariantsBatch loads the compiled products for the given documents and
+// maps each to its variant/task-type sets. Documents are walked in
+// docProductsBatchSize chunks so the products held in memory at any moment are
+// limited to a single batch instead of the whole KB (the previous loop loaded one
+// document at a time and released it; a single full-KB batch read would retain
+// every document's products — including vectors — until recovery finished).
+func (c *Consumer) recoverDocVariantsBatch(ctx context.Context, tenant, kb string, docs []string) (map[string]docVariantResult, error) {
+	out := make(map[string]docVariantResult, len(docs))
+	for start := 0; start < len(docs); start += docProductsBatchSize {
+		end := start + docProductsBatchSize
+		if end > len(docs) {
+			end = len(docs)
+		}
+		productsByDoc, err := c.reader.LoadDocProductsByDocs(ctx, tenant, kb, docs[start:end])
+		if err != nil {
+			return nil, err
+		}
+		for _, docID := range docs[start:end] {
+			variants, taskTypes, rerr := recoverDocTypesFrom(productsByDoc[docID])
+			if rerr != nil {
+				// O2a hard failure: abort the rebuild so an unknown template kind
+				// cannot leave the doc's dataset-level products unrebuilt.
+				return nil, fmt.Errorf("knowledge_compile: rebuild recover variants %s: %w", docID, rerr)
+			}
+			out[docID] = docVariantResult{variants: variants, taskTypes: taskTypes}
+		}
+	}
+	return out, nil
+}
+
+// filterWikiPageCandidates returns ONLY the wiki page products the dataset-level
+// wiki merge may fold. It drops every non-wiki product (tree/structure/nav) so
+// those never enter the wiki Dedup/KNN/WriteMerged path, and within the wiki
+// variant keeps strictly page-kind products (Meta.kind == "page"). Sections are
+// a doc-level concern and must never enter the dataset-level page bucket, and
+// the deduper must not carry an implicit section-filter contract. This is the
+// per-variant product selection (review issue 2): a completed wiki-only doc whose
+// event carried tree/structure products on a prior run must not feed stale
+// tree/structure rows into the wiki merge.
+func filterWikiPageCandidates(candidates []kccommon.Product) []kccommon.Product {
+	filtered := make([]kccommon.Product, 0, len(candidates))
+	for _, cand := range candidates {
+		if cand.Variant != kccommon.VariantWiki {
+			continue // tree/structure products never enter the wiki merge
+		}
+		if kccommon.MetaString(cand.Meta, "kind") != "page" {
+			continue
+		}
+		filtered = append(filtered, cand)
+	}
+	return filtered
 }
 
 // processBatch applies out-of-order / tombstone handling, then recomputes and
 // writes the dataset-level merged products for the claimed closed batch. It
 // returns an error if any reader/dedup/writer step fails so the caller can
 // leave the batch for reclamation instead of acking dropped work.
-func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries []BacklogEntry) error {
+func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, entries []BacklogEntry, taskTypes []string) error {
+	if len(taskTypes) == 0 {
+		taskTypes = taskTypesForEntries(entries)
+	}
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.05, "classifying", fmt.Sprintf("Classifying %d scheduling entries", len(entries)))
+	common.Info("knowledge_compile: processing claimed batch",
+		zap.String("dataset_id", kb),
+		zap.String("tenant_id", tenant),
+		zap.Int("entries", len(entries)))
 	c.mu.Lock()
 	if c.tombs == nil {
 		c.tombs = map[string]map[string]uint64{}
 	}
-	if c.seqs == nil {
-		c.seqs = map[string]map[string]uint64{}
-	}
 	tomb := c.tombs[kb]
-	docSeqs := c.seqs[kb]
-	if docSeqs == nil {
-		docSeqs = map[string]uint64{}
-		c.seqs[kb] = docSeqs
-	}
 	var completed []BacklogEntry
 	var deleted []string
-	// Per-document seq advances and tombstone clears are staged locally and
-	// committed only after the write/delete paths below return without error,
-	// so a failed batch leaves c.seqs/c.tombs untouched (except tombstones
-	// recorded for the deletion events already present in this batch) and can
-	// be retried on reclaim.
-	var pendingSeq []BacklogEntry
+	var disabled []BacklogEntry
+	// Per-document tombstone clears are staged locally and committed only after
+	// the write/delete paths below return without error, so a failed batch
+	// leaves c.tombs untouched and can be retried on reclaim.
 	var pendingTombClear []string
-	// Reconcile each document to its highest-sequence event before classifying
-	// it as deleted or completed. A completion and a deletion for the same doc
-	// can land in the same batch, and completions/deletions can also arrive
-	// out of order across batches. The last event (by per-doc seq) wins, so we
-	// must not delete a doc that was re-ingested after its deletion, nor accept
-	// a stale completion shadowed by a later deletion.
+	// Reconcile each document to its last event before classifying it as
+	// deleted or completed. A completion and a deletion for the same doc can
+	// land in the same batch, and completions/deletions can also arrive out of
+	// order across batches. The LAST event for a doc (by backlog append order)
+	// decides its fate, so we must not delete a doc that was re-ingested after
+	// its deletion, nor merge a completion shadowed by a later deletion. Queue
+	// positions preserve the backlog's append order and the last write wins,
+	// which is exactly the re-parse (completed last) vs delete
+	// (deleted last) semantics we want.
 	type docState struct {
 		winEvent EventType
-		winSeq   uint64
+		variants []string
 	}
 	byDoc := make(map[string]*docState, len(entries))
 	for _, e := range entries {
 		et := EventType(e.EventType)
 		st := byDoc[e.DocID]
 		if st == nil {
-			byDoc[e.DocID] = &docState{winEvent: et, winSeq: e.Seq}
+			byDoc[e.DocID] = &docState{winEvent: et, variants: e.Variants}
 			continue
 		}
-		if e.Seq >= st.winSeq {
-			st.winEvent = et
-			st.winSeq = e.Seq
-		}
+		// Later entries overwrite earlier ones: last event wins.
+		st.winEvent = et
+		st.variants = e.Variants
 	}
 	for docID, st := range byDoc {
 		switch st.winEvent {
 		case EventTypeDeleted:
 			// Record the tombstone for this batch's deletion so a stale
-			// completion (seq <= delete seq) is skipped. The tombstone is
-			// committed immediately (deletions are not rolled back on a
-			// failed batch because re-running the delete is idempotent).
+			// completion is skipped. The tombstone is committed immediately
+			// (deletions are not rolled back on a failed batch because
+			// re-running the delete is idempotent).
 			if tomb == nil {
 				tomb = map[string]uint64{}
 				c.tombs[kb] = tomb
 			}
-			tomb[docID] = st.winSeq
+			tomb[docID] = 1
 			deleted = append(deleted, docID)
+		case EventTypeDisabled:
+			disabled = append(disabled, BacklogEntry{DocID: docID, EventType: string(EventTypeDisabled), Variants: st.variants})
 		case EventTypeCompleted:
 			// A re-ingest after an earlier deletion: clear the prior
 			// tombstone (deferred until the batch succeeds).
 			if _, hadTomb := tomb[docID]; hadTomb {
 				pendingTombClear = append(pendingTombClear, docID)
 			}
-			// Seq is per-document, so the stale/duplicate check must be
-			// scoped to the document, not the whole dataset (C4).
-			if prev, ok := docSeqs[docID]; ok && st.winSeq <= prev {
-				continue // stale / duplicate completion for this doc
-			}
-			// The seq advance is deferred to after the batch succeeds (see
-			// below), so a transient reader/deduper/writer failure does not
-			// permanently drop the completion on the next reclaim+retry.
-			pendingSeq = append(pendingSeq, BacklogEntry{DocID: docID, EventType: string(EventTypeCompleted), Seq: st.winSeq})
-			completed = append(completed, BacklogEntry{DocID: docID, EventType: string(EventTypeCompleted), Seq: st.winSeq})
+			// Preserve the winning event's variants so the dispatch below can
+			// route this doc to the matching dataset-level compile path (A0-4).
+			completed = append(completed, BacklogEntry{DocID: docID, EventType: string(EventTypeCompleted), Variants: st.variants})
+		case EventTypeEnabled:
+			completed = append(completed, BacklogEntry{DocID: docID, EventType: string(EventTypeEnabled), Variants: st.variants})
 		}
 	}
 	// Sort for deterministic iteration in the delete/load passes below.
 	sort.Strings(deleted)
 	c.mu.Unlock()
 
-	if len(deleted) == 0 && len(completed) == 0 {
+	// Per-entry detail (each claim carries a frozen, closed batch of doc events;
+	// log them on a single line so a batch can be reconstructed from the ingestor
+	// log alone).
+	entryDetails := make([]string, 0, len(entries))
+	for _, e := range entries {
+		entryDetails = append(entryDetails, fmt.Sprintf("doc=%s event=%s", e.DocID, e.EventType))
+	}
+
+	common.Info("knowledge_compile: batch merge start",
+		zap.String("dataset_id", kb),
+		zap.Int("completed_docs", len(completed)),
+		zap.Int("deleted_docs", len(deleted)),
+		zap.Int("disabled_docs", len(disabled)),
+		zap.Strings("entries", entryDetails))
+
+	if len(deleted) == 0 && len(disabled) == 0 && len(completed) == 0 {
+		c.reportProgress(ctx, tenant, kb, token, taskTypes, 1, "completed", "No document products require merging")
 		return nil
 	}
-
-	deduper, err := c.factory(tenant)
-	if err != nil || deduper == nil {
-		deduper = NewNoopDeduper()
-	}
-
 	deletedSet := make(map[string]bool, len(deleted))
 	for _, d := range deleted {
 		deletedSet[d] = true
 	}
+	retractedDocIDs := append([]string(nil), deleted...)
+	for _, entry := range disabled {
+		retractedDocIDs = append(retractedDocIDs, entry.DocID)
+	}
+	retractedDocIDs = common.DeduplicateSorted(retractedDocIDs)
+	wikiDiff, err := c.prepareWikiContributionDiff(ctx, tenant, kb, completed, retractedDocIDs)
+	if err != nil {
+		return err
+	}
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.10, "comparing_knowledge_contributions",
+		fmt.Sprintf("Comparing knowledge contributions: %d affected page(s)", len(wikiDiff.affectedKeys)))
+	wikiOnly := len(completed) > 0
+	for _, entry := range completed {
+		if len(entry.Variants) != 1 || !variantsContain(entry.Variants, "wiki") {
+			wikiOnly = false
+			break
+		}
+	}
+	if len(retractedDocIDs) == 0 && wikiOnly && len(wikiDiff.affectedKeys) == 0 {
+		c.mu.Lock()
+		for _, docID := range pendingTombClear {
+			delete(c.tombs[kb], docID)
+		}
+		c.mu.Unlock()
+		c.reportProgress(ctx, tenant, kb, token, taskTypes, 1, "completed", "Knowledge contributions are unchanged; no dataset pages require updating")
+		return nil
+	}
 
-	// --- Deletion (two sequential DocEngine calls, no in-memory load) ---
-	// Deleted wins regardless of batch order, so we process deletions first.
-	// The deleted docs' products are never loaded into memory: the DocEngine
-	// does all the work in two calls:
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.12, "deleting", fmt.Sprintf("Deleting products for %d document(s)", len(deleted)))
+
+	// --- Retraction (sequential DocEngine calls, no in-memory load) ---
+	// Deleted and disabled docs are handled before completion merges. Their
+	// dataset-level contributions are removed without loading document products:
+	//   - deleted docs also lose their document-level compiled products;
+	//   - disabled docs retain document-level products for a later re-enable.
+	// The DocEngine does the dataset-level work in two calls:
 	//   1. DeleteDocLevelForDocs drops every per-document (doc-level) product of
-	//      the deleted docs in a single engine call.
+	//      deleted docs in a single engine call.
 	//   2. StripMergedSources removes the deleted doc ids from the source_doc_ids
 	//      array of every dataset-level merged product and deletes any product
 	//      whose array became empty.
 	// A merged product referencing several deleted docs is pruned in one pass,
 	// and an emptied product is removed exactly once.
-	if len(deleted) > 0 {
-		delIDs := make([]string, 0, len(deletedSet))
-		for d := range deletedSet {
-			delIDs = append(delIDs, d)
+	if len(deleted) > 0 || len(disabled) > 0 {
+		delIDs := retractedDocIDs
+		// Each destructive write runs under the scheduler's per-dataset
+		// write/rebuild lock with the generation check performed INSIDE the lock,
+		// so a rewrite can neither land between the check and the write nor
+		// interleave with the write itself (it must wait for this lock). This
+		// closes the TOCTOU window where a worker past its fence could repopulate
+		// storage the rebuild just cleared.
+		if len(deleted) > 0 {
+			if err := c.withWriteLock(ctx, kb, token, func() error {
+				return c.writer.DeleteDocLevelForDocs(ctx, tenant, kb, deleted)
+			}); err != nil {
+				if errors.Is(err, errClaimSuperseded) {
+					common.Info("knowledge_compile: batch stale before delete, aborting (rewrite barrier)",
+						zap.String("dataset_id", kb))
+				}
+				return err
+			}
 		}
-		if err := c.writer.DeleteDocLevelForDocs(ctx, tenant, kb, delIDs); err != nil {
+		// The second destructive call is its own locked section: a rewrite can
+		// land between the two, in which case the stale batch must not apply its
+		// second side effect under the new generation.
+		if err := c.withWriteLock(ctx, kb, token, func() error {
+			return c.writer.StripMergedSources(ctx, tenant, kb, delIDs)
+		}); err != nil {
+			if errors.Is(err, errClaimSuperseded) {
+				common.Info("knowledge_compile: batch stale before strip, aborting (rewrite barrier)",
+					zap.String("dataset_id", kb))
+			}
 			return err
 		}
-		if err := c.writer.StripMergedSources(ctx, tenant, kb, delIDs); err != nil {
+		// G3: structure ghost cleanup — remove structure dataset rows whose only
+		// source docs were just deleted. Also a locked destructive write.
+		if err := c.withWriteLock(ctx, kb, token, func() error {
+			return c.writer.DeleteStructureForDocs(ctx, tenant, kb, delIDs)
+		}); err != nil {
+			if errors.Is(err, errClaimSuperseded) {
+				common.Info("knowledge_compile: batch stale before structure ghost cleanup, aborting (rewrite barrier)",
+					zap.String("dataset_id", kb))
+			}
 			return err
 		}
+		if err := c.removeNavLocked(ctx, tenant, kb, token, delIDs); err != nil {
+			if errors.Is(err, errClaimSuperseded) {
+				common.Info("knowledge_compile: batch stale before navigation removal, aborting (rewrite barrier)",
+					zap.String("dataset_id", kb))
+			}
+			return err
+		}
+	}
+	if len(completed) == 0 && len(wikiDiff.affectedKeys) == 0 {
+		if err := c.commitWikiContributions(ctx, tenant, kb, wikiDiff.currentByDoc, retractedDocIDs); err != nil {
+			return err
+		}
+		c.mu.Lock()
+		for _, docID := range pendingTombClear {
+			delete(c.tombs[kb], docID)
+		}
+		c.mu.Unlock()
+		c.reportProgress(ctx, tenant, kb, token, taskTypes, 1, "completed", "Document availability changes applied")
+		return nil
+	}
+	deduper, err := c.factory(ctx, tenant)
+	if err != nil || deduper == nil {
+		// A no-op deduper would silently disable dataset-level LLM merging: every
+		// candidate (including e.g. a "吕布" wiki_page) would be written as its own
+		// merged row and duplicates would accumulate across runs. That degradation
+		// is never acceptable here, so fail the batch instead of papering over it.
+		// Never call common.Fatal here: the ingestor is shared by every tenant, so
+		// one tenant's model misconfiguration must not terminate the process.
+		factoryErr := "deduper factory returned nil"
+		if err != nil {
+			factoryErr = err.Error()
+		}
+		return fmt.Errorf("knowledge_compile: dataset-level LLM deduper unavailable for kb %s (tenant %s): %s", kb, tenant, factoryErr)
 	}
 
 	// --- Completion merge ---
@@ -319,45 +820,197 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 	// completed and deleted is a stale tombstone: the deletion wins, so we skip
 	// its completion.
 	var incoming []kccommon.Product
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.28, "loading_products", fmt.Sprintf("Loading products for %d document(s)", len(completed)))
 	for _, e := range completed {
 		if deletedSet[e.DocID] {
 			continue
 		}
-		docProducts, err := c.reader.LoadDocProducts(ctx, tenant, kb, e.DocID)
+		docProducts := wikiDiff.productsByDoc[e.DocID]
+		// A0-4: the event's Variants are the authoritative dispatch signal — route
+		// ONLY the products whose variant the compiler actually produced for this
+		// doc. A doc re-compiled under a new template may still hold stale
+		// doc-level rows of an earlier variant in storage; without this gate those
+		// would leak into the nav/structure paths despite the event asking only
+		// for, say, wiki. Legacy events with empty Variants keep all products.
+		selected := productsForVariants(docProducts, e.Variants)
+		for _, product := range selected {
+			if product.Variant != kccommon.VariantWiki {
+				incoming = append(incoming, product)
+			}
+		}
+	}
+	if len(wikiDiff.affectedKeys) > 0 {
+		reader, ok := c.reader.(documentWikiPageReader)
+		if !ok {
+			return fmt.Errorf("knowledge_compile: reader does not support Wiki contribution loading")
+		}
+		pages, err := reader.LoadDocumentWikiPagesBySlugs(ctx, tenant, kb, sortedStringSet(wikiDiff.affectedSlugs))
 		if err != nil {
 			return err
 		}
-		incoming = append(incoming, docProducts...)
+		for _, page := range pages {
+			if _, affected := wikiDiff.affectedKeys[wikiPageMergeKey(page)]; affected {
+				incoming = append(incoming, page)
+			}
+		}
 	}
 
-	// In-memory dedup among the completed batch first.
-	candidates, err := deduper.Dedup(ctx, incoming)
+	// Route Tree and PageIndex products to the dataset-navigation tree. Wiki,
+	// Graph, Timeline, and Mindmap products have no navigation projection.
+	navIn := navInputFromProducts(kb, incoming)
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.40, "merging_navigation", fmt.Sprintf("Merging navigation products: %d", len(navIn)))
+	if docsWithoutNav := completedDocsWithoutNavInput(completed, navIn); len(docsWithoutNav) > 0 {
+		if err := c.removeNavLocked(ctx, tenant, kb, token, docsWithoutNav); err != nil {
+			return err
+		}
+	}
+	if len(navIn) > 0 {
+		ns := nav.GetNavService()
+		if ns == nil {
+			common.Warn("knowledge_compile: nav service unavailable, skipping dataset-nav upsert for batch",
+				zap.String("dataset_id", kb))
+		} else if err := c.upsertNavLocked(ctx, tenant, kb, token, ns, navIn); err != nil {
+			return err
+		}
+	}
+
+	// G1+G2: dataset-level structure merge and build-time stamp, both under the
+	// claim-fenced write lock (B7 applies to structure writes too): a worker
+	// invalidated by CancelInflight must not write structure rows after a rebuild
+	// has cleared them.
+	if err := c.withWriteLock(ctx, kb, token, func() error {
+		return c.mergeStructureDataset(ctx, tenant, kb, incoming)
+	}); err != nil {
+		if errors.Is(err, errClaimSuperseded) {
+			common.Info("knowledge_compile: batch stale before structure merge, aborting (rewrite barrier)",
+				zap.String("dataset_id", kb))
+		}
+		return err
+	}
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.50, "merging_structure", fmt.Sprintf("Merging structure products: %d", len(incoming)))
+
+	// wiki_incremental port (M1): the dataset-level merge only processes wiki
+	// PAGES. A wiki doc yields both page and section products (Meta.kind
+	// "page"/"section"); sections are a doc-level concern and must never be folded
+	// into the dataset-level page bucket. Filter BEFORE the in-memory dedup so
+	// sections never enter the deduper (and never trigger LLM/embedding/alias
+	// processing) — the decider must not carry an implicit section-filter
+	// contract. Legacy rows whose kind is empty are derived in the Reader; only
+	// truly page-kind wiki products proceed.
+	candidates := filterWikiPageCandidates(incoming)
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.54, "filtering_candidates", fmt.Sprintf("Filtering knowledge page candidates: %d", len(candidates)))
+	entityMerged, topicCandidates, err := c.mergeEntityModeCandidates(ctx, tenant, kb, candidates)
 	if err != nil {
 		return err
 	}
+	// A Wiki page is identified by its page type and canonical slug. Do not use
+	// content KNN or an LLM to decide whether two pages are the same: different
+	// slugs are distinct pages, while equal slugs are deterministically folded.
+	topicMerged, err := c.mergeWikiProductsBySlug(ctx, tenant, kb, topicCandidates)
+	if err != nil {
+		return err
+	}
+	entityMerged = append(entityMerged, topicMerged...)
+	// Load the dataset's merged wiki pages once and reuse the snapshot for both
+	// the scoped-page deletion and the topic-key seed below, instead of reading
+	// the same pages twice per merge step.
+	var existingPages []kccommon.Product
+	if pageReader, ok := c.reader.(mergedWikiPageReader); ok {
+		existingPages, err = pageReader.LoadMergedWikiPages(ctx, tenant, kb)
+		if err != nil {
+			return err
+		}
+	}
+	deletedIDs := []string{}
+	if len(wikiDiff.affectedKeys) > 0 {
+		deletedIDs, err = c.deleteMissingScopedWikiPages(ctx, tenant, kb, token, wikiDiff.affectedKeys, entityMerged, existingPages)
+		if err != nil {
+			return err
+		}
+	}
+	excluded := make(map[string]struct{}, len(deletedIDs))
+	for _, id := range deletedIDs {
+		excluded[id] = struct{}{}
+	}
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.58, "merging_by_slug", fmt.Sprintf("Merging knowledge pages by slug: %d", len(entityMerged)))
+	// Entity pages have stable page identity and must bypass topic-mode KNN and
+	// Page-specific entity/concept merging. Only topic-mode pages continue below.
+	// The slug-only merge above has already handled every Wiki page candidate.
+	// Leave the legacy generic dedup path with no candidates so it cannot apply
+	// content similarity or LLM merge decisions to Wiki pages.
+	candidates = nil
+	// In-memory dedup among the completed batch first.
+	candidates, dedupErr := deduper.Dedup(ctx, candidates)
+	if dedupErr != nil {
+		return dedupErr
+	}
+	// Diagnostics: after batch dedup, verify the per-doc products still carry
+	// their embedding before the KNN/merge path consumes cand.Vector. If
+	// candidates show 0 vectors while incoming had vectors, Dedup is dropping
+	// them and both the KNN lookups and the merged rows lose embeddings. Gated to
+	// debug: the counting below allocates even in quiet production.
+	if common.IsDebugEnabled() {
+		inVec, candVec := computeDedupVectorAudit(incoming, candidates)
+		common.Info("knowledge_compile: dedup vector audit",
+			zap.String("kb_id", kb),
+			zap.Int("incoming", len(incoming)),
+			zap.Int("incoming_with_vector", inVec),
+			zap.Int("candidates", len(candidates)),
+			zap.Int("candidates_with_vector", candVec))
+	}
+
+	// Diagnostics: break the KNN-input set down by variant and list the wiki_page
+	// slugs, so the reader can reconcile the number of wiki_page candidates here
+	// against the wiki_page rows WriteMerged emits (they differ when KNN merges a
+	// candidate into an existing merged row, when DecideBatch returns distinct new
+	// rows, or when candidates of the same variant collapse in-memory). This is
+	// what explains "39 wiki_page written vs 21 KNN requests". Gated to debug.
+	if common.IsDebugEnabled() {
+		byVariant, wikiPageSlugs := computeCandidatesBreakdown(candidates)
+		common.Info("knowledge_compile: candidates breakdown",
+			zap.String("kb_id", kb),
+			zap.Int("candidates", len(candidates)),
+			zap.Any("by_variant", byVariant),
+			zap.Strings("wiki_page_candidate_slugs", wikiPageSlugs))
+	}
 
 	// Then dedup each candidate against the DocEngine via KNN top1 + LLM judge,
-	// mirroring Python _struct_doc_storage_dedup_batch. Candidates that KNN-hit
+	// mirroring _struct_doc_storage_dedup_batch. Candidates that KNN-hit
 	// the same existing merged row are grouped so the row is merged/updated once
 	// instead of being rewritten per candidate.
-	type mergeGroup struct {
-		existing   kccommon.Product
-		candidates []kccommon.Product
-		score      float64
-	}
 	groupsByID := make(map[string]*mergeGroup, len(candidates))
 	var (
 		unmatchedMu sync.Mutex
 		unmatched   []kccommon.Product
 		groupsMu    sync.Mutex
 	)
+	// Exact topic recall is independent of page-content KNN. A page can use
+	// different wording from the existing topic while still belonging to the
+	// same topic, so consult the current dataset pages before running KNN.
+	// Seed with the surviving topic pages (excluding the ones this step just
+	// deleted), reproducing the post-deletion snapshot the previous double-read
+	// produced without a second engine query.
+	topicPagesByKey := buildTopicPagesByKey(existingPages, excluded)
 	// The KNN pass is docengine-bounded (vector search), not CPU-bounded, so we
 	// fan it out across the shared global compilerPool (vCPU-sized). Output order
 	// is irrelevant: merged rows are upserted by their idempotent dataset-level
 	// id, and each candidate lands in exactly one group / the unmatched set.
-	jobs := make([]compilerJob, 0, len(candidates))
+	jobs := make([]CompilerJob, 0, len(candidates))
 	for _, cand := range candidates {
 		cand := cand
+		if isTopicPage(cand) {
+			if existing, ok := topicPagesByKey[topicKey(productTopic(cand))]; ok {
+				groupsMu.Lock()
+				g := groupsByID[existing.ID]
+				if g == nil {
+					g = &mergeGroup{existing: existing, score: 1}
+					groupsByID[existing.ID] = g
+				}
+				g.candidates = append(g.candidates, cand)
+				groupsMu.Unlock()
+				continue
+			}
+		}
 		jobs = append(jobs, func() error {
 			var vec64 []float64
 			if len(cand.Vector) > 0 {
@@ -366,13 +1019,22 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 					vec64[i] = float64(v)
 				}
 			}
-			hit, score, err := c.reader.SearchSimilar(ctx, tenant, kb, cand.Variant, vec64, 1, c.mergeThreshold)
+			// wiki_incremental port (B2): request topN >= 2 so SearchSimilar can
+			// apply its score-descending skip rule on a dirty top-1 (the reader
+			// drops rows whose compile_kwd does not map to the searched variant;
+			// a re-query with topN=2 lets the next clean candidate surface instead
+			// of falling through to "no hit").
+			hit, score, err := c.reader.SearchSimilar(ctx, tenant, kb, cand.Variant, vec64, 2, c.mergeThreshold)
 			if err != nil {
 				return err
 			}
 			if hit.ID == "" {
 				// No sufficiently-similar merged row: insert the candidate as a new
 				// merged row.
+				common.Debug("knowledge_compile: KNN no hit, candidate becomes new merged row",
+					zap.String("kb_id", kb),
+					zap.String("candidate", candidateIdentity(cand)),
+					zap.String("variant", string(cand.Variant)))
 				cand.Merged = true
 				cand.DocID = kb
 				unmatchedMu.Lock()
@@ -380,6 +1042,12 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 				unmatchedMu.Unlock()
 				return nil
 			}
+			common.Debug("knowledge_compile: KNN hit",
+				zap.String("kb_id", kb),
+				zap.String("candidate", candidateIdentity(cand)),
+				zap.String("variant", string(cand.Variant)),
+				zap.String("hit", candidateIdentity(hit)),
+				zap.Float64("score", score))
 			groupsMu.Lock()
 			g := groupsByID[hit.ID]
 			if g == nil {
@@ -394,12 +1062,74 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 	if err := runCompilerJobs(ctx, jobs); err != nil {
 		return err
 	}
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.72, "routing_pages", fmt.Sprintf("Routing %d knowledge pages against existing products", len(candidates)))
+
+	// KNN only narrows topic-page candidates. When the hit is a topic page,
+	// require an explicit topic match or an LLM topic-route decision before
+	// allowing the generic Wiki evidence merge to fold the pages together.
+	// Otherwise semantically unrelated pages with similar prose would inherit
+	// the existing page's topic.
+	router, hasRouter := deduper.(topicRouter)
+	if hasRouter || len(groupsByID) > 0 {
+		for _, group := range groupsByID {
+			if !isTopicPage(group.existing) {
+				continue
+			}
+			accepted := make([]kccommon.Product, 0, len(group.candidates))
+			for _, candidate := range group.candidates {
+				if !isTopicPage(candidate) {
+					candidate.Merged = true
+					candidate.DocID = kb
+					unmatched = append(unmatched, candidate)
+					continue
+				}
+				if topicKey(productTopic(candidate)) == topicKey(productTopic(group.existing)) {
+					accepted = append(accepted, candidate)
+					continue
+				}
+				merge, routedTopic := false, ""
+				if hasRouter {
+					var err error
+					merge, routedTopic, err = router.RouteTopic(ctx, candidate, group.existing)
+					if err != nil {
+						return err
+					}
+				}
+				if !merge {
+					candidate.Merged = true
+					candidate.DocID = kb
+					unmatched = append(unmatched, candidate)
+					continue
+				}
+				if routedTopic == "" {
+					routedTopic = productTopic(group.existing)
+				}
+				candidate = prepareTopicProduct(candidate, routedTopic)
+				candidate.Meta["title"] = routedTopic
+				accepted = append(accepted, candidate)
+			}
+			group.candidates = accepted
+		}
+	}
 
 	// Fold every KNN group into the LLM in a single batch round-trip (one
 	// DecideBatch call instead of one Decide per pair), then collect the
 	// updated existing rows and the candidates judged distinct (new rows).
 	var newMerged []kccommon.Product
+	newMerged = append(newMerged, entityMerged...)
 	if len(groupsByID) > 0 {
+		c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.82, "llm_merge", fmt.Sprintf("Merging %d candidate groups with the LLM", len(groupsByID)))
+		// Diagnostics: summarize the KNN groups before the LLM merge decision so
+		// the reader can see which existing merged rows were hit and by how many
+		// candidates (e.g. whether a "吕布" candidate hit an existing 吕布 row and
+		// was then judged by the LLM). Gated to debug: the slice/map construction
+		// below allocates even in quiet production and is only useful when tracing.
+		if common.IsDebugEnabled() {
+			common.Info("knowledge_compile: KNN groups for DecideBatch",
+				zap.String("kb_id", kb),
+				zap.Int("groups", len(groupsByID)),
+				zap.Any("groups_detail", computeKNNGroupDumps(groupsByID)))
+		}
 		batched := make([]MergeGroup, 0, len(groupsByID))
 		for _, g := range groupsByID {
 			batched = append(batched, MergeGroup{
@@ -408,7 +1138,9 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 				Score:      g.score,
 			})
 		}
-		batched, err = deduper.DecideBatch(ctx, batched)
+		llmCtx, finishLLMProgress := withKnowledgeCompileLLMProgress(ctx, tenant, kb)
+		batched, err = deduper.DecideBatch(llmCtx, batched)
+		finishLLMProgress()
 		if err != nil {
 			return err
 		}
@@ -418,24 +1150,845 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 		}
 	}
 
-	// Write the surviving merged set (updated existing + new distinct rows).
+	// Write the surviving merged set (updated existing + new distinct rows). The
+	// generation check + WriteMerged run atomically under the per-dataset
+	// write/rebuild lock, so a rewrite that lands during the (now long) KNN + LLM
+	// merge cannot leak into the freshly rewritten index, and a rewrite that is
+	// clearing storage cannot interleave with the write.
 	mergedFinal := make([]kccommon.Product, 0, len(newMerged)+len(unmatched))
 	mergedFinal = append(mergedFinal, newMerged...)
 	mergedFinal = append(mergedFinal, unmatched...)
-	if err := c.writer.WriteMerged(ctx, tenant, kb, mergedFinal); err != nil {
+	mergedFinal, staleTopicIDs := mergeTopicProducts(tenant, kb, mergedFinal)
+	mergedFinal = refreshWikiProductVectors(ctx, tenant, mergedFinal)
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.90, "writing_products", fmt.Sprintf("Writing %d merged products", len(mergedFinal)))
+	if err := c.withWriteLock(ctx, kb, token, func() error {
+		if err := c.writer.WriteMerged(ctx, tenant, kb, mergedFinal); err != nil {
+			return err
+		}
+		if len(staleTopicIDs) == 0 {
+			return nil
+		}
+		deleter, ok := c.writer.(interface {
+			DeleteMergedWikiPages(context.Context, string, string, []string) error
+		})
+		if !ok {
+			return fmt.Errorf("wiki topic merge requires page deletion support for %d stale page(s)", len(staleTopicIDs))
+		}
+		return deleter.DeleteMergedWikiPages(ctx, tenant, kb, staleTopicIDs)
+	}); err != nil {
+		if errors.Is(err, errClaimSuperseded) {
+			common.Info("knowledge_compile: batch stale before write, aborting (rewrite barrier)",
+				zap.String("dataset_id", kb))
+		}
 		return err
 	}
 
-	// All merge and delete paths succeeded: commit the staged per-document seq
-	// advances and tombstone clears. These are only now persisted so a failed
-	// batch leaves c.seqs/c.tombs untouched and a later reclaim can retry.
-	c.mu.Lock()
-	for _, e := range pendingSeq {
-		c.seqs[kb][e.DocID] = e.Seq
+	// Re-materialize the wiki page graph from the now-consistent merged set. This
+	// runs unconditionally after a merge: the graph is a global per-dataset
+	// projection rebuilt from a consistent read each time, so it must run even
+	// when the current batch only prunes (deletes) wiki pages, and even for a
+	// non-wiki batch where the dataset already has no wiki pages (ProjectWikiGraph
+	// then just drops any stale graph rows). The graph is reconstructible, so the
+	// cost of an occasional no-op reprojection is accepted. It is also a locked
+	// destructive side effect for the same TOCTOU reasons as WriteMerged.
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.97, "projecting_graph", "Projecting the knowledge graph")
+	if err := c.withWriteLock(ctx, kb, token, func() error {
+		return c.writer.ProjectWikiGraph(ctx, tenant, kb)
+	}); err != nil {
+		if errors.Is(err, errClaimSuperseded) {
+			common.Info("knowledge_compile: batch stale before graph projection, aborting (rewrite barrier)",
+				zap.String("dataset_id", kb))
+		}
+		return err
 	}
+	if err := c.commitWikiContributions(ctx, tenant, kb, wikiDiff.currentByDoc, retractedDocIDs); err != nil {
+		return err
+	}
+
+	// All merge and delete paths succeeded: commit the staged tombstone
+	// clears. These are only now persisted so a failed batch leaves c.tombs
+	// untouched and a later reclaim can retry.
+	c.mu.Lock()
 	for _, docID := range pendingTombClear {
 		delete(c.tombs[kb], docID)
 	}
 	c.mu.Unlock()
+	common.Info("knowledge_compile: batch merge complete",
+		zap.String("dataset_id", kb),
+		zap.Int("completed_docs", len(completed)),
+		zap.Int("deleted_docs", len(deleted)),
+		zap.Int("merged_rows_written", len(mergedFinal)))
+	c.reportProgress(ctx, tenant, kb, token, taskTypes, 1, "completed", fmt.Sprintf("Knowledge compilation completed: %d merged products", len(mergedFinal)))
 	return nil
+}
+
+func completedDocsWithoutNavInput(completed []BacklogEntry, inputs []nav.UpsertDocInput) []string {
+	withNav := make(map[string]struct{}, len(inputs))
+	for _, input := range inputs {
+		withNav[input.DocID] = struct{}{}
+	}
+	withoutNav := make([]string, 0, len(completed))
+	for _, entry := range completed {
+		if _, ok := withNav[entry.DocID]; !ok {
+			withoutNav = append(withoutNav, entry.DocID)
+		}
+	}
+	return common.DeduplicateSorted(withoutNav)
+}
+
+func copyMeta(input map[string]any) map[string]any {
+	output := make(map[string]any, len(input)+2)
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
+}
+
+// mergeEntityModeCandidates handles entity/concept pages by their deterministic
+// page identity. A batch may contain evidence for the same page from multiple
+// documents; fold it before WriteMerged. Topic pages are returned for the same
+// slug-only path.
+func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb string, candidates []kccommon.Product) ([]kccommon.Product, []kccommon.Product, error) {
+	var entityCandidates []kccommon.Product
+	var topic []kccommon.Product
+	for _, candidate := range candidates {
+		pageType := strings.ToLower(strings.TrimSpace(kccommon.MetaString(candidate.Meta, "page_type")))
+		if pageType != "entity" && pageType != "concept" {
+			topic = append(topic, candidate)
+			continue
+		}
+		entityCandidates = append(entityCandidates, candidate)
+	}
+	merged, err := c.mergeWikiProductsBySlug(ctx, tenant, kb, entityCandidates)
+	return merged, topic, err
+}
+
+// mergeWikiProductsBySlug folds document-level Wiki pages into the dataset
+// level using only page_type + slug. Equal identities are merged; different
+// slugs remain independent pages. A single document page is already a complete
+// Wiki page and passes through unchanged; only groups containing multiple
+// document pages need an LLM rewrite.
+func (c *Consumer) mergeWikiProductsBySlug(ctx context.Context, tenant, kb string, candidates []kccommon.Product) ([]kccommon.Product, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	groups := make(map[string][]kccommon.Product)
+	order := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		key := wikiPageMergeKey(candidate)
+		if key == "" {
+			// A malformed page without a slug cannot be safely merged with another
+			// page. Keep it isolated so it remains visible for diagnosis.
+			key = "id\x00" + candidate.ID
+		}
+		if _, exists := groups[key]; !exists {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], candidate)
+	}
+
+	merged := make([]kccommon.Product, 0, len(order))
+	rewriteIndexes := make([]int, 0, len(order))
+	for _, key := range order {
+		group := groups[key]
+		topic := selectMergedWikiTopicPath(group)
+		var current kccommon.Product
+		exists := false
+		for _, candidate := range group {
+			candidate.Merged = true
+			candidate.DocID = kb
+			if !exists || current.ID == "" {
+				current = candidate
+				exists = true
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(kccommon.MetaString(current.Meta, "page_type")), "topic") {
+				current = mergeTopicPage(current, candidate)
+			} else {
+				current = wikiEntityMerge(current, candidate)
+			}
+		}
+		if current.ID != "" {
+			current.Meta = copyMeta(current.Meta)
+			current.Meta["topic"] = topic
+			current.Merged = true
+			current.DocID = kb
+			merged = append(merged, current)
+			if len(group) > 1 {
+				rewriteIndexes = append(rewriteIndexes, len(merged)-1)
+			}
+		}
+	}
+	if err := rewriteMergedWikiPages(ctx, tenant, merged, rewriteIndexes); err != nil {
+		return nil, err
+	}
+	return merged, nil
+}
+
+const wikiPageRewriteSystemPrompt = `You are the final editor for a knowledge-base Wiki page.
+Rewrite the supplied evidence into one coherent Markdown page.
+Preserve every factual detail from the evidence, including names, dates, numbers,
+relationships, quoted statements, and links. Do not invent facts or remove
+information merely to shorten the page. Organize duplicated or fragmented
+evidence into a clear structure. Return Markdown only, without commentary about
+the editing process.`
+
+// rewriteMergedWikiPages lets the LLM compose the final dataset-level page
+// after deterministic slug grouping has selected the evidence that belongs to
+// that page. The calls are independent and use the shared compiler pool.
+func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon.Product, indexes []int) error {
+	if len(indexes) == 0 {
+		return nil
+	}
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
+	if err != nil {
+		return fmt.Errorf("resolve Wiki page rewrite dependencies: %w", err)
+	}
+	if deps.Chat == nil {
+		return fmt.Errorf("Wiki page rewrite chat model is unavailable")
+	}
+	jobs := make([]CompilerJob, 0, len(indexes))
+	for _, idx := range indexes {
+		idx := idx
+		jobs = append(jobs, func() error {
+			page := pages[idx]
+			prompt := fmt.Sprintf("PAGE TYPE: %s\nTITLE: %s\nTOPIC: %s\nENTITIES: %s\nSUMMARY: %s\n\nEVIDENCE MARKDOWN:\n%s",
+				kccommon.MetaString(page.Meta, "page_type"),
+				kccommon.MetaString(page.Meta, "title"),
+				kccommon.MetaString(page.Meta, "topic"),
+				strings.Join(kccommon.MetaStringSlice(page.Meta, "entity_names"), ", "),
+				kccommon.MetaString(page.Meta, "summary"),
+				page.Content)
+			response, err := deps.Chat.Chat(ctx, kccommon.ChatRequest{
+				LLMID:        defaultLLMID,
+				SystemPrompt: wikiPageRewriteSystemPrompt,
+				UserPrompt:   prompt,
+				Temperature:  floatPtr(0.1),
+			})
+			if err != nil {
+				return fmt.Errorf("rewrite Wiki page %q: %w", kccommon.MetaString(page.Meta, "slug"), err)
+			}
+			if response == nil {
+				return fmt.Errorf("rewrite Wiki page %q returned no response", kccommon.MetaString(page.Meta, "slug"))
+			}
+			content := strings.TrimSpace(response.Content)
+			if content == "" {
+				return fmt.Errorf("rewrite Wiki page %q returned empty content", kccommon.MetaString(page.Meta, "slug"))
+			}
+			pages[idx].Content = content
+			return nil
+		})
+	}
+	return SubmitCompilerLLMJobs(ctx, jobs)
+}
+
+func floatPtr(value float64) *float64 { return &value }
+
+func wikiPageMergeKey(product kccommon.Product) string {
+	slug := strings.TrimSpace(kccommon.MetaString(product.Meta, "slug"))
+	if slug == "" {
+		return ""
+	}
+	pageType := strings.ToLower(strings.TrimSpace(kccommon.MetaString(product.Meta, "page_type")))
+	return pageType + "\x00" + strings.ToLower(strings.Join(strings.Fields(slug), " "))
+}
+
+type mergedWikiPageDeleter interface {
+	DeleteMergedWikiPages(ctx context.Context, tenant, kb string, ids []string) error
+}
+
+// deleteMissingScopedWikiPages removes the merged wiki pages whose contribution
+// was dropped by this batch (present in affectedKeys but no longer in current).
+// It takes the already-loaded merged pages (existingPages) so the merge step can
+// reuse a single LoadMergedWikiPages snapshot; the caller passes the same slice
+// it uses to seed the topic-key map, excluding the returned deleted IDs.
+func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb, token string, affected map[string]struct{}, current, existingPages []kccommon.Product) ([]string, error) {
+	_, readerOK := c.reader.(mergedWikiPageReader)
+	deleter, writerOK := c.writer.(mergedWikiPageDeleter)
+	if !readerOK || !writerOK {
+		return nil, fmt.Errorf("knowledge_compile: scoped Wiki cleanup is unsupported")
+	}
+	present := make(map[string]struct{}, len(current))
+	for _, page := range current {
+		if key := wikiPageMergeKey(page); key != "" {
+			present[key] = struct{}{}
+		}
+	}
+	ids := make([]string, 0)
+	for _, page := range existingPages {
+		key := wikiPageMergeKey(page)
+		if _, scoped := affected[key]; !scoped {
+			continue
+		}
+		if _, remains := present[key]; !remains && page.ID != "" {
+			ids = append(ids, page.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if err := c.withWriteLock(ctx, kb, token, func() error {
+		return deleter.DeleteMergedWikiPages(ctx, tenant, kb, ids)
+	}); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// buildTopicPagesByKey indexes the topic-mode merged pages by their topic key,
+// skipping any page whose ID is in excludedIDs. excludedIDs are the page IDs this
+// process deletes in the same merge step; skipping them reproduces the
+// post-deletion snapshot the merge step previously obtained via a second
+// LoadMergedWikiPages call, without a second read.
+func buildTopicPagesByKey(pages []kccommon.Product, excludedIDs map[string]struct{}) map[string]kccommon.Product {
+	out := make(map[string]kccommon.Product)
+	for _, page := range pages {
+		if !isTopicPage(page) {
+			continue
+		}
+		if _, del := excludedIDs[page.ID]; del {
+			continue
+		}
+		key := topicKey(productTopic(page))
+		if key == "" {
+			continue
+		}
+		if _, exists := out[key]; !exists {
+			out[key] = page
+		}
+	}
+	return out
+}
+
+func refreshWikiProductVectors(ctx context.Context, tenant string, products []kccommon.Product) []kccommon.Product {
+	if len(products) == 0 {
+		return products
+	}
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
+	if err != nil || deps.Embed == nil {
+		return products
+	}
+	vectors, err := deps.Embed.Encode(ctx, productContentsForEmbedding(products))
+	if err != nil || len(vectors) != len(products) {
+		return products
+	}
+	for i := range products {
+		products[i].Vector = vectors[i]
+	}
+	return products
+}
+
+func productContentsForEmbedding(products []kccommon.Product) []string {
+	contents := make([]string, len(products))
+	for i := range products {
+		contents[i] = products[i].Content
+	}
+	return contents
+}
+
+func variantsContain(variants []string, wanted string) bool {
+	for _, variant := range variants {
+		if variant == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedStringSet(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// candidateIdentity returns a compact identity string for a product, preferring
+// the wiki slug (full "<page_type>/<slug>") when present, else the id/doc_id,
+// so KNN/dedup diagnostics can tie a candidate to the page it belongs to.
+func candidateIdentity(p kccommon.Product) string {
+	if slug, _ := p.Meta["slug"].(string); slug != "" {
+		return slug
+	}
+	if id := p.ID; id != "" {
+		return id
+	}
+	if docID := p.DocID; docID != "" {
+		return docID
+	}
+	return "<unknown>"
+}
+
+// productsForVariants filters a doc's loaded products down to those whose
+// variant is in the requested set. An empty set (legacy backlog entries without
+// variants, or a rebuild event that carries none) is treated as "all variants"
+// to preserve existing behavior; otherwise a product is kept only when its
+// variant appears in variants. This is what makes BacklogEntry.Variants actually
+// drive per-variant dispatch instead of handing every doc's full product set to
+// every dataset-level path.
+func productsForVariants(products []kccommon.Product, variants []string) []kccommon.Product {
+	if len(variants) == 0 {
+		return products
+	}
+	want := make(map[string]struct{}, len(variants))
+	for _, v := range variants {
+		want[v] = struct{}{}
+	}
+	out := products[:0:0]
+	for i := range products {
+		if _, ok := want[string(products[i].Variant)]; ok {
+			out = append(out, products[i])
+		}
+	}
+	return out
+}
+
+// navInputFromProducts extracts the dataset-navigation upsert inputs for tree
+// and PageIndex products in a batch.
+// Summary extraction matches the component's by-product hooks:
+//   - tree: the root product (Meta.kind=="root") carries the document summary in
+//     Content and its vector in Vector.
+//   - PageIndex: entity descriptions are folded into a document-level summary.
+//
+// Each document contributes at most one nav input, keyed by DocID, so a doc that
+// yields several tree/PageIndex products upserts once. NavService embeds the
+// summary itself when Embedd is empty, so the consumer needs no embedder.
+func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDocInput {
+	type acc struct {
+		in             nav.UpsertDocInput
+		treeSummary    string
+		treeEmbedd     []float32
+		structureLines []string
+	}
+	byDoc := make(map[string]*acc, len(products))
+	for i := range products {
+		p := &products[i]
+		switch p.Variant {
+		case kccommon.VariantTree:
+			if kind, _ := p.Meta["kind"].(string); kind != "root" {
+				continue
+			}
+			a := byDoc[p.DocID]
+			if a == nil {
+				byDoc[p.DocID] = &acc{in: nav.UpsertDocInput{TenantID: p.TenantID, KbID: kb, DocID: p.DocID}}
+				a = byDoc[p.DocID]
+			}
+			a.treeSummary = p.Content
+			a.treeEmbedd = p.Vector
+		case kccommon.VariantStructure:
+			if p.Kind != "page_index" {
+				continue
+			}
+			if kind, _ := p.Meta["kind"].(string); kind != "entity" {
+				continue
+			}
+			line := structureEntityNavLine(p.Content)
+			if line == "" {
+				continue
+			}
+			a := byDoc[p.DocID]
+			if a == nil {
+				byDoc[p.DocID] = &acc{in: nav.UpsertDocInput{TenantID: p.TenantID, KbID: kb, DocID: p.DocID}}
+				a = byDoc[p.DocID]
+			}
+			a.structureLines = append(a.structureLines, line)
+		}
+	}
+	out := make([]nav.UpsertDocInput, 0, len(byDoc))
+	for _, a := range byDoc {
+		// Tree is the canonical navigation summary when both variants are present;
+		// otherwise use the folded structure/page-index summary. This makes the
+		// result independent of product iteration order.
+		if strings.TrimSpace(a.treeSummary) != "" {
+			a.in.CompileKind = "tree"
+			a.in.Summary = a.treeSummary
+			a.in.Embedd = a.treeEmbedd
+		} else {
+			a.in.CompileKind = "page_index"
+			a.in.Summary = strings.Join(a.structureLines, "\n")
+		}
+		if strings.TrimSpace(a.in.Summary) == "" {
+			continue
+		}
+		out = append(out, a.in)
+	}
+	return out
+}
+
+// structureEntityNavLine renders one entity row's payload JSON as a
+// "name: description" line for the page_index nav summary.
+func structureEntityNavLine(payloadJSON string) string {
+	var ent struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(payloadJSON), &ent); err != nil {
+		return ""
+	}
+	desc := strings.Join(strings.Fields(ent.Description), " ")
+	if desc == "" {
+		return ""
+	}
+	if ent.Name != "" {
+		return ent.Name + ": " + desc
+	}
+	return desc
+}
+
+// mergeStructureDataset performs the dataset-level structure merge (G1/G4): it
+// groups the structure products of a batch by name, folds their
+// descriptions and source doc/chunk sets into one StructureBucket per group, and
+// writes scope_kwd="dataset" rows via WriteMergedStructure. This mirrors
+// dataset_structure_merger._merge_bucket but is a self-contained from-scratch
+// path (B3: the legacy unified merge never aggregated structure by name).
+func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string, products []kccommon.Product) error {
+	products = kccommon.FilterOrphanRelations(products)
+	common.Info("knowledge_compile: mergeStructureDataset entry",
+		zap.String("kb_id", kb),
+		zap.Int("products", len(products)))
+	// Bucket by (template, lower(name), compile kind) for entities and
+	// (template, lower(from), lower(type), lower(to), compile kind) for relations —
+	// relations have no "name" and must not be silently dropped (review issue 3),
+	// and the relation type + compile kind keep distinct structure kinds and
+	// distinct relation types from collapsing into one dataset row.
+	type ekey struct{ template, name, ckwd string }
+	type rkey struct{ template, from, typ, to, ckwd string }
+	entByKey := make(map[ekey]*StructureBucket, 16)
+	relByKey := make(map[rkey]*StructureBucket, 16)
+	// The authoritative (dataset_structure_merger._do_build) merges EVERY
+	// structure-kind doc row unconditionally — dataset scope is driven by the
+	// task type (structure_graph/timeline/structure_mindmap), NOT by a template
+	// Config["dataset_merge"] flag (that was a stale concept). So
+	// structure/mindmap entity/relation products always enter the dataset merge.
+	for _, p := range products {
+		if p.Variant != kccommon.VariantStructure && p.Variant != kccommon.VariantMindmap {
+			continue
+		}
+		// Dataset rows retain the producing compilation kind. Extraction shape
+		// is separate metadata and does not determine the stored kind.
+		ckwd := enginetypes.CanonicalCompilationKind(kccommon.FirstNonEmpty(p.Kind, kccommon.MetaString(p.Meta, "compile_kwd")))
+		if ckwd == "" {
+			ckwd = compileKwdForVariant(p.Variant)
+		}
+		kind := kccommon.MetaString(p.Meta, "kind")
+		template := structureTemplateIdentity(p.TemplateID, p.Kind)
+		from := kccommon.MetaString(p.Meta, "from")
+		to := kccommon.MetaString(p.Meta, "to")
+		if kind == "relation" || (from != "" && to != "") {
+			from = strings.TrimSpace(from)
+			to = strings.TrimSpace(to)
+			// Skip a relation with an incomplete endpoint pair: writing a bucket
+			// like "A -> " would let multiple malformed relations collapse into
+			// the same dataset row.
+			if from == "" || to == "" {
+				continue
+			}
+			relType := kccommon.MetaString(p.Meta, "relation_type")
+			if relType == "" {
+				relType = kccommon.MetaString(p.Meta, "type")
+			}
+			if relType == "" {
+				relType = "related"
+			}
+			k := rkey{template: template, from: normalizedStructureEntityName(from), typ: structureRelationType(relType), to: normalizedStructureEntityName(to), ckwd: ckwd}
+			b := relByKey[k]
+			if b == nil {
+				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, RelationType: relType}
+				relByKey[k] = b
+			}
+			appendBucket(b, p)
+			continue
+		}
+		// entity bucket
+		name := kccommon.MetaString(p.Meta, "name")
+		typ := kccommon.MetaString(p.Meta, "entity_type")
+		if typ == "" {
+			typ = kccommon.MetaString(p.Meta, "type")
+		}
+		if name == "" {
+			continue
+		}
+		k := ekey{template: template, name: normalizedStructureEntityName(name), ckwd: ckwd}
+		b := entByKey[k]
+		if b == nil {
+			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind}
+			entByKey[k] = b
+		} else {
+			b.Type = preferredStructureEntityType(b.Type, typ)
+		}
+		appendBucket(b, p)
+	}
+	for key, bucket := range relByKey {
+		if entity := entByKey[ekey{template: key.template, name: key.from, ckwd: key.ckwd}]; entity != nil {
+			bucket.FromEntity = entity.Name
+		}
+		if entity := entByKey[ekey{template: key.template, name: key.to, ckwd: key.ckwd}]; entity != nil {
+			bucket.ToEntity = entity.Name
+		}
+		bucket.Name = bucket.FromEntity + " -> " + bucket.ToEntity
+	}
+	buckets := make([]StructureBucket, 0, len(entByKey)+len(relByKey))
+	for _, b := range entByKey {
+		buckets = append(buckets, *b)
+	}
+	for _, b := range relByKey {
+		buckets = append(buckets, *b)
+	}
+	common.Info("knowledge_compile: mergeStructureDataset buckets",
+		zap.String("kb_id", kb),
+		zap.Int("entities", len(entByKey)),
+		zap.Int("relations", len(relByKey)),
+		zap.Int("total_buckets", len(buckets)))
+	if len(buckets) == 0 {
+		return nil
+	}
+	sort.Slice(buckets, func(i, j int) bool {
+		if buckets[i].Name != buckets[j].Name {
+			return buckets[i].Name < buckets[j].Name
+		}
+		return buckets[i].Type < buckets[j].Type
+	})
+	return c.writer.WriteMergedStructure(ctx, tenant, kb, buckets)
+}
+
+func normalizedStructureEntityName(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(name), " "))
+}
+
+func preferredStructureEntityType(existing, incoming string) string {
+	existing = strings.TrimSpace(existing)
+	incoming = strings.TrimSpace(incoming)
+	if existing == "mindmap" && incoming == "mind_map" {
+		return incoming
+	}
+	if existing == "" || strings.EqualFold(existing, "other") {
+		if incoming != "" && !strings.EqualFold(incoming, "other") {
+			return incoming
+		}
+	}
+	if existing != "" {
+		return existing
+	}
+	return incoming
+}
+
+func structureTemplateIdentity(templateID, templateKind string) string {
+	if templateID = strings.TrimSpace(templateID); templateID != "" {
+		return templateID
+	}
+	return enginetypes.CanonicalCompilationKind(templateKind)
+}
+
+// appendBucket folds a structure product into a bucket: concatenates its
+// description, unions its source doc/chunk ids, and folds its vector into a true
+// element-wise running mean (review issue 13). VecCount tracks how many vectors
+// have been folded so the mean is order-independent.
+func appendBucket(b *StructureBucket, p kccommon.Product) {
+	// The product's Content is the doc row's full content_with_weight JSON
+	// (e.g. {"category":"Person","description":"…","name":"…","type":"entity"}),
+	// NOT the plain-text description. Extract the "description" field so the
+	// dataset row's description stays a plain-text string (mirror
+	// _struct_merge_graph_entities, which folds the entity description, not the
+	// whole payload). Fall back to Content only when it is not a JSON object.
+	desc := structureProductDescription(p.Content)
+	if desc == "" {
+		// Match dataset merger fallback: mindmap entities only carry
+		// name/type, while their dataset row still needs searchable text.
+		// Relations likewise use the endpoint names and relation type when the
+		// source payload has no description.
+		from := kccommon.MetaString(p.Meta, "from")
+		to := kccommon.MetaString(p.Meta, "to")
+		if kind := kccommon.MetaString(p.Meta, "kind"); kind == "relation" || (from != "" && to != "") {
+			relType := kccommon.MetaString(p.Meta, "relation_type")
+			if relType == "" {
+				relType = kccommon.MetaString(p.Meta, "type")
+			}
+			if relType == "" {
+				relType = "related"
+			}
+			desc = strings.TrimSpace(strings.Join([]string{from, relType, to}, " "))
+		} else {
+			desc = strings.TrimSpace(kccommon.MetaString(p.Meta, "name"))
+		}
+	}
+	if desc != "" {
+		if b.Description != "" {
+			b.Description += "\n"
+		}
+		b.Description += desc
+	}
+	b.SourceDocIDs = common.AppendUnique(b.SourceDocIDs, []string{p.DocID})
+	b.SourceChunkIDs = common.AppendUnique(b.SourceChunkIDs, kccommon.MetaStringSlice(p.Meta, "source_chunk_ids"))
+	// mention_count_int: sum the per-entity mention counts (
+	// _struct_merge_graph_entities sums mention_count across the merged entities).
+	// Each entity product carries mention_count ≥ 1 (structure compile.go L231);
+	// mindmap entities carry none, so they contribute a default of 0 and are
+	// simply not stamped (mention_count_int is omitted when 0).
+	if mc, ok := kccommon.MetaInt(p.Meta, "mention_count"); ok && mc > 0 {
+		b.MentionCount += int(mc)
+	}
+	if len(p.Vector) > 0 {
+		b.VecCount++
+		if len(b.Vector) == 0 {
+			b.Vector = append([]float32(nil), p.Vector...)
+		} else {
+			n := len(p.Vector)
+			if len(b.Vector) < n {
+				b.Vector = append(b.Vector, make([]float32, n-len(b.Vector))...)
+			}
+			for i := 0; i < n; i++ {
+				// running mean: acc + (next - acc)/count
+				b.Vector[i] += (p.Vector[i] - b.Vector[i]) / float32(b.VecCount)
+			}
+		}
+	}
+}
+
+// structureProductDescription extracts the plain-text description from a structure
+// product's Content. In production Content is the doc row's content_with_weight
+// JSON ({"description":"…","name":"…","type":"…"}), so we parse it and return the
+// "description" field — the whole payload must NOT leak into the dataset row's
+// description (that is the bug: projectEntity then renders the raw JSON object).
+// When Content is NOT a JSON object (plain text, legacy/unit-test rows), it is
+// returned verbatim so existing folded-description behavior is preserved.
+func structureProductDescription(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+	if content[0] == '{' {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(content), &m); err == nil {
+			if d, ok := m["description"].(string); ok {
+				if s := strings.TrimSpace(d); s != "" {
+					return s
+				}
+			}
+			// JSON object without a plain-text description: nothing to fold.
+			return ""
+		}
+	}
+	return content
+}
+
+// upsertNavLocked places the batch's Tree/PageIndex summaries into the dataset
+// navigation tree under the per-dataset write/rebuild lock, with the claim-token
+// check inside the lock (B7: nav writes are claim-fenced like any other
+// destructive write so a stale worker cannot repopulate a rebuilt tree).
+func (c *Consumer) upsertNavLocked(ctx context.Context, tenant, kb, token string, ns nav.NavService, inputs []nav.UpsertDocInput) error {
+	return c.withWriteLock(ctx, kb, token, func() error {
+		for i := range inputs {
+			// The minimal-loop NavService.UpsertDoc is idempotent by summary; a
+			// failure here aborts the batch so the claim is not acked and the
+			// batch is retried.
+			if err := ns.UpsertDoc(ctx, inputs[i]); err != nil {
+				return fmt.Errorf("knowledge_compile: nav upsert %s: %w", inputs[i].DocID, err)
+			}
+		}
+		return nil
+	})
+}
+
+// removeNavLocked removes the retracted documents from the dataset navigation
+// tree under the same claim-fenced write lock used by navigation upserts. The
+// document-level tree/structure products remain in storage for a later enable;
+// only their dataset-level navigation projections are removed here.
+func (c *Consumer) removeNavLocked(ctx context.Context, tenant, kb, token string, docIDs []string) error {
+	if len(docIDs) == 0 {
+		return nil
+	}
+	ns := nav.GetNavService()
+	if ns == nil {
+		return fmt.Errorf("knowledge_compile: nav service unavailable while removing documents")
+	}
+	return c.withWriteLock(ctx, kb, token, func() error {
+		for _, docID := range docIDs {
+			if err := ns.RemoveDoc(ctx, tenant, kb, docID); err != nil {
+				return fmt.Errorf("knowledge_compile: nav remove %s: %w", docID, err)
+			}
+		}
+		return nil
+	})
+}
+
+// mergeGroup groups the KNN/LLM merge candidates that resolve to the same
+// existing merged row, so the row is merged/updated once instead of being
+// rewritten per candidate.
+type mergeGroup struct {
+	existing   kccommon.Product
+	candidates []kccommon.Product
+	score      float64
+}
+
+// groupDump is the debug-only serialization of a mergeGroup for the KNN
+// pre-LLM-merge diagnostic log.
+type groupDump struct {
+	Existing   string   `json:"existing"`
+	Candidates []string `json:"candidates"`
+	Score      float64  `json:"score"`
+}
+
+// computeDedupVectorAudit counts how many incoming and post-dedup candidates
+// still carry an embedding, surfacing whether Dedup is dropping vectors before
+// the KNN/merge path consumes cand.Vector.
+func computeDedupVectorAudit(incoming, candidates []kccommon.Product) (int, int) {
+	incomingVec, candVec := 0, 0
+	for _, p := range incoming {
+		if len(p.Vector) > 0 {
+			incomingVec++
+		}
+	}
+	for _, p := range candidates {
+		if len(p.Vector) > 0 {
+			candVec++
+		}
+	}
+	return incomingVec, candVec
+}
+
+// computeCandidatesBreakdown breaks the KNN-input set down by variant and lists
+// the wiki_page slugs, so a reader can reconcile candidate counts against the
+// merged rows WriteMerged emits.
+func computeCandidatesBreakdown(candidates []kccommon.Product) (map[string]int, []string) {
+	byVariant := map[string]int{}
+	var wikiPageSlugs []string
+	for _, cand := range candidates {
+		v := string(cand.Variant)
+		byVariant[v]++
+		if cand.Variant == kccommon.VariantWiki {
+			wikiPageSlugs = append(wikiPageSlugs, candidateIdentity(cand))
+		}
+	}
+	return byVariant, wikiPageSlugs
+}
+
+// computeDocProductsVectorAudit counts how many loaded per-doc products carry an
+// embedding and the (deduped) vector dimensions, surfacing when
+// VectorFromChunkMap fails to restore the vector.
+func computeDocProductsVectorAudit(products []kccommon.Product) (int, map[int]int) {
+	vecCount := 0
+	dims := map[int]int{}
+	for _, p := range products {
+		if dim := len(p.Vector); dim > 0 {
+			vecCount++
+			dims[dim]++
+		}
+	}
+	return vecCount, dims
+}
+
+// computeKNNGroupDumps serializes the KNN groups before the LLM merge decision
+// for the debug-only diagnostic log.
+func computeKNNGroupDumps(groups map[string]*mergeGroup) []groupDump {
+	dumps := make([]groupDump, 0, len(groups))
+	for _, g := range groups {
+		cands := make([]string, 0, len(g.candidates))
+		for _, cand := range g.candidates {
+			cands = append(cands, candidateIdentity(cand))
+		}
+		dumps = append(dumps, groupDump{Existing: candidateIdentity(g.existing), Candidates: cands, Score: g.score})
+	}
+	return dumps
 }

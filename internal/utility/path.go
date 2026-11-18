@@ -30,10 +30,10 @@ func GetProjectRoot() string {
 	if confDir := common.GetEnv(common.EnvRAGFlowConfDir); confDir != "" {
 		return confDir
 	}
-	if d := common.GetEnv(common.EnvRAGProjectBaseURL); d != "" {
+	if d := common.GetEnv(common.EnvRAGProjectBase); d != "" {
 		return d
 	}
-	if d := common.GetEnv(common.EnvRAGDeployBaseURL); d != "" {
+	if d := common.GetEnv(common.EnvRAGDeployBase); d != "" {
 		return d
 	}
 
@@ -64,14 +64,14 @@ func GetProjectRoot() string {
 func FindConfFileInProject(fileName string) (*string, error) {
 
 	var filePath string
-	if projDir := common.GetEnv(common.EnvRAGProjectBaseURL); projDir != "" {
+	if projDir := common.GetEnv(common.EnvRAGProjectBase); projDir != "" {
 		filePath = filepath.Join(projDir, "conf", fileName)
 		if _, err := os.Stat(filePath); err == nil {
 			return &filePath, nil
 		}
 	}
 
-	if projDir := common.GetEnv(common.EnvRAGDeployBaseURL); projDir != "" {
+	if projDir := common.GetEnv(common.EnvRAGDeployBase); projDir != "" {
 		filePath = filepath.Join(projDir, "conf", fileName)
 		if _, err := os.Stat(filePath); err == nil {
 			return &filePath, nil

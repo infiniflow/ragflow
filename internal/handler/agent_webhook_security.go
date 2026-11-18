@@ -24,8 +24,8 @@ package handler
 //
 //   - max body size (with the 10 MB cap at agent_api.py:1652)
 //   - IP whitelist (CIDR + exact match)
-//   - rate limit (token bucket via redis.EvalTokenBucketStrict — strict
-//     fail-closed; see redis.go)
+//   - rate limit (token bucket via kvrocks.EvalTokenBucketStrict — strict
+//     fail-closed; see kvrocks.go)
 //   - token auth (header check)
 //   - basic auth (HTTP Basic)
 //   - JWT (HS/RS256, audience/issuer/required-claims)
@@ -39,14 +39,16 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 
-	rediscli "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 )
 
 const (
@@ -58,13 +60,8 @@ const (
 	bytesPerKB int64 = 1000
 	bytesPerMB int64 = bytesPerKB * 1000
 
-	// webhookBodyMaxBytes is the hard ceiling above which a configured
-	// max_body_size is rejected at config-validation time. Stated
-	// in decimal MB to match the kb/mb unit base above; 10 MB
-	// decimal = 10 000 000 bytes. The python reference
-	// (agent_api.py:1652) uses 10 * 1024 * 1024 = 10 485 760 bytes,
-	// so this is ~486 KB stricter than python.
-	webhookBodyMaxBytes int64 = 10 * bytesPerMB
+	// webhookBodyMaxBytes is the default and hard maximum request body size.
+	webhookBodyMaxBytes int64 = common.MaxWebhookRequestBodyBytes
 
 	// webhookRateLimitTimeout is the redis call timeout used for the
 	// strict token-bucket lookup. Short on purpose — a security gate
@@ -107,6 +104,7 @@ func validateWebhookSecurity(
 	c *gin.Context,
 	canvasID string,
 ) error {
+	ctx := c.Request.Context()
 	if len(securityCfg) == 0 {
 		return errWebhookFailClosed
 	}
@@ -116,7 +114,7 @@ func validateWebhookSecurity(
 	if err := validateIPWhitelist(c, securityCfg); err != nil {
 		return err
 	}
-	if err := validateRateLimit(canvasID, securityCfg); err != nil {
+	if err := validateRateLimit(ctx, canvasID, securityCfg); err != nil {
 		return err
 	}
 	return validateAuth(c, securityCfg)
@@ -146,12 +144,11 @@ func validateMaxBodySize(c *gin.Context, cfg map[string]any) error {
 	return nil
 }
 
-// parseMaxBodySize returns the byte limit configured by
-// `max_body_size` (with the 10 MB cap enforced) or 0 when no limit
-// is configured. The handler uses this to wrap c.Request.Body in
-// http.MaxBytesReader so the actual stream read is bounded — the
-// Content-Length header check alone is insufficient because a client
-// can advertise a small Content-Length and stream more.
+// parseMaxBodySize returns the configured body limit, defaulting to 10 MB
+// when `max_body_size` is absent. Configured values cannot exceed that cap.
+// The handler wraps c.Request.Body in http.MaxBytesReader so the actual stream
+// read is bounded — the Content-Length header check alone is insufficient
+// because a client can advertise a small Content-Length and stream more.
 //
 // Unit base: 1 kb = 1 000 B, 1 mb = 1 000 000 B (SI decimal). Per
 // user request; note this DIVERGES from the python reference
@@ -163,11 +160,18 @@ func validateMaxBodySize(c *gin.Context, cfg map[string]any) error {
 // the 10 MB cap. We check the parsed number against the cap before
 // multiplying.
 func parseMaxBodySize(cfg map[string]any) (int64, error) {
-	raw, ok := cfg["max_body_size"].(string)
-	if !ok || raw == "" {
-		return 0, nil
+	rawValue, exists := cfg["max_body_size"]
+	if !exists || rawValue == nil {
+		return webhookBodyMaxBytes, nil
+	}
+	raw, ok := rawValue.(string)
+	if !ok {
+		return 0, fmt.Errorf("invalid max_body_size format")
 	}
 	sizeStr := strings.ToLower(strings.TrimSpace(raw))
+	if sizeStr == "" {
+		return webhookBodyMaxBytes, nil
+	}
 	var limit int64
 	switch {
 	case strings.HasSuffix(sizeStr, "kb"):
@@ -199,8 +203,16 @@ func parseMaxBodySize(cfg map[string]any) (int64, error) {
 
 // validateIPWhitelist mirrors python agent_api.py:1660-1679. Empty
 // list → allow. Supports CIDR ("10.0.0.0/8") and exact ("1.2.3.4").
-// The client IP comes from gin's c.ClientIP() which honours
-// X-Forwarded-For when trusted proxies are configured.
+//
+// This is a security gate, so the address it checks must be one the
+// caller cannot choose. c.ClientIP() takes X-Forwarded-For / X-Real-IP
+// only when the direct peer is in the engine's trusted proxy list and
+// falls back to the socket peer otherwise; the engine is configured via
+// common.ConfigureTrustedProxies (default: loopback, the nginx bundled
+// in the image) instead of gin's trust-everything default, which let any
+// caller send "X-Forwarded-For: <an-allowed-ip>" and pass. The socket
+// peer alone (c.RemoteIP()) is not usable here because behind that
+// bundled nginx it is 127.0.0.1 for every request.
 func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 	whitelist, _ := cfg["ip_whitelist"].([]any)
 	if len(whitelist) == 0 {
@@ -242,7 +254,7 @@ func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 //
 // Strict fail-closed: any Redis error → error. The webhook handler
 // surfaces this as 102 so an operator notices a misconfiguration.
-func validateRateLimit(canvasID string, cfg map[string]any) error {
+func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any) error {
 	rawRL, ok := cfg["rate_limit"].(map[string]any)
 	if !ok || len(rawRL) == 0 {
 		return nil
@@ -277,16 +289,21 @@ func validateRateLimit(canvasID string, cfg map[string]any) error {
 	}
 
 	key := fmt.Sprintf("rl:tb:%s", canvasID)
-	ctx, cancel := context.WithTimeout(context.Background(), webhookRateLimitTimeout)
+	newCtx, cancel := context.WithTimeout(ctx, webhookRateLimitTimeout)
 	defer cancel()
 
-	rdb := rediscli.Get()
+	rdb := kvrocks.Get()
 	if rdb == nil {
 		return fmt.Errorf("rate limit error: redis not initialised")
 	}
-	allowed, err := rdb.EvalTokenBucketStrict(ctx, key, limitF, limitF/window)
+	allowed, err := rdb.EvalTokenBucketStrict(newCtx, key, limitF, limitF/window)
 	if err != nil {
-		return fmt.Errorf("rate limit error: %s", err.Error())
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			common.Warn("rate limit check ambiguous (timeout/cancel), allowing",
+				zap.String("canvas_id", canvasID), zap.Error(err))
+			return nil
+		}
+		return fmt.Errorf("rate limit error: %w", err)
 	}
 	if !allowed {
 		return fmt.Errorf("too many requests (rate limit exceeded)")
@@ -455,7 +472,7 @@ func validateJWTAuth(c *gin.Context, cfg map[string]any) error {
 
 	token, err := jwt.Parse(tokenStr, keyFunc, parserOpts...)
 	if err != nil {
-		return fmt.Errorf("invalid jwt: %s", err.Error())
+		return fmt.Errorf("invalid jwt: %w", err)
 	}
 	if !token.Valid {
 		return fmt.Errorf("invalid jwt")
@@ -491,13 +508,13 @@ func jwtKeyFunc(alg, secret string) (jwt.Keyfunc, error) {
 	case "RS256", "RS384", "RS512":
 		pub, err := jwt.ParseRSAPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt rsa public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt rsa public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	case "ES256", "ES384", "ES512":
 		pub, err := jwt.ParseECPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt ec public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt ec public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	}

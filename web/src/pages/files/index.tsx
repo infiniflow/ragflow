@@ -9,9 +9,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ListDeletionKey } from '@/constants/list-deletion';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
+import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { LucidePlus } from 'lucide-react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CreateFolderDialog } from './create-folder-dialog';
 import { FileBreadcrumb } from './file-breadcrumb';
@@ -24,7 +28,10 @@ import { MoveDialog } from './move-dialog';
 import { useBulkOperateFile } from './use-bulk-operate-file';
 import { useHandleCreateFolder } from './use-create-folder';
 import { useHandleMoveFile } from './use-move-file';
-import { useSelectBreadcrumbItems } from './use-navigate-to-folder';
+import {
+  useNavigateToOtherFolder,
+  useSelectBreadcrumbItems,
+} from './use-navigate-to-folder';
 import { useHandleUploadFile } from './use-upload-file';
 
 export default function Files() {
@@ -52,8 +59,21 @@ export default function Files() {
     loading,
     setPagination,
     searchString,
+    setSearchString,
     handleInputChange,
+    folderNotFound,
   } = useFetchFileList();
+
+  const navigateToOtherFolder = useNavigateToOtherFolder();
+
+  // The folder currently open was removed (e.g. an ancestor was moved into
+  // another folder). Send the user back to the root instead of showing an
+  // error for a listing that no longer exists.
+  useEffect(() => {
+    if (folderNotFound) {
+      navigateToOtherFolder('');
+    }
+  }, [folderNotFound, navigateToOtherFolder]);
 
   const {
     rowSelection,
@@ -62,6 +82,14 @@ export default function Files() {
     clearRowSelection,
     selectedCount,
   } = useRowSelection();
+
+  useClearSelectionOnPageChange(pagination, clearRowSelection);
+
+  useGoToPreviousPageOnEmpty(files?.length, loading, {
+    deletionKey: ListDeletionKey.FileList,
+    searchString,
+    setSearchString,
+  });
 
   const {
     showMoveFileModal,

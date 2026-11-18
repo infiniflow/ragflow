@@ -1,87 +1,263 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   AutoKeywordsFormField,
   AutoQuestionsFormField,
 } from '@/components/auto-keywords-form-field';
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import { Collapse } from '@/components/collapse';
 import { LargeModelFormField } from '@/components/large-model-form-field';
-import { LlmSettingSchema } from '@/components/llm-setting-items/next';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { AsyncTreeSelect } from '@/components/ui/async-tree-select';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
-import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
-import { isGoBackend } from '@/utils/backend-runtime';
-import { buildOptions } from '@/utils/form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { memo } from 'react';
-import { useForm } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { FormLayout } from '@/constants/form';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { MetadataType } from '@/pages/dataset/components/metedata/constant';
 import {
-  ContextGeneratorFieldName,
-  initialExtractorValues,
-} from '../../constant/pipeline';
+  useManageMetadata,
+  util,
+} from '@/pages/dataset/components/metedata/hooks/use-manage-modal';
+import {
+  IBuiltInMetadataItem,
+  IMetaDataReturnJSONSettings,
+} from '@/pages/dataset/components/metedata/interface';
+import { ManageMetadataModal } from '@/pages/dataset/components/metedata/manage-modal';
+import { transformExtractorConfigToForm } from '@/utils/pipeline-operator';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Settings } from 'lucide-react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
+import { useForm, useFormContext, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
+import { initialExtractorValues } from '../../constant/pipeline';
 import { useOwnerTenantId } from '../../context';
-import { useBuildNodeOutputOptions } from '../../hooks/use-build-options';
 import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
-import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
-import { useSwitchPrompt } from './use-switch-prompt';
+import { ExtractorFormSchemaType, FormSchema } from './schema';
 import { canSelectTagFile, useTagFileTree } from './use-tag-file-tree';
-import { FormLayout } from '@/constants/form';
 
-export const FormSchema = z.object({
-  field_name: z.string(),
-  sys_prompt: z.string(),
-  prompts: z.string().optional(),
-  auto_keywords: z.number().optional(),
-  auto_questions: z.number().optional(),
-  auto_tags: z.number().optional(),
-  tag_file_id: z.string().optional(),
-  ...LlmSettingSchema,
-});
+// The summary/metadata enable switches live in the Collapse header
+// (rightContent); the metadata section body only carries the field-schema
+// editor (custom + built-in metadata).
+function ExtractorMetadataContent() {
+  const { t } = useTranslation();
+  const form = useFormContext<ExtractorFormSchemaType>();
+  const {
+    manageMetadataVisible,
+    showManageMetadataModal,
+    hideManageMetadataModal,
+    tableData,
+    config: metadataConfig,
+  } = useManageMetadata();
 
-export type ExtractorFormSchemaType = z.infer<typeof FormSchema>;
+  const handleOpen = useCallback(() => {
+    showManageMetadataModal({
+      metadata: util.metaDataSettingJSONToMetaDataTableData(
+        form.getValues('metadata.metadata') || [],
+      ),
+      isCanAdd: true,
+      type: MetadataType.Setting,
+      builtInMetadata: form.getValues('metadata.built_in_metadata') || [],
+    });
+  }, [form, showManageMetadataModal]);
+
+  const handleSave = useCallback(
+    (data?: {
+      metadata?: IMetaDataReturnJSONSettings;
+      builtInMetadata?: IBuiltInMetadataItem[];
+    }) => {
+      form.setValue('metadata.metadata', data?.metadata || [], {
+        shouldDirty: true,
+      });
+      form.setValue('metadata.built_in_metadata', data?.builtInMetadata || [], {
+        shouldDirty: true,
+      });
+      form.setValue('metadata.enabled', true, { shouldDirty: true });
+    },
+    [form],
+  );
+
+  return (
+    <>
+      <div>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={handleOpen}
+          data-testid="extractor-metadata-open-modal-btn"
+        >
+          <div className="flex items-center gap-2">
+            <Settings />
+            {t('knowledgeConfiguration.settings')}
+          </div>
+        </Button>
+      </div>
+      {manageMetadataVisible && (
+        <ManageMetadataModal
+          title={t('knowledgeDetails.metadata.metadataGenerationSettings')}
+          visible={manageMetadataVisible}
+          hideModal={hideManageMetadataModal}
+          tableData={tableData}
+          isCanAdd={metadataConfig.isCanAdd}
+          isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
+          type={metadataConfig.type}
+          otherData={metadataConfig.record}
+          isShowDescription
+          isShowValueSwitch
+          isVerticalShowValue={false}
+          isLocalSave
+          builtInMetadata={metadataConfig.builtInMetadata}
+          secondTitle={metadataConfig.secondTitle}
+          success={handleSave}
+        />
+      )}
+    </>
+  );
+}
 
 const outputList = buildOutputList(initialExtractorValues.outputs);
+
+const useNormalizedExtractorFormValues = (node?: RAGFlowNodeType) => {
+  return useMemo(() => {
+    const raw = (node?.data?.form as Record<string, any>) || {};
+    return {
+      ...initialExtractorValues,
+      ...transformExtractorConfigToForm(raw),
+    };
+  }, [node?.data?.form]);
+};
 
 const ExtractorForm = ({
   node,
   onValuesChange,
   hideOutputs,
+  externalErrors,
 }: INextOperatorForm) => {
-  const defaultValues = useFormValues(initialExtractorValues, node);
+  const defaultValues = useNormalizedExtractorFormValues(node);
   const { t } = useTranslation();
 
   const form = useForm<ExtractorFormSchemaType>({
     defaultValues,
     resolver: zodResolver(FormSchema),
-    // mode: 'onChange',
+    mode: 'onChange',
   });
 
-  const promptOptions = useBuildNodeOutputOptions(node?.id);
-
-  const options = buildOptions(ContextGeneratorFieldName, t, 'flow');
-
-  const {
-    handleFieldNameChange,
-    confirmSwitch,
-    hideModal,
-    visible,
-    cancelSwitch,
-  } = useSwitchPrompt(form);
+  useSyncExternalFormErrors(form, externalErrors);
 
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
 
   const ownerTenantId = useOwnerTenantId();
 
-  const { treeData, loadData } = useTagFileTree(form.watch('tag_file_id'));
+  const tagFileId = useWatch({
+    control: form.control,
+    name: 'tags.tag_file_id',
+  });
+  const { treeData, loadData } = useTagFileTree(tagFileId, ownerTenantId);
+
+  const keywordsEnabledRaw = useWatch({
+    control: form.control,
+    name: 'keywords.enabled',
+  });
+  const questionsEnabledRaw = useWatch({
+    control: form.control,
+    name: 'questions.enabled',
+  });
+  const tagsEnabledRaw = useWatch({
+    control: form.control,
+    name: 'tags.enabled',
+  });
+  const summaryEnabledRaw = useWatch({
+    control: form.control,
+    name: 'summary.enabled',
+  });
+  const metadataEnabledRaw = useWatch({
+    control: form.control,
+    name: 'metadata.enabled',
+  });
+  const keywordsEnabled =
+    keywordsEnabledRaw === true || keywordsEnabledRaw === 1;
+  const questionsEnabled =
+    questionsEnabledRaw === true || questionsEnabledRaw === 1;
+  const tagsEnabled = tagsEnabledRaw === true || tagsEnabledRaw === 1;
+  const summaryEnabled = summaryEnabledRaw === true || summaryEnabledRaw === 1;
+  const metadataEnabled =
+    metadataEnabledRaw === true || metadataEnabledRaw === 1;
+
+  useEffect(() => {
+    if (!form.getValues('keywords.system_prompt')) {
+      form.setValue(
+        'keywords.system_prompt',
+        t('flow.prompts.system.keywords'),
+      );
+    }
+    if (!form.getValues('questions.system_prompt')) {
+      form.setValue(
+        'questions.system_prompt',
+        t('flow.prompts.system.questions'),
+      );
+    }
+    if (!form.getValues('summary.system_prompt')) {
+      form.setValue('summary.system_prompt', t('flow.prompts.system.summary'));
+    }
+  }, [form, t]);
+
+  const handleKeywordsSwitch = useCallback(
+    (checked: boolean) => {
+      form.setValue('keywords.enabled', checked, { shouldDirty: true });
+    },
+    [form],
+  );
+
+  const handleQuestionsSwitch = useCallback(
+    (checked: boolean) => {
+      form.setValue('questions.enabled', checked, { shouldDirty: true });
+    },
+    [form],
+  );
+
+  const handleTagsSwitch = useCallback(
+    (checked: boolean) => {
+      form.setValue('tags.enabled', checked, { shouldDirty: true });
+    },
+    [form],
+  );
+
+  const handleSummarySwitch = useCallback(
+    (checked: boolean) => {
+      form.setValue('summary.enabled', checked, { shouldDirty: true });
+    },
+    [form],
+  );
+
+  const handleMetadataSwitch = useCallback(
+    (checked: boolean) => {
+      form.setValue('metadata.enabled', checked, { shouldDirty: true });
+    },
+    [form],
+  );
 
   return (
     <Form {...form}>
@@ -89,75 +265,154 @@ const ExtractorForm = ({
         <LargeModelFormField
           ownerTenantId={ownerTenantId}
         ></LargeModelFormField>
-        <AutoKeywordsFormField name="auto_keywords"></AutoKeywordsFormField>
-        <AutoQuestionsFormField name="auto_questions"></AutoQuestionsFormField>
-        {isGoBackend() && (
-          <>
-            <SliderInputFormField
-              name="auto_tags"
-              label={t('knowledgeDetails.autoTags')}
-              min={1}
-              max={10}
-              defaultValue={1}
-              layout={FormLayout.Vertical}
-            ></SliderInputFormField>
 
-            <RAGFlowFormItem label={t('flow.tagFile')} name="tag_file_id">
-              {(field) => (
-                <AsyncTreeSelect
-                  treeData={treeData}
-                  value={field.value}
-                  onChange={field.onChange}
-                  loadData={loadData}
-                  canSelect={canSelectTagFile}
-                ></AsyncTreeSelect>
-              )}
-            </RAGFlowFormItem>
-          </>
-        )}
+        <div className="space-y-4">
+          <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+            <Collapse
+              title={t('flow.keywords')}
+              defaultOpen
+              rightContent={
+                <Switch
+                  checked={keywordsEnabled}
+                  onCheckedChange={handleKeywordsSwitch}
+                  data-testid="extractor-keywords-switch"
+                />
+              }
+            >
+              <div className="space-y-4">
+                <AutoKeywordsFormField name="keywords.top_n" />
+                <RAGFlowFormItem
+                  label={t('flow.systemPrompt')}
+                  name="keywords.system_prompt"
+                >
+                  <Textarea
+                    placeholder={t('flow.messagePlaceholder')}
+                    rows={18}
+                    resize="vertical"
+                  />
+                </RAGFlowFormItem>
+              </div>
+            </Collapse>
+          </Card>
 
-        <RAGFlowFormItem label={t('flow.fieldName')} name="field_name">
-          {(field) => (
-            <SelectWithSearch
-              onChange={(value) => {
-                field.onChange(value);
-                handleFieldNameChange(value);
-              }}
-              value={field.value}
-              placeholder={t('dataFlowPlaceholder')}
-              options={options}
-            ></SelectWithSearch>
-          )}
-        </RAGFlowFormItem>
+          <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+            <Collapse
+              title={t('flow.questions')}
+              defaultOpen
+              rightContent={
+                <Switch
+                  checked={questionsEnabled}
+                  onCheckedChange={handleQuestionsSwitch}
+                  data-testid="extractor-questions-switch"
+                />
+              }
+            >
+              <div className="space-y-4">
+                <AutoQuestionsFormField name="questions.top_n" />
+                <RAGFlowFormItem
+                  label={t('flow.systemPrompt')}
+                  name="questions.system_prompt"
+                >
+                  <Textarea
+                    placeholder={t('flow.messagePlaceholder')}
+                    resize="vertical"
+                    rows={18}
+                  />
+                </RAGFlowFormItem>
+              </div>
+            </Collapse>
+          </Card>
 
-        <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
-          <PromptEditor
-            placeholder={t('flow.messagePlaceholder')}
-            showToolbar={true}
-            baseOptions={promptOptions}
-          ></PromptEditor>
-        </RAGFlowFormItem>
+          <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+            <Collapse
+              title={t('flow.tags') || t('knowledgeDetails.autoTags')}
+              defaultOpen
+              rightContent={
+                <Switch
+                  checked={tagsEnabled}
+                  onCheckedChange={handleTagsSwitch}
+                  data-testid="extractor-tags-switch"
+                />
+              }
+            >
+              <div className="space-y-4">
+                <SliderInputFormField
+                  name="tags.top_n"
+                  label={t('knowledgeDetails.autoTags')}
+                  min={0}
+                  max={10}
+                  defaultValue={0}
+                  layout={FormLayout.Vertical}
+                  integer
+                />
+                <RAGFlowFormItem
+                  label={t('flow.tagFile')}
+                  tooltip={t('flow.tagFileTip')}
+                  name="tags.tag_file_id"
+                >
+                  {(field) => (
+                    <AsyncTreeSelect
+                      treeData={treeData}
+                      value={field.value}
+                      onChange={field.onChange}
+                      loadData={loadData}
+                      canSelect={canSelectTagFile}
+                    />
+                  )}
+                </RAGFlowFormItem>
+              </div>
+            </Collapse>
+          </Card>
 
-        <RAGFlowFormItem label={t('flow.userPrompt')} name="prompts">
-          <PromptEditor
-            showToolbar={true}
-            baseOptions={promptOptions}
-          ></PromptEditor>
-        </RAGFlowFormItem>
+          <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+            <Collapse
+              title={t('flow.summary')}
+              defaultOpen
+              rightContent={
+                <Switch
+                  checked={summaryEnabled}
+                  onCheckedChange={handleSummarySwitch}
+                  data-testid="extractor-summary-switch"
+                />
+              }
+            >
+              <RAGFlowFormItem
+                label={t('flow.systemPrompt')}
+                name="summary.system_prompt"
+              >
+                <Textarea
+                  placeholder={t('flow.messagePlaceholder')}
+                  resize="vertical"
+                  rows={18}
+                />
+              </RAGFlowFormItem>
+            </Collapse>
+          </Card>
+
+          <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+            <Collapse
+              title={t('flow.metadata')}
+              defaultOpen
+              rightContent={
+                <Switch
+                  checked={metadataEnabled}
+                  onCheckedChange={handleMetadataSwitch}
+                  data-testid="extractor-metadata-switch"
+                />
+              }
+            >
+              <ExtractorMetadataContent />
+            </Collapse>
+          </Card>
+        </div>
 
         {!hideOutputs && <Output list={outputList}></Output>}
       </FormWrapper>
-      {visible && (
-        <ConfirmDeleteDialog
-          title={t('flow.switchPromptMessage')}
-          open
-          onOpenChange={hideModal}
-          onOk={confirmSwitch}
-          onCancel={cancelSwitch}
-        ></ConfirmDeleteDialog>
-      )}
     </Form>
   );
 };
 
 export default memo(ExtractorForm);
+
+export { FormSchema } from './schema';
+export type { ExtractorFormSchemaType } from './schema';

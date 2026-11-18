@@ -1,143 +1,190 @@
 import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import { MessageType } from '@/constants/chat';
-import {
-  useHandleMessageInputChange,
-  useRegenerateMessage,
-  useSelectDerivedMessages,
-  useSendMessageWithSse,
-} from '@/hooks/logic-hooks';
-import { useGetChatSearchParams } from '@/hooks/use-chat-request';
-import { IMessage } from '@/interfaces/database/chat';
-import api from '@/utils/api';
+import { useHandleMessageInputChange } from '@/hooks/logic-hooks';
+import { useFetchChat, useGetChatSearchParams } from '@/hooks/use-chat-request';
+import { useVirtualMessages } from '@/hooks/use-virtual-messages';
+import { buildMessageListWithUuid } from '@/utils/chat';
+import { IMessage, Message } from '@/interfaces/database/chat';
+import notification from '@/utils/notification';
 import { trim } from 'lodash';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
+import { runChatCompletionStream } from '../chat-stream/run-stream';
+import {
+  useChatPendingInput,
+  useChatStreamMessages,
+  useChatStreamStore,
+  useIsChatStreaming,
+} from '../chat-stream/store';
+import { resolveResendOptions } from '../utils';
 import { useCreateConversationBeforeSendMessage } from './use-chat-url';
+import { useRegenerationAutoScroll } from './use-regeneration-auto-scroll';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
 import { useUploadFile } from './use-upload-file';
 
-export const useSelectNextMessages = () => {
-  const {
-    scrollRef,
-    messageContainerRef,
-    setDerivedMessages,
-    derivedMessages,
-    addNewestAnswer,
-    addNewestQuestion,
-    removeLatestMessage,
-    removeMessageById,
-    removeMessagesAfterCurrentMessage,
-  } = useSelectDerivedMessages();
-  const { isNew, conversationId } = useGetChatSearchParams();
+/**
+ * Subscribes to the current conversation's entry in the chat stream store and
+ * seeds the prologue for a brand new session. Because the store lives at module
+ * level, an in-flight stream keeps updating it while this page is unmounted, so
+ * switching back re-attaches to the still-running stream.
+ */
+export const useCurrentChatSession = () => {
+  const { conversationId, isNew } = useGetChatSearchParams();
   const { id: dialogId } = useParams();
   const prologue = useFindPrologueFromDialogList();
 
-  const addPrologue = useCallback(() => {
-    if (dialogId !== '' && isNew === 'true') {
-      const nextMessage = {
-        role: MessageType.Assistant,
-        content: prologue,
-        id: uuid(),
-        conversationId: conversationId,
-      } as IMessage;
+  const messages = useChatStreamMessages(conversationId);
+  const isStreaming = useIsChatStreaming(conversationId);
 
-      setDerivedMessages([nextMessage]);
-    }
-  }, [conversationId, dialogId, isNew, prologue, setDerivedMessages]);
+  const messageContainerRef = useRef<HTMLDivElement>(null);
+  const { virtualizer, scrollToBottom } = useVirtualMessages(
+    messages,
+    messageContainerRef,
+    { resetKey: conversationId },
+  );
+
+  const ensureSession = useChatStreamStore((state) => state.ensureSession);
+  const seedPrologue = useChatStreamStore((state) => state.seedPrologue);
 
   useEffect(() => {
-    addPrologue();
-  }, [addPrologue]);
+    if (!conversationId) return;
+    ensureSession(conversationId, dialogId ?? '');
+  }, [conversationId, dialogId, ensureSession]);
+
+  useEffect(() => {
+    if (!conversationId || isNew !== 'true') return;
+    seedPrologue(conversationId, dialogId ?? '', prologue ?? '');
+  }, [conversationId, dialogId, isNew, prologue, seedPrologue]);
 
   return {
-    scrollRef,
+    messages,
+    isStreaming,
+    virtualizer,
     messageContainerRef,
-    derivedMessages,
-    addNewestAnswer,
-    addNewestQuestion,
-    removeLatestMessage,
-    removeMessageById,
-    removeMessagesAfterCurrentMessage,
-    setDerivedMessages,
+    scrollToBottom,
   };
 };
 
-export const useSendMessage = (controller: AbortController) => {
-  const { conversationId, isNew } = useGetChatSearchParams();
+export const useSendMessage = () => {
+  const { conversationId } = useGetChatSearchParams();
+  const { t } = useTranslation();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
   const { handleUploadFile, isUploading, removeFile, files, clearFiles } =
     useUploadFile();
 
   const { id: chatId } = useParams();
-  const { send, answer, done } = useSendMessageWithSse();
+  const { data: currentDialog } = useFetchChat();
   const {
-    scrollRef,
+    messages,
+    isStreaming,
+    virtualizer,
     messageContainerRef,
-    derivedMessages,
-    addNewestAnswer,
-    addNewestQuestion,
-    removeLatestMessage,
-    removeMessageById,
-    removeMessagesAfterCurrentMessage,
-    setDerivedMessages,
-  } = useSelectNextMessages();
+    scrollToBottom,
+  } = useCurrentChatSession();
+
+  const appendQuestion = useChatStreamStore((state) => state.appendQuestion);
+  const failStream = useChatStreamStore((state) => state.failStream);
+  const consumePendingInput = useChatStreamStore(
+    (state) => state.consumePendingInput,
+  );
+  const pendingInput = useChatPendingInput(conversationId);
+  const removeMessageFromStore = useChatStreamStore(
+    (state) => state.removeMessageById,
+  );
+  const hydrateFromServer = useChatStreamStore(
+    (state) => state.hydrateFromServer,
+  );
+  const stopStream = useChatStreamStore((state) => state.stopStream);
+
+  // The regenerate button lives in the transcript, which has no access to the
+  // input box's thinking / internet toggles. Remember what the last send used
+  // so a retry keeps the same options instead of silently dropping them.
+  const lastSendOptionsRef = useRef<NextMessageInputOnPressEnterParameter>({});
 
   const sendMessage = useCallback(
     async ({
       message,
       currentConversationId,
-      messages,
       enableInternet,
       enableThinking,
     }: {
       message: IMessage;
       currentConversationId?: string;
-      messages?: IMessage[];
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
-      const res = await send(
-        api.completionUrl,
-        {
-          chat_id: chatId,
-          session_id: sessionId,
-          // An explicitly provided list is authoritative, even when empty
-          // (e.g. regenerating the first question must truncate history).
-          messages: [
-            ...(Array.isArray(messages) ? messages : (derivedMessages ?? [])),
-            message,
-          ],
-          pass_all_history_messages: true,
-          reasoning: Number(enableThinking),
-          internet: enableInternet,
-        },
-        controller,
-      );
 
-      if (res && (res?.response.status !== 200 || res?.data?.code !== 0)) {
-        // cancel loading
-        setValue(message.content);
-        console.info('removeLatestMessage111');
-        removeLatestMessage();
+      lastSendOptionsRef.current = { enableInternet, enableThinking };
+
+      const { ok, aborted } = await runChatCompletionStream({
+        conversationId: sessionId,
+        chatId,
+        question: message.content,
+        files: message.files,
+        enableThinking,
+        enableInternet,
+        llmSetting: currentDialog?.llm_setting,
+      });
+
+      if (!ok && !aborted) {
+        // The failure can land long after the page unmounted or after the user
+        // switched conversations, so don't write to the input box here: park the
+        // text on the failing session instead, and tell the user something went
+        // wrong wherever they currently are.
+        failStream(sessionId, message.content);
+        notification.error({ message: t('message.requestError') });
       }
     },
-    [
-      derivedMessages,
-      conversationId,
-      chatId,
-      removeLatestMessage,
-      setValue,
-      send,
-      controller,
-    ],
+    [conversationId, chatId, failStream, t, currentDialog?.llm_setting],
   );
 
-  const { regenerateMessage } = useRegenerateMessage({
-    removeMessagesAfterCurrentMessage,
-    sendMessage,
-    messages: derivedMessages,
+  // Hand a failed question back to the input box, but only once the box is
+  // empty so a message the user is currently typing is never clobbered.
+  useEffect(() => {
+    if (!pendingInput || trim(value) !== '') return;
+    consumePendingInput(conversationId);
+    setValue(pendingInput);
+  }, [pendingInput, value, conversationId, consumePendingInput, setValue]);
+
+  const removeMessageById = useCallback(
+    (messageId: string) => {
+      removeMessageFromStore(conversationId, messageId);
+    },
+    [conversationId, removeMessageFromStore],
+  );
+
+  const { startAutoScroll } = useRegenerationAutoScroll({
+    conversationId,
+    messages,
+    isStreaming,
+    containerRef: messageContainerRef,
   });
+
+  // Regenerating re-asks the same question as a new turn instead of rewriting
+  // the original exchange, so every earlier answer stays in the transcript.
+  const regenerateMessage = useCallback(
+    (message: Message) => {
+      if (isStreaming) return;
+
+      const questionMessage: IMessage = {
+        content: message.content,
+        files: message.files,
+        id: uuid(),
+        role: MessageType.User,
+        conversationId,
+      };
+
+      startAutoScroll();
+      appendQuestion(conversationId, questionMessage);
+      sendMessage({
+        message: questionMessage,
+        ...resolveResendOptions(lastSendOptionsRef.current),
+      });
+    },
+    [conversationId, isStreaming, appendQuestion, sendMessage, startAutoScroll],
+  );
 
   const { createConversationBeforeSendMessage } =
     useCreateConversationBeforeSendMessage();
@@ -147,7 +194,7 @@ export const useSendMessage = (controller: AbortController) => {
       enableThinking,
       enableInternet,
     }: NextMessageInputOnPressEnterParameter) => {
-      if (trim(value) === '' || !done) return;
+      if (trim(value) === '' || isStreaming) return;
 
       const data = await createConversationBeforeSendMessage(value);
 
@@ -157,67 +204,78 @@ export const useSendMessage = (controller: AbortController) => {
 
       const { targetConversationId, currentMessages } = data;
 
+      // The await above can span a conversation switch, and the target session
+      // may already have a stream running.
+      if (
+        useChatStreamStore.getState().sessions[targetConversationId]
+          ?.isStreaming
+      ) {
+        return;
+      }
+
       const id = uuid();
 
-      addNewestQuestion({
+      const questionMessage: IMessage = {
         content: value,
-        files: files,
+        files,
         id,
         role: MessageType.User,
         conversationId: targetConversationId,
-      });
+      };
 
-      if (done) {
-        setValue('');
-        sendMessage({
-          currentConversationId: targetConversationId,
-          // For an existing conversation currentMessages is empty; fall back
-          // to derivedMessages instead of sending an empty history.
-          messages: currentMessages.length > 0 ? currentMessages : undefined,
-          message: {
-            id,
-            content: value.trim(),
-            role: MessageType.User,
-            files,
-            conversationId: targetConversationId,
-          },
-          enableInternet,
-          enableThinking,
-        });
+      // A brand new conversation is persisted under a server-generated id, so
+      // the prologue seeded on the temporary id doesn't carry over. Seed the
+      // real session from the server's list (which holds just the prologue)
+      // BEFORE appending the question — hydrating afterwards would pass the
+      // authority check (not streaming yet) and wipe the question and
+      // placeholder that were just appended.
+      if (currentMessages.length > 0) {
+        hydrateFromServer(
+          targetConversationId,
+          buildMessageListWithUuid(currentMessages),
+        );
       }
+
+      // Route the question to the conversation it was asked in, not whichever
+      // is currently displayed.
+      appendQuestion(targetConversationId, questionMessage);
+
+      setValue('');
+      sendMessage({
+        currentConversationId: targetConversationId,
+        message: {
+          id,
+          content: value.trim(),
+          role: MessageType.User,
+          files,
+          conversationId: targetConversationId,
+        },
+        enableInternet,
+        enableThinking,
+      });
 
       clearFiles();
 
       // Auto scroll to bottom when sending new message
-      if (messageContainerRef.current) {
-        const el = messageContainerRef.current;
-
-        requestAnimationFrame(() => {
-          el.scrollTo({
-            top: el.scrollHeight,
-          });
-        });
-      }
+      requestAnimationFrame(scrollToBottom);
     },
     [
       value,
-      done,
+      isStreaming,
       createConversationBeforeSendMessage,
-      addNewestQuestion,
+      appendQuestion,
+      hydrateFromServer,
       files,
       clearFiles,
       setValue,
       sendMessage,
-      messageContainerRef,
+      scrollToBottom,
     ],
   );
 
-  useEffect(() => {
-    //  #1289
-    if (answer.answer && conversationId && isNew !== 'true') {
-      addNewestAnswer(answer);
-    }
-  }, [answer, addNewestAnswer, conversationId, isNew]);
+  const stopOutputMessage = useCallback(() => {
+    stopStream(conversationId);
+  }, [conversationId, stopStream]);
 
   return {
     handlePressEnter,
@@ -225,14 +283,15 @@ export const useSendMessage = (controller: AbortController) => {
     value,
     setValue,
     regenerateMessage,
-    sendLoading: !done,
-    scrollRef,
+    sendLoading: isStreaming,
+    virtualizer,
     messageContainerRef,
-    derivedMessages,
+    messages,
     removeMessageById,
     handleUploadFile,
     isUploading,
     removeFile,
-    setDerivedMessages,
+    hydrateFromServer,
+    stopOutputMessage,
   };
 };

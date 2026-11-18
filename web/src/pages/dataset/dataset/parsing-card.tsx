@@ -1,8 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { formatDate } from '@/utils/date';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus, RunningStatusMap } from './constant';
+import { getDocumentProgressMessage, getDocumentRunningStatus } from './utils';
 
 interface IProps {
   record: IDocumentInfo;
@@ -21,7 +23,9 @@ function Dot({ run }: { run: RunningStatus }) {
 
 export const PopoverContent = ({ record }: IProps) => {
   const { t } = useTranslation();
-  const label = t(`knowledgeDetails.runningStatus${record.run}`);
+  // Go derives state from ingestion_status; Python reads the legacy run.
+  const run = getDocumentRunningStatus(record);
+  const label = t(`knowledgeDetails.runningStatus${run}`);
 
   const replaceText = (text: string) => {
     // Remove duplicate \n
@@ -46,24 +50,24 @@ export const PopoverContent = ({ record }: IProps) => {
     {
       key: 'process_begin_at',
       label: t('knowledgeDetails.processBeginAt'),
-      children: record.process_begin_at,
+      children: formatDate(record.process_begin_at),
     },
     {
       key: 'knowledgeDetails.process_duration',
       label: t('processDuration'),
-      children: `${record.process_duration.toFixed(2)} s`,
+      children: `${(record.process_duration || 0).toFixed(2)} s`,
     },
     {
       key: 'progress_msg',
       label: t('knowledgeDetails.progressMsg'),
-      children: replaceText(record.progress_msg.trim()),
+      children: replaceText(getDocumentProgressMessage(record).trim()),
     },
   ];
 
   return (
     <section>
       <div className="flex gap-2 items-center pb-2">
-        <Dot run={record.run}></Dot> {label}
+        <Dot run={run}></Dot> {label}
       </div>
       <div className="flex flex-col max-h-[50vh] overflow-auto">
         {items.map((x, idx) => {
@@ -82,13 +86,14 @@ export const PopoverContent = ({ record }: IProps) => {
 };
 
 export function ParsingCard({ record, handleShowLog }: IProps) {
+  const run = getDocumentRunningStatus(record);
   return (
     <Button
       variant="ghost"
       size="icon-xs"
       onClick={() => handleShowLog?.(record)}
     >
-      <Dot run={record.run}></Dot>
+      <Dot run={run}></Dot>
     </Button>
   );
 }

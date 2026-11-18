@@ -42,23 +42,6 @@ func TestModelScopeName(t *testing.T) {
 	}
 }
 
-func TestNormalizeModelScopeBaseURL(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{"http://127.0.0.1:8000", "http://127.0.0.1:8000"},
-		{"http://127.0.0.1:8000/", "http://127.0.0.1:8000"},
-		{"http://127.0.0.1:8000/v1", "http://127.0.0.1:8000"},
-		{" http://127.0.0.1:8000/v1/ ", "http://127.0.0.1:8000"},
-	}
-	for _, tc := range cases {
-		if got := normalizeModelScopeBaseURL(tc.in); got != tc.want {
-			t.Errorf("normalizeModelScopeBaseURL(%q)=%q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestModelScopeFactoryRoute(t *testing.T) {
 	driver, err := NewModelFactory().CreateModelDriver("ModelScope", map[string]string{"default": "http://unused"}, URLSuffix{})
 	if err != nil {
@@ -305,10 +288,10 @@ func TestModelScopeUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	m := newModelScopeForTest("http://unused")
 	model := "Qwen/Qwen2.5-7B-Instruct"
 
-	if _, err := m.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: expected no such method, got %v", err)
 	}
-	if _, err := m.Rerank(ctx, &model, "q", []string{"d"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected no such method, got %v", err)
 	}
 	if _, err := m.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {

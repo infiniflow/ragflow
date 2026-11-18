@@ -1,4 +1,5 @@
 import message from '@/components/ui/message';
+import { useSaveBuiltinMetadata } from '@/ee/pages/dataset/components/metedata/hooks/use-save-builtin-metadata';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
 import { DocumentApiAction } from '@/hooks/use-document-request';
@@ -289,10 +290,12 @@ export const useManageMetaDataModal = (
   type: MetadataType = MetadataType.Manage,
   otherData?: Record<string, any>,
   documentIds?: string[],
+  isLocalSave = false,
 ) => {
   const { id } = useParams();
   const { t } = useTranslation();
   const { data, loading } = useFetchMetaDataManageData(type, documentIds);
+  const { saveBuiltinMetadata } = useSaveBuiltinMetadata();
 
   const [tableData, setTableData] = useState<IMetaDataTableData[]>(metaData);
   const queryClient = useQueryClient();
@@ -305,8 +308,6 @@ export const useManageMetaDataModal = (
     addUpdateValue,
     resetOperations,
   } = useMetadataOperations();
-
-  // const { setDocumentMeta } = useSetDocumentMeta();
 
   useEffect(() => {
     if (fetchTypeList.includes(type)) {
@@ -415,21 +416,24 @@ export const useManageMetaDataModal = (
   const handleSaveSettings = useCallback(
     async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      const { data: res } = await kbUpdateMetaData(id || '', {
-        metadata: data,
-        builtInMetadata: builtInMetadata || [],
-      });
-      if (res.code === 0) {
-        message.success(t('message.operated'));
+      if (isLocalSave) {
         callback?.();
+      } else {
+        const { data: res } = await kbUpdateMetaData(id || '', {
+          metadata: data,
+          builtInMetadata: builtInMetadata || [],
+        });
+        if (res.code === 0) {
+          message.success(t('message.operated'));
+          callback?.();
+        }
       }
-      // callback?.();
       return {
         metadata: data,
         builtInMetadata: builtInMetadata || [],
       };
     },
-    [tableData, t, id],
+    [tableData, t, id, isLocalSave],
   );
 
   const handleSaveSingleFileSettings = useCallback(
@@ -467,6 +471,12 @@ export const useManageMetaDataModal = (
         case MetadataType.UpdateSingle:
           // handleSaveUpdateSingle(callback);
           handleSaveManage(callback);
+          await saveBuiltinMetadata({
+            kbId: id,
+            documentId: documentIds?.[0],
+            builtInMetadata,
+            metadata: util.tableDataToMetaDataSettingJSON(tableData),
+          });
           break;
         case MetadataType.Manage:
           handleSaveManage(callback);
@@ -482,8 +492,12 @@ export const useManageMetaDataModal = (
       }
     },
     [
+      id,
+      documentIds,
+      tableData,
       handleSaveManage,
       type,
+      saveBuiltinMetadata,
       // handleSaveUpdateSingle,
       handleSaveSettings,
       handleSaveSingleFileSettings,

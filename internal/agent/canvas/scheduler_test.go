@@ -2,7 +2,6 @@
 package canvas
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -24,7 +23,7 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 				Upstream:   []string{"begin_0"},
 			},
 			"message_0": {
-				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer"}},
 				Downstream: []string{},
 				Upstream:   []string{"llm_0"},
 			},
@@ -32,7 +31,7 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 		Path: []string{"begin_0", "llm_0", "message_0"},
 	}
 
-	wf, err := BuildWorkflow(context.Background(), c)
+	wf, err := BuildWorkflow(t.Context(), c)
 	if err != nil {
 		t.Fatalf("BuildWorkflow: %v", err)
 	}
@@ -41,12 +40,47 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 	}
 
 	// Compile to a Runnable to confirm the topology is internally consistent.
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
 	if cc.Workflow == nil {
 		t.Fatal("nil compiled workflow")
+	}
+}
+
+// TestBuildWorkflow_MessageThenNextNode keeps a status message between two
+// steps. The edge after Message is ordering-only, so the graph still compiles
+// when Message is not the terminal node.
+func TestBuildWorkflow_MessageThenNextNode(t *testing.T) {
+	c := &Canvas{
+		Components: map[string]CanvasComponent{
+			"begin_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
+				Downstream: []string{"message_0"},
+			},
+			"message_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"content": []any{"Searching the first source"}}},
+				Downstream: []string{"llm_0"},
+				Upstream:   []string{"begin_0"},
+			},
+			"llm_0": {
+				Obj:        CanvasComponentObj{ComponentName: "LLM", Params: map[string]any{"prompt": "{sys.query}"}},
+				Downstream: []string{"message_1"},
+				Upstream:   []string{"message_0"},
+			},
+			"message_1": {
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"content": []any{"{llm_0@content}"}}},
+				Upstream: []string{"llm_0"},
+			},
+		},
+	}
+
+	if _, err := BuildWorkflow(t.Context(), c); err != nil {
+		t.Fatalf("BuildWorkflow: %v", err)
+	}
+	if _, err := Compile(t.Context(), c); err != nil {
+		t.Fatalf("Compile: %v", err)
 	}
 }
 
@@ -76,7 +110,7 @@ func TestBuildWorkflow_5NodeDiamond(t *testing.T) {
 				Upstream:   []string{"a_0"},
 			},
 			"d_0": {
-				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer"}},
 				Downstream: []string{},
 				Upstream:   []string{"b_0", "c_0"},
 			},
@@ -84,12 +118,44 @@ func TestBuildWorkflow_5NodeDiamond(t *testing.T) {
 		Path: []string{"begin_0", "a_0", "b_0", "c_0", "d_0"},
 	}
 
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile diamond: %v", err)
 	}
 	if cc.Workflow == nil {
 		t.Fatal("nil compiled diamond workflow")
+	}
+}
+
+// TestBuildWorkflow_DuplicateUpstreamSucceeds verifies that multiple output
+// handles from one branching node may converge on the same downstream node.
+// The DSL records one upstream entry per handle, while eino requires only one
+// control edge between the two nodes.
+func TestBuildWorkflow_DuplicateUpstreamSucceeds(t *testing.T) {
+	c := &Canvas{
+		Components: map[string]CanvasComponent{
+			"begin_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
+				Downstream: []string{"categorize_0"},
+			},
+			"categorize_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Categorize", Params: map[string]any{}},
+				Downstream: []string{"message_0", "message_0"},
+				Upstream:   []string{"begin_0"},
+			},
+			"message_0": {
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer"}},
+				Upstream: []string{"categorize_0", "categorize_0"},
+			},
+		},
+	}
+
+	cc, err := Compile(t.Context(), c)
+	if err != nil {
+		t.Fatalf("Compile duplicate upstream: %v", err)
+	}
+	if cc == nil || cc.Workflow == nil {
+		t.Fatal("Compile produced nil workflow")
 	}
 }
 
@@ -111,12 +177,12 @@ func TestBuildWorkflow_MultiTerminalSucceeds(t *testing.T) {
 				Upstream:   []string{"begin_0"},
 			},
 			"b_0": {
-				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer a"}},
 				Downstream: []string{},
 				Upstream:   []string{"a_0"},
 			},
 			"c_0": {
-				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer b"}},
 				Downstream: []string{},
 				Upstream:   []string{"a_0"},
 			},
@@ -124,9 +190,9 @@ func TestBuildWorkflow_MultiTerminalSucceeds(t *testing.T) {
 		Path: []string{"begin_0", "a_0", "b_0", "c_0"},
 	}
 
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
-		t.Fatalf("Compile multi-terminal canvas: %v", err)
+		t.Fatalf("Compile multi-terminal agent: %v", err)
 	}
 	if cc.Workflow == nil {
 		t.Fatal("nil compiled multi-terminal workflow")
@@ -192,9 +258,9 @@ func TestBuildWorkflow_ParallelGroupWithOuterFollowerSucceeds(t *testing.T) {
 		},
 	}
 
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
-		t.Fatalf("Compile parallel canvas: %v", err)
+		t.Fatalf("Compile parallel agent: %v", err)
 	}
 	if cc.Workflow == nil {
 		t.Fatal("nil compiled parallel workflow")
@@ -212,13 +278,13 @@ func TestBuildWorkflow_ErrorsOnUnknownUpstream(t *testing.T) {
 				Upstream:   []string{},
 			},
 			"message_0": {
-				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer"}},
 				Downstream: []string{},
 				Upstream:   []string{"unknown_0"}, // <-- bad
 			},
 		},
 	}
-	_, err := BuildWorkflow(context.Background(), c)
+	_, err := BuildWorkflow(t.Context(), c)
 	if err == nil {
 		t.Fatal("expected error for unknown upstream")
 	}
@@ -238,7 +304,7 @@ func TestBuildWorkflow_ErrorsOnSelfEdge(t *testing.T) {
 			},
 		},
 	}
-	_, err := BuildWorkflow(context.Background(), c)
+	_, err := BuildWorkflow(t.Context(), c)
 	if err == nil {
 		t.Fatal("expected error for self-edge")
 	}
@@ -249,7 +315,7 @@ func TestBuildWorkflow_ErrorsOnSelfEdge(t *testing.T) {
 
 func TestNodeLifecycleEventsSafeMarshalNonSerializableInputs(t *testing.T) {
 	events := make(chan RunEvent, 2)
-	ctx := WithRunMeta(context.Background(), &RunMeta{
+	ctx := WithRunMeta(t.Context(), &RunMeta{
 		Events:    events,
 		MessageID: "msg-1",
 		SessionID: "session-1",
@@ -280,7 +346,7 @@ func TestNodeLifecycleEventsSafeMarshalNonSerializableInputs(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s inputs = %T %v, want object", wantType, payload["inputs"], payload["inputs"])
 			}
-			if _, ok := in["callback"]; !ok {
+			if _, ok = in["callback"]; !ok {
 				t.Fatalf("%s inputs missing sanitized callback key: %v", wantType, in)
 			}
 			if in["callback"] != nil {
@@ -294,7 +360,7 @@ func TestNodeLifecycleEventsSafeMarshalNonSerializableInputs(t *testing.T) {
 
 func TestNodeLifecycleEventsFallbackMarshalErrorPreservesIdentity(t *testing.T) {
 	events := make(chan RunEvent, 2)
-	ctx := WithRunMeta(context.Background(), &RunMeta{
+	ctx := WithRunMeta(t.Context(), &RunMeta{
 		Events:    events,
 		MessageID: "msg-2",
 		SessionID: "session-2",

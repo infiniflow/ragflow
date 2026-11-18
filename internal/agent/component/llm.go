@@ -14,13 +14,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
+	einojsonschema "github.com/eino-contrib/jsonschema"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/chat"
@@ -28,7 +31,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/tokenizer"
+	"ragflow/internal/modelcontext"
 
 	"go.uber.org/zap"
 )
@@ -64,6 +67,16 @@ type LLMParam struct {
 	// same line verbatim.
 	FrequencyPenalty *float64
 
+	// TemperatureDisabled, TopPDisabled, MaxTokensDisabled,
+	// PresencePenaltyDisabled and FrequencyPenaltyDisabled record a DSL
+	// *Enabled switch set to false, so runtime inputs that carry the value
+	// without its switch do not bring it back (see gateSampler).
+	TemperatureDisabled      bool
+	TopPDisabled             bool
+	MaxTokensDisabled        bool
+	PresencePenaltyDisabled  bool
+	FrequencyPenaltyDisabled bool
+
 	// Driver is the configured provider driver to use (e.g. "openai"). When
 	// empty, the default ChatInvoker derives it from ModelID or uses the explicit
 	// test/development-only dummy driver.
@@ -89,13 +102,7 @@ type LLMParam struct {
 	// (2 seconds). Matches Python's `delay_after_error` param.
 	DelayAfterError time.Duration
 
-	// Thinking mirrors the python `thinking` Agent LLM setting
-	// (PR #15446). When set to "enabled" or "disabled", the LLM
-	// driver is told to turn its reasoning mode on/off
-	// (provider-specific; see chat_model.py for Qwen/Kimi/GLM
-	// policy). Empty string means "system default" — the LLM
-	// driver decides, which today means Qwen3 is sent
-	// `enable_thinking=false` unless overridden.
+	// Thinking enables reasoning only when explicitly set to "enabled".
 	Thinking string
 }
 
@@ -114,7 +121,7 @@ type LLMInput struct {
 	OutputStructure          map[string]any
 	Driver                   string
 	APIKey                   string
-	Thinking                 string // "enabled" | "disabled" | ""
+	Thinking                 string // "enabled" | "disabled"
 }
 
 // LLMOutput mirrors the outputs map (per plan §2.11.3 row 5):
@@ -185,13 +192,7 @@ type einoChatInvoker struct{}
 // Invoke satisfies ChatInvoker.
 func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	if req.ModelName == "" {
-		// Harness/agentic-search nodes may omit the model; fall back to the
-		// bootstrap-registered tenant default so those calls work in production.
-		if def := chat.GetDefaultModelName(); def != "" {
-			req.ModelName = def
-		} else {
-			return nil, fmt.Errorf("component: LLM: model_id is required and no default model is configured")
-		}
+		return nil, fmt.Errorf("component: LLM: model_id is required")
 	}
 	driver := req.Driver
 	modelName := req.ModelName
@@ -217,31 +218,383 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 	}
-	// Propagate the agent-level Thinking setting to the driver so
-	// providers like DeepSeek can send thinking: {type: "disabled"}
-	// and prevent chain-of-thought from leaking into the answer.
-	// Mirrors the Python agent/component/llm.py behaviour.
-	switch req.Thinking {
-	case "enabled":
-		t := true
-		chatCfg.Thinking = &t
-	case "disabled":
-		f := false
-		chatCfg.Thinking = &f
-	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
-	out, err := wrapper.Generate(ctx, toEinoMessages(req.Messages))
+	einoMsgs := toEinoMessages(req.Messages)
+	infos, choice := toolOptions(req.Tools, req.ToolChoice)
+	if len(infos) > 0 {
+		withTools, err := wrapper.WithTools(infos)
+		if err != nil {
+			return nil, err
+		}
+		wrapper = withTools.(*models.EinoChatModel).WithToolChoice(choice)
+	}
+	out, err := wrapper.Generate(ctx, einoMsgs)
 	if err != nil {
 		return nil, err
 	}
-	return &ChatInvokeResponse{
+	resp := &ChatInvokeResponse{
 		Content:  out.Content,
 		Thinking: out.ReasoningContent,
 		Model:    modelName,
 		Stopped:  true,
-		Tokens:   0,
-	}, nil
+		Usage:    usageFromMessage(out),
+	}
+	if calls := nativeToolCalls(out.ToolCalls); len(calls) > 0 {
+		resp.ToolCalls = calls
+	}
+	return resp, nil
 }
+
+// usageFromMessage copies the call's own token split - which the model attaches to the
+// message it returns (ResponseMeta.Usage) - into the chat.Response Usage. The split
+// travels with the call instead of being read back off the shared ChatModel, where a
+// concurrent call could have replaced it before the read.
+func usageFromMessage(msg *schema.Message) *chat.Usage {
+	if msg == nil || msg.ResponseMeta == nil {
+		return nil
+	}
+	return usageFromEinoUsage(msg.ResponseMeta.Usage)
+}
+
+// usageFromEinoUsage converts eino's own usage metadata into the chat.Response Usage.
+// A nil usage yields a nil Response.Usage, which is the honest answer for a call whose
+// provider reported none - better than a value left behind by another call.
+func usageFromEinoUsage(u *schema.TokenUsage) *chat.Usage {
+	if u == nil {
+		return nil
+	}
+	return &chat.Usage{
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		TotalTokens:      u.TotalTokens,
+	}
+}
+
+// toolOptions converts the seam-level chat.Tool declarations into eino tool
+// infos and a tool_choice string the provider understands. It returns
+// (nil, "") when no tools were requested, so the invoke falls back to plain
+// completion and the harness can still parse tool calls from a fenced block.
+func toolOptions(tools []chat.Tool, choice chat.ToolChoice) ([]*schema.ToolInfo, string) {
+	if len(tools) == 0 {
+		return nil, ""
+	}
+	infos := make([]*schema.ToolInfo, 0, len(tools))
+	for _, t := range tools {
+		name, desc := t.Function.Name, t.Function.Description
+		if name == "" {
+			continue
+		}
+		infos = append(infos, &schema.ToolInfo{
+			Name:        name,
+			Desc:        desc,
+			ParamsOneOf: paramsFromMap(t.Function.Parameters),
+		})
+	}
+	if len(infos) == 0 {
+		return nil, ""
+	}
+	resolved := "auto"
+	switch choice {
+	case chat.ToolChoiceNone:
+		resolved = "none"
+	case chat.ToolChoiceRequired:
+		resolved = "required"
+	case chat.ToolChoiceAuto:
+		resolved = "auto"
+	case "":
+		resolved = "auto"
+	}
+	return infos, resolved
+}
+
+// paramsFromMap builds an eino ParamsOneOf from a raw JSON-schema dict. The
+// harness ToolSpec carries the schema as map[string]any, so we round-trip it
+// through JSON into a jsonschema.Schema. A malformed schema yields a permissive
+// (empty) ParamsOneOf rather than failing the whole call.
+func paramsFromMap(raw map[string]any) *schema.ParamsOneOf {
+	if len(raw) == 0 {
+		return &schema.ParamsOneOf{}
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return &schema.ParamsOneOf{}
+	}
+	var js einojsonschema.Schema
+	if err := json.Unmarshal(b, &js); err != nil {
+		return &schema.ParamsOneOf{}
+	}
+	return schema.NewParamsOneOfByJSONSchema(&js)
+}
+
+// nativeToolCalls converts eino tool calls into the seam's chat.ToolCall values,
+// parsing each call's JSON arguments into a map for direct dispatch. A malformed
+// argument string is left as an empty map rather than dropping the call, so the
+// harness can surface the parse failure through its normal error path.
+func nativeToolCalls(calls []schema.ToolCall) []chat.ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]chat.ToolCall, 0, len(calls))
+	for _, c := range calls {
+		args := map[string]any{}
+		if c.Function.Arguments != "" {
+			_ = json.Unmarshal([]byte(c.Function.Arguments), &args)
+		}
+		out = append(out, chat.ToolCall{
+			ID:        c.ID,
+			Name:      c.Function.Name,
+			Arguments: args,
+		})
+	}
+	return out
+}
+
+// Stream satisfies chat.StreamingInvoker: it emits the reply as it arrives
+// while still returning the assembled result, so a caller can push deltas to the
+// user without waiting for the full answer.
+func (e *einoChatInvoker) Stream(ctx context.Context, _ *gorm.DB, req ChatInvokeRequest, onDelta func(delta string, isThink bool) error) (*ChatInvokeResponse, error) {
+	modelName := req.ModelName
+	if modelName == "" {
+		return nil, fmt.Errorf("component: LLM: model_id is required")
+	}
+	driver, bareModel := req.Driver, modelName
+	if driver == "" && bareModel != "" {
+		if name, provider, ok := splitCompositeLLMID(bareModel); ok {
+			driver, bareModel = provider, name
+		}
+	}
+	if driver == "" {
+		driver = "dummy"
+	}
+	d, err := newChatModelDriver(driver, req.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM: resolve driver %q: %w", driver, err)
+	}
+	apiKey := req.APIKey
+	cm := models.NewChatModel(d, &bareModel, &models.APIConfig{ApiKey: &apiKey})
+	chatCfg := &models.ChatConfig{Temperature: req.Temperature, TopP: req.TopP, MaxTokens: req.MaxTokens}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
+
+	wrapper := models.NewEinoChatModel(cm, chatCfg)
+	if infos, choice := toolOptions(req.Tools, req.ToolChoice); len(infos) > 0 {
+		withTools, err := wrapper.WithTools(infos)
+		if err != nil {
+			return nil, err
+		}
+		wrapper = withTools.(*models.EinoChatModel).WithToolChoice(choice)
+	}
+	return streamEinoChat(ctx, wrapper, toEinoMessages(req.Messages), cm, bareModel, onDelta)
+}
+
+// streamEinoChat drains a streaming eino chat call and assembles the reply the
+// one-shot path would have returned, forwarding every piece to onDelta as it
+// arrives (reasoning pieces are flagged isThink so the caller never renders them
+// as answer text). Both chat invokers share it, so streaming and one-shot calls
+// cannot drift apart.
+//
+// Streaming native tool calls arrive as incremental deltas, each carrying an
+// Index (parallel calls) and a slice of Function.Arguments. Merge them by
+// index the same way Python's async_chat_streamly aggregates tool_calls
+// (chat_model.py:711-719): first delta seeds the entry, later deltas append to
+// the arguments string. The full list is committed once the stream ends.
+func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*schema.Message, cm *models.ChatModel, modelName string, onDelta func(delta string, isThink bool) error) (*ChatInvokeResponse, error) {
+	sr, err := wrapper.Stream(ctx, msgs)
+	if err != nil {
+		return nil, err
+	}
+	defer sr.Close()
+
+	var content, reasoning strings.Builder
+	pendingCalls := map[int]*schema.ToolCall{}
+	// A streamed call reports its usage on the last message that carries it
+	// (stream_options.include_usage), so keep the newest one and read it out below.
+	// It is this call's own split: the model no longer parks it on a field shared by
+	// every call on the ChatModel.
+	var streamUsage *schema.TokenUsage
+	for {
+		chunk, recvErr := sr.Recv()
+		if recvErr == io.EOF {
+			break
+		}
+		if recvErr != nil {
+			return nil, recvErr
+		}
+		if chunk == nil {
+			continue
+		}
+		if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil {
+			streamUsage = chunk.ResponseMeta.Usage
+		}
+		// Streaming tool-call deltas are merged before any content handling so a
+		// chunk that carries both is processed exactly once.
+		for _, tc := range chunk.ToolCalls {
+			idx := -1
+			if tc.Index != nil {
+				idx = *tc.Index
+			}
+			existing, ok := pendingCalls[idx]
+			if !ok {
+				cp := tc
+				if cp.Function.Arguments == "" {
+					cp.Function.Arguments = ""
+				}
+				pendingCalls[idx] = &cp
+				continue
+			}
+			existing.Function.Arguments += tc.Function.Arguments
+			if existing.ID == "" && tc.ID != "" {
+				existing.ID = tc.ID
+			}
+			if existing.Function.Name == "" && tc.Function.Name != "" {
+				existing.Function.Name = tc.Function.Name
+			}
+		}
+		// Reasoning is streamed first and flagged, so the caller can render it
+		// separately instead of showing it as part of the answer.
+		if chunk.ReasoningContent != "" {
+			reasoning.WriteString(chunk.ReasoningContent)
+			if onDelta != nil {
+				if err := onDelta(chunk.ReasoningContent, true); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if chunk.Content != "" {
+			content.WriteString(chunk.Content)
+			if onDelta != nil {
+				if err := onDelta(chunk.Content, false); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	resp := &ChatInvokeResponse{
+		Content:  content.String(),
+		Thinking: reasoning.String(),
+		Model:    modelName,
+		Stopped:  true,
+		Usage:    usageFromEinoUsage(streamUsage),
+	}
+	if len(pendingCalls) > 0 {
+		// Preserve provider-given index order (Python's final_tool_calls.values()
+		// is insertion-ordered by index) rather than relying on map iteration.
+		idxs := make([]int, 0, len(pendingCalls))
+		for k := range pendingCalls {
+			idxs = append(idxs, k)
+		}
+		sort.Ints(idxs)
+		merged := make([]schema.ToolCall, 0, len(pendingCalls))
+		for _, k := range idxs {
+			merged = append(merged, *pendingCalls[k])
+		}
+		if calls := nativeToolCalls(merged); len(calls) > 0 {
+			resp.ToolCalls = calls
+		}
+	}
+	return resp, nil
+}
+
+// resolvedModelInvoker pins agent calls to one factory-created tenant model.
+// Unlike einoChatInvoker it never consults a process-global default or parses a
+// composite model reference.
+type resolvedModelInvoker struct {
+	model *models.ChatModel
+}
+
+// NewResolvedInvoker builds a ChatInvoker around a typed, resolved chat model.
+func NewResolvedInvoker(model *models.ChatModel) ChatInvoker {
+	if model == nil {
+		return nil
+	}
+	return &resolvedModelInvoker{model: model}
+}
+
+// resolvedChatWrapper builds the eino wrapper for the pinned model, applying the
+// request's sampling config, thinking switch and tool binding. Invoke and Stream
+// share it so both send an identical request; only the transport differs.
+func (c *resolvedModelInvoker) resolvedChatWrapper(modelName string, req ChatInvokeRequest) (*models.EinoChatModel, *models.ChatModel, error) {
+	cm := c.model
+	if cm.ModelName == nil || *cm.ModelName != modelName {
+		cm = models.NewChatModelWithInfo(cm.ModelDriver, &modelName, cm.APIConfig, cm.Info())
+	}
+	chatCfg := &models.ChatConfig{
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
+		MaxTokens:   req.MaxTokens,
+	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
+	wrapper := models.NewEinoChatModel(cm, chatCfg)
+	infos, choice := toolOptions(req.Tools, req.ToolChoice)
+	if len(infos) > 0 {
+		withTools, err := wrapper.WithTools(infos)
+		if err != nil {
+			return nil, nil, err
+		}
+		wrapper = withTools.(*models.EinoChatModel).WithToolChoice(choice)
+	}
+	return wrapper, cm, nil
+}
+
+// modelFor returns the model to call: the request's override when set, else the
+// model this invoker was pinned to.
+func (c *resolvedModelInvoker) modelFor(req ChatInvokeRequest) string {
+	if req.ModelName != "" {
+		return req.ModelName
+	}
+	if info := c.model.Info(); info != nil {
+		return info.Name
+	}
+	if c.model.ModelName != nil {
+		return *c.model.ModelName
+	}
+	return ""
+}
+
+// Invoke satisfies ChatInvoker.
+func (c *resolvedModelInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+	modelName := c.modelFor(req)
+	wrapper, _, err := c.resolvedChatWrapper(modelName, req)
+	if err != nil {
+		return nil, err
+	}
+	out, err := wrapper.Generate(ctx, toEinoMessages(req.Messages))
+	if err != nil {
+		return nil, err
+	}
+	resp := &ChatInvokeResponse{
+		Content:  out.Content,
+		Thinking: out.ReasoningContent,
+		Model:    modelName,
+		Stopped:  true,
+		Usage:    usageFromMessage(out),
+	}
+	if calls := nativeToolCalls(out.ToolCalls); len(calls) > 0 {
+		resp.ToolCalls = calls
+	}
+	return resp, nil
+}
+
+// Stream satisfies chat.StreamingInvoker, the seam
+// harness.InvokerSessionModel.StreamComplete asserts when it composes the final
+// answer (harness/action_session.go:1504). Without it every agentic answer fell
+// back to the one-shot call above and reached the client in a single piece,
+// logging "chat invoker … does not support streaming" per request. Mirrors
+// Python, where LLMBundle.async_chat_streamly feeds tools.answer_sink while the
+// model is still writing.
+func (c *resolvedModelInvoker) Stream(ctx context.Context, _ *gorm.DB, req ChatInvokeRequest, onDelta func(delta string, isThink bool) error) (*ChatInvokeResponse, error) {
+	modelName := c.modelFor(req)
+	wrapper, cm, err := c.resolvedChatWrapper(modelName, req)
+	if err != nil {
+		return nil, err
+	}
+	return streamEinoChat(ctx, wrapper, toEinoMessages(req.Messages), cm, modelName, onDelta)
+}
+
+// The harness asserts chat.StreamingInvoker on the invoker it is handed
+// (action_session.go:1504), so a missing Stream silently downgrades the final
+// answer to a non-streaming call. Fail at build time instead.
+var _ chat.StreamingInvoker = (*resolvedModelInvoker)(nil)
 
 // toEinoMessages converts the LLM component's Message slice to eino's.
 //
@@ -276,6 +629,8 @@ func toEinoMessages(msgs []schema.Message) []*schema.Message {
 			Role:                  role,
 			Content:               m.Content,
 			UserInputMultiContent: cloned,
+			ToolCalls:             m.ToolCalls,
+			ToolCallID:            m.ToolCallID,
 		})
 	}
 	return out
@@ -296,8 +651,116 @@ func NewLLMComponent(p LLMParam) *LLMComponent {
 // Name returns the registered component name.
 func (c *LLMComponent) Name() string { return "LLM" }
 
-// Invoke runs the LLM and returns the output map.
+const defaultLLMDeferredTimeout = 10 * time.Minute
+
+func (c *LLMComponent) hasStructuredOutput(inputs map[string]any) bool {
+	if c.param.JSONOutput || len(c.param.OutputStructure) > 0 {
+		return true
+	}
+	if v, ok := inputs["json_output"]; ok {
+		if b, ok := v.(bool); ok && b {
+			return true
+		}
+	}
+	if v, ok := inputs["output_structure"]; ok && v != nil {
+		return true
+	}
+	return false
+}
+
+// Invoke runs the LLM component. When the component directly precedes a
+// terminal Message node in the canvas, it returns a lazy DeferredStream closure
+// so that Message can stream deltas in real-time. Otherwise, it executes eagerly.
 func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	if runtime.ComponentExecutionOptionsFromContext(ctx).DeferLLMToMessage && !c.hasStructuredOutput(inputs) {
+		timeout := defaultLLMDeferredTimeout
+		if deadline, ok := ctx.Deadline(); ok {
+			if remaining := time.Until(deadline); remaining > 0 {
+				timeout = remaining
+			}
+		}
+		var once sync.Once
+		var resp map[string]any
+		var err error
+		deferred := &runtime.DeferredStream{
+			Open: func(openCtx context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+				once.Do(func() {
+					agentCtx, cancel := context.WithTimeout(openCtx, timeout)
+					defer cancel()
+					resp, err = c.invokeStreamNow(runtime.WithAgentDeltaSink(agentCtx, sink), db, inputs, sink)
+				})
+				return resp, err
+			},
+		}
+		return map[string]any{"content": deferred}, nil
+	}
+	return c.invokeNow(ctx, db, inputs)
+}
+
+func (c *LLMComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	inv, req, p, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
+	if err != nil {
+		return nil, err
+	}
+	if earlyOut != nil {
+		return earlyOut, nil
+	}
+	resp, err := inv.Invoke(ctx, db, req)
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
+	}
+	return c.postProcessResponse(ctx, db, inv, req, p, resp)
+}
+
+func (c *LLMComponent) invokeStreamNow(ctx context.Context, db *gorm.DB, inputs map[string]any, sink runtime.AgentDeltaSink) (map[string]any, error) {
+	inv, req, p, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
+	if err != nil {
+		return nil, err
+	}
+	if earlyOut != nil {
+		if content, ok := earlyOut["content"].(string); ok && content != "" && sink != nil {
+			sink(content, "")
+		}
+		return earlyOut, nil
+	}
+
+	var resp *ChatInvokeResponse
+	if streamer, ok := inv.(chat.StreamingInvoker); ok {
+		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if sink != nil {
+				if isThink {
+					sink("", delta)
+				} else {
+					sink(delta, "")
+				}
+			}
+			return nil
+		})
+	} else {
+		resp, err = inv.Invoke(ctx, db, req)
+		if err == nil && resp != nil && sink != nil {
+			if resp.Thinking != "" {
+				sink("", resp.Thinking)
+			}
+			if resp.Content != "" {
+				sink(resp.Content, "")
+			}
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
+	}
+	return c.postProcessResponse(ctx, db, inv, req, p, resp)
+}
+
+func (c *LLMComponent) prepareChatRequest(
+	ctx context.Context,
+	db *gorm.DB,
+	inputs map[string]any,
+) (ChatInvoker, ChatInvokeRequest, LLMParam, map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
 
 	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
@@ -305,23 +768,44 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// reference selected in the agent canvas is passed verbatim to the LLM
 	// driver, causing 400s for custom-added models.
 	var err error
+	originalModelID := p.ModelID
 	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
+		return nil, ChatInvokeRequest{}, p, nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
 	}
-
+	// Resolve the model's context window (content_length) for message
+	// fitting. 0 means the model is unknown → chat.FitMessages falls back to
+	// 8192, matching Python's chat_mdl.max_length = model_config.get("max_tokens") or 8192.
+	// tenantID scopes composite-reference resolution to the tenant's own rows
+	// so a per-model "max_tokens" override in tenant_model.extra is honored.
+	tenantID := ""
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
+		if tid, ok := state.GetSysString("tenant_id"); ok {
+			tenantID = tid
+		}
+	}
+	contentLength := modelcontext.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
+	if contentLength <= 0 {
+		// A 0 makes chat.FitMessages fall back to the 8192 default budget, which
+		// can silently discard most of a large-context prompt, so surface the
+		// resolution failure for diagnosis.
+		common.Warn("llm: content_length not resolved, falling back to 8192",
+			zap.String("model_ref", originalModelID),
+			zap.String("driver", p.Driver),
+			zap.String("model_name", p.ModelID))
+	}
 	if p.ModelID == "" {
-		return nil, &ParamError{Field: "model_id", Reason: "required"}
+		return nil, ChatInvokeRequest{}, p, nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
 	if p.UserPrompt == "" && p.SystemPrompt == "" {
-		return nil, &ParamError{Field: "user_prompt", Reason: "at least one of user_prompt or system_prompt must be set"}
+		return nil, ChatInvokeRequest{}, p, nil, &ParamError{Field: "user_prompt", Reason: "at least one of user_prompt or system_prompt must be set"}
 	}
 	// Resolve {{cpn_id@var}} references in the system and user
 	// prompts against the canvas state attached to ctx. When the
 	// state is absent (e.g. tests that call Invoke directly without
 	// going through the canvas scheduler), the prompts pass through
 	// unchanged — backward compatible.
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		// ResolveTemplate returns the partial output (with "" in place
 		// of unresolved refs) even on error — we accept the partial
 		// output and log the error for diagnostics. This matches
@@ -359,7 +843,10 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	var sysFileTexts []string
 	var sysFileImgs []string
 	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
+		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
+			return nil, ChatInvokeRequest{}, p, nil, err
+		}
 		sysFileTexts, sysFileImgs = collectSysFiles(state)
 		if len(sysFileImgs) > 0 {
 			p.VisualFiles = dedupStrings(append(p.VisualFiles, sysFileImgs...))
@@ -415,24 +902,23 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// empty,
 	// this is a no-op.
 	if p.MessageHistoryWindowSize > 0 {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			msgs = prependHistory(msgs, state.SnapshotPriorHistory(), p.MessageHistoryWindowSize)
 		}
 	}
 	// Apply message fitting (trim to context window) after all
 	// prompt/history/sys.files augmentation and before invoking the
-	// LLM. Mirrors Python's message_fit_in in PR #16413.
+	// LLM. Mirrors Python's message_fit_in in PR #16413. The budget is
+	// the model's context window (content_length), resolved from the
+	// model config above — NOT the canvas max_tokens, which caps
+	// generation length only.
 	{
-		maxCtx := 0
-		if p.MaxTokens != nil {
-			maxCtx = *p.MaxTokens
-		}
 		// The system prompt is already embedded as the first message
-		// in msgs by buildMessagesWithImages; pass "" so fitMessages
+		// in msgs by buildMessagesWithImages; pass "" so chat.FitMessages
 		// does not duplicate it.
-		fitted, fitErr := fitMessages("", msgs, maxCtx)
+		fitted, fitErr := chat.FitMessages("", msgs, contentLength)
 		if fitErr != "" {
-			return map[string]any{"content": fitErr}, nil
+			return nil, ChatInvokeRequest{}, p, map[string]any{"content": fitErr}, nil
 		}
 		msgs = fitted
 	}
@@ -442,30 +928,6 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// for a per-call retry budget. We RE-WRAP the default
 	// invoker in a fresh retryInvoker that respects those
 	// values literally.
-	//
-	// LLM retry normal-absolute-count: when MaxRetries OR
-	// DelayAfterError is explicitly set on LLMParam, the
-	// operator's intent is an ABSOLUTE attempt budget. The
-	// default invoker installed at boot in cmd/server_main.go
-	// is itself a retryInvoker wrapping einoChatInvoker.
-	// Without unwrapping, the two loops would multiplicatively
-	// stack:
-	//
-	//   boot=3, MaxRetries=5 → up to (3+1) × (5+1) = 24
-	//                          invocations, not the 6 the
-	//                          operator almost certainly intended.
-	//
-	// unwrapChatInvoker peels off any retryInvoker layers to
-	// reach the bare invoker, then the param-override branch
-	// wraps that bare invoker in a fresh retryInvoker with the
-	// operator's literal values. Net effect: the absolute attempt
-	// count is exactly (MaxRetries + 1), independent of the boot
-	// layer.
-	//
-	// Operators who do NOT set MaxRetries (both fields zero) get
-	// the boot retry chain unchanged. The unit tests in
-	// llm_retry_test.go pin both the unwrap behaviour and the
-	// stacking-prevention contract.
 	hasOverride := p.MaxRetries > 0 || p.DelayAfterError > 0
 	if hasOverride {
 		maxRetries := p.MaxRetries
@@ -473,12 +935,9 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		if delay <= 0 {
 			delay = retryInvokerBackoff
 		}
-		// Normalise the attempt budget: peel off the boot
-		// retryInvoker layer (if any) so the operator's
-		// MaxRetries is an absolute count, not a stacked one.
 		inv = newRetryInvoker(unwrapChatInvoker(inv), maxRetries, delay)
 	}
-	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
+	req := ChatInvokeRequest{
 		Driver:           p.Driver,
 		ModelName:        p.ModelID,
 		APIKey:           p.APIKey,
@@ -490,11 +949,18 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		FrequencyPenalty: p.FrequencyPenalty,
 		MaxTokens:        p.MaxTokens,
 		Thinking:         p.Thinking,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
 	}
+	return inv, req, p, nil, nil
+}
 
+func (c *LLMComponent) postProcessResponse(
+	ctx context.Context,
+	db *gorm.DB,
+	inv ChatInvoker,
+	req ChatInvokeRequest,
+	p LLMParam,
+	resp *ChatInvokeResponse,
+) (map[string]any, error) {
 	// Strip think blocks + JSON fences from the response.
 	// Mirrors Python's clean_formated_answer() exactly
 	// (re.sub(r"^.*</think>", "", ...) + ^.*```json + trailing ```).
@@ -578,24 +1044,17 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 // downstream consumers can flush state without relying on channel close
 // alone (close also works; the "done" key is informational).
 //
-// Today, the LLM driver layer returns a single non-streamed response,
-// so this v1 emits exactly one chunk + one done. Hooking the actual
-// eino stream (EinoChatModel.Stream at internal/entity/models/llm.go:137)
-// is deferred — the public surface here is correct, only the data
-// source needs to be swapped to a real StreamReader consumer in a
-// follow-up.
+// Stream satisfies Component.Stream: it emits reasoning and content deltas as
+// they arrive from the model, followed by a final done marker.
 func (c *LLMComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
 	out := make(chan map[string]any, 16)
 	go func() {
 		defer close(out)
-		// Early bail-out for pre-cancelled contexts: don't run the
-		// (potentially expensive) LLM call when the consumer has
-		// already given up. Honors the documented select-on-ctx
-		// pattern at the goroutine entry, not just between chunks.
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		result, err := c.Invoke(ctx, db, inputs)
+
+		inv, req, _, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
 		if err != nil {
 			select {
 			case out <- map[string]any{"error": err.Error()}:
@@ -603,21 +1062,72 @@ func (c *LLMComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[strin
 			}
 			return
 		}
-		// Single non-streamed response — emit as one content chunk.
-		// A real streaming integration would loop over a channel
-		// here and emit multiple chunks with partial content.
-		chunk := map[string]any{
-			"thinking": result["thinking"],
-			"content":  result["content"],
-		}
-		select {
-		case out <- chunk:
-		case <-ctx.Done():
+		if earlyOut != nil {
+			if content, ok := earlyOut["content"].(string); ok && content != "" {
+				select {
+				case out <- map[string]any{"content": content}:
+				case <-ctx.Done():
+					return
+				}
+			}
+			select {
+			case out <- map[string]any{"done": true}:
+			case <-ctx.Done():
+			}
 			return
 		}
-		// Final done marker.
+
+		var resp *ChatInvokeResponse
+		if streamer, ok := inv.(chat.StreamingInvoker); ok {
+			resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if delta == "" {
+					return nil
+				}
+				chunk := map[string]any{}
+				if isThink {
+					chunk["thinking"] = delta
+				} else {
+					chunk["content"] = delta
+				}
+				select {
+				case out <- chunk:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+		} else {
+			resp, err = inv.Invoke(ctx, db, req)
+			if err == nil && resp != nil {
+				chunk := map[string]any{
+					"thinking": resp.Thinking,
+					"content":  resp.Content,
+				}
+				select {
+				case out <- chunk:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+
+		if err != nil {
+			select {
+			case out <- map[string]any{"error": err.Error()}:
+			case <-ctx.Done():
+			}
+			return
+		}
+
+		modelName := ""
+		if resp != nil {
+			modelName = resp.Model
+		}
 		select {
-		case out <- map[string]any{"done": true, "model": result["model"]}:
+		case out <- map[string]any{"done": true, "model": modelName}:
 		case <-ctx.Done():
 		}
 	}()
@@ -766,7 +1276,7 @@ func extractDataImages(values []string) []string {
 // and image data URIs. The caller is responsible for handling any
 // {sys.files} placeholder replacement in the prompts.
 func collectSysFiles(state *runtime.CanvasState) (textParts, imageURIs []string) {
-	files, ok := state.Sys["files"]
+	files, ok := state.GetSys("files")
 	if !ok {
 		return nil, nil
 	}
@@ -866,6 +1376,15 @@ func buildMessagesWithImages(system, user string, images []string, cite bool) []
 		return out
 	}
 
+	out = append(out, userMessageWithImages(user, images))
+	return out
+}
+
+// userMessageWithImages builds a user message carrying the text plus the
+// given data-image URIs as eino multi-modal content parts. Shared by the
+// LLM component (buildMessagesWithImages) and the Agent component
+// (buildAgentInputMessages) so both produce the exact same part shape.
+func userMessageWithImages(user string, images []string) schema.Message {
 	parts := make([]schema.MessageInputPart, 0, 1+len(images))
 	if user != "" {
 		parts = append(parts, schema.MessageInputPart{
@@ -882,11 +1401,10 @@ func buildMessagesWithImages(system, user string, images []string, cite bool) []
 			},
 		})
 	}
-	out = append(out, schema.Message{
+	return schema.Message{
 		Role:                  schema.User,
 		UserInputMultiContent: parts,
-	})
-	return out
+	}
 }
 
 // mergeLLMParam layers raw inputs over the receiver's default param set.
@@ -944,18 +1462,22 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		f := v
 		p.Temperature = &f
 	}
+	gateSampler(inputs, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
 	if v, ok := floatFrom(inputs, "top_p"); ok {
 		f := v
 		p.TopP = &f
 	}
+	gateSampler(inputs, "topPEnabled", &p.TopP, &p.TopPDisabled)
 	if v, ok := floatFrom(inputs, "presence_penalty"); ok {
 		f := v
 		p.PresencePenalty = &f
 	}
+	gateSampler(inputs, "presencePenaltyEnabled", &p.PresencePenalty, &p.PresencePenaltyDisabled)
 	if v, ok := floatFrom(inputs, "frequency_penalty"); ok {
 		f := v
 		p.FrequencyPenalty = &f
 	}
+	gateSampler(inputs, "frequencyPenaltyEnabled", &p.FrequencyPenalty, &p.FrequencyPenaltyDisabled)
 	// visual_files: accept []string or single string with embedded
 	// data URIs. The current implementation only walks top-level
 	// string values; recursive walk is a future enhancement.
@@ -968,240 +1490,14 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		i := v
 		p.MaxTokens = &i
 	}
+	gateSampler(inputs, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 	if v, ok := stringFrom(inputs, "thinking"); ok {
-		// Forward any non-empty, non-"default" value to match the
-		// lenient Python gate: hasattr(self,"thinking") and
-		// self.thinking and self.thinking != "default".
-		// Downstream (einoChatInvoker) only acts on "enabled" /
-		// "disabled" and silently ignores unknown values, so
-		// this is safe.
-		if v != "" && v != "default" {
-			p.Thinking = v
-		}
+		p.Thinking = v
+	}
+	if p.Thinking == "" || p.Thinking == "default" {
+		p.Thinking = "disabled"
 	}
 	return p
-}
-
-// effectiveContextLength returns maxLength if positive, otherwise 8192.
-// Mirrors Python's LLM.effective_context_length in PR #16413 — prevents
-// zero/negative context windows from silently trimming all prompt content.
-func effectiveContextLength(maxLength int) int {
-	if maxLength > 0 {
-		return maxLength
-	}
-	return 8192
-}
-
-// contextFitBudget returns 97% of the effective context length as the
-// token budget for message_fit_in. Mirrors Python's LLM.context_fit_budget
-// in PR #16413.
-func contextFitBudget(maxLength int) int {
-	return int(float64(effectiveContextLength(maxLength)) * 0.97)
-}
-
-// validateFittedMessages checks that the fitted message list is non-empty
-// and the last message is a non-empty user turn (content or multi-modal
-// parts). Returns an error string on failure, empty string on success.
-// Python requires len >= 2 because the system prompt is always injected
-// upstream; Go allows len >= 1 because the system message may be embedded
-// inside msgs (from buildMessagesWithImages) or absent entirely.
-func validateFittedMessages(msgFit []schema.Message) string {
-	if len(msgFit) == 0 {
-		return "**ERROR**: message_fit_in produced insufficient messages for LLM"
-	}
-	last := msgFit[len(msgFit)-1]
-	if last.Role != schema.User {
-		return "**ERROR**: LLM last message is not a user turn after prompt fitting; check model max_tokens context setting"
-	}
-	if strings.TrimSpace(last.Content) == "" && len(last.UserInputMultiContent) == 0 {
-		return "**ERROR**: LLM user message is empty after prompt fitting; check model max_tokens context setting"
-	}
-	return ""
-}
-
-// fitMessages calls message_fit_in semantics on the given messages and
-// validates that the result ends with a non-empty user turn. Returns the
-// fitted messages and an error string (empty on success).
-// Mirrors Python's LLM.fit_messages in PR #16413.
-func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
-	// Convert schema.Message → []map[string]interface{} for fitting.
-	all := make([]map[string]interface{}, 0, 1+len(msgs))
-	// Deep-copy msgs (mirrors Python's deepcopy) to avoid mutating caller's slice.
-	copied := make([]schema.Message, len(msgs))
-	for i, m := range msgs {
-		cloned := slices.Clone(m.UserInputMultiContent)
-		for j, p := range cloned {
-			if p.Image != nil {
-				imgCopy := *p.Image
-				if p.Image.URL != nil {
-					u := *p.Image.URL
-					imgCopy.URL = &u
-				}
-				cloned[j].Image = &imgCopy
-			}
-		}
-		copied[i] = schema.Message{
-			Role:                  m.Role,
-			Content:               m.Content,
-			UserInputMultiContent: cloned,
-		}
-	}
-	// System prompt first (when not already embedded in msgs).
-	if systemPrompt != "" {
-		all = append(all, map[string]interface{}{
-			"role":    "system",
-			"content": systemPrompt,
-		})
-	}
-	for _, m := range copied {
-		entry := map[string]interface{}{
-			"role":    string(m.Role),
-			"content": m.Content,
-		}
-		if len(m.UserInputMultiContent) > 0 {
-			entry["user_input_multi_content"] = m.UserInputMultiContent
-		}
-		all = append(all, entry)
-	}
-	// Use 97% of effective context as the token budget.
-	budget := contextFitBudget(maxLength)
-	_, fitted := messageFitInRaw(all, budget)
-
-	// Convert back to []schema.Message.
-	result := make([]schema.Message, 0, len(fitted))
-	for _, m := range fitted {
-		role, _ := m["role"].(string)
-		content, _ := m["content"].(string)
-		msg := schema.Message{
-			Role:    schema.RoleType(role),
-			Content: content,
-		}
-		if multi, ok := m["user_input_multi_content"].([]schema.MessageInputPart); ok {
-			msg.UserInputMultiContent = multi
-		}
-		result = append(result, msg)
-	}
-	return result, validateFittedMessages(result)
-}
-
-// messageFitInRaw trims messages to fit within a token budget. Operates on
-// raw []map[string]interface{} (role + content). Returns the token count
-// used and the trimmed slice. Mirrors Python's message_fit_in in
-// rag/prompts/generator.py.
-//
-// Strategy:
-//  1. If everything fits → return as-is.
-//  2. Keep all system messages + the last user/assistant message.
-//  3. If still too large, trim content proportionally:
-//     - System dominates (>80%) → preserve last message first.
-//     - Otherwise → preserve system first.
-func messageFitInRaw(messages []map[string]interface{}, maxTokens int) (int, []map[string]interface{}) {
-	if maxTokens <= 0 {
-		maxTokens = 8192
-	}
-
-	// Step 1: everything fits.
-	totalTokens := countAllTokens(messages)
-	if totalTokens < maxTokens {
-		return totalTokens, messages
-	}
-
-	// Step 2: keep all system messages + the last non-system message.
-	result := make([]map[string]interface{}, 0)
-	for _, m := range messages {
-		if role, _ := m["role"].(string); role == "system" {
-			result = append(result, m)
-		}
-	}
-	if len(messages) > 0 {
-		last := messages[len(messages)-1]
-		if role, _ := last["role"].(string); role != "system" {
-			result = append(result, last)
-		}
-	}
-	if len(result) == 0 {
-		return 0, result
-	}
-
-	totalTokens = countAllTokens(result)
-	if totalTokens < maxTokens {
-		return totalTokens, result
-	}
-
-	// Step 3: trim content to fit.
-	ll := tokenizer.NumTokensFromString(stringContent(result[0]))
-	ll2 := tokenizer.NumTokensFromString(stringContent(result[len(result)-1]))
-	total := ll + ll2
-	if total <= 0 {
-		return 0, result
-	}
-
-	if len(result) == 1 {
-		setContent(result[0], tokenizer.TrimContentToTokenLimit(stringContent(result[0]), maxTokens))
-		return countAllTokens(result), result
-	}
-
-	if float64(ll)/float64(total) > 0.8 {
-		preservedLast := min(ll2, maxTokens)
-		setContent(result[len(result)-1], tokenizer.TrimContentToTokenLimit(stringContent(result[len(result)-1]), preservedLast))
-		remaining := max(0, maxTokens-preservedLast)
-		setContent(result[0], tokenizer.TrimContentToTokenLimit(stringContent(result[0]), remaining))
-	} else {
-		preservedSystem := min(ll, maxTokens)
-		setContent(result[0], tokenizer.TrimContentToTokenLimit(stringContent(result[0]), preservedSystem))
-		remaining := max(0, maxTokens-preservedSystem)
-		setContent(result[len(result)-1], tokenizer.TrimContentToTokenLimit(stringContent(result[len(result)-1]), remaining))
-	}
-
-	return countAllTokens(result), result
-}
-
-// countAllTokens returns the total token count across all messages.
-func countAllTokens(messages []map[string]interface{}) int {
-	total := 0
-	for _, m := range messages {
-		total += tokenizer.NumTokensFromString(stringContent(m))
-	}
-	return total
-}
-
-// stringContent extracts the display text from a message map, or "".
-// For plain messages the text lives in "content"; for multimodal messages
-// (with images) it lives in a text part of "user_input_multi_content".
-func stringContent(m map[string]interface{}) string {
-	s, _ := m["content"].(string)
-	if s != "" {
-		return s
-	}
-	if multi, ok := m["user_input_multi_content"].([]schema.MessageInputPart); ok {
-		for _, part := range multi {
-			if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
-				return part.Text
-			}
-		}
-	}
-	return ""
-}
-
-// setContent writes text into a message map's display field. When the
-// message has user_input_multi_content parts, the first text part is
-// updated; otherwise the plain "content" field is set.
-func setContent(m map[string]interface{}, text string) {
-	if multi, ok := m["user_input_multi_content"].([]schema.MessageInputPart); ok {
-		for i, part := range multi {
-			if part.Type == schema.ChatMessagePartTypeText {
-				multi[i].Text = text
-				return
-			}
-		}
-		// No existing text part – prepend one.
-		m["user_input_multi_content"] = append(
-			[]schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: text}},
-			multi...,
-		)
-		return
-	}
-	m["content"] = text
 }
 
 // stringFrom extracts a string from inputs[name], accepting both string and
@@ -1241,6 +1537,19 @@ func boolFrom(inputs map[string]any, name string) (bool, bool) {
 		return b, true
 	}
 	return false, false
+}
+
+// gateSampler applies the sampler switch inputs[flag] to value. The switch
+// state is kept in disabled, so a later merge whose inputs carry the value
+// without the switch still drops it. Mirrors Python's LLMParam.gen_conf, which
+// only sends a sampler value when its switch is on.
+func gateSampler[T any](inputs map[string]any, flag string, value **T, disabled *bool) {
+	if enabled, ok := boolFrom(inputs, flag); ok {
+		*disabled = !enabled
+	}
+	if *disabled {
+		*value = nil
+	}
 }
 
 // floatFrom extracts a float64 from inputs[name], also accepting int.
@@ -1300,14 +1609,17 @@ func init() {
 			f := v
 			p.Temperature = &f
 		}
+		gateSampler(params, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
 		if v, ok := floatFrom(params, "top_p"); ok {
 			f := v
 			p.TopP = &f
 		}
+		gateSampler(params, "topPEnabled", &p.TopP, &p.TopPDisabled)
 		if v, ok := intFrom(params, "max_tokens"); ok {
 			i := v
 			p.MaxTokens = &i
 		}
+		gateSampler(params, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 		if v, ok := boolFrom(params, "json_output"); ok {
 			p.JSONOutput = v
 		}
@@ -1318,10 +1630,12 @@ func init() {
 			f := v
 			p.PresencePenalty = &f
 		}
+		gateSampler(params, "presencePenaltyEnabled", &p.PresencePenalty, &p.PresencePenaltyDisabled)
 		if v, ok := floatFrom(params, "frequency_penalty"); ok {
 			f := v
 			p.FrequencyPenalty = &f
 		}
+		gateSampler(params, "frequencyPenaltyEnabled", &p.FrequencyPenalty, &p.FrequencyPenaltyDisabled)
 		// cite defaults to true (matches Python) when neither LLMParam
 		// nor inputs set it.
 		p.Cite = true
@@ -1356,13 +1670,12 @@ func init() {
 // This removes DeepSeek-R1-style thinking blocks and JSON-fence
 // prefixes/suffixes from the raw model response.
 var (
-	reThinkPrefix     = regexp.MustCompile(`(?s)^.*</think>`)
 	reJSONFencePrefix = regexp.MustCompile(`(?s)^.*` + "```json")
 	reJSONFenceSuffix = regexp.MustCompile("```\n*$")
 )
 
 func cleanFormattedAnswer(ans string) string {
-	ans = reThinkPrefix.ReplaceAllString(ans, "")
+	ans = common.StripThinkTrailing(ans)
 	ans = reJSONFencePrefix.ReplaceAllString(ans, "")
 	ans = reJSONFenceSuffix.ReplaceAllString(ans, "")
 	return ans

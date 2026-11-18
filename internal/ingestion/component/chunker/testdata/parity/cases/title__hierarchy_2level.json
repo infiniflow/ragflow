@@ -1,0 +1,22 @@
+{
+  "id": "title__hierarchy_2level",
+  "component": "TitleChunker",
+  "notes": "Baseline hierarchy mode: two levels ('#' then '##') split into one chunk per heading.",
+  "param": {
+    "method": "hierarchy",
+    "levels": [
+      [
+        "#"
+      ],
+      [
+        "##"
+      ]
+    ],
+    "hierarchy": 2
+  },
+  "input": {
+    "name": "t.md",
+    "output_format": "markdown",
+    "markdown": "# A\nbody a\n## A1\nbody a1"
+  }
+}

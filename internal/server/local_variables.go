@@ -49,5 +49,8 @@ func SetServerName(serverName string) {
 func GetServerName() string {
 	localVariablesMu.RLock()
 	defer localVariablesMu.RUnlock()
+	if localVariables == nil || localVariables.ServerName == nil {
+		return ""
+	}
 	return *localVariables.ServerName
 }

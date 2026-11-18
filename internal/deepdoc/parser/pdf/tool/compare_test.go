@@ -3,30 +3,42 @@
 package tool
 
 import (
-	"log/slog"
-	"os"
 	"path/filepath"
 	"testing"
+
+	"ragflow/internal/common"
 )
 
 // TestBatchCompareWithPython compares Go output against Python reference
 // across 4 dimensions (text, tables, DLA, TSR raw).  It is read-only —
-// no generation, no CGO/DeepDoc dependency.  Use BATCH_SKIP_OCR=1 to
-// compare the noocr variant; PY_OCR_SUFFIX to override the Python variant.
+// no generation, no CGO/DeepDoc dependency.  Use PY_OCR_SUFFIX to override
+// the Python variant.
 func TestBatchCompareWithPython(t *testing.T) {
-	level := slog.LevelInfo
-	if common.GetEnv(common.EnvBatchLogLevel) == "debug" {
-		level = slog.LevelDebug
+	prevLogger, prevSugar := common.Logger, common.Sugar
+	var prevLevel string
+	if common.Logger != nil {
+		prevLevel = common.GetLogLevel()
 	}
-	if common.GetEnv(common.EnvBatchLogLevel) == "warn" {
-		level = slog.LevelWarn
+	t.Cleanup(func() {
+		common.Logger = prevLogger
+		common.Sugar = prevSugar
+		if prevLogger != nil {
+			_ = common.SetLogLevel(prevLevel)
+		}
+	})
+
+	level := "info"
+	switch common.GetEnv(common.EnvBatchLogLevel) {
+	case "debug":
+		level = "debug"
+	case "warn":
+		level = "warn"
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	if err := common.InitLogger(level, common.FileOutput{}, ""); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
 
 	goVariant := "ocr"
-	if common.GetEnv(common.EnvBatchSkipOCR) == "1" {
-		goVariant = "noocr"
-	}
 	pyVariant := common.GetEnv(common.EnvPYOCRSuffix)
 	if pyVariant == "" {
 		pyVariant = goVariant

@@ -1,8 +1,23 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import HighLightMarkdown from '@/components/highlight-markdown';
 import { Button } from '@/components/ui/button';
-import message from '@/components/ui/message';
 import { Modal } from '@/components/ui/modal/modal';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Switch } from '@/components/ui/switch';
 import {
   LanguageAbbreviation,
@@ -12,6 +27,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { ExternalLink } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import CopyToClipboard from '@/components/copy-to-clipboard';
 
 type IEmbedAppModalProps = {
   open: any;
@@ -25,7 +41,7 @@ type IEmbedAppModalProps = {
 const EmbedAppModal = (props: IEmbedAppModalProps) => {
   const { t } = useTranslate('search');
   const { data: tenantInfo } = useFetchTenantInfo();
-  const tenantId = tenantInfo.tenant_id;
+  const tenantId = tenantInfo?.tenant_id ?? '';
   const { open, setOpen, token = '', from, url, beta = '' } = props;
 
   const [hideAvatar, setHideAvatar] = useState(false);
@@ -96,12 +112,12 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
           <label className="block text-sm font-medium mb-2">
             {t('locale')}
           </label>
-          <RAGFlowSelect
+          <SelectWithSearch
             placeholder={t('selectLocalePlaceholder')}
             value={locale}
             onChange={(value) => setLocale(value)}
             options={languageOptions}
-          ></RAGFlowSelect>
+          ></SelectWithSearch>
         </div>
         {/* Embed Code */}
         <div className="mb-6">
@@ -136,30 +152,7 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
               readOnly
               className="flex-1 px-4 py-2 focus:outline-none bg-bg-base rounded-lg"
             />
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(token);
-                message.success(t('copySuccess'));
-              }}
-              className="ml-2 p-2 hover:text-white transition-colors"
-              title="Copy ID"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h10a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                />
-              </svg>
-            </button>
+            <CopyToClipboard text={token}></CopyToClipboard>
           </div>
         </div>
       </div>

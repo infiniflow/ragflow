@@ -7,18 +7,13 @@ import (
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/parser/tableutil"
 )
 
-// constructTable produces an HTML table string from TSR cells and text boxes.
-// Both cells and boxes must be in the same coordinate space (crop pixel space).
-// Fills item.Rows so downstream consumers don't need to re-group cells.
-//
-// Python equivalent: TableStructureRecognizer.construct_table()
-// stripCaptionFromCells clears caption-like text from TSR cells.
-// This catches captions that fillCellTextFromBoxes missed (e.g. text
-// that doesn't match isCaptionBox patterns like "公司差旅费管理办法").
-// Only clears cells whose text matches caption patterns or that contain
-// only number+separator text (pure "1. ", "一、" etc. without data).
+// StripCaptionFromCells clears caption-like text from TSR cells. It catches
+// captions that fillCellTextFromBoxes missed (e.g. text that doesn't match
+// isCaptionBox patterns), clearing only cells whose text matches caption
+// patterns or contains only number+separator text.
 func StripCaptionFromCells(cells []pdf.TSRCell) {
 	for i := range cells {
 		t := strings.TrimSpace(cells[i].Text)
@@ -36,7 +31,88 @@ func StripCaptionFromCells(cells []pdf.TSRCell) {
 	// This pass is intentionally conservative — only clears clearly-non-data text.
 }
 
+// gridToStreamCells flattens a cross-page merged, Y-shifted, X-aligned
+// grid back into the row-major cell stream that the EE V/H renderer consumes,
+// dropping fully-empty phantom / edge columns first. Used only by the
+// RenderVH dispatch below (never by the OSS constructTableCore path).
+func gridToStreamCells(grid [][]pdf.TSRCell) []pdf.TSRCell {
+	if len(grid) == 0 {
+		return nil
+	}
+	grid = dropEmptyColumns(grid)
+	stream := make([]pdf.TSRCell, 0, len(grid)*len(grid[0]))
+	for _, row := range grid {
+		for _, c := range row {
+			if c.X1 <= c.X0 && c.Y1 <= c.Y0 {
+				continue
+			}
+			stream = append(stream, c)
+		}
+	}
+	return stream
+}
+
+// dropEmptyColumns removes columns with no text in any row (phantom/edge
+// bands the EE V/H renderer must not emit). See gridToStreamCells.
+func dropEmptyColumns(grid [][]pdf.TSRCell) [][]pdf.TSRCell {
+	if len(grid) == 0 {
+		return grid
+	}
+	nCols := len(grid[0])
+	keep := make([]bool, nCols)
+	for j := 0; j < nCols; j++ {
+		keep[j] = !columnIsEmpty(grid, j)
+	}
+	out := make([][]pdf.TSRCell, len(grid))
+	for i, row := range grid {
+		nr := make([]pdf.TSRCell, 0, nCols)
+		for j, c := range row {
+			if j < len(keep) && keep[j] {
+				nr = append(nr, c)
+			}
+		}
+		out[i] = nr
+	}
+	return out
+}
+
+// columnIsEmpty reports whether column j has no text in any row.
+func columnIsEmpty(grid [][]pdf.TSRCell, j int) bool {
+	for _, row := range grid {
+		if j < len(row) && strings.TrimSpace(row[j].Text) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// ConstructTable renders a table to HTML. The dispatch to the EE V/H
+// renderer (when item.RenderVH is set) is added by the enterprise build;
+// the OSS build always uses constructTableCore. All branches inside the
+// RenderVH block are EE-only: no OSS-built TableItem sets RenderVH.
 func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, item *pdf.TableItem) string {
+	if item != nil && item.RenderVH {
+		if item.GridUnified {
+			return ConstructTableVH(gridToStreamCells(item.Grid), nil, caption)
+		}
+		if len(item.VHPageSpans) > 0 {
+			return ConstructTableVHPaged(item.Cells, boxes, item.VHPageSpans, caption)
+		}
+		cropBoxes := make([]pdf.TextBox, len(boxes))
+		for i := range boxes {
+			cropBoxes[i] = BoxToCropSpace(boxes[i], item.Scale, item.CropOffX, item.CropOffY)
+		}
+		return ConstructTableVH(item.Cells, cropBoxes, caption)
+	}
+	return constructTableCore(cells, boxes, caption, item)
+}
+
+// constructTableCore produces an HTML table string from TSR cells and text
+// boxes. Both cells and boxes must be in the same coordinate space (crop pixel
+// space). Fills item.Rows so downstream consumers don't need to re-group cells.
+//
+// Python equivalent: TableStructureRecognizer.construct_table()
+func constructTableCore(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, item *pdf.TableItem) string {
 	// Strip caption-like text from cells (defense-in-depth: fillCellTextFromBoxes
 	// may include caption text that doesn't match isCaptionBox patterns).
 	StripCaptionFromCells(cells)
@@ -52,35 +128,33 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		rows = GroupTSRCellsToRows(cells)
 	}
 	if len(rows) > 0 && HasText(rows) {
-		hdrs := HeaderSetWithBlockType(rows)
+		// Cleanup may drop rows/columns, so recompute item.Grid and item.Rows
+		// after both passes.
+		rows = CleanupOrphanColumns(rows)
+		// TSR can emit an empty row component; drop it before orphan cleanup.
+		rows = DropAllEmptyRows(rows)
+		rows = CleanupOrphanRows(rows)
+		hdrs := HeaderSetWithBlockType(rows, boxes)
 		if item != nil {
+			item.Grid = rows
 			item.Rows = RowsToStrings(rows)
 		}
-		rows = CleanupOrphanColumns(rows)
 		spanInfo, covered := CalSpans(rows)
-		return RowsToHTML(rows, caption, hdrs, spanInfo, covered)
+		if item != nil {
+			MarkCoveredCells(item.Grid, covered)
+		}
+		return tableutil.RenderTableHTML(ToTableData(rows, caption, hdrs, spanInfo, covered))
 	}
-	// Fallback: boxes with R/C annotations.
-	if len(boxes) > 0 && BoxesHaveAnnotations(boxes) {
+	// Fallback: rebuild from boxes. GroupBoxesByRC uses R/C when present and
+	// falls back to Y/X grouping otherwise.
+	if len(boxes) > 0 {
 		rows := GroupBoxesByRC(boxes)
 		if HasText(rows) {
 			if item != nil {
 				item.Rows = RowsToStrings(rows)
 			}
 			spanInfo, covered := CalSpans(rows)
-			return RowsToHTML(rows, caption, BoxHeaderSet(rows, boxes), spanInfo, covered)
-		}
-	}
-	// Test-only: Y/X coordinate grouping (matching Python construct_table).
-	// Used by table_parity_test.go to verify pipeline with Python boxes.
-	if len(boxes) > 0 && !BoxesHaveAnnotations(boxes) {
-		rows := GroupBoxesByYX(boxes)
-		if HasText(rows) {
-			if item != nil {
-				item.Rows = RowsToStrings(rows)
-			}
-			spanInfo, covered := CalSpans(rows)
-			return RowsToHTML(rows, caption, BoxHeaderSet(rows, boxes), spanInfo, covered)
+			return tableutil.RenderTableHTML(ToTableData(rows, caption, BoxHeaderSet(rows, boxes), spanInfo, covered))
 		}
 	}
 	return ""
@@ -158,32 +232,70 @@ func isDataSourceBox(text string) bool {
 // handles test TableItems or bare engines without DLA.
 func tableRegionBox(tbl *pdf.TableItem, ref *pdf.TextBox, html string) pdf.TextBox {
 	pg := 0
-	if len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0 {
+	hasPageNumber := len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0
+	if hasPageNumber {
 		pg = tbl.Positions[0].PageNumbers[0]
 	}
+	// A table merged across consecutive pages (MergeTablesAcrossPages appends
+	// every spanned page to tbl.Positions) must record ALL its pages so the
+	// resulting section's Position spans them — otherwise a caption on a later
+	// page of the same table is wrongly treated as off-page and the
+	// cross-page caption continuation (e.g. 13's 'Table: Monthly financial
+	// summary FY2024') is dropped. PageNumber keeps the anchor page for
+	// single-page consumers (insertion, etc.).
+	pages := mergedTablePages(tbl)
 	// Use DLA region boundaries when set.
 	if tbl.RegionLeft != 0 || tbl.RegionRight != 0 || tbl.RegionTop != 0 || tbl.RegionBottom != 0 {
 		return pdf.TextBox{
-			X0:         tbl.RegionLeft,
-			X1:         tbl.RegionRight,
-			Top:        tbl.RegionTop,
-			Bottom:     tbl.RegionBottom,
-			Text:       html,
-			PageNumber: pg,
-			LayoutType: pdf.LayoutTypeTable,
+			X0:            tbl.RegionLeft,
+			X1:            tbl.RegionRight,
+			Top:           tbl.RegionTop,
+			Bottom:        tbl.RegionBottom,
+			Text:          html,
+			PageNumber:    pg,
+			HasPageNumber: hasPageNumber,
+			Pages:         pages,
+			Positions:     tableRegionPositions(*tbl),
+			LayoutType:    pdf.LayoutTypeTable,
 		}
 	}
 	// Fallback: use anchor box coordinates.
 	x0, x1, top, bot := ref.X0, ref.X1, ref.Top, ref.Bottom
 	return pdf.TextBox{
-		X0:         x0,
-		X1:         x1,
-		Top:        top,
-		Bottom:     bot,
-		Text:       html,
-		PageNumber: pg,
-		LayoutType: pdf.LayoutTypeTable,
+		X0:            x0,
+		X1:            x1,
+		Top:           top,
+		Bottom:        bot,
+		Text:          html,
+		PageNumber:    pg,
+		HasPageNumber: hasPageNumber,
+		Pages:         pages,
+		Positions:     tableRegionPositions(*tbl),
+		LayoutType:    pdf.LayoutTypeTable,
 	}
+}
+
+// mergedTablePages returns the sorted, de-duplicated set of page numbers a
+// table spans, taken from every Position the (possibly cross-page-merged)
+// TableItem carries. A single-page table yields a one-element slice (or nil
+// when it has no positions), so callers can use it to decide whether the box
+// spans multiple pages.
+func mergedTablePages(tbl *pdf.TableItem) []int {
+	if len(tbl.Positions) == 0 {
+		return nil
+	}
+	seen := make(map[int]bool, len(tbl.Positions))
+	pages := make([]int, 0, len(tbl.Positions))
+	for _, p := range tbl.Positions {
+		for _, pn := range p.PageNumbers {
+			if !seen[pn] {
+				seen[pn] = true
+				pages = append(pages, pn)
+			}
+		}
+	}
+	sort.Ints(pages)
+	return pages
 }
 
 // minRectangleDistance computes the Euclidean distance between two rectangles.
@@ -207,12 +319,15 @@ func minRectangleDistance(left1, right1, top1, bottom1, left2, right2, top2, bot
 	return math.Sqrt(dx*dx + dy*dy)
 }
 
-// Orphan column/row cleanup (Python: construct_table lines 256-368)
+// Orphan column/row cleanup (Python: construct_table:221-277 columns, :279-333 rows)
 
-// CleanupOrphanColumns removes columns that have only a single non-empty cell
-// when there are ≥4 rows. Matches Python's construct_table column cleanup.
+// CleanupOrphanColumns removes columns that have only a single non-empty cell.
+// Matches Python's construct_table column cleanup (table_structure_recognizer.py:224-277),
+// which is gated on the ROW count: `if len(rows) >= 4` (construct_table:221).
+// The original Go gate (len(rows) < 4) matched Python and is preserved here —
+// removing it would make Go drop orphan columns that Python keeps for <4-row tables.
 func CleanupOrphanColumns(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
-	if len(rows) < 4 || len(rows) == 0 {
+	if len(rows) < 4 {
 		return rows
 	}
 	nCols := len(rows[0])
@@ -236,6 +351,17 @@ func CleanupOrphanColumns(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
 		// Step 3: Calculate merge distance
 		leftDist, rightDist := calculateMergeDistance(rows, j, ii, nCols, hasLeftText, hasRightText)
 
+		// Python asserts at least one side is mergeable (left < 100000 or
+		// right < 100000). If both neighbors are empty there is nothing to
+		// merge the orphan into, so skip the column rather than dropping its
+		// only cell (Python would assert/crash here). This guards the >=4-row
+		// degenerate case where a column has a single cell but no mergeable
+		// neighbor column.
+		if leftDist >= 1e9 && rightDist >= 1e9 {
+			j++
+			continue
+		}
+
 		// Step 4: Merge the column
 		if leftDist < rightDist && j > 0 {
 			mergeColumnIntoLeft(rows, j)
@@ -249,6 +375,138 @@ func CleanupOrphanColumns(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
 		// Don't increment j — the next column shifted into position j.
 	}
 	return rows
+}
+
+// CleanupOrphanRows removes rows that hold exactly one non-empty cell when the
+// table has >=4 columns, merging that lone cell into its nearest vertical
+// neighbor. Mirrors Python's construct_table row cleanup
+// (table_structure_recognizer.py:279-333).
+//
+// A "sandwiched" orphan row — both the row above and the row below have text in
+// the same column as the lone cell — is kept, because merging would destroy a
+// real data row. Otherwise the orphan cell is merged UP if the vertical gap to
+// the row above is smaller than to the row below, else DOWN. The neighbor cell
+// keeps its own coordinates and only its text is extended (Python extends the
+// box list); CalSpans recomputes spans from geometry, so no row-number
+// bookkeeping (Python's "rn") is needed here.
+//
+// The >=4 threshold is the COLUMN count (Python's len(cols) >= 4), evaluated
+// after column cleanup, not the row count.
+func CleanupOrphanRows(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
+	if len(rows) == 0 || len(rows[0]) < 4 {
+		return rows
+	}
+	nRows := len(rows)
+	i := 0
+	for i < nRows {
+		// Count non-empty cells; remember the lone populated column.
+		e, jj := 0, 0
+		for j := range rows[i] {
+			if strings.TrimSpace(rows[i][j].Text) != "" {
+				e++
+				jj = j
+				if e > 1 {
+					break
+				}
+			}
+		}
+		if e != 1 {
+			// 0 cells (empty row) or >1 (not an orphan): nothing to merge.
+			i++
+			continue
+		}
+
+		// Are the directly-adjacent cells in the same column populated?
+		hasAbove := (i > 0 && strings.TrimSpace(rows[i-1][jj].Text) != "") || i == 0
+		hasBelow := (i+1 < nRows && strings.TrimSpace(rows[i+1][jj].Text) != "") || i+1 >= nRows
+		if hasAbove && hasBelow {
+			// Sandwiched between two populated cells → keep.
+			i++
+			continue
+		}
+
+		// Minimum vertical gap to the nearest mergeable neighbor.
+		const inf = 1e9
+		up, down := inf, inf
+		if i > 0 && !hasAbove {
+			for j := range rows[i-1] {
+				if strings.TrimSpace(rows[i-1][j].Text) != "" {
+					if d := rows[i][jj].Y0 - rows[i-1][j].Y1; d < up {
+						up = d
+					}
+				}
+			}
+		}
+		if i+1 < nRows && !hasBelow {
+			for j := range rows[i+1] {
+				if strings.TrimSpace(rows[i+1][j].Text) != "" {
+					if d := rows[i+1][j].Y0 - rows[i][jj].Y1; d < down {
+						down = d
+					}
+				}
+			}
+		}
+		// Python asserts up < 100000 or down < 100000 (at least one side is
+		// mergeable) because hasAbove/hasBelow are not both true. If BOTH
+		// adjacent rows are entirely empty there is nowhere to merge into —
+		// keep the orphan rather than relocating it (Python would assert/crash
+		// here). Mirrors the orphan-column guard in CleanupOrphanColumns.
+		if up >= inf && down >= inf {
+			i++
+			continue
+		}
+
+		if up < down {
+			mergeOrphanCell(rows, i, i-1, jj)
+		} else {
+			mergeOrphanCell(rows, i, i+1, jj)
+		}
+		// Drop the orphan row; the next row shifts into position i.
+		rows = append(rows[:i], rows[i+1:]...)
+		nRows--
+	}
+	return rows
+}
+
+// DropAllEmptyRows removes rows whose cells are all whitespace/empty.
+// Python's construct_table never emits a row that has no boxes assigned
+// to any (R,C), so the parity target is to keep only rows that contribute
+// at least one non-empty cell. Runs BEFORE CleanupOrphanRows so the
+// downstream "exactly one populated cell" check is not silently masking
+// a TSR false positive (e.g. a duplicate row component detected on top
+// of a "table projected row header").
+func DropAllEmptyRows(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
+	out := make([][]pdf.TSRCell, 0, len(rows))
+	for _, r := range rows {
+		empty := true
+		for j := range r {
+			if strings.TrimSpace(r[j].Text) != "" {
+				empty = false
+				break
+			}
+		}
+		if !empty {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// mergeOrphanCell appends the lone cell at (from, col) into the target cell at
+// (to, col). Matches Python's tbl[to][col].extend(tbl[from][col]): when the
+// target already has text, the orphan text is appended after it. The target
+// keeps its own coordinates; only the text is merged.
+func mergeOrphanCell(rows [][]pdf.TSRCell, from, to, col int) {
+	target := &rows[to][col]
+	orphan := strings.TrimSpace(rows[from][col].Text)
+	if orphan == "" {
+		return
+	}
+	if strings.TrimSpace(target.Text) == "" {
+		target.Text = orphan
+	} else {
+		target.Text = target.Text + " " + orphan
+	}
 }
 
 // countNonEmptyCells counts non-empty cells in a column and returns the count

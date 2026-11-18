@@ -33,15 +33,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
+import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
 import { ActionCell } from './action-cell';
 import {
   UseHandleConnectToKnowledgeReturnType,
@@ -53,8 +54,6 @@ import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 import { isFolderType, isKnowledgeBaseType } from './util';
 
-declare const __API_PROXY_SCHEME__: string;
-
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
   'files' | 'loading' | 'pagination' | 'setPagination' | 'total'
@@ -62,6 +61,7 @@ type FilesTableProps = Pick<
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> &
   UseMoveDocumentShowType & {
     connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType;
+    showPrivilegeModal?(record: IFile): void;
   };
 
 export function FilesTable({
@@ -74,6 +74,7 @@ export function FilesTable({
   setRowSelection,
   showMoveFileModal,
   connectKnowledgeModal,
+  showPrivilegeModal,
 }: FilesTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -85,7 +86,7 @@ export function FilesTable({
     keyPrefix: 'fileManager',
   });
   const navigateToOtherFolder = useNavigateToOtherFolder();
-  const navigate = useNavigate();
+  const { navigateToSkills } = useNavigatePage();
   const {
     connectToKnowledgeVisible,
     hideConnectToKnowledgeModal,
@@ -103,30 +104,11 @@ export function FilesTable({
     fileRenameLoading,
   } = useRenameCurrentFile();
 
-  // Check if skills feature is enabled (only in hybrid or go mode)
-  const isSkillsEnabled = useMemo(() => {
-    const scheme =
-      typeof __API_PROXY_SCHEME__ !== 'undefined'
-        ? __API_PROXY_SCHEME__
-        : 'python';
-    return scheme === 'hybrid' || scheme === 'go';
-  }, []);
-
-  // Sort files with skills folder first, then by time
-  // Filter out skills folder if not in hybrid/go mode
+  // Sort files with the skills folder first, then by time
   const sortedFiles = useMemo(() => {
     if (!files) return [];
 
-    // Filter out skills folder if feature is disabled
-    const filteredFiles = isSkillsEnabled
-      ? files
-      : files.filter((file) => {
-          const isSkills =
-            isFolderType(file.type) && file.name.toLowerCase() === 'skills';
-          return !isSkills;
-        });
-
-    return [...filteredFiles].sort((a, b) => {
+    return [...files].sort((a, b) => {
       const aIsSkills =
         isFolderType(a.type) && a.name.toLowerCase() === 'skills';
       const bIsSkills =
@@ -139,7 +121,7 @@ export function FilesTable({
       // Then sort by create_time desc (newest first)
       return (b.create_time || 0) - (a.create_time || 0);
     });
-  }, [files, isSkillsEnabled]);
+  }, [files]);
 
   const columns: ColumnDef<IFile>[] = [
     {
@@ -193,7 +175,7 @@ export function FilesTable({
 
         const handleNameClick = () => {
           if (isSkillsFolder) {
-            navigate('/files/skills');
+            navigateToSkills();
           } else if (isFolder) {
             navigateToOtherFolder(id);
           }
@@ -204,8 +186,13 @@ export function FilesTable({
             <TooltipTrigger asChild>
               <Button
                 variant="static"
-                onClick={handleNameClick}
-                className="max-w-full p-0 flex justify-start gap-2 text-text-primary"
+                onClick={isFolder ? handleNameClick : undefined}
+                className={cn(
+                  'max-w-full p-0 flex justify-start gap-2 text-text-primary',
+                  // Only folders navigate; files are inert, so drop the pointer
+                  // affordance to make that distinction visible.
+                  isFolder ? 'cursor-pointer' : 'cursor-default',
+                )}
               >
                 <FileIcon name={name} type={isSkillsFolder ? 'skills' : type} />
 
@@ -287,6 +274,8 @@ export function FilesTable({
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
             showMoveFileModal={showMoveFileModal}
+            setRowSelection={setRowSelection}
+            showPrivilegeModal={showPrivilegeModal}
           />
         );
       },
@@ -318,8 +307,7 @@ export function FilesTable({
       const type = row.original.type;
       const isSkillsFolder =
         isFolderType(type) && name.toLowerCase() === 'skills';
-      // Skills folder is not selectable when enabled (it's a special entry)
-      // When disabled, it's already filtered out
+      // The Go skills folder is not selectable because it's a special entry.
       return !isKnowledgeBaseType(row.original.source_type) && !isSkillsFolder;
     },
     state: {
@@ -414,6 +402,7 @@ export function FilesTable({
           onOk={onFileRenameOk}
           initialName={initialFileName}
           loading={fileRenameLoading}
+          forbidSlash
         ></RenameDialog>
       )}
     </>

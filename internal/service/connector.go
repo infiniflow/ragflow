@@ -28,17 +28,20 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"ragflow/internal/engine/redis"
-	"ragflow/internal/utility"
+	"ragflow/internal/engine/kvrocks"
+	syncerconnector "ragflow/internal/syncer/connector"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 const (
@@ -66,33 +69,80 @@ var (
 		"https://www.googleapis.com/auth/admin.directory.user.readonly",
 		"https://www.googleapis.com/auth/admin.directory.group.readonly",
 	}
-	connectorRedisGet = redis.Get
+	connectorRedisGet = kvrocks.Get
 )
 
-// Sentinel errors so handlers can map to the proper response codes,
-// mirroring the Python connector_api responses.
+// Sentinel errors so handlers can map to the proper response codes.
 var (
-	// ErrConnectorNotFound mirrors Python's "Can't find this Connector!".
+	// ErrConnectorNotFound is returned when a connector is not found.
 	ErrConnectorNotFound = errors.New("can't find this Connector")
-	// ErrConnectorNoAuth mirrors Python's "no authorization" denial.
-	ErrConnectorNoAuth = errors.New("no authorization")
-	// ErrConnectorTestUnsupported is returned for connector sources whose
-	// validation path is not yet ported to Go.
-	ErrConnectorTestUnsupported = errors.New("test endpoint currently supports only REST API connectors")
+	// ErrConnectorNotBoundToKB is returned when the connector is not bound to the kb being rebuilt.
+	ErrConnectorNotBoundToKB = errors.New("connector is not bound to this knowledge base")
+	// ErrConnectorIDRequired is returned when a connector ID is missing.
+	ErrConnectorIDRequired = errors.New("connector_id is required")
+	// ErrConnectorTestUnsupported is returned for connector sources without a settings validator.
+	ErrConnectorTestUnsupported = errors.New("connector test is not supported for this source")
+	// ErrConnectorSourceNotImplemented is returned for connector sources not registered in the Go syncer.
+	ErrConnectorSourceNotImplemented = errors.New("connector source is not implemented")
+	// ErrConnectorEncryptedCredentials is returned when a request sends credentials in the stored "enc:" form.
+	ErrConnectorEncryptedCredentials = errors.New("config.credentials must be plaintext, not an \"enc:\" value")
+	// ErrConnectorInvalidFreq is returned when a connector frequency is not
+	// positive. Handlers map it to a client error; callers match with errors.Is.
+	ErrConnectorInvalidFreq = errors.New("connector frequency must be positive")
+	// ErrConnectorInvalidName is returned when a connector name is empty or
+	// wider than the connector.name column. Handlers map it to a client error.
+	ErrConnectorInvalidName = errors.New("connector name is invalid")
 )
 
 // ConnectorService connector service
 type ConnectorService struct {
-	connectorDAO  *dao.ConnectorDAO
-	userTenantDAO *dao.UserTenantDAO
+	connectorDAO      *dao.ConnectorDAO
+	connectorRegistry *syncerconnector.Registry
+}
+
+type syncTaskPublisher interface {
+	PublishSyncerTask(taskID string) error
+}
+
+type syncTaskWakeupPublisher interface {
+	PublishSyncerTaskWakeup(taskID string) error
+}
+
+type syncCheckpointLoader interface {
+	LoadSyncCheckpoint(ctx context.Context, taskID string) (*syncerconnector.SyncCheckpointState, error)
+}
+
+type syncCheckpointDeleter interface {
+	DeleteSyncCheckpoint(ctx context.Context, taskID string) error
+}
+
+var getSyncerTaskPublisher = func() (syncTaskPublisher, bool) {
+	publisher, ok := engine.GetMessageQueueEngine().(syncTaskPublisher)
+	return publisher, ok
+}
+
+var getSyncCheckpointLoader = func() (syncCheckpointLoader, bool) {
+	loader, ok := engine.GetMessageQueueEngine().(syncCheckpointLoader)
+	return loader, ok
+}
+
+var getSyncCheckpointDeleter = func() (syncCheckpointDeleter, bool) {
+	deleter, ok := engine.GetMessageQueueEngine().(syncCheckpointDeleter)
+	return deleter, ok
 }
 
 // NewConnectorService create connector service
 func NewConnectorService() *ConnectorService {
 	return &ConnectorService{
-		connectorDAO:  dao.NewConnectorDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		connectorDAO:      dao.NewConnectorDAO(),
+		connectorRegistry: newConnectorRegistry(),
 	}
+}
+
+func newConnectorRegistry() *syncerconnector.Registry {
+	registry := syncerconnector.NewRegistry()
+	syncerconnector.RegisterBuiltIns(registry)
+	return registry
 }
 
 // ListConnectorsResponse list connectors response
@@ -100,7 +150,7 @@ type ListConnectorsResponse struct {
 	Connectors []*dao.ConnectorListItem `json:"connectors"`
 }
 
-// CreateConnectorRequest creates a connector with Python-compatible defaults.
+// CreateConnectorRequest holds the fields used to create a connector.
 type CreateConnectorRequest struct {
 	Name        string         `json:"name"`
 	Source      string         `json:"source"`
@@ -113,6 +163,12 @@ type CreateConnectorRequest struct {
 // RebuildConnectorRequest rebuild connector request.
 type RebuildConnectorRequest struct {
 	KbID string `json:"kb_id"`
+}
+
+// ResumeFailedSyncRequest resumes a failed connector sync task from checkpoint.
+type ResumeFailedSyncRequest struct {
+	KbID   string `json:"kb_id"`
+	TaskID string `json:"task_id"`
 }
 
 type StartGoogleWebOAuthRequest struct {
@@ -215,21 +271,6 @@ type boxOAuthTokenResponse struct {
 	ErrorDesc    string `json:"error_description,omitempty"`
 }
 
-// canAccessConnector Test Authentication
-func (s *ConnectorService) canAccessConnector(ctx context.Context, connector *entity.Connector, userID string) (bool, error) {
-	if connector.TenantID == userID {
-		return true, nil
-	}
-	_, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, connector.TenantID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
 // cancelConnectorTasks Stop connector tasks
 func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID string) error {
 	if err := s.connectorDAO.CancelRunningOrScheduledLogs(ctx, dao.DB, connectorID); err != nil {
@@ -239,8 +280,32 @@ func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID
 }
 
 // CreateConnector creates a connector owned by the current user.
-// Equivalent to Python's create_connector endpoint.
-func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
+func (s *ConnectorService) CreateConnector(ctx context.Context, req *CreateConnectorRequest) (*entity.Connector, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(req.Name)
+	if err := common.ValidateNameRunes(name, common.NameLimit128); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrConnectorInvalidName, err)
+	}
+	req.Name = name
+	if req.RefreshFreq != nil && *req.RefreshFreq <= 0 {
+		return nil, fmt.Errorf("%w: refresh_freq got %d", ErrConnectorInvalidFreq, *req.RefreshFreq)
+	}
+	if req.PruneFreq != nil && *req.PruneFreq <= 0 {
+		return nil, fmt.Errorf("%w: prune_freq got %d", ErrConnectorInvalidFreq, *req.PruneFreq)
+	}
+	if common.HasEncryptedConnectorCredentials(req.Config) {
+		return nil, ErrConnectorEncryptedCredentials
+	}
 	refreshFreq := int64(defaultConnectorFreq)
 	if req.RefreshFreq != nil {
 		refreshFreq = *req.RefreshFreq
@@ -257,65 +322,88 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 	}
 
 	connector := &entity.Connector{
-		ID:          utility.GenerateUUID(),
-		TenantID:    userID,
+		ID:          common.GenerateUUID(),
+		UserID:      userID,
+		TenantID:    tenantID,
 		Name:        req.Name,
 		Source:      req.Source,
 		InputType:   connectorInputTypePoll,
-		Config:      req.Config,
+		Config:      entity.ConnectorConfig(req.Config),
 		RefreshFreq: refreshFreq,
 		PruneFreq:   pruneFreq,
 		TimeoutSecs: timeoutSecs,
 		Status:      connectorStatusUnstarted,
 	}
 
-	if err := s.connectorDAO.Create(ctx, dao.DB, connector); err != nil {
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.connectorDAO.Create(ctx, tx, connector); err != nil {
+			return err
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connector.ID})
+	}); err != nil {
 		return nil, err
 	}
 
-	return s.connectorDAO.GetByID(ctx, dao.DB, connector.ID)
+	created, err := s.connectorDAO.GetByID(ctx, dao.DB, connector.ID)
+	if err != nil {
+		return nil, err
+	}
+	return withDecryptedCredentials(created)
 }
 
-// GetConnector returns one connector when the user can access its tenant.
-func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, common.ErrorCode, error) {
-	if connectorID == "" {
-		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
+// GetConnector returns one connector when the user has read permission.
+func (s *ConnectorService) GetConnector(ctx context.Context, connectorID string) (*entity.Connector, error) {
+	if strings.TrimSpace(connectorID) == "" {
+		return nil, ErrConnectorIDRequired
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationRead); err != nil {
+		return nil, err
 	}
 
 	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeDataError, fmt.Errorf("can't find this Connector")
+			return nil, ErrConnectorNotFound
 		}
-		return nil, common.CodeServerError, err
+		common.Error("get connector failed", err, zap.String("connector_id", connectorID))
+		return nil, fmt.Errorf("get connector: %w", err)
 	}
 
-	if connector.TenantID == userID {
-		return connector, common.CodeSuccess, nil
-	}
-
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	for _, tenantID := range tenantIDs {
-		if tenantID == connector.TenantID {
-			return connector, common.CodeSuccess, nil
-		}
-	}
-
-	return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	return withDecryptedCredentials(connector)
 }
 
-// ListConnectors list connectors for a user
-func (s *ConnectorService) ListConnectors(ctx context.Context, userID string) (*ListConnectorsResponse, error) {
-	userID = strings.TrimSpace(userID)
+// withDecryptedCredentials decrypts the credentials of a connector that goes
+// back to the client. The web form sends this config back on update.
+func withDecryptedCredentials(connector *entity.Connector) (*entity.Connector, error) {
+	config, err := common.DecryptConnectorCredentials(connector.Config)
+	if err != nil {
+		return nil, err
+	}
+	connector.Config = config
+	return connector, nil
+}
+
+// ListConnectors returns connectors belonging to a tenant the caller can use.
+func (s *ConnectorService) ListConnectors(ctx context.Context, requestedTenantID string) (*ListConnectorsResponse, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	if userID == "" {
-		return nil, fmt.Errorf("user_id is required")
+		return nil, permission.ErrUnauthenticated
 	}
 
-	// Query connectors by tenant ID
-	connectors, err := s.connectorDAO.ListByTenantID(ctx, dao.DB, userID)
+	tenantID := strings.TrimSpace(requestedTenantID)
+	if tenantID == "" {
+		var err error
+		tenantID, err = requireCurrentTenantID(ctx)
+		if errors.Is(err, permission.ErrMembershipNotFound) {
+			return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
+		return nil, err
+	}
+	connectors, err := s.connectorDAO.ListByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -325,70 +413,139 @@ func (s *ConnectorService) ListConnectors(ctx context.Context, userID string) (*
 	}, nil
 }
 
-// accessible reports whether the user can access the connector's tenant.
-// Mirrors Python's ConnectorService.accessible: owner access plus joined tenants.
-func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID string) (bool, error) {
-	conn, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
-	if err != nil {
-		return false, ErrConnectorNotFound
-	}
-
-	if conn.TenantID == userID {
-		return true, nil
-	}
-
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return false, err
-	}
-	for _, tid := range tenantIDs {
-		if tid == conn.TenantID {
-			return true, nil
+// TestConnector validates connector settings without persisting or syncing.
+func (s *ConnectorService) TestConnector(ctx context.Context, connectorID string, config entity.JSONMap) error {
+	var storedConnector *entity.Connector
+	if connectorID != "" {
+		permissionErr := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationUse)
+		if permissionErr != nil && !errors.Is(permissionErr, permission.ErrResourceNotFound) {
+			return permissionErr
+		}
+		if errors.Is(permissionErr, permission.ErrResourceNotFound) {
+			if config == nil {
+				return ErrConnectorNotFound
+			}
+			// A caller may test settings for an unsaved connector by supplying a
+			// request config, but must not use that path to test an existing
+			// connector they cannot access.
+			if _, lookupErr := s.connectorDAO.GetByID(ctx, dao.DB, connectorID); lookupErr == nil {
+				return ErrConnectorNotFound
+			} else if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				return lookupErr
+			}
+		} else {
+			loadedConnector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrConnectorNotFound
+				}
+				return err
+			}
+			storedConnector = loadedConnector
 		}
 	}
-	return false, nil
-}
 
-// TestConnector validates a connector's stored configuration.
-// Equivalent to Python's test_connector. Per-connector credential validation
-// lives in the Python common.data_source package and is not yet available in
-// Go; for now this verifies access, that the connector exists, that the source
-// is REST_API (the only source Python currently tests), and that credentials
-// are present in the stored config. It returns ErrConnectorTestUnsupported for
-// other sources.
-func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userID string) error {
-	ok, err := s.accessible(ctx, connectorID, userID)
-	if err != nil && errors.Is(err, ErrConnectorNotFound) {
-		return ErrConnectorNotFound
-	}
+	source, connectorConfig, err := testConnectorSettings(storedConnector, config)
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return ErrConnectorNoAuth
-	}
-
-	conn, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
+	connector, err := s.connectorRegistry.OpenFromConfig(source, connectorConfig)
 	if err != nil {
-		return ErrConnectorNotFound
+		var unsupported *syncerconnector.UnsupportedSourceError
+		if errors.As(err, &unsupported) {
+			return fmt.Errorf("%w: %s", ErrConnectorSourceNotImplemented, unsupported.Source)
+		}
+		return err
 	}
-
-	if conn.Source != "rest_api" {
+	validator, ok := connector.(syncerconnector.SettingValidator)
+	if !ok {
 		return ErrConnectorTestUnsupported
 	}
-
-	config := conn.Config
-	if config == nil {
-		return fmt.Errorf("connector configuration is missing")
-	}
-	creds, ok := config["credentials"].(map[string]interface{})
-	if !ok || len(creds) == 0 {
-		return fmt.Errorf("connector credentials are missing")
-	}
-	return nil
+	return wrapConnectorValidationError(validator.ValidateConnectorSetting(ctx, connectorConfig))
 }
 
-func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, userID, source string, req *StartGoogleWebOAuthRequest) (*StartGoogleWebOAuthResponse, common.ErrorCode, error) {
+func wrapConnectorValidationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var (
+		valErr  *syncerconnector.ConnectorValidationError
+		credErr *syncerconnector.ConnectorMissingCredentialError
+		rateErr *syncerconnector.RateLimitTriedTooManyTimesError
+	)
+	if errors.As(err, &valErr) || errors.As(err, &credErr) || errors.As(err, &rateErr) {
+		return err
+	}
+	return &syncerconnector.ConnectorValidationError{Message: err.Error()}
+}
+
+func testConnectorSettings(stored *entity.Connector, request entity.JSONMap) (string, entity.JSONMap, error) {
+	source := ""
+	var config entity.JSONMap
+	if stored != nil {
+		source = strings.TrimSpace(stored.Source)
+		config = entity.JSONMap(stored.Config)
+	}
+	fromRequest := false
+	if request != nil {
+		if value := strings.TrimSpace(stringConfigValue(request["source"])); value != "" {
+			source = value
+		}
+		if nested, ok := request["config"]; ok {
+			config = jsonMapValue(nested)
+			fromRequest = true
+		} else if _, ok := request["source"]; !ok {
+			config = request
+			fromRequest = true
+		}
+	}
+	if source == "" {
+		return "", nil, fmt.Errorf("connector source is required")
+	}
+	if config == nil {
+		return "", nil, fmt.Errorf("connector configuration is missing")
+	}
+	if fromRequest {
+		if common.HasEncryptedConnectorCredentials(config) {
+			return "", nil, &syncerconnector.ConnectorValidationError{Message: ErrConnectorEncryptedCredentials.Error()}
+		}
+		return source, config, nil
+	}
+	// Decrypt only the stored fallback, so testing new credentials works without the key.
+	decrypted, err := common.DecryptConnectorCredentials(config)
+	if err != nil {
+		return "", nil, err
+	}
+	return source, decrypted, nil
+}
+
+func jsonMapValue(value any) entity.JSONMap {
+	switch typed := value.(type) {
+	case entity.JSONMap:
+		return typed
+	case map[string]any:
+		return entity.JSONMap(typed)
+	default:
+		return nil
+	}
+}
+
+func stringConfigValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case nil:
+		return ""
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, source string, req *StartGoogleWebOAuthRequest) (*StartGoogleWebOAuthResponse, common.ErrorCode, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
+	}
 	source = strings.TrimSpace(source)
 	if source == "" {
 		source = "google-drive"
@@ -437,13 +594,13 @@ func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, userID, sour
 		return nil, common.CodeServerError, err
 	}
 
-	flowID := utility.GenerateUUID()
+	flowID := common.GenerateUUID()
 	authorizationURL, err := buildGoogleAuthorizationURL(authURI, clientID, redirectURI, flowID, googleOAuthScopesForSource(source), codeChallenge)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration")
+		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration: %w", err)
 	}
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return nil, common.CodeServerError, fmt.Errorf("no configure Redis on the server")
 	}
@@ -477,7 +634,7 @@ func (s *ConnectorService) GoogleWebOAuthCallback(ctx context.Context, source, s
 		return renderWebOAuthPopup("", false, "Missing OAuth state parameter.", source)
 	}
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return renderWebOAuthPopup(stateID, false, "Authorization session expired. Please restart from the main window.", source)
 	}
@@ -529,7 +686,11 @@ func (s *ConnectorService) GoogleWebOAuthCallback(ctx context.Context, source, s
 	return renderWebOAuthPopup(stateID, true, "Authorization completed successfully.", source)
 }
 
-func (s *ConnectorService) PollGoogleWebOAuthResult(ctx context.Context, userID, source string, req *PollGoogleWebOAuthResultRequest) (*PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
+func (s *ConnectorService) PollGoogleWebOAuthResult(ctx context.Context, source string, req *PollGoogleWebOAuthResultRequest) (*PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
+	}
 	source = strings.TrimSpace(source)
 	if source != "google-drive" && source != "gmail" {
 		return nil, common.CodeArgumentError, fmt.Errorf("invalid Google OAuth type")
@@ -538,7 +699,7 @@ func (s *ConnectorService) PollGoogleWebOAuthResult(ctx context.Context, userID,
 		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
 	}
 
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient == nil {
 		return nil, common.CodeRunning, fmt.Errorf("authorization is still pending")
 	}
@@ -559,9 +720,9 @@ func (s *ConnectorService) PollGoogleWebOAuthResult(ctx context.Context, userID,
 
 func defaultGoogleWebOAuthRedirectURI(source string) string {
 	if source == "gmail" {
-		return getEnvDefault(common.EnvGmailWebOAuthRedirectURI, "http://localhost:9384/api/v1/connectors/gmail/oauth/web/callback")
+		return getEnvDefault(common.EnvGmailWebOAuthRedirectURI, "http://localhost:9380/api/v1/connectors/gmail/oauth/web/callback")
 	}
-	return getEnvDefault(common.EnvGoogleDriveWebOAuthRedirectURI, "http://localhost:9384/api/v1/connectors/google-drive/oauth/web/callback")
+	return getEnvDefault(common.EnvGoogleDriveWebOAuthRedirectURI, "http://localhost:9380/api/v1/connectors/google-drive/oauth/web/callback")
 }
 
 func getEnvDefault(key, fallback string) string {
@@ -668,13 +829,14 @@ func exchangeGoogleWebOAuthCode(clientConfig map[string]interface{}, scopes []st
 
 	clientID := strings.TrimSpace(stringValue(webConfig["client_id"]))
 	clientSecret := strings.TrimSpace(stringValue(webConfig["client_secret"]))
-	tokenURI := strings.TrimSpace(stringValue(webConfig["token_uri"]))
-	if tokenURI == "" {
-		tokenURI = googleOAuthTokenURL
+	configuredTokenURI := strings.TrimSpace(stringValue(webConfig["token_uri"]))
+	if configuredTokenURI != "" && configuredTokenURI != googleOAuthTokenURL {
+		return "", fmt.Errorf("invalid Google OAuth client configuration: token_uri must use Google's token endpoint")
 	}
-	if clientID == "" || tokenURI == "" {
+	if clientID == "" {
 		return "", fmt.Errorf("invalid Google OAuth client configuration")
 	}
+	tokenURI := googleOAuthTokenURL
 
 	form := url.Values{}
 	form.Set("client_id", clientID)
@@ -833,9 +995,13 @@ func webOAuthSourceDisplayName(source string) string {
 	return "OAuth"
 }
 
-func (s *ConnectorService) DeleteConnector(ctx context.Context, connectorID, userID string) (bool, common.ErrorCode, error) {
+func (s *ConnectorService) DeleteConnector(ctx context.Context, connectorID string) (bool, common.ErrorCode, error) {
 	if connectorID == "" {
 		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationDelete); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return false, code, permissionErr
 	}
 
 	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
@@ -844,14 +1010,6 @@ func (s *ConnectorService) DeleteConnector(ctx context.Context, connectorID, use
 			return false, common.CodeDataError, fmt.Errorf("can't find this Connector")
 		}
 		return false, common.CodeServerError, err
-	}
-
-	canAccess, err := s.canAccessConnector(ctx, connector, userID)
-	if err != nil {
-		return false, common.CodeServerError, err
-	}
-	if !canAccess {
-		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
 	if err = s.cancelConnectorTasks(ctx, connector.ID); err != nil {
@@ -873,9 +1031,19 @@ type UpdateConnectorRequest struct {
 	Status      string         `json:"status,omitempty"`
 }
 
-func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, userID string, req *UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID string, req *UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
 	if connectorID == "" {
 		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, permissionErr
+	}
+	if req != nil && (req.Reschedule || isConnectorCancelStatus(req.Status) || isConnectorScheduleStatus(req.Status)) {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationRun); err != nil {
+			code, permissionErr := permissionresponse.NormalizeHidden(err)
+			return nil, code, permissionErr
+		}
 	}
 
 	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
@@ -886,24 +1054,34 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 		return nil, common.CodeServerError, err
 	}
 
-	canAccess, err := s.canAccessConnector(ctx, connector, userID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !canAccess {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	// The response returns the stored credentials. Fail before any write when they
+	// cannot be decrypted; a request with new credentials replaces them instead.
+	if req == nil || req.Config == nil {
+		if _, err = common.DecryptConnectorCredentials(connector.Config); err != nil {
+			return nil, common.CodeServerError, err
+		}
 	}
 
 	updates := map[string]interface{}{}
 	if req != nil {
 		if req.PruneFreq != nil {
+			if *req.PruneFreq <= 0 {
+				return nil, common.CodeDataError, fmt.Errorf("%w: prune_freq got %d", ErrConnectorInvalidFreq, *req.PruneFreq)
+			}
 			updates["prune_freq"] = *req.PruneFreq
 		}
 		if req.RefreshFreq != nil {
+			if *req.RefreshFreq <= 0 {
+				return nil, common.CodeDataError, fmt.Errorf("%w: refresh_freq got %d", ErrConnectorInvalidFreq, *req.RefreshFreq)
+			}
 			updates["refresh_freq"] = *req.RefreshFreq
 		}
 		if req.Config != nil {
-			updates["config"] = req.Config
+			if common.HasEncryptedConnectorCredentials(req.Config) {
+				return nil, common.CodeDataError, ErrConnectorEncryptedCredentials
+			}
+			// GORM writes map update values as given, so the value itself must be the type that encrypts.
+			updates["config"] = entity.ConnectorConfig(req.Config)
 		}
 		if req.TimeoutSecs != nil {
 			updates["timeout_secs"] = *req.TimeoutSecs
@@ -921,17 +1099,21 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 			if err = s.cancelConnectorTasks(ctx, connectorID); err != nil {
 				return nil, common.CodeServerError, err
 			}
-			if err = s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID); err != nil {
+			taskIDs, err := s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID)
+			if err != nil {
 				return nil, common.CodeServerError, err
 			}
+			publishSyncerTasks(taskIDs)
 		} else if isConnectorCancelStatus(req.Status) {
 			if err = s.cancelConnectorTasks(ctx, connectorID); err != nil {
 				return nil, common.CodeServerError, err
 			}
 		} else if isConnectorScheduleStatus(req.Status) {
-			if err = s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID); err != nil {
+			taskIDs, err := s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID)
+			if err != nil {
 				return nil, common.CodeServerError, err
 			}
+			publishSyncerTasks(taskIDs)
 		}
 	}
 
@@ -943,6 +1125,10 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 		return nil, common.CodeServerError, err
 	}
 
+	connector, err = withDecryptedCredentials(connector)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
 	return connector, common.CodeSuccess, nil
 }
 
@@ -957,12 +1143,16 @@ func isConnectorScheduleStatus(status string) bool {
 }
 
 // RebuildConnector schedules a rebuild for an accessible connector and knowledge base.
-func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, userID, kbID string) (bool, common.ErrorCode, error) {
+func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, kbID string) (bool, common.ErrorCode, error) {
 	if connectorID == "" {
 		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
 	if kbID == "" {
 		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: kb_id")
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationRun); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return false, code, permissionErr
 	}
 
 	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
@@ -973,12 +1163,22 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 		return false, common.CodeServerError, err
 	}
 
-	canAccess, err := s.canAccessConnector(ctx, connector, userID)
+	// The caller-supplied kb is targeted by delete + re-sync below, so it must
+	// be accessible to the caller and the connector must be bound to it.
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kbID}, permission.OperationRun); err != nil {
+		common.Warn("rebuild denied: kb not accessible",
+			zap.String("connector_id", connectorID), zap.String("kb_id", kbID), zap.String("user_id", permission.UserIDFromContext(ctx)))
+		code, permissionErr := permissionresponse.Normalize(err)
+		return false, code, permissionErr
+	}
+	bound, err := s.connectorDAO.Connector2KBExists(ctx, dao.DB, connectorID, kbID)
 	if err != nil {
 		return false, common.CodeServerError, err
 	}
-	if !canAccess {
-		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	if !bound {
+		common.Warn("rebuild denied: connector not bound to kb",
+			zap.String("connector_id", connectorID), zap.String("kb_id", kbID), zap.String("user_id", permission.UserIDFromContext(ctx)))
+		return false, common.CodeAuthenticationError, ErrConnectorNotBoundToKB
 	}
 
 	sourceType := fmt.Sprintf("%s/%s", connector.Source, connector.ID)
@@ -989,10 +1189,145 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 
 	s.deleteConnectorDocumentChunks(ctx, connector.TenantID, kbID, documents)
 
-	if err = s.connectorDAO.RebuildConnector(ctx, dao.DB, connector, kbID, documents); err != nil {
+	taskIDs, oldSyncTaskIDs, err := s.connectorDAO.RebuildConnector(ctx, dao.DB, connector, kbID, documents)
+	if err != nil {
+		return false, common.CodeServerError, err
+	}
+
+	if err = deleteSyncCheckpoints(ctx, oldSyncTaskIDs); err != nil {
+		common.Warn("delete sync checkpoints failed during rebuild",
+			zap.String("connector_id", connectorID), zap.Error(err))
+	}
+
+	publishSyncerTasks(taskIDs)
+	return true, common.CodeSuccess, nil
+}
+
+// ResumeFailedSync schedules a failed sync task to continue from its saved checkpoint.
+func (s *ConnectorService) ResumeFailedSync(ctx context.Context, connectorID string, req *ResumeFailedSyncRequest) (bool, common.ErrorCode, error) {
+	if connectorID == "" {
+		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+	if req == nil {
+		return false, common.CodeArgumentError, fmt.Errorf("request is required")
+	}
+	// check KBid and TaskID
+	req.KbID = strings.TrimSpace(req.KbID)
+	req.TaskID = strings.TrimSpace(req.TaskID)
+	if req.KbID == "" {
+		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: kb_id")
+	}
+	if req.TaskID == "" {
+		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: task_id")
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationRun); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return false, code, permissionErr
+	}
+	connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}
+	taskScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindSyncTask,
+		Parent:    connectorRef,
+		Operation: permission.OperationRun,
+		Entry:     &connectorRef,
+		EntryOp:   permission.OperationRun,
+	})
+	if err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return false, code, permissionErr
+	}
+	taskAccessible := false
+	for _, taskID := range taskScope.ResourceIDs {
+		if taskID == req.TaskID {
+			taskAccessible = true
+			break
+		}
+	}
+	if !taskAccessible {
+		code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+		return false, code, permissionErr
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KbID}, permission.OperationRun); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return false, code, permissionErr
+	}
+	// load the checkpoint
+	loader, ok := getSyncCheckpointLoader()
+	if !ok {
+		return false, common.CodeServerError, fmt.Errorf("sync checkpoint store is not configured")
+	}
+
+	checkpoint, err := loader.LoadSyncCheckpoint(ctx, req.TaskID)
+	if err != nil {
+		return false, common.CodeServerError, err
+	}
+	if checkpoint == nil || checkpoint.Checkpoint == nil {
+		return false, common.CodeDataError, fmt.Errorf("checkpoint not found, cannot resume failed sync task")
+	}
+	if checkpoint.TaskID != req.TaskID || checkpoint.ConnectorID != connectorID || checkpoint.KBID != req.KbID {
+		return false, common.CodeDataError, fmt.Errorf("checkpoint does not match connector, knowledge base, and task")
+	}
+	// resume the task
+	if err = s.connectorDAO.ResumeFailedSyncTask(ctx, dao.DB, connectorID, req.KbID, req.TaskID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, common.CodeDataError, fmt.Errorf("failed sync task not found")
+		}
+		return false, common.CodeServerError, err
+	}
+	if err = publishSyncerTaskWakeup(req.TaskID); err != nil {
 		return false, common.CodeServerError, err
 	}
 	return true, common.CodeSuccess, nil
+}
+
+func publishSyncerTasks(taskIDs []string) {
+	if len(taskIDs) == 0 {
+		return
+	}
+	publisher, ok := getSyncerTaskPublisher()
+	if !ok {
+		common.Warn("syncer task publisher is not configured")
+		return
+	}
+	for _, taskID := range taskIDs {
+		if taskID == "" {
+			continue
+		}
+		if err := publisher.PublishSyncerTask(taskID); err != nil {
+			common.Warn("syncer task publish failed", zap.String("task_id", taskID), zap.Error(err))
+		}
+	}
+}
+
+// publishSyncerTaskWakeup publish syncer task wakeup message to nats
+func publishSyncerTaskWakeup(taskID string) error {
+	publisher, ok := getSyncerTaskPublisher()
+	if !ok {
+		return fmt.Errorf("syncer task publisher is not configured")
+	}
+	if wakeupPublisher, ok := publisher.(syncTaskWakeupPublisher); ok {
+		return wakeupPublisher.PublishSyncerTaskWakeup(taskID)
+	}
+	return publisher.PublishSyncerTask(taskID)
+}
+
+func deleteSyncCheckpoints(ctx context.Context, taskIDs []string) error {
+	if len(taskIDs) == 0 {
+		return nil
+	}
+	deleter, ok := getSyncCheckpointDeleter()
+	if !ok {
+		return fmt.Errorf("sync checkpoint store is not configured")
+	}
+	for _, taskID := range taskIDs {
+		if taskID == "" {
+			continue
+		}
+		if err := deleter.DeleteSyncCheckpoint(ctx, taskID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *ConnectorService) deleteConnectorDocumentChunks(ctx context.Context, tenantID, kbID string, documents []*entity.Document) {
@@ -1007,36 +1342,42 @@ func (s *ConnectorService) deleteConnectorDocumentChunks(ctx context.Context, te
 	}
 }
 
-func (s *ConnectorService) ListLog(ctx context.Context, connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+func (s *ConnectorService) ListLog(ctx context.Context, connectorID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
 	if connectorID == "" {
 		return nil, 0, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
 
-	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, 0, common.CodeDataError, fmt.Errorf("can't find this Connector")
-		}
-		return nil, 0, common.CodeServerError, err
+	checker := permission.NewDatabaseChecker(dao.DB)
+	connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}
+	if err := checker.CheckResource(ctx, connectorRef, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, 0, code, permissionErr
 	}
-
-	canAccess, err := s.canAccessConnector(ctx, connector, userID)
+	taskScope, err := checker.Scope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindSyncTask,
+		Parent:    connectorRef,
+		Operation: permission.OperationRead,
+		Entry:     &connectorRef,
+		EntryOp:   permission.OperationRead,
+	})
 	if err != nil {
-		return nil, 0, common.CodeServerError, err
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, 0, code, permissionErr
 	}
-	if !canAccess {
-		return nil, 0, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	taskIDs := taskScope.ResourceIDs
+	if taskScope.Mode != permission.ScopeIDs {
+		taskIDs = []string{}
 	}
 
 	if page < 1 {
-		page = 1
+		page = common.DefaultPage
 	}
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 15
+	if pageSize <= 0 || pageSize > common.MaxPageSize {
+		pageSize = common.DefaultPageSize
 	}
 	offset := (page - 1) * pageSize
 
-	logs, total, err := s.connectorDAO.ListLogsByConnectorID(ctx, dao.DB, connectorID, offset, pageSize)
+	logs, total, err := s.connectorDAO.ListLogsByTaskIDs(ctx, dao.DB, taskIDs, "", offset, pageSize)
 	if err != nil {
 		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch connector logs: %w", err)
 	}
@@ -1046,7 +1387,79 @@ func (s *ConnectorService) ListLog(ctx context.Context, connectorID, userID stri
 	return logs, total, common.CodeSuccess, nil
 }
 
-func (s *ConnectorService) StartBoxWebOAuth(ctx context.Context, userID string, req *StartBoxWebOAuthRequest) (*StartBoxWebOAuthResponse, common.ErrorCode, error) {
+// ListLogs lists sync logs for the current user with pagination.
+// When datasetID is non-empty, only logs of that dataset are returned.
+func (s *ConnectorService) ListLogs(ctx context.Context, datasetID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+	if strings.TrimSpace(permission.UserIDFromContext(ctx)) == "" {
+		return nil, 0, common.CodeUnauthorized, permission.ErrUnauthenticated
+	}
+
+	if datasetID != "" {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+			code, permissionErr := permissionresponse.NormalizeHidden(err)
+			return nil, 0, code, permissionErr
+		}
+	}
+	checker := permission.NewDatabaseChecker(dao.DB)
+	connectorScope, err := checker.Scope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindConnector,
+		Operation: permission.OperationRead,
+	})
+	if err != nil {
+		return nil, 0, common.CodeServerError, err
+	}
+	connectorIDs := connectorScope.ResourceIDs
+	if connectorScope.Mode != permission.ScopeIDs {
+		connectorIDs = []string{}
+	}
+	var taskIDs []string
+	for _, connectorID := range connectorIDs {
+		connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}
+		taskScope, err := checker.Scope(ctx, permission.ScopeQuery{
+			Kind:      permission.ResourceKindSyncTask,
+			Parent:    connectorRef,
+			Operation: permission.OperationRead,
+			Entry:     &connectorRef,
+			EntryOp:   permission.OperationRead,
+		})
+		if err != nil {
+			code, permissionErr := permissionresponse.NormalizeHidden(err)
+			return nil, 0, code, permissionErr
+		}
+		if taskScope.Mode == permission.ScopeIDs {
+			taskIDs = append(taskIDs, taskScope.ResourceIDs...)
+		}
+	}
+
+	offset, limit := 0, pageSize
+	if pageSize <= 0 {
+		// pageSize == 0 means no pagination: return every matching row.
+		limit = 0
+	} else {
+		if page < 1 {
+			page = common.DefaultPage
+		}
+		if pageSize > common.MaxPageSize {
+			limit = common.DefaultPageSize
+		}
+		offset = (page - 1) * limit
+	}
+
+	logs, total, err := s.connectorDAO.ListLogsByTaskIDs(ctx, dao.DB, taskIDs, datasetID, offset, limit)
+	if err != nil {
+		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch sync logs: %w", err)
+	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
+	return logs, total, common.CodeSuccess, nil
+}
+
+func (s *ConnectorService) StartBoxWebOAuth(ctx context.Context, req *StartBoxWebOAuthRequest) (*StartBoxWebOAuthResponse, common.ErrorCode, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
+	}
 	var clientID, clientSecret, redirectURI string
 	if req != nil {
 		clientID = strings.TrimSpace(req.ClientID)
@@ -1060,7 +1473,7 @@ func (s *ConnectorService) StartBoxWebOAuth(ctx context.Context, userID string, 
 		redirectURI = defaultBoxWebOAuthRedirectURI()
 	}
 
-	flowID := utility.GenerateUUID()
+	flowID := common.GenerateUUID()
 	authorizationURL, err := buildBoxAuthorizationURL(clientID, redirectURI, flowID)
 	if err != nil {
 		return nil, common.CodeServerError, err
@@ -1146,7 +1559,11 @@ func (s *ConnectorService) BoxWebOAuthCallback(ctx context.Context, flowID strin
 	return renderWebOAuthPopup(flowID, true, "Authorization completed successfully.", "box")
 }
 
-func (s *ConnectorService) PollBoxWebOAuthResult(ctx context.Context, userID string, req *PollBoxWebOAuthResultRequest) (*PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
+func (s *ConnectorService) PollBoxWebOAuthResult(ctx context.Context, req *PollBoxWebOAuthResultRequest) (*PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
+	}
 	if req == nil || strings.TrimSpace(req.FlowID) == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: flow_id")
 	}
@@ -1174,7 +1591,7 @@ func (s *ConnectorService) PollBoxWebOAuthResult(ctx context.Context, userID str
 func defaultBoxWebOAuthRedirectURI() string {
 	return getEnvDefault(
 		common.EnvBoxWebOAuthRedirectURI,
-		"http://localhost:9384/api/v1/connectors/box/oauth/web/callback",
+		"http://localhost:9380/api/v1/connectors/box/oauth/web/callback",
 	)
 }
 

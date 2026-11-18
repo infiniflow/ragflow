@@ -64,6 +64,7 @@ func TestEmail_BuildMessage(t *testing.T) {
 }
 
 func TestEmail_SendBuildsDistinctHeadersAndEnvelopeRecipients(t *testing.T) {
+	ctx := t.Context()
 	originalSendEmail := sendEmail
 	t.Cleanup(func() { sendEmail = originalSendEmail })
 	var sentParams emailParams
@@ -92,12 +93,12 @@ func TestEmail_SendBuildsDistinctHeadersAndEnvelopeRecipients(t *testing.T) {
 	argsJSON, _ := json.Marshal(args)
 	state := runtime.NewCanvasState("run-email", "task-email")
 	state.Sys["date"] = "2026-07-15"
-	out, err := built.(*EmailTool).InvokableRun(runtime.WithState(context.Background(), state), string(argsJSON))
+	out, err := built.(*EmailTool).InvokableRun(runtime.WithState(ctx, state), string(argsJSON))
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	var env emailEnvelope
-	if err := json.Unmarshal([]byte(out), &env); err != nil || !env.OK || env.Error != "" {
+	if err = json.Unmarshal([]byte(out), &env); err != nil || !env.OK || env.Error != "" {
 		t.Fatalf("output = %s, decode error = %v", out, err)
 	}
 
@@ -118,7 +119,36 @@ func TestEmail_SendBuildsDistinctHeadersAndEnvelopeRecipients(t *testing.T) {
 	}
 }
 
+func TestEmail_ModelArgsCannotOverrideNodeSMTPConfig(t *testing.T) {
+	ctx := t.Context()
+	originalSendEmail := sendEmail
+	t.Cleanup(func() { sendEmail = originalSendEmail })
+	var sentParams emailParams
+	sendEmail = func(_ context.Context, p emailParams, _ []byte) error {
+		sentParams = p
+		return nil
+	}
+
+	tool := newEmailTool(emailParams{
+		SMTPServer:   "smtp.trusted.example",
+		SMTPPort:     587,
+		Email:        "sender@example.com",
+		SMTPUsername: "trusted-user",
+		Password:     "trusted-password",
+		SenderName:   "Trusted Sender",
+	})
+	args := `{"to_email":"recipient@example.com","subject":"hello","content":"body","smtp_server":"attacker.example","smtp_port":2525,"email":"attacker@example.com","smtp_username":"attacker","password":"stolen-password","sender_name":"Attacker"}`
+	if _, err := tool.InvokableRun(ctx, args); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+
+	if sentParams.SMTPServer != "smtp.trusted.example" || sentParams.SMTPPort != 587 || sentParams.Email != "sender@example.com" || sentParams.SMTPUsername != "trusted-user" || sentParams.Password != "trusted-password" || sentParams.SenderName != "Trusted Sender" {
+		t.Fatalf("model arguments overrode node SMTP config: %#v", sentParams)
+	}
+}
+
 func TestEmail_STARTTLSRequiredBeforeSubmission(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -161,7 +191,7 @@ func TestEmail_STARTTLSRequiredBeforeSubmission(t *testing.T) {
 	}
 	var portNumber int
 	_, _ = fmt.Sscanf(port, "%d", &portNumber)
-	err = sendEmailSTARTTLS(context.Background(), emailParams{
+	err = sendEmailSTARTTLS(ctx, emailParams{
 		SMTPServer: host, SMTPPort: portNumber, Email: "alice@example.com",
 		ToEmail: "bob@example.com",
 	}, []byte("message"))
@@ -182,6 +212,7 @@ func TestEmail_STARTTLSRequiredBeforeSubmission(t *testing.T) {
 }
 
 func TestEmail_RequiresFields(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	cases := []struct {
@@ -212,7 +243,7 @@ func TestEmail_RequiresFields(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := tc.tool.InvokableRun(context.Background(), tc.args)
+			_, err := tc.tool.InvokableRun(ctx, tc.args)
 			if err == nil {
 				t.Fatalf("expected error for %s", tc.name)
 			}
@@ -224,10 +255,11 @@ func TestEmail_RequiresFields(t *testing.T) {
 }
 
 func TestEmail_Info(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	tool := NewEmailTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}

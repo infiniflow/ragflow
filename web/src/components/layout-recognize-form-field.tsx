@@ -1,12 +1,30 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { useTranslate } from '@/hooks/common-hooks';
-import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
+import { LLMFactory } from '@/constants/llm';
 import { cn } from '@/lib/utils';
+import { parseModelValue } from '@/utils/llm-util';
 import { camelCase } from 'lodash';
 import { ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { MinerUOptionsFormField } from './mineru-options-form-field';
-import { buildModelTree } from './model-tree-select';
+import { useModelTree } from './model-tree-select';
 import { PaddleOCROptionsFormField } from './paddleocr-options-form-field';
+import { UnlimitedOCROptionsFormField } from './unlimited-ocr-options-form-field';
 import { TreeSelect, TreeSelectNode } from './tree-select';
 import {
   FormControl,
@@ -22,8 +40,25 @@ export const enum ParseDocumentType {
   Docling = 'Docling',
   OpenDataLoader = 'OpenDataLoader',
   TCADPParser = 'TCADP Parser',
+  MonkeyOCRv2 = 'MonkeyOCRv2',
+  UnlimitedOCR2 = 'Unlimited-OCR-2',
 }
 
+// Stable reference: useModelTree keys its memoized tree on its identity.
+const LayoutRecognizeModelTypes = ['image2text', 'ocr', 'vision'];
+
+function renderExperimentalLeaf(node: TreeSelectNode) {
+  return (
+    <div className="flex justify-between items-center gap-2 w-full">
+      <span className="flex items-center gap-1.5 truncate">{node.label}</span>
+      <span className="text-state-error text-sm flex-shrink-0">
+        Experimental
+      </span>
+    </div>
+  );
+}
+
+/** Selects a parser model and scopes provider-specific options to its form path. */
 export function LayoutRecognizeFormField({
   name = 'parser_config.layout_recognize',
   horizontal = true,
@@ -46,10 +81,16 @@ export function LayoutRecognizeFormField({
   const form = useFormContext();
 
   const { t } = useTranslate('knowledgeDetails');
-  const { data: allAddedModels } = useFetchAllAddedModels(
-    undefined,
+  const {
+    treeData: modelTree,
+    allAddedModels,
+    isFetched: modelsFetched,
+    isError: modelsError,
+  } = useModelTree({
+    modelTypes: LayoutRecognizeModelTypes,
+    renderLeafLabel: renderExperimentalLeaf,
     ownerTenantId,
-  );
+  });
 
   const treeData = useMemo(() => {
     const list = optionsWithoutLLM
@@ -60,6 +101,8 @@ export function LayoutRecognizeFormField({
           ParseDocumentType.Docling,
           ParseDocumentType.OpenDataLoader,
           ParseDocumentType.TCADPParser,
+          ParseDocumentType.MonkeyOCRv2,
+          ParseDocumentType.UnlimitedOCR2,
         ].map((x) => ({
           label: x === ParseDocumentType.PlainText ? t(camelCase(x)) : x,
           value: x,
@@ -70,29 +113,29 @@ export function LayoutRecognizeFormField({
       title: x.label,
     }));
 
-    const modelTree = buildModelTree(
-      allAddedModels,
-      ['image2text', 'ocr'],
-      (node) => (
-        <div className="flex justify-between items-center gap-2 w-full">
-          <span className="flex items-center gap-1.5 truncate">
-            {node.label}
-          </span>
-          <span className="text-state-error text-sm flex-shrink-0">
-            Experimental
-          </span>
-        </div>
-      ),
-    );
-
     return [...prependNodes, ...modelTree];
-  }, [allAddedModels, optionsWithoutLLM, t]);
+  }, [modelTree, optionsWithoutLLM, t]);
 
   return (
     <FormField
       control={form.control}
       name={name}
       render={({ field }) => {
+        const provider =
+          allAddedModels.find((model) => model.model_id === field.value)
+            ?.provider_name ??
+          parseModelValue(field.value)?.model_provider ??
+          field.value;
+        const isMinerU =
+          typeof provider === 'string' &&
+          [LLMFactory.MinerU, LLMFactory.MinerUNet].some(
+            (factory) => factory.toLowerCase() === provider.toLowerCase(),
+          );
+        const isUnlimitedOCR =
+          (typeof provider === 'string' &&
+            provider.toLowerCase().includes('unlimited')) ||
+          field.value === ParseDocumentType.UnlimitedOCR2;
+        const namePrefix = name.split('.').slice(0, -1).join('.');
         return (
           <>
             <FormItem className={'items-center space-y-0 '}>
@@ -104,9 +147,12 @@ export function LayoutRecognizeFormField({
               >
                 <FormLabel
                   tooltip={t('layoutRecognizeTip')}
-                  className={cn('text-sm text-text-secondary whitespace-wrap', {
-                    ['w-1/4']: horizontal,
-                  })}
+                  className={cn(
+                    'text-sm text-text-secondary whitespace-wrap pb-1',
+                    {
+                      ['w-1/4']: horizontal,
+                    },
+                  )}
                 >
                   {label || t('layoutRecognize')}
                 </FormLabel>
@@ -118,6 +164,7 @@ export function LayoutRecognizeFormField({
                       testId={testId}
                       showSearch
                       defaultExpandAll
+                      loading={!modelsFetched || modelsError}
                       renderSelected={(node) => {
                         if (!node) return null;
                         return node.label ?? node.title;
@@ -131,7 +178,12 @@ export function LayoutRecognizeFormField({
                 <FormMessage />
               </div>
             </FormItem>
-            {showMineruOptions && <MinerUOptionsFormField />}
+            {showMineruOptions && isMinerU && (
+              <MinerUOptionsFormField namePrefix={namePrefix} />
+            )}
+            {isUnlimitedOCR && (
+              <UnlimitedOCROptionsFormField namePrefix={namePrefix} />
+            )}
             {showPaddleocrOptions && <PaddleOCROptionsFormField />}
           </>
         );

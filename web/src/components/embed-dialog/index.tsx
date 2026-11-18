@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Button, ButtonLoading } from '@/components/ui/button';
@@ -39,9 +55,11 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { z } from 'zod';
 import { RAGFlowFormItem } from '../ragflow-form';
-import { SwitchFormField } from '../switch-fom-field';
+import { SwitchFormField } from '../switch-form-field';
 import { useIsDarkTheme } from '../theme-provider';
 import { Input } from '../ui/input';
+
+const MAX_EMBED_USER_ID_LENGTH = 255;
 
 const FormSchema = z.object({
   visibleAvatar: z.boolean(),
@@ -51,7 +69,7 @@ const FormSchema = z.object({
   enableStreaming: z.boolean(),
   muteWidget: z.boolean(),
   theme: z.enum([ThemeEnum.Light, ThemeEnum.Dark]),
-  userId: z.string().optional(),
+  userId: z.string().max(MAX_EMBED_USER_ID_LENGTH).optional(),
   widgetTitle: z.string(),
   widgetSubtitle: z.string(),
   widgetFooterText: z.string(),
@@ -63,22 +81,15 @@ const FormSchema = z.object({
   widgetFooterTextColor: z.string(),
 });
 
-export type WidgetSettings = Pick<
-  z.infer<typeof FormSchema>,
-  | 'enableStreaming'
-  | 'muteWidget'
-  | 'widgetTitle'
-  | 'widgetSubtitle'
-  | 'widgetFooterText'
-  | 'widgetFooterLink'
-  | 'widgetAccentColor'
-  | 'widgetBackgroundColor'
-  | 'widgetTextColor'
-  | 'widgetHeaderTextColor'
-  | 'widgetFooterTextColor'
->;
+export type WidgetSettings = z.infer<typeof FormSchema>;
 
 export const defaultWidgetSettings: WidgetSettings = {
+  embedType: 'fullscreen',
+  theme: ThemeEnum.Light,
+  visibleAvatar: false,
+  published: false,
+  locale: '',
+  userId: '',
   enableStreaming: false,
   muteWidget: false,
   widgetTitle: '',
@@ -129,11 +140,6 @@ function EmbedDialog({
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      visibleAvatar: false,
-      published: false,
-      locale: '',
-      embedType: 'fullscreen' as const,
-      theme: ThemeEnum.Light,
       ...defaultWidgetSettings,
       ...initialWidgetSettings,
     },
@@ -284,19 +290,7 @@ window.addEventListener('message',e=>{
       return;
     }
 
-    await onSaveWidgetSettings({
-      enableStreaming: values.enableStreaming,
-      muteWidget: values.muteWidget,
-      widgetTitle: values.widgetTitle,
-      widgetSubtitle: values.widgetSubtitle,
-      widgetFooterText: values.widgetFooterText,
-      widgetFooterLink: values.widgetFooterLink,
-      widgetAccentColor: values.widgetAccentColor,
-      widgetBackgroundColor: values.widgetBackgroundColor,
-      widgetTextColor: values.widgetTextColor,
-      widgetHeaderTextColor: values.widgetHeaderTextColor,
-      widgetFooterTextColor: values.widgetFooterTextColor,
-    });
+    await onSaveWidgetSettings({ ...defaultWidgetSettings, ...values });
   }, [onSaveWidgetSettings, values]);
 
   return (
@@ -415,8 +409,15 @@ window.addEventListener('message',e=>{
                     ></SelectWithSearch>
                   </RAGFlowFormItem>
                   {isAgent && (
-                    <RAGFlowFormItem name="userId" label={t('flow.userId')}>
-                      <Input></Input>
+                    <RAGFlowFormItem
+                      name="userId"
+                      label={t('flow.userId')}
+                      tooltip={t('chat.embedUserIdTooltip')}
+                    >
+                      <Input
+                        maxLength={MAX_EMBED_USER_ID_LENGTH}
+                        placeholder={t('chat.embedUserIdPlaceholder')}
+                      ></Input>
                     </RAGFlowFormItem>
                   )}
                 </TabsContent>

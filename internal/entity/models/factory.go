@@ -57,10 +57,21 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVllmModel(baseURL, urlSuffix), nil
 	case "openai-api-compatible":
 		return NewOpenAIAPICompatibleModel(baseURL, urlSuffix), nil
+	case "systemone":
+		// Not chat-completions-shaped: this provider speaks TypeSafe System One,
+		// where one request carries many questions and the answer is a labelled
+		// verdict per question rather than a message.
+		return NewSystemOneModel(baseURL, urlSuffix), nil
+	case "mws":
+		return NewMWSModel(baseURL, urlSuffix), nil
 	case "xai":
 		return NewXAIModel(baseURL, urlSuffix), nil
+	case "hubris":
+		return NewHubrisModel(baseURL, urlSuffix), nil
 	case "lm-studio":
 		return NewLmStudioModel(baseURL, urlSuffix), nil
+	case "llmman":
+		return NewLlmmanModel(baseURL, urlSuffix), nil
 	case "ollama":
 		return NewOllamaModel(baseURL, urlSuffix), nil
 	case "openai":
@@ -77,10 +88,16 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewHuggingFaceModel(baseURL, urlSuffix), nil
 	case "baiduyiyan":
 		return NewBaiduModel(baseURL, urlSuffix), nil
+	case "cheaper inference":
+		return NewCheaperInferenceModel(baseURL, urlSuffix), nil
 	case "cohere":
 		return NewCoHereModel(baseURL, urlSuffix), nil
+	case "aimlapi.com":
+		return NewAimlapiModel(baseURL, urlSuffix), nil
 	case "cometapi":
 		return NewCometAPIModel(baseURL, urlSuffix), nil
+	case "daoxe":
+		return NewDaoxeModel(baseURL, urlSuffix), nil
 	case "fish audio":
 		return NewFishAudioModel(baseURL, urlSuffix), nil
 	case "mistral":
@@ -109,6 +126,12 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewTokenPonyModel(baseURL, urlSuffix), nil
 	case "tokenhub":
 		return NewTokenHubModel(baseURL, urlSuffix), nil
+	case "demon route":
+		return NewDemonRouteModel(baseURL, urlSuffix), nil
+	case "trustedrouter":
+		return NewTrustedRouterModel(baseURL, urlSuffix), nil
+	case "ai stupid level":
+		return NewAIStupidLevelModel(baseURL, urlSuffix), nil
 	case "novitaai":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":
@@ -123,8 +146,10 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewPPIOModel(baseURL, urlSuffix), nil
 	case "voyage ai":
 		return NewVoyageModel(baseURL, urlSuffix), nil
-	case "paddleocr.net":
+	case "paddleocr":
 		return NewPaddleOCRModel(baseURL, urlSuffix), nil
+	case "somark":
+		return NewSoMarkModel(baseURL, urlSuffix), nil
 	case "xunfei spark":
 		return NewXunFeiModel(baseURL, urlSuffix), nil
 	case "deepinfra":
@@ -137,6 +162,13 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAI302Model(baseURL, urlSuffix), nil
 	case "mineru":
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
+	case "monkeyocrv2":
+		return NewMonkeyOCRv2Model(baseURL, urlSuffix), nil
+	case "monkeyocr":
+		// MonkeyOCR's RAGFlow adapter uses the same /file_parse ZIP protocol as MinerU.
+		return NewMonkeyOCRModel(baseURL, urlSuffix), nil
+	case "unlimited_ocr", "unlimited-ocr-2":
+		return NewUnlimitedOCRModel(baseURL, urlSuffix), nil
 	case "futurmix":
 		return NewFuturMixModel(baseURL, urlSuffix), nil
 	case "perplexity":
@@ -147,8 +179,10 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewN1NModel(baseURL, urlSuffix), nil
 	case "bedrock":
 		return NewBedrockModel(baseURL, urlSuffix), nil
-	case "paddleocr":
+	case "paddleocr.local":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
+	case "minicpm-ocr":
+		return NewMiniCPMOCRModel(baseURL, urlSuffix), nil
 	case "orcarouter":
 		return NewOrcaRouterModel(baseURL, urlSuffix), nil
 	case "huaweicloud":
@@ -161,6 +195,47 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewFunASRModel(baseURL, urlSuffix), nil
 	case "greenpt":
 		return NewGreenPTModel(baseURL, urlSuffix), nil
+	case "synthorai":
+		return NewSynthoraiModel(baseURL, urlSuffix), nil
+	case "radeon cloud":
+		return NewRadeonCloudModel(baseURL, urlSuffix), nil
+	case "anonrouter":
+		return NewAnonRouterModel(baseURL, urlSuffix), nil
+	case "api-route":
+		return NewApiRouteModel(baseURL, urlSuffix), nil
+	case "shengsuanyun":
+		return NewShengsuanyunModel(baseURL, urlSuffix), nil
+	case "opper":
+		return NewOpperModel(baseURL, urlSuffix), nil
+	case "empiriolabs ai":
+		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
+	case "runcrate":
+		return NewRuncrateModel(baseURL, urlSuffix), nil
+	case "nace":
+		// System One protocol, like "systemone", with Nace's own model catalog.
+		return NewNaceModel(baseURL, urlSuffix), nil
+	case "worldrouter":
+		return NewWorldRouterModel(baseURL, urlSuffix), nil
+	case "cloudgpu":
+		return NewCloudGPUModel(baseURL, urlSuffix), nil
+	case "obscurify.ai":
+		return NewObscurifyModel(baseURL, urlSuffix), nil
+	case "cheapaimodel":
+		return NewCheapaimodelModel(baseURL, urlSuffix), nil
+	case "new api":
+		return NewNewAPIModel(baseURL, urlSuffix), nil
+	case "hostinger router":
+		return NewHostingerRouterModel(baseURL, urlSuffix), nil
+	case "wally":
+		return NewWallyModel(baseURL, urlSuffix), nil
+	case "synap":
+		return NewSynapModel(baseURL, urlSuffix), nil
+	case "wiro ai":
+		return NewWiroModel(baseURL, urlSuffix), nil
+	case "crusoe":
+		return NewCrusoeModel(baseURL, urlSuffix), nil
+	case "hopbase":
+		return NewHopBaseModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

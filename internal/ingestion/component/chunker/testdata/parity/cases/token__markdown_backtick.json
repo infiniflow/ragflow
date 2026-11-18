@@ -1,0 +1,16 @@
+{
+ "id": "token__markdown_backtick",
+ "component": "TokenChunker",
+ "notes": "Custom-delimiter branch on the markdown path, including blank lines so empty segments are exercised.",
+ "param": {
+  "chunk_token_size": 128,
+  "delimiters": [
+   "`\n`"
+  ]
+ },
+ "input": {
+  "name": "t",
+  "output_format": "markdown",
+  "markdown": "# Title\n\nParagraph one.\n\nParagraph two."
+ }
+}

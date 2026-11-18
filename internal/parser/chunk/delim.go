@@ -23,35 +23,9 @@ import (
 	"unicode/utf8"
 )
 
-// Canonical parser for the parser_config.delimiter field.
-//
-// Mirrors Python rag/nlp/delim.py (#17383). A delimiter field is a string
-// with the grammar:
-//
-//	delimiter_field  := token*
-//	token            := backtick_wrapped | bare_char
-//	backtick_wrapped := "`" bare_char+ "`"
-//	bare_char        := any single Unicode character except "`"
-//
-// Semantics:
-//  1. Characters between matching backticks form one multi-character delimiter.
-//  2. Any character outside backticks is its own single-character delimiter.
-//  3. Results are deduplicated and sorted longest-first (stable for equal length).
-//  4. CRLF and standalone CR are normalized to LF before parsing.
-//  5. Matching is case-sensitive.
-
 // backtickWrappedRE matches a backtick-wrapped multi-character token.
 // Case-sensitive on purpose (see #17384).
 var backtickWrappedRE = regexp.MustCompile("`([^`]+)`")
-
-// NormalizeTextNewlines converts CRLF and standalone CR to LF.
-func NormalizeTextNewlines(text string) string {
-	if text == "" {
-		return text
-	}
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	return strings.ReplaceAll(text, "\r", "\n")
-}
 
 // HasWrappedDelimiter reports whether the delimiter field contains at least
 // one backtick-wrapped token. Used to decide the historical "custom delimiter"
@@ -64,51 +38,39 @@ func HasWrappedDelimiter(s string) bool {
 	return backtickWrappedRE.MatchString(s)
 }
 
-// ParseDelimiterField parses the delimiter field into delimiter strings.
-//
-// Returns nil for an empty field. Whitespace characters are valid
-// single-character delimiters. Output is sorted longest-first and
-// deduplicated while preserving first-occurrence order for equal-length
-// items (the sort is stable). CRLF/CR inside the field are normalized to LF.
-func ParseDelimiterField(s string) []string {
-	if s == "" {
-		return nil
+// ParseDelimiterField converts the legacy Python delimiter string into the
+// canonical delimiter list used by the Go pipeline. Characters outside
+// backticks are individual Unicode delimiters; a backtick-wrapped token stays
+// as one list entry so multi-character delimiters remain lossless.
+func ParseDelimiterField(value string) []string {
+	if value == "" {
+		return []string{}
 	}
-	normalized := NormalizeTextNewlines(s)
-
 	var delimiters []string
-	seen := make(map[string]struct{})
-	cursor := 0
-	for _, loc := range backtickWrappedRE.FindAllStringSubmatchIndex(normalized, -1) {
-		// loc: [fullStart, fullEnd, groupStart, groupEnd]
-		start, end := loc[0], loc[1]
-		for _, ch := range runesOf(normalized[cursor:start]) {
-			if _, ok := seen[ch]; ok {
-				continue
+	var wrapped strings.Builder
+	inWrapped := false
+	for _, r := range value {
+		if r == '`' {
+			if inWrapped {
+				wrapped.WriteRune(r)
+				delimiters = append(delimiters, wrapped.String())
+				wrapped.Reset()
+				inWrapped = false
+			} else {
+				inWrapped = true
+				wrapped.WriteRune(r)
 			}
-			seen[ch] = struct{}{}
-			delimiters = append(delimiters, ch)
-		}
-		token := normalized[loc[2]:loc[3]]
-		if token != "" {
-			if _, ok := seen[token]; !ok {
-				seen[token] = struct{}{}
-				delimiters = append(delimiters, token)
-			}
-		}
-		cursor = end
-	}
-	for _, ch := range runesOf(normalized[cursor:]) {
-		if _, ok := seen[ch]; ok {
 			continue
 		}
-		seen[ch] = struct{}{}
-		delimiters = append(delimiters, ch)
+		if inWrapped {
+			wrapped.WriteRune(r)
+			continue
+		}
+		delimiters = append(delimiters, string(r))
 	}
-
-	sort.SliceStable(delimiters, func(i, j int) bool {
-		return utf8.RuneCountInString(delimiters[i]) > utf8.RuneCountInString(delimiters[j])
-	})
+	if wrapped.Len() > 0 {
+		delimiters = append(delimiters, wrapped.String())
+	}
 	return delimiters
 }
 
@@ -135,16 +97,29 @@ func CompileDelimiterPattern(delimiters []string) *regexp.Regexp {
 	return regexp.MustCompile(strings.Join(escaped, "|"))
 }
 
-// CompileDelimiterListPattern compiles a TokenChunker-style []string delimiter
-// list. Entries wrapped in backticks contribute their inner content as a
-// split pattern (Python token_chunker / historical Go compileDelimPattern).
-// Bare list entries are ignored for the active pattern — they are only used
-// by merge paths when no custom pattern exists.
+// CompileDelimiterPatternList builds an alternation regex from a
+// TokenChunker-style []string delimiter list, with a shared policy for how
+// backtick-wrapped and bare entries are treated. Every non-empty entry is
+// regexp.QuoteMeta'd and the result is sorted longest-first (stable by rune
+// count) so a longer delimiter always wins over a shorter prefix inside it.
 //
-// Prefer ParseDelimiterField for the single-string parser_config.delimiter
-// field. This helper exists for the dataflow list API.
-func CompileDelimiterListPattern(delims []string) *regexp.Regexp {
-	var custom []string
+//   - Backtick-wrapped entries (“ `abc` “) contribute their INNER content as
+//     the split pattern; the backticks are stripped. The wrapping is the
+//     delimiter-list quoting syntax that opts an entry into the active set.
+//   - Bare entries (e.g. ". ") behave according to keepBare:
+//     keepBare=false (the main `delimiters` list): a bare entry is IGNORED for
+//     the active pattern — it only influences merge paths when no custom
+//     pattern exists.
+//     keepBare=true (the `children_delimiters` list): a bare entry is KEPT
+//     active, because every non-empty children delimiter splits — including
+//     bare ones.
+//
+// Returns nil when no active entry remains. This helper exists for the
+// dataflow list API. Call ParseDelimiterField before it when consuming the
+// legacy single-string parser_config field.
+func CompileDelimiterPatternList(delims []string, keepBare bool) *regexp.Regexp {
+	var out []string
+	seen := make(map[string]struct{})
 	for _, d := range delims {
 		if d == "" {
 			continue
@@ -154,20 +129,43 @@ func CompileDelimiterListPattern(delims []string) *regexp.Regexp {
 			if inner == "" {
 				continue
 			}
-			custom = append(custom, inner)
+			if _, ok := seen[inner]; ok {
+				continue
+			}
+			seen[inner] = struct{}{}
+			out = append(out, inner)
+			continue
 		}
+		if !keepBare {
+			continue
+		}
+		if _, ok := seen[d]; ok {
+			continue
+		}
+		seen[d] = struct{}{}
+		out = append(out, d)
 	}
-	if len(custom) == 0 {
+	if len(out) == 0 {
 		return nil
 	}
-	sort.SliceStable(custom, func(i, j int) bool {
-		return utf8.RuneCountInString(custom[i]) > utf8.RuneCountInString(custom[j])
+	sort.SliceStable(out, func(i, j int) bool {
+		return utf8.RuneCountInString(out[i]) > utf8.RuneCountInString(out[j])
 	})
-	escaped := make([]string, 0, len(custom))
-	for _, d := range custom {
+	escaped := make([]string, 0, len(out))
+	for _, d := range out {
 		escaped = append(escaped, regexp.QuoteMeta(d))
 	}
 	return regexp.MustCompile(strings.Join(escaped, "|"))
+}
+
+// CompileDelimiterListPattern compiles a TokenChunker-style []string delimiter
+// list. It is CompileDelimiterPatternList with keepBare=false: backtick entries
+// contribute their inner content and bare entries are ignored for the active
+// pattern (they only steer merge paths when no custom pattern exists).
+//
+// This helper exists for the dataflow list API.
+func CompileDelimiterListPattern(delims []string) *regexp.Regexp {
+	return CompileDelimiterPatternList(delims, false)
 }
 
 // HasCustomDelimiterList reports whether any entry in a TokenChunker-style
@@ -181,14 +179,31 @@ func HasCustomDelimiterList(delims []string) bool {
 	return false
 }
 
-// runesOf splits s into individual Unicode characters (as strings).
-func runesOf(s string) []string {
-	if s == "" {
+// CustomDelimiterPrefixes returns the inner text of every backtick-wrapped
+// entry in a TokenChunker-style delimiter list, longest-first and deduplicated.
+// Used when a custom delimiter marks record boundaries across DOCX paragraphs.
+func CustomDelimiterPrefixes(delims []string) []string {
+	var out []string
+	seen := make(map[string]struct{})
+	for _, d := range delims {
+		if !strings.HasPrefix(d, "`") || !strings.HasSuffix(d, "`") || len(d) < 2 {
+			continue
+		}
+		inner := d[1 : len(d)-1]
+		if inner == "" {
+			continue
+		}
+		if _, ok := seen[inner]; ok {
+			continue
+		}
+		seen[inner] = struct{}{}
+		out = append(out, inner)
+	}
+	if len(out) == 0 {
 		return nil
 	}
-	out := make([]string, 0, utf8.RuneCountInString(s))
-	for _, r := range s {
-		out = append(out, string(r))
-	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return utf8.RuneCountInString(out[i]) > utf8.RuneCountInString(out[j])
+	})
 	return out
 }

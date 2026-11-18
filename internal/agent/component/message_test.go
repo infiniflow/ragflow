@@ -18,6 +18,8 @@ package component
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -32,7 +34,7 @@ func TestMessage_ResolveTemplate(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys["query"] = "world"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":   "hello {{sys.query}}",
@@ -57,7 +59,7 @@ func TestMessage_ResolveListReferenceAsJSON(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-list", "task-list")
 	state.SetVar("list_0", "result", []any{"user: 1"})
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":   "{{list_0@result}}",
@@ -78,7 +80,7 @@ func TestMessage_Stream(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Sys["query"] = "alice"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	ch, err := c.Stream(ctx, nil, map[string]any{
 		"text":   "hi",
@@ -107,7 +109,7 @@ func TestMessage_Stream(t *testing.T) {
 func TestMessage_NoTemplate(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-3", "task-3")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{"text": "no refs here", "stream": false})
 	if err != nil {
@@ -118,10 +120,41 @@ func TestMessage_NoTemplate(t *testing.T) {
 	}
 }
 
+func TestMessage_DanglingReference(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-dangling", "task-dangling")
+	ctx := withStateForTest(t.Context(), state)
+
+	for _, text := range []string{
+		"{{Agent:Deleted@content}}",
+		"prefix {{Agent:Deleted@content}} suffix",
+	} {
+		_, err := c.Invoke(ctx, nil, map[string]any{"text": text})
+		if err == nil || err.Error() != "Can't find variable: 'Agent:Deleted@content'" {
+			t.Errorf("Invoke(%q) error = %v, want clean missing-variable error", text, err)
+		}
+	}
+}
+
+func TestMessage_ExistingEmptyReference(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-empty", "task-empty")
+	state.SetVar("Agent:Empty", "content", "")
+	ctx := withStateForTest(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"text": "{{Agent:Empty@content}}"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "" {
+		t.Fatalf("content = %q, want empty", got)
+	}
+}
+
 func TestMessage_RuntimeContentInput(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-4", "task-4")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{"content": "from upstream", "stream": false})
 	if err != nil {
@@ -135,7 +168,7 @@ func TestMessage_RuntimeContentInput(t *testing.T) {
 func TestMessage_EmitsAgentMessage(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-emit", "task-emit")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var emitted []string
 	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
 		if contentDelta != "" {
@@ -164,7 +197,7 @@ func TestMessage_EmitsAgentMessage(t *testing.T) {
 func TestMessage_EmitsDirectCanvasMessage(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-direct", "task-direct")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var direct []string
 	var agent []string
 	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
@@ -198,7 +231,7 @@ func TestMessage_NormalTemplateEmitsOnlyRenderedMessage(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-normal-template", "task-normal-template")
 	state.Sys["query"] = "world"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var direct []string
 	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
 		direct = append(direct, content)
@@ -224,7 +257,7 @@ func TestMessage_NormalTemplateEmitsOnlyRenderedMessage(t *testing.T) {
 func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-skip", "task-skip")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var emitted []string
 	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
 		if contentDelta != "" {
@@ -261,7 +294,7 @@ func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
 func TestMessage_EmitsContentDifferentFromAgentStream(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-distinct", "task-distinct")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var emitted []string
 	ctx = runtime.WithAgentMessageEmitter(ctx, func(contentDelta, thinkingDelta string) {
 		if contentDelta != "" {
@@ -301,7 +334,7 @@ func TestMessage_ConsumesDeferredAgentStream(t *testing.T) {
 			return map[string]any{"content": "hello world"}, nil
 		},
 	})
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var emitted []string
 	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
 		if content != "" {
@@ -321,6 +354,47 @@ func TestMessage_ConsumesDeferredAgentStream(t *testing.T) {
 	}
 }
 
+func TestMessage_MaterializesDeferredAgentStructured(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred-structured", "task-deferred-structured")
+	opened := false
+	state.SetVar("Agent:HungryLiliesDance", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, _ runtime.AgentDeltaSink) (map[string]any, error) {
+			opened = true
+			return map[string]any{
+				"content": `{"findings":[{"ruleId":"r1"}],"opinion":{"conclusion":"PASS"}}`,
+				"structured": map[string]any{
+					"findings": []any{map[string]any{"ruleId": "r1"}},
+					"opinion":  map[string]any{"conclusion": "PASS"},
+				},
+			}, nil
+		},
+	})
+	ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
+	completed := false
+	runtime.RegisterDeferredNode(ctx, "Agent:HungryLiliesDance", func(error) { completed = true })
+
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"text": "{{Agent:HungryLiliesDance@structured}}",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if !opened {
+		t.Fatal("deferred Agent stream was not opened for @structured")
+	}
+	if !completed {
+		t.Fatal("deferred Agent node was not completed")
+	}
+	got, _ := out["content"].(string)
+	if !strings.Contains(got, `"findings"`) || !strings.Contains(got, `"ruleId":"r1"`) {
+		t.Fatalf("content = %q, want structured JSON", got)
+	}
+	if v, _ := state.GetVar("Agent:HungryLiliesDance@structured"); v == nil {
+		t.Fatal("structured missing from state after materialize")
+	}
+}
+
 func TestMessage_DeferredStreamThinkingEvents(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-deferred-thinking", "task-deferred-thinking")
@@ -331,7 +405,7 @@ func TestMessage_DeferredStreamThinkingEvents(t *testing.T) {
 			return map[string]any{"content": "answer"}, nil
 		},
 	})
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var events []string
 	ctx = runtime.WithCanvasMessageEventEmitter(ctx, func(content string, startToThink, endToThink bool) {
 		switch {
@@ -361,7 +435,7 @@ func TestMessage_DeferredStreamUsesCompletedContent(t *testing.T) {
 			return map[string]any{"content": "grounded answer [ID:1]"}, nil
 		},
 	})
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 	var streamed []string
 	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
 		streamed = append(streamed, content)
@@ -382,10 +456,96 @@ func TestMessage_DeferredStreamUsesCompletedContent(t *testing.T) {
 	}
 }
 
+func TestMessage_DeferredStreamSurfacesResultError(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred-error", "task-deferred-error")
+	state.SetVar("agent_0", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, _ runtime.AgentDeltaSink) (map[string]any, error) {
+			return map[string]any{"_ERROR": "**ERROR**: upstream 402"}, nil
+		},
+	})
+	ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
+	completed := false
+	var completedErr error
+	runtime.RegisterDeferredNode(ctx, "agent_0", func(err error) {
+		completed = true
+		completedErr = err
+	})
+
+	_, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"})
+	if err == nil || !strings.Contains(err.Error(), "upstream 402") {
+		t.Fatalf("Invoke error = %v, want upstream 402", err)
+	}
+	if !completed || completedErr == nil || !strings.Contains(completedErr.Error(), "upstream 402") {
+		t.Fatalf("expected deferred node completion with error, got completed=%v, err=%v", completed, completedErr)
+	}
+}
+
+func TestMessage_DeferredStreamOpenFailure(t *testing.T) {
+	for _, cause := range []error{errors.New("model unavailable"), context.Canceled, context.DeadlineExceeded} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			c, _ := NewMessageComponent(nil)
+			state := canvas.NewCanvasState("run-deferred-open-error", "task-deferred-open-error")
+			state.SetVar("agent_0", "content", &runtime.DeferredStream{
+				Open: func(context.Context, runtime.AgentDeltaSink) (map[string]any, error) {
+					return nil, fmt.Errorf("agent failed: %w", cause)
+				},
+			})
+			_, err := c.Invoke(withStateForTest(t.Context(), state), nil, map[string]any{"text": "{{agent_0@content}}"})
+			deferred, ok := errors.AsType[*runtime.DeferredStreamError](err)
+			if !ok {
+				t.Fatalf("Invoke error = %v, want DeferredStreamError", err)
+			}
+			if cause == context.Canceled || cause == context.DeadlineExceeded {
+				if !errors.Is(err, cause) {
+					t.Fatalf("Invoke error = %v, want preserved %v", err, cause)
+				}
+			} else if got := deferred.FailureText(); got != "**ERROR**: agent failed: model unavailable" {
+				t.Fatalf("failure text = %q, want chat error envelope", got)
+			}
+		})
+	}
+}
+
+func TestMessage_DeferredStreamErrorPersistsOutputsBeforeCompletion(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result map[string]any
+		err    error
+	}{
+		{name: "provider error", result: map[string]any{"tool_invocations": []map[string]any{{"tool_name": "search"}}}, err: errors.New("provider failed")},
+		{name: "step exhaustion", result: map[string]any{"_ERROR": "**ERROR**: exceeds max steps", "tool_invocations": []map[string]any{{"tool_name": "search"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := NewMessageComponent(nil)
+			state := canvas.NewCanvasState("run-deferred-output", "task-deferred-output")
+			state.SetVar("agent_0", "content", &runtime.DeferredStream{
+				Open: func(context.Context, runtime.AgentDeltaSink) (map[string]any, error) {
+					return tc.result, tc.err
+				},
+			})
+			ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
+			var outputAtCompletion any
+			runtime.RegisterDeferredNode(ctx, "agent_0", func(error) {
+				outputAtCompletion, _ = state.GetVar("agent_0@tool_invocations")
+			})
+
+			_, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"})
+			if err == nil {
+				t.Fatal("expected deferred stream failure")
+			}
+			invocations, ok := outputAtCompletion.([]map[string]any)
+			if !ok || len(invocations) != 1 || invocations[0]["tool_name"] != "search" {
+				t.Fatalf("tool_invocations at completion = %#v, want recorded search invocation", outputAtCompletion)
+			}
+		})
+	}
+}
+
 func TestMessage_FormalizedContentFallback(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-5", "task-5")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"formalized_content": "retrieved answer",
@@ -400,10 +560,10 @@ func TestMessage_FormalizedContentFallback(t *testing.T) {
 	}
 }
 
-func TestMessage_SingleStringFallback(t *testing.T) {
+func TestMessage_DoesNotUseUnconfiguredUpstreamResult(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-6", "task-6")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"value":         "single upstream text",
@@ -412,8 +572,49 @@ func TestMessage_SingleStringFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, _ := out["content"].(string); got != "single upstream text" {
-		t.Errorf("content: got %q, want %q", got, "single upstream text")
+	if got, _ := out["content"].(string); got != "" {
+		t.Errorf("content: got %q, want empty content", got)
+	}
+}
+
+func TestMessage_AttachmentOnlyDoesNotResurrectResult(t *testing.T) {
+	c, _ := NewMessageComponent(map[string]any{"content": []any{"{{source@attachments}}"}})
+	state := canvas.NewCanvasState("run-attachment-only", "task-attachment-only")
+	state.SetVar("source", "attachments", []map[string]any{{
+		"doc_id": "d-1", "filename": "report.md", "mime_type": "text/markdown",
+		"url": "/api/v1/agents/attachments/d-1/download",
+	}})
+	ctx := withStateForTest(t.Context(), state)
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"content":     "upstream content",
+		"attachments": []any{map[string]any{"doc_id": "d-1", "filename": "report.md", "mime_type": "text/markdown", "url": "/api/v1/agents/attachments/d-1/download"}},
+		"result":      "upstream result",
+		"stream":      false,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); strings.Contains(got, "upstream result") || strings.Contains(got, "upstream content") {
+		t.Fatalf("content = %q, must not contain unconfigured upstream text", got)
+	}
+	downloads, ok := out["downloads"].([]DownloadInfo)
+	if !ok || len(downloads) != 1 || downloads[0].DocID != "d-1" {
+		t.Fatalf("downloads = %#v, want attachment metadata", out["downloads"])
+	}
+}
+
+func TestMessage_MissingAttachmentIsOptional(t *testing.T) {
+	c, _ := NewMessageComponent(map[string]any{"content": []any{"{{source@attachments}}"}})
+	state := canvas.NewCanvasState("run-missing-attachment", "task-missing-attachment")
+	ctx := withStateForTest(t.Context(), state)
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"content": "upstream content", "result": "upstream result",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "" {
+		t.Fatalf("content = %q, want empty", got)
 	}
 }
 

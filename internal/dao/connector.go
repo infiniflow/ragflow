@@ -20,11 +20,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ConnectorDAO connector data access object
@@ -59,11 +60,9 @@ type ConnectorDatasetListItem struct {
 	Status    string `json:"status" gorm:"column:status"`
 }
 
-// ListByTenantID list connectors by tenant ID
-// Only selects id, name, source, status fields (matching Python implementation)
+// ListByTenantID returns connector summaries for a tenant.
 func (dao *ConnectorDAO) ListByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*ConnectorListItem, error) {
-	var connectors []*ConnectorListItem
-
+	connectors := make([]*ConnectorListItem, 0)
 	err := db.WithContext(ctx).Model(&entity.Connector{}).
 		Select("id", "name", "source", "status").
 		Where("tenant_id = ?", tenantID).
@@ -86,6 +85,7 @@ func (dao *ConnectorDAO) ListByDatasetIDTx(ctx context.Context, db *gorm.DB, dat
 	var connectors []*ConnectorDatasetListItem
 
 	err := db.WithContext(ctx).Model(&entity.Connector2Kb{}).
+		Distinct().
 		Select("connector.id, connector.source, connector.name, connector2kb.auto_parse, connector.status").
 		Joins("JOIN connector ON connector2kb.connector_id = connector.id").
 		Where("connector2kb.kb_id = ?", datasetID).
@@ -105,21 +105,26 @@ type DatasetConnectorLink struct {
 }
 
 // LinkDatasetConnectors syncs connector2kb rows for a dataset.
-func (dao *ConnectorDAO) LinkDatasetConnectors(ctx context.Context, db *gorm.DB, kbID string, connectors []DatasetConnectorLink) error {
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (dao *ConnectorDAO) LinkDatasetConnectors(ctx context.Context, db *gorm.DB, kbID string, connectors []DatasetConnectorLink) ([]string, error) {
+	var taskIDs []string
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var kb entity.Knowledgebase
-		if err := db.WithContext(ctx).Select("tenant_id").Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).First(&kb).Error; err != nil {
+		if err := tx.WithContext(ctx).Select("tenant_id").Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).First(&kb).Error; err != nil {
 			return err
 		}
-		return dao.LinkDatasetConnectorsTx(ctx, tx, kbID, kb.TenantID, connectors)
+		var err error
+		taskIDs, err = dao.LinkDatasetConnectorsTx(ctx, tx, kbID, kb.TenantID, connectors)
+		return err
 	})
+	return taskIDs, err
 }
 
 // LinkDatasetConnectorsTx syncs connector2kb rows using the caller's transaction.
-func (dao *ConnectorDAO) LinkDatasetConnectorsTx(ctx context.Context, tx *gorm.DB, kbID, tenantID string, connectors []DatasetConnectorLink) error {
+func (dao *ConnectorDAO) LinkDatasetConnectorsTx(ctx context.Context, tx *gorm.DB, kbID, tenantID string, connectors []DatasetConnectorLink) ([]string, error) {
+	var taskIDs []string
 	var existing []entity.Connector2Kb
 	if err := tx.WithContext(ctx).Where("kb_id = ?", kbID).Find(&existing).Error; err != nil {
-		return err
+		return nil, err
 	}
 
 	oldConnectorIDs := make(map[string]entity.Connector2Kb, len(existing))
@@ -138,37 +143,41 @@ func (dao *ConnectorDAO) LinkDatasetConnectorsTx(ctx context.Context, tx *gorm.D
 		var fullConnector entity.Connector
 		if err := tx.WithContext(ctx).Where("id = ? AND tenant_id = ?", connector.ID, tenantID).First(&fullConnector).Error; err != nil {
 			if IsNotFoundErr(err) {
-				return fmt.Errorf("%w: %s", errConnectorNotAccessible, connector.ID)
+				return nil, fmt.Errorf("%w: %s", errConnectorNotAccessible, connector.ID)
 			}
-			return err
+			return nil, err
 		}
 
 		if _, ok := oldConnectorIDs[connector.ID]; ok {
 			if err := tx.WithContext(ctx).Model(&entity.Connector2Kb{}).
 				Where("connector_id = ? AND kb_id = ?", connector.ID, kbID).
 				Update("auto_parse", autoParse).Error; err != nil {
-				return err
+				return nil, err
 			}
 			continue
 		}
 
 		if err := tx.WithContext(ctx).Create(&entity.Connector2Kb{
-			ID:          utility.GenerateUUID(),
+			ID:          common.GenerateUUID(),
 			ConnectorID: connector.ID,
 			KbID:        kbID,
 			AutoParse:   autoParse,
 		}).Error; err != nil {
-			return err
+			return nil, err
 		}
 
-		if err := scheduleConnectorTask(ctx, tx, connector.ID, kbID, connectorTaskTypeSync, true); err != nil {
-			return err
+		taskID, err := scheduleConnectorTask(ctx, tx, connector.ID, kbID, connectorTaskTypeSync, true)
+		if err != nil {
+			return nil, err
 		}
+		taskIDs = append(taskIDs, taskID)
 
 		if connectorConfigBool(fullConnector.Config, "sync_deleted_files") {
-			if err := scheduleConnectorTask(ctx, tx, connector.ID, kbID, connectorTaskTypePrune, false); err != nil {
-				return err
+			taskID, err = scheduleConnectorTask(ctx, tx, connector.ID, kbID, connectorTaskTypePrune, false)
+			if err != nil {
+				return nil, err
 			}
+			taskIDs = append(taskIDs, taskID)
 		}
 	}
 
@@ -178,22 +187,22 @@ func (dao *ConnectorDAO) LinkDatasetConnectorsTx(ctx context.Context, tx *gorm.D
 		}
 		if err := tx.WithContext(ctx).Where("kb_id = ? AND connector_id = ?", kbID, connectorID).
 			Delete(&entity.Connector2Kb{}).Error; err != nil {
-			return err
+			return nil, err
 		}
 		if err := tx.WithContext(ctx).Model(&entity.SyncLogs{}).
 			Where("connector_id = ? AND kb_id = ? AND status IN ?", connectorID, kbID, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
 			Update("status", string(entity.TaskStatusCancel)).Error; err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return taskIDs, nil
 }
 
 // GetByID get connector by ID
 func (dao *ConnectorDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Connector, error) {
 	var connector entity.Connector
-	err := db.WithContext(ctx).Where("id = ?", id).First(&connector).Error
+	err := db.WithContext(ctx).Take(&connector, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -223,8 +232,9 @@ func (dao *ConnectorDAO) CancelRunningOrScheduledLogs(ctx context.Context, db *g
 }
 
 // ScheduleConnectorTasks schedules sync and optional prune tasks for a connector.
-func (dao *ConnectorDAO) ScheduleConnectorTasks(ctx context.Context, db *gorm.DB, connectorID string) error {
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (dao *ConnectorDAO) ScheduleConnectorTasks(ctx context.Context, db *gorm.DB, connectorID string) ([]string, error) {
+	taskIDs := []string{}
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var connector entity.Connector
 		if err := tx.WithContext(ctx).Where("id = ?", connectorID).First(&connector).Error; err != nil {
 			return err
@@ -236,12 +246,20 @@ func (dao *ConnectorDAO) ScheduleConnectorTasks(ctx context.Context, db *gorm.DB
 		}
 
 		for _, mapping := range mappings {
-			if err := scheduleConnectorTask(ctx, tx, connectorID, mapping.KbID, connectorTaskTypeSync, false); err != nil {
+			taskID, err := scheduleConnectorTask(ctx, tx, connectorID, mapping.KbID, connectorTaskTypeSync, false)
+			if err != nil {
 				return err
 			}
+			if taskID != "" {
+				taskIDs = append(taskIDs, taskID)
+			}
 			if connectorConfigBool(connector.Config, "sync_deleted_files") {
-				if err := scheduleConnectorTask(ctx, tx, connectorID, mapping.KbID, connectorTaskTypePrune, false); err != nil {
+				taskID, err = scheduleConnectorTask(ctx, tx, connectorID, mapping.KbID, connectorTaskTypePrune, false)
+				if err != nil {
 					return err
+				}
+				if taskID != "" {
+					taskIDs = append(taskIDs, taskID)
 				}
 			}
 		}
@@ -250,6 +268,19 @@ func (dao *ConnectorDAO) ScheduleConnectorTasks(ctx context.Context, db *gorm.DB
 			Where("id = ?", connectorID).
 			Update("status", string(entity.TaskStatusSchedule)).Error
 	})
+	return taskIDs, err
+}
+
+// Connector2KBExists reports whether the connector is bound to the knowledge base.
+func (dao *ConnectorDAO) Connector2KBExists(ctx context.Context, db *gorm.DB, connectorID, kbID string) (bool, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Connector2Kb{}).
+		Where("connector_id = ? AND kb_id = ?", connectorID, kbID).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // ListDocumentsByKBAndSourceType lists connector documents in a dataset.
@@ -260,8 +291,15 @@ func (dao *ConnectorDAO) ListDocumentsByKBAndSourceType(ctx context.Context, db 
 }
 
 // RebuildConnector replaces old connector documents with scheduled sync tasks.
-func (dao *ConnectorDAO) RebuildConnector(ctx context.Context, db *gorm.DB, connector *entity.Connector, kbID string, documents []*entity.Document) error {
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (dao *ConnectorDAO) RebuildConnector(ctx context.Context, db *gorm.DB, connector *entity.Connector, kbID string, documents []*entity.Document) ([]string, []string, error) {
+	var taskIDs []string
+	var oldSyncTaskIDs []string
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.WithContext(ctx).Model(&entity.SyncLogs{}).
+			Where("connector_id = ? AND kb_id = ? AND task_type = ?", connector.ID, kbID, connectorTaskTypeSync).
+			Pluck("id", &oldSyncTaskIDs).Error; err != nil {
+			return err
+		}
 		if err := tx.WithContext(ctx).Where("connector_id = ? AND kb_id = ?", connector.ID, kbID).Delete(&entity.SyncLogs{}).Error; err != nil {
 			return err
 		}
@@ -326,15 +364,51 @@ func (dao *ConnectorDAO) RebuildConnector(ctx context.Context, db *gorm.DB, conn
 			return err
 		}
 
-		if err := createRebuildSyncLog(ctx, tx, connector.ID, kbID, connectorTaskTypeSync, true); err != nil {
+		taskID, err := createRebuildSyncLog(ctx, tx, connector.ID, kbID, connectorTaskTypeSync, true)
+		if err != nil {
 			return err
 		}
+		taskIDs = append(taskIDs, taskID)
 		if syncDeletedFiles, _ := connector.Config["sync_deleted_files"].(bool); syncDeletedFiles {
-			if err := createRebuildSyncLog(ctx, tx, connector.ID, kbID, connectorTaskTypePrune, false); err != nil {
+			taskID, err = createRebuildSyncLog(ctx, tx, connector.ID, kbID, connectorTaskTypePrune, false)
+			if err != nil {
 				return err
 			}
+			taskIDs = append(taskIDs, taskID)
 		}
 		return nil
+	})
+	return taskIDs, oldSyncTaskIDs, err
+}
+
+// ResumeFailedSyncTask schedules one failed sync task for checkpoint resume.
+func (dao *ConnectorDAO) ResumeFailedSyncTask(ctx context.Context, db *gorm.DB, connectorID, kbID, taskID string) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task entity.SyncLogs
+		query := tx.WithContext(ctx)
+		if tx.Dialector.Name() != "sqlite" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.
+			Where("id = ? AND connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", taskID, connectorID, kbID, connectorTaskTypeSync, string(entity.TaskStatusFail)).
+			First(&task).Error; err != nil {
+			return err
+		}
+
+		now := time.Now().Local()
+		if err := tx.WithContext(ctx).Model(&entity.SyncLogs{}).
+			Where("id = ? AND status = ?", taskID, string(entity.TaskStatusFail)).
+			Updates(map[string]any{
+				"status":       string(entity.TaskStatusSchedule),
+				"error_msg":    "",
+				"error_count":  int64(0),
+				"time_started": &now,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.WithContext(ctx).Model(&entity.Connector{}).
+			Where("id = ?", connectorID).
+			Update("status", string(entity.TaskStatusSchedule)).Error
 	})
 }
 
@@ -343,14 +417,15 @@ const (
 	connectorTaskTypePrune = "prune"
 )
 
-func createRebuildSyncLog(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) error {
+func createRebuildSyncLog(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) (string, error) {
 	fromBeginning := "0"
 	if reindex {
 		fromBeginning = "1"
 	}
 	now := time.Now().Local()
-	return tx.WithContext(ctx).Create(&entity.SyncLogs{
-		ID:               utility.GenerateToken(),
+	taskID := common.GenerateToken()
+	return taskID, tx.WithContext(ctx).Create(&entity.SyncLogs{
+		ID:               taskID,
 		ConnectorID:      connectorID,
 		KbID:             kbID,
 		TaskType:         taskType,
@@ -362,15 +437,27 @@ func createRebuildSyncLog(ctx context.Context, tx *gorm.DB, connectorID, kbID, t
 	}).Error
 }
 
-func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) error {
-	var existing int64
-	if err := tx.WithContext(ctx).Model(&entity.SyncLogs{}).
+func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) (string, error) {
+	var scheduled entity.SyncLogs
+	err := tx.WithContext(ctx).
 		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusSchedule)).
-		Count(&existing).Error; err != nil {
-		return err
+		Order("update_time DESC").
+		First(&scheduled).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", err
 	}
-	if existing > 0 {
-		return nil
+	if err == nil {
+		return scheduled.ID, nil
+	}
+
+	var running int64
+	if err := tx.WithContext(ctx).Model(&entity.SyncLogs{}).
+		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusRunning)).
+		Count(&running).Error; err != nil {
+		return "", err
+	}
+	if running > 0 {
+		return "", nil
 	}
 
 	var pollRangeStart *time.Time
@@ -381,11 +468,14 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 			Order("update_time DESC").
 			First(&latest).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+			return "", err
 		}
 		if err == nil {
-			pollRangeStart = latest.PollRangeEnd
 			totalDocsIndexed = latest.TotalDocsIndexed
+			if latest.PollRangeEnd != nil {
+				pollRangeEnd := latest.PollRangeEnd.Time()
+				pollRangeStart = &pollRangeEnd
+			}
 		}
 	}
 
@@ -394,14 +484,15 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 		fromBeginning = "1"
 	}
 	now := time.Now().Local()
-	return tx.WithContext(ctx).Create(&entity.SyncLogs{
-		ID:               utility.GenerateToken(),
+	taskID := common.GenerateToken()
+	return taskID, tx.WithContext(ctx).Create(&entity.SyncLogs{
+		ID:               taskID,
 		ConnectorID:      connectorID,
 		KbID:             kbID,
 		TaskType:         taskType,
 		Status:           string(entity.TaskStatusSchedule),
 		FromBeginning:    &fromBeginning,
-		PollRangeStart:   pollRangeStart,
+		PollRangeStart:   entity.NewFlexibleTime(pollRangeStart),
 		TimeStarted:      &now,
 		ErrorMsg:         "",
 		TotalDocsIndexed: totalDocsIndexed,
@@ -424,13 +515,36 @@ func connectorConfigBool(config map[string]interface{}, key string) bool {
 	}
 }
 
-// ListLogsByConnectorID lists sync logs for one connector with pagination.
-func (dao *ConnectorDAO) ListLogsByConnectorID(ctx context.Context, db *gorm.DB, connectorID string, offset, limit int) ([]*entity.ConnectorSyncLog, int64, error) {
+// syncLogsStatusPriorityOrder orders sync log rows by status priority:
+// SCHEDULE first, RUNNING second, then the rest, newest update first within
+// each group. Returned as a single raw ORDER BY fragment because gorm.Expr is
+// silently dropped by gorm's Order and repeated Order calls merge in reverse.
+func syncLogsStatusPriorityOrder() string {
+	return fmt.Sprintf(
+		"CASE WHEN sync_logs.status = '%s' THEN 0 WHEN sync_logs.status = '%s' THEN 1 ELSE 2 END, sync_logs.update_time DESC",
+		string(entity.TaskStatusSchedule),
+		string(entity.TaskStatusRunning),
+	)
+}
+
+// ListLogsByTaskIDs returns logs only for authorized sync task IDs.
+func (dao *ConnectorDAO) ListLogsByTaskIDs(ctx context.Context, db *gorm.DB, taskIDs []string, datasetID string, offset, limit int) ([]*entity.ConnectorSyncLog, int64, error) {
+	if len(taskIDs) == 0 {
+		return []*entity.ConnectorSyncLog{}, 0, nil
+	}
+	return dao.listLogs(ctx, db, taskIDs, datasetID, offset, limit)
+}
+
+func (dao *ConnectorDAO) listLogs(ctx context.Context, db *gorm.DB, taskIDs []string, datasetID string, offset, limit int) ([]*entity.ConnectorSyncLog, int64, error) {
 	baseQuery := db.WithContext(ctx).Model(&entity.SyncLogs{}).
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
-		Where("sync_logs.connector_id = ?", connectorID)
+		Where("sync_logs.id IN ?", taskIDs)
+
+	if datasetID != "" {
+		baseQuery = baseQuery.Where("sync_logs.kb_id = ?", datasetID)
+	}
 
 	var total int64
 	if err := baseQuery.Distinct("sync_logs.id").Count(&total).Error; err != nil {
@@ -438,7 +552,7 @@ func (dao *ConnectorDAO) ListLogsByConnectorID(ctx context.Context, db *gorm.DB,
 	}
 
 	var logs []*entity.ConnectorSyncLog
-	err := baseQuery.
+	query := baseQuery.
 		Select(
 			"sync_logs.id",
 			"sync_logs.connector_id",
@@ -455,12 +569,14 @@ func (dao *ConnectorDAO) ListLogsByConnectorID(ctx context.Context, db *gorm.DB,
 			"connector.prune_freq AS prune_freq",
 			"knowledgebase.name AS kb_name",
 			"sync_logs.status",
+			"sync_logs.update_time",
 		).
 		Distinct().
-		Order("sync_logs.update_date DESC").
-		Offset(offset).
-		Limit(limit).
-		Scan(&logs).Error
+		Order(syncLogsStatusPriorityOrder())
+	if limit > 0 {
+		query = query.Offset(offset).Limit(limit)
+	}
+	err := query.Scan(&logs).Error
 	if err != nil {
 		return nil, 0, err
 	}

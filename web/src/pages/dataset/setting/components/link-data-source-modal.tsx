@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
 import { IConnector } from '@/interfaces/database/dataset';
+import { useOwnerTenantId } from '@/pages/dataset/contexts/knowledge-base-context';
 import { useListDataSource } from '@/pages/user-setting/data-source/hooks';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { t } from 'i18next';
@@ -26,7 +27,11 @@ const LinkDataSourceModal = ({
     setList(selectedList);
   }, [selectedList]);
 
-  const { categorizedList } = useListDataSource();
+  const ownerTenantId = useOwnerTenantId();
+  const { categorizedList } = useListDataSource(
+    ownerTenantId,
+    Boolean(ownerTenantId),
+  );
   const handleFormSubmit = (values: any) => {
     console.log(values, selectedList);
     onSubmit?.(list);

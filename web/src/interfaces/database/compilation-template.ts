@@ -12,6 +12,7 @@ export interface ICompilationTemplateSection {
 
 export interface ICompilationTemplateRaptorConfig {
   prompt?: string;
+  claim_prompt?: string;
   max_token?: number;
   clustering_threshold?: number;
   clustering_ratio?: number;
@@ -21,6 +22,7 @@ export interface ICompilationTemplateRaptorConfig {
 export interface ICompilationTemplateConfig {
   kind?: string;
   llm_id?: string;
+  mode?: 'entity' | 'topic';
   entity?: ICompilationTemplateSection;
   relation?: ICompilationTemplateSection;
   raptor?: ICompilationTemplateRaptorConfig;
@@ -74,5 +76,5 @@ export interface IWikiPreset {
   id: string;
   topic: string;
   instruction: string;
-  page_example: string;
+  example: string;
 }

@@ -3,12 +3,37 @@ package pdf
 import (
 	"context"
 	"image"
-	"log/slog"
 	"math"
+	"strings"
 
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
+)
+
+// pageNumCtxKey / tableIdxCtxKey let a DocAnalyzer that replays
+// pre-computed Python intermediates (the pipeline-parity harness) recover
+// which page, and which per-page table, a DLA/TSR call refers to. The
+// production DeepDoc analyzer ignores them; they matter only for replay
+// tests, where the DocAnalyzer interface cannot otherwise carry page
+// context (pages are processed concurrently and TSR receives a cropped
+// image with no page identifier).
+type replayCtxKey int
+
+const (
+	pageNumCtxKey replayCtxKey = iota
+	tableIdxCtxKey
+	// cropOffXKey / cropOffYKey carry the crop origin (image pixels) of the
+	// table region that processOneTable hands to TSR. A replay TableBuilder
+	// reads them to map Python's page-space TSR cells into the exact crop
+	// space Go uses, so cells and boxInCrop share one coordinate frame.
+	cropOffXKey
+	cropOffYKey
+	// ocrBoxIdxCtxKey carries the index of the OCR detect box that a
+	// per-crop OCRRecognize call belongs to (stamped by ocrDetectAndRecognize
+	// before recognition). The Phase 3 replay analyzer reads it to return the
+	// Python-dumped recognized text for that box instead of running OCR.
+	ocrBoxIdxCtxKey
 )
 
 // enrichOnePageWithDeepDoc runs DLA+TSR for a single page and returns
@@ -36,7 +61,7 @@ import (
 //
 // Returns:
 //   - annotated: page boxes after DLA/TSR annotation write-back (LayoutType,
-//     LayoutNo, R/C/H/SP fields) — same length as input pageBoxes.
+//     LayoutNo, R/C/H/SP fields), plus image geometry.
 //   - tables:    table candidates detected on this page.
 //   - dlaRegions: page-local DLA regions payload.
 func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
@@ -48,9 +73,12 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 	if docAnalyzer == nil || !docAnalyzer.Health() || renderErr != nil || pageImg == nil {
 		return pageBoxes, nil, nil
 	}
+	// Stamp the page number before DLA so a replay analyzer can map the call
+	// back to the correct Python DLA page. The production analyzer ignores it.
+	ctx = context.WithValue(ctx, pageNumCtxKey, pg)
 	regions, err := p.inferDLA(ctx, docAnalyzer, pageImg)
 	if err != nil {
-		slog.Warn("DLA failed", "page", pg, "err", err)
+		reportPageInferenceFailure(ctx, "DLA failed", pg, err)
 		return pageBoxes, nil, nil
 	}
 	dlaRegions = []pdf.DLAPageRegions{{Page: pg, Regions: regions}}
@@ -60,12 +88,19 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 	// caller should use downstream for layout/text-merge.
 	annotated = append([]pdf.TextBox(nil), pageBoxes...)
 	annotated = tbl.AnnotateBoxLayouts(annotated, regions, scale, float64(pageImg.Bounds().Dy()))
+	for i := range annotated {
+		annotated[i].PageNumber = pg
+		annotated[i].HasPageNumber = true
+	}
 
 	tableMatches := tbl.MatchTableRegions(annotated, regions, scale)
 	var items []pdf.TableItem
-	for _, tm := range tableMatches {
-		item := p.processOneTable(ctx, pageImg, annotated, pg, docAnalyzer, tb, tm, scale)
-		if item.ImageB64 != "" || len(item.Cells) > 0 || len(item.Positions) > 0 {
+	for i, tm := range tableMatches {
+		// Stamp the per-page table index so a replay analyzer can map a
+		// TSR call back to the correct Python intermediate table.
+		tctx := context.WithValue(ctx, tableIdxCtxKey, i)
+		item := p.processOneTable(tctx, pageImg, annotated, pg, docAnalyzer, tb, tm, scale)
+		if len(item.Cells) > 0 || len(item.Positions) > 0 {
 			items = append(items, item)
 		}
 	}
@@ -80,6 +115,8 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	if cropErr != nil {
 		return pdf.TableItem{}
 	}
+	cropOffX := math.Max(0, tm.Region.X0-util.TSRRegionMarginPx)
+	cropOffY := math.Max(0, tm.Region.Y0-util.TSRRegionMarginPx)
 	autoRotate := p.Config.AutoRotateTables != nil && *p.Config.AutoRotateTables
 	bestAngle := 0
 	origW, origH := cropped.Bounds().Dx(), cropped.Bounds().Dy()
@@ -89,24 +126,18 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		bestAngle = angle
 		tsrImg = rotated
 	}
-	imgB64, encErr := util.EncodeImageToBase64PNG(cropped)
-	if encErr != nil {
-		slog.Warn("table PNG encode failed", "page", pageNum, "err", encErr)
-	}
-	cells, tsrErr := p.inferTSR(ctx, tb, tsrImg)
+	// Hand the crop origin to TSR so a replay TableBuilder can map Python
+	// page-space TSR cells into this exact crop frame. Production callers
+	// (DeepDocTableBuilder) ignore the value and use the cropped image pixels.
+	tsrCtx := context.WithValue(ctx, cropOffXKey, cropOffX)
+	tsrCtx = context.WithValue(tsrCtx, cropOffYKey, cropOffY)
+	cells, tsrErr := p.inferTSR(tsrCtx, tb, tsrImg)
 	if tsrErr != nil {
-		slog.Warn("TSR failed", "page", pageNum, "err", tsrErr)
+		reportPageInferenceFailure(tsrCtx, "TSR failed", pageNum, tsrErr)
 	}
-	w := tm.Region.X1 - tm.Region.X0
-	h := tm.Region.Y1 - tm.Region.Y0
-	cropOffX := math.Max(0, tm.Region.X0-w*0.03)
-	cropOffY := math.Max(0, tm.Region.Y0-h*0.03)
 	var boxInCrop []pdf.TextBox
 	if tsrErr == nil && len(cells) > 0 {
 		if bestAngle != 0 {
-			if !p.Config.SkipOCR {
-				p.ocrTableCells(ctx, cells, tsrImg, docAnalyzer)
-			}
 			for i := range cells {
 				cells[i].X0, cells[i].Y0, cells[i].X1, cells[i].Y1 = util.MapRotatedRectToOriginal(
 					cells[i].X0, cells[i].Y0, cells[i].X1, cells[i].Y1, bestAngle, origW, origH)
@@ -121,13 +152,23 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		if firstCellTop == 1e9 {
 			firstCellTop = cells[0].Y0
 		}
-		boxInCrop = make([]pdf.TextBox, 0, len(tm.BoxIdx))
+		// Preserve each text box until its cell has been assigned. Paragraph
+		// merging here would join adjacent table rows before their R/C labels
+		// exist. GroupBoxesByRC joins text within the assigned cell below.
+		tableBoxes := make([]pdf.TextBox, 0, len(tm.BoxIdx))
 		for _, idx := range tm.BoxIdx {
 			b := boxes[idx]
 			if b.Bottom*scale-cropOffY < firstCellTop {
 				continue
 			}
-			boxInCrop = append(boxInCrop, tbl.BoxToCropSpace(b, scale, cropOffX, cropOffY))
+			tableBoxes = append(tableBoxes, b)
+		}
+		tableBoxes = dedupTableBoxes(tableBoxes)
+		boxInCrop = make([]pdf.TextBox, 0, len(tableBoxes))
+		for _, b := range tableBoxes {
+			cropBox := tbl.BoxToCropSpace(b, scale, cropOffX, cropOffY)
+			cropBox.IsOCR = b.IsOCR
+			boxInCrop = append(boxInCrop, cropBox)
 		}
 	}
 	var positions []pdf.Position
@@ -139,36 +180,139 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		})
 	}
 	var grid [][]pdf.TSRCell
-	if len(cells) > 0 {
-		grid = tb.GroupCells(cells)
-		if len(grid) > 0 {
-			flat := tbl.FlattenGrid(grid)
-			tbl.FillCellTextFromBoxes(flat, boxInCrop)
-			idx := 0
-			for ri := range grid {
-				for ci := range grid[ri] {
-					grid[ri][ci].Text = flat[idx].Text
-					idx++
-				}
-			}
-			if bestAngle == 0 && !p.Config.SkipOCR {
-				p.ocrTableCells(ctx, flat, tsrImg, docAnalyzer)
-				idx = 0
-				for ri := range grid {
-					for ci := range grid[ri] {
-						grid[ri][ci].Text = flat[idx].Text
-						idx++
-					}
-				}
+	// A builder that renders its own HTML from assembled cells (the EE V/H
+	// builder) needs no OSS cross-product grid or R/C annotation. Skip the
+	// grid path for it so item.Grid stays nil and its grid-free cell stream
+	// is preserved. OSS builders do not implement RendersOwnHTML, so their
+	// behavior is unchanged.
+	type htmlRenderingBuilder interface{ RendersOwnHTML() bool }
+	renderOwn := false
+	if vh, ok := tb.(htmlRenderingBuilder); ok {
+		renderOwn = vh.RendersOwnHTML()
+	}
+	if len(cells) > 0 && len(boxInCrop) > 0 && !renderOwn {
+		// Cross-product grid (structure lines, de-duplicated like Python's
+		// gather) is used ONLY to derive per-box R/C annotations.
+		annotGrid := tb.GroupCells(cells)
+		if len(annotGrid) > 0 {
+			// Derive R/C/H/SP in crop space. R uses the raw TSR row bands,
+			// not the span-extended grid rows, so a rowspan header does not
+			// pull the next physical row into its origin row.
+			tbl.AnnotateBoxesWithGridAndRows(boxInCrop, annotGrid, tbl.AnnotationRowBands(cells))
+			boxInCrop = dedupSameCellOCRBoxes(boxInCrop)
+			// Rebuild the grid from the derived per-char R/C, exactly like
+			// Python's construct_table groups boxes by their R/C labels —
+			// rows are produced only for R values that carry boxes. Fall back
+			// to the cross-product grid when no box carries annotations.
+			if rcGrid := tbl.GroupBoxesByRC(boxInCrop); len(rcGrid) > 0 {
+				grid = rcGrid
+			} else {
+				grid = annotGrid
 			}
 		}
 	}
+	// Let the active builder finalize the grid (e.g. fold in a deferred OCR
+	// overlay). The DeepDoc builder is the identity function, so OSS keeps its
+	// current behavior unchanged.
+	grid = tb.FinalizeGrid(grid, boxInCrop)
+	// An empty leading row must not hide the real header row from the merge
+	// guard. ConstructTable applies the same cleanup before rendering, so
+	// normalizing here also keeps HeaderRows aligned with the rendered grid.
+	grid = tbl.DropAllEmptyRows(grid)
+	headerRows := 0
+	if len(grid) > 0 {
+		headerRows = leadingHeaderRows(tbl.HeaderSetWithBlockType(grid, boxInCrop))
+	}
 	item := pdf.TableItem{
-		ImageB64: imgB64, Cells: cells, Grid: grid, Positions: positions,
+		Cells: cells, Grid: grid, Positions: positions,
 		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
 		RegionLeft: tm.Region.X0 / scale, RegionRight: tm.Region.X1 / scale,
 		RegionTop: tm.Region.Y0 / scale, RegionBottom: tm.Region.Y1 / scale,
+		HeaderRows: headerRows,
+		Page:       pageNum,
 	}
 	tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
+	// Let the active builder attach builder-specific span geometry onto the
+	// assembled item. The DeepDoc builder is a no-op, so OSS keeps its current
+	// behavior unchanged.
+	tb.AttachSpanInfo(&item)
 	return item
+}
+
+// dedupTableBoxes drops fully contained text fragments. Partial overlaps are
+// preserved because the boxes may belong to different cells.
+func dedupTableBoxes(boxes []pdf.TextBox) []pdf.TextBox {
+	keep := make([]bool, len(boxes))
+	for i := range boxes {
+		keep[i] = strings.TrimSpace(boxes[i].Text) != ""
+	}
+	for i := 0; i < len(boxes); i++ {
+		if !keep[i] {
+			continue
+		}
+		at := strings.TrimSpace(boxes[i].Text)
+		for j := 0; j < len(boxes); j++ {
+			if i == j || !keep[j] {
+				continue
+			}
+			bt := strings.TrimSpace(boxes[j].Text)
+			if bt == "" || !strings.Contains(at, bt) {
+				continue
+			}
+			outer, inner := boxes[i], boxes[j]
+			if inner.X0 < outer.X0 || inner.X1 > outer.X1 {
+				continue
+			}
+			if inner.Top >= outer.Top && inner.Bottom <= outer.Bottom {
+				keep[j] = false
+			}
+		}
+	}
+	out := make([]pdf.TextBox, 0, len(boxes))
+	for i := range boxes {
+		if keep[i] {
+			out = append(out, boxes[i])
+		}
+	}
+	return out
+}
+
+// dedupSameCellOCRBoxes removes overlapping copies of the same OCR text after
+// cell assignment, comparing original boxes rather than accumulated cell text.
+func dedupSameCellOCRBoxes(boxes []pdf.TextBox) []pdf.TextBox {
+	out := boxes[:0]
+	for _, b := range boxes {
+		duplicate := false
+		if b.IsOCR && b.RBott > b.RTop {
+			for _, kept := range out {
+				if !kept.IsOCR || kept.RBott <= kept.RTop || b.R != kept.R || b.C != kept.C ||
+					strings.TrimSpace(b.Text) != strings.TrimSpace(kept.Text) {
+					continue
+				}
+				width := math.Min(b.X1-b.X0, kept.X1-kept.X0)
+				height := math.Min(b.Bottom-b.Top, kept.Bottom-kept.Top)
+				overlapX := math.Min(b.X1, kept.X1) - math.Max(b.X0, kept.X0)
+				overlapY := math.Min(b.Bottom, kept.Bottom) - math.Max(b.Top, kept.Top)
+				if width > 0 && height > 0 && overlapX >= width*0.6 && overlapY >= height*0.6 {
+					duplicate = true
+					break
+				}
+			}
+		}
+		if !duplicate {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// leadingHeaderRows counts the leading consecutive rows flagged as headers.
+// HeaderSetWithBlockType may flag a non-leading row; only the leading run is
+// the table's header block, matching ToTableData's semantics.
+func leadingHeaderRows(headers map[int]bool) int {
+	rows := 0
+	for headers[rows] {
+		rows++
+	}
+	return rows
 }

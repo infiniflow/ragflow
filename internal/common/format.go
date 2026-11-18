@@ -19,11 +19,11 @@ package common
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/cespare/xxhash/v2"
 )
@@ -56,6 +56,22 @@ func IsUUID(uuid string) bool {
 		return true
 	}
 	return false
+}
+
+// BaseModelName returns the bare model name of a (possibly composite) model
+// reference by stripping the trailing "@instance@provider" (or "@provider")
+// segments. The split is right-anchored so model names that legitimately
+// contain '@' (e.g. LM Studio quant suffixes) are preserved. Mirrors Python's
+// api/db/services/knowledgebase_service.py _base_model_name (rsplit("@", 2)[0]).
+func BaseModelName(modelName string) string {
+	if idx := strings.LastIndex(modelName, "@"); idx > 0 {
+		base := modelName[:idx]
+		if idx2 := strings.LastIndex(base, "@"); idx2 > 0 {
+			return base[:idx2]
+		}
+		return base
+	}
+	return modelName
 }
 
 // ExtractCompositeName splits a composite model name into three parts.
@@ -105,6 +121,16 @@ func FormatBytes(bytes int64) string {
 	}
 }
 
+// FormatMinimumShouldMatchPercent converts a fractional minimum_should_match
+// value to a percentage string using half-up rounding, mirroring Python's
+// common.float_utils.format_minimum_should_match_percent.
+func FormatMinimumShouldMatchPercent(fraction float64) string {
+	// Add a tiny epsilon so values whose true product ends in .5 but are
+	// represented slightly below it (e.g. 0.285*100 == 28.499...) still
+	// round half-up instead of being truncated.
+	return fmt.Sprintf("%d%%", int(math.Floor(fraction*100+0.5+1e-9)))
+}
+
 func FormatNumber(n int64) string {
 	s := fmt.Sprintf("%d", n)
 	parts := []string{}
@@ -147,13 +173,6 @@ func ParseBytesString(s string) int64 {
 	return int64(val * float64(multiplier))
 }
 
-func FormatTime(t *int64) string {
-	if t == nil {
-		return "N/A"
-	}
-	return time.UnixMilli(*t).Format("2006-01-02 15:04:05")
-}
-
 func IsValidString(v interface{}) bool {
 	str, ok := v.(string)
 	return ok && str != ""
@@ -171,4 +190,17 @@ func IsValidString(v interface{}) bool {
 // (docID, text) pair.
 func ChunkID(docID, text string) string {
 	return fmt.Sprintf("%016x", xxhash.Sum64String(text+docID))
+}
+
+// FirstNonEmpty returns the first value that is non-empty after trimming,
+// trimmed. Trimming the returned value means callers receive a normalized result
+// and need not TrimSpace again at every use site. Used as a generic
+// settings/value precedence helper across the codebase.
+func FirstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }

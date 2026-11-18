@@ -1,13 +1,27 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from './originui/select-with-search';
 import { Switch } from '@/components/ui/switch';
-import { LLMFactory } from '@/constants/llm';
 import { buildOptions } from '@/utils/form';
-import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-const parseMethodOptions = buildOptions(['auto', 'txt', 'ocr']);
-const languageOptions = buildOptions([
+const ParseMethodOptions = buildOptions(['auto', 'txt', 'ocr']);
+const LanguageOptions = buildOptions([
   'English',
   'Chinese',
   'Traditional Chinese',
@@ -30,29 +44,19 @@ const languageOptions = buildOptions([
   'Hindi',
 ]);
 
-export function MinerUOptionsFormField({
-  namePrefix = 'parser_config',
-}: {
-  namePrefix?: string;
-}) {
-  const form = useFormContext();
+/** Edits MinerU PDF options under the parent-selected setup, retaining false. */
+export function MinerUOptionsFormField({ namePrefix }: { namePrefix: string }) {
   const { t } = useTranslation();
   const buildName = (field: string) =>
     namePrefix ? `${namePrefix}.${field}` : field;
-
-  const layoutRecognize = useWatch({
-    control: form.control,
-    name: 'parser_config.layout_recognize',
-  });
-
-  // Check if MinerU is selected (the value contains 'MinerU' or matches the factory name)
-  const isMinerUSelected =
-    layoutRecognize?.includes(LLMFactory.MinerU) ||
-    layoutRecognize?.toLowerCase()?.includes('mineru');
-
-  if (!isMinerUSelected) {
-    return null;
-  }
+  const formulaLabel = t(
+    'knowledgeConfiguration.mineruFormulaEnable',
+    'Formula Recognition',
+  );
+  const tableLabel = t(
+    'knowledgeConfiguration.mineruTableEnable',
+    'Table Recognition',
+  );
 
   return (
     <div className="space-y-4 border-l-2 border-primary/30 pl-4 ml-2">
@@ -70,10 +74,10 @@ export function MinerUOptionsFormField({
         horizontal={true}
       >
         {(field) => (
-          <RAGFlowSelect
+          <SelectWithSearch
             value={field.value || 'auto'}
             onChange={field.onChange}
-            options={parseMethodOptions}
+            options={ParseMethodOptions}
             placeholder={t('common.selectPlaceholder', 'Select value')}
           />
         )}
@@ -89,10 +93,10 @@ export function MinerUOptionsFormField({
         horizontal={true}
       >
         {(field) => (
-          <RAGFlowSelect
+          <SelectWithSearch
             value={field.value || 'English'}
             onChange={field.onChange}
-            options={languageOptions}
+            options={LanguageOptions}
             placeholder={t('common.selectPlaceholder', 'Select value')}
           />
         )}
@@ -100,19 +104,18 @@ export function MinerUOptionsFormField({
 
       <RAGFlowFormItem
         name={buildName('mineru_formula_enable')}
-        label={t(
-          'knowledgeConfiguration.mineruFormulaEnable',
-          'Formula Recognition',
-        )}
+        label={formulaLabel}
         tooltip={t(
           'knowledgeConfiguration.mineruFormulaEnableTip',
-          'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
+          'For /file_parse, enable formula recognition. Hybrid backends apply this switch to inline formulas only; block formulas remain enabled. V1 does not support disabling this option.',
         )}
         horizontal={true}
-        labelClassName="!mb-0"
+        labelClassName="!mb-0 whitespace-nowrap"
+        valueClassName="w-auto shrink-0"
       >
         {(field) => (
           <Switch
+            aria-label={formulaLabel}
             checked={field.value ?? true}
             onCheckedChange={field.onChange}
           />
@@ -121,19 +124,18 @@ export function MinerUOptionsFormField({
 
       <RAGFlowFormItem
         name={buildName('mineru_table_enable')}
-        label={t(
-          'knowledgeConfiguration.mineruTableEnable',
-          'Table Recognition',
-        )}
+        label={tableLabel}
         tooltip={t(
           'knowledgeConfiguration.mineruTableEnableTip',
-          'Enable table recognition and extraction.',
+          'For /file_parse, enable table recognition and extraction. V1 does not support disabling this option.',
         )}
         horizontal={true}
-        labelClassName="!mb-0"
+        labelClassName="!mb-0 whitespace-nowrap"
+        valueClassName="w-auto shrink-0"
       >
         {(field) => (
           <Switch
+            aria-label={tableLabel}
             checked={field.value ?? true}
             onCheckedChange={field.onChange}
           />

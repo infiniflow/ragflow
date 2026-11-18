@@ -136,12 +136,8 @@ func TestOpenAI_MergeGenerationConfig_AddsNewKeys(t *testing.T) {
 // calls BuildChatConfig(dialog, nil) which reads the merged values.
 // Verifies that all 5 fields the Python server honors
 // (temperature, top_p, max_tokens, frequency_penalty, presence_penalty)
-// survive the merge. For 3 of them (temperature, top_p, max_tokens) the
-// ChatConfig fields exist and the test asserts the values. For the
-// other 2 (frequency_penalty, presence_penalty) the ChatConfig struct
-// doesn't have fields yet, so we just assert the dialog's LLMSetting
-// preserves them — the structural gap is documented in
-// openai_chat_completions.go::extractGenerationConfig.
+// survive the merge. For the fields ChatConfig supports, the values must
+// surface on the returned struct.
 //
 // The handler-side float64 coercion of max_tokens is verified by
 // TestExtractGenerationConfig_OnlyKnownFields in the handler package.
@@ -178,9 +174,6 @@ func TestOpenAI_MergeThenBuild_AllGenerationParamsReachChatConfig(t *testing.T) 
 		t.Fatalf("presence_penalty: expected 0.2, got %v", got)
 	}
 
-	// Now run the RAG-pipeline call: BuildChatConfig(dialog, nil).
-	// For the 3 fields ChatConfig supports, the values must surface
-	// on the returned struct.
 	cfg := BuildChatConfig(dialog, nil)
 	if cfg.Temperature == nil || *cfg.Temperature != 0.7 {
 		t.Fatalf("ChatConfig.Temperature: expected 0.7, got %v", cfg.Temperature)
@@ -446,32 +439,32 @@ func TestOpenAI_PerDeltaTrimSpace_NotApplied(t *testing.T) {
 // Request preparation helpers (moved from internal/handler/openai_chat_completions_test.go)
 // =============================================================================
 
-// TestService_NormalizeMessageContent_String passes a plain string through.
-func TestService_NormalizeMessageContent_String(t *testing.T) {
-	got, err := normalizeMessageContent("hello")
+// TestService_NormalizeOpenAIMessageContent_String passes a plain string through.
+func TestService_NormalizeOpenAIMessageContent_String(t *testing.T) {
+	got, err := NormalizeOpenAIMessageContent("hello")
 	if err != nil || got != "hello" {
 		t.Fatalf("expected (%q,nil), got (%q,%v)", "hello", got, err)
 	}
 }
 
-// TestService_NormalizeMessageContent_Nil returns "" with no error.
-func TestService_NormalizeMessageContent_Nil(t *testing.T) {
-	got, err := normalizeMessageContent(nil)
+// TestService_NormalizeOpenAIMessageContent_Nil returns "" with no error.
+func TestService_NormalizeOpenAIMessageContent_Nil(t *testing.T) {
+	got, err := NormalizeOpenAIMessageContent(nil)
 	if err != nil || got != "" {
 		t.Fatalf("expected (\"\",nil), got (%q,%v)", got, err)
 	}
 }
 
-// TestService_NormalizeMessageContent_ArrayOfTextParts joins text parts
+// TestService_NormalizeOpenAIMessageContent_ArrayOfTextParts joins text parts
 // with "\n" and drops non-text parts (e.g. image_url). Mirrors
 // _normalize_message_content in openai_api.py:198-216.
-func TestService_NormalizeMessageContent_ArrayOfTextParts(t *testing.T) {
+func TestService_NormalizeOpenAIMessageContent_ArrayOfTextParts(t *testing.T) {
 	in := []interface{}{
 		map[string]interface{}{"type": "text", "text": "first"},
 		map[string]interface{}{"type": "image_url", "image_url": map[string]string{"url": "http://x"}},
 		map[string]interface{}{"type": "text", "text": "second"},
 	}
-	got, err := normalizeMessageContent(in)
+	got, err := NormalizeOpenAIMessageContent(in)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -480,9 +473,9 @@ func TestService_NormalizeMessageContent_ArrayOfTextParts(t *testing.T) {
 	}
 }
 
-// TestService_NormalizeMessageContent_InvalidType returns the Python error string.
-func TestService_NormalizeMessageContent_InvalidType(t *testing.T) {
-	_, err := normalizeMessageContent(42)
+// TestService_NormalizeOpenAIMessageContent_InvalidType returns the Python error string.
+func TestService_NormalizeOpenAIMessageContent_InvalidType(t *testing.T) {
+	_, err := NormalizeOpenAIMessageContent(42)
 	if err == nil || !strings.Contains(err.Error(), "must be a string or an array") {
 		t.Fatalf("expected content-type error, got %v", err)
 	}
@@ -532,10 +525,57 @@ func TestService_ExtractGenerationConfig_OnlyKnownFields(t *testing.T) {
 	if cfg["presence_penalty"] != pres {
 		t.Fatalf("presence_penalty: got %v want %v", cfg["presence_penalty"], pres)
 	}
-	for _, k := range []string{"stop", "user", "internet", "tools"} {
+	for _, k := range []string{"stop", "user", "internet", "tools", "reasoning"} {
 		if _, has := cfg[k]; has {
 			t.Fatalf("%s should not be in generation config, got %v", k, cfg[k])
 		}
+	}
+}
+
+// TestOpenAI_ChatKwargs_ReasoningDrivesAgentic pins the wiring: the request
+// body's top-level `reasoning` must reach AsyncChat as kwargs["reasoning"] so
+// resolveReasoningLevel can select the smart-reasoning agent. The three input
+// shapes cover what clients actually send; none may fail the unmarshal.
+func TestOpenAI_ChatKwargs_ReasoningDrivesAgentic(t *testing.T) {
+	bodies := []string{
+		`{"model":"model","messages":[{"role":"user","content":"q"}],"reasoning":5}`,
+		`{"model":"model","messages":[{"role":"user","content":"q"}],"reasoning":5.0}`,
+		`{"model":"model","messages":[{"role":"user","content":"q"}],"reasoning":"5"}`,
+	}
+	for _, body := range bodies {
+		var req OpenAIChatRequest
+		if err := json.Unmarshal([]byte(body), &req); err != nil {
+			t.Fatalf("unmarshal %s: %v", body, err)
+		}
+		kwargs := openAIChatKwargs(&req, false, "")
+		if got := resolveReasoningLevel(kwargs, nil); got != reasoningLevelAgentic {
+			t.Errorf("body %s: resolveReasoningLevel = %d, want %d", body, got, reasoningLevelAgentic)
+		}
+		if _, has := extractGenerationConfig(&req)["reasoning"]; has {
+			t.Errorf("body %s: reasoning must not enter the generation config", body)
+		}
+	}
+}
+
+// TestOpenAI_ChatKwargs_AbsentReasoningKeepsPromptConfigLevel pins the
+// fallback: a request without `reasoning` leaves the key out of the kwargs, so
+// a dialog pinned to the agentic level still gets it.
+func TestOpenAI_ChatKwargs_AbsentReasoningKeepsPromptConfigLevel(t *testing.T) {
+	var req OpenAIChatRequest
+	body := `{"model":"model","messages":[{"role":"user","content":"q"}],"reasoning":null}`
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		t.Fatalf("unmarshal %s: %v", body, err)
+	}
+	kwargs := openAIChatKwargs(&req, true, "")
+	if _, has := kwargs["reasoning"]; has {
+		t.Fatalf("reasoning must be absent from kwargs, got %#v", kwargs)
+	}
+	if kwargs["quote"] != true {
+		t.Errorf("quote = %#v, want true", kwargs["quote"])
+	}
+	pinned := map[string]interface{}{"reasoning": float64(reasoningLevelAgentic)}
+	if got := resolveReasoningLevel(kwargs, pinned); got != reasoningLevelAgentic {
+		t.Errorf("resolveReasoningLevel = %d, want %d from prompt_config", got, reasoningLevelAgentic)
 	}
 }
 

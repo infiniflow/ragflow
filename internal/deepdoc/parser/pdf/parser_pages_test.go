@@ -1,7 +1,6 @@
 package pdf
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -82,7 +81,7 @@ func TestParseRaw_PageRanges_Applied(t *testing.T) {
 	eng := makePageTaggedEngine(10)
 	p := NewParser(pdf.ParserConfig{Pages: [][]int{{1, 3}, {8, 10}}})
 
-	result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
+	result, err := p.ParseRaw(t.Context(), eng, &MockDocAnalyzer{Healthy: true})
 	if err != nil {
 		t.Fatalf("ParseRaw: %v", err)
 	}
@@ -113,7 +112,7 @@ func TestParseRaw_NoPages_AllPagesParsed(t *testing.T) {
 	eng := makePageTaggedEngine(10)
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
+	result, err := p.ParseRaw(t.Context(), eng, &MockDocAnalyzer{Healthy: true})
 	if err != nil {
 		t.Fatalf("ParseRaw: %v", err)
 	}
@@ -133,7 +132,7 @@ func TestParseRaw_PageRanges_BeyondDoc(t *testing.T) {
 	eng := makePageTaggedEngine(5)
 	p := NewParser(pdf.ParserConfig{Pages: [][]int{{8, 10}}})
 
-	result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
+	result, err := p.ParseRaw(t.Context(), eng, &MockDocAnalyzer{Healthy: true})
 	if err != nil {
 		t.Fatalf("ParseRaw: %v", err)
 	}

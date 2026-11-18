@@ -1,16 +1,38 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
-import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
+import {
+  MarkdownRemarkPlugins,
+  MarkdownRemarkPluginsLite,
+} from '@/constants/markdown-remark-plugins';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 import DOMPurify from 'dompurify';
-import { useCallback, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -20,12 +42,14 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
 import {
-  currentReg,
+  decodeAngleBracketEntities,
+  escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  unescapeAngleBrackets,
 } from '@/utils/chat';
 import classNames from 'classnames';
 import { omit } from 'lodash';
@@ -39,14 +63,65 @@ import {
   HoverCardTrigger,
 } from '../ui/hover-card';
 import styles from './index.module.less';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
+import { SafeImg } from '@/components/safe-img';
 
 const getChunkIndex = (match: string) => parseCitationIndex(match);
+const ReferenceMarkerReg = /(\[(?:ID:)?[0-9\u0660-\u0669\u06F0-\u06F9]+\])/g;
 
-const formatMetadataValue = (value: unknown) => {
-  if (Array.isArray(value)) return value.join(', ');
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
+// Wraps every text node so citation markers can be replaced by React elements.
+// Defined at module scope: react-markdown rebuilds its whole processor whenever
+// a plugin's identity changes, and while an answer streams this component
+// re-renders many times a second.
+const rehypeWrapReference = () => {
+  return function wrapTextTransform(tree: any) {
+    visitParents(tree, 'text', (node, ancestors) => {
+      const latestAncestor = ancestors.at(-1);
+      if (
+        latestAncestor.tagName !== 'custom-typography' &&
+        latestAncestor.tagName !== 'code'
+      ) {
+        node.type = 'element';
+        node.tagName = 'custom-typography';
+        node.properties = {};
+        node.children = [{ type: 'text', value: node.value }];
+      }
+    });
+  };
+};
+
+const MarkdownRehypePlugins = [
+  rehypeRaw,
+  RehypeSanitizeAssistantMarkdown,
+  rehypeWrapReference,
+  rehypeKatex,
+];
+
+const MarkdownParagraph = ({ children, ...props }: any) => (
+  <p {...props}>{children}</p>
+);
+
+const MarkdownCode = (props: any) => {
+  const { children, className, ...rest } = props;
+  const restProps = omit(rest, 'node');
+  const match = /language-(\w+)/.exec(className || '');
+  // Code content is literal for react-markdown, so the &lt;/&gt; entities
+  // restored by unescapeAngleBrackets survive parsing; decode them back.
+  const codeText = decodeAngleBracketEntities(String(children));
+  return match ? (
+    <SyntaxHighlighter
+      {...restProps}
+      PreTag="div"
+      language={match[1]}
+      wrapLongLines
+    >
+      {codeText.replace(/\n$/, '')}
+    </SyntaxHighlighter>
+  ) : (
+    <code {...restProps} className={classNames(className, 'text-wrap')}>
+      {codeText}
+    </code>
+  );
 };
 
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
@@ -55,77 +130,89 @@ const MarkdownContent = ({
   clickDocumentButton,
   content,
   loading,
+  disableMath = false,
 }: {
   content: string;
   loading: boolean;
   reference: IReference;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
+  /**
+   * When true, disables LaTeX math rendering (remark-math + rehype-katex).
+   * Use this for user-generated content where `$` should be treated as literal text.
+   */
+  disableMath?: boolean;
 }) => {
   const { t } = useTranslation();
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
+    // Escape standalone < and > outside matched <...> tags
+    // so DOMPurify doesn't strip them as HTML.
+    const safeContent = escapeUnmatchedAngleBrackets(content);
+
+    let text = DOMPurify.sanitize(safeContent, {
       ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
 
     // let text = content;
-    if (text === '') {
+    if (text === '' && loading) {
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
     const thinkSummary = loading
       ? `${t('chat.thinking')}...`
       : t('chat.thought');
-    return pipe(
-      (value: string) => replaceThinkToSection(value, thinkSummary),
-      replaceRetrievingToSection,
-      preprocessLaTeX,
-    )(nextText);
+    return unescapeAngleBrackets(
+      pipe(
+        (value: string) => replaceThinkToSection(value, thinkSummary),
+        replaceRetrievingToSection,
+        preprocessLaTeX,
+        // Entity decoding can expose a line-leading > after the first escape.
+        escapeUnmatchedAngleBrackets,
+      )(nextText),
+    );
   }, [content, loading, t]);
 
-  useEffect(() => {
+  const documentIds = useMemo(() => {
     const docAggs = reference?.doc_aggs;
-    setDocumentIds(Array.isArray(docAggs) ? docAggs.map((x) => x.doc_id) : []);
-  }, [reference, setDocumentIds]);
+    return Array.isArray(docAggs) ? docAggs.map((x) => x.doc_id) : [];
+  }, [reference?.doc_aggs]);
+
+  // Skipping the empty case matters: this component is mounted once per message,
+  // and setting a fresh empty array would re-render (and re-parse the markdown
+  // of) every message that carries no reference at all.
+  useEffect(() => {
+    if (documentIds.length === 0) return;
+    setDocumentIds(documentIds);
+  }, [documentIds, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
-        if (!isPdf) {
-          if (!documentUrl) {
-            return;
-          }
-          window.open(documentUrl, '_blank');
-        } else {
-          clickDocumentButton?.(documentId, chunk);
+        if (supportsSourceLocate(fileExtension) && clickDocumentButton) {
+          clickDocumentButton(documentId, chunk);
+          return;
         }
+        if (!documentUrl) return;
+        // Web page documents carry their own url; opening the internal
+        // /document route for them lands on an empty page.
+        if (/^https?:\/\//i.test(documentUrl)) {
+          window.open(documentUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        window.open(
+          `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
+          '_blank',
+        );
       },
     [clickDocumentButton],
   );
-
-  const rehypeWrapReference = () => {
-    return function wrapTextTransform(tree: any) {
-      visitParents(tree, 'text', (node, ancestors) => {
-        const latestAncestor = ancestors.at(-1);
-        if (
-          latestAncestor.tagName !== 'custom-typography' &&
-          latestAncestor.tagName !== 'code'
-        ) {
-          node.type = 'element';
-          node.tagName = 'custom-typography';
-          node.properties = {};
-          node.children = [{ type: 'text', value: node.value }];
-        }
-      });
-    };
-  };
 
   const getReferenceInfo = useCallback(
     (chunkIndex: number) => {
@@ -172,12 +259,14 @@ const MarkdownContent = ({
               <HoverCardTrigger>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceChunkImage}
                 ></Image>
               </HoverCardTrigger>
               <HoverCardContent>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceImagePreview}
                 ></Image>
               </HoverCardContent>
@@ -186,26 +275,11 @@ const MarkdownContent = ({
           <div className={'space-y-2 max-w-[40vw]'}>
             <div
               dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
+                __html: sanitizeHtmlWithImagesAsText(chunkItem?.content ?? ''),
               }}
               className={classNames(styles.chunkContentText)}
               dir="auto"
             ></div>
-            {chunkItem?.document_metadata &&
-              Object.keys(chunkItem.document_metadata).length > 0 && (
-                <section className="space-y-1 border border-border-default rounded p-2">
-                  {Object.entries(chunkItem.document_metadata).map(
-                    ([key, value]) => (
-                      <div key={key} className="text-xs">
-                        <span className="text-text-secondary">{key}:</span>{' '}
-                        <span className="text-text-primary">
-                          {formatMetadataValue(value)}
-                        </span>
-                      </div>
-                    ),
-                  )}
-                </section>
-              )}
             {documentId && (
               <section className="flex gap-1">
                 {fileThumbnail ? (
@@ -226,7 +300,7 @@ const MarkdownContent = ({
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
-                    fileExtension === 'pdf',
+                    fileExtension,
                     documentUrl,
                   )}
                 >
@@ -243,65 +317,71 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      const replacedText = reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+      const replacedText = reactStringReplace(
+        text,
+        ReferenceMarkerReg,
+        (match, i) => {
+          const chunkIndex = getChunkIndex(match);
+          if (typeof chunkIndex !== 'number') {
+            return match;
+          }
+          const hasReference = !!reference?.chunks?.[chunkIndex];
+          // Explicit markers can render while their sources are still arriving.
+          if (!hasReference && !(loading && match.startsWith('[ID:'))) {
+            return match;
+          }
 
-        return (
-          <HoverCard key={i}>
-            <HoverCardTrigger>
-              <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                Fig. {chunkIndex + 1}
-              </bdi>
-            </HoverCardTrigger>
-            <HoverCardContent className="max-w-3xl">
-              {getPopoverContent(chunkIndex)}
-            </HoverCardContent>
-          </HoverCard>
-        );
-      });
+          return (
+            <HoverCard key={i}>
+              <HoverCardTrigger>
+                <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
+                  [{chunkIndex + 1}]
+                </bdi>
+              </HoverCardTrigger>
+              {hasReference && (
+                <HoverCardPrimitive.Portal>
+                  <HoverCardContent className="max-w-3xl">
+                    {getPopoverContent(chunkIndex)}
+                  </HoverCardContent>
+                </HoverCardPrimitive.Portal>
+              )}
+            </HoverCard>
+          );
+        },
+      );
 
       return replacedText;
     },
-    [getPopoverContent],
+    [getPopoverContent, loading, reference?.chunks],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
   const showLoadingDots = useLoadingPause(loading, content);
 
+  const markdownComponents = useMemo(
+    () =>
+      ({
+        p: MarkdownParagraph,
+        'custom-typography': ({ children }: { children: string }) =>
+          renderReference(children),
+        img: SafeImg,
+        code: MarkdownCode,
+      }) as any,
+    [renderReference],
+  );
+
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
-        remarkPlugins={MarkdownRemarkPlugins}
-        components={
-          {
-            p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
-            'custom-typography': ({ children }: { children: string }) =>
-              renderReference(children),
-            code(props: any) {
-              const { children, className, ...rest } = props;
-              const restProps = omit(rest, 'node');
-              const match = /language-(\w+)/.exec(className || '');
-              return match ? (
-                <SyntaxHighlighter
-                  {...restProps}
-                  PreTag="div"
-                  language={match[1]}
-                  wrapLongLines
-                >
-                  {String(children).replace(/\n$/, '')}
-                </SyntaxHighlighter>
-              ) : (
-                <code
-                  {...restProps}
-                  className={classNames(className, 'text-wrap')}
-                >
-                  {children}
-                </code>
-              );
-            },
-          } as any
+        rehypePlugins={
+          disableMath
+            ? MarkdownRehypePlugins.filter((p) => p !== rehypeKatex)
+            : MarkdownRehypePlugins
         }
+        remarkPlugins={
+          disableMath ? MarkdownRemarkPluginsLite : MarkdownRemarkPlugins
+        }
+        components={markdownComponents}
       >
         {contentWithCursor}
       </Markdown>
@@ -312,4 +392,4 @@ const MarkdownContent = ({
   );
 };
 
-export default MarkdownContent;
+export default memo(MarkdownContent);

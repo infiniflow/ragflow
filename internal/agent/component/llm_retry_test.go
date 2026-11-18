@@ -61,7 +61,7 @@ func TestRetryInvoker_SucceedsOnSecondAttempt(t *testing.T) {
 	inner := &scriptedInvoker{failTimes: 1, err: errors.New("transient"), resp: want}
 	r := newRetryInvoker(inner, 3, time.Millisecond)
 
-	resp, err := r.Invoke(context.Background(), nil, ChatInvokeRequest{ModelName: "m"})
+	resp, err := r.Invoke(t.Context(), nil, ChatInvokeRequest{ModelName: "m"})
 	if err != nil {
 		t.Fatalf("Invoke: unexpected err: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestRetryInvoker_ExhaustsRetries(t *testing.T) {
 	inner := &alwaysFailInvoker{err: sentinel}
 	r := newRetryInvoker(inner, 3, time.Millisecond)
 
-	_, err := r.Invoke(context.Background(), nil, ChatInvokeRequest{ModelName: "m"})
+	_, err := r.Invoke(t.Context(), nil, ChatInvokeRequest{ModelName: "m"})
 	if err == nil {
 		t.Fatal("expected error after exhaustion")
 	}
@@ -121,7 +121,7 @@ func TestRetryInvoker_HonorsContextCancellation(t *testing.T) {
 	// honored. The cancellation lands within milliseconds.
 	r := newRetryInvoker(inner, 5, 30*time.Second)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	// Cancel after a short delay, while the retry is sleeping
 	// through the first backoff.
 	go func() {
@@ -164,7 +164,7 @@ func TestRetryInvoker_ExponentialBackoff(t *testing.T) {
 	r := newRetryInvoker(inner, 3, initial)
 
 	start := time.Now()
-	_, _ = r.Invoke(context.Background(), nil, ChatInvokeRequest{ModelName: "m"})
+	_, _ = r.Invoke(t.Context(), nil, ChatInvokeRequest{ModelName: "m"})
 	elapsed := time.Since(start)
 
 	// 20 + 40 + 80 = 140ms of backoff (3 retries, 4 attempts total).
@@ -185,7 +185,7 @@ func TestRetryInvoker_NoRetriesWhenZero(t *testing.T) {
 	inner := &alwaysFailInvoker{err: errors.New("nope")}
 	r := newRetryInvoker(inner, 0, 50*time.Millisecond)
 
-	_, err := r.Invoke(context.Background(), nil, ChatInvokeRequest{ModelName: "m"})
+	_, err := r.Invoke(t.Context(), nil, ChatInvokeRequest{ModelName: "m"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -198,7 +198,7 @@ func TestRetryInvoker_NoRetriesWhenZero(t *testing.T) {
 // should not panic when constructed with nil inner.
 func TestRetryInvoker_NilInner(t *testing.T) {
 	r := newRetryInvoker(nil, 3, time.Millisecond)
-	_, err := r.Invoke(context.Background(), nil, ChatInvokeRequest{ModelName: "m"})
+	_, err := r.Invoke(t.Context(), nil, ChatInvokeRequest{ModelName: "m"})
 	if err == nil {
 		t.Fatal("expected error for nil inner")
 	}
@@ -220,7 +220,7 @@ func TestLLMParam_RespectsMaxRetries(t *testing.T) {
 	// zero-value default is 2s, which would make this test slow.
 	c.param.DelayAfterError = time.Millisecond
 
-	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error from exhausted retries")
 	}
@@ -249,7 +249,7 @@ func TestLLMParam_ZeroRetriesMeansOneAttempt(t *testing.T) {
 	// with maxRetries=0.
 	c.param.DelayAfterError = time.Millisecond
 
-	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -280,7 +280,7 @@ func TestLLMParam_DefaultRetries(t *testing.T) {
 	SetDefaultChatInvoker(newRetryInvoker(fastInner, 2, time.Millisecond))
 	t.Cleanup(func() { SetDefaultChatInvoker(nil) })
 
-	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error after default retries")
 	}
@@ -364,7 +364,7 @@ func TestLLM_ParamOverride_AbsoluteCount_NotStacked(t *testing.T) {
 	// Force a tiny delay so the test runs fast.
 	c.param.DelayAfterError = time.Millisecond
 
-	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error from exhausted retries")
 	}
@@ -394,7 +394,7 @@ func TestLLM_NoParamOverride_StackingPreserved(t *testing.T) {
 	// No param override: MaxRetries=0 AND DelayAfterError=0.
 	c := NewLLMComponent(LLMParam{ModelID: "m"})
 
-	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error from exhausted retries")
 	}
@@ -403,4 +403,80 @@ func TestLLM_NoParamOverride_StackingPreserved(t *testing.T) {
 	if got, want := bare.callCount(), 4; got != want {
 		t.Errorf("bare.calls=%d, want %d (boot layer ran unchanged — no param override means we keep the implicit 3-retry budget)", got, want)
 	}
+}
+
+type mockStreamingInvoker struct {
+	calls     int32
+	failTimes int32
+	err       error
+	deltas    []string
+	postErr   error
+}
+
+func (m *mockStreamingInvoker) Invoke(context.Context, *gorm.DB, ChatInvokeRequest) (*ChatInvokeResponse, error) {
+	return nil, errors.New("unexpected Invoke call")
+}
+
+func (m *mockStreamingInvoker) Stream(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest, onDelta func(delta string, isThink bool) error) (*ChatInvokeResponse, error) {
+	n := atomic.AddInt32(&m.calls, 1)
+	if n <= atomic.LoadInt32(&m.failTimes) {
+		return nil, m.err
+	}
+	for _, d := range m.deltas {
+		if onDelta != nil {
+			if err := onDelta(d, false); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return &ChatInvokeResponse{Content: strings.Join(m.deltas, "")}, m.postErr
+}
+
+func TestRetryInvoker_Stream(t *testing.T) {
+	t.Run("retries transient error before first delta", func(t *testing.T) {
+		inner := &mockStreamingInvoker{failTimes: 1, err: errors.New("blip"), deltas: []string{"o", "k"}}
+		inv := newRetryInvoker(inner, 2, time.Millisecond)
+
+		var got []string
+		resp, err := inv.Stream(t.Context(), nil, ChatInvokeRequest{}, func(d string, _ bool) error {
+			got = append(got, d)
+			return nil
+		})
+		if err != nil || resp == nil || resp.Content != "ok" || inner.calls != 2 || strings.Join(got, "") != "ok" {
+			t.Errorf("got %v, err %v, calls %d", resp, err, inner.calls)
+		}
+	})
+
+	t.Run("does not retry after deltas are emitted", func(t *testing.T) {
+		inner := &mockStreamingInvoker{deltas: []string{"partial"}, postErr: errors.New("mid-stream fail")}
+		inv := newRetryInvoker(inner, 3, time.Millisecond)
+
+		_, err := inv.Stream(t.Context(), nil, ChatInvokeRequest{}, nil)
+		if err == nil || inner.calls != 1 {
+			t.Errorf("expected error, inner.calls = %d, want 1", inner.calls)
+		}
+	})
+
+	t.Run("stops and propagates callback error without retrying", func(t *testing.T) {
+		inner := &mockStreamingInvoker{deltas: []string{"a", "b"}}
+		inv := newRetryInvoker(inner, 3, time.Millisecond)
+
+		sinkErr := errors.New("sink broken")
+		_, err := inv.Stream(t.Context(), nil, ChatInvokeRequest{}, func(string, bool) error { return sinkErr })
+		if !errors.Is(err, sinkErr) || inner.calls != 1 {
+			t.Errorf("err = %v, calls = %d, want sinkErr and 1 call", err, inner.calls)
+		}
+	})
+
+	t.Run("non-streaming invoker fallback propagates callback error", func(t *testing.T) {
+		resp := &ChatInvokeResponse{Thinking: "ponder", Content: "reply"}
+		inner := &scriptedInvoker{failTimes: 0, resp: resp}
+		inv := newRetryInvoker(inner, 1, time.Millisecond)
+
+		sinkErr := errors.New("sink failed")
+		_, err := inv.Stream(t.Context(), nil, ChatInvokeRequest{}, func(string, bool) error { return sinkErr })
+		if !errors.Is(err, sinkErr) {
+			t.Errorf("err = %v, want sinkErr", err)
+		}
+	})
 }

@@ -1,0 +1,16 @@
+{
+ "id": "token__text_token_liveness",
+ "component": "TokenChunker",
+ "param": {
+  "chunk_token_size": 32,
+  "delimiters": [
+   "\n"
+  ]
+ },
+ "input": {
+  "name": "default.text",
+  "output_format": "text",
+  "text": "RAGFlow is an open-source retrieval-augmented generation engine.\nIt ingests documents of many types and splits them into chunks.\nEach chunk is embedded and stored in a vector database for retrieval.\nThe chunker honours document structure such as headings and tables.\nLong paragraphs are divided so each chunk fits a token budget.\nOverlap between chunks preserves context across boundaries.\nRetrieval returns the most relevant chunks for a user question.\nThe generator then composes an answer from those chunks.\nEvaluation measures faithfulness and answer relevance.\nUsers tune chunk size to balance recall and precision.\nSmaller chunks improve recall but increase storage cost.\nLarger chunks keep more context but may dilute relevance.\nThe system supports many languages and encodings.\nDeep parsing extracts text from PDF images and scans.\nTables are recognised and preserved as structured chunks.\nImages can be described and attached to neighbouring text.\nThe API exposes dataset, document, and chat endpoints.\nA web UI lets users manage knowledge bases visually.\nBatch ingestion processes large corpora efficiently.\nConcurrency limits protect the embedding service.\nCaching avoids re-embedding unchanged content.\nLogging records ingestion progress and errors.\nMetrics help operators spot slow components.\nConfiguration controls parsers and chunking strategies.\nTemplates encode common ingestion pipelines.\nThe engine scales horizontally behind a load balancer.\nSecurity isolates tenant data by document id.\nAuditing tracks who accessed which knowledge base.\nPlugins extend parsing for proprietary formats."
+ },
+ "notes": "Default delimiter ['\\n'] -> Python naive_merge('') -> 1 chunk (PY-BUG). Corpus has many '\\n' boundaries so Go segments and merges by token size into many chunks. Also a tokenizer-liveness guard: a dead tokenizer (0 tokens) collapses all segments into 1 chunk."
+}

@@ -73,6 +73,7 @@ func (m *OpenAIAPICompatibleModel) ListModels(ctx context.Context, apiConfig *AP
 			continue
 		}
 		model.ModelTypes = inferred
+		model.ModelTypesInferred = true
 		filtered = append(filtered, model)
 	}
 
@@ -89,33 +90,21 @@ func (m *OpenAIAPICompatibleModel) ChatWithMessages(ctx context.Context, modelNa
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
-	}
+	applyVllmCompatibleThinking(reqBody, modelName, chatModelConfig)
 
 	body, err := m.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function
@@ -131,11 +120,10 @@ func (m *OpenAIAPICompatibleModel) ChatStreamlyWithSender(ctx context.Context, m
 		return fmt.Errorf("sender is required")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
@@ -143,75 +131,11 @@ func (m *OpenAIAPICompatibleModel) ChatStreamlyWithSender(ctx context.Context, m
 		"include_usage": true,
 	}
 
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
-	}
+	applyVllmCompatibleThinking(reqBody, modelName, chatModelConfig)
 
 	return m.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
 		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-}
-
-// Hint keywords for model type inference, matching Python's
-// OpenAIAPICompatible class-level hint constants.
-var (
-	embeddingHints = []string{"embed", "embedding", "bge"}
-	rerankHints    = []string{"rerank", "reranker"}
-	asrHints       = []string{"asr", "stt", "transcribe", "transcriber", "whisper"}
-	ttsHints       = []string{"tts", "text-to-speech"}
-	visionHints    = []string{
-		"vl", "vision", "llava", "internvl", "minicpm-v",
-		"gpt-4o", "glm-4v", "qvq", "qwen-vl", "pixtral",
-	}
-	ocrHints = []string{"ocr"}
-)
-
-// containsHint checks whether modelName (lowercased) contains any of the
-// given hint substrings.
-func containsHint(modelName string, hints []string) bool {
-	for _, hint := range hints {
-		if strings.Contains(modelName, hint) {
-			return true
-		}
-	}
-	return false
-}
-
-// InferModelTypes derives RAGFlow LLM model types from the model name using
-// keyword heuristics, covering all seven supported types: chat, embedding,
-// rerank, asr, tts, ocr, and vision (always combined with chat).
-func InferModelTypes(modelName string) []string {
-	lower := strings.ToLower(modelName)
-
-	if containsHint(lower, rerankHints) {
-		return []string{"rerank"}
-	}
-	if containsHint(lower, embeddingHints) {
-		return []string{"embedding"}
-	}
-	if containsHint(lower, asrHints) {
-		return []string{"asr"}
-	}
-	if containsHint(lower, ttsHints) {
-		return []string{"tts"}
-	}
-	if containsHint(lower, ocrHints) {
-		return []string{"ocr"}
-	}
-
-	types := []string{"chat"}
-	if containsHint(lower, visionHints) {
-		types = append(types, "vision")
-	}
-	return types
 }
 
 // ttsVoiceForModel maps model names to appropriate TTS voices for
@@ -257,11 +181,10 @@ func (m *OpenAIAPICompatibleModel) AudioSpeech(ctx context.Context, modelName *s
 	reqCtx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), strings.TrimPrefix(m.baseModel.URLSuffix.TTS, "/"))
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -340,11 +263,10 @@ func (m *OpenAIAPICompatibleModel) TranscribeAudio(ctx context.Context, modelNam
 	reqCtx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), strings.TrimPrefix(m.baseModel.URLSuffix.ASR, "/"))
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -419,4 +341,8 @@ func (m *OpenAIAPICompatibleModel) TranscribeAudio(ctx context.Context, modelNam
 // for connection verification.
 func (m *OpenAIAPICompatibleModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s ASR streaming not implemented", m.Name())
+}
+
+func (m *OpenAIAPICompatibleModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", m.Name())
 }

@@ -5,8 +5,15 @@ import {
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
-import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
+import {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from './button';
 import { SearchInput } from './input';
@@ -23,9 +30,14 @@ export type TreeNodeType = {
 type AsyncTreeSelectProps = {
   treeData: TreeNodeType[];
   value?: TreeId;
+  // Cleared is reported as '' (same convention as SelectWithSearch), never
+  // undefined — RHF falls back to defaultValues when a field gets undefined.
   onChange?(value: TreeId): void;
   loadData?(node: TreeNodeType): Promise<any>;
   canSelect?(node: TreeNodeType): boolean;
+  defaultExpandRoot?: boolean;
+  // When false, hides the clear button and disables re-click deselection.
+  allowClear?: boolean;
 };
 
 function getNodeText(node: ReactNode): string {
@@ -41,17 +53,22 @@ export function AsyncTreeSelect({
   loadData,
   onChange,
   canSelect,
+  defaultExpandRoot = false,
+  allowClear = true,
 }: AsyncTreeSelectProps) {
   const [open, setOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
   const { t } = useTranslation();
 
   const [expandedKeys, setExpandedKeys] = useState<TreeId[]>([]);
+  const rootExpansionInitialized = useRef(false);
   const [loadingId, setLoadingId] = useState<TreeId>('');
 
   const selectedTitle = useMemo(() => {
     return treeData.find((x) => x.id === value)?.title;
   }, [treeData, value]);
+
+  const hasSelection = value !== undefined && value !== '';
 
   const visibleNodeIds = useMemo(() => {
     const trimmed = searchText.trim().toLowerCase();
@@ -138,11 +155,24 @@ export function AsyncTreeSelect({
         await toggleNode(node);
         return;
       }
-      onChange?.(node.id);
+      // Clicking the selected node again clears the selection.
+      if (value !== node.id) {
+        onChange?.(node.id);
+      } else if (allowClear) {
+        onChange?.('');
+      }
       setOpen(false);
       setSearchText('');
     },
-    [canSelect, onChange, toggleNode],
+    [allowClear, canSelect, onChange, toggleNode, value],
+  );
+
+  const handleClear = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      onChange?.('');
+    },
+    [onChange],
   );
 
   const handleArrowClick = useCallback(
@@ -226,17 +256,38 @@ export function AsyncTreeSelect({
   useEffect(() => {
     if (isEmpty(treeData)) {
       loadData?.({ id: '', parentId: '', title: '' });
+    } else if (defaultExpandRoot && !rootExpansionInitialized.current) {
+      rootExpansionInitialized.current = true;
+      setExpandedKeys(
+        treeData
+          .filter((node) =>
+            treeData.every((parent) => node.parentId !== parent.id),
+          )
+          .map((node) => node.id),
+      );
     }
-  }, [treeData, loadData]);
+  }, [treeData, loadData, defaultExpandRoot]);
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <div className="flex justify-between border px-2 py-1.5 rounded-md gap-2 items-center w-full">
+        <div className="flex justify-between border px-2 py-1.5 rounded-md gap-2 items-center w-full break-all">
           {selectedTitle || (
             <span className="text-slate-400">{t('common.pleaseSelect')}</span>
           )}
-          <ChevronDown className="size-5" />
+          <span className="flex items-center gap-1">
+            {allowClear && hasSelection && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="size-5"
+                onClick={handleClear}
+              >
+                <X />
+              </Button>
+            )}
+            <ChevronDown className="size-5" />
+          </span>
         </div>
       </PopoverTrigger>
       <PopoverContent className="p-1 min-w-[var(--radix-popover-trigger-width)]">

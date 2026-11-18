@@ -31,9 +31,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
@@ -66,7 +68,7 @@ func TestBuildChatbotPipelineMessages_DropsLeadingAssistantAndSystem(t *testing.
 		{"role": "assistant", "content": "Hello, how can I help?", "created_at": 1},
 		{"role": "system", "content": "hidden", "created_at": 2},
 		{"role": "user", "content": "What is Go?", "created_at": 3},
-		{"role": "assistant", "content": "Go is a compiled language.", "created_at": 4},
+		{"role": "assistant", "content": "Go is a compiled language.", "created_at": 4, "reference": map[string]any{"chunks": []any{"large chunk"}}, "prompt": "system", "usage": map[string]any{"total_tokens": 10}, "elapsed_ms": 100},
 	}
 	raw, err := json.Marshal(turns)
 	if err != nil {
@@ -81,6 +83,11 @@ func TestBuildChatbotPipelineMessages_DropsLeadingAssistantAndSystem(t *testing.
 	}
 	if msgs[1]["role"] != "assistant" || msgs[1]["content"] != "Go is a compiled language." {
 		t.Errorf("turn 1: %+v", msgs[1])
+	}
+	for _, key := range []string{"prompt", "usage", "elapsed_ms", "reference"} {
+		if _, ok := msgs[1][key]; ok {
+			t.Fatalf("LLM history contains %s: %v", key, msgs[1])
+		}
 	}
 	if msgs[2]["role"] != "user" || msgs[2]["content"] != "and Rust?" || msgs[2]["id"] != "msg-2" {
 		t.Errorf("turn 2: %+v", msgs[2])
@@ -158,7 +165,7 @@ func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
 		Title:          sptr("Victim Agent"),
 		CanvasCategory: "agent_canvas",
 	}).Error; err != nil {
-		t.Fatalf("seed victim canvas: %v", err)
+		t.Fatalf("seed victim agent: %v", err)
 	}
 
 	// Seed tenant-B (the attacker's tenant).
@@ -171,11 +178,11 @@ func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
 		t.Fatalf("seed tenant-B: %v", err)
 	}
 
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 
 	// Attacker (tenant-B) asks for victim (tenant-A's canvas).
-	title, _, _, _, _, code, err := svc.AgentbotInputs(context.Background(),
-		"tenant-B", "agent-victim")
+	title, _, _, _, _, code, err := svc.AgentbotInputs(serviceTestContext(t, "tenant-B", "tenant-B"),
+		"agent-victim")
 	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
 		t.Errorf("cross-tenant: want ErrUserCanvasNotFound, got %v", err)
 	}
@@ -213,6 +220,7 @@ func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
 	if err := db.Create(&entity.UserCanvas{
 		ID:             "agent-1",
 		UserID:         "owner-1",
+		TenantID:       sptr("tenant-1"),
 		Title:          &title,
 		Avatar:         &avatar,
 		CanvasCategory: "agent_canvas",
@@ -233,12 +241,12 @@ func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
 			},
 		},
 	}).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 	gotTitle, gotAvatar, prologue, mode, inputs, code, err := svc.AgentbotInputs(
-		context.Background(), "owner-1", "agent-1")
+		serviceTestContext(t, "owner-1", "tenant-1"), "agent-1")
 	if err != nil {
 		t.Fatalf("AgentbotInputs: %v", err)
 	}
@@ -357,6 +365,23 @@ func TestWriteChatbotRunEvent_ErrorCarriesSessionAlias(t *testing.T) {
 	}
 }
 
+func TestWriteChatbotRunEvent_RedactsInternalError(t *testing.T) {
+	rec := &recordingResponseWriter{header: http.Header{}}
+	if err := WriteChatbotRunEvent(rec, canvas.RunEvent{
+		Type: "error",
+		Data: `{"message":"dial mysql.internal:3306 password=secret","kind":"internal"}`,
+	}); err != nil {
+		t.Fatalf("WriteChatbotRunEvent: %v", err)
+	}
+	body := rec.body.String()
+	if !strings.Contains(body, canvas.InternalRunErrorMessage) {
+		t.Errorf("body missing safe internal error message: %s", body)
+	}
+	if strings.Contains(body, "mysql.internal") || strings.Contains(body, "password=secret") {
+		t.Fatalf("body leaked internal error details: %s", body)
+	}
+}
+
 // TestBotService_ChatbotCompletion_NewSessionSkipsLLM locks in the
 // share-page handshake behaviour: the front-end opens a shared chat
 // with an empty question and no session_id only to obtain a session
@@ -390,9 +415,9 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 
 	// llmService is nil — any attempt to reach the LLM path would
 	// fail loudly, so a successful run proves the LLM was skipped.
-	svc := NewBotService(nil, nil)
-	frames, code, err := svc.ChatbotCompletion(context.Background(),
-		"tenant-1", "dlg-1", ChatbotCompletionRequest{Question: ""})
+	svc := NewBotService(nil)
+	frames, code, err := svc.ChatbotCompletion(serviceTestContext(t, "tenant-1", "tenant-1"),
+		"dlg-1", ChatbotCompletionRequest{Question: ""})
 	if err != nil {
 		t.Fatalf("ChatbotCompletion: %v", err)
 	}
@@ -423,7 +448,7 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 	// The persisted session must hold exactly the prologue turn —
 	// no empty user message may be written.
 	ctx := t.Context()
-	row, derr := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, got[0].SessionID, "dlg-1")
+	row, derr := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, got[0].SessionID, "dlg-1", true)
 	if derr != nil || row == nil {
 		t.Fatalf("session not persisted: row=%v err=%v", row, derr)
 	}
@@ -492,16 +517,26 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 		t.Fatalf("seed session: %v", err)
 	}
 
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 	ref := map[string]any{
 		"chunks":   []any{map[string]any{"chunk_id": "c1"}},
 		"doc_aggs": []any{},
 	}
-	if err := svc.persistChatbotTurn(ctx, sess, "What is Go?", "A language.", "msg-p1", ref); err != nil {
+	if err := svc.persistChatbotQuestion(ctx, sess, "What is Go?", "msg-p1", 2); err != nil {
+		t.Fatalf("persist question: %v", err)
+	}
+	questionRow, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p1", "dlg-p1", true, dao.ConversationHistoryOptions{IncludeReference: true})
+	if err != nil || questionRow == nil {
+		t.Fatalf("read pending question: %v", err)
+	}
+	if turns := parseChatbotTurns(questionRow.Message); len(turns) != 2 || turns[1]["role"] != "user" || turns[1]["created_at"] != float64(2) {
+		t.Fatalf("question must be persisted before completion: %+v", turns)
+	}
+	if err := svc.persistChatbotTurn(ctx, sess, "What is Go?", "A language.", "msg-p1", ref, 3); err != nil {
 		t.Fatalf("persistChatbotTurn: %v", err)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p1", "dlg-p1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p1", "dlg-p1", true, dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -517,10 +552,15 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 	if turns[2]["role"] != "assistant" || turns[2]["content"] != "A language." || turns[2]["id"] != "msg-p1" {
 		t.Errorf("assistant turn: %+v", turns[2])
 	}
+	if turns[1]["created_at"] != float64(2) || turns[2]["created_at"] != float64(3) {
+		t.Fatalf("question and answer timestamps must remain separate: %+v", turns)
+	}
 
 	var refs []map[string]any
-	if err := json.Unmarshal(row.Reference, &refs); err != nil {
-		t.Fatalf("reference decode: %v", err)
+	for _, message := range parseChatbotTurns(row.Message) {
+		if reference, ok := message["reference"].(map[string]any); ok {
+			refs = append(refs, reference)
+		}
 	}
 	if len(refs) != 1 {
 		t.Fatalf("want 1 reference entry, got %d: %+v", len(refs), refs)
@@ -533,7 +573,7 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 
 // TestPersistChatbotTurn_NilReferenceDefaultsToEmpty ensures a turn
 // without retrieval results still records an empty reference object,
-// keeping the reference list index-aligned with the turn pairs.
+// attached directly to its assistant message.
 func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -544,18 +584,23 @@ func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
 		t.Fatalf("seed session: %v", err)
 	}
 
-	svc := NewBotService(nil, nil)
-	if err := svc.persistChatbotTurn(ctx, sess, "q", "a", "msg-p2", nil); err != nil {
+	svc := NewBotService(nil)
+	if err := svc.persistChatbotQuestion(ctx, sess, "q", "msg-p2", 2); err != nil {
+		t.Fatalf("persist question: %v", err)
+	}
+	if err := svc.persistChatbotTurn(ctx, sess, "q", "a", "msg-p2", nil, 3); err != nil {
 		t.Fatalf("persistChatbotTurn: %v", err)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p2", "dlg-p1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p2", "dlg-p1", true, dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
 	var refs []map[string]any
-	if err := json.Unmarshal(row.Reference, &refs); err != nil {
-		t.Fatalf("reference decode: %v", err)
+	for _, message := range parseChatbotTurns(row.Message) {
+		if reference, ok := message["reference"].(map[string]any); ok {
+			refs = append(refs, reference)
+		}
 	}
 	if len(refs) != 1 {
 		t.Fatalf("want 1 reference entry, got %+v", refs)
@@ -590,7 +635,7 @@ func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
 		t.Fatalf("seed session: %v", err)
 	}
 
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 	// Both callers hold the same stale snapshot loaded before their
 	// streams started — exactly the race the lock fixes.
 	var wg sync.WaitGroup
@@ -598,14 +643,18 @@ func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
 		wg.Add(1)
 		go func(i int, q, a string) {
 			defer wg.Done()
-			if err := svc.persistChatbotTurn(ctx, sess, q, a, fmt.Sprintf("msg-p3-%d", i), nil); err != nil {
+			if err := svc.persistChatbotQuestion(ctx, sess, q, fmt.Sprintf("msg-p3-%d", i), 2); err != nil {
+				t.Errorf("persist question %d: %v", i, err)
+				return
+			}
+			if err := svc.persistChatbotTurn(ctx, sess, q, a, fmt.Sprintf("msg-p3-%d", i), nil, 3); err != nil {
 				t.Errorf("persistChatbotTurn %d: %v", i, err)
 			}
 		}(i, turn[0], turn[1])
 	}
 	wg.Wait()
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p3", "dlg-p1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p3", "dlg-p1", true, dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -613,8 +662,10 @@ func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
 		t.Fatalf("want both exchanges persisted (4 turns), got %d: %+v", len(turns), turns)
 	}
 	var refs []map[string]any
-	if err = json.Unmarshal(row.Reference, &refs); err != nil {
-		t.Fatalf("reference decode: %v", err)
+	for _, message := range parseChatbotTurns(row.Message) {
+		if reference, ok := message["reference"].(map[string]any); ok {
+			refs = append(refs, reference)
+		}
 	}
 	if len(refs) != 2 {
 		t.Fatalf("want 2 reference entries, got %d: %+v", len(refs), refs)
@@ -636,3 +687,336 @@ func (r *recordingResponseWriter) Write(b []byte) (int, error) {
 	return r.body.Write(b)
 }
 func (r *recordingResponseWriter) WriteHeader(_ int) {}
+
+// seedStreamTurnSession creates a persisted api_4_conversation row the
+// streamChatbotTurn tests can append to.
+func seedStreamTurnSession(t *testing.T, id, question, messageID string) {
+	t.Helper()
+	raw, err := json.Marshal([]map[string]any{{"role": "user", "content": question, "id": messageID, "created_at": 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := &entity.API4Conversation{ID: id, DialogID: "dlg-s1", UserID: "tenant-1", Message: raw}
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), dao.DB, sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+}
+
+// TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText pins
+// the python iframe wire contract for the final SSE frame and the
+// persisted turn:
+//
+//   - The final frame carries the retrieval reference but an empty
+//     `answer` whenever text was already streamed as deltas (python
+//     async_chat sets final["answer"] = "").
+//   - The persisted assistant turn is the raw streamed text, NOT the
+//     decorated final answer. Persisting the decorated text leaks the
+//     server-inserted [ID:n] markers into the next turn's prompt
+//     history; models that imitate the history format then emit
+//     citation markers on turns whose retrieval returned nothing, and
+//     the widget renders those as "Reference unavailable" icons.
+func TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-s1", "q1", "msg-s1")
+	svc := NewBotService(nil)
+
+	ref := map[string]any{
+		"chunks":   []any{map[string]any{"chunk_id": "c1"}, map[string]any{"chunk_id": "c2"}},
+		"doc_aggs": []any{},
+	}
+	results := make(chan AsyncChatResult, 5)
+	results <- AsyncChatResult{Answer: "答案", Reference: map[string]any{}}
+	results <- AsyncChatResult{Answer: "第一段", Reference: map[string]any{}}
+	// Decorated final answer with server-inserted markers — must not
+	// reach the wire (deltas exist) nor the persisted history.
+	results <- AsyncChatResult{Answer: "答案第一段 [ID:0][ID:1]", Reference: ref, Final: true}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-s1", DialogID: "dlg-s1", UserID: "tenant-1"}
+	var frames []ChatbotSSEFrame
+	for f := range svc.streamChatbotTurn(t.Context(), sess, "q1", "msg-s1", results) {
+		frames = append(frames, f)
+	}
+
+	if len(frames) != 4 || !frames[3].Done {
+		t.Fatalf("want 3 frames + done, got %+v", frames)
+	}
+	final := frames[2]
+	if !final.Final {
+		t.Fatalf("frame 2 must be final: %+v", final)
+	}
+	if final.Data != "" {
+		t.Errorf("final frame answer = %q, want empty (deltas already streamed)", final.Data)
+	}
+	if !reflect.DeepEqual(final.Reference, ref) {
+		t.Errorf("final frame reference = %+v, want the retrieval reference", final.Reference)
+	}
+	if frames[0].Data != "答案" || frames[1].Data != "第一段" {
+		t.Errorf("delta frames must forward their own delta: %+v %+v", frames[0], frames[1])
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s1", "dlg-s1", true)
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	turns := parseChatbotTurns(row.Message)
+	if len(turns) != 2 || turns[1]["role"] != "assistant" {
+		t.Fatalf("want user+assistant pair, got %+v", turns)
+	}
+	if got := turns[1]["content"]; got != "答案第一段" {
+		t.Errorf("persisted assistant content = %v, want raw streamed text without server-inserted markers", got)
+	}
+}
+
+// TestStreamChatbotTurn_ThinkMarkersPersistedAsTags ensures the raw
+// stream text keeps the <think>/</think> tags the marker frames stand
+// for, matching python structure_answer's accumulation.
+func TestStreamChatbotTurn_ThinkMarkersPersistedAsTags(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-s2", "q2", "msg-s2")
+	svc := NewBotService(nil)
+
+	results := make(chan AsyncChatResult, 5)
+	results <- AsyncChatResult{StartToThink: true}
+	results <- AsyncChatResult{Answer: "思考中", Reference: map[string]any{}}
+	results <- AsyncChatResult{EndToThink: true}
+	results <- AsyncChatResult{Answer: "结论", Reference: map[string]any{}}
+	results <- AsyncChatResult{Answer: "<think>思考中</think>结论", Final: true}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-s2", DialogID: "dlg-s1", UserID: "tenant-1"}
+	for range svc.streamChatbotTurn(t.Context(), sess, "q2", "msg-s2", results) {
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s2", "dlg-s1", true)
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	turns := parseChatbotTurns(row.Message)
+	if len(turns) != 2 {
+		t.Fatalf("want user+assistant pair, got %+v", turns)
+	}
+	if got := turns[1]["content"]; got != "<think>思考中</think>结论" {
+		t.Errorf("persisted assistant content = %v, want <think>思考中</think>结论", got)
+	}
+}
+
+// TestStreamChatbotTurn_SingleShotFinalKeepsText covers finals that
+// arrive without any streamed delta (e.g. the structured-SQL path):
+// the final frame is the only carrier of the text and must keep it,
+// and it is what gets persisted.
+func TestStreamChatbotTurn_SingleShotFinalKeepsText(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-s3", "q3", "msg-s3")
+	svc := NewBotService(nil)
+
+	ref := map[string]any{"chunks": []any{}, "doc_aggs": []any{}}
+	results := make(chan AsyncChatResult, 1)
+	results <- AsyncChatResult{Answer: "sql result", Reference: ref, Final: true}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-s3", DialogID: "dlg-s1", UserID: "tenant-1"}
+	var frames []ChatbotSSEFrame
+	for f := range svc.streamChatbotTurn(t.Context(), sess, "q3", "msg-s3", results) {
+		frames = append(frames, f)
+	}
+	if len(frames) != 2 || !frames[1].Done {
+		t.Fatalf("want final + done, got %+v", frames)
+	}
+	if frames[0].Data != "sql result" {
+		t.Errorf("single-shot final must carry the text, got %q", frames[0].Data)
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s3", "dlg-s1", true)
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	turns := parseChatbotTurns(row.Message)
+	if len(turns) != 2 || turns[1]["content"] != "sql result" {
+		t.Errorf("persisted turns = %+v, want assistant content 'sql result'", turns)
+	}
+}
+
+// TestStreamChatbotTurn_ErrorKeptOnWireAndNotPersisted mirrors the
+// python exception path: the error text must stay visible on the wire
+// (it was never streamed as a delta) but nothing is persisted.
+func TestStreamChatbotTurn_ErrorKeptOnWireAndNotPersisted(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-s4", "q4", "msg-s4")
+	svc := NewBotService(nil)
+
+	results := make(chan AsyncChatResult, 1)
+	results <- AsyncChatResult{Answer: "**ERROR**: boom", Final: true}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-s4", DialogID: "dlg-s1", UserID: "tenant-1"}
+	var frames []ChatbotSSEFrame
+	for f := range svc.streamChatbotTurn(t.Context(), sess, "q4", "msg-s4", results) {
+		frames = append(frames, f)
+	}
+	if len(frames) != 2 || !frames[1].Done {
+		t.Fatalf("want final + done, got %+v", frames)
+	}
+	if frames[0].Data != "**ERROR**: boom" {
+		t.Errorf("error final must carry the text, got %q", frames[0].Data)
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s4", "dlg-s1", true)
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	if turns := parseChatbotTurns(row.Message); len(turns) != 1 || turns[0]["role"] != "user" {
+		t.Errorf("error must retain only the user question, got %+v", turns)
+	}
+}
+
+// TestStreamChatbotTurn_ErrorAfterDeltasKeptOnWire covers a pipeline-level
+// failure that arrives AFTER partial deltas were already streamed
+// (chat_pipeline.go reports a mid-stream driver error as a final
+// "**ERROR**" result): the final frame must still carry the error text —
+// dropping it would leave the client with a silently truncated partial
+// answer — and nothing is persisted.
+func TestStreamChatbotTurn_ErrorAfterDeltasKeptOnWire(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-s5", "q5", "msg-s5")
+	svc := NewBotService(nil)
+
+	results := make(chan AsyncChatResult, 2)
+	results <- AsyncChatResult{Answer: "partial", Reference: map[string]any{}}
+	results <- AsyncChatResult{Answer: "**ERROR**: boom", Final: true}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-s5", DialogID: "dlg-s1", UserID: "tenant-1"}
+	var frames []ChatbotSSEFrame
+	for f := range svc.streamChatbotTurn(t.Context(), sess, "q5", "msg-s5", results) {
+		frames = append(frames, f)
+	}
+	if len(frames) != 3 || !frames[2].Done {
+		t.Fatalf("want delta + final + done, got %+v", frames)
+	}
+	if frames[0].Data != "partial" {
+		t.Errorf("delta frame = %q, want partial", frames[0].Data)
+	}
+	if !frames[1].Final || frames[1].Data != "**ERROR**: boom" {
+		t.Errorf("error final after deltas must carry the error text, got %+v", frames[1])
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s5", "dlg-s1", true)
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	if turns := parseChatbotTurns(row.Message); len(turns) != 1 || turns[0]["role"] != "user" {
+		t.Errorf("error must retain only the user question, got %+v", turns)
+	}
+}
+
+// TestStreamChatbotTurn_ReasoningFieldForwardedAsStreamText covers the
+// tool-path delivery mode: chat_pipeline.go's ChatStreamlyWithTools
+// callback routes in-think text through the Reasoning field (so the
+// OpenAI-compat SSE handler can map it to delta.reasoning_content)
+// instead of Answer deltas. Python delivers the same reasoning as
+// <think>-wrapped answer stream text (rag/llm/chat_model.py), so the
+// iframe wire and the persisted history must carry it too — dropping it
+// would leave the widget's think block empty.
+func TestStreamChatbotTurn_ReasoningFieldForwardedAsStreamText(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-s6", "q6", "msg-s6")
+	svc := NewBotService(nil)
+
+	results := make(chan AsyncChatResult, 5)
+	results <- AsyncChatResult{StartToThink: true}
+	results <- AsyncChatResult{Reasoning: "推理中", Reference: map[string]any{}}
+	results <- AsyncChatResult{EndToThink: true}
+	results <- AsyncChatResult{Answer: "结论", Reference: map[string]any{}}
+	results <- AsyncChatResult{Answer: "<think>推理中</think>结论", Final: true}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-s6", DialogID: "dlg-s1", UserID: "tenant-1"}
+	var frames []ChatbotSSEFrame
+	for f := range svc.streamChatbotTurn(t.Context(), sess, "q6", "msg-s6", results) {
+		frames = append(frames, f)
+	}
+	if len(frames) != 6 || !frames[5].Done {
+		t.Fatalf("want think + reasoning + think + delta + final + done, got %+v", frames)
+	}
+	if frames[1].Data != "推理中" {
+		t.Errorf("reasoning frame must forward the reasoning text, got %+v", frames[1])
+	}
+	if frames[4].Final && frames[4].Data != "" {
+		t.Errorf("final frame answer = %q, want empty (deltas already streamed)", frames[4].Data)
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s6", "dlg-s1", true)
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	turns := parseChatbotTurns(row.Message)
+	if len(turns) != 2 {
+		t.Fatalf("want user+assistant pair, got %+v", turns)
+	}
+	if got := turns[1]["content"]; got != "<think>推理中</think>结论" {
+		t.Errorf("persisted assistant content = %v, want <think>推理中</think>结论", got)
+	}
+}
+
+func TestStreamChatbotTurn_ContextCancellationUnblocksFullChannel(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-cancel-leak", "q_leak", "msg-leak")
+	svc := NewBotService(nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	results := make(chan AsyncChatResult, 30)
+	for i := 0; i < 30; i++ {
+		results <- AsyncChatResult{Answer: fmt.Sprintf("chunk-%d", i)}
+	}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-cancel-leak", DialogID: "dlg-s1", UserID: "tenant-1"}
+
+	// Cancel context to simulate client disconnect while channel buffer is full
+	cancel()
+
+	frames := svc.streamChatbotTurn(ctx, sess, "q_leak", "msg-leak", results)
+
+	// Do NOT drain concurrently. streamChatbotTurn should detect ctx.Done()
+	// and close frames promptly.
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-frames:
+			if !ok {
+				goto verified
+			}
+		case <-timeout:
+			t.Fatal("streamChatbotTurn leaked: did not terminate when context was cancelled")
+		}
+	}
+
+verified:
+	// The user question is preserved in history; failure/cancellation leaves it intact.
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(context.Background(), dao.DB, "sess-cancel-leak", "dlg-s1", true)
+	if err != nil {
+		t.Fatalf("re-read session: %v", err)
+	}
+	if row != nil {
+		turns := parseChatbotTurns(row.Message)
+		if len(turns) != 1 || turns[0]["id"] != "msg-leak" {
+			t.Fatalf("expected user turn to be preserved in history, got: %+v", turns)
+		}
+	}
+}

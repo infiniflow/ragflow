@@ -36,7 +36,7 @@ func TestToolWrapperChain_NoMiddleware(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestToolWrapperChain_MiddlewareOrder(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw1, mw2)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestNewTimeoutToolMiddleware_NoTimeout(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestNewTimeoutToolMiddleware_ToolExceedsTimeout(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err == nil {
 		t.Error("expected timeout error")
 	}
@@ -137,7 +137,7 @@ func TestNewTimeoutToolMiddleware_PerInvocationTimeout(t *testing.T) {
 	// Per-invocation timeout (shorter) should be used
 	ictx := &ToolInvocationContext{Timeout: 100 * time.Millisecond}
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), ictx)
+	result, err := chained(t.Context(), ictx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestNewRetryToolMiddleware_SuccessFirstTry(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestNewRetryToolMiddleware_RetriesOnFailure(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestNewRetryToolMiddleware_Exhausted(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err == nil {
 		t.Fatal("expected retry exhausted error")
 	}
@@ -217,7 +217,7 @@ func TestNewRetryToolMiddleware_NonRetryableError(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -242,7 +242,7 @@ func TestNewFallbackToolMiddleware_PrimarySucceeds(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestNewFallbackToolMiddleware_FallbackOnFailure(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestNewFallbackToolMiddleware_NoFallbackConfigured(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err == nil {
 		t.Fatal("expected error when primary fails with no fallback")
 	}
@@ -312,7 +312,7 @@ func TestToolWrapperChain_TimeoutThenRetry(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, timeoutMw, retryMw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestToolToInvokeFn(t *testing.T) {
 		Arguments: &schema.ToolArgument{Arguments: `"hello"`},
 	}
 
-	result, err := invokeFn(context.Background(), ictx)
+	result, err := invokeFn(t.Context(), ictx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestEnhancedToolToInvokeFn(t *testing.T) {
 		},
 	}
 
-	result, err := invokeFn(context.Background(), ictx)
+	result, err := invokeFn(t.Context(), ictx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -374,7 +374,7 @@ func TestAutoApprovalMiddleware(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -428,4 +428,58 @@ func (t *simpleEnhancedTestTool) EnhancedInvoke(ctx context.Context, args *schem
 func (t *simpleEnhancedTestTool) EnhancedStream(ctx context.Context, args *schema.ToolArgument, opts ...ToolOption) (*schema.StreamReader[*schema.ToolResult], error) {
 	r := &schema.ToolResult{Name: args.Name, Content: "enhanced stream", ToolCallID: args.CallID}
 	return schema.StreamReaderFromArray([]*schema.ToolResult{r}), nil
+}
+
+// TestNewRetryToolMiddleware_BackoffCapped is the regression test for the
+// unbounded-backoff bug: the retry delay used to grow as backoff *= 2 with no
+// ceiling, so a large MaxAttempts produced minute/hour-scale gaps. The fix
+// recomputes the delay from common.ExponentialBackoff, which is capped at 1
+// minute. With a tiny base and MaxAttempts=100 the test asserts (a) every
+// observed gap stays <= 1 minute and the final gap is exactly capped, and (b)
+// the exact doubling sequence (base, 2*base, 4*base, 8*base) is preserved for
+// the first attempts so the fix is behavior-identical except for the cap.
+func TestNewRetryToolMiddleware_BackoffCapped(t *testing.T) {
+	const base = time.Millisecond
+	// Capture the delays passed to the sleep seam without actually sleeping.
+	var gaps []time.Duration
+	orig := toolRetrySleep
+	toolRetrySleep = func(_ context.Context, d time.Duration) { gaps = append(gaps, d) }
+	defer func() { toolRetrySleep = orig }()
+
+	const maxAttempts = 100
+	mw := NewRetryToolMiddleware(&ToolRetryConfig{
+		MaxAttempts: maxAttempts,
+		Backoff:     base,
+		IsRetryable: func(err error) bool { return true },
+	})
+	fn := func(ctx context.Context, ictx *ToolInvocationContext) (*schema.ToolResult, error) {
+		return nil, errors.New("always fails")
+	}
+
+	chained := ToolWrapperChain(fn, mw)
+	if _, err := chained(t.Context(), &ToolInvocationContext{}); err == nil {
+		t.Fatal("expected exhausted error")
+	}
+
+	// The loop sleeps once per attempt in [0, maxAttempts-1], so maxAttempts gaps.
+	if len(gaps) != maxAttempts {
+		t.Fatalf("gaps = %d, want %d", len(gaps), maxAttempts)
+	}
+	// Exact doubling for the first few attempts.
+	want := []time.Duration{base, 2 * base, 4 * base, 8 * base}
+	for i := range want {
+		if gaps[i] != want[i] {
+			t.Errorf("gap[%d] = %v, want %v (doubling broken)", i, gaps[i], want[i])
+		}
+	}
+	// No gap may exceed 1 minute even at attempt 100.
+	for i, g := range gaps {
+		if g > time.Minute {
+			t.Errorf("gap[%d] = %v > 1min (unbounded backoff bug)", i, g)
+		}
+	}
+	// The cap must actually engage: the last (largest) gap is exactly 1 minute.
+	if last := gaps[len(gaps)-1]; last != time.Minute {
+		t.Errorf("last gap = %v, want 1min (cap not engaged)", last)
+	}
 }

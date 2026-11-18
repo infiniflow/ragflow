@@ -18,8 +18,10 @@ package service
 
 import (
 	"context"
-	"ragflow/internal/tokenizer"
 	"strings"
+
+	"ragflow/internal/common"
+	"ragflow/internal/tokenizer"
 )
 
 const thinkOpen = "<think>"
@@ -369,13 +371,10 @@ func ExtractVisibleAnswer(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	if !strings.Contains(raw, thinkClose) {
-		return stripThinkTags(raw)
-	}
-
-	lastClose := strings.LastIndex(raw, thinkClose)
-	answer := raw[lastClose+len(thinkClose):]
-	return stripThinkTags(answer)
+	// Cut through the last </think> (common.StripThinkTrailing), then strip
+	// residual stray tags. With no </think> the cut is a no-op and all tags
+	// are stripped — same behaviour as before.
+	return stripThinkTags(common.StripThinkTrailing(raw))
 }
 
 // BufferAnswerDelta processes an answer delta through the think-state lifecycle.

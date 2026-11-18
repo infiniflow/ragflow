@@ -1,8 +1,26 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { ChatSearchParams } from '@/constants/chat';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import {
+  IAgenticRagSettings,
   IClientConversation,
   IConversation,
   IDialog,
@@ -17,10 +35,11 @@ import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-
 import chatService from '@/services/next-chat-service';
 import api from '@/utils/api';
 import { buildMessageListWithUuid } from '@/utils/chat';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { has } from 'lodash';
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
 import {
@@ -28,6 +47,7 @@ import {
   useHandleSearchChange,
 } from './logic-hooks';
 import { useHandleSearchStrChange } from './logic-hooks/use-change-search';
+import { useSessionList } from './use-session-list';
 
 export const enum ChatApiAction {
   FetchChatList = 'fetchChatList',
@@ -51,6 +71,17 @@ export const enum ChatApiAction {
   CreateSharedConversation = 'createSharedConversation',
 }
 
+export const AgenticRagKeys = {
+  all: ['agenticRag'] as const,
+  config: (chatId?: string) =>
+    [...AgenticRagKeys.all, 'config', chatId] as const,
+};
+
+export const ChatSessionKeys = {
+  all: [ChatApiAction.FetchSessionList] as const,
+  list: (chatId?: string) => [...ChatSessionKeys.all, chatId] as const,
+};
+
 export const useGetChatSearchParams = () => {
   const [currentQueryParameters] = useSearchParams();
 
@@ -63,10 +94,12 @@ export const useGetChatSearchParams = () => {
 };
 
 export const useFetchChatList = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
 
   const {
     data,
@@ -115,10 +148,12 @@ export const useFetchChatList = () => {
     loading,
     refetch,
     searchString,
+    setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total },
     setPagination,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -139,6 +174,7 @@ export const useDeleteChat = () => {
         queryClient.invalidateQueries({
           queryKey: [ChatApiAction.FetchChatList],
         });
+        markListItemsDeleted(ListDeletionKey.ChatList);
         message.success(t('message.deleted'));
       }
       return data.code;
@@ -201,6 +237,7 @@ export const useUpdateChat = () => {
           queryKey: [ChatApiAction.FetchChatList],
         });
         queryClient.invalidateQueries({ queryKey: [ChatApiAction.FetchChat] });
+        queryClient.invalidateQueries({ queryKey: AgenticRagKeys.all });
         message.success(t('message.modified'));
       }
       return data?.code;
@@ -237,6 +274,7 @@ export const usePatchChat = () => {
           queryKey: [ChatApiAction.FetchChatList],
         });
         queryClient.invalidateQueries({ queryKey: [ChatApiAction.FetchChat] });
+        queryClient.invalidateQueries({ queryKey: AgenticRagKeys.all });
         message.success(t('message.modified'));
       }
       return data?.code;
@@ -268,6 +306,21 @@ export const useFetchChat = () => {
   return { data, loading, refetch };
 };
 
+export const useFetchAgenticRagConfig = (chatId?: string) => {
+  const { data, isFetching: loading } = useQuery<IAgenticRagSettings>({
+    queryKey: AgenticRagKeys.config(chatId),
+    enabled: !!chatId,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data } = await chatService.getAgenticRagConfig(chatId);
+      return data?.data;
+    },
+  });
+
+  return { data, loading };
+};
+
 //#region Session
 
 export const useFetchSessionList = () => {
@@ -276,34 +329,31 @@ export const useFetchSessionList = () => {
   const { searchString, handleInputChange, setSearchString } =
     useHandleSearchStrChange();
 
-  const {
-    data,
-    isFetching: loading,
-    refetch,
-  } = useQuery<IConversation[]>({
-    queryKey: [ChatApiAction.FetchSessionList, id],
-    initialData: [],
-    gcTime: 0,
-    refetchOnWindowFocus: false,
+  const result = useSessionList<IConversation>({
+    queryKey: ChatSessionKeys.list(id),
     enabled: !!id,
-    select(data) {
-      return searchString
-        ? data.filter((x) => x.name.includes(searchString))
-        : data;
-    },
-    queryFn: async () => {
+    fetchPage: async (params) => {
       const { data } = await chatService.listSessions(
-        { url: api.listSessions(id!) },
+        { chatId: id, params: { ...params, include_history: false } },
         true,
       );
-      return data?.data;
+      return { items: data?.data ?? [], total: data?.total ?? 0 };
     },
   });
 
+  const keyword = searchString.trim();
+  const data = useMemo(
+    () =>
+      keyword
+        ? result.data.filter((session) => session.name.includes(keyword))
+        : result.data,
+    [result.data, keyword],
+  );
+
   return {
+    ...result,
     data,
-    loading,
-    refetch,
+    total: keyword ? data.length : result.total,
     searchString,
     handleInputChange,
     setSearchString,
@@ -320,7 +370,10 @@ export function useFetchSessionManually() {
     mutationKey: [ChatApiAction.FetchSessionManually],
     mutationFn: async (sessionId) => {
       const { data } = await chatService.getSession(
-        { url: api.getSession(chatId!, sessionId) },
+        {
+          url: api.getSession(chatId!, sessionId),
+          params: { include_reference: true, include_prompt: true },
+        },
         true,
       );
 
@@ -350,7 +403,7 @@ export const useCreateSession = () => {
       );
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [ChatApiAction.FetchSessionList],
+          queryKey: ChatSessionKeys.all,
         });
       }
       return data;
@@ -384,7 +437,7 @@ export const useUpdateSession = () => {
       );
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [ChatApiAction.FetchSessionList],
+          queryKey: ChatSessionKeys.all,
         });
         message.success(t(`message.modified`));
       }
@@ -412,7 +465,7 @@ export const useRemoveSessions = () => {
       );
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [ChatApiAction.FetchSessionList],
+          queryKey: ChatSessionKeys.all,
         });
       }
       return data.code;
@@ -559,7 +612,7 @@ export const useFetchExternalChatInfo = () => {
     queryFn: async () => {
       const { data } = await chatService.fetchExternalChatInfo(id!);
 
-      return data?.data;
+      return data?.data ?? ({} as IExternalChatInfo);
     },
   });
 

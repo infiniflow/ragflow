@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/utility"
 	"sync"
 	"time"
 
@@ -29,15 +28,13 @@ import (
 
 // Variables holds all runtime variables that can be changed during system operation
 // Unlike Config, these can be modified at runtime
-type Variables struct {
-	//SecretKey string `json:"secret_key"`
-}
+type Variables struct{}
 
 // VariableStore interface for persistent storage (e.g., Redis)
 type VariableStore interface {
 	Get(ctx context.Context, key string) (string, error)
 	Set(ctx context.Context, key string, value string, exp time.Duration) bool
-	SetNX(ctx context.Context, key string, value string, exp time.Duration) bool
+	SetNX(ctx context.Context, key string, value string, exp time.Duration) (bool, error)
 }
 
 var (
@@ -62,32 +59,10 @@ func InitVariables(store VariableStore) error {
 	variablesOnce.Do(func() {
 		globalVariables = &Variables{}
 
-		//// secret key
-		//generatedKey, err := utility.GenerateSecretKey()
-		//if err != nil {
-		//	initErr = fmt.Errorf("failed to generate secret key: %w", err)
-		//}
-		//
-		//// Initialize SecretKey
-		//secretKey, err := GetOrCreateKey(store, SecretKeyRedisKey, generatedKey)
-		//if err != nil {
-		//	initErr = fmt.Errorf("failed to initialize secret key: %w", err)
-		//} else {
-		//	globalVariables.SecretKey = secretKey
-		//	common.Info("Secret key initialized from store")
-		//}
-
 		common.Info("Server variables initialized successfully")
 	})
 	return initErr
 }
-
-// GetVariables returns the global variables instance
-//func GetVariables() *Variables {
-//	variablesMu.RLock()
-//	defer variablesMu.RUnlock()
-//	return globalVariables
-//}
 
 // GetSecretKey returns the current secret key
 func GetSecretKey(ctx context.Context, store VariableStore) (string, error) {
@@ -95,7 +70,7 @@ func GetSecretKey(ctx context.Context, store VariableStore) (string, error) {
 		return globalConfig.GetSecretKey(), nil
 	}
 
-	generatedKey, err := utility.GenerateSecretKey()
+	generatedKey, err := common.GenerateSecretKey()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate secret key: %w", err)
 	}
@@ -106,16 +81,6 @@ func GetSecretKey(ctx context.Context, store VariableStore) (string, error) {
 	}
 	return secretKey, nil
 }
-
-// SetSecretKey updates the secret key at runtime
-//func SetSecretKey(key string) {
-//	variablesMu.Lock()
-//	defer variablesMu.Unlock()
-//	if globalVariables != nil {
-//		globalVariables.SecretKey = key
-//		common.Info("Secret key updated at runtime")
-//	}
-//}
 
 // GetOrCreateKey gets a key from store, or creates it if not exists
 // - If key exists in store, returns the stored value
@@ -145,7 +110,11 @@ func GetOrCreateKey(ctx context.Context, store VariableStore, key string, newVal
 	common.Info("Generating new value for key", zap.String("key", key))
 
 	// Try to set with NX (only if not exists) - ensures atomicity
-	if store.SetNX(ctx, key, newValue, SecretKeyTTL) {
+	created, err := store.SetNX(ctx, key, newValue, SecretKeyTTL)
+	if err != nil {
+		return "", fmt.Errorf("failed to create key %q: %w", key, err)
+	}
+	if created {
 		common.Info("New value stored successfully", zap.String("key", key))
 		return newValue, nil
 	}
@@ -187,7 +156,6 @@ func RefreshVariables(ctx context.Context, store VariableStore) error {
 		return err
 	}
 	if secretKey != "" {
-		//globalVariables.SecretKey = secretKey
 		common.Info("Secret key refreshed from store")
 	}
 
@@ -235,28 +203,6 @@ func (w *VariableWatcher) Stop() {
 	close(w.stopChan)
 	w.wg.Wait()
 	common.Info("Variable watcher stopped")
-}
-
-// SaveToStorage saves current variables to persistent storage
-func SaveToStorage(store VariableStore) error {
-	if store == nil {
-		return fmt.Errorf("store is nil")
-	}
-
-	variablesMu.RLock()
-	defer variablesMu.RUnlock()
-
-	if globalVariables == nil {
-		return fmt.Errorf("variables not initialized")
-	}
-
-	// Save SecretKey
-	//if !store.Set(SecretKeyRedisKey, globalVariables.SecretKey, SecretKeyTTL) {
-	//	return fmt.Errorf("failed to save secret key to store")
-	//}
-
-	common.Info("Variables saved to storage")
-	return nil
 }
 
 // WithTimeout creates a context with timeout for variable operations

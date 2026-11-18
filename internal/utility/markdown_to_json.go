@@ -88,10 +88,13 @@ type kv struct {
 }
 type OMap []kv
 
-// Node is one shaped mind-map node (Python's {"id", "children"} shape).
+// Node is one shaped mind-map node. SourceChunkIDs is populated by the Go
+// mindmap compiler when the model returns provenance in its JSON response;
+// legacy Markdown shaping leaves it empty.
 type Node struct {
-	ID       string
-	Children []*Node
+	ID             string
+	SourceChunkIDs []string
+	Children       []*Node
 }
 
 type blockType int
@@ -104,7 +107,7 @@ const (
 	otherBlock
 )
 
-// mdBlock is one markdown block in dictify terms: heading (level+text), list
+// mdBlock is one Markdown block in dictify terms: heading (level+text), list
 // (flattened items), paragraph/fenced/other (text).
 type mdBlock struct {
 	typ   blockType
@@ -117,7 +120,7 @@ type mdBlock struct {
 // lines (``` or ```lang) are removed before parsing.
 var fenceStripRE = regexp.MustCompile("```[^\\n]*")
 
-// StripFences removes markdown code-fence marker lines from an LLM reply.
+// StripFences removes Markdown code-fence marker lines from an LLM reply.
 func StripFences(s string) string {
 	return fenceStripRE.ReplaceAllString(s, "")
 }
@@ -136,17 +139,17 @@ func Dictify(md string) OMap {
 	if len(blocks) == 0 {
 		return OMap{}
 	}
-	min := 100000
+	minVal := 100000
 	for _, b := range blocks {
 		lvl := 100000
 		if b.typ == headingBlock {
 			lvl = b.level
 		}
-		if lvl < min {
-			min = lvl
+		if lvl < minVal {
+			minVal = lvl
 		}
 	}
-	switch t := dictifyBlocks(blocks, min).(type) {
+	switch t := dictifyBlocks(blocks, minVal).(type) {
 	case OMap:
 		out := OMap{}
 		for _, e := range t {
@@ -422,7 +425,7 @@ func toBlock(n ast.Node, src []byte) mdBlock {
 }
 
 // headingRawText renders the heading's raw source line without the ATX
-// markers, keeping inline markdown (e.g. asterisks) intact like CommonMark's
+// markers, keeping inline Markdown (e.g. asterisks) intact like CommonMark's
 // block.strings (goldmark's inline text would strip emphasis). Both leading
 // and trailing '#' runs are removed (deviation #1 fixed: Python's CommonMark
 // strips the closing '#' sequence too).

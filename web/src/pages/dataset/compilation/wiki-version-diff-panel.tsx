@@ -37,13 +37,13 @@ export function WikiVersionDiffPanel({
     <section className="flex flex-col h-full border-l border-border-button p-5">
       <header className="shrink-0 pb-5">
         <h3 className="font-semibold text-text-primary">
-          {title || t('knowledgeDetails.versionDiff')}
+          {title || t('knowledgeCompilation.versionDiff')}
         </h3>
       </header>
       <div className="flex-1 overflow-y-auto">
         {changes.length === 0 ? (
           <div className=" text-sm text-text-secondary">
-            {t('knowledgeDetails.noDiffAvailable')}
+            {t('knowledgeCompilation.noDiffAvailable')}
           </div>
         ) : (
           <div className="space-y-5">

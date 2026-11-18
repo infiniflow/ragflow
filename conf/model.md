@@ -24,14 +24,15 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | Yes | Canonical model identifier (e.g. `gpt-4o`, `claude-opus-4-8`). Must be unique within a provider file. |
-| `content_length` | integer | No | Maximum **context window** in tokens — the total number of tokens (input + output) the model can process in a single request. Previously named `max_tokens` (until PR #17807). |
-| `max_output` | integer | No | Maximum **output generation** in tokens — the upper bound for tokens the model will generate. It may be a fixed vendor limit, or dynamic (computed as `content_length - input_tokens`). See [Vendor Breakdown](#vendor-breakdown). |
+| `context_length` | integer | No | Maximum **context window** in tokens — the total number of tokens (input + output) the model can process in a single request. Previously named `max_tokens` (until PR #17807). |
+| `max_output` | integer | No | Maximum **output generation** in tokens — the upper bound for tokens the model will generate. It may be a fixed vendor limit, or dynamic (computed as `context_length - input_tokens`). See [Vendor Breakdown](#vendor-breakdown). |
 | `model_types` | string[] | Yes | Capabilities of the model. Common values: `chat`, `vision`, `embedding`, `rerank`, `asr`, `tts`, `ocr`, `doc_parse`. |
 | `thinking` | object | No | Extended-thinking configuration (see [Thinking Object](#thinking-object)). |
 | `tools` | object | No | Tool-use capability (see [Tools Object](#tools-object)). |
 | `class` | string | No | Provider-specific model class used to select the correct driver (e.g. `glm`, `kimi`). |
 | `max_dimension` | integer | No | Maximum supported embedding dimension. Used by `embedding`-type models (e.g. `1536`). |
 | `dimensions` | integer[] | No | Supported embedding dimensions (e.g. `[256, 512, 1024, 1536]`). When non-empty, a requested dimension must match one of these values. When empty `[]` (or omitted), any dimension up to `max_dimension` is accepted. |
+| `batch_size` | integer | No | Maximum number of text inputs that can be submitted to the embedding API in a single request. Used by `embedding`-type models. Values come from each provider's official documentation; models with no documented provider limit use a conservative high cap. When omitted, no explicit cap is declared. |
 | `alias` | string[] | No | Alternative names for the same model. Used for model lookup when a tenant refers to the model by an alias. **Must be unique across all models.** |
 | `rank` | integer | No | Sort priority (lower = higher rank). Used when ordering model lists in the UI. |
 
@@ -40,7 +41,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 ```json
 {
   "name": "claude-opus-4-8",
-  "content_length": 1000000,
+  "context_length": 1000000,
   "max_output": 128000,
   "model_types": ["chat", "vision"],
   "thinking": {
@@ -80,7 +81,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 
 ```text
 ┌─────────────────────────────────────────────────────┐
-│                  content_length                      │
+│                  context_length                      │
 │  (total context window: input + output combined)    │
 │                                                     │
 │  ┌─────────────────────────────────────────────┐    │
@@ -94,22 +95,22 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 └─────────────────────────────────────────────────────┘
 ```
 
-- `content_length` is the **total** budget (input + output).
+- `context_length` is the **total** budget (input + output).
 - `max_output` is the **generation** budget alone.
-- For most models, `max_output <= content_length`. Some vendors set them equal (output can fill the entire window).
-- **Dynamic max_output**: Some models (e.g. Kimi K2.6) define max_output as `content_length - input_tokens`. In these cases, the configured `max_output` represents the upper bound; the actual available output decreases as the prompt grows.
+- For most models, `max_output <= context_length`. Some vendors set them equal (output can fill the entire window).
+- **Dynamic max_output**: Some models (e.g. Kimi K2.6) define max_output as `context_length - input_tokens`. In these cases, the configured `max_output` represents the upper bound; the actual available output decreases as the prompt grows.
 
 ---
 
 ## Migration Note
 
-Before PR #17807, a single `max_tokens` field served double duty — it was documented as the context window but often used as the output cap at runtime. The split into `content_length` + `max_output` removes this ambiguity:
+Before PR #17807, a single `max_tokens` field served double duty — it was documented as the context window but often used as the output cap at runtime. The split into `context_length` + `max_output` removes this ambiguity:
 
 - **Old `max_tokens`** → used only as migration context; do not copy it blindly.
-- **New `content_length`** → set the vendor-documented context window.
+- **New `context_length`** → set the vendor-documented context window.
 - **New `max_output`** → set the vendor-documented generation cap.
 
-Every migrated model **must define both `content_length` and `max_output`**, each taken from the official vendor model specification.
+Every migrated model **must define both `context_length` and `max_output`**, each taken from the official vendor model specification.
 
 ---
 
@@ -130,7 +131,7 @@ A quick test: if `n & (n-1) == 0`, the value is a power of 2 (binary). Otherwise
 
 ## Vendor Breakdown
 
-| Vendor | `content_length` convention | `max_output` convention | Source |
+| Vendor | `context_length` convention | `max_output` convention | Source |
 |---|---|---|---|
 | **OpenAI** | Binary | Binary | [OpenAI Models](https://developers.openai.com/api/docs/models/) |
 | **Anthropic** | Decimal (200K, 1M) | Binary (8K, 16K, 32K, 64K, 128K) | [Anthropic Docs](https://docs.anthropic.com/en/docs/about-claude/models) |
@@ -139,8 +140,8 @@ A quick test: if `n & (n-1) == 0`, the value is a power of 2 (binary). Otherwise
 | **Meta (Llama)** | Binary | Binary | [Llama Model Cards](https://github.com/meta-llama/llama-models) |
 | **DeepSeek** | Varies by model — binary (128K, 1M) | Varies by model — binary (8K, 32K, 64K, 384K) | [DeepSeek API Docs](https://api-docs.deepseek.com/) |
 | **Alibaba (Qwen)** | Binary (32K, 128K, 256K, 1M) | Binary (8K, 16K, 32K, 64K) | [Alibaba Bailian Docs](https://help.aliyun.com/zh/model-studio/) |
-| **Moonshot (Kimi)** | Binary (256K = 262144, 1M = 1048576) | Dynamic — up to `content_length - input_tokens` (API default 32768) | [Kimi API Docs](https://platform.kimi.com/docs/api/models-overview) |
-| **Mistral** | Binary | Binary (= content_length) | [Mistral Docs](https://docs.mistral.ai/getting-started/models/models_overview/) |
+| **Moonshot (Kimi)** | Binary (256K = 262144, 1M = 1048576) | Dynamic — up to `context_length - input_tokens` (API default 32768) | [Kimi API Docs](https://platform.kimi.com/docs/api/models-overview) |
+| **Mistral** | Binary | Binary (= context_length) | [Mistral Docs](https://docs.mistral.ai/getting-started/models/models_overview/) |
 | **NVIDIA** | Binary | Binary | [NVIDIA NIM Docs](https://build.nvidia.com/nemotron) |
 | **xAI (Grok)** | Decimal (131K, 262K) | Decimal (128K, 131K) | [xAI Docs](https://docs.x.ai/docs/models) |
 | **GLM (Zhipu)** | Decimal (128000, 200000, 204800, 1000000) | Decimal (4096, 16384, 96000, 128000) | [Zhipu AI Docs](https://docs.bigmodel.cn/cn/guide/start/model-overview) |
@@ -152,6 +153,7 @@ A quick test: if `n & (n-1) == 0`, the value is a power of 2 (binary). Otherwise
 | **Tencent (Hunyuan)** | Decimal (32K, 131K, 262K) | Decimal (8K, 64K) | [Tencent Cloud Docs](https://cloud.tencent.com/document/product/1759) |
 | **Xiaomi (MiMo)** | Binary (1M) | Binary (8K) | [MiMo Docs](https://huggingface.co/XiaomiMiMo) |
 | **HuggingFace** | Varies (hosted models) | Varies | [HuggingFace Model Cards](https://huggingface.co/docs/hub/model-cards) |
+| **Nace (Drex)** | Binary (262,144 = the state plus one question, per question; decision models only) | None — answers are probabilities, not generated tokens | [Nace Docs](https://console.nace.ai/docs/drex/reference/limits) |
 
 ### Key Takeaways
 
@@ -165,7 +167,7 @@ A quick test: if `n & (n-1) == 0`, the value is a power of 2 (binary). Otherwise
 
 ## Aggregators & Platforms
 
-The following providers are **aggregators** — they host models from multiple upstream creators. Their `content_length` / `max_output` values inherit from the underlying model, not from a native convention of their own. When updating an aggregator's model entry, refer to the upstream creator's documentation (see table above).
+The following providers are **aggregators** — they host models from multiple upstream creators. Their `context_length` / `max_output` values inherit from the underlying model, not from a native convention of their own. When updating an aggregator's model entry, refer to the upstream creator's documentation (see table above).
 
 | Aggregator | Notes |
 |---|---|
@@ -175,24 +177,39 @@ The following providers are **aggregators** — they host models from multiple u
 | **AstraFlow** | Multi-provider aggregator |
 | **Avian** | Multi-provider aggregator |
 | **Baidu (Qianwen)** | Ernie + third-party models |
+| **cheapaimodel** | OpenAI-compatible gateway for open-weight models (DeepSeek, GLM, Kimi) plus Grok |
+| **CloudGPU** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **CometAPI** | Multi-provider aggregator |
+| **Crusoe** | Open-weight model hosting on its own GPU cloud, with an OpenAI-compatible API |
 | **DeepInfra** | Open-source model hosting |
+| **Demon Route** | OpenAI-compatible router |
+| **EmpirioLabs AI** | AI inference provider |
 | **FuturMix** | Multi-provider aggregator |
 | **GiteeAI** | Chinese aggregator |
 | **GreenPT** | GLM-based models |
+| **HopBase** | Enterprise AI gateway: one OpenAI-compatible key for Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi and more, with high-concurrency routing and automatic failover |
+| **Hostinger Router** | OpenAI-compatible router with EU/US regional model variants |
 | **Huawei Cloud** | Hosts GLM, Kimi, etc. |
 | **JieKouAI** | Multi-provider aggregator |
 | **LongCat** | Meituan's model platform |
 | **N1N** | Multi-provider aggregator |
 | **Novita** | Open-source model hosting |
+| **Obscurify.ai** | Privacy-focused OpenAI-compatible API, 200+ models |
 | **OpenRouter** | Multi-provider router |
 | **OrcaRouter** | Auto-routing layer |
 | **PPIO** | Edge AI platform |
 | **Qiniu** | Chinese cloud platform |
 | **Replicate** | Open-source model hosting |
+| **Runcrate** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **SiliconFlow** | Chinese aggregator |
+| **Synap** | Linkrra's OpenAI-compatible router for open-weight models served on self-operated GPUs |
 | **TogetherAI** | Open-source model hosting |
 | **TokenHub** | Multi-provider aggregator |
+| **TrustedRouter** | OpenAI-compatible router |
+| **Wally** | OpenAI-compatible API for open-weight models |
+| **Wiro AI** | Multi-provider LLM gateway with an OpenAI-compatible API |
+| **WorldRouter** | Multi-provider gateway with an OpenAI-compatible inference API |
+| **AI Stupid Level** | Benchmark-based router (routes each request to the best-scoring model, with your own provider keys) |
 | **TokenPony** | Multi-provider aggregator |
 | **Volcengine (Doubao)** | ByteDance's cloud (hosts Doubao + third-party) |
 
@@ -200,21 +217,23 @@ The following providers are **aggregators** — they host models from multiple u
 
 ## How to Add a New Model
 
-1. Determine the model's `content_length` (context window) and `max_output` (generation cap) from the **official API documentation**.
+1. Determine the model's `context_length` (context window) and `max_output` (generation cap) from the **official API documentation**.
 2. Use the exact number stated — do not convert between decimal and binary.
-3. Add the entry to the appropriate `conf/models/<provider>.json` file.
-4. If the model is also listed in `conf/all_models.json`, update that entry too (or add it).
-5. Run `go test ./internal/entity/models/...` to verify the config loads correctly.
+3. For `embedding`-type models, also determine `batch_size` — the provider's documented maximum number of inputs per request — and add it to the entry.
+4. Add the entry to the appropriate `conf/models/<provider>.json` file.
+5. If the model is also listed in `conf/all_models.json`, update that entry too (or add it).
+6. Run `go test ./internal/entity/models/...` to verify the config loads correctly.
 
 ---
 
 ## How to Update an Existing Model
 
 1. Find the latest official spec from the vendor's documentation.
-2. Update `content_length` and/or `max_output` to match.
-3. If the model appears in multiple provider files (e.g. DeepSeek models appear in `deepseek.json`, `ppio.json`, `qiniu.json`), update all copies.
-4. Update `conf/all_models.json` if the model has an entry there.
-5. Run `go test ./internal/entity/models/...` to verify.
+2. Update `context_length` and/or `max_output` to match.
+3. If the model is an embedding model, update `batch_size` to the provider's documented per-request input limit.
+4. If the model appears in multiple provider files (e.g. DeepSeek models appear in `deepseek.json`, `ppio.json`, `qiniu.json`), update all copies.
+5. Update `conf/all_models.json` if the model has an entry there.
+6. Run `go test ./internal/entity/models/...` to verify.
 
 ---
 
@@ -278,6 +297,6 @@ InitProviderManager: duplicate alias "X" for models "A" and "B"
 
 **Symptom**: API returns errors about exceeding context limits.
 
-**Cause**: `content_length` in config does not match the vendor's actual limit.
+**Cause**: `context_length` in config does not match the vendor's actual limit.
 
 **Fix**: Verify against official vendor documentation and update accordingly.

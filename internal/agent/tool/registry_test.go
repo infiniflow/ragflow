@@ -1,7 +1,6 @@
 package tool
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -14,14 +13,15 @@ func TestBuildAll_KnownTools(t *testing.T) {
 	if len(tools) != 2 {
 		t.Fatalf("len(tools) = %d, want 2", len(tools))
 	}
-	info0, err := tools[0].Info(context.Background())
+	ctx := t.Context()
+	info0, err := tools[0].Info(ctx)
 	if err != nil {
 		t.Fatalf("tools[0].Info: %v", err)
 	}
 	if info0.Name != "search_my_dateset" {
 		t.Errorf("tools[0].Info().Name = %q, want search_my_dateset", info0.Name)
 	}
-	info1, err := tools[1].Info(context.Background())
+	info1, err := tools[1].Info(ctx)
 	if err != nil {
 		t.Fatalf("tools[1].Info: %v", err)
 	}
@@ -48,10 +48,15 @@ func TestBuildByName_CanvasComponentNames(t *testing.T) {
 		{name: "CodeExec", wantToolName: "execute_code"},
 		{name: "GoogleScholar", wantToolName: "google_scholar_search"},
 		{name: "KeenableSearch", wantToolName: "keenable_search"},
+		{name: "QueritContents", wantToolName: "querit_contents"},
 		{name: "QueritSearch", wantToolName: "querit_search"},
+		{name: "Search1APICrawl", wantToolName: "search1api_crawl"},
+		{name: "Search1APISearch", wantToolName: "search1api_search"},
+		{name: "SofyaSearch", wantToolName: "sofya_search"},
 		{name: "TavilyExtract", wantToolName: "tavily_extract"},
 		{name: "TavilySearch", wantToolName: "tavily_search"},
 		{name: "YahooFinance", wantToolName: "yahoo_finance"},
+		{name: "YouComSearch", wantToolName: "youcom_search"},
 	}
 
 	for _, tc := range tests {
@@ -104,6 +109,27 @@ func TestBuildAll_CanvasComponentNameUsesCanonicalParams(t *testing.T) {
 	}
 }
 
+// TestBuildByName_FunctionNameCollisionPrefersComponentName asserts that a
+// Retrieval node whose DSL function_name happens to match a registered tool
+// (e.g., "wikipedia") still builds the retrieval tool, not the registered one.
+// The retrieval tool advertises the DSL function_name as its agent-visible name.
+func TestBuildByName_FunctionNameCollisionPrefersComponentName(t *testing.T) {
+	built, err := BuildByName("wikipedia", map[string]any{
+		"component_name": "Retrieval",
+		"function_name":  "wikipedia",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	info, err := built.Info(t.Context())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if info.Name != "wikipedia" {
+		t.Errorf("tool name = %q, want retrieval advertised as the DSL function_name (collision must not build Wikipedia)", info.Name)
+	}
+}
+
 func TestBuildByName_QueritAliases(t *testing.T) {
 	for _, name := range []string{"querit", "querit_search", "queritsearch", "QueritSearch"} {
 		built, err := BuildByName(name, map[string]any{
@@ -127,10 +153,79 @@ func TestBuildByName_QueritAliases(t *testing.T) {
 		if querit.defaults.Count != 8 || querit.defaults.ChunksPerDoc == nil || *querit.defaults.ChunksPerDoc != 2 || len(querit.defaults.SiteInclude) != 1 {
 			t.Fatalf("BuildByName(%q) defaults = %#v", name, querit.defaults)
 		}
-		info, infoErr := built.Info(context.Background())
+		info, infoErr := built.Info(t.Context())
 		if infoErr != nil || info.Name != "querit_search" {
 			t.Fatalf("BuildByName(%q).Info() = %#v, %v", name, info, infoErr)
 		}
+	}
+}
+
+func TestBuildByName_QueritContentsAliases(t *testing.T) {
+	for _, name := range []string{"querit_contents", "queritcontents", "QueritContents"} {
+		built, err := BuildByName(name, map[string]any{
+			"api_key":       "stored-key",
+			"format":        "html",
+			"crawl_timeout": float64(20),
+			"extras_meta":   true,
+		})
+		if err != nil {
+			t.Fatalf("BuildByName(%q): %v", name, err)
+		}
+		contents, ok := built.(*QueritContentsTool)
+		if !ok {
+			t.Fatalf("BuildByName(%q) returned %T, want *QueritContentsTool", name, built)
+		}
+		if contents.defaults.Format != "html" || contents.defaults.CrawlTimeout != 20 || !contents.defaults.ExtrasMeta {
+			t.Fatalf("BuildByName(%q) defaults = %#v", name, contents.defaults)
+		}
+	}
+}
+
+func TestBuildByName_QueritContentsEmptyTimeoutUsesDefault(t *testing.T) {
+	for _, value := range []string{"", "  "} {
+		built, err := BuildByName("querit_contents", map[string]any{
+			"crawl_timeout": value,
+		})
+		if err != nil {
+			t.Fatalf("BuildByName with empty crawl_timeout %q: %v", value, err)
+		}
+		contents, ok := built.(*QueritContentsTool)
+		if !ok {
+			t.Fatalf("BuildByName returned %T, want *QueritContentsTool", built)
+		}
+		if contents.defaults.CrawlTimeout != 10 {
+			t.Fatalf("crawl timeout = %d, want default 10", contents.defaults.CrawlTimeout)
+		}
+	}
+}
+
+func TestBuildByName_YouComReadsCanvasParams(t *testing.T) {
+	// The canvas stores tool params under the lower-cased component name, and
+	// the node form also carries query/outputs keys the tool must ignore.
+	tools, err := BuildAll([]string{"YouComSearch"}, map[string]map[string]any{
+		"youcomsearch": {
+			"api_key":   "stored-key",
+			"freshness": "week",
+			"top_n":     float64(4),
+			"outputs":   map[string]any{"json": map[string]any{}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildAll: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("len(tools) = %d, want 1", len(tools))
+	}
+	youcomTool, ok := tools[0].(*YouComTool)
+	if !ok {
+		t.Fatalf("tools[0] = %T, want *YouComTool", tools[0])
+	}
+	if youcomTool.apiKey != "stored-key" || youcomTool.defaults.Freshness != "week" || youcomTool.defaults.TopN != 4 {
+		t.Fatalf("defaults = %#v, apiKey = %q", youcomTool.defaults, youcomTool.apiKey)
+	}
+	info, infoErr := youcomTool.Info(t.Context())
+	if infoErr != nil || info.Name != "youcom_search" {
+		t.Fatalf("Info() = %#v, %v", info, infoErr)
 	}
 }
 
@@ -140,10 +235,10 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
-		"querit", "querit_search",
-		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
+		"querit", "querit_contents", "querit_search",
+		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
-		"yahoo_finance",
+		"yahoo_finance", "youcom",
 	}
 	params := map[string]map[string]any{
 		"execute_sql": {
@@ -177,6 +272,35 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	}
 }
 
+// TestBuildTushareTool_NodeParams pins the node-level credential channel:
+// the token comes from tool_params, an empty set still builds (Invoke reports
+// the missing configuration), and a non-string token is rejected.
+func TestBuildTushareTool_NodeParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("tushare", map[string]any{"token": "T-node"})
+	if err != nil {
+		t.Fatalf("BuildByName(tushare) with token: %v", err)
+	}
+	tool, ok := built.(*TushareTool)
+	if !ok {
+		t.Fatalf("tool type = %T, want *TushareTool", built)
+	}
+	if tool.defaults.Token != "T-node" {
+		t.Fatalf("defaults.Token = %q, want T-node", tool.defaults.Token)
+	}
+
+	if _, err = BuildByName("tushare", map[string]any{}); err != nil {
+		t.Fatalf("BuildByName(tushare) without params: %v", err)
+	}
+
+	if _, err = BuildByName("tushare", map[string]any{"token": 1}); err == nil {
+		t.Fatal("expected a type error for a non-string token")
+	} else if !strings.Contains(err.Error(), "string node-level param token") {
+		t.Fatalf("err = %q, want the node-level token type error", err.Error())
+	}
+}
+
 func TestBuildAll_ExeSQLRequiresNodeParams(t *testing.T) {
 	_, err := BuildAll([]string{"execute_sql"}, nil)
 	if err == nil {
@@ -204,10 +328,10 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
-		"querit", "querit_search",
-		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
+		"querit", "querit_contents", "querit_search",
+		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
-		"yahoo_finance",
+		"yahoo_finance", "youcom",
 	}
 	params := map[string]map[string]any{
 		"execute_sql": {
@@ -242,7 +366,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 
 	// Schema-level checks per entry.
 	for i, name := range names {
-		info, err := tools[i].Info(context.Background())
+		info, err := tools[i].Info(t.Context())
 		if err != nil {
 			t.Errorf("tools[%d] (registry name %q).Info: %v", i, name, err)
 			continue
@@ -275,6 +399,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"wikipedia":             "wikipedia_search",
 		"wikipedia_search":      "wikipedia_search",
 		"querit":                "querit_search",
+		"querit_contents":       "querit_contents",
 		"querit_search":         "querit_search",
 	}
 	for _, name := range names {
@@ -283,7 +408,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 			continue
 		}
 		idx := indexOf(names, name)
-		info, err := tools[idx].Info(context.Background())
+		info, err := tools[idx].Info(t.Context())
 		if err != nil {
 			continue
 		}

@@ -17,18 +17,14 @@
 // config.go — type-safe accessors for the JSON config map that the
 // admin-panel settings reader passes to each provider's FromConfig.
 //
-// The config map mirrors the env-var contract (same keys, sans the
-// per-provider prefix: e.g. SANDBOX_EXECUTOR_MANAGER_URL on env ==
-// "EXECUTOR_MANAGER_URL" in the config map). Values come from
-// `internal/dao/system_settings.go::SystemSettingsDAO.GetByName` via
-// the manager's LoadFromSettings path.
+// The config map uses the canonical lowercase Python provider keys.
+// Runtime values may also come from environment variables; strict
+// validation of admin-supplied settings belongs at the write boundary.
 //
-// The accessors are intentionally permissive: they accept any JSON
-// shape (string, float64 from JSON numbers, bool, nested maps) and
-// coerce to the target Go type. Operators that mis-configure a key
-// in the admin panel get a default value (per the env-driven
-// fallback) rather than a hard failure — admin-panel settings are
-// best-effort overrides of the env defaults.
+// The accessors are intentionally permissive for runtime environment
+// values: they accept strings and JSON-decoded primitive values and
+// coerce to the target Go type. Admin-supplied settings are validated
+// before persistence.
 
 package sandbox
 

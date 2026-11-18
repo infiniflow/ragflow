@@ -6,34 +6,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-	"time"
 )
-
-// builtinHTTPClient is a shared client with timeouts for all Builtin model
-// requests. http.DefaultClient has no timeout, so a hung or slow TEI server
-// would otherwise block goroutines indefinitely.
-var builtinHTTPClient = &http.Client{
-	Timeout: 30 * time.Second,
-	Transport: &http.Transport{
-		MaxIdleConnsPerHost:   10,
-		ResponseHeaderTimeout: 10 * time.Second,
-	},
-}
 
 // BuiltinModel implements ModelDriver for Builtin (local embedding models via TEI)
 type BuiltinModel struct {
-	baseURL string
-	model   string
+	baseURL    string
+	model      string
+	httpClient *http.Client
 }
 
 // NewBuiltinModel creates a new Builtin model instance
 func NewBuiltinModel(baseURL, model string) *BuiltinModel {
+	if baseURL == "" {
+		host := getEnv(common.EnvTEIHost, "tei")
+		baseURL = getEnv(common.EnvTEIBaseURL, "http://"+net.JoinHostPort(host, "80"))
+	}
+
 	return &BuiltinModel{
-		baseURL: baseURL,
-		model:   model,
+		baseURL:    baseURL,
+		model:      model,
+		httpClient: common.GetSchemeSafeHTTPClient(),
 	}
 }
 
@@ -57,20 +53,15 @@ func (b *BuiltinModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 }
 
 // Embed sends texts to a TEI (Text Embeddings Inference) server and returns embeddings
-func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
+func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
-	baseURL := b.baseURL
-	if baseURL == "" {
-		baseURL = "http://localhost:6380"
-	}
-
-	url := fmt.Sprintf("%s/embed", baseURL)
+	url := fmt.Sprintf("%s/embed", b.baseURL)
 
 	reqBody := map[string]interface{}{
-		"inputs": texts,
+		"inputs": request.Texts,
 	}
 
 	// Add dimension if specified
@@ -83,7 +74,7 @@ func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, texts []str
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +82,7 @@ func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, texts []str
 	req.Header.Set("Content-Type", "application/json")
 	// Note: TEI server typically doesn't require auth for local deployments
 
-	resp, err := builtinHTTPClient.Do(req)
+	resp, err := b.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +114,7 @@ func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, texts []str
 	return result, nil
 }
 
-func (b *BuiltinModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (b *BuiltinModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support rerank")
 }
 
@@ -165,7 +156,7 @@ func (b *BuiltinModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[s
 
 func (b *BuiltinModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
 	// Try to get model info to verify connection
-	_, err := b.Embed(ctx, nil, []string{"test"}, apiConfig, nil, nil)
+	_, err := b.Embed(ctx, nil, EmbedRequest{Texts: []string{"test"}}, apiConfig, nil, nil)
 	return err
 }
 
@@ -177,15 +168,13 @@ func (b *BuiltinModel) ShowTask(ctx context.Context, taskID string, apiConfig *A
 	return nil, fmt.Errorf("builtin model does not support tasks")
 }
 
+func (b *BuiltinModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("builtin model does not support decide")
+}
+
 // GetBuiltinEmbeddingModel returns a Builtin model driver for the given model name
 func GetBuiltinEmbeddingModel(modelName string) ModelDriver {
-	// Get TEI base URL from environment or config
-	// Default to port 6380 where docker-tei-cpu-1 maps internal port 80
-	teiBaseURL := getEnv(common.EnvTEIBaseURL, "http://localhost:6380")
-
-	// Create a builtin model instance with TEI endpoint
-	driver := NewBuiltinModel(teiBaseURL, modelName)
-	return driver
+	return NewBuiltinModel("", modelName)
 }
 
 // getEnv is a helper to get environment variable with default

@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +27,7 @@ import (
 
 func TestDeepL_BuildRequest(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotMethod, gotAuth, gotCT, gotPath string
 	var gotForm url.Values
@@ -51,9 +51,9 @@ func TestDeepL_BuildRequest(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
-	tool := NewDeepLToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
-		`{"api_key":"key-xyz:fx","text":"Hello world","source_lang":"en","target_lang":"de"}`)
+	tool := NewDeepLToolWith(helper, "key-xyz:fx")
+	out, err := tool.InvokableRun(ctx,
+		`{"text":"Hello world","source_lang":"en","target_lang":"de"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -98,6 +98,7 @@ func TestDeepL_BuildRequest(t *testing.T) {
 
 func TestDeepL_DefaultLanguages(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotForm url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -111,9 +112,9 @@ func TestDeepL_DefaultLanguages(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
-	tool := NewDeepLToolWith(helper)
-	if _, err := tool.InvokableRun(context.Background(),
-		`{"api_key":"x:fx","text":"Hello"}`); err != nil {
+	tool := NewDeepLToolWith(helper, "x:fx")
+	if _, err := tool.InvokableRun(ctx,
+		`{"text":"Hello"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if gotForm.Get("source_lang") != "EN" {
@@ -124,25 +125,77 @@ func TestDeepL_DefaultLanguages(t *testing.T) {
 	}
 }
 
-func TestDeepL_RequiresAPIKeyAndText(t *testing.T) {
-	t.Parallel()
+// TestDeepL_RejectsMissingCredentialAndText pins that the credential is a
+// server-side setting: an unconfigured tool fails before any request, and the
+// model cannot inject one through its arguments.
+func TestDeepL_RejectsMissingCredentialAndText(t *testing.T) {
+	t.Setenv("DEEPL_API_KEY", "")
+	ctx := t.Context()
 
 	tool := NewDeepLTool()
-	if _, err := tool.InvokableRun(context.Background(),
-		`{"api_key":"","text":"Hello"}`); err == nil {
-		t.Error("expected error for missing api_key")
+	out, err := tool.InvokableRun(ctx,
+		`{"api_key":"model-supplied","text":"Hello"}`)
+	if err == nil {
+		t.Fatal("expected error for unconfigured api_key")
 	}
-	if _, err := tool.InvokableRun(context.Background(),
-		`{"api_key":"x","text":""}`); err == nil {
+	if !strings.Contains(err.Error(), "api_key is not configured") {
+		t.Errorf("err = %v, want to mention api_key is not configured", err)
+	}
+	if !strings.Contains(out, "_ERROR") {
+		t.Errorf("out = %q, want _ERROR envelope", out)
+	}
+
+	configured := NewDeepLToolWith(nil, "x:fx")
+	if _, err := configured.InvokableRun(ctx, `{"text":""}`); err == nil {
 		t.Error("expected error for empty text")
+	}
+}
+
+func TestDeepL_UsesEnvCredential(t *testing.T) {
+	t.Setenv("DEEPL_API_KEY", "env-key:fx")
+	ctx := t.Context()
+
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"translations":[{"text":"你好","detected_source_language":"EN"}]}`))
+	}))
+	defer srv.Close()
+
+	helper := NewHTTPHelper().WithClient(&http.Client{
+		Transport: rewriteHostTransport(srv.URL),
+	})
+	if _, err := NewDeepLToolWith(helper, "").InvokableRun(ctx, `{"text":"Hello"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if gotAuth != "DeepL-Auth-Key env-key:fx" {
+		t.Errorf("Authorization = %q, want DeepL-Auth-Key env-key:fx", gotAuth)
+	}
+}
+
+func TestDeepL_BuildByNameUsesNodeCredential(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("deepl", map[string]any{"api_key": "node-key:fx"})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	tool, ok := built.(*DeepLTool)
+	if !ok {
+		t.Fatalf("BuildByName returned %T, want *DeepLTool", built)
+	}
+	if tool.apiKey != "node-key:fx" {
+		t.Errorf("apiKey = %q, want node-key:fx", tool.apiKey)
 	}
 }
 
 func TestDeepL_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewDeepLTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -151,6 +204,17 @@ func TestDeepL_Info(t *testing.T) {
 	}
 	if !strings.Contains(info.Desc, "DeepL") {
 		t.Errorf("Desc = %q, want to mention DeepL", info.Desc)
+	}
+	params, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema: %v", err)
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal params schema: %v", err)
+	}
+	if strings.Contains(string(raw), `"api_key"`) {
+		t.Fatalf("schema exposes api_key; the credential must stay server-side: %s", raw)
 	}
 }
 
@@ -178,6 +242,7 @@ func TestDeepL_Info(t *testing.T) {
 // when both tests run in the same package.
 func TestDeepL_TranslationFailureReturnsError(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	// 500 Internal Server Error from a stub DeepL endpoint.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -188,9 +253,9 @@ func TestDeepL_TranslationFailureReturnsError(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
-	tool := NewDeepLToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
-		`{"api_key":"key-xyz:fx","text":"hello","source_lang":"EN","target_lang":"ZH"}`)
+	tool := NewDeepLToolWith(helper, "key-xyz:fx")
+	out, err := tool.InvokableRun(ctx,
+		`{"text":"hello","source_lang":"EN","target_lang":"ZH"}`)
 	if err == nil {
 		t.Fatalf("expected non-nil error, got nil; out=%s", out)
 	}

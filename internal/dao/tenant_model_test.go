@@ -17,7 +17,6 @@
 package dao
 
 import (
-	"context"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -59,7 +58,7 @@ func TestTenantModelDAODeleteByModelIDAndScopeDeletesOnlyMatchingModel(t *testin
 	seedTenantModel(t, db, &entity.TenantModel{ID: "model-delete", ModelName: "m", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
 	seedTenantModel(t, db, &entity.TenantModel{ID: "model-keep", ModelName: "m", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-2", Status: "active"})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	rows, err := NewTenantModelDAO().DeleteByModelIDAndProviderIDAndInstanceID(ctx, db, "model-delete", "provider-1", "instance-1")
 	if err != nil {
 		t.Fatalf("DeleteByModelIDAndProviderIDAndInstanceID() error = %v", err)
@@ -89,7 +88,7 @@ func TestTenantModelDAOUpdateStatusByIDAndScope(t *testing.T) {
 
 	seedTenantModel(t, db, &entity.TenantModel{ID: "model-status", ModelName: "m", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	rows, err := NewTenantModelDAO().UpdateStatusByIDAndScope(ctx, db, "model-status", "provider-1", "instance-1", "inactive")
 	if err != nil {
 		t.Fatalf("UpdateStatusByIDAndScope() error = %v", err)

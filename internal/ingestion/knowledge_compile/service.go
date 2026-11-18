@@ -22,9 +22,12 @@ import (
 	"fmt"
 	"time"
 
-	"gorm.io/gorm"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/service/file"
+
+	"gorm.io/gorm"
 )
 
 // Option configures a Consumer.
@@ -74,8 +77,31 @@ func WithReader(r Reader) Option { return func(c *Consumer) { c.reader = r } }
 // WithWriter overrides the chunk Writer (used in tests).
 func WithWriter(w Writer) Option { return func(c *Consumer) { c.writer = w } }
 
+// WithStorage wires the process-wide doc engine and database handle into the
+// consumer's default reader, writer, and wiki contribution store. The server
+// assembly point passes ingestion.Deps here; a consumer assembled without it
+// fails fast on its first storage access (errEngineNotConfigured) instead of
+// silently reading zero products. Apply it before any WithReader/WithWriter
+// overrides.
+func WithStorage(eng engine.DocEngine, db *gorm.DB) Option {
+	return func(c *Consumer) {
+		c.reader = engineReader{eng: eng, db: db}
+		c.writer = engineWriter{eng: eng, db: db, commitService: file.NewFileCommitService()}
+		c.contributions = newWikiContributionStore(eng)
+		c.db = db
+		c.docEngine = eng
+		c.storageConfigured = true
+	}
+}
+
 // WithDeduperFactory overrides the per-tenant Deduper factory.
 func WithDeduperFactory(f DeduperFactory) Option { return func(c *Consumer) { c.factory = f } }
+
+// withWikiContributionStore overrides the durable document-contribution store
+// in package tests.
+func withWikiContributionStore(store wikiContributionStore) Option {
+	return func(c *Consumer) { c.contributions = store }
+}
 
 // defaultLLMID / defaultEmbedding are the model ids used when resolving LLM
 // deps for the dataset-level deduper. Set via SetModelConfig (typically from the
@@ -92,16 +118,26 @@ func SetModelConfig(llmID, embedding string) {
 	defaultEmbedding = embedding
 }
 
+// InitializePublisher installs the process-wide publisher used by document
+// lifecycle events. API processes publish events but do not own the dataset
+// consumer, so they need this producer-only initialization without starting a
+// worker.
+func InitializePublisher(db *gorm.DB, mq engine.MessageQueue) {
+	if defaultPublisher == nil {
+		SetScheduler(newScheduler(db, mq, generateHolder(), 2*time.Minute))
+	}
+}
+
 // defaultDeduperFactory resolves the per-tenant LLM deps and builds the
-// KB-scoped deduper. On any failure it returns an error so the caller falls
-// back to the noop deduper (merged products are still written, just without
-// cross-document LLM merging).
-func defaultDeduperFactory(tenant string) (Deduper, error) {
-	deps, err := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
+// KB-scoped deduper. On any failure it returns an error so the caller can fail
+// the batch: a noop deduper would silently disable cross-document LLM merging
+// and let duplicate merged products accumulate.
+func defaultDeduperFactory(ctx context.Context, tenant string) (Deduper, error) {
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
 	if err != nil {
 		return nil, err
 	}
-	return NewLLMDeduper(deps.Chat, deps.Embed, defaultLLMID, 0.99, deps.LLMMaxLength), nil
+	return NewLLMDeduper(deps.Chat, deps.Embed, defaultLLMID, 0.99, deps.ModelContextLen, deps.ModelMaxOutput), nil
 }
 
 func generateHolder() string {
@@ -127,11 +163,16 @@ func Provision(ctx context.Context, mq engine.MessageQueue, db *gorm.DB) error {
 	// Bound the startup AutoMigrate so a slow/unreachable DB cannot block
 	// startup indefinitely. The caller's ctx is also honoured (cancelled on
 	// shutdown).
+	runCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := s.Provision(ctx); err != nil {
 		return err
 	}
+	if err := db.WithContext(ctx).AutoMigrate(&entity.WikiDocumentDirty{}); err != nil {
+		return err
+	}
 	SetScheduler(s)
+	go runWikiDirtyWorker(runCtx, db, s.holder)
 	return nil
 }

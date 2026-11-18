@@ -14,10 +14,6 @@
 //  limitations under the License.
 //
 
-// cancel.go implements the cross-process cancel signal for ordinary Agent
-// sessions. A canvas run polls Redis for "{sessionID}-cancel"; when the HTTP
-// handler sets the key, the watcher cancels the same context used by the
-// workflow.
 package canvas
 
 import (
@@ -29,7 +25,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	redis2 "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 )
 
 // cancelKeySuffix is appended to the session id to form the Redis key.
@@ -38,8 +34,8 @@ const cancelKeySuffix = "-cancel"
 func cancelKey(sessionID string) string { return sessionID + cancelKeySuffix }
 
 // cancelPollInterval is the gap between Redis Get polls. 500ms keeps
-// cancel latency p99 ≤ 500ms while staying cheap (one GET every half-
-// second per active run). Tunable later if a tenant needs lower latency.
+// cancel latency p99 ≤ 500ms while staying cheap (one GET every half-second per active run).
+// Tunable later if a tenant needs lower latency.
 const cancelPollInterval = 500 * time.Millisecond
 
 // RequestCancelTTL is the lifetime of the cancel flag in Redis. Long
@@ -51,18 +47,18 @@ const RequestCancelTTL = 24 * time.Hour
 // a package-level variable so tests can override it with a miniredis
 // client (the production path goes through cache.Get()).
 var cancelClientFn = func() (*redis.Client, error) {
-	rc := redis2.Get()
+	rc := kvrocks.Get()
 	if rc == nil {
 		return nil, errors.New("cancel: redis cache not initialized")
 	}
 	c := rc.GetClient()
 	if c == nil {
-		return nil, errors.New("cancel: redis client not initialized")
+		return nil, errors.New("cancel: kvrocks client not initialized")
 	}
 	return c, nil
 }
 
-// WatchCancel blocks until either ctx is cancelled or the Redis
+// WatchCancel blocks until either ctx is canceled or the Redis
 // "{sessionID}-cancel" key contains a non-empty value. When fired, it calls
 // onCancel exactly once and returns. Polling interval is fixed
 // at 500ms (see plan §4.9 — revised 2026-06-03 from 1s to 500ms).

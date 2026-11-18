@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -18,15 +34,14 @@ import { SwitchLogicOperator, SwitchOperatorOptions } from '@/constants/agent';
 import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
 import { useFetchKnowledgeMetadata } from '@/hooks/use-knowledge-request';
 import { cn } from '@/lib/utils';
-import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
 import { Plus, X } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { LogicalOperator } from '../logical-operator';
+import { SelectWithSearch } from '../originui/select-with-search';
 import { Card, CardContent } from '../ui/card';
-import { InputSelect } from '../ui/input-select';
-import { RAGFlowSelect } from '../ui/select';
+import { InputSelect, InputSelectOption } from '../ui/input-select';
 
 type ConditionCardsProps = {
   fieldName: string;
@@ -35,7 +50,7 @@ type ConditionCardsProps = {
   remove: (index: number) => void;
   switchOperatorOptions: ReturnType<typeof useBuildSwitchOperatorOptions>;
   metadata: ReturnType<typeof useFetchKnowledgeMetadata>;
-  canReference?: boolean;
+  variableOptions: InputSelectOption[];
 };
 
 function ConditionCards({
@@ -45,22 +60,25 @@ function ConditionCards({
   remove,
   switchOperatorOptions,
   metadata,
-  canReference,
+  variableOptions,
 }: ConditionCardsProps) {
   const { t } = useTranslation();
   const form = useFormContext();
   const op = useWatch({ name: `${name}.${index}.op` });
   const key = useWatch({ name: fieldName });
   const valueOptions = useMemo(() => {
-    if (!key || !metadata?.data || !metadata?.data[key]) return [];
-    if (typeof metadata?.data[key] === 'object') {
-      return Object.keys(metadata?.data[key]).map((item: string) => ({
-        value: item,
-        label: item,
-      }));
-    }
-    return [];
-  }, [key, metadata?.data]);
+    const candidateOptions =
+      !key ||
+      !metadata?.data ||
+      !metadata.data[key] ||
+      typeof metadata.data[key] !== 'object'
+        ? []
+        : Object.keys(metadata.data[key]).map((item: string) => ({
+            value: item,
+            label: item,
+          }));
+    return [...candidateOptions, ...variableOptions];
+  }, [key, metadata?.data, variableOptions]);
 
   const handleChangeOp = useCallback(
     (value: string) => {
@@ -108,7 +126,7 @@ function ConditionCards({
               render={({ field }) => (
                 <FormItem>
                   <FormControl>
-                    <RAGFlowSelect
+                    <SelectWithSearch
                       {...field}
                       onChange={(value) => {
                         handleChangeOp(value);
@@ -132,21 +150,13 @@ function ConditionCards({
               return (
                 <FormItem>
                   <FormControl>
-                    {canReference ? (
-                      <PromptEditor
-                        {...valueField}
-                        multiLine={false}
-                        showToolbar={false}
-                      ></PromptEditor>
-                    ) : (
-                      <InputSelect
-                        placeholder={t('common.pleaseInput')}
-                        {...valueField}
-                        options={valueOptions}
-                        className="w-full"
-                        multi={op === 'in' || op === 'not in'}
-                      />
-                    )}
+                    <InputSelect
+                      placeholder={t('common.pleaseInput')}
+                      {...valueField}
+                      options={valueOptions}
+                      className="w-full"
+                      multi={op === 'in' || op === 'not in'}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -155,7 +165,7 @@ function ConditionCards({
           />
         </CardContent>
       </Card>
-      <Button variant={'ghost'} onClick={() => remove(index)}>
+      <Button variant={'ghost'} type="button" onClick={() => remove(index)}>
         <X />
       </Button>
     </div>
@@ -165,17 +175,22 @@ function ConditionCards({
 export function MetadataFilterConditions({
   kbIds,
   prefix = '',
-  canReference,
+  variableOptions = [],
 }: {
   kbIds: string[];
   prefix?: string;
-  canReference?: boolean;
+  variableOptions?: InputSelectOption[];
 }) {
   const { t } = useTranslation();
   const form = useFormContext();
   const name = prefix + 'meta_data_filter.manual';
   const logic = prefix + 'meta_data_filter.logic';
   const metadata = useFetchKnowledgeMetadata(kbIds);
+
+  const metadataKeys = useMemo(
+    () => Object.keys(metadata.data),
+    [metadata.data],
+  );
 
   const switchOperatorOptions = useBuildSwitchOperatorOptions();
 
@@ -203,19 +218,25 @@ export function MetadataFilterConditions({
       <div className="flex items-center justify-between">
         <FormLabel>{t('chat.conditions')}</FormLabel>
         <DropdownMenu>
-          <DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild>
             <Button variant={'ghost'} type="button">
               <Plus />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="max-h-[300px] !overflow-y-auto scrollbar-auto">
-            {Object.keys(metadata.data).map((key, idx) => {
-              return (
-                <DropdownMenuItem key={idx} onClick={add(key)}>
-                  {key}
-                </DropdownMenuItem>
-              );
-            })}
+            {metadataKeys.length === 0 ? (
+              <DropdownMenuItem disabled>
+                {t('knowledgeDetails.emptyMetadata')}
+              </DropdownMenuItem>
+            ) : (
+              metadataKeys.map((key, idx) => {
+                return (
+                  <DropdownMenuItem key={idx} onClick={add(key)}>
+                    {key}
+                  </DropdownMenuItem>
+                );
+              })
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -233,7 +254,7 @@ export function MetadataFilterConditions({
                 remove={remove}
                 switchOperatorOptions={switchOperatorOptions}
                 metadata={metadata}
-                canReference={canReference}
+                variableOptions={variableOptions}
               />
             );
           })}

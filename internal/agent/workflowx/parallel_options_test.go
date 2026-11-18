@@ -132,6 +132,7 @@ func TestOptions_EnableSubCheckpoint_False(t *testing.T) {
 // options are passed to every per-item sub-workflow Invoke. We
 // assert that the run option count matches the call count.
 func TestOptions_ParallelRunOptionsForwarded(t *testing.T) {
+	ctx := t.Context()
 	var calls atomic.Int32
 	sub := compose.NewWorkflow[int, int]()
 	lambda := compose.InvokableLambda(func(_ context.Context, in int) (int, error) {
@@ -143,7 +144,7 @@ func TestOptions_ParallelRunOptionsForwarded(t *testing.T) {
 	sub.End().AddInput("op")
 
 	outer := compose.NewWorkflow[[]int, []int]()
-	pNode, err := AddParallelNode(context.Background(), outer, "par", sub,
+	pNode, err := AddParallelNode(ctx, outer, "par", sub,
 		WithParallelMaxConcurrency(0),
 		WithParallelRunOptions(compose.WithCheckPointID("ignored-by-inner")),
 	)
@@ -152,11 +153,11 @@ func TestOptions_ParallelRunOptionsForwarded(t *testing.T) {
 	}
 	pNode.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	_, err = compiled.Invoke(context.Background(), []int{1, 2, 3, 4})
+	_, err = compiled.Invoke(ctx, []int{1, 2, 3, 4})
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -168,8 +169,9 @@ func TestOptions_ParallelRunOptionsForwarded(t *testing.T) {
 // TestOptions_ParallelCompileOptionsForwarded asserts the compile
 // options are passed to the inner sub-workflow's Compile call.
 func TestOptions_ParallelCompileOptionsForwarded(t *testing.T) {
+	ctx := t.Context()
 	store := newInMemoryStore()
-	_ = store.Set(context.Background(), "k", []byte("v"))
+	_ = store.Set(ctx, "k", []byte("v"))
 
 	sub := compose.NewWorkflow[int, int]()
 	lambda := compose.InvokableLambda(func(ctx context.Context, in int) (int, error) {
@@ -184,7 +186,7 @@ func TestOptions_ParallelCompileOptionsForwarded(t *testing.T) {
 	sub.End().AddInput("op")
 
 	outer := compose.NewWorkflow[[]int, []int]()
-	pNode, err := AddParallelNode(context.Background(), outer, "par", sub,
+	pNode, err := AddParallelNode(ctx, outer, "par", sub,
 		WithParallelMaxConcurrency(0),
 		WithParallelCompileOptions(compose.WithCheckPointStore(store)),
 	)
@@ -193,11 +195,11 @@ func TestOptions_ParallelCompileOptionsForwarded(t *testing.T) {
 	}
 	pNode.AddInput(compose.START)
 	outer.End().AddInput("par")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	got, err := compiled.Invoke(context.Background(), []int{1, 2, 3})
+	got, err := compiled.Invoke(ctx, []int{1, 2, 3})
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -214,18 +216,19 @@ func TestOptions_ParallelCompileOptionsForwarded(t *testing.T) {
 func TestOptions_ParallelNilChecks(t *testing.T) {
 	sub := buildParallelIncSub(t)
 	outer := compose.NewWorkflow[[]int, []int]()
+	ctx := t.Context()
 
 	cases := []struct {
 		name string
 		fn   func() error
 	}{
 		{"nil outer", func() error {
-			_, err := AddParallelNode[int, int](context.Background(), nil, "par", sub)
+			_, err := AddParallelNode[int, int](ctx, nil, "par", sub)
 			return err
 		}},
 		{"nil sub", func() error {
 			var nilSub Compilable[int, int]
-			_, err := AddParallelNode(context.Background(), outer, "par", nilSub)
+			_, err := AddParallelNode(ctx, outer, "par", nilSub)
 			return err
 		}},
 	}
@@ -245,9 +248,10 @@ func TestOptions_ParallelNilChecks(t *testing.T) {
 // workflow is not modified to a state that would mask the
 // failure.
 func TestOptions_ParallelCompileFailureIsolated(t *testing.T) {
+	ctx := t.Context()
 	sub := compose.NewWorkflow[int, int]() // no nodes; compile fails
 	outer := compose.NewWorkflow[[]int, []int]()
-	_, err := AddParallelNode(context.Background(), outer, "par", sub)
+	_, err := AddParallelNode(ctx, outer, "par", sub)
 	if err == nil {
 		t.Fatal("expected compile error, got nil")
 	}
@@ -255,7 +259,7 @@ func TestOptions_ParallelCompileFailureIsolated(t *testing.T) {
 		t.Errorf("errors.Is(err, ErrParallelCompileFailed) = false; err = %v", err)
 	}
 	// The outer workflow should still be empty.
-	_, err = outer.Compile(context.Background())
+	_, err = outer.Compile(ctx)
 	if err == nil || !strings.Contains(err.Error(), "start node not set") {
 		t.Errorf("outer workflow not in expected state: %v", err)
 	}
@@ -292,6 +296,7 @@ func TestOptions_ParallelSentinelErrorsExist(t *testing.T) {
 // tested via the runParallelFanout integration by ensuring the
 // sub-workflow still gets called.
 func TestOptions_EmptyBuilderReturnRejectsEmptyID(t *testing.T) {
+	ctx := t.Context()
 	var calls atomic.Int32
 	sub := compose.NewWorkflow[int, int]()
 	lambda := compose.InvokableLambda(func(_ context.Context, in int) (int, error) {
@@ -302,7 +307,7 @@ func TestOptions_EmptyBuilderReturnRejectsEmptyID(t *testing.T) {
 	node.AddInput(compose.START)
 	sub.End().AddInput("op")
 
-	compiled, err := sub.Compile(context.Background())
+	compiled, err := sub.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile sub: %v", err)
 	}
@@ -313,7 +318,7 @@ func TestOptions_EmptyBuilderReturnRejectsEmptyID(t *testing.T) {
 		}),
 	})
 	bridge := newParallelBridgeState(nil)
-	got, err := runParallelInvoke(context.Background(), "par", compiled, []int{0, 1, 2}, opts, bridge)
+	got, err := runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts, bridge)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -332,6 +337,7 @@ func TestOptions_EmptyBuilderReturnRejectsEmptyID(t *testing.T) {
 // safe because the sub-workflow has no checkpoint store in this
 // test.
 func TestOptions_EnableSubCheckpointFalse_NoPerItemID(t *testing.T) {
+	ctx := t.Context()
 	var calls atomic.Int32
 	sub := compose.NewWorkflow[int, int]()
 	lambda := compose.InvokableLambda(func(_ context.Context, in int) (int, error) {
@@ -342,7 +348,7 @@ func TestOptions_EnableSubCheckpointFalse_NoPerItemID(t *testing.T) {
 	node.AddInput(compose.START)
 	sub.End().AddInput("op")
 
-	compiled, err := sub.Compile(context.Background())
+	compiled, err := sub.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile sub: %v", err)
 	}
@@ -351,7 +357,7 @@ func TestOptions_EnableSubCheckpointFalse_NoPerItemID(t *testing.T) {
 		WithParallelEnableSubCheckpoint(false),
 	})
 	bridge := newParallelBridgeState(nil)
-	_, err = runParallelInvoke(context.Background(), "par", compiled, []int{0, 1, 2}, opts, bridge)
+	_, err = runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts, bridge)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}

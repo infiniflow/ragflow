@@ -18,82 +18,19 @@ package service
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
-
-	"ragflow/internal/utility"
 )
 
-var (
-	promptCache    = make(map[string]string)
-	promptMu       sync.RWMutex
-	promptsBaseDir string
-)
-
-// thinkBlockRE strips think blocks from LLM responses.
-//
-// This mirrors the Python original
-//
-//	re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-//
-// exactly: `.*` with re.DOTALL is greedy, so the regex consumes
-// everything from the start of the string up to and including the
-// LAST </think> on the input. The Go form uses [\s\S] (Go's
-// newline-aware any-char) and a greedy `*`. A non-greedy `*?` here
-// would diverge for responses containing more than one </think>
-// (e.g. malformed streams that re-emit a partial think block
-// after the real answer), stripping only the first and leaving the
-// rest of the response invisible to the caller.
-var thinkBlockRE = regexp.MustCompile(`^[\s\S]*</think>`)
-
-// jsonFenceRE matches markdown code fences around JSON responses.
+// jsonFenceRE matches Markdown code fences around JSON responses.
 // Mirrors Python's re.sub(r"(`{3}json\n|`{3}\n*$)", ..., flags=re.DOTALL).
 // Note: `\n*` is intentionally narrower than Go's `\s*` — Python only
 // matches newlines, not other whitespace, so a closing fence followed
 // by trailing spaces (e.g. "```   \n") is left intact.
 var jsonFenceRE = regexp.MustCompile("```json\\n|```\\n*$")
 
-func init() {
-	root := utility.GetProjectRoot()
-	if _, err := os.Stat(filepath.Join(root, "rag", "prompts")); err == nil {
-		promptsBaseDir = root
-		return
-	}
-	// Final fallback
-	promptsBaseDir = "/ragflow"
-}
-
-// LoadPrompt loads a prompt by name from the rag/prompts/ directory.
-// It caches loaded prompts for subsequent calls.
-// Corresponds to rag/prompts/template.py:load_prompt()
-func LoadPrompt(name string) (string, error) {
-	promptMu.RLock()
-	if cached, ok := promptCache[name]; ok {
-		promptMu.RUnlock()
-		return cached, nil
-	}
-	promptMu.RUnlock()
-
-	promptPath := filepath.Join(promptsBaseDir, "rag", "prompts", fmt.Sprintf("%s.md", name))
-	content, err := os.ReadFile(promptPath)
-	if err != nil {
-		return "", fmt.Errorf("prompt file '%s.md' not found in rag/prompts/: %w", name, err)
-	}
-
-	cached := strings.TrimSpace(string(content))
-	promptMu.Lock()
-	promptCache[name] = cached
-	promptMu.Unlock()
-
-	return cached, nil
-}
-
 // RenderPrompt renders a prompt template with the given variables.
 // Supports {{ variable }} and {{ variable | filter(args) }} syntax.
-// Corresponds to rag/prompts/generator.py template rendering (Jinja2).
 func RenderPrompt(template string, data map[string]interface{}) string {
 	// Handle {{ variable | filter(args) }} syntax - capture filter arguments too
 	filterPattern := regexp.MustCompile(`\{\{\s*(\w+)\s*\|\s*(\w+)\s*\(\s*([^)]*)\s*\)\s*\}\}`)

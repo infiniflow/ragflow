@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -118,7 +117,7 @@ func TestGoogleScholar_BuildURL(t *testing.T) {
 			wantNum:    "5",
 			wantHost:   "scholar.google.com",
 			wantQuery:  "ai",
-			wantParams: map[string]string{"as_vis": "1"},
+			wantParams: map[string]string{"as_sdt": "1,33", "as_vis": ""},
 		},
 		{
 			name:      "include patents (default)",
@@ -144,7 +143,8 @@ func TestGoogleScholar_BuildURL(t *testing.T) {
 				"scisbd": "1",
 				"as_ylo": "2019",
 				"as_yhi": "2023",
-				"as_vis": "1",
+				"as_sdt": "1,33",
+				"as_vis": "",
 			},
 		},
 	}
@@ -180,6 +180,7 @@ func TestGoogleScholar_BuildURL(t *testing.T) {
 
 func TestGoogleScholar_ParseResults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
@@ -191,7 +192,7 @@ func TestGoogleScholar_ParseResults(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewGoogleScholarToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"query":"transformer","top_n":5,"sort_by":"relevance","year_low":2020,"year_high":2024,"patents":true}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -229,23 +230,25 @@ func TestGoogleScholar_ParseResults(t *testing.T) {
 
 func TestGoogleScholar_EmptyQuery(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewGoogleScholarTool()
-	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	out, err := tool.InvokableRun(ctx, `{"query":""}`)
 	if err != nil {
 		t.Fatalf("InvokableRun(empty): %v", err)
 	}
 	var envelope googleScholarEnvelope
-	if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
+	if err = json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
 		t.Fatalf("empty result = %s / %v", out, err)
 	}
 }
 
 func TestGoogleScholar_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewGoogleScholarTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -259,6 +262,7 @@ func TestGoogleScholar_Info(t *testing.T) {
 
 func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	built, err := BuildByName("google_scholar", map[string]any{
 		"top_n":    float64(7),
@@ -274,7 +278,7 @@ func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
 	if scholar.defaults.TopN != 7 || scholar.defaults.SortBy != "date" || scholar.defaults.YearLow != 2020 || scholar.defaults.Patents == nil || *scholar.defaults.Patents {
 		t.Fatalf("defaults = %+v", scholar.defaults)
 	}
-	for _, params := range []map[string]any{{"top_n": 0}, {"top_n": 1.5}, {"sort_by": "newest"}, {"patents": "yes"}} {
+	for _, params := range []map[string]any{{"top_n": 0}, {"top_n": 1.5}, {"sort_by": "data"}, {"sort_by": "newest"}, {"patents": "yes"}} {
 		if _, err := BuildByName("google_scholar", params); err == nil {
 			t.Fatalf("BuildByName(%#v) succeeded", params)
 		}
@@ -286,7 +290,7 @@ func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
 	envelope := map[string]any{"results": []any{map[string]any{
 		"title": "Paper", "link": "https://paper.example", "authors": "A Author", "year": "2024", "snippet": "Abstract",
 	}}}
-	chunks, docAggs := scholar.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := scholar.BuildReferences(ctx, envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 || !strings.Contains(chunks[0]["content"].(string), "Authors: A Author") {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}
@@ -325,6 +329,7 @@ func TestRenderGoogleScholarReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
 
 func TestGoogleScholar_MergesNodeLevelDefaults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -343,8 +348,11 @@ func TestGoogleScholar_MergesNodeLevelDefaults(t *testing.T) {
 		if q.Get("as_yhi") != "2024" {
 			t.Errorf("as_yhi = %q, want 2024", q.Get("as_yhi"))
 		}
-		if q.Get("as_vis") != "1" {
-			t.Errorf("as_vis = %q, want 1", q.Get("as_vis"))
+		if q.Get("as_sdt") != "1,33" {
+			t.Errorf("as_sdt = %q, want 1,33", q.Get("as_sdt"))
+		}
+		if q.Has("as_vis") {
+			t.Errorf("as_vis = %q, want unset", q.Get("as_vis"))
 		}
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 		_, _ = w.Write([]byte(cannedScholarHTML))
@@ -362,7 +370,7 @@ func TestGoogleScholar_MergesNodeLevelDefaults(t *testing.T) {
 		YearHigh: 2024,
 		Patents:  boolPtr(false),
 	})
-	_, err := tool.InvokableRun(context.Background(), `{}`)
+	_, err := tool.InvokableRun(ctx, `{}`)
 	if err != nil {
 		t.Fatalf("InvokableRun with defaults: %v", err)
 	}

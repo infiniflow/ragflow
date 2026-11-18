@@ -19,8 +19,8 @@
 // that did not previously satisfy ParseResultProducer:
 //
 //   - HTMLParser — block-level walker that emits the python-compatible
-//     {text, doc_type_kwd, ck_type} shape.
-//   - TextParser — paragraph-splitting for the text&code family
+//     {text, doc_type_kwd, layout} shape.
+//   - TextParser — normalized one-unit output for the text&code family
 //     (.txt / .py / .js / .java / .c / .cpp / .h / .php / .go / .ts
 //     / .sh / .cs / .kt / .sql).
 //
@@ -33,39 +33,41 @@
 package parser
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"golang.org/x/net/html"
+	"golang.org/x/text/encoding/simplifiedchinese"
 
 	"ragflow/internal/utility"
 )
 
-// TestTextParser_ParseWithResult_ParaSplit pins the paragraph-split
-// rule. A blank-line-separated input yields one item per
-// paragraph; the python TxtParser does the same.
-func TestTextParser_ParseWithResult_ParaSplit(t *testing.T) {
+// TestTextParser_ParseWithResult_PreservesOneTextUnit verifies that parser
+// output does not claim chunk boundaries by splitting on its historical
+// fixed delimiter set. GeneralChunker owns that decision from this point on.
+func TestTextParser_ParseWithResult_PreservesOneTextUnit(t *testing.T) {
 	p := NewTextParser()
-	src := []byte("First paragraph.\n\nSecond paragraph.\n\nThird.")
-	ctx := t.Context()
-	res := p.ParseWithResult(ctx, "doc.txt", src)
+	res := p.ParseWithResult(t.Context(), "doc.txt", []byte("First sentence.\r\n\r\nSecond sentence!\rThird sentence?"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if got, want := res.File["name"], "doc.txt"; got != want {
-		t.Errorf("File.name = %v, want %v", got, want)
+		t.Fatalf("File.name = %v, want %v", got, want)
 	}
-	if len(res.JSON) != 3 {
-		t.Fatalf("JSON len = %d, want 3 (one per paragraph)", len(res.JSON))
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1: %#v", len(res.JSON), res.JSON)
 	}
-	if got, want := res.JSON[0]["text"], "First paragraph."; got != want {
-		t.Errorf("JSON[0].text = %v, want %v", got, want)
+	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "text"; got != want {
+		t.Fatalf("JSON[0].doc_type_kwd = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[2]["text"], "Third."; got != want {
-		t.Errorf("JSON[2].text = %v, want %v", got, want)
+	got, _ := res.JSON[0].ToMap()["text"].(string)
+	want := "First sentence.\n\nSecond sentence!\nThird sentence?"
+	if got != want {
+		t.Errorf("JSON[0].text = %q, want %q", got, want)
 	}
 }
 
@@ -85,10 +87,12 @@ func TestTextParser_ParseWithResult_Empty(t *testing.T) {
 	}
 }
 
-// TestTextParser_ParseWithResult_LongParagraphSlicing pins the
-// maxItemBytes boundary behaviour. A single paragraph longer
-// than 8192 bytes is sliced at the nearest line boundary.
-func TestTextParser_ParseWithResult_LongParagraphSlicing(t *testing.T) {
+// TestTextParser_ParseWithResult_NoSizeCap pins that the parser performs no
+// per-item byte slicing: a single continuous run longer than any prior cap
+// (here 9000 'a's with no delimiter) stays as one item whose full content is
+// preserved. Sizing is delegated to the chunker / embedding truncation, matching
+// python's parser_txt (which also does no size slicing).
+func TestTextParser_ParseWithResult_NoSizeCap(t *testing.T) {
 	ctx := t.Context()
 	p := NewTextParser()
 	long := strings.Repeat("a", 9000)
@@ -96,32 +100,42 @@ func TestTextParser_ParseWithResult_LongParagraphSlicing(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if len(res.JSON) < 2 {
-		t.Errorf("JSON len = %d, want >=2 (sliced at maxItemBytes)", len(res.JSON))
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1 (no per-item size cap)", len(res.JSON))
 	}
-	for i, it := range res.JSON {
-		if txt, _ := it["text"].(string); len(txt) > 8192 {
-			t.Errorf("JSON[%d].text len = %d, exceeds maxItemBytes=8192", i, len(txt))
-		}
+	if txt, _ := res.JSON[0].ToMap()["text"].(string); txt != long {
+		t.Errorf("text len = %d, want %d (full content preserved, not sliced)", len(txt), len(long))
 	}
 }
 
-// TestTextParser_ParseWithResult_InvalidUTF8 pins the UTF-8
-// validation rule. Invalid bytes produce an error in the result
-// (matching the python TxtParser's behaviour).
-func TestTextParser_ParseWithResult_InvalidUTF8(t *testing.T) {
+// TestTextParser_ParseWithResult_GBK pins that non-UTF-8 (e.g. GBK) text input
+// is decoded to valid UTF-8 rather than returning an error.
+func TestTextParser_ParseWithResult_GBK(t *testing.T) {
 	ctx := t.Context()
 	p := NewTextParser()
-	bad := []byte{0xff, 0xfe, 0xfd}
-	res := p.ParseWithResult(ctx, "bad.txt", bad)
-	if res.Err == nil {
-		t.Fatal("want error for invalid UTF-8, got nil")
+	gbkBytes, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte("测试中文文本内容"))
+	if err != nil {
+		t.Fatalf("GBK encode: %v", err)
+	}
+	res := p.ParseWithResult(ctx, "chinese_gbk.txt", gbkBytes)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult(GBK): unexpected error %v", res.Err)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatal("want non-empty items")
+	}
+	got, _ := res.JSON[0].ToMap()["text"].(string)
+	if got != "测试中文文本内容" {
+		t.Errorf("got %q, want %q", got, "测试中文文本内容")
+	}
+	if enc, _ := res.File["encoding"].(string); enc != "gb18030" && enc != "gbk" {
+		t.Errorf("File.encoding = %q, want gb18030 or gbk", enc)
 	}
 }
 
 // TestHTMLParser_ParseWithResult_BlockSplit pins the HTML walker.
 // Three block elements (heading, paragraph, list) yield three
-// items with the python-compatible ck_type vocabulary.
+// items with the structural layout vocabulary.
 func TestHTMLParser_ParseWithResult_BlockSplit(t *testing.T) {
 	ctx := t.Context()
 	p := NewHTMLParser()
@@ -134,28 +148,28 @@ func TestHTMLParser_ParseWithResult_BlockSplit(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 3 {
 		t.Fatalf("JSON len = %d, want 3 (h1, p, ul)", len(res.JSON))
 	}
-	if got, want := res.JSON[0]["ck_type"], "heading"; got != want {
-		t.Errorf("JSON[0].ck_type = %v, want %v", got, want)
+	if got, want := res.JSON[0].ToMap()["layout"], "heading"; got != want {
+		t.Errorf("JSON[0].layout = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[0]["text"], "Title"; got != want {
+	if got, want := res.JSON[0].ToMap()["text"], "Title"; got != want {
 		t.Errorf("JSON[0].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1]["ck_type"], "paragraph"; got != want {
-		t.Errorf("JSON[1].ck_type = %v, want %v", got, want)
+	if got, want := res.JSON[1].ToMap()["layout"], "paragraph"; got != want {
+		t.Errorf("JSON[1].layout = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1]["text"], "First paragraph."; got != want {
+	if got, want := res.JSON[1].ToMap()["text"], "First paragraph."; got != want {
 		t.Errorf("JSON[1].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[2]["ck_type"], "list"; got != want {
-		t.Errorf("JSON[2].ck_type = %v, want %v", got, want)
+	if got, want := res.JSON[2].ToMap()["layout"], "list"; got != want {
+		t.Errorf("JSON[2].layout = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[2]["text"], "Item one"; got != want {
+	if got, want := res.JSON[2].ToMap()["text"], "Item one"; got != want {
 		t.Errorf("JSON[2].text = %v, want %v", got, want)
 	}
 }
@@ -181,7 +195,7 @@ Tail text
 	}
 	want := []struct {
 		text   string
-		ckType string
+		layout string
 	}{
 		{"Intro text", "text"},
 		{"Title", "heading"},
@@ -193,14 +207,14 @@ Tail text
 		t.Fatalf("JSON len = %d, want %d: %#v", len(res.JSON), len(want), res.JSON)
 	}
 	for i, w := range want {
-		if got := res.JSON[i]["text"]; got != w.text {
+		if got := res.JSON[i].ToMap()["text"]; got != w.text {
 			t.Errorf("JSON[%d].text = %v, want %v", i, got, w.text)
 		}
-		if got := res.JSON[i]["doc_type_kwd"]; got != "text" {
+		if got := res.JSON[i].ToMap()["doc_type_kwd"]; got != "text" {
 			t.Errorf("JSON[%d].doc_type_kwd = %v, want text", i, got)
 		}
-		if got := res.JSON[i]["ck_type"]; got != w.ckType {
-			t.Errorf("JSON[%d].ck_type = %v, want %v", i, got, w.ckType)
+		if got := res.JSON[i].ToMap()["layout"]; got != w.layout {
+			t.Errorf("JSON[%d].layout = %v, want %v", i, got, w.layout)
 		}
 	}
 }
@@ -221,18 +235,19 @@ Tail text`)
 		t.Fatalf("JSON len = %d, want %d: %#v", len(res.JSON), len(want), res.JSON)
 	}
 	for i, text := range want {
-		if got := res.JSON[i]["text"]; got != text {
+		if got := res.JSON[i].ToMap()["text"]; got != text {
 			t.Errorf("JSON[%d].text = %v, want %v", i, got, text)
 		}
 	}
 }
 
-func TestWalkHTMLBlocks_SkipsHeadLooseText(t *testing.T) {
+func TestWalkHTMLBlocksWithState_SkipsHeadLooseText(t *testing.T) {
 	head := &html.Node{Type: html.ElementNode, Data: "head"}
 	head.AppendChild(&html.Node{Type: html.TextNode, Data: "Head metadata"})
 
 	var items []map[string]any
-	walkHTMLBlocks(head, &items)
+	state := &htmlWalkState{budget: newMediaBudgetForTest()}
+	walkHTMLBlocksWithState(head, &items, state)
 	if len(items) != 0 {
 		t.Fatalf("JSON len = %d, want 0: %#v", len(items), items)
 	}
@@ -258,7 +273,7 @@ func TestHTMLParser_ParseWithResult_SkipsScriptAndStyle(t *testing.T) {
 	if len(res.JSON) != 3 {
 		t.Errorf("JSON len = %d, want 3 (script+style+noscript skipped)", len(res.JSON))
 	}
-	for _, it := range res.JSON {
+	for _, it := range ItemsToMaps(res.JSON) {
 		if txt, _ := it["text"].(string); strings.Contains(txt, "alert") ||
 			strings.Contains(txt, "color") ||
 			strings.Contains(txt, "inline alert") ||
@@ -274,11 +289,106 @@ func TestHTMLParser_ParseWithResult_SkipsScriptAndStyle(t *testing.T) {
 // `utility.FileTypeTXT` resolves to a TextParser that satisfies
 // ParseResultProducer.
 func TestGetParser_RoutesTextAndCode(t *testing.T) {
-	p, err := GetParser(utility.FileTypeTXT)
+	p, _, err := GetParser(utility.FileTypeTXT, nil)
 	if err != nil {
 		t.Fatalf("GetParser(FileTypeTXT): %v", err)
 	}
 	if _, ok := p.(ParseResultProducer); !ok {
 		t.Fatal("TextParser does not implement ParseResultProducer")
+	}
+}
+
+// TestTextParser_ParseWithResult_NewlineNormalization pins the
+// normalizeTextNewlines contract: CRLF ("\r\n") and lone-CR ("\r") line
+// endings fold to LF while the complete text remains one parser unit.
+func TestTextParser_ParseWithResult_NewlineNormalization(t *testing.T) {
+	ctx := t.Context()
+	p := NewTextParser()
+
+	// Same logical content expressed with LF, CRLF, and lone-CR line endings.
+	lf := "First line.\nSecond line! Third? Fourth."
+	crlf := strings.ReplaceAll(lf, "\n", "\r\n")
+	cr := strings.ReplaceAll(lf, "\n", "\r")
+
+	extract := func(src string) []string {
+		res := p.ParseWithResult(ctx, "doc.txt", []byte(src))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult: %v", res.Err)
+		}
+		out := make([]string, 0, len(res.JSON))
+		for _, it := range ItemsToMaps(res.JSON) {
+			if txt, _ := it["text"].(string); txt != "" {
+				out = append(out, txt)
+			}
+		}
+		return out
+	}
+
+	want := extract(lf)
+	if len(want) == 0 {
+		t.Fatal("LF baseline produced no items")
+	}
+	for _, variant := range []struct {
+		name string
+		src  string
+	}{
+		{"crlf", crlf},
+		{"cr", cr},
+	} {
+		got := extract(variant.src)
+		if len(got) != len(want) {
+			t.Fatalf("%s: JSON len = %d, want %d: %#v", variant.name, len(got), len(want), got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("%s: JSON[%d].text = %q, want %q", variant.name, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+// TestTextParser_AlignmentGolden verifies Go's ParseWithResult output is
+// content-equivalent to Python's _code on the shared sample, using the shared
+// concatenation-normalization alignment tool (align_test.go). Item boundaries
+// intentionally differ because Parser no longer performs Python's delimiter
+// split; the comparison joins normalized text and checks content only.
+//
+// No generator script is committed. The baseline metadata records the Python
+// generator and delimiter used for normalization; Parser output is compared
+// for content equivalence, not Python's historical item boundaries.
+func TestTextParser_AlignmentGolden(t *testing.T) {
+	ctx := t.Context()
+	p := NewTextParser()
+
+	cases := []struct {
+		name   string
+		sample string
+		golden string
+	}{
+		{"en", "testdata/textcode.sample.en.txt", "testdata/textcode.python.en.golden.json"},
+		{"zh", "testdata/textcode.sample.zh.txt", "testdata/textcode.python.zh.golden.json"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sample, err := os.ReadFile(tc.sample)
+			if err != nil {
+				t.Fatalf("read sample: %v", err)
+			}
+			res := p.ParseWithResult(ctx, tc.sample, sample)
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+
+			gd := LoadGoldenDoc(t, tc.golden)
+			ignore := AcceptedDivergences(gd.Meta)
+
+			goText := FilterOutDocTypes(FilterByDocType(ItemsToMaps(res.JSON), "text"), ignore)
+			pyText := FilterOutDocTypes(FilterByDocType(gd.Items, "text"), ignore)
+
+			delimiter, _ := gd.Meta["delimiter"].(string)
+			if ok, diff := CompareAlignment(goText, pyText, TextCodeAlignOptions(delimiter)); !ok {
+				t.Fatalf("text&code parser not aligned with Python golden:%s", diff)
+			}
+		})
 	}
 }

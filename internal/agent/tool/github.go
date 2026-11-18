@@ -18,13 +18,10 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -50,8 +47,8 @@ const githubQueryDescription = "The search keywords to execute with GitHub. Use 
 // githubParams mirrors Python GitHubParam. Info() exposes only Query to the
 // model, while TopN is a canvas-side configuration value merged with defaults.
 type githubParams struct {
-	Query string `json:"query"`
-	TopN  int    `json:"top_n"`
+	Query string `json:"query" doc:"The search keywords to execute with GitHub. Use the most important terms and synonyms from the original request." required:"true"`
+	TopN  int    `json:"top_n" schema:"-"`
 }
 
 // githubResponse keeps GitHub's raw repository objects intact. The Python
@@ -109,17 +106,7 @@ func NewGitHubToolWithDefaults(h *HTTPHelper, defaults githubParams) *GitHubTool
 
 // Info returns the tool's metadata for the chat model.
 func (g *GitHubTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: githubToolName,
-		Desc: githubToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     githubQueryDescription,
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(githubToolName, githubToolDescription, githubParams{})
 }
 
 // buildGitHubURL constructs the repository search URL used by the Python
@@ -230,10 +217,9 @@ func buildGitHubReferences(envelope map[string]any) ([]map[string]any, []map[str
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(githubHashInt(content, 100000000), 10)
 		title := githubValueString(repository["name"])
 		resultURL := githubValueString(repository["html_url"])
-		displayID := strconv.FormatInt(githubHashInt(documentID, 500), 10)
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -309,12 +295,6 @@ func githubValueString(value any) string {
 		return "False"
 	}
 	return fmt.Sprint(value)
-}
-
-func githubHashInt(value string, modulus int64) int64 {
-	sum := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(sum[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateGitHubRunes(value string, limit int) string {

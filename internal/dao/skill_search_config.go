@@ -18,8 +18,8 @@ package dao
 
 import (
 	"context"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"strings"
 
 	"gorm.io/gorm"
@@ -131,7 +131,7 @@ func (dao *SkillSearchConfigDAO) CreateWithTenantSpace(ctx context.Context, db *
 	}
 
 	defaultConfig := &entity.SkillSearchConfig{
-		ID:                     utility.GenerateUUID(),
+		ID:                     common.GenerateUUID(),
 		TenantID:               tenantID,
 		SpaceID:                spaceID,
 		EmbdID:                 embdID,
@@ -179,9 +179,4 @@ func (dao *SkillSearchConfigDAO) UpdateByTenantID(ctx context.Context, db *gorm.
 func (dao *SkillSearchConfigDAO) UpdateByTenantAndEmbdID(ctx context.Context, db *gorm.DB, tenantID, spaceID, embdID string, updates map[string]interface{}) error {
 	result := db.WithContext(ctx).Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND space_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), embdID, "1").Updates(updates)
 	return result.Error
-}
-
-// Delete deletes a skill search config by ID (soft delete)
-func (dao *SkillSearchConfigDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.SkillSearchConfig{}).Where("id = ?", id).Update("status", "0").Error
 }

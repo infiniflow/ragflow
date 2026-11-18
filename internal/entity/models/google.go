@@ -150,8 +150,9 @@ type GoogleModel struct {
 func NewGoogleModel(baseURL map[string]string, urlSuffix URLSuffix) *GoogleModel {
 	return &GoogleModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -165,16 +166,20 @@ func (g *GoogleModel) Name() string {
 }
 
 func (g *GoogleModel) clientConfig(apiKey string, apiConfig *APIConfig) *genai.ClientConfig {
-	return &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI, HTTPOptions: genai.HTTPOptions{BaseURL: g.baseURL(apiConfig)}}
+	return &genai.ClientConfig{
+		APIKey:      apiKey,
+		Backend:     genai.BackendGeminiAPI,
+		HTTPClient:  g.baseModel.httpClient,
+		HTTPOptions: genai.HTTPOptions{BaseURL: g.baseURL(apiConfig)},
+	}
 }
 
 func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
 	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		defaultConfig := &APIConfig{}
-		if apiConfig != nil {
-			defaultConfig.BaseURL = apiConfig.BaseURL
-		}
+		defaultConfig.BaseURL = apiConfig.BaseURL
+
 		baseURL, err = g.baseModel.GetBaseURL(defaultConfig)
 		if err != nil {
 			return ""
@@ -611,14 +616,14 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 // Embed generates embeddings for a batch of texts using the Gemini embeddings API.
 // The SDK routes to batchEmbedContents internally, so all texts are sent in one request.
-func (g *GoogleModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (g *GoogleModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return nil, fmt.Errorf("texts is empty")
 	}
 
@@ -630,8 +635,8 @@ func (g *GoogleModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
 
-	contents := make([]*genai.Content, len(texts))
-	for i, text := range texts {
+	contents := make([]*genai.Content, len(request.Texts))
+	for i, text := range request.Texts {
 		contents[i] = genai.NewContentFromText(text, genai.RoleUser)
 	}
 
@@ -646,8 +651,8 @@ func (g *GoogleModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, fmt.Errorf("failed to embed content: %w", err)
 	}
 
-	if len(resp.Embeddings) != len(texts) {
-		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(resp.Embeddings))
+	if len(resp.Embeddings) != len(request.Texts) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(request.Texts), len(resp.Embeddings))
 	}
 
 	result := make([]EmbeddingData, len(resp.Embeddings))
@@ -674,7 +679,7 @@ func (g *GoogleModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (g *GoogleModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", g.Name())
 }
 
 func (g *GoogleModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -683,42 +688,46 @@ func (g *GoogleModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 }
 
 // Rerank calculates similarity scores between query and documents
-func (g *GoogleModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (g *GoogleModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", g.Name())
 }
 
 // TranscribeAudio transcribe audio
 func (g *GoogleModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", g.Name())
 }
 
 func (g *GoogleModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", g.Name())
 }
 
 // AudioSpeech convert text to audio
 func (g *GoogleModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", g.Name())
 }
 
 func (g *GoogleModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", g.Name())
 }
 
 // OCRFile OCR file
 func (g *GoogleModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", g.Name())
 }
 
 // ParseFile parse file
 func (g *GoogleModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", g.Name())
 }
 
 func (g *GoogleModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", g.Name())
 }
 
 func (g *GoogleModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", g.Name())
+}
+
+func (g *GoogleModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", g.Name())
 }

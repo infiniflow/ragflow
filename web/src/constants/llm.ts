@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 export enum ModelStatus {
   Active = 'active',
   Inactive = 'inactive',
@@ -28,6 +44,7 @@ export enum LLMFactory {
   NVIDIA = 'NVIDIA',
   LMStudio = 'LM-Studio',
   OpenAiAPICompatible = 'OpenAI-API-Compatible',
+  MWS = 'MWS',
   Cohere = 'Cohere',
   LeptonAI = 'LeptonAI',
   TogetherAI = 'TogetherAI',
@@ -68,8 +85,10 @@ export enum LLMFactory {
   MinerU = 'MinerU',
   MinerUNet = 'MinerU.Net',
   PaddleOCR = 'PaddleOCR',
-  PaddleOCRNet = 'PaddleOCR.Net',
+  PaddleOCRLocal = 'PaddleOCR.local',
+  MiniCPMOCR = 'MiniCPM-OCR',
   OpenDataLoader = 'OpenDataLoader',
+  UnlimitedOCR = 'Unlimited-OCR-2',
   SoMark = 'SoMark',
   N1n = 'n1n',
   Avian = 'Avian',
@@ -86,9 +105,33 @@ export enum LLMFactory {
   Qiniu = 'Qiniu',
   TokenHub = 'TokenHub',
   NewAPI = 'New API',
+  DaoXE = 'DaoXE',
   FunASR = 'FunASR',
   AIMLAPI = 'aimlapi.com',
   GreenPT = 'GreenPT',
+  Synthorai = 'Synthorai',
+  RadeonCloud = 'Radeon Cloud',
+  ApiRoute = 'API-Route',
+  CheaperInference = 'Cheaper Inference',
+  Opper = 'Opper',
+  DemonRoute = 'Demon Route',
+  TrustedRouter = 'TrustedRouter',
+  EmpirioLabs = 'EmpirioLabs AI',
+  AIStupidLevel = 'AI Stupid Level',
+  Runcrate = 'Runcrate',
+  WorldRouter = 'WorldRouter',
+  CloudGPU = 'CloudGPU',
+  Obscurify = 'Obscurify.ai',
+  Cheapaimodel = 'cheapaimodel',
+  SystemOne = 'SystemOne',
+  Nace = 'Nace',
+  HostingerRouter = 'Hostinger Router',
+  Wally = 'Wally',
+  Shengsuanyun = 'Shengsuanyun',
+  Synap = 'Synap',
+  Wiro = 'Wiro AI',
+  Crusoe = 'Crusoe',
+  HopBase = 'HopBase',
 }
 
 // Please lowercase the file name
@@ -157,7 +200,8 @@ export const IconMap = {
   [LLMFactory.MinerU]: 'mineru',
   [LLMFactory.MinerUNet]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
-  [LLMFactory.PaddleOCRNet]: 'paddleocr',
+  [LLMFactory.PaddleOCRLocal]: 'paddleocr',
+  [LLMFactory.MiniCPMOCR]: 'minicpm-ocr',
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
   [LLMFactory.RAGcon]: 'ragcon',
@@ -172,15 +216,51 @@ export const IconMap = {
   [LLMFactory.OrcaRouter]: 'orcarouter',
   [LLMFactory.Qiniu]: 'qiniu',
   [LLMFactory.TokenHub]: 'tokenhub',
+  [LLMFactory.UnlimitedOCR]: 'unlimited-ocr',
   [LLMFactory.SoMark]: 'somark',
   [LLMFactory.NewAPI]: 'new-api',
+  [LLMFactory.DaoXE]: 'daoxe',
   [LLMFactory.FunASR]: 'funasr',
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
+  [LLMFactory.Synthorai]: 'synthorai',
+  [LLMFactory.RadeonCloud]: 'radeon-cloud',
+  [LLMFactory.ApiRoute]: 'apiroute',
+  [LLMFactory.MWS]: 'mws',
+  [LLMFactory.CheaperInference]: 'cheaperinference',
+  [LLMFactory.Opper]: 'opper',
+  [LLMFactory.TrustedRouter]: 'trustedrouter',
+  [LLMFactory.EmpirioLabs]: 'empiriolabs',
+  [LLMFactory.AIStupidLevel]: 'aistupidlevel',
+  [LLMFactory.Runcrate]: 'runcrate',
+  [LLMFactory.Nace]: 'nace',
+  [LLMFactory.WorldRouter]: 'worldrouter',
+  [LLMFactory.CloudGPU]: 'cloudgpu',
+  [LLMFactory.Obscurify]: 'obscurify',
+  [LLMFactory.HostingerRouter]: 'hostinger-router',
+  [LLMFactory.Cheapaimodel]: 'cheapaimodel',
+  [LLMFactory.Wally]: 'wally',
+  [LLMFactory.Shengsuanyun]: 'shengsuanyun',
+  [LLMFactory.Synap]: 'synap',
+  [LLMFactory.Wiro]: 'wiro',
+  [LLMFactory.Crusoe]: 'crusoe',
+  [LLMFactory.HopBase]: 'hopbase',
 };
+
+/**
+ * Providers that may serve a given model type.
+ *
+ * Types without an entry are unrestricted — listing every provider here would
+ * be a second copy of the catalog that goes stale. Decision is intentionally
+ * unrestricted: the backend derives the System One endpoint from the selected
+ * instance's own base URL, so any provider that serves that path on its
+ * instances can offer decision models.
+ */
+export const ModelTypeProviderMap: Record<string, string[]> = {};
 
 export const ModelTypeToField: Record<string, string> = {
   chat: 'llm_id',
+  decision: 'decision_id',
   embedding: 'embd_id',
   vision: 'img2txt_id',
   asr: 'asr_id',
@@ -190,6 +270,7 @@ export const ModelTypeToField: Record<string, string> = {
 
 export const FieldToModelType: Record<string, string> = {
   llm_id: 'chat',
+  decision_id: 'decision',
   embd_id: 'embedding',
   img2txt_id: 'vision',
   asr_id: 'asr',
@@ -201,12 +282,39 @@ export const APIMapUrl = {
   [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
   [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
   [LLMFactory.GreenPT]: 'https://greenpt.ai',
+  [LLMFactory.Synthorai]: 'https://synthorai.io',
+  [LLMFactory.ApiRoute]: 'https://www.api-route.com',
+  [LLMFactory.DaoXE]: 'https://daoxe.com',
+  [LLMFactory.CheaperInference]: 'https://cheaperinference.com',
+  [LLMFactory.Opper]: 'https://platform.opper.ai',
+  [LLMFactory.TrustedRouter]: 'https://trustedrouter.com/keys',
+  [LLMFactory.EmpirioLabs]:
+    'https://platform.empiriolabs.ai/dashboard/api-keys',
+  [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
+  [LLMFactory.Runcrate]:
+    'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
+  [LLMFactory.Nace]: 'https://console.nace.ai/dashboard/api-keys',
+  [LLMFactory.WorldRouter]:
+    'https://worldrouter.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=provider&utm_campaign=integration',
+  [LLMFactory.CloudGPU]: 'https://cloudgpu.app/api/console',
+  [LLMFactory.Obscurify]: 'https://obscurify.ai/account',
+  [LLMFactory.HostingerRouter]: 'https://hpanel.hostinger.com/ai-router',
+  [LLMFactory.Cheapaimodel]:
+    'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
+  [LLMFactory.Wally]: 'https://console.runanywhere.ai',
+  [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
+  [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
+  [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
+  [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
+  [LLMFactory.MWS]:
+    'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
   [LLMFactory.Gemini]: 'https://aistudio.google.com/app/apikey',
   [LLMFactory.DeepSeek]: 'https://platform.deepseek.com/api_keys',
   [LLMFactory.Moonshot]: 'https://platform.moonshot.cn/console/api-keys',
-  [LLMFactory.TongYiQianWen]: 'https://dashscope.console.aliyun.com/apiKey',
-  [LLMFactory.ZhipuAI]: 'https://open.bigmodel.cn/usercenter/apikeys',
+  [LLMFactory.TongYiQianWen]:
+    'https://bailian.console.aliyun.com/?tab=model#/api-key',
+  [LLMFactory.ZhipuAI]: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
   [LLMFactory.XAI]: 'https://x.ai/api/',
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
   [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',
@@ -219,7 +327,7 @@ export const APIMapUrl = {
   [LLMFactory.AzureOpenAI]:
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
-  [LLMFactory.XunFeiSpark]: 'https://console.xfyun.cn/services/cbm',
+  [LLMFactory.XunFeiSpark]: 'https://maas.xfyun.cn/apikey',
   [LLMFactory.MiniMax]:
     'https://platform.minimaxi.com/user-center/basic-information',
   [LLMFactory.Groq]: 'https://console.groq.com/keys',
@@ -247,7 +355,8 @@ export const APIMapUrl = {
   [LLMFactory.DeerAPI]: 'https://api.deerapi.com/token',
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
-  [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.PaddleOCR]: 'https://aistudio.baidu.com/paddleocr',
+  [LLMFactory.MiniCPMOCR]: 'https://platform.modelbest.cn/console/keys',
   [LLMFactory.SoMark]: 'https://somark.cn/workbench/apikey',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',
@@ -282,7 +391,9 @@ export const APIMapUrl = {
   [LLMFactory.JiekouAI]: 'https://jiekou.ai',
   [LLMFactory.MinerU]: 'https://mineru.net',
   [LLMFactory.MinerUNet]: 'https://mineru.net',
-  [LLMFactory.PaddleOCRNet]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.UnlimitedOCR]: 'https://github.com/baidu/Unlimited-OCR',
+  [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
+  [LLMFactory.Shengsuanyun]: 'https://www.shengsuanyun.com/zh/?from=ragflow',
 };

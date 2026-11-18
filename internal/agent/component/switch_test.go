@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
@@ -56,7 +55,7 @@ func TestSwitch_AndMatches(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys["x"] = "yes"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -87,7 +86,7 @@ func TestSwitch_OrMatches(t *testing.T) {
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Sys["score"] = "85"
 	state.Sys["flag"] = "no"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -129,7 +128,7 @@ func TestSwitch_DefaultFallback(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-3", "task-3")
 	state.Sys["x"] = "no"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -156,7 +155,7 @@ func TestSwitch_LegacyEndCpnIDsFallback(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-end-cpn", "task-end-cpn")
 	state.Sys["x"] = "no"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -186,7 +185,7 @@ func TestSwitch_ContainsAndEmpty(t *testing.T) {
 	state := canvas.NewCanvasState("run-4", "task-4")
 	state.Sys["body"] = "hello world"
 	state.Sys["opt"] = ""
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -229,7 +228,7 @@ func TestSwitch_LegacyConditionsAndArrayTo(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-legacy", "task-legacy")
 	state.SetVar("UserFillUp:Menu", "demo", "loop")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	out, err := s.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -238,6 +237,51 @@ func TestSwitch_LegacyConditionsAndArrayTo(t *testing.T) {
 	targets := nextTargets(out)
 	if len(targets) != 1 || targets[0] != "Loop:InputUntil1" {
 		t.Errorf("_next: got %v, want [\"Loop:InputUntil1\"]", targets)
+	}
+}
+
+func TestSwitch_EmptyConditionUsesLatestExplicitBeginInput(t *testing.T) {
+	begin, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"a": map[string]any{}},
+	})
+	switchNode, _ := NewSwitchComponent(map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"cpn_id": "begin@a", "operator": "empty"},
+				},
+				"to": []any{"if_target"},
+			},
+		},
+		"end_cpn_ids": []any{"else_target"},
+	})
+	state := canvas.NewCanvasState("run-begin-switch", "task-begin-switch")
+	ctx := withStateForTest(t.Context(), state)
+
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "non-empty", value: "hello", want: "else_target"},
+		{name: "empty", value: "", want: "if_target"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			beginOut, err := begin.Invoke(ctx, nil, map[string]any{"query": map[string]any{"a": tc.value}})
+			if err != nil {
+				t.Fatalf("Begin.Invoke: %v", err)
+			}
+			state.SetVar("begin", "a", beginOut["a"])
+			out, err := switchNode.Invoke(ctx, nil, nil)
+			if err != nil {
+				t.Fatalf("Switch.Invoke: %v", err)
+			}
+			targets := nextTargets(out)
+			if len(targets) != 1 || targets[0] != tc.want {
+				t.Fatalf("_next = %v, want [%q]", targets, tc.want)
+			}
+		})
 	}
 }
 
@@ -253,7 +297,7 @@ func TestSwitch_NilUpstreamContainsEmptyNeedleMatches(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-contains", "task-nil-contains")
 	state.Sys["answer"] = nil
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -284,7 +328,7 @@ func TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-needle", "task-nil-needle")
 	state.Sys["answer"] = nil
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -316,7 +360,7 @@ func TestSwitch_NilValueContainsDoesNotRaise(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-value", "task-nil-value")
 	state.Sys["answer"] = "foobar"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -350,7 +394,7 @@ func TestSwitch_NilUpstreamStartWithEndWithDoNotCrash(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-start-end", "task-nil-start-end")
 	state.Sys["answer"] = nil
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	for _, tc := range []struct {
 		name string
@@ -393,7 +437,7 @@ func TestSwitch_MultiTargetTo(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-multi", "task-multi")
 	state.SetVar("UserFillUp:Menu", "demo", "data_ops")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -430,7 +474,7 @@ func TestSwitch_MultiTargetTo(t *testing.T) {
 func TestSwitch_EmptyAndConditionFallsThrough(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-empty-and", "task-1")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	// Empty clauses: must not match. Should fall through to default.
 	inputs := map[string]any{
@@ -462,7 +506,7 @@ func TestSwitch_EmptyAndConditionFallsThrough(t *testing.T) {
 func TestSwitch_LegacyEmptyItemsFallsThrough(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-legacy-empty", "task-1")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -496,7 +540,7 @@ func TestSwitch_SatisfiedAndConditionStillRoutes(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-and-ok", "task-1")
 	state.Sys["greeting"] = "hello world"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -526,5 +570,103 @@ func TestSwitch_SatisfiedAndConditionStillRoutes(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("satisfied and-condition must route to CORRECT_TARGET, got %v", targets)
+	}
+}
+
+// TestSwitch_NumericOperatorUnparseableOperandFallsThrough pins #19416: the
+// comparison value comes straight from the condition config and defaults to
+// "" (check() only requires a branch target), so a numeric variable compared
+// with an empty or non-numeric value must be a non-match that falls through
+// to the default — not an error that aborts the canvas run. The == case is
+// already safe via equalFoldValues; the ordered operators are the fix.
+func TestSwitch_NumericOperatorUnparseableOperandFallsThrough(t *testing.T) {
+	cases := []struct {
+		name  string
+		op    string
+		value any
+	}{
+		{name: "empty value", op: ">", value: ""},
+		{name: "text value", op: ">", value: "abc"},
+		{name: "less than empty", op: "<", value: ""},
+		{name: "gte text", op: ">=", value: "high"},
+		{name: "lte nil", op: "<=", value: nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, _ := NewSwitchComponent(nil)
+			state := canvas.NewCanvasState("run-num", "task-num")
+			state.Sys["score"] = 5
+			ctx := withStateForTest(t.Context(), state)
+
+			inputs := map[string]any{
+				"conditions": []any{
+					map[string]any{
+						"op": "and",
+						"clauses": []any{
+							map[string]any{"left": "{{sys.score}}", "op": c.op, "right": c.value},
+						},
+						"to": "numeric_target",
+					},
+				},
+				"default": "fallback",
+			}
+			out, err := s.Invoke(ctx, nil, inputs)
+			if err != nil {
+				t.Fatalf("Invoke must not fail on an unparseable comparison value: %v", err)
+			}
+			targets := nextTargets(out)
+			if len(targets) != 1 || targets[0] != "fallback" {
+				t.Errorf("unparseable operand must fall through to the default, got %v", targets)
+			}
+		})
+	}
+}
+
+// TestSwitch_NumericOperatorsStillCompare verifies the ordered operators
+// keep working when both operands parse, so the fall-through change cannot
+// regress the matching path.
+func TestSwitch_NumericOperatorsStillCompare(t *testing.T) {
+	cases := []struct {
+		name  string
+		op    string
+		right any
+		want  bool
+	}{
+		{name: "5 > 3", op: ">", right: 3, want: true},
+		{name: "5 > 9", op: ">", right: 9, want: false},
+		{name: "5 < 9", op: "<", right: 9, want: true},
+		{name: "5 >= 5", op: ">=", right: 5, want: true},
+		{name: "5 <= 4", op: "<=", right: 4, want: false},
+		{name: "numeric string right", op: ">", right: "4", want: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, _ := NewSwitchComponent(nil)
+			state := canvas.NewCanvasState("run-num2", "task-num2")
+			state.Sys["score"] = 5
+			ctx := withStateForTest(t.Context(), state)
+
+			inputs := map[string]any{
+				"conditions": []any{
+					map[string]any{
+						"op": "and",
+						"clauses": []any{
+							map[string]any{"left": "{{sys.score}}", "op": c.op, "right": c.right},
+						},
+						"to": "numeric_target",
+					},
+				},
+				"default": "fallback",
+			}
+			out, err := s.Invoke(ctx, nil, inputs)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			targets := nextTargets(out)
+			matched := len(targets) == 1 && targets[0] == "numeric_target"
+			if matched != c.want {
+				t.Errorf("5 %s %v: routed %v, want match=%v", c.op, c.right, targets, c.want)
+			}
+		})
 	}
 }

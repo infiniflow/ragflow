@@ -11,7 +11,10 @@ package common
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
+
+	appcommon "ragflow/internal/common"
 )
 
 // Variant identifies which knowledge-compile strategy to run.
@@ -22,6 +25,18 @@ const (
 	VariantWiki      Variant = "wiki"
 	VariantTree      Variant = "tree"
 	VariantMindmap   Variant = "mindmap"
+)
+
+// Task type labels are the values exposed by the pipeline operation log API.
+// They intentionally preserve the frontend categories instead of collapsing
+// every structure-based template into the internal structure variant.
+const (
+	TaskTypeWiki      = "Wiki"
+	TaskTypeTree      = "Tree"
+	TaskTypeGraph     = "Graph"
+	TaskTypeMindmap   = "Mindmap"
+	TaskTypeTimeline  = "Timeline"
+	TaskTypePageIndex = "PageIndex"
 )
 
 // Sentinel errors.
@@ -44,11 +59,17 @@ type Param struct {
 
 	LLMID          string
 	EmbeddingModel string
+	ChatSettings   ChatSettings
 	Language       string
 	// SimilarityThreshold defaults to 0.99 when not provided (see Defaults).
 	SimilarityThreshold   float64
 	MaxWorkers            int
 	EnableHistoricalDedup bool
+	// Plan selects the wiki compilation mode. nil means the DSL did not specify a
+	// mode, so template config may decide; the effective default is false
+	// (entity mode). true selects topic mode, which allows related identities to
+	// be merged during PLAN; both modes assign pages to MAP topics.
+	Plan *bool
 	// Extra carries arbitrary caller-provided overrides merged into the
 	// resolved template config.
 	Extra map[string]any
@@ -110,10 +131,7 @@ type Product struct {
 	DocID    string
 	TenantID string
 	Variant  Variant
-	// Kind is the original compilation_template.kind (e.g. "page_index"),
-	// distinct from Variant (the collapsed Go strategy, e.g. "structure"). It
-	// is stamped onto compilation_template_kind_kwd so the document-structure
-	// endpoint can group rows by the true template kind.
+	// Kind identifies the producing template's knowledge compilation kind.
 	Kind string
 	// TemplateID is the compilation template that produced this row.
 	TemplateID string
@@ -122,8 +140,8 @@ type Product struct {
 	ParentID   string
 	Meta       map[string]any
 	// Merged marks rows that already went through dataset-level dedup
-	// (kc_merged=1, doc_id=kb). The consumer distinguishes these from the
-	// per-document compiled rows (doc_id=<source doc>, no kc_merged) so it can
+	// (available_int=1, doc_id=kb). The consumer distinguishes these from the
+	// per-document compiled rows (doc_id=<source doc>, available_int=0) so it can
 	// KNN against only the merged set instead of re-deduping the whole KB.
 	Merged bool
 }
@@ -133,6 +151,9 @@ type Product struct {
 type Outputs struct {
 	Products          []Product
 	DuplicatesDropped int
+	AffectedPageSlugs []string
+	RemovedPageSlugs  []string
+	WikiActiveStates  []WikiMapActiveState
 }
 
 // ParseParam builds a Param from the DSL params map. The variant is NOT taken
@@ -156,6 +177,38 @@ func ParseParam(m map[string]any) (Param, error) {
 	if v, ok := m["llm_id"].(string); ok {
 		p.LLMID = v
 	}
+	var err error
+	if p.ChatSettings.Temperature, err = optionalFloatSetting(m, "temperature", "temperatureEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.TopP, err = optionalFloatSetting(m, "top_p", "topPEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.PresencePenalty, err = optionalFloatSetting(m, "presence_penalty", "presencePenaltyEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.FrequencyPenalty, err = optionalFloatSetting(m, "frequency_penalty", "frequencyPenaltyEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.MaxTokens, err = optionalIntSetting(m, "max_tokens", "maxTokensEnabled"); err != nil {
+		return p, err
+	}
+	if raw, ok := m["thinking"]; ok && raw != nil {
+		thinking, valid := raw.(string)
+		if !valid {
+			return p, fmt.Errorf("knowledge_compiler: thinking must be a string")
+		}
+		switch strings.TrimSpace(thinking) {
+		case "enabled":
+			p.ChatSettings.Thinking = new(true)
+			p.ChatSettings.ThinkingSet = true
+		case "", "default", "disabled":
+			p.ChatSettings.Thinking = new(false)
+			p.ChatSettings.ThinkingSet = true
+		default:
+			return p, fmt.Errorf("knowledge_compiler: unsupported thinking setting %q", thinking)
+		}
+	}
 	if v, ok := m["embedding_model"].(string); ok {
 		p.EmbeddingModel = v
 	}
@@ -168,15 +221,84 @@ func ParseParam(m map[string]any) (Param, error) {
 	if v, ok := m["enable_historical_dedup"].(bool); ok {
 		p.EnableHistoricalDedup = v
 	}
+	// Keep presence separate from the boolean value: nil means template config may
+	// supply the mode, while an explicit false still overrides template plan:true.
+	if v, ok := m["plan"].(bool); ok {
+		p.Plan = &v
+	}
 	if raw, ok := m["extra"].(map[string]any); ok {
 		p.Extra = raw
 	}
 	return p, nil
 }
 
+func optionalFloatSetting(params map[string]any, key, enabledKey string) (*float64, error) {
+	if !settingEnabled(params, enabledKey) {
+		return nil, nil
+	}
+	raw, ok := params[key]
+	if !ok {
+		return nil, nil
+	}
+	value, ok := numericValue(raw)
+	if !ok {
+		return nil, fmt.Errorf("knowledge_compiler: %s must be numeric", key)
+	}
+	return &value, nil
+}
+
+func optionalIntSetting(params map[string]any, key, enabledKey string) (*int, error) {
+	if !settingEnabled(params, enabledKey) {
+		return nil, nil
+	}
+	raw, ok := params[key]
+	if !ok {
+		return nil, nil
+	}
+	value, ok := numericValue(raw)
+	maxInt := int(^uint(0) >> 1)
+	if !ok || math.Trunc(value) != value || value <= 0 || value >= float64(maxInt) {
+		return nil, fmt.Errorf("knowledge_compiler: %s must be a positive integer", key)
+	}
+	intValue := int(value)
+	return &intValue, nil
+}
+
+func settingEnabled(params map[string]any, enabledKey string) bool {
+	raw, exists := params[enabledKey]
+	if !exists {
+		return true
+	}
+	enabled, ok := raw.(bool)
+	return ok && enabled
+}
+
+func numericValue(value any) (float64, bool) {
+	switch value := value.(type) {
+	case float64:
+		return value, true
+	case float32:
+		return float64(value), true
+	case int:
+		return float64(value), true
+	case int64:
+		return float64(value), true
+	case int32:
+		return float64(value), true
+	default:
+		return 0, false
+	}
+}
+
+// PlanEnabled reports whether wiki topic mode is selected. An unset value
+// defaults to entity mode.
+func (p Param) PlanEnabled() bool {
+	return p.Plan != nil && *p.Plan
+}
+
 // KindToVariant maps a compilation_template.kind to the Go compiler Variant.
 //
-// The Python model uses richer kind values (mind_map, page_index,
+// The model uses richer kind values (mind_map, page_index
 // session_essence, session_graph, timeline, knowledge_graph, tree, wiki); the
 // Go port collapses them onto its variants. Per the agreed mapping:
 //
@@ -192,7 +314,7 @@ func ParseParam(m map[string]any) (Param, error) {
 // turns that into a hard failure rather than silently emitting uncompiled rows.
 //
 // Note: "datasetnav"/"dataset_nav" intentionally has NO mapping here — dataset
-// navigation is not an independent compile kind in Python; it is a by-product
+// navigation is not an independent compile kind in ; it is a by-product
 // written after tree/page_index compilation via internal/service datasetnav
 // (see tasks/agentic_search_port_plan.md).
 func KindToVariant(kind string) (Variant, error) {
@@ -211,14 +333,104 @@ func KindToVariant(kind string) (Variant, error) {
 	}
 }
 
-// FirstNonEmpty returns the first string that is non-empty after trimming.
+// KindToTaskType maps the original compilation template kind to the category
+// shown in pipeline operation logs. Unlike KindToVariant, this mapping keeps
+// structure sub-kinds distinct so graph, timeline, and page-index logs are not
+// mislabeled as the same task.
+func KindToTaskType(kind string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "wiki":
+		return TaskTypeWiki, nil
+	case "tree":
+		return TaskTypeTree, nil
+	case "knowledge_graph", "knowledgegraph", "graph":
+		return TaskTypeGraph, nil
+	case "mind_map", "mindmap":
+		return TaskTypeMindmap, nil
+	case "timeline":
+		return TaskTypeTimeline, nil
+	case "page_index":
+		return TaskTypePageIndex, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrUnknownVariant, kind)
+	}
+}
+
+// VariantToTaskType provides the best category available when reading legacy
+// rows that do not retain the original template kind.
+func VariantToTaskType(variant Variant) string {
+	switch variant {
+	case VariantWiki:
+		return TaskTypeWiki
+	case VariantTree:
+		return TaskTypeTree
+	case VariantMindmap:
+		return TaskTypeMindmap
+	case VariantStructure:
+		return TaskTypeGraph
+	default:
+		return ""
+	}
+}
+
+// FirstNonEmpty returns the first string that is non-empty after trimming,
+// trimmed. It delegates to the generic helper in internal/common so the
+// knowledge_compiler package shares one implementation with the rest of the
+// codebase (the generic component layer no longer needs to reach into this
+// package for a meta-agnostic string helper). The trimmed return value preserves
+// the historical contract of the wiki pipeline's local helper.
 func FirstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return v
+	return appcommon.FirstNonEmpty(vals...)
+}
+
+// MetaInt extracts an integer from a Product.Meta value that may be boxed as
+// int64, int, float64 (JSON number), or even a numeric string — the
+// engine/JSON round-trip does not guarantee a single numeric type. It returns
+// (0, false) when the key is absent or not a parseable number. The int64 form
+// is the canonical one so callers can store it directly without a narrowing
+// conversion.
+func MetaInt(meta map[string]any, key string) (int64, bool) {
+	switch v := meta[key].(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		var n int64
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+			return n, true
 		}
 	}
-	return ""
+	return 0, false
+}
+
+// MetaStringSlice reads a []string (or []any) Product.Meta key, keeping
+// non-empty strings and dropping empties. Both the []string and []any branches
+// filter empties so the result is independent of how the value was boxed (the
+// engine/JSON round-trip does not guarantee a single type). Returns nil when no
+// strings are present; a present but empty key yields a non-nil empty slice.
+func MetaStringSlice(meta map[string]any, key string) []string {
+	switch v := meta[key].(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if e != "" {
+				out = append(out, e)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if s, ok := e.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // VectorFromChunkMap extracts a pre-computed embedding from a chunk map. The
@@ -235,13 +447,13 @@ func FirstNonEmpty(vals ...string) string {
 // them would be unstable across runs — such chunks are rejected with an error.
 func VectorFromChunkMap(m map[string]any, dim int) ([]float32, error) {
 	if dim > 0 {
-		if v, ok := m[fmt.Sprintf("q_%d_vec", dim)]; ok {
+		if v, ok := m[appcommon.VectorColumnName(dim)]; ok {
 			return toFloat32Slice(v), nil
 		}
 	}
 	var keys []string
 	for k := range m {
-		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+		if appcommon.IsVectorColumn(k) {
 			keys = append(keys, k)
 		}
 	}

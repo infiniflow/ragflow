@@ -17,8 +17,8 @@
 package sandbox
 
 import (
-	"context"
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -26,6 +26,71 @@ import (
 	"testing"
 	"time"
 )
+
+func TestLocalOutputCapture_DrainsBeyondLimit(t *testing.T) {
+	var output localOutputCapture
+	output.limit = 32
+	for range 100 {
+		if n, err := output.Write([]byte(strings.Repeat("x", 1024))); err != nil || n != 1024 {
+			t.Fatalf("Write = (%d, %v), want (1024, nil)", n, err)
+		}
+	}
+	if output.buffer.Len() > 32 {
+		t.Errorf("captured %d bytes, want at most 32", output.buffer.Len())
+	}
+	if output.total != 102400 {
+		t.Errorf("total = %d, want 102400", output.total)
+	}
+}
+
+func TestLocal_ExecuteCode_OutputLimit(t *testing.T) {
+	pythonPath, err := findBinary("python3")
+	if err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	p := newLocalForTest(t)
+	p.pythonBin = pythonPath
+	p.maxOutputBytes = 1024
+	inst, err := p.CreateInstance(t.Context(), "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	defer p.DestroyInstance(t.Context(), inst)
+
+	for _, size := range []string{"65536", "600"} {
+		t.Run(size, func(t *testing.T) {
+			code := "import sys\n\ndef main():\n    sys.stdout.write('x' * " + size + ")\n    sys.stderr.write('y' * " + size + ")\n    return 1"
+			result, err := p.ExecuteCode(t.Context(), inst, code, "python", 10, nil)
+			if result != nil || err == nil || !strings.Contains(err.Error(), "local: output exceeds 1024 bytes (got ") {
+				t.Fatalf("ExecuteCode returned result=%t, err=%v; want output limit error", result != nil, err)
+			}
+		})
+	}
+}
+
+func TestLocal_ExecuteCode_NonzeroExitWithinOutputLimit(t *testing.T) {
+	pythonPath, err := findBinary("python3")
+	if err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	p := newLocalForTest(t)
+	p.pythonBin = pythonPath
+	p.maxOutputBytes = 1024
+	inst, err := p.CreateInstance(t.Context(), "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	defer p.DestroyInstance(t.Context(), inst)
+
+	code := "import sys\n\ndef main():\n    print('hello')\n    sys.stderr.write('failure\\n')\n    raise SystemExit(7)"
+	result, err := p.ExecuteCode(t.Context(), inst, code, "python", 10, nil)
+	if err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	if result.ExitCode != 7 || result.Stdout != "hello\n" || result.Stderr != "failure\n" {
+		t.Errorf("result = (%d, %q, %q), want (7, hello, failure)", result.ExitCode, result.Stdout, result.Stderr)
+	}
+}
 
 // newLocalForTest builds a LocalProvider pointing at a temp
 // work_dir so tests don't pollute the operator's filesystem.
@@ -43,7 +108,8 @@ func newLocalForTest(t *testing.T) *LocalProvider {
 		maxArtifactBytes: 10 << 20,
 		instances:        map[string]string{},
 	}
-	if err := p.Initialize(context.Background()); err != nil {
+	ctx := t.Context()
+	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	return p
@@ -101,6 +167,19 @@ func TestLocal_EnvOverride(t *testing.T) {
 	}
 }
 
+func TestLocal_ConfigUsesCanonicalLowercaseKeys(t *testing.T) {
+	p := newLocalProviderFromConfig(map[string]any{
+		"python_bin": "/custom/python", "work_dir": "/custom/work", "timeout": 12,
+	})
+	if p.pythonBin != "/custom/python" || p.workDir != "/custom/work" || p.timeout != 12 {
+		t.Fatalf("lowercase config was not applied: %#v", p)
+	}
+	legacy := newLocalProviderFromConfig(map[string]any{"PYTHON_BIN": "/legacy"})
+	if legacy.pythonBin == "/legacy" {
+		t.Fatal("uppercase configuration unexpectedly accepted")
+	}
+}
+
 func TestLocal_Initialize_CreatesWorkDir(t *testing.T) {
 	workDir := filepath.Join(t.TempDir(), "nested", "workdir")
 	if _, err := os.Stat(workDir); !os.IsNotExist(err) {
@@ -108,7 +187,8 @@ func TestLocal_Initialize_CreatesWorkDir(t *testing.T) {
 	}
 	t.Setenv("LOCAL_WORK_DIR", workDir)
 	p := newLocalProviderFromEnv()
-	if err := p.Initialize(context.Background()); err != nil {
+	ctx := t.Context()
+	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	info, err := os.Stat(workDir)
@@ -120,9 +200,46 @@ func TestLocal_Initialize_CreatesWorkDir(t *testing.T) {
 	}
 }
 
+func TestLocal_Initialize_OutputLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		limit     any
+		wantError bool
+	}{
+		{"default", nil, false},
+		{"positive", 1024, false},
+		{"positive_below_schema_minimum", 1, false},
+		{"zero", 0, true},
+		{"negative", -1, true},
+		{"string_zero", "0", true},
+		{"string_negative", "-1", true},
+		{"json_zero", float64(0), true},
+		{"json_negative", float64(-1), true},
+		{"json_number_zero", json.Number("0"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newLocalProviderFromConfig(map[string]any{
+				"work_dir":         t.TempDir(),
+				"max_output_bytes": tc.limit,
+			})
+			err := p.Initialize(t.Context())
+			if (err != nil) != tc.wantError {
+				t.Fatalf("Initialize = %v, wantError = %v", err, tc.wantError)
+			}
+			if err != nil && !strings.Contains(err.Error(), "max_output_bytes") {
+				t.Fatalf("Initialize error does not identify invalid limit: %v", err)
+			}
+			if p.isInitialized() == tc.wantError {
+				t.Fatalf("initialized = %v, want %v", p.isInitialized(), !tc.wantError)
+			}
+		})
+	}
+}
+
 func TestLocal_CreateInstance_CreatesArtifactsDir(t *testing.T) {
 	p := newLocalForTest(t)
-	inst, err := p.CreateInstance(context.Background(), "python")
+	ctx := t.Context()
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
@@ -141,7 +258,8 @@ func TestLocal_CreateInstance_CreatesArtifactsDir(t *testing.T) {
 
 func TestLocal_CreateInstance_RejectsBadLanguage(t *testing.T) {
 	p := newLocalForTest(t)
-	if _, err := p.CreateInstance(context.Background(), "ruby"); err == nil {
+	ctx := t.Context()
+	if _, err := p.CreateInstance(ctx, "ruby"); err == nil {
 		t.Errorf("CreateInstance(ruby): got nil error, want one")
 	}
 }
@@ -149,17 +267,18 @@ func TestLocal_CreateInstance_RejectsBadLanguage(t *testing.T) {
 func TestLocal_AllOps_BeforeInit(t *testing.T) {
 	t.Parallel()
 	p := &LocalProvider{}
+	ctx := t.Context()
 	inst := &SandboxInstance{InstanceID: "x", Provider: ProviderLocal}
-	if _, err := p.CreateInstance(context.Background(), "python"); err == nil {
+	if _, err := p.CreateInstance(ctx, "python"); err == nil {
 		t.Errorf("CreateInstance before init: got nil error, want one")
 	}
-	if _, err := p.ExecuteCode(context.Background(), inst, "x", "python", 5, nil); err == nil {
+	if _, err := p.ExecuteCode(ctx, inst, "x", "python", 5, nil); err == nil {
 		t.Errorf("ExecuteCode before init: got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err == nil {
+	if err := p.DestroyInstance(ctx, inst); err == nil {
 		t.Errorf("DestroyInstance before init: got nil error, want one")
 	}
-	if err := p.HealthCheck(context.Background()); err == nil {
+	if err := p.HealthCheck(ctx); err == nil {
 		t.Errorf("HealthCheck before init: got nil error, want one")
 	}
 }
@@ -173,15 +292,16 @@ func TestLocal_ExecuteCode_Python_RoundTrip(t *testing.T) {
 		t.Skip("python3 not on PATH — skipping local subprocess test")
 	}
 	p := newLocalForTest(t)
+	ctx := t.Context()
 	p.pythonBin = pythonPath
-	inst, err := p.CreateInstance(context.Background(), "python")
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	defer p.DestroyInstance(context.Background(), inst)
+	defer p.DestroyInstance(ctx, inst)
 
 	code := "def main(): return {'value': 7, 'type': 'json'}"
-	result, err := p.ExecuteCode(context.Background(), inst, code, "python", 10, nil)
+	result, err := p.ExecuteCode(ctx, inst, code, "python", 10, nil)
 	if err != nil {
 		t.Fatalf("ExecuteCode: %v", err)
 	}
@@ -198,7 +318,7 @@ func TestLocal_ExecuteCode_Python_RoundTrip(t *testing.T) {
 func TestLocal_ExecuteCode_RejectsBadInputs(t *testing.T) {
 	p := newLocalForTest(t)
 	p.initialized = true
-
+	ctx := t.Context()
 	cases := []struct {
 		name string
 		fn   func() error
@@ -207,7 +327,7 @@ func TestLocal_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "empty instance id",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: ""}, "x", "python", 5, nil)
 				return err
 			},
@@ -216,7 +336,7 @@ func TestLocal_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "unsupported language",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "ruby", 5, nil)
 				return err
 			},
@@ -225,7 +345,7 @@ func TestLocal_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "timeout too small",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "python", 0, nil)
 				return err
 			},
@@ -247,50 +367,53 @@ func TestLocal_ExecuteCode_RejectsBadInputs(t *testing.T) {
 
 func TestLocal_DestroyInstance_RemovesDir(t *testing.T) {
 	p := newLocalForTest(t)
-	inst, err := p.CreateInstance(context.Background(), "python")
+	ctx := t.Context()
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
 	dir := filepath.Join(p.workDir, inst.InstanceID)
-	if _, err := os.Stat(dir); err != nil {
+	if _, err = os.Stat(dir); err != nil {
 		t.Fatalf("instance dir not created: %v", err)
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err != nil {
+	if err = p.DestroyInstance(ctx, inst); err != nil {
 		t.Errorf("DestroyInstance: %v", err)
 	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+	if _, err = os.Stat(dir); !os.IsNotExist(err) {
 		t.Errorf("instance dir still exists after destroy: %v", err)
 	}
 	// Idempotent: second call should be a no-op.
-	if err := p.DestroyInstance(context.Background(), inst); err != nil {
+	if err = p.DestroyInstance(ctx, inst); err != nil {
 		t.Errorf("DestroyInstance (idempotent): %v", err)
 	}
 }
 
 func TestLocal_HealthCheck(t *testing.T) {
 	p := newLocalForTest(t)
-	if err := p.HealthCheck(context.Background()); err != nil {
+	ctx := t.Context()
+	if err := p.HealthCheck(ctx); err != nil {
 		t.Errorf("HealthCheck: %v", err)
 	}
-	// Removing the work dir should make HealthCheck fail.
+	// Removing the work dir should make health check fail.
 	if err := os.RemoveAll(p.workDir); err != nil {
 		t.Fatalf("remove work dir: %v", err)
 	}
-	if err := p.HealthCheck(context.Background()); err == nil {
+	if err := p.HealthCheck(ctx); err == nil {
 		t.Errorf("HealthCheck after remove: got nil error, want one")
 	}
 }
 
 func TestLocal_CollectArtifacts_RejectsBadExtension(t *testing.T) {
 	p := newLocalForTest(t)
-	inst, err := p.CreateInstance(context.Background(), "python")
+	ctx := t.Context()
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	defer p.DestroyInstance(context.Background(), inst)
+	defer p.DestroyInstance(ctx, inst)
 	// Drop an unsupported extension into the artifacts dir.
 	artDir := filepath.Join(p.workDir, inst.InstanceID, "artifacts")
-	if err := os.WriteFile(filepath.Join(artDir, "evil.exe"), []byte("x"), 0o600); err != nil {
+	if err = os.WriteFile(filepath.Join(artDir, "evil.exe"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write artifact: %v", err)
 	}
 	_, err = p.collectArtifacts(p.workDir + "/" + inst.InstanceID)
@@ -304,13 +427,14 @@ func TestLocal_CollectArtifacts_RejectsBadExtension(t *testing.T) {
 
 func TestLocal_CollectArtifacts_AllowsCSVRoundTrip(t *testing.T) {
 	p := newLocalForTest(t)
-	inst, err := p.CreateInstance(context.Background(), "python")
+	ctx := t.Context()
+	inst, err := p.CreateInstance(ctx, "python")
 	if err != nil {
 		t.Fatalf("CreateInstance: %v", err)
 	}
-	defer p.DestroyInstance(context.Background(), inst)
+	defer p.DestroyInstance(ctx, inst)
 	artDir := filepath.Join(p.workDir, inst.InstanceID, "artifacts")
-	if err := os.WriteFile(filepath.Join(artDir, "out.csv"), []byte("a,b\n1,2\n"), 0o600); err != nil {
+	if err = os.WriteFile(filepath.Join(artDir, "out.csv"), []byte("a,b\n1,2\n"), 0o600); err != nil {
 		t.Fatalf("write artifact: %v", err)
 	}
 	artifacts, err := p.collectArtifacts(p.workDir + "/" + inst.InstanceID)
@@ -340,13 +464,13 @@ func TestLocal_CollectArtifacts_AllowsCSVRoundTrip(t *testing.T) {
 
 func TestShq(t *testing.T) {
 	t.Parallel()
-	// shq replaces ' with \', wraps the result in single quotes.
-	// "o'clock" -> 'o\'clock' (raw bytes: ', o, \, ', c, l, o, c, k, ').
+	// shq uses the POSIX single-quote escape sequence for embedded apostrophes.
+	// "o'clock" -> 'o'\''clock'.
 	cases := []struct {
 		in, want string
 	}{
 		{"foo", "'foo'"},
-		{"o'clock", `'o\'clock'`},
+		{"o'clock", `'o'\''clock'`},
 		{"a b c", "'a b c'"},
 		{"", "''"},
 	}

@@ -1,3 +1,20 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { evictDocumentImage } from '@/components/image';
 import message from '@/components/ui/message';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
@@ -85,6 +102,17 @@ export const useCreateChunk = () => {
       });
       if (data.code === 0) {
         message.success(t('message.created'));
+        const updatedChunkId = payload.chunk_id || payload.id;
+        const updatedDatasetId = payload.kb_id || knowledgeId;
+        if (payload.image_base64 && updatedChunkId && updatedDatasetId) {
+          // The UI renders a chunk image under the backend's img_id,
+          // `<dataset_id>-<chunk_id>` (see the Go/Python chunk APIs). That id
+          // survives an image replacement, so it is the cache entry to drop.
+          evictDocumentImage(
+            `${updatedDatasetId}-${updatedChunkId}`,
+            payload.doc_id || payload.document_id,
+          );
+        }
         setTimeout(() => {
           queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
         }, 1000); // Delay to ensure the list is updated
@@ -129,7 +157,7 @@ export const useFetchNextChunkList = (
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
-  const chunkIds = options?.chunkIds;
+  const chunkIds = options?.chunkIds?.slice(0, 100);
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
@@ -159,10 +187,8 @@ export const useFetchNextChunkList = (
       const { data } = await kbService.chunkList({
         kb_id: knowledgeId,
         doc_id: documentId,
-        page: chunkIds?.length ? 1 : pagination.current,
-        size: chunkIds?.length
-          ? Math.max(chunkIds.length, 100)
-          : pagination.pageSize,
+        page: pagination.current,
+        size: Math.min(pagination.pageSize, 100),
         available_int: available,
         keywords: searchString,
         chunk_ids: chunkIds,

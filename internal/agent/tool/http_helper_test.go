@@ -49,6 +49,7 @@ func newTestHelper(maxAttempts int, base, max time.Duration) *HTTPHelper {
 // attempt with no retry, and the body / content-type round-trip cleanly.
 func TestHTTPHelper_HappyPath(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -58,7 +59,7 @@ func TestHTTPHelper_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
-	resp, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
+	resp, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
 	if err != nil {
 		t.Fatalf("Do returned error: %v", err)
 	}
@@ -80,6 +81,7 @@ func TestHTTPHelper_HappyPath(t *testing.T) {
 // returns the first 2xx response. Server returns 503 twice, then 200.
 func TestHTTPHelper_RetriesOn5xx(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +96,7 @@ func TestHTTPHelper_RetriesOn5xx(t *testing.T) {
 	defer srv.Close()
 
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
-	resp, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
+	resp, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
 	if err != nil {
 		t.Fatalf("Do returned error: %v", err)
 	}
@@ -112,10 +114,97 @@ func TestHTTPHelper_RetriesOn5xx(t *testing.T) {
 	}
 }
 
+func TestHTTPHelper_PostDoesNotRetry5xx(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	resp, err := newTestHelper(3, time.Millisecond, 5*time.Millisecond).
+		Do(t.Context(), http.MethodPost, srv.URL, "payload", "text/plain", nil)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable || hits.Load() != 1 {
+		t.Fatalf("status = %d, server hits = %d; want 503 and 1 hit", resp.StatusCode, hits.Load())
+	}
+}
+
+func TestHTTPHelper_PostDoesNotRetryAfterTransportError(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		hits.Add(1)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack: %v", err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	_, err := newTestHelper(3, time.Millisecond, 5*time.Millisecond).
+		Do(t.Context(), http.MethodPost, srv.URL, "payload", "text/plain", nil)
+	if err == nil {
+		t.Fatal("Do unexpectedly succeeded after server closed the connection")
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("server hits = %d, want 1 (request body was already delivered)", got)
+	}
+}
+
+func TestHTTPHelper_DoPinnedClosesConnectionAfterResponse(t *testing.T) {
+	t.Parallel()
+	closed := make(chan struct{}, 1)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			closed <- struct{}{}
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	u, err := neturl.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newTestHelper(3, time.Millisecond, 5*time.Millisecond)
+	resp, err := h.DoPinned(t.Context(), http.MethodGet, "http://example.test:"+port+"/",
+		"", "", nil, "example.test", net.ParseIP("127.0.0.1"))
+	if err != nil {
+		t.Fatalf("DoPinned: %v", err)
+	}
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		t.Fatal(err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("pinned connection remained idle after response body was closed")
+	}
+}
+
 // TestHTTPHelper_NoRetryOn4xx verifies that 4xx is returned immediately with
 // no retry — the caller is responsible for fixing 4xx, retrying won't help.
 func TestHTTPHelper_NoRetryOn4xx(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +215,7 @@ func TestHTTPHelper_NoRetryOn4xx(t *testing.T) {
 	defer srv.Close()
 
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
-	resp, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
+	resp, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
 	if err != nil {
 		t.Fatalf("Do returned error: %v", err)
 	}
@@ -158,6 +247,7 @@ func TestHTTPHelper_NoRetryOn4xx(t *testing.T) {
 // and flaked under load.
 func TestHTTPHelper_Timeout(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -176,7 +266,7 @@ func TestHTTPHelper_Timeout(t *testing.T) {
 	})
 	// Tight 50ms deadline. The server takes 500ms, so this call must
 	// abort due to the context, not the server finishing.
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 	defer cancel()
 
 	_, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
@@ -187,8 +277,11 @@ func TestHTTPHelper_Timeout(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Do err = %v, want context.DeadlineExceeded (callers branch on errors.Is for this)", err)
 	}
-	if got := atomic.LoadInt32(&hits); got != 1 {
-		t.Errorf("server hits = %d, want 1 (context errors are not retryable — a regression to retry on ctx-deadline would show 2+)", got)
+	// 0 is allowed: under a loaded machine the 50ms deadline can expire during the
+	// dial, before the request reaches the handler. What this test really pins is
+	// that a ctx deadline is NOT retried (a regression would show 2+ attempts).
+	if got := atomic.LoadInt32(&hits); got > 1 {
+		t.Errorf("server hits = %d, want at most 1 (context errors are not retryable — a regression to retry on ctx-deadline would show 2+)", got)
 	}
 }
 
@@ -196,6 +289,7 @@ func TestHTTPHelper_Timeout(t *testing.T) {
 // 5xx error is returned.
 func TestHTTPHelper_5xxExhaustion(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +299,7 @@ func TestHTTPHelper_5xxExhaustion(t *testing.T) {
 	defer srv.Close()
 
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
-	_, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
+	_, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
 	if err == nil {
 		t.Fatal("expected error after 5xx exhaustion, got nil")
 	}
@@ -218,6 +312,7 @@ func TestHTTPHelper_5xxExhaustion(t *testing.T) {
 // custom headers and a non-empty content-type on POST bodies.
 func TestHTTPHelper_HeadersAndContentType(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("X-Token"); got != "abc" {
@@ -234,7 +329,7 @@ func TestHTTPHelper_HeadersAndContentType(t *testing.T) {
 	defer srv.Close()
 
 	h := newTestHelper(1, 1*time.Millisecond, 5*time.Millisecond)
-	resp, err := h.Do(context.Background(), http.MethodPost, srv.URL, `{"k":1}`, "application/json", map[string]string{"X-Token": "abc"})
+	resp, err := h.Do(ctx, http.MethodPost, srv.URL, `{"k":1}`, "application/json", map[string]string{"X-Token": "abc"})
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
@@ -251,20 +346,20 @@ func TestBackoffExponential(t *testing.T) {
 	t.Parallel()
 
 	base := 50 * time.Millisecond
-	max := 300 * time.Millisecond
+	maxDuration := 300 * time.Millisecond
 
-	got1 := backoff(base, max, 1)
+	got1 := backoff(base, maxDuration, 1)
 	if got1 < 0 || got1 > base {
 		t.Fatalf("backoff(attempt=1) = %s, want [0, %s]", got1, base)
 	}
-	got3 := backoff(base, max, 3)
-	if got3 < 0 || got3 > max {
-		t.Fatalf("backoff(attempt=3) = %s, want [0, %s] (capped)", got3, max)
+	got3 := backoff(base, maxDuration, 3)
+	if got3 < 0 || got3 > maxDuration {
+		t.Fatalf("backoff(attempt=3) = %s, want [0, %s] (capped)", got3, maxDuration)
 	}
 	// With base=50ms, attempt=10 should be capped at 300ms.
-	got10 := backoff(base, max, 10)
-	if got10 > max {
-		t.Fatalf("backoff(attempt=10) = %s, want <= %s (cap)", got10, max)
+	got10 := backoff(base, maxDuration, 10)
+	if got10 > maxDuration {
+		t.Fatalf("backoff(attempt=10) = %s, want <= %s (cap)", got10, maxDuration)
 	}
 }
 
@@ -289,7 +384,7 @@ func TestRetryConfigDefaults(t *testing.T) {
 // test for the M1-rebinding fix as hardened by the post-Phase-7
 // review: DNS pinning MUST happen at the transport layer, not by
 // rewriting the request URL. If the URL host were rewritten to the IP,
-// the TLS ServerName (auto-populated by Go from req.URL.Host) would
+// the TLS ServerName (autopopulated by Go from req.URL.Host) would
 // become the IP, the SNI would send the IP, and cert verification
 // would target the IP — which is not what real HTTPS sites have, and
 // would manifest as x509 errors against any host-cert-only target.
@@ -297,12 +392,13 @@ func TestRetryConfigDefaults(t *testing.T) {
 // This test stands up a real TLS server with a cert whose DNS SAN is
 // "example.test" and whose IP SAN covers the loopback address. The
 // pinned dialer connects to 127.0.0.1, but the request URL host stays
-// as "example.test". The server observes the SNI the client sent and
+// as "example.test". The server observes the SNI the client sent, and
 // we assert it equals "example.test" (not the IP), and the request
 // completes successfully (cert verification passes because the URL
 // host matches the SAN).
 func TestHTTPHelper_DoPinnedHTTPS_PreservesSNIAndCert(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	// Cert valid for "example.test" (DNS SAN) and 127.0.0.1, ::1
 	// (IP SANs, just so the test environment itself can resolve).
@@ -353,7 +449,7 @@ func TestHTTPHelper_DoPinnedHTTPS_PreservesSNIAndCert(t *testing.T) {
 	h := NewHTTPHelper()
 	h.baseTransport.TLSClientConfig = &tls.Config{RootCAs: pool}
 
-	resp, err := h.DoPinned(context.Background(),
+	resp, err := h.DoPinned(ctx,
 		http.MethodGet, targetURL, "", "", nil, "example.test", pinnedIP)
 	if err != nil {
 		t.Fatalf("DoPinned: %v", err)
@@ -378,9 +474,10 @@ func TestHTTPHelper_DoPinnedHTTPS_PreservesSNIAndCert(t *testing.T) {
 // refuse rather than silently deliver a broken connection.
 func TestHTTPHelper_DoPinnedRefusesMismatchedURLHost(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	h := NewHTTPHelper()
-	_, err := h.DoPinned(context.Background(),
+	_, err := h.DoPinned(ctx,
 		http.MethodGet,
 		"https://attacker.example/foo",
 		"", "", nil,
@@ -391,6 +488,50 @@ func TestHTTPHelper_DoPinnedRefusesMismatchedURLHost(t *testing.T) {
 	}
 	if got := err.Error(); !contains(got, "would break TLS SNI") {
 		t.Errorf("error %q does not mention TLS SNI breakage", got)
+	}
+}
+
+// TestHTTPHelper_DoPinnedAcceptsCaseInsensitiveHost locks in that the
+// DoPinned host guard is case-insensitive. DNS hostnames are
+// case-insensitive, so a URL host spelled with a different case than
+// originalHost (e.g. a user-typed "EXAMPLE.TEST" vs the resolver's
+// lowercased "example.test") must still be pinned and delivered, not
+// refused. A genuinely different host is still refused by
+// TestHTTPHelper_DoPinnedRefusesMismatchedURLHost.
+func TestHTTPHelper_DoPinnedAcceptsCaseInsensitiveHost(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+
+	u, perr := neturl.Parse(srv.URL)
+	if perr != nil {
+		t.Fatalf("parse server URL %q: %v", srv.URL, perr)
+	}
+	serverHost, serverPort, sperr := net.SplitHostPort(u.Host)
+	if sperr != nil {
+		t.Fatalf("split server host:port from %q: %v", u.Host, sperr)
+	}
+	// URL host is UPPER-case; originalHost (as a resolver would record
+	// it) is lower-case — DNS-equivalent, so the pin must proceed.
+	targetURL := fmt.Sprintf("http://EXAMPLE.TEST:%s/", serverPort)
+	pinnedIP := net.ParseIP(serverHost)
+	if pinnedIP == nil {
+		t.Fatalf("server host %q is not an IP literal", serverHost)
+	}
+
+	h := NewHTTPHelper()
+	resp, err := h.DoPinned(ctx,
+		http.MethodGet, targetURL, "", "", nil, "example.test", pinnedIP)
+	if err != nil {
+		t.Fatalf("DoPinned rejected case-insensitive equivalent host: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 }
 
@@ -414,6 +555,7 @@ func TestHTTPHelper_DoPinnedRefusesMismatchedURLHost(t *testing.T) {
 // bypasses the proxy, the direct dial to 127.0.0.1 succeeds.
 func TestHTTPHelper_DoPinnedBypassesProxy(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	cert := generateTestCert(t, "example.test")
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -467,7 +609,7 @@ func TestHTTPHelper_DoPinnedBypassesProxy(t *testing.T) {
 	}
 	h.baseTransport.Proxy = http.ProxyURL(closedProxy)
 
-	resp, err := h.DoPinned(context.Background(),
+	resp, err := h.DoPinned(ctx,
 		http.MethodGet, targetURL, "", "", nil, "example.test", pinnedIP)
 	if err != nil {
 		t.Fatalf("DoPinned: %v (proxy may not have been bypassed)", err)
@@ -486,6 +628,7 @@ func TestHTTPHelper_DoPinnedBypassesProxy(t *testing.T) {
 // transport-layer primitive that DoPinned uses.
 func TestPinnedDialer_RewritesAddress(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	// Stand up a TCP server on 127.0.0.1:<random> and capture the
 	// accepted conn to confirm the pinned dialer actually dialed it.
@@ -511,7 +654,7 @@ func TestPinnedDialer_RewritesAddress(t *testing.T) {
 	// Pass a deliberately misleading host in the addr — the dialer
 	// must ignore it and dial 127.0.0.1:<ln port> instead.
 	misleading := net.JoinHostPort("203.0.113.99", fmt.Sprint(ln.Addr().(*net.TCPAddr).Port))
-	conn, derr := d.DialContext(context.Background(), "tcp", misleading)
+	conn, derr := d.DialContext(ctx, "tcp", misleading)
 	if derr != nil {
 		t.Fatalf("DialContext: %v", derr)
 	}
@@ -565,5 +708,51 @@ func generateTestCert(t *testing.T, dnsName string) tls.Certificate {
 	return tls.Certificate{
 		Certificate: [][]byte{der},
 		PrivateKey:  priv,
+	}
+}
+
+// TestBackoffBounds verifies the exponential backoff helper never exceeds its
+// cap and stays within the (jitter-randomized) capped exponential. Delegation to
+// common.ExponentialBackoff is what keeps the cap consistent across the retry
+// loops in the codebase.
+func TestBackoffBounds(t *testing.T) {
+	cases := []struct {
+		name    string
+		base    time.Duration
+		max     time.Duration
+		attempt int
+	}{
+		{"firstAttempt", 200 * time.Millisecond, 3 * time.Second, 1},
+		{"secondAttempt", 200 * time.Millisecond, 3 * time.Second, 2},
+		{"attemptZeroClampsToFirst", 200 * time.Millisecond, 3 * time.Second, 0},
+		{"largeAttemptCapped", 200 * time.Millisecond, 3 * time.Second, 100},
+		{"baseGreaterThanMax", 10 * time.Second, 3 * time.Second, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Expected capped exponential, mirroring common.ExponentialBackoff
+			// so this test does not depend on that package directly.
+			want := c.base
+			for i := 1; i < c.attempt; i++ {
+				want *= 2
+				if want > c.max {
+					want = c.max
+					break
+				}
+			}
+			if want > c.max {
+				want = c.max
+			}
+			got := backoff(c.base, c.max, c.attempt)
+			if got < 0 {
+				t.Errorf("backoff returned negative %v", got)
+			}
+			if got > want {
+				t.Errorf("backoff(%v,%v,%d) = %v > %v (exceeds capped exponential)", c.base, c.max, c.attempt, got, want)
+			}
+			if got > c.max {
+				t.Errorf("backoff(%v,%v,%d) = %v > max %v (cap violated)", c.base, c.max, c.attempt, got, c.max)
+			}
+		})
 	}
 }

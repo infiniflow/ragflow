@@ -106,6 +106,8 @@ const (
 	TokenAgent
 	TokenMemories
 	TokenMemory
+	TokenCores
+	TokenConcurrency
 	TokenRetrieve
 	TokenCurrent
 	TokenSoft
@@ -129,6 +131,7 @@ const (
 	TokenDimension
 	TokenAsync
 	TokenSync
+	TokenSyncLogs
 	TokenBenchmark
 	TokenPing
 	TokenToken
@@ -158,7 +161,6 @@ const (
 	TokenMax
 	TokenLS
 	TokenCat
-	TokenInsert
 	TokenFile
 	TokenMetadata
 	TokenTable
@@ -170,7 +172,6 @@ const (
 	TokenChunks
 	TokenDocument
 	TokenDocuments
-	TokenTag
 	TokenRegion
 	TokenURL
 	TokenTask
@@ -199,6 +200,7 @@ const (
 	TokenDays
 	TokenWindow
 	TokenActivity
+	TokenHardware
 	TokenData
 	TokenPurge
 	TokenPlan
@@ -213,6 +215,11 @@ const (
 	TokenError
 	TokenFatal
 	TokenPanic
+	TokenBy
+	TokenDate
+	TokenGroup
+	TokenGroups
+	TokenFeatures
 	// Literals
 	TokenIdentifier
 	TokenQuotedString

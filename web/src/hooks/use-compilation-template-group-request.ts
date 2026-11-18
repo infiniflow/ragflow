@@ -1,4 +1,21 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
 import {
   ICreateCompilationTemplateGroupRequestBody,
@@ -13,16 +30,11 @@ import {
   updateCompilationTemplateGroup,
 } from '@/services/compilation-template-group-service';
 import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useDebounce } from 'ahooks';
 import { useCallback, useMemo } from 'react';
-import { useParams } from 'react-router';
 
-import {
-  useGetPaginationWithRouter,
-  useHandleSearchChange,
-} from './logic-hooks';
-import { AgentApiAction } from './use-agent-request';
+import { AgentKeys } from './use-agent-request';
 
 export const enum CompilationTemplateGroupApiAction {
   FetchCompilationTemplateGroups = 'fetchCompilationTemplateGroups',
@@ -33,11 +45,6 @@ export const enum CompilationTemplateGroupApiAction {
 }
 
 export const CompilationTemplateGroupKeys = {
-  list: (keywords?: string, page?: number, pageSize?: number) =>
-    [
-      CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups,
-      { keywords, page, pageSize },
-    ] as const,
   detail: (id?: string) =>
     [
       CompilationTemplateGroupApiAction.FetchCompilationTemplateGroup,
@@ -47,62 +54,7 @@ export const CompilationTemplateGroupKeys = {
     [CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups] as const,
 };
 
-export const useFetchCompilationTemplateGroupsByPage = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
-  const { pagination, setPagination } = useGetPaginationWithRouter();
-  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-
-  const { data, isFetching: loading } = useQuery<{
-    groups: ICompilationTemplateGroup[];
-    total: number;
-  }>({
-    queryKey: CompilationTemplateGroupKeys.list(
-      debouncedSearchString,
-      pagination.current,
-      pagination.pageSize,
-    ),
-    initialData: {
-      groups: [],
-      total: 0,
-    },
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await compilationTemplateGroupService.listGroups(
-        {
-          params: {
-            keywords: debouncedSearchString,
-            page: pagination.current,
-            page_size: pagination.pageSize,
-          },
-        },
-        true,
-      );
-
-      return {
-        groups: (data?.data?.groups ?? []) as ICompilationTemplateGroup[],
-        total: data?.data?.total ?? 0,
-      };
-    },
-  });
-
-  const currentPagination = useMemo(
-    () => ({ ...pagination, total: data?.total ?? 0 }),
-    [pagination, data?.total],
-  );
-
-  return {
-    groups: data?.groups ?? [],
-    total: data?.total ?? 0,
-    searchString,
-    handleInputChange,
-    pagination: currentPagination,
-    setPagination,
-    loading,
-  };
-};
-
-export const useFetchCompilationTemplateGroup = () => {
-  const { id } = useParams<{ id: string }>();
+export const useFetchCompilationTemplateGroup = (id?: string) => {
   const isCreate = isCreateCompilationTemplateGroup(id);
 
   const { data, isFetching: loading } = useQuery<
@@ -228,10 +180,17 @@ export const useDeleteCompilationTemplateGroup = () => {
         });
         // The agents page lists groups merged into /agents results.
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchAgentListByPage],
+          queryKey: AgentKeys.list(),
         });
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.filters(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.tags(),
+        });
+        markListItemsDeleted(ListDeletionKey.AgentList);
       }
-      return data?.data ?? true;
+      return data?.code;
     },
   });
 
@@ -245,15 +204,35 @@ export const useDeleteCompilationTemplateGroup = () => {
   return { data, loading, deleteGroup };
 };
 
-export const useFetchAllCompilationTemplateGroups = () => {
-  const { data, isFetching: loading } = useQuery<ICompilationTemplateGroup[]>({
-    queryKey: CompilationTemplateGroupKeys.all(),
+export const useFetchAllCompilationTemplateGroups = (
+  ownerTenantId?: string,
+) => {
+  const {
+    data,
+    isFetching: loading,
+    isFetched,
+    isError,
+  } = useQuery<ICompilationTemplateGroup[]>({
+    queryKey: [...CompilationTemplateGroupKeys.all(), ownerTenantId],
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
+      const params: {
+        keywords: string;
+        page: number;
+        page_size: number;
+        tenant_id?: string;
+      } = {
+        keywords: '',
+        page: 1,
+        page_size: 100,
+      };
+      // Viewing a shared canvas: fetch the canvas owner's groups instead.
       const { data } = await compilationTemplateGroupService.listGroups(
         {
-          params: { keywords: '', page: 1, page_size: 100 },
+          params: ownerTenantId
+            ? { ...params, tenant_id: ownerTenantId }
+            : params,
         },
         true,
       );
@@ -261,14 +240,38 @@ export const useFetchAllCompilationTemplateGroups = () => {
     },
   });
 
-  return { groups: data ?? [], loading };
+  // `initialData: []` keeps `isLoading` from ever firing and can't tell a real
+  // empty result apart from "fetch hasn't completed yet" — gate on `isFetched`.
+  return { groups: data ?? [], loading, isFetched, isError };
 };
 
-export const useCompilationTemplateGroupOptions = () => {
-  const { groups } = useFetchAllCompilationTemplateGroups();
+export const useCompilationTemplateGroupOptions = (ownerTenantId?: string) => {
+  const { groups, isFetched, isError } =
+    useFetchAllCompilationTemplateGroups(ownerTenantId);
 
-  return useMemo(
+  const options = useMemo(
     () => groups.map((group) => ({ label: group.name, value: group.id })),
     [groups],
   );
+
+  return { options, isFetched, isError };
+};
+
+/**
+ * Ids of template groups visible under the given owner tenant (the current
+ * user's own when omitted). Groups resolve per tenant at run time, so a group
+ * referenced by a shared pipeline only exists under the canvas owner's
+ * tenant. `isFetched` must be checked before trusting `validIds` — the query
+ * seeds `initialData: []`, so every id looks missing while loading.
+ */
+export const useCompilationTemplateGroupValidIds = (ownerTenantId?: string) => {
+  const { groups, isFetched } =
+    useFetchAllCompilationTemplateGroups(ownerTenantId);
+
+  const validIds = useMemo(
+    () => new Set(groups.map((group) => group.id)),
+    [groups],
+  );
+
+  return { validIds, isFetched };
 };

@@ -41,6 +41,8 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 )
 
 type codeExecSandboxRecorder struct {
@@ -202,7 +204,7 @@ func TestRetrieval_NodeQueryResolvedFromCanvasState(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.Sys["query"] = "AirPure X200 vs AirPure X300"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"category":      "Product Feature Comparison",
 		"category_name": "Product Feature Comparison",
@@ -227,17 +229,17 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 		t.Fatalf("failed to unwrap sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+	if err = db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatalf("failed to migrate knowledgebase: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate user_tenant: %v", err)
 	}
 	origDB := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = origDB })
 	activeStatus := "1"
-	if err := db.Create(&entity.UserTenant{
+	if err = db.Create(&entity.UserTenant{
 		ID:        "ut-1",
 		UserID:    "user-1",
 		TenantID:  "tenant-1",
@@ -247,8 +249,11 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to seed user_tenant: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
 
-	if err := db.Create(&entity.Knowledgebase{
+	if err = db.Create(&entity.Knowledgebase{
 		ID:         "kb-da1",
 		Name:       "da1",
 		TenantID:   "tenant-1",
@@ -270,7 +275,9 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 	})
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), db, merged)
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "user-1", "tenant-1")
+	normalizeLegacyRetrievalInputs(ctx, db, merged)
 
 	if got, _ := merged["query"].(string); got != "diamond necklace" {
 		t.Fatalf("query = %q, want diamond necklace", got)
@@ -309,6 +316,9 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to seed user_tenant: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
 	if err = db.Create(&entity.Knowledgebase{
 		ID:         "kb-da1",
 		Name:       "da1",
@@ -336,7 +346,9 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 	})
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), db, merged)
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "user-1", "tenant-1")
+	normalizeLegacyRetrievalInputs(ctx, db, merged)
 
 	if got, _ := merged["query"].(string); got != "合同" {
 		t.Fatalf("query = %q, want 合同", got)
@@ -377,11 +389,69 @@ func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
 	}
 
 	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["user_id"] = "tenant-1"
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "tenant-1", "tenant-1")
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "tenant-1"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
 
 	if got := resolveRetrievalDatasetID(ctx, db, "da1"); got != "kb-da1" {
 		t.Fatalf("resolveRetrievalDatasetID = %q, want kb-da1", got)
+	}
+}
+
+func TestRetrieval_ResolveDatasetIDByUserPermission(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		visibility string
+		wantID     string
+	}{
+		{name: "team-visible", visibility: string(entity.TenantPermissionTeam), wantID: "kb-team"},
+		{name: "private-denied", visibility: string(entity.TenantPermissionMe)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+			if err != nil {
+				t.Fatalf("failed to open sqlite: %v", err)
+			}
+			if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+				t.Fatalf("failed to migrate permission tables: %v", err)
+			}
+			origDB := dao.DB
+			dao.DB = db
+			t.Cleanup(func() { dao.DB = origDB })
+
+			status := string(entity.StatusValid)
+			datasetID := "kb-team"
+			if tc.visibility == string(entity.TenantPermissionMe) {
+				datasetID = "kb-private"
+			}
+			dataset := entity.Knowledgebase{
+				ID: datasetID, Name: "named-dataset", TenantID: "tenant-1", EmbdID: "embedding",
+				Permission: tc.visibility, CreatedBy: "owner", Status: &status,
+			}
+			if err := db.Create(&dataset).Error; err != nil {
+				t.Fatalf("failed to seed dataset: %v", err)
+			}
+			memberships := []entity.UserTenant{
+				{ID: "owner-membership", UserID: "owner", TenantID: "tenant-1", Role: "owner", InvitedBy: "owner", Status: &status},
+				{ID: "member-membership", UserID: "member", TenantID: "tenant-1", Role: "normal", InvitedBy: "owner", Status: &status},
+			}
+			if err := db.Create(&memberships).Error; err != nil {
+				t.Fatalf("failed to seed memberships: %v", err)
+			}
+			if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "owner", "member"); err != nil {
+				t.Fatalf("prepare permission fixture: %v", err)
+			}
+
+			state := runtime.NewCanvasState("run-1", "task-1")
+			state.Sys["user_id"] = "member"
+			ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "member", "tenant-1")
+			if got := resolveRetrievalDatasetID(ctx, db, "named-dataset"); got != tc.wantID {
+				t.Fatalf("resolveRetrievalDatasetID = %q, want %q", got, tc.wantID)
+			}
+		})
 	}
 }
 
@@ -401,7 +471,7 @@ func TestRetrieval_StructuredInputPreservesQueryWhenDatasetIDsAlreadyPresent(t *
 		},
 	})
 
-	consumed := normalizeStructuredRetrievalInputs(context.Background(), nil, merged)
+	consumed := normalizeStructuredRetrievalInputs(t.Context(), nil, merged)
 	if !consumed {
 		t.Fatal("normalizeStructuredRetrievalInputs should consume structured query")
 	}
@@ -443,7 +513,7 @@ func TestRetrieval_KbIDsEndToEndThroughTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(Retrieval): %v", err)
 	}
-	out, err := wrapper.Invoke(context.Background(), nil, map[string]any{"query": "ragflow"})
+	out, err := wrapper.Invoke(t.Context(), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Retrieval.Invoke: %v", err)
 	}
@@ -557,7 +627,7 @@ func TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"arguments": map[string]any{
 			"x": 7,
 		},
@@ -596,6 +666,17 @@ func TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs(t *testing.T) {
 	if got := out["_ERROR"]; got != "" {
 		t.Errorf("CodeExec _ERROR = %v, want empty string", got)
 	}
+
+	out, err = c.Invoke(t.Context(), nil, map[string]any{"x": 7})
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke with named argument: %v", err)
+	}
+	if got := recorder.req.Arguments["x"]; got != float64(7) {
+		t.Errorf("sandbox arguments[x] = %v, want 7 from named argument", got)
+	}
+	if got := out["result"]; got != float64(14) {
+		t.Errorf("CodeExec result = %v, want numeric 14", got)
+	}
 }
 
 func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
@@ -629,7 +710,7 @@ func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"state": map[string]map[string]any{
 			"UserFillUp:CodeInput": {
 				"x": "8",
@@ -680,7 +761,7 @@ func TestCodeExec_LegacyDSLWrapperResolvesSysArgumentRefsFromCanvasState(t *test
 
 	state := runtime.NewCanvasState("run-codeexec", "task-codeexec")
 	state.Sys["query"] = "532"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("CodeExec.Invoke: %v", err)
@@ -720,7 +801,7 @@ func TestCodeExec_LegacyDSLWrapperContractMismatchSetsError(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("CodeExec.Invoke: %v", err)
 	}
@@ -760,9 +841,9 @@ func TestCodeExec_LegacyDSLWrapperPreservesExecutionError(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
-	if err == nil {
-		t.Fatal("CodeExec.Invoke: want wrapped execution error, got nil")
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "Container pool is busy") {
+		t.Fatalf("CodeExec.Invoke error = %v, want terminal sandbox error", err)
 	}
 	if got, _ := out["_ERROR"].(string); got != "Container pool is busy" {
 		t.Errorf("CodeExec _ERROR = %v, want sandbox execution error", out["_ERROR"])
@@ -852,7 +933,7 @@ func TestLLM_RetryStackingSemantics(t *testing.T) {
 			}
 			// The retry chain always returns errLLMRetryTestAlwaysFail
 			// so we can count attempts deterministically.
-			_, _ = comp.Invoke(context.Background(), nil, nil)
+			_, _ = comp.Invoke(t.Context(), nil, nil)
 			if counter.calls < tc.wantMinAttempts {
 				t.Errorf("counter.calls = %d, want >= %d (MaxRetries=%d stacking regression?)",
 					counter.calls, tc.wantMinAttempts, tc.maxRetries)

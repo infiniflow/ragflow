@@ -18,6 +18,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"testing"
 )
 
@@ -32,11 +33,25 @@ func oneChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 	if err != nil {
 		t.Fatalf("OneChunker.Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks not []map[string]any: %T", out["chunks"])
 	}
 	return chunks
+}
+
+// TestNewChunkerByName_TokenChunkerOneMode pins the DSL-contract
+// translation: a TokenChunker component whose delimiter_mode is "one"
+// (what the web UI and the Python runtime emit) must build a
+// OneChunker, not fail schema validation.
+func TestNewChunkerByName_TokenChunkerOneMode(t *testing.T) {
+	comp, err := newChunkerByName(ComponentNameTokenChunker, map[string]any{"delimiter_mode": "one"})
+	if err != nil {
+		t.Fatalf("newChunkerByName: %v", err)
+	}
+	if _, ok := comp.(*OneChunkerComponent); !ok {
+		t.Fatalf("component type = %T, want *OneChunkerComponent", comp)
+	}
 }
 
 // TestOneChunker_Text emits exactly one chunk for a text payload,
@@ -139,5 +154,18 @@ func assertCoordTuple(t *testing.T, key string, got any, want []float64) {
 		if rows[0][i] != w {
 			t.Errorf("%s[0][%d] = %v, want %v", key, i, rows[0][i], w)
 		}
+	}
+}
+
+// TestOneChunkerKeepsImgIDForTextlessItem covers the single-item guard: an
+// item kept alive by ImgID must carry that ID into the output chunk.
+func TestOneChunkerKeepsImgIDForTextlessItem(t *testing.T) {
+	out := emitOneFromItems([]schema.ChunkDoc{{DocType: "image", ImgID: "kb-1-chunk-1"}}, nil)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(chunks))
+	}
+	if chunks[0]["img_id"] != "kb-1-chunk-1" {
+		t.Fatalf("img_id = %v, want kb-1-chunk-1", chunks[0]["img_id"])
 	}
 }

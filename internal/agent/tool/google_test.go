@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -86,6 +85,7 @@ func TestGoogle_BuildURL(t *testing.T) {
 
 func TestGoogle_ParseResults(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -102,7 +102,7 @@ func TestGoogle_ParseResults(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewGoogleToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"q":"ragflow","api_key":"K","num":5,"country":"us","language":"en"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -128,9 +128,10 @@ func TestGoogle_ParseResults(t *testing.T) {
 
 func TestGoogle_RequiresAPIKey(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewGoogleTool()
-	_, err := tool.InvokableRun(context.Background(), `{"q":"x","api_key":""}`)
+	_, err := tool.InvokableRun(ctx, `{"q":"x","api_key":""}`)
 	if err == nil {
 		t.Fatal("expected error for missing api_key")
 	}
@@ -141,9 +142,10 @@ func TestGoogle_RequiresAPIKey(t *testing.T) {
 
 func TestGoogle_InfoAndInputForm(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewGoogleTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -246,6 +248,7 @@ func TestGoogle_BuildByNameIgnoresUnrelatedCanvasParams(t *testing.T) {
 
 func TestGoogle_ComponentReferencesAndOutputs(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	google := NewGoogleTool()
 	spec := google.ComponentSpec()
@@ -270,7 +273,7 @@ func TestGoogle_ComponentReferencesAndOutputs(t *testing.T) {
 			}},
 		},
 	}}
-	chunks, docAggs := google.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := google.BuildReferences(ctx, envelope)
 	if len(chunks) != 2 || len(docAggs) != 2 {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}

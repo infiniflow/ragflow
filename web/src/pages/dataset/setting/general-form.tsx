@@ -10,18 +10,22 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { LanguageTranslationMap } from '@/constants/common';
-import { isGoBackend } from '@/utils/backend-runtime';
+import {
+  DESCRIPTION_MAX_LENGTH,
+  LanguageTranslationMap,
+} from '@/constants/common';
 import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
+import { showPermissionField } from '@/ee/constants/feature-flags';
+import { useOwnerTenantId } from '../contexts/knowledge-base-context';
 import { EmbeddingModelItem } from './embedding-model-form-field';
 import { PermissionFormField } from './permission-form-field';
 
 export function GeneralForm() {
   const form = useFormContext();
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   const languageOptions = useMemo(() => {
     return Object.keys(LanguageTranslationMap).map((x) => ({
@@ -56,21 +60,19 @@ export function GeneralForm() {
           </FormItem>
         )}
       />
-      {isGoBackend() && (
-        <div className="items-center">
-          <RAGFlowFormItem
-            name="language"
-            label={t('common.language')}
-            horizontal={true}
-          >
-            <SelectWithSearch
-              options={languageOptions}
-              triggerClassName="w-full"
-              testId="ds-settings-basic-language-select"
-            ></SelectWithSearch>
-          </RAGFlowFormItem>
-        </div>
-      )}
+      <div className="items-center">
+        <RAGFlowFormItem
+          name="language"
+          label={t('common.language')}
+          horizontal={true}
+        >
+          <SelectWithSearch
+            options={languageOptions}
+            triggerClassName="w-full"
+            testId="ds-settings-basic-language-select"
+          ></SelectWithSearch>
+        </RAGFlowFormItem>
+      </div>
       <FormField
         control={form.control}
         name="avatar"
@@ -113,6 +115,7 @@ export function GeneralForm() {
                 <FormControl className="w-3/4">
                   <Input
                     {...field}
+                    maxLength={DESCRIPTION_MAX_LENGTH}
                     placeholder={t('knowledgeConfiguration.datasetDescription')}
                     data-testid="ds-settings-basic-description-input"
                   ></Input>
@@ -126,10 +129,10 @@ export function GeneralForm() {
           );
         }}
       />
-      <PermissionFormField></PermissionFormField>
+      {showPermissionField && <PermissionFormField></PermissionFormField>}
       <EmbeddingModelItem
         isEdit={true}
-        ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
+        ownerTenantId={ownerTenantId}
       ></EmbeddingModelItem>
       <PageRankFormField></PageRankFormField>
     </>

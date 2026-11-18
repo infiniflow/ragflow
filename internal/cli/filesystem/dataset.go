@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
+	"ragflow/internal/cli/utils"
 	"strconv"
 	"strings"
 	"time"
@@ -369,9 +371,9 @@ func (p *DatasetProvider) searchWithRetrieval(ctx stdctx.Context, opts *SearchOp
 func (p *DatasetProvider) chunkToNodeWithKBMapping(chunk map[string]interface{}, kbIDToName map[string]string) *Node {
 	// Extract chunk content - try multiple field names
 	content := ""
-	if v, ok := chunk["content_with_weight"].(string); ok && v != "" {
+	if v, ok := chunk["content"].(string); ok && v != "" {
 		content = v
-	} else if v, ok := chunk["content"].(string); ok && v != "" {
+	} else if v, ok := chunk["content_with_weight"].(string); ok && v != "" {
 		content = v
 	} else if v, ok := chunk["content_ltks"].(string); ok && v != "" {
 		content = v
@@ -381,15 +383,17 @@ func (p *DatasetProvider) chunkToNodeWithKBMapping(chunk map[string]interface{},
 
 	// Get chunk_id for URI
 	chunkID := ""
-	if v, ok := chunk["chunk_id"].(string); ok {
+	if v, ok := chunk["id"].(string); ok {
 		chunkID = v
-	} else if v, ok := chunk["id"].(string); ok {
+	} else if v, ok := chunk["chunk_id"].(string); ok {
 		chunkID = v
 	}
 
 	// Get document name and ID
 	docName := ""
-	if v, ok := chunk["docnm_kwd"].(string); ok && v != "" {
+	if v, ok := chunk["document_keyword"].(string); ok && v != "" {
+		docName = v
+	} else if v, ok := chunk["docnm_kwd"].(string); ok && v != "" {
 		docName = v
 	} else if v, ok := chunk["docnm"].(string); ok && v != "" {
 		docName = v
@@ -398,7 +402,9 @@ func (p *DatasetProvider) chunkToNodeWithKBMapping(chunk map[string]interface{},
 	}
 
 	docID := ""
-	if v, ok := chunk["doc_id"].(string); ok && v != "" {
+	if v, ok := chunk["document_id"].(string); ok && v != "" {
+		docID = v
+	} else if v, ok := chunk["doc_id"].(string); ok && v != "" {
 		docID = v
 	}
 
@@ -407,7 +413,9 @@ func (p *DatasetProvider) chunkToNodeWithKBMapping(chunk map[string]interface{},
 	datasetID := ""
 
 	// First try to get kb_id from chunk (could be string or array)
-	if v, ok := chunk["kb_id"].(string); ok && v != "" {
+	if v, ok := chunk["dataset_id"].(string); ok && v != "" {
+		datasetID = v
+	} else if v, ok := chunk["kb_id"].(string); ok && v != "" {
 		datasetID = v
 	} else if v, ok := chunk["kb_id"].([]interface{}); ok && len(v) > 0 {
 		if s, ok := v[0].(string); ok {
@@ -492,19 +500,21 @@ func (p *DatasetProvider) listDocuments(ctx stdctx.Context, datasetName string, 
 		return nil, fmt.Errorf("dataset ID not found")
 	}
 
-	// Build query parameters
-	params := make(map[string]string)
+	params := url.Values{}
 	if opts != nil {
-		if opts.Limit > 0 {
-			params["page_size"] = fmt.Sprintf("%d", opts.Limit)
+		pageSize := opts.Limit
+		if pageSize <= 0 {
+			pageSize = 100
 		}
-		if opts.Offset > 0 {
-			params["page"] = fmt.Sprintf("%d", opts.Offset/opts.Limit+1)
-		}
+		params.Set("page_size", strconv.Itoa(pageSize))
+		params.Set("page", strconv.Itoa(max(opts.Offset, 0)/pageSize+1))
 	}
 
-	path := fmt.Sprintf("/datasets/%s/documents", datasetID)
-	resp, err := p.httpClient.Request("GET", path, "auto", params, nil)
+	path := utils.APIPath("/datasets", datasetID, "documents")
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+	resp, err := p.httpClient.Request("GET", path, "auto", nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -753,6 +763,8 @@ func parseTime(v interface{}) time.Time {
 			formats := []string{
 				"2006-01-02 15:04:05",
 				"2006-01-02T15:04:05",
+				time.RFC3339Nano,
+				time.RFC3339,
 				"2006-01-02T15:04:05Z",
 				"2006-01-02",
 			}
@@ -767,9 +779,10 @@ func parseTime(v interface{}) time.Time {
 		return time.Time{}
 	}
 
-	// Convert milliseconds to seconds if timestamp is in milliseconds (13 digits)
+	// Convert milliseconds to seconds if timestamp is in milliseconds (13 digits),
+	// preserving the sub-second remainder.
 	if ts > 1e12 {
-		ts = ts / 1000
+		return time.Unix(ts/1000, (ts%1000)*int64(time.Millisecond))
 	}
 
 	return time.Unix(ts, 0)

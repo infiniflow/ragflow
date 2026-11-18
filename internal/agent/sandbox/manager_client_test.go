@@ -2,9 +2,18 @@ package sandbox
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 )
 
 type managerClientStubProvider struct{}
@@ -37,7 +46,8 @@ func TestManagerClient_MapsStructuredResultToSandboxResponse(t *testing.T) {
 	mgr.SetProvider(managerClientStubProvider{})
 
 	client := &ManagerClient{manager: mgr}
-	resp, err := client.ExecuteCode(context.Background(), agenttool.SandboxRequest{
+	ctx := t.Context()
+	resp, err := client.ExecuteCode(ctx, agenttool.SandboxRequest{
 		Lang:   "python",
 		Script: "def main(): return 16",
 	})
@@ -57,7 +67,8 @@ func TestManagerClient_MapsLegacyResultKeyToSandboxResponse(t *testing.T) {
 	mgr.SetProvider(managerClientResultKeyProvider{})
 
 	client := &ManagerClient{manager: mgr}
-	resp, err := client.ExecuteCode(context.Background(), agenttool.SandboxRequest{
+	ctx := t.Context()
+	resp, err := client.ExecuteCode(ctx, agenttool.SandboxRequest{
 		Lang:   "python",
 		Script: "def main(): return 16",
 	})
@@ -97,3 +108,141 @@ func (managerClientResultKeyProvider) DestroyInstance(context.Context, *SandboxI
 }
 func (managerClientResultKeyProvider) HealthCheck(context.Context) error { return nil }
 func (managerClientResultKeyProvider) SupportedLanguages() []string      { return []string{"python"} }
+
+func TestManagerClient_RefreshDuringExecution(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&entity.SystemSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	previousDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previousDB })
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	oldServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/run" {
+			close(started)
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return
+			}
+			handleRun(t, w, r, "old", "")
+		}
+	}))
+	defer oldServer.Close()
+	defer once.Do(func() { close(release) })
+	newServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/run" {
+			handleRun(t, w, r, "new", "")
+		}
+	}))
+	defer newServer.Close()
+	d := dao.NewSystemSettingsDAO()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	if err := d.SaveOrCreate(ctx, db, "sandbox.provider_type", "self_managed", "admin", "string"); err != nil {
+		t.Fatal(err)
+	}
+	save := func(endpoint string) {
+		t.Helper()
+		cfg, _ := json.Marshal(map[string]any{"endpoint": endpoint})
+		if err := d.SaveOrCreate(ctx, db, "sandbox.self_managed", string(cfg), "admin", "json"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save(oldServer.URL)
+	client := &ManagerClient{manager: &ProviderManager{}}
+	type outcome struct {
+		response *agenttool.SandboxResponse
+		err      error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		response, err := client.ExecuteCode(ctx, agenttool.SandboxRequest{Lang: "python", Script: "print('old')"})
+		done <- outcome{response, err}
+	}()
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	save(":invalid")
+	if _, err := client.ExecuteCode(ctx, agenttool.SandboxRequest{Lang: "python"}); err == nil {
+		t.Fatal("new execution silently accepted failed replacement")
+	}
+	save(newServer.URL)
+	response, err := client.ExecuteCode(ctx, agenttool.SandboxRequest{Lang: "python", Script: "print('new')"})
+	if err != nil || response.Stdout != "new" {
+		t.Fatalf("next execution = %+v, %v", response, err)
+	}
+	once.Do(func() { close(release) })
+	select {
+	case result := <-done:
+		if result.err != nil || result.response.Stdout != "old" {
+			t.Fatalf("in-flight execution = %+v, %v", result.response, result.err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
+type cleanupTrackingProvider struct {
+	managerClientStubProvider
+	started chan struct{}
+	release chan struct{}
+	cleaned chan struct{}
+}
+
+func (p *cleanupTrackingProvider) ExecuteCode(ctx context.Context, inst *SandboxInstance, code, lang string, timeout int, args map[string]any) (*ExecutionResult, error) {
+	close(p.started)
+	select {
+	case <-p.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return p.managerClientStubProvider.ExecuteCode(ctx, inst, code, lang, timeout, args)
+}
+
+func (p *cleanupTrackingProvider) DestroyInstance(ctx context.Context, _ *SandboxInstance) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	close(p.cleaned)
+	return nil
+}
+
+func TestManagerClient_CleanupUsesOriginalProvider(t *testing.T) {
+	p := &cleanupTrackingProvider{started: make(chan struct{}), release: make(chan struct{}), cleaned: make(chan struct{})}
+	m := &ProviderManager{}
+	m.SetProvider(p)
+	client := &ManagerClient{manager: m}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := client.ExecuteCode(ctx, agenttool.SandboxRequest{Lang: "python"}); done <- err }()
+	select {
+	case <-p.started:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	m.SetProvider(managerClientStubProvider{})
+	close(p.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.cleaned:
+	default:
+		t.Fatal("original provider was not cleaned up")
+	}
+}

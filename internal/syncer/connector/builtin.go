@@ -1,0 +1,97 @@
+//
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+package connector
+
+import (
+	"context"
+	"strings"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+)
+
+// RegisterBuiltIns wires every connector shipped in the server binary. Each
+// source registers both the task-context factory (used by the syncer runtime)
+// and the raw-config factory (used by the test-connection endpoint).
+func RegisterBuiltIns(registry *Registry) {
+	registerBuiltIn(registry, "confluence", NewConfluenceConnector)
+	registerBuiltIn(registry, "rss", NewRSSConnector)
+	registerBuiltIn(registry, "sitemap", NewSitemapConnector)
+	registerBuiltIn(registry, "salesforce", NewSalesforceConnector)
+	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
+	registerBuiltIn(registry, "azure_devops", NewAzureDevOpsConnector)
+	registerBuiltIn(registry, "dropbox", NewDropboxConnector)
+	registerBuiltIn(registry, "box", NewBoxConnector)
+	registerBuiltIn(registry, "asana", NewAsanaConnector)
+	registerBuiltIn(registry, "github", NewGitHubConnector)
+	registerBuiltIn(registry, "gitlab", NewGitlabConnector)
+	registerBuiltIn(registry, "gmail", NewGmailConnector)
+	registerBuiltIn(registry, "google-drive", NewGoogleDriveConnector)
+	registerBuiltIn(registry, "google_drive", NewGoogleDriveConnector)
+	registerBuiltIn(registry, "google_cloud_storage", NewGoogleCloudStorageConnector)
+	registerBuiltIn(registry, "oci_storage", NewOCIStorageConnector)
+	registerBuiltIn(registry, "zendesk", NewZendeskConnector)
+	registerBuiltIn(registry, "azure_blob", NewAzureBlobStorageConnector)
+	registerBuiltIn(registry, "airtable", NewAirtableConnector)
+	registerBuiltIn(registry, "r2", NewR2Connector)
+	registerBuiltIn(registry, "s3", newS3SourceConnector)
+	registerBuiltIn(registry, "s3_compatible", NewS3CompatibleConnector)
+	registerBuiltIn(registry, "dingtalk_ai_table", NewDingTalkAITableConnector)
+	registerBuiltIn(registry, "imap", NewIMAPConnector)
+	registerBuiltIn(registry, "jira", NewJiraConnector)
+	registerBuiltIn(registry, "outlook", NewOutlookConnector)
+	registerBuiltIn(registry, "onedrive", NewOneDriveConnector)
+	registerBuiltIn(registry, "notion", NewNotionConnector)
+	registerBuiltIn(registry, "rest_api", NewRestAPIConnector)
+	registerBuiltIn(registry, "xquik", NewXquikConnector)
+	registerBuiltIn(registry, "moodle", NewMoodleConnector)
+	registerBuiltIn(registry, "mysql", NewMySQLConnector)
+	registerBuiltIn(registry, "postgresql", NewPostgreSQLConnector)
+	registerBuiltIn(registry, "slack", NewSlackConnector)
+	registerBuiltIn(registry, "teams", NewTeamsConnector)
+	registerBuiltIn(registry, "sharepoint", NewSharePointConnector)
+	registerBuiltIn(registry, "discord", NewDiscordConnector)
+	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
+	registerBuiltIn(registry, "seafile", NewSeaFileConnector)
+	registerBuiltIn(registry, "bigquery", NewBigQueryConnector)
+	registerBuiltIn(registry, "zotero", NewZoteroConnector)
+}
+
+// newS3SourceConnector selects the client for the bucket type stored under an S3 source.
+// The data source form keeps an S3-compatible bucket under source "s3" with bucket_type "s3_compatible".
+// Compatible mode keeps the "s3" ID namespace, so documents already indexed under this source keep their IDs.
+func newS3SourceConnector(config map[string]any) (Connector, error) {
+	if strings.TrimSpace(stringConfig(config["bucket_type"])) == s3CompatibleSource {
+		return newS3CompatibleConnector(config, s3Source)
+	}
+	return NewS3Connector(config)
+}
+
+func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {
+	registry.RegisterConfigFactory(source, func(config map[string]any) (Connector, error) {
+		return factory(config)
+	})
+	registry.Register(source, func(ctx context.Context, taskContext dao.SyncTaskContext) (Connector, error) {
+		// Decrypt here, not when the task is loaded: a missing key then fails
+		// this task through the normal retry path instead of blocking its claim.
+		config, err := common.DecryptConnectorCredentials(taskContext.Connector.Config)
+		if err != nil {
+			return nil, err
+		}
+		return factory(config)
+	})
+}

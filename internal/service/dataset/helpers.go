@@ -6,14 +6,35 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/google/uuid"
 )
+
+// keepDatasetOrderTerms narrows the requested terms to the columns the dataset
+// list has always accepted, which is a smaller set than the knowledge base row
+// exposes. A list with nothing left falls back to create_time in the first
+// requested direction, which is what an unrecognised single name did.
+func keepDatasetOrderTerms(terms []dao.OrderTerm) []dao.OrderTerm {
+	kept := make([]dao.OrderTerm, 0, len(terms))
+	for _, term := range terms {
+		column := strings.TrimSpace(term.Column)
+		if _, ok := datasetAllowedOrderByFields[column]; ok {
+			kept = append(kept, dao.OrderTerm{Column: column, Desc: term.Desc})
+		}
+	}
+	if len(kept) == 0 {
+		return []dao.OrderTerm{{Column: "create_time", Desc: len(terms) > 0 && terms[0].Desc}}
+	}
+	return kept
+}
 
 // Package-level vars and constants used by the dataset service.
 var (
@@ -31,13 +52,9 @@ var (
 		"time":   {},
 		"number": {},
 	}
-	validIndexTypes        = []string{"graph", "raptor", "mindmap"}
-	indexTypeToTaskType    = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
-	indexTypeToDisplayName = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
 )
 
 const (
-	graphRaptorQueueDocID    = "graph_raptor_x"
 	maximumTaskPageNumber    = int64(100000000)
 	serverQueueNamePrefix    = "te"
 	defaultEmbeddingCheckNum = 5
@@ -46,19 +63,37 @@ const (
 	graphPhaseCommunityDone  = "community_done"
 )
 
-// validateParserID validates parser_id against the built-in pipeline registry.
-func validateParserID(chunkMethod string) error {
-	if chunkMethod == "knowledge_graph" {
-		return nil
+// canonicalDatasetParserID resolves a parser ID to its canonical builtin ID.
+// The registry retains legacy aliases such as naive -> general for old clients.
+func canonicalDatasetParserID(parserID string) (string, error) {
+	if parserID == "knowledge_graph" {
+		return parserID, nil
 	}
 	registry, err := pipelinepkg.DefaultRegistry()
 	if err != nil || registry == nil {
-		return errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
+		return "", errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
 	}
-	if registry.IsValid(chunkMethod) {
-		return nil
+	template, ok := registry.Get(parserID)
+	if ok {
+		return template.ParserID, nil
 	}
-	return parserIDError()
+	return "", parserIDError()
+}
+
+// validateParserID validates parser_id against the built-in pipeline registry.
+func validateParserID(parserID string) error {
+	_, err := canonicalDatasetParserID(parserID)
+	return err
+}
+
+// datasetParserIDForResponse returns the canonical parser ID when a legacy
+// persisted value remains resolvable. Unknown stored values are preserved.
+func datasetParserIDForResponse(parserID string) string {
+	canonicalID, err := canonicalDatasetParserID(parserID)
+	if err != nil {
+		return parserID
+	}
+	return canonicalID
 }
 
 func parserIDError() error {
@@ -86,6 +121,9 @@ func quoteList(items []string) string {
 }
 
 func validateDatasetAvatar(avatar string) error {
+	if avatar == "" {
+		return nil
+	}
 	if !strings.Contains(avatar, ",") {
 		return errors.New("missing MIME prefix. Expected format: data:<mime>;base64,<data>")
 	}
@@ -114,6 +152,13 @@ func isHexID(s string) bool {
 
 func validateDatasetEmbeddingModel(embeddingModel string) error {
 	if isHexID(embeddingModel) {
+		return nil
+	}
+
+	// A gp- model group reference resolves through the group picker at use
+	// time (verifyEmbeddingAvailability -> ResolveInfo), so it passes format
+	// validation here.
+	if _, ok := common.ParseGroupModelRef(embeddingModel); ok {
 		return nil
 	}
 
@@ -157,9 +202,54 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 		return errors.New("parser_config must be valid JSON")
 	}
 	if len(data) > 65535 {
-		return fmt.Errorf("parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
+		return fmt.Errorf("Parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
 	}
 	return nil
+}
+
+// DropUnscopedParserConfigKeys removes top-level parser_config keys that
+// common.IsComponentKey does not recognize as component-scoped. Flat keys are
+// transport artifacts that BuildParserConfig never reads, so they are dropped
+// rather than rejected. Only top-level keys are affected; nested keys keep
+// their names. It mutates parserConfig and returns the dropped names so callers
+// can log them. A nil or empty map is returned untouched.
+func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
+	if len(parserConfig) == 0 {
+		return nil
+	}
+	var dropped []string
+	for key := range parserConfig {
+		if !common.IsComponentKey(key) {
+			dropped = append(dropped, key)
+		}
+	}
+	for _, key := range dropped {
+		delete(parserConfig, key)
+	}
+	return dropped
+}
+
+// ValidateParserConfig validates the shared REST parser_config schema. Flat
+// (non-component-scoped) keys are no longer rejected: they are silently dropped
+// because downstream consumers never read them. The size limit is still
+// enforced. It returns the names of the dropped (unscoped) keys so the caller
+// can log the silent drop; this is the single drop point shared by every entry
+// path, so callers should not call DropUnscopedParserConfigKeys again.
+func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	dropped := DropUnscopedParserConfigKeys(parserConfig)
+	return dropped, validateDatasetParserConfigSize(parserConfig)
+}
+
+// ValidateDocumentParserConfig validates the parser_config attached to a
+// document. Documents follow the same component-scoped contract as datasets:
+// every key must be scoped under a node id (e.g. "Extractor:AutoExtractDefault"
+// or "GeneralChunker:SixApplesFall"). A document's Extractor/GeneralChunker
+// nodes come from the same pipeline DSL as the dataset, so flat keys are dropped
+// (not kept) and the size limit is enforced. It returns the dropped key names
+// for logging, mirroring ValidateParserConfig.
+func ValidateDocumentParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	dropped := DropUnscopedParserConfigKeys(parserConfig)
+	return dropped, validateDatasetParserConfigSize(parserConfig)
 }
 
 // NormalizeDatasetID validates the dataset ID format and returns its
@@ -180,6 +270,27 @@ func normalizeDatasetID(id string) (string, error) {
 	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
 }
 
+// datasetLanguageLimit mirrors the max_length of CreateDatasetReq.language in
+// the Python request model.
+const datasetLanguageLimit = 32
+
+// normalizeDatasetLanguage trims a dataset language and applies the same
+// constraints as CreateDatasetReq.language in Python
+// (strip_whitespace=True, min_length=1, max_length=32), so both backends accept
+// and reject the same values. The length is counted in characters, not bytes,
+// because pydantic counts characters — a byte count would reject valid
+// non-ASCII language names well below the documented limit.
+func normalizeDatasetLanguage(language string) (string, error) {
+	normalized := strings.TrimSpace(language)
+	if normalized == "" {
+		return "", errors.New("String should have at least 1 character")
+	}
+	if utf8.RuneCountInString(normalized) > datasetLanguageLimit {
+		return "", fmt.Errorf("String should have at most %d characters", datasetLanguageLimit)
+	}
+	return normalized, nil
+}
+
 // pythonStringListRepr renders a string slice the way Python prints a list of
 // strings, e.g. ['a', 'b'], for error messages that mirror the Python API.
 func pythonStringListRepr(items []string) string {
@@ -190,9 +301,12 @@ func pythonStringListRepr(items []string) string {
 	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
-func canvasAccessibleForUser(ctx context.Context, userID, canvasID string) (bool, error) {
-	tenantIDs, _ := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
-	return dao.NewUserCanvasDAO().Accessible(ctx, dao.DB, canvasID, userID, tenantIDs), nil
+func canvasAccessibleForUser(ctx context.Context, canvasID string) (bool, error) {
+	err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationUse)
+	if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func parserConfigValueOrEmptyList(parserConfig map[string]interface{}, key string) interface{} {
@@ -223,10 +337,11 @@ func datasetUpdateParserID(req service.UpdateDatasetRequest) (string, bool, erro
 	if !provided {
 		return "", false, nil
 	}
-	if err := validateParserID(parserID); err != nil {
+	canonicalID, err := canonicalDatasetParserID(parserID)
+	if err != nil {
 		return "", true, err
 	}
-	return parserID, true, nil
+	return canonicalID, true, nil
 }
 
 func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, error) {
@@ -249,46 +364,180 @@ func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, e
 	return embdID, true, nil
 }
 
-func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
+func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
 	if next == nil {
 		next = entity.JSONMap{}
 	}
-	for _, key := range []string{"metadata", "built_in_metadata", "enable_metadata"} {
-		if incoming != nil {
-			if value, ok := incoming[key]; ok {
-				next[key] = value
+	var mm map[string]any
+	if incoming != nil {
+		mm = extractorNodeMetadata(incoming, next)
+	}
+	if mm == nil && existing != nil {
+		mm = extractorNodeMetadata(existing, next)
+	}
+	if mm != nil {
+		next["metadata"] = mm
+	}
+	// Resolve the dataset-level parent_child setting (component-scoped on a
+	// chunker node) and scope it onto every chunker node in next. There is no
+	// flat aggregation key.
+	parentChild := resolveParentChild(incoming, existing)
+	if parentChild != nil {
+		for componentID, value := range next {
+			if !pipelinepkg.IsChunkerComponent(componentID) {
 				continue
 			}
+			params, ok := value.(map[string]interface{})
+			if !ok {
+				params = map[string]interface{}{}
+				next[componentID] = params
+			}
+			params["parent_child"] = parentChild
 		}
-		if existing != nil {
-			if value, ok := existing[key]; ok {
-				next[key] = value
+	}
+	requestedChildren := make(map[string]interface{})
+	for componentID, value := range incoming {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		if requested, ok := value.(map[string]interface{}); ok {
+			if enabled, provided := requested["enable_children"].(bool); provided && !enabled {
+				requestedChildren[componentID] = []string{}
+			} else if _, provided := requested["children_delimiters"]; provided {
+				if params, ok := next[componentID].(map[string]interface{}); ok {
+					requestedChildren[componentID] = params["children_delimiters"]
+				}
+			}
+		}
+	}
+	// Re-derive delimiters from parent_child, then keep explicit chunker edits
+	// (or an existing chunker setting on a partial update) over that fallback.
+	parentChildConfig := map[string]interface{}{}
+	for componentID, value := range incoming {
+		if pipelinepkg.IsChunkerComponent(componentID) {
+			parentChildConfig[componentID] = value
+		}
+	}
+	pipelinepkg.ApplyParentChildChunkerConfig(next, parentChildConfig)
+	parentChildUpdated := parentChild != nil
+	for componentID, value := range next {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if delimiters, provided := requestedChildren[componentID]; provided {
+			params["children_delimiters"] = delimiters
+			continue
+		}
+		if parentChildUpdated {
+			continue
+		}
+		if previous, ok := existing[componentID].(map[string]interface{}); ok {
+			if delimiters, present := previous["children_delimiters"]; present {
+				params["children_delimiters"] = delimiters
+			}
+			if enabled, present := previous["enable_children"]; present {
+				params["enable_children"] = enabled
 			}
 		}
 	}
 	return next
 }
 
-func normalizeDatasetUpdateExt(ext map[string]interface{}) map[string]interface{} {
-	if ext == nil {
+// extractorNodeMetadata returns the modular metadata object ({enabled, metadata,
+// built_in_metadata}) from the first Extractor node present in validConfig, or
+// nil if none is present. validConfig is the rebuilt parser_config for the
+// current DSL; keys outside it are ignored so stale nodes cannot override the
+// active configuration.
+func extractorNodeMetadata(parserConfig, validConfig map[string]interface{}) map[string]any {
+	if parserConfig == nil {
 		return nil
 	}
-	updates := make(map[string]interface{}, len(ext))
-	for key, value := range ext {
-		switch key {
-		case "chunk_method":
-			updates["parser_id"] = value
-		case "token_num", "chunk_num", "parser_config":
+	for _, cpnID := range common.SortedExtractorKeys(parserConfig) {
+		if _, ok := validConfig[cpnID]; !ok {
 			continue
-		case "pagerank":
-			if v, ok := value.(float64); ok {
-				updates[key] = int64(v)
-			}
-		default:
-			updates[key] = value
+		}
+		raw := parserConfig[cpnID]
+		params, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if meta, ok := params["metadata"].(map[string]any); ok {
+			return meta
 		}
 	}
-	return updates
+	return nil
+}
+
+// resolveParentChild extracts the dataset-level parent_child setting from one or
+// more parser_configs. It reads the component-scoped "parent_child" sub-object on
+// a chunker node only; flat top-level keys are not accepted. Returns nil when
+// absent.
+func resolveParentChild(configs ...map[string]interface{}) map[string]any {
+	for _, cfg := range configs {
+		if cfg == nil {
+			continue
+		}
+		for componentID, raw := range cfg {
+			if !pipelinepkg.IsChunkerComponent(componentID) {
+				continue
+			}
+			params, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if pc, ok := params["parent_child"].(map[string]any); ok {
+				return pc
+			}
+		}
+	}
+	return nil
+}
+
+func parserConfigJSONMap(value interface{}) entity.JSONMap {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case entity.JSONMap:
+		return typed
+	case map[string]interface{}:
+		return entity.JSONMap(typed)
+	default:
+		return nil
+	}
+}
+
+func cloneJSONMap(source entity.JSONMap) entity.JSONMap {
+	if source == nil {
+		return nil
+	}
+	cloned := make(entity.JSONMap, len(source))
+	for key, value := range source {
+		cloned[key] = cloneJSONValue(value)
+	}
+	return cloned
+}
+
+func cloneJSONValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		nested := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			nested[key] = cloneJSONValue(item)
+		}
+		return nested
+	case []interface{}:
+		nested := make([]interface{}, len(typed))
+		for idx, item := range typed {
+			nested[idx] = cloneJSONValue(item)
+		}
+		return nested
+	default:
+		return typed
+	}
 }
 
 func normalizeMetadataConfigFields(fields []service.MetadataConfigField, fieldName string) ([]map[string]interface{}, error) {

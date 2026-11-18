@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 /**
  * Parses a "Delimiter for text" field value into a list of delimiters for
  * display in the UI. Mirrors the canonical backend parser in
@@ -77,5 +93,44 @@ export function parseDelimitersForDisplay(
   for (const ch of normalizedValue.slice(cursor)) push(ch);
 
   // Stable sort longest-first (matches backend parse_delimiter_field).
+  return result.sort((a, b) => b.raw.length - a.raw.length);
+}
+
+/**
+ * Parse the chunker operator's delimiter LIST (one delimiter per row) for
+ * display — a different field shape from the single delimiter string above,
+ * where each row is already one delimiter.
+ *
+ * A backtick-wrapped row contributes its inner text; any other non-empty row is
+ * one delimiter exactly as typed (multi-character included) when `keepBare` is
+ * true. `keepBare` is false for the Python flow TokenChunker, which only
+ * activates backtick-wrapped entries. Mirrors the backend list compiler:
+ * deduplicated, longest-first.
+ */
+export function parseDelimiterListForDisplay(
+  values: (string | undefined)[] | undefined,
+  { keepBare }: { keepBare: boolean },
+): ParsedDelimiter[] {
+  if (!values) return [];
+
+  const result: ParsedDelimiter[] = [];
+  const seen = new Set<string>();
+
+  const push = (raw: string) => {
+    if (!raw || seen.has(raw)) return;
+    seen.add(raw);
+    result.push({ raw, display: toDisplay(raw) });
+  };
+
+  for (const value of values) {
+    if (!value) continue;
+    if (value.length >= 2 && value.startsWith('`') && value.endsWith('`')) {
+      push(value.slice(1, -1));
+      continue;
+    }
+    if (keepBare) push(value);
+  }
+
+  // Stable sort longest-first (matches the backend list compiler).
   return result.sort((a, b) => b.raw.length - a.raw.length);
 }

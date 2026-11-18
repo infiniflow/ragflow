@@ -70,6 +70,7 @@ func (c *Config) ParseGeneralConfig(v *viper.Viper) error {
 	}
 	if sub.IsSet("storage_engine") {
 		c.general.StorageEngine = sub.GetString("storage_engine")
+		c.generalStorageEngineSet = true
 	}
 	if sub.IsSet("cache_engine") {
 		c.general.CacheEngine = sub.GetString("cache_engine")
@@ -95,6 +96,9 @@ func (c *Config) GetMode() string {
 }
 
 func (c *Config) DatabaseType() string {
+	if c.environments.DatabaseType != "" {
+		return c.environments.DatabaseType
+	}
 	return c.general.Database
 }
 
@@ -106,6 +110,9 @@ func (c *Config) DocEngineType() string {
 }
 
 func (c *Config) StorageEngineType() string {
+	if c.environments.StorageType != "" {
+		return c.environments.StorageType
+	}
 	return c.general.StorageEngine
 }
 

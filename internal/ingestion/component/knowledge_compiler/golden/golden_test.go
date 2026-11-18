@@ -48,20 +48,20 @@ func TestAnalyzeTreeProducts_TreeShape(t *testing.T) {
 	vector := json.RawMessage(`[0.1,0.2,0.3]`)
 	chunks := []schema.ChunkDoc{
 		{Text: "root summary", Extra: mustExtras(t, map[string]any{
-			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
-			"kc_kind": "root", "kc_level": float64(-1), "q_3_vec": vector,
+			"id": "r1", "doc_id": "d1", "compile_kwd": "tree",
+			"raptor_kwd": "root", "raptor_layer_int": float64(-1), "q_3_vec": vector,
 		})},
 		{Text: "leaf A", Extra: mustExtras(t, map[string]any{
-			"id": "a1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
-			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
+			"id": "a1", "doc_id": "d1", "compile_kwd": "tree",
+			"raptor_kwd": "summary", "raptor_layer_int": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
 		})},
 		{Text: "leaf B", Extra: mustExtras(t, map[string]any{
-			"id": "b1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
-			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
+			"id": "b1", "doc_id": "d1", "compile_kwd": "tree",
+			"raptor_kwd": "summary", "raptor_layer_int": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
 		})},
 		{Text: "mid A", Extra: mustExtras(t, map[string]any{
-			"id": "m1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
-			"kc_kind": "summary", "kc_level": float64(1), "parent_kwd": "r1", "q_3_vec": vector,
+			"id": "m1", "doc_id": "d1", "compile_kwd": "tree",
+			"raptor_kwd": "summary", "raptor_layer_int": float64(1), "parent_kwd": "r1", "q_3_vec": vector,
 		})},
 	}
 	m := AnalyzeTreeProducts(chunks)
@@ -85,12 +85,12 @@ func TestAnalyzeTreeProducts_TreeShape(t *testing.T) {
 func TestAnalyzeTreeProducts_DetectsDanglingParent(t *testing.T) {
 	chunks := []schema.ChunkDoc{
 		{Text: "root", Extra: mustExtras(t, map[string]any{
-			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
-			"kc_kind": "root",
+			"id": "r1", "doc_id": "d1", "compile_kwd": "tree",
+			"raptor_kwd": "root",
 		})},
 		{Text: "orphan", Extra: mustExtras(t, map[string]any{
-			"id": "o1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
-			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "missing-parent",
+			"id": "o1", "doc_id": "d1", "compile_kwd": "tree",
+			"raptor_kwd": "summary", "raptor_layer_int": float64(0), "parent_kwd": "missing-parent",
 		})},
 	}
 	m := AnalyzeTreeProducts(chunks)
@@ -134,12 +134,12 @@ func TestAnalyzeTreeProducts_IgnoresUnknownSourceIDs(t *testing.T) {
 	vector := json.RawMessage(`[0.1,0.2,0.3]`)
 	chunks := []schema.ChunkDoc{
 		{Text: "root", Extra: mustExtras(t, map[string]any{
-			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
-			"kc_kind": "root", "kc_level": float64(-1), "q_3_vec": vector,
+			"id": "r1", "doc_id": "d1", "compile_kwd": "tree",
+			"raptor_kwd": "root", "raptor_layer_int": float64(-1), "q_3_vec": vector,
 		})},
 		{Text: "leaf", Extra: mustExtras(t, map[string]any{
-			"id": "a1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
-			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
+			"id": "a1", "doc_id": "d1", "compile_kwd": "tree",
+			"raptor_kwd": "summary", "raptor_layer_int": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
 			"source_chunk_ids": []string{"chunk-01", "chunk-02", "leaked-unknown-id"},
 		})},
 	}
@@ -153,8 +153,8 @@ func TestAnalyzeTreeProducts_IgnoresUnknownSourceIDs(t *testing.T) {
 }
 
 func TestExtraFloat_Roundtrip(t *testing.T) {
-	doc := schema.ChunkDoc{Extra: mustExtras(t, map[string]any{"kc_level": float64(3)})}
-	if v, ok := extraFloat(doc, "kc_level"); !ok || v != 3 {
+	doc := schema.ChunkDoc{Extra: mustExtras(t, map[string]any{"raptor_layer_int": float64(3)})}
+	if v, ok := extraFloat(doc, "raptor_layer_int"); !ok || v != 3 {
 		t.Errorf("extraFloat = %v/%v, want 3/true", v, ok)
 	}
 	if _, ok := extraFloat(doc, "missing"); ok {

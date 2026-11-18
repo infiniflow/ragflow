@@ -146,6 +146,20 @@ func buildFilters(condition map[string]interface{}) []string {
 					}
 				}
 			}
+		case k == "knowledge_graph_kwd":
+			var values []interface{}
+			switch list := v.(type) {
+			case []interface{}:
+				values = list
+			case []string:
+				values = make([]interface{}, len(list))
+				for i := range list {
+					values[i] = list[i]
+				}
+			default:
+				values = []interface{}{v}
+			}
+			filters = append(filters, "("+inList("type_kwd", values)+" OR "+inList("knowledge_graph_kwd", values)+")")
 		case isArrayColumn(k):
 			vals := toStringSlice(v)
 			if len(vals) == 0 {
@@ -197,7 +211,7 @@ func stripESQuery(matchingText string) string {
 	txt = esSyntaxRe.ReplaceAllString(txt, " ")
 	seen := map[string]struct{}{}
 	var out []string
-	for _, t := range strings.Fields(txt) {
+	for t := range strings.FieldsSeq(txt) {
 		if _, ok := seen[t]; ok {
 			continue
 		}

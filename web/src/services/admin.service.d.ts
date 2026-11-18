@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 declare namespace AdminService {
   export type LoginData = {
     access_token: string;
@@ -23,12 +39,14 @@ declare namespace AdminService {
   };
 
   export type ListUsersItem = {
-    create_date: string;
+    create_date: number;
     email: string;
     is_active: '0' | '1';
     is_superuser: boolean;
-    role: string;
     nickname: string;
+    ldap_server?: string;
+    last_login_time?: string;
+    plan?: string;
   };
 
   export type UserDetail = {
@@ -43,7 +61,6 @@ declare namespace AdminService {
     login_channel: unknown;
     status: '0' | '1';
     update_date: string;
-    role: string;
   };
 
   export type ListUserDatasetItem = {
@@ -84,17 +101,17 @@ declare namespace AdminService {
   export type ListServicesItem = {
     extra: Record<string, unknown>;
     host: string;
-    id: number;
+    id: number | string;
     name: string;
-    port: number;
+    port: number | string;
     service_type: string;
-    status: 'alive' | 'timeout' | 'fail';
+    status: string;
   };
 
   export type ServiceDetail =
     | {
         service_name: string;
-        status: 'alive' | 'timeout';
+        status: string;
         message: string | Record<string, any> | Record<string, any>[];
       }
     | {
@@ -149,7 +166,6 @@ declare namespace AdminService {
     user: {
       id: string;
       username: string;
-      role: string;
     };
     role_permissions: Record<string, PermissionData>;
   };

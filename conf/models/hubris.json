@@ -1,0 +1,249 @@
+{
+  "name": "Hubris",
+  "url": {
+    "default": "https://api.hubris.pw/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "hubris",
+  "models": [
+    {
+      "name": "anthropic/claude-haiku-4.5",
+      "context_length": 200000,
+      "max_output": 64000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": false,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-5",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-5",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": false,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-flash",
+      "context_length": 1048576,
+      "max_output": 384000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "context_length": 1048576,
+      "max_output": 384000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": false,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.7-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.8-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m3",
+      "context_length": 1048576,
+      "max_output": 512000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": false,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k3",
+      "context_length": 1048576,
+      "max_output": 943718,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.4-mini",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": false,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.6-luna",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": false,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-6-astra",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": false,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "x-ai/grok-4.6",
+      "context_length": 500000,
+      "max_output": 450000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3",
+      "context_length": 1310720,
+      "max_output": 943718,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/text-embedding-3-large",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "openai/text-embedding-3-small",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    }
+  ]
+}

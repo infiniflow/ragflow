@@ -20,11 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"ragflow/internal/common"
 	"sync"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 // ErrMemoryNotFound is returned when a key does not exist in the in-memory backend.
@@ -137,6 +134,16 @@ func (m *MemoryStorage) ObjExist(ctx context.Context, bucket, fnm string, tenant
 	return ok
 }
 
+func (m *MemoryStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, exists := m.objects[bucket][fnm]
+	return exists, nil
+}
+
 func (m *MemoryStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -183,6 +190,13 @@ func (m *MemoryStorage) BucketExists(ctx context.Context, bucket string) bool {
 	return ok
 }
 
+func (m *MemoryStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return m.BucketExists(ctx, bucket), nil
+}
+
 // RemoveBucket deletes a bucket and all of its keys. Removing a
 // non-existent bucket is a no-op and returns nil.
 func (m *MemoryStorage) RemoveBucket(ctx context.Context, bucket string) error {
@@ -193,6 +207,20 @@ func (m *MemoryStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	delete(m.objects, bucket)
+	return nil
+}
+
+// RemoveEmptyBucket deletes a bucket only when it contains no objects.
+func (m *MemoryStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.objects[bucket]) != 0 {
+		return fmt.Errorf("bucket %s is not empty", bucket)
+	}
 	delete(m.objects, bucket)
 	return nil
 }
@@ -234,24 +262,15 @@ func (m *MemoryStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket
 // Move transfers an object to a new location, deleting the source on success.
 // Returns false if the source does not exist or the copy step fails.
 func (m *MemoryStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
-
 	if err := ctx.Err(); err != nil {
 		return false
 	}
 
-	if !m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
-		return false
-	}
-	if err := m.Remove(ctx, srcBucket, srcPath); err != nil {
-		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-		err = m.Remove(rollbackCtx, destBucket, destPath)
-		if err != nil {
-			common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(err))
-		}
-		return false
-	}
-	return true
+	return moveWithRollback(ctx, srcBucket, srcPath, destBucket, destPath,
+		func() bool { return m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) },
+		func(rctx context.Context) error { return m.Remove(rctx, srcBucket, srcPath) },
+		func(rctx context.Context) error { return m.Remove(rctx, destBucket, destPath) },
+	)
 }
 
 func (m *MemoryStorage) Close() error { return nil }

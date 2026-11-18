@@ -37,7 +37,7 @@ func NewMoonshotModel(baseURL map[string]string, urlSuffix URLSuffix) *MoonshotM
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -92,11 +92,10 @@ func (m *MoonshotModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -119,7 +118,7 @@ func (m *MoonshotModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -138,11 +137,10 @@ func (m *MoonshotModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return fmt.Errorf("sender is required")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	if chatModelConfig != nil {
@@ -165,7 +163,7 @@ func (m *MoonshotModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 }
 
 // Embed embeds a list of texts into embeddings
-func (m *MoonshotModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (m *MoonshotModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -175,11 +173,10 @@ func (m *MoonshotModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -228,11 +225,10 @@ func (m *MoonshotModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Balance)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Balance)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -289,42 +285,46 @@ func (m *MoonshotModel) CheckConnection(ctx context.Context, apiConfig *APIConfi
 }
 
 // Rerank calculates similarity scores between query and documents
-func (m *MoonshotModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (m *MoonshotModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", m.Name())
 }
 
 // TranscribeAudio transcribe audio
 func (m *MoonshotModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", m.Name())
 }
 
 func (m *MoonshotModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", m.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", m.Name())
 }
 
 // AudioSpeech convert text to audio
 func (m *MoonshotModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", m.Name())
 }
 
 func (m *MoonshotModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", m.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", m.Name())
 }
 
 // OCRFile OCR file
 func (m *MoonshotModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", m.Name())
 }
 
 // ParseFile parse file
 func (m *MoonshotModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", m.Name())
 }
 
 func (m *MoonshotModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", m.Name())
 }
 
 func (m *MoonshotModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", m.Name())
+}
+
+func (m *MoonshotModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", m.Name())
 }

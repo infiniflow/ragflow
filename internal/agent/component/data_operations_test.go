@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -66,7 +65,7 @@ func TestDataOperations_SelectKeys(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"items": []any{
 		map[string]any{"a": 1, "b": 2, "c": 3},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -88,17 +87,26 @@ func TestDataOperations_SelectKeys(t *testing.T) {
 	}
 }
 
-// TestDataOperations_Combine: merge 2 dicts; key conflict on "k":
-// first=[1], second=[2,3] → result has "k"=[1,2,3].
+// TestDataOperations_Combine merges duplicate keys for every scalar/list shape.
 func TestDataOperations_Combine(t *testing.T) {
 	c, _ := NewDataOperationsComponent(map[string]any{
 		"query":      []string{"cpn_0@d1", "cpn_1@d2"},
 		"operations": "combine",
 	})
 	state := canvas.NewCanvasState("run-2", "task-2")
-	state.Outputs["cpn_0"] = map[string]any{"d1": map[string]any{"k": []any{1}}}
-	state.Outputs["cpn_1"] = map[string]any{"d2": map[string]any{"k": []any{2, 3}}}
-	ctx := canvas.WithState(context.Background(), state)
+	state.Outputs["cpn_0"] = map[string]any{"d1": map[string]any{
+		"scalar_list":   1,
+		"scalar_scalar": "a",
+		"list_list":     []any{2},
+		"list_scalar":   []any{4},
+	}}
+	state.Outputs["cpn_1"] = map[string]any{"d2": map[string]any{
+		"scalar_list":   []any{2, 3},
+		"scalar_scalar": "b",
+		"list_list":     []any{3, 4},
+		"list_scalar":   5,
+	}}
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -108,8 +116,15 @@ func TestDataOperations_Combine(t *testing.T) {
 	if merged == nil {
 		t.Fatalf("expected map result, got %T", out["result"])
 	}
-	if got, want := merged["k"], []any{1, 2, 3}; !reflect.DeepEqual(got, want) {
-		t.Errorf("k: got %v, want %v", got, want)
+	for key, want := range map[string][]any{
+		"scalar_list":   {1, 2, 3},
+		"scalar_scalar": {"a", "b"},
+		"list_list":     {2, 3, 4},
+		"list_scalar":   {4, 5},
+	} {
+		if got := merged[key]; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: got %v, want %v", key, got, want)
+		}
 	}
 }
 
@@ -128,7 +143,7 @@ func TestDataOperations_RemoveKeys(t *testing.T) {
 			"value":  42,
 		},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -169,7 +184,7 @@ func TestDataOperations_LiteralEval(t *testing.T) {
 			"bool":   "true",
 		},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -210,7 +225,7 @@ func TestDataOperations_FilterValues(t *testing.T) {
 		map[string]any{"k": "2-abc"},
 		map[string]any{"k": "3-1abc"},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -235,7 +250,7 @@ func TestDataOperations_AppendOrUpdate(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"items": []any{
 		map[string]any{"name": "x"},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -262,7 +277,7 @@ func TestDataOperations_RenameKeys(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"items": []any{
 		map[string]any{"k": 1, "other": "x"},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {

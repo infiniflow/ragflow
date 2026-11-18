@@ -1,29 +1,219 @@
 package table
 
 import (
+	"html"
+	"math"
+	"sort"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section {
+// captionText is one caption box: its text plus the box itself.
+type captionText struct {
+	text string
+	// pos is the caption box. Two things read it: the reading-order sort below,
+	// and the target's highlight geometry — merging a caption moves its TEXT
+	// into the target's chunk, so its boxes have to move with it, or the UI
+	// highlights the figure region only and never the caption line beside it.
+	pos []pdf.Position
+}
+
+// top is the caption's top edge, used to order multiple captions of one target
+// in READING order (top→bottom) before concatenation. Section order is not
+// guaranteed to match the PDF layout (e.g. 06's lower caption box precedes the
+// upper one in sections), so it is read from the box. A caption with no
+// positions sorts last.
+func (c captionText) top() float64 {
+	if len(c.pos) == 0 {
+		return 1e9
+	}
+	return c.pos[0].Top
+}
+
+// captionSep returns the separator inserted before a caption whose text is
+// being appended to an existing caption string. Python's __html_table
+// (deepdoc/vision/table_structure_recognizer.py construct_table) adds a space
+// between captions only for ENGLISH documents; for non-English (e.g. CJK) it
+// concatenates directly. MergeCaptions is not threaded the document language,
+// so we approximate per caption: a caption containing ASCII letters is treated
+// as English and gets a space, matching Python for the dominant cases without
+// changing the function signature.
+func captionSep(text string) string {
+	for _, r := range text {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return " "
+		}
+	}
+	return ""
+}
+
+// captionContinuationGap is the maximum vertical gap (PDF points) between a
+// caption line and its predecessor for the line to count as the same caption
+// block. Real continuation lines sit within a point or two; 4 tolerates
+// box-boundary jitter without bridging a paragraph break.
+const captionContinuationGap = 4.0
+
+// labelOnlyCaption reports whether a caption kind came only from the layout
+// label: the text carries no caption marker of its own.
+func labelOnlyCaption(s pdf.Section) bool {
+	return strings.Contains(s.LayoutType, "caption") &&
+		!captionMarkerPrefix(strings.TrimSpace(s.Text))
+}
+
+// startsLowerLetter reports whether text starts with a lowercase letter — the
+// shape of a sentence that continues the previous line or column.
+func startsLowerLetter(text string) bool {
+	r, _ := utf8.DecodeRuneInString(strings.TrimSpace(text))
+	return unicode.IsLower(r)
+}
+
+// continuesCaption reports whether s follows a caption MergeCaptions already
+// accepted, on the same page and vertically contiguous. Real multi-line
+// captions continue with lowercase lines ("ering, lateral gathering, ..."), so
+// a lowercase start alone does not make a labeled caption prose.
+func continuesCaption(sections []pdf.Section, accepted []bool, i int) bool {
+	if i == 0 || !accepted[i-1] {
+		return false
+	}
+	prev, cur := sections[i-1], sections[i]
+	if len(prev.Positions) == 0 || len(cur.Positions) == 0 {
+		return false
+	}
+	cp := cur.Positions[0]
+	shared, constrained := sharedPageNumbers(cp, prev.Positions)
+	if constrained && len(shared) == 0 {
+		return false
+	}
+	pp := prev.Positions[0]
+	return cp.Top <= pp.Bottom+captionContinuationGap
+}
+
+// unfinishedTextBefore reports whether the section immediately before i is body
+// text whose sentence is still open. A lowercase caption candidate at the top
+// of a column is a paragraph tail when the preceding column ends mid-sentence.
+// Requiring a text section (or an unannotated box, which defaults to text) also
+// keeps the check away from tables, figures and equations, whose serialized
+// text never ends in sentence punctuation.
+func unfinishedTextBefore(sections []pdf.Section, i int) bool {
+	if i == 0 {
+		return false
+	}
+	prev := sections[i-1]
+	if prev.LayoutType != pdf.LayoutTypeText && prev.LayoutType != "" {
+		return false
+	}
+	text := strings.TrimSpace(prev.Text)
+	if text == "" {
+		return false
+	}
+	last, _ := utf8.DecodeLastRuneInString(text)
+	return !strings.ContainsRune(".!?。！？:：;；", last)
+}
+
+// MergeCaptions folds caption sections into their nearest table or figure.
+// Table captions are injected as one <caption> element and move their boxes
+// into the target's Positions; figure captions keep the historical raw-text
+// append. Target sections are mutated in place. Sections must be in reading
+// order: the prose guard compares each candidate with the section immediately
+// before it.
+func MergeCaptions(sections []pdf.Section) []pdf.Section {
 	captions := make([]int, 0, 4)
+	// accepted marks the sections already classified as captions, so a
+	// lowercase continuation can tell a caption's next line from a paragraph
+	// tail that the layout detector mislabelled as a caption.
+	accepted := make([]bool, len(sections))
+	// Group caption texts by the target section index they attach to, so
+	// multiple caption boxes for the SAME table/figure collapse into a single
+	// <caption> element. HTML allows only one <caption> per <table>; injecting
+	// one per box would emit invalid HTML whose extra <caption>s consumers
+	// (browsers, HTML→Markdown converters) silently drop — a real content loss.
+	byTarget := make(map[int][]captionText)
 	for i, s := range sections {
+		// An extracted figure/table box is already a parent candidate, never a
+		// caption: Python pops table/figure boxes out of self.boxes BEFORE its
+		// caption scan (pdf_parser.py _extract_table_figure), so they are never
+		// classified there. Without this skip, CaptionKind's text patterns would
+		// classify a figure whose embedded text starts with a caption marker
+		// (图1 …, Figure 1: …) as its own caption, and findNearestParent would
+		// match it to ITSELF (CollectFigures includes it — distance 0) —
+		// the figure would become its own merge target and be removed with the
+		// caption, deleting the image from the output (go_bug
+		// figure-self-caption-deleted).
+		if s.LayoutType == pdf.LayoutTypeFigure || s.LayoutType == pdf.LayoutTypeTable {
+			continue
+		}
 		captionType := CaptionKind(s)
 		if captionType == "" {
 			continue
 		}
-		target := findNearestParent(i, s, sections, figures, captionType)
-		if target >= 0 {
-			// For table sections, prepend caption before the HTML table
-			// (matching Python's _extract_table_figure caption->construct_table).
-			if sections[target].LayoutType == pdf.LayoutTypeTable && sections[target].Text != "" {
-				sections[target].Text = s.Text + sections[target].Text
-			} else if sections[target].Text != "" {
-				sections[target].Text += " " + s.Text
-			} else {
-				sections[target].Text = s.Text
-			}
+		// A DLA table-caption label over a lowercase line that continues an
+		// unfinished body sentence is a paragraph tail, not a caption (#21884).
+		// The detector labels body text directly above a table as "table
+		// caption" (the reported 27-page RAG paper, Table 1), while real
+		// multi-line captions also continue with lowercase lines ("ering,
+		// lateral gathering, ..."), so the label alone cannot decide. Keep the
+		// prose as body text: merging it would move the sentence into the
+		// table's <caption> and extend the table's highlight over an unrelated
+		// region.
+		//
+		// Uppercase-starting prose (a new sentence mislabeled the same way) is
+		// still merged: without part-of-speech information it is
+		// indistinguishable from a title-case caption.
+		if captionType == pdf.LayoutTypeTable &&
+			labelOnlyCaption(s) &&
+			startsLowerLetter(s.Text) &&
+			unfinishedTextBefore(sections, i) &&
+			!continuesCaption(sections, accepted, i) {
+			sections[i].LayoutType = pdf.LayoutTypeText
+			continue
 		}
-		captions = append(captions, i)
+		accepted[i] = true
+		target := findNearestParent(s, sections, captionType)
+		if target >= 0 {
+			// Emit the caption inside the target table's HTML as a <caption>
+			// element (matching Python's __html_table) and drop the standalone
+			// caption section. Retaining the caption text closes the previous
+			// content-loss go_bug table-html-emission-format; it is NOT a
+			// table-assembly change (cell content/structure are untouched).
+			byTarget[target] = append(byTarget[target], captionText{text: s.Text, pos: s.Positions})
+			captions = append(captions, i)
+			continue
+		}
+		// No merge target. Keep a FIGURE caption as its own section when no
+		// nearby figure is available. Position-only sections let captions for
+		// pure-image figures attach to their image before reaching this branch.
+		// A TABLE caption with no reachable table or figure parent is a DLA
+		// mislabel (e.g. rotate_270's rotated text labeled "table").
+		// findNearestParent searches both kinds, matching Python's fallback.
+		// Keep the historical removal so rotated-page text is not duplicated.
+		if captionType != pdf.LayoutTypeFigure {
+			captions = append(captions, i)
+		}
+	}
+	// Inject one combined <caption> per target. Captions of the same table are
+	// ordered by top edge (reading order, top→bottom) before concatenation.
+	for idx, entries := range byTarget {
+		sort.SliceStable(entries, func(i, j int) bool { return entries[i].top() < entries[j].top() })
+		texts := make([]string, len(entries))
+		for i, e := range entries {
+			texts[i] = e.text
+		}
+		if sections[idx].LayoutType == pdf.LayoutTypeTable {
+			injectCaption(&sections[idx], texts)
+		} else {
+			// Non-table target (figure): keep the historical raw-text
+			// concatenation. The <caption> element is table-specific; wrapping a
+			// figure section's text in it would emit meaningless HTML in a figure
+			// section (which carries an image, not a table). Figure captions are
+			// out of this PR's scope, so preserve their pre-existing behavior.
+			appendRawCaptions(&sections[idx], texts)
+		}
+		// Either way the caption's text now lives in this section's chunk, so its
+		// boxes have to move with it (see extendCaptionPositions).
+		extendCaptionPositions(&sections[idx], entries)
 	}
 	// Remove caption sections in reverse order.
 	n := len(sections)
@@ -40,62 +230,408 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 	return out
 }
 
-// findNearestParent finds the nearest figure (for figure caption) or
-// table (for table caption) section by position proximity.
-// captionType is "table" or "figure" (from captionKind).
-// Returns the index in `sections` (for tables) or a virtual index mapping
-// to `figures` (negative offset for figures).
-func findNearestParent(captionIdx int, caption pdf.Section, sections []pdf.Section, figures []pdf.Section, captionType string) int {
-	find := func(targets []pdf.Section, skipIdx int) (int, float64) {
-		bestIdx := -1
-		bestDist := 1e9
-		for i, t := range targets {
-			if i == skipIdx {
-				continue // don't match caption to itself
+// maxCaptionGap is the squared gap (PDF points²) beyond which a figure caption
+// is not attached to a candidate parent: 40000 — about 200pt at zero horizontal
+// offset. See captionGapDistance for how the gap is measured.
+const maxCaptionGap = 40000.0
+
+// captionGapDistance returns the squared gap between a caption box and a
+// candidate parent: the vertical gap between the two boxes (0 when their Y
+// bands overlap) plus the horizontal offset between their centres. It also
+// returns that vertical gap, which callers use as the adjacency signal on its
+// own.
+//
+// The vertical part is edge-to-edge because a parent's CENTRE says nothing
+// about adjacency: a caption just above a 69pt diagram is 12pt from that
+// diagram's edge but further from its centre than from the centre of a short
+// equation on the other side of the caption (go_bug
+// diagram-caption-attached-to-equation, issue #21389), and a caption above a
+// tall cross-page table is hundreds of points from the table's centre while
+// touching its edge (go_bug tall-table-caption-dropped). The horizontal part
+// compares centres so that a narrow caption above a wide table is ranked by
+// how far it is from the table's middle, not punished twice for the table's
+// width.
+//
+// Equation identity is not available here: DLA maps equations to
+// LayoutTypeFigure and Section drops the "equation-N" LayoutNo, so adjacency
+// is the only signal this layer can rank on. That is enough for the reported
+// case (a caption between its diagram and an equation), but a caption placed
+// nearer the equation than its own diagram will still attach to the equation.
+func captionGapDistance(caption, target pdf.Position) (dist, gapY float64) {
+	if caption.Bottom <= target.Top {
+		gapY = target.Top - caption.Bottom
+	} else if caption.Top >= target.Bottom {
+		gapY = caption.Top - target.Bottom
+	}
+	dx := (target.Left+target.Right)/2 - (caption.Left+caption.Right)/2
+	if dx < 0 {
+		dx = -dx
+	}
+	return gapY*gapY + dx*dx, gapY
+}
+
+// occupiesPage reports whether a section's recorded positions place it on
+// `page`, and whether the section carries page metadata at all. Page-local
+// coordinates repeat on every page (every page has a caption band at roughly
+// the same y), so proximity alone cannot decide which page a caption belongs
+// to — both parent searches must consult this.
+//
+// hasPages==false means the section has NO page metadata (a section built by a
+// caller that never set PageNumbers). The two callers treat that differently on
+// purpose: findTables rejects it (its pre-existing behavior), while the figure
+// search keeps it, because that search is also the fallback target for
+// orphaned table captions — rejecting on missing metadata there would delete
+// their text.
+func occupiesPage(s pdf.Section, page int) (onPage, hasPages bool) {
+	for _, p := range s.Positions {
+		for _, pn := range p.PageNumbers {
+			hasPages = true
+			if pn == page {
+				onPage = true
 			}
-			if len(t.Positions) == 0 || len(caption.Positions) == 0 {
+		}
+	}
+	return onPage, hasPages
+}
+
+// nearestFigureIn returns the index in `sections` of the figure closest to
+// caption by page-local gap (see captionGapDistance), or -1 when none is
+// within maxCaptionGap.
+//
+// Candidates are read straight off `sections` and the section index is tracked
+// directly. A position box is NOT a figure's identity: page-local coordinates
+// repeat on every page, so two figures on different pages can carry the same
+// box — the very repetition the page filter exists to resolve — and resolving a
+// hit back by box would land on the wrong page's figure.
+//
+// requirePage restricts candidates to figures that occupy the caption's page.
+// Without it the search is page-blind, and the nearest figure by page-local
+// gap is usually on a DIFFERENT page. A figure with no page metadata stays a
+// candidate in both modes, so a caller that must not lose text (the
+// table-caption fallback) cannot be defeated by missing metadata — see
+// occupiesPage.
+func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bool) int {
+	if len(caption.Positions) == 0 {
+		return -1
+	}
+	capKnown, capPage := false, 0
+	if requirePage {
+		if pn := caption.Positions[0].PageNumbers; len(pn) > 0 {
+			capKnown, capPage = true, pn[0]
+		}
+	}
+	cp := caption.Positions[0]
+
+	// Candidates are ranked in two tiers so a figure recorded on the caption's
+	// own page always beats a page-less one: tier 0 is occupied-by-capPage,
+	// tier 1 is "no page metadata". A figure known to sit on a DIFFERENT page is
+	// skipped outright. Keeping tier 1 means a figure whose caller never set
+	// PageNumbers can still take a caption the table fallback must not drop;
+	// ordering the tiers means it cannot outbid a figure we can actually place.
+	//
+	bestIdx, bestDist, bestTier := -1, 1e9, 2
+	for i, t := range sections {
+		if t.LayoutType != pdf.LayoutTypeFigure || len(t.Positions) == 0 {
+			continue
+		}
+		tier := 0
+		if capKnown {
+			switch onPage, hasPages := occupiesPage(t, capPage); {
+			case !hasPages:
+				tier = 1
+			case onPage:
+				tier = 0
+			default:
 				continue
 			}
-			tp := t.Positions[0]
-			cp := caption.Positions[0]
-			// Squared Euclidean distance (Python _extract_table_figure:1196).
-			// Caption is typically below. Use center-point distance.
-			cx := (tp.Left + tp.Right) / 2
-			cy := (tp.Top + tp.Bottom) / 2
-			ccx := (cp.Left + cp.Right) / 2
-			ccy := (cp.Top + cp.Bottom) / 2
-			dist := (cx-ccx)*(cx-ccx) + (cy-ccy)*(cy-ccy)
-			if dist < bestDist {
-				bestDist = dist
-				bestIdx = i
-			}
 		}
-		return bestIdx, bestDist
+		dist, _ := captionGapDistance(cp, t.Positions[0])
+		if tier < bestTier || (tier == bestTier && dist < bestDist) {
+			bestTier, bestDist, bestIdx = tier, dist, i
+		}
 	}
+	if bestIdx < 0 || bestDist >= maxCaptionGap {
+		return -1
+	}
+	return bestIdx
+}
 
-	const maxCaptionGap = 40000.0 // PDF points (~7cm) — beyond this, don't attach.
-	if captionType == pdf.LayoutTypeFigure && len(figures) > 0 {
-		idx, dist := find(figures, -1) // figures don't contain the caption itself
-		if idx >= 0 && dist < maxCaptionGap {
-			// Match by position coordinates, not PositionTag strings.
-			f := figures[idx]
-			for i, s := range sections {
-				if s.LayoutType != pdf.LayoutTypeFigure || len(s.Positions) == 0 || len(f.Positions) == 0 {
-					continue
-				}
-				sp, fp := s.Positions[0], f.Positions[0]
-				if sp.Left == fp.Left && sp.Right == fp.Right &&
-					sp.Top == fp.Top && sp.Bottom == fp.Bottom {
-					return i
-				}
-			}
+// findNearestParent finds the nearest figure (for figure captions) or table
+// (for table captions) section by position proximity. captionType is "table"
+// or "figure" (from CaptionKind). A table caption first searches tables and,
+// when none is in range, falls through to the figure search — mirroring
+// Python's nearest(tables)/nearest(figures) double search and its `elif fk`
+// fallback (pdf_parser.py _extract_table_figure), so a caption whose table is
+// unreachable (wrong page, out of range, or absent) lands on the nearest
+// figure instead of being dropped. Returns the index in `sections`, or -1
+// when no parent is in range.
+func findNearestParent(caption pdf.Section, sections []pdf.Section, captionType string) int {
+	// maxCaptionVGap is the vertical gap within which a table caption attaches
+	// regardless of its horizontal offset: vertical adjacency is the signal
+	// that the caption belongs to that table, and dx only ranks candidates
+	// within the band. A narrow caption (e.g. a short Chinese label) above a
+	// much wider table has a large centre offset; rejecting it on the combined
+	// distance would drop a legitimate caption. The figure search below has no
+	// such offset escape — but it needs none: an unattached figure caption
+	// stays a standalone section, so it is never lost. 200pt matches the
+	// vertical tolerance maxCaptionGap allows at dx≈0.
+	const maxCaptionVGap = 200.0
+	if captionType == pdf.LayoutTypeTable {
+		if idx := findTables(sections, caption, maxCaptionVGap); idx >= 0 {
+			return idx
 		}
+		// No table in range: fall through to the figure search below —
+		// Python's `elif fk` — rather than leaving the caller to delete a
+		// caption whose text Python preserves on a nearby figure.
+	}
+	// Two-pass figure search (see nearestFigureIn). Page-local coordinates
+	// repeat on every page, so proximity alone picks a figure on the wrong
+	// page: Figure 1's caption on page 0 and a formula figure on page 13
+	// carried page-local boxes within a few points of each other.
+	//
+	// A genuine FIGURE caption is restricted to its own page: when no figure
+	// shares that page it stays a standalone section, which MergeCaptions keeps
+	// for figure captions — no text is lost and the caption is never glued to
+	// an unrelated figure. The TABLE-caption fallback must not lose text
+	// either, so it retries without the page filter and takes the nearest
+	// figure anywhere, mirroring Python's nearest(figures), which has no page
+	// scope at all: there, placement is best-effort but preservation is not.
+	if idx := nearestFigureIn(sections, caption, true); idx >= 0 {
+		return idx
 	}
 	if captionType == pdf.LayoutTypeTable {
-		idx, dist := find(sections, captionIdx)
-		if idx >= 0 && dist < maxCaptionGap && sections[idx].LayoutType == pdf.LayoutTypeTable {
+		if idx := nearestFigureIn(sections, caption, false); idx >= 0 {
 			return idx
 		}
 	}
 	return -1
+}
+
+// findTables returns the nearest table section within maxGapY of the caption's
+// vertical edge. Restricting to table sections (not all sections) prevents a
+// caption sitting in the left margin — far from the table's horizontal centre —
+// from matching a nearer non-table section (e.g. another caption) and being
+// wrongly dropped. The vertical limit is applied BEFORE ranking: a table
+// beyond it must not win the ranking and then be rejected, because an eligible
+// table further away in the combined metric would never be considered. Gap
+// alone gates tables (any horizontal offset is allowed), so ranking then only
+// breaks ties between tables that are all in range.
+//
+// Ranking uses captionGapDistance, whose vertical part is edge-based: a
+// cross-page table is one tall merged section, so its CENTRE is far from a
+// caption sitting just above/below it — centre distance exceeded
+// maxCaptionGap and the caption was dropped (real content loss, e.g. 13's
+// 'Extended Financial Report' / 14's 'Table 1: Revenue'). A caption just above
+// the table (gap to its top) or just below (gap to its bottom) has a small
+// edge gap and attaches; one that vertically overlaps the table has gap 0.
+func findTables(sections []pdf.Section, caption pdf.Section, maxGapY float64) int {
+	bestIdx := -1
+	bestDist := 1e9
+	if len(caption.Positions) == 0 {
+		return bestIdx
+	}
+	cp := caption.Positions[0]
+	// Page-scope guard: a caption attaches to a table only on its OWN page (a
+	// table whose page set includes the caption's page — a genuine cross-page
+	// merged table carries multiple Position entries, one per spanned page, so
+	// a caption on any of those pages is on-page). A caption on a DIFFERENT
+	// page may attach ONLY to such a cross-page merged table when it vertically
+	// overlaps the table's Y band (gapY==0) — the cross-page continuation case
+	// (13's later-page caption 'Table: Monthly financial summary FY2024' lands
+	// inside the merged table's Y band in page-local coordinates). A caption on
+	// a different page that merely repeats a single-page table's page-local Y
+	// (page-local Y ranges repeat every page) is a FALSE attachment and must be
+	// rejected: this was the icbccs bug where a page-3 caption wrongly attached
+	// to a page-5 table and was concatenated into the <caption>, duplicating it
+	// ("请求参数 请求参数").
+	capKnown := len(cp.PageNumbers) > 0
+	capPage := 0
+	if capKnown {
+		capPage = cp.PageNumbers[0]
+	}
+	for i, t := range sections {
+		if t.LayoutType != pdf.LayoutTypeTable || len(t.Positions) == 0 {
+			continue
+		}
+		tp := t.Positions[0]
+		if capKnown {
+			// Page-scope guard: a caption attaches to a table only on a page
+			// the table actually occupies. A genuine cross-page MERGED table
+			// carries every spanned page in its Position.PageNumbers (set by
+			// tableRegionBox/createTableBoxFromItem from the merged TableItem's
+			// Positions), so a caption on any of those pages is on-page and
+			// attaches. A caption on a DIFFERENT page that merely repeats a
+			// single-page table's page-local Y (page-local Y ranges repeat
+			// every page) is a FALSE attachment and is rejected — this was the
+			// icbccs bug where a page-3 caption wrongly attached to a page-5
+			// table and was concatenated into the <caption>, duplicating it
+			// ("请求参数 请求参数").
+			// A table whose positions carry no page metadata is rejected,
+			// matching the pre-existing behavior (see occupiesPage).
+			if onPage, _ := occupiesPage(t, capPage); !onPage {
+				continue
+			}
+		}
+		dist, gapY := captionGapDistance(cp, tp)
+		if gapY > maxGapY {
+			continue
+		}
+		if dist < bestDist {
+			bestDist = dist
+			bestIdx = i
+		}
+	}
+	return bestIdx
+}
+
+// appendRawCaptions concatenates caption texts onto a non-table section
+// (figure) as raw text, preserving the historical behavior before the
+// <caption> injection existed. The <caption> element is table-specific and
+// would be meaningless in a figure section's text.
+func appendRawCaptions(target *pdf.Section, captions []string) {
+	var b strings.Builder
+	for _, c := range captions {
+		t := strings.TrimSpace(c)
+		if t == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(t)
+	}
+	if b.Len() == 0 {
+		return
+	}
+	if target.Text != "" {
+		target.Text += "\n" + b.String()
+	} else {
+		target.Text = b.String()
+	}
+}
+
+// extendCaptionPositions appends the attached captions' boxes to the target's
+// own, so the target chunk's highlight geometry covers the caption as well as
+// the table or figure region it was merged into. The chunk TEXT already
+// contains the caption (appendRawCaptions / injectCaption); without this the
+// caption is never highlighted with the parent it belongs to. A table's
+// caption box routinely sits a couple of points ABOVE the table box rather
+// than overlapping it, so this bites tables too.
+//
+// Only the pages the target itself occupies are merged. A cross-page
+// attachment (the table-caption fallback can land on a figure pages away), or
+// a caption box that itself spans pages, must not make the target claim a page
+// it does not occupy: Position pages drive the section's page set, its
+// render/eviction window and its crop plan. So a caption position is trimmed
+// to the pages it shares with the target, and dropped when it shares none. A
+// caption with no page metadata at all carries no page claim and is merged
+// as-is.
+//
+// Eligibility is anchored to the target's ORIGINAL pages, so a caption merged
+// earlier in the loop cannot widen what a later one is allowed to claim.
+//
+// Appending (not prepending) keeps Positions[0] as the primary box, which
+// reading-order sorting and the proximity searches elsewhere depend on. The
+// appended tail is then put back in page/reading order.
+func extendCaptionPositions(target *pdf.Section, entries []captionText) {
+	base := make([]pdf.Position, len(target.Positions))
+	copy(base, target.Positions)
+	for _, e := range entries {
+		for _, p := range e.pos {
+			shared, constrained := sharedPageNumbers(p, base)
+			if constrained {
+				if len(shared) == 0 {
+					continue
+				}
+				p.PageNumbers = shared
+			}
+			target.Positions = append(target.Positions, p)
+		}
+	}
+	// Captions arrive ordered by top edge only, so a caption on an earlier
+	// page of a cross-page table would stay after the later page's row in the
+	// serialized _pdf_positions. Sort the tail (Positions[0] stays primary) so
+	// the metadata matches page and reading order.
+	if len(target.Positions) > 1 {
+		tail := target.Positions[1:]
+		sort.SliceStable(tail, func(i, j int) bool {
+			a, b := tail[i], tail[j]
+			if ap, bp := positionSortPage(a), positionSortPage(b); ap != bp {
+				return ap < bp
+			}
+			if a.Top != b.Top {
+				return a.Top < b.Top
+			}
+			return a.Left < b.Left
+		})
+	}
+}
+
+// positionSortPage ranks a position's first page for ordering. A position
+// with no page metadata sorts after every placed one.
+func positionSortPage(p pdf.Position) int {
+	if len(p.PageNumbers) == 0 {
+		return math.MaxInt
+	}
+	return p.PageNumbers[0]
+}
+
+// sharedPageNumbers returns the page numbers p and have have in common.
+// constrained is false when p carries no page numbers at all — there is then
+// nothing to intersect and the position is safe to merge unchanged.
+func sharedPageNumbers(p pdf.Position, have []pdf.Position) (shared []int, constrained bool) {
+	if len(p.PageNumbers) == 0 {
+		return nil, false
+	}
+	seen := make(map[int]struct{}, len(p.PageNumbers))
+	for _, b := range p.PageNumbers {
+		for _, h := range have {
+			for _, a := range h.PageNumbers {
+				if a == b {
+					if _, dup := seen[b]; !dup {
+						seen[b] = struct{}{}
+						shared = append(shared, b)
+					}
+				}
+			}
+		}
+	}
+	return shared, true
+}
+
+// injectCaption concatenates the given caption texts (already grouped per
+// target by MergeCaptions) into a SINGLE <caption> element inserted
+// immediately after the table's opening <table> tag (matching Python's
+// __html_table). This keeps the caption text inside the table HTML instead of
+// losing it as a dropped standalone section, and emits valid HTML (one
+// <caption> per table) rather than one <caption> per caption box. If the
+// target has no <table> tag the <caption> is prepended so the text is at least
+// preserved.
+func injectCaption(table *pdf.Section, captions []string) {
+	var b strings.Builder
+	for _, c := range captions {
+		t := strings.TrimSpace(c)
+		if t == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString(captionSep(c))
+		}
+		b.WriteString(html.EscapeString(t))
+	}
+	if b.Len() == 0 {
+		return
+	}
+	escaped := "<caption>" + b.String() + "</caption>"
+	if table.Text == "" {
+		table.Text = escaped
+		return
+	}
+	const open = "<table>"
+	if idx := strings.Index(table.Text, open); idx >= 0 {
+		at := idx + len(open)
+		table.Text = table.Text[:at] + escaped + table.Text[at:]
+		return
+	}
+	table.Text = escaped + table.Text
 }

@@ -1,10 +1,14 @@
 package mindmap
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 )
 
@@ -15,6 +19,9 @@ func TestRenderPrompt(t *testing.T) {
 	}
 	if strings.Contains(got, "{input_text}") {
 		t.Fatalf("placeholder survived: %q", got)
+	}
+	if !strings.Contains(got, `"source_chunk_ids"`) {
+		t.Fatalf("source chunk provenance requirement missing: %q", got)
 	}
 	// The verbatim prompt body must be present.
 	if !strings.Contains(got, "Generate a title for user's 'TEXT'。") {
@@ -47,58 +54,183 @@ func TestTreeToProducts_ParentLinks(t *testing.T) {
 		{ID: "A", Children: []*utility.Node{{ID: "A1"}, {ID: "A2"}}},
 		{ID: "B"},
 	}}
-	products := treeToProducts("t1", "d1", root)
-	if len(products) != 5 {
-		t.Fatalf("products = %d, want 5 (root+A+A1+A2+B)", len(products))
+	products := treeToProducts("t1", "d1", root, []string{"c1", "c2"})
+	// 5 entities (root, A, A1, A2, B) + 4 relations (root→A, A→A1, A→A2, root→B).
+	if len(products) != 9 {
+		t.Fatalf("products = %d, want 9 (5 entities + 4 relations)", len(products))
 	}
-	if products[0].Meta["kind"] != "root" || products[0].ParentID != "" {
-		t.Errorf("root product malformed: %+v", products[0].Meta)
-	}
-	if products[1].ParentID != products[0].ID {
-		t.Errorf("A parent link = %q, want root id", products[1].ParentID)
-	}
-	var aID string
+	entCount, relCount := 0, 0
+	fromTo := map[string]bool{}
 	for _, p := range products {
-		if p.Meta["name"] == "A" {
-			aID = p.ID
+		if p.Meta["compile_kwd"] != "mind_map" {
+			t.Errorf("product %s compile_kwd = %v, want mind_map", p.ID, p.Meta["compile_kwd"])
 		}
-	}
-	for _, p := range products {
-		if n, _ := p.Meta["name"].(string); n == "A1" || n == "A2" {
-			if p.ParentID != aID {
-				t.Errorf("%s parent = %q, want A id", n, p.ParentID)
+		kind, _ := p.Meta["kind"].(string)
+		switch kind {
+		case "entity":
+			entCount++
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(p.Content), &payload); err != nil {
+				t.Fatalf("entity %q content is not JSON: %v", p.Meta["name"], err)
 			}
+			if payload["name"] != p.Meta["name"] || payload["type"] != "mind_map" {
+				t.Errorf("entity payload = %v, want name=%v and type=mind_map", payload, p.Meta["name"])
+			}
+			if p.Meta["entity_type"] != "mind_map" {
+				t.Errorf("entity %v type = %v, want mind_map", p.Meta["name"], p.Meta["entity_type"])
+			}
+		case "relation":
+			relCount++
+			from, _ := p.Meta["from"].(string)
+			to, _ := p.Meta["to"].(string)
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(p.Content), &payload); err != nil {
+				t.Fatalf("relation %q content is not JSON: %v", p.Meta["name"], err)
+			}
+			if payload["source"] != from || payload["target"] != to || payload["type"] != "related" {
+				t.Errorf("relation payload = %v, want source=%v target=%v type=related", payload, from, to)
+			}
+			fromTo[from+"->"+to] = true
+			if p.Meta["relation_type"] != "related" {
+				t.Errorf("relation %v->%v type = %v, want related", from, to, p.Meta["relation_type"])
+			}
+		default:
+			t.Errorf("unexpected kind %q", kind)
+		}
+	}
+	if entCount != 5 || relCount != 4 {
+		t.Errorf("entities=%d relations=%d, want 5/4", entCount, relCount)
+	}
+	for _, edge := range []string{"root->A", "A->A1", "A->A2", "root->B"} {
+		if !fromTo[edge] {
+			t.Errorf("missing relation %s", edge)
 		}
 	}
 }
 
-func TestSerializeNode_Shape(t *testing.T) {
-	root := &utility.Node{ID: "Top \"quoted\"", Children: []*utility.Node{{ID: "child"}}}
-	js := serializeNode(root)
-	if !strings.HasPrefix(js, `{"id":"Top \"quoted\""`) {
-		t.Errorf("serializeNode = %q", js)
+func TestTreeToProducts_EmptyAndNil(t *testing.T) {
+	if got := treeToProducts("t1", "d1", nil, nil); len(got) != 0 {
+		t.Errorf("nil root produced %d products", len(got))
+	}
+	if got := treeToProducts("t1", "d1", &utility.Node{ID: ""}, nil); len(got) != 0 {
+		t.Errorf("empty root id produced %d products", len(got))
 	}
 }
 
-// TestSerializeNode_EscapesControlChars locks that serializeNode uses
-// encoding/json: control characters such as CR/LF/TAB/FF are escaped (not
-// embedded raw), so the output is always valid JSON.
-func TestSerializeNode_EscapesControlChars(t *testing.T) {
-	root := &utility.Node{ID: "a\rb\tc\fd", Children: []*utility.Node{{ID: "x\ny"}}}
-	js := serializeNode(root)
-	var dec struct {
-		ID       string `json:"id"`
-		Children []struct {
-			ID string `json:"id"`
-		} `json:"children"`
+func TestTreeToProducts_SkipsSelfLoop(t *testing.T) {
+	root := &utility.Node{ID: "root", Children: []*utility.Node{
+		{ID: "root"},
+		{ID: "child"},
+	}}
+	products := treeToProducts("t1", "d1", root, nil)
+
+	if len(products) != 3 {
+		t.Fatalf("products = %d, want root entity, child entity, and one relation", len(products))
 	}
-	if err := json.Unmarshal([]byte(js), &dec); err != nil {
-		t.Fatalf("serializeNode produced invalid JSON: %v (%q)", err, js)
+	for _, product := range products {
+		if product.Meta["kind"] == "relation" && product.Meta["from"] == product.Meta["to"] {
+			t.Fatalf("self-loop relation was emitted: %+v", product.Meta)
+		}
 	}
-	if dec.ID != "a\rb\tc\fd" {
-		t.Errorf("root id round-trip = %q, want %q", dec.ID, "a\rb\tc\fd")
+}
+
+func TestParseJSONTree_SourceChunkIDs(t *testing.T) {
+	content := `{"id":"root","source_chunk_ids":["c1","outside"],"children":[{"id":"child","source_chunk_ids":["c2"],"children":[]}]}`
+	root, ok := parseJSONTree(content, []string{"c1", "c2"})
+	if !ok || root == nil {
+		t.Fatal("JSON mindmap response was not parsed")
 	}
-	if len(dec.Children) != 1 || dec.Children[0].ID != "x\ny" {
-		t.Errorf("child id round-trip = %+v", dec.Children)
+	if len(root.SourceChunkIDs) != 1 || root.SourceChunkIDs[0] != "c1" {
+		t.Fatalf("root source chunk ids = %v, want [c1]", root.SourceChunkIDs)
 	}
+	if len(root.Children) != 1 || len(root.Children[0].SourceChunkIDs) != 1 || root.Children[0].SourceChunkIDs[0] != "c2" {
+		t.Fatalf("child source chunk ids = %+v, want [c2]", root.Children)
+	}
+
+	products := treeToProducts("t1", "d1", root, nil)
+	if ids, ok := products[0].Meta["source_chunk_ids"].([]string); !ok || len(ids) != 1 || ids[0] != "c1" {
+		t.Fatalf("entity meta source chunk ids = %#v, want [c1]", products[0].Meta["source_chunk_ids"])
+	}
+}
+
+func TestMergeMindmapBatchResultsKeepsSuccessfulTrees(t *testing.T) {
+	root := mergeMindmapBatchResults([]mindmapBatchResult{
+		{tree: &utility.Node{ID: "root", Children: []*utility.Node{{ID: "child"}}}},
+		{},
+	})
+	if root == nil || len(root.Children) != 1 || root.Children[0].ID != "child" {
+		t.Fatalf("merged tree = %+v, want successful tree with child", root)
+	}
+}
+
+func TestMergeMindmapTreesDoesNotDuplicateChildren(t *testing.T) {
+	root := mergeMindmapTrees(
+		&utility.Node{ID: "root", Children: []*utility.Node{{ID: "first"}}},
+		&utility.Node{ID: "root", Children: []*utility.Node{{ID: "second"}}},
+	)
+	if root == nil || len(root.Children) != 2 {
+		t.Fatalf("merged children = %+v, want 2 unique children", root.Children)
+	}
+}
+
+type retryChat struct {
+	calls int
+}
+
+func (c *retryChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+	c.calls++
+	if !req.JSONMode || !req.DisableThinking {
+		return nil, fmt.Errorf("mindmap request must enable JSON mode and disable thinking")
+	}
+	if c.calls == 1 {
+		return &common.ChatResponse{Content: "not json"}, nil
+	}
+	return &common.ChatResponse{Content: `{"id":"root","children":[{"id":"child","children":[]}]}`}, nil
+}
+
+func TestRunRetriesInvalidJSON(t *testing.T) {
+	chat := &retryChat{}
+	outputs, err := Run(context.Background(), common.Deps{
+		Chat:     chat,
+		TenantID: "t1",
+	}, common.Param{}, common.Inputs{
+		Chunks: []common.Chunk{{ID: "c1", Text: "source text"}},
+		DocID:  "d1",
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if chat.calls != 2 {
+		t.Fatalf("chat calls = %d, want 2 after one invalid JSON response", chat.calls)
+	}
+	if len(outputs.Products) != 3 {
+		t.Fatalf("products = %d, want root, child, and relation", len(outputs.Products))
+	}
+}
+
+func TestRunReportsJSONParseFailure(t *testing.T) {
+	var messages []string
+	ctx := runtime.WithProgressMessageCallback(t.Context(), func(_, message string) {
+		messages = append(messages, message)
+	})
+	outputs, err := Run(ctx, common.Deps{
+		Chat: invalidJSONChat{},
+	}, common.Param{}, common.Inputs{
+		Chunks: []common.Chunk{{ID: "c1", Text: "source text"}},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(outputs.Products) != 0 {
+		t.Fatalf("products = %d, want no products after parse failure", len(outputs.Products))
+	}
+	if len(messages) != 1 || !strings.Contains(messages[0], "[ERROR] Mindmap batch 1/1 JSON parsing failed") {
+		t.Fatalf("progress messages = %v, want one user-facing parse error", messages)
+	}
+}
+
+type invalidJSONChat struct{}
+
+func (invalidJSONChat) Chat(context.Context, common.ChatRequest) (*common.ChatResponse, error) {
+	return &common.ChatResponse{Content: "The request was rejected because it was considered high risk"}, nil
 }

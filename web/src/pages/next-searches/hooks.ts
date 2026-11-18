@@ -1,11 +1,29 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 // src/pages/next-searches/hooks.ts
 
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import searchService from '@/services/search-service';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
@@ -17,14 +35,11 @@ interface CreateSearchProps {
 }
 
 interface CreateSearchResponse {
-  id: string;
-  name: string;
-  description: string;
+  search_id: string;
 }
 
 export const useCreateSearch = () => {
   const { t } = useTranslation();
-
   const {
     data,
     isError,
@@ -40,9 +55,6 @@ export const useCreateSearch = () => {
     },
     onSuccess: () => {
       message.success(t('message.created'));
-    },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
     },
   });
 
@@ -73,6 +85,7 @@ export interface ISearchAppProps {
   id: string;
   name: string;
   nickname: string;
+  operator_permission?: number;
   status: string;
   tenant_avatar: any;
   tenant_id: string;
@@ -88,10 +101,16 @@ interface SearchListResponse {
 }
 
 export const useFetchSearchList = () => {
-  const { handleInputChange, searchString, pagination, setPagination } =
-    useHandleSearchChange();
+  const {
+    handleInputChange,
+    searchString,
+    setSearchString,
+    pagination,
+    setPagination,
+  } = useHandleSearchChange();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
   const { data, isLoading, isError, refetch } = useQuery<
     SearchListResponse,
     Error
@@ -130,10 +149,12 @@ export const useFetchSearchList = () => {
     isError,
     pagination,
     searchString,
+    setSearchString,
     handleInputChange,
     setPagination,
     refetch,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -144,7 +165,6 @@ interface DeleteSearchProps {
 
 interface DeleteSearchResponse {
   code: number;
-  data: boolean;
   message: string;
 }
 
@@ -187,17 +207,14 @@ export interface ISearchAppDetailProps {
     summary: boolean;
     llm_setting: IllmSettingProps & IllmSettingEnableProps;
     top_k: number;
+    rerank_candidates_count: number;
     use_kg: boolean;
-    vector_similarity_weight: number;
+    keywords_similarity_weight?: number;
     web_search: boolean;
     chat_settingcross_languages: string[];
     meta_data_filter?: {
       method: string;
       manual: { key: string; op: string; value: string }[];
-    };
-    reference_metadata?: {
-      include?: boolean;
-      fields?: string[];
     };
   };
   tenant_id: string;
@@ -257,13 +274,11 @@ export const useDeleteSearch = () => {
       }
 
       queryClient.invalidateQueries({ queryKey: ['searchList'] });
+      markListItemsDeleted(ListDeletionKey.SearchList);
       return response;
     },
     onSuccess: () => {
       message.success(t('message.deleted'));
-    },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
     },
   });
 
@@ -345,34 +360,41 @@ export const useRenameSearch = () => {
 
   const onSearchRenameOk = useCallback(
     async (name: string, callBack?: () => void) => {
-      let res;
       setLoading(true);
-      if (search?.id) {
-        try {
+      let saved = false;
+      try {
+        if (search?.id) {
           const response = await searchService.getSearchDetail({
-            search_id: search?.id,
+            search_id: search.id,
           });
           const detail = response.data?.data;
 
           // oxlint-disable-next-line typescript/no-unused-vars
           const { id, created_by, update_time, ...searchDataTemp } = detail;
-          res = await updateSearch({
+          await updateSearch({
             ...searchDataTemp,
-            name: name,
-            search_id: search?.id,
+            name,
+            search_id: search.id,
           } as unknown as IUpdateSearchProps);
-        } catch (e) {
-          console.error('error', e);
+          saved = true;
+        } else {
+          const created = await createSearch({ name });
+          if (created && !search?.id) {
+            navigateToSearch(created.search_id)();
+            saved = true;
+          }
         }
-      } else {
-        res = await createSearch({ name: name });
+      } catch {
+        // Request failures are already reported by the request layer; keep
+        // the dialog open so the user can retry.
+      } finally {
+        // Always release the loading state, even when the request throws.
+        setLoading(false);
       }
-      if (res && !search?.id) {
-        navigateToSearch(res?.search_id)();
+      if (saved) {
+        callBack?.();
+        handleHideModal();
       }
-      callBack?.();
-      setLoading(false);
-      handleHideModal();
     },
     [search, createSearch, handleHideModal, navigateToSearch, updateSearch],
   );

@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FileUploader } from '@/components/file-uploader';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
@@ -817,7 +833,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
                       {parsedMetadata.name && (
                         <div className="text-sm mt-1">
                           <span className="text-text-secondary">
-                            {t('skills.name') || 'Name'}:{' '}
+                            {t('skills.name', { defaultValue: 'Name' })}:{' '}
                           </span>
                           <span>{parsedMetadata.name}</span>
                         </div>
@@ -825,7 +841,10 @@ const UploadModal: React.FC<UploadModalProps> = ({
                       {parsedMetadata.description && (
                         <div className="text-sm mt-1">
                           <span className="text-text-secondary">
-                            {t('skills.description') || 'Description'}:{' '}
+                            {t('skills.description', {
+                              defaultValue: 'Description',
+                            })}
+                            :{' '}
                           </span>
                           <span>
                             {parsedMetadata.description.slice(0, 100)}
@@ -946,7 +965,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
             <Label htmlFor="git-token">
               {t('skills.accessToken') || 'Access Token'}
               <span className="text-text-secondary ml-1">
-                ({t('common.optional') || 'optional'})
+                ({t('common.optional', { defaultValue: 'optional' })})
               </span>
             </Label>
             <Input

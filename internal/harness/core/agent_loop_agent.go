@@ -210,7 +210,7 @@ func (l *AgentLoop[T]) runAgentAndHandleEvents(
 		}
 		if err := finalizeCheckpoint(); err != nil {
 			if handleErr != nil {
-				handleErr = fmt.Errorf("%w; checkpoint error: %v", handleErr, err)
+				handleErr = fmt.Errorf("%w; checkpoint error: %w", handleErr, err)
 			} else {
 				handleErr = err
 			}
@@ -225,7 +225,7 @@ func (l *AgentLoop[T]) runAgentAndHandleEvents(
 		<-done
 		if err := finalizeCheckpoint(); err != nil {
 			if handleErr != nil {
-				handleErr = fmt.Errorf("%w; checkpoint error: %v", handleErr, err)
+				handleErr = fmt.Errorf("%w; checkpoint error: %w", handleErr, err)
 			} else {
 				handleErr = err
 			}

@@ -23,6 +23,21 @@ export const QueritFormSchema = z.object({
   language_include: dynamicStringListSchema,
 });
 
+const draftStringListSchema = z.array(
+  z.object({
+    value: z
+      .string()
+      .transform((value) => (value.trim() ? value.trim() : value)),
+  }),
+);
+
+export const QueritDraftFormSchema = QueritFormSchema.extend({
+  site_include: draftStringListSchema,
+  site_exclude: draftStringListSchema,
+  country_include: draftStringListSchema,
+  language_include: draftStringListSchema,
+});
+
 type QueritFormRecord = Record<string, any>;
 
 function toObjectArray(values: unknown) {
@@ -60,7 +75,7 @@ export function serializeQueritFormValues(values: QueritFormRecord) {
 export function validateQueritFormValuesForPersistence(
   values: QueritFormRecord,
 ) {
-  const result = QueritFormSchema.safeParse(values);
+  const result = QueritDraftFormSchema.safeParse(values);
   if (!result.success) {
     return undefined;
   }

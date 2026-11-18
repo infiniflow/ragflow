@@ -4,12 +4,19 @@ jest.mock('@/constants/agent', () => ({
     TavilyExtract: 'TavilyExtract',
     Google: 'Google',
     KeenableSearch: 'KeenableSearch',
+    YouComSearch: 'YouComSearch',
+    SofyaSearch: 'SofyaSearch',
     BGPT: 'Bing',
+    QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
+    Search1APISearch: 'Search1APISearch',
+    Search1APICrawl: 'Search1APICrawl',
+    Begin: 'Begin',
   },
+  AgentDialogueMode: { Webhook: 'Webhook' },
 }));
 
-import { Operator } from '@/constants/agent';
+import { AgentDialogueMode, Operator } from '@/constants/agent';
 import { clearSensitiveFields } from './clear-sensitive-fields';
 
 describe('clearSensitiveFields', () => {
@@ -44,28 +51,31 @@ describe('clearSensitiveFields', () => {
     expect(dsl.tools[0].params.api_key).toBe('querit-secret');
   });
 
-  it.each(['querit', 'querit_search', 'queritsearch'])(
-    'clears a Querit API key for the %s registry alias',
-    (componentName) => {
-      const dsl = {
-        tools: [
-          {
-            component_name: componentName,
-            params: {
-              api_key: 'querit-secret',
-              count: 5,
-            },
+  it.each([
+    'querit',
+    'querit_contents',
+    'queritcontents',
+    'querit_search',
+    'queritsearch',
+  ])('clears a Querit API key for the %s registry alias', (componentName) => {
+    const dsl = {
+      tools: [
+        {
+          component_name: componentName,
+          params: {
+            api_key: 'querit-secret',
+            count: 5,
           },
-        ],
-      };
+        },
+      ],
+    };
 
-      const sanitized = clearSensitiveFields(dsl);
+    const sanitized = clearSensitiveFields(dsl);
 
-      expect(sanitized.tools[0].params.api_key).toBe('');
-      expect(sanitized.tools[0].params.count).toBe(5);
-      expect(dsl.tools[0].params.api_key).toBe('querit-secret');
-    },
-  );
+    expect(sanitized.tools[0].params.api_key).toBe('');
+    expect(sanitized.tools[0].params.count).toBe(5);
+    expect(dsl.tools[0].params.api_key).toBe('querit-secret');
+  });
 
   it('clears a standalone Querit Canvas key from graph and components', () => {
     const dsl = {
@@ -105,6 +115,126 @@ describe('clearSensitiveFields', () => {
     expect(dsl.components.querit.obj.params.api_key).toBe('component-secret');
   });
 
+  it('clears a You.com key from a canvas node and from a tool record', () => {
+    const dsl = {
+      graph: {
+        nodes: [
+          {
+            data: {
+              label: Operator.YouComSearch,
+              form: {
+                api_key: 'ydc-graph-secret',
+                freshness: 'week',
+              },
+            },
+          },
+        ],
+      },
+      tools: [
+        {
+          component_name: Operator.YouComSearch,
+          params: {
+            api_key: 'ydc-tool-secret',
+            top_n: 10,
+          },
+        },
+      ],
+    };
+
+    const sanitized = clearSensitiveFields(dsl);
+
+    expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+    expect(sanitized.graph.nodes[0].data.form.freshness).toBe('week');
+    expect(sanitized.tools[0].params.api_key).toBe('');
+    expect(sanitized.tools[0].params.top_n).toBe(10);
+    expect(dsl.graph.nodes[0].data.form.api_key).toBe('ydc-graph-secret');
+    expect(dsl.tools[0].params.api_key).toBe('ydc-tool-secret');
+  });
+
+  it('clears a Sofya key from a canvas node and from a tool record', () => {
+    const dsl = {
+      graph: {
+        nodes: [
+          {
+            data: {
+              label: Operator.SofyaSearch,
+              form: {
+                api_key: 'sofya-graph-secret',
+                search_depth: 'basic',
+              },
+            },
+          },
+        ],
+      },
+      tools: [
+        {
+          component_name: Operator.SofyaSearch,
+          params: {
+            api_key: 'sofya-tool-secret',
+            top_n: 10,
+          },
+        },
+      ],
+    };
+
+    const sanitized = clearSensitiveFields(dsl);
+
+    expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+    expect(sanitized.graph.nodes[0].data.form.search_depth).toBe('basic');
+    expect(sanitized.tools[0].params.api_key).toBe('');
+    expect(sanitized.tools[0].params.top_n).toBe(10);
+    expect(dsl.graph.nodes[0].data.form.api_key).toBe('sofya-graph-secret');
+    expect(dsl.tools[0].params.api_key).toBe('sofya-tool-secret');
+  });
+
+  it.each([
+    'Search1APISearch',
+    'Search1APICrawl',
+    'search1apisearch',
+    'search1apicrawl',
+    'search1api',
+    'search1api_crawl',
+  ])(
+    'clears a %s key from a canvas node and from a tool record',
+    (operator) => {
+      const dsl = {
+        graph: {
+          nodes: [
+            {
+              data: {
+                label: operator,
+                form: {
+                  api_key: 'search1api-graph-secret',
+                  channel: 'news',
+                },
+              },
+            },
+          ],
+        },
+        tools: [
+          {
+            component_name: operator,
+            params: {
+              api_key: 'search1api-tool-secret',
+              search_service: 'reuters',
+            },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+      expect(sanitized.graph.nodes[0].data.form.channel).toBe('news');
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.search_service).toBe('reuters');
+      expect(dsl.graph.nodes[0].data.form.api_key).toBe(
+        'search1api-graph-secret',
+      );
+      expect(dsl.tools[0].params.api_key).toBe('search1api-tool-secret');
+    },
+  );
+
   it('does not change standalone graph export behavior for other tools', () => {
     const dsl = {
       graph: {
@@ -122,5 +252,65 @@ describe('clearSensitiveFields', () => {
     };
 
     expect(clearSensitiveFields(dsl)).toEqual(dsl);
+  });
+
+  it('clears webhook authentication secrets from a begin node', () => {
+    const dsl = {
+      graph: {
+        nodes: [
+          {
+            data: {
+              label: Operator.Begin,
+              form: {
+                mode: AgentDialogueMode.Webhook,
+                security: {
+                  auth_type: 'basic',
+                  token: {
+                    token_header: 'X-Token',
+                    token_value: 'token-secret',
+                  },
+                  basic_auth: { username: 'service', password: 'basic-secret' },
+                  jwt: { secret: 'jwt-secret', issuer: 'ragflow' },
+                  hmac: { header: 'X-Signature', secret: 'hmac-secret' },
+                },
+              },
+            },
+          },
+        ],
+      },
+      components: {
+        begin: {
+          obj: {
+            component_name: Operator.Begin,
+            params: {
+              mode: AgentDialogueMode.Webhook,
+              security: {
+                auth_type: 'token',
+                token: { token_value: 'component-token-secret' },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const sanitized = clearSensitiveFields(dsl);
+    const security = sanitized.graph.nodes[0].data.form.security;
+
+    expect(security.token.token_value).toBe('');
+    expect(security.basic_auth.password).toBe('');
+    expect(security.jwt.secret).toBe('');
+    expect(security.hmac.secret).toBe('');
+    expect(security.basic_auth.username).toBe('service');
+    expect(security.token.token_header).toBe('X-Token');
+    expect(
+      sanitized.components.begin.obj.params.security.token.token_value,
+    ).toBe('');
+    expect(dsl.graph.nodes[0].data.form.security.token.token_value).toBe(
+      'token-secret',
+    );
+    expect(dsl.components.begin.obj.params.security.token.token_value).toBe(
+      'component-token-secret',
+    );
   });
 });

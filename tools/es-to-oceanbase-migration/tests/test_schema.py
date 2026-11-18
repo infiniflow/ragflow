@@ -138,6 +138,21 @@ class TestRAGFlowDataConverter:
         assert row["content_with_weight"] == "This is test content"
         assert row["available_int"] == 1
 
+    def test_convert_document_defaults_missing_chunk_order(self):
+        """Test missing chunk order defaults to the first chunk position."""
+        converter = RAGFlowDataConverter()
+
+        row = converter.convert_document(
+            {
+                "_id": "test-id-123",
+                "_source": {
+                    "kb_id": "kb-001",
+                },
+            }
+        )
+
+        assert row["chunk_order_int"] == 0
+
     def test_convert_with_vector(self):
         """Test converting document with vector embedding."""
         converter = RAGFlowDataConverter()
@@ -369,6 +384,9 @@ class TestConstants:
         assert RAGFLOW_COLUMNS["metadata"]["is_json"] is True
         assert RAGFLOW_COLUMNS["extra"]["is_json"] is True
 
+        assert RAGFLOW_COLUMNS["_order_id"]["default"] == 0
+        assert RAGFLOW_COLUMNS["chunk_order_int"]["default"] == 0
+
 
 class TestRAGFlowSchemaConverterEdgeCases:
     """Test edge cases for RAGFlowSchemaConverter."""
@@ -515,22 +533,21 @@ class TestRAGFlowDataConverterEdgeCases:
     def test_convert_array_with_special_characters(self):
         """Test converting array with special characters."""
         converter = RAGFlowDataConverter()
+        values = ["key\\with\\backslashes", "key\nwith\nnewlines", "key\rwith\rcarriage returns", "key\twith\ttabs", " padded "]
 
         es_doc = {
             "_id": "special_array",
             "_source": {
                 "id": "special_array",
                 "kb_id": "kb_001",
-                "important_kwd": ["key\nwith\nnewlines", "key\twith\ttabs"],
+                "important_kwd": values,
             },
         }
 
         row = converter.convert_document(es_doc)
 
-        # Should be JSON string with escaped characters
         assert isinstance(row["important_kwd"], str)
-        parsed = json.loads(row["important_kwd"])
-        assert len(parsed) == 2
+        assert json.loads(row["important_kwd"]) == values
 
     def test_convert_already_json_array(self):
         """Test converting already JSON-encoded array."""

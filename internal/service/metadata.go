@@ -90,61 +90,23 @@ func (s *MetadataService) GetTenantIDByKBID(ctx context.Context, kbID string) (s
 	return dao.GetTenantIDByKBID(ctx, dao.DB, kbID)
 }
 
-// GetTenantIDByKBIDs retrieves tenant ID from the first knowledge base ID in the list
-func (s *MetadataService) GetTenantIDByKBIDs(ctx context.Context, kbIDs []string) (string, error) {
-	if len(kbIDs) == 0 {
-		return "", fmt.Errorf("no kb_ids provided")
-	}
-	return dao.GetTenantIDByKBID(ctx, dao.DB, kbIDs[0])
-}
-
 // SearchMetadataResponse holds the result of a metadata search
 type SearchMetadataResponse struct {
-	IndexName       string
 	MetadataRecords []map[string]interface{}
 }
 
 // SearchMetadata searches the metadata index with the given parameters
-func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResponse, error) {
+func (s *MetadataService) SearchMetadata(ctx context.Context, kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResponse, error) {
 	searchReq := &types.SearchMetadataRequest{
 		TenantID: tenantID,
 		Offset:   0,
 		Limit:    size,
 		Filter: map[string]interface{}{
-			"id":    docIDs,
 			"kb_id": kbID,
 		},
 	}
-
-	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
-	}
-
-	return &SearchMetadataResponse{
-		IndexName:       BuildMetadataIndexName(tenantID),
-		MetadataRecords: searchResult.MetadataRecords,
-	}, nil
-}
-
-// SearchMetadataByKBs searches the metadata index for multiple knowledge bases
-func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*SearchMetadataResponse, error) {
-	if len(kbIDs) == 0 {
-		return &SearchMetadataResponse{MetadataRecords: []map[string]interface{}{}}, nil
-	}
-
-	tenantID, err := s.GetTenantIDByKBIDs(ctx, kbIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	searchReq := &types.SearchMetadataRequest{
-		TenantID: tenantID,
-		Offset:   0,
-		Limit:    size,
-		Filter: map[string]interface{}{
-			"kb_id": kbIDs,
-		},
+	if len(docIDs) > 0 {
+		searchReq.Filter["id"] = docIDs
 	}
 
 	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
@@ -153,9 +115,98 @@ func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []strin
 	}
 
 	return &SearchMetadataResponse{
-		IndexName:       BuildMetadataIndexName(tenantID),
 		MetadataRecords: searchResult.MetadataRecords,
 	}, nil
+}
+
+// SearchMetadataByKBs searches each tenant's metadata store, with size as the
+// per-tenant limit and the KB filter scoped to that tenant.
+func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*SearchMetadataResponse, error) {
+	if len(kbIDs) == 0 {
+		return &SearchMetadataResponse{MetadataRecords: []map[string]interface{}{}}, nil
+	}
+
+	groups, err := dao.GroupKBIDsByTenant(ctx, dao.DB, kbIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SearchMetadataResponse{MetadataRecords: make([]map[string]interface{}, 0)}
+	for _, group := range groups {
+		searchReq := &types.SearchMetadataRequest{
+			TenantID: group.TenantID,
+			Limit:    size,
+			Filter: map[string]interface{}{
+				"kb_id": group.KBIDs,
+			},
+		}
+		searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
+		if err != nil {
+			return nil, fmt.Errorf("metadata search for tenant %s failed: %w", group.TenantID, err)
+		}
+		response.MetadataRecords = append(response.MetadataRecords, searchResult.MetadataRecords...)
+	}
+	return response, nil
+}
+
+// MetadataForDocIDs returns doc_id → its metadata fields, reading ONLY the given documents
+// (the doc-scoped query runtime.MetadataResolver.MetadataForDocIDs needs).
+//
+// Best effort: a dataset whose tenant lookup or index read fails contributes nothing and
+// the failure is returned, but the documents another dataset answered for are still
+// returned. The caller has already resolved the document ids, so a missing context block
+// must not turn a successful selection into an error.
+func (s *MetadataService) MetadataForDocIDs(ctx context.Context, kbIDs, docIDs []string) (map[string]map[string]any, error) {
+	if s == nil || s.docEngine == nil || len(kbIDs) == 0 || len(docIDs) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]map[string]any, len(docIDs))
+	var firstErr error
+	for _, kbID := range kbIDs {
+		tenantID, err := s.GetTenantIDByKBID(ctx, kbID)
+		if err != nil || tenantID == "" {
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		res, err := s.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		for docID, meta := range ConvertSearchResultToDocMeta(res.MetadataRecords) {
+			if _, exists := out[docID]; !exists {
+				out[docID] = meta
+			}
+		}
+	}
+	return out, firstErr
+}
+
+// DeclaredMetadataFields implements runtime.DeclaredMetadataResolver: it reads the metadata
+// fields each dataset DECLARES in its parser_config — the {key, type, description, enum}
+// definitions the metadata config API writes for extraction.
+//
+// One row read per dataset and no index scan, so it is cheap enough to run per
+// metadata_search call. An unknown dataset is skipped rather than failing the read, and a
+// dataset that declares nothing contributes nothing: the caller always has the metadata
+// index as its other half.
+func (s *MetadataService) DeclaredMetadataFields(ctx context.Context, kbIDs []string) ([]common.MetadataFieldDef, error) {
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	var out []common.MetadataFieldDef
+	for _, kbID := range kbIDs {
+		kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
+		if err != nil || kb == nil {
+			continue
+		}
+		out = append(out, common.DeclaredMetadataFieldsFromParserConfig(kb.ParserConfig)...)
+	}
+	return out, nil
 }
 
 // GetFlattedMetaByKBs returns flattened metadata in the format:
@@ -267,6 +318,25 @@ func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []strin
 	return flattedMeta, nil
 }
 
+// FilterDocIDsByMetaPushdown runs ONLY the metadata-index push-down, which is the first
+// half of the agentic metadata_search pipeline (the caller falls back to
+// GetFlattedMetaByKBs + ApplyMetaFilter when the push-down is not viable).
+//
+// ok=false means the push-down is not viable or errored; ok=true with an empty slice is
+// the definitive "no document matches". That split is the engine's own contract
+// (engine.DocEngine.FilterDocIdsByMetaPushdown returns nil for "not viable"), surfaced
+// here so the caller does not have to reach into the engine itself.
+func (s *MetadataService) FilterDocIDsByMetaPushdown(ctx context.Context, kbIDs []string, filters []map[string]any, logic string) ([]string, bool) {
+	if s == nil || s.docEngine == nil || len(kbIDs) == 0 || len(filters) == 0 {
+		return nil, false
+	}
+	docIDs := s.docEngine.FilterDocIdsByMetaPushdown(ctx, dao.DB, kbIDs, filters, logic)
+	if docIDs == nil {
+		return nil, false
+	}
+	return docIDs, true
+}
+
 // CollectDocIDsByKB collects unique (kb_id, doc_id) pairs from chunks.
 func CollectDocIDsByKB(chunks []map[string]interface{}) KBDocIDsMap {
 	seen := make(map[string]struct{})
@@ -306,10 +376,10 @@ func ConvertSearchResultToDocMeta(chunks []map[string]interface{}) DocMetaMap {
 }
 
 // FetchDocMetaByKB fetches document metadata from ES for each KB.
-func (s *MetadataService) FetchDocMetaByKB(docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
+func (s *MetadataService) FetchDocMetaByKB(ctx context.Context, docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
 	metaByDoc := make(DocMetaMap)
 	for kbID, docIDs := range docIDsByKB {
-		result, err := s.SearchMetadata(kbID, tenantID, docIDs, len(docIDs))
+		result, err := s.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
 		if err != nil {
 			continue
 		}
@@ -353,7 +423,7 @@ func AttachDocMetaToChunks(chunks []map[string]interface{}, metaByDoc DocMetaMap
 
 // EnrichChunksWithDocMetadata attaches document metadata to each chunk in-place.
 // Combines CollectDocIDsByKB, FetchDocMetaByKB, and AttachDocMetaToChunks.
-func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interface{}, tenantID string, metadataFields []string) {
+func (s *MetadataService) EnrichChunksWithDocMetadata(ctx context.Context, chunks []map[string]interface{}, tenantID string, metadataFields []string) {
 	if len(chunks) == 0 || s.docEngine == nil {
 		return
 	}
@@ -361,7 +431,7 @@ func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interf
 	if len(docIDsByKB) == 0 {
 		return
 	}
-	metaByDoc := s.FetchDocMetaByKB(docIDsByKB, tenantID)
+	metaByDoc := s.FetchDocMetaByKB(ctx, docIDsByKB, tenantID)
 	if len(metaByDoc) == 0 {
 		return
 	}
@@ -436,7 +506,7 @@ func ExtractMetaFields(chunk map[string]interface{}) (map[string]interface{}, er
 	return metaFields, nil
 }
 
-// mergeFieldValues merges two field values when the same key appears multiple times
+// MergeFieldValues merges two field values when the same key appears multiple times
 // If both are arrays, append all elements. If one is array and other is string, append string to array.
 // Returns []interface{} with all merged values (flattened).
 func MergeFieldValues(existing, new interface{}) []interface{} {
@@ -493,7 +563,7 @@ func appendDocID(existing interface{}, docID string) []string {
 	return result
 }
 
-// ParseLengthPrefixedJSON parses Infinity's length-prefixed JSON format
+// ParseLengthPrefixedJSON parses Infinity's length-prefixed JSON
 // Format: [4-byte length (little-endian)][JSON][4-byte length][JSON]...
 // Returns the FIRST valid JSON object found
 func ParseLengthPrefixedJSON(data []byte) map[string]interface{} {

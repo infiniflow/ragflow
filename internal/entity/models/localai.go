@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // LocalAIModel implements ModelDriver for LocalAI
@@ -39,7 +38,7 @@ func NewLocalAIModel(baseURL map[string]string, urlSuffix URLSuffix) *LocalAIMod
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(true),
+			httpClient:       common.GetSchemeSafeHTTPClient(),
 		},
 	}
 }
@@ -73,11 +72,10 @@ func (l *LocalAIModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -89,7 +87,7 @@ func (l *LocalAIModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via the
@@ -108,11 +106,10 @@ func (l *LocalAIModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	if chatModelConfig != nil {
@@ -140,11 +137,11 @@ type localAIEmbeddingResponse struct {
 	Object string                 `json:"object"`
 }
 
-func (l *LocalAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (l *LocalAIModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -152,15 +149,14 @@ func (l *LocalAIModel) Embed(ctx context.Context, modelName *string, texts []str
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -204,11 +200,11 @@ func (l *LocalAIModel) Embed(ctx context.Context, modelName *string, texts []str
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	filled := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	filled := make([]bool, len(request.Texts))
 	for _, item := range parsed.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			return nil, fmt.Errorf("localai: response index %d out of range for %d inputs", item.Index, len(texts))
+		if item.Index < 0 || item.Index >= len(request.Texts) {
+			return nil, fmt.Errorf("localai: response index %d out of range for %d inputs", item.Index, len(request.Texts))
 		}
 		if filled[item.Index] {
 			return nil, fmt.Errorf("localai: duplicate embedding index %d in response", item.Index)
@@ -242,10 +238,12 @@ type localAIRerankResponse struct {
 	} `json:"results"`
 }
 
-func (l *LocalAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (l *LocalAIModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -253,11 +251,10 @@ func (l *LocalAIModel) Rerank(ctx context.Context, modelName *string, query stri
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -328,11 +325,10 @@ func (l *LocalAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, err
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -375,7 +371,7 @@ func (l *LocalAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 }
 
 func (l *LocalAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", l.Name())
 }
 
 func (l *LocalAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -387,35 +383,39 @@ func (l *LocalAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 }
 
 func (l *LocalAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", l.Name())
 }
 
 func (l *LocalAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", l.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", l.Name())
 }
 
 // AudioSpeech convert text to audio
 func (l *LocalAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", l.Name())
 }
 
 func (l *LocalAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", l.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", l.Name())
 }
 
 func (l *LocalAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", l.Name())
 }
 
 // ParseFile parse file
 func (l *LocalAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", l.Name())
 }
 
 func (l *LocalAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", l.Name())
 }
 
 func (l *LocalAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", l.Name())
+}
+
+func (l *LocalAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", l.Name())
 }

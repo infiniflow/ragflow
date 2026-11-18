@@ -2,11 +2,16 @@ package pdf
 
 import (
 	"context"
+	"fmt"
 	"image"
+	"math"
+	"reflect"
+	"strings"
 	"testing"
 
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 type orientationScoringDoc struct{}
@@ -20,25 +25,40 @@ func (d *orientationScoringDoc) TSR(_ context.Context, _ image.Image) ([]pdf.TSR
 }
 
 func (d *orientationScoringDoc) OCRDetect(_ context.Context, img image.Image) ([]pdf.OCRBox, error) {
-	regions := 1
-	if img.Bounds().Dy() > img.Bounds().Dx() {
-		regions = 5
+	// EvaluateTableOrientation now scores each angle by per-line recognition,
+	// so it requires detection output (an empty result scores 0). Emit line
+	// boxes whose GEOMETRY tracks the image orientation so the warped crop
+	// handed to OCRRecognize preserves aspect ratio: a landscape image yields
+	// wide boxes, a portrait (rotated) image yields tall boxes. The mock's
+	// recognition signal (portrait crop reads as more legible) must survive
+	// the warp — fixed-size boxes would always yield a landscape strip and
+	// silently disable the orientation signal.
+	portrait := img.Bounds().Dy() > img.Bounds().Dx()
+	w, h := 100.0, 10.0
+	if portrait {
+		w, h = 10.0, 100.0
 	}
-	boxes := make([]pdf.OCRBox, regions)
-	for i := range boxes {
-		x0 := float64((i + 1) * 10)
-		boxes[i] = pdf.OCRBox{
-			X0: x0, Y0: 10,
-			X1: x0 + 5, Y1: 10,
-			X2: x0 + 5, Y2: 30,
-			X3: x0, Y3: 30,
-		}
-	}
-	return boxes, nil
+	return []pdf.OCRBox{{
+		X0: 0, Y0: 0, X1: w, Y1: 0, X2: w, Y2: h, X3: 0, Y3: h,
+	}}, nil
 }
 
-func (d *orientationScoringDoc) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
-	return nil, nil
+func (d *orientationScoringDoc) OCRRecognize(_ context.Context, img image.Image) ([]pdf.OCRText, error) {
+	// Encode the orientation signal via recognition confidence: a portrait
+	// (rotated) crop reads as more legible text, so it should score higher.
+	// This mirrors the region-count-vs-orientation intent the mock previously
+	// expressed through OCRDetect.
+	regions := 1
+	conf := 0.1
+	if img.Bounds().Dy() > img.Bounds().Dx() {
+		regions = 5
+		conf = 0.9
+	}
+	texts := make([]pdf.OCRText, regions)
+	for i := range texts {
+		texts[i] = pdf.OCRText{Text: "cell", Confidence: conf}
+	}
+	return texts, nil
 }
 
 func (d *orientationScoringDoc) Health() bool { return true }
@@ -60,11 +80,19 @@ func (b *staticTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	return [][]pdf.TSRCell{{cells[0]}}
 }
 
+// FinalizeGrid returns annotGrid unchanged (identity). The fake carries no
+// deferred OCR-overlay behavior, matching the production DeepDoc builder.
+func (b *staticTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
+	return annotGrid
+}
+
+// AttachSpanInfo is a no-op for the fake builder.
+func (b *staticTableBuilder) AttachSpanInfo(item *pdf.TableItem) {}
+
 func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 	autoRotate := true
 	cfg := pdf.DefaultParserConfig()
 	cfg.AutoRotateTables = &autoRotate
-	cfg.SkipOCR = true
 	p := NewParser(cfg)
 
 	pageImg := image.NewRGBA(image.Rect(0, 0, 320, 220))
@@ -81,17 +109,348 @@ func TestProcessOneTable_AutoRotateNormalizesCellBounds(t *testing.T) {
 		},
 	}
 
-	item := p.processOneTable(context.Background(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
 	if len(item.Cells) != 1 {
 		t.Fatalf("cells = %d, want 1", len(item.Cells))
 	}
 
 	got := item.Cells[0]
-	if got.X0 != 20 || got.Y0 != 45 || got.X1 != 80 || got.Y1 != 95 {
-		t.Errorf("cell bounds = (%.0f,%.0f,%.0f,%.0f), want (20,45,80,95)",
-			got.X0, got.Y0, got.X1, got.Y1)
-	}
-	if got.X0 > got.X1 || got.Y0 > got.Y1 {
+
+	// Auto-rotate must return axis-aligned (non-inverted) bounds — the core
+	// "normalize" invariant. Asserting this instead of absolute pixels makes
+	// the test immune to TSR crop margin / crop-size changes.
+	if got.X0 >= got.X1 || got.Y0 >= got.Y1 {
 		t.Fatalf("cell bounds are inverted: (%.0f,%.0f,%.0f,%.0f)", got.X0, got.Y0, got.X1, got.Y1)
+	}
+
+	// Rotation is area-preserving: the processed cell keeps the input cell's
+	// area (50*60 = 3000) regardless of crop size or rotation angle.
+	const inW, inH = 50.0, 60.0
+	gotW, gotH := got.X1-got.X0, got.Y1-got.Y0
+	if math.Abs(gotW*gotH-inW*inH) > 1e-6 {
+		t.Errorf("cell area = %.0f, want %.0f (rotation preserves area)", gotW*gotH, inW*inH)
+	}
+
+	// The cell must stay inside the cropped image. Crop bounds are derived
+	// from the shared TSRRegionMarginPx constant, so they track margin changes.
+	cropX0 := math.Max(0, match.Region.X0-util.TSRRegionMarginPx)
+	cropY0 := math.Max(0, match.Region.Y0-util.TSRRegionMarginPx)
+	cropX1 := math.Min(float64(pageImg.Bounds().Dx()), match.Region.X1+util.TSRRegionMarginPx)
+	cropY1 := math.Min(float64(pageImg.Bounds().Dy()), match.Region.Y1+util.TSRRegionMarginPx)
+	if got.X0 < cropX0-1 || got.Y0 < cropY0-1 || got.X1 > cropX1+1 || got.Y1 > cropY1+1 {
+		t.Errorf("cell (%.0f,%.0f,%.0f,%.0f) outside crop (%.0f,%.0f,%.0f,%.0f)",
+			got.X0, got.Y0, got.X1, got.Y1, cropX0, cropY0, cropX1, cropY1)
+	}
+}
+
+// TestProcessOneTable_CropOffUsesFixedMargin locks the parity contract that
+// the TSR crop offset is a fixed margin (TSRRegionMarginPx = 10pt * DlaScale =
+// 30px), not a proportional percentage of the region. processOneTable computes
+// cropOffX = max(0, region.X0 - TSRRegionMarginPx); for a region whose X0/Y0
+// lie beyond the margin the offsets must equal region.X - 30 (nonzero), which
+// is exactly the inverse of CropImageRegion's forward 30px expansion. The
+// pre-fix code used w*0.03/h*0.03 here, diverging from Python.
+func TestProcessOneTable_CropOffUsesFixedMargin(t *testing.T) {
+	cfg := pdf.DefaultParserConfig()
+	p := NewParser(cfg)
+
+	pageImg := image.NewRGBA(image.Rect(0, 0, 320, 220))
+	boxes := []pdf.TextBox{
+		{X0: 10, X1: 60, Top: 10, Bottom: 30, Text: "cell", LayoutType: pdf.LayoutTypeTable},
+	}
+	// Region beyond TSRRegionMarginPx (30px), with distinct X/Y origins so a
+	// regression that uses the wrong origin for CropOffY is caught. Offset
+	// must be region.X - 30 (nonzero), not the old proportional w*0.03 and
+	// not clamped to 0.
+	const regionX0, regionY0 = 100.0, 140.0
+	match := tbl.TableMatch{
+		Region: pdf.DLARegion{X0: regionX0, Y0: regionY0, X1: 210, Y1: 200, Label: pdf.LayoutTypeTable},
+		BoxIdx: []int{0},
+	}
+	builder := &staticTableBuilder{
+		cells: []pdf.TSRCell{
+			{X0: 10, Y0: 20, X1: 60, Y1: 80, Label: "table row"},
+		},
+	}
+
+	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+
+	const wantOffX = regionX0 - util.TSRRegionMarginPx // 100 - 30 = 70
+	const wantOffY = regionY0 - util.TSRRegionMarginPx // 140 - 30 = 110
+	if item.CropOffX != wantOffX {
+		t.Errorf("cropOffX = %v, want %v (region.X0 - fixed 30px margin)", item.CropOffX, wantOffX)
+	}
+	if item.CropOffY != wantOffY {
+		t.Errorf("cropOffY = %v, want %v (region.Y0 - fixed 30px margin)", item.CropOffY, wantOffY)
+	}
+}
+
+// ocrFillingDoc is like orientationScoringDoc but its OCRRecognize returns
+// text for any cropped image. It exists so a test can prove Go does NOT
+// perform per-cell OCR on empty TSR cells: even though the OCR engine would
+// happily fill any cropped cell, the cell must stay empty. This guards the
+// alignment target (Python only fills cells from page-level OCR boxes matched
+// via construct_table; it never crops individual cells for recognition).
+type ocrFillingDoc struct {
+	orientationScoringDoc
+}
+
+func (d *ocrFillingDoc) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.OCRText, error) {
+	return []pdf.OCRText{{Text: "OCR-FILL", Confidence: 0.9}}, nil
+}
+
+// TestProcessOneTable_NoPerCellOCR is a regression guard for the removal of
+// ocrTableCells (per-cell OCR). An empty TSR cell with no overlapping
+// page-level OCR box must remain empty regardless of table auto-rotation:
+// the former rotated path (bestAngle != 0) and the non-rotated path
+// (bestAngle == 0) both used to fill such cells via per-cell OCR.
+func TestProcessOneTable_NoPerCellOCR(t *testing.T) {
+	doc := &ocrFillingDoc{}
+	for _, autoRotate := range []bool{false, true} {
+		t.Run(fmt.Sprintf("autoRotate=%v", autoRotate), func(t *testing.T) {
+			cfg := pdf.DefaultParserConfig()
+			cfg.AutoRotateTables = &autoRotate
+			p := NewParser(cfg)
+
+			pageImg := image.NewRGBA(image.Rect(0, 0, 320, 220))
+			// No page-level OCR box overlaps the cell, so FillCellTextFromBoxes
+			// leaves it empty; per-cell OCR must not fill it either.
+			boxes := []pdf.TextBox{}
+			match := tbl.TableMatch{
+				Region: pdf.DLARegion{X0: 10, Y0: 10, X1: 210, Y1: 110, Label: pdf.LayoutTypeTable},
+				BoxIdx: []int{},
+			}
+			builder := &staticTableBuilder{
+				cells: []pdf.TSRCell{
+					{X0: 10, Y0: 20, X1: 60, Y1: 80, Label: "table row", Text: ""},
+				},
+			}
+
+			item := p.processOneTable(t.Context(), pageImg, boxes, 0, doc, builder, match, pdf.DlaScale)
+			if len(item.Cells) != 1 {
+				t.Fatalf("cells = %d, want 1", len(item.Cells))
+			}
+			if item.Cells[0].Text != "" {
+				t.Errorf("empty cell filled by per-cell OCR: %q; Go must align with Python, which skips per-cell OCR", item.Cells[0].Text)
+			}
+		})
+	}
+}
+
+// twoRowTableBuilder groups DetectCells' output into one row per cell
+// (single column), so a test can control exactly which TSR row band each
+// cell occupies.
+type twoRowTableBuilder struct {
+	cells []pdf.TSRCell
+}
+
+func (b *twoRowTableBuilder) Name() string { return "tworow" }
+
+func (b *twoRowTableBuilder) DetectCells(_ context.Context, _ image.Image) ([]pdf.TSRCell, error) {
+	return append([]pdf.TSRCell(nil), b.cells...), nil
+}
+
+func (b *twoRowTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
+	rows := make([][]pdf.TSRCell, len(cells))
+	for i, c := range cells {
+		rows[i] = []pdf.TSRCell{c}
+	}
+	return rows
+}
+
+// FinalizeGrid returns annotGrid unchanged (identity). The fake carries no
+// deferred OCR-overlay behavior, matching the production DeepDoc builder.
+func (b *twoRowTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
+	return annotGrid
+}
+
+// AttachSpanInfo is a no-op for the fake builder.
+func (b *twoRowTableBuilder) AttachSpanInfo(item *pdf.TableItem) {}
+
+func TestProcessOneTable_HandlesTextFragments(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bottom float64
+		want   [][]string
+	}{
+		{"contained fragment", 24, [][]string{{"Alpha Beta"}}},
+		{"partial fragment across rows", 28.33, [][]string{{"Alpha Beta"}, {"Beta"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			boxes := []pdf.TextBox{
+				{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha Beta", IsOCR: true},
+				{X0: 20, X1: 50, Top: 18.33, Bottom: tc.bottom, Text: "Beta", IsOCR: true},
+			}
+			builder := &twoRowTableBuilder{cells: []pdf.TSRCell{
+				{X0: 0, Y0: 0, X1: 150, Y1: 60}, {X0: 0, Y0: 60, X1: 150, Y1: 120},
+			}}
+			match := tbl.TableMatch{Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 150, Y1: 120}, BoxIdx: []int{0, 1}}
+			item := NewParser(pdf.DefaultParserConfig()).processOneTable(t.Context(), image.NewGray(image.Rect(0, 0, 180, 150)), boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+			tbl.ConstructTable(item.Cells, nil, "", &item)
+			if !reflect.DeepEqual(item.Rows, tc.want) {
+				t.Fatalf("rows = %v, want %v", item.Rows, tc.want)
+			}
+		})
+	}
+}
+
+// TestDedupTableBoxes_IdenticalBBoxKeepsContent locks that two boxes with
+// IDENTICAL bbox AND identical text are not BOTH dropped. The containment
+// check drops the inner box when its bbox lies fully inside the outer's and
+// the outer text contains the inner's — but for identical bboxes each box is
+// "inside" the other, so both get marked for removal and the cell content
+// vanishes. Only STRICT containment may drop; identical-bbox boxes must keep
+// at least one copy.
+func TestDedupTableBoxes_IdenticalBBoxKeepsContent(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 100, X1: 300, Top: 100, Bottom: 120, Text: "Revenue", IsOCR: true},
+		{X0: 100, X1: 300, Top: 100, Bottom: 120, Text: "Revenue", IsOCR: true},
+	}
+	got := dedupTableBoxes(boxes)
+	if len(got) == 0 {
+		t.Fatal("identical bbox+text boxes were BOTH dropped — content loss; at least one copy must survive")
+	}
+	for _, b := range got {
+		if strings.TrimSpace(b.Text) != "Revenue" {
+			t.Errorf("surviving box text = %q, want %q", b.Text, "Revenue")
+		}
+	}
+}
+
+func TestDedupTableBoxes_TableFragments(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		boxes []pdf.TextBox
+		want  string
+	}{
+		{"overlapping fragment", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha Beta", IsOCR: true},
+			{X0: 20, X1: 50, Top: 18.33, Bottom: 28.33, Text: "Beta", IsOCR: true},
+		}, "Alpha Beta|Beta"},
+		{"adjacent identical rows", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true},
+			{X0: 0, X1: 50, Top: 14, Bottom: 24, Text: "R/W", IsOCR: true},
+		}, "R/W|R/W"},
+		{"adjacent columns", []pdf.TextBox{
+			{X0: 0, X1: 20, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true},
+			{X0: 21, X1: 41, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true},
+		}, "R/W|R/W"},
+		{"taller fragment", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "Alpha Beta", IsOCR: true},
+			{X0: 20, X1: 50, Top: 5, Bottom: 25, Text: "Beta", IsOCR: true},
+		}, "Alpha Beta|Beta"},
+		{"overlap with distinct text", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha", IsOCR: true},
+			{X0: 20, X1: 50, Top: 18.33, Bottom: 28.33, Text: "Beta", IsOCR: true},
+		}, "Alpha|Beta"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var texts []string
+			for _, b := range dedupTableBoxes(tc.boxes) {
+				texts = append(texts, b.Text)
+			}
+			if got := strings.Join(texts, "|"); got != tc.want {
+				t.Fatalf("text = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestProcessOneTable_PreservesAdjacentRows(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 10, X1: 90, Top: 5, Bottom: 15, Text: "功能"},
+		{X0: 10, X1: 90, Top: 17, Bottom: 27, Text: "输入"},
+		{X0: 10, X1: 90, Top: 29, Bottom: 39, Text: "输出"},
+	}
+	match := tbl.TableMatch{Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 300, Y1: 150}, BoxIdx: []int{0, 1, 2}}
+	builder := &twoRowTableBuilder{cells: []pdf.TSRCell{
+		{X0: 0, X1: 300, Y0: 0, Y1: 48},
+		{X0: 0, X1: 300, Y0: 48, Y1: 84},
+		{X0: 0, X1: 300, Y0: 84, Y1: 126},
+	}}
+	item := NewParser(pdf.DefaultParserConfig()).processOneTable(t.Context(), image.NewGray(image.Rect(0, 0, 300, 150)), boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+	tbl.ConstructTable(item.Cells, nil, "", &item)
+	if want := [][]string{{"功能"}, {"输入"}, {"输出"}}; !reflect.DeepEqual(item.Rows, want) {
+		t.Fatalf("rows = %v, want %v", item.Rows, want)
+	}
+}
+
+func TestProcessOneTable_PreservesOverlappingRows(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		boxes []pdf.TextBox
+		want  [][]string
+	}{
+		{"identical text", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true},
+			{X0: 0, X1: 50, Top: 9, Bottom: 19, Text: "R/W", IsOCR: true},
+		}, [][]string{{"R/W"}, {"R/W"}}},
+		{"substring text", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "100", IsOCR: true},
+			{X0: 0, X1: 50, Top: 9, Bottom: 19, Text: "10", IsOCR: true},
+		}, [][]string{{"100"}, {"10"}}},
+		{"shorter substring text", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "100", IsOCR: true},
+			{X0: 0, X1: 50, Top: 9, Bottom: 18, Text: "10", IsOCR: true},
+		}, [][]string{{"100"}, {"10"}}},
+		{"identical text with different heights", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 3, Bottom: 15, Text: "R/W", IsOCR: true},
+			{X0: 0, X1: 50, Top: 9, Bottom: 19, Text: "R/W", IsOCR: true},
+		}, [][]string{{"R/W"}, {"R/W"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			builder := &twoRowTableBuilder{cells: []pdf.TSRCell{
+				{X0: 0, X1: 150, Y0: 0, Y1: 30},
+				{X0: 0, X1: 150, Y0: 30, Y1: 60},
+			}}
+			match := tbl.TableMatch{Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 150, Y1: 60}, BoxIdx: []int{0, 1}}
+			item := NewParser(pdf.DefaultParserConfig()).processOneTable(t.Context(), image.NewGray(image.Rect(0, 0, 180, 90)), tc.boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+			tbl.ConstructTable(item.Cells, nil, "", &item)
+			if !reflect.DeepEqual(item.Rows, tc.want) {
+				t.Fatalf("rows = %v, want %v", item.Rows, tc.want)
+			}
+		})
+	}
+}
+
+func TestProcessOneTable_DeduplicatesSameCellOCR(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		first, second pdf.TextBox
+		want          [][]string
+	}{
+		{"duplicate OCR", pdf.TextBox{X0: 0, X1: 40, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, pdf.TextBox{X0: 0, X1: 40, Top: 9, Bottom: 19, Text: " R/W ", IsOCR: true}, [][]string{{"R/W", ""}, {"", "bottom"}}},
+		{"separate words", pdf.TextBox{X0: 0, X1: 15, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, pdf.TextBox{X0: 20, X1: 35, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, [][]string{{"R/W R/W", ""}, {"", "bottom"}}},
+		{"separate lines", pdf.TextBox{X0: 0, X1: 40, Top: 5, Bottom: 10, Text: "R/W", IsOCR: true}, pdf.TextBox{X0: 0, X1: 40, Top: 12, Bottom: 17, Text: "R/W", IsOCR: true}, [][]string{{"R/W R/W", ""}, {"", "bottom"}}},
+		{"different columns", pdf.TextBox{X0: 0, X1: 80, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, pdf.TextBox{X0: 20, X1: 100, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, [][]string{{"R/W", "R/W"}, {"", "bottom"}}},
+		{"native text", pdf.TextBox{X0: 0, X1: 40, Top: 5, Bottom: 15, Text: "R/W"}, pdf.TextBox{X0: 0, X1: 40, Top: 9, Bottom: 19, Text: "R/W"}, [][]string{{"R/W R/W", ""}, {"", "bottom"}}},
+		{"native then OCR", pdf.TextBox{X0: 0, X1: 40, Top: 5, Bottom: 15, Text: "R/W"}, pdf.TextBox{X0: 0, X1: 40, Top: 9, Bottom: 19, Text: "R/W", IsOCR: true}, [][]string{{"R/W R/W", ""}, {"", "bottom"}}},
+		{"OCR then native", pdf.TextBox{X0: 0, X1: 40, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, pdf.TextBox{X0: 0, X1: 40, Top: 9, Bottom: 19, Text: "R/W"}, [][]string{{"R/W R/W", ""}, {"", "bottom"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			boxes := []pdf.TextBox{tc.first, tc.second, {X0: 60, X1: 90, Top: 25, Bottom: 35, Text: "bottom", IsOCR: true}}
+			doc := &MockDocAnalyzer{Healthy: true, TSRCells: []pdf.TSRCell{
+				{X0: 0, X1: 300, Y0: 0, Y1: 60, Label: "table row"}, {X0: 0, X1: 300, Y0: 60, Y1: 120, Label: "table row"},
+				{X0: 0, X1: 150, Y0: 0, Y1: 120, Label: "table column"}, {X0: 150, X1: 300, Y0: 0, Y1: 120, Label: "table column"},
+			}}
+			match := tbl.TableMatch{Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 300, Y1: 120}, BoxIdx: []int{0, 1, 2}}
+			item := NewParser(pdf.DefaultParserConfig()).processOneTable(t.Context(), image.NewGray(image.Rect(0, 0, 330, 150)), boxes, 0, doc, tbl.NewDeepDocTableBuilder(doc), match, pdf.DlaScale)
+			tbl.ConstructTable(item.Cells, nil, "", &item)
+			if !reflect.DeepEqual(item.Rows, tc.want) {
+				t.Fatalf("rows = %v, want %v", item.Rows, tc.want)
+			}
+		})
+	}
+}
+
+func TestHeaderRowsSkipEmptyLeadingGridRow(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{},
+		{{Text: "Header", Label: "table column header"}},
+		{{Text: "data"}},
+	}
+	grid = tbl.DropAllEmptyRows(grid)
+	if got, want := leadingHeaderRows(tbl.HeaderSetWithBlockType(grid, nil)), 1; got != want {
+		t.Fatalf("header rows = %d, want %d", got, want)
 	}
 }

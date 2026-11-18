@@ -20,6 +20,8 @@ import (
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/mindmap"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
+	"ragflow/internal/ingestion/component/knowledge_compiler/tree"
+	"ragflow/internal/ingestion/component/knowledge_compiler/wiki"
 	"ragflow/internal/ingestion/knowledge_compile"
 )
 
@@ -31,8 +33,10 @@ import (
 // core count regardless of which stage is running.
 func init() {
 	submit := func(ctx context.Context, jobs []func() error) error {
-		return knowledge_compile.SubmitCompilerJobs(ctx, jobs)
+		return knowledge_compile.SubmitCompilerLLMJobs(ctx, jobs)
 	}
 	structure.SetBatchSubmitter(submit)
 	mindmap.SetBatchSubmitter(submit)
+	tree.SetBatchSubmitter(submit)
+	wiki.SetBatchSubmitter(submit)
 }

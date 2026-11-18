@@ -28,7 +28,7 @@ Run:
       test/integration/wiki/test_wiki_incremental.py -s -v
 
 Env:
-  RAGFLOW_API_KEY   default ragflow-Unleq1d1mMvztQH2QswdjfWZvP9Xkh-TAMhf_XrM7gc
+  RAGFLOW_API_KEY   required API token
   RAGFLOW_HOST      default http://localhost:9380
   WIKI_PIPELINE_ID  default 977f06ac8ccf11f192396b1c282a3cb7 (wikipipeline)
 """
@@ -39,12 +39,12 @@ import time
 import pytest
 import requests
 
-API_KEY = os.getenv(
-    "RAGFLOW_API_KEY",
-    "ragflow-Unleq1d1mMvztQH2QswdjfWZvP9Xkh-TAMhf_XrM7gc",
-)
+API_KEY = os.getenv("RAGFLOW_API_KEY")
 HOST = os.getenv("RAGFLOW_HOST", "http://localhost:9380")
 PIPELINE_ID = os.getenv("WIKI_PIPELINE_ID", "977f06ac8ccf11f192396b1c282a3cb7")
+if not API_KEY:
+    pytest.skip("RAGFLOW_API_KEY is required", allow_module_level=True)
+
 API = f"{HOST}/api/v1"
 HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 
@@ -249,12 +249,12 @@ def test_wiki_plan_toggle_resets_state(wiki_dataset):
     import asyncio
     from rag.svr.task_executor_refactor import dataset_wiki_generator as dwg
 
-    # Mode-A (plan=off) build records plan_kwd=false in the mode meta row.
-    asyncio.run(dwg._wiki_save_mode_plan(tenant_id, ds_id, False))
-    loaded = asyncio.run(dwg._wiki_load_mode_plan(tenant_id, ds_id))
-    assert loaded is False, f"expected recorded mode plan=false, got {loaded!r}"
+    # Entity mode records its mode in the mode meta row.
+    asyncio.run(dwg._wiki_save_mode(tenant_id, ds_id, "entity"))
+    loaded = asyncio.run(dwg._wiki_load_mode(tenant_id, ds_id))
+    assert loaded == "entity", f"expected recorded entity mode, got {loaded!r}"
 
-    # Toggling to plan=true (Mode B) is a config change: run_wiki_incremental
+    # Switching to topic mode is a config change: run_wiki_incremental
     # detects prev != new and resets all wiki-derived state so the next build
     # rebuilds cleanly in the new mode (no mixing of A/B page structures).
     asyncio.run(dwg._wiki_reset_all_wiki_state(tenant_id, ds_id))
@@ -262,4 +262,4 @@ def test_wiki_plan_toggle_resets_state(wiki_dataset):
     assert pages_after == 0, "full reset did not clear wiki state"
 
     # After reset the mode meta is gone too (first build of the new mode).
-    assert asyncio.run(dwg._wiki_load_mode_plan(tenant_id, ds_id)) is None, "mode meta was not cleared by reset"
+    assert asyncio.run(dwg._wiki_load_mode(tenant_id, ds_id)) is None, "mode meta was not cleared by reset"

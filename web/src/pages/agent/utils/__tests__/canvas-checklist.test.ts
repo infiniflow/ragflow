@@ -1,0 +1,1290 @@
+import { Edge } from '@xyflow/react';
+import {
+  CanvasChecklistInputs,
+  CanvasIssueType,
+  collectCanvasIssues,
+} from '../canvas-checklist';
+
+const makeNode = (
+  id: string,
+  label: string,
+  form: Record<string, any> = {},
+  extra: Record<string, any> = {},
+) =>
+  ({
+    id,
+    data: { label, name: id, form },
+    ...extra,
+  }) as any;
+
+const makeEdge = (source: string, target: string, sourceHandle?: string) =>
+  ({ id: `${source}->${target}`, source, target, sourceHandle }) as Edge;
+
+const collect = (
+  overrides: Partial<CanvasChecklistInputs> & {
+    nodes: CanvasChecklistInputs['nodes'];
+  },
+) =>
+  collectCanvasIssues({
+    edges: [],
+    editedNodeFormIds: [],
+    ...overrides,
+  });
+
+describe('collectCanvasIssues: orphan steps', () => {
+  it('flags a node with no incident edges', () => {
+    const issues = collect({
+      nodes: [makeNode('Parser:p1', 'Parser', { setups: [{}] })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Parser:p1',
+        type: CanvasIssueType.Orphan,
+        messageKey: 'flow.issueNotConnected',
+      }),
+    );
+  });
+
+  it('treats any edge — including tool edges — as a connection', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Agent:a1', 'Agent', { llm_id: 'model-1', tools: [] }),
+        makeNode('Tool:t1', 'Tool'),
+      ],
+      edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.Orphan),
+    ).toHaveLength(0);
+  });
+
+  it.each([
+    ['begin', 'Begin'],
+    ['Note:n1', 'Note'],
+    ['Placeholder:p1', 'Placeholder'],
+    ['IterationItem:i1', 'IterationItem'],
+    ['LoopItem:l1', 'LoopItem'],
+    ['ExitLoop:e1', 'ExitLoop'],
+  ])('exempts structural node %s', (id, label) => {
+    const issues = collect({ nodes: [makeNode(id, label)] });
+
+    expect(
+      issues.some((x) => x.nodeId === id && x.type === CanvasIssueType.Orphan),
+    ).toBe(false);
+  });
+
+  it('flags a pipeline File node without downstream', () => {
+    const issues = collect({ nodes: [makeNode('File', 'File', {})] });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({ nodeId: 'File', type: CanvasIssueType.Orphan }),
+    );
+  });
+
+  it('flags pipeline node groups wired to each other but detached from File', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('File', 'File'),
+        makeNode('Parser:p1', 'Parser'),
+        makeNode('Chunker:c1', 'TokenChunker'),
+        makeNode('Compiler:cp1', 'Compiler'),
+        makeNode('Indexer:i1', 'Indexer'),
+        makeNode('Extractor:e1', 'Extractor'),
+        makeNode('Extractor:e2', 'Extractor'),
+      ],
+      edges: [
+        makeEdge('File', 'Parser:p1'),
+        makeEdge('Parser:p1', 'Chunker:c1'),
+        makeEdge('Compiler:cp1', 'Indexer:i1'),
+        makeEdge('Extractor:e1', 'Extractor:e2'),
+      ],
+    });
+
+    const orphans = issues
+      .filter((x) => x.type === CanvasIssueType.Orphan)
+      .map((x) => x.nodeId);
+    expect(orphans).toEqual(
+      expect.arrayContaining([
+        'Compiler:cp1',
+        'Indexer:i1',
+        'Extractor:e1',
+        'Extractor:e2',
+      ]),
+    );
+    expect(orphans).not.toContain('File');
+    expect(orphans).not.toContain('Parser:p1');
+    expect(orphans).not.toContain('Chunker:c1');
+  });
+
+  it('flags no orphan on a fully connected pipeline', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('File', 'File'),
+        makeNode('Parser:p1', 'Parser'),
+        makeNode('Chunker:c1', 'TokenChunker'),
+        makeNode('Indexer:i1', 'Indexer'),
+      ],
+      edges: [
+        makeEdge('File', 'Parser:p1'),
+        makeEdge('Parser:p1', 'Chunker:c1'),
+        makeEdge('Chunker:c1', 'Indexer:i1'),
+      ],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.Orphan),
+    ).toHaveLength(0);
+  });
+});
+
+describe('collectCanvasIssues: dangling variable references', () => {
+  const retrievalNode = () =>
+    makeNode('Retrieval:r1', 'Retrieval', {
+      retrieval_from: 'dataset',
+      dataset_ids: ['kb-1'],
+      outputs: { formalized_content: { type: 'string' } },
+    });
+
+  it('accepts a reference to a connected upstream output', () => {
+    const issues = collect({
+      nodes: [
+        retrievalNode(),
+        makeNode('Message:m1', 'Message', {
+          content: ['{Retrieval:r1@formalized_content}'],
+        }),
+      ],
+      edges: [makeEdge('Retrieval:r1', 'Message:m1')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('flags the reference once the connecting edge is removed', () => {
+    const issues = collect({
+      nodes: [
+        retrievalNode(),
+        makeNode('Message:m1', 'Message', {
+          content: ['{Retrieval:r1@formalized_content}'],
+        }),
+      ],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Message:m1',
+        type: CanvasIssueType.InvalidVariable,
+        messageKey: 'flow.issueVariableInvalid',
+        messageParams: { variable: 'Retrieval:r1@formalized_content' },
+      }),
+    );
+  });
+
+  it('flags a reference whose target node was deleted', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Message:m1', 'Message', {
+          content: ['{Retrieval:gone@formalized_content}'],
+        }),
+      ],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Message:m1',
+        type: CanvasIssueType.InvalidVariable,
+        messageParams: { variable: 'Retrieval:gone@formalized_content' },
+      }),
+    );
+  });
+
+  it('flags a reference whose output key no longer exists', () => {
+    const renamed = retrievalNode();
+    renamed.data.form.outputs = { json: { type: 'object' } };
+    const issues = collect({
+      nodes: [
+        renamed,
+        makeNode('Message:m1', 'Message', {
+          content: ['{Retrieval:r1@formalized_content}'],
+        }),
+      ],
+      edges: [makeEdge('Retrieval:r1', 'Message:m1')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Message:m1',
+        type: CanvasIssueType.InvalidVariable,
+      }),
+    );
+  });
+
+  it('skips the output-key check for nodes declaring no outputs (Message)', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Message:m1', 'Message', { content: ['hello'] }),
+        makeNode('Message:m2', 'Message', {
+          content: ['{Message:m1@content}'],
+        }),
+      ],
+      edges: [makeEdge('Message:m1', 'Message:m2')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('reports a duplicated dangling reference only once per node', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Message:m1', 'Message', {
+          content: ['{Retrieval:gone@x}', 'again {Retrieval:gone@x}'],
+        }),
+      ],
+    });
+
+    expect(
+      issues.filter(
+        (x) =>
+          x.type === CanvasIssueType.InvalidVariable &&
+          x.messageParams?.variable === 'Retrieval:gone@x',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('detects bare whole-string references such as switch cpn_id', () => {
+    const issues = collect({
+      nodes: [
+        retrievalNode(),
+        makeNode('Switch:s1', 'Switch', {
+          conditions: [{ cpn_id: 'Retrieval:r1@formalized_content' }],
+        }),
+      ],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Switch:s1',
+        type: CanvasIssueType.InvalidVariable,
+        messageParams: { variable: 'Retrieval:r1@formalized_content' },
+      }),
+    );
+  });
+
+  it('ignores brace-like text inside the Code code field', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('CodeExec:c1', 'CodeExec', {
+          code: 'print("{Retrieval:gone@x}")',
+          outputs: { result: { type: 'string' } },
+        }),
+      ],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('never scans password fields for references', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('ExeSQL:e1', 'ExeSQL', { password: 'user:p@ss' }),
+        makeNode('Message:m1', 'Message', { content: ['hi'] }),
+      ],
+      edges: [makeEdge('ExeSQL:e1', 'Message:m1')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+});
+
+describe('collectCanvasIssues: begin/sys/env references', () => {
+  const beginNode = () =>
+    makeNode('begin', 'Begin', { inputs: { query: { type: 'line' } } });
+
+  it('accepts an existing begin input and flags a deleted one', () => {
+    const issues = collect({
+      nodes: [
+        beginNode(),
+        makeNode('Message:m1', 'Message', {
+          content: ['{begin@query} {begin@removed}'],
+        }),
+      ],
+      edges: [makeEdge('begin', 'Message:m1')],
+    });
+
+    const invalidVariables = issues
+      .filter((x) => x.type === CanvasIssueType.InvalidVariable)
+      .map((x) => x.messageParams?.variable);
+    expect(invalidVariables).toEqual(['begin@removed']);
+  });
+
+  it('treats sys.* globals as always resolvable', () => {
+    const issues = collect({
+      nodes: [makeNode('Message:m1', 'Message', { content: ['{sys.query}'] })],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('flags a deleted conversation variable, but only once variables loaded', () => {
+    const messageNode = makeNode('Message:m1', 'Message', {
+      content: ['{env.token}'],
+    });
+
+    const valid = collect({ nodes: [messageNode], variables: { token: {} } });
+    const invalid = collect({ nodes: [messageNode], variables: {} });
+    const unsettled = collect({ nodes: [messageNode] });
+
+    expect(
+      valid.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+    expect(invalid).toContainEqual(
+      expect.objectContaining({
+        type: CanvasIssueType.InvalidVariable,
+        messageParams: { variable: 'env.token' },
+      }),
+    );
+    expect(
+      unsettled.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+});
+
+describe('collectCanvasIssues: iteration/loop children references', () => {
+  it('lets a Loop child reference the parent outputs', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Loop:p1', 'Loop', { outputs: { content: {} } }),
+        makeNode('LoopItem:s1', 'LoopItem', {}, { parentId: 'Loop:p1' }),
+        makeNode(
+          'Message:m1',
+          'Message',
+          { content: ['{Loop:p1@content}'] },
+          { parentId: 'Loop:p1' },
+        ),
+      ],
+      edges: [makeEdge('LoopItem:s1', 'Message:m1')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('lets an Iteration child reference the parent upstream', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('File', 'File', {}),
+        makeNode('Iteration:p1', 'Iteration', { outputs: {} }),
+        makeNode(
+          'IterationItem:s1',
+          'IterationItem',
+          {},
+          { parentId: 'Iteration:p1' },
+        ),
+        makeNode(
+          'Message:m1',
+          'Message',
+          { content: ['{File@result}'] },
+          { parentId: 'Iteration:p1' },
+        ),
+      ],
+      edges: [
+        makeEdge('File', 'Iteration:p1'),
+        makeEdge('IterationItem:s1', 'Message:m1'),
+      ],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('lets a Loop reference its own variables and child outputs', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Loop:p1', 'Loop', {
+          loop_termination_condition: [
+            { variable: 'UserFillUp:u1@value', operator: 'is', value: '1' },
+            { variable: 'Loop:p1@count', operator: '≥', value: 3 },
+          ],
+          outputs: { count: { type: 'number' } },
+        }),
+        makeNode(
+          'UserFillUp:u1',
+          'UserFillUp',
+          { outputs: { value: { type: 'string' } } },
+          { parentId: 'Loop:p1' },
+        ),
+      ],
+      edges: [makeEdge('Loop:p1', 'Message:m1')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('lets an Iteration reference child outputs in its output map', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Iteration:p1', 'Iteration', {
+          outputs: {
+            merged: { ref: 'StringTransform:s1@result' },
+          },
+        }),
+        makeNode(
+          'StringTransform:s1',
+          'StringTransform',
+          { outputs: { result: { type: 'string' } } },
+          { parentId: 'Iteration:p1' },
+        ),
+      ],
+      edges: [makeEdge('Iteration:p1', 'Message:m1')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('flags an Iteration referencing the per-item IterationStart outputs', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Iteration:p1', 'Iteration', {
+          outputs: {
+            merged: { ref: 'IterationStart:s1@item' },
+          },
+        }),
+        makeNode(
+          'IterationStart:s1',
+          'IterationItem',
+          { outputs: { item: { type: 'unknown' } } },
+          { parentId: 'Iteration:p1' },
+        ),
+      ],
+      edges: [makeEdge('Iteration:p1', 'Message:m1')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Iteration:p1',
+        type: CanvasIssueType.InvalidVariable,
+        messageParams: { variable: 'IterationStart:s1@item' },
+      }),
+    );
+  });
+
+  it('still flags an outsider referencing a container child', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Loop:p1', 'Loop', { outputs: {} }),
+        makeNode(
+          'UserFillUp:u1',
+          'UserFillUp',
+          { outputs: { value: { type: 'string' } } },
+          { parentId: 'Loop:p1' },
+        ),
+        makeNode('Message:m1', 'Message', {
+          content: ['{UserFillUp:u1@value}'],
+        }),
+      ],
+      edges: [makeEdge('Loop:p1', 'Message:m1')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Message:m1',
+        type: CanvasIssueType.InvalidVariable,
+        messageParams: { variable: 'UserFillUp:u1@value' },
+      }),
+    );
+  });
+});
+
+describe('collectCanvasIssues: missing required fields', () => {
+  it('flags an empty Message', () => {
+    const issues = collect({
+      nodes: [makeNode('Message:m1', 'Message', { content: [''] })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Message:m1',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.messageMsg',
+      }),
+    );
+  });
+
+  it('flags a Retrieval node without dataset or memory binding', () => {
+    const datasetIssues = collect({
+      nodes: [
+        makeNode('Retrieval:r1', 'Retrieval', {
+          retrieval_from: 'dataset',
+          dataset_ids: [],
+        }),
+      ],
+    });
+    const memoryIssues = collect({
+      nodes: [
+        makeNode('Retrieval:r2', 'Retrieval', {
+          retrieval_from: 'memory',
+          memory_ids: [],
+        }),
+      ],
+    });
+
+    expect(datasetIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalDatasetMissing' }),
+    );
+    expect(memoryIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalMemoryMissing' }),
+    );
+  });
+
+  // Switching the source to memories writes no `memory_ids` key until a
+  // memory is picked, so the unbound node round-trips without it.
+  it('flags a Retrieval node whose binding key is absent', () => {
+    const datasetIssues = collect({
+      nodes: [
+        makeNode('Retrieval:r1', 'Retrieval', { retrieval_from: 'dataset' }),
+      ],
+    });
+    const memoryIssues = collect({
+      nodes: [
+        makeNode('Retrieval:r2', 'Retrieval', { retrieval_from: 'memory' }),
+      ],
+    });
+
+    expect(datasetIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalDatasetMissing' }),
+    );
+    expect(memoryIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalMemoryMissing' }),
+    );
+  });
+
+  it('treats a Retrieval node without retrieval_from as a dataset node', () => {
+    const emptyIssues = collect({
+      nodes: [makeNode('Retrieval:r1', 'Retrieval', {})],
+    });
+    const legacyIssues = collect({
+      nodes: [makeNode('Retrieval:r2', 'Retrieval', { kb_ids: ['kb-1'] })],
+    });
+    const memoryIssues = collect({
+      nodes: [makeNode('Retrieval:r3', 'Retrieval', { memory_ids: ['mem-1'] })],
+    });
+
+    expect(emptyIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalDatasetMissing' }),
+    );
+    // A legacy `kb_ids` binding counts as bound; a legacy memory binding is
+    // read as a memory source instead of an empty dataset.
+    expect(
+      legacyIssues.filter((x) => x.messageKey.startsWith('flow.retrieval')),
+    ).toHaveLength(0);
+    expect(
+      memoryIssues.filter((x) => x.messageKey.startsWith('flow.retrieval')),
+    ).toHaveLength(0);
+  });
+
+  it('flags an Agent node without a model', () => {
+    const issues = collect({
+      nodes: [makeNode('Agent:a1', 'Agent', { llm_id: '' })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Agent:a1',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.agentModelMissing',
+      }),
+    );
+  });
+
+  it('flags an Extractor node without a model', () => {
+    const issues = collect({
+      nodes: [makeNode('Extractor:e1', 'Extractor', { llm_id: '' })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Extractor:e1',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.extractorModelMissing',
+      }),
+    );
+  });
+
+  it('flags an invalid Parser form only after the node was edited', () => {
+    const parserNode = makeNode('Parser:p1', 'Parser', { setups: [] });
+    const connected = [makeEdge('File', 'Parser:p1')];
+    const fileNode = makeNode('File', 'File', {});
+
+    const untouched = collect({
+      nodes: [parserNode, fileNode],
+      edges: connected,
+    });
+    const edited = collect({
+      nodes: [parserNode, fileNode],
+      edges: connected,
+      editedNodeFormIds: ['Parser:p1'],
+    });
+
+    expect(untouched.some((x) => x.messageKey === 'flow.nodeFormInvalid')).toBe(
+      false,
+    );
+    expect(edited).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Parser:p1',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+      }),
+    );
+  });
+
+  describe('variable assigner rows', () => {
+    const fileNode = () => makeNode('File', 'File', {});
+    const assignerNode = (variables: Record<string, any>[]) =>
+      makeNode('VariableAssigner:v1', 'VariableAssigner', { variables });
+    const wire = () => [makeEdge('File', 'VariableAssigner:v1')];
+    const edited = ['VariableAssigner:v1'];
+
+    const collectRowIssues = (variables: Record<string, any>[]) =>
+      collect({
+        nodes: [fileNode(), assignerNode(variables)],
+        edges: wire(),
+        editedNodeFormIds: edited,
+      }).filter(
+        (x) =>
+          x.nodeId === 'VariableAssigner:v1' &&
+          x.messageKey === 'flow.nodeFormInvalid',
+      );
+
+    it('flags an incomplete row only after the node was edited', () => {
+      const variables = [
+        { variable: '', operator: 'overwrite', parameter: '' },
+      ];
+
+      const untouched = collect({
+        nodes: [fileNode(), assignerNode(variables)],
+        edges: wire(),
+      });
+
+      expect(
+        untouched.some((x) => x.messageKey === 'flow.nodeFormInvalid'),
+      ).toBe(false);
+      expect(collectRowIssues(variables)).toHaveLength(1);
+    });
+
+    it('flags a row with an empty variable or operator', () => {
+      expect(
+        collectRowIssues([{ operator: 'set', parameter: 'x' }]),
+      ).toHaveLength(1);
+      expect(
+        collectRowIssues([{ variable: 'begin@a', parameter: 'x' }]),
+      ).toHaveLength(1);
+    });
+
+    it('flags a missing, empty-string or empty-array parameter', () => {
+      expect(
+        collectRowIssues([{ variable: 'begin@a', operator: 'overwrite' }]),
+      ).toHaveLength(1);
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: 'overwrite', parameter: '' },
+        ]),
+      ).toHaveLength(1);
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: 'append', parameter: [] },
+        ]),
+      ).toHaveLength(1);
+    });
+
+    it.each([['clear'], ['remove_first'], ['remove_last']])(
+      'skips the parameter check for the parameterless %s operator',
+      (operator) => {
+        expect(
+          collectRowIssues([{ variable: 'begin@a', operator }]),
+        ).toHaveLength(0);
+      },
+    );
+
+    it('treats 0, yes and {} as filled parameters', () => {
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: '+=', parameter: 0 },
+          { variable: 'begin@b', operator: 'set', parameter: 'yes' },
+          { variable: 'begin@c', operator: 'set', parameter: '{}' },
+        ]),
+      ).toHaveLength(0);
+    });
+
+    it('accepts a complete row and an empty variables list', () => {
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: 'set', parameter: 'x' },
+        ]),
+      ).toHaveLength(0);
+      expect(collectRowIssues([])).toHaveLength(0);
+    });
+  });
+});
+
+describe('collectCanvasIssues: stale resources', () => {
+  it('flags a Message memory that no longer exists', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Message:m1', 'Message', {
+          content: ['hi'],
+          memory_ids: ['mem-gone'],
+        }),
+      ],
+      memoryIds: new Set(['mem-1']),
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Message:m1',
+        type: CanvasIssueType.InvalidVariable,
+        messageKey: 'flow.memoryUnavailable',
+      }),
+    );
+  });
+
+  it('skips the memory check while the memory list is unsettled', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Message:m1', 'Message', {
+          content: ['hi'],
+          memory_ids: ['mem-gone'],
+        }),
+      ],
+    });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'flow.memoryUnavailable'),
+    ).toHaveLength(0);
+  });
+
+  it('flags a deleted model on any node carrying llm_id', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Categorize:c1', 'Categorize', { llm_id: 'deleted-model' }),
+      ],
+      modelValidIds: new Set(['other-model']),
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Categorize:c1',
+        type: CanvasIssueType.InvalidVariable,
+        messageKey: 'common.modelUnavailable',
+      }),
+    );
+  });
+
+  it('accepts a decision model for Categorize while keeping Agent chat-only', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Categorize:c1', 'Categorize', { llm_id: 'decision-model' }),
+        makeNode('Agent:a1', 'Agent', { llm_id: 'decision-model' }),
+      ],
+      modelValidIds: new Set(['chat-model']),
+      categorizeModelValidIds: new Set(['chat-model', 'decision-model']),
+    });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'common.modelUnavailable'),
+    ).toEqual([
+      expect.objectContaining({ nodeId: 'Agent:a1', blocksRun: true }),
+    ]);
+  });
+
+  it('flags a stale dataset on a Retrieval node', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Retrieval:r1', 'Retrieval', {
+          retrieval_from: 'dataset',
+          dataset_ids: ['kb-stale'],
+        }),
+      ],
+      staleDatasetIds: new Set(['kb-stale']),
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Retrieval:r1',
+        type: CanvasIssueType.InvalidVariable,
+        messageKey: 'chat.datasetUnavailable',
+      }),
+    );
+  });
+});
+
+describe('collectCanvasIssues: required tool API key', () => {
+  it.each([
+    ['SofyaSearch', 'SofyaSearch:s1'],
+    ['Search1APISearch', 'Search1API:s2'],
+  ])('flags a standalone %s node without an API key', (label, id) => {
+    const issues = collect({
+      nodes: [makeNode(id, label, { api_key: '' })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: id,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      }),
+    );
+  });
+
+  it.each([['SofyaSearch'], ['Search1APISearch']])(
+    'passes a standalone %s node with an API key',
+    (label) => {
+      const issues = collect({
+        nodes: [makeNode(`${label}:s1`, label, { api_key: 'secret' })],
+      });
+
+      expect(
+        issues.some(
+          (x) =>
+            x.type === CanvasIssueType.MissingRequired &&
+            x.messageKey === 'flow.apiKeyMissing',
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it('flags an agent-embedded tool without an API key on the Tool node', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'SofyaSearch',
+          id: 'tool-1',
+          name: 'Sofya',
+          params: { api_key: '' },
+        },
+      ],
+    });
+
+    const issues = collect({
+      nodes: [agent, makeNode('Tool:t1', 'Tool')],
+      edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Tool:t1',
+        toolId: 'tool-1',
+        nodeName: 'Agent:a1 / Sofya',
+        operatorLabel: 'SofyaSearch',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      }),
+    );
+  });
+
+  it('flags an agent-embedded tool with no params object at all', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [{ component_name: 'Search1APISearch', id: 'tool-2' }],
+    });
+
+    const issues = collect({ nodes: [agent] });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Agent:a1',
+        toolId: undefined,
+        nodeName: 'Agent:a1 / Search1APISearch',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      }),
+    );
+  });
+
+  it('passes an agent-embedded tool with an API key and skips other tools', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'SofyaSearch',
+          id: 'tool-1',
+          name: 'Sofya',
+          params: { api_key: 'secret' },
+        },
+        {
+          component_name: 'ExeSQL',
+          id: 'tool-2',
+          params: {
+            db_type: 'mysql',
+            database: 'db',
+            username: 'root',
+            host: 'db.internal',
+            port: 3306,
+            password: 'secret',
+            max_records: 1024,
+          },
+        },
+      ],
+    });
+
+    const issues = collect({ nodes: [agent] });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'flow.apiKeyMissing'),
+    ).toHaveLength(0);
+  });
+
+  it('flags an agent-embedded ExeSQL tool with incomplete connection fields', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'ExeSQL',
+          id: 'tool-1',
+          name: 'QueryOrders',
+          params: { db_type: 'mysql', username: 'root', port: 3306 },
+        },
+      ],
+    });
+
+    const issues = collect({
+      nodes: [agent, makeNode('Tool:t1', 'Tool')],
+      edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Tool:t1',
+        toolId: 'tool-1',
+        nodeName: 'Agent:a1 / QueryOrders',
+        operatorLabel: 'ExeSQL',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+        blocksRun: true,
+      }),
+    );
+  });
+
+  it('passes an agent-embedded ExeSQL tool with complete connection fields', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'ExeSQL',
+          id: 'tool-1',
+          params: {
+            db_type: 'trino',
+            database: 'db',
+            username: 'root',
+            host: 'db.internal',
+            port: 8080,
+            max_records: 1024,
+          },
+        },
+      ],
+    });
+
+    const issues = collect({ nodes: [agent] });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'flow.nodeFormInvalid'),
+    ).toHaveLength(0);
+  });
+});
+
+describe('collectCanvasIssues: agent-embedded retrieval tools', () => {
+  const agentWithTool = () =>
+    makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'Retrieval',
+          id: 'tool-1',
+          name: 'Docs',
+          params: { retrieval_from: 'dataset', dataset_ids: [] },
+        },
+      ],
+    });
+
+  it('attributes the issue to the Tool canvas node when it exists', () => {
+    const issues = collect({
+      nodes: [agentWithTool(), makeNode('Tool:t1', 'Tool')],
+      edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Tool:t1',
+        toolId: 'tool-1',
+        // Names the concrete tool under the concrete agent, not the Tool
+        // node's own label ('flow.tool' on legacy canvases).
+        nodeName: 'Agent:a1 / Docs',
+        operatorLabel: 'Retrieval',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.retrievalDatasetMissing',
+      }),
+    );
+  });
+
+  it('falls back to the agent node when there is no Tool canvas node', () => {
+    const issues = collect({ nodes: [agentWithTool()] });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Agent:a1',
+        nodeName: 'Agent:a1 / Docs',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.retrievalDatasetMissing',
+      }),
+    );
+  });
+
+  it('distinguishes multiple retrieval tools of the same agent', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'Retrieval',
+          id: 'tool-1',
+          name: 'DocsA',
+          params: { retrieval_from: 'dataset', dataset_ids: [] },
+        },
+        {
+          component_name: 'Retrieval',
+          id: 'tool-2',
+          name: 'DocsB',
+          params: { retrieval_from: 'memory', memory_ids: [] },
+        },
+      ],
+    });
+
+    const issues = collect({
+      nodes: [agent, makeNode('Tool:t1', 'Tool')],
+      edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        toolId: 'tool-1',
+        nodeName: 'Agent:a1 / DocsA',
+        messageKey: 'flow.retrievalDatasetMissing',
+      }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        toolId: 'tool-2',
+        nodeName: 'Agent:a1 / DocsB',
+        messageKey: 'flow.retrievalMemoryMissing',
+      }),
+    );
+  });
+
+  it('checks stale datasets and memories inside tool params', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'Retrieval',
+          id: 'tool-1',
+          params: { retrieval_from: 'memory', memory_ids: ['mem-gone'] },
+        },
+      ],
+    });
+
+    const issues = collect({
+      nodes: [agent],
+      memoryIds: new Set(['mem-1']),
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Agent:a1',
+        type: CanvasIssueType.InvalidVariable,
+        messageKey: 'flow.memoryUnavailable',
+      }),
+    );
+  });
+});
+
+describe('collectCanvasIssues: compiler template group', () => {
+  it('flags a Compiler node with an empty template group', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Compiler:c1', 'Compiler', {
+          compilation_template_group_id: '',
+        }),
+      ],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Compiler:c1',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'knowledgeConfiguration.compilationTemplateRequired',
+        blocksRun: true,
+      }),
+    );
+  });
+
+  it('flags a template group the current user cannot resolve', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Compiler:c1', 'Compiler', {
+          compilation_template_group_id: 'g-gone',
+        }),
+      ],
+      compilationTemplateGroupIds: new Set(['g-1']),
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Compiler:c1',
+        type: CanvasIssueType.InvalidVariable,
+        messageKey: 'knowledgeConfiguration.compilationTemplateUnavailable',
+      }),
+    );
+  });
+
+  it('skips the availability check while the group list is unsettled', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Compiler:c1', 'Compiler', {
+          compilation_template_group_id: 'g-gone',
+        }),
+      ],
+    });
+
+    expect(
+      issues.filter(
+        (x) =>
+          x.messageKey ===
+          'knowledgeConfiguration.compilationTemplateUnavailable',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('accepts a resolvable template group', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Compiler:c1', 'Compiler', {
+          compilation_template_group_id: 'g-1',
+        }),
+      ],
+      compilationTemplateGroupIds: new Set(['g-1']),
+    });
+
+    expect(
+      issues.filter(
+        (x) =>
+          x.messageKey ===
+            'knowledgeConfiguration.compilationTemplateUnavailable' ||
+          x.messageKey === 'knowledgeConfiguration.compilationTemplateRequired',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('ignores the same form key on non-Compiler nodes', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Categorize:c1', 'Categorize', {
+          compilation_template_group_id: '',
+        }),
+      ],
+    });
+
+    expect(
+      issues.filter(
+        (x) =>
+          x.messageKey === 'knowledgeConfiguration.compilationTemplateRequired',
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+describe('collectCanvasIssues: extractor extraction toggles', () => {
+  const extractIssues = (form: Record<string, any>) =>
+    collect({
+      nodes: [
+        makeNode('Extractor:e1', 'Extractor', { llm_id: 'model-1', ...form }),
+      ],
+    }).filter((x) => x.nodeId === 'Extractor:e1');
+
+  it('flags an enabled keywords group whose top_n is not positive', () => {
+    const issues = extractIssues({ keywords: { enabled: true, top_n: 0 } });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.extractorKeywordsTopNMissing',
+      }),
+    );
+  });
+
+  it('flags enabled questions and tags groups whose top_n is not positive', () => {
+    const issues = extractIssues({
+      questions: { enabled: true },
+      tags: { enabled: true, top_n: -1, tag_file_id: 'tag-1' },
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        messageKey: 'flow.extractorQuestionsTopNMissing',
+      }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.extractorTagsTopNMissing' }),
+    );
+    // A tag file is selected, so no tag-file issue.
+    expect(
+      issues.some((x) => x.messageKey === 'flow.extractorTagFileMissing'),
+    ).toBe(false);
+  });
+
+  it('flags an enabled tags group without a tag file', () => {
+    const issues = extractIssues({ tags: { enabled: true, top_n: 3 } });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.extractorTagFileMissing' }),
+    );
+    expect(
+      issues.some((x) => x.messageKey === 'flow.extractorTagsTopNMissing'),
+    ).toBe(false);
+  });
+
+  it('accepts switched-off groups and enabled groups with a positive top_n', () => {
+    const issues = extractIssues({
+      keywords: { enabled: false, top_n: 0 },
+      questions: { enabled: true, top_n: 2 },
+      tags: { enabled: true, top_n: 3, tag_file_id: 'tag-1' },
+    });
+
+    expect(
+      issues.filter((x) => x.messageKey.startsWith('flow.extractor')),
+    ).toHaveLength(0);
+  });
+
+  it('ignores legacy groups without the enabled key', () => {
+    const issues = extractIssues({ keywords: { top_n: 0 } });
+
+    expect(
+      issues.filter((x) => x.messageKey.startsWith('flow.extractor')),
+    ).toHaveLength(0);
+  });
+});

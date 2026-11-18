@@ -17,16 +17,19 @@
 package engine
 
 import (
+	"context"
 	"fmt"
-	"ragflow/internal/common"
-	"ragflow/internal/engine/nats"
-	"ragflow/internal/server"
 	"sync"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
+	"ragflow/internal/engine/nats"
+	"ragflow/internal/engine/oceanbase"
+	"ragflow/internal/engine/opensearch"
 	"ragflow/internal/engine/serenedb"
-
+	"ragflow/internal/engine/vastbase"
+	"ragflow/internal/server"
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
@@ -40,7 +43,7 @@ var (
 )
 
 // InitDocEngine initializes document engine
-func InitDocEngine() error {
+func InitDocEngine(ctx context.Context) error {
 
 	var initErr error
 	once.Do(func() {
@@ -50,11 +53,22 @@ func InitDocEngine() error {
 		var err error
 		switch engineType {
 		case "elasticsearch":
-			globalEngine, err = elasticsearch.NewEngine(globalConfig.GetElasticsearchConfig())
+			globalEngine, err = elasticsearch.NewEngine(ctx, globalConfig.GetElasticsearchConfig())
+		case "opensearch":
+			globalEngine, err = opensearch.NewEngine(ctx, globalConfig.GetOpenSearchConfig())
 		case "infinity":
-			globalEngine, err = infinity.NewEngine(globalConfig.GetInfinityConfig())
+			globalEngine, err = infinity.NewEngine(ctx, globalConfig.GetInfinityConfig())
+		case "oceanbase", "seekdb":
+			connectionConfig, resolveErr := globalConfig.ResolveOceanBaseConnection(engineType)
+			if resolveErr != nil {
+				err = resolveErr
+			} else {
+				globalEngine, err = oceanbase.NewEngine(engineType, connectionConfig)
+			}
 		case "serenedb":
 			globalEngine, err = serenedb.NewEngine(globalConfig.GetSereneDBConfig())
+		case "vastbase":
+			globalEngine, err = vastbase.NewEngine(globalConfig.GetVastbaseConfig())
 		default:
 			err = fmt.Errorf("unsupported doc engine type: %s", engineType)
 		}
@@ -103,7 +117,10 @@ func InitMessageQueue() error {
 	switch messageQueueType {
 	case "nats":
 		natsConfig := globalConfig.GetNATSConfig()
-		messageQueueEngine = nats.NewNatsEngine(natsConfig.Host, natsConfig.Port)
+		messageQueueEngine = nats.NewNatsEngine(
+			natsConfig.Host,
+			natsConfig.Port,
+		)
 		err := messageQueueEngine.Init()
 		if err != nil {
 			return err

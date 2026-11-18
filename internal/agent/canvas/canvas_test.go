@@ -16,7 +16,6 @@
 package canvas
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -44,7 +43,8 @@ func TestBeginToMessage_Smoke(t *testing.T) {
 		Path: []string{"begin_0", "message_0"},
 	}
 
-	cc, err := Compile(context.Background(), dsl)
+	ctx := t.Context()
+	cc, err := Compile(ctx, dsl)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -63,13 +63,13 @@ func TestBeginToMessage_Smoke(t *testing.T) {
 
 	// Stash runState on the context so the canvas runner can extract
 	// it via GetStateFromContext.
-	ctx := withState(context.Background(), runState)
+	newCtx := withState(ctx, runState)
 
 	// Invoke with the seed input. The "query" key flows into Begin's
 	// Invoke and is written to state.Sys["query"], where Message's
 	// ResolveTemplate of "{{sys.query}}" will read it.
 	in := map[string]any{"query": "world"}
-	out, err := cc.Workflow.Invoke(ctx, in)
+	out, err := cc.Workflow.Invoke(newCtx, in)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -113,7 +113,8 @@ func TestBuildWorkflow_PreservesRequestSysValues(t *testing.T) {
 		Path: []string{"begin_0", "message_0"},
 	}
 
-	cc, err := Compile(context.Background(), dsl)
+	ctx := t.Context()
+	cc, err := Compile(ctx, dsl)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -121,8 +122,8 @@ func TestBuildWorkflow_PreservesRequestSysValues(t *testing.T) {
 	state := NewCanvasState("run-request-sys", "task-request-sys")
 	state.Sys["files"] = []string{"File: notes.txt\nContent as following:\nhello"}
 	state.Sys["user_id"] = "user-1"
-	ctx := withState(context.Background(), state)
-	if _, err := cc.Workflow.Invoke(ctx, map[string]any{"query": "hello"}); err != nil {
+	newCtx := withState(ctx, state)
+	if _, err = cc.Workflow.Invoke(newCtx, map[string]any{"query": "hello"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 

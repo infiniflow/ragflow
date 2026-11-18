@@ -1,10 +1,10 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { Handle, HandleProps, Position } from '@xyflow/react';
-import { Plus } from 'lucide-react';
-import { useMemo } from 'react';
+import { Plus, ChevronDown } from 'lucide-react';
+import { useMemo, type MouseEvent } from 'react';
 import { NodeHandleId } from '../../constant';
-import { HandleContext } from '../../context';
+import { HandleContext, useCanvasReadonly } from '../../context';
 import { useIsPipeline } from '../../hooks/use-is-pipeline';
 import useGraphStore from '../../store';
 import { useDropdownManager } from '../context';
@@ -22,6 +22,7 @@ export function CommonHandle({
     (state) => state,
   );
   const isPipeline = useIsPipeline();
+  const readOnly = useCanvasReadonly();
 
   let isConnectable = true;
 
@@ -47,8 +48,14 @@ export function CommonHandle({
   return (
     <HandleContext.Provider value={value}>
       <Handle
+        // With ConnectionMode.Loose a drag may start from any handle and land
+        // on any handle, so pin the direction here: a target handle never
+        // starts a drag and a source handle never accepts one. Callers can
+        // still override through props.
+        isConnectableStart={props.type === 'target' ? false : undefined}
+        isConnectableEnd={props.type === 'source' ? false : undefined}
         {...props}
-        isConnectable={isConnectable}
+        isConnectable={isConnectable && !readOnly}
         className={cn(
           'inline-flex justify-center items-center !bg-accent-primary !border-none group-hover:!size-4 group-hover:!rounded-sm',
           className,
@@ -56,7 +63,10 @@ export function CommonHandle({
         onClick={(e) => {
           e.stopPropagation();
 
-          if (!isConnectable) {
+          // A read-only canvas never opens the next-step menu: the click
+          // handler is a custom add-node entry that nodesConnectable={false}
+          // does not cover.
+          if (readOnly || !isConnectable) {
             return;
           }
 
@@ -69,7 +79,7 @@ export function CommonHandle({
         }}
       >
         <Plus className="size-3 pointer-events-none text-white hidden group-hover:inline-block" />
-        {visible && (
+        {!readOnly && visible && (
           <NextStepDropdown
             nodeId={nodeId}
             hideModal={() => {
@@ -87,16 +97,70 @@ export function CommonHandle({
 
 export function LeftEndHandle({
   isConnectable,
+  className,
   ...props
 }: Omit<HandleProps, 'type' | 'position'>) {
   return (
     <Handle
+      // A target handle must never start a drag: with ConnectionMode.Loose a
+      // drag started here can land on another target handle, and xyflow then
+      // records a flipped edge (drop node as source) that cannot render.
+      isConnectableStart={false}
       isConnectable={isConnectable}
-      className="!bg-accent-primary !size-2"
+      className={cn('!bg-accent-primary !size-2', className)}
       id={NodeHandleId.End}
       type="target"
       position={Position.Left}
       {...props}
     ></Handle>
+  );
+}
+
+export function BottomHandle({
+  id,
+  left,
+  visible,
+  nodeId,
+}: {
+  id: NodeHandleId;
+  left: number;
+  visible: boolean;
+  nodeId: string;
+}) {
+  const toggleBottomCollapse = useGraphStore(
+    (state) => state.toggleBottomCollapse,
+  );
+  const collapsed = useGraphStore(
+    (state) => state.collapsedBottomHandles[nodeId]?.includes(id) ?? false,
+  );
+
+  const handleClick = (e: MouseEvent) => {
+    e.stopPropagation();
+    toggleBottomCollapse(nodeId, id);
+  };
+
+  return (
+    <Handle
+      type="source"
+      position={Position.Bottom}
+      isConnectable={false}
+      // With pointer events re-enabled above, keep pointerdown on the handle
+      // from starting a connection drag
+      isConnectableStart={false}
+      id={id}
+      style={{ left }}
+      onClick={handleClick}
+      className={cn(
+        '!size-3.5 !bg-text-disabled !border-border-button inline-flex items-center justify-center invisible !pointer-events-auto cursor-pointer',
+        { visible },
+      )}
+    >
+      <ChevronDown
+        className={cn(
+          'size-2.5 text-bg-base pointer-events-none transition-transform',
+          { '-rotate-90': collapsed },
+        )}
+      />
+    </Handle>
   );
 }

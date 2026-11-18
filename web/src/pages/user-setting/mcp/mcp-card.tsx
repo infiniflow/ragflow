@@ -1,5 +1,23 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { SharedBadge } from '@/components/shared-badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { McpSelectionGuard } from '@/ee/pages/user-setting/mcp/mcp-selection-guard';
 import { IMcpServer } from '@/interfaces/database/mcp';
 import { formatDate } from '@/utils/date';
 import { isPlainObject } from 'lodash';
@@ -13,13 +31,16 @@ export type DatasetCardProps = {
   data: IMcpServer;
   isSelectionMode: boolean;
 } & Pick<UseBulkOperateMCPReturnType, 'handleSelectChange' | 'selectedList'> &
-  Pick<UseEditMcpReturnType, 'showEditModal'>;
+  Pick<UseEditMcpReturnType, 'showEditModal'> & {
+    showPrivilegeModal(): void;
+  };
 
 export function McpCard({
   data,
   selectedList,
   handleSelectChange,
   showEditModal,
+  showPrivilegeModal,
   isSelectionMode,
 }: DatasetCardProps) {
   const { t } = useTranslation();
@@ -45,18 +66,21 @@ export function McpCard({
           </h3>
           <div className="space-x-4">
             {isSelectionMode ? (
-              <Checkbox
-                checked={selectedList.includes(data.id)}
-                onCheckedChange={onCheckedChange}
-                onClick={(e) => {
-                  e.stopPropagation();
-                }}
-              />
+              <McpSelectionGuard mcp={data}>
+                <Checkbox
+                  checked={selectedList.includes(data.id)}
+                  onCheckedChange={onCheckedChange}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                />
+              </McpSelectionGuard>
             ) : (
               <McpOperation
                 mcp={data}
                 showEditModal={showEditModal}
-              ></McpOperation>
+                showPrivilegeModal={showPrivilegeModal}
+              />
             )}
           </div>
         </section>
@@ -65,7 +89,10 @@ export function McpCard({
             <div className="line-clamp-1 pb-1">
               {toolLength} {t('mcp.cachedTools')}
             </div>
-            <p>{formatDate(data.update_date)}</p>
+            <section className="flex items-center justify-between">
+              <p>{formatDate(data.update_date)}</p>
+              <SharedBadge>{data?.nickname}</SharedBadge>
+            </section>
           </div>
         </div>
       </CardContent>

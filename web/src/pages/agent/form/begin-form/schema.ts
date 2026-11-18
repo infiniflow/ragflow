@@ -1,5 +1,56 @@
 import { WebhookJWTAlgorithmList } from '@/constants/agent';
+import { countBy } from 'lodash';
 import { z } from 'zod';
+import { isValidIpOrCidr } from './utils';
+
+/** Rejects duplicate field names, ignoring case only for HTTP headers. */
+function validateUniqueKeys(
+  items: Array<{ key: string }>,
+  ctx: z.RefinementCtx,
+  ignoreCase = false,
+) {
+  const keyCounts = countBy(items, (item) =>
+    ignoreCase ? item.key.toLowerCase() : item.key,
+  );
+
+  items.forEach((item, index) => {
+    const key = ignoreCase ? item.key.toLowerCase() : item.key;
+    if (key && keyCounts[key] > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index, 'key'],
+        message: 'The key cannot be repeated!',
+      });
+    }
+  });
+}
+
+const WebhookParameterSchema = z.object({
+  key: z.string().trim().min(1, 'The key is required!'),
+  type: z.string(),
+  required: z.boolean(),
+});
+
+const WebhookParametersSchema = z
+  .array(WebhookParameterSchema)
+  .superRefine(validateUniqueKeys)
+  .optional();
+
+const WebhookHeadersSchema = z
+  .array(
+    WebhookParameterSchema.extend({
+      key: z
+        .string()
+        .trim()
+        .min(1, 'The key is required!')
+        .regex(
+          /^[0-9a-zA-Z_-]+$/,
+          'Header names may contain only letters, digits, underscores, and hyphens.',
+        ),
+    }),
+  )
+  .superRefine((items, ctx) => validateUniqueKeys(items, ctx, true))
+  .optional();
 
 export const BeginFormSchema = z.object({
   enablePrologue: z.boolean().optional(),
@@ -23,7 +74,13 @@ export const BeginFormSchema = z.object({
   security: z
     .object({
       auth_type: z.string(),
-      ip_whitelist: z.array(z.object({ value: z.string() })),
+      ip_whitelist: z.array(
+        z.object({
+          value: z.string().trim().refine(isValidIpOrCidr, {
+            message: 'Invalid IP address or CIDR block',
+          }),
+        }),
+      ),
       rate_limit: z.object({
         limit: z.number(),
         per: z.string().optional(),
@@ -46,38 +103,16 @@ export const BeginFormSchema = z.object({
     .optional(),
   schema: z
     .object({
-      query: z
-        .array(
-          z.object({
-            key: z.string(),
-            type: z.string(),
-            required: z.boolean(),
-          }),
-        )
-        .optional(),
-      headers: z
-        .array(
-          z.object({
-            key: z.string(),
-            type: z.string(),
-            required: z.boolean(),
-          }),
-        )
-        .optional(),
-      body: z
-        .array(
-          z.object({
-            key: z.string(),
-            type: z.string(),
-            required: z.boolean(),
-          }),
-        )
-        .optional(),
+      query: WebhookParametersSchema,
+      headers: WebhookHeadersSchema,
+      body: WebhookParametersSchema,
     })
     .optional(),
   response: z
     .object({
-      status: z.number(),
+      status: z
+        .number({ invalid_type_error: 'The status is required!' })
+        .int('The status must be an integer'),
       // headers_template: z.array(
       //   z.object({ key: z.string(), value: z.string() }),
       // ),

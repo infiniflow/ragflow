@@ -529,7 +529,7 @@ func TestHunyuanEmbedHappyPath(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "hunyuan-embedding"
-	embeddings, err := newHunyuanForTest(srv.URL).Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	embeddings, err := newHunyuanForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -544,24 +544,24 @@ func TestHunyuanEmbedValidatesInputs(t *testing.T) {
 	apiKey := "test-key"
 	model := "hunyuan-embedding"
 
-	if embeddings, err := newHunyuanForTest("http://unused").Embed(ctx, nil, nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil || len(embeddings) != 0 {
+	if embeddings, err := newHunyuanForTest("http://unused").Embed(ctx, nil, EmbedRequest{}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil || len(embeddings) != 0 {
 		t.Errorf("empty input: embeddings=%+v err=%v", embeddings, err)
 	}
-	if _, err := newHunyuanForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(ctx, nil, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("nil model: %v", err)
 	}
 	emptyModel := ""
-	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &emptyModel, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &emptyModel, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("empty model: %v", err)
 	}
-	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &model, []string{"x"}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("nil api config: %v", err)
 	}
-	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("missing api key: %v", err)
 	}
 	emptyKey := ""
-	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &model, []string{"x"}, &APIConfig{ApiKey: &emptyKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newHunyuanForTest("http://unused").Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("empty api key: %v", err)
 	}
 }

@@ -17,13 +17,12 @@
 package tool
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"html"
 	"io"
-	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -47,6 +46,8 @@ const duckduckgoChannelNews = "news"
 
 const duckduckgoPromptMaxTokens = 200000
 
+const duckduckgoMaxResponseBytes = 4 << 20
+
 var duckduckgoSearchEndpoint = "https://duckduckgo.com/html/"
 var duckduckgoNewsEndpoint = "https://duckduckgo.com/news.js"
 var duckduckgoNewsBootstrapEndpoint = "https://duckduckgo.com/"
@@ -58,9 +59,9 @@ var duckduckgoDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/pn
 var duckduckgoNewlinePattern = regexp.MustCompile(`\n+`)
 
 type duckduckgoParams struct {
-	Query   string `json:"query"`
-	Channel string `json:"channel"`
-	TopN    int    `json:"top_n"`
+	Query   string `json:"query" doc:"Search query." required:"true"`
+	Channel string `json:"channel" doc:"Search channel: general or news. Defaults to general." enum:"general,news"`
+	TopN    int    `json:"top_n,omitempty" schema:"-" doc:"Maximum number of results."`
 }
 
 type duckduckgoResult struct {
@@ -114,42 +115,22 @@ func newDuckDuckGoTool(h *HTTPHelper, defaults duckduckgoParams) *DuckDuckGoTool
 }
 
 func (d *DuckDuckGoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: duckduckgoToolName,
-		Desc: duckduckgoToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Search query.",
-				Required: true,
-			},
-			"channel": {
-				Type:     schema.String,
-				Desc:     "Search channel: general or news. Defaults to general.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(duckduckgoToolName, duckduckgoToolDescription, duckduckgoParams{})
 }
 
 func (d *DuckDuckGoTool) ComponentSpec() ComponentSpec {
-	return ComponentSpec{
-		Inputs: map[string]string{
-			"query":   "Search query.",
-			"channel": "Search channel: general or news.",
-			"top_n":   "Maximum number of results.",
-		},
-		Outputs: map[string]string{
-			"formalized_content": "Rendered DuckDuckGo references for downstream prompts.",
-			"json":               "DuckDuckGo result list.",
-		},
-		InputForm: map[string]any{
-			"query": map[string]any{"name": "Query", "type": "line"},
-			"channel": map[string]any{
-				"name": "Channel", "type": "options", "value": "general", "options": []string{"general", "news"},
-			},
+	spec := BuildComponentSpec(duckduckgoParams{})
+	spec.Outputs = map[string]string{
+		"formalized_content": "Rendered DuckDuckGo references for downstream prompts.",
+		"json":               "DuckDuckGo result list.",
+	}
+	spec.InputForm = map[string]any{
+		"query": map[string]any{"name": "Query", "type": "line"},
+		"channel": map[string]any{
+			"name": "Channel", "type": "options", "value": "general", "options": []string{"general", "news"},
 		},
 	}
+	return spec
 }
 
 func buildDuckDuckGoSearchURL(query string, topN int) string {
@@ -232,7 +213,17 @@ func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 			fmt.Errorf("duckduckgo: upstream returned %d", resp.StatusCode)
 	}
 
-	results, err := parseDuckDuckGoHTML(resp.Body, topN)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, duckduckgoMaxResponseBytes+1))
+	if err != nil {
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: read body: %w", err)),
+			fmt.Errorf("duckduckgo: read body: %w", err)
+	}
+	if len(body) > duckduckgoMaxResponseBytes {
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: response too large")),
+			fmt.Errorf("duckduckgo: response too large")
+	}
+
+	results, err := parseDuckDuckGoHTML(bytes.NewReader(body), topN)
 	if err != nil {
 		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: parse html: %w", err)),
 			fmt.Errorf("duckduckgo: parse html: %w", err)
@@ -277,10 +268,9 @@ func buildDuckDuckGoReferences(envelope map[string]any) ([]map[string]any, []map
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(duckduckgoHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(duckduckgoHashInt(documentID, 500), 10)
 		title := duckduckgoText(item["title"])
 		resultURL := duckduckgoText(item["url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -327,12 +317,6 @@ func duckduckgoText(value any) string {
 	return fmt.Sprint(value)
 }
 
-func duckduckgoHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
-}
-
 func truncateDuckDuckGoRunes(value string, limit int) string {
 	if utf8.RuneCountInString(value) <= limit {
 		return value
@@ -363,8 +347,18 @@ func (d *DuckDuckGoTool) runNewsSearch(ctx context.Context, query string, topN i
 			fmt.Errorf("duckduckgo: upstream returned %d", resp.StatusCode)
 	}
 
+	body, err := io.ReadAll(io.LimitReader(resp.Body, duckduckgoMaxResponseBytes+1))
+	if err != nil {
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: read news response: %w", err)),
+			fmt.Errorf("duckduckgo: read news response: %w", err)
+	}
+	if len(body) > duckduckgoMaxResponseBytes {
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: news response too large")),
+			fmt.Errorf("duckduckgo: news response too large")
+	}
+
 	var raw duckduckgoNewsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := json.Unmarshal(body, &raw); err != nil {
 		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: decode news response: %w", err)),
 			fmt.Errorf("duckduckgo: decode news response: %w", err)
 	}
@@ -407,9 +401,12 @@ func (d *DuckDuckGoTool) fetchDuckDuckGoNewsVQD(ctx context.Context, query strin
 		return "", fmt.Errorf("duckduckgo: news bootstrap returned %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, duckduckgoMaxResponseBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("duckduckgo: read news bootstrap: %w", err)
+	}
+	if len(body) > duckduckgoMaxResponseBytes {
+		return "", fmt.Errorf("duckduckgo: news bootstrap response too large")
 	}
 	matches := duckduckgoVQDPattern.FindSubmatch(body)
 	if len(matches) != 2 {
@@ -513,7 +510,7 @@ func hasClassToken(n *xhtml.Node, want string) bool {
 		if a.Key != "class" {
 			continue
 		}
-		for _, token := range strings.Fields(a.Val) {
+		for token := range strings.FieldsSeq(a.Val) {
 			if token == want {
 				return true
 			}

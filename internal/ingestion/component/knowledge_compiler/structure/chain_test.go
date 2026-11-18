@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
@@ -126,14 +127,14 @@ func TestValidateAndCorrectChainFailOpen(t *testing.T) {
 		relRow("r-ag", "Alpha", "Gamma"),
 	}
 	deps := common.Deps{Chat: errChainChat{}, Embed: hashEmbedder{dim: 8}}
-	out := validateAndCorrectChain(context.Background(), deps, "llm1", rows, nil, TypeList)
+	out := validateAndCorrectChain(common.WithRetryDelay(context.Background(), time.Millisecond), deps, "llm1", rows, nil, TypeList)
 	if len(out) != len(rows) {
 		t.Fatalf("fail-open: LLM failure must return the input untouched (%d vs %d)", len(out), len(rows))
 	}
 
 	// Non-chain kinds skip validation entirely (no LLM call possible).
 	deps2 := common.Deps{Chat: errChainChat{}}
-	out2 := validateAndCorrectChain(context.Background(), deps2, "llm1", rows, nil, TypeHypergraph)
+	out2 := validateAndCorrectChain(common.WithRetryDelay(context.Background(), time.Millisecond), deps2, "llm1", rows, nil, TypeHypergraph)
 	if len(out2) != len(rows) {
 		t.Fatalf("non-chain kind must pass through untouched")
 	}

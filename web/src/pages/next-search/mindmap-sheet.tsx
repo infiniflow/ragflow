@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { IndentedTree } from '@/components/indented-tree/indented-tree';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -18,6 +34,10 @@ interface IProps extends IModalProps<any> {
 const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
   const { t } = useTranslation();
   const percent = usePendingMindMap();
+  // An empty tree (no children) means the backend honestly found nothing to
+  // map. Render an explicit empty state instead of a ghost "root" node.
+  const isEmptyMindMap =
+    !data || !Array.isArray(data.children) || data.children.length === 0;
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
@@ -45,7 +65,14 @@ const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
               <Progress value={percent} className="h-1 flex-1 min-w-10" />
             </div>
           )}
-          {!loading && (
+          {!loading && isEmptyMindMap && (
+            <div className="bg-bg-card rounded-lg w-full h-full flex items-center justify-center">
+              <p className="text-text-secondary">
+                {t('knowledgeCompilation.noStructureMindmap')}
+              </p>
+            </div>
+          )}
+          {!loading && !isEmptyMindMap && (
             <div className="bg-bg-card rounded-lg w-full h-full">
               <IndentedTree data={data}></IndentedTree>
             </div>

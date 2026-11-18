@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"ragflow/internal/entity/models"
+	componentpkg "ragflow/internal/ingestion/component"
 )
 
 func makeEmbeddingModelForResolver() *models.EmbeddingModel {
@@ -40,7 +41,7 @@ func TestEmbedderResolver_UsesKBEmbdID(t *testing.T) {
 		},
 	)
 	ctx := t.Context()
-	emb, err := resolver(ctx, "tenant-1", "kb-1", "should-be-ignored")
+	emb, embdID, err := resolver(ctx, "tenant-1", "kb-1")
 	if err != nil {
 		t.Fatalf("resolver: %v", err)
 	}
@@ -49,6 +50,9 @@ func TestEmbedderResolver_UsesKBEmbdID(t *testing.T) {
 	}
 	if gotTenantID != "tenant-1" || gotEmbdID != "kb-embd-1" {
 		t.Fatalf("resolver args = (%q, %q), want (tenant-1, kb-embd-1)", gotTenantID, gotEmbdID)
+	}
+	if embdID != "kb-embd-1" {
+		t.Fatalf("resolver embdID = %q, want kb-embd-1", embdID)
 	}
 }
 
@@ -63,12 +67,32 @@ func TestEmbedderResolver_EmptyKBEmbdIDReturnsNil(t *testing.T) {
 		},
 	)
 	ctx := t.Context()
-	emb, err := resolver(ctx, "tenant-1", "kb-1", "ignored")
+	emb, embdID, err := resolver(ctx, "tenant-1", "kb-1")
 	if err != nil {
 		t.Fatalf("resolver: %v", err)
 	}
 	if emb != nil {
 		t.Fatal("expected nil embedder when kb has no embd_id")
+	}
+	if embdID != "" {
+		t.Fatalf("expected empty embdID when kb has no embd_id, got %q", embdID)
+	}
+}
+
+// TestEmbedderResolverFailsFastWhenUninitialized guards the nil-db guard in the
+// production resolver closure: if the server assembly point forgets to call
+// InitEmbedderResolver, the resolver must fail loud instead of dereferencing a
+// nil *gorm.DB at run time.
+func TestEmbedderResolverFailsFastWhenUninitialized(t *testing.T) {
+	saved := embedderResolverDB
+	defer func() { embedderResolverDB = saved }()
+	embedderResolverDB = nil
+	if componentpkg.DefaultEmbedderResolver == nil {
+		t.Fatal("DefaultEmbedderResolver was not wired by init()")
+	}
+	_, _, err := componentpkg.DefaultEmbedderResolver(t.Context(), "tenant-1", "kb-1")
+	if err == nil {
+		t.Fatal("expected fail-fast error when the resolver db is uninitialized, got nil")
 	}
 }
 
@@ -77,14 +101,14 @@ type stubDriver struct {
 	capturedTexts []string
 }
 
-func (d *stubDriver) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *models.APIConfig, embeddingConfig *models.EmbeddingConfig, usage *common.ModelUsage) ([]models.EmbeddingData, error) {
-	d.capturedTexts = texts
-	result := make([]models.EmbeddingData, len(texts))
-	for i := range texts {
+func (d *stubDriver) Embed(ctx context.Context, modelName *string, request models.EmbedRequest, apiConfig *models.APIConfig, embeddingConfig *models.EmbeddingConfig, usage *common.ModelUsage) ([]models.EmbeddingData, error) {
+	d.capturedTexts = request.Texts
+	result := make([]models.EmbeddingData, len(request.Texts))
+	for i := range request.Texts {
 		result[i] = models.EmbeddingData{
 			Embedding:  []float64{float64(i), 0.1},
 			Index:      i,
-			TokenCount: len(texts[i]),
+			TokenCount: len(request.Texts[i]),
 		}
 	}
 	return result, nil
@@ -97,7 +121,7 @@ func (d *stubDriver) ChatWithMessages(ctx context.Context, modelName string, mes
 func (d *stubDriver) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []models.Message, apiConfig *models.APIConfig, modelConfig *models.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
 	return nil
 }
-func (d *stubDriver) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *models.APIConfig, rerankConfig *models.RerankConfig, usage *common.ModelUsage) (*models.RerankResponse, error) {
+func (d *stubDriver) Rerank(ctx context.Context, modelName *string, request models.RerankRequest, apiConfig *models.APIConfig, rerankConfig *models.RerankConfig, usage *common.ModelUsage) (*models.RerankResponse, error) {
 	return nil, nil
 }
 func (d *stubDriver) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *models.APIConfig, asrConfig *models.ASRConfig, usage *common.ModelUsage) (*models.ASRResponse, error) {
@@ -131,6 +155,9 @@ func (d *stubDriver) ListTasks(ctx context.Context, apiConfig *models.APIConfig)
 	return nil, nil
 }
 func (d *stubDriver) ShowTask(ctx context.Context, taskID string, apiConfig *models.APIConfig) (*models.TaskResponse, error) {
+	return nil, nil
+}
+func (d *stubDriver) Decide(ctx context.Context, modelName *string, request *models.DecideRequest, apiConfig *models.APIConfig, modelUsage *common.ModelUsage) (*models.DecideResponse, error) {
 	return nil, nil
 }
 func (d *stubDriver) ToolCall(ctx context.Context, name string, arguments map[string]interface{}) (string, error) {

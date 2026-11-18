@@ -33,11 +33,14 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 )
 
 func getDelimiters(delimiters string) string {
-	p := chunk.CompileDelimiterPattern(chunk.ParseDelimiterField(delimiters))
+	// Mirror the live path: backtick-wrapped entries contribute their inner
+	// content (see chunk.CompileDelimiterPatternList).
+	p := chunk.CompileDelimiterPatternList([]string{delimiters}, true)
 	if p == nil {
 		return ""
 	}
@@ -117,29 +120,42 @@ func TestCompileDelimPattern_BacktickEndIsCaseSensitive(t *testing.T) {
 	}
 }
 
-func TestCompileDelimPattern_BareCharIsNotActivePattern(t *testing.T) {
-	// Plain delimiters are not compiled — only backtick-wrapped tokens are.
-	if p := compileDelimPattern([]string{"a"}); p != nil {
-		t.Fatalf("compileDelimPattern([a]) = %v, want nil", p)
+func TestCompileDelimPattern_BareCharIsActivePattern(t *testing.T) {
+	// Plain (bare) delimiters ARE compiled into an active pattern (#17723
+	// fix): they split the payload into paragraphs that are then merged by
+	// token size. Only when no entry yields a pattern does compileDelimPattern
+	// return nil.
+	if p := compileDelimPattern([]string{"a"}); p == nil {
+		t.Fatalf("compileDelimPattern([a]) = nil, want active pattern")
+	}
+	// Empty / all-empty entries still yield nil.
+	if p := compileDelimPattern([]string{""}); p != nil {
+		t.Fatalf("compileDelimPattern([\"\"]) = %v, want nil", p)
 	}
 }
 
 func TestCompileDelimPattern_ExtractsPerEntryIndependently(t *testing.T) {
-	// Adjacent entries must not form a cross-boundary backtick pair.
-	// Concatenating "`aa" + "`bb`" would invent an "aa`bb" token; per-entry
-	// extraction only sees the complete "`bb`" pair in the second entry.
+	// Adjacent entries must not form a cross-boundary backtick pair:
+	// "`aa" + "`bb`" must NOT invent an "aa`bb" token. Per-entry extraction
+	// compiles "`aa" as its literal content (keepBare only promotes entries
+	// with NO backticks at all) and "`bb`" as the inner "bb"; the two are
+	// alternated, never concatenated into a single "aa`bb" delimiter.
 	p := compileDelimPattern([]string{"`aa", "`bb`"})
 	if p == nil {
-		t.Fatal("expected pattern from second entry `bb`")
+		t.Fatal("expected pattern from entries")
 	}
-	if got := p.String(); got != "bb" {
-		t.Fatalf("pattern = %q, want %q (no cross-entry token)", got, "bb")
-	}
-	if p.MatchString("aa") {
-		t.Fatalf("must not match incomplete first-entry token; pattern=%q", p.String())
-	}
+	// The complete backtick entry "`bb`" is active.
 	if !p.MatchString("bb") {
 		t.Fatalf("must match token from second entry; pattern=%q", p.String())
+	}
+	// An incomplete backtick entry "`aa" is compiled as its literal content,
+	// not promoted to a bare "aa", so a bare "aa" must not match.
+	if p.MatchString("aa") {
+		t.Fatalf("incomplete backtick entry must not match a bare token; pattern=%q", p.String())
+	}
+	// No cross-entry "aa`bb" delimiter was invented.
+	if strings.Contains(p.String(), "aa`bb") {
+		t.Fatalf("cross-entry backtick token invented; pattern=%q", p.String())
 	}
 
 	// Multiple well-formed entries still combine.
@@ -170,7 +186,7 @@ func TestTokenChunker_BacktickEndSplitsOnlyAtLowercase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	got := make([]string, 0, len(chunks))
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)
@@ -179,8 +195,10 @@ func TestTokenChunker_BacktickEndSplitsOnlyAtLowercase(t *testing.T) {
 			got = append(got, text)
 		}
 	}
-	// Python's _split_text_by_pattern drops the matched delimiter and
-	// .strip()s each segment: "the" | "and End and END come"
+	// The custom (backtick) delimiter "end" is DROPPED (Python-compatible),
+	// so only the lowercase "end" matches and "End"/"END" stay intact inside
+	// the second segment. After trimming, the two segments are "the" and
+	// "and End and END come".
 	want := []string{"the", "and End and END come"}
 	if len(got) != len(want) {
 		t.Fatalf("chunks = %#v, want %#v", got, want)
@@ -208,7 +226,7 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	got := make([]string, 0, len(chunks))
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)
@@ -217,8 +235,8 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 			got = append(got, text)
 		}
 	}
-	// "B" + "a" glued → "Ba"; remainder "Ab". Python drops the matched
-	// delimiter and .strip()s, leaving "B" | "Ab".
+	// The custom (backtick) delimiter "a" is DROPPED (Python-compatible), so
+	// "BaAb" splits into "B" + "Ab".
 	want := []string{"B", "Ab"}
 	if len(got) != len(want) {
 		t.Fatalf("chunks = %#v, want %#v", got, want)
@@ -232,13 +250,9 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 
 func TestBacktickDelimiterIsCaseSensitive(t *testing.T) {
 	// Extraction and compiled pattern must both preserve letter casing.
-	parsed := chunk.ParseDelimiterField("`End`")
-	if len(parsed) != 1 || parsed[0] != "End" {
-		t.Fatalf("ParseDelimiterField(`End`) = %#v, want [End]", parsed)
-	}
-	p := chunk.CompileDelimiterPattern(parsed)
+	p := chunk.CompileDelimiterPatternList([]string{"`End`"}, true)
 	if p == nil {
-		t.Fatal("CompileDelimiterPattern returned nil")
+		t.Fatal("CompileDelimiterPatternList returned nil")
 	}
 	if !p.MatchString("End") || p.MatchString("end") || p.MatchString("END") {
 		t.Fatalf("pattern %q is not case-sensitive", p.String())

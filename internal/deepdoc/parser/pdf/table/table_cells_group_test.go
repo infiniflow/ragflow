@@ -233,3 +233,88 @@ func TestFillCellTextFromBoxes_EmptyBoxIgnored(t *testing.T) {
 		t.Errorf("whitespace text should produce empty, got %q", cells[0].Text)
 	}
 }
+
+func TestFillCellTextFromBoxes_RowStripUsesTSRRowBBox(t *testing.T) {
+	// 13_crosspage_table root cause: TSR "table row" 44 has a narrower X
+	// bbox (x0=106.9) than the grid column union (x0=90.8). A col-0 box
+	// spanning rows 43/44 ("2024-43 2024-44", x0=87) overlaps row 44's true
+	// bbox by only ~21% (Python's find_overlapped_with_threshold rejects it,
+	// thr=0.3) but overlaps the full-width grid strip by ~50% — so Go picked
+	// row 44 while Python fell back to row 43. The rowStrip variant must use
+	// the TSR row bbox so the box lands in the upper row.
+	grid := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 1500, Y1: 54},
+			{X0: 1500, Y0: 0, X1: 3000, Y1: 54},
+		},
+		{
+			{X0: 0, Y0: 54, X1: 1500, Y1: 108},
+			{X0: 1500, Y0: 54, X1: 3000, Y1: 108},
+		},
+	}
+	// TSR row bboxes (sorted top-to-bottom): row 1 is narrower on the left,
+	// like table_rotation/13's second-row-of-a-pair. Without rowStrips the
+	// full-width strip makes the box overlap row 1 at ~51% (> row 0's 49%)
+	// and Go wrongly assigns it to the lower row.
+	rowStrips := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 3000, Y1: 54},
+		{X0: 57, Y0: 54, X1: 1400, Y1: 108}, // narrow left edge: col-0 box partially outside
+	}
+	// Box spans both rows, x0=0 is inside row 0's strip but outside row 1's
+	// narrow strip (x0=57), so only row 0 gets >= 0.3 overlap.
+	boxes := []pdf.TextBox{{X0: 0, X1: 100, Top: 20, Bottom: 90, Text: "AB"}}
+
+	flat := FlattenGrid(grid)
+	FillCellTextFromBoxesWithRows(flat, boxes, rowStrips)
+
+	if flat[0].Text != "AB" { // grid row0 col0
+		t.Fatalf("row0 col0 = %q, want AB (box must reject narrow row1 bbox)", flat[0].Text)
+	}
+	if flat[2].Text != "" { // grid row1 col0
+		t.Errorf("row1 col0 = %q, want empty (box belongs to row 0)", flat[2].Text)
+	}
+}
+
+// TestFillCellTextFromBoxes_RowStripHeaderTable locks that the TSR row-strip
+// override applies to data rows even when the table HAS a header. The caller
+// (table_extract.go) collects only "table row" components into rowStrips and
+// excludes header / projrowheader; the former all-or-nothing guard
+// (len(rowStrips) == len(rows)) disabled the override for any header-bearing
+// table. Matching is now by Y, so data rows get the narrow strip X while the
+// header row keeps the grid-union X and is unaffected.
+func TestFillCellTextFromBoxes_RowStripHeaderTable(t *testing.T) {
+	// 3 grid rows: header + 2 data rows. Header is wider in Y only.
+	grid := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 3000, Y1: 50}, // header row
+		},
+		{
+			{X0: 0, Y0: 50, X1: 3000, Y1: 100}, // data row A (full width)
+		},
+		{
+			{X0: 0, Y0: 100, X1: 3000, Y1: 150}, // data row B (narrow on left)
+		},
+	}
+	// Only data rows are collected into rowStrips (header excluded), matching
+	// production: data A full-width, data B narrow (x0=57).
+	rowStrips := []pdf.TSRCell{
+		{X0: 0, Y0: 50, X1: 3000, Y1: 100},
+		{X0: 57, Y0: 100, X1: 1400, Y1: 150}, // narrow left edge
+	}
+	// Box spans both data rows but is outside data row B's narrow strip
+	// (x0=57), so it must land in data row A.
+	boxes := []pdf.TextBox{{X0: 0, X1: 100, Top: 60, Bottom: 140, Text: "AB"}}
+
+	flat := FlattenGrid(grid)
+	FillCellTextFromBoxesWithRows(flat, boxes, rowStrips)
+
+	if flat[1].Text != "AB" { // header=row0, data A=row1
+		t.Fatalf("data row A (flat[1]) = %q, want AB (override must apply to header tables)", flat[1].Text)
+	}
+	if flat[2].Text != "" { // data B=row2
+		t.Errorf("data row B (flat[2]) = %q, want empty (box rejected by narrow strip)", flat[2].Text)
+	}
+	if flat[0].Text != "" { // header row: box does not overlap it
+		t.Errorf("header row (flat[0]) = %q, want empty", flat[0].Text)
+	}
+}

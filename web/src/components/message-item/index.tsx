@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { MessageType } from '@/constants/chat';
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import {
@@ -13,7 +29,6 @@ import { memo, useCallback, useMemo } from 'react';
 import { DocumentDownloadButton } from '../document-download-button';
 import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../markdown-content';
-import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
 import { ReferenceImageList } from '../next-message-item/reference-image-list';
 import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
 import { RAGFlowAvatar } from '../ragflow-avatar';
@@ -21,12 +36,14 @@ import SvgIcon from '../svg-icon';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.module.less';
+import { TurnUsage } from './turn-usage';
 
 interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   item: IMessage;
   reference: IReference;
   loading?: boolean;
   sendLoading?: boolean;
+  deleteDisabled?: boolean;
   visibleAvatar?: boolean;
   nickname?: string;
   avatar?: string;
@@ -35,6 +52,7 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   index: number;
   showLikeButton?: boolean;
   showLoudspeaker?: boolean;
+  isLast?: boolean;
 }
 
 const MessageItem = ({
@@ -44,6 +62,7 @@ const MessageItem = ({
   avatar,
   avatarDialog,
   sendLoading = false,
+  deleteDisabled = false,
   clickDocumentButton,
   index,
   removeMessageById,
@@ -52,6 +71,7 @@ const MessageItem = ({
   showLoudspeaker = true,
   visibleAvatar = true,
   nickname,
+  isLast = false,
 }: IProps) => {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -60,10 +80,6 @@ const MessageItem = ({
   const uploadedFiles = useMemo(() => {
     return item?.files ?? [];
   }, [item?.files]);
-
-  const referenceDocumentList = useMemo(() => {
-    return reference?.doc_aggs ?? [];
-  }, [reference?.doc_aggs]);
 
   const documentDownloadInfos = useMemo(
     () => item.downloads ?? [],
@@ -134,6 +150,7 @@ const MessageItem = ({
                 removeMessageById={removeMessageById}
                 regenerateMessage={regenerateMessage && handleRegenerateMessage}
                 sendLoading={sendLoading}
+                deleteDisabled={deleteDisabled}
               ></UserGroupButton>
             )}
             {/* Show message content if there's any text besides the download */}
@@ -148,7 +165,7 @@ const MessageItem = ({
                   { '!bg-bg-card': !isAssistant },
                 )}
               >
-                {sendLoading && isEmpty(messageContent) ? (
+                {sendLoading && isLast && isEmpty(messageContent) ? (
                   <LoadingDots className="text-text-secondary" />
                 ) : (
                   <MarkdownContent
@@ -156,7 +173,16 @@ const MessageItem = ({
                     content={messageContent}
                     reference={reference}
                     clickDocumentButton={clickDocumentButton}
+                    disableMath={isUser}
                   ></MarkdownContent>
+                )}
+                {/* What the turn cost. Under the answer, and only for the turn
+                    that reported it — see TurnUsage. */}
+                {isAssistant && (
+                  <TurnUsage
+                    usage={item.usage}
+                    elapsedMs={item.elapsed_ms}
+                  ></TurnUsage>
                 )}
               </div>
             )}
@@ -165,11 +191,6 @@ const MessageItem = ({
                 referenceChunks={reference.chunks}
                 messageContent={messageContent}
               ></ReferenceImageList>
-            )}
-            {isAssistant && referenceDocumentList.length > 0 && (
-              <ReferenceDocumentList
-                list={referenceDocumentList}
-              ></ReferenceDocumentList>
             )}
             {isUser &&
               Array.isArray(uploadedFiles) &&

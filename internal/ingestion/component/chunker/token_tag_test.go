@@ -15,6 +15,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"strings"
 	"testing"
 )
@@ -25,7 +26,7 @@ import (
 // the body text still carries coordinate markers.
 func TestTokenChunker_TextPath_StripsParserTags(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": 1000,
 		"delimiters":       []string{"\n"},
 	})
@@ -40,7 +41,7 @@ func TestTokenChunker_TextPath_StripsParserTags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -74,7 +75,7 @@ func TestTokenChunker_JSONPath_StripsParserTags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}

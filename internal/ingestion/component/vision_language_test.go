@@ -1,0 +1,111 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package component
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestResolveVisionLanguage(t *testing.T) {
+	tests := []struct {
+		name     string
+		inputs   map[string]any
+		override string
+		want     string
+	}{
+		{
+			name:     "explicit enhancement language wins",
+			inputs:   map[string]any{"lang": "Japanese"},
+			override: "French",
+			want:     "French",
+		},
+		{
+			name:     "explicit enhancement language is trimmed",
+			inputs:   map[string]any{"lang": "Japanese"},
+			override: " French ",
+			want:     "French",
+		},
+		{
+			name:     "empty override falls back to the dataset language",
+			inputs:   map[string]any{"lang": " Japanese "},
+			override: "",
+			want:     "Japanese",
+		},
+		{
+			name:     "empty values default to English",
+			inputs:   map[string]any{"lang": ""},
+			override: "",
+			want:     defaultVisionLanguage,
+		},
+		{
+			name:     "absent language defaults to English",
+			inputs:   nil,
+			override: "",
+			want:     defaultVisionLanguage,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveVisionLanguage(tt.inputs, tt.override); got != tt.want {
+				t.Fatalf("resolveVisionLanguage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderFigureVisionLanguage(t *testing.T) {
+	prompt := renderFigureVisionLanguage("spaced={{ language }} compact={{language}}", "Japanese")
+	if prompt != "spaced=Japanese compact=Japanese" {
+		t.Fatalf("renderFigureVisionLanguage() = %q", prompt)
+	}
+
+	prompt = renderFigureVisionLanguage("language={{ language }}", "")
+	if prompt != "language=English" {
+		t.Fatalf("empty-language rendering = %q, want English fallback", prompt)
+	}
+}
+
+func TestBuildFigureVisionPromptRendersLanguage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	prompt, err := buildFigureVisionPrompt("Japanese")
+	if err != nil {
+		t.Fatalf("buildFigureVisionPrompt: %v", err)
+	}
+
+	if !strings.Contains(prompt, "Write all descriptions and field values in Japanese.") {
+		t.Fatalf("prompt does not contain language directive, got: %q", prompt)
+	}
+	for _, unresolved := range []string{"{{ language }}", "{{language}}"} {
+		if strings.Contains(prompt, unresolved) {
+			t.Fatalf("prompt contains unresolved placeholder %q", unresolved)
+		}
+	}
+
+	// Verify language is rendered separately for each request.
+	secondPrompt, err := buildFigureVisionPrompt("Chinese")
+	if err != nil {
+		t.Fatalf("buildFigureVisionPrompt for second language: %v", err)
+	}
+	if !strings.Contains(secondPrompt, "Write all descriptions and field values in Chinese.") {
+		t.Fatalf("prompt did not render the second request language")
+	}
+	if strings.Contains(secondPrompt, "in Japanese.") {
+		t.Fatalf("prompt leaked the previous request language")
+	}
+}

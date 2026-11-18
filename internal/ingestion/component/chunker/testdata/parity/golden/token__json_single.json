@@ -1,0 +1,9 @@
+{
+ "case_id": "token__json_single",
+ "chunks": [
+  {
+   "doc_type_kwd": "text",
+   "text": "hello world"
+  }
+ ]
+}

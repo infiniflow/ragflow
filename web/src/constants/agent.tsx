@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
 import {
   Circle,
@@ -54,6 +70,7 @@ export const initialLlmBaseValues = {
   frequency_penalty: 0.7,
   presence_penalty: 0.4,
   max_tokens: 256,
+  thinking: 'disabled' as const,
 };
 
 export enum AgentCategory {
@@ -63,6 +80,7 @@ export enum AgentCategory {
 
 export enum AgentQuery {
   Category = 'category',
+  CanvasCategory = 'canvas_category',
 }
 
 export enum Operator {
@@ -70,7 +88,6 @@ export enum Operator {
   Retrieval = 'Retrieval',
   Categorize = 'Categorize',
   Message = 'Message',
-  RewriteQuestion = 'RewriteQuestion',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
   PubMed = 'PubMed',
@@ -95,14 +112,18 @@ export enum Operator {
   Tool = 'Tool',
   TavilySearch = 'TavilySearch',
   TavilyExtract = 'TavilyExtract',
+  QueritContents = 'QueritContents',
   QueritSearch = 'QueritSearch',
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
   BGPT = 'BGPT',
   KeenableSearch = 'KeenableSearch',
+  YouComSearch = 'YouComSearch',
+  SofyaSearch = 'SofyaSearch',
+  Search1APISearch = 'Search1APISearch',
+  Search1APICrawl = 'Search1APICrawl',
   DocGenerator = 'DocGenerator',
-  Browser = 'Browser',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   ListOperations = 'ListOperations',
@@ -111,8 +132,14 @@ export enum Operator {
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
+  GeneralChunker = 'GeneralChunker',
   TokenChunker = 'TokenChunker',
   TitleChunker = 'TitleChunker',
+  ManualChunker = 'ManualChunker',
+  TableChunker = 'TableChunker',
+  QAChunker = 'QAChunker',
+  OneChunker = 'OneChunker',
+  PageChunker = 'PageChunker',
   Extractor = 'Extractor',
   Compiler = 'Compiler',
   Loop = 'Loop',
@@ -137,6 +164,21 @@ export enum ComparisonOperator {
   In = 'in',
   NotIn = 'not in',
 }
+
+export const CanvasSwitchOperators: ComparisonOperator[] = [
+  ComparisonOperator.Equal,
+  ComparisonOperator.NotEqual,
+  ComparisonOperator.GreatThan,
+  ComparisonOperator.GreatEqual,
+  ComparisonOperator.LessThan,
+  ComparisonOperator.LessEqual,
+  ComparisonOperator.Contains,
+  ComparisonOperator.NotContains,
+  ComparisonOperator.StartWith,
+  ComparisonOperator.EndWith,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
+];
 
 export const SwitchOperatorOptions = [
   { value: ComparisonOperator.Equal, label: 'equal', icon: 'equal' },

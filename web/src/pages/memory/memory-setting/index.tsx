@@ -2,40 +2,35 @@ import { DynamicForm } from '@/components/dynamic-form';
 import { Button } from '@/components/ui/button';
 import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
-import { MainContainer } from '@/pages/dataset/dataset-setting/configuration-form-container';
 import { TopTitle } from '@/pages/dataset/dataset-title';
 import { IMemory } from '@/pages/memories/interface';
+import { showPermissionField } from '@/ee/constants/feature-flags';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
 import { useFetchMemoryBaseConfiguration } from '../hooks/use-memory-setting';
 import {
   AdvancedSettingsForm,
-  advancedSettingsFormSchema,
   defaultAdvancedSettingsForm,
 } from './advanced-settings-form';
-import { BasicInfo, basicInfoSchema, defaultBasicInfo } from './basic-form';
+import { BasicInfo, defaultBasicInfo } from './basic-form';
 import { useUpdateMemoryConfig } from './hook';
+import { MemoryModelForm, defaultMemoryModelForm } from './memory-model-form';
 import {
-  MemoryModelForm,
-  defaultMemoryModelForm,
-  memoryModelFormSchema,
-} from './memory-model-form';
+  useMemoryFormSchema,
+  useRevalidatePersistedModels,
+} from './memory-setting-hooks';
 import { MemorySettingProvider } from './memory-setting-context';
 
-// type MemoryMessageForm = z.infer<typeof MemoryMessageSchema>;
 export default function MemoryMessage() {
   const { t } = useTranslation();
-  const MemoryMessageSchema = z.object({
-    id: z.string(),
-    ...basicInfoSchema,
-    ...memoryModelFormSchema(t),
-    ...advancedSettingsFormSchema,
-  });
+  const { data } = useFetchMemoryBaseConfiguration();
+  const { formSchema, modelsFetched, modelsEditable } = useMemoryFormSchema(
+    data?.tenant_id,
+  );
   const form = useForm<IMemory>({
-    resolver: zodResolver(MemoryMessageSchema),
+    resolver: zodResolver(formSchema),
     defaultValues: {
       id: '',
       ...defaultBasicInfo,
@@ -43,7 +38,6 @@ export default function MemoryMessage() {
       ...defaultAdvancedSettingsForm,
     } as unknown as IMemory,
   });
-  const { data } = useFetchMemoryBaseConfiguration();
   const { onMemoryRenameOk, loading } = useUpdateMemoryConfig();
 
   useEffect(() => {
@@ -61,11 +55,21 @@ export default function MemoryMessage() {
       user_prompt: data?.user_prompt || '',
       forgetting_policy: data?.forgetting_policy || 'FIFO',
       storage_type: data?.storage_type || 'Table',
-      permissions: data?.permissions || 'me',
+      ...(showPermissionField
+        ? { permissions: data?.permissions || 'me' }
+        : {}),
     });
   }, [data, form]);
+
+  useRevalidatePersistedModels({
+    control: form.control,
+    trigger: form.trigger,
+    clearErrors: form.clearErrors,
+    modelsFetched,
+    modelsEditable,
+  });
+
   const onSubmit = (data: IMemory) => {
-    console.log('data', data);
     onMemoryRenameOk(data);
   };
   return (
@@ -79,7 +83,7 @@ export default function MemoryMessage() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(() => {})} className="space-y-6 ">
               <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
-                <MainContainer className="text-text-secondary !space-y-10">
+                <section className="space-y-5 text-text-secondary !space-y-10">
                   <div className="text-base font-medium text-text-primary">
                     {t('knowledgeConfiguration.baseInfo')}
                   </div>
@@ -87,7 +91,7 @@ export default function MemoryMessage() {
                   <Divider />
                   <MemoryModelForm />
                   <AdvancedSettingsForm />
-                </MainContainer>
+                </section>
               </div>
               <div className="text-right items-center flex justify-end gap-3 w-[768px]">
                 <Button
@@ -102,7 +106,6 @@ export default function MemoryMessage() {
                 <DynamicForm.SavingButton
                   submitLoading={loading}
                   submitFunc={(value) => {
-                    console.log('form-value', value);
                     onSubmit(value as IMemory);
                   }}
                 ></DynamicForm.SavingButton>

@@ -16,11 +16,13 @@ export interface ICompilationTemplateRaptorConfigRequest {
   clustering_threshold?: number;
   clustering_ratio?: number;
   rechunk?: boolean;
+  claim_prompt?: string;
 }
 
 export interface ICompilationTemplateConfigRequest {
   kind?: string;
   llm_id?: string;
+  mode?: 'entity' | 'topic';
   entity?: ICompilationTemplateSectionRequest;
   relation?: ICompilationTemplateSectionRequest;
   raptor?: ICompilationTemplateRaptorConfigRequest;

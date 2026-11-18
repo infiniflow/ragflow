@@ -19,13 +19,12 @@ package models
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-
-	"github.com/goccy/go-json"
 )
 
 type HuaweiCloudModel struct {
@@ -37,7 +36,7 @@ func NewHuaweiCloudModel(baseURL map[string]string, urlSuffix URLSuffix) *Huawei
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -123,9 +122,6 @@ func huaweiCloudApplyChatConfig(req map[string]any, modelName string, chatModelC
 	if chatModelConfig == nil {
 		return
 	}
-	if chatModelConfig.MaxTokens != nil {
-		req["max_tokens"] = *chatModelConfig.MaxTokens
-	}
 	if chatModelConfig.Temperature != nil {
 		req["temperature"] = *chatModelConfig.Temperature
 	}
@@ -176,9 +172,8 @@ func (h *HuaweiCloudModel) ChatWithMessages(ctx context.Context, modelName strin
 
 	baseURLRegion := huaweiCloudRegionForModel(apiConfig, modelName)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
@@ -196,7 +191,7 @@ func (h *HuaweiCloudModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (h *HuaweiCloudModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -216,9 +211,8 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(ctx context.Context, modelName
 
 	baseURLRegion := huaweiCloudRegionForModel(apiConfig, modelName)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return err
@@ -266,32 +260,31 @@ type huaweiCloudRerankResponse struct {
 	} `json:"usage"`
 }
 
-func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
 	baseURLRegion := huaweiCloudRegion(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(h.baseModel.URLSuffix.Embedding, "/"))
+	url := joinURL(baseURL, h.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
-		"input":           texts,
+		"input":           request.Texts,
 		"encoding_format": "float",
 	}
 
@@ -328,18 +321,18 @@ func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts [
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	if len(parsed.Data) != len(texts) {
-		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(parsed.Data))
+	if len(parsed.Data) != len(request.Texts) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(request.Texts), len(parsed.Data))
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	seen := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	seen := make([]bool, len(request.Texts))
 	for _, item := range parsed.Data {
 		if item.Index == nil {
 			return nil, fmt.Errorf("missing index field in embedding item")
 		}
 		idx := *item.Index
-		if idx < 0 || idx >= len(texts) {
+		if idx < 0 || idx >= len(request.Texts) {
 			return nil, fmt.Errorf("embedding index %d out of range", idx)
 		}
 		if seen[idx] {
@@ -368,13 +361,17 @@ func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts [
 	return embeddings, nil
 }
 
-func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
+
+	documents := request.Documents
+	query := request.Query
+
 	if query == "" {
 		return nil, fmt.Errorf("query is required")
 	}
@@ -384,15 +381,14 @@ func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, query 
 
 	baseURLRegion := huaweiCloudRegion(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(h.baseModel.URLSuffix.Rerank, "/"))
+	url := joinURL(baseURL, h.baseModel.URLSuffix.Rerank)
 
 	reqBody := map[string]interface{}{
 		"model":     *modelName,
@@ -461,27 +457,27 @@ func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, query 
 }
 
 func (h *HuaweiCloudModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", h.Name())
 }
 
 func (h *HuaweiCloudModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", h.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", h.Name())
 }
 
 func (h *HuaweiCloudModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", h.Name())
 }
 
 func (h *HuaweiCloudModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", h.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", h.Name())
 }
 
 func (h *HuaweiCloudModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", h.Name())
 }
 
 func (h *HuaweiCloudModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", h.Name())
 }
 
 func (h *HuaweiCloudModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -491,15 +487,14 @@ func (h *HuaweiCloudModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 
 	baseURLRegion := huaweiCloudRegion(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(h.baseModel.URLSuffix.Models, "/"))
+	url := joinURL(baseURL, h.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -538,7 +533,7 @@ func (h *HuaweiCloudModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 }
 
 func (h *HuaweiCloudModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", h.Name())
 }
 
 func (h *HuaweiCloudModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -547,9 +542,13 @@ func (h *HuaweiCloudModel) CheckConnection(ctx context.Context, apiConfig *APICo
 }
 
 func (h *HuaweiCloudModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", h.Name())
 }
 
 func (h *HuaweiCloudModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", h.Name())
+}
+
+func (h *HuaweiCloudModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", h.Name())
 }

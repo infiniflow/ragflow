@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
@@ -9,6 +25,7 @@ import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -17,11 +34,14 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import {
   currentReg,
+  decodeAngleBracketEntities,
+  escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  unescapeAngleBrackets,
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -66,7 +86,11 @@ const MarkdownContent = ({
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
+    // Escape standalone < and > outside matched <...> tags
+    // so DOMPurify doesn't strip them as HTML.
+    const safeContent = escapeUnmatchedAngleBrackets(content);
+
+    let text = DOMPurify.sanitize(safeContent, {
       ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
@@ -75,11 +99,15 @@ const MarkdownContent = ({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return pipe(
-      replaceThinkToSection,
-      replaceRetrievingToSection,
-      preprocessLaTeX,
-    )(nextText);
+    return unescapeAngleBrackets(
+      pipe(
+        replaceThinkToSection,
+        replaceRetrievingToSection,
+        preprocessLaTeX,
+        // Entity decoding can expose a line-leading > after the first escape.
+        escapeUnmatchedAngleBrackets,
+      )(nextText),
+    );
   }, [content, t]);
 
   useEffect(() => {
@@ -88,15 +116,14 @@ const MarkdownContent = ({
   }, [reference, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
-    (
-      documentId: string,
-      chunk: IReferenceChunk,
-      isPdf: boolean = false,
-      documentUrl?: string,
-    ) => {
-      void isPdf;
-      void documentUrl;
+    (documentId: string, chunk: IReferenceChunk, documentUrl?: string) => {
       return () => {
+        // Web page documents carry their own url; the preview modal can't
+        // render them, so open the link directly.
+        if (documentUrl && /^https?:\/\//i.test(documentUrl)) {
+          window.open(documentUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
         clickDocumentButton?.(documentId, chunk);
       };
     },
@@ -149,6 +176,7 @@ const MarkdownContent = ({
   const getPopoverContent = useCallback(
     (chunkIndex: number) => {
       const {
+        documentUrl,
         fileThumbnail,
         fileExtension,
         imageId,
@@ -164,12 +192,14 @@ const MarkdownContent = ({
               <PopoverTrigger>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceChunkImage}
                 ></Image>
               </PopoverTrigger>
               <PopoverContent>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceImagePreview}
                 ></Image>
               </PopoverContent>
@@ -182,7 +212,7 @@ const MarkdownContent = ({
               }}
               className={classNames(styles.chunkContentText)}
             ></div>
-            {documentId && (
+            {documentId && documentId !== chunkItem?.dataset_id && (
               <div className="flex gap-2">
                 {fileThumbnail ? (
                   <AuthenticatedImg
@@ -205,8 +235,7 @@ const MarkdownContent = ({
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
-                    // fileExtension === 'pdf',
-                    // documentUrl,
+                    documentUrl,
                   )}
                 >
                   {document?.doc_name}
@@ -223,13 +252,13 @@ const MarkdownContent = ({
   const renderReference = useCallback(
     (text: string) => {
       const replacedText = reactStringReplace(text, currentReg, (match) => {
-        const chunkIndex = getChunkIndex(match);
+        const chunkIndex = getChunkIndex(match) as number;
 
         return (
           <Popover>
             <PopoverTrigger>
               <span className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap">
-                Fig. {chunkIndex + 1}
+                [{chunkIndex + 1}]
               </span>
             </PopoverTrigger>
             <PopoverContent className="!w-fit">
@@ -252,7 +281,12 @@ const MarkdownContent = ({
       className="[&>section.think]:pl-[10px] [&>section.think]:text-[#8b8b8b] [&>section.think]:border-l-2 [&>section.think]:border-l-[#d5d3d3] [&>section.think]:mb-[10px] [&>section.think]:text-xs [&>blockquote]:pl-[10px] [&>blockquote]:border-l-4 [&>blockquote]:border-l-[#ccc] text-sm"
     >
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
         remarkPlugins={MarkdownRemarkPlugins}
         components={
           {
@@ -263,6 +297,10 @@ const MarkdownContent = ({
               const { children, className, ...rest } = props;
               const restProps = omit(rest, 'node');
               const match = /language-(\w+)/.exec(className || '');
+              // Code content is literal for react-markdown, so the &lt;/&gt;
+              // entities restored by unescapeAngleBrackets survive parsing;
+              // decode them back.
+              const codeText = decodeAngleBracketEntities(String(children));
               return match ? (
                 <SyntaxHighlighter
                   {...restProps}
@@ -270,14 +308,14 @@ const MarkdownContent = ({
                   language={match[1]}
                   wrapLongLines
                 >
-                  {String(children).replace(/\n$/, '')}
+                  {codeText.replace(/\n$/, '')}
                 </SyntaxHighlighter>
               ) : (
                 <code
                   {...restProps}
                   className={classNames(className, 'text-wrap')}
                 >
-                  {children}
+                  {codeText}
                 </code>
               );
             },
