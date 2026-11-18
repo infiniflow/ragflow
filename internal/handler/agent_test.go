@@ -356,9 +356,10 @@ func TestCreateAgentUsesAuthenticatedUserID(t *testing.T) {
 	}
 }
 
-func TestCreateAgentSessionReturnsAgentBinding(t *testing.T) {
+func TestCreateAgentSessionUsesServerSourceAndAgentBinding(t *testing.T) {
 	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPost, "/api/v1/agents/canvas-1/sessions")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-1"}}
+	c.Request.Body = io.NopCloser(strings.NewReader(`{"source":"chat_channel"}`))
 	if err := db.Create(&entity.UserCanvas{ID: "canvas-1", UserID: "user-1", TenantID: sptr("user-1"), DSL: entity.JSONMap{}}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -372,6 +373,17 @@ func TestCreateAgentSessionReturnsAgentBinding(t *testing.T) {
 	}
 	if response.Code != 0 || response.Data["agent_id"] != "canvas-1" {
 		t.Fatalf("response: %s", w.Body.String())
+	}
+	if response.Data["source"] != string(entity.AgentSessionSourceAgent) {
+		t.Fatalf("response source = %v, want %q: %s", response.Data["source"], entity.AgentSessionSourceAgent, w.Body.String())
+	}
+	sessionID, _ := response.Data["id"].(string)
+	var stored entity.API4Conversation
+	if err := db.Where("id = ?", sessionID).Take(&stored).Error; err != nil {
+		t.Fatalf("load created session: %v", err)
+	}
+	if stored.Source == nil || *stored.Source != string(entity.AgentSessionSourceAgent) {
+		t.Fatalf("persisted source = %v, want %q", stored.Source, entity.AgentSessionSourceAgent)
 	}
 }
 

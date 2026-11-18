@@ -16,7 +16,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { VirtualMessageList } from '@/components/virtual-message-list';
-import { MessageType } from '@/constants/chat';
+import { ChatSessionSource, MessageType } from '@/constants/chat';
 import { useHandleMessageInputChange } from '@/hooks/logic-hooks';
 import {
   useFetchChat,
@@ -307,6 +307,8 @@ export function MultipleChatBox({
     useCreateConversationBeforeUploadDocument();
   const { conversationId } = useGetChatSearchParams();
   const disabled = useGetSendButtonDisabled();
+  const isChannelConversation =
+    conversation.source === ChatSessionSource.ChatChannel;
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -384,8 +386,8 @@ export function MultipleChatBox({
       </div>
       <div className="px-[20%]">
         <NextMessageInput
-          disabled={disabled}
-          sendDisabled={sendDisabled}
+          disabled={disabled || isChannelConversation}
+          sendDisabled={sendDisabled || isChannelConversation}
           sendLoading={isAnyBoxLoading}
           value={value}
           resize="vertical"
