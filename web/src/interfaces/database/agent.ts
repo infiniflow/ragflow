@@ -30,7 +30,7 @@ export interface ISwitchForm {
   no: string;
 }
 
-import { AgentCategory } from '@/constants/agent';
+import { AgentCategory, AgentSessionSource } from '@/constants/agent';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
 import { ICompilationTemplateGroup } from './compilation-template';
@@ -329,7 +329,7 @@ export interface IAgentLogResponse {
   round: number;
   thumb_up: number;
   errors: string;
-  source: string;
+  source: AgentSessionSource | null;
   user_id: string;
   dsl: string;
   name: string;

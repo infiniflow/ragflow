@@ -64,6 +64,9 @@ func ValidateSystemSettingValue(setting SystemSettings, value string) error {
 }
 
 func InferSystemSettingDataType(name string) string {
+	if strings.EqualFold(name, "api_key.max_count") {
+		return "integer"
+	}
 	if name == "sandbox.provider_type" {
 		return "string"
 	}

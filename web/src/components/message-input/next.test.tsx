@@ -182,4 +182,18 @@ describe('NextMessageInput', () => {
 
     expect(mockSetThinkingLevel).toHaveBeenCalledWith('5');
   });
+
+  it('disables every composer action when the input is disabled', () => {
+    renderInput({
+      disabled: true,
+      showReasoning: true,
+      showInternet: true,
+    });
+
+    expect(screen.getByTestId('chat-detail-add-menu')).toBeDisabled();
+    expect(screen.getByTestId('chat-detail-thinking-toggle')).toBeDisabled();
+    expect(screen.getByTestId('chat-detail-audio-toggle')).toBeDisabled();
+    expect(screen.getByTestId('chat-textarea')).toBeDisabled();
+    expect(screen.getByTestId('chat-detail-send')).toBeDisabled();
+  });
 });

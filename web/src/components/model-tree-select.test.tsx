@@ -46,13 +46,19 @@ function addedModel(overrides: Record<string, unknown>) {
   };
 }
 
-function build(models: unknown[], types: string[], providers?: string[]) {
+function build(
+  models: unknown[],
+  types: string[],
+  providers?: string[],
+  requireModelId = false,
+) {
   return buildModelTree(
     models as never,
     types,
     undefined,
     undefined,
     providers,
+    requireModelId,
   );
 }
 
@@ -125,6 +131,25 @@ describe('buildModelTree', () => {
     expect(tree.map((node) => node.title).sort()).toEqual([
       'ProviderA',
       'ProviderB',
+    ]);
+  });
+
+  it('requires persistent model ids only when explicitly requested', () => {
+    const models = [
+      addedModel({ model_id: 'model-uuid', name: 'uuid-model' }),
+      addedModel({
+        model_id: '',
+        name: 'builtin-tei',
+        provider_name: 'Builtin',
+      }),
+    ];
+
+    expect(leaves(build(models, ['chat']))).toEqual([
+      'model-uuid',
+      'builtin-tei@default@Builtin',
+    ]);
+    expect(leaves(build(models, ['chat'], undefined, true))).toEqual([
+      'model-uuid',
     ]);
   });
 });

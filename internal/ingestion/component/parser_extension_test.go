@@ -22,7 +22,7 @@ import (
 	"ragflow/internal/utility"
 )
 
-func TestParserFileFamilyRegisteredOfficeExtensions(t *testing.T) {
+func TestParserFileFamilyRegisteredExtensions(t *testing.T) {
 	for _, tc := range []struct {
 		ext    string
 		ft     utility.FileType
@@ -34,6 +34,7 @@ func TestParserFileFamilyRegisteredOfficeExtensions(t *testing.T) {
 		{"officebookxml", utility.FileTypeXLSX, "spreadsheet"},
 		{"officedeck", utility.FileTypePPT, "slides"},
 		{"officedeckxml", utility.FileTypePPTX, "slides"},
+		{"drawingfile", utility.FileType("drawing"), "drawing"},
 	} {
 		t.Run(tc.ext, func(t *testing.T) {
 			utility.RegisterExtensionFileType(tc.ext, tc.ft)
@@ -43,6 +44,55 @@ func TestParserFileFamilyRegisteredOfficeExtensions(t *testing.T) {
 			}
 			if got := fileTypeFromInputs(map[string]any{"name": "sample." + tc.ext}); got != tc.ft {
 				t.Errorf("file type = %q, want %q", got, tc.ft)
+			}
+		})
+	}
+}
+
+func TestParserFamilyUsesResolvedFileType(t *testing.T) {
+	type registration struct {
+		extension string
+		fileType  utility.FileType
+	}
+	for _, tc := range []struct {
+		name          string
+		registrations []registration
+		extension     string
+		fileType      utility.FileType
+		family        string
+	}{
+		{"chain", []registration{{"familyalias", "familymiddle"}, {"familymiddle", utility.FileTypeDOCX}}, "familyalias", "familymiddle", "familymiddle"},
+		{"self reference", []registration{{"familyself", "familyself"}}, "familyself", "familyself", "familyself"},
+		{"cycle", []registration{{"familyleft", "familyright"}, {"familyright", "familyleft"}}, "familyleft", "familyright", "familyright"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, entry := range tc.registrations {
+				utility.RegisterExtensionFileType(entry.extension, entry.fileType)
+				t.Cleanup(func() { utility.RegisterExtensionFileType(entry.extension, utility.FileTypeOTHER) })
+			}
+			if got := fileTypeFromInputs(map[string]any{"name": "sample." + tc.extension}); got != tc.fileType {
+				t.Fatalf("selected parser type = %q, want %q", got, tc.fileType)
+			}
+			if got := ParserFileFamily(tc.extension); got != tc.family {
+				t.Errorf("upload family = %q, want %q", got, tc.family)
+			}
+			if got := resolveParserFamily(tc.fileType); got != tc.family {
+				t.Errorf("runtime family = %q, want %q", got, tc.family)
+			}
+		})
+	}
+}
+
+func TestParserFileFamilyHints(t *testing.T) {
+	for _, tc := range []struct{ hint, family string }{
+		{"slides", "slides"}, {"pages", "slides"}, {"spreadsheet", "spreadsheet"},
+		{"text&code", "text&code"}, {"image", "image"}, {"visual", "image"},
+		{"audio", "audio"}, {"aural", "audio"}, {"video", "video"},
+		{"unrecognized-family", ""}, {"", ""},
+	} {
+		t.Run(tc.hint, func(t *testing.T) {
+			if got := ParserFileFamily(tc.hint); got != tc.family {
+				t.Errorf("ParserFileFamily(%q) = %q, want %q", tc.hint, got, tc.family)
 			}
 		})
 	}

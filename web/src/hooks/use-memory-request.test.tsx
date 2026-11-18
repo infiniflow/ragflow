@@ -48,22 +48,22 @@ describe('useFetchAllMemoryList', () => {
     });
   });
 
-  it('passes canvas_id when a canvas is given', async () => {
-    renderHook(() => useFetchAllMemoryList('canvas-1'), {
+  it('passes access_user_id when a resource owner is given', async () => {
+    renderHook(() => useFetchAllMemoryList('owner-1'), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(mockGetMemoryList).toHaveBeenCalled());
     expect(mockGetMemoryList).toHaveBeenCalledWith(
       {
-        params: { page_size: 100, page: 1, canvas_id: 'canvas-1' },
+        params: { page_size: 100, page: 1, access_user_id: 'owner-1' },
         data: {},
       },
       true,
     );
   });
 
-  it('omits canvas_id without a canvas', async () => {
+  it('omits access_user_id without a resource owner', async () => {
     renderHook(() => useFetchAllMemoryList(), {
       wrapper: createWrapper(),
     });
@@ -78,10 +78,10 @@ describe('useFetchAllMemoryList', () => {
     );
   });
 
-  it('caches canvas-scoped lists separately', async () => {
+  it('caches owner-scoped lists separately', async () => {
     const wrapper = createWrapper();
-    renderHook(() => useFetchAllMemoryList('canvas-1'), { wrapper });
-    renderHook(() => useFetchAllMemoryList('canvas-2'), { wrapper });
+    renderHook(() => useFetchAllMemoryList('owner-1'), { wrapper });
+    renderHook(() => useFetchAllMemoryList('owner-2'), { wrapper });
 
     await waitFor(() => expect(mockGetMemoryList).toHaveBeenCalledTimes(2));
   });

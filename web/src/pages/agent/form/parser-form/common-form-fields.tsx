@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { useEffect } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
@@ -26,14 +26,14 @@ export function ParserMethodFormField({
   showMineruOptions?: boolean;
 }) {
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   return (
     <LayoutRecognizeFormField
       name={buildFieldNameWithPrefix(`parse_method`, prefix)}
       horizontal={false}
       optionsWithoutLLM={optionsWithoutLLM}
       label={t('flow.parserMethod')}
-      ownerTenantId={ownerTenantId}
+      resourceTenantId={resourceTenantId}
       showMineruOptions={showMineruOptions}
     ></LayoutRecognizeFormField>
   );

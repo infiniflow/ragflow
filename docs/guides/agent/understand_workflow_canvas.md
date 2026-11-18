@@ -82,7 +82,7 @@ Connections define component execution order. Sequential components run along a 
 ## Configuration Panel
 Click any canvas component to open the right-side configuration panel, which displays fields, input variables, output variables and execution settings. Recommended workflow: confirm which variable the component reads → configure processing logic → verify downstream nodes reference correct outputs.
 
-For slow workflows, see [Improve Agent Response Time](./best_practices/accelerate_agent_question_answering.md).
+For slow workflows, see [Improve Agent Response Time](./accelerate_agent_question_answering.md).
 
 ## Sharing Scope
 

@@ -53,7 +53,11 @@ export function DatasetCard({
           <MoreButton></MoreButton>
         </DatasetDropdown>
       }
-      sharedBadge={<SharedBadge>{dataset.nickname}</SharedBadge>}
+      sharedBadge={
+        <SharedBadge userId={dataset.user_id} ownerNickname={dataset.nickname}>
+          {dataset.nickname}
+        </SharedBadge>
+      }
       onClick={handleCardClick}
     ></HomeCard>
   );

@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -238,7 +239,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if created.Headers["Authorization"] != maskedMCPSecret {
 		t.Fatal("create response exposed headers")
 	}
-	listed, _, err := s.ListMCPServers(ctx, "", nil, "", 0, 0, "create_time", false)
+	listed, _, err := s.ListMCPServers(ctx, "", "", nil, "", 0, 0, "create_time", false)
 	if err != nil || len(listed.MCPServers) != 1 || listed.MCPServers[0].Variables["authorization_token"] != maskedMCPSecret {
 		t.Fatalf("list: result=%#v err=%v", listed, err)
 	}
@@ -519,23 +520,55 @@ func TestListMCPServersAppliesAuthorizationBeforeSQLPagination(t *testing.T) {
 	}
 	pushServiceDB(t, db)
 	addMCPOwnerMembership(t, db, "owner", "tenant-1")
+	active := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID: "mcp-target-member", UserID: "target-user", TenantID: "tenant-1",
+		Role: string(permission.RoleNormal), Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create MCP target membership: %v", err)
+	}
 	for _, server := range []*entity.MCPServer{
-		{ID: "mcp-c", TenantID: "tenant-1", Name: "charlie", URL: "https://example.test/c", ServerType: mcpServerTypeSSE},
-		{ID: "mcp-a", TenantID: "tenant-1", Name: "alpha", URL: "https://example.test/a", ServerType: mcpServerTypeSSE},
-		{ID: "mcp-b", TenantID: "tenant-1", Name: "bravo", URL: "https://example.test/b", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-c", UserID: "owner", TenantID: "tenant-1", Name: "charlie", URL: "https://example.test/c", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-a", UserID: "owner", TenantID: "tenant-1", Name: "alpha", URL: "https://example.test/a", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-b", UserID: "owner", TenantID: "tenant-1", Name: "bravo", URL: "https://example.test/b", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-target", UserID: "target-user", TenantID: "tenant-1", Name: "target", URL: "https://example.test/target", ServerType: mcpServerTypeSSE},
 	} {
 		if err := db.Create(server).Error; err != nil {
 			t.Fatalf("create MCP server %q: %v", server.ID, err)
 		}
 	}
 
-	ctx := serviceTestContext(t, "owner", "tenant-1")
-	listed, code, err := NewMCPService().ListMCPServers(ctx, "tenant-1", nil, "", 2, 1, "name", false)
+	ctx := serviceTestContext(t, "owner", "tenant-1", "target-user")
+	for _, serverID := range []string{"mcp-a", "mcp-b", "mcp-c", "mcp-target"} {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-1", "mcp", serverID, "target-user", "read"); err != nil {
+			t.Fatalf("grant selected MCP user access: %v", err)
+		}
+	}
+	listed, code, err := NewMCPService().ListMCPServers(ctx, "tenant-1", "", nil, "", 2, 1, "name", false)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListMCPServers() = (code %d, %v), want success", code, err)
 	}
-	if listed.Total != 3 || len(listed.MCPServers) != 1 || listed.MCPServers[0].ID != "mcp-b" {
-		t.Fatalf("ListMCPServers() = %#v, want total 3 and page [mcp-b]", listed)
+	if listed.Total != 4 || len(listed.MCPServers) != 1 || listed.MCPServers[0].ID != "mcp-b" {
+		t.Fatalf("ListMCPServers() = %#v, want total 4 and page [mcp-b]", listed)
+	}
+	listed, code, err = NewMCPService().ListMCPServers(ctx, "tenant-1", "target-user", nil, "", 0, 0, "name", false)
+	if err != nil || code != common.CodeSuccess || listed.Total != 4 || len(listed.MCPServers) != 4 {
+		t.Fatalf("ListMCPServers(access_user_id) = (code %d, %#v, %v), want all tenant MCP servers usable by the selected user", code, listed, err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "mcp-member-tenant-1", UserID: "member", TenantID: "tenant-1", Role: string(permission.RoleNormal), Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create MCP member membership: %v", err)
+	}
+	memberCtx := serviceTestContext(t, "member", "tenant-1")
+	for _, serverID := range []string{"mcp-a", "mcp-b", "mcp-c", "mcp-target"} {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-1", "mcp", serverID, "member", "read"); err != nil {
+			t.Fatalf("grant MCP member access: %v", err)
+		}
+	}
+	listed, code, err = NewMCPService().ListMCPServers(memberCtx, "tenant-1", "target-user", nil, "", 0, 0, "name", false)
+	if err != nil || code != common.CodeSuccess || listed.Total != 4 || len(listed.MCPServers) != 4 {
+		t.Fatalf("member ListMCPServers(access_user_id) = (code %d, %#v, %v), want tenant-visible MCP servers the member can use", code, listed, err)
 	}
 }
 
@@ -570,6 +603,7 @@ func sharedMCPTestSetup(t *testing.T, serverTenant, userID, role string, dsl ent
 	server := &entity.MCPServer{
 		ID:         "server",
 		Name:       "Project tools",
+		UserID:     "owner",
 		TenantID:   serverTenant,
 		ServerType: mcpServerTypeStreamableHTTP,
 		URL:        "https://user:credential@example.test/mcp",
@@ -587,16 +621,16 @@ func sharedMCPTestSetup(t *testing.T, serverTenant, userID, role string, dsl ent
 	}
 
 	if role != "" {
-		rel := &entity.UserTenant{
-			ID:        "rel-1",
-			UserID:    userID,
-			TenantID:  serverTenant,
-			Role:      role,
-			InvitedBy: serverTenant,
-			Status:    sptr("1"),
-		}
-		if err := dao.DB.Create(rel).Error; err != nil {
-			t.Fatalf("create tenant membership: %v", err)
+		for _, rel := range []*entity.UserTenant{
+			{ID: "rel-owner", UserID: "owner", TenantID: serverTenant, Role: string(permission.RoleOwner), InvitedBy: serverTenant, Status: sptr("1")},
+			{ID: "rel-1", UserID: userID, TenantID: serverTenant, Role: role, InvitedBy: serverTenant, Status: sptr("1")},
+		} {
+			if rel.UserID == userID && rel.ID == "rel-owner" {
+				continue
+			}
+			if err := dao.DB.Create(rel).Error; err != nil {
+				t.Fatalf("create tenant membership: %v", err)
+			}
 		}
 	}
 
@@ -865,17 +899,17 @@ func TestListMCPServers_IncludesSharedWhenIDsRequested(t *testing.T) {
 	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
 
 	s := NewMCPService()
-	resp, code, err := s.ListMCPServers(permission.WithIdentity(t.Context(), "member", "team"), "team", []string{"server", "server"}, "", 0, 0, "create_time", true)
+	resp, code, err := s.ListMCPServers(permission.WithIdentity(t.Context(), "member", "team"), "team", "", []string{"server", "server"}, "", 0, 0, "create_time", true)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("expected success, got code=%v err=%v", code, err)
 	}
 	if resp.Total != 1 || len(resp.MCPServers) != 1 {
 		t.Fatalf("expected one server, got total=%d len=%d", resp.Total, len(resp.MCPServers))
 	}
-	// A non-owning member has no read grant on the server itself; it is
-	// returned through the shared-agent fallback, which is always read-only.
-	if !resp.MCPServers[0].ReadOnly {
-		t.Errorf("expected shared server to be read_only")
+	// The duplicate requested ID must not produce a second row, and the list
+	// item must not leak stored credentials.
+	if fmt.Sprint(resp.MCPServers[0].Variables) == fmt.Sprint(entity.JSONMap{"authorization_token": "credential"}) {
+		t.Error("list item leaked stored MCP credentials")
 	}
 }
 
@@ -887,7 +921,7 @@ func TestListMCPServers_SharedHonorsPagination(t *testing.T) {
 	pushServiceDB(t, db)
 	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
 	ctx := permission.WithIdentity(t.Context(), "member", "team")
-	resp, code, err := NewMCPService().ListMCPServers(ctx, "team", []string{"server"}, "", 2, 1, "name", false)
+	resp, code, err := NewMCPService().ListMCPServers(ctx, "team", "", []string{"server"}, "", 2, 1, "name", false)
 	if err != nil || code != common.CodeSuccess || resp.Total != 1 || len(resp.MCPServers) != 0 {
 		t.Fatalf("page two: response=%+v code=%d err=%v", resp, code, err)
 	}
@@ -900,7 +934,6 @@ func TestSharedMCPServerManagementRemainsOwnerOnly(t *testing.T) {
 	}
 	pushServiceDB(t, db)
 	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
-	addMCPOwnerMembership(t, db, "owner", "team")
 	ctx := permission.WithIdentity(t.Context(), "member", "team")
 	s := NewMCPService()
 	shared, code, err := s.GetMCPServer(ctx, "server")
@@ -933,14 +966,14 @@ func TestListMCPServers_NoIDDoesNotEnumerateShared(t *testing.T) {
 	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
 
 	s := NewMCPService()
-	resp, code, err := s.ListMCPServers(permission.WithIdentity(t.Context(), "member", "team"), "team", nil, "", 0, 0, "create_time", true)
+	resp, code, err := s.ListMCPServers(permission.WithIdentity(t.Context(), "member", "team"), "team", "", nil, "", 0, 0, "create_time", true)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("expected success, got code=%v err=%v", code, err)
 	}
-	// A non-owning member has no owned scope and the shared-ID expansion only
-	// runs for IDs explicitly requested by the caller, so nothing is listed.
-	if resp.Total != 0 || len(resp.MCPServers) != 0 {
-		t.Fatalf("expected no servers, got total=%d len=%d", resp.Total, len(resp.MCPServers))
+	// The shared-ID expansion only runs for explicitly requested IDs; without
+	// them the member sees the tenant-visible server exactly once.
+	if resp.Total != 1 || len(resp.MCPServers) != 1 {
+		t.Fatalf("expected one tenant-visible server, got total=%d len=%d", resp.Total, len(resp.MCPServers))
 	}
 }
 
@@ -954,7 +987,7 @@ func TestListMCPServers_SharedHonorsKeyword(t *testing.T) {
 	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
 
 	s := NewMCPService()
-	resp, code, err := s.ListMCPServers(permission.WithIdentity(t.Context(), "member", "team"), "team", []string{"server"}, "unmatched", 0, 0, "create_time", true)
+	resp, code, err := s.ListMCPServers(permission.WithIdentity(t.Context(), "member", "team"), "team", "", []string{"server"}, "unmatched", 0, 0, "create_time", true)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("expected success, got code=%v err=%v", code, err)
 	}

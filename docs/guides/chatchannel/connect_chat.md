@@ -4,7 +4,7 @@ title: Connect Chat
 sidebar_label: Connect Chat
 slug: /connect_chat_channel
 sidebar_custom_props: {
-  categoryIcon: LucideMessagesSquare
+  categoryIcon: LucideLink
 }
 ---
 

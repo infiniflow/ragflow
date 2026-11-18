@@ -20,6 +20,7 @@ import {
 } from '../chat-stream/store';
 import { resolveResendOptions } from '../utils';
 import { useCreateConversationBeforeSendMessage } from './use-chat-url';
+import { useRegenerationAutoScroll } from './use-regeneration-auto-scroll';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
 import { useUploadFile } from './use-upload-file';
 
@@ -154,6 +155,13 @@ export const useSendMessage = () => {
     [conversationId, removeMessageFromStore],
   );
 
+  const { startAutoScroll } = useRegenerationAutoScroll({
+    conversationId,
+    messages,
+    isStreaming,
+    containerRef: messageContainerRef,
+  });
+
   // Regenerating re-asks the same question as a new turn instead of rewriting
   // the original exchange, so every earlier answer stays in the transcript.
   const regenerateMessage = useCallback(
@@ -168,13 +176,14 @@ export const useSendMessage = () => {
         conversationId,
       };
 
+      startAutoScroll();
       appendQuestion(conversationId, questionMessage);
       sendMessage({
         message: questionMessage,
         ...resolveResendOptions(lastSendOptionsRef.current),
       });
     },
-    [conversationId, isStreaming, appendQuestion, sendMessage],
+    [conversationId, isStreaming, appendQuestion, sendMessage, startAutoScroll],
   );
 
   const { createConversationBeforeSendMessage } =

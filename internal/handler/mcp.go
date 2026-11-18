@@ -101,8 +101,9 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 	keywords := c.Query("keywords")
 	mcpIDs := getMCPIDsFromQuery(c)
 	tenantID := c.Query("tenant_id")
+	accessUserID := c.Query("access_user_id")
 
-	result, code, err := h.mcpService.ListMCPServers(ctx, tenantID, mcpIDs, keywords, page, pageSize, orderby, desc)
+	result, code, err := h.mcpService.ListMCPServers(ctx, tenantID, accessUserID, mcpIDs, keywords, page, pageSize, orderby, desc)
 	if err != nil {
 		if code == common.CodeServerError {
 			common.Respond(c, http.StatusInternalServerError, code, nil, err.Error())

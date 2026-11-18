@@ -76,8 +76,6 @@ type Service struct {
 	BillingSubscriptionDAO *dao.BillingSubscriptionDAO
 	MemoryDAO              *dao.MemoryDAO
 	SearchDAO              *dao.SearchDAO
-	deleteEngine           engine.DocEngine
-	deleteStorage          storage.Storage
 }
 
 // NewService create admin service
@@ -338,25 +336,14 @@ func (s *Service) GetUserDetails(ctx context.Context, username string) (map[stri
 	}, nil
 }
 
-// DeleteUserResult result of delete user operation
-type DeleteUserResult struct {
-	Username        string   `json:"username"`
-	LangfuseCount   int      `json:"langfuse_count"`
-	MetadataTable   string   `json:"metadata_table"`
-	TenantCount     int      `json:"tenant_count"`
-	UserTenantCount int      `json:"user_tenant_count"`
-	UserCount       int      `json:"user_count"`
-	DeletedDetails  []string `json:"deleted_details"`
-}
-
 // DeleteUser delete user with cascade delete of all related data
 // Parameters:
 //   - username: email address of the user to delete
 //
 // Returns:
-//   - *DeleteUserResult
+//   - *servicepkg.DeleteUserResult
 //   - error: error message
-func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserResult, error) {
+func (s *Service) DeleteUser(ctx context.Context, username string) (*servicepkg.DeleteUserResult, error) {
 	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
@@ -381,7 +368,7 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserR
 		return nil, fmt.Errorf("user '%s' is admin account and cannot be deleted", username)
 	}
 
-	return s.deleteUserData(ctx, user)
+	return (servicepkg.UserDeletionService{}).Delete(ctx, user)
 }
 
 // ChangePassword change user password
@@ -1058,6 +1045,11 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 }
 
 func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValue string) error {
+	if strings.EqualFold(varName, "api_key.max_count") {
+		if _, err := entity.ParseAPITokenLimit(varValue); err != nil {
+			return err
+		}
+	}
 	settings, err := s.systemSettingsDAO.GetByName(ctx, db, varName)
 	if err != nil {
 		return err
@@ -1065,6 +1057,11 @@ func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValu
 
 	if len(settings) == 1 {
 		setting := &settings[0]
+		if strings.EqualFold(setting.Name, "api_key.max_count") {
+			if _, err := entity.ParseAPITokenLimit(varValue); err != nil {
+				return err
+			}
+		}
 		if err = entity.ValidateSystemSettingValue(*setting, varValue); err != nil {
 			return err
 		}

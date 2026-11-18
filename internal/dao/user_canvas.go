@@ -229,14 +229,15 @@ func (dao *UserCanvasDAO) ListByIDs(ctx context.Context, db *gorm.DB, canvasIDs,
 		user_canvas.permission,
 		user_canvas.user_id,
 		COALESCE(NULLIF(user_canvas.tenant_id, ''), user_canvas.user_id) AS tenant_id,
-		user.nickname,
-		user.avatar AS tenant_avatar,
+		owner.nickname,
+		tenant.avatar AS tenant_avatar,
 		user_canvas.canvas_type,
 		user_canvas.canvas_category,
 		user_canvas.tags,
 		user_canvas.create_time,
 		user_canvas.update_time`).
-		Joins("LEFT JOIN user ON user_canvas.user_id = user.id").
+		Joins("LEFT JOIN user AS owner ON user_canvas.user_id = owner.id").
+		Joins("LEFT JOIN user AS tenant ON COALESCE(NULLIF(user_canvas.tenant_id, ''), user_canvas.user_id) = tenant.id").
 		Where("user_canvas.id IN ?", canvasIDs)
 	if len(ownerIDs) > 0 {
 		base = base.Where("user_canvas.user_id IN ?", ownerIDs)

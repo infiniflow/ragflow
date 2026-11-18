@@ -25,7 +25,6 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -200,56 +199,42 @@ type CreateFolderRequest struct {
 // @Failure 400 {object} map[string]interface{}
 // @Router /api/v1/files [POST]
 func (h *FileHandler) UploadFile(c *gin.Context) {
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "upload_files_or_create_directory",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
+	operation := "upload_files_or_create_directory"
+	switch {
+	case strings.Contains(c.ContentType(), "multipart/form-data"):
+		operation = "upload_files"
+	case strings.Contains(c.ContentType(), "application/json"):
+		operation = "create_directory"
 	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
+	common.StartOperationLog(c, operation)
+	defer common.FinishOperationLog(c)
 
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(common.CodeBadRequest)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
-	operationLog.UserID = user.ID
 
 	userID := user.ID
 
 	contentType := c.ContentType()
 	ctx := c.Request.Context()
 
-	operationLog.Resources = make(map[string]any)
 	if strings.Contains(contentType, "multipart/form-data") {
-		operationLog.Operation = "upload_files"
 		uploadLimit := file.DeploymentUploadMaxBytes()
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadLimit)
 		if cl := c.Request.ContentLength; cl > uploadLimit {
 			common.RespondError(c, common.CodeBadRequest, "request body exceeds deployment upload limit")
-			operationLog.Code = int(common.CodeBadRequest)
-			operationLog.Error = errors.New("request body exceeds deployment upload limit")
 			return
 		}
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
 			common.RespondError(c, common.CodeBadRequest, "Failed to parse multipart form: "+err.Error())
-			operationLog.Code = int(common.CodeBadRequest)
-			operationLog.Error = fmt.Errorf("failed to parse multipart form: %w", err)
 			return
 		}
 
 		form := c.Request.MultipartForm
 		if form == nil {
 			common.RespondError(c, common.CodeBadRequest, "No file part!")
-			operationLog.Code = int(common.CodeBadRequest)
-			operationLog.Error = errors.New("no file part")
 			return
 		}
 		var totalSize int64
@@ -266,29 +251,23 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			rootFolder, err := h.fileService.GetRootFolder(ctx)
 			if err != nil {
 				respondFileServiceError(c, err)
-				operationLog.Code = int(common.CodeBadRequest)
-				operationLog.Error = err
 				return
 			}
 			parentID = rootFolder["id"].(string)
 		}
 
+		common.SetOperationResource(c, "parent_id", parentID)
 		files := form.File["file"]
 		if len(files) == 0 {
 			common.RespondError(c, common.CodeBadRequest, "No file selected!")
-			operationLog.Code = int(common.CodeBadRequest)
-			operationLog.Error = errors.New("no file selected")
 			return
 		}
 
 		for _, fileHeader := range files {
 			if fileHeader.Filename == "" {
 				common.RespondError(c, common.CodeBadRequest, "No file selected!")
-				operationLog.Code = int(common.CodeBadRequest)
-				operationLog.Error = errors.New("no file selected")
 				return
 			}
-			operationLog.Resources[fileHeader.Filename] = fileHeader.Size
 		}
 
 		result, err := h.fileService.UploadFile(ctx, parentID, files, uploadLimit)
@@ -297,17 +276,21 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 				return
 			}
 			common.RespondError(c, common.CodeBadRequest, err.Error())
-			operationLog.Code = int(common.CodeBadRequest)
-			operationLog.Error = err
 			return
 		}
 
+		fileIDs := make([]string, 0, len(result))
+		for _, uploaded := range result {
+			if id, ok := uploaded["id"].(string); ok {
+				fileIDs = append(fileIDs, id)
+			}
+		}
+		common.SetOperationResource(c, "file_ids", fileIDs)
 		common.RespondSuccessList(c, result, common.CodeSuccess.Message())
 		return
 	}
 
 	if strings.Contains(contentType, "application/json") {
-		operationLog.Operation = "create_directory"
 		var req CreateFolderRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			common.Respond(c, http.StatusBadRequest, 400, nil, err.Error())
@@ -319,25 +302,22 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			rootFolder, err := h.fileService.GetRootFolder(ctx)
 			if err != nil {
 				respondFileServiceError(c, err)
-				operationLog.Code = int(common.CodeBadRequest)
-				operationLog.Error = err
 				return
 			}
 			parentID = rootFolder["id"].(string)
 		}
-		operationLog.Resources["directory_name"] = req.Name
 
+		common.SetOperationResource(c, "parent_id", parentID)
 		result, err := h.fileService.CreateFolder(ctx, req.Name, parentID, req.Type)
 		if err != nil {
 			if respondPermissionErrorIf(c, err, true) {
 				return
 			}
 			common.RespondError(c, common.CodeBadRequest, err.Error())
-			operationLog.Code = int(common.CodeBadRequest)
-			operationLog.Error = err
 			return
 		}
 
+		common.SetOperationResource(c, "file_id", result["id"])
 		common.RespondSuccess(c, result, common.CodeSuccess.Message())
 		return
 	}
@@ -360,36 +340,21 @@ type DeleteFileRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files [delete]
 func (h *FileHandler) DeleteFiles(c *gin.Context) {
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "delete_files",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
-
-	operationLog.UserID = permission.UserIDFromContext(c.Request.Context())
+	common.StartOperationLog(c, "delete_files")
+	defer common.FinishOperationLog(c)
 
 	var req DeleteFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
-		operationLog.Code = int(common.CodeBadRequest)
-		operationLog.Error = err
 		return
 	}
 
+	common.SetOperationResource(c, "file_ids", req.IDs)
 	if err := h.fileService.DeleteFiles(c.Request.Context(), req.IDs); err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		common.RespondError(c, common.CodeBadRequest, err.Error())
-		operationLog.Code = int(common.CodeBadRequest)
-		operationLog.Error = err
 		return
 	}
 
@@ -414,49 +379,33 @@ type MoveFileRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/move [post]
 func (h *FileHandler) MoveFiles(c *gin.Context) {
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "move_files",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
+	common.StartOperationLog(c, "move_files")
+	defer common.FinishOperationLog(c)
 
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
-	operationLog.UserID = user.ID
 
 	var req MoveFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
-		operationLog.Code = int(common.CodeBadRequest)
-		operationLog.Error = err
 		return
 	}
+
+	common.SetOperationResource(c, "file_ids", req.SrcFileIDs)
+	common.SetOperationResource(c, "dest_file_id", req.DestFileID)
 
 	// Validate: at least one of dest_file_id or new_name must be provided
 	if req.DestFileID == "" && req.NewName == "" {
 		common.RespondError(c, common.CodeParamError, "at least one of dest_file_id or new_name must be provided")
-		operationLog.Code = int(common.CodeParamError)
-		operationLog.Error = errors.New("at least one of dest_file_id or new_name must be provided")
 		return
 	}
 
 	// Validate: new_name can only be used with a single file
 	if req.NewName != "" && len(req.SrcFileIDs) > 1 {
 		common.RespondError(c, common.CodeParamError, "new_name can only be used with a single file")
-		operationLog.Code = int(common.CodeParamError)
-		operationLog.Error = errors.New("new_name can only be used with a single file")
 		return
 	}
 
@@ -466,8 +415,6 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 			return
 		}
 		common.RespondError(c, common.CodeBadRequest, err.Error())
-		operationLog.Code = int(common.CodeBadRequest)
-		operationLog.Error = err
 		return
 	}
 
@@ -483,32 +430,18 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 // @Success 200 {file} binary "File stream"
 // @Router /api/v1/files/{file_id} [get]
 func (h *FileHandler) Download(c *gin.Context) {
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "download_file",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
-	user, errorCode, errorMessage := GetUser(c)
+	common.StartOperationLog(c, "download_file")
+	defer common.FinishOperationLog(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
-	operationLog.UserID = user.ID
 
 	fileID := c.Param("id")
+	common.SetOperationResource(c, "file_id", fileID)
 	if fileID == "" {
 		common.RespondError(c, common.CodeParamError, "id is required")
-		operationLog.Code = int(common.CodeParamError)
-		operationLog.Error = errors.New("id is required")
 		return
 	}
 
@@ -517,13 +450,9 @@ func (h *FileHandler) Download(c *gin.Context) {
 	fileContent, err := h.fileService.GetFileContent(ctx, fileID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
-			operationLog.Code = int(common.CodePermissionError)
-			operationLog.Error = err
 			return
 		}
 		common.RespondError(c, common.CodeUnauthorized, err.Error())
-		operationLog.Code = int(common.CodeUnauthorized)
-		operationLog.Error = err
 		return
 	}
 
@@ -531,8 +460,6 @@ func (h *FileHandler) Download(c *gin.Context) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		common.RespondError(c, common.CodeServerError, "storage not initialized")
-		operationLog.Code = int(common.CodeServerError)
-		operationLog.Error = errors.New("storage not initialized")
 		return
 	}
 
@@ -549,8 +476,6 @@ func (h *FileHandler) Download(c *gin.Context) {
 		storageAddr, err = h.fileService.GetStorageAddress(ctx, fileID)
 		if err != nil {
 			common.RespondError(c, common.CodeServerError, "Failed to get file storage address: "+err.Error())
-			operationLog.Code = int(common.CodeServerError)
-			operationLog.Error = errors.New("failed to get file storage address")
 			return
 		}
 		blob, getErr = storageImpl.Get(ctx, storageAddr.Bucket, storageAddr.Name)
@@ -563,8 +488,6 @@ func (h *FileHandler) Download(c *gin.Context) {
 			errMsg += ": " + getErr.Error()
 		}
 		common.RespondError(c, common.CodeServerError, errMsg)
-		operationLog.Code = int(common.CodeServerError)
-		operationLog.Error = errors.New(errMsg)
 		return
 	}
 

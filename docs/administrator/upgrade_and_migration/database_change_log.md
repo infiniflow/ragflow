@@ -4,7 +4,7 @@ title: Database Change Log
 sidebar_label: Database Change Log
 slug: /database_change_log
 sidebar_custom_props: {
-  categoryIcon: LucideFileDiff
+  categoryIcon: LucideFileClock
 }
 ---
 
@@ -21,6 +21,10 @@ A record of the schema and data changes the Go backend applies to a RAGFlow data
 - The compilation queue split records `knowledgeCompileQueueTargetVersion` (`v1.0.0-rc3.dev5`), defined in [knowledge_compile_queue_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/knowledge_compile_queue_migration.go), after both queues finish. Source-column presence controls the queue copy even when the marker already contains this or a newer version.
 - A version-gated step runs when the stored version is lower than the step's version. Versions are compared with Python PEP 440 semantics, where a `dev` prerelease sorts *before* the release it precedes (`v1.0.0-rc1.dev1` < `v1.0.0-rc1`). A missing or unparsable marker never skips a step.
 - `checkDatabaseVersion` in [cmd/ragflow_server.go](https://github.com/infiniflow/ragflow/blob/main/cmd/ragflow_server.go) refuses to start when the code version is older than the stored database version, so a database migrated by a newer release cannot be opened by an older one.
+
+OSS startup runs migrations automatically before starting services. The enterprise
+executable exposes `--migrate` for a separate migration step; the explicit commands
+below refer to that deployment flow.
 
 Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/database.go)):
 

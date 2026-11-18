@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -56,6 +57,28 @@ func newOpenRouterForTest(baseURL string) *OpenRouterModel {
 			Balance: "credits",
 		},
 	)
+}
+
+func TestOpenRouterReasoningConfigPreservesThinkingChoice(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  *ChatConfig
+		want map[string]any
+	}{
+		{"unset", nil, nil},
+		{"disabled with effort", &ChatConfig{Thinking: new(false), Effort: new("high")}, map[string]any{"enabled": false}},
+		{"enabled with effort", &ChatConfig{Thinking: new(true), Effort: new("high")}, map[string]any{"enabled": true, "effort": "high"}},
+		{"effort only", &ChatConfig{Effort: new("high")}, map[string]any{"effort": "high"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := map[string]any{}
+			applyOpenRouterReasoningConfig(body, tc.cfg)
+			got, _ := body["reasoning"].(map[string]any)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("reasoning = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
 }
 
 func writeOpenRouterAudioFile(t *testing.T, name string, content []byte) string {

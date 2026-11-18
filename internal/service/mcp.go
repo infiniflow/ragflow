@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -94,6 +95,9 @@ type UpdateMCPServerRequest map[string]json.RawMessage
 // MCPServerListItem is an MCP server item in the list response.
 type MCPServerListItem struct {
 	ID                 string         `json:"id"`
+	UserID             string         `json:"user_id"`
+	TenantID           string         `json:"tenant_id"`
+	Nickname           string         `json:"nickname"`
 	Name               string         `json:"name"`
 	ServerType         string         `json:"server_type"`
 	URL                string         `json:"url"`
@@ -743,7 +747,7 @@ func headerOrVariablesChanged(req UpdateMCPServerRequest) bool {
 // ListMCPServers lists MCP servers belonging to a tenant the caller can use,
 // plus sanitized metadata for any requested MCP IDs that are shared through
 // a visible agent canvas.
-func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID, accessUserID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
@@ -761,15 +765,17 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID strin
 	}
 
 	checker := permission.NewDatabaseChecker(dao.DB)
-	queryScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
+	queryScope, err := queryScopeForAccessUser(ctx, checker, permission.ScopeQuery{
 		TenantID:  tenantID,
 		Kind:      permission.ResourceKindMCPServer,
-		Operation: permission.OperationRead,
-	})
+		Operation: permission.OperationUse,
+	}, accessUserID)
 	if err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
+	// When explicit IDs are requested the shared catalog entries are merged in
+	// below, so pagination must run on the combined list rather than in SQL.
 	queryPage, queryPageSize := page, pageSize
 	if len(ids) > 0 {
 		queryPage, queryPageSize = 0, 0
@@ -797,7 +803,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID strin
 		}
 		for _, ref := range refs {
 			access, ok := accesses[ref]
-			if !ok || !access.Allows(permission.OperationRead) {
+			if !ok || !access.Allows(permission.OperationUse) {
 				continue
 			}
 			permissionMasks[ref.ID] = access.PermissionMask
@@ -810,7 +816,11 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID strin
 		if !ok {
 			continue
 		}
-		item := newMCPServerListItem(server, false)
+		nickname := ""
+		if server.Nickname != nil {
+			nickname = *server.Nickname
+		}
+		item := newMCPServerListItem(&server.MCPServer, nickname, false)
 		item.OperatorPermission = permissionMask
 		items = append(items, item)
 		ownedIDs[server.ID] = struct{}{}
@@ -838,11 +848,14 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID strin
 			if keywords != "" && !strings.Contains(strings.ToLower(shared.Name), strings.ToLower(keywords)) {
 				continue
 			}
-			items = append(items, newMCPServerListItem(shared, true))
+			items = append(items, newMCPServerListItem(shared, "", true))
 			total++
 		}
 	}
 
+	if len(ids) > 0 {
+		sortMCPServerListItems(items, orderby, desc)
+	}
 	if len(ids) > 0 && page > 0 && pageSize > 0 {
 		start := len(items)
 		if page-1 <= len(items)/pageSize {
@@ -856,16 +869,55 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID strin
 	}, common.CodeSuccess, nil
 }
 
+// sortMCPServerListItems orders the combined owned+shared list with the same
+// ordering the DAO applies for owned rows: the requested column first, then
+// id ASC as tie-breaker.
+func sortMCPServerListItems(items []*MCPServerListItem, orderby string, desc bool) {
+	field := func(item *MCPServerListItem) string {
+		switch orderby {
+		case "name":
+			return item.Name
+		case "server_type":
+			return item.ServerType
+		case "url":
+			return item.URL
+		case "update_time", "update_date":
+			if item.UpdateDate != nil {
+				return *item.UpdateDate
+			}
+		case "create_time", "create_date":
+			if item.CreateDate != nil {
+				return *item.CreateDate
+			}
+		}
+		return item.ID
+	}
+	slices.SortStableFunc(items, func(a, b *MCPServerListItem) int {
+		if orderby != "id" {
+			if c := strings.Compare(field(a), field(b)); c != 0 {
+				if desc {
+					return -c
+				}
+				return c
+			}
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+}
+
 // newMCPServerListItem builds a list item from an MCP server. For shared
 // servers the Variables/Headers are already sanitized by GetSharedMCPServer;
 // for owned servers the standard response masking is applied.
-func newMCPServerListItem(server *entity.MCPServer, readOnly bool) *MCPServerListItem {
+func newMCPServerListItem(server *entity.MCPServer, nickname string, readOnly bool) *MCPServerListItem {
 	variables := server.Variables
 	if variables == nil {
 		variables = entity.JSONMap{}
 	}
 	return &MCPServerListItem{
 		ID:          server.ID,
+		UserID:      server.UserID,
+		TenantID:    server.TenantID,
+		Nickname:    nickname,
 		Name:        server.Name,
 		ServerType:  server.ServerType,
 		URL:         server.URL,

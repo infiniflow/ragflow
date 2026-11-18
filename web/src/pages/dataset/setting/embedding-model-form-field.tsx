@@ -19,8 +19,8 @@ interface IProps {
 export function EmbeddingModelItem({
   line = 1,
   isEdit,
-  ownerTenantId,
-}: IProps & { ownerTenantId?: string }) {
+  resourceTenantId,
+}: IProps & { resourceTenantId?: string }) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const disabled = useHasParsedDocument(isEdit);
@@ -53,7 +53,7 @@ export function EmbeddingModelItem({
                     field={field}
                     disabled={disabled}
                     testId="ds-settings-basic-embedding-model-select"
-                    ownerTenantId={ownerTenantId}
+                    resourceTenantId={resourceTenantId}
                   ></EmbeddingSelect>
                 </FormControl>
               </div>

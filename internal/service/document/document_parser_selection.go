@@ -26,8 +26,13 @@ const generalParserID = "general"
 // governs the file. Mirrors Python's FileService.get_parser
 // (api/db/services/file_service.py:734-743): images and video are parsed by the
 // picture pipeline, audio by audio, presentations by presentation and mail by
-// email.
+// email. An edition may add a file type of its own through
+// dedicatedParserExtension.
 func dedicatedDocumentParserID(filetype utility.FileType, filename string) string {
+	if id := dedicatedParserExtension(filetype, filename); id != "" {
+		return id
+	}
+
 	switch filetype {
 	case utility.FileTypeVISUAL:
 		return "picture"

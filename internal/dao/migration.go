@@ -90,18 +90,19 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate tenant model data: %w", err)
 	}
 
-	// Drop the unused tenant-level model group tables. Failover is configured
-	// per conversation instead, so nothing reads or writes these any more.
-	if err := dropModelGroupTables(ctx, db); err != nil {
-		return fmt.Errorf("failed to drop tenant model group tables: %w", err)
+	// Drop the tables left behind by the abandoned tenant-level model group
+	// feature. Failover is configured per conversation instead, so nothing
+	// read or wrote them any more.
+	if err := dropAbandonedModelGroupTables(ctx, db); err != nil {
+		return fmt.Errorf("failed to drop abandoned model group tables: %w", err)
 	}
 
 	common.Info("All manual migrations completed successfully")
 	return nil
 }
 
-// dropModelGroupTables removes tenant_model_group and
-// tenant_model_group_mapping.
+// dropAbandonedModelGroupTables removes tenant_model_group_mapping, and a
+// tenant_model_group table that still carries the abandoned feature's schema.
 //
 // The tables were created by AutoMigrate for a tenant-scoped failover-group
 // feature that was never shipped: no service read them, and the per-conversation
@@ -109,18 +110,26 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 // without this they would linger in every existing database with no way to remove
 // them. AutoMigrate cannot express a drop, hence the explicit migration.
 //
-// Guarded by HasTable so a database that never had them is a no-op, and
-// mapping-first because it references the group table.
-func dropModelGroupTables(ctx context.Context, db *gorm.DB) error {
+// The enterprise model-group feature now owns the tenant_model_group name
+// (entity.TenantModelGroup, auto-migrated together with tenant_model_group_map),
+// so the group table must never be dropped blindly. It is removed only when the
+// feature's map table is absent: the feature always creates both tables in one
+// auto-migrate pass, so their presence proves the table is live, while their
+// absence proves the table is the abandoned feature's leftover and safe to drop
+// before AutoMigrate recreates it with the current definition.
+func dropAbandonedModelGroupTables(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
-	for _, table := range []string{"tenant_model_group_mapping", "tenant_model_group"} {
-		if !migrator.HasTable(table) {
-			continue
+	if migrator.HasTable("tenant_model_group_mapping") {
+		if err := migrator.DropTable("tenant_model_group_mapping"); err != nil {
+			return fmt.Errorf("drop tenant_model_group_mapping: %w", err)
 		}
-		if err := migrator.DropTable(table); err != nil {
-			return fmt.Errorf("drop %s: %w", table, err)
+		common.Info("Dropped unused table", zap.String("table", "tenant_model_group_mapping"))
+	}
+	if migrator.HasTable("tenant_model_group") && !migrator.HasTable("tenant_model_group_map") {
+		if err := migrator.DropTable("tenant_model_group"); err != nil {
+			return fmt.Errorf("drop tenant_model_group: %w", err)
 		}
-		common.Info("Dropped unused table", zap.String("table", table))
+		common.Info("Dropped unused table", zap.String("table", "tenant_model_group"))
 	}
 	return nil
 }

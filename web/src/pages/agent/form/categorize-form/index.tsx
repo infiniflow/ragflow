@@ -7,7 +7,7 @@ import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { initialCategorizeValues } from '../../constant';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
@@ -33,7 +33,7 @@ function CategorizeForm({ node }: INextOperatorForm) {
 
   useWatchFormChange(node?.id, form);
 
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
 
   return (
     <Form {...form}>
@@ -44,7 +44,7 @@ function CategorizeForm({ node }: INextOperatorForm) {
           label={t('chat.model')}
           modelTypes={['chat', 'vision', 'decision']}
           providers={[]}
-          ownerTenantId={ownerTenantId}
+          resourceTenantId={resourceTenantId}
         />
         <MessageHistoryWindowSizeFormField
           min={0}
