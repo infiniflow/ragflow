@@ -123,6 +123,8 @@ export enum Operator {
   SofyaSearch = 'SofyaSearch',
   Search1APISearch = 'Search1APISearch',
   Search1APICrawl = 'Search1APICrawl',
+  AnySearchSearch = 'AnySearchSearch',
+  AnySearchDiscover = 'AnySearchDiscover',
   DocGenerator = 'DocGenerator',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',

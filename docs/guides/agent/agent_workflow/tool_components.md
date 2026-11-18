@@ -18,7 +18,7 @@ In the tables below, **No** means manual input is optional; keep any default sho
 
 | Tool Category | Typical Components | Use Case |
 | --- | --- | --- |
-| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable, Sofya, Search1API | Retrieve web pages, news, public information, or content from specified sites. |
+| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable, Sofya, Search1API, AnySearch | Retrieve web pages, news, public information, or content from specified sites. |
 | Academic search | Google Scholar, ArXiv, PubMed, BGPT | Retrieve papers, medical literature, and research materials. |
 | Data and financial queries | Execute SQL, Yahoo Finance, WenCai | Query databases, market data, or financial screening results. |
 | Content output | Email, Document Generator | Send emails or generate downloadable documents. |
@@ -336,6 +336,59 @@ Search1API Crawl reads one web page and returns its title and full content. A co
 #### Output Result
 
 `json` contains the page title, link, content, and any metadata returned by Search1API.
+
+### AnySearch
+
+AnySearch searches the web and specialised verticals, such as finance, academic papers, code documentation, legal, and health data, through one API. It works without an API key. A key raises the usage quota and can be created at [anysearch.com](https://anysearch.com/console/api-keys). In an Agent it is available as two tools, AnySearch and AnySearch Discover. The search component can also be used as a standalone node.
+
+An Agent that needs a vertical search first calls AnySearch Discover to list the current domains and the tags and parameters of the ones it picks, then calls AnySearch with the tag and parameters it found. The catalog changes over time, so it is read from the service and not fixed in the Agent.
+
+#### Parameter Description
+
+AnySearch:
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| query | string | Yes | `{sys.query}` | Search keywords. |
+| tag | string | No | Empty | Vertical tag such as `code.doc` or `finance.quote`, as returned by AnySearch Discover. Leave it empty for a general web search. |
+| params | object | No | Empty | Parameters the tag declares, for example `{"library": "react"}`. Requires a tag. Pass every required parameter, using an empty string when it does not apply. |
+| queries | array | No | Empty | Agent tool only. 1 to 5 independent searches that run in parallel. Each item takes the same fields as above. Use it instead of `query`. |
+| max_results | integer | No | Node Top N | Number of results for one search, 1 to 10. |
+| api_key | string | Node configuration | Empty | Optional AnySearch API key. Leave it empty for anonymous access. |
+| top_n | integer | Node configuration | 10 | Default number of results per search, 1 to 10. |
+| zone | string | Node configuration | Empty | Region preference, `cn` or `intl`. The Agent can override it for a call. |
+| language | string | Node configuration | Empty | Preferred result language, such as `en` or `zh-CN`. The Agent can override it for a call. |
+
+AnySearch Discover:
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| domains | array | No | Empty | Up to 5 domain IDs, such as `code` or `finance`. Leave it empty to list the available domains. |
+| api_key | string | Node configuration | Empty | Optional AnySearch API key. |
+
+Each tool has its own node settings, so enter the key on each tool you add.
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| Query | React useEffect cleanup |
+| API Key |  |
+| Top N | 5 |
+| Zone |  |
+| Language | en |
+
+The tag, params and queries are chosen for each call and are not stored in the node settings. The Agent supplies them when it uses the tools, and the debug form of the standalone component accepts a tag and params. For example, an Agent searching React documentation sends the tag `code.doc` with the params `{"library": "react"}`.
+
+Follow the discovered parameter descriptions, including conditional requirements. For `travel.flight_status`, provide a nonempty `flight_number`. When no departure airport is specified, the tool sends `departure: ""`; an explicitly supplied airport is preserved. A missing flight number or a non-string departure value is rejected before making a request.
+
+#### Output Result
+
+`json` contains one record per search, in the order the searches were sent: the query, the tag, the AnySearch `request_id`, the results, and an `_ERROR` field when that search failed. `formalized_content` renders the results grouped by query and is commonly used as Agent context. Content and snippets are limited to 1,500 characters; `truncated_fields` identifies shortened fields by result index. URLs and other fields are preserved. A query exceeding the approximately 819 KiB result budget returns an error, while other batch queries can still succeed.
+
+Searches in a `queries` call are independent. If one fails, for example because of an unknown tag, the other results are still returned, and the failed record carries the AnySearch message and `request_id`. The whole call reports an error only when every search failed. An invalid argument, such as an unsupported zone, a missing query, or more than 5 queries, is rejected before any search runs. An invalid API key is reported as an error and is never retried without the key.
+
+Both the standalone component and Agent tool runs record search results as retrieval references. Their document and display IDs use RAGFlow's shared citation contract so the results remain available for citation grounding.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.
