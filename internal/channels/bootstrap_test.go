@@ -26,8 +26,73 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"ragflow/internal/channels/core"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 )
+
+func TestStartIsolatesMalformedChannelAndKeepsReconciling(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&entity.ChatChannel{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.ChatChannel{
+		ID: "invalid", TenantID: "tenant", Name: "invalid", Channel: "telegram",
+		Config: entity.JSONMap{}, Status: 1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	runtime, err := Start(ctx, nil)
+	if err != nil {
+		t.Fatalf("Start() error = %v, want isolated channel failure", err)
+	}
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		runtime.mu.Lock()
+		failure, ok := runtime.failed["invalid"]
+		if ok {
+			cancel()
+			runtime.mu.Unlock()
+			if failure.attempts != 1 {
+				t.Fatalf("failed channel attempts = %d, want 1", failure.attempts)
+			}
+			break
+		}
+		runtime.mu.Unlock()
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			t.Fatal("background reconciliation did not record channel failure")
+		}
+	}
+}
+
+func TestStartReturnsDatabaseFailure(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalDB := dao.DB
+	dao.DB = db
+	defer func() { dao.DB = originalDB }()
+	if _, err := Start(t.Context(), nil); err == nil {
+		t.Fatal("Start() succeeded without the channel table")
+	}
+}
 
 func TestStartRetryDelay(t *testing.T) {
 	tests := []struct {

@@ -19,10 +19,12 @@ package entity
 import (
 	"strings"
 	"time"
+
+	"ragflow/internal/common"
 )
 
-// DatasetNameLimit is the maximum length for dataset name
-const DatasetNameLimit = 128
+// DatasetNameLimit is the maximum length for a dataset name.
+const DatasetNameLimit = common.NameLimit128
 
 // Status represents the status enum values
 type Status string
@@ -102,12 +104,13 @@ const (
 type Knowledgebase struct {
 	ID                     string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	Avatar                 *string    `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
+	UserID                 string     `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
 	TenantID               string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Name                   string     `gorm:"column:name;size:128;not null;index" json:"name"`
 	Language               *string    `gorm:"column:language;size:32;index;default:'English'" json:"language,omitempty"`
 	Description            *string    `gorm:"column:description;type:longtext" json:"description,omitempty"`
 	EmbdID                 string     `gorm:"column:embd_id;size:128;not null;index" json:"embd_id"`
-	TenantEmbdID           *string    `gorm:"column:tenant_embd_id;size:32;index" json:"tenant_embd_id,omitempty"`
+	TenantEmbdID           *string    `gorm:"column:tenant_embd_id;size:35;index" json:"tenant_embd_id,omitempty"`
 	Permission             string     `gorm:"column:permission;size:16;not null;default:me;index" json:"permission"`
 	CreatedBy              string     `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
 	DocNum                 int64      `gorm:"column:doc_num;default:0;index" json:"doc_num"`

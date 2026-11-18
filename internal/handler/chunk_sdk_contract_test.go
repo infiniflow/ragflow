@@ -28,7 +28,7 @@ import (
 func TestChunkUpdateRejectsMalformedSDKFields(t *testing.T) {
 	for _, body := range []string{`{"content":null}`, `{"content":1}`, `{"important_keywords":[1]}`, `{"important_keywords":null}`, `{"questions":"abc"}`, `{"questions":[false]}`, `{"available":1}`, `{"available":"true"}`} {
 		t.Run(body, func(t *testing.T) {
-			mock := &mockChunkSvc{updateChunkFn: func(context.Context, *service.UpdateChunkRequest, string) error {
+			mock := &mockChunkSvc{updateChunkFn: func(context.Context, *service.UpdateChunkRequest) error {
 				t.Error("invalid update reached service")
 				return nil
 			}}
@@ -50,7 +50,7 @@ func TestChunkUpdateRejectsMalformedSDKFields(t *testing.T) {
 }
 
 func TestChunkListAcceptsSDKID(t *testing.T) {
-	mock := &mockChunkSvc{listFn: func(_ context.Context, req *service.ListChunksRequest, _ string) (*service.ListChunksResponse, error) {
+	mock := &mockChunkSvc{listFn: func(_ context.Context, req *service.ListChunksRequest) (*service.ListChunksResponse, error) {
 		if len(req.ChunkIDs) != 1 || req.ChunkIDs[0] != "sdk-id" {
 			t.Errorf("filter=%v", req.ChunkIDs)
 		}

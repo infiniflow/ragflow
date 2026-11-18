@@ -3,13 +3,17 @@ package table
 import (
 	"math"
 	"sort"
+	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // MergeTablesAcrossPages merges TableItems on consecutive pages with
 // overlapping X and close Y proximity.  Matches Python's
-// _extract_table_figure table merge (pdf_parser.py:1061-1080).
+// _extract_table_figure table merge (pdf_parser.py:1061-1080), with an
+// additional header guard: geometry only supplies candidates, and tables whose
+// detected headers disagree are kept separate. A repeated continuation header
+// is dropped before the grids are stacked.
 //
 // pageHeights maps each 0-based page number to its PDF-point page height. It
 // is required to measure the cross-page Y gap in a page-absolute frame: the
@@ -55,6 +59,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		anchor := tables[it.idx]
 		merged[it.idx] = true
 		var contGrids [][][]pdf.TSRCell
+		anchor.RegionPositions = tableRegionPositions(anchor)
 
 		// Python nomerge_lout_no: tables whose box is followed by a
 		// caption/title/reference should not be merged cross-page.
@@ -65,6 +70,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 
 		anchorPg := it.pg
 		anchorBtm := anchor.Positions[0].Bottom
+		anchorHeader, anchorHeaderOK := tableHeaderOf(&anchor)
 
 		// Look for consecutive-page continuations.
 		for _, jt := range items {
@@ -138,10 +144,25 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 					}
 				}
 			}
-			// Merge: combine cells and positions.
-			anchor.Cells = append(anchor.Cells, tables[jt.idx].Cells...)
+			candidateHeader, candidateHeaderOK := tableHeaderOf(&tables[jt.idx])
+			if !canMergeTableHeader(anchorHeader, anchorHeaderOK, candidateHeader, candidateHeaderOK) {
+				continue
+			}
+			// Merge: combine cells and positions. A continuation page that
+			// repeats the anchor's header must not contribute a second header
+			// block to the merged grid.
+			cells := tables[jt.idx].Cells
+			grid := tables[jt.idx].Grid
+			if anchorHeaderOK && candidateHeaderOK && candidateHeader.hasText &&
+				candidateHeader.text == anchorHeader.text {
+				cells, grid = dropTableHeaderRows(tables[jt.idx], candidateHeader.rows)
+			}
+			anchor.Cells = append(anchor.Cells, cells...)
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
-			contGrids = append(contGrids, tables[jt.idx].Grid)
+			anchor.RegionPositions = append(anchor.RegionPositions, tableRegionPositions(tables[jt.idx])...)
+			if len(grid) > 0 {
+				contGrids = append(contGrids, grid)
+			}
 			if tables[jt.idx].Caption != "" {
 				if anchor.Caption != "" {
 					anchor.Caption += " "
@@ -232,6 +253,46 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 	return result
 }
 
+func tableRegionPositions(item pdf.TableItem) []pdf.Position {
+	if len(item.RegionPositions) > 0 {
+		return append([]pdf.Position(nil), item.RegionPositions...)
+	}
+	pages := mergedTablePages(&item)
+	positions := make([]pdf.Position, 0, len(pages))
+	for i, page := range pages {
+		pos := pdf.Position{PageNumbers: []int{page}}
+		found := false
+		for _, p := range item.Positions {
+			onPage := len(p.PageNumbers) == 0
+			for _, pn := range p.PageNumbers {
+				onPage = onPage || pn == page
+			}
+			if !onPage {
+				continue
+			}
+			if !found {
+				pos.Left, pos.Right, pos.Top, pos.Bottom = p.Left, p.Right, p.Top, p.Bottom
+				found = true
+			} else {
+				pos.Left, pos.Right = math.Min(pos.Left, p.Left), math.Max(pos.Right, p.Right)
+				pos.Top, pos.Bottom = math.Min(pos.Top, p.Top), math.Max(pos.Bottom, p.Bottom)
+			}
+		}
+		if i == 0 && item.RegionRight > item.RegionLeft && item.RegionBottom > item.RegionTop {
+			pos.Left, pos.Right, pos.Top, pos.Bottom = item.RegionLeft, item.RegionRight, item.RegionTop, item.RegionBottom
+			found = true
+		}
+		if !found {
+			// A page with no matching position must not reach the crop plan:
+			// an empty rectangle renders as a 1x1 placeholder plus a stitch
+			// gap, injecting a blank band into the preview.
+			continue
+		}
+		positions = append(positions, pos)
+	}
+	return positions
+}
+
 // maxBottomOnPage returns the largest Bottom among the table's positions that
 // carry page number pg. Page-local Y resets to 0 at each page top, so a
 // multi-page anchor's positions across different pages are not directly
@@ -255,6 +316,100 @@ func maxBottomOnPage(positions []pdf.Position, pg int) float64 {
 		}
 	}
 	return mb
+}
+
+// tableHeaderSignature is the normalized header block used by the cross-page
+// merge guard. rows and columns preserve the block's shape; text includes empty
+// cells and row boundaries so two headers with the same visible labels but
+// different layouts are not treated as repeats.
+type tableHeaderSignature struct {
+	rows    int
+	columns int
+	text    string
+	hasText bool
+}
+
+// tableHeaderOf derives a comparable header signature from a table's grid.
+// It returns false when the table carries no header metadata (HeaderRows is
+// zero), so callers can fall back to the legacy geometry-only behavior for
+// headerless tables and fixtures that do not populate the field.
+func tableHeaderOf(item *pdf.TableItem) (tableHeaderSignature, bool) {
+	if item == nil || len(item.Grid) == 0 || item.HeaderRows <= 0 || item.HeaderRows > len(item.Grid) {
+		return tableHeaderSignature{}, false
+	}
+	rows := item.HeaderRows
+	columns := 0
+	hasText := false
+	headerRows := make([]string, 0, rows)
+	for _, row := range item.Grid[:rows] {
+		if len(row) > columns {
+			columns = len(row)
+		}
+		cells := make([]string, len(row))
+		for i, cell := range row {
+			if strings.Contains(cell.Label, "covered") {
+				continue
+			}
+			value := normalizeTableHeaderCell(cell.Text)
+			if value != "" {
+				hasText = true
+			}
+			cells[i] = value
+		}
+		headerRows = append(headerRows, strings.Join(cells, "\x1f"))
+	}
+	return tableHeaderSignature{
+		rows:    rows,
+		columns: columns,
+		text:    strings.Join(headerRows, "\x1e"),
+		hasText: hasText,
+	}, true
+}
+
+// canMergeTableHeader rejects a geometry-only cross-page candidate when both
+// tables expose a header and their shape or normalized content disagree. Empty
+// cells and row boundaries are part of the signature, so a header with an
+// inserted empty column is not accepted as a repeated header. When only one
+// side has usable header text, matching shape is sufficient: the other page's
+// header may simply have been missed by TSR.
+func canMergeTableHeader(anchor tableHeaderSignature, anchorOK bool, candidate tableHeaderSignature, candidateOK bool) bool {
+	if !anchorOK || !candidateOK {
+		return true
+	}
+	if anchor.rows != candidate.rows || anchor.columns != candidate.columns {
+		return false
+	}
+	if anchor.hasText && candidate.hasText {
+		return anchor.text == candidate.text
+	}
+	return true
+}
+
+func normalizeTableHeaderCell(text string) string {
+	return strings.Join(strings.Fields(strings.ToLower(text)), " ")
+}
+
+// dropTableHeaderRows removes the continuation table's repeated header rows
+// from both the grid and the flat TSR cells before they are stacked onto the
+// anchor. Cells are filtered by their Y band, matching the grid's crop-space
+// coordinates.
+func dropTableHeaderRows(item pdf.TableItem, rows int) ([]pdf.TSRCell, [][]pdf.TSRCell) {
+	if rows <= 0 {
+		return item.Cells, item.Grid
+	}
+	if rows >= len(item.Grid) {
+		return nil, nil
+	}
+	top, bottom := gridYExtent(item.Grid[:rows])
+	cells := make([]pdf.TSRCell, 0, len(item.Cells))
+	for _, cell := range item.Cells {
+		center := (cell.Y0 + cell.Y1) / 2
+		if center >= top && center <= bottom {
+			continue
+		}
+		cells = append(cells, cell)
+	}
+	return cells, item.Grid[rows:]
 }
 
 // stackGrids concatenates per-page grids (each already built correctly by

@@ -70,10 +70,10 @@ class TestChatAssistantsList:
 
     @pytest.mark.p2
     @pytest.mark.parametrize("page", [0, -1])
-    def test_nonpositive_page_is_unpaginated(self, client, chats, page):
+    def test_nonpositive_page_is_rejected(self, client, chats, page):
         prefix = chats[0].name.rsplit("-", 1)[0]
-        listed = client.list_chats(page=page, page_size=2, keywords=prefix)
-        assert {chat.id for chat in listed} == {chat.id for chat in chats}
+        with pytest.raises(Exception, match="page must be a positive integer"):
+            client.list_chats(page=page, page_size=2, keywords=prefix)
 
     @pytest.mark.p1
     @pytest.mark.parametrize("page_size", [1, 2, 6])
@@ -84,10 +84,10 @@ class TestChatAssistantsList:
 
     @pytest.mark.p2
     @pytest.mark.parametrize("page_size", [0, -1])
-    def test_nonpositive_page_size_is_unpaginated(self, client, chats, page_size):
+    def test_nonpositive_page_size_is_rejected(self, client, chats, page_size):
         prefix = chats[0].name.rsplit("-", 1)[0]
-        listed = client.list_chats(page_size=page_size, keywords=prefix)
-        assert {chat.id for chat in listed} == {chat.id for chat in chats}
+        with pytest.raises(Exception, match="page_size must be between 1 and 100"):
+            client.list_chats(page_size=page_size, keywords=prefix)
 
     @pytest.mark.p3
     @pytest.mark.parametrize("orderby", ["create_time", "update_time", "name"])

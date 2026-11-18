@@ -8,8 +8,13 @@ import { MemoryDropdown } from './memory-dropdown';
 interface IProps {
   data: IMemory;
   showMemoryRenameModal: (data: IMemory) => void;
+  showPrivilegeModal: () => void;
 }
-export function MemoryCard({ data, showMemoryRenameModal }: IProps) {
+export function MemoryCard({
+  data,
+  showMemoryRenameModal,
+  showPrivilegeModal,
+}: IProps) {
   const { navigateToMemory } = useNavigatePage();
 
   return (
@@ -24,6 +29,7 @@ export function MemoryCard({ data, showMemoryRenameModal }: IProps) {
         <MemoryDropdown
           memory={data}
           showMemoryRenameModal={showMemoryRenameModal}
+          showPrivilegeModal={showPrivilegeModal}
         >
           <MoreButton></MoreButton>
         </MemoryDropdown>

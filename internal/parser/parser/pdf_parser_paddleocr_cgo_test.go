@@ -23,7 +23,7 @@ func TestPaddleOCRPDFResultPageGeometry(t *testing.T) {
 		{Index: 1, Width: 900, Height: 1200},
 		{Index: 2, Width: 600, Height: 800, Blocks: []models.OCRBlock{{Text: "third", Label: "text", BBox: []float64{30, 40, 300, 160}}, {Text: "<table><tr><td>42</td></tr></table>", Label: "table", BBox: []float64{30, 200, 300, 400}}}},
 	}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -50,7 +50,7 @@ func TestPaddleOCRPDFResultLocatesUnstructuredTableText(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{{Text: "Item: 42", Label: "table", BBox: []float64{20, 40, 100, 120}}}}}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil || len(result.JSON) != 1 {
 		t.Fatalf("result=%+v", result)
 	}
@@ -67,7 +67,7 @@ func TestPaddleOCRPDFResultKeepsGeometryAfterOnePageFails(t *testing.T) {
 	}
 	block := models.OCRBlock{Label: "text", Text: "body", BBox: []float64{10, 20, 100, 200}}
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{block}}, {Index: 99, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{block}}}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -88,7 +88,7 @@ func TestPaddleOCRPDFResultLocatesMediaRegions(t *testing.T) {
 		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)", BBox: []float64{10, 20, 100, 120}},
 		{Label: "image", Text: "Figure 1: pipeline", BBox: []float64{10, 130, 100, 230}},
 	}}}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil || len(result.JSON) != 2 {
 		t.Fatalf("result=%+v", result)
 	}
@@ -132,7 +132,7 @@ func TestPaddleOCRPDFResultDropsMismatchedPageGeometry(t *testing.T) {
 					{Text: "second", BBox: []float64{30, 200, 100, 240}},
 				},
 			}}}
-			result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+			result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 			if result.Err != nil || len(result.JSON) != 2 {
 				t.Fatalf("result=%+v", result)
 			}
@@ -171,7 +171,7 @@ func TestPaddleOCRPDFResultKeepsMediaItems(t *testing.T) {
 		{Label: "seal", Text: "![seal](https://example.invalid/s.png)", BBox: []float64{10, 350, 100, 450}},
 		{Text: "![uncaptioned](https://example.invalid/u.png)", BBox: []float64{10, 460, 100, 560}},
 	}}}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil || len(result.JSON) != 5 {
 		t.Fatalf("result=%+v", result)
 	}
@@ -199,7 +199,7 @@ func TestPaddleOCRMediaItemsSurviveNormalize(t *testing.T) {
 		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)", BBox: []float64{10, 20, 100, 120}},
 		{Label: "image", Text: "Figure 1: pipeline", BBox: []float64{10, 130, 100, 230}},
 	}}}}
-	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response))
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response))
 	if result.Err != nil || len(result.JSON) != 2 {
 		t.Fatalf("result=%+v", result)
 	}

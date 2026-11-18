@@ -14,27 +14,8 @@
 //  limitations under the License.
 //
 
-// Phase 4 of plan port-rag-flow-pipeline-to-go.md — integration
-// tests for GET /api/v1/components.
-//
-// The tests import the agent and ingestion component packages via
-// blank imports so their init() functions register every factory
-// into runtime.DefaultRegistry. The tests then assert that the
-// HTTP handler projects that registry into the expected
-// JSON-shaped response.
-//
-// Counters are derived from runtime.DefaultRegistry.Names() /
-// NamesByCategory() at test time rather than hardcoded constants —
-// the registry is the source of truth, so any future registration
-// change just moves the expected values with it.
-//
-// This file lives in its own subpackage (components_testpkg) so
-// its test binary does not co-compile with the rest of the
-// internal/handler tests, whose build is currently broken on the
-// agent-go-port branch (pre-existing
-// `interface{}` vs `string` mismatch in chat_test.go /
-// searchbot_test.go). When the upstream build is fixed this
-// package can be folded back into the main handler test binary.
+// Tests exercise the component catalog HTTP envelope and category filters
+// against the registered agent and ingestion components.
 package handler_test
 
 import (
@@ -50,7 +31,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/handler"
 	_ "ragflow/internal/ingestion/component"         // registers ingestion main components
-	_ "ragflow/internal/ingestion/component/chunker" // registers 4 chunker variants
+	_ "ragflow/internal/ingestion/component/chunker" // registers chunker variants
 	"ragflow/internal/service"
 )
 
@@ -133,9 +114,8 @@ func TestComponentsHandler_NoFilter(t *testing.T) {
 }
 
 // TestComponentsHandler_FilterIngestion verifies the
-// ?category=ingestion filter returns the ingestion components
-// (Compiler, Extractor, File, Parser, Tokenizer + 10 chunker variants).
-// Names must be sorted ascending (plan §4 task 1 stable output).
+// ?category=ingestion filter returns all registered ingestion components
+// sorted by name.
 func TestComponentsHandler_FilterIngestion(t *testing.T) {
 	eng := newComponentsTestRig(t)
 	w := doRequest(t, eng, "/api/v1/components?category=ingestion")
@@ -145,11 +125,7 @@ func TestComponentsHandler_FilterIngestion(t *testing.T) {
 	}
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 
-	wantNames := []string{
-		"compiler", "extractor", "file", "generalchunker", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
-		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker",
-		"titlechunker", "tokenchunker", "tokenizer",
-	}
+	wantNames := runtime.DefaultRegistry.NamesByCategory(runtime.CategoryIngestion)
 	assertNameSet(t, "ingestion", data, wantNames)
 
 	for _, d := range data {
@@ -160,8 +136,7 @@ func TestComponentsHandler_FilterIngestion(t *testing.T) {
 }
 
 // TestComponentsHandler_FilterMultiple verifies comma-separated
-// category values work. The shared category may currently be empty,
-// so ?category=ingestion,shared must still return the ingestion set.
+// category values return the union of their registered components.
 func TestComponentsHandler_FilterMultiple(t *testing.T) {
 	eng := newComponentsTestRig(t)
 	w := doRequest(t, eng, "/api/v1/components?category=ingestion,shared")
@@ -171,11 +146,10 @@ func TestComponentsHandler_FilterMultiple(t *testing.T) {
 	}
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 
-	wantNames := []string{
-		"compiler", "extractor", "file", "generalchunker", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
-		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker",
-		"titlechunker", "tokenchunker", "tokenizer",
-	}
+	wantNames := append(
+		runtime.DefaultRegistry.NamesByCategory(runtime.CategoryIngestion),
+		runtime.DefaultRegistry.NamesByCategory(runtime.CategoryShared)...,
+	)
 	assertNameSet(t, "ingestion,shared", data, wantNames)
 }
 
@@ -272,11 +246,7 @@ func TestComponentsHandler_CaseInsensitive(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
-	wantNames := []string{
-		"compiler", "extractor", "file", "generalchunker", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
-		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker",
-		"titlechunker", "tokenchunker", "tokenizer",
-	}
+	wantNames := runtime.DefaultRegistry.NamesByCategory(runtime.CategoryIngestion)
 	assertNameSet(t, "INGESTION (case-folded)", data, wantNames)
 }
 
@@ -307,15 +277,15 @@ func TestComponentsHandler_RouteMounted(t *testing.T) {
 }
 
 // assertNameSet checks that the descriptors returned by the
-// handler contain exactly the names in want (set comparison;
-// ignores ordering — the handler also sorts by name, but the
-// comparison is order-independent to make test failures easier
-// to read).
+// handler contain exactly the names in want, sorted by name.
 func assertNameSet(t *testing.T, label string, got []service.ComponentDescriptor, want []string) {
 	t.Helper()
 	gotNames := make([]string, 0, len(got))
 	for _, d := range got {
 		gotNames = append(gotNames, d.Name)
+	}
+	if !sort.StringsAreSorted(gotNames) {
+		t.Errorf("%s: component names are not sorted: %v", label, gotNames)
 	}
 	sort.Strings(gotNames)
 	wantSorted := append([]string(nil), want...)

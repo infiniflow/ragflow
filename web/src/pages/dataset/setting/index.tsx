@@ -45,7 +45,7 @@ import {
   useSaveDatasetSetting,
 } from './hooks';
 import { normalizeParserConfigForComparison } from './parser-config';
-import { useFetchCanvasVersionList } from '@/hooks/use-agent-request';
+import { useFetchPipelineVersionList } from '@/hooks/use-pipeline-version-request';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 import { ApplyParserConfigDialog } from './apply-parser-config-dialog';
 
@@ -183,10 +183,9 @@ export default function DatasetSetting() {
     ? (knowledgeDetails?.pipeline_version_id ?? '')
     : '';
 
-  // Published versions of the selected dataflow canvas, fetched here only to
-  // prefill the latest version for unpinned datasets (design C1/C2); the
-  // select itself lazy-loads whatever branches the user expands.
-  const { data: canvasVersions } = useFetchCanvasVersionList(
+  // Reuse the select's catalog cache to prefill the latest saved version for
+  // unpinned datasets.
+  const { data: canvasVersions } = useFetchPipelineVersionList(
     parseType === ParseType.Pipeline && pipelineId ? pipelineId : undefined,
   );
   // Show the outdated bang only while the form still holds the SAVED pin:
@@ -304,7 +303,7 @@ export default function DatasetSetting() {
       (parseType === ParseType.BuiltIn && !!builtinPipelineId));
 
   return (
-    <div className="pr-5 pb-5">
+    <div className="h-full pr-5 pb-5">
       <ApplyParserConfigDialog
         datasetId={knowledgeDetails.id}
         open={applyParserConfigOpen}
@@ -337,6 +336,14 @@ export default function DatasetSetting() {
                     {t('knowledgeConfiguration.baseInfo')}
                   </div>
                   <GeneralForm></GeneralForm>
+
+                  <Divider />
+                  <LinkDataSource
+                    data={pipelineDataList}
+                    handleLinkOrEditSubmit={handleLinkOrEditSubmit}
+                    unbindFunc={unbindFunc}
+                    handleAutoParse={handleAutoParse}
+                  />
 
                   <Divider />
                   <div className="text-base font-medium text-text-primary">
@@ -385,14 +392,6 @@ export default function DatasetSetting() {
                       fixedFileFormats
                     />
                   )}
-
-                  <Divider />
-                  <LinkDataSource
-                    data={pipelineDataList}
-                    handleLinkOrEditSubmit={handleLinkOrEditSubmit}
-                    unbindFunc={unbindFunc}
-                    handleAutoParse={handleAutoParse}
-                  />
                 </section>
               </div>
 

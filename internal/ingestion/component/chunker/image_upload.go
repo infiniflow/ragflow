@@ -24,17 +24,17 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
+
+	"ragflow/internal/common"
 
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 )
 
 // imageUploadSem caps concurrent object-storage uploads process-wide. Default
-// 10, matching Python's minio_limiter (MAX_CONCURRENT_MINIO, see
-// rag/svr/task_executor_limiter.py:22). Overridable via the same env var.
+// 10, matching minio_limiter (MAX_CONCURRENT_MINIO, see
+// ). Overridable via the same env var
 var imageUploadSem = make(chan struct{}, imageUploadConcurrency())
 
 // ChunkImageUploader is the uploader used by the chunker's image-upload pass
@@ -43,10 +43,8 @@ var imageUploadSem = make(chan struct{}, imageUploadConcurrency())
 var ChunkImageUploader component.ImageUploader = component.DefaultImageUploader
 
 func imageUploadConcurrency() int {
-	if v := os.Getenv("MAX_CONCURRENT_MINIO"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
+	if n := common.GetEnvInt("MAX_CONCURRENT_MINIO", 0); n > 0 {
+		return n
 	}
 	return 10
 }
@@ -54,7 +52,7 @@ func imageUploadConcurrency() int {
 // uploadChunkMedia is the caller-side image pass for a chunker's output. It
 // runs at the chunker stage (not in the Tokenizer) so bytes are dropped as soon
 // as they are uploaded:
-//   - img_id already set → keep it, skip upload (Python bypass).
+// - img_id already set → keep it, skip upload ( bypass)
 //   - no image or ref    → img_id="", nothing to upload.
 //   - media_ref only     → materialize one image from the run media cache.
 //   - otherwise          → decode the image, upload the bytes via

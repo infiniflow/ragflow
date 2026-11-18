@@ -119,6 +119,7 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 		ingestorWorkers    int
 		pageConcurrency    int
 		cpuCores           int
+		ingestorTier       string
 		initSuperUser      bool
 		enablePProf        bool
 		helpFlag           bool
@@ -137,6 +138,7 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	fs.IntVar(&ingestorWorkers, "ingestor-concurrent-workers", 0, "")
 	fs.IntVar(&pageConcurrency, "ingestor-page-concurrency", 0, "")
 	fs.IntVar(&cpuCores, "deepdoc-inference-cpu-cores", 0, "")
+	fs.StringVar(&ingestorTier, "ingestor-tier", "", "")
 	fs.BoolVar(&initSuperUser, "init-superuser", false, "")
 	fs.BoolVar(&enablePProf, "profile", false, "")
 	fs.BoolVar(&helpFlag, "help", false, "")
@@ -181,6 +183,8 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 			args.IngestorPageConcurrency = &pageConcurrency
 		case "deepdoc-inference-cpu-cores":
 			args.DeepdocInferenceCPUCores = &cpuCores
+		case "ingestor-tier":
+			args.IngestorTier = &ingestorTier
 		case "init-superuser":
 			args.InitSuperUser = initSuperUser
 		case "profile":
@@ -230,6 +234,11 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	}
 	if args.DeepdocInferenceCPUCores != nil && *args.DeepdocInferenceCPUCores < 0 {
 		return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", *args.DeepdocInferenceCPUCores)
+	}
+	if args.IngestorTier != nil {
+		if _, err := common.ParseIngestorTier(*args.IngestorTier); err != nil {
+			return nil, err
+		}
 	}
 
 	return args, nil
@@ -332,6 +341,7 @@ func printHelp(args *bootstrap.ServerArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tProcess-wide page concurrency N, range [1, 16] (default: 2)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-tier string\tIngestor task lane (default: low)\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
@@ -466,6 +476,9 @@ func main() {
 		common.Error("Failed to initialize audit logger", err)
 		os.Exit(1)
 	}
+	defer func() {
+		common.SyncAudit()
+	}()
 
 	// set server name and log file path
 	server.SetServerName(serverName)
@@ -475,12 +488,14 @@ func main() {
 		err = deepdocpkg.RegisterNativeDeepDoc(arguments)
 		if err != nil {
 			common.Error("Failed to register in-process DeepDoc backend", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 	case common.ServerTypeDeepDocCPU, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend:
 		err = runDeepDoc(ctx, serverName, arguments)
 		if err != nil {
 			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 
@@ -564,6 +579,7 @@ func main() {
 	err = server.StartServer(ctx, cancel, serverName, serverType)
 	if err != nil {
 		common.Error("Failed to start EE server", err)
+		common.SyncAudit()
 		os.Exit(1)
 	}
 	defer server.ShutdownServer(ctx)
@@ -577,28 +593,33 @@ func main() {
 		err = apipkg.Run(ctx, serverName, arguments)
 		if err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 	case common.ServerTypeAdmin:
 		err = admin.Run(ctx, serverName, arguments)
 		if err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 	case common.ServerTypeIngestion:
 		err = ingestorpkg.Run(ctx, cancel, serverName, arguments)
 		if err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 	case common.ServerTypeFileSyncer:
 		err = syncerpkg.Run(ctx, cancel, serverName, arguments)
 		if err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 	default:
 		fmt.Printf("Invalid server mode: %v\n", serverType)
+		common.SyncAudit()
 		os.Exit(1)
 	}
 }

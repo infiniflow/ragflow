@@ -182,7 +182,7 @@ func imageWithinVisionLimits(img image.Image) bool {
 	if width <= 0 || height <= 0 {
 		return false
 	}
-	// Edge is unbounded (mirrors Python); only the opt-in raster-byte ceiling applies.
+	// Edge is unbounded (mirrors ); only the opt-in raster-byte ceiling applies
 	return parserlib.CheckImageRasterLimit(width, height) == nil
 }
 

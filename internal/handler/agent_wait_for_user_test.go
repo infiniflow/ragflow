@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
 
@@ -94,9 +95,8 @@ func (f *waitFakeAgentService) DeleteAgent(context.Context, string, string) erro
 // RunAgent mimics service.AgentService.RunAgent for the test
 // driver. It loads the canvas (a no-op in tests), builds a RunFunc
 // from the supplied stub, and hands off to the orchestrator.
-func (f *waitFakeAgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
-	_ = ctx
-	_ = userID
+func (f *waitFakeAgentService) RunAgent(ctx context.Context, canvasID, sessionID, version string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+	userID := permission.UserIDFromContext(ctx)
 	_ = version
 	stub := f.stubRunFunc
 	run := func(ctx context.Context, root map[string]any) (*runtime.CanvasState, error) {
@@ -117,13 +117,13 @@ func (f *waitFakeAgentService) RunAgent(ctx context.Context, userID, canvasID, s
 func (f *waitFakeAgentService) PublishAgent(context.Context, string, string, *service.PublishAgentRequest) (*entity.UserCanvasVersion, error) {
 	return &entity.UserCanvasVersion{}, nil
 }
-func (f *waitFakeAgentService) ListVersions(context.Context, string, string) ([]*entity.UserCanvasVersion, error) {
+func (f *waitFakeAgentService) ListVersions(context.Context, string) ([]*entity.UserCanvasVersion, error) {
 	return nil, nil
 }
-func (f *waitFakeAgentService) GetVersion(context.Context, string, string, string) (*entity.UserCanvasVersion, error) {
+func (f *waitFakeAgentService) GetVersion(context.Context, string, string) (*entity.UserCanvasVersion, error) {
 	return &entity.UserCanvasVersion{}, nil
 }
-func (f *waitFakeAgentService) DeleteVersion(context.Context, string, string, string) error {
+func (f *waitFakeAgentService) DeleteVersion(context.Context, string, string) error {
 	return nil
 }
 
@@ -140,6 +140,7 @@ func waitForUserRoutes(svc *waitFakeAgentService) *gin.Engine {
 	g := r.Group("/api/v1/agents")
 	g.Use(func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-wait"})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-wait", ""))
 		c.Next()
 	})
 	g.POST("/:canvas_id/run", func(c *gin.Context) {
@@ -150,11 +151,11 @@ func waitForUserRoutes(svc *waitFakeAgentService) *gin.Engine {
 		canvasID := c.Param("canvas_id")
 		sessionID := c.Query("session_id")
 		userInput := c.Query("user_input")
-		events, err := svc.RunAgent(c.Request.Context(), "user-wait", canvasID, sessionID, "", userInput, nil)
+		events, err := svc.RunAgent(c.Request.Context(), canvasID, sessionID, "", userInput, nil)
 		if err != nil {
 			// We never expect a non-nil err from the fake,
 			// but be defensive.
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
+			common.RespondError(c, common.CodeServerError, err.Error())
 			return
 		}
 		c.Writer.Header().Set("Content-Type", "text/event-stream")

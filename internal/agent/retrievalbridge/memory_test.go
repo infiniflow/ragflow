@@ -24,22 +24,25 @@ import (
 
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 )
 
 type captureMessageSearcher struct {
-	userID string
 	params map[string]any
 }
 
 func (s *captureMessageSearcher) SearchMessage(
 	_ context.Context,
-	userID string,
 	_ map[string]any,
 	params map[string]any,
 ) ([]map[string]any, common.ErrorCode, error) {
-	s.userID = userID
 	s.params = params
 	return nil, common.CodeSuccess, nil
+}
+
+func memoryRequestContext(t *testing.T) context.Context {
+	t.Helper()
+	return permission.WithIdentity(t.Context(), "user-1", "tenant-1")
 }
 
 type fakeQueryTranslator struct {
@@ -77,7 +80,7 @@ func TestMemoryAdapterTranslatesQueryWithCrossLanguages(t *testing.T) {
 	translator := &fakeQueryTranslator{result: "what happened yesterday?"}
 	adapter := &MemoryAdapter{svc: searcher, translator: translator}
 
-	if _, err := adapter.Search(t.Context(), nil, memoryRequest("English")); err != nil {
+	if _, err := adapter.Search(memoryRequestContext(t), nil, memoryRequest("English")); err != nil {
 		t.Fatal(err)
 	}
 	if translator.calls != 1 {
@@ -97,7 +100,7 @@ func TestMemoryAdapterSkipsTranslationWithoutCrossLanguages(t *testing.T) {
 	translator := &fakeQueryTranslator{result: "unused"}
 	adapter := &MemoryAdapter{svc: searcher, translator: translator}
 
-	if _, err := adapter.Search(t.Context(), nil, memoryRequest()); err != nil {
+	if _, err := adapter.Search(memoryRequestContext(t), nil, memoryRequest()); err != nil {
 		t.Fatal(err)
 	}
 	if translator.calls != 0 {
@@ -120,7 +123,7 @@ func TestMemoryAdapterKeepsOriginalQueryWhenTranslationFails(t *testing.T) {
 			searcher := &captureMessageSearcher{}
 			adapter := &MemoryAdapter{svc: searcher, translator: tc.translator}
 
-			if _, err := adapter.Search(t.Context(), nil, memoryRequest("English")); err != nil {
+			if _, err := adapter.Search(memoryRequestContext(t), nil, memoryRequest("English")); err != nil {
 				t.Fatal(err)
 			}
 			if got := searcher.params["query"]; got != "¿qué pasó ayer?" {
@@ -143,7 +146,7 @@ func TestMemoryAdapterRejectsCrossLanguagesWithoutTranslator(t *testing.T) {
 	searcher := &captureMessageSearcher{}
 	adapter := &MemoryAdapter{svc: searcher}
 
-	if _, err := adapter.Search(t.Context(), nil, memoryRequest("English")); err == nil {
+	if _, err := adapter.Search(memoryRequestContext(t), nil, memoryRequest("English")); err == nil {
 		t.Fatal("expected an error when cross_languages is set and no translator is configured")
 	}
 	if searcher.params != nil {

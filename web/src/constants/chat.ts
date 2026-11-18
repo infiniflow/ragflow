@@ -61,6 +61,7 @@ export enum WebSearchProvider {
   Brave = 'brave',
   Exa = 'exa',
   Firecrawl = 'firecrawl',
+  Keirolabs = 'keirolabs',
   Linkup = 'linkup',
   Parallel = 'parallel',
   Querit = 'querit',
