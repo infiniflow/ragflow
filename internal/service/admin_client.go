@@ -88,7 +88,7 @@ func (h *AdminClient) InitHTTPClient() error {
 // SendHeartbeat sends a heartbeat message to the admin server
 func (h *AdminClient) SendHeartbeat() error {
 
-	if h.attemptCount < 10 {
+	if h.attemptCount < 3 {
 		if h.lastSuccess {
 			h.attemptCount++
 			return nil
