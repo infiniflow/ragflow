@@ -2035,11 +2035,19 @@ func TestListAgentsPreservesImplicitMergedOrdering(t *testing.T) {
 		t.Run(tc.query, func(t *testing.T) {
 			c, w, db := setupGinContextWithUserAndDB(t, "GET", "/api/v1/agents"+tc.query)
 			active := string(entity.StatusValid)
-			if err := db.Create(&entity.UserTenant{
-				ID: "ut-agent-list-owner", UserID: "user-1", TenantID: "user-1",
-				Role: string(permission.RoleOwner), Status: &active,
-			}).Error; err != nil {
-				t.Fatalf("seed active tenant owner: %v", err)
+			var ownerCount int64
+			if err := db.Model(&entity.UserTenant{}).
+				Where("user_id = ? AND tenant_id = ? AND status = ?", "user-1", "user-1", active).
+				Count(&ownerCount).Error; err != nil {
+				t.Fatalf("count active tenant owner: %v", err)
+			}
+			if ownerCount == 0 {
+				if err := db.Create(&entity.UserTenant{
+					ID: "ut-agent-list-owner", UserID: "user-1", TenantID: "user-1",
+					Role: string(permission.RoleOwner), Status: &active,
+				}).Error; err != nil {
+					t.Fatalf("seed active tenant owner: %v", err)
+				}
 			}
 			if err := db.AutoMigrate(&entity.CompilationTemplateGroup{}); err != nil {
 				t.Fatal(err)

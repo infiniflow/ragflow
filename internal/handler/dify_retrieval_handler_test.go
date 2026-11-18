@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 
@@ -188,6 +189,9 @@ func setupDifyTest(t *testing.T, userID string) (*DifyRetrievalHandler, *gin.Eng
 		Role: string(permission.RoleOwner), Status: &status,
 	}).Error; err != nil {
 		t.Fatalf("create Dify test membership: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant1", userID); err != nil {
+		t.Fatalf("prepare Dify permission fixture: %v", err)
 	}
 
 	kbSvc := &mockKBService{}

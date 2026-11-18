@@ -245,6 +245,9 @@ func TestDisabledDocumentRemainsReadableWithinDataset(t *testing.T) {
 	if err := db.Create(&membership).Error; err != nil {
 		t.Fatalf("create owner membership: %v", err)
 	}
+	if err := prepareEnterpriseDatabaseSourceFixture(db, tenantID); err != nil {
+		t.Fatalf("prepare Enterprise permission fixture: %v", err)
+	}
 
 	checker := newCommunityDatabaseChecker(db)
 	ctx := WithIdentity(context.Background(), ownerID, tenantID)
@@ -325,6 +328,9 @@ func TestDatasetAndDocumentQueryScopesUseResourceOwners(t *testing.T) {
 			t.Fatalf("create membership %q: %v", memberships[i].ID, err)
 		}
 	}
+	if err := prepareEnterpriseDatabaseSourceFixture(db, "tenant-1"); err != nil {
+		t.Fatalf("prepare Enterprise permission fixture: %v", err)
+	}
 	if _, err := ListReadableDocumentIDs(WithIdentity(context.Background(), "team-reader", "tenant-1"), db, []string{"private-dataset"}, []string{}); !errors.Is(err, ErrPermissionDenied) {
 		t.Fatalf("ListReadableDocumentIDs(private dataset, empty selection) error = %v, want permission denied", err)
 	}
@@ -332,7 +338,7 @@ func TestDatasetAndDocumentQueryScopesUseResourceOwners(t *testing.T) {
 		t.Fatalf("ListReadableDocumentIDs(team dataset, empty selection) = %v, %v, want no documents", documentIDs, err)
 	}
 
-	checker := newCommunityDatabaseChecker(db)
+	checker := newEditionDatabaseChecker(db)
 	for _, tc := range []struct {
 		userID    string
 		wantIDs   []string
