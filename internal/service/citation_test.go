@@ -367,6 +367,7 @@ func TestRepairBadCitationFormats(t *testing.T) {
 		{"[ref=14] [ref: 15] [ref 16] [ref17]", "[ID:14] [ID:15] [ID:16] [ID:17]"},
 		{"ref=18 ref:19 ref20", "[ID:18] [ID:19] [ID:20]"},
 		{"[reference 31] prefer=32", "[reference 31] prefer=32"},
+		{"https://example.com/?ref=12", "https://example.com/?ref=12"},
 		{"Built in 1865 (**ID:1**).", "Built in 1865 [ID:1]."},
 		{"plain text no cites", "plain text no cites"},
 	}
@@ -374,6 +375,14 @@ func TestRepairBadCitationFormats(t *testing.T) {
 		if got := RepairBadCitationFormats(c.in); got != c.want {
 			t.Errorf("RepairBadCitationFormats(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestCitationStreamFilterPreservesURLRefQuery(t *testing.T) {
+	var filter citationStreamFilter
+	got := filter.write("See https://example.com/?ref=") + filter.write("12 now.") + filter.flush()
+	if got != "See https://example.com/?ref=12 now." {
+		t.Fatalf("URL query parameter changed by citation filtering: %q", got)
 	}
 }
 

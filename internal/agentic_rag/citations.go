@@ -233,11 +233,17 @@ func ResolveCitations(answer string, registry *EvidenceRegistry, publishable []s
 		sub := citedRefRE.FindStringSubmatch(m)
 		n, err := strconv.Atoi(sub[1])
 		if err != nil || n < 0 || n >= len(ids) {
-			return ""
+			if strings.Contains(strings.ToLower(m), "id") {
+				return ""
+			}
+			return m
 		}
 		k, ok := pos[ids[n]]
 		if !ok {
-			return ""
+			if strings.Contains(strings.ToLower(m), "id") {
+				return ""
+			}
+			return m
 		}
 		if _, dup := seen[k]; !dup {
 			seen[k] = struct{}{}

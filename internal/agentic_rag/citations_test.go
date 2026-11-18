@@ -197,6 +197,19 @@ func TestResolveCitationsAcceptsBareNumericMarkers(t *testing.T) {
 	}
 }
 
+func TestResolveCitationsPreservesUnresolvedBareNumericMarkers(t *testing.T) {
+	r := NewEvidenceRegistry()
+	r.Stamp("c1")
+
+	marked, cited := ResolveCitations("Year [2024]; evidence [0]", r, []string{"c1"})
+	if marked != "Year [2024]; evidence [ID:0]" {
+		t.Fatalf("marked = %q, want unresolved bare number preserved", marked)
+	}
+	if fmt.Sprint(cited) != "[c1]" {
+		t.Fatalf("cited = %v, want [c1]", cited)
+	}
+}
+
 func TestResolveCitationsNoSignal(t *testing.T) {
 	answer := "no handles"
 	if got, cited := ResolveCitations(answer, nil, []string{"c1"}); got != answer || cited != nil {
