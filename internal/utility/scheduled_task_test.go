@@ -23,6 +23,30 @@ import (
 	"time"
 )
 
+func TestScheduledTaskPanicIsContained(t *testing.T) {
+	var runs atomic.Int32
+	task := NewScheduledTask("panic", time.Hour, func() {
+		runs.Add(1)
+		panic("boom")
+	})
+	t.Cleanup(task.Stop)
+
+	// A panicking job must be contained (logged), not escalated to os.Exit.
+	task.runSafely()
+	if got := runs.Load(); got != 1 {
+		t.Fatalf("job ran %d times, want 1", got)
+	}
+	if task.IsExecuting() {
+		t.Fatal("executing flag was not reset after a panic")
+	}
+
+	// The task must remain usable after the panic.
+	task.runSafely()
+	if got := runs.Load(); got != 2 {
+		t.Fatalf("job ran %d times after a panic, want 2", got)
+	}
+}
+
 func TestScheduledTaskConcurrentStart(t *testing.T) {
 	task := NewScheduledTask("concurrent start", time.Hour, func() {})
 	t.Cleanup(task.Stop)
@@ -105,6 +129,27 @@ func TestScheduledTaskCanRestart(t *testing.T) {
 
 	previousRuns := runs.Load()
 	waitForScheduledTaskRuns(t, &runs, previousRuns+1)
+}
+
+func TestScheduledTaskWaitJoinsRunningJob(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	task := NewScheduledTask("joined shutdown", time.Hour, func() {
+		close(started)
+		<-release
+		close(finished)
+	})
+	go task.Start()
+	<-started
+	task.Stop()
+	close(release)
+	task.Wait()
+	select {
+	case <-finished:
+	default:
+		t.Fatal("Wait returned before the running job finished")
+	}
 }
 
 func scheduledTaskStopChannel(task *ScheduledTask) chan struct{} {

@@ -1,6 +1,12 @@
 {
   "system_settings": [
     {
+      "name": "api_key.max_count",
+      "source": "variable",
+      "data_type": "integer",
+      "value": "16"
+    },
+    {
       "name": "enable_whitelist",
       "source": "variable",
       "data_type": "bool",
@@ -70,7 +76,7 @@
       "name": "sandbox.self_managed",
       "source": "variable",
       "data_type": "json",
-      "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"timeout\": 30, \"max_retries\": 3}"
+      "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"timeout\": 30}"
     },
     {
       "name": "sandbox.aliyun_codeinterpreter",
@@ -86,6 +92,12 @@
     },
     {
       "name": "sandbox.ucloud_agent_sandbox",
+      "source": "variable",
+      "data_type": "json",
+      "value": "{}"
+    },
+    {
+      "name": "sandbox.kosa8",
       "source": "variable",
       "data_type": "json",
       "value": "{}"

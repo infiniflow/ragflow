@@ -18,7 +18,7 @@ package utility
 
 // TruncateRunes returns s truncated to at most max runes, preserving the
 // original bytes when shorter. Truncation counts runes (not bytes), so
-// multi-byte characters are never split. A non-positive max yields the empty
+// multibyte characters are never split. A non-positive max yields the empty
 // string.
 //
 // This is the single shared implementation previously duplicated in

@@ -23,7 +23,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // LongCatModel implements ModelDriver for LongCat (Meituan).
@@ -87,12 +86,10 @@ func (l *LongCatModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 	delete(reqBody, "stop")
@@ -119,12 +116,10 @@ func (l *LongCatModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	delete(reqBody, "stop")
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
@@ -158,12 +153,10 @@ func (l *LongCatModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, err
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -212,50 +205,54 @@ func (l *LongCatModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 }
 
 func (l *LongCatModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", l.Name())
 }
 
 // Rerank is not exposed by the LongCat API.
 func (l *LongCatModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", l.Name())
 }
 
 // Balance is not exposed by the LongCat API.
 func (l *LongCatModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", l.Name())
 }
 
 // TranscribeAudio (ASR) is not exposed by the LongCat API.
 func (l *LongCatModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", l.Name())
 }
 
 func (l *LongCatModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", l.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", l.Name())
 }
 
 // AudioSpeech (TTS) is not exposed by the LongCat API.
 func (l *LongCatModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", l.Name())
 }
 
 func (l *LongCatModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", l.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", l.Name())
 }
 
 func (l *LongCatModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", l.Name())
 }
 
 // ParseFile parse file
 func (l *LongCatModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", l.Name())
 }
 
 func (l *LongCatModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", l.Name())
 }
 
 func (l *LongCatModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", l.Name())
+}
+
+func (l *LongCatModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", l.Name())
 }

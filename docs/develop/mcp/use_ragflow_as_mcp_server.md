@@ -4,7 +4,7 @@ title: Use RAGFlow as an MCP Server
 sidebar_label: Use RAGFlow as an MCP Server
 slug: /use_ragflow_as_mcp_server
 sidebar_custom_props:
-  categoryIcon: LucideBookOpen
+  categoryIcon: LucideServer
 ---
 
 # Use RAGFlow as an MCP Server
@@ -22,7 +22,7 @@ External MCP client → Go MCP endpoint → RAGFlow services
 | `POST /api/v1/mcp` on the Go API port | Available while the Go API runs | Streamable HTTP with JSON responses | Each client sends its RAGFlow credential in `Authorization`. |
 | `/mcp` on the optional MCP listener | Enable `mcp.enabled` or `RAGFLOW_MCP_ENABLED` | Streamable HTTP; legacy SSE at `/sse` and `/messages/` when enabled | `host` mode authenticates each request; `self-host` mode uses one configured key for all clients. |
 
-For a local binary, start the API with `bin/ragflow_server --api --config conf/service_conf.yaml`. The target Go API port is `9380`, so its direct endpoint is `http://127.0.0.1:9380/api/v1/mcp`. Use the configured address if your port or reverse proxy differs. This API route accepts POST requests; it does not provide the legacy SSE paths.
+For a local binary, start the API with `bin/ragflow_server --config conf/service_conf.yaml`. The target Go API port is `9380`, so its direct endpoint is `http://127.0.0.1:9380/api/v1/mcp`. Use the configured address if your port or reverse proxy differs. This API route accepts POST requests; it does not provide the legacy SSE paths.
 
 ## Enable the optional MCP listener
 
@@ -39,7 +39,7 @@ mcp:
   json_response: true
 ```
 
-Start the Go API with `bin/ragflow_server --api --config conf/service_conf.yaml`. The listener's Streamable HTTP URL is `http://127.0.0.1:9382/mcp`. If SSE is enabled, legacy clients use `http://127.0.0.1:9382/sse` and send messages to `/messages/`.
+Start the Go API with `bin/ragflow_server --config conf/service_conf.yaml`. The listener's Streamable HTTP URL is `http://127.0.0.1:9382/mcp`. If SSE is enabled, legacy clients use `http://127.0.0.1:9382/sse` and send messages to `/messages/`.
 
 Environment variables override YAML settings:
 
@@ -71,14 +71,9 @@ Enabling the listener with its default `self-host` mode requires `mcp.host_api_k
 
 For the Go deployment, use `docker/docker-compose.yml` with `docker/.env`. Uncomment the `mcp` example in `docker/service_conf.yaml.template` or set the equivalent `RAGFLOW_MCP_*` values in `docker/.env`. The Go entrypoint generates the runtime configuration from that template.
 
-To connect to the optional listener from outside the container, set its host to `0.0.0.0` and add this mapping under the `ragflow-cpu` service's `ports` in `docker/docker-compose.yml`:
+Set `RAGFLOW_MCP_HOST=0.0.0.0` and connect to `http://<docker-host-ip>:${SVR_MCP_PORT}/mcp`. Compose publishes `SVR_MCP_PORT` (default `9382`) on all host IPv4 interfaces to the configured `RAGFLOW_MCP_PORT` (default `9382`) inside the container. Recreate the container after changing these settings.
 
-```yaml
-ports:
-  - ${SVR_MCP_PORT}:9382
-```
-
-The checked-in Go Compose file does not publish port `9382` by default. `SVR_MCP_PORT` is defined in `docker/.env`. Adjust the container-side port if you change `mcp.port`. Use `host` mode when external clients must authenticate individually.
+This exposes the listener to any network that can reach the host port. In `self-host` mode, every client reaching it shares the configured user's identity. Restrict access with a firewall and use `host` mode when clients should authenticate with their own RAGFlow credentials.
 
 ## Verify the endpoint
 

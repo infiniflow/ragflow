@@ -15,23 +15,35 @@
  */
 
 import { IMemory } from '@/interfaces/database/memory';
+import { ModelResourceAccessUserIdContext } from '@/hooks/use-llm-request';
 import memoryService from '@/services/memory-service';
 import { useQuery } from '@tanstack/react-query';
+import { useContext } from 'react';
 
 export const enum MemoryApiAction {
   FetchMemoryList = 'fetchMemoryList',
 }
 
-export const useFetchAllMemoryList = (ownerTenantId?: string) => {
+export const MemoryKeys = {
+  list: (accessUserId?: string) =>
+    [MemoryApiAction.FetchMemoryList, accessUserId] as const,
+};
+
+export const useFetchAllMemoryList = (accessUserId?: string) => {
+  const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
+  const resourceAccessUserId = accessUserId ?? contextAccessUserId;
   const { data, isLoading, isError, refetch } = useQuery<IMemory[], Error>({
-    queryKey: [MemoryApiAction.FetchMemoryList, ownerTenantId],
+    queryKey: MemoryKeys.list(resourceAccessUserId),
     queryFn: async () => {
-      // Viewing a shared canvas: fetch the canvas owner's memories instead.
       const { data: response } = await memoryService.getMemoryList(
         {
-          params: ownerTenantId
-            ? { page_size: 100, page: 1, tenant_id: ownerTenantId }
-            : { page_size: 100, page: 1 },
+          params: {
+            page_size: 100,
+            page: 1,
+            ...(resourceAccessUserId
+              ? { access_user_id: resourceAccessUserId }
+              : {}),
+          },
           data: {},
         },
         true,

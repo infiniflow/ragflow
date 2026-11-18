@@ -106,13 +106,12 @@ func (s *MemoryEventStore) Seek(ctx context.Context, clock uint64) (EventIterato
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	pos := 0
+	pos := len(s.events)
 	for i, ev := range s.events {
 		if ev.Clock >= clock {
 			pos = i
 			break
 		}
-		_ = i
 	}
 	return &sliceIterator{events: s.events[pos:], pos: 0}, nil
 }

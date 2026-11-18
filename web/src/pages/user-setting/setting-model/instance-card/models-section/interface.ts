@@ -31,7 +31,7 @@ export interface ModelsSectionProps {
    */
   hideActions?: boolean;
   /**
-   * True once the lazy-loaded instance details (which carry `api_key` /
+   * True once the lazy-loaded instance details (safe credential status and
    * `base_url` - the list endpoint omits them) have resolved. Providers
    * whose upstream model-list endpoint requires an api_key (e.g.
    * VolcEngine) use this to defer the auto-fetch until the credential
@@ -59,7 +59,7 @@ export interface ModelsSectionProps {
    * payload's `api_key` / `base_url` / `region` from the host card's
    * current form values. Providers whose credential field names don't
    * map directly onto `api_key` / `base_url` (e.g. PaddleOCR's nested
-   * `paddleocr_api_url` / `paddleocr_access_token` / `paddleocr_algorithm`)
+   * `paddleocr_api_url` / `paddleocr_access_token`)
    * supply this so the per-model verify can forward the structured
    * `api_key` object the backend expects. When absent the generic
    * `values.api_key` / `values.base_url` mapping is used.

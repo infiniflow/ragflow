@@ -2,18 +2,17 @@
 // document-level structure compilation (list / set / hypergraph — the graph
 // kind) as a two-stage entity → relation LLM extraction with template-driven
 // prompts, followed by LLM-judged in-run merge dedup. Stage semantics and
-// prompts mirror Python's rag/advanced_rag/knowlege_compile/structure.py; the
+// prompts mirror ; the
 // Go port keeps all intermediate state in memory (no ES reads/writes).
 package structure
 
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"sync"
 
 	"ragflow/internal/agent/runtime"
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -51,7 +50,7 @@ func runBatches(ctx context.Context, jobs []func() error) error {
 
 // structureInputBudget mirrors _build_chunk_batches' default mode:
 // input_budget = max(int(max_length * INPUT_UTILIZATION) - prompt_overhead, 1024)
-// with INPUT_UTILIZATION = 0.5 (rag/prompts/generator.py) and prompt_overhead
+// with INPUT_UTILIZATION = 0.5 and prompt_overhead
 // the larger of the two stage prompts. A batch is one LLM call's whole input,
 // so a budget that ignores the model window changes how many calls a document
 // takes — and with it which entities land in which batch.
@@ -68,6 +67,17 @@ func structureInputBudget(modelContextLen, promptOverhead int) int {
 		budget = floor
 	}
 	return budget
+}
+
+// structureBatchCap returns the optional STRUCT_MAX_CHUNKS_PER_BATCH override
+// (0 means off). appcommon.GetEnvInt falls back to 0 on an unset or unparseable
+// value, so the caller only needs to check cap > 0.
+func structureBatchCap() int {
+	v := appcommon.GetEnvInt("STRUCT_MAX_CHUNKS_PER_BATCH", 0)
+	if v <= 0 {
+		return 0
+	}
+	return v
 }
 
 // Run executes the structure variant:
@@ -103,7 +113,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	gateMode := EvidenceGateMode(parserConfig)
 
 	// ---- MAP ----
-	// Prompt overhead is counted the same way Python does: the larger of the
+	// Prompt overhead is counted the same way does: the larger of the
 	// two stage prompts, subtracted from the window-derived input budget. The
 	// tokenizer is optional (offline tests wire none) — without it the
 	// overhead is 0 and PackBatches degrades to per-chunk counting.
@@ -121,12 +131,12 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		budget = 4096
 	}
 	batches := common.PackBatches(inputs.Chunks, budget, deps.Tokenizer)
-	// Python structure.py _STRUCT_MAX_CHUNKS_PER_BATCH: optional chunk-count cap
+	// _STRUCT_MAX_CHUNKS_PER_BATCH: optional chunk-count cap
 	// per extraction batch (0 = window-packed only — a heading has to see its
 	// whole section to own it; the 4-per-batch rule belongs to tree's claim
 	// harvesting). Overridable for benchmarking, mirrored verbatim.
-	if v, err := strconv.Atoi(os.Getenv("STRUCT_MAX_CHUNKS_PER_BATCH")); err == nil && v > 0 {
-		batches = capBatchChunkCount(batches, v)
+	if cap := structureBatchCap(); cap > 0 {
+		batches = capBatchChunkCount(batches, cap)
 	}
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 		"%s-template: %d chunk(s) -> %d batch(es)", compileType, len(inputs.Chunks), len(batches)))
@@ -143,6 +153,13 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// The progress callback is supplied by the caller and is not required to be
 	// goroutine-safe; pool workers report out of order, so serialise it.
 	var progressMu sync.Mutex
+	// LLM extraction owns 80%; the four subsequent phases share the remainder.
+	mapWindow := deps.Progress
+	mapWindow.Span *= 0.8
+	remainingWindow := deps.Progress
+	remainingWindow.Base += mapWindow.Span
+	remainingWindow.Span -= mapWindow.Span
+	mapDone := mapWindow.Counter(ctx, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
@@ -150,13 +167,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				"%s-template: extracting batch %d/%d", compileType, i+1, len(batches)))
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {
+				mapDone()
 				return nil
 			}
 			nodes, edges, err := extractHypergraph(ctx, deps, cfg, nodePrompt, edgePromptTmpl, packed)
 			if err != nil {
 				return err
 			}
-			// Evidence gate (mirrors Python _struct_process_batch): validate
+			// Evidence gate (mirrors _struct_process_batch): validate
 			// quotes while the batch's source text is still in hand. It is
 			// pure validation — no embedding — so it stays inside the worker,
 			// and the vectors buildRows builds later are computed from the
@@ -178,6 +196,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				"%s-template: batch %d/%d done: %d entities, %d relations",
 				compileType, i+1, len(batches), len(nodes), len(edges)))
 			progressMu.Unlock()
+			mapDone()
 			return nil
 		})
 	}
@@ -187,6 +206,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	if err := runBatches(ctx, jobs); err != nil {
 		return common.Outputs{}, err
 	}
+	mapWindow.Report(ctx, 1)
 	// Embed each extracted batch serially after all MAP jobs have returned.
 	// This avoids nesting Embed.Encode (and its batch jobs) inside a worker
 	// already occupied by the shared compiler pool.
@@ -201,27 +221,33 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 		perBatch[i] = rows
 		rowCount += len(rows)
+		remainingWindow.Sub(0, 4).Report(ctx, float64(i+1)/float64(len(extracted)))
 		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 			"%s-template: embedded batch %d/%d (%d rows so far)", compileType, i+1, len(batches), rowCount))
 	}
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 		"%s-template: deduplicating %d row(s)", compileType, rowCount))
 
+	remainingWindow.Sub(0, 4).Report(ctx, 1)
 	// ---- DEDUP ----
 	// Sequential in batch order so merge outcomes are deterministic and match
-	// Python's _struct_local_dedup (which folds docs in list order).
+	// _struct_local_dedup (which folds docs in list order)
 	decider := NewLLMMergeDecider(deps.Chat, llmID, deps.Embed, param.SimilarityThreshold)
 	deduper := NewGroupedDeduper(decider)
+	dedupDone := remainingWindow.Sub(1, 4).Counter(ctx, rowCount)
 	for _, rows := range perBatch {
 		for _, row := range rows {
 			if err := deduper.Add(ctx, row); err != nil {
 				return common.Outputs{}, err
 			}
+			dedupDone()
 		}
 	}
+	remainingWindow.Sub(1, 4).Report(ctx, 1)
 	if err := deduper.RewriteRelations(ctx, decider.Aliases(), deps.Embed); err != nil {
 		return common.Outputs{}, err
 	}
+	remainingWindow.Sub(2, 4).Report(ctx, 1)
 	stats := deduper.Stats()
 	prods := filterSelfLoopRelations(deduper.Rows())
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
@@ -232,7 +258,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// Chain kinds (list/timeline): relations must form a strict linear chain;
 	// offending relations the LLM does not keep are dropped (fail-open).
 	// Timeline additionally drops entity rows no surviving relation references.
-	// (Mirrors Python's validate_and_correct_chain — which runs right after
+	// (Mirrors validate_and_correct_chain — which runs right after
 	// local dedup — and cleanup_timeline_isolated_entities.)
 	if ChainKinds[compileType] {
 		chunksByID := make(map[string]string, len(inputs.Chunks))
@@ -247,7 +273,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		prods = dropIsolatedTimelineEntities(prods)
 	}
 
-	// Python stamps the inferred compile kind (list/set/hypergraph) as each
+	// stamps the inferred compile kind (list/set/hypergraph) as each
 	// row's compile_kwd; the chunk converter picks it up from Meta.
 	for i := range prods {
 		prods[i].Meta["compile_kwd"] = string(compileType)
@@ -269,7 +295,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 }
 
 // capBatchChunkCount splits window-packed batches into sub-batches of at most
-// cap chunks (Python batch_size_cap greedy mode, chunk-count cutoff). Order is
+// cap chunks ( batch_size_cap greedy mode, chunk-count cutoff). Order is
 // preserved; PackBatch labels are per-batch positional so sub-batches renumber
 // from C1 exactly like freshly packed batches.
 func capBatchChunkCount(batches [][]common.Chunk, cap int) [][]common.Chunk {

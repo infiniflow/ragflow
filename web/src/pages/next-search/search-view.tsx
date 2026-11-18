@@ -45,12 +45,6 @@ import RetrievalDocuments from './retrieval-documents';
 import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import classNames from 'classnames';
 
-const formatMetadataValue = (value: unknown) => {
-  if (Array.isArray(value)) return value.join(', ');
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-};
 export default function SearchingView({
   setIsSearching,
   searchData,
@@ -270,38 +264,22 @@ export default function SearchingView({
                               )}
                             />
                           </div>
-                          {chunk.document_metadata &&
-                            Object.keys(chunk.document_metadata).length > 0 && (
-                              <div className="flex flex-wrap gap-2 mt-2">
-                                {Object.entries(chunk.document_metadata).map(
-                                  ([key, value]) => (
-                                    <div
-                                      key={key}
-                                      className="text-xs border border-border-default rounded px-2 py-1"
-                                    >
-                                      <span className="text-text-secondary">
-                                        {key}:
-                                      </span>{' '}
-                                      <span className="text-text-primary">
-                                        {formatMetadataValue(value)}
-                                      </span>
-                                    </div>
-                                  ),
-                                )}
-                              </div>
-                            )}
-                          <div
-                            className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
-                            onClick={() =>
-                              clickDocumentButton(
-                                chunk.document_id,
-                                chunk as any,
-                              )
-                            }
-                          >
-                            <FileIcon name={chunk.document_keyword}></FileIcon>
-                            {chunk.document_keyword}
-                          </div>
+                          {chunk.document_id !== chunk.dataset_id && (
+                            <div
+                              className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
+                              onClick={() =>
+                                clickDocumentButton(
+                                  chunk.document_id,
+                                  chunk as any,
+                                )
+                              }
+                            >
+                              <FileIcon
+                                name={chunk.document_keyword}
+                              ></FileIcon>
+                              {chunk.document_keyword}
+                            </div>
+                          )}
                         </div>
                         {index < chunks.length - 1 && (
                           <div className="w-full border-b border-border-default/80 mt-6 mb-2"></div>
@@ -351,28 +329,28 @@ export default function SearchingView({
                 </div>
               )}
           </div>
-
-          {!mindMapVisible &&
-            !isFirstRender &&
-            !isSearchStrEmpty &&
-            !isEmpty(searchData.search_config.kb_ids) &&
-            searchData.search_config.query_mindmap && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    onClick={showMindMapModal}
-                    variant={'outline'}
-                    className="absolute top-16 translate-y-2 right-10 z-30 rounded-full size-6"
-                  >
-                    <ListTree />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-fit">
-                  {t('chunk.mind')}
-                </PopoverContent>
-              </Popover>
-            )}
         </div>
+        {!mindMapVisible &&
+          !isFirstRender &&
+          !isSearchStrEmpty &&
+          !isEmpty(searchData.search_config.kb_ids) &&
+          searchData.search_config.query_mindmap && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  onClick={showMindMapModal}
+                  variant={'outline'}
+                  // className="absolute top-16 translate-y-2 right-10 z-30 rounded-full size-6"
+                  className=" translate-y-2 ml-2 mt-16 z-30 rounded-full size-6"
+                >
+                  <ListTree />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-fit">
+                {t('chunk.mind')}
+              </PopoverContent>
+            </Popover>
+          )}
         {mindMapVisible && (
           <MindMapSheet
             visible={mindMapVisible}

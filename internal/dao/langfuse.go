@@ -66,19 +66,6 @@ func (dao *LangfuseDAO) UpdateByTenantID(ctx context.Context, db *gorm.DB, tenan
 	return nil
 }
 
-// DeleteByTenantID deletes the Langfuse credentials row for a tenant
-// (mirrors delete_model / delete_ty_tenant_id).
-func (dao *LangfuseDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) error {
-	res := db.WithContext(ctx).Where("tenant_id = ?", tenantID).Delete(&entity.TenantLangfuse{})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
-}
-
 func (dao *LangfuseDAO) SaveByTenantID(ctx context.Context, db *gorm.DB, row *entity.TenantLangfuse) error {
 	return db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "tenant_id"}},

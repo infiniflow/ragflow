@@ -18,7 +18,6 @@ import Empty from '@/components/empty/empty';
 import { RenameDialog } from '@/components/rename-dialog';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -30,9 +29,13 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
+import { DatasetTableLayout } from '../components/dataset-table-layout';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import ProcessLogModal from '../process-log-modal';
-import { ChangeParserDialog } from './change-parser-dialog';
+import {
+  ChangeParserDialog,
+  ReparseConfirmDialog,
+} from './change-parser-dialog';
 import { useShowLog } from './hooks';
 import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
@@ -44,7 +47,6 @@ export type DatasetTableProps = Pick<
 > &
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> & {
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
-    bulkOperateBarVisible?: boolean;
   };
 
 export function DatasetTable({
@@ -54,7 +56,6 @@ export function DatasetTable({
   rowSelection,
   setRowSelection,
   showManageMetadataModal,
-  bulkOperateBarVisible = false,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -70,6 +71,9 @@ export function DatasetTable({
     hideChangeParserModal,
     showChangeParserModal,
     changeParserRecord,
+    reparseVisible,
+    hideReparseModal,
+    confirmReparse,
   } = useChangeDocumentParser();
 
   const {
@@ -122,12 +126,16 @@ export function DatasetTable({
   });
 
   return (
-    <div className="w-full">
-      <Table
-        rootClassName={
-          bulkOperateBarVisible
-            ? 'max-h-[calc(100vh-320px)]'
-            : 'max-h-[calc(100vh-280px)]'
+    <>
+      <DatasetTableLayout
+        pagination={
+          <RAGFlowPagination
+            {...pick(pagination, 'current', 'pageSize')}
+            total={pagination.total}
+            onChange={(page, pageSize) => {
+              setPagination({ page, pageSize });
+            }}
+          ></RAGFlowPagination>
         }
       >
         <TableHeader>
@@ -176,25 +184,21 @@ export function DatasetTable({
             </TableRow>
           )}
         </TableBody>
-      </Table>
-      <div className="flex items-center justify-end  py-4 absolute bottom-3 right-8">
-        <div className="space-x-2">
-          <RAGFlowPagination
-            {...pick(pagination, 'current', 'pageSize')}
-            total={pagination.total}
-            onChange={(page, pageSize) => {
-              setPagination({ page, pageSize });
-            }}
-          ></RAGFlowPagination>
-        </div>
-      </div>
+      </DatasetTableLayout>
       {changeParserVisible && (
         <ChangeParserDialog
           record={changeParserRecord}
-          visible={changeParserVisible}
           onOk={onChangeParserOk}
           hideModal={hideChangeParserModal}
           loading={changeParserLoading}
+        />
+      )}
+
+      {reparseVisible && (
+        <ReparseConfirmDialog
+          visible={reparseVisible}
+          onOk={confirmReparse}
+          onCancel={hideReparseModal}
         />
       )}
 
@@ -216,6 +220,6 @@ export function DatasetTable({
           logInfo={logInfo}
         />
       )}
-    </div>
+    </>
   );
 }

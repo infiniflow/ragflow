@@ -4,6 +4,7 @@ import humanId from 'human-id';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
+import { v4 as uuid } from 'uuid';
 import { useTranslation } from 'react-i18next';
 import {
   NodeHandleId,
@@ -13,7 +14,6 @@ import {
   initialArXivValues,
   initialBeginValues,
   initialBingValues,
-  initialBrowserValues,
   initialCategorizeValues,
   initialCodeValues,
   initialCompilationValues,
@@ -32,7 +32,10 @@ import {
   initialIterationValues,
   initialKeenableValues,
   initialSofyaValues,
+  initialSearch1APICrawlValues,
+  initialSearch1APISearchValues,
   initialYouComValues,
+  initialPerplexityValues,
   initialListOperationsValues,
   initialLoopValues,
   initialMessageValues,
@@ -42,7 +45,7 @@ import {
   initialQueritContentsValues,
   initialQueritValues,
   initialRetrievalValues,
-  initialRewriteQuestionValues,
+  initialScoredSwitchValues,
   initialSearXNGValues,
   initialStringTransformValues,
   initialSwitchValues,
@@ -74,19 +77,33 @@ function isBottomSubAgent(type: string, position: Position) {
   );
 }
 
-const GroupStartNodeMap = {
-  [Operator.Iteration]: {
+// The canvas uses nodeOrigin [0.5, 0], so position.x is a node's horizontal
+// center and position.y its top edge.
+const DefaultNodeWidth = 200;
+const DefaultNodeHeight = 100;
+const GroupNodeWidth = 500;
+const GroupNodeHeight = 250;
+const HorizontalNodeGap = 100;
+const VerticalNodeGap = 50;
+
+// Each add must produce a fresh start node object (and id): nodes are stored
+// by reference in the zustand store and immer freezes them, so a shared
+// object would be frozen after the first add and duplicate ids after the
+// second.
+const GroupStartNodeBuilders = {
+  [Operator.Iteration]: (parentId: string): Node<any> => ({
     id: `${Operator.IterationStart}:${humanId()}`,
     type: 'iterationStartNode',
     position: { x: 50, y: 100 },
     data: {
       label: Operator.IterationStart,
       name: Operator.IterationStart,
-      form: initialIterationStartValues,
+      form: { ...initialIterationStartValues },
     },
     extent: 'parent' as const,
-  },
-  [Operator.Loop]: {
+    parentId,
+  }),
+  [Operator.Loop]: (parentId: string): Node<any> => ({
     id: `${Operator.LoopStart}:${humanId()}`,
     type: 'loopStartNode',
     position: { x: 50, y: 100 },
@@ -96,21 +113,26 @@ const GroupStartNodeMap = {
       form: {},
     },
     extent: 'parent' as const,
-  },
+    parentId,
+  }),
 };
 
 function useAddGroupNode() {
   const { addEdge, addNode } = useGraphStore((state) => state);
 
   const addGroupNode = useCallback(
-    (operatorType: string, newNode: Node<any>, nodeId?: string) => {
-      newNode.width = 500;
-      newNode.height = 250;
+    (
+      operatorType: string,
+      newNode: Node<any>,
+      nodeId?: string,
+      sourceHandle?: string,
+    ) => {
+      newNode.width = GroupNodeWidth;
+      newNode.height = GroupNodeHeight;
 
-      const startNode: Node<any> =
-        GroupStartNodeMap[operatorType as keyof typeof GroupStartNodeMap];
-
-      startNode.parentId = newNode.id;
+      const startNode = GroupStartNodeBuilders[
+        operatorType as keyof typeof GroupStartNodeBuilders
+      ](newNode.id);
 
       addNode(newNode);
       addNode(startNode);
@@ -119,7 +141,7 @@ function useAddGroupNode() {
         addEdge({
           source: nodeId,
           target: newNode.id,
-          sourceHandle: NodeHandleId.Start,
+          sourceHandle: sourceHandle || NodeHandleId.Start,
           targetHandle: NodeHandleId.End,
         });
       }
@@ -133,6 +155,7 @@ function useAddGroupNode() {
 export const useInitializeOperatorParams = () => {
   const defaultModelDictionary = useFetchDefaultModelDictionary();
   const llmId = defaultModelDictionary.llm_id;
+  const scoringId = defaultModelDictionary.scoring_id;
 
   const initialFormValuesMap = useMemo(() => {
     return {
@@ -142,9 +165,9 @@ export const useInitializeOperatorParams = () => {
         ...initialCategorizeValues,
         llm_id: llmId,
       },
-      [Operator.RewriteQuestion]: {
-        ...initialRewriteQuestionValues,
-        llm_id: llmId,
+      [Operator.ScoredSwitch]: {
+        ...initialScoredSwitchValues,
+        llm_id: scoringId,
       },
       [Operator.Message]: initialMessageValues,
       [Operator.DuckDuckGo]: initialDuckValues,
@@ -176,7 +199,10 @@ export const useInitializeOperatorParams = () => {
       [Operator.QueritSearch]: initialQueritValues,
       [Operator.KeenableSearch]: initialKeenableValues,
       [Operator.YouComSearch]: initialYouComValues,
+      [Operator.PerplexitySearch]: initialPerplexityValues,
       [Operator.SofyaSearch]: initialSofyaValues,
+      [Operator.Search1APISearch]: initialSearch1APISearchValues,
+      [Operator.Search1APICrawl]: initialSearch1APICrawlValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,
@@ -187,6 +213,15 @@ export const useInitializeOperatorParams = () => {
       [Operator.TokenChunker]: initialTokenChunkerValues,
       [Operator.GeneralChunker]: initialGeneralChunkerValues,
       [Operator.TitleChunker]: initialTitleChunkerValues,
+      // The manual chunker shares the title chunker's form (TitleChunkerForm
+      // with pinMethodGroup) and initial values, like normalizeOperatorForm.
+      [Operator.ManualChunker]: initialTitleChunkerValues,
+      // Parser-internal chunkers are never added through the canvas; these
+      // entries only keep the map exhaustive over Operator.
+      [Operator.TableChunker]: {},
+      [Operator.QAChunker]: {},
+      [Operator.OneChunker]: {},
+      [Operator.PageChunker]: {},
       [Operator.Extractor]: {
         ...getInitialExtractorValues(),
         llm_id: llmId,
@@ -200,14 +235,22 @@ export const useInitializeOperatorParams = () => {
       [Operator.LoopStart]: {},
       [Operator.ExitLoop]: {},
       [Operator.DocGenerator]: initialDocGeneratorValues,
-      [Operator.Browser]: { ...initialBrowserValues, llm_id: llmId },
       [Operator.ExcelProcessor]: {},
-    };
-  }, [defaultModelDictionary, llmId]);
+    } satisfies Record<Operator, unknown>;
+  }, [defaultModelDictionary, llmId, scoringId]);
 
   const initializeOperatorParams = useCallback(
     (operatorName: Operator, position: Position) => {
       const initialValues = initialFormValuesMap[operatorName];
+      if (operatorName === Operator.ScoredSwitch) {
+        return {
+          ...initialValues,
+          items: [
+            { name: 'option_a', description: '', uuid: uuid() },
+            { name: 'option_b', description: '', uuid: uuid() },
+          ],
+        };
+      }
       if (isBottomSubAgent(operatorName, position)) {
         return {
           ...initialValues,
@@ -239,7 +282,7 @@ export function useCalculateNewlyChildPosition() {
   const edges = useGraphStore((state) => state.edges);
 
   const calculateNewlyBackChildPosition = useCallback(
-    (id?: string, sourceHandle?: string) => {
+    (id?: string, sourceHandle?: string, childWidth = DefaultNodeWidth) => {
       const parentNode = getNode(id);
 
       // Calculate the coordinates of child nodes to prevent newly added child nodes from covering other child nodes
@@ -247,15 +290,31 @@ export function useCalculateNewlyChildPosition() {
         .filter((x) => x.source === id && x.sourceHandle === sourceHandle)
         .map((x) => x.target);
 
-      const yAxises = nodes
-        .filter((x) => allChildNodeIds.some((y) => y === x.id))
-        .map((x) => x.position.y);
+      const childNodes = nodes.filter((x) =>
+        allChildNodeIds.some((y) => y === x.id),
+      );
 
-      const maxY = Math.max(...yAxises);
+      const childTops = childNodes.map((x) => x.position.y);
+      const childBottoms = childNodes.map(
+        (x) =>
+          x.position.y + (x.height ?? x.measured?.height ?? DefaultNodeHeight),
+      );
+
+      // nodeOrigin is [0.5, 0]: position.x is the node's horizontal center,
+      // so the gap must account for both the parent's and the child's width.
+      const parentWidth =
+        parentNode?.width ?? parentNode?.measured?.width ?? DefaultNodeWidth;
+      const parentRight = (parentNode?.position.x || 0) + parentWidth / 2;
 
       const position = {
-        y: yAxises.length > 0 ? maxY + 150 : parentNode?.position.y || 0,
-        x: (parentNode?.position.x || 0) + 300,
+        y:
+          childTops.length > 0
+            ? Math.max(
+                Math.max(...childTops) + 150,
+                Math.max(...childBottoms) + VerticalNodeGap,
+              )
+            : parentNode?.position.y || 0,
+        x: parentRight + HorizontalNodeGap + childWidth / 2,
       };
 
       return position;
@@ -292,15 +351,20 @@ function useAddChildEdge() {
 }
 
 function useAddToolNode() {
-  const { nodes, edges, addEdge, getNode, addNode } = useGraphStore(
-    (state) => state,
-  );
+  const { addEdge, getNode, addNode } = useGraphStore((state) => state);
 
   const addToolNode = useCallback(
     (newNode: Node<any>, nodeId?: string): boolean => {
       const agentNode = getNode(nodeId);
 
       if (agentNode) {
+        // Read edges/nodes from the store at call time, not from the
+        // render-time snapshot: React StrictMode double-invokes the mount
+        // effect that auto-adds this node (ToolPopover), and the second
+        // invocation must see the edge the first one just committed —
+        // otherwise both pass the guard and stack a duplicate tool node at
+        // the same position.
+        const { nodes, edges } = useGraphStore.getState();
         const childToolNodeIds = edges
           .filter(
             (x) => x.source === nodeId && x.sourceHandle === NodeHandleId.Tool,
@@ -332,7 +396,7 @@ function useAddToolNode() {
       }
       return false;
     },
-    [addEdge, addNode, edges, getNode, nodes],
+    [addEdge, addNode, getNode],
   );
 
   return { addToolNode };
@@ -413,12 +477,20 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           type !== Operator.Note &&
           !params.isFromConnectionDrag
         ) {
-          position = calculateNewlyBackChildPosition(nodeId, params.id);
+          position = calculateNewlyBackChildPosition(
+            nodeId,
+            params.id,
+            [Operator.Iteration, Operator.Loop].includes(type as Operator)
+              ? GroupNodeWidth
+              : DefaultNodeWidth,
+          );
         }
 
         const newNode: Node<any> = {
           id: `${type}:${humanId()}`,
-          type: NodeMap[type as Operator] || 'ragNode',
+          // NodeMap only covers canvas operators; unknown types fall back to
+          // the generic ragNode renderer.
+          type: NodeMap[type as keyof typeof NodeMap] || 'ragNode',
           position: position || {
             x: 0,
             y: 0,
@@ -447,7 +519,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
         }
 
         if ([Operator.Iteration, Operator.Loop].includes(type as Operator)) {
-          return addGroupNode(type, newNode, nodeId);
+          return addGroupNode(type, newNode, nodeId, params.id);
         } else if (
           type === Operator.Agent &&
           params.position === Position.Bottom

@@ -56,7 +56,7 @@ func TestValidateDynamicEntriesExeSQL(t *testing.T) {
 		"port":        3306,
 		"max_records": 1024,
 	}))
-	if err := ValidateDynamicEntries(templateScaffold); err != nil {
+	if err := ValidateDraftDynamicEntries(templateScaffold); err != nil {
 		t.Fatalf("unconfigured ExeSQL scaffold rejected: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestValidateDynamicEntriesExeSQL(t *testing.T) {
 		{
 			"scaffold with only host filled",
 			componentDSL("ExeSQL", map[string]any{"db_type": "mysql", "database": "", "username": "", "host": "10.0.0.5", "password": ""}),
-			"[ExeSQL] Database name does not support empty value",
+			"Database name does not support empty value",
 		},
 		{
 			"unsupported db_type",
@@ -83,27 +83,27 @@ func TestValidateDynamicEntriesExeSQL(t *testing.T) {
 		{
 			"empty database",
 			componentDSL("ExeSQL", map[string]any{"db_type": "mysql", "database": "", "username": "u", "host": "h", "password": "p"}),
-			"[ExeSQL] Database name does not support empty value",
+			"Database name does not support empty value",
 		},
 		{
 			"missing database",
 			componentDSL("ExeSQL", map[string]any{"db_type": "mysql", "username": "u", "host": "h", "password": "p"}),
-			"[ExeSQL] Database name does not support empty value",
+			"Database name does not support empty value",
 		},
 		{
 			"empty username",
 			componentDSL("ExeSQL", map[string]any{"db_type": "mysql", "database": "d", "username": "", "host": "h", "password": "p"}),
-			"[ExeSQL] database username does not support empty value",
+			"database username does not support empty value",
 		},
 		{
 			"empty host",
 			componentDSL("ExeSQL", map[string]any{"db_type": "mysql", "database": "d", "username": "u", "host": " ", "password": "p"}),
-			"[ExeSQL] IP Address does not support empty value",
+			"IP Address does not support empty value",
 		},
 		{
 			"missing password",
 			componentDSL("ExeSQL", map[string]any{"db_type": "mysql", "database": "d", "username": "u", "host": "h"}),
-			"[ExeSQL] Database password does not support empty value",
+			"Database password does not support empty value",
 		},
 		{
 			"zero port",

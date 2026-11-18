@@ -115,6 +115,12 @@ function SystemSetting() {
         tooltip: t('embeddingModelTip'),
       },
       {
+        id: 'scoring_id',
+        label: t('scoringModel'),
+        value: defaultModelDictionary.scoring_id ?? '',
+        tooltip: t('scoringModelTip'),
+      },
+      {
         id: 'img2txt_id',
         label: t('img2txtModel'),
         value: defaultModelDictionary.img2txt_id ?? '',
@@ -137,6 +143,15 @@ function SystemSetting() {
         label: t('ttsModel'),
         value: defaultModelDictionary.tts_id ?? '',
         tooltip: t('ttsModelTip'),
+      },
+      {
+        // The decision model judges whether a retrieved passage is worth
+        // putting in front of the chat model. It sits next to the chat model
+        // because it is chosen the same way and independently of it.
+        id: 'decision_id',
+        label: t('decisionModel'),
+        value: defaultModelDictionary.decision_id ?? '',
+        tooltip: t('decisionModelTip'),
       },
     ];
   }, [defaultModelDictionary, t]);

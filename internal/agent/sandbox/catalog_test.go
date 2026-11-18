@@ -10,10 +10,10 @@ import (
 
 func TestCatalogOrderAndFreshSchemas(t *testing.T) {
 	providers := ListProviders()
-	if len(providers) != 7 {
-		t.Fatalf("provider count = %d, want 7", len(providers))
+	if len(providers) != 8 {
+		t.Fatalf("provider count = %d, want 8", len(providers))
 	}
-	for i, want := range providerOrder {
+	for i, want := range []string{"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "kosa8", "local"} {
 		if got := providers[i]["id"]; got != want {
 			t.Errorf("provider %d = %v, want %q", i, got, want)
 		}
@@ -41,6 +41,7 @@ func TestCatalogValidationBoundaries(t *testing.T) {
 		"e2b":                    {"api_key": "key"},
 		"tenki":                  {"api_key": "key", "timeout": 30, "max_lifetime": 3600, "max_output_bytes": 1024, "max_artifact_bytes": 1024},
 		"ucloud_agent_sandbox":   {"api_key": "key"},
+		"kosa8":                  {"api_key": "key", "timeout": 30, "max_lifetime": 3600},
 	}
 	for provider, base := range baselines {
 		t.Run(provider, func(t *testing.T) {
@@ -107,7 +108,7 @@ func TestCatalogValidationBoundaries(t *testing.T) {
 }
 
 func TestCatalogDynamicDeploymentDefaults(t *testing.T) {
-	for env, field := range map[string]string{"SANDBOX_EXECUTOR_MANAGER_IMAGE": "executor_manager_image", "SANDBOX_BASE_PYTHON_IMAGE": "base_python_image", "SANDBOX_BASE_NODEJS_IMAGE": "base_nodejs_image", "SANDBOX_MAX_MEMORY": "max_memory", "SANDBOX_CONTAINER_NETWORK": "container_network", "SANDBOX_TIMEOUT": "sandbox_timeout"} {
+	for env, field := range map[string]string{"SANDBOX_BASE_PYTHON_IMAGE": "base_python_image", "SANDBOX_BASE_NODEJS_IMAGE": "base_nodejs_image"} {
 		t.Setenv(env, "custom")
 		schema, err := ConfigSchema("self_managed")
 		if err != nil {
@@ -125,17 +126,9 @@ func TestCatalogDynamicDeploymentDefaults(t *testing.T) {
 			t.Errorf("%s empty env lost", field)
 		}
 	}
-	t.Setenv("SANDBOX_ENABLE_SECCOMP", "TRUE")
-	t.Setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "9")
-	t.Setenv("SANDBOX_EXECUTOR_MANAGER_PORT", "9999")
 	schema, err := ConfigSchema("self_managed")
 	if err != nil {
 		t.Fatal(err)
-	}
-	for field, want := range map[string]any{"enable_seccomp": true, "executor_manager_pool_size": int64(9), "executor_manager_port": int64(9999)} {
-		if got := schema[field].(map[string]any)["default"]; got != want {
-			t.Errorf("%s=%v want %v", field, got, want)
-		}
 	}
 	providers := ListProviders()
 	providers[0]["tags"].([]any)[0] = "changed"
@@ -178,15 +171,30 @@ func TestValidateConfigTypesRangesAndProviderRules(t *testing.T) {
 	if err := ValidateConfig("ucloud_agent_sandbox", map[string]any{"api_key": "key", "template": ""}); err == nil {
 		t.Fatal("empty UCloud template accepted")
 	}
+	if err := ValidateConfig("kosa8", map[string]any{"api_key": "key", "base_url": "http://kosa8.example.com"}); err == nil {
+		t.Fatal("plain-HTTP kosa8 endpoint accepted")
+	}
+	if err := ValidateConfig("kosa8", map[string]any{"api_key": "key", "timeout": 601}); err == nil {
+		t.Fatal("kosa8 timeout above 600 accepted")
+	}
+	if err := ValidateConfig("kosa8", map[string]any{"api_key": "key", "python_template": " "}); err == nil {
+		t.Fatal("empty kosa8 template accepted")
+	}
 }
 
-func TestSelfManagedPoolValidationUsesSelectedField(t *testing.T) {
-	cfg := map[string]any{"endpoint": "http://localhost", "executor_manager_pool_size": 3, "pool_size": -1}
-	if err := ValidateConfig("self_managed", cfg); err != nil {
+func TestSelfManagedRetiredSettingsAreTolerated(t *testing.T) {
+	schema, err := ConfigSchema("self_managed")
+	if err != nil {
 		t.Fatal(err)
 	}
-	delete(cfg, "executor_manager_pool_size")
-	if err := ValidateConfig("self_managed", cfg); err == nil {
-		t.Fatal("invalid fallback pool accepted")
+	cfg := map[string]any{"endpoint": "http://localhost", "timeout": 30, "api_token": "secret"}
+	for _, key := range []string{"executor_manager_image", "executor_manager_pool_size", "executor_manager_port", "enable_seccomp", "max_memory", "container_network", "sandbox_timeout", "pool_size", "max_retries"} {
+		if _, exists := schema[key]; exists {
+			t.Errorf("retired field %q remains exposed", key)
+		}
+		cfg[key] = "retired value"
+	}
+	if err := ValidateConfig("self_managed", cfg); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -30,9 +30,10 @@ export interface IFetchKnowledgeListRequestParams {
   page_size?: number;
   keywords?: string;
   owner_ids?: string[];
+  access_user_id?: string;
   parser_id?: string;
-  // Viewing a shared canvas: fetch the canvas owner's datasets instead.
-  tenant_id?: string;
+  // Filter to datasets usable by both the canvas owner and the current user.
+  canvas_id?: string;
 }
 
 export interface IFetchDocumentListRequestBody {

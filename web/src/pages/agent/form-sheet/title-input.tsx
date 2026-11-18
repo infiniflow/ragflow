@@ -7,12 +7,14 @@ import { useTranslation } from 'react-i18next';
 import { BeginId, Operator } from '../constant';
 import { useHandleNodeNameChange } from '../hooks/use-change-node-name';
 import { useIsMcp } from '../hooks/use-is-mcp';
+import { RAGFlowTooltip } from '@/components/ui/tooltip';
 
 type TitleInputProps = {
   node?: RAGFlowNodeType;
+  readOnly?: boolean;
 };
 
-export function TitleInput({ node }: TitleInputProps) {
+export function TitleInput({ node, readOnly = false }: TitleInputProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
@@ -54,10 +56,14 @@ export function TitleInput({ node }: TitleInputProps) {
 
   return (
     // Give a fixed height to prevent layout shift when switching between edit and view modes
-    <div className="flex items-center gap-1 flex-1 h-8 mr-2">
+    <div className="flex items-center gap-1 flex-1 h-8 mr-2 min-w-0">
       {node?.id === BeginId ? (
         // Begin node is not editable
         <span>{t(`flow.${BeginId}`)}</span>
+      ) : readOnly ? (
+        // A read-only canvas never enters name-editing mode: renaming writes
+        // the store via useHandleNodeNameChange.
+        <div className="flex items-center gap-2.5 text-base">{name}</div>
       ) : isEditingMode ? (
         <Input
           ref={inputRef}
@@ -72,8 +78,10 @@ export function TitleInput({ node }: TitleInputProps) {
           onChange={handleNameChange}
         />
       ) : (
-        <div className="flex items-center gap-2.5 text-base">
-          {name}
+        <div className="flex items-center text-base w-full">
+          <RAGFlowTooltip tooltip={name} asChild>
+            <span className="truncate">{name}</span>
+          </RAGFlowTooltip>
 
           <Button
             variant="transparent"

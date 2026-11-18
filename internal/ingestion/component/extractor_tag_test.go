@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,10 +14,71 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
+
+func TestExtractorTagsShareExtractionConcurrency(t *testing.T) {
+	pushExtractorTagChatStub(t, map[string]string{"__static__": `{"finance": 8}`})
+	pushExtractorTagTargetResolverStub(t)
+
+	previous := extractorPool
+	pool := utility.NewWorkerPool[extractorJob, struct{}](1, 4,
+		func(_ context.Context, job extractorJob) (struct{}, error) { return struct{}{}, job() })
+	extractorPool = pool
+	t.Cleanup(func() { pool.StopWait(); extractorPool = previous })
+	release := make(chan struct{})
+	defer close(release)
+	started := make(chan struct{})
+	if _, err := pool.Submit(t.Context(), func() error { close(started); <-release; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{}.Defaults()}
+	c.Param.Tags.TopN = 1
+	chunks := []map[string]any{{"text": "unrelated astronomy observations"}, {"text": "unrelated mountain geology"}}
+	indexed := &MemoryTagIndex{allTags: map[string]float64{"finance": 1}}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- c.runLLMTags(ctx, nil, extractorInputs{llmID: "test@test", modelID: "test@test"}, chunks, indexed, nil, progress.Window{})
+	}()
+
+	// The occupied shared slot must hold up tags, rather than letting their
+	// own pool bypass extraction work already in flight.
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for pool.Stats().SubmittedTotal < 3 {
+		select {
+		case err := <-done:
+			t.Fatalf("tagging bypassed the occupied extraction pool: %v", err)
+		case <-ctx.Done():
+			t.Fatal("tagging did not queue in the shared extraction pool")
+		case <-ticker.C:
+		}
+	}
+	release <- struct{}{}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("tagging did not finish after the extraction slot was released")
+	}
+	for i, chunk := range chunks {
+		weights, ok := chunk[common.TAG_FLD].(OrderedTagWeights)
+		if !ok || weights["finance"] != 8 {
+			t.Fatalf("chunk %d tags = %v, want finance=8", i, chunk[common.TAG_FLD])
+		}
+	}
+}
 
 type stubExtractorTagChat struct {
 	responses map[string]string
@@ -57,7 +119,7 @@ func TestExtractorTags_NoTagFileID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -80,7 +142,7 @@ func TestExtractorTags_NoLLMID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if _, ok := chunks[0][common.TAG_FLD]; ok {
 		t.Fatal("tag_feas should not be set without tag_file_id")
 	}
@@ -110,7 +172,7 @@ func TestExtractorTags_WithKeywords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if chunks[0][common.TAG_FLD] != nil {
 		t.Fatal("tag_feas should not be set without tag_file_id")
 	}
@@ -208,7 +270,7 @@ func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
 
 	// A dataset whose tenant does not own the file must be denied, and must not
 	// get the bytes.
-	vocab, err := TagVocabularyFromTagFileID(t.Context(), fileID, attackerTenant)
+	vocab, err := TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, attackerTenant)
 	if err == nil {
 		t.Fatalf("IDOR: foreign tenant read the tag source file, vocab=%v", vocab)
 	}
@@ -217,12 +279,12 @@ func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
 	}
 
 	// An empty owner tenant fails closed as well.
-	if _, err := TagVocabularyFromTagFileID(t.Context(), fileID, ""); err == nil {
+	if _, err := TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, ""); err == nil {
 		t.Fatal("empty owner tenant must fail closed")
 	}
 
 	// The owning tenant still gets the vocabulary.
-	vocab, err = TagVocabularyFromTagFileID(t.Context(), fileID, ownerTenant)
+	vocab, err = TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, ownerTenant)
 	if err != nil {
 		t.Fatalf("owner tenant load failed: %v", err)
 	}
@@ -234,7 +296,7 @@ func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
 	// file's ParentID is never compared against the referencing dataset), so any
 	// number of datasets in ownerTenant can point at this same tag source file —
 	// each passes its own dataset tenant (kb.TenantID) here.
-	shared, err := TagVocabularyFromTagFileID(t.Context(), fileID, ownerTenant)
+	shared, err := TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, ownerTenant)
 	if err != nil {
 		t.Fatalf("a second dataset in the same tenant must resolve the shared file: %v", err)
 	}
@@ -594,7 +656,7 @@ func TestParseTagSourceByFilename(t *testing.T) {
 	}
 }
 
-// rag/app/tag.py's .csv path switches to TAB as soon as the file contains one,
+// A TAB separated .csv reads with TAB,
 // while the tags column stays comma-separated.
 func TestParseTagSourceByFilename_TabSeparatedCSV(t *testing.T) {
 	data := []byte("Document Title\tTag1,Tag2\nAnother Document\tTag3\n")
@@ -610,6 +672,75 @@ func TestParseTagSourceByFilename_TabSeparatedCSV(t *testing.T) {
 	}
 	if got[1].Content != "Another Document" || len(got[1].Tags) != 1 || got[1].Tags[0] != "Tag3" {
 		t.Errorf("csv[1] = %+v", got[1])
+	}
+}
+
+// A comma separated .csv stays comma separated when one field holds a TAB,
+// quoted, not quoted, or with a trailing empty column.
+func TestParseTagSourceByFilename_CommaCSVWithTabInField(t *testing.T) {
+	want := []schema.TagLabel{
+		{Content: "first line", Tags: []string{"alpha"}},
+		{Content: "press\tTab", Tags: []string{"keys"}},
+		{Content: "last line", Tags: []string{"omega"}},
+	}
+	for _, data := range []string{
+		"first line,alpha\n\"press\tTab\",keys\nlast line,omega",
+		"first line,alpha\npress\tTab,keys\nlast line,omega",
+		"first line,alpha,\n\"press\tTab\",keys,\nlast line,omega,",
+	} {
+		got, err := parseTagSourceByFilename([]byte(data), "tags.csv")
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("%q: got %+v (err=%v), want %+v", data, got, err, want)
+		}
+	}
+}
+
+// Pin the delimiter rule's known limitations.
+func TestParseTagSourceByFilename_KnownDelimiterLimits(t *testing.T) {
+	for _, tc := range []struct {
+		data string
+		want []schema.TagLabel
+	}{
+		// A TAB file with two comma lines before the first record reads with comma.
+		{"Animal tags, part one\nMore tags, part two\ncontent\ttag1,tag2", []schema.TagLabel{
+			{Content: "Animal tags", Tags: []string{"part one"}},
+			{Content: "More tags", Tags: []string{"part two"}},
+			{Content: "content\ttag1", Tags: []string{"tag2"}},
+		}},
+		// One comma pair cannot outnumber the TAB row, so the file reads with TAB.
+		{"first line,alpha\npress\tTab,keys", []schema.TagLabel{
+			{Content: "first line,alpha\npress", Tags: []string{"Tab", "keys"}},
+		}},
+		// A TAB in the first row selects TAB, and the comma row is dropped.
+		{"press\tTab,keys\nlast,omega", []schema.TagLabel{
+			{Content: "press", Tags: []string{"Tab", "keys"}},
+		}},
+	} {
+		got, err := parseTagSourceByFilename([]byte(tc.data), "tags.csv")
+		if err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%q: got %+v (err=%v), want %+v", tc.data, got, err, tc.want)
+		}
+	}
+}
+
+func TestCSVTagSourceDelimiter(t *testing.T) {
+	for _, tc := range []struct {
+		data string
+		want rune
+	}{
+		{"RAGFlow guide\nfor beginners\nRAGFlow intro,RAG", ','},
+		{"first line,alpha\n,\n\"press\tTab\",keys\n,\nlast line,omega", ','},
+		{"the quick, brown fox\tanimal,fox", '\t'},
+		{"hello world\tgreeting,demo", '\t'},
+		{"hello world\tgreeting,demo\t", '\t'},
+		{"Animal tags\ncat on a mat\tanimal,cat\ndog in a park\tanimal,dog", '\t'},
+		{"Animal tags, part one\ncat on a mat\tanimal,cat", '\t'},
+		{"Animal tags, part one\nMore tags, part two\nthe quick, brown fox\tanimal,fox", '\t'},
+		{"the quick, brown fox\tanimal\nlazy, sleepy dog\nin the park, at noon\nunder a tree, in shade\nthe cat, the mat\tpet", '\t'},
+	} {
+		if got := csvTagSourceDelimiter([]byte(tc.data)); got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.data, got, tc.want)
+		}
 	}
 }
 

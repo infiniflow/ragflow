@@ -14,9 +14,7 @@
 //  limitations under the License.
 //
 
-// Package prompts holds LLM prompt templates used by the agent
-// components. The strings mirror the canonical Python templates under
-// rag/prompts/ — keep them in sync when editing either side.
+// Package prompts holds LLM prompt templates used by the agent components.
 package prompts
 
 import (
@@ -29,9 +27,8 @@ import (
 // CitationPrompt returns the citation-instruction text. The LLM
 // component appends it to the system prompt when LLMParam.Cite is true.
 //
-// The text lives once, in internal/rag/prompts/citation_prompt.md (a copy of
-// rag/prompts/citation_prompt.md), and is delegated to here so the two Go
-// columns cannot drift apart again.
+// The text lives in internal/rag/prompts/citation_prompt.md and is loaded
+// through the shared embedded prompt package.
 //
 // Format: [ID:N] inline citation; max 4 per sentence; placed at
 // sentence end before punctuation; forbidden format "[ID:0, ID:5, ...]"
@@ -40,8 +37,7 @@ func CitationPrompt() string {
 	return ragprompts.CitationPrompt("")
 }
 
-// citationPlusTemplate is the post-stream citation-grounding template,
-// mirrored from rag/prompts/citation_plus.md.
+// citationPlusTemplate is the post-stream citation-grounding template.
 //
 // Two placeholders are substituted at render time:
 //

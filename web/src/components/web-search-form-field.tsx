@@ -14,12 +14,17 @@
  *  limitations under the License.
  */
 
+import anysearchLogo from '@/assets/anysearch.webp';
 import braveLogo from '@/assets/svg/brave.svg';
 import exaLogo from '@/assets/exa.png';
 import firecrawlLogo from '@/assets/firecrawl.png';
+import keirolabsLogo from '@/assets/keirolabs.png';
 import linkupLogo from '@/assets/linkup.png';
 import parallelLogo from '@/assets/svg/parallel.svg';
+import perplexityLogo from '@/assets/svg/perplexity.svg';
 import queritLogo from '@/assets/querit.png';
+import search1apiLogo from '@/assets/search1api.png';
+import searchapiLogo from '@/assets/searchapi.png';
 import serplyLogo from '@/assets/serply.png';
 import tavilyLogo from '@/assets/svg/tavily.svg';
 import youcomLogo from '@/assets/svg/youcom.svg';
@@ -40,6 +45,11 @@ interface IProps {
 // the key field's label is interpolated into (chat.webSearchApiKeyLabel).
 const webSearchProviderCatalog = [
   {
+    name: 'AnySearch',
+    logo: anysearchLogo,
+    value: WebSearchProvider.AnySearch,
+  },
+  {
     name: 'Brave Search',
     logo: braveLogo,
     value: WebSearchProvider.Brave,
@@ -55,6 +65,11 @@ const webSearchProviderCatalog = [
     value: WebSearchProvider.Firecrawl,
   },
   {
+    name: 'Keirolabs',
+    logo: keirolabsLogo,
+    value: WebSearchProvider.Keirolabs,
+  },
+  {
     name: 'Linkup',
     logo: linkupLogo,
     value: WebSearchProvider.Linkup,
@@ -65,9 +80,24 @@ const webSearchProviderCatalog = [
     value: WebSearchProvider.Parallel,
   },
   {
+    name: 'Perplexity',
+    logo: perplexityLogo,
+    value: WebSearchProvider.Perplexity,
+  },
+  {
     name: 'Querit',
     logo: queritLogo,
     value: WebSearchProvider.Querit,
+  },
+  {
+    name: 'Search1API',
+    logo: search1apiLogo,
+    value: WebSearchProvider.Search1API,
+  },
+  {
+    name: 'SearchApi',
+    logo: searchapiLogo,
+    value: WebSearchProvider.SearchApi,
   },
   {
     name: 'Serply',
@@ -112,6 +142,12 @@ const providerDisplayName = (provider?: WebSearchProvider) =>
   '';
 
 const providerKeyConfig = {
+  [WebSearchProvider.AnySearch]: {
+    name: 'prompt_config.anysearch_api_key',
+    tip: 'anysearchApiKeyTip',
+    placeholder: 'anysearchApiKeyMessage',
+    helpUrl: 'https://anysearch.com/console/api-keys',
+  },
   [WebSearchProvider.Brave]: {
     name: 'prompt_config.brave_api_key',
     tip: 'braveApiKeyTip',
@@ -130,6 +166,12 @@ const providerKeyConfig = {
     placeholder: 'firecrawlApiKeyMessage',
     helpUrl: 'https://www.firecrawl.dev/app/api-keys',
   },
+  [WebSearchProvider.Keirolabs]: {
+    name: 'prompt_config.keirolabs_api_key',
+    tip: 'keirolabsApiKeyTip',
+    placeholder: 'keirolabsApiKeyMessage',
+    helpUrl: 'https://www.keirolabs.cloud',
+  },
   [WebSearchProvider.Linkup]: {
     name: 'prompt_config.linkup_api_key',
     tip: 'linkupApiKeyTip',
@@ -142,11 +184,29 @@ const providerKeyConfig = {
     placeholder: 'parallelApiKeyMessage',
     helpUrl: 'https://platform.parallel.ai',
   },
+  [WebSearchProvider.Perplexity]: {
+    name: 'prompt_config.perplexity_api_key',
+    tip: 'perplexityApiKeyTip',
+    placeholder: 'perplexityApiKeyMessage',
+    helpUrl: 'https://www.perplexity.ai/account/api/keys',
+  },
   [WebSearchProvider.Querit]: {
     name: 'prompt_config.querit_api_key',
     tip: 'queritApiKeyTip',
     placeholder: 'queritApiKeyMessage',
     helpUrl: 'https://querit.ai',
+  },
+  [WebSearchProvider.Search1API]: {
+    name: 'prompt_config.search1api_api_key',
+    tip: 'search1apiApiKeyTip',
+    placeholder: 'search1apiApiKeyMessage',
+    helpUrl: 'https://app.s1.dev',
+  },
+  [WebSearchProvider.SearchApi]: {
+    name: 'prompt_config.searchapi_api_key',
+    tip: 'searchapiApiKeyTip',
+    placeholder: 'searchapiApiKeyMessage',
+    helpUrl: 'https://www.searchapi.io',
   },
   [WebSearchProvider.Serply]: {
     name: 'prompt_config.serply_api_key',

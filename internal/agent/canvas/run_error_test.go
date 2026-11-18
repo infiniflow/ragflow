@@ -81,3 +81,19 @@ func TestRunErrorEventPreservesUserFacingMessage(t *testing.T) {
 		t.Errorf("kind = %q, want user", payload.Kind)
 	}
 }
+
+func TestRunErrorEventNeutralizesEinoNodePathSeparator(t *testing.T) {
+	// eino's internalError.Error() decorates node failures with a dash-only
+	// line, which Markdown clients parse as a setext heading underline.
+	einoText := "[NodeRunError] agent: component \"Retrieval:SweetDogsAct\" invoke: aliyun rerank API error: 404 Not Found" +
+		"\n------------------------\nnode path: [Retrieval:SweetDogsAct]"
+	payload := runErrorEvent(fmt.Errorf("agent invoke: %w", errors.New(einoText)))
+	if strings.Contains(payload.Message, "------------------------") {
+		t.Fatalf("message still carries the setext heading separator: %q", payload.Message)
+	}
+	want := "agent invoke: [NodeRunError] agent: component \"Retrieval:SweetDogsAct\" invoke: aliyun rerank API error: 404 Not Found" +
+		"\n\nnode path: [Retrieval:SweetDogsAct]"
+	if payload.Message != want {
+		t.Errorf("message = %q, want %q", payload.Message, want)
+	}
+}

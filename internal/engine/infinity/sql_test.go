@@ -644,6 +644,26 @@ func TestBuildFilterFromConditionMissingJSONListColumnNeverMatches(t *testing.T)
 // filter_fulltext() query, so a whitespace-bearing value matched NOTHING (nav's
 // parent_kwd child lookup, cluster updates and cleanup all no-op'd); the ES
 // columns are keywords and match exactly.
+func TestGraphTypeFilterSupportsCurrentAndLegacyRows(t *testing.T) {
+	condition := map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}}
+	for name, got := range map[string]string{
+		"search":   equivalentConditionToStr(condition, nil),
+		"mutation": buildFilterFromCondition(condition, nil),
+	} {
+		for _, want := range []string{
+			"filter_fulltext('type_kwd', 'entity')",
+			"knowledge_graph_kwd='entity'",
+			"filter_fulltext('type_kwd', 'relation')",
+			"knowledge_graph_kwd='relation'",
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s graph filter = %q, missing %q", name, got, want)
+			}
+		}
+	}
+}
+
+// TestKeywordFilterConditionExactForWhitespaceValues covers exact matching for multi-token keywords.
 func TestKeywordFilterConditionExactForWhitespaceValues(t *testing.T) {
 	cases := []struct {
 		name, field, value, want string
@@ -696,6 +716,16 @@ func TestKeywordFilterConditionExactForWhitespaceValues(t *testing.T) {
 // would write a doc's parent_kwd while the cluster's own update matched nothing.
 func TestKeywordFilterRenderingBothPaths(t *testing.T) {
 	const name = "Imperial Memorial and Governance Advice 59cbfbef"
+	for _, alias := range []string{"mind_map", "mindmap"} {
+		condition := map[string]interface{}{"entity_type_kwd": alias}
+		for _, query := range []string{equivalentConditionToStr(condition, nil), buildFilterFromCondition(condition, nil)} {
+			for _, value := range []string{"mind_map", "mindmap"} {
+				if !strings.Contains(query, "filter_fulltext('entity_type_kwd', '"+value+"')") {
+					t.Errorf("entity type filter %q does not match %q", query, value)
+				}
+			}
+		}
+	}
 
 	wantParent := `(parent_kwd = '` + name + `')`
 	parentCond := map[string]interface{}{"parent_kwd": []string{name}}

@@ -67,9 +67,9 @@ type infinityClient struct {
 // to this rather than becoming unbounded.
 const defaultPoolMaxSize = 4
 
-// defaultMaxIdleConnections caps how many established connections the pool
-// keeps idle for reuse, independent of the pool's hard open cap (MaxOpen).
-// It bounds idle socket retention on the Infinity server when MaxOpen is large.
+// defaultMaxIdleConnections is the idle cap (MaxIdle) for the Go Infinity
+// connection pool. Invalid or missing INFINITY_POOL_MAX_IDLE values fall back
+// to this rather than becoming unbounded.
 const defaultMaxIdleConnections = 2
 
 // defaultOperationTimeout bounds the total duration of a single pool operation
@@ -94,6 +94,26 @@ func resolvePoolMaxSize() int {
 		return defaultPoolMaxSize
 	}
 	return v
+}
+
+// resolvePoolMaxIdle reads INFINITY_POOL_MAX_IDLE and falls back to defaultMaxIdleConnections.
+// A value < 1 is rejected so idle retention stays bounded rather than unbounded.
+// The result is clamped to maxOpen so MaxIdle never exceeds the pool's hard open cap.
+func resolvePoolMaxIdle(maxOpen int) int {
+	idle := defaultMaxIdleConnections
+	if raw := os.Getenv("INFINITY_POOL_MAX_IDLE"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 1 {
+			common.Warn("INFINITY_POOL_MAX_IDLE must be a positive integer; using default",
+				zap.String("value", raw), zap.Int("default", defaultMaxIdleConnections))
+		} else {
+			idle = v
+		}
+	}
+	if idle > maxOpen {
+		idle = maxOpen
+	}
+	return idle
 }
 
 // NewInfinityClient creates a new Infinity client using the SDK
@@ -145,15 +165,10 @@ func NewInfinityClient(cfg config.InfinityConfig) (*infinityClient, error) {
 	common.Info("Connecting to Infinity")
 	uri := infinity.NetworkAddress{IP: host, Port: port}
 	maxOpen := resolvePoolMaxSize()
+	maxIdle := resolvePoolMaxIdle(maxOpen)
 	var pool *infinity.ConnectionPool
 	var err error
 	for i := 0; i < 24; i++ {
-		// Cap idle connections retained for reuse; never exceed the pool's
-		// hard open cap (MaxOpen).
-		maxIdle := maxOpen
-		if maxIdle > defaultMaxIdleConnections {
-			maxIdle = defaultMaxIdleConnections
-		}
 		poolCfg := infinity.DefaultConnectionPoolConfig(uri)
 		// Don't pre-open connections at process startup (InitialSize=0);
 		// connections are created lazily on first use. Keep MaxIdle so that

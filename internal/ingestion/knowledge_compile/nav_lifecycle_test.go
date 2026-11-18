@@ -46,6 +46,10 @@ func (f *recordingNavService) Search(context.Context, string, string, string, []
 	return nil, nil
 }
 
+func (f *recordingNavService) EncodeQueryVector(context.Context, string, string) []float64 {
+	return nil
+}
+
 func (f *recordingNavService) ListClusters(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
 	return nil, 0, nil
 }
@@ -123,7 +127,7 @@ func TestProcessBatchReaddsEnabledDocumentToNavigation(t *testing.T) {
 			Meta:     map[string]any{"kind": "root"},
 		}}}),
 		WithWriter(&fakeWriter{}),
-		WithDeduperFactory(func(string) (Deduper, error) { return NewNoopDeduper(), nil }),
+		WithDeduperFactory(func(context.Context, string) (Deduper, error) { return NewNoopDeduper(), nil }),
 		withWikiContributionStore(&memoryWikiContributionStore{items: map[string]wikiDocumentContribution{}}),
 	)
 
@@ -158,7 +162,7 @@ func TestProcessBatchRemovesNavigationForGraphOnlyDocument(t *testing.T) {
 			Meta:     map[string]any{"kind": "entity"},
 		}}}),
 		WithWriter(&fakeWriter{}),
-		WithDeduperFactory(func(string) (Deduper, error) { return NewNoopDeduper(), nil }),
+		WithDeduperFactory(func(context.Context, string) (Deduper, error) { return NewNoopDeduper(), nil }),
 		withWikiContributionStore(&memoryWikiContributionStore{items: map[string]wikiDocumentContribution{}}),
 	)
 

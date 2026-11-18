@@ -75,7 +75,7 @@ func TestExecute_DebugViaEntry(t *testing.T) {
 
 	insertCalled := false
 
-	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0)
+	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}
@@ -110,6 +110,40 @@ func TestExecute_DebugViaEntry(t *testing.T) {
 	}
 	if insertCalled {
 		t.Error("chunk insert should NOT be called in a debug (kb_id == \"\") run")
+	}
+}
+
+func TestExecute_DebugViaEntryPurgesRunState(t *testing.T) {
+	taskCtx := NewDebugTaskContext("t1", "canvas-1", "doc.pdf", []byte("page one"))
+	runCtx, cancel := context.WithCancel(context.Background())
+
+	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0, testPipelineDeps())
+	if err != nil {
+		t.Fatalf("NewPipelineExecutor: %v", err)
+	}
+	var purgedTaskID string
+	exec.purgeTaskState = func(ctx context.Context, taskID string) error {
+		if err := ctx.Err(); err != nil {
+			t.Errorf("purge context was cancelled with the debug request: %v", err)
+		}
+		purgedTaskID = taskID
+		return nil
+	}
+	exec.
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return "dsl", "canvas-1", nil
+		}).
+		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+			cancel()
+			return map[string]any{"chunks": []map[string]any{{"text": "c1"}}}, dsl, nil
+		})
+
+	if _, err := exec.Execute(runCtx); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	want := "pipeline_" + taskCtx.Doc.ID
+	if purgedTaskID != want {
+		t.Fatalf("purged task id = %q, want %q", purgedTaskID, want)
 	}
 }
 
@@ -313,7 +347,7 @@ func TestExecute_DebugViaEntry_NoKnowledgeCompilePublish(t *testing.T) {
 
 	taskCtx := NewDebugTaskContext("t1", "canvas-1", "doc.pdf", []byte("page one\fpage two\fpage three"))
 
-	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0)
+	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}

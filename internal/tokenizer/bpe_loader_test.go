@@ -117,11 +117,11 @@ func TestLocalBpeLoader_ReadsSha1FileFromWorkingDirectory(t *testing.T) {
 	}
 }
 
-// A developer checkout that has run download_deps.py but never started the
-// Python side only has the file under its download name.
+// A developer checkout provisioned with build.sh can have the file under
+// its download name.
 func TestLocalBpeLoader_ReadsBundledVocabFromAncestor(t *testing.T) {
 	dir := isolate(t)
-	writeBpeTable(t, filepath.Join(dir, "ragflow_deps", "cl100k_base.tiktoken"), 10)
+	writeBpeTable(t, filepath.Join(dir, "deps", "cl100k_base.tiktoken"), 10)
 	nested := filepath.Join(dir, "internal", "tokenizer")
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -139,7 +139,7 @@ func TestLocalBpeLoader_ReadsBundledVocabFromAncestor(t *testing.T) {
 
 func TestLocalBpeLoader_CacheDirWinsOverBundledVocab(t *testing.T) {
 	dir := isolate(t)
-	writeBpeTable(t, filepath.Join(dir, "ragflow_deps", "cl100k_base.tiktoken"), 10)
+	writeBpeTable(t, filepath.Join(dir, "deps", "cl100k_base.tiktoken"), 10)
 	cache := t.TempDir()
 	writeBpeTable(t, filepath.Join(cache, cacheFileName(testBpeURL)), 7)
 	t.Setenv("TIKTOKEN_CACHE_DIR", cache)

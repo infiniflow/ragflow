@@ -2,8 +2,8 @@ import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
+import { Badge } from '@/components/ui/badge';
 import { Form } from '@/components/ui/form';
-import { MultiSelect } from '@/components/ui/multi-select';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
@@ -73,12 +73,15 @@ const TokenizerForm = ({
           tooltip={t('flow.searchMethodTip')}
         >
           {(field) => (
-            <MultiSelect
-              options={SearchMethodOptions}
-              onValueChange={field.onChange}
-              defaultValue={field.value}
-              variant="inverted"
-            />
+            <div className="flex flex-wrap gap-1.5">
+              {SearchMethodOptions.filter((option) =>
+                field.value?.includes(option.value),
+              ).map((option) => (
+                <Badge key={option.value} variant="secondary">
+                  {option.label}
+                </Badge>
+              ))}
+            </div>
           )}
         </RAGFlowFormItem>
         <SliderInputFormField

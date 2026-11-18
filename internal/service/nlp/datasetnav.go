@@ -33,11 +33,10 @@ import (
 )
 
 // Dataset-nav constants. These mirror Python's dataset_nav.py: nav rows live in
-// the document index as compile_kwd="dataset_nav" rows with available_int=0
+// the document index with type_kwd nav_doc/nav_cluster and available_int=0
 // (invisible to the default retriever, which filters available_int=1), and the
 // tree is threaded through parent_kwd ("root" for depth-0 clusters).
 const (
-	navCompileKwd = "dataset_nav"
 	navRootParent = "root"
 
 	navMergeThreshold = 0.80 // sim >= this -> merge doc into cluster
@@ -98,6 +97,26 @@ type NavService struct {
 	llm    nav.NavMergeLLM  // optional; nil disables LLM merge/summary
 }
 
+// EncodeQueryVector embeds one SEARCH QUERY for the tenant and returns it in the
+// engine's float64 form.
+//
+// It is the query-side seam the agentic claim recall uses to run a KNN leg over
+// claim rows (which store their own q_<dim>_vec). The vector is produced by the
+// tenant's DEFAULT embedding model, so on a dataset whose embedding model
+// differs in dimension the KNN leg addresses a column the rows do not carry and
+// recall falls back to its lexical leg — the documented degradation, and the
+// reason an error here returns nil instead of failing the caller.
+func (s *NavService) EncodeQueryVector(ctx context.Context, tenantID, text string) []float64 {
+	if s == nil || s.embed == nil || tenantID == "" || strings.TrimSpace(text) == "" {
+		return nil
+	}
+	vectors, err := encodeNavQuery(ctx, s.embed, tenantID, []string{text})
+	if err != nil || len(vectors) == 0 {
+		return nil
+	}
+	return f32ToF64Slice(vectors[0])
+}
+
 // NewNavService builds the ES-backed NavService. embed may be nil when the
 // caller guarantees every UpsertDocInput carries a precomputed Embedd.
 func NewNavService(embed NavEmbedder) *NavService {
@@ -128,9 +147,9 @@ func (s *NavService) navIndexName(tenantID string) string {
 	return fmt.Sprintf("ragflow_%s", tenantID)
 }
 
-// navFilter builds the common nav filter that pins compile_kwd.
+// navFilter scopes navigation reads and writes to navigation row roles.
 func navFilter(extra map[string]interface{}) map[string]interface{} {
-	f := map[string]interface{}{"compile_kwd": []string{navCompileKwd}}
+	f := map[string]interface{}{"type_kwd": []string{nav.TypeNavDoc, nav.TypeNavCluster}}
 	for k, v := range extra {
 		f[k] = v
 	}
@@ -544,7 +563,7 @@ func (s *NavService) navScan(ctx context.Context, tenantID, kbID string, filter 
 		filter,
 		[]string{"type_kwd", "title_kwd", "docnm_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, limit,
 		[]interface{}{&types.MatchDenseExpr{
-			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
+			VectorColumnName:  common.VectorColumnName(len(f64)),
 			EmbeddingData:     f64,
 			EmbeddingDataType: "float",
 			DistanceType:      "cosine",
@@ -648,7 +667,7 @@ func navIntersectScope(docIDs []string, allowed map[string]struct{}) []string {
 // SummariesByDocIDs returns the nav_doc description — the document's overall
 // summary — keyed by doc_id for the given documents. It mirrors Python
 // dataset_api_service._nav_doc_summaries: it reads the nav_doc rows
-// (compile_kwd=dataset_nav, type_kwd=nav_doc) for the doc_ids and yields, per
+// (type_kwd=nav_doc) for the doc_ids and yields, per
 // doc, the payload description. The description wins over the row's label on
 // purpose: callers render this value to the model as the routed document's
 // <summary>, and title_kwd holds only the summary's first line (length-capped).
@@ -706,6 +725,13 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	if strings.TrimSpace(in.Summary) == "" {
 		return nil
 	}
+	in.CompileKind = types.CanonicalCompilationKind(in.CompileKind)
+	if in.CompileKind == "" {
+		in.CompileKind = "tree"
+	}
+	if in.CompileKind != "tree" && in.CompileKind != "page_index" {
+		return fmt.Errorf("datasetnav: invalid compilation kind %q", in.CompileKind)
+	}
 	de, err := s.docEngine()
 	if err != nil {
 		return err
@@ -739,7 +765,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"type_kwd": []string{nav.TypeNavDoc},
 			"doc_id":   []string{in.DocID},
 		}),
-		[]string{"content_with_weight", "content_ltks", "content_sm_ltks", "title_kwd", "docnm_kwd"}, 0, 1, nil)
+		[]string{"content_with_weight", "content_ltks", "content_sm_ltks", "title_kwd", "docnm_kwd", "compile_kwd", "scope_kwd"}, 0, 1, nil)
 	if err != nil {
 		return err
 	}
@@ -751,16 +777,24 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		// file name. The tokenized text is (re)built when it is missing.
 		title := navDocTitle(in.Summary)
 		titleStale := navRowLabel(existing[0]) != title
+		kindStale := firstStringValue(existing[0]["compile_kwd"]) != in.CompileKind
+		scopeStale := firstStringValue(existing[0]["scope_kwd"]) != "doc"
 		ltksStale := firstStringValue(existing[0]["content_ltks"]) == "" ||
 			firstStringValue(existing[0]["content_sm_ltks"]) == ""
 		if payload, ok := existing[0]["content_with_weight"].(string); ok {
 			var m map[string]interface{}
 			if err := json.Unmarshal([]byte(payload), &m); err == nil {
 				if d, _ := m["description"].(string); d == in.Summary {
-					if !titleStale && !ltksStale {
+					if !titleStale && !ltksStale && !kindStale && !scopeStale {
 						return nil // unchanged
 					}
 					updates := map[string]interface{}{}
+					if scopeStale {
+						updates["scope_kwd"] = "doc"
+					}
+					if kindStale {
+						updates["compile_kwd"] = in.CompileKind
+					}
 					if titleStale {
 						updates["title_kwd"] = title
 					}
@@ -770,10 +804,9 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 					}
 					return de.UpdateChunks(ctx,
 						map[string]interface{}{
-							"compile_kwd": []string{navCompileKwd},
-							"type_kwd":    []string{nav.TypeNavDoc},
-							"doc_id":      []string{in.DocID},
-							"kb_id":       in.KbID,
+							"type_kwd": []string{nav.TypeNavDoc},
+							"doc_id":   []string{in.DocID},
+							"kb_id":    in.KbID,
 						},
 						updates, s.navIndexName(in.TenantID), in.KbID)
 				}
@@ -813,7 +846,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			return err
 		}
 		if err := s.appendDocToCluster(ctx, de, in.TenantID, in.KbID, bestName, in.DocID,
-			fmt.Sprintf("q_%d_vec", len(vec))); err != nil {
+			common.VectorColumnName(len(vec)), in.CompileKind); err != nil {
 			return err
 		}
 		// Explicit stable id (A5): the nav_doc row is addressable by a
@@ -822,7 +855,8 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		// instead of relying on a doc_id + type filter alone.
 		row := map[string]interface{}{
 			"id":            navDocID(in.TenantID, in.KbID, in.DocID),
-			"compile_kwd":   navCompileKwd,
+			"compile_kwd":   in.CompileKind,
+			"scope_kwd":     "doc",
 			"available_int": 0,
 			"type_kwd":      "nav_doc",
 			// The nav_doc's label is a readable title derived from the summary
@@ -834,15 +868,15 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"parent_kwd": parent,
 			// The nav_doc sits one level below its (possibly nested) parent
 			// cluster, so its depth is parentDepth+1 — not a hard-coded 1.
-			"depth_int":           bestDepth + 1,
-			"doc_id":              in.DocID,
-			"doc_count_int":       1,
-			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
-			"content_ltks":        contentLtks,
-			"content_sm_ltks":     contentSmLtks,
-			"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
+			"depth_int":                       bestDepth + 1,
+			"doc_id":                          in.DocID,
+			"doc_count_int":                   1,
+			"content_with_weight":             payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+			"content_ltks":                    contentLtks,
+			"content_sm_ltks":                 contentSmLtks,
+			common.VectorColumnName(len(vec)): f32ToF64Slice(vec),
 		}
-		_, err = de.InsertChunks(ctx, []map[string]interface{}{row}, idx, in.KbID)
+		_, err = de.InsertChunks(ctx, []map[string]interface{}{row}, idx, in.KbID, "")
 		return err
 	}
 
@@ -880,22 +914,23 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		clusterContentSmLtks = clusterContentLtks
 	}
 	clusterRow := map[string]interface{}{
-		"id":                  navClusterID(in.TenantID, in.KbID, name),
-		"doc_id":              in.KbID, // cluster rows carry the kb as doc_id (Python _build_nav_cluster_row), so ES InsertChunks does not skip them
-		"compile_kwd":         navCompileKwd,
-		"available_int":       0,
-		"type_kwd":            "nav_cluster",
-		"title_kwd":           name,
-		"parent_kwd":          parent,
-		"depth_int":           depth,
-		"doc_count_int":       1,
-		"doc_ids_kwd":         []string{in.DocID},
-		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
-		"content_ltks":        clusterContentLtks,
-		"content_sm_ltks":     clusterContentSmLtks,
-		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
+		"id":                              navClusterID(in.TenantID, in.KbID, name),
+		"doc_id":                          in.KbID, // cluster rows carry the kb as doc_id (Python _build_nav_cluster_row), so ES InsertChunks does not skip them
+		"compile_kwd":                     in.CompileKind,
+		"scope_kwd":                       "dataset",
+		"available_int":                   0,
+		"type_kwd":                        "nav_cluster",
+		"title_kwd":                       name,
+		"parent_kwd":                      parent,
+		"depth_int":                       depth,
+		"doc_count_int":                   1,
+		"doc_ids_kwd":                     []string{in.DocID},
+		"content_with_weight":             payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
+		"content_ltks":                    clusterContentLtks,
+		"content_sm_ltks":                 clusterContentSmLtks,
+		common.VectorColumnName(len(vec)): f32ToF64Slice(vec),
 	}
-	_, err = de.InsertChunks(ctx, []map[string]interface{}{clusterRow}, idx, in.KbID)
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{clusterRow}, idx, in.KbID, "")
 	if err != nil {
 		return err
 	}
@@ -905,21 +940,22 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	// nav tree with a single cluster and no nav_doc child, so /children returns
 	// empty. The nav_doc carries a readable title + parent_kwd = the cluster name.
 	docRow := map[string]interface{}{
-		"id":                  navDocID(in.TenantID, in.KbID, in.DocID),
-		"compile_kwd":         navCompileKwd,
-		"available_int":       0,
-		"type_kwd":            "nav_doc",
-		"title_kwd":           navDocTitle(in.Summary),
-		"parent_kwd":          name,
-		"depth_int":           depth + 1,
-		"doc_id":              in.DocID,
-		"doc_count_int":       1,
-		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
-		"content_ltks":        contentLtks,
-		"content_sm_ltks":     contentSmLtks,
-		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
+		"id":                              navDocID(in.TenantID, in.KbID, in.DocID),
+		"compile_kwd":                     in.CompileKind,
+		"scope_kwd":                       "doc",
+		"available_int":                   0,
+		"type_kwd":                        "nav_doc",
+		"title_kwd":                       navDocTitle(in.Summary),
+		"parent_kwd":                      name,
+		"depth_int":                       depth + 1,
+		"doc_id":                          in.DocID,
+		"doc_count_int":                   1,
+		"content_with_weight":             payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+		"content_ltks":                    contentLtks,
+		"content_sm_ltks":                 contentSmLtks,
+		common.VectorColumnName(len(vec)): f32ToF64Slice(vec),
 	}
-	_, err = de.InsertChunks(ctx, []map[string]interface{}{docRow}, idx, in.KbID)
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{docRow}, idx, in.KbID, "")
 	return err
 }
 
@@ -964,8 +1000,8 @@ func navChildRehomeCondition(child map[string]interface{}, kbID string) map[stri
 		return nil
 	}
 	cond := map[string]interface{}{
-		"compile_kwd": []string{navCompileKwd},
-		"kb_id":       kbID,
+		"type_kwd": []string{nav.TypeNavDoc, nav.TypeNavCluster},
+		"kb_id":    kbID,
 	}
 	if rowID := firstStringValue(child["id"]); rowID != "" {
 		cond["id"] = []string{rowID}
@@ -1051,7 +1087,7 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 			}),
 			[]string{"title_kwd", "docnm_kwd", "_score"}, 0, 1,
 			[]interface{}{&types.MatchDenseExpr{
-				VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
+				VectorColumnName:  common.VectorColumnName(len(f64)),
 				EmbeddingData:     f64,
 				EmbeddingDataType: "float",
 				DistanceType:      "cosine",
@@ -1148,7 +1184,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 	// engine-assigned row id and inherit the cluster's directly-held documents.
 	clusterChunks, _, err := s.navSearch(ctx, tenantID, kbID,
 		navClusterCondition(tenantID, kbID, clusterName),
-		[]string{"id", "doc_count_int", "doc_ids_kwd", "parent_kwd", "depth_int"}, 0, 1, nil)
+		[]string{"id", "doc_count_int", "doc_ids_kwd", "parent_kwd", "depth_int", "compile_kwd"}, 0, 1, nil)
 	if err != nil {
 		return err
 	}
@@ -1204,7 +1240,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		if typ == "nav_doc" {
 			childDocIDs = append(childDocIDs, firstStringValue(child["doc_id"]))
 		}
-		acc.ids = appendUnique(acc.ids, childDocIDs)
+		acc.ids = common.AppendUnique(acc.ids, childDocIDs)
 		childCond := navChildRehomeCondition(child, kbID)
 		if childCond == nil {
 			// Unreachable after the pre-pass above; kept so a future caller
@@ -1242,6 +1278,10 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 	if err != nil {
 		return err
 	}
+	splitCompileKind := "tree"
+	if len(clusterChunks) > 0 && types.CompilationKind(clusterChunks[0]) == "page_index" {
+		splitCompileKind = "page_index"
+	}
 	for _, spl := range []struct {
 		name  string
 		count int
@@ -1251,10 +1291,10 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		// parity so no tracked document is lost (review Major).
 		for i, d := range origIDs {
 			if i%2 == 0 && spl.name == splitA {
-				spl.ids = appendUnique(spl.ids, []string{d})
+				spl.ids = common.AppendUnique(spl.ids, []string{d})
 				spl.count++
 			} else if i%2 == 1 && spl.name == splitB {
-				spl.ids = appendUnique(spl.ids, []string{d})
+				spl.ids = common.AppendUnique(spl.ids, []string{d})
 				spl.count++
 			}
 		}
@@ -1269,7 +1309,8 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		}
 		row := map[string]interface{}{
 			"id":                  navClusterID(tenantID, kbID, spl.name),
-			"compile_kwd":         navCompileKwd,
+			"compile_kwd":         splitCompileKind,
+			"scope_kwd":           "dataset",
 			"available_int":       0,
 			"type_kwd":            "nav_cluster",
 			"title_kwd":           spl.name,
@@ -1285,9 +1326,9 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		// so the split cluster participates in KNN routing. This is a heuristic
 		// stand-in for Python's k-means centroid.
 		if vec := pickAnyVector(children, i2boolForTarget(spl.name, splitA)); len(vec) > 0 {
-			row["q_"+fmt.Sprintf("%d", len(vec))+"_vec"] = f32ToF64Slice(vec)
+			row[common.VectorColumnName(len(vec))] = f32ToF64Slice(vec)
 		}
-		if _, err := de.InsertChunks(ctx, []map[string]interface{}{row}, s.navIndexName(tenantID), kbID); err != nil {
+		if _, err := de.InsertChunks(ctx, []map[string]interface{}{row}, s.navIndexName(tenantID), kbID, ""); err != nil {
 			return err
 		}
 	}
@@ -1317,7 +1358,7 @@ func pickAnyVector(children []map[string]interface{}, wantA bool) []float32 {
 		// The engine returns dense vectors as []interface{} of float64 (q_<n>_vec
 		// is unboxed); walk any key that looks like a q_*_vec.
 		for k, v := range c {
-			if !strings.HasPrefix(k, "q_") || !strings.HasSuffix(k, "_vec") {
+			if !common.IsVectorColumn(k) {
 				continue
 			}
 			return toF32Vector(v)
@@ -1401,7 +1442,7 @@ func (s *NavService) mergeClusterDescription(ctx context.Context, de engine.DocE
 	}
 	if s.embed != nil {
 		if vecs, err := s.embed.Encode(ctx, tenantID, []string{merged}); err == nil && len(vecs) > 0 && len(vecs[0]) > 0 {
-			updates[fmt.Sprintf("q_%d_vec", len(vecs[0]))] = f32ToF64Slice(vecs[0])
+			updates[common.VectorColumnName(len(vecs[0]))] = f32ToF64Slice(vecs[0])
 		}
 	}
 	return de.UpdateChunks(ctx,
@@ -1507,10 +1548,10 @@ func (s *NavService) llmCreateSummary(ctx context.Context, tenantID, text string
 // doc_count_int. Implemented as a read-modify-write. vecCol names the engine
 // vector column (q_<dim>_vec) so an overfull-cluster split can inherit a
 // representative vector; pass "" when the caller has no known dimension.
-func (s *NavService) appendDocToCluster(ctx context.Context, de engine.DocEngine, tenantID, kbID, clusterName, docID, vecCol string) error {
+func (s *NavService) appendDocToCluster(ctx context.Context, de engine.DocEngine, tenantID, kbID, clusterName, docID, vecCol, compileKind string) error {
 	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
 		navClusterCondition(tenantID, kbID, clusterName),
-		[]string{"doc_ids_kwd", "doc_count_int"}, 0, 1, nil)
+		[]string{"doc_ids_kwd", "doc_count_int", "compile_kwd"}, 0, 1, nil)
 	if err != nil {
 		return err
 	}
@@ -1546,9 +1587,13 @@ func (s *NavService) appendDocToCluster(ctx context.Context, de engine.DocEngine
 	// this one. The read-modify-write here is expected to run under a per-dataset
 	// lock held by the UpsertDoc caller; without it, concurrent appends to the
 	// same cluster can lose updates.
+	updates := map[string]interface{}{"doc_ids_kwd": ids, "doc_count_int": count, "scope_kwd": "dataset"}
+	if kind := types.CompilationKind(chunks[0]); kind != "tree" && kind != "page_index" {
+		updates["compile_kwd"] = compileKind
+	}
 	if err := de.UpdateChunks(ctx,
 		navClusterCondition(tenantID, kbID, clusterName),
-		map[string]interface{}{"doc_ids_kwd": ids, "doc_count_int": count},
+		updates,
 		s.navIndexName(tenantID), kbID); err != nil {
 		return err
 	}
@@ -1649,7 +1694,7 @@ func (s *NavService) findClusterContainingDoc(ctx context.Context, tenantID, kbI
 			IndexNames:   []string{s.navIndexName(tenantID)},
 			KbIDs:        []string{kbID},
 			SelectFields: []string{"title_kwd", "docnm_kwd", "doc_ids_kwd"},
-			Filter:       map[string]interface{}{"type_kwd": "nav_cluster", "compile_kwd": []string{navCompileKwd}},
+			Filter:       map[string]interface{}{"type_kwd": "nav_cluster"},
 			Offset:       offset,
 			Limit:        pageSize,
 		})
@@ -1767,7 +1812,8 @@ func firstStringValue(v interface{}) string {
 	return ""
 }
 
-// intValue returns the integer value of an engine field.
+// firstStringSlice returns v as a []string, unwrapping a []interface{} whose
+// elements are all strings; returns nil for any other type.
 func firstStringSlice(v interface{}) []string {
 	switch s := v.(type) {
 	case []string:
@@ -1782,22 +1828,6 @@ func firstStringSlice(v interface{}) []string {
 		return out
 	}
 	return nil
-}
-
-// appendUnique appends only values not already present, preserving order.
-func appendUnique(dst, values []string) []string {
-	seen := make(map[string]bool, len(dst)+len(values))
-	for _, v := range dst {
-		seen[v] = true
-	}
-	for _, v := range values {
-		if v == "" || seen[v] {
-			continue
-		}
-		seen[v] = true
-		dst = append(dst, v)
-	}
-	return dst
 }
 
 func intValue(v interface{}) int {

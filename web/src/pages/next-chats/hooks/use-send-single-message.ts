@@ -36,7 +36,7 @@ export function useSendSingleMessage({
   const { send, answer, done } = useSendMessageWithSse();
 
   const {
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     setDerivedMessages,
     derivedMessages,
@@ -86,7 +86,6 @@ export function useSendSingleMessage({
           ...(storeHistoryMessages === undefined
             ? {}
             : { store_history_messages: storeHistoryMessages }),
-          pass_all_history_messages: true,
         },
         controller,
       );
@@ -152,7 +151,7 @@ export function useSendSingleMessage({
   );
 
   return {
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     setDerivedMessages,
     derivedMessages,

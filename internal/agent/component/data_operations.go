@@ -166,6 +166,9 @@ type DataOperationsComponent struct {
 // NewDataOperationsComponent constructs a DataOperations from the
 // DSL param map.
 func NewDataOperationsComponent(params map[string]any) (Component, error) {
+	if err := validateDataOperationsParams(componentNameDataOperations, params, false); err != nil {
+		return nil, runtime.NewUserFacingError(err.Error())
+	}
 	p := &dataOperationsParam{}
 	if err := p.Update(params); err != nil {
 		return nil, fmt.Errorf("DataOperations: param update: %w", err)

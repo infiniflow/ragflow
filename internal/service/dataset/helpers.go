@@ -8,9 +8,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/google/uuid"
@@ -50,9 +52,6 @@ var (
 		"time":   {},
 		"number": {},
 	}
-	validIndexTypes        = []string{"graph", "raptor", "mindmap"}
-	indexTypeToTaskType    = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
-	indexTypeToDisplayName = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
 )
 
 const (
@@ -122,6 +121,9 @@ func quoteList(items []string) string {
 }
 
 func validateDatasetAvatar(avatar string) error {
+	if avatar == "" {
+		return nil
+	}
 	if !strings.Contains(avatar, ",") {
 		return errors.New("missing MIME prefix. Expected format: data:<mime>;base64,<data>")
 	}
@@ -150,6 +152,13 @@ func isHexID(s string) bool {
 
 func validateDatasetEmbeddingModel(embeddingModel string) error {
 	if isHexID(embeddingModel) {
+		return nil
+	}
+
+	// A gp- model group reference resolves through the group picker at use
+	// time (verifyEmbeddingAvailability -> ResolveInfo), so it passes format
+	// validation here.
+	if _, ok := common.ParseGroupModelRef(embeddingModel); ok {
 		return nil
 	}
 
@@ -198,46 +207,49 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 	return nil
 }
 
-// validateDatasetParserConfig enforces the Go backend's "component-scoped only"
-// contract: every top-level parser_config key must be keyed by a component id
-// (it contains ":"), never a flat (non-component-scoped) key. The Python backend
-// is fully retired (SystemHandler.Language always returns "go"), so the dataset
-// parser_config is always built from a DSL whose params live on component nodes
-// (e.g. chunk size is "chunk_token_size" on the chunker node, not the legacy
-// flat "chunk_token_num"). Any flat key would be silently dropped by
-// CleanComponentParams downstream and is never consumed, so we reject it loudly
-// here instead.
-//
-// ValidateDocumentParserConfig delegates to this same check, so documents and
-// datasets share one contract: no flat keys are ever permitted on either path.
-func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
+// DropUnscopedParserConfigKeys removes top-level parser_config keys that
+// common.IsComponentKey does not recognize as component-scoped. Flat keys are
+// transport artifacts that BuildParserConfig never reads, so they are dropped
+// rather than rejected. Only top-level keys are affected; nested keys keep
+// their names. It mutates parserConfig and returns the dropped names so callers
+// can log them. A nil or empty map is returned untouched.
+func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
 	if len(parserConfig) == 0 {
 		return nil
 	}
+	var dropped []string
 	for key := range parserConfig {
-		if !strings.Contains(key, ":") {
-			return fmt.Errorf(
-				"parser_config key %q must be component-scoped (e.g. under an Extractor or GeneralChunker node), not a flat top-level key",
-				key,
-			)
+		if !common.IsComponentKey(key) {
+			dropped = append(dropped, key)
 		}
 	}
-	return nil
+	for _, key := range dropped {
+		delete(parserConfig, key)
+	}
+	return dropped
 }
 
-// ValidateParserConfig validates the shared REST parser_config schema.
-func ValidateParserConfig(parserConfig map[string]interface{}) error {
-	return validateDatasetParserConfig(parserConfig)
+// ValidateParserConfig validates the shared REST parser_config schema. Flat
+// (non-component-scoped) keys are no longer rejected: they are silently dropped
+// because downstream consumers never read them. The size limit is still
+// enforced. It returns the names of the dropped (unscoped) keys so the caller
+// can log the silent drop; this is the single drop point shared by every entry
+// path, so callers should not call DropUnscopedParserConfigKeys again.
+func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	dropped := DropUnscopedParserConfigKeys(parserConfig)
+	return dropped, validateDatasetParserConfigSize(parserConfig)
 }
 
 // ValidateDocumentParserConfig validates the parser_config attached to a
 // document. Documents follow the same component-scoped contract as datasets:
 // every key must be scoped under a node id (e.g. "Extractor:AutoExtractDefault"
 // or "GeneralChunker:SixApplesFall"). A document's Extractor/GeneralChunker
-// nodes come from the same pipeline DSL as the dataset, so there is no flat-key
-// fallback to keep. validateDatasetParserConfig enforces the no-flat-key rule.
-func ValidateDocumentParserConfig(parserConfig map[string]interface{}) error {
-	return validateDatasetParserConfig(parserConfig)
+// nodes come from the same pipeline DSL as the dataset, so flat keys are dropped
+// (not kept) and the size limit is enforced. It returns the dropped key names
+// for logging, mirroring ValidateParserConfig.
+func ValidateDocumentParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	dropped := DropUnscopedParserConfigKeys(parserConfig)
+	return dropped, validateDatasetParserConfigSize(parserConfig)
 }
 
 // NormalizeDatasetID validates the dataset ID format and returns its
@@ -289,9 +301,12 @@ func pythonStringListRepr(items []string) string {
 	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
-func canvasAccessibleForUser(ctx context.Context, userID, canvasID string) (bool, error) {
-	tenantIDs, _ := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
-	return dao.NewUserCanvasDAO().Accessible(ctx, dao.DB, canvasID, userID, tenantIDs), nil
+func canvasAccessibleForUser(ctx context.Context, canvasID string) (bool, error) {
+	err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationUse)
+	if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func parserConfigValueOrEmptyList(parserConfig map[string]interface{}, key string) interface{} {
@@ -355,10 +370,10 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 	}
 	var mm map[string]any
 	if incoming != nil {
-		mm = extractorNodeMetadata(incoming)
+		mm = extractorNodeMetadata(incoming, next)
 	}
 	if mm == nil && existing != nil {
-		mm = extractorNodeMetadata(existing)
+		mm = extractorNodeMetadata(existing, next)
 	}
 	if mm != nil {
 		next["metadata"] = mm
@@ -433,18 +448,19 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 }
 
 // extractorNodeMetadata returns the modular metadata object ({enabled, metadata,
-// built_in_metadata}) from the first Extractor node in a parser_config, or nil
-// if none is present. Metadata is component-scoped under Extractor nodes; this
-// helper reads it back for preservation across partial updates.
-func extractorNodeMetadata(parserConfig map[string]interface{}) map[string]any {
+// built_in_metadata}) from the first Extractor node present in validConfig, or
+// nil if none is present. validConfig is the rebuilt parser_config for the
+// current DSL; keys outside it are ignored so stale nodes cannot override the
+// active configuration.
+func extractorNodeMetadata(parserConfig, validConfig map[string]interface{}) map[string]any {
 	if parserConfig == nil {
 		return nil
 	}
-	for cpnID, raw := range parserConfig {
-		lower := strings.ToLower(cpnID)
-		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
+	for _, cpnID := range common.SortedExtractorKeys(parserConfig) {
+		if _, ok := validConfig[cpnID]; !ok {
 			continue
 		}
+		raw := parserConfig[cpnID]
 		params, ok := raw.(map[string]any)
 		if !ok {
 			continue

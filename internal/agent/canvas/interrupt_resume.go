@@ -131,6 +131,9 @@ func buildUserFillUpInterruptInfo(ctx context.Context, params map[string]any) ma
 func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Context, input map[string]any) (map[string]any, error) {
 	inputSpec := BuildInputSpec(params)
 	body := func(ctx context.Context, input map[string]any) (map[string]any, error) {
+		if err := runtime.ValidateUserFillUpOptions(params, false); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
+		}
 		// Resume branch: the orchestrator decorated ctx with
 		// compose.ResumeWithData(ctx, interruptID, userInput).
 		// isResumeFlow is true when THIS node is the explicit target;
@@ -152,7 +155,7 @@ func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Co
 		// returns an interrupt error or panics on engine misuse. Keep
 		// the guard so test runs without a runner surface a clear
 		// message rather than a panic.
-		return nil, fmt.Errorf("canvas: UserFillUp %q: interrupt did not halt execution", cpnID)
+		return nil, fmt.Errorf("agent: UserFillUp %q: interrupt did not halt execution", cpnID)
 	}
 	return body
 }

@@ -21,10 +21,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -113,6 +115,50 @@ func insertRunningSyncTask(t *testing.T, db *gorm.DB, taskID string, errorCount,
 	}
 }
 
+func TestRescheduleClaimedPreservesNewerClaim(t *testing.T) {
+	db := setupSyncTaskTestDB(t)
+	if err := db.AutoMigrate(&entity.Connector{}); err != nil {
+		t.Fatalf("migrate connector: %v", err)
+	}
+	dao := NewSyncTaskDAO(db)
+	staleStartedAt := time.Now().Truncate(time.Millisecond)
+	currentStartedAt := staleStartedAt.Add(time.Second)
+	if err := db.Create(&entity.SyncLogs{
+		ID:          "task-1",
+		ConnectorID: "conn-1",
+		KbID:        "kb-1",
+		TaskType:    TaskTypeSync,
+		Status:      SyncStatusRunning,
+		TimeStarted: &currentStartedAt,
+	}).Error; err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+
+	restored, err := dao.RescheduleClaimed(t.Context(), "task-1", &staleStartedAt)
+	if err != nil {
+		t.Fatalf("reschedule stale claim: %v", err)
+	}
+	if restored {
+		t.Fatal("stale claim restored a newer claim")
+	}
+
+	var task entity.SyncLogs
+	if err = db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != SyncStatusRunning {
+		t.Fatalf("status = %s, want running", task.Status)
+	}
+
+	restored, err = dao.RescheduleClaimed(t.Context(), "task-1", &currentStartedAt)
+	if err != nil {
+		t.Fatalf("reschedule current claim: %v", err)
+	}
+	if !restored {
+		t.Fatal("current claim was not restored")
+	}
+}
+
 // TestHandleTransientFailureUsesClassScopedRetryBudget verifies the retry
 // comparison uses a counter scoped to the current error class: failures under
 // one class must not consume another class's budget, and ErrorCount keeps the
@@ -183,5 +229,32 @@ func TestHandleTransientFailureUsesClassScopedRetryBudget(t *testing.T) {
 	}
 	if task.RetryCount != 4 {
 		t.Fatalf("retry_count = %d, want 4", task.RetryCount)
+	}
+}
+
+// TestGetTaskContextKeepsCredentialsEncrypted verifies that loading a task
+// never needs the connector key, so claiming and failing a task still work
+// after the key is lost.
+func TestGetTaskContextKeepsCredentialsEncrypted(t *testing.T) {
+	t.Setenv(common.EnvRAGFlowConnectorKey, "")
+	db := setupConnectorCredentialsTestDB(t)
+	if err := db.AutoMigrate(&entity.Connector2Kb{}, &entity.Knowledgebase{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	insertRawConnector(t, db, "conn-1", `{"credentials":"enc:v1:abc","sync_deleted_files":true}`)
+	insertRunningSyncTask(t, db, "task-1", 0, 0, "")
+	if err := db.Create(&entity.Connector2Kb{ID: "link-1", ConnectorID: "conn-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("create link: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "kb", EmbdID: "embd", Permission: "me", CreatedBy: "user-1", ParserID: "naive", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create knowledgebase: %v", err)
+	}
+
+	taskContext, err := NewSyncTaskDAO(db).GetTaskContext(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("GetTaskContext: %v", err)
+	}
+	if taskContext.Connector.Config["credentials"] != "enc:v1:abc" || taskContext.Connector.Config["sync_deleted_files"] != true {
+		t.Fatalf("connector config = %#v, want the stored value", taskContext.Connector.Config)
 	}
 }

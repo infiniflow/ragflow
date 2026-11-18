@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/tokenizer"
@@ -108,7 +109,7 @@ func TestSummarizeTextsFailsAfterMaxRetries(t *testing.T) {
 	f := &fakeChat{responses: []*common.ChatResponse{
 		{Content: "**ERROR** 1"}, {Content: "**ERROR** 2"}, {Content: "**ERROR** 3"},
 	}}
-	if _, err := summarizeTexts(context.Background(), depsWithChat(f), "llm", "sys", "user", 512); err == nil {
+	if _, err := summarizeTexts(common.WithRetryDelay(context.Background(), time.Millisecond), depsWithChat(f), "llm", "sys", "user", 512); err == nil {
 		t.Fatal("expected error after exhausting retries")
 	}
 	if f.calls != raptorMaxRetries {
@@ -167,7 +168,7 @@ func TestBuildTreeNoPanicWhenAllSummariesFail(t *testing.T) {
 		{Text: "beta", Vector: []float32{0, 1, 0, 0}},
 	}
 	var products []common.Product
-	if err := buildTree(context.Background(), deps, "llm", "t", "d", chunks, 4, "", common.Param{}, &products, nil); err != nil {
+	if err := buildTree(common.WithRetryDelay(context.Background(), time.Millisecond), deps, "llm", "t", "d", chunks, 4, "", common.Param{}, &products, nil); err != nil {
 		t.Fatalf("buildTree returned unexpected error: %v", err)
 	}
 	if len(products) != 0 {

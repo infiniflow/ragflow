@@ -42,9 +42,9 @@ var akshareStockNewsEndpoint = "https://search-api-web.eastmoney.com/search/json
 
 // akshareParams is the JSON shape the model sends into InvokableRun.
 type akshareParams struct {
-	Query  string `json:"query"`
-	Symbol string `json:"symbol,omitempty"`
-	TopN   int    `json:"top_n,omitempty"`
+	Query  string `json:"query" doc:"Stock symbol/code to fetch East Money news for, e.g. 600519." required:"true"`
+	Symbol string `json:"symbol,omitempty" schema:"-"`
+	TopN   int    `json:"top_n,omitempty" schema:"-"`
 }
 
 func (p akshareParams) stockSymbol() string {
@@ -119,17 +119,7 @@ func NewAkShareToolWithTopN(h *HTTPHelper, topN int) *AkShareTool {
 
 // Info returns the tool's metadata for the chat model.
 func (a *AkShareTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: akshareToolName,
-		Desc: akshareToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Stock symbol/code to fetch East Money news for, e.g. 600519.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(akshareToolName, akshareToolDescription, akshareParams{})
 }
 
 // InvokableRun fetches stock news from East Money and returns both a

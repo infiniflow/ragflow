@@ -13,8 +13,11 @@ import WhatIsThis from '@/components/what-is-this';
 import { RunningStatusMap, RunningStatusOld } from '@/constants/knowledge';
 import { FC, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams, useSearchParams } from 'react-router';
 import { RunningStatus } from '../dataset/constant';
+import { DatasetPageFrame } from '../components/dataset-page-frame';
 import { LogTabs } from './dataset-common';
+import DataSourceLogsTable from './data-source-logs-table';
 import { DatasetFilter } from './dataset-filter';
 import { useFetchFileLogList, useFetchOverviewTotal } from './hook';
 import { DocumentLog, IFileLogItem } from './interface';
@@ -116,6 +119,9 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
 
 const FileLogsPage: FC = () => {
   const { t } = useTranslation();
+  const [searchParams] = useSearchParams();
+  const { id } = useParams();
+  const datasetId = searchParams.get('id') || id || '';
   const { data: topData } = useFetchOverviewTotal();
   const overviewStats = buildDatasetOverviewStats(topData);
 
@@ -137,14 +143,16 @@ const FileLogsPage: FC = () => {
       {
         field: 'operation_status',
         label: t('knowledgeDetails.status'),
-        list: Object.values(RunningStatusOld).map((value) => {
-          // const value = key as RunningStatus;
-          return {
-            id: value,
-            // label: RunningStatusMap[value].label,
-            label: RunningStatusMap[value],
-          };
-        }),
+        list: Object.values(RunningStatusOld)
+          .filter((value) => value !== RunningStatusOld.UNSTART)
+          .map((value) => {
+            // const value = key as RunningStatus;
+            return {
+              id: value,
+              // label: RunningStatusMap[value].label,
+              label: RunningStatusMap[value],
+            };
+          }),
       },
       // {
       //   field: 'types',
@@ -205,13 +213,9 @@ const FileLogsPage: FC = () => {
   const isDark = useIsDarkTheme();
 
   return (
-    <Card
-      className="
-      p-5 min-w-[880px] mr-5 mb-5 bg-transparent shadow-none
-      flex flex-col min-h-0"
-    >
+    <DatasetPageFrame className="px-5 pt-5">
       {/* Stats Cards */}
-      <div className="grid grid-cols-3 md:grid-cols-3 gap-7 mb-6">
+      <div className="grid grid-cols-3 md:grid-cols-3 gap-7 mb-6 shrink-0">
         <StatCard
           title={t('datasetOverview.totalFiles')}
           value={overviewStats.totalFiles}
@@ -282,14 +286,18 @@ const FileLogsPage: FC = () => {
       />
 
       {/* Table */}
-      <FileLogsTable
-        data={tableList}
-        pagination={pagination}
-        setPagination={handlePaginationChange}
-        pageCount={10}
-        active={active}
-      />
-    </Card>
+      {active === LogTabs.DATASOURCE_LOGS ? (
+        <DataSourceLogsTable datasetId={datasetId} />
+      ) : (
+        <FileLogsTable
+          data={tableList}
+          pagination={pagination}
+          setPagination={handlePaginationChange}
+          pageCount={10}
+          active={active}
+        />
+      )}
+    </DatasetPageFrame>
   );
 };
 

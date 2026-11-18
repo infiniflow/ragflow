@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 )
 
@@ -14,7 +13,7 @@ type ValidationError struct{ Message string }
 func (e *ValidationError) Error() string { return e.Message }
 
 var providerOrder = []string{
-	"local", "self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox",
+	"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "kosa8", "local",
 }
 
 var providerMetadata = map[string]map[string]any{
@@ -25,6 +24,7 @@ var providerMetadata = map[string]map[string]any{
 	"e2b":                    {"name": "E2B", "description": "E2B Cloud - Code Execution Sandboxes", "tags": []any{"saas", "fast", "global"}},
 	"tenki":                  {"name": "Tenki", "description": "Tenki - Disposable microVM code sandboxes", "tags": []any{"saas", "cloud", "microvm", "isolated"}},
 	"ucloud_agent_sandbox":   {"name": "UCloud Agent Sandbox", "description": "UCloud Agent Sandbox - Disposable cloud sandboxes for agent code execution", "tags": []any{"saas", "cloud", "isolated", "ucloud"}},
+	"kosa8":                  {"name": "kosa8", "description": "kosa8 - Disposable microVM sandboxes, hosted or self-hosted", "tags": []any{"saas", "self-hosted", "microvm", "isolated"}},
 }
 
 func field(typ string, required bool, label string) map[string]any {
@@ -91,19 +91,9 @@ func ValidateConfig(provider string, config map[string]any) error {
 		if endpoint, _ := config["endpoint"].(string); endpoint != "" && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
 			return invalid("invalid endpoint format: %s", endpoint)
 		}
-		poolValue, present := config["executor_manager_pool_size"]
-		if !present {
-			poolValue = config["pool_size"]
-		}
-		if pool, ok := integerValue(poolValue); ok && pool <= 0 {
-			return invalid("pool size must be greater than 0")
-		}
 		timeout := integerOr(config["timeout"], 30)
 		if timeout < 1 || timeout > 600 {
 			return invalid("timeout must be between 1 and 600 seconds")
-		}
-		if retries, ok := integerValue(config["max_retries"]); ok && (retries < 0 || retries > 10) {
-			return invalid("max retries must be between 0 and 10")
 		}
 	case "ssh":
 		if strings.TrimSpace(stringValue(config["host"])) == "" {
@@ -167,6 +157,18 @@ func ValidateConfig(provider string, config map[string]any) error {
 		}
 		if _, present := config["template"]; present && strings.TrimSpace(stringValue(config["template"])) == "" {
 			return invalid("template is required")
+		}
+	case "kosa8":
+		if strings.TrimSpace(stringValue(config["api_key"])) == "" {
+			return invalid("kosa8 API key is required")
+		}
+		if baseURL := strings.TrimSpace(stringValue(config["base_url"])); baseURL != "" && !strings.HasPrefix(baseURL, "https://") && !strings.HasPrefix(baseURL, "http://localhost") && !strings.HasPrefix(baseURL, "http://127.0.0.1") {
+			return invalid("kosa8 API URL must use https: %s", baseURL)
+		}
+		for _, key := range []string{"python_template", "node_template"} {
+			if _, present := config[key]; present && strings.TrimSpace(stringValue(config[key])) == "" {
+				return invalid("%s must not be empty", key)
+			}
 		}
 	}
 	return nil
@@ -252,25 +254,10 @@ func env(key, fallback string) string {
 	return fallback
 }
 
-func envInt(key string, fallback int64) int64 {
-	value, err := strconv.ParseInt(env(key, strconv.FormatInt(fallback, 10)), 10, 64)
-	if err != nil {
-		return fallback
-	}
-	return value
-}
-
 func selfManagedSchema() map[string]any {
 	s := staticSchema("self_managed")
-	s["executor_manager_image"].(map[string]any)["default"] = env("SANDBOX_EXECUTOR_MANAGER_IMAGE", "infiniflow/sandbox-executor-manager:latest")
-	s["executor_manager_pool_size"].(map[string]any)["default"] = envInt("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", 3)
 	s["base_python_image"].(map[string]any)["default"] = env("SANDBOX_BASE_PYTHON_IMAGE", "infiniflow/sandbox-base-python:latest")
 	s["base_nodejs_image"].(map[string]any)["default"] = env("SANDBOX_BASE_NODEJS_IMAGE", "infiniflow/sandbox-base-nodejs:latest")
-	s["executor_manager_port"].(map[string]any)["default"] = envInt("SANDBOX_EXECUTOR_MANAGER_PORT", 9385)
-	s["enable_seccomp"].(map[string]any)["default"] = strings.EqualFold(env("SANDBOX_ENABLE_SECCOMP", "false"), "true")
-	s["max_memory"].(map[string]any)["default"] = env("SANDBOX_MAX_MEMORY", "256m")
-	s["container_network"].(map[string]any)["default"] = env("SANDBOX_CONTAINER_NETWORK", "none")
-	s["sandbox_timeout"].(map[string]any)["default"] = env("SANDBOX_TIMEOUT", "10s")
 	return cloneMap(s)
 }
 
@@ -289,18 +276,11 @@ func staticSchema(provider string) map[string]any {
 		}
 	case "self_managed":
 		return map[string]any{
-			"endpoint":                   fieldWith("string", true, "Executor Manager Endpoint", "placeholder", "http://sandbox-executor-manager:9385", "default", "http://sandbox-executor-manager:9385", "description", "HTTP endpoint used by RAGFlow to call sandbox-executor-manager.", "scope", "runtime", "readonly", false),
-			"api_token":                  fieldWith("string", false, "Executor Manager API Token", "secret", true, "placeholder", "Optional; defaults to SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "default", "", "description", "Shared secret authenticating RAGFlow to sandbox-executor-manager. Must match SANDBOX_EXECUTOR_MANAGER_API_TOKEN on the executor-manager side.", "scope", "runtime", "readonly", false),
-			"timeout":                    limitsScoped("integer", false, "Request Timeout (seconds)", 30, 5, 300, "Maximum request time for a single code execution call. Unit: seconds.", "runtime", false),
-			"executor_manager_image":     fieldWith("string", false, "Executor Manager Image", "default", "infiniflow/sandbox-executor-manager:latest", "description", "Docker image used by sandbox-executor-manager.", "scope", "deployment", "readonly", true),
-			"executor_manager_pool_size": limitsScoped("integer", false, "Container Pool Size", int64(3), 1, 100, "Container pool size used by sandbox-executor-manager.", "deployment", true),
-			"base_python_image":          fieldWith("string", false, "Base Python Image", "default", "infiniflow/sandbox-base-python:latest", "description", "Python runtime image used by executor-managed containers.", "scope", "deployment", "readonly", true),
-			"base_nodejs_image":          fieldWith("string", false, "Base Node.js Image", "default", "infiniflow/sandbox-base-nodejs:latest", "description", "Node.js runtime image used by executor-managed containers.", "scope", "deployment", "readonly", true),
-			"executor_manager_port":      limitsScoped("integer", false, "Executor Manager Port", int64(9385), 1, 65535, "Host port exposed by sandbox-executor-manager.", "deployment", true),
-			"enable_seccomp":             fieldWith("boolean", false, "Enable Seccomp", "default", false, "description", "Whether sandbox-executor-manager starts containers with seccomp enabled.", "scope", "deployment", "readonly", true),
-			"max_memory":                 fieldWith("string", false, "Max Memory", "default", "256m", "description", "Memory limit applied to each sandbox container. Common format: 256m or 1g.", "scope", "deployment", "readonly", true),
-			"container_network":          fieldWith("string", false, "Container Network", "default", "none", "description", "Docker network attached to sandbox containers. Defaults to 'none' (no external network access); set to 'bridge' only if sandboxed code needs outbound network.", "scope", "deployment", "readonly", true),
-			"sandbox_timeout":            fieldWith("string", false, "Sandbox Timeout", "default", "10s", "description", "Executor-manager container timeout for each sandbox run. Common format: 10s or 1m.", "scope", "deployment", "readonly", true),
+			"endpoint":          fieldWith("string", true, "Executor Manager Endpoint", "placeholder", "http://sandbox-executor-manager:9385", "default", "http://sandbox-executor-manager:9385", "description", "HTTP endpoint used by RAGFlow to call sandbox-executor-manager.", "scope", "runtime", "readonly", false),
+			"api_token":         fieldWith("string", false, "Executor Manager API Token", "secret", true, "placeholder", "Optional; defaults to SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "default", "", "description", "Shared secret authenticating RAGFlow to sandbox-executor-manager. Must match SANDBOX_EXECUTOR_MANAGER_API_TOKEN on the executor-manager side.", "scope", "runtime", "readonly", false),
+			"timeout":           limitsScoped("integer", false, "Request Timeout (seconds)", 30, 5, 300, "Maximum request time for a single code execution call. Unit: seconds.", "runtime", false),
+			"base_python_image": fieldWith("string", false, "Base Python Image", "default", "infiniflow/sandbox-base-python:latest", "description", "Python runtime image used by executor-managed containers.", "scope", "deployment", "readonly", true),
+			"base_nodejs_image": fieldWith("string", false, "Base Node.js Image", "default", "infiniflow/sandbox-base-nodejs:latest", "description", "Node.js runtime image used by executor-managed containers.", "scope", "deployment", "readonly", true),
 		}
 	case "ssh":
 		return sshSchema()
@@ -319,6 +299,8 @@ func staticSchema(provider string) map[string]any {
 		return tenkiSchema()
 	case "ucloud_agent_sandbox":
 		return ucloudSchema()
+	case "kosa8":
+		return kosa8Schema()
 	}
 	return nil
 }
@@ -393,5 +375,20 @@ func ucloudSchema() map[string]any {
 		"max_output_bytes":      limitsNoDescription("integer", false, "Max Output Bytes", 1048576, 1024, 10485760),
 		"max_artifacts":         limitsNoDescription("integer", false, "Max Artifacts", 20, 0, 100),
 		"max_artifact_bytes":    limitsNoDescription("integer", false, "Max Artifact Bytes", 10485760, 1024, 104857600),
+	}
+}
+
+func kosa8Schema() map[string]any {
+	return map[string]any{
+		"api_key":            fieldWith("string", true, "API Key", "secret", true, "placeholder", "k8c_live_...", "description", "kosa8 API key. Create one at https://app.kosa8.com under API keys."),
+		"base_url":           fieldWith("string", false, "API Endpoint", "placeholder", "https://api.kosa8.com", "description", "Override the kosa8 API endpoint, for example a self-hosted deployment. Leave empty for kosa8 Cloud."),
+		"python_template":    fieldWith("string", false, "Python Template", "default", "python", "description", "Template for Python runs. The default is Python 3.12 on Alpine."),
+		"node_template":      fieldWith("string", false, "Node.js Template", "default", "node", "description", "Template for JavaScript runs. The default is Node.js 22 on Alpine."),
+		"allow_internet":     fieldWith("boolean", false, "Allow Internet Access", "default", false, "description", "Security-relevant. Disabled by default so sandboxed code has no network access. Enable it to let code make outbound connections (e.g. to install packages)."),
+		"timeout":            limits("integer", false, "Timeout (seconds)", 30, 1, 600, "Maximum execution time for a single run."),
+		"max_lifetime":       limits("integer", false, "Max Sandbox Lifetime (seconds)", 3600, 60, 86400, "kosa8 deletes a sandbox after this, guarding against leaks if the run is interrupted."),
+		"max_output_bytes":   limits("integer", false, "Max Output Bytes", 1048576, 1024, 10485760, "Maximum combined stdout and stderr size."),
+		"max_artifacts":      limits("integer", false, "Max Artifacts", 20, 0, 100, "Maximum number of files collected from the sandbox artifacts directory."),
+		"max_artifact_bytes": limits("integer", false, "Max Artifact Bytes", 10485760, 1024, 104857600, "Maximum size of a single artifact file in bytes."),
 	}
 }

@@ -47,9 +47,9 @@ var credentialQueryParams = map[string]struct{}{
 }
 
 // validateURLForSSRF parses rawURL and rejects any target whose host
-// resolves (via DNS) to a non-public IP. The check is repeated against
-// every returned A/AAAA record because a name that resolves to a mix
-// of public and private IPs is also dangerous (DNS-rebinding /
+// resolves (via DNS) to a non-public IP unless ALLOW_ANY_HOST is enabled.
+// The check covers every returned A/AAAA record because a name that resolves
+// to a mix of public and private IPs is also dangerous (DNS-rebinding /
 // multi-A-record pinning).
 func validateURLForSSRF(rawURL string) error {
 	_, _, err := ResolveAndValidate(rawURL)
@@ -57,7 +57,8 @@ func validateURLForSSRF(rawURL string) error {
 }
 
 // ResolveAndValidate parses rawURL, performs the SSRF blocklist checks,
-// and returns the first non-public IP that the host resolves to. The
+// and returns the first validated IP that the host resolves to. ALLOW_ANY_HOST
+// permits non-public addresses while preserving scheme and DNS checks. The
 // returned IP is safe to dial directly (bypassing a fresh DNS lookup)
 // which defeats DNS-rebinding attacks: an attacker cannot swap a
 // public record for a private one between this lookup and the connect,
@@ -114,7 +115,7 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 
 	// If the host is a literal IP, no DNS lookup is needed.
 	if ip := net.ParseIP(host); ip != nil {
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", nil, fmt.Errorf("%w: literal %s", ErrSSRFBlocked, host)
 		}
 		return host, ip, nil
@@ -130,7 +131,7 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 		if ip == nil {
 			return "", nil, fmt.Errorf("ssrf: could not parse resolved address %q for %s", addr, host)
 		}
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", nil, fmt.Errorf("%w: %s -> %s", ErrSSRFBlocked, host, ip)
 		}
 		if firstSafe == nil {
@@ -143,31 +144,26 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 	return host, firstSafe, nil
 }
 
-// isPrivateOrLoopback reports whether ip is in any of the ranges we
-// refuse to fetch from. It is deliberately conservative — link-local
-// (169.254.0.0/16, fe80::/10) is rejected because that is where cloud
-// metadata services live; multicast and the unspecified address are
-// also rejected.
-func isPrivateOrLoopback(ip net.IP) bool {
+// isNonGlobalIP applies the same special-use address policy as the shared
+// host guard without repeating its range list or performing another DNS lookup.
+func isNonGlobalIP(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsPrivate() || ip.IsMulticast() || ip.IsUnspecified() {
-		return true
-	}
-	return false
+	_, err := common.AssertHostSafe(ip.String())
+	return err != nil
 }
 
+// allowAnyHost reads the shared environment opt-in for private addresses.
 func allowAnyHost() bool {
-	return common.AllowAnyHostForTest
+	return common.AllowConfiguredPrivateHost()
 }
 
 // ValidateDBHost parses host (literal IP or DNS name), verifies it
-// resolves only to public IPs, and returns the validated address as a
-// string. The returned value is safe to pass to a SQL driver instead
-// of the original hostname so the connection is pinned at the
-// transport layer — closing the DNS-rebinding window between
+// resolves only to public IPs unless ALLOW_ANY_HOST is enabled, and returns
+// the validated address as a string. The returned value is safe to pass to a
+// SQL driver instead of the original hostname so the connection is pinned
+// at the transport layer — closing the DNS-rebinding window between
 // validation and the actual TCP connect. Mirrors the SSRF guard
 // applied to `test_db_connection` (PR #15609, Python
 // agent/tools/exesql.py).
@@ -183,19 +179,8 @@ func ValidateDBHost(host string) (string, error) {
 		return "", fmt.Errorf("%w: empty host", ErrSSRFBlocked)
 	}
 
-	// Mirror ResolveAndValidate's test-only bypass.
-	if allowAnyHost() {
-		if ip := net.ParseIP(host); ip != nil {
-			return ip.String(), nil
-		}
-		addrs, lerr := common.LookupHost(host)
-		if lerr != nil {
-			return "", fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
-		}
-		if len(addrs) == 0 {
-			return "", fmt.Errorf("ssrf: %s has no A/AAAA records", host)
-		}
-		return addrs[0], nil
+	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
+		return pinned, err
 	}
 
 	// Short-circuit the well-known host aliases DNS lookups may also
@@ -210,7 +195,7 @@ func ValidateDBHost(host string) (string, error) {
 
 	// Literal IP — no DNS lookup needed.
 	if ip := net.ParseIP(host); ip != nil {
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", fmt.Errorf("%w: literal %s", ErrSSRFBlocked, host)
 		}
 		return ip.String(), nil
@@ -232,7 +217,7 @@ func ValidateDBHost(host string) (string, error) {
 		if ip == nil {
 			return "", fmt.Errorf("ssrf: could not parse resolved address %q for %s", addr, host)
 		}
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", fmt.Errorf("%w: %s -> %s", ErrSSRFBlocked, host, ip)
 		}
 		if firstSafe == "" {

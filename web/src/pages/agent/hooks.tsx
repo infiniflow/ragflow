@@ -6,7 +6,7 @@ import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { get, lowerFirst, omit } from 'lodash';
 import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { Operator, RestrictedUpstreamMap } from './constant';
+import { NodeHandleId, Operator, RestrictedUpstreamMap } from './constant';
 import { useIsPipeline } from './hooks/use-is-pipeline';
 import useGraphStore, { RFState } from './store';
 import { buildCategorizeObjectFromList, replaceIdWithText } from './utils';
@@ -172,6 +172,15 @@ export const useValidateConnection = () => {
       // node cannot connect to itself
       const isSelfConnected = connection.target === connection.source;
 
+      // With ConnectionMode.Loose a drag can start on a target handle and
+      // land on another target handle; xyflow then reports the flipped
+      // connection (drop node as source, still carrying the "end" handle id).
+      // Such a ghost edge can never resolve its source handle, so reject any
+      // connection whose handle ids violate the start/end convention.
+      const isHandleDirectionValid =
+        connection.sourceHandle !== NodeHandleId.End &&
+        connection.targetHandle !== NodeHandleId.Start;
+
       // limit the connection between two nodes to only one connection line in one direction
       // const hasLine = edges.some(
       //   (x) => x.source === connection.source && x.target === connection.target,
@@ -179,6 +188,7 @@ export const useValidateConnection = () => {
 
       const ret =
         !isSelfConnected &&
+        isHandleDirectionValid &&
         RestrictedUpstreamMap[
           getOperatorTypeFromId(
             connection.source,

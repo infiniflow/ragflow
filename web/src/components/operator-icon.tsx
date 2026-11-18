@@ -17,12 +17,12 @@
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import queritLogo from '@/assets/querit.png';
+import search1apiLogo from '@/assets/search1api.png';
 import { cn } from '@/lib/utils';
 import {
   Columns3Cog,
   FileCode,
   FileText,
-  Globe,
   HousePlus,
   Infinity as InfinityIcon,
   LogOut,
@@ -73,11 +73,14 @@ export const SVGIconMap = {
   [Operator.SearXNG]: 'searxng',
   [Operator.KeenableSearch]: 'keenable',
   [Operator.YouComSearch]: 'youcom',
+  [Operator.PerplexitySearch]: 'perplexity',
   [Operator.SofyaSearch]: 'sofya',
   [Operator.TavilyExtract]: 'tavily',
   [Operator.TavilySearch]: 'tavily',
   [Operator.QueritContents]: 'querit',
   [Operator.QueritSearch]: 'querit',
+  [Operator.Search1APISearch]: 'search1api',
+  [Operator.Search1APICrawl]: 'search1api',
   [Operator.Wikipedia]: 'wikipedia',
   [Operator.YahooFinance]: 'yahoo-finance',
   [Operator.WenCai]: 'wencai',
@@ -88,7 +91,6 @@ export const LucideIconMap = {
   [Operator.Loop]: InfinityIcon,
   [Operator.ExitLoop]: LogOut,
   [Operator.DocGenerator]: FileText,
-  [Operator.Browser]: Globe,
   [Operator.Compiler]: Columns3Cog,
   [Operator.File]: LucideFile,
   [Operator.Parser]: LucideFilePlay,
@@ -98,6 +100,26 @@ export const LucideIconMap = {
   [Operator.TitleChunker]: LucideHeading,
   [Operator.Extractor]: LucideFileStack,
 };
+
+function ScoredSwitchMark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn('size-5', className)}
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" fill="currentColor" />
+      <path
+        d="M7 12.2 10.3 15.6 17 8.4"
+        fill="none"
+        stroke="var(--bg-base, #fff)"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 const Empty = () => {
   return <div className="hidden"></div>;
@@ -135,6 +157,20 @@ const OperatorIcon = ({ name, className }: IProps) => {
         className={cn('size-5 object-contain', className)}
       />
     );
+  }
+
+  if (name === Operator.Search1APISearch || name === Operator.Search1APICrawl) {
+    return (
+      <img
+        src={search1apiLogo}
+        alt=""
+        className={cn('size-5 object-contain', className)}
+      />
+    );
+  }
+
+  if (name === Operator.ScoredSwitch) {
+    return <ScoredSwitchMark className={className} />;
   }
 
   if (name === Operator.Begin) {

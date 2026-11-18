@@ -130,3 +130,63 @@ func TestNewPostprocessOperatorParsesFilterFlags(t *testing.T) {
 		t.Errorf("String() missing filter flags:\n%s", s)
 	}
 }
+
+// runMerge builds a postprocess operator whose only stage is the merge, runs it
+// over the given chunk contents, and returns the resulting contents in order.
+func runMerge(t *testing.T, target int, contents ...string) []string {
+	t.Helper()
+	op, err := NewPostprocessOperator(map[string]interface{}{
+		"merge": map[string]interface{}{"target_size": float64(target)},
+	})
+	if err != nil {
+		t.Fatalf("NewPostprocessOperator returned error: %v", err)
+	}
+	ctx := &ChunkContext{SplitChunks: make([]ChunkData, len(contents))}
+	for i, c := range contents {
+		ctx.SplitChunks[i] = ChunkData{Content: c, Index: i}
+	}
+	if err := op.Execute(ctx); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	out := make([]string, len(ctx.ResultChunks))
+	for i, c := range ctx.ResultChunks {
+		out[i] = c.Content
+	}
+	return out
+}
+
+// TestMergeChunksTargetCountsRunes pins the merge budget unit: target_size and
+// the per-chunk overflow check are documented in runes (ChunkOptions.
+// FilterMinLength, len([]rune(c.Content)) >= target), so the running total must
+// accumulate runes too. Mixing builder byte length with rune length makes CJK
+// text flush early: every merged chunk stays far below target_size.
+func TestMergeChunksTargetCountsRunes(t *testing.T) {
+	// Three 4-rune chunks; joining separator adds 1 rune per join.
+	// Budget 12 runes: chunk1+chunk2 = 4+1+4 = 9 fits; adding chunk3 would
+	// reach 14, so the merge must flush after two chunks.
+	got := runMerge(t, 12, "甲乙丙丁", "戊己庚辛", "壬癸子丑")
+	want := []string{"甲乙丙丁 戊己庚辛", "壬癸子丑"}
+	if !eq(got, want) {
+		t.Fatalf("merge budget must count runes, not bytes: got %q, want %q", got, want)
+	}
+}
+
+// TestMergeChunksASCIIBehaviourUnchanged asserts the rune-accounting fix leaves
+// ASCII (1 byte per rune) behaviour identical.
+func TestMergeChunksASCIIBehaviourUnchanged(t *testing.T) {
+	got := runMerge(t, 12, "abcd", "efgh", "ijkl")
+	want := []string{"abcd efgh", "ijkl"}
+	if !eq(got, want) {
+		t.Fatalf("ASCII merge behaviour changed: got %q, want %q", got, want)
+	}
+}
+
+// TestMergeChunksOversizeUnitStandsAloneCJK keeps the single-chunk overflow
+// path covered for multi-byte text; the overflow check is rune-based already.
+func TestMergeChunksOversizeUnitStandsAloneCJK(t *testing.T) {
+	got := runMerge(t, 4, "甲乙丙丁", "戊己庚辛")
+	want := []string{"甲乙丙丁", "戊己庚辛"}
+	if !eq(got, want) {
+		t.Fatalf("oversize CJK unit must stand alone: got %q, want %q", got, want)
+	}
+}

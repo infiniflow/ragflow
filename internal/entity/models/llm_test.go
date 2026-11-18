@@ -14,6 +14,59 @@ import (
 	"ragflow/internal/common"
 )
 
+func TestChatThinkingDefaultsAcrossInvocationPaths(t *testing.T) {
+	for _, thinking := range []*bool{nil, new(false), new(true)} {
+		for _, path := range []string{"chat", "stream", "eino generate", "eino stream", "tools", "tools stream"} {
+			t.Run(fmt.Sprintf("%s/thinking=%v", path, thinking), func(t *testing.T) {
+				driver := &captureToolDriver{resp: &ChatResponse{Answer: new("done")}}
+				chat := NewChatModelWithInfo(driver, new("chat"), &APIConfig{}, &ModelInfo{
+					Thinking: &ModelThinking{DefaultValue: true},
+				})
+				cfg := &ChatConfig{Thinking: thinking}
+				messages := []Message{{Role: "user", Content: "hi"}}
+				sender := func(*string, *string) error { return nil }
+				var err error
+				switch path {
+				case "chat":
+					_, err = chat.ChatWithMessages(t.Context(), messages, cfg, nil)
+				case "stream":
+					err = chat.ChatStreamlyWithSender(t.Context(), messages, cfg, nil, sender)
+				case "eino generate":
+					_, err = NewEinoChatModel(chat, cfg).Generate(t.Context(), []*schema.Message{schema.UserMessage("hi")})
+				case "eino stream":
+					var stream *schema.StreamReader[*schema.Message]
+					stream, err = NewEinoChatModel(chat, cfg).Stream(t.Context(), []*schema.Message{schema.UserMessage("hi")})
+					if err == nil {
+						defer stream.Close()
+						for {
+							_, err = stream.Recv()
+							if err != nil {
+								break
+							}
+						}
+						if errors.Is(err, io.EOF) {
+							err = nil
+						}
+					}
+				case "tools":
+					chat.ToolConfig = &ToolConfig{Tools: "[]"}
+					_, _, err = chat.ChatWithTools(t.Context(), "", messages, cfg)
+				case "tools stream":
+					chat.ToolConfig = &ToolConfig{Tools: "[]"}
+					_, err = chat.ChatStreamlyWithTools(t.Context(), "", messages, cfg, sender)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := thinking != nil && *thinking
+				if driver.lastConfig == nil || driver.lastConfig.Thinking == nil || *driver.lastConfig.Thinking != want {
+					t.Fatalf("driver config = %+v, want thinking %v", driver.lastConfig, want)
+				}
+			})
+		}
+	}
+}
+
 func TestEinoChatModelRequiresExecuteCodeTool(t *testing.T) {
 	name := "chat"
 	base := NewChatModel(&streamSentinelDriver{}, &name, &APIConfig{})
@@ -111,6 +164,7 @@ func TestEinoChatModelAppliesExplicitToolChoice(t *testing.T) {
 		name       string
 		tools      []*schema.ToolInfo
 		choice     string
+		callOpts   []einomodel.Option
 		wantChoice string
 		wantValue  map[string]any // nil for the keyword forms
 	}{
@@ -137,6 +191,41 @@ func TestEinoChatModelAppliesExplicitToolChoice(t *testing.T) {
 			},
 		},
 		{
+			name:       "web search uses the object form",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}, {Name: "search_bm25_chunks"}},
+			choice:     "web_search",
+			wantChoice: "web_search",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "web_search"},
+			},
+		},
+		{
+			name:       "per-call web search overrides initial none",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}, {Name: "search_chunks"}},
+			choice:     "none",
+			callOpts:   []einomodel.Option{einomodel.WithToolChoice(schema.ToolChoiceForced, "web_search")},
+			wantChoice: "web_search",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "web_search"},
+			},
+		},
+		{
+			name:       "per-call auto releases initial web search",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}},
+			choice:     "web_search",
+			callOpts:   []einomodel.Option{einomodel.WithToolChoice(schema.ToolChoiceAllowed)},
+			wantChoice: "auto",
+		},
+		{
+			name:       "per-call none clears the named function",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}},
+			choice:     "web_search",
+			callOpts:   []einomodel.Option{einomodel.WithToolChoice(schema.ToolChoiceForbidden)},
+			wantChoice: "none",
+		},
+		{
 			name:       "no explicit choice keeps the execute_code default",
 			tools:      []*schema.ToolInfo{{Name: "execute_code"}},
 			wantChoice: "required",
@@ -161,6 +250,13 @@ func TestEinoChatModelAppliesExplicitToolChoice(t *testing.T) {
 			cfg, err := wrapper.chatConfigForGenerate()
 			if err != nil {
 				t.Fatalf("chatConfigForGenerate: %v", err)
+			}
+			if tc.choice != "" {
+				opts := append([]einomodel.Option{einomodel.WithTools(tc.tools)}, tc.callOpts...)
+				cfg, err = wrapper.chatConfigWithOptsTools(cfg, opts)
+				if err != nil {
+					t.Fatalf("chatConfigWithOptsTools: %v", err)
+				}
 			}
 			if cfg.ToolChoice == nil {
 				t.Fatalf("ToolChoice = nil, want %q", tc.wantChoice)
@@ -548,6 +644,9 @@ func (d *captureToolDriver) ListTasks(ctx context.Context, _ *APIConfig) ([]List
 	return nil, nil
 }
 func (d *captureToolDriver) ShowTask(ctx context.Context, _ string, _ *APIConfig) (*TaskResponse, error) {
+	return nil, nil
+}
+func (u *captureToolDriver) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, nil
 }
 

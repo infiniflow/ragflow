@@ -19,6 +19,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
@@ -29,8 +30,8 @@ import (
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/modelcontext"
 
 	"go.uber.org/zap"
 )
@@ -66,6 +67,16 @@ type LLMParam struct {
 	// same line verbatim.
 	FrequencyPenalty *float64
 
+	// TemperatureDisabled, TopPDisabled, MaxTokensDisabled,
+	// PresencePenaltyDisabled and FrequencyPenaltyDisabled record a DSL
+	// *Enabled switch set to false, so runtime inputs that carry the value
+	// without its switch do not bring it back (see gateSampler).
+	TemperatureDisabled      bool
+	TopPDisabled             bool
+	MaxTokensDisabled        bool
+	PresencePenaltyDisabled  bool
+	FrequencyPenaltyDisabled bool
+
 	// Driver is the configured provider driver to use (e.g. "openai"). When
 	// empty, the default ChatInvoker derives it from ModelID or uses the explicit
 	// test/development-only dummy driver.
@@ -91,13 +102,7 @@ type LLMParam struct {
 	// (2 seconds). Matches Python's `delay_after_error` param.
 	DelayAfterError time.Duration
 
-	// Thinking mirrors the python `thinking` Agent LLM setting
-	// (PR #15446). When set to "enabled" or "disabled", the LLM
-	// driver is told to turn its reasoning mode on/off
-	// (provider-specific; see chat_model.py for Qwen/Kimi/GLM
-	// policy). Empty string means "system default" — the LLM
-	// driver decides, which today means Qwen3 is sent
-	// `enable_thinking=false` unless overridden.
+	// Thinking enables reasoning only when explicitly set to "enabled".
 	Thinking string
 }
 
@@ -116,7 +121,7 @@ type LLMInput struct {
 	OutputStructure          map[string]any
 	Driver                   string
 	APIKey                   string
-	Thinking                 string // "enabled" | "disabled" | ""
+	Thinking                 string // "enabled" | "disabled"
 }
 
 // LLMOutput mirrors the outputs map (per plan §2.11.3 row 5):
@@ -213,18 +218,7 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 	}
-	// Propagate the agent-level Thinking setting to the driver so
-	// providers like DeepSeek can send thinking: {type: "disabled"}
-	// and prevent chain-of-thought from leaking into the answer.
-	// Mirrors the Python agent/component/llm.py behaviour.
-	switch req.Thinking {
-	case "enabled":
-		t := true
-		chatCfg.Thinking = &t
-	case "disabled":
-		f := false
-		chatCfg.Thinking = &f
-	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	einoMsgs := toEinoMessages(req.Messages)
 	infos, choice := toolOptions(req.Tools, req.ToolChoice)
@@ -380,14 +374,7 @@ func (e *einoChatInvoker) Stream(ctx context.Context, _ *gorm.DB, req ChatInvoke
 	apiKey := req.APIKey
 	cm := models.NewChatModel(d, &bareModel, &models.APIConfig{ApiKey: &apiKey})
 	chatCfg := &models.ChatConfig{Temperature: req.Temperature, TopP: req.TopP, MaxTokens: req.MaxTokens}
-	switch req.Thinking {
-	case "enabled":
-		t := true
-		chatCfg.Thinking = &t
-	case "disabled":
-		f := false
-		chatCfg.Thinking = &f
-	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
 
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	if infos, choice := toolOptions(req.Tools, req.ToolChoice); len(infos) > 0 {
@@ -508,45 +495,35 @@ func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*
 	return resp, nil
 }
 
-// resolvedModelInvoker is a ChatInvoker pinned to an already-resolved model
-// (driver/modelName/apiConfig). Unlike einoChatInvoker it never consults the
-// process-global default model name nor splits a composite llm id — the caller
-// (e.g. the Go chat pipeline's harness bridge) resolves the tenant model up
-// front via the model provider service. This mirrors Python, where RAGTools
-// receives a fully-resolved LLMBundle, and lets the agentic-RAG harness call a
-// tenant's actual chat model (which may be a UUID/tenant_model id) instead of
-// falling through to a dummy driver.
+// resolvedModelInvoker pins agent calls to one factory-created tenant model.
+// Unlike einoChatInvoker it never consults a process-global default or parses a
+// composite model reference.
 type resolvedModelInvoker struct {
-	driver    models.ModelDriver
-	modelName string
-	apiConfig *models.APIConfig
+	model *models.ChatModel
 }
 
-// NewResolvedInvoker builds a ChatInvoker bound to the given resolved model
-// config. modelName may be a bare model name; apiConfig carries the api key and
-// base url already resolved for the tenant.
-func NewResolvedInvoker(driver models.ModelDriver, modelName string, apiConfig *models.APIConfig) ChatInvoker {
-	return &resolvedModelInvoker{driver: driver, modelName: modelName, apiConfig: apiConfig}
+// NewResolvedInvoker builds a ChatInvoker around a typed, resolved chat model.
+func NewResolvedInvoker(model *models.ChatModel) ChatInvoker {
+	if model == nil {
+		return nil
+	}
+	return &resolvedModelInvoker{model: model}
 }
 
 // resolvedChatWrapper builds the eino wrapper for the pinned model, applying the
 // request's sampling config, thinking switch and tool binding. Invoke and Stream
 // share it so both send an identical request; only the transport differs.
 func (c *resolvedModelInvoker) resolvedChatWrapper(modelName string, req ChatInvokeRequest) (*models.EinoChatModel, *models.ChatModel, error) {
-	cm := models.NewChatModel(c.driver, &modelName, c.apiConfig)
+	cm := c.model
+	if cm.ModelName == nil || *cm.ModelName != modelName {
+		cm = models.NewChatModelWithInfo(cm.ModelDriver, &modelName, cm.APIConfig, cm.Info())
+	}
 	chatCfg := &models.ChatConfig{
 		Temperature: req.Temperature,
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 	}
-	switch req.Thinking {
-	case "enabled":
-		t := true
-		chatCfg.Thinking = &t
-	case "disabled":
-		f := false
-		chatCfg.Thinking = &f
-	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	infos, choice := toolOptions(req.Tools, req.ToolChoice)
 	if len(infos) > 0 {
@@ -565,7 +542,13 @@ func (c *resolvedModelInvoker) modelFor(req ChatInvokeRequest) string {
 	if req.ModelName != "" {
 		return req.ModelName
 	}
-	return c.modelName
+	if info := c.model.Info(); info != nil {
+		return info.Name
+	}
+	if c.model.ModelName != nil {
+		return *c.model.ModelName
+	}
+	return ""
 }
 
 // Invoke satisfies ChatInvoker.
@@ -668,8 +651,116 @@ func NewLLMComponent(p LLMParam) *LLMComponent {
 // Name returns the registered component name.
 func (c *LLMComponent) Name() string { return "LLM" }
 
-// Invoke runs the LLM and returns the output map.
+const defaultLLMDeferredTimeout = 10 * time.Minute
+
+func (c *LLMComponent) hasStructuredOutput(inputs map[string]any) bool {
+	if c.param.JSONOutput || len(c.param.OutputStructure) > 0 {
+		return true
+	}
+	if v, ok := inputs["json_output"]; ok {
+		if b, ok := v.(bool); ok && b {
+			return true
+		}
+	}
+	if v, ok := inputs["output_structure"]; ok && v != nil {
+		return true
+	}
+	return false
+}
+
+// Invoke runs the LLM component. When the component directly precedes a
+// terminal Message node in the canvas, it returns a lazy DeferredStream closure
+// so that Message can stream deltas in real-time. Otherwise, it executes eagerly.
 func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	if runtime.ComponentExecutionOptionsFromContext(ctx).DeferLLMToMessage && !c.hasStructuredOutput(inputs) {
+		timeout := defaultLLMDeferredTimeout
+		if deadline, ok := ctx.Deadline(); ok {
+			if remaining := time.Until(deadline); remaining > 0 {
+				timeout = remaining
+			}
+		}
+		var once sync.Once
+		var resp map[string]any
+		var err error
+		deferred := &runtime.DeferredStream{
+			Open: func(openCtx context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+				once.Do(func() {
+					agentCtx, cancel := context.WithTimeout(openCtx, timeout)
+					defer cancel()
+					resp, err = c.invokeStreamNow(runtime.WithAgentDeltaSink(agentCtx, sink), db, inputs, sink)
+				})
+				return resp, err
+			},
+		}
+		return map[string]any{"content": deferred}, nil
+	}
+	return c.invokeNow(ctx, db, inputs)
+}
+
+func (c *LLMComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	inv, req, p, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
+	if err != nil {
+		return nil, err
+	}
+	if earlyOut != nil {
+		return earlyOut, nil
+	}
+	resp, err := inv.Invoke(ctx, db, req)
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
+	}
+	return c.postProcessResponse(ctx, db, inv, req, p, resp)
+}
+
+func (c *LLMComponent) invokeStreamNow(ctx context.Context, db *gorm.DB, inputs map[string]any, sink runtime.AgentDeltaSink) (map[string]any, error) {
+	inv, req, p, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
+	if err != nil {
+		return nil, err
+	}
+	if earlyOut != nil {
+		if content, ok := earlyOut["content"].(string); ok && content != "" && sink != nil {
+			sink(content, "")
+		}
+		return earlyOut, nil
+	}
+
+	var resp *ChatInvokeResponse
+	if streamer, ok := inv.(chat.StreamingInvoker); ok {
+		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if sink != nil {
+				if isThink {
+					sink("", delta)
+				} else {
+					sink(delta, "")
+				}
+			}
+			return nil
+		})
+	} else {
+		resp, err = inv.Invoke(ctx, db, req)
+		if err == nil && resp != nil && sink != nil {
+			if resp.Thinking != "" {
+				sink("", resp.Thinking)
+			}
+			if resp.Content != "" {
+				sink(resp.Content, "")
+			}
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
+	}
+	return c.postProcessResponse(ctx, db, inv, req, p, resp)
+}
+
+func (c *LLMComponent) prepareChatRequest(
+	ctx context.Context,
+	db *gorm.DB,
+	inputs map[string]any,
+) (ChatInvoker, ChatInvokeRequest, LLMParam, map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
 
 	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
@@ -680,7 +771,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	originalModelID := p.ModelID
 	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
+		return nil, ChatInvokeRequest{}, p, nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
 	}
 	// Resolve the model's context window (content_length) for message
 	// fitting. 0 means the model is unknown → chat.FitMessages falls back to
@@ -689,11 +780,11 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// so a per-model "max_tokens" override in tenant_model.extra is honored.
 	tenantID := ""
 	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
-		if tid, ok := state.Sys["tenant_id"].(string); ok {
+		if tid, ok := state.GetSysString("tenant_id"); ok {
 			tenantID = tid
 		}
 	}
-	contentLength := dao.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
+	contentLength := modelcontext.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
 	if contentLength <= 0 {
 		// A 0 makes chat.FitMessages fall back to the 8192 default budget, which
 		// can silently discard most of a large-context prompt, so surface the
@@ -704,10 +795,10 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 			zap.String("model_name", p.ModelID))
 	}
 	if p.ModelID == "" {
-		return nil, &ParamError{Field: "model_id", Reason: "required"}
+		return nil, ChatInvokeRequest{}, p, nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
 	if p.UserPrompt == "" && p.SystemPrompt == "" {
-		return nil, &ParamError{Field: "user_prompt", Reason: "at least one of user_prompt or system_prompt must be set"}
+		return nil, ChatInvokeRequest{}, p, nil, &ParamError{Field: "user_prompt", Reason: "at least one of user_prompt or system_prompt must be set"}
 	}
 	// Resolve {{cpn_id@var}} references in the system and user
 	// prompts against the canvas state attached to ctx. When the
@@ -754,7 +845,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
 	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
-			return nil, err
+			return nil, ChatInvokeRequest{}, p, nil, err
 		}
 		sysFileTexts, sysFileImgs = collectSysFiles(state)
 		if len(sysFileImgs) > 0 {
@@ -827,7 +918,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		// does not duplicate it.
 		fitted, fitErr := chat.FitMessages("", msgs, contentLength)
 		if fitErr != "" {
-			return map[string]any{"content": fitErr}, nil
+			return nil, ChatInvokeRequest{}, p, map[string]any{"content": fitErr}, nil
 		}
 		msgs = fitted
 	}
@@ -837,30 +928,6 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// for a per-call retry budget. We RE-WRAP the default
 	// invoker in a fresh retryInvoker that respects those
 	// values literally.
-	//
-	// LLM retry normal-absolute-count: when MaxRetries OR
-	// DelayAfterError is explicitly set on LLMParam, the
-	// operator's intent is an ABSOLUTE attempt budget. The
-	// default invoker installed at boot in cmd/server_main.go
-	// is itself a retryInvoker wrapping einoChatInvoker.
-	// Without unwrapping, the two loops would multiplicatively
-	// stack:
-	//
-	//   boot=3, MaxRetries=5 → up to (3+1) × (5+1) = 24
-	//                          invocations, not the 6 the
-	//                          operator almost certainly intended.
-	//
-	// unwrapChatInvoker peels off any retryInvoker layers to
-	// reach the bare invoker, then the param-override branch
-	// wraps that bare invoker in a fresh retryInvoker with the
-	// operator's literal values. Net effect: the absolute attempt
-	// count is exactly (MaxRetries + 1), independent of the boot
-	// layer.
-	//
-	// Operators who do NOT set MaxRetries (both fields zero) get
-	// the boot retry chain unchanged. The unit tests in
-	// llm_retry_test.go pin both the unwrap behaviour and the
-	// stacking-prevention
 	hasOverride := p.MaxRetries > 0 || p.DelayAfterError > 0
 	if hasOverride {
 		maxRetries := p.MaxRetries
@@ -868,12 +935,9 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		if delay <= 0 {
 			delay = retryInvokerBackoff
 		}
-		// Normalise the attempt budget: peel off the boot
-		// retryInvoker layer (if any) so the operator's
-		// MaxRetries is an absolute count, not a stacked one.
 		inv = newRetryInvoker(unwrapChatInvoker(inv), maxRetries, delay)
 	}
-	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
+	req := ChatInvokeRequest{
 		Driver:           p.Driver,
 		ModelName:        p.ModelID,
 		APIKey:           p.APIKey,
@@ -885,11 +949,18 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		FrequencyPenalty: p.FrequencyPenalty,
 		MaxTokens:        p.MaxTokens,
 		Thinking:         p.Thinking,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
 	}
+	return inv, req, p, nil, nil
+}
 
+func (c *LLMComponent) postProcessResponse(
+	ctx context.Context,
+	db *gorm.DB,
+	inv ChatInvoker,
+	req ChatInvokeRequest,
+	p LLMParam,
+	resp *ChatInvokeResponse,
+) (map[string]any, error) {
 	// Strip think blocks + JSON fences from the response.
 	// Mirrors Python's clean_formated_answer() exactly
 	// (re.sub(r"^.*</think>", "", ...) + ^.*```json + trailing ```).
@@ -973,24 +1044,17 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 // downstream consumers can flush state without relying on channel close
 // alone (close also works; the "done" key is informational).
 //
-// Today, the LLM driver layer returns a single non-streamed response,
-// so this v1 emits exactly one chunk + one done. Hooking the actual
-// eino stream (EinoChatModel.Stream at internal/entity/models/llm.go:137)
-// is deferred — the public surface here is correct, only the data
-// source needs to be swapped to a real StreamReader consumer in a
-// follow-up.
+// Stream satisfies Component.Stream: it emits reasoning and content deltas as
+// they arrive from the model, followed by a final done marker.
 func (c *LLMComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
 	out := make(chan map[string]any, 16)
 	go func() {
 		defer close(out)
-		// Early bail-out for pre-cancelled contexts: don't run the
-		// (potentially expensive) LLM call when the consumer has
-		// already given up. Honors the documented select-on-ctx
-		// pattern at the goroutine entry, not just between chunks.
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		result, err := c.Invoke(ctx, db, inputs)
+
+		inv, req, _, earlyOut, err := c.prepareChatRequest(ctx, db, inputs)
 		if err != nil {
 			select {
 			case out <- map[string]any{"error": err.Error()}:
@@ -998,21 +1062,72 @@ func (c *LLMComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[strin
 			}
 			return
 		}
-		// Single non-streamed response — emit as one content chunk.
-		// A real streaming integration would loop over a channel
-		// here and emit multiple chunks with partial content.
-		chunk := map[string]any{
-			"thinking": result["thinking"],
-			"content":  result["content"],
-		}
-		select {
-		case out <- chunk:
-		case <-ctx.Done():
+		if earlyOut != nil {
+			if content, ok := earlyOut["content"].(string); ok && content != "" {
+				select {
+				case out <- map[string]any{"content": content}:
+				case <-ctx.Done():
+					return
+				}
+			}
+			select {
+			case out <- map[string]any{"done": true}:
+			case <-ctx.Done():
+			}
 			return
 		}
-		// Final done marker.
+
+		var resp *ChatInvokeResponse
+		if streamer, ok := inv.(chat.StreamingInvoker); ok {
+			resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if delta == "" {
+					return nil
+				}
+				chunk := map[string]any{}
+				if isThink {
+					chunk["thinking"] = delta
+				} else {
+					chunk["content"] = delta
+				}
+				select {
+				case out <- chunk:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+		} else {
+			resp, err = inv.Invoke(ctx, db, req)
+			if err == nil && resp != nil {
+				chunk := map[string]any{
+					"thinking": resp.Thinking,
+					"content":  resp.Content,
+				}
+				select {
+				case out <- chunk:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+
+		if err != nil {
+			select {
+			case out <- map[string]any{"error": err.Error()}:
+			case <-ctx.Done():
+			}
+			return
+		}
+
+		modelName := ""
+		if resp != nil {
+			modelName = resp.Model
+		}
 		select {
-		case out <- map[string]any{"done": true, "model": result["model"]}:
+		case out <- map[string]any{"done": true, "model": modelName}:
 		case <-ctx.Done():
 		}
 	}()
@@ -1161,7 +1276,7 @@ func extractDataImages(values []string) []string {
 // and image data URIs. The caller is responsible for handling any
 // {sys.files} placeholder replacement in the prompts.
 func collectSysFiles(state *runtime.CanvasState) (textParts, imageURIs []string) {
-	files, ok := state.Sys["files"]
+	files, ok := state.GetSys("files")
 	if !ok {
 		return nil, nil
 	}
@@ -1347,18 +1462,22 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		f := v
 		p.Temperature = &f
 	}
+	gateSampler(inputs, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
 	if v, ok := floatFrom(inputs, "top_p"); ok {
 		f := v
 		p.TopP = &f
 	}
+	gateSampler(inputs, "topPEnabled", &p.TopP, &p.TopPDisabled)
 	if v, ok := floatFrom(inputs, "presence_penalty"); ok {
 		f := v
 		p.PresencePenalty = &f
 	}
+	gateSampler(inputs, "presencePenaltyEnabled", &p.PresencePenalty, &p.PresencePenaltyDisabled)
 	if v, ok := floatFrom(inputs, "frequency_penalty"); ok {
 		f := v
 		p.FrequencyPenalty = &f
 	}
+	gateSampler(inputs, "frequencyPenaltyEnabled", &p.FrequencyPenalty, &p.FrequencyPenaltyDisabled)
 	// visual_files: accept []string or single string with embedded
 	// data URIs. The current implementation only walks top-level
 	// string values; recursive walk is a future enhancement.
@@ -1371,16 +1490,12 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		i := v
 		p.MaxTokens = &i
 	}
+	gateSampler(inputs, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 	if v, ok := stringFrom(inputs, "thinking"); ok {
-		// Forward any non-empty, non-"default" value to match the
-		// lenient Python gate: hasattr(self,"thinking") and
-		// self.thinking and self.thinking != "default".
-		// Downstream (einoChatInvoker) only acts on "enabled" /
-		// "disabled" and silently ignores unknown values, so
-		// this is safe.
-		if v != "" && v != "default" {
-			p.Thinking = v
-		}
+		p.Thinking = v
+	}
+	if p.Thinking == "" || p.Thinking == "default" {
+		p.Thinking = "disabled"
 	}
 	return p
 }
@@ -1422,6 +1537,19 @@ func boolFrom(inputs map[string]any, name string) (bool, bool) {
 		return b, true
 	}
 	return false, false
+}
+
+// gateSampler applies the sampler switch inputs[flag] to value. The switch
+// state is kept in disabled, so a later merge whose inputs carry the value
+// without the switch still drops it. Mirrors Python's LLMParam.gen_conf, which
+// only sends a sampler value when its switch is on.
+func gateSampler[T any](inputs map[string]any, flag string, value **T, disabled *bool) {
+	if enabled, ok := boolFrom(inputs, flag); ok {
+		*disabled = !enabled
+	}
+	if *disabled {
+		*value = nil
+	}
 }
 
 // floatFrom extracts a float64 from inputs[name], also accepting int.
@@ -1481,14 +1609,17 @@ func init() {
 			f := v
 			p.Temperature = &f
 		}
+		gateSampler(params, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
 		if v, ok := floatFrom(params, "top_p"); ok {
 			f := v
 			p.TopP = &f
 		}
+		gateSampler(params, "topPEnabled", &p.TopP, &p.TopPDisabled)
 		if v, ok := intFrom(params, "max_tokens"); ok {
 			i := v
 			p.MaxTokens = &i
 		}
+		gateSampler(params, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 		if v, ok := boolFrom(params, "json_output"); ok {
 			p.JSONOutput = v
 		}
@@ -1499,10 +1630,12 @@ func init() {
 			f := v
 			p.PresencePenalty = &f
 		}
+		gateSampler(params, "presencePenaltyEnabled", &p.PresencePenalty, &p.PresencePenaltyDisabled)
 		if v, ok := floatFrom(params, "frequency_penalty"); ok {
 			f := v
 			p.FrequencyPenalty = &f
 		}
+		gateSampler(params, "frequencyPenaltyEnabled", &p.FrequencyPenalty, &p.FrequencyPenaltyDisabled)
 		// cite defaults to true (matches Python) when neither LLMParam
 		// nor inputs set it.
 		p.Cite = true

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -33,7 +37,7 @@ func TestDropProviderInstanceRequestRequiresNonEmptyInstances(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var req DropProviderInstanceRequest
+			var req service.DropProviderInstanceRequest
 			if err := json.Unmarshal([]byte(tt.payload), &req); err != nil {
 				t.Fatal(err)
 			}
@@ -52,6 +56,7 @@ func setupProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&entity.User{},
 		&entity.UserTenant{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
@@ -73,8 +78,10 @@ func seedProviderHandlerModel(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	activeStatus := "1"
 	rows := []interface{}{
+		// The enterprise policy resolves the tenant role through the user row.
+		&entity.User{ID: "user-1", Nickname: "user", Email: "user-1@test.local", IsAuthenticated: "1", IsActive: "1", IsAnonymous: "0"},
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-1", UserID: "user-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	}
@@ -100,6 +107,9 @@ func newProviderHandlerRequest(t *testing.T, body map[string]interface{}, params
 	ctx.Request = req
 	ctx.Params = params
 	ctx.Set("user_id", "user-1")
+	ctx.Request = ctx.Request.WithContext(permission.WithIdentity(ctx.Request.Context(),
+		"user-1", "tenant-1",
+	))
 	return ctx, recorder
 }
 
@@ -185,6 +195,24 @@ func TestMergeProviderModelsMatchesNamesCaseInsensitively(t *testing.T) {
 	}
 }
 
+func TestMergeProviderModelsDoesNotUseMaxOutputAsContextWindow(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "chat-model", "model_types": []string{"chat"}, "context_length": 128000, "max_output": 4096},
+	}
+	remote := []map[string]interface{}{
+		{"name": "CHAT-MODEL", "model_types": []string{"chat"}, "context_length": 256000, "max_output": 8192},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	model := got["chat-model"]
+	if model["max_tokens"] != 128000 {
+		t.Fatalf("legacy max_tokens = %v, want catalog context length 128000", model["max_tokens"])
+	}
+	if model["max_output"] != 8192 {
+		t.Fatalf("max_output = %v, want remote output ceiling 8192", model["max_output"])
+	}
+}
+
 func TestMergeProviderModelsInheritsCatalogTypesOnConflict(t *testing.T) {
 	static := []map[string]interface{}{
 		{"name": "rerank-1", "model_types": []string{"rerank"}, "max_tokens": 1024},
@@ -204,6 +232,64 @@ func TestMergeProviderModelsInheritsCatalogTypesOnConflict(t *testing.T) {
 	}
 }
 
+func TestMergeProviderModelsKeepsCatalogTypesOverInferredTypes(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "vision-chat", "model_types": []string{"chat", "vision"}},
+		{"name": "plain-chat", "model_types": []string{"chat"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "vision-chat", "model_types": []string{"chat"}, "model_types_inferred": true},
+		{"name": "plain-chat", "model_types": []string{"chat"}, "model_types_inferred": true},
+		{"name": "remote-only", "model_types": []string{"chat"}, "model_types_inferred": true},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if types := providerModelMapTypes(got["vision-chat"]); !reflect.DeepEqual(types, []string{"chat", "vision"}) {
+		t.Errorf("vision-chat model_types = %v, want catalog [chat vision]", types)
+	}
+	if types := providerModelMapTypes(got["plain-chat"]); !reflect.DeepEqual(types, []string{"chat"}) {
+		t.Errorf("plain-chat model_types = %v, want [chat]", types)
+	}
+	if types := providerModelMapTypes(got["remote-only"]); !reflect.DeepEqual(types, []string{"chat"}) {
+		t.Errorf("remote-only model_types = %v, want [chat]", types)
+	}
+	for name, m := range got {
+		if _, ok := m["model_types_inferred"]; ok {
+			t.Errorf("%s still carries the internal model_types_inferred hint", name)
+		}
+	}
+}
+
+func TestMergeProviderModelsKeepsDeclaredRemoteChat(t *testing.T) {
+	// Bedrock-style drivers declare ["chat"] for text-only models; the catalog's
+	// vision must not be copied onto them.
+	static := []map[string]interface{}{
+		{"name": "amazon.nova-pro-v1:0", "model_types": []string{"chat", "vision"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "amazon.nova-pro-v1:0", "model_types": []string{"chat"}, "model_types_inferred": false},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if types := providerModelMapTypes(got["amazon.nova-pro-v1:0"]); !reflect.DeepEqual(types, []string{"chat"}) {
+		t.Errorf("model_types = %v, want declared remote [chat]", types)
+	}
+}
+
+func TestMergeProviderModelsKeepsExplicitRemoteTypes(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "multi", "model_types": []string{"chat"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "multi", "model_types": []string{"chat", "vision"}},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if types := providerModelMapTypes(got["multi"]); !reflect.DeepEqual(types, []string{"chat", "vision"}) {
+		t.Errorf("multi model_types = %v, want remote [chat vision]", types)
+	}
+}
+
 func TestValidateInstanceName(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -216,15 +302,16 @@ func TestValidateInstanceName(t *testing.T) {
 		{name: "-my-instance-1", valid: true},
 		{name: "", valid: false},
 		{name: "my instance", valid: false},
-		{name: "实例", valid: false},
+		{name: "实例", valid: true},
+		{name: "实例_name123", valid: true},
 		{name: "instância", valid: false},
 		{name: "instance!", valid: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateInstanceName(tt.name); (err == nil) != tt.valid {
-				t.Fatalf("validateInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
+			if err := service.ValidateProviderInstanceName(tt.name); (err == nil) != tt.valid {
+				t.Fatalf("ValidateProviderInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
 			}
 		})
 	}
@@ -264,6 +351,84 @@ func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {
 	}
 }
 
+type providerModelListProbe struct {
+	*modelModule.DummyModel
+	apiKey string
+	region string
+	calls  int
+}
+
+func (p *providerModelListProbe) ListModels(_ context.Context, config *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+	p.calls++
+	if config.ApiKey != nil {
+		p.apiKey = *config.ApiKey
+	}
+	if config.Region != nil {
+		p.region = *config.Region
+	}
+	return []modelModule.ListModelResponse{{Name: "gpt-live-test", ModelTypes: []string{"chat"}}}, nil
+}
+
+func (p *providerModelListProbe) NewInstance(map[string]string) modelModule.ModelDriver {
+	return p
+}
+
+func TestListModelsSavedCredentialsUsesProviderCatalogMerge(t *testing.T) {
+	db := setupProviderHandlerTestDB(t)
+	useProviderHandlerTestDB(t, db)
+	seedProviderHandlerModel(t, db)
+	// The enterprise policy also reads group, role and grant tables; the
+	// fixture migrates and seeds them, and is a no-op in the community build.
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+		t.Fatalf("prepare provider permission fixture: %v", err)
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("OpenAI")
+	if provider == nil {
+		t.Fatal("OpenAI provider is not configured")
+	}
+	probe := &providerModelListProbe{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	originalDriver := provider.ModelDriver
+	provider.ModelDriver = probe
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/providers/OpenAI/models?use_saved_credentials=true&instance_name=default", nil)
+	ctx.Params = gin.Params{{Key: "provider_id_or_name", Value: "OpenAI"}}
+	ctx.Set("user_id", "user-1")
+	ctx.Request = ctx.Request.WithContext(permission.WithIdentity(ctx.Request.Context(),
+		"user-1", "tenant-1",
+	))
+
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).ListModels(ctx)
+	body := decodeProviderHandlerResponse(t, recorder)
+	if common.ErrorCode(body["code"].(float64)) != common.CodeSuccess {
+		t.Fatalf("ListModels() response = %v, want success", body)
+	}
+	if probe.calls != 1 || probe.apiKey != "sk-test" || probe.region != "default" {
+		t.Fatalf("provider list calls=%d region=%q, want one call with saved key and default region", probe.calls, probe.region)
+	}
+
+	models, ok := body["data"].([]interface{})
+	if !ok {
+		t.Fatalf("ListModels() data = %T, want model list", body["data"])
+	}
+	modelNames := make(map[string]bool, len(models))
+	for _, item := range models {
+		model, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("model entry = %T, want object", item)
+		}
+		name, _ := model["name"].(string)
+		modelNames[name] = true
+	}
+	if !modelNames["gpt-live-test"] || !modelNames["gpt-5.6"] {
+		t.Fatalf("ListModels() names = %v, want live model and catalog model", modelNames)
+	}
+}
+
 func TestProviderHandlerAlterModelRejectsInvalidStatus(t *testing.T) {
 	ctx, recorder := newProviderHandlerRequest(
 		t,
@@ -288,6 +453,9 @@ func TestProviderHandlerAlterModelUpdatesStatus(t *testing.T) {
 	db := setupProviderHandlerTestDB(t)
 	useProviderHandlerTestDB(t, db)
 	seedProviderHandlerModel(t, db)
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+		t.Fatalf("prepare provider permission fixture: %v", err)
+	}
 
 	ctx, recorder := newProviderHandlerRequest(
 		t,

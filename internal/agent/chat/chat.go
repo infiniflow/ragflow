@@ -17,10 +17,9 @@
 // Package chat is a dependency-light home for the LLM chat-invoker interface
 // and its package-level singleton. It lives here (leaf, importing only eino
 // schema + gorm) so that both internal/agent/component (which owns the
-// production eino-based invoker) and internal/agent/tool /
-// internal/rag/agentic-rag/harness (which need to call the LLM for
-// routing/selection) can depend on it without forming an import cycle. The production invoker is registered at boot via
-// SetDefaultInvoker.
+// production eino-based invoker) and internal/agent/tool (which need to call
+// the LLM for routing/selection) can depend on it without forming an import
+// cycle. The production invoker is registered at boot via SetDefaultInvoker.
 package chat
 
 import (

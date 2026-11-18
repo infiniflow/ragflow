@@ -58,6 +58,7 @@ const useFetchFileLogList = () => {
   );
   const knowledgeBaseId = searchParams.get('id') || id;
   const logType = active === LogTabs.DATASET_LOGS ? 'dataset' : 'file';
+  const isDataSourceLogs = active === LogTabs.DATASOURCE_LOGS;
   const { data } = useQuery<IFileLogList>({
     queryKey: DatasetOverviewKeys.logs(
       knowledgeBaseId,
@@ -73,7 +74,7 @@ const useFetchFileLogList = () => {
       }
       return previousData;
     },
-    enabled: !!knowledgeBaseId,
+    enabled: !!knowledgeBaseId && !isDataSourceLogs,
     refetchInterval: (query) =>
       hasActiveIngestionLogs(query.state.data) ? PollIntervalMs : false,
     queryFn: async () => {

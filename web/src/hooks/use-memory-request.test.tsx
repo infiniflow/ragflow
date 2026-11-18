@@ -48,7 +48,7 @@ describe('useFetchAllMemoryList', () => {
     });
   });
 
-  it('passes tenant_id when an owner tenant is given', async () => {
+  it('passes access_user_id when a resource owner is given', async () => {
     renderHook(() => useFetchAllMemoryList('owner-1'), {
       wrapper: createWrapper(),
     });
@@ -56,14 +56,14 @@ describe('useFetchAllMemoryList', () => {
     await waitFor(() => expect(mockGetMemoryList).toHaveBeenCalled());
     expect(mockGetMemoryList).toHaveBeenCalledWith(
       {
-        params: { page_size: 100, page: 1, tenant_id: 'owner-1' },
+        params: { page_size: 100, page: 1, access_user_id: 'owner-1' },
         data: {},
       },
       true,
     );
   });
 
-  it('omits tenant_id without an owner tenant', async () => {
+  it('omits access_user_id without a resource owner', async () => {
     renderHook(() => useFetchAllMemoryList(), {
       wrapper: createWrapper(),
     });

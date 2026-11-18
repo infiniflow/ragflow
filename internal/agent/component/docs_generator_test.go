@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/storage"
@@ -246,5 +247,36 @@ func TestResolveDocsGeneratorContent_ThinkAndTrim(t *testing.T) {
 	}
 	if got != "plain" {
 		t.Errorf("content = %q, want %q", got, "plain")
+	}
+}
+
+// TestSanitizeFilename_CapsLength pins the two caps on generated names: 180
+// characters for the base, then 255 bytes for the whole name. Both cuts land
+// on a rune boundary and keep the extension; cutting bytes mid-rune left
+// invalid UTF-8 in the filename and download URL.
+func TestSanitizeFilename_CapsLength(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		ext  string
+		want string
+	}{
+		{"ascii over 180 chars", strings.Repeat("x", 200), ".pdf", strings.Repeat("x", 180) + ".pdf"},
+		{"cjk at 255 bytes", strings.Repeat("报", 83), ".pdf", strings.Repeat("报", 83) + ".pdf"},
+		{"cjk over 255 bytes", strings.Repeat("报", 84), ".pdf", strings.Repeat("报", 83) + ".pdf"},
+		{"cjk over both caps", strings.Repeat("报", 200), ".pdf", strings.Repeat("报", 83) + ".pdf"},
+		// The leading "a" puts the 255-byte boundary inside a 3-byte character.
+		{"mixed cut on a character", "a" + strings.Repeat("报", 200), ".pdf", "a" + strings.Repeat("报", 83) + ".pdf"},
+		{"longer extension", strings.Repeat("报", 100), ".docx", strings.Repeat("报", 83) + ".docx"},
+		{"extension already present", strings.Repeat("报", 100) + ".PDF", ".pdf", strings.Repeat("报", 83) + ".PDF"},
+	}
+	for _, c := range cases {
+		got := sanitizeFilename(c.raw, c.ext)
+		if got != c.want {
+			t.Errorf("%s: sanitizeFilename = %q (%d bytes), want %q (%d bytes)", c.name, got, len(got), c.want, len(c.want))
+		}
+		if len(got) > 255 || !utf8.ValidString(got) || !strings.HasSuffix(strings.ToLower(got), c.ext) {
+			t.Errorf("%s: %q is longer than 255 bytes, not valid UTF-8 or lacks %s", c.name, got, c.ext)
+		}
 	}
 }

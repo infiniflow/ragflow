@@ -16,6 +16,7 @@
 
 import LLMLabel, { MissingModelLabel } from '@/components/llm-select/llm-label';
 import { LlmIcon } from '@/components/svg-icon';
+import { ModelSharingBadge } from '@/ee/components/model-sharing-badge';
 import {
   FormControl,
   FormField,
@@ -23,7 +24,16 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
+import { ModelTypeProviderMap } from '@/constants/llm';
+import { ModelReferenceSelect } from '@/ee/components/model-reference-select';
+import {
+  useFetchAllAddedModels,
+  useModelValidIds,
+} from '@/hooks/use-llm-request';
+import {
+  useFetchTenantInfo,
+  useFetchUserInfo,
+} from '@/hooks/use-user-setting-request';
 import { IAddedModel } from '@/interfaces/database/llm';
 import { buildModelValue, getRealModelName } from '@/utils/llm-util';
 import { forwardRef, useCallback, useEffect, useMemo } from 'react';
@@ -34,28 +44,51 @@ import { TreeSelect, TreeSelectNode } from './tree-select';
 /** Maps form field names to their supported model types */
 export const ModelTypeMap: Record<string, string[]> = {
   llm_id: ['chat', 'vision'],
+  decision_id: ['decision'],
   embd_id: ['embedding'],
+  scoring_id: ['scoring'],
   img2txt_id: ['vision'],
   asr_id: ['asr'],
   rerank_id: ['rerank'],
   tts_id: ['tts'],
 };
 
+/** The type/provider predicate shared by buildModelTree and useModelTree. */
+function filterAddedModels(
+  allModels: IAddedModel[],
+  modelTypes: string[],
+  providers?: string[],
+  requireModelId = false,
+): IAddedModel[] {
+  return allModels.filter(
+    (m) =>
+      (!requireModelId || Boolean(m.model_id)) &&
+      m.model_type?.some((t) => modelTypes.includes(t)) &&
+      (!providers?.length || providers.includes(m.provider_name)),
+  );
+}
+
 export function buildModelTree(
   allModels: IAddedModel[],
   modelTypes: string[],
+  tenantId?: string,
   renderLeafLabel?: (
     node: TreeSelectNode,
     model: IAddedModel,
   ) => React.ReactNode,
+  providers?: string[],
+  requireModelId = false,
+  currentUserId?: string,
 ): TreeSelectNode[] {
-  const filtered = allModels.filter((m) =>
-    m.model_type?.some((t) => modelTypes.includes(t)),
+  const filtered = filterAddedModels(
+    allModels,
+    modelTypes,
+    providers,
+    requireModelId,
   );
 
   const seenLeafIds = new Set<string>();
   const providerMap = new Map<string, Map<string, IAddedModel[]>>();
-
   for (const model of filtered) {
     let instances = providerMap.get(model.provider_name);
     if (!instances) {
@@ -77,6 +110,7 @@ export function buildModelTree(
       id: `${provider}||${instance}`,
       title: instance,
       children: models.reduce<TreeSelectNode[]>((acc, m) => {
+        const mTenantId = m.tenant_id;
         const modelName = getRealModelName(m.name);
 
         const id =
@@ -100,12 +134,22 @@ export function buildModelTree(
                 imgClass="size-[22px] flex-shrink-0"
               />
               <span className="truncate">{modelName}</span>
+              <ModelSharingBadge
+                tenantName={m.tenant_name}
+                tenantId={mTenantId}
+                currentTenantId={tenantId}
+                userId={m.user_id}
+                nickname={m.nickname}
+                currentUserId={currentUserId}
+              />
             </span>
           ),
           data: {
             provider_name: m.provider_name,
             instance_name: m.instance_name,
             model_name: modelName,
+            tenant_id: m.tenant_id,
+            tenant_name: m.tenant_name,
           },
         };
         if (renderLeafLabel) {
@@ -118,8 +162,103 @@ export function buildModelTree(
   }));
 }
 
+export interface UseModelTreeOptions {
+  modelTypes?: string[];
+  /**
+   * Effective provider restriction. The ModelTypeProviderMap fallback stays
+   * with ModelTreeSelect, so callers that pass nothing get every provider.
+   */
+  providers?: string[];
+  requireModelId?: boolean;
+  renderLeafLabel?: (
+    node: TreeSelectNode,
+    model: IAddedModel,
+  ) => React.ReactNode;
+  resourceTenantId?: string;
+  accessUserId?: string;
+  ownerTenantId?: string;
+  /**
+   * Set where the tenant endpoint is not part of the page's contract (e.g.
+   * the admin gateway, which serves every tenant). Tenant labels are then
+   * not rendered.
+   */
+  skipTenantInfo?: boolean;
+}
+
+/**
+ * Fetch + filter + tree assembly shared by ModelTreeSelect and the pickers
+ * that need the query result itself: layout_recognize derives the selected
+ * provider from allAddedModels, and the image OCR radio drives its state
+ * machine from the flat list and the request state. Array options must be
+ * stable references (module constants) — the memoized tree keys on their
+ * identity, and a fresh array per render would reset TreeSelect expansion on
+ * every parent render.
+ */
+export function useModelTree({
+  modelTypes = ModelTypeMap.llm_id,
+  providers,
+  requireModelId = false,
+  renderLeafLabel,
+  resourceTenantId,
+  accessUserId,
+  ownerTenantId,
+  skipTenantInfo = false,
+}: UseModelTreeOptions = {}) {
+  const {
+    data: allAddedModels,
+    isFetched,
+    isError,
+  } = useFetchAllAddedModels(
+    undefined,
+    resourceTenantId ?? ownerTenantId,
+    accessUserId,
+  );
+  const { data: tenantInfo } = useFetchTenantInfo(!skipTenantInfo);
+  const { data: userInfo } = useFetchUserInfo(!skipTenantInfo);
+  const currentUserId = skipTenantInfo ? undefined : userInfo?.id;
+
+  const models = useMemo(
+    () =>
+      filterAddedModels(allAddedModels, modelTypes, providers, requireModelId),
+    [allAddedModels, modelTypes, providers, requireModelId],
+  );
+
+  const treeData = useMemo(
+    () =>
+      buildModelTree(
+        allAddedModels,
+        modelTypes,
+        tenantInfo?.tenant_id,
+        renderLeafLabel,
+        providers,
+        requireModelId,
+        currentUserId,
+      ),
+    [
+      allAddedModels,
+      modelTypes,
+      tenantInfo?.tenant_id,
+      renderLeafLabel,
+      providers,
+      requireModelId,
+      currentUserId,
+    ],
+  );
+
+  return { treeData, models, allAddedModels, isFetched, isError };
+}
+
 export interface ModelTreeSelectProps {
   modelTypes?: string[];
+  /**
+   * Restricts the tree to these providers. Defaults to whatever
+   * ModelTypeProviderMap declares for the selected types, so a caller that
+   * picks modelTypes automatically inherits the provider restriction.
+   */
+  providers?: string[];
+  dropdownHeader?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   value?: string;
   onChange?: (value: string) => void;
   disabled?: boolean;
@@ -129,15 +268,27 @@ export interface ModelTreeSelectProps {
   className?: string;
   renderSelected?: (node: TreeSelectNode | undefined) => React.ReactNode;
   testId?: string;
+  resourceTenantId?: string;
+  accessUserId?: string;
   ownerTenantId?: string;
+  skipTenantInfo?: boolean;
 }
 
-export const ModelTreeSelect = forwardRef<
+export interface DirectModelTreeSelectProps extends ModelTreeSelectProps {
+  requireModelId?: boolean;
+}
+
+export const DirectModelTreeSelect = forwardRef<
   HTMLButtonElement,
-  ModelTreeSelectProps
->(function ModelTreeSelect(
+  DirectModelTreeSelectProps
+>(function DirectModelTreeSelect(
   {
     modelTypes = ModelTypeMap.llm_id,
+    providers,
+    requireModelId = false,
+    dropdownHeader,
+    open,
+    onOpenChange,
     value,
     onChange,
     disabled,
@@ -147,20 +298,38 @@ export const ModelTreeSelect = forwardRef<
     className,
     renderSelected,
     testId,
+    resourceTenantId,
+    accessUserId,
     ownerTenantId,
+    skipTenantInfo = false,
   },
   ref,
 ) {
+  // An explicit prop wins; otherwise inherit the restriction declared for the
+  // type, so the default-model page and the chat settings agree without each
+  // call site having to remember.
+  const allowedProviders = useMemo(() => {
+    if (providers) return providers;
+    for (const type of modelTypes) {
+      const declared = ModelTypeProviderMap[type];
+      if (declared) return declared;
+    }
+    return undefined;
+  }, [providers, modelTypes]);
+
   const {
-    data: allAddedModels,
+    treeData,
     isFetched: modelsFetched,
     isError: modelsError,
-  } = useFetchAllAddedModels(undefined, ownerTenantId);
-
-  const treeData = useMemo(
-    () => buildModelTree(allAddedModels, modelTypes),
-    [allAddedModels, modelTypes],
-  );
+  } = useModelTree({
+    modelTypes,
+    providers: allowedProviders,
+    resourceTenantId,
+    accessUserId,
+    ownerTenantId,
+    requireModelId,
+    skipTenantInfo,
+  });
 
   // Backward compatibility: map legacy concatenated ids
   // ("modelName@instanceName@providerName") to new model_id-based ids so
@@ -192,7 +361,7 @@ export const ModelTreeSelect = forwardRef<
 
   const defaultRenderSelected = useCallback(
     (node: TreeSelectNode | undefined) => {
-      if (!node?.data) return null;
+      if (!node?.data) return <span className="truncate">{value}</span>;
       return (
         <LLMLabel
           value={buildModelValue({
@@ -200,10 +369,11 @@ export const ModelTreeSelect = forwardRef<
             model_instance: node.data.instance_name,
             model_provider: node.data.provider_name,
           })}
+          resourceTenantId={resourceTenantId ?? ownerTenantId}
         />
       );
     },
-    [],
+    [value, resourceTenantId, ownerTenantId],
   );
 
   // The persisted model no longer matches any added model (e.g. it was
@@ -212,15 +382,21 @@ export const ModelTreeSelect = forwardRef<
   // the raw composite id.
   const renderMissingModel = useCallback(
     (missingValue: string) => (
-      <MissingModelLabel value={missingValue} ownerTenantId={ownerTenantId} />
+      <MissingModelLabel
+        value={missingValue}
+        resourceTenantId={resourceTenantId ?? ownerTenantId}
+      />
     ),
-    [ownerTenantId],
+    [resourceTenantId, ownerTenantId],
   );
 
   return (
     <TreeSelect
       ref={ref}
       data={treeData}
+      dropdownHeader={dropdownHeader}
+      open={open}
+      onOpenChange={onOpenChange}
       value={normalizedValue}
       onChange={onChange}
       placeholder={placeholder}
@@ -233,6 +409,22 @@ export const ModelTreeSelect = forwardRef<
       renderMissingValue={renderMissingModel}
       loading={!modelsFetched || modelsError}
       testId={testId}
+    />
+  );
+});
+
+export const ModelTreeSelect = forwardRef<
+  HTMLButtonElement,
+  ModelTreeSelectProps
+>(function ModelTreeSelect(props, ref) {
+  const modelTypes = props.modelTypes ?? ModelTypeMap.llm_id;
+  return (
+    <ModelReferenceSelect
+      {...props}
+      modelTypes={modelTypes}
+      ownerTenantId={props.ownerTenantId ?? props.resourceTenantId}
+      directModelSelect={DirectModelTreeSelect}
+      ref={ref}
     />
   );
 });
@@ -253,7 +445,13 @@ export function ModelTreeSelectFormField({
 }: ModelTreeSelectFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
-  const { loading } = useFetchAllAddedModels(undefined, rest.ownerTenantId);
+  const modelTypes = rest.modelTypes ?? ModelTypeMap.llm_id;
+  const { isSettled: modelsSettled } = useModelValidIds(
+    modelTypes,
+    rest.resourceTenantId ?? rest.ownerTenantId,
+    rest.accessUserId,
+    !rest.skipTenantInfo,
+  );
   const value = useWatch({ control: form.control, name });
 
   // `form` from context is a new object on every provider render, so it must
@@ -267,9 +465,9 @@ export function ModelTreeSelectFormField({
   // has loaded, revalidate explicitly — it may reference a model that has
   // since been deleted, and the error should be visible before submit.
   useEffect(() => {
-    if (loading || !value) return;
+    if (!modelsSettled || !value) return;
     trigger(name);
-  }, [trigger, loading, name, value]);
+  }, [trigger, modelsSettled, name, value]);
 
   return (
     <FormField

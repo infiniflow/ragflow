@@ -40,6 +40,8 @@ export interface ArtifactForceGraphProps<TNodeValue = IArtifactGraphEntity> {
   mapNodeToValue?: (node: IArtifactGraphEntity) => TNodeValue;
   getNodeId?: (node: IArtifactGraphEntity) => string;
   getNodeColor?: (node: IArtifactGraphEntity) => string;
+  /** Plain tooltip text; escaped once by the graph before rendering as HTML. */
+  getNodeLabel?: (node: IArtifactGraphEntity) => string;
   getNodeRadius?: (
     node: IArtifactGraphEntity,
     minWeight: number,

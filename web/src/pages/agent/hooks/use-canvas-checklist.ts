@@ -22,7 +22,7 @@ import { useModelValidIds } from '@/hooks/use-llm-request';
 import { useFetchAllMemoryList } from '@/hooks/use-memory-request';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { useDebounce } from 'ahooks';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { Operator } from '../constant';
 import useGraphStore from '../store';
 import {
@@ -58,15 +58,19 @@ function collectAllDatasetIds(nodes: RAGFlowNodeType[]): string[] {
 }
 
 /**
- * Real-time canvas issues for the checklist panel (`issues`, debounced so
- * dragging a node does not recompute every frame) plus a synchronous
- * `getLatestIssues` for gating the Run/Publish/Embed/Explore entry points —
- * a user who fixes the last issue and immediately clicks Run must not be
- * blocked by a stale debounced value.
+ * Real-time canvas issues for the checklist panel, debounced so dragging a
+ * node does not recompute every frame. The checklist only reports issues to
+ * the user. Run checks blocking rules synchronously, without this debounce.
  */
 export function useCanvasChecklist({
-  ownerTenantId,
-}: { ownerTenantId?: string } = {}) {
+  resourceTenantId,
+  ownerUserId,
+  canvasID,
+}: {
+  resourceTenantId?: string;
+  ownerUserId?: string;
+  canvasID?: string;
+} = {}) {
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
   const editedNodeFormIds = useGraphStore((state) => state.editedNodeFormIds);
@@ -76,22 +80,30 @@ export function useCanvasChecklist({
     data: memoryList,
     isLoading: memoryLoading,
     isError: memoryError,
-  } = useFetchAllMemoryList(ownerTenantId);
-  // Validate against the canvas owner's resources: a shared canvas runs with
-  // the owner's models/groups/memories, while an imported dsl.json makes the
-  // importer the owner — so references pointing anywhere else surface as
-  // issues.
-  const { validIds: modelValidIds, isFetched: modelsFetched } =
-    useModelValidIds(ModelTypeMap.llm_id, ownerTenantId);
+  } = useFetchAllMemoryList(ownerUserId);
+  // Model, template-group, and memory references use the canvas owner's
+  // access scope. Dataset references are scoped separately by canvasID.
+  const { validIds: modelValidIds, isSettled: modelsFetched } =
+    useModelValidIds(ModelTypeMap.llm_id, resourceTenantId, ownerUserId);
+  const {
+    validIds: categorizeModelValidIds,
+    isSettled: categorizeModelsFetched,
+  } = useModelValidIds(
+    ['chat', 'vision', 'decision'],
+    resourceTenantId,
+    ownerUserId,
+  );
+  const { validIds: scoringModelValidIds, isFetched: scoringModelsFetched } =
+    useModelValidIds(ModelTypeMap.scoring_id, resourceTenantId, ownerUserId);
   const {
     groups: templateGroups,
     isFetched: templateGroupsFetched,
     isError: templateGroupsError,
-  } = useFetchAllCompilationTemplateGroups(ownerTenantId);
+  } = useFetchAllCompilationTemplateGroups(ownerUserId);
   const datasetIds = useMemo(() => collectAllDatasetIds(nodes), [nodes]);
   const { staleDatasetIds, settled: datasetsSettled } = useStaleDatasetIds(
     datasetIds,
-    ownerTenantId,
+    canvasID,
   );
 
   const inputs: CanvasChecklistInputs = useMemo(
@@ -107,6 +119,12 @@ export function useCanvasChecklist({
           ? new Set(memoryList?.map((x) => x.id))
           : undefined,
       modelValidIds: modelsFetched ? modelValidIds : undefined,
+      categorizeModelValidIds: categorizeModelsFetched
+        ? categorizeModelValidIds
+        : undefined,
+      scoringModelValidIds: scoringModelsFetched
+        ? scoringModelValidIds
+        : undefined,
       staleDatasetIds: datasetsSettled ? staleDatasetIds : undefined,
       // The groups query fetches only the first page (page_size: 100) — a
       // full page means some groups live beyond it, so hold off instead of
@@ -129,6 +147,10 @@ export function useCanvasChecklist({
       memoryList,
       modelsFetched,
       modelValidIds,
+      categorizeModelsFetched,
+      categorizeModelValidIds,
+      scoringModelsFetched,
+      scoringModelValidIds,
       datasetsSettled,
       staleDatasetIds,
       templateGroups,
@@ -141,24 +163,5 @@ export function useCanvasChecklist({
   const issues = useMemo(() => collectCanvasIssues(inputs), [inputs]);
   const debouncedIssues = useDebounce(issues, { wait: 300 });
 
-  const inputsRef = useRef(inputs);
-  useEffect(() => {
-    inputsRef.current = inputs;
-  }, [inputs]);
-
-  const getLatestIssues = useCallback(() => {
-    const {
-      nodes: currentNodes,
-      edges: currentEdges,
-      editedNodeFormIds: currentEditedNodeFormIds,
-    } = useGraphStore.getState();
-    return collectCanvasIssues({
-      ...inputsRef.current,
-      nodes: currentNodes,
-      edges: currentEdges,
-      editedNodeFormIds: currentEditedNodeFormIds,
-    });
-  }, []);
-
-  return { issues: debouncedIssues, getLatestIssues };
+  return { issues: debouncedIssues };
 }

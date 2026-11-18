@@ -1,0 +1,15 @@
+{
+  "name": "SystemOne",
+  "rank": 986,
+  "url": {
+    "default": "https://maas.qianwenaiapi.com/compatible-mode/v1"
+  },
+  "url_suffix": {
+    "decision": "systemone",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "url_hint": "https://maas.qianwenaiapi.com/compatible-mode/v1",
+  "class": "local",
+  "models": []
+}

@@ -56,8 +56,8 @@ func TestRealComponentBody_BindsFractionToNodeID(t *testing.T) {
 		got = append(got, [2]interface{}{component, fraction})
 	})
 
-	bodyA := realComponentBody("Parser:aaa", "TestFraction", &fractionComponent{fraction: 0.25})
-	bodyB := realComponentBody("Parser:bbb", "TestFraction", &fractionComponent{fraction: 0.75})
+	bodyA := realComponentBody("Parser:aaa", "TestFraction", "", &fractionComponent{fraction: 0.25})
+	bodyB := realComponentBody("Parser:bbb", "TestFraction", "", &fractionComponent{fraction: 0.75})
 	if _, err := bodyA(ctx, map[string]any{}); err != nil {
 		t.Fatalf("bodyA: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRealComponentBody_BindsFractionToNodeID(t *testing.T) {
 // TestRealComponentBody_NoFractionSinkIsNoop verifies a headless run (no
 // run-level callback) pays nothing and components still report freely.
 func TestRealComponentBody_NoFractionSinkIsNoop(t *testing.T) {
-	body := realComponentBody("test-cpn", "TestFraction", &fractionComponent{fraction: 0.5})
+	body := realComponentBody("test-cpn", "TestFraction", "", &fractionComponent{fraction: 0.5})
 	if _, err := body(t.Context(), map[string]any{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

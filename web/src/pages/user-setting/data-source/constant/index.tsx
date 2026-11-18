@@ -14,24 +14,26 @@
  *  limitations under the License.
  */
 
+import sitemapSvg from '@/assets/svg/data-source/sitemap.svg?raw';
 import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { BookOpen, Globe, Mail, Rss, Search } from 'lucide-react';
+import { Mail, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
+import {
+  eeDataSourceDefaultValues,
+  eeDataSourceFormFields,
+  generateEeDataSourceInfo,
+} from '@/ee/pages/user-setting/data-source/ee-extensions';
 import { IDataSourceInfoMap } from '../interface';
 import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
-import {
-  feishuWikiConstant,
-  feishuWikiDefaultValues,
-} from './feishu-wiki-constant';
 import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
@@ -41,7 +43,6 @@ export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   NOTION = 'notion',
   GOOGLE_DRIVE = 'google_drive',
-  FEISHU_WIKI = 'feishu_wiki',
   GMAIL = 'gmail',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   OCI_STORAGE = 'oci_storage',
@@ -223,7 +224,12 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.SITEMAP]: {
       name: 'Sitemap',
       description: t(`setting.${DataSourceKey.SITEMAP}Description`),
-      icon: <Globe className="text-text-primary" size={22} />,
+      icon: (
+        <span
+          className="flex w-[22px] text-text-primary [&>svg]:h-auto [&>svg]:w-full"
+          dangerouslySetInnerHTML={{ __html: sitemapSvg }}
+        />
+      ),
     },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
@@ -271,11 +277,6 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Google Drive',
       description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
       icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
-    },
-    [DataSourceKey.FEISHU_WIKI]: {
-      name: 'Feishu Wiki',
-      description: t(`setting.${DataSourceKey.FEISHU_WIKI}Description`),
-      icon: <BookOpen className="text-text-primary" size={22} />,
     },
     [DataSourceKey.GMAIL]: {
       name: 'Gmail',
@@ -381,7 +382,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.ZOTERO]: {
       name: 'Zotero',
       description: t(`setting.${DataSourceKey.ZOTERO}Description`),
-      icon: <BookOpen className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/zotero'} width={38} />,
     },
     [DataSourceKey.SEAFILE]: {
       name: 'SeaFile',
@@ -411,7 +412,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.OUTLOOK]: {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
-      icon: <Mail className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/outlook'} width={38} />,
     },
     [DataSourceKey.SALESFORCE]: {
       name: 'Salesforce',
@@ -423,6 +424,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.AZURE_BLOB}Description`),
       icon: <SvgIcon name={'data-source/azure-blob'} width={38} />,
     },
+    ...generateEeDataSourceInfo(t),
   };
 };
 
@@ -507,7 +509,6 @@ export const getCommonExtraDefaultValues = () => ({
 });
 
 const generateDataSourceFormFields = (t: TFunction) => ({
-  [DataSourceKey.FEISHU_WIKI]: feishuWikiConstant(t),
   [DataSourceKey.ONEDRIVE]: [
     {
       label: t('setting.dataSourceFieldTenantId'),
@@ -1022,7 +1023,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       label: t('setting.dataSourceFieldMyDriveEmails'),
       name: 'config.my_drive_emails',
       type: FormFieldType.Text,
-      required: true,
+      required: false,
       placeholder: 'user1@example.com,user2@example.com',
       tooltip: t('setting.google_driveMyDriveEmailsTip'),
     },
@@ -2224,10 +2225,10 @@ const generateDataSourceFormFields = (t: TFunction) => ({
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
+  ...eeDataSourceFormFields,
 });
 
 export const DataSourceFormDefaultValues = {
-  [DataSourceKey.FEISHU_WIKI]: feishuWikiDefaultValues,
   [DataSourceKey.RSS]: {
     name: '',
     source: DataSourceKey.RSS,
@@ -2781,6 +2782,7 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  ...eeDataSourceDefaultValues,
 };
 
 export const getDataSourceFieldsWithExtras = (

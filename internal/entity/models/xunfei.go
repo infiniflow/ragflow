@@ -22,47 +22,7 @@ import (
 	"fmt"
 	"io"
 	"ragflow/internal/common"
-	"strings"
 )
-
-// sparkModelVersions maps the catalog model names to the version identifiers
-// the XunFei Spark HTTP API expects in the request body's "model" field.
-// Mirrors SparkChat.model2version in rag/llm/chat_model.py.
-var sparkModelVersions = map[string]string{
-	"Spark-Max":       "generalv3.5",
-	"Spark-Max-32K":   "max-32k",
-	"Spark-Lite":      "lite",
-	"Spark-Pro":       "generalv3",
-	"Spark-Pro-128K":  "pro-128k",
-	"Spark-4.0-Ultra": "4.0Ultra",
-}
-
-func resolveSparkModel(modelName string) string {
-	if version, ok := sparkModelVersions[modelName]; ok {
-		return version
-	}
-	return modelName
-}
-
-// resolveBearerToken extracts the credential used as the Bearer token. The
-// instance stores the XunFei credential bundle (API password, APPID, API
-// secret, API key) as a JSON object string; the Spark HTTP API authenticates
-// with the bundle's spark_api_password.
-func resolveBearerToken(apiConfig *APIConfig) string {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return ""
-	}
-	key := strings.TrimSpace(*apiConfig.ApiKey)
-	if strings.HasPrefix(key, "{") {
-		var bundle map[string]interface{}
-		if err := json.Unmarshal([]byte(key), &bundle); err == nil {
-			if password, ok := bundle["spark_api_password"].(string); ok && password != "" {
-				return password
-			}
-		}
-	}
-	return key
-}
 
 type XunFeiModel struct {
 	baseModel BaseModel
@@ -77,7 +37,7 @@ func NewXunFeiModel(baseURL map[string]string, urlSuffix URLSuffix) *XunFeiModel
 			// The Spark HTTP API authenticates with the credential bundle's
 			// spark_api_password, not the raw stored key.
 			authHeader: func(cfg *APIConfig) (string, string) {
-				return "Authorization", "Bearer " + resolveBearerToken(cfg)
+				return "Authorization", "Bearer " + *cfg.ApiKey
 			},
 		},
 	}
@@ -100,12 +60,11 @@ func (x *XunFeiModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Chat)
-	reqBody := buildRequestBody(chatModelConfig, resolveSparkModel(modelName), messages, false)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Thinking != nil {
@@ -138,13 +97,12 @@ func (x *XunFeiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Chat)
 
-	reqBody := buildRequestBody(modelConfig, resolveSparkModel(modelName), messages, true)
+	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
 		if modelConfig.Thinking != nil {
@@ -170,35 +128,35 @@ func (x *XunFeiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 }
 
 func (x *XunFeiModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", x.Name())
 }
 
 func (x *XunFeiModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", x.Name())
 }
 
 func (x *XunFeiModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", x.Name())
 }
 
 func (x *XunFeiModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", x.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", x.Name())
 }
 
 func (x *XunFeiModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", x.Name())
 }
 
 func (x *XunFeiModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", x.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", x.Name())
 }
 
 func (x *XunFeiModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", x.Name())
 }
 
 func (x *XunFeiModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", x.Name())
 }
 
 func (x *XunFeiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -206,11 +164,10 @@ func (x *XunFeiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Models)
 
 	body, err := x.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
 	if err != nil {
@@ -230,7 +187,7 @@ func (x *XunFeiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (x *XunFeiModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", x.Name())
 }
 
 func (x *XunFeiModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -242,14 +199,18 @@ func (x *XunFeiModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 	// free Spark-Lite model.
 	maxTokens := 1
 	chatConfig := &ChatConfig{MaxTokens: &maxTokens}
-	_, err := x.ChatWithMessages(ctx, "Spark-Lite", []Message{{Role: "user", Content: "Hi"}}, apiConfig, chatConfig, nil)
+	_, err := x.ChatWithMessages(ctx, "spark-x2.5-1.7b", []Message{{Role: "user", Content: "Hi"}}, apiConfig, chatConfig, nil)
 	return err
 }
 
 func (x *XunFeiModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", x.Name())
 }
 
 func (x *XunFeiModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", x.Name())
+}
+
+func (x *XunFeiModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", x.Name())
 }

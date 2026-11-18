@@ -16,6 +16,7 @@ import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { useCanvasReadonly } from '../../../context';
 import { NodeWrapper } from '../node-wrapper';
 import { ResizeIcon, controlStyle } from '../resize-icon';
 import { ToolBar } from '../toolbar';
@@ -42,6 +43,7 @@ function NoteNode({
   useWatchNoteNameFormChange,
 }: NoteNodeProps) {
   const { t } = useTranslation();
+  const readOnly = useCanvasReadonly();
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -53,9 +55,17 @@ function NoteNode({
     defaultValues: { name: data.name },
   });
 
-  (useWatchNoteFormChange || useWatchFormChange)(id, form);
+  // Read-only canvas: pass no id so the sync hooks (which write the form back
+  // to the store) stay inert, and the inputs below are disabled.
+  (useWatchNoteFormChange || useWatchFormChange)(
+    readOnly ? undefined : id,
+    form,
+  );
 
-  (useWatchNoteNameFormChange || useWatchNameFormChange)(id, nameForm);
+  (useWatchNoteNameFormChange || useWatchNameFormChange)(
+    readOnly ? undefined : id,
+    nameForm,
+  );
 
   return (
     <ToolBar
@@ -69,9 +79,15 @@ function NoteNode({
         className="p-0  w-full h-full flex flex-col bg-bg-component border border-accent-primary rounded-lg shadow-md pb-1"
         selected={selected}
       >
-        <NodeResizeControl minWidth={190} minHeight={128} style={controlStyle}>
-          <ResizeIcon />
-        </NodeResizeControl>
+        {!readOnly && (
+          <NodeResizeControl
+            minWidth={190}
+            minHeight={128}
+            style={controlStyle}
+          >
+            <ResizeIcon />
+          </NodeResizeControl>
+        )}
         <section className="px-2 py-1 flex gap-2 items-center note-drag-handle rounded-t border-t-2 border-accent-primary">
           <NotebookPen className="size-4" />
           <Form {...nameForm}>
@@ -86,6 +102,7 @@ function NoteNode({
                         placeholder={t('flow.notePlaceholder')}
                         {...field}
                         type="text"
+                        disabled={readOnly}
                         className="bg-transparent border-none focus-visible:outline focus-visible:outline-text-sub-title p-1"
                       />
                     </FormControl>
@@ -107,6 +124,7 @@ function NoteNode({
                     <Textarea
                       placeholder={t('flow.notePlaceholder')}
                       resize="none"
+                      disabled={readOnly}
                       className="resize-none rounded-none p-1 py-0 overflow-auto bg-transparent focus-visible:ring-0 border-none text-text-secondary focus-visible:ring-offset-0 !text-xs h-full"
                       {...field}
                     />

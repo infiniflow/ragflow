@@ -68,15 +68,52 @@ func TestResolveVectorSimilarityWeight(t *testing.T) {
 }
 
 func TestNormalizeSimilarityWeights(t *testing.T) {
-	values := map[string]interface{}{"keywords_similarity_weight": 0.7}
-	if err := NormalizeSimilarityWeights(values); err != nil {
-		t.Fatalf("NormalizeSimilarityWeights failed: %v", err)
+	tests := []struct {
+		name         string
+		values       map[string]interface{}
+		wantVector   float64
+		wantKeywords float64
+	}{
+		{
+			// 1 - 0.7 is 0.30000000000000004 in float64; the persisted pair
+			// must be the clean 0.3 / 0.7.
+			name:         "keyword weight derives an exact vector weight",
+			values:       map[string]interface{}{"keywords_similarity_weight": 0.7},
+			wantVector:   0.3,
+			wantKeywords: 0.7,
+		},
+		{
+			name:         "vector weight derives an exact keyword weight",
+			values:       map[string]interface{}{"vector_similarity_weight": 0.3},
+			wantVector:   0.3,
+			wantKeywords: 0.7,
+		},
+		{
+			name: "matching weights are persisted unchanged",
+			values: map[string]interface{}{
+				"keywords_similarity_weight": 0.7,
+				"vector_similarity_weight":   0.3,
+			},
+			wantVector:   0.3,
+			wantKeywords: 0.7,
+		},
 	}
-	if got := values["vector_similarity_weight"].(float64); math.Abs(got-0.3) > similarityWeightTolerance {
-		t.Fatalf("vector_similarity_weight = %v, want 0.3", got)
-	}
-	if got := values["keywords_similarity_weight"].(float64); got != 0.7 {
-		t.Fatalf("keywords_similarity_weight = %v, want 0.7", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := NormalizeSimilarityWeights(tt.values); err != nil {
+				t.Fatalf("NormalizeSimilarityWeights failed: %v", err)
+			}
+			if got := tt.values["vector_similarity_weight"].(float64); got != tt.wantVector {
+				t.Fatalf("vector_similarity_weight = %v, want exactly %v", got, tt.wantVector)
+			}
+			if got := tt.values["keywords_similarity_weight"].(float64); got != tt.wantKeywords {
+				t.Fatalf("keywords_similarity_weight = %v, want exactly %v", got, tt.wantKeywords)
+			}
+			if sum := tt.values["vector_similarity_weight"].(float64) + tt.values["keywords_similarity_weight"].(float64); sum != 1 {
+				t.Fatalf("weights sum to %v, want exactly 1", sum)
+			}
+		})
 	}
 }
 

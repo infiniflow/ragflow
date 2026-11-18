@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
-	"strings"
 )
 
 // DeepSeekModel implements ModelDriver for DeepSeek
@@ -94,43 +93,14 @@ func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		var thinkingFlag string
-		effort := "high"
-		if chatModelConfig.Effort != nil {
-			effort = *chatModelConfig.Effort
-		}
-		switch effort {
-		case "none":
-			thinkingFlag = "disabled"
-		case "low":
-			thinkingFlag = "disabled"
-		case "medium":
-			thinkingFlag = "disabled"
-		case "high":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "high"
-		case "default":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "high"
-		case "max":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "max"
-		}
-		reqBody["thinking"] = map[string]interface{}{
-			"type": thinkingFlag,
-		}
-	} else {
-		reqBody["thinking"] = map[string]interface{}{
-			"type": "disabled",
-		}
+	if err := applyDeepSeekThinkingConfig(reqBody, chatModelConfig); err != nil {
+		return nil, err
 	}
 
 	body, err := d.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -151,45 +121,14 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		var thinkingFlag string
-		effort := "high"
-		if chatModelConfig.Effort != nil {
-			effort = *chatModelConfig.Effort
-		}
-		switch effort {
-		case "none":
-			thinkingFlag = "disabled"
-		case "low":
-			thinkingFlag = "disabled"
-		case "medium":
-			thinkingFlag = "disabled"
-		case "high":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "high"
-		case "default":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "high"
-		case "max":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "max"
-		default:
-			return fmt.Errorf("invalid effort level")
-		}
-		reqBody["thinking"] = map[string]interface{}{
-			"type": thinkingFlag,
-		}
-	} else {
-		reqBody["thinking"] = map[string]interface{}{
-			"type": "disabled",
-		}
+	if err := applyDeepSeekThinkingConfig(reqBody, chatModelConfig); err != nil {
+		return err
 	}
 
 	// Request token usage in streaming response. DeepSeek only includes
@@ -201,9 +140,37 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	})
 }
 
+func applyDeepSeekThinkingConfig(reqBody map[string]any, config *ChatConfig) error {
+	reqBody["thinking"] = map[string]any{"type": "disabled"}
+	if config == nil || config.Thinking == nil || !*config.Thinking {
+		return nil
+	}
+
+	effort := "high"
+	if config.Effort != nil {
+		effort = *config.Effort
+	}
+	switch effort {
+	case "none":
+		return nil
+	case "minimal", "low":
+		effort = "low"
+	case "medium", "high", "xhigh", "default":
+		effort = "high"
+	case "max", "ultra":
+		effort = "max"
+	default:
+		return fmt.Errorf("invalid effort level %q for DeepSeek", effort)
+	}
+
+	reqBody["thinking"] = map[string]any{"type": "enabled"}
+	reqBody["reasoning_effort"] = effort
+	return nil
+}
+
 // Embed embeds a list of texts into embeddings
 func (d *DeepSeekModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", d.Name())
 }
 
 func (d *DeepSeekModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -211,11 +178,10 @@ func (d *DeepSeekModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, err
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -282,12 +248,10 @@ func (d *DeepSeekModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[
 		return nil, err
 	}
 
-	baseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Balance)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), d.baseModel.URLSuffix.Balance)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -352,36 +316,40 @@ func (d *DeepSeekModel) Rerank(ctx context.Context, modelName *string, request R
 
 // TranscribeAudio transcribe audio
 func (d *DeepSeekModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", d.Name())
 }
 
 func (d *DeepSeekModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", d.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", d.Name())
 }
 
 // AudioSpeech convert text to audio
 func (d *DeepSeekModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", d.Name())
 }
 
 func (d *DeepSeekModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", d.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", d.Name())
 }
 
 // OCRFile OCR file
 func (d *DeepSeekModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", d.Name())
 }
 
 // ParseFile parse file
 func (d *DeepSeekModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", d.Name())
 }
 
 func (d *DeepSeekModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", d.Name())
 }
 
 func (d *DeepSeekModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", d.Name())
+}
+
+func (d *DeepSeekModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", d.Name())
 }

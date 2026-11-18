@@ -189,9 +189,8 @@ func TestParallel_Sequential_OneGoroutineSpawns(t *testing.T) {
 	}
 }
 
-// TestParallel_Concurrent_UsesSemaphoreFanout asserts that
-// MaxConcurrency(N) drives the fan-out path (i>=1 items run
-// via the semaphore-bounded goroutine fan-out). The eino
+// TestParallel_Concurrent_BoundedFanout asserts that
+// MaxConcurrency(N) drives the fan-out path. The eino
 // Workflow runtime internally serialises Invoke calls on a
 // single compiled runnable, so we cannot directly observe
 // in-flight workers from outside; instead we drive
@@ -200,14 +199,12 @@ func TestParallel_Sequential_OneGoroutineSpawns(t *testing.T) {
 // closes, and (c) the order in which the results arrive is
 // still index-keyed (so the bounded fan-out did not lose
 // per-item attribution).
-func TestParallel_Concurrent_UsesSemaphoreFanout(t *testing.T) {
+func TestParallel_Concurrent_BoundedFanout(t *testing.T) {
 	var calls atomic.Int32
 	runner := testCountingRunnable{
 		fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
 			calls.Add(1)
-			// Tiny sleep so the semaphore workers have a
-			// chance to interleave with the main-goroutine
-			// item 0.
+			// Tiny sleep so workers have a chance to interleave.
 			time.Sleep(time.Millisecond)
 			return in, nil
 		},
@@ -244,6 +241,149 @@ func TestParallel_Concurrent_UsesSemaphoreFanout(t *testing.T) {
 	}
 	if got := calls.Load(); got != int32(len(indices)) {
 		t.Errorf("calls: got %d, want %d", got, len(indices))
+	}
+}
+
+func TestParallel_Concurrent_FirstItemDoesNotBlockAdmission(t *testing.T) {
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	release := sync.OnceFunc(func() { close(releaseFirst) })
+	defer release()
+	runner := testCountingRunnable{fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
+		if in == 0 {
+			close(firstStarted)
+			<-releaseFirst
+		} else if in == 1 {
+			close(secondStarted)
+		}
+		return in, nil
+	}}
+	opts := getParallelOptions([]ParallelOption{WithParallelMaxConcurrency(2), WithParallelEnableSubCheckpoint(false)})
+	ch := make(chan (<-chan parallelTaskResult), 1)
+	go func() {
+		ch <- runParallelFanout(t.Context(), "par", runner, []int{0, 1}, []int{0, 1}, opts, newParallelBridgeState(nil))
+	}()
+	select {
+	case <-firstStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first item did not start")
+	}
+	select {
+	case <-secondStarted:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("second item was blocked behind first")
+	}
+	release()
+	select {
+	case results := <-ch:
+		for range results {
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("fanout did not return")
+	}
+}
+
+func TestParallel_Concurrent_BoundsWaitingGoroutines(t *testing.T) {
+	const count = 512
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	releaseRest := make(chan struct{})
+	releaseFirstOnce := sync.OnceFunc(func() { close(releaseFirst) })
+	defer releaseFirstOnce()
+	release := sync.OnceFunc(func() { close(releaseRest) })
+	defer release()
+	runner := testCountingRunnable{fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
+		if in == 0 {
+			close(firstStarted)
+			<-releaseFirst
+		} else {
+			<-releaseRest
+		}
+		return in, nil
+	}}
+	items := make([]int, count)
+	indices := make([]int, count)
+	for i := range items {
+		items[i], indices[i] = i, i
+	}
+	opts := getParallelOptions([]ParallelOption{WithParallelMaxConcurrency(2), WithParallelEnableSubCheckpoint(false)})
+	before := runtime.NumGoroutine()
+	ch := make(chan (<-chan parallelTaskResult), 1)
+	go func() {
+		ch <- runParallelFanout(t.Context(), "par", runner, items, indices, opts, newParallelBridgeState(nil))
+	}()
+	select {
+	case <-firstStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first item did not start")
+	}
+	releaseFirstOnce()
+	var results <-chan parallelTaskResult
+	select {
+	case results = <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fanout did not return")
+	}
+	if got := runtime.NumGoroutine(); got > before+50 {
+		t.Errorf("fanout started %d extra goroutines for concurrency 2", got-before)
+	}
+	release()
+	for range results {
+	}
+}
+
+func TestParallel_Concurrent_CancelSkipsQueuedItems(t *testing.T) {
+	const count = 128
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	started := make(chan struct{}, 2)
+	var calls atomic.Int32
+	runner := testCountingRunnable{fn: func(ctx context.Context, in int, _ ...compose.Option) (int, error) {
+		calls.Add(1)
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-ctx.Done()
+		return 0, ctx.Err()
+	}}
+	items := make([]int, count)
+	indices := make([]int, count)
+	for i := range items {
+		items[i], indices[i] = i, i
+	}
+	opts := getParallelOptions([]ParallelOption{WithParallelMaxConcurrency(2), WithParallelEnableSubCheckpoint(false)})
+	results := make(chan (<-chan parallelTaskResult), 1)
+	go func() {
+		results <- runParallelFanout(ctx, "par", runner, items, indices, opts, newParallelBridgeState(nil))
+	}()
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("both workers did not start")
+		}
+	}
+	cancel()
+	var got <-chan parallelTaskResult
+	select {
+	case got = <-results:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fanout did not return after cancellation")
+	}
+	seen := 0
+	for result := range got {
+		seen++
+		if !errors.Is(result.err, context.Canceled) {
+			t.Errorf("item %d: got %v, want cancellation", result.index, result.err)
+		}
+	}
+	if seen >= count {
+		t.Errorf("cancellation reported all %d items instead of stopping admission", seen)
+	}
+	if got := calls.Load(); got > 2 {
+		t.Errorf("invoked %d items after cancellation with concurrency 2", got)
 	}
 }
 
@@ -495,6 +635,36 @@ func TestParallel_InvokeRejectsInputCountMismatch(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "does not match restored input count") {
 		t.Errorf("err %q must mention restored input count", err.Error())
+	}
+}
+
+func TestParallel_ResumeBuilderFailureSkipsItemInvocation(t *testing.T) {
+	cloneErr := errors.New("state clone failed")
+	payload, err := encodeParallelState(ParallelInterruptState{
+		OriginalInputsJSON: []byte(`[1,2]`),
+		CompletedResults:   map[int]any{0: 10},
+		InterruptedIndices: []int{1},
+		TotalCount:         2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	sub := testCountingRunnable{fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
+		calls.Add(1)
+		return in, nil
+	}}
+	opts := getParallelOptions([]ParallelOption{
+		WithParallelContextBuilder(func(ctx context.Context, _ any, _ int) (context.Context, error) {
+			return ctx, cloneErr
+		}),
+	})
+	_, err = runParallelInvoke(injectResumeState(t.Context(), payload), "par", sub, nil, opts, newParallelBridgeState(nil))
+	if !errors.Is(err, cloneErr) {
+		t.Fatalf("resume error = %v, want state clone failure", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("sub invoked %d times after state clone failure", calls.Load())
 	}
 }
 

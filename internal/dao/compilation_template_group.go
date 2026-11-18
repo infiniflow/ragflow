@@ -33,12 +33,12 @@ func NewCompilationTemplateGroupDAO() *CompilationTemplateGroupDAO {
 	return &CompilationTemplateGroupDAO{}
 }
 
-// ListSaved returns the tenant's valid groups with optional keyword/scope
-// filtering and ordering, mirroring Python list_saved(). Built-in template
-// definitions are not persisted as a group and therefore never appear here.
-func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.DB, tenantID, keywords, scope string, terms []OrderTerm) ([]*entity.CompilationTemplateGroup, error) {
+// ListSaved returns a user's valid groups in a tenant with optional keyword/scope
+// filtering and ordering. Built-in template definitions are not persisted as
+// a group and therefore never appear here.
+func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.DB, tenantID, userID, keywords, scope string, terms []OrderTerm) ([]*entity.CompilationTemplateGroup, error) {
 	q := db.WithContext(ctx).
-		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid))
+		Where("tenant_id = ? AND user_id = ? AND status = ?", tenantID, userID, string(entity.StatusValid))
 	if keywords != "" {
 		q = q.Where("name LIKE ?", "%"+keywords+"%")
 	}
@@ -52,31 +52,11 @@ func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.
 	return groups, nil
 }
 
-// ListOwnedSaved returns only the tenant's own valid groups, mirroring the
-// Python list_saved() query (cls.model.tenant_id == tenant_id). The merged
-// /agents list uses this for tenant-owned canvas groups.
-func (dao *CompilationTemplateGroupDAO) ListOwnedSaved(ctx context.Context, db *gorm.DB, tenantID, keywords, scope string, terms []OrderTerm) ([]*entity.CompilationTemplateGroup, error) {
-	q := db.WithContext(ctx).
-		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid))
-	if keywords != "" {
-		q = q.Where("name LIKE ?", "%"+keywords+"%")
-	}
-	if scope != "" {
-		q = q.Where("scope = ?", scope)
-	}
-	var groups []*entity.CompilationTemplateGroup
-	if err := q.Order(compilationTemplateGroupOrderClause(terms)).Find(&groups).Error; err != nil {
-		return nil, err
-	}
-	return groups, nil
-}
-
-// CountSavedByTenant counts the tenant's own valid groups, mirroring the
-// group_count query in Python get_owner_filter / get_category_filter.
-func (dao *CompilationTemplateGroupDAO) CountSavedByTenant(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
+// CountSavedByTenantAndUser counts a user's valid groups in a tenant.
+func (dao *CompilationTemplateGroupDAO) CountSavedByTenantAndUser(ctx context.Context, db *gorm.DB, tenantID, userID string) (int64, error) {
 	var count int64
 	err := db.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
-		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid)).
+		Where("tenant_id = ? AND user_id = ? AND status = ?", tenantID, userID, string(entity.StatusValid)).
 		Count(&count).Error
 	return count, err
 }
@@ -101,7 +81,7 @@ func (dao *CompilationTemplateGroupDAO) GetSaved(ctx context.Context, db *gorm.D
 // tenant, excluding excludeID. Mirrors Python name_exists().
 func (dao *CompilationTemplateGroupDAO) NameExists(ctx context.Context, db *gorm.DB, tenantID, name, excludeID string) (bool, error) {
 	q := db.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
-		Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, string(entity.StatusValid))
+		Where("tenant_id = ? AND LOWER(name) = LOWER(?) AND status = ?", tenantID, name, string(entity.StatusValid))
 	if excludeID != "" {
 		q = q.Where("id <> ?", excludeID)
 	}

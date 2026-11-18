@@ -74,7 +74,7 @@ func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, in
 			KbIDs:        []string{datasetID},
 			Offset:       offset,
 			Limit:        sourceChunkAvailabilityBatchSize,
-			SelectFields: []string{"id", "compile_kwd"},
+			SelectFields: []string{"id", "compile_kwd", "type_kwd"},
 			Filter:       map[string]any{"doc_id": []string{documentID}},
 		})
 		cancel()
@@ -85,6 +85,9 @@ func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, in
 			break
 		}
 		for _, row := range result.Chunks {
+			if enginetypes.IsNavigationRow(row) {
+				continue
+			}
 			if kwd := strings.TrimSpace(documentStoreString(row["compile_kwd"])); kwd != "" {
 				variant, variantErr := knowledge_compile.KwdToVariant(kwd)
 				if variantErr != nil || variant == kccommon.VariantWiki {
@@ -111,7 +114,7 @@ func (s *DocumentService) loadSourceChunkIDs(ctx context.Context, indexName, dat
 			KbIDs:              []string{datasetID},
 			Offset:             offset,
 			Limit:              sourceChunkAvailabilityBatchSize,
-			SelectFields:       []string{"id", "compile_kwd"},
+			SelectFields:       []string{"id", "compile_kwd", "type_kwd"},
 			Filter:             map[string]any{"doc_id": []string{documentID}},
 			IncludeUnavailable: includeUnavailable,
 		})
@@ -123,6 +126,9 @@ func (s *DocumentService) loadSourceChunkIDs(ctx context.Context, indexName, dat
 			break
 		}
 		for _, row := range result.Chunks {
+			if enginetypes.IsNavigationRow(row) {
+				continue
+			}
 			if strings.TrimSpace(documentStoreString(row["compile_kwd"])) != "" {
 				continue
 			}

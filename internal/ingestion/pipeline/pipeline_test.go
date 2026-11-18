@@ -18,6 +18,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -26,6 +27,9 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/parser/media"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -36,6 +40,31 @@ type mockCanvasStage struct {
 	output map[string]any
 	called bool
 	calls  int
+}
+
+type pipelineContextMediaCache struct {
+	scope string
+}
+
+func (c *pipelineContextMediaCache) Put(context.Context, string, string, []byte) (entity.MediaRef, error) {
+	return entity.MediaRef{Scope: c.scope}, nil
+}
+
+func (c *pipelineContextMediaCache) Get(context.Context, entity.MediaRef) ([]byte, error) {
+	return nil, nil
+}
+
+type mediaCacheContextStage struct{}
+
+func (*mediaCacheContextStage) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
+	cache, ok := media.CacheFromContext(ctx).(*pipelineContextMediaCache)
+	if !ok {
+		return nil, errors.New("pipeline media cache is not attached")
+	}
+	if got := globals.TaskID(ctx); got != cache.scope {
+		return nil, fmt.Errorf("pipeline task id = %q, want media cache scope %q", got, cache.scope)
+	}
+	return map[string]any{"media_cache_scope": cache.scope}, nil
 }
 
 func (m *mockCanvasStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
@@ -203,6 +232,60 @@ func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
 	}
 }
 
+func TestPipelineRunAttachesInjectedMediaCacheWithTaskScope(t *testing.T) {
+	const stageName = "p.MediaCacheContextStage"
+	runtime.MustRegister(stageName, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) {
+			return &mediaCacheContextStage{}, nil
+		},
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-media-cache"
+	cache := &pipelineContextMediaCache{scope: taskID}
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["stage"]},
+				"stage": {"obj": {"component_name": "p.MediaCacheContextStage", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "stage"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithDocumentID("doc-media-cache"))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	pipe.media = cache
+
+	out, err := pipe.Run(t.Context(), map[string]any{"name": "image.html"}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	stage, ok := out["stage"].(map[string]any)
+	if !ok {
+		t.Fatalf("stage output = %T, want map[string]any", out["stage"])
+	}
+	if got := stage["media_cache_scope"]; got != taskID {
+		t.Fatalf("media cache scope = %v, want %q", got, taskID)
+	}
+}
+
+func TestNewPipelineFromDSLRejectsEmptyTaskID(t *testing.T) {
+	_, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["stage"]},
+				"stage": {"obj": {"component_name": "Begin", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "stage"],
+			"graph": {"nodes": []}
+		}
+	}`), "  ")
+	if err == nil {
+		t.Fatal("NewPipelineFromDSL accepted an empty task id")
+	}
+}
+
 func TestPipelineRun_TaskScopedFactoriesDoNotLeakAcrossConcurrentPipelines(t *testing.T) {
 	origFactory := runtime.DefaultFactory()
 	runtime.SetDefaultFactory(func(_ string, _ map[string]any) (runtime.Component, error) {
@@ -295,6 +378,44 @@ func (r *recordingSink) OnComponentProgress(ctx context.Context, ev ProgressEven
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events = append(r.events, ev)
+}
+
+func TestPipelineTimeoutFailureProgress(t *testing.T) {
+	const compilerTimeout = "Compiler: Document compilation timed out. Check that the configured model service is reachable and responsive, then retry."
+	for _, tc := range []struct {
+		name      string
+		component string
+		err       error
+		want      string
+	}{
+		{name: "compiler deadline", component: "Compiler", err: context.DeadlineExceeded, want: compilerTimeout},
+		{name: "compiler wrapped response deadline", component: "Compiler", err: fmt.Errorf("failed to read response: %w", context.DeadlineExceeded), want: compilerTimeout},
+		{name: "compiler serialized deadline", component: "Compiler", err: errors.New("failed to read response:context deadline exceeded"), want: compilerTimeout},
+		{name: "compiler ordinary failure", component: "Compiler", err: errors.New("failed to read response: unexpected EOF"), want: "Compiler: failed to read response: unexpected EOF"},
+		{name: "compiler canceled", component: "Compiler", err: context.Canceled, want: "Compiler: context canceled"},
+		{name: "extractor deadline", component: "Extractor", err: context.DeadlineExceeded, want: "Extractor: Document extraction timed out while waiting for the configured LLM. Check that the model service is reachable, then retry."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := &recordingSink{}
+			const nodeID = "stage:one"
+			p := &Pipeline{
+				taskID: "task-timeout", documentID: "doc-timeout", sink: sink,
+				canvas: &canvas.Canvas{Components: map[string]canvas.CanvasComponent{
+					nodeID: {Obj: canvas.CanvasComponentObj{ComponentName: tc.component}},
+				}},
+			}
+			p.componentProgressCallback(t.Context())(runtime.ProgressEvent{
+				Component: nodeID, Phase: runtime.PhaseError, Err: tc.err,
+			})
+			if len(sink.events) != 1 {
+				t.Fatalf("progress events = %d, want 1", len(sink.events))
+			}
+			got := sink.events[0]
+			if got.Message != tc.want || got.Component != nodeID || got.Phase != int(runtime.PhaseError) {
+				t.Fatalf("failure progress = %+v, want component %q and message %q", got, nodeID, tc.want)
+			}
+		})
+	}
 }
 
 // TestPipelineRunForwardsProgressToSink verifies the pipeline reports the

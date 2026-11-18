@@ -2,19 +2,11 @@ import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { ButtonLoading } from '@/components/ui/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
-import { useForm, useFormContext } from 'react-hook-form';
+import { useForm, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialExeSqlValues } from '../../constant';
@@ -39,121 +31,52 @@ const outputList = buildOutputList(initialExeSqlValues.outputs);
 
 export function ExeSQLFormWidgets({ loading }: { loading: boolean }) {
   const form = useFormContext();
-  const { t } = useTranslate('flow');
+  const { t } = useTranslation();
+  // Password is only required for password-authenticated databases; trino
+  // connects without one (mirrors the superRefine in FormSchema).
+  const dbType = useWatch({ control: form.control, name: 'db_type' });
 
   return (
     <>
-      <FormField
-        control={form.control}
-        name="db_type"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('dbType')}</FormLabel>
-            <FormControl>
-              <SelectWithSearch
-                {...field}
-                options={ExeSQLOptions}
-              ></SelectWithSearch>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="database"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('database')}</FormLabel>
-            <FormControl>
-              <Input {...field}></Input>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="username"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('username')}</FormLabel>
-            <FormControl>
-              <Input {...field}></Input>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="host"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('host')}</FormLabel>
-            <FormControl>
-              <Input {...field}></Input>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="port"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('port')}</FormLabel>
-            <FormControl>
-              <NumberInput
-                {...field}
-                min={MinPort}
-                max={MaxPort}
-                integer
-                className="w-full"
-              ></NumberInput>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
+      <RAGFlowFormItem name="db_type" label={t('flow.dbType')} required>
+        <SelectWithSearch options={ExeSQLOptions}></SelectWithSearch>
+      </RAGFlowFormItem>
+      <RAGFlowFormItem name="database" label={t('flow.database')} required>
+        <Input></Input>
+      </RAGFlowFormItem>
+      <RAGFlowFormItem name="username" label={t('flow.username')} required>
+        <Input></Input>
+      </RAGFlowFormItem>
+      <RAGFlowFormItem name="host" label={t('flow.host')} required>
+        <Input></Input>
+      </RAGFlowFormItem>
+      <RAGFlowFormItem name="port" label={t('flow.port')} required>
+        <NumberInput
+          min={MinPort}
+          max={MaxPort}
+          integer
+          className="w-full"
+        ></NumberInput>
+      </RAGFlowFormItem>
+      <RAGFlowFormItem
         name="password"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('password')}</FormLabel>
-            <FormControl>
-              <Input {...field} type="password"></Input>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        control={form.control}
-        name="max_records"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('maxRecords')}</FormLabel>
-            <FormControl>
-              <NumberInput
-                {...field}
-                min={MinMaxRecords}
-                max={MaxMaxRecords}
-                integer
-                className="w-full"
-              ></NumberInput>
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+        label={t('flow.password')}
+        required={dbType !== 'trino'}
+      >
+        <Input type="password"></Input>
+      </RAGFlowFormItem>
+      <RAGFlowFormItem name="max_records" label={t('flow.maxRecords')} required>
+        <NumberInput
+          min={MinMaxRecords}
+          max={MaxMaxRecords}
+          integer
+          className="w-full"
+        ></NumberInput>
+      </RAGFlowFormItem>
 
       <div className="flex justify-end">
         <ButtonLoading loading={loading} type="submit">
-          {t('test')}
+          {t('flow.test')}
         </ButtonLoading>
       </div>
     </>

@@ -13,7 +13,17 @@ func TestValidateDynamicEntries(t *testing.T) {
 			"filter_values": []any{map[string]any{"key": "status", "operator": "eq", "value": "published"}},
 		}),
 		componentDSL("Agent", map[string]any{"tools": []any{"web_search"}}),
-		componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "query", "ref": "Begin@query", "value": "query"}}}),
+		// Invoke rows take their value from either a reference or a
+		// literal, so a row may carry only one of the two.
+		componentDSL("Invoke", map[string]any{"variables": []any{
+			map[string]any{"key": "query", "ref": "Begin@query", "value": "query"},
+			map[string]any{"key": "question", "ref": "Begin@query", "value": ""},
+			map[string]any{"key": "top_k", "ref": "", "value": "12"},
+			map[string]any{"key": "limit", "ref": "", "value": 10},
+			map[string]any{"key": "enabled", "ref": "", "value": false},
+		}}),
+		// A null variables value carries no rows, same as an omitted one.
+		componentDSL("Invoke", map[string]any{"variables": nil}),
 		componentDSL("VariableAggregator", map[string]any{"groups": []any{map[string]any{
 			"group_name": "answer",
 			"variables":  []any{map[string]any{"value": "LLM@content"}},
@@ -54,6 +64,18 @@ func TestValidateDynamicEntries(t *testing.T) {
 		{"tool name", componentDSL("Agent", map[string]any{"tools": []any{"web_search", ""}}), "tools"},
 		{"filter operator", componentDSL("DataOperations", map[string]any{"filter_values": []any{map[string]any{"key": "status", "operator": "", "value": "published"}}}), "filter_values[0]"},
 		{"invoke variable", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "", "ref": "Begin@query", "value": "query"}}}), "variables[0]"},
+		{"invoke variable without source", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "query", "ref": "", "value": ""}}}), "variables[0]"},
+		{"invoke variable with nil literal", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "query", "ref": "", "value": nil}}}), "variables[0]"},
+		{"invoke variable row not a map", componentDSL("Invoke", map[string]any{"variables": []any{"query"}}), "variables[0]"},
+		{"invoke variable nil row", componentDSL("Invoke", map[string]any{"variables": []any{nil}}), "variables[0]"},
+		{"invoke variable without key", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"ref": "Begin@query", "value": ""}}}), "variables[0]"},
+		{"invoke variable with numeric key", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": 42, "ref": "Begin@query", "value": ""}}}), "variables[0]"},
+		{"invoke variables not an array", componentDSL("Invoke", map[string]any{"variables": "query"}), "variables must be an array"},
+		{"invoke variables object", componentDSL("Invoke", map[string]any{"variables": map[string]any{"key": "query"}}), "variables must be an array"},
+		{"invoke variable without source after valid row", componentDSL("Invoke", map[string]any{"variables": []any{
+			map[string]any{"key": "query", "ref": "Begin@query", "value": ""},
+			map[string]any{"key": "top_k", "ref": "", "value": " "},
+		}}), "variables[1]"},
 		{"malformed group", componentDSL("VariableAggregator", map[string]any{"groups": []any{"not a group"}}), "groups[0]"},
 		{"aggregated variable", componentDSL("VariableAggregator", map[string]any{"groups": []any{map[string]any{"group_name": "answer", "variables": []any{map[string]any{"value": ""}}}}}), "groups[0].variables[0]"},
 		{"malformed aggregated variable", componentDSL("VariableAggregator", map[string]any{"groups": []any{map[string]any{"group_name": "answer", "variables": []any{nil}}}}), "groups[0].variables[0]"},
@@ -73,6 +95,19 @@ func TestValidateDynamicEntries(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			draftErr := ValidateDraftDynamicEntries(dslWithComponents(test.component))
+			invokeDraft := test.component["component_name"] == "Invoke"
+			switch test.name {
+			case "invoke variable row not a map", "invoke variable nil row", "invoke variable with numeric key", "invoke variables not an array", "invoke variables object":
+				invokeDraft = false
+			}
+			if test.component["component_name"] == "Message" || test.component["component_name"] == "Agent" || test.component["component_name"] == "DataOperations" || test.component["component_name"] == "Compiler" || test.component["component_name"] == "Loop" || test.component["component_name"] == "Iteration" || test.component["component_name"] == "TokenChunker" || invokeDraft || test.name == "input option" || test.name == "aggregated variable" {
+				if draftErr != nil {
+					t.Fatalf("draft rejected unfinished entries: %v", draftErr)
+				}
+			} else if draftErr == nil || !strings.Contains(draftErr.Error(), test.want) {
+				t.Fatalf("draft validation changed: %v, want %q", draftErr, test.want)
+			}
 			err := ValidateDynamicEntries(dslWithComponents(test.component))
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("ValidateDynamicEntries() error = %v, want %q", err, test.want)
@@ -91,4 +126,14 @@ func dslWithComponents(components ...map[string]any) map[string]any {
 
 func componentDSL(name string, params map[string]any) map[string]any {
 	return map[string]any{"component_name": name, "params": params}
+}
+
+func TestMessageDSLFactoryRejectsIncompleteContent(t *testing.T) {
+	for _, params := range []map[string]any{
+		nil, {}, {"text": ""}, {"content": []string{}}, {"content": []string{"hello", ""}},
+	} {
+		if _, err := New("Message", params); err == nil || !strings.Contains(err.Error(), "content does not support empty") {
+			t.Fatalf("factory accepted %#v: %v", params, err)
+		}
+	}
 }

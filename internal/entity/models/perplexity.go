@@ -62,7 +62,7 @@ func (p *PerplexityModel) chatURL(apiConfig *APIConfig) (string, error) {
 		return "", err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Chat), nil
+	return joinURL(baseURL, p.baseModel.URLSuffix.Chat), nil
 }
 
 func (p *PerplexityModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -137,12 +137,10 @@ func (p *PerplexityModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 		return nil, err
 	}
 
-	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	url, err := p.baseModel.EndpointURL(apiConfig, p.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -210,12 +208,10 @@ func (p *PerplexityModel) Embed(ctx context.Context, modelName *string, request 
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	url, err := p.baseModel.EndpointURL(apiConfig, p.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -273,41 +269,45 @@ func (p *PerplexityModel) Embed(ctx context.Context, modelName *string, request 
 }
 
 func (p *PerplexityModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", p.Name())
 }
 
 func (p *PerplexityModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", p.Name())
 }
 
 func (p *PerplexityModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", p.Name())
 }
 
 func (p *PerplexityModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", p.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", p.Name())
 }
 
 func (p *PerplexityModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", p.Name())
 }
 
 func (p *PerplexityModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", p.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", p.Name())
 }
 
 func (p *PerplexityModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", p.Name())
 }
 
 func (p *PerplexityModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", p.Name())
 }
 
 func (p *PerplexityModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", p.Name())
 }
 
 func (p *PerplexityModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", p.Name())
+}
+
+func (p *PerplexityModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", p.Name())
 }

@@ -14,10 +14,7 @@
 //  limitations under the License.
 //
 
-// manager.go is the Go port of `agent/sandbox/providers/manager.py`.
-//
-// Configuration source priority (matches the Python load order, see
-// `agent/sandbox/client.py::_load_provider_from_settings`):
+// Configuration source priority:
 //
 //  1. Admin-panel `sandbox.provider_type` + `sandbox.{provider_type}`
 //     JSON config stored in the `system_settings` MySQL table. The
@@ -30,7 +27,7 @@
 //     `FromConfig` constructor is the single source of truth.
 //
 // Once initialized, the manager holds the active provider. There is
-// at most one active provider at a time — same as Python, because
+// at most one active provider at a time because
 // sandbox configuration is global.
 
 package sandbox
@@ -49,9 +46,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// ProviderManager is the Go equivalent of
-// `agent/sandbox/providers/manager.py::ProviderManager`. It is
-// goroutine-safe and lazily initialized.
+// ProviderManager is goroutine-safe and lazily initialized.
 type ProviderManager struct {
 	refreshMu          sync.Mutex
 	mu                 sync.RWMutex
@@ -62,9 +57,7 @@ type ProviderManager struct {
 	settingsConfigured bool
 }
 
-// globalManager is the package-level manager. Mirrors the Python
-// `_provider_manager` global in `agent/sandbox/client.py`. Tests
-// can use SetProvider to inject a custom provider.
+// globalManager is the package-level manager. Tests can inject a provider.
 var (
 	globalManager     *ProviderManager
 	globalManagerOnce sync.Once
@@ -216,10 +209,7 @@ func (m *ProviderManager) LoadFromSettingsWithReader(ctx context.Context, db *go
 	return nil
 }
 
-// ReloadFromSettings resets the manager and re-reads the admin-panel
-// settings. Mirrors Python's `reload_provider()` in
-// `agent/sandbox/client.py` — call after the operator updates the
-// sandbox settings.
+// ReloadFromSettings resets the manager and re-reads admin settings.
 func (m *ProviderManager) ReloadFromSettings(ctx context.Context, db *gorm.DB) error {
 	return m.ReloadFromSettingsWithReader(ctx, db, dao.NewSystemSettingsDAO())
 }
@@ -302,8 +292,10 @@ func buildProvider(t ProviderType) (SandboxProvider, error) {
 		return newTenkiProviderFromEnv(), nil
 	case ProviderUCloudAgentSandbox:
 		return newUCloudAgentSandboxProviderFromEnv(), nil
+	case ProviderKosa8:
+		return newKosa8ProviderFromEnv(), nil
 	default:
-		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki, ucloud_agent_sandbox)", t)
+		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki, ucloud_agent_sandbox, kosa8)", t)
 	}
 }
 
@@ -325,7 +317,9 @@ func buildProviderFromConfig(t ProviderType, cfg map[string]any) (SandboxProvide
 		return newTenkiProviderFromConfig(cfg), nil
 	case ProviderUCloudAgentSandbox:
 		return newUCloudAgentSandboxProviderFromConfig(cfg), nil
+	case ProviderKosa8:
+		return newKosa8ProviderFromConfig(cfg), nil
 	default:
-		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki, ucloud_agent_sandbox)", t)
+		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki, ucloud_agent_sandbox, kosa8)", t)
 	}
 }

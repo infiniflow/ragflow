@@ -1,0 +1,102 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package bootstrap
+
+import (
+	"fmt"
+	"time"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	"ragflow/internal/server"
+	"ragflow/internal/server/local"
+	"ragflow/internal/service"
+	"ragflow/internal/utility"
+)
+
+// SetLogger opens the configured log destinations and keeps startup INFO logs visible.
+func SetLogger(serverName string, logLevel string) {
+	// log filename
+	logFileName := fmt.Sprintf("%s.log", serverName)
+
+	globalConfig := server.GetConfig()
+	logConfig := globalConfig.GetLogConfig()
+
+	if common.LogLevelHigherThanInfo(logLevel) {
+		logLevel = "info"
+	}
+
+	fileOut := common.FileOutput{
+		Filename:   logFileName,
+		Path:       logConfig.Path,
+		MaxSize:    logConfig.MaxSize,
+		MaxBackups: logConfig.MaxBackups,
+		MaxAge:     logConfig.MaxAge,
+		Compress:   logConfig.Compress,
+	}
+
+	common.SyncLog()
+	if err := common.InitLogger(logLevel, fileOut, serverName); err != nil {
+		common.Error("Failed to initialize startup logger", err)
+	}
+}
+
+// SetIngestLog (re)initializes the ingestion lifecycle event sink for the given
+// server name from the configured ingest_log settings. It mirrors SetLogger so
+// every server mode that can emit (the API server creating/enqueuing tasks, the
+// ingestor running them, etc.) shares one sink. Emission is best-effort: a sink
+// init failure is logged but never fatal. The sink always writes to stdout; an
+// ingestor.log.path only adds an optional rotated file on top of it.
+func SetIngestLog(serverName string) {
+	globalConfig := server.GetConfig()
+	ingestLogConfig := globalConfig.GetIngestLogConfig()
+	if err := common.InitIngestLog(ingestLogConfig.Type, ingestLogConfig.GetFileOutput(), serverName); err != nil {
+		common.Error("Failed to initialize ingest log sink", err)
+	}
+}
+
+// StartHeartbeat initializes and starts the heartbeat reporter to the admin
+// server. It is shared by the API, ingestor, and syncer server modes. The
+// caller must stop and wait for the returned task before closing shared resources.
+func StartHeartbeat(serverType common.ServerType, serverID string, port int, heartBeatInterval time.Duration) *utility.ScheduledTask {
+	localIP, err := utility.GetLocalIP()
+	if err != nil {
+		common.Fatal("fail to get local ip address")
+	}
+
+	client := service.NewAdminClient(
+		serverType,
+		serverID,
+		localIP,
+		port,
+	)
+	if err = client.InitHTTPClient(); err != nil {
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
+		return nil
+	}
+
+	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval, func() {
+		if err := client.SendHeartbeat(); err == nil {
+			local.SetAdminStatus(local.Available, "")
+		} else {
+			local.SetAdminStatus(local.Unavailable, err.Error())
+		}
+	})
+	heartbeatReporter.Start()
+	return heartbeatReporter
+}

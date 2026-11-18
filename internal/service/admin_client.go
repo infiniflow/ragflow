@@ -29,33 +29,30 @@ import (
 	"go.uber.org/zap"
 )
 
-var licenseStatusCode common.ErrorCode
-var AdminServiceClient *AdminClient
-
 // AdminClient is responsible for sending heartbeat reports to the admin server
 type AdminClient struct {
-	client       *utility.HTTPClient
-	serverType   common.ServerType
-	serverName   string
-	host         string
-	port         int
-	version      string
-	lastSuccess  bool
-	attemptCount int
-	clusterInfo  *utility.ClusterInfo
+	licenseStatusCode common.ErrorCode
+	client            *utility.HTTPClient
+	serverType        common.ServerType
+	serverName        string
+	host              string
+	port              int
+	version           string
+	lastSuccess       bool
+	attemptCount      int
 }
 
 // NewAdminClient creates a new heartbeat service instance
 func NewAdminClient(serverType common.ServerType, serverName, host string, port int) *AdminClient {
-	licenseStatusCode = common.CodeSuccess
 	return &AdminClient{
-		serverType:   serverType,
-		serverName:   serverName,
-		host:         host,
-		port:         port,
-		version:      common.GetRAGFlowVersion(),
-		lastSuccess:  false,
-		attemptCount: 0,
+		licenseStatusCode: common.CodeSuccess,
+		serverType:        serverType,
+		serverName:        serverName,
+		host:              host,
+		port:              port,
+		version:           common.GetRAGFlowVersion(),
+		lastSuccess:       false,
+		attemptCount:      0,
 	}
 }
 
@@ -80,7 +77,7 @@ func (h *AdminClient) InitHTTPClient() error {
 
 	err := h.InitHTTPClientEE()
 	if err != nil {
-		common.Fatal(fmt.Sprintf("Fail to init enterprise service: %v", err))
+		common.Fatal(fmt.Sprintf("failed to init enterprise service: %v", err))
 	}
 
 	return nil
@@ -89,7 +86,7 @@ func (h *AdminClient) InitHTTPClient() error {
 // SendHeartbeat sends a heartbeat message to the admin server
 func (h *AdminClient) SendHeartbeat() error {
 
-	if h.attemptCount < 10 {
+	if h.attemptCount < 3 {
 		if h.lastSuccess {
 			h.attemptCount++
 			return nil
@@ -100,7 +97,7 @@ func (h *AdminClient) SendHeartbeat() error {
 
 	if h.client == nil {
 		if err := h.InitHTTPClient(); err != nil {
-			common.Error("Failed to initialize HTTP client", err)
+			common.Error("failed to initialize HTTP client", err)
 			return err
 		}
 	}
@@ -117,11 +114,17 @@ func (h *AdminClient) SendHeartbeat() error {
 		Ext:         nil,
 	}
 
-	message.Ext = h.clusterInfo
-
-	jsonData, err := json.Marshal(message)
+	var err error
+	message, err = h.EnrichMessage(message)
 	if err != nil {
-		common.Error("Failed to marshal heartbeat message", err)
+		common.Error("failed to enrich heartbeat message", err)
+		return err
+	}
+
+	var jsonData []byte
+	jsonData, err = json.Marshal(message)
+	if err != nil {
+		common.Error("failed to marshal heartbeat message", err)
 		return err
 	}
 
@@ -148,19 +151,25 @@ func (h *AdminClient) SendHeartbeat() error {
 
 	responseCode := common.ErrorCode(code)
 	if responseCode != common.CodeLicenseValid {
-		if responseCode != licenseStatusCode {
-			licenseStatusCode = responseCode
+		if responseCode != h.licenseStatusCode {
+			h.licenseStatusCode = responseCode
 			common.Warn(fmt.Sprintf("Heartbeat response error: %s, code: %d", responseCode.Message(), responseCode))
 		}
 
-		return errors.New(responseCode.Message())
+		var errorMessage string
+		errorMessage, ok = responseBody["message"].(string)
+		if !ok {
+			errorMessage = responseCode.Message()
+		}
+
+		return errors.New(errorMessage)
 	}
-	licenseStatusCode = responseCode
+	h.licenseStatusCode = responseCode
 
 	responseData := responseBody["data"]
 	err = h.UpdateClient(responseData)
 	if err != nil {
-		common.Error("fail to update client info", err)
+		common.Error("failed to update client info", err)
 		return err
 	}
 

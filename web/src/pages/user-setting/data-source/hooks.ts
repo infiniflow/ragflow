@@ -40,7 +40,10 @@ import {
 } from './interface';
 
 const DataSourceKeys = {
-  list: () => ['data-source'] as const,
+  list: (accessUserId?: string) =>
+    accessUserId
+      ? (['data-source', accessUserId] as const)
+      : (['data-source'] as const),
   detail: (id?: string | null) => ['data-source-detail', id] as const,
   logs: (
     id: string | null,
@@ -50,12 +53,15 @@ const DataSourceKeys = {
   logsPrefix: (id?: string | null) => ['data-source-logs', id] as const,
 };
 
-export const useListDataSource = () => {
+export const useListDataSource = (accessUserId?: string, enabled = true) => {
   const { dataSourceInfo } = useDataSourceInfo();
   const { data: list, isFetching } = useQuery<IDataSource[]>({
-    queryKey: DataSourceKeys.list(),
+    queryKey: DataSourceKeys.list(accessUserId),
+    enabled,
     queryFn: async () => {
-      const { data } = await dataSourceService.dataSourceList();
+      const { data } = await dataSourceService.dataSourceList(
+        accessUserId ? { access_user_id: accessUserId } : undefined,
+      );
       return data.data;
     },
   });

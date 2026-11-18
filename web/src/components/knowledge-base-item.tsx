@@ -45,7 +45,8 @@ function DatasetLabel({ text }: { text: string }) {
 
 export function useDisableDifferenceEmbeddingDataset(
   name: string,
-  ownerTenantId?: string,
+  canvasID?: string,
+  accessUserId?: string,
 ) {
   const form = useFormContext();
   const datasetId = useWatch({ name, control: form.control });
@@ -60,7 +61,9 @@ export function useDisableDifferenceEmbeddingDataset(
     false,
     debouncedSearchString,
     undefined,
-    ownerTenantId,
+    canvasID,
+    undefined,
+    accessUserId,
   );
   const selectedDatasetIds = useMemo(
     () => (Array.isArray(datasetId) ? datasetId : []),
@@ -73,7 +76,8 @@ export function useDisableDifferenceEmbeddingDataset(
   // comes back missing and its badge falls back to the raw id.
   const { data: selectedDatasets } = useFetchDatasetsByIds(
     selectedDatasetIds,
-    ownerTenantId,
+    canvasID,
+    accessUserId,
   );
 
   const datasetList = useMemo(() => {
@@ -151,13 +155,15 @@ export function KnowledgeBaseFormField({
   name = 'dataset_ids',
   label,
   required = false,
-  ownerTenantId,
+  canvasID,
+  accessUserId,
 }: {
   showVariable?: boolean;
   name?: string;
   label?: ReactNode;
   required?: boolean;
-  ownerTenantId?: string;
+  canvasID?: string;
+  accessUserId?: string;
 }) {
   const { t } = useTranslation();
 
@@ -168,7 +174,7 @@ export function KnowledgeBaseFormField({
     searchString,
     handleScroll,
     hasNextPage,
-  } = useDisableDifferenceEmbeddingDataset(name, ownerTenantId);
+  } = useDisableDifferenceEmbeddingDataset(name, canvasID, accessUserId);
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 

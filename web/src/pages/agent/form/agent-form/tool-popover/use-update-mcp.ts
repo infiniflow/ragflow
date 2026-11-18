@@ -1,6 +1,7 @@
 import { useListMcpServer } from '@/hooks/use-mcp-request';
+import { ModelResourceAccessUserIdContext } from '@/hooks/use-llm-request';
 import { IAgentForm } from '@/interfaces/database/agent';
-import { AgentFormContext } from '@/pages/agent/context';
+import { AgentFormContext, useResourceTenantId } from '@/pages/agent/context';
 import useGraphStore from '@/pages/agent/store';
 import { get } from 'lodash';
 import { useCallback, useContext, useMemo } from 'react';
@@ -18,7 +19,13 @@ export function useUpdateAgentNodeMCP() {
   const { updateNodeForm } = useGraphStore((state) => state);
   const node = useContext(AgentFormContext);
   const mcpList = useGetNodeMCP();
-  const { data } = useListMcpServer();
+  const resourceTenantId = useResourceTenantId();
+  const accessUserId = useContext(ModelResourceAccessUserIdContext);
+  const { data } = useListMcpServer(
+    resourceTenantId,
+    Boolean(resourceTenantId),
+    accessUserId,
+  );
   const mcpServers = data.mcp_servers;
 
   const findMcpTools = useCallback(

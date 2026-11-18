@@ -112,6 +112,37 @@ func TestDLAWireClamps(t *testing.T) {
 	}
 }
 
+func TestDLAResultClampBoxes(t *testing.T) {
+	// Same contract as TSR: the in-process backend consumes raw postprocess
+	// boxes, so the [0,W]/[0,H] clamp (mirroring dla_adapter.py) must live
+	// on the result, not only in Wire().
+	r := DLAResult{
+		Boxes: []DLABox{
+			{X0: -2, Y0: 1.5, X1: 103.75, Y1: 8, Score: 0.6, Class: 5},
+			{X0: 10, Y0: 2, X1: 90, Y1: 8, Score: 0.7, Class: 1},
+		},
+		W: 100, H: 10,
+	}
+	got := r.ClampBoxes()
+	if len(got) != 2 {
+		t.Fatalf("ClampBoxes returned %d boxes, want 2", len(got))
+	}
+	b := got[0]
+	if b.X0 != 0 || b.Y0 != 1.5 || b.X1 != 100 || b.Y1 != 8 {
+		t.Errorf("ClampBoxes[0] = (%v, %v, %v, %v), want (0, 1.5, 100, 8)", b.X0, b.Y0, b.X1, b.Y1)
+	}
+	// In-bounds boxes pass through untouched.
+	in := got[1]
+	if in.X0 != 10 || in.Y0 != 2 || in.X1 != 90 || in.Y1 != 8 {
+		t.Errorf("ClampBoxes[1] = (%v, %v, %v, %v), want (10, 2, 90, 8)", in.X0, in.Y0, in.X1, in.Y1)
+	}
+	// The receiver must not be mutated: Wire() and the analyzer share one
+	// result and both need the raw values intact.
+	if r.Boxes[0].X0 != -2 || r.Boxes[0].X1 != 103.75 {
+		t.Errorf("ClampBoxes mutated the receiver's boxes: %+v", r.Boxes[0])
+	}
+}
+
 func TestTSRWire(t *testing.T) {
 	r := TSRResult{Boxes: []TSRBox{{Label: "table column", Score: 0.7, X0: 1.2, X1: 9.8, Top: 3.4, Bottom: 5.6}}, W: 1000, H: 1000}
 	// "table column" -> class 1; within bounds so clamp is a no-op.
@@ -129,6 +160,38 @@ func TestTSRWireClamps(t *testing.T) {
 	want := `{"bboxes":[[0,3.4,9.8,10,0.7,1]]}`
 	if got := r.Wire(); got != want {
 		t.Fatalf("Wire() = %s, want %s", got, want)
+	}
+}
+
+func TestTSRResultClampBoxes(t *testing.T) {
+	// The in-process DocAnalyzer backend consumes raw postprocess boxes
+	// directly and never serialises through Wire(), so the [0,W]/[0,H]
+	// clamp (mirroring tsr_adapter.py) must live on the result itself.
+	// A bottom-edge row at 370.18 on a 370-tall image must come back at 370.
+	r := TSRResult{
+		Boxes: []TSRBox{
+			{Label: "table row", Score: 0.9, X0: -4.5, X1: 12.25, Top: 3.4, Bottom: 370.18},
+			{Label: "table column", Score: 0.8, X0: 1.2, X1: 9.8, Top: 3.4, Bottom: 5.6},
+		},
+		W: 10, H: 370,
+	}
+	got := r.ClampBoxes()
+	if len(got) != 2 {
+		t.Fatalf("ClampBoxes returned %d boxes, want 2", len(got))
+	}
+	b := got[0]
+	if b.X0 != 0 || b.X1 != 10 || b.Top != 3.4 || b.Bottom != 370 {
+		t.Errorf("ClampBoxes[0] = (%v, %v, %v, %v), want (0, 10, 3.4, 370)", b.X0, b.X1, b.Top, b.Bottom)
+	}
+	// In-bounds boxes pass through untouched.
+	in := got[1]
+	if in.X0 != 1.2 || in.X1 != 9.8 || in.Top != 3.4 || in.Bottom != 5.6 {
+		t.Errorf("ClampBoxes[1] = (%v, %v, %v, %v), want (1.2, 9.8, 3.4, 5.6)", in.X0, in.X1, in.Top, in.Bottom)
+	}
+	// The receiver must not be mutated: Wire() and the analyzer share one
+	// result and both need the raw values intact.
+	if r.Boxes[0].X0 != -4.5 || r.Boxes[0].Bottom != 370.18 {
+		t.Errorf("ClampBoxes mutated the receiver's boxes: %+v", r.Boxes[0])
 	}
 }
 

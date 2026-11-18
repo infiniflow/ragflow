@@ -1,0 +1,20 @@
+{
+  "name": "SoMark",
+  "url": {
+    "default": "https://somark.cn/api/v1",
+    "intl": "https://somark.ai/api/v1"
+  },
+  "url_suffix": {
+    "ocr": "parse/async",
+    "tasks": "parse/async_check"
+  },
+  "class": "somark",
+  "models": [
+    {
+      "name": "SoMark-model",
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}

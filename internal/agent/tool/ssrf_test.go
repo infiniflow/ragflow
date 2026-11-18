@@ -17,11 +17,42 @@
 package tool
 
 import (
+	"errors"
 	"net"
 	"ragflow/internal/common"
 	"strings"
 	"testing"
 )
+
+func TestResolveAndValidateRejectsNonGlobalAddresses(t *testing.T) {
+	origLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if mixed := map[string]string{
+			"mixed-zero.example":      "0.1.2.3",
+			"mixed-cgnat.example":     "100.64.0.1",
+			"mixed-benchmark.example": "198.19.0.1",
+		}[host]; mixed != "" {
+			return []string{"1.1.1.1", mixed}, nil
+		}
+		return origLookup(host)
+	}
+	t.Cleanup(func() { common.LookupHost = origLookup })
+
+	for _, rawURL := range []string{
+		"http://0.1.2.3/", "http://100.64.0.1/", "http://198.19.0.1/",
+		"http://[::ffff:100.64.0.1]/", "http://[2002:7f00:101::1]/",
+		"http://[64:ff9b::7f00:1]/",
+		"http://mixed-zero.example/", "http://mixed-cgnat.example/",
+		"http://mixed-benchmark.example/",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			host, ip, err := ResolveAndValidate(rawURL)
+			if !errors.Is(err, ErrSSRFBlocked) || host != "" || ip != nil {
+				t.Fatalf("ResolveAndValidate(%q) = (%q, %v, %v), want blocked with no pinned IP", rawURL, host, ip, err)
+			}
+		})
+	}
+}
 
 func TestValidateURLForSSRF(t *testing.T) {
 	originalLookupHost := common.LookupHost
@@ -171,24 +202,62 @@ func TestResolveAndValidate(t *testing.T) {
 	})
 }
 
-func TestResolveAndValidateProductionEnvCannotDisableGuard(t *testing.T) {
-	t.Setenv(common.EnvAllowAnyHost, "true")
-
-	if _, _, err := ResolveAndValidate("http://127.0.0.1/"); err == nil {
-		t.Fatal("ResolveAndValidate(loopback) = nil, want SSRF rejection")
-	}
-	if _, err := ValidateDBHost("127.0.0.1"); err == nil {
-		t.Fatal("ValidateDBHost(loopback) = nil, want SSRF rejection")
+// TestResolveAndValidateRejectsPrivateHostsByDefault checks that false or
+// unrecognized ALLOW_ANY_HOST values keep URL and database guards enabled.
+func TestResolveAndValidateRejectsPrivateHostsByDefault(t *testing.T) {
+	for _, value := range []string{"", "0", "false", "no", "off", "invalid"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(common.EnvAllowAnyHost, value)
+			if _, _, err := ResolveAndValidate("http://127.0.0.1/"); err == nil {
+				t.Fatal("ResolveAndValidate(loopback) = nil, want SSRF rejection")
+			}
+			if _, err := ValidateDBHost("127.0.0.1"); err == nil {
+				t.Fatal("ValidateDBHost(loopback) = nil, want SSRF rejection")
+			}
+		})
 	}
 }
 
-func TestResolveAndValidateTestHookAllowsLocalhost(t *testing.T) {
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = false })
+// TestValidateDBHostAllowAnyHostPinsPrivateResolution checks that a
+// private DNS answer is accepted and the dial stays pinned to that IP.
+func TestValidateDBHostAllowAnyHostPinsPrivateResolution(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "1")
+	orig := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if host == "host.docker.internal" {
+			return []string{"192.168.65.254"}, nil
+		}
+		return nil, errors.New("no such host")
+	}
+	t.Cleanup(func() { common.LookupHost = orig })
+
+	got, err := ValidateDBHost("host.docker.internal")
+	if err != nil {
+		t.Fatalf("ValidateDBHost(host.docker.internal) = %v", err)
+	}
+	if got != "192.168.65.254" {
+		t.Fatalf("ValidateDBHost(host.docker.internal) = %q, want 192.168.65.254", got)
+	}
+	host, ip, err := ResolveAndValidate("http://host.docker.internal/")
+	if err != nil || host != "host.docker.internal" || !ip.Equal(net.ParseIP("192.168.65.254")) {
+		t.Fatalf("ResolveAndValidate(host.docker.internal) = %q, %v, %v", host, ip, err)
+	}
+	if _, err = ValidateDBHost("missing.internal"); err == nil {
+		t.Fatal("unresolvable host must still fail when ALLOW_ANY_HOST is set")
+	}
+	for _, rawURL := range []string{"http://missing.internal/", "ftp://127.0.0.1/", "http:///path"} {
+		if _, _, err := ResolveAndValidate(rawURL); err == nil {
+			t.Fatalf("ResolveAndValidate(%q) must still fail when ALLOW_ANY_HOST is set", rawURL)
+		}
+	}
+}
+
+func TestResolveAndValidateAllowAnyHostAllowsLocalhost(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	host, ip, err := ResolveAndValidate("http://127.0.0.1/")
 	if err != nil {
-		t.Fatalf("ResolveAndValidate(loopback) = %v, want nil with test hook", err)
+		t.Fatalf("ResolveAndValidate(loopback) = %v, want nil when ALLOW_ANY_HOST is set", err)
 	}
 	if host != "127.0.0.1" || !ip.Equal(net.ParseIP("127.0.0.1")) {
 		t.Fatalf("ResolveAndValidate(loopback) = (%q, %v), want (127.0.0.1, 127.0.0.1)", host, ip)
@@ -196,7 +265,7 @@ func TestResolveAndValidateTestHookAllowsLocalhost(t *testing.T) {
 
 	dbHost, err := ValidateDBHost("127.0.0.1")
 	if err != nil {
-		t.Fatalf("ValidateDBHost(loopback) = %v, want nil with test hook", err)
+		t.Fatalf("ValidateDBHost(loopback) = %v, want nil when ALLOW_ANY_HOST is set", err)
 	}
 	if dbHost != "127.0.0.1" {
 		t.Fatalf("ValidateDBHost(loopback) = %q, want 127.0.0.1", dbHost)

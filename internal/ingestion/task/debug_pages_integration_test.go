@@ -27,8 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest/observer"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/deepdoc/parser/pdf"
@@ -37,6 +35,9 @@ import (
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/storage"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // TestExecute_DebugViaEntry_HonorsPagesCap_Integration is the end-to-end
@@ -141,7 +142,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 		CanvasCategory: "agent_canvas",
 		DSL:            canvasDSL,
 	}).Error; err != nil {
-		t.Fatalf("create user canvas: %v", err)
+		t.Fatalf("create user agent: %v", err)
 	}
 	t.Cleanup(func() { _ = realDB.Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error })
 
@@ -190,7 +191,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	defer func() { common.Logger = oldLogger }()
 
 	// Uncapped baseline: explicit pages=all → executor respects override.
-	uncappedExec, err := NewPipelineExecutor(newDebugCtx(allPages), canvasID, 0)
+	uncappedExec, err := NewPipelineExecutor(newDebugCtx(allPages), canvasID, 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor (uncapped): %v", err)
 	}
@@ -200,7 +201,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	}
 
 	// Capped: no pages override → executor injects [[1, debugPageCapPages]].
-	cappedExec, err := NewPipelineExecutor(newDebugCtx(nil), canvasID, 0)
+	cappedExec, err := NewPipelineExecutor(newDebugCtx(nil), canvasID, 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor (capped): %v", err)
 	}

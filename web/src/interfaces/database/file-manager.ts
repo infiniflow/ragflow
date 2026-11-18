@@ -14,6 +14,7 @@ export interface IFile {
   update_time: number;
   source_type: string;
   has_child_folder?: boolean;
+  operator_permission?: number;
 }
 
 export interface IFolder {
@@ -30,10 +31,14 @@ export interface IFolder {
   update_date: string;
   update_time: number;
   source_type: string;
+  operator_permission?: number;
 }
 
 export type IFetchFileListResult = {
   files: IFile[];
   parent_folder: IFolder;
   total: number;
+  // Set by the file-list hook when the requested folder no longer exists so
+  // the page can redirect to the root folder instead of rendering an error.
+  folderNotFound?: boolean;
 };

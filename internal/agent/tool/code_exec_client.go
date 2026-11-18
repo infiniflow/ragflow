@@ -14,31 +14,8 @@
 //  limitations under the License.
 //
 
-// CodeExec sandbox client. The Python sandbox service is kept
-// as-is (we do NOT rewrite the sandbox). The Go side has a
-// client that talks to the Python sandbox subsystem via the
-// internal/agent/sandbox providers.
-//
-// The Python agent's code_exec delegates to a
-// `SandboxProvider` subsystem (agent/sandbox/providers/) with
-// three backends: self-managed (Docker + gVisor via local
-// executor_manager HTTP), Aliyun Code Interpreter (cloud), and
-// e2b (cloud SaaS). A `ProviderManager` selects one at
-// startup. The Go side's decision is recorded in
-// code_exec_sandbox_design.md:
-//
-//  1. shell out = spawn a Python subprocess that uses
-//     ProviderManager to dispatch to whichever provider the
-//     operator has configured. Reuses all three providers.
-//  2. in-process = reimplement all three provider clients in
-//     Go. No Python dep, but three SDK surfaces to maintain.
-//
-// Decision: shell out (option A). The interface here is stable —
-// when the implementation lands, callers see no change.
-//
-// Until the proto lands, CodeExecTool.InvokableRun surfaces
-// ErrCodeExecSandboxMissing (defined in code_exec.go) so callers
-// can detect the no-sandbox state.
+// CodeExec dispatches through the Go provider manager in internal/agent/sandbox.
+// Self-managed execution uses the external Sandbox executor-manager HTTP API.
 package tool
 
 import (
@@ -46,18 +23,13 @@ import (
 	"sync"
 )
 
-// SandboxClient is the abstract interface for the CodeExec gRPC
-// client. Production code calls SetSandboxClient at boot to install
-// a real client; the default is a stub returning
-// ErrSandboxNotWired.
+// SandboxClient dispatches CodeExec requests to the configured provider.
+// Production installs a ManagerClient; the default stub reports missing wiring.
 type SandboxClient interface {
 	ExecuteCode(ctx context.Context, req SandboxRequest) (*SandboxResponse, error)
 }
 
-// SandboxRequest is the wire shape between the CodeExec tool and
-// the sandbox subsystem. Mirrors `agent.sandbox.client.execute_code`'s
-// input surface. Arguments and Timeout are optional — the bridge
-// applies defaults (no args, 30s timeout) when zero-valued.
+// SandboxRequest carries code, arguments, and timeout to the provider adapter.
 type SandboxRequest struct {
 	Lang      string         // "python" | "javascript"
 	Script    string         // the user's code

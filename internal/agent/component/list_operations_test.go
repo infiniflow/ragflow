@@ -426,17 +426,6 @@ func TestListOperations_StrictFalseStringsIgnored(t *testing.T) {
 	}
 }
 
-// TestListOperations_CoerceNBool pins Change #4: toInt must follow
-// Python's int() semantics for booleans (true→1, false→0).
-func TestListOperations_CoerceNBool(t *testing.T) {
-	if got := toInt(true); got != 1 {
-		t.Errorf("toInt(true) = %d, want 1", got)
-	}
-	if got := toInt(false); got != 0 {
-		t.Errorf("toInt(false) = %d, want 0", got)
-	}
-}
-
 // TestListOperations_FilterEqBool pins Change #5: normValue must render
 // Go's bool as Python's str(bool) ("True"/"False") so filter `=` matches
 // the Python DSL

@@ -14,6 +14,7 @@ import {
   rerankCandidatesCountSchema,
 } from '@/components/rerank-candidates-count-item';
 
+import { SwitchFormField } from '@/components/switch-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
@@ -32,9 +33,10 @@ import {
   useWatch,
 } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { z } from 'zod';
 import { RetrievalFrom, initialRetrievalValues } from '../../constant';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
@@ -51,50 +53,57 @@ export const RetrievalPartialSchema = {
   dataset_ids: z.array(z.string()).optional(),
   rerank_id: z.string(),
   cross_languages: z.array(z.string()),
+  highlight: z.boolean().optional(),
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
   retrieval_from: z.string(),
   user_id: z.string().optional(),
 };
 
+// A Retrieval node sourcing from datasets must name at least one dataset, and
+// one sourcing from memories must name at least one memory. The backend
+// otherwise rejects the run with a `dataset_ids`/`memory_ids is required`
+// error that only surfaces at runtime. Shared with the Agent-embedded
+// Retrieval tool form, which owns the same fields.
+export function refineRetrievalBindings(
+  data: Record<string, any>,
+  ctx: z.RefinementCtx,
+) {
+  if (
+    data.retrieval_from !== RetrievalFrom.Memory &&
+    (data.dataset_ids ?? []).length === 0
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dataset_ids'],
+      message: t('flow.retrievalDatasetRequired'),
+    });
+  }
+  if (
+    data.retrieval_from === RetrievalFrom.Memory &&
+    (data.memory_ids ?? []).length === 0
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['memory_ids'],
+      message: t('flow.retrievalMemoryRequired'),
+    });
+  }
+}
+
 export const FormSchema = z
   .object({
     query: z.string().optional(),
     ...RetrievalPartialSchema,
   })
-  .superRefine((data, ctx) => {
-    // A Retrieval node sourcing from datasets must name at least one dataset,
-    // and one sourcing from memories must name at least one memory. The
-    // backend otherwise rejects the run with a `dataset_ids`/`memory_ids is
-    // required` error that only surfaces at runtime.
-    if (
-      data.retrieval_from === RetrievalFrom.Dataset &&
-      (data.dataset_ids ?? []).length === 0
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['dataset_ids'],
-        message: t('flow.retrievalDatasetRequired'),
-      });
-    }
-    if (
-      data.retrieval_from === RetrievalFrom.Memory &&
-      (data.memory_ids ?? []).length === 0
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['memory_ids'],
-        message: t('flow.retrievalMemoryRequired'),
-      });
-    }
-  });
+  .superRefine(refineRetrievalBindings);
 
 export type RetrievalFormSchemaType = z.infer<typeof FormSchema>;
 
 export function MemoryDatasetForm() {
   const { t } = useTranslation();
   const form = useFormContext();
-  const ownerTenantId = useOwnerTenantId();
+  const { id: canvasID } = useParams();
   const retrievalFrom = useWatch({
     control: form.control,
     name: 'retrieval_from',
@@ -115,7 +124,6 @@ export function MemoryDatasetForm() {
           <MemoriesFormField
             label={t('header.memories')}
             required
-            ownerTenantId={ownerTenantId}
           ></MemoriesFormField>
           <UserIdFormField></UserIdFormField>
         </>
@@ -123,7 +131,7 @@ export function MemoryDatasetForm() {
         <KnowledgeBaseFormField
           showVariable
           required
-          ownerTenantId={ownerTenantId}
+          canvasID={canvasID}
         ></KnowledgeBaseFormField>
       )}
     </>
@@ -141,7 +149,8 @@ export function useHideKnowledgeGraphField(form: UseFormReturn<any>) {
 
 function RetrievalForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
+  const { id: canvasID } = useParams();
 
   const outputList = useMemo(() => {
     return [
@@ -161,7 +170,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
     defaultValues?.dataset_ids,
-    { ownerTenantId },
+    { canvasID },
   );
 
   const form = useForm({
@@ -187,7 +196,6 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <section className="space-y-5">
             <SimilaritySliderFormField
               similarityWeightName="keywords_similarity_weight"
-              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <RerankCandidatesCountFormField></RerankCandidatesCountFormField>
@@ -195,7 +203,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
             {hideKnowledgeGraphField || (
               <>
                 <RerankFormFields
-                  ownerTenantId={ownerTenantId}
+                  resourceTenantId={resourceTenantId}
                 ></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>
@@ -203,6 +211,11 @@ function RetrievalForm({ node }: INextOperatorForm) {
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+                <SwitchFormField
+                  name="highlight"
+                  label={t('flow.highlight')}
+                  tooltip={t('flow.highlightTip')}
+                ></SwitchFormField>
               </>
             )}
           </section>

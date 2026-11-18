@@ -77,6 +77,13 @@ export function VariableTable({
       },
     },
     {
+      accessorKey: 'type',
+      header: t('flow.type'),
+      cell: ({ row }) => (
+        <div>{row.original.type === 'object' ? 'Object' : 'String'}</div>
+      ),
+    },
+    {
       accessorKey: 'ref',
       header: t('flow.ref'),
       meta: { cellClassName: 'max-w-30' },

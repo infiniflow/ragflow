@@ -8,11 +8,19 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
+import { ModelResourceAccessUserIdContext } from '@/hooks/use-llm-request';
 import { Operator } from '@/pages/agent/constant';
+import { useResourceTenantId } from '@/pages/agent/context';
 import OperatorIcon from '@/components/operator-icon';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
-import { PropsWithChildren, useCallback, useEffect, useState } from 'react';
+import {
+  PropsWithChildren,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGetNodeTools, useUpdateAgentNodeTools } from './use-update-tools';
 
@@ -31,7 +39,10 @@ const Menus = [
       Operator.SearXNG,
       Operator.KeenableSearch,
       Operator.YouComSearch,
+      Operator.PerplexitySearch,
       Operator.SofyaSearch,
+      Operator.Search1APISearch,
+      Operator.Search1APICrawl,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.BGPT,
@@ -106,7 +117,7 @@ function useHandleSelectChange({ onChange, value }: ToolCommandProps) {
 }
 
 // oxlint-disable-next-line
-export function ToolCommand({ value, onChange }: ToolCommandProps) {
+export function ToolCommand() {
   const { t } = useTranslation();
 
   const currentValue = useGetNodeTools();
@@ -138,7 +149,13 @@ export function ToolCommand({ value, onChange }: ToolCommandProps) {
 }
 
 export function MCPCommand({ onChange, value }: ToolCommandProps) {
-  const { data } = useListMcpServer();
+  const resourceTenantId = useResourceTenantId();
+  const accessUserId = useContext(ModelResourceAccessUserIdContext);
+  const { data } = useListMcpServer(
+    resourceTenantId,
+    Boolean(resourceTenantId),
+    accessUserId,
+  );
   const { toggleOption, currentValue } = useHandleSelectChange({
     onChange,
     value,
