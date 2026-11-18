@@ -562,7 +562,22 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 	// to every renderer: a locate hit is also how the model learns a document
 	// exists, and only the corpus-passage tools can pay for that (see
 	// snippetFilterTools).
+	if compiledServeActive(tool) && len(hits) > 0 {
+		if out, ok := tryFormatLocateCompiled(ctx, tool, query, hits, notices...); ok {
+			return out
+		}
+		common.InfoCtx(ctx, "agentic_rag: compiled serve located no products; passthrough raw",
+			zap.String("tool", tool))
+	}
 	hits = filterSnippetHits(ctx, tool, hits)
+	// Compiled evidence comes FIRST, ahead of the hits it was compiled from: a
+	// corpus that has claims offers the propositions (plus their verbatim
+	// quotes) before the raw passage, so the model can answer without paying for
+	// a deep read. The block is empty for a corpus without claims, for web hits,
+	// and for claims this turn already showed.
+	if notice := compiledEvidenceNotice(ctx, tool, query, hits); notice != "" {
+		notices = append(notices, notice)
+	}
 	// Single serve point for every locate tool: one debug line per served chunk
 	// records exactly what went in front of the model (silent unless the logger
 	// runs at debug level).
@@ -724,7 +739,22 @@ func formatChunksXML(ctx context.Context, docID string, chunks []runtime.Retriev
 	// handle, or the model would hold a number for text it never saw. Filtering
 	// first also makes `fetched` keep its one invariant — it counts the <chunk>
 	// elements below it.
+	if compiledServeOnlyMode() && len(chunks) > 0 {
+		if out, ok := tryFormatChunksCompiled(ctx, docID, chunks, anchorMeta, notice); ok {
+			return out
+		}
+		common.InfoCtx(ctx, "agentic_rag: compiled deep-read located no products; passthrough raw",
+			zap.String("doc_id", docID))
+	}
 	chunks = filterChunks(ctx, chunks)
+	return renderChunksXML(ctx, docID, chunks, anchorMeta, notice)
+}
+
+// renderChunksXML renders deep-read passages without the sufficiency filter. It
+// is for the places whose result set IS the evidence the model is being asked to
+// judge - a page that has already been decided must be shown whole, so the
+// filter has no business shortening it.
+func renderChunksXML(ctx context.Context, docID string, chunks []runtime.RetrievalChunk, anchorMeta, notice string) string {
 	// Deep-read passages are citable too: stamp the same [ID:n] handle the locate
 	// tools use, so a fact read from the full text can be cited.
 	reg := evidenceRegistryFrom(ctx)

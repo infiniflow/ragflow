@@ -1,5 +1,5 @@
-import LLMLabel from '@/components/llm-select/llm-label';
 import { ModelTypeMap } from '@/components/model-tree-select';
+import { ModelReferenceLabel } from '@/ee/components/model-reference-label';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -22,12 +22,15 @@ import {
   useCompilationTemplateGroupOptions,
   useCompilationTemplateGroupValidIds,
 } from '@/hooks/use-compilation-template-group-request';
-import { useModelValidIds } from '@/hooks/use-llm-request';
+import {
+  ModelResourceAccessUserIdContext,
+  useModelValidIds,
+} from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
 import { TriangleAlert } from 'lucide-react';
-import { PropsWithChildren } from 'react';
+import { PropsWithChildren, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 
 export function CardWithForm() {
   return (
@@ -87,33 +90,46 @@ export function LabelCard({ children, className, ...props }: LabelCardProps) {
   );
 }
 
-export function LLMLabelCard({ llmId }: { llmId?: string }) {
-  const ownerTenantId = useOwnerTenantId();
+export function LLMLabelCard({
+  llmId,
+  modelTypes = ModelTypeMap.llm_id,
+}: {
+  llmId?: string;
+  modelTypes?: string[];
+}) {
+  const resourceTenantId = useResourceTenantId();
   const { t } = useTranslation();
   // Validity is checked against the canvas owner's models: a shared canvas
   // runs with the owner's models, while an imported dsl.json makes the
   // importer the owner — anything else is flagged. Gated on isFetched so a
   // slow list never flashes a false error state. The display name likewise
   // resolves through the owner's list.
-  const { validIds, isFetched } = useModelValidIds(
-    ModelTypeMap.llm_id,
-    ownerTenantId,
+  const accessUserId = useContext(ModelResourceAccessUserIdContext);
+  const { validIds, isFetched, getPendingMessage } = useModelValidIds(
+    modelTypes,
+    resourceTenantId,
+    accessUserId,
   );
 
-  const isUnavailable = !!llmId && isFetched && !validIds.has(llmId);
+  const pendingMessage = llmId ? getPendingMessage?.(llmId) : undefined;
+  const isUnavailable =
+    !!llmId && !pendingMessage && isFetched && !validIds.has(llmId);
   // An empty model keeps the historical red state; a loading list shows nothing.
   const isInvalid = llmId ? isUnavailable : true;
 
   return (
     <LabelCard
       className={isInvalid ? 'bg-state-error-5 border-state-error border' : ''}
-      title={isUnavailable ? t('common.modelUnavailable') : undefined}
+      title={
+        pendingMessage ??
+        (isUnavailable ? t('common.modelUnavailable') : undefined)
+      }
     >
       <span className="flex items-center gap-1.5">
         {isUnavailable && (
           <TriangleAlert className="size-4 shrink-0 text-state-error" />
         )}
-        <LLMLabel value={llmId} ownerTenantId={ownerTenantId}></LLMLabel>
+        <ModelReferenceLabel value={llmId} ownerTenantId={resourceTenantId} />
       </span>
     </LabelCard>
   );
@@ -125,14 +141,14 @@ export function CompilationTemplateLabelCard({
   groupId?: string;
 }) {
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
-  const { options } = useCompilationTemplateGroupOptions(ownerTenantId);
+  const accessUserId = useContext(ModelResourceAccessUserIdContext);
+  const { options } = useCompilationTemplateGroupOptions(accessUserId);
   // Validity is checked against the canvas owner's groups: a shared canvas
   // runs with the owner's groups, while an imported dsl.json makes the
   // importer the owner — anything else is flagged. Gated on isFetched so a
   // slow list never flashes a false error state.
   const { validIds, isFetched } =
-    useCompilationTemplateGroupValidIds(ownerTenantId);
+    useCompilationTemplateGroupValidIds(accessUserId);
 
   const isUnavailable = !!groupId && isFetched && !validIds.has(groupId);
   const groupName =

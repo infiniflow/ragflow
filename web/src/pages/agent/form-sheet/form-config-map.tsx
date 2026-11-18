@@ -4,7 +4,6 @@ import AgentForm from '../form/agent-form';
 import ArXivForm from '../form/arxiv-form';
 import BeginForm from '../form/begin-form';
 import BingForm from '../form/bing-form';
-import BrowserForm from '../form/browser-use-form';
 import CompilationForm from '../form/compilation-form';
 import CategorizeForm from '../form/categorize-form';
 import CodeForm from '../form/code-form';
@@ -35,6 +34,7 @@ import QueritContentsForm from '../form/querit-contents-form';
 import QueritForm from '../form/querit-form';
 import BGPTForm from '../form/bgpt-form';
 import RetrievalForm from '../form/retrieval-form/next';
+import ScoredSwitchForm from '../form/scored-switch-form';
 import SearXNGForm from '../form/searxng-form';
 import StringTransformForm from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
@@ -128,6 +128,9 @@ export const FormConfigMap: Partial<Record<Operator, OperatorFormConfig>> = {
   [Operator.Switch]: {
     component: SwitchForm,
   },
+  [Operator.ScoredSwitch]: {
+    component: ScoredSwitchForm,
+  },
   [Operator.WenCai]: {
     component: WenCaiForm,
   },
@@ -145,9 +148,6 @@ export const FormConfigMap: Partial<Record<Operator, OperatorFormConfig>> = {
   },
   [Operator.DocGenerator]: {
     component: DocGeneratorForm,
-  },
-  [Operator.Browser]: {
-    component: BrowserForm,
   },
   [Operator.Note]: {
     component: () => <></>,

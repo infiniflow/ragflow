@@ -53,6 +53,7 @@ func decisionStub(t *testing.T, nouls []float64, status int, seen *map[string]an
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		if seen != nil && body != nil {
 			body["_auth"] = r.Header.Get("Authorization")
+			body["_path"] = r.URL.Path
 			*seen = body
 		}
 		if status != http.StatusOK {
@@ -117,6 +118,9 @@ func TestDecisionRequestShape(t *testing.T) {
 	}
 	if got := seen["_auth"]; got != "Bearer test-key" {
 		t.Errorf("Authorization = %v, want %q", got, "Bearer test-key")
+	}
+	if got := seen["_path"]; got != "/" {
+		t.Errorf("request path = %v, want the configured endpoint path /", got)
 	}
 	if got := seen["model"]; got != defaultDecisionModel {
 		t.Errorf("model = %v, want %q", got, defaultDecisionModel)

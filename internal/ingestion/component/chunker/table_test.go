@@ -297,3 +297,30 @@ func TestTableChunker_HeaderlessHTMLFirstRowIsHeader(t *testing.T) {
 		t.Errorf("text = %v", chunks[0]["text"])
 	}
 }
+
+// TestTableChunker_HeaderOriginRowspanDoesNotLeak: a vertical merge mastered
+// on the header is a column label, not a value. The table view must leave the
+// data slot empty instead of stamping the header text into the row chunk.
+func TestTableChunker_HeaderOriginRowspanDoesNotLeak(t *testing.T) {
+	table := `<table>` +
+		`<tr><th rowspan="2">H</th><th>Name</th></tr>` +
+		`<tr><td>Alice</td></tr>` +
+		`</table>`
+	chunks := tableChunksOf(t, map[string]any{
+		"name":          "h.xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			tableItem(t, table),
+		},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks, want the single data row", len(chunks))
+	}
+	txt, _ := chunks[0]["text"].(string)
+	if strings.Contains(txt, "<td>H</td>") {
+		t.Fatalf("header label leaked into the data row: %v", txt)
+	}
+	if !strings.Contains(txt, "<td></td><td>Alice</td>") {
+		t.Fatalf("data row lost its real value or column alignment: %v", txt)
+	}
+}

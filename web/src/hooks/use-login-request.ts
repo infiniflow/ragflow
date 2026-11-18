@@ -16,16 +16,13 @@
 
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
-import userService, {
-  getLoginChannels,
-  loginWithChannel,
-} from '@/services/user-service';
+import userService from '@/services/user-service';
 import {
   default as authorizationUtil,
   redirectToLogin,
   default as storage,
 } from '@/utils/authorization-util';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useSaveSetting } from './use-user-setting-request';
 
@@ -37,36 +34,6 @@ export interface ILoginRequestBody {
 export interface IRegisterRequestBody extends ILoginRequestBody {
   nickname: string;
 }
-
-export interface ILoginChannel {
-  channel: string;
-  display_name: string;
-  icon: string;
-}
-
-export const useLoginChannels = () => {
-  const { data, isLoading } = useQuery({
-    queryKey: ['loginChannels'],
-    queryFn: async () => {
-      const { data: res = {} } = await getLoginChannels();
-      return res.data || [];
-    },
-  });
-
-  return { channels: data as ILoginChannel[], loading: isLoading };
-};
-
-export const useLoginWithChannel = () => {
-  const { isPending: loading, mutateAsync } = useMutation({
-    mutationKey: ['loginWithChannel'],
-    mutationFn: async (channel: string) => {
-      loginWithChannel(channel);
-      return Promise.resolve();
-    },
-  });
-
-  return { loading, login: mutateAsync };
-};
 
 export const useLogin = () => {
   const { saveSetting } = useSaveSetting(true);

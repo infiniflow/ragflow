@@ -26,6 +26,24 @@ import (
 	"ragflow/internal/entity"
 )
 
+const tenantModelMaxTokensPreviousSharedVersion = "v1.0.0-rc1"
+
+func TestTenantModelMaxTokensMigrationVersionFollowsParserConfig(t *testing.T) {
+	if compareMigrationVersion(knowledgebaseParserConfigTargetVersion, tenantModelMaxTokensTargetVersion) >= 0 {
+		t.Fatalf("parser-config migration version %q must precede max_tokens version %q", knowledgebaseParserConfigTargetVersion, tenantModelMaxTokensTargetVersion)
+	}
+}
+
+func migrationTestMaxTokens(extra string) int64 {
+	var value struct {
+		MaxTokens int64 `json:"max_tokens"`
+	}
+	if err := json.Unmarshal([]byte(extra), &value); err != nil {
+		return 0
+	}
+	return value.MaxTokens
+}
+
 func setupTenantModelMaxTokensMigrationDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
@@ -133,8 +151,11 @@ func TestMigrateTenantModelMaxTokensBackfillsOnlyMissingValues(t *testing.T) {
 	if err := db.Create(&models).Error; err != nil {
 		t.Fatalf("failed to seed tenant models: %v", err)
 	}
-	if err := setDatabaseMigrationVersion(t.Context(), db, conversationHistoryTargetVersion); err != nil {
-		t.Fatalf("failed to set rc1 migration version: %v", err)
+	if err := setDatabaseMigrationVersion(t.Context(), db, tenantModelMaxTokensPreviousSharedVersion); err != nil {
+		t.Fatalf("failed to set prior shared migration version: %v", err)
+	}
+	if err := setDatabaseMigrationVersion(t.Context(), db, knowledgebaseParserConfigTargetVersion); err != nil {
+		t.Fatalf("failed to set parser-config migration version: %v", err)
 	}
 
 	if err := migrateTenantModelMaxTokens(t.Context(), db); err != nil {
@@ -154,7 +175,7 @@ func TestMigrateTenantModelMaxTokensBackfillsOnlyMissingValues(t *testing.T) {
 			t.Fatalf("failed to read tenant model %q: %v", item.id, err)
 		}
 	}
-	if got := modelExtraMaxTokens(missing.Extra); got != 65536 {
+	if got := migrationTestMaxTokens(missing.Extra); got != 65536 {
 		t.Fatalf("backfilled max_tokens = %d, want 65536 (extra: %s)", got, missing.Extra)
 	}
 	var missingExtra struct {
@@ -166,10 +187,10 @@ func TestMigrateTenantModelMaxTokensBackfillsOnlyMissingValues(t *testing.T) {
 	if !missingExtra.IsTools {
 		t.Fatalf("backfill lost existing extra fields: %s", missing.Extra)
 	}
-	if got := modelExtraMaxTokens(configured.Extra); got != 16384 {
+	if got := migrationTestMaxTokens(configured.Extra); got != 16384 {
 		t.Fatalf("existing max_tokens was overwritten: got %d, want 16384", got)
 	}
-	if got := modelExtraMaxTokens(zero.Extra); got != 0 {
+	if got := migrationTestMaxTokens(zero.Extra); got != 0 {
 		t.Fatalf("explicit zero max_tokens was overwritten: got %d, want 0", got)
 	}
 	if hasMaxTokens, err := tenantModelExtraHasMaxTokens(zero.Extra); err != nil || !hasMaxTokens {
@@ -239,7 +260,7 @@ func TestBackfillTenantModelMaxTokensSkipsCatalogDefaults(t *testing.T) {
 			if tc.wantUpdated == 0 && model.Extra != `{"is_tools":true}` {
 				t.Fatalf("catalog default changed extra: %s", model.Extra)
 			}
-			if tc.wantUpdated == 1 && int64(modelExtraMaxTokens(model.Extra)) != tc.limit {
+			if tc.wantUpdated == 1 && migrationTestMaxTokens(model.Extra) != tc.limit {
 				t.Fatalf("custom limit was not preserved: %s", model.Extra)
 			}
 		})

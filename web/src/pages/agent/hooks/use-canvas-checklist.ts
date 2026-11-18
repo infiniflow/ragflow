@@ -60,12 +60,17 @@ function collectAllDatasetIds(nodes: RAGFlowNodeType[]): string[] {
 /**
  * Real-time canvas issues for the checklist panel, debounced so dragging a
  * node does not recompute every frame. The checklist only reports issues to
- * the user; it does not gate any entry points.
+ * the user. Run checks blocking rules synchronously, without this debounce.
  */
 export function useCanvasChecklist({
-  ownerTenantId,
+  resourceTenantId,
+  ownerUserId,
   canvasID,
-}: { ownerTenantId?: string; canvasID?: string } = {}) {
+}: {
+  resourceTenantId?: string;
+  ownerUserId?: string;
+  canvasID?: string;
+} = {}) {
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
   const editedNodeFormIds = useGraphStore((state) => state.editedNodeFormIds);
@@ -75,17 +80,26 @@ export function useCanvasChecklist({
     data: memoryList,
     isLoading: memoryLoading,
     isError: memoryError,
-  } = useFetchAllMemoryList(canvasID);
-  // Model and template-group references use the canvas owner's tenant.
-  // Dataset and memory references are scoped by canvasID so both the canvas
-  // owner and current user can use the resource.
-  const { validIds: modelValidIds, isFetched: modelsFetched } =
-    useModelValidIds(ModelTypeMap.llm_id, ownerTenantId);
+  } = useFetchAllMemoryList(ownerUserId);
+  // Model, template-group, and memory references use the canvas owner's
+  // access scope. Dataset references are scoped separately by canvasID.
+  const { validIds: modelValidIds, isSettled: modelsFetched } =
+    useModelValidIds(ModelTypeMap.llm_id, resourceTenantId, ownerUserId);
+  const {
+    validIds: categorizeModelValidIds,
+    isSettled: categorizeModelsFetched,
+  } = useModelValidIds(
+    ['chat', 'vision', 'decision'],
+    resourceTenantId,
+    ownerUserId,
+  );
+  const { validIds: scoringModelValidIds, isFetched: scoringModelsFetched } =
+    useModelValidIds(ModelTypeMap.scoring_id, resourceTenantId, ownerUserId);
   const {
     groups: templateGroups,
     isFetched: templateGroupsFetched,
     isError: templateGroupsError,
-  } = useFetchAllCompilationTemplateGroups(ownerTenantId);
+  } = useFetchAllCompilationTemplateGroups(ownerUserId);
   const datasetIds = useMemo(() => collectAllDatasetIds(nodes), [nodes]);
   const { staleDatasetIds, settled: datasetsSettled } = useStaleDatasetIds(
     datasetIds,
@@ -105,6 +119,12 @@ export function useCanvasChecklist({
           ? new Set(memoryList?.map((x) => x.id))
           : undefined,
       modelValidIds: modelsFetched ? modelValidIds : undefined,
+      categorizeModelValidIds: categorizeModelsFetched
+        ? categorizeModelValidIds
+        : undefined,
+      scoringModelValidIds: scoringModelsFetched
+        ? scoringModelValidIds
+        : undefined,
       staleDatasetIds: datasetsSettled ? staleDatasetIds : undefined,
       // The groups query fetches only the first page (page_size: 100) — a
       // full page means some groups live beyond it, so hold off instead of
@@ -127,6 +147,10 @@ export function useCanvasChecklist({
       memoryList,
       modelsFetched,
       modelValidIds,
+      categorizeModelsFetched,
+      categorizeModelValidIds,
+      scoringModelsFetched,
+      scoringModelValidIds,
       datasetsSettled,
       staleDatasetIds,
       templateGroups,

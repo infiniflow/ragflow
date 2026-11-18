@@ -41,7 +41,7 @@ func TestBuildParserConfigPreservesMinerUExtractionSwitches(t *testing.T) {
 					if nested {
 						params = map[string]any{"setups": params}
 					}
-					config := BuildParserConfig(generalDSL(t), map[string]any{
+					config := buildTestParserConfig(t, generalDSL(t), map[string]any{
 						"Parser:HipSignsRhyme": params,
 					})
 					// Exercise the serialized shape stored in parser_config, not

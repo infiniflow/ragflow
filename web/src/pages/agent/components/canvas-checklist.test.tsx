@@ -24,6 +24,12 @@ describe('CanvasChecklist', () => {
     useGraphStore.setState({ nodeFocusRequest: null });
   });
 
+  it('renders nothing when there are no issues', () => {
+    const { container } = render(<CanvasChecklist issues={[]} />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it('posts a node focus request with the form opened for variable issues', () => {
     render(<CanvasChecklist issues={[issue]} />);
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"ragflow/internal/common"
 	"reflect"
 	"strings"
 	"testing"
@@ -17,6 +18,27 @@ func clearMCPEnv(t *testing.T) {
 		if err := os.Unsetenv(name); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestMCPAllowPrivateHostsEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"", false}, {"0", false}, {"false", false}, {"no", false}, {"off", false}, {"invalid", false},
+		{"1", true}, {"true", true}, {"yes", true}, {"on", true}, {" TRUE ", true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv(common.EnvAllowAnyHost, tc.value)
+			var cfg Config
+			if err := cfg.GetEnvironments(); err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.GetMCPAllowPrivateHosts(); got != tc.want {
+				t.Fatalf("ALLOW_ANY_HOST=%q: MCPAllowPrivateHosts = %v, want %v", tc.value, got, tc.want)
+			}
+		})
 	}
 }
 

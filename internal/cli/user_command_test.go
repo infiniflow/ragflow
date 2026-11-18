@@ -20,8 +20,50 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+func TestParseLocalHTMLWithInlineImage(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "image.html")
+	if err := os.WriteFile(filename, []byte(`<p>hello</p><img alt="image" src="data:image/png;base64,aGVsbG8=">`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := &CLI{Config: &CommandLineConfig{CLIMode: APIMode}}
+	response, err := c.APIParseLocalFileCommand(1, &Command{Params: map[string]interface{}{"filename": filename}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, ok := response.(*SimpleResponse); !ok || result.Code != 0 {
+		t.Fatalf("unexpected response: %#v", response)
+	}
+}
+
+func TestAPIShowVersionCommandReadsVersionObject(t *testing.T) {
+	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/system/version" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"code":0,"message":"success","data":{"version":"v1.2.3"}}`)
+	}))
+	c := &CLI{
+		Config: &CommandLineConfig{
+			CLIMode:         APIMode,
+			APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+		},
+		APIServerClientMap: map[string]*HTTPClient{"test": client},
+	}
+	result, err := c.APIShowVersionCommand(1, &Command{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, ok := result.(*KeyValueResponse)
+	if !ok || response.Code != 0 || response.Key != "version" || response.Value != "v1.2.3" {
+		t.Fatalf("unexpected version response: %#v", result)
+	}
+}
 
 func TestDevUpdateChunkCommandUsesChunkResource(t *testing.T) {
 	updated := make(chan struct{}, 1)
@@ -75,6 +117,70 @@ func TestDevUpdateChunkCommandUsesChunkResource(t *testing.T) {
 	}
 	if response, ok := result.(*SimpleResponse); !ok || response.Code != 0 {
 		t.Fatalf("unexpected response: %#v", result)
+	}
+}
+
+func TestDevRemoveChunksCommandReadsDeletedCount(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		body    string
+		count   string
+		wantErr bool
+	}{
+		{name: "deleted chunks", body: `{"code":0,"data":{"deleted_count":2}}`, count: "2"},
+		{name: "nothing deleted", body: `{"code":0,"data":{"deleted_count":0}}`, count: "0"},
+		{name: "large count", body: `{"code":0,"data":{"deleted_count":9007199254740993}}`, count: "9007199254740993"},
+		{name: "missing data", body: `{"code":0}`, wantErr: true},
+		{name: "missing count", body: `{"code":0,"data":{}}`, wantErr: true},
+		{name: "null count", body: `{"code":0,"data":{"deleted_count":null}}`, wantErr: true},
+		{name: "scalar data", body: `{"code":0,"data":2}`, wantErr: true},
+		{name: "fractional count", body: `{"code":0,"data":{"deleted_count":1.5}}`, wantErr: true},
+		{name: "negative count", body: `{"code":0,"data":{"deleted_count":-1}}`, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/v1/datasets":
+					_, _ = fmt.Fprint(w, `{"code":0,"data":[{"id":"dataset-1","name":"test"}]}`)
+				case "/api/v1/datasets/dataset-1/documents/doc-1/chunks":
+					if r.Method != http.MethodDelete {
+						t.Errorf("method = %s, want DELETE", r.Method)
+					}
+					_, _ = fmt.Fprint(w, tc.body)
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			client.useAPIKey = true
+			c := &CLI{
+				Config: &CommandLineConfig{
+					CLIMode:         APIMode,
+					APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+				},
+				APIServerClientMap: map[string]*HTTPClient{"test": client},
+			}
+			result, err := c.DevRemoveChunksCommand(1, &Command{Params: map[string]interface{}{
+				"dataset_name": "test",
+				"doc_id":       "doc-1",
+				"chunk_ids":    []string{"chunk-1", "chunk-2"},
+			}})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected invalid deletion response to fail, got %#v", result)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, ok := result.(*SimpleResponse)
+			wantMessage := "Success to remove chunks from document doc-1: " + tc.count + " chunks deleted"
+			if !ok || response.Code != 0 || response.Message != wantMessage {
+				t.Fatalf("unexpected deletion response: %#v, want %q", result, wantMessage)
+			}
+		})
 	}
 }
 

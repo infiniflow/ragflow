@@ -23,7 +23,7 @@ const InnerNodeHeader = ({
     <section className={cn(wrapperClassName, 'pb-2')}>
       <div className={cn(className, 'flex gap-2.5')}>
         {icon || <OperatorIcon name={label as Operator}></OperatorIcon>}
-        <span className="truncate text-center font-semibold text-sm">
+        <span className="truncate text-left font-semibold text-sm flex-1">
           {name}
         </span>
       </div>

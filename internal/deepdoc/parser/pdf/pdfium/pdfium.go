@@ -56,14 +56,8 @@ import (
 	"unsafe"
 
 	pdfsync "ragflow/internal/deepdoc/parser/pdf/pdfsync"
+	doctype "ragflow/internal/deepdoc/parser/type"
 )
-
-// Outline represents one entry in a PDF document outline (table of contents).
-type Outline struct {
-	Title      string
-	Level      int
-	PageNumber int // 1-indexed, matching Python
-}
 
 var initOnce sync.Once
 
@@ -140,6 +134,15 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		pxW := int(math.Round(pw * scale))
 		pxH := int(math.Round(ph * scale))
 
+		// Reject absurd pages before pdfium allocates the bitmap. RenderPage
+		// holds two buffers at peak: pdfium's pxH*stride bitmap and the
+		// image.NewRGBA copy (4 bytes/pixel each), so budget 8 bytes/pixel.
+		const maxRenderBytes = 1 << 30
+		if int64(pxW)*int64(pxH)*8 > maxRenderBytes {
+			err = fmt.Errorf("pdfium: page %d render buffers %dx%d exceed %d bytes", pageIdx, pxW, pxH, maxRenderBytes)
+			return
+		}
+
 		bitmap := C.FPDFBitmap_Create(C.int(pxW), C.int(pxH), 1) // 1 = RGBA
 		if bitmap == nil {
 			err = fmt.Errorf("pdfium: FPDFBitmap_Create(%d,%d) returned nil", pxW, pxH)
@@ -151,7 +154,13 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		// (e.g. outside crop box) are white rather than undefined.
 		stride := int(C.FPDFBitmap_GetStride(bitmap))
 		buf := C.FPDFBitmap_GetBuffer(bitmap)
-		pixels := (*[1 << 30]byte)(unsafe.Pointer(buf))[: pxH*stride : pxH*stride]
+		if stride <= 0 || buf == nil {
+			err = fmt.Errorf("pdfium: bitmap %dx%d has invalid buffer (stride %d)", pxW, pxH, stride)
+			return
+		}
+		// pdfium owns a pxH*stride byte buffer. Describe it directly instead of
+		// slicing a fixed [1<<30]byte array, which panicked on large pages.
+		pixels := unsafe.Slice((*byte)(buf), pxH*stride)
 		for i := range pixels {
 			pixels[i] = 255
 		}
@@ -233,11 +242,11 @@ func openPage(pdfData []byte, pageIdx int) (
 // Traversal is iterative with an explicit stack to avoid stack overflow on deep
 // outline trees. pdfium is not thread-safe; all FPDF_* calls are serialized by
 // the shared pdfsync.Mu.
-func ExtractOutlines(pdfData []byte) []Outline {
+func ExtractOutlines(pdfData []byte) []doctype.Outline {
 	if len(pdfData) == 0 {
 		return nil
 	}
-	var out []Outline
+	var out []doctype.Outline
 	pdfsync.With(func() {
 		Init()
 
@@ -255,7 +264,7 @@ func ExtractOutlines(pdfData []byte) []Outline {
 			level int
 		}
 
-		var result []Outline
+		var result []doctype.Outline
 		stack := []frame{{bm: C.FPDFBookmark_GetFirstChild(doc, nil), level: 0}}
 
 		for len(stack) > 0 {
@@ -277,7 +286,7 @@ func ExtractOutlines(pdfData []byte) []Outline {
 				}
 			}
 
-			result = append(result, Outline{Title: title, Level: top.level, PageNumber: pageNum})
+			result = append(result, doctype.Outline{Title: title, Level: top.level, PageNumber: pageNum})
 
 			// Push siblings after children so children are processed first (pre-order).
 			if sibling := C.FPDFBookmark_GetNextSibling(doc, top.bm); sibling != nil {

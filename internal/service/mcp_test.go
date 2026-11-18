@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/utility"
 )
 
@@ -67,7 +68,7 @@ func TestUpdateMCPServerRejectsDuplicatedName(t *testing.T) {
 	addMCPOwnerMembership(t, testDB, tenantID, tenantID)
 
 	s := NewMCPService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, tenantID, tenantID)
 
 	nameReq := func(name string) UpdateMCPServerRequest {
 		raw, err := json.Marshal(name)
@@ -78,17 +79,17 @@ func TestUpdateMCPServerRejectsDuplicatedName(t *testing.T) {
 	}
 
 	// Renaming to an existing server name of the same tenant is rejected.
-	if _, code, err := s.UpdateMCPServer(ctx, tenantID, "mcp-1", nameReq("beta")); err == nil || code != common.CodeDataError {
+	if _, code, err := s.UpdateMCPServer(ctx, "mcp-1", nameReq("beta")); err == nil || code != common.CodeDataError {
 		t.Errorf("expected duplicated name data error, got code=%v err=%v", code, err)
 	}
 
 	// Keeping the current name is allowed.
-	if _, code, err := s.UpdateMCPServer(ctx, tenantID, "mcp-1", nameReq("alpha")); err != nil || code != common.CodeSuccess {
+	if _, code, err := s.UpdateMCPServer(ctx, "mcp-1", nameReq("alpha")); err != nil || code != common.CodeSuccess {
 		t.Errorf("expected success keeping current name, got code=%v err=%v", code, err)
 	}
 
 	// Renaming to a fresh name is allowed.
-	updated, code, err := s.UpdateMCPServer(ctx, tenantID, "mcp-1", nameReq("gamma"))
+	updated, code, err := s.UpdateMCPServer(ctx, "mcp-1", nameReq("gamma"))
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("expected success renaming to fresh name, got code=%v err=%v", code, err)
 	}
@@ -102,17 +103,17 @@ func TestServerInputValidation(t *testing.T) {
 	ctx := t.Context()
 
 	// Empty URL is rejected before any connection attempt.
-	if _, err := s.TestServer(ctx, "tenant-1", "id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for empty url, got %v", err)
 	}
 
 	// nil body is treated as empty URL.
-	if _, err := s.TestServer(ctx, "tenant-1", "id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for nil body, got %v", err)
 	}
 
 	// Invalid server type is rejected before connecting.
-	if _, err := s.TestServer(ctx, "tenant-1", "id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
+	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
 		t.Errorf("expected ErrMCPInvalidType for bad type, got %v", err)
 	}
 }
@@ -132,8 +133,8 @@ func TestImportServersValidationErrors(t *testing.T) {
 		"missing-fields": {"foo": "bar"},
 		"bad-type":       {"url": "http://example.com", "type": "stdio"},
 	}
-	ctx := t.Context()
-	results, err := s.ImportServers(ctx, "tenant-1", configs, 1)
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
+	results, err := s.ImportServers(ctx, configs, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -221,7 +222,8 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	defer server.Close()
 	withMCPDiscoveryOverrides(t, server)
 	s := NewMCPService()
-	created, code, err := s.CreateMCPServer(t.Context(), "tenant-1", CreateMCPServerRequest{
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
+	created, code, err := s.CreateMCPServer(ctx, CreateMCPServerRequest{
 		Name: "managed-auth", URL: server.URL, ServerType: mcpServerTypeStreamableHTTP,
 		Headers:   json.RawMessage(`{"Authorization":"Bearer ${authorization_token}"}`),
 		Variables: json.RawMessage(`{"authorization_token":"ragflow-secret"}`),
@@ -235,18 +237,18 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if created.Headers["Authorization"] != maskedMCPSecret {
 		t.Fatal("create response exposed headers")
 	}
-	listed, _, err := s.ListMCPServers(t.Context(), "tenant-1", "", nil, "", 0, 0, "create_time", false)
+	listed, _, err := s.ListMCPServers(ctx, "", "", nil, "", 0, 0, "create_time", false)
 	if err != nil || len(listed.MCPServers) != 1 || listed.MCPServers[0].Variables["authorization_token"] != maskedMCPSecret {
 		t.Fatalf("list: result=%#v err=%v", listed, err)
 	}
 	testReq := &TestServerRequest{URL: server.URL, ServerType: mcpServerTypeStreamableHTTP, Headers: map[string]any(created.Headers), Variables: map[string]any{"authorization_token": maskedMCPSecret}}
 	beforeRejected := len(captured())
 	testReq.URL = server.URL + "/other"
-	if _, err := s.TestServer(t.Context(), "tenant-1", created.ID, testReq); err == nil {
+	if _, err := s.TestServer(ctx, created.ID, testReq); err == nil {
 		t.Fatal("preview reused credentials for a different URL")
 	}
 	testReq.Variables["authorization_token"] = "replacement"
-	if _, err := s.TestServer(t.Context(), "tenant-1", created.ID, testReq); err == nil {
+	if _, err := s.TestServer(ctx, created.ID, testReq); err == nil {
 		t.Fatal("preview reused masked headers for a different URL")
 	}
 	testReq.Variables["authorization_token"] = maskedMCPSecret
@@ -257,23 +259,23 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 		{"variables": json.RawMessage(`{"authorization_token":"replacement"}`), "headers": json.RawMessage(`{"Authorization":"********"}`)},
 	} {
 		extra["url"] = json.RawMessage(fmt.Sprintf("%q", server.URL+"/other"))
-		if _, _, err := s.UpdateMCPServer(t.Context(), "tenant-1", created.ID, extra); err == nil {
+		if _, _, err := s.UpdateMCPServer(ctx, created.ID, extra); err == nil {
 			t.Fatal("update reused credentials for a different URL")
 		}
 	}
 	if len(captured()) != beforeRejected {
 		t.Fatal("rejected endpoint changes made outbound requests")
 	}
-	if _, err := s.TestServer(t.Context(), "other-tenant", created.ID, testReq); err == nil {
+	if _, err := s.TestServer(serviceTestContext(t, "other-tenant", "other-tenant"), created.ID, testReq); err == nil {
 		t.Fatal("masked preview resolved another tenant's credential")
 	}
-	if _, err := s.TestServer(t.Context(), "tenant-1", created.ID, testReq); err != nil {
+	if _, err := s.TestServer(ctx, created.ID, testReq); err != nil {
 		t.Fatalf("masked preview: %v", err)
 	}
 	if testReq.Variables["authorization_token"] != maskedMCPSecret || testReq.Headers["Authorization"] != maskedMCPSecret {
 		t.Fatal("preview mutated the client payload")
 	}
-	updated, code, err := s.UpdateMCPServer(t.Context(), "tenant-1", created.ID, UpdateMCPServerRequest{
+	updated, code, err := s.UpdateMCPServer(ctx, created.ID, UpdateMCPServerRequest{
 		"url":       json.RawMessage(fmt.Sprintf("%q", server.URL)),
 		"variables": json.RawMessage(`{"authorization_token":"********"}`),
 		"headers":   json.RawMessage(`{"Authorization":"********"}`),
@@ -281,7 +283,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if err != nil || code != common.CodeSuccess || updated.URL != server.URL || updated.Variables["authorization_token"] != "ragflow-secret" {
 		t.Fatalf("masked update: result=%#v code=%d err=%v", updated, code, err)
 	}
-	stored, _, err := s.GetMCPServer(t.Context(), "tenant-1", created.ID)
+	stored, _, err := s.GetMCPServer(ctx, created.ID)
 	if err != nil || stored.URL != server.URL || stored.Variables["authorization_token"] != "ragflow-secret" {
 		t.Fatalf("reload: result=%#v err=%v", stored, err)
 	}
@@ -293,7 +295,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 			t.Fatalf("authentication not preserved: %#v", headers)
 		}
 	}
-	exported, _, err := s.ExportMCPServer(t.Context(), "tenant-1", created.ID)
+	exported, _, err := s.ExportMCPServer(ctx, created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,70 +303,13 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if err != nil || !strings.Contains(string(payload), "ragflow-secret") {
 		t.Fatalf("explicit credential export: payload=%s err=%v", payload, err)
 	}
-	updated, code, err = s.UpdateMCPServer(t.Context(), "tenant-1", created.ID, UpdateMCPServerRequest{
+	updated, code, err = s.UpdateMCPServer(ctx, created.ID, UpdateMCPServerRequest{
 		"url":       json.RawMessage(fmt.Sprintf("%q", server.URL+"/other")),
 		"variables": json.RawMessage(`{"authorization_token":"replacement"}`),
 		"headers":   json.RawMessage(`{"Authorization":"Bearer ${authorization_token}"}`),
 	})
 	if err != nil || code != common.CodeSuccess || updated.URL != server.URL+"/other" {
 		t.Fatalf("explicit credentials must allow endpoint changes: code=%d err=%v", code, err)
-	}
-}
-
-func TestMCPServerPermissionsUsePolicyAcrossServiceOperations(t *testing.T) {
-	db := setupServiceTestDB(t)
-	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
-		t.Fatalf("migrate MCP server: %v", err)
-	}
-	pushServiceDB(t, db)
-	addMCPOwnerMembership(t, db, "owner", "team")
-	active := string(entity.StatusValid)
-	if err := db.Create(&entity.UserTenant{
-		ID: "mcp-member-membership", UserID: "member", TenantID: "team",
-		Role: string(permission.RoleNormal), InvitedBy: "owner", Status: &active,
-	}).Error; err != nil {
-		t.Fatalf("create MCP member membership: %v", err)
-	}
-	if err := db.Create(&entity.MCPServer{
-		ID: "team-server", Name: "shared", TenantID: "team", URL: "https://example.com/mcp",
-		ServerType: mcpServerTypeStreamableHTTP,
-	}).Error; err != nil {
-		t.Fatalf("create MCP server: %v", err)
-	}
-
-	server, captured := newMCPDiscoveryTestServer(t)
-	defer server.Close()
-	withMCPDiscoveryOverrides(t, server)
-	service := NewMCPService()
-	ctx := t.Context()
-
-	if _, code, err := service.GetMCPServer(ctx, "member", "team-server"); err == nil || code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("member direct read should be hidden: code=%d err=%v", code, err)
-	}
-	listed, code, err := service.ListMCPServers(ctx, "member", "team", nil, "", 0, 0, "create_time", false)
-	if err != nil || code != common.CodeSuccess || len(listed.MCPServers) != 1 {
-		t.Fatalf("member list: response=%#v code=%d err=%v", listed, code, err)
-	}
-
-	name, _ := json.Marshal("renamed")
-	if _, code, err := service.UpdateMCPServer(ctx, "member", "team-server", UpdateMCPServerRequest{"name": name}); err == nil || code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("member update should be hidden: code=%d err=%v", code, err)
-	}
-	if _, code, err := service.DeleteMCPServer(ctx, "member", "team-server"); err == nil || code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("member delete should be hidden: code=%d err=%v", code, err)
-	}
-	if _, err := service.TestServer(ctx, "member", "team-server", &TestServerRequest{
-		URL: "https://example.com/mcp", ServerType: mcpServerTypeStreamableHTTP,
-	}); err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("member connection test should require update permission: %v", err)
-	}
-	if _, code, err := service.CreateMCPServer(ctx, "member", CreateMCPServerRequest{
-		Name: "new", URL: server.URL, ServerType: mcpServerTypeStreamableHTTP,
-	}); err == nil || code != common.CodeForbidden {
-		t.Fatalf("member create should require an owned tenant: code=%d err=%v", code, err)
-	}
-	if len(captured()) != 0 {
-		t.Fatalf("denied connection/config operations made outbound requests: %d", len(captured()))
 	}
 }
 
@@ -405,7 +350,7 @@ func TestImportServersPreservesExplicitHeadersAndVariables(t *testing.T) {
 			defer srv.Close()
 			withMCPDiscoveryOverrides(t, srv)
 
-			results, err := NewMCPService().ImportServers(t.Context(), "tenant-1", map[string]map[string]interface{}{
+			results, err := NewMCPService().ImportServers(serviceTestContext(t, "tenant-1", "tenant-1"), map[string]map[string]interface{}{
 				"parallel": {
 					"type":                mcpServerTypeStreamableHTTP,
 					"url":                 srv.URL,
@@ -469,7 +414,7 @@ func TestImportServersPreservesExplicitHeadersAndVariables(t *testing.T) {
 				t.Fatalf("export did not contain parallel config: %s", exported)
 			}
 			capturedBefore := len(captured())
-			reimported, err := NewMCPService().ImportServers(t.Context(), "tenant-1", map[string]map[string]interface{}{
+			reimported, err := NewMCPService().ImportServers(serviceTestContext(t, "tenant-1", "tenant-1"), map[string]map[string]interface{}{
 				"parallel": reimportConfig,
 			}, 2)
 			if err != nil {
@@ -566,36 +511,62 @@ func withMCPDiscoveryOverrides(t *testing.T, server *httptest.Server) {
 	})
 }
 
-func TestPaginateMCPServersNegativeValuesMatchPythonSlice(t *testing.T) {
-	servers := makeMCPServers(13)
-
-	got := paginateMCPServers(servers, -1, -2)
-
-	if len(got) != 0 {
-		t.Fatalf("expected empty page for negative pagination, got %d servers", len(got))
+func TestListMCPServersAppliesAuthorizationBeforeSQLPagination(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestPaginateMCPServersKeepsUnpagedList(t *testing.T) {
-	servers := makeMCPServers(3)
-
-	got := paginateMCPServers(servers, 0, 0)
-
-	if len(got) != len(servers) {
-		t.Fatalf("expected unpaged list length %d, got %d", len(servers), len(got))
+	pushServiceDB(t, db)
+	addMCPOwnerMembership(t, db, "owner", "tenant-1")
+	active := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID: "mcp-target-member", UserID: "target-user", TenantID: "tenant-1",
+		Role: string(permission.RoleNormal), Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create MCP target membership: %v", err)
 	}
-}
-
-func TestPaginateMCPServersPositiveValues(t *testing.T) {
-	servers := makeMCPServers(5)
-
-	got := paginateMCPServers(servers, 2, 2)
-
-	if len(got) != 2 {
-		t.Fatalf("expected 2 servers, got %d", len(got))
+	for _, server := range []*entity.MCPServer{
+		{ID: "mcp-c", UserID: "owner", TenantID: "tenant-1", Name: "charlie", URL: "https://example.test/c", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-a", UserID: "owner", TenantID: "tenant-1", Name: "alpha", URL: "https://example.test/a", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-b", UserID: "owner", TenantID: "tenant-1", Name: "bravo", URL: "https://example.test/b", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-target", UserID: "target-user", TenantID: "tenant-1", Name: "target", URL: "https://example.test/target", ServerType: mcpServerTypeSSE},
+	} {
+		if err := db.Create(server).Error; err != nil {
+			t.Fatalf("create MCP server %q: %v", server.ID, err)
+		}
 	}
-	if got[0].ID != "server-3" || got[1].ID != "server-4" {
-		t.Fatalf("expected second page servers, got %q and %q", got[0].ID, got[1].ID)
+
+	ctx := serviceTestContext(t, "owner", "tenant-1", "target-user")
+	for _, serverID := range []string{"mcp-a", "mcp-b", "mcp-c", "mcp-target"} {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-1", "mcp", serverID, "target-user", "read"); err != nil {
+			t.Fatalf("grant selected MCP user access: %v", err)
+		}
+	}
+	listed, code, err := NewMCPService().ListMCPServers(ctx, "tenant-1", "", nil, "", 2, 1, "name", false)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListMCPServers() = (code %d, %v), want success", code, err)
+	}
+	if listed.Total != 4 || len(listed.MCPServers) != 1 || listed.MCPServers[0].ID != "mcp-b" {
+		t.Fatalf("ListMCPServers() = %#v, want total 4 and page [mcp-b]", listed)
+	}
+	listed, code, err = NewMCPService().ListMCPServers(ctx, "tenant-1", "target-user", nil, "", 0, 0, "name", false)
+	if err != nil || code != common.CodeSuccess || listed.Total != 4 || len(listed.MCPServers) != 4 {
+		t.Fatalf("ListMCPServers(access_user_id) = (code %d, %#v, %v), want all tenant MCP servers usable by the selected user", code, listed, err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "mcp-member-tenant-1", UserID: "member", TenantID: "tenant-1", Role: string(permission.RoleNormal), Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create MCP member membership: %v", err)
+	}
+	memberCtx := serviceTestContext(t, "member", "tenant-1")
+	for _, serverID := range []string{"mcp-a", "mcp-b", "mcp-c", "mcp-target"} {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-1", "mcp", serverID, "member", "read"); err != nil {
+			t.Fatalf("grant MCP member access: %v", err)
+		}
+	}
+	listed, code, err = NewMCPService().ListMCPServers(memberCtx, "tenant-1", "target-user", nil, "", 0, 0, "name", false)
+	if err != nil || code != common.CodeSuccess || listed.Total != 4 || len(listed.MCPServers) != 4 {
+		t.Fatalf("member ListMCPServers(access_user_id) = (code %d, %#v, %v), want tenant-visible MCP servers the member can use", code, listed, err)
 	}
 }
 

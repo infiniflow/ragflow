@@ -15,31 +15,24 @@
  */
 
 import { render, screen } from '@testing-library/react';
-import { OwnerTenantIdContext } from '../../context';
+import { ResourceTenantIdContext } from '../../context';
+import { ModelResourceAccessUserIdContext } from '@/hooks/use-llm-request';
 import { CompilationTemplateLabelCard, LLMLabelCard } from './card';
 
 const mockUseModelValidIds = jest.fn();
 const mockUseCompilationTemplateGroupOptions = jest.fn();
 const mockUseCompilationTemplateGroupValidIds = jest.fn();
 
-// Untyped on purpose: files with jest.mock are transformed by esbuild-jest's
-// babel pass, which cannot strip type-only import usages.
-const mockOwnerModels = [
-  {
-    model_id: 'owner-model',
-    model_type: ['chat'],
-    name: 'deepseek-v4-flash',
-    provider_id: 'p1',
-    provider_name: 'OpenAI',
-    instance_id: 'i1',
-    instance_name: 'geek',
-  },
-];
+jest.mock('react-i18next', () => ({
+  ...jest.requireActual('react-i18next'),
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
 
 jest.mock('@/hooks/use-llm-request', () => ({
+  ModelResourceAccessUserIdContext: jest
+    .requireActual('react')
+    .createContext(undefined),
   useModelValidIds: (...args: unknown[]) => mockUseModelValidIds(...args),
-  // The display name resolves through the owner's list; validity does not.
-  useFetchAllAddedModels: () => ({ data: mockOwnerModels }),
 }));
 
 jest.mock('@/hooks/use-compilation-template-group-request', () => ({
@@ -49,24 +42,33 @@ jest.mock('@/hooks/use-compilation-template-group-request', () => ({
     mockUseCompilationTemplateGroupValidIds(...args),
 }));
 
-// LlmIcon relies on theme hooks that jsdom cannot satisfy.
-jest.mock('@/components/svg-icon', () => ({
-  LlmIcon: () => null,
+jest.mock('@/ee/components/model-reference-label', () => ({
+  ModelReferenceLabel: ({ value }: { value?: string }) => (
+    <span>{value === 'owner-model' ? 'deepseek-v4-flash' : value}</span>
+  ),
 }));
 
 function renderCard(llmId?: string) {
   return render(
-    <OwnerTenantIdContext.Provider value="owner-tenant">
+    <ResourceTenantIdContext.Provider value="owner-tenant">
       <LLMLabelCard llmId={llmId} />
-    </OwnerTenantIdContext.Provider>,
+    </ResourceTenantIdContext.Provider>,
+  );
+}
+
+function renderCurrentUserCard(llmId?: string) {
+  return render(
+    <ResourceTenantIdContext.Provider value={undefined}>
+      <LLMLabelCard llmId={llmId} />
+    </ResourceTenantIdContext.Provider>,
   );
 }
 
 function renderGroupCard(groupId?: string) {
   return render(
-    <OwnerTenantIdContext.Provider value="owner-tenant">
+    <ModelResourceAccessUserIdContext.Provider value="owner-user">
       <CompilationTemplateLabelCard groupId={groupId} />
-    </OwnerTenantIdContext.Provider>,
+    </ModelResourceAccessUserIdContext.Provider>,
   );
 }
 
@@ -123,6 +125,43 @@ describe('LLMLabelCard', () => {
     expect(container.querySelector('svg.text-state-error')).toBeNull();
   });
 
+  it('shows group pending for the current user without an unavailable error state', () => {
+    const groupRef = 'gp-0123456789abcdef0123456789abcdef';
+    const pendingMessage = 'setting.modelGroupSelector.pending';
+    mockUseModelValidIds.mockReturnValue({
+      validIds: new Set(),
+      isFetched: true,
+      getPendingMessage: () => pendingMessage,
+    });
+
+    const { container } = renderCurrentUserCard(groupRef);
+
+    expect(mockUseModelValidIds).toHaveBeenCalledWith(
+      ['chat', 'vision'],
+      undefined,
+    );
+    expect(screen.getByTitle(pendingMessage)).toBeInTheDocument();
+    expect(screen.queryByTitle('common.modelUnavailable')).toBeNull();
+    expect(container.querySelector('.border-state-error')).toBeNull();
+    expect(container.querySelector('svg.text-state-error')).toBeNull();
+  });
+
+  it('flags an unknown settled group reference as unavailable for the current user', () => {
+    const groupRef = 'gp-0123456789abcdef0123456789abcdef';
+    mockUseModelValidIds.mockReturnValue({
+      validIds: new Set(),
+      isFetched: true,
+      isSettled: true,
+      getPendingMessage: () => undefined,
+    });
+
+    const { container } = renderCurrentUserCard(groupRef);
+
+    expect(screen.getByTitle('common.modelUnavailable')).toBeInTheDocument();
+    expect(container.querySelector('.border-state-error')).not.toBeNull();
+    expect(container.querySelector('svg.text-state-error')).not.toBeNull();
+  });
+
   it('validates against the canvas owner tenant', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(['m1']),
@@ -135,6 +174,29 @@ describe('LLMLabelCard', () => {
       ['chat', 'vision'],
       'owner-tenant',
     );
+  });
+
+  it('accepts decision models when Categorize includes them', () => {
+    mockUseModelValidIds.mockImplementation((types: string[]) => ({
+      validIds: new Set(types.includes('decision') ? ['decision-model'] : []),
+      isFetched: true,
+    }));
+
+    const { container } = render(
+      <ResourceTenantIdContext.Provider value="owner-tenant">
+        <LLMLabelCard
+          llmId="decision-model"
+          modelTypes={['chat', 'vision', 'decision']}
+        />
+      </ResourceTenantIdContext.Provider>,
+    );
+
+    expect(mockUseModelValidIds).toHaveBeenCalledWith(
+      ['chat', 'vision', 'decision'],
+      'owner-tenant',
+    );
+    expect(screen.queryByTitle('common.modelUnavailable')).toBeNull();
+    expect(container.querySelector('.border-state-error')).toBeNull();
   });
 });
 
@@ -216,7 +278,7 @@ describe('CompilationTemplateLabelCard', () => {
     expect(container.querySelector('svg.text-state-error')).toBeNull();
   });
 
-  it('resolves names and validity against the canvas owner tenant', () => {
+  it('resolves names and validity against the canvas owner user', () => {
     mockUseCompilationTemplateGroupValidIds.mockReturnValue({
       validIds: new Set(['g1']),
       isFetched: true,
@@ -225,10 +287,10 @@ describe('CompilationTemplateLabelCard', () => {
     renderGroupCard('g1');
 
     expect(mockUseCompilationTemplateGroupOptions).toHaveBeenCalledWith(
-      'owner-tenant',
+      'owner-user',
     );
     expect(mockUseCompilationTemplateGroupValidIds).toHaveBeenCalledWith(
-      'owner-tenant',
+      'owner-user',
     );
   });
 });

@@ -14,21 +14,42 @@
  *  limitations under the License.
  */
 
-import { omit } from 'lodash';
-import { Segmented, SegmentedProps } from './ui/segmented';
+import {
+  Segmented,
+  SegmentedLabeledOption,
+  SegmentedProps,
+  SegmentedValue,
+} from './ui/segmented';
 
-export function BoolSegmented({ ...props }: Omit<SegmentedProps, 'options'>) {
+const BoolOptions: SegmentedLabeledOption[] = [
+  { value: true as unknown as SegmentedValue, label: 'True' },
+  { value: false as unknown as SegmentedValue, label: 'False' },
+];
+
+interface BoolSegmentedProps extends Omit<
+  SegmentedProps,
+  'options' | 'value' | 'defaultValue' | 'onChange'
+> {
+  value?: boolean;
+  defaultValue?: boolean;
+  onChange?: (value: boolean) => void;
+}
+
+export function BoolSegmented({
+  value,
+  defaultValue,
+  onChange,
+  ...props
+}: BoolSegmentedProps) {
   return (
     <Segmented
-      options={
-        [
-          { value: true, label: 'True' },
-          { value: false, label: 'False' },
-        ] as any
-      }
+      options={BoolOptions}
       sizeType="sm"
       itemClassName="justify-center flex-1"
-      {...omit(props, 'options')}
+      value={value as unknown as SegmentedValue}
+      defaultValue={defaultValue as unknown as SegmentedValue}
+      onChange={onChange as SegmentedProps['onChange']}
+      {...props}
     ></Segmented>
   );
 }

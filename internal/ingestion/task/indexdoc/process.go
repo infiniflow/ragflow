@@ -18,7 +18,6 @@ package indexdoc
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -105,6 +104,21 @@ func ProcessChunksForPipeline(
 	return metadata, nil
 }
 
+// StampDatasetPagerank writes the dataset's pagerank onto every chunk a run is
+// about to index. index-time doc template carries it
+// (`if task["pagerank"]: doc[PAGERANK_FLD] = int(...)`), which is what makes a
+// pagerank configured before parsing apply to the chunks it produces. Without
+// it only the chunks that already existed when the setting was saved carry the
+// value, since the dataset-level update rewrites rows rather than future ones.
+func StampDatasetPagerank(chunks []map[string]any, pagerank int64) {
+	if pagerank == 0 {
+		return
+	}
+	for _, chunk := range chunks {
+		chunk[common.PAGERANK_FLD] = pagerank
+	}
+}
+
 // requireStringText enforces the pre-index wire contract: every chunk must
 // carry a string "text" field before chunk-id generation or persistence mapping.
 func requireStringText(ck map[string]any) (string, error) {
@@ -150,12 +164,14 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 // describe the table or spreadsheet block) and NONE of them is a chunk-store
 // column.
 //
-// The Python index doc carries none of them — its chunk builder emits only the
+// The index doc carries none of them — its chunk builder emits only the
 // persist fields — but Go's chunker hands them on, and the write boundary is
 // where they stop: Elasticsearch and Vastbase would add a field for each key,
-// and Infinity would drop each key at insert with a warning.
+// and Infinity would drop each key at insert with a warning. media_ref is the
+// deferred-image reference consumed by the upload pass; a chunk that still
+// carries one must not reach the index.
 var pipelineOnlyFields = []string{
-	"tk_nums", "layout", "layout_type", "layoutno", "image",
+	"tk_nums", "layout", "layout_type", "layoutno", "image", "media_ref",
 	"context_above", "context_below", "page_number", "_preserve_order",
 	"table_id", "sheet", "sheet_index", "headers", "cells",
 	"row_start", "row_end", "col_start", "col_end",
@@ -273,7 +289,7 @@ func isSpreadsheetChunk(ck map[string]any) bool {
 
 // AggregateTableDocMetadata collects unique per-column values across all chunks
 // for columns with role "metadata" or "both", merges them into document metadata.
-// Mirrors Python: rag/utils/table_es_metadata.py:aggregate_table_doc_metadata
+// Mirrors aggregate_table_doc_metadata
 func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
 	mode, roles, tableColumnNames := resolveTableColumnConfig(parserConfig)
 	if mode == "" {
@@ -359,7 +375,7 @@ func resolveTableColumnConfig(parserConfig map[string]interface{}) (mode string,
 		return mode, roles, rawNames
 	}
 	for cid, raw := range parserConfig {
-		if !strings.HasPrefix(cid, "Parser:") {
+		if !common.IsParserComponentID(cid) {
 			continue
 		}
 		comp, _ := raw.(map[string]interface{})

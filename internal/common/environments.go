@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func GetEnv(key string) string {
@@ -45,6 +46,62 @@ func GetEnvInt(key string, def int) int {
 
 func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
+}
+
+// GetEnvBool reads a boolean setting, falling back to def when the variable is
+// unset, blank, or not a boolean. strconv.ParseBool already accepts
+// 1/t/T/TRUE/True/true and 0/f/FALSE/False/false, so malformed values degrade
+// to the default rather than to a fixed zero/false — the caller's def is the
+// only fallback, in either direction.
+func GetEnvBool(key string, def bool) bool {
+	raw := strings.TrimSpace(GetEnv(key))
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+// SplitCommaList reads a comma-separated list, trimming each entry and dropping
+// empty ones. An unset, blank, or separators-only value returns nil so call
+// sites that branch on `if list == nil` keep distinguishing "no list" from
+// "empty list". Entries surrounded by whitespace are trimmed before the
+// empty-check, so "a, ,b" yields [a b], not [a " " b].
+func SplitCommaList(key string) []string {
+	raw := strings.TrimSpace(GetEnv(key))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// getEnvDuration reads a duration setting such as "90s" or "5m", falling back to
+// def when the variable is unset, malformed, or non-positive. A zero or
+// negative value would remove the deadline instead of tightening it, so it is
+// treated as a typo rather than as an instruction to disable the guard.
+func getEnvDuration(key string, def time.Duration) time.Duration {
+	raw := strings.TrimSpace(GetEnv(key))
+	if raw == "" {
+		return def
+	}
+	v, err := time.ParseDuration(raw)
+	if err != nil || v <= 0 {
+		return def
+	}
+	return v
 }
 
 // SandboxArtifactBucket is the object-storage bucket that holds
@@ -72,9 +129,11 @@ var SandboxArtifactContentTypes = map[string]string{
 	".html": "text/html",
 }
 
+// IsLLMDebugEnabled reports whether LLM_DEBUG is set to a true boolean. Kept as
+// a named entry point so call sites read by intent; it is a thin wrapper over
+// GetEnvBool(EnvLLMDebug, false).
 func IsLLMDebugEnabled() bool {
-	enabled, err := strconv.ParseBool(strings.TrimSpace(GetEnv(EnvLLMDebug)))
-	return err == nil && enabled
+	return GetEnvBool(EnvLLMDebug, false)
 }
 
 // environment variables
@@ -84,10 +143,12 @@ const (
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
 	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
-	EnvMCPAllowPrivateHosts              = "RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS"
 	EnvDocEngine                         = "DOC_ENGINE"
 	EnvMaxFileNumPerUser                 = "MAX_FILE_NUM_PER_USER"
 	EnvMaxContentLength                  = "MAX_CONTENT_LENGTH"
+	EnvMaxJSONContentLength              = "MAX_JSON_CONTENT_LENGTH"
+	EnvMaxMultipartContentLength         = "MAX_MULTIPART_CONTENT_LENGTH"
+	EnvMaxDocumentUploadSize             = "MAX_DOCUMENT_UPLOAD_SIZE"
 	EnvRAGFlowDictPath                   = "RAGFLOW_DICT_PATH"
 	EnvDefaultSuperuserEmail             = "DEFAULT_SUPERUSER_EMAIL"
 	EnvDefaultSuperuserNickname          = "DEFAULT_SUPERUSER_NICKNAME"
@@ -96,10 +157,6 @@ const (
 	EnvDBType                            = "DB_TYPE"
 	EnvDevice                            = "DEVICE"
 	EnvStorageImpl                       = "STORAGE_IMPL"
-	EnvStageHandCacheCap                 = "STAGEHAND_CACHE_CAP"
-	EnvStageHandCacheTTLSeconds          = "STAGEHAND_CACHE_TTL_SECONDS"
-	EnvStageHandCacheSweepInterval       = "STAGEHAND_CACHE_SWEEP_INTERVAL"
-	EnvStageHandExtractResultFile        = "STAGEHAND_EXTRACT_RESULT_FILE"
 	EnvAgentRunAccessKeyID               = "AGENTRUN_ACCESS_KEY_ID"
 	EnvAgentRunAccessKeySecret           = "AGENTRUN_ACCESS_KEY_SECRET"
 	EnvAgentRunAccountID                 = "AGENTRUN_ACCOUNT_ID"
@@ -119,6 +176,12 @@ const (
 	EnvTenkiImage                        = "TENKI_IMAGE"
 	EnvTenkiTimeout                      = "TENKI_TIMEOUT"
 	EnvTenkiAllowOutbound                = "TENKI_ALLOW_OUTBOUND"
+	EnvKosa8APIKey                       = "KOSA8_API_KEY"
+	EnvKosa8APIURL                       = "KOSA8_API_URL"
+	EnvKosa8PythonTemplate               = "KOSA8_PYTHON_TEMPLATE"
+	EnvKosa8NodeTemplate                 = "KOSA8_NODE_TEMPLATE"
+	EnvKosa8Timeout                      = "KOSA8_TIMEOUT"
+	EnvKosa8AllowInternet                = "KOSA8_ALLOW_INTERNET"
 	EnvUCloudSandboxAPIKey               = "UCLOUD_SANDBOX_API_KEY"
 	EnvUCloudSandboxRegion               = "UCLOUD_SANDBOX_REGION"
 	EnvUCloudSandboxDomain               = "UCLOUD_SANDBOX_DOMAIN"
@@ -150,7 +213,6 @@ const (
 	EnvOpenAIBaseURL                     = "OPENAI_BASE_URL"
 	EnvOpenAIModel                       = "OPENAI_MODEL"
 	EnvLLMDebug                          = "LLM_DEBUG"
-	EnvStageHandExtractSchemaJSON        = "STAGEHAND_EXTRACT_SCHEMA_JSON"
 	EnvSandboxProviderType               = "SANDBOX_PROVIDER_TYPE"
 	EnvSandboxExecutorManagerURL         = "SANDBOX_EXECUTOR_MANAGER_URL"
 	EnvSandboxExecutorManagerTimeout     = "SANDBOX_EXECUTOR_MANAGER_TIMEOUT"
@@ -178,6 +240,8 @@ const (
 	EnvAllowAnyHost                      = "ALLOW_ANY_HOST"
 	EnvTavilyAPIKey                      = "TAVILY_API_KEY"
 	EnvQueritAPIKey                      = "QUERIT_API_KEY"
+	EnvDeepLAPIKey                       = "DEEPL_API_KEY"
+	EnvQWeatherAPIKey                    = "QWEATHER_API_KEY"
 	EnvHome                              = "HOME"
 	EnvUserProfile                       = "USERPROFILE"
 	EnvHTTPProxy                         = "http_proxy"
@@ -213,6 +277,7 @@ const (
 	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
 	EnvMineruServerURL                   = "MINERU_SERVER_URL"
+	EnvMineruTimeout                     = "MINERU_TIMEOUT"
 	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
 	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
 	EnvMonkeyOCRAPIServer                = "MONKEYOCR_APISERVER"
@@ -220,12 +285,14 @@ const (
 	EnvMonkeyOCRServerURL                = "MONKEYOCR_SERVER_URL"
 	EnvMonkeyOCRBackend                  = "MONKEYOCR_BACKEND"
 	EnvMonkeyOCRDeleteOutput             = "MONKEYOCR_DELETE_OUTPUT"
+	EnvUnlimitedOCRServerURL             = "UNLIMITED_OCR_SERVER_URL"
+	EnvUnlimitedOCRAPIServer             = "UNLIMITED_OCR_APISERVER"
+	EnvUnlimitedOCRTimeout               = "UNLIMITED_OCR_TIMEOUT"
 	EnvOpenDataLoaderAPIServer           = "OPENDATALOADER_APISERVER"
 	EnvOpenDataLoaderAPIKey              = "OPENDATALOADER_API_KEY"
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
 	EnvPaddleOCRAPIURL                   = "PADDLEOCR_API_URL"
 	EnvPaddleOCRAccessToken              = "PADDLEOCR_ACCESS_TOKEN"
-	EnvPaddleOCRAlgorithm                = "PADDLEOCR_ALGORITHM"
 	EnvSOMarkBaseUrl                     = "SOMARK_BASE_URL"
 	EnvSOMarkAPIKey                      = "SOMARK_API_KEY"
 	EnvSOMarkImageFormat                 = "SOMARK_IMAGE_FORMAT"
@@ -247,6 +314,7 @@ const (
 	EnvFirecrawlTimeout                  = "FIRECRAWL_TIMEOUT"
 	EnvFirecrawlRelayTimeout             = "FIRECRAWL_RELAY_TIMEOUT"
 	EnvRAGFlowSecretKey                  = "RAGFLOW_SECRET_KEY"
+	EnvRAGFlowConnectorKey               = "RAGFLOW_CONNECTOR_KEY"
 	EnvEnableRegister                    = "ENABLE_REGISTER"
 	EnvDisablePasswordLogin              = "DISABLE_PASSWORD_LOGIN"
 	EnvMinioHost                         = "MINIO_HOST"
@@ -272,6 +340,10 @@ const (
 	EnvGoogleDriveWebOAuthRedirectURI    = "GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI"
 	EnvSpacyModelDir                     = "SPACY_MODEL_DIR"
 
+	// EnvExtractorConcurrency bounds concurrent chunk extraction jobs across
+	// all Extractor invocations in one process.
+	EnvExtractorConcurrency = "EXTRACTOR_CONCURRENCY"
+
 	// EnvExtractorChatTimeout sets the Extractor LLM call timeout in seconds,
 	// including retries and backoff. It does not apply to tag extraction.
 	EnvExtractorChatTimeout = "EXTRACTOR_CHAT_TIMEOUT"
@@ -292,21 +364,34 @@ const (
 	// ingestor.inference_concurrency config key and is itself overridden by the
 	// --deepdoc-inference-concurrency CLI flag.
 	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
-	// EnvIngestorMaxConcurrentWorkers bounds how many ingestion tasks the
+	// EnvIngestorConcurrentWorkers bounds how many ingestion tasks the
 	// ingestor runs in parallel (the NATS consumer worker count). It overrides
-	// the ingestor.max_concurrent_workers config key and is itself overridden
-	// by the --ingestor-max-concurrent-workers CLI flag.
-	EnvIngestorMaxConcurrentWorkers = "RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS"
+	// the ingestor.concurrent_workers config key and is itself overridden
+	// by the --ingestor-concurrent-workers CLI flag.
+	EnvIngestorConcurrentWorkers = "RAGFLOW_INGESTOR_CONCURRENT_WORKERS"
 	// EnvIngestorPageConcurrency bounds how many pages of a single document are
 	// parsed concurrently inside one ingestor worker. It overrides the
 	// ingestor.page_concurrency config key and is itself overridden by the
 	// --ingestor-page-concurrency CLI flag.
 	EnvIngestorPageConcurrency = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
+	// EnvIngestorTier restricts which ingestion lanes an ingestor consumes
+	// (high/medium/low). It is overridden by the --ingestor-tier CLI flag and
+	// defaults to the default (low) lane when unset. The accepted values are
+	// edition-specific: the community build accepts only the default lane, the
+	// enterprise build accepts its full high/medium/low set.
+	EnvIngestorTier = "RAGFLOW_INGESTOR_TIER"
 	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
 	// in-process inference (0 = all cores). It overrides the
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
 	// --deepdoc-inference-cpu-cores CLI flag.
 	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
+
+	// Media extraction limits. The parser media budget and the run media cache
+	// read these per call: the per-image payload limit, the number of distinct
+	// images one run may cache, and the total decoded bytes one run may cache.
+	EnvMediaImageMaxBytes   = "RAGFLOW_MEDIA_IMAGE_MAX_BYTES"
+	EnvMediaMaxImagesPerRun = "RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN"
+	EnvMediaMaxBytesPerRun  = "RAGFLOW_MEDIA_MAX_BYTES_PER_RUN"
 
 	// Typed-decision model. Unset RAGFLOW_DECISION_DIR leaves the feature off:
 	// every caller degrades to unfiltered behaviour, so a deployment without the
@@ -328,6 +413,35 @@ const (
 	// only RAGFLOW_DECISION_DIR keeps filtering deep reads and nothing else.
 	EnvDecisionFilterDeepRead = "RAGFLOW_DECISION_FILTER_DEEP_READ"
 	EnvDecisionFilterSnippet  = "RAGFLOW_DECISION_FILTER_SNIPPET"
+	// EnvClaimSearch switches the claim-text retrieval leg: claim rows are searched
+	// by their own text and the hits are UNIONED onto the anchored page. Off means
+	// the page is the anchored claims only, which is the pre-existing behaviour.
+	EnvClaimSearch = "RAGFLOW_CLAIM_SEARCH"
+	// EnvClaimPage switches the claim evidence page itself. Off means the
+	// prefetch serves the retrieved chunks as raw text instead of their claims:
+	// the control arm for measuring what the claim artifact is worth, and an
+	// escape hatch for a deployment whose ingestion has not compiled claims yet.
+	EnvClaimPage = "RAGFLOW_CLAIM_PAGE"
+	// EnvDecisionClaimFloor switches the claim exit's per-chunk floor and relative
+	// threshold. On by default: the absolute threshold was fitted on a different
+	// judge, so a correctly recalled claim can sit below it and be dropped.
+	EnvDecisionClaimFloor = "RAGFLOW_DECISION_CLAIM_FLOOR"
+	// EnvDecisionClaimJudgeCap bounds how many statements ONE claim page may send
+	// to the judge. Unset means the built-in bound. The page is unbounded by
+	// design; the judge cannot afford to be, and a rate-limited key trips its
+	// breaker long before a 300-statement page is scored.
+	EnvDecisionClaimJudgeCap = "RAGFLOW_DECISION_CLAIM_JUDGE_CAP"
+	// EnvDecisionClaimMinProb is the P(relevant) a compiled statement must reach to
+	// survive the claim exit. It is separate from EnvDecisionMinProb because a
+	// statement is a single fact with a short quote, not a passage: the judge scores
+	// the two shapes on different scales, so one threshold for both either drops
+	// recalled statements or keeps noise.
+	EnvDecisionClaimMinProb = "RAGFLOW_DECISION_CLAIM_MIN_PROB"
+	// EnvDecisionFilterClaim switches the filter's third exit: compiled claims,
+	// judged one statement at a time. On by default because the claim page is the
+	// only model-visible block with no length bound of its own - a chunk's claim
+	// set can cost more than the chunk it stands for, and this is what bounds it.
+	EnvDecisionFilterClaim = "RAGFLOW_DECISION_FILTER_CLAIM"
 	// EnvDecisionSnippetTools replaces the snippet filter's TOOL scope (comma
 	// separated). Unset means the corpus-passage locate tools only;
 	// search_metadata is never in scope because it returns no passages.
@@ -432,7 +546,58 @@ const (
 	// question and below every runaway one, so it bounds the tail without
 	// touching the body of the distribution.
 	EnvAgenticTokenBudget = "RAGFLOW_AGENTIC_TOKEN_BUDGET"
+
+	// EnvCompiledServe switches the corpus-passage SERVE PATH: after a locate
+	// recall (grep/bm25/semantic/search_chunks) the model is normally shown the
+	// recalled chunk's raw text; this knob replaces that text with the corpus's
+	// KNOWLEDGE-COMPILED products (entity/relation descriptions, RAPTOR tree
+	// summaries, …) that are DERIVED FROM those chunks via source_chunk_ids
+	// lineage.
+	//
+	//   - "off"   (default): unchanged behaviour — raw snippet/body is served,
+	//     the decision sufficiency filter runs as configured.
+	//   - "only" : locate exit serves compiled products only (raw snippet is
+	//     withheld); the deep-read exit (list_chunks) also serves the requested
+	//     chunks' compiled products. A chunk with no compiled derivative falls
+	//     back to its raw text (logged) so the run never sees an empty result.
+	//   - "first" : locate exit serves compiled products PLUS the chunk handles
+	//     and a deep-read hint — the model reads the compiled products first and
+	//     falls back to list_chunks (raw body, decision filter as baseline) only
+	//     when it needs more. The deep-read exit is unchanged.
+	EnvCompiledServe = "RAGFLOW_COMPILED_SERVE"
+	// EnvCompiledServeTopN caps how many compiled products one locate/deep-read
+	// result set may present. Default 12: a compiled product is one
+	// entity/summary paragraph, far shorter than a chunk, so a dozen fit in the
+	// space of one or two raw passages.
+	EnvCompiledServeTopN = "RAGFLOW_COMPILED_SERVE_TOP_N"
+	// EnvCompiledServeKinds restricts which compile_kwd kinds are served
+	// (comma-separated). Unset means every present kind except the "*" junk rows
+	// and dataset_nav metadata; per-run kinds are probed from the bound datasets
+	// by the compiled-knowledge tools, but here we keep it explicit so an arm can
+	// be narrowed (e.g. "tree,graph") without a recompile.
+	EnvCompiledServeKinds = "RAGFLOW_COMPILED_SERVE_KINDS"
+	// EnvCompiledServeTypes restricts the served rows to these entity_type_kwd
+	// values. Claim rows carry compile_kwd=tree exactly like tree nodes, so KINDS
+	// alone cannot separate them; TYPES=claim is what turns this path into claim
+	// serving. Unset keeps every type, i.e. the previous behaviour.
+	EnvCompiledServeTypes = "RAGFLOW_COMPILED_SERVE_TYPES"
+	// EnvCompiledServeScope overrides which locate tools feed compiled products
+	// (comma-separated tool names). Unset = the corpus-passage locate tools only;
+	// web_search is NEVER in scope because its hits carry no corpus document with
+	// a source_chunk_ids linkage.
+	EnvCompiledServeScope = "RAGFLOW_COMPILED_SERVE_SCOPE"
 )
+
+// EnvLLMHTTPResponseHeaderTimeout bounds how long an outbound provider call may
+// wait for response headers. An endpoint that accepts the connection and then
+// never answers otherwise blocks each retry attempt for the full client default
+// (20m on both shared clients), so retries consume wall time instead of
+// retrying. One override covers both shared clients because a hung endpoint is
+// indistinguishable to the caller; each client keeps its own default while the
+// override is unset.
+// The value is a Go duration ("45s", "5m"), read once when a client is first
+// built. Unset, malformed, or non-positive keeps the client default.
+const EnvLLMHTTPResponseHeaderTimeout = "LLM_HTTP_RESPONSE_HEADER_TIMEOUT"
 
 // DeepDocModelFiles is the single source of truth for the weights the
 // in-process (Go) DeepDoc backend requires to serve. The Go backend consumes
@@ -467,6 +632,36 @@ func HasModelFiles(dir string) bool {
 		}
 	}
 	return true
+}
+
+// DeepDocModelDir resolves the directory holding the in-process (Go) DeepDoc
+// weights. It is the single source of truth shared by the DeepDoc server boot
+// path and any runtime probe (e.g. the /system/doc-analyzers availability
+// check) so the two never disagree about where the weights live.
+//
+// Resolution order:
+//  1. the explicit DEEPDOC_MODEL_DIR env, when set;
+//  2. the first MODEL_ASSETS_DIR candidate that actually contains the
+//     required weights (see HasModelFiles / DeepDocModelFiles);
+//  3. the repo-default internal/rag/res/deepdoc layout;
+//  4. as a last resort the canonical default, so a missing-weights error
+//     message points at the conventional location.
+func DeepDocModelDir() string {
+	if v := strings.TrimSpace(GetEnv(EnvDeepDocModelDir)); v != "" {
+		return v
+	}
+	wd, _ := os.Getwd()
+	candidates := append([]string(nil), ModelAssetCandidates("huggingface.co/InfiniFlow/deepdoc")...)
+	candidates = append(candidates,
+		filepath.Join(wd, "internal", "rag", "res", "deepdoc"),
+		filepath.Join(wd, "huggingface.co", "InfiniFlow", "deepdoc"),
+	)
+	for _, c := range candidates {
+		if HasModelFiles(c) {
+			return c
+		}
+	}
+	return filepath.Join(wd, "internal", "rag", "res", "deepdoc")
 }
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)

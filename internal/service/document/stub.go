@@ -1,0 +1,45 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+//go:build !ee
+
+package document
+
+import (
+	"context"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
+)
+
+// grantDocumentOwnerEE grants nothing: the community edition has no document
+// permission records.
+func grantDocumentOwnerEE(context.Context, *gorm.DB, *entity.Document) error { return nil }
+
+// dedicatedParserExtension lets the enterprise edition bind a file type to its
+// own built-in pipeline. The community build registers no such binding, so the
+// community routing in dedicatedDocumentParserID is unchanged.
+func dedicatedParserExtension(utility.FileType, string) string { return "" }
+
+// preparePreviewPresentationEE is a no-op outside the enterprise edition.
+func preparePreviewPresentationEE(context.Context, *entity.Document, string) ([]byte, string, bool, error) {
+	return nil, "", false, nil
+}
+
+// cleanupPreviewArtifactsEE is a no-op outside the enterprise edition.
+func cleanupPreviewArtifactsEE(context.Context, *entity.Document) {}

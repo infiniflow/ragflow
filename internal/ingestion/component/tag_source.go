@@ -45,12 +45,14 @@ import (
 	"sync"
 	"time"
 
+	excel "github.com/jloor/go-excel-reader"
 	"github.com/xuri/excelize/v2"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/tokenizer"
 
 	"gorm.io/gorm"
@@ -343,9 +345,9 @@ func tagSourceFileCacheKey(f *entity.File, lang string) string {
 	return fmt.Sprintf("tag-file:%s:%s:%s:%d:%d:%s", f.ID, f.ParentID, location, f.Size, updateTime, lang)
 }
 
-// parseTagSourceByFilename mirrors rag/app/tag.py chunk(): the format is chosen
+// parseTagSourceByFilename mirrors chunk(): the format is chosen
 // by the file extension, and only .xlsx/.xls, .txt and .csv are supported. Any
-// other extension (including no extension) is rejected, matching Python's
+// other extension (including no extension) is rejected, matching
 // NotImplementedError for unsupported formats. xlsx is parsed per-sheet (2
 // columns, no header, multiple sheets); .csv uses a quote-aware reader; .txt
 // uses the delimiter-detecting reader.
@@ -359,14 +361,14 @@ func parseTagSourceByFilename(data []byte, filename string) ([]schema.TagLabel, 
 		delimiter := detectCSVDelimiterBytes(data)
 		return parseCSVTagSourceReader(bytes.NewReader(data), delimiter), nil
 	default:
-		return nil, fmt.Errorf("unsupported tag source extension %q: only .xlsx, .txt and .csv are supported", filepath.Ext(filename))
+		return nil, fmt.Errorf("unsupported tag source extension %q: only .xlsx, .xls, .txt and .csv are supported", filepath.Ext(filename))
 	}
 }
 
 // ----------------------------------------------------------------------
-// Tag source file readers, mirroring rag/app/tag.py's chunk(): xlsx is read
-// per-sheet, .csv with a quote-aware reader, .txt with the delimiter-detecting
-// one. Only parseTagSourceByFilename above calls into this section.
+// Tag source file readers. xlsx is read per-sheet, .csv with a quote-aware
+// reader, .txt with the delimiter-detecting one. Only
+// parseTagSourceByFilename above calls into this section.
 // ----------------------------------------------------------------------
 
 func parseCSVTagSource(text string) []schema.TagLabel {
@@ -377,7 +379,7 @@ func parseCSVTagSourceBytes(data []byte) []schema.TagLabel {
 	return parseCSVTagSourceReader(bytes.NewReader(data), detectCSVDelimiterBytes(data))
 }
 
-// parseCSVTagSourceReader mirrors rag/app/tag.py's txt parsing: lines that do
+// parseCSVTagSourceReader mirrors 's txt parsing: lines that do
 // not split into exactly two columns are accumulated as body text and prepended
 // to the next tagged line. The second column holds comma-separated tags.
 func parseCSVTagSourceReader(r io.Reader, delimiter string) []schema.TagLabel {
@@ -409,12 +411,11 @@ func parseCSVTagSourceReader(r io.Reader, delimiter string) []schema.TagLabel {
 	return result
 }
 
-// csvTagSourceDelimiter returns TAB, the documented delimiter, unless the file
-// reads as comma separated (infiniflow/ragflow#20925). A file with no TAB
-// reads with comma. A comma separated file can still hold a TAB inside one
-// field, so a file with a TAB reads with comma only when the first non-empty
-// row holds no TAB, every row with a TAB splits into two values, and the
-// two-value rows with no TAB outnumber all other non-empty rows.
+// csvTagSourceDelimiter returns comma when the file has no TAB. If the file
+// contains a TAB, it returns comma only when the first non-empty row has no
+// TAB, every non-empty row with a TAB has exactly two non-empty fields, and
+// two-field rows without a TAB outnumber all other non-empty rows. Otherwise
+// it returns TAB.
 func csvTagSourceDelimiter(data []byte) rune {
 	if !bytes.Contains(data, []byte("\t")) {
 		return ','
@@ -450,15 +451,15 @@ func csvTagSourceDelimiter(data []byte) rune {
 	return '\t'
 }
 
-// parseCSVQuoteAwareReader mirrors rag/app/tag.py's .csv path: the whole text
+// parseCSVQuoteAwareReader mirrors 's .csv path: the whole text
 // goes through a single encoding/csv reader, so a quoted field may contain the
-// delimiter or span several physical lines (Python's csv.reader pulls further
+// delimiter or span several physical lines ( csv.reader pulls further
 // lines from its generator while inside quotes; Go's reader does the same).
 // Records that do not yield exactly two non-empty columns are accumulated as
 // body text using the raw lines they span, and the second column holds
 // comma-separated tags.
 //
-// LazyQuotes mirrors Python's tolerance for stray quote characters: a bare "
+// LazyQuotes mirrors tolerance for stray quote characters: a bare "
 // inside an unquoted field is data there, not a fatal parse error.
 func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 	data, err := io.ReadAll(r)
@@ -470,7 +471,7 @@ func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 
 	reader := csv.NewReader(strings.NewReader(text))
 	reader.Comma = delimiter
-	reader.FieldsPerRecord = -1 // Python's csv.reader accepts variable column counts.
+	reader.FieldsPerRecord = -1 // the reader accepts variable column counts per record.
 	reader.LazyQuotes = true
 
 	result := make([]schema.TagLabel, 0)
@@ -485,7 +486,7 @@ func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 
 	// InputOffset() reports where a record ended, so the text between the
 	// previous offset and this one is the raw span the record was parsed from,
-	// the equivalent of Python's lines[prev_line_num : reader.line_num].
+	// the equivalent of lines[prev_line_num : reader.line_num]
 	start := 0
 	for {
 		rec, err := reader.Read()
@@ -498,7 +499,7 @@ func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 		end := int(reader.InputOffset())
 		raw := strings.TrimSuffix(strings.TrimSuffix(text[start:end], "\n"), "\r")
 		start = end
-		// encoding/csv skips blank lines without reporting them, while Python's
+		// encoding/csv skips blank lines without reporting them, while
 		// generator hands them to the reader as empty records, which land in
 		// the body text. Replay them as empty lines.
 		for strings.HasPrefix(raw, "\n") || strings.HasPrefix(raw, "\r\n") {
@@ -521,12 +522,20 @@ func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 	return result
 }
 
-// parseXLSXTagSource mirrors rag/app/tag.py's .xlsx path: every sheet is read
+// parseXLSXTagSource mirrors 's .xlsx path: every sheet is read
 // with no header, and each row contributes a (content, tags) pair from its
 // first and second non-empty cells. Single-cell rows are accumulated as body text
 // and prepended to the next tagged row, matching CSV parsing behavior.
 // The second cell holds comma-separated tags.
+//
+// A legacy BIFF .xls (OLE compound document) is detected by magic and routed
+// to parseBIFF8TagSource, which applies the same per-row rule via
+// go-excel-reader — mirroring internal/parser/parser/xls_parser.go. An .xls
+// that is actually OOXML (renamed .xlsx) falls through to the excelize path.
 func parseXLSXTagSource(data []byte) []schema.TagLabel {
+	if bytes.HasPrefix(data, parser.CompoundDocumentSignature) {
+		return parseBIFF8TagSource(data)
+	}
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		common.Warn(fmt.Sprintf("extractor tags: open xlsx tag source: %v", err))
@@ -542,13 +551,6 @@ func parseXLSXTagSource(data []byte) []schema.TagLabel {
 			continue
 		}
 		content := ""
-		appendLine := func(s string) {
-			if content == "" {
-				content = s
-			} else {
-				content += "\n" + s
-			}
-		}
 		for _, row := range rows {
 			var cells []string
 			for _, c := range row {
@@ -556,20 +558,69 @@ func parseXLSXTagSource(data []byte) []schema.TagLabel {
 					cells = append(cells, c)
 				}
 			}
-			if len(cells) == 0 {
-				continue
-			}
-			if len(cells) == 1 {
-				appendLine(cells[0])
-				continue
-			}
-			appendLine(cells[0])
-			tags := splitAndTrim(cells[1], ",")
-			result = append(result, schema.TagLabel{Content: content, Tags: tags})
-			content = ""
+			accumulateTagCells(cells, &content, &result)
 		}
 	}
 	return result
+}
+
+// parseBIFF8TagSource applies the parseXLSXTagSource row rule to a legacy
+// BIFF .xls workbook: every sheet is read with no header, each row's first
+// and second non-empty cells form a (content, tags) pair, and single-cell
+// rows accumulate as body text for the next tagged row. Cells beyond the
+// second are ignored, matching the xlsx path. The BIFF reader exposes no
+// merged ranges, so a vertical merge stays a dense row with an empty slave
+// cell — the same caveat as internal/parser/parser/xls_parser.go.
+func parseBIFF8TagSource(data []byte) []schema.TagLabel {
+	reader, err := excel.OpenXLS(bytes.NewReader(data), excel.WithErrorValues(true))
+	if err != nil {
+		common.Warn(fmt.Sprintf("extractor tags: open BIFF xls tag source: %v", err))
+		return nil
+	}
+	defer reader.Close()
+
+	result := make([]schema.TagLabel, 0)
+	for reader.NextSheet() {
+		content := ""
+		for reader.Read() {
+			var cells []string
+			for col := 0; col < reader.FieldCount(); col++ {
+				if c := strings.TrimSpace(parser.SpreadsheetCellString(reader.GetValue(col))); c != "" {
+					cells = append(cells, c)
+				}
+			}
+			accumulateTagCells(cells, &content, &result)
+		}
+	}
+	if err := reader.Err(); err != nil {
+		common.Warn(fmt.Sprintf("extractor tags: read BIFF xls tag source: %v", err))
+	}
+	return result
+}
+
+// accumulateTagCells applies the shared tag row rule: empty rows are skipped,
+// single-cell rows accumulate as body text for the next tagged row, and rows
+// with two or more non-empty cells emit a (content, tags) pair from the first
+// two cells. Extra cells are ignored.
+func accumulateTagCells(cells []string, content *string, result *[]schema.TagLabel) {
+	if len(cells) == 0 {
+		return
+	}
+	appendLine := func(s string) {
+		if *content == "" {
+			*content = s
+		} else {
+			*content += "\n" + s
+		}
+	}
+	if len(cells) == 1 {
+		appendLine(cells[0])
+		return
+	}
+	appendLine(cells[0])
+	tags := splitAndTrim(cells[1], ",")
+	*result = append(*result, schema.TagLabel{Content: *content, Tags: tags})
+	*content = ""
 }
 
 func stripEmptyFields(fields []string) []string {
@@ -658,7 +709,7 @@ func splitAndTrim(s, sep string) []string {
 
 // TagVocabularyFromBytes is the storage/DAO-free core of
 // TagVocabularyFromTagFileID. It parses a tag source file's raw bytes (mirroring
-// rag/app/tag.py's chunk format) and returns the vocabulary as tag -> number of
+// 's chunk format) and returns the vocabulary as tag -> number of
 // source examples that mention the tag; a tag repeated within one source example
 // counts once, matching buildMemoryTagIndex's per-sample deduplication.
 func TagVocabularyFromBytes(data []byte, filename string) (map[string]int, error) {

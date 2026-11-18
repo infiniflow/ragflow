@@ -247,3 +247,91 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "..."
 }
+
+func TestDOCXWriter_MarkdownHeadings(t *testing.T) {
+	content := "# Report\n\n## 4. Findings\n\n### 4.2 **Risk & controls**\n\nBody retained.\n\n> #### Quoted heading\n>\n> Quoted body.\n\n- ##### Nested heading\n\n  Nested body.\n\n```markdown\n###### Fenced heading\n```"
+	doc, err := WriteDOCX(content, DOCXOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(doc), int64(len(doc)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := readZipFile(t, zr, "word/document.xml")
+	var document struct {
+		Body struct {
+			Paragraphs []struct {
+				Properties struct {
+					Style struct {
+						Value string `xml:"val,attr"`
+					} `xml:"pStyle"`
+				} `xml:"pPr"`
+				Runs []struct {
+					Text string `xml:"t"`
+				} `xml:"r"`
+			} `xml:"p"`
+		} `xml:"body"`
+	}
+	if err := xml.Unmarshal([]byte(body), &document); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Report", "4. Findings", "4.2 Risk & controls", "Body retained.", "Quoted heading", "Quoted body.", "Nested heading", "Nested body.", "Fenced heading"}
+	styles := []string{"Heading1", "Heading2", "Heading3", "", "Heading4", "", "Heading5", "", "Heading6"}
+	if len(document.Body.Paragraphs) != len(want) {
+		t.Fatalf("got %d paragraphs, want %d: %s", len(document.Body.Paragraphs), len(want), body)
+	}
+	for i, paragraph := range document.Body.Paragraphs {
+		var text strings.Builder
+		for _, run := range paragraph.Runs {
+			text.WriteString(run.Text)
+		}
+		if text.String() != want[i] || paragraph.Properties.Style.Value != styles[i] {
+			t.Errorf("paragraph %d = %q (%s), want %q (%s)", i, text.String(), paragraph.Properties.Style.Value, want[i], styles[i])
+		}
+	}
+	styleXML, _ := readZipFile(t, zr, "word/styles.xml")
+	for _, style := range styles {
+		if style != "" && !strings.Contains(styleXML, `w:styleId="`+style+`"`) {
+			t.Errorf("missing style definition %s", style)
+		}
+	}
+}
+
+func TestDOCXWriter_MarkdownLists(t *testing.T) {
+	doc, err := WriteDOCX("## 4.2 Findings\n\n- First bullet\n  - Nested bullet\n\n    Continuation.\n- Second bullet\n\n## 4.3 Actions\n\n3. Third action\n4. Fourth action\n\nNext list:\n\n1. Separate list\n", DOCXOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(doc), int64(len(doc)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := readZipFile(t, zr, "word/document.xml")
+	if count := strings.Count(body, "<w:numPr>"); count != 6 {
+		t.Errorf("numbered paragraphs = %d, want 6", count)
+	}
+	for _, text := range []string{"First bullet", "Nested bullet", "Continuation.", "Second bullet", "Third action", "Fourth action", "Separate list"} {
+		if !strings.Contains(body, text) {
+			t.Errorf("missing %q", text)
+		}
+	}
+	if !strings.Contains(body, "<w:ind w:left=\"1440\"/></w:pPr><w:r>") {
+		t.Error("nested continuation lost its indentation")
+	}
+	numbering, ok := readZipFile(t, zr, "word/numbering.xml")
+	if !ok {
+		t.Fatal("missing numbering.xml")
+	}
+	for _, value := range []string{`w:val="bullet"`, `w:val="decimal"`, `w:start w:val="3"`, `w:left="1440"`} {
+		if !strings.Contains(numbering, value) {
+			t.Errorf("missing list definition %s", value)
+		}
+	}
+	for name, want := range map[string]string{"[Content_Types].xml": "/word/numbering.xml", "word/_rels/document.xml.rels": "relationships/numbering"} {
+		part, _ := readZipFile(t, zr, name)
+		if !strings.Contains(part, want) {
+			t.Errorf("%s missing %s", name, want)
+		}
+	}
+}

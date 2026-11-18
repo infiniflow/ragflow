@@ -173,6 +173,8 @@ type checkpointPayload struct {
 	RunCtx              *runContext
 	Info                *InterruptInfo
 	EnableStreaming     bool
+	WasInterrupted      bool
+	InterruptState      any
 	InterruptID2Address map[string]Address
 	InterruptID2State   map[string]InterruptState
 	TenantID            string
@@ -200,8 +202,10 @@ func extractCheckpointTenant(ctx context.Context) string {
 		return tid
 	}
 	if rc := getRunCtx(ctx); rc != nil && rc.Session != nil {
-		if tid, ok := rc.Session.Values[DefaultCheckpointTenantKey].(string); ok {
-			return tid
+		if value, ok := rc.Session.getValue(DefaultCheckpointTenantKey); ok {
+			if tid, ok := value.(string); ok {
+				return tid
+			}
 		}
 	}
 	return ""
@@ -297,6 +301,8 @@ func loadCheckpoint(store CheckPointStore, ctx context.Context, cid string) (con
 	return ctx, p.RunCtx, &ResumeInfo{
 		EnableStreaming: p.EnableStreaming,
 		InterruptInfo:   p.Info,
+		WasInterrupted:  p.WasInterrupted,
+		InterruptState:  p.InterruptState,
 	}, nil
 }
 
@@ -307,12 +313,16 @@ func saveCheckpoint(store CheckPointStore, ctx context.Context, key string, enab
 	rc := getRunCtx(ctx)
 	id2addr, id2state := signalToMaps(is)
 	tenantID := extractCheckpointTenant(ctx)
+	var interruptState any
+	if is != nil {
+		interruptState = is.State
+	}
 
 	// Encode payload with tenant ID
 	p := checkpointPayload{
 		RunCtx: rc, Info: info, EnableStreaming: enableStreaming,
 		InterruptID2Address: id2addr, InterruptID2State: id2state,
-		TenantID: tenantID,
+		TenantID: tenantID, WasInterrupted: is != nil, InterruptState: interruptState,
 	}
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(p); err != nil {
@@ -418,6 +428,7 @@ func buildResumeInfo(ctx context.Context, nextID string, info *ResumeInfo) (cont
 		EnableStreaming: info.EnableStreaming,
 		InterruptInfo:   info.InterruptInfo,
 		WasInterrupted:  info.WasInterrupted,
+		InterruptState:  info.InterruptState,
 		IsResumeTarget:  info.IsResumeTarget,
 		ResumeData:      info.ResumeData,
 	}

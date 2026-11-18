@@ -32,10 +32,13 @@ import {
 import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
-import { useParams } from 'react-router';
+import { useCallback, useContext, useMemo } from 'react';
 
 import { AgentKeys } from './use-agent-request';
+import {
+  ModelResourceAccessUserIdContext,
+  ModelResourceTenantIdContext,
+} from './use-llm-request';
 
 export const enum CompilationTemplateGroupApiAction {
   FetchCompilationTemplateGroups = 'fetchCompilationTemplateGroups',
@@ -51,12 +54,13 @@ export const CompilationTemplateGroupKeys = {
       CompilationTemplateGroupApiAction.FetchCompilationTemplateGroup,
       id,
     ] as const,
+  scoped: (tenantId?: string, accessUserId?: string) =>
+    [...CompilationTemplateGroupKeys.all(), tenantId, accessUserId] as const,
   all: () =>
     [CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups] as const,
 };
 
-export const useFetchCompilationTemplateGroup = () => {
-  const { id } = useParams<{ id: string }>();
+export const useFetchCompilationTemplateGroup = (id?: string) => {
   const isCreate = isCreateCompilationTemplateGroup(id);
 
   const { data, isFetching: loading } = useQuery<
@@ -96,6 +100,8 @@ export const useCreateCompilationTemplateGroup = () => {
           CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups,
         ],
       });
+      queryClient.invalidateQueries({ queryKey: AgentKeys.list() });
+      queryClient.invalidateQueries({ queryKey: AgentKeys.filters() });
     },
   });
 
@@ -192,7 +198,7 @@ export const useDeleteCompilationTemplateGroup = () => {
         });
         markListItemsDeleted(ListDeletionKey.AgentList);
       }
-      return data?.data ?? true;
+      return data?.code;
     },
   });
 
@@ -206,16 +212,20 @@ export const useDeleteCompilationTemplateGroup = () => {
   return { data, loading, deleteGroup };
 };
 
-export const useFetchAllCompilationTemplateGroups = (
-  ownerTenantId?: string,
-) => {
+export const useFetchAllCompilationTemplateGroups = (accessUserId?: string) => {
+  const contextTenantId = useContext(ModelResourceTenantIdContext);
+  const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
+  const groupAccessUserId = accessUserId ?? contextAccessUserId;
   const {
     data,
     isFetching: loading,
     isFetched,
     isError,
   } = useQuery<ICompilationTemplateGroup[]>({
-    queryKey: [...CompilationTemplateGroupKeys.all(), ownerTenantId],
+    queryKey: CompilationTemplateGroupKeys.scoped(
+      contextTenantId,
+      groupAccessUserId,
+    ),
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
@@ -223,7 +233,7 @@ export const useFetchAllCompilationTemplateGroups = (
         keywords: string;
         page: number;
         page_size: number;
-        tenant_id?: string;
+        access_user_id?: string;
       } = {
         keywords: '',
         page: 1,
@@ -232,8 +242,8 @@ export const useFetchAllCompilationTemplateGroups = (
       // Viewing a shared canvas: fetch the canvas owner's groups instead.
       const { data } = await compilationTemplateGroupService.listGroups(
         {
-          params: ownerTenantId
-            ? { ...params, tenant_id: ownerTenantId }
+          params: groupAccessUserId
+            ? { ...params, access_user_id: groupAccessUserId }
             : params,
         },
         true,
@@ -247,9 +257,9 @@ export const useFetchAllCompilationTemplateGroups = (
   return { groups: data ?? [], loading, isFetched, isError };
 };
 
-export const useCompilationTemplateGroupOptions = (ownerTenantId?: string) => {
+export const useCompilationTemplateGroupOptions = (accessUserId?: string) => {
   const { groups, isFetched, isError } =
-    useFetchAllCompilationTemplateGroups(ownerTenantId);
+    useFetchAllCompilationTemplateGroups(accessUserId);
 
   const options = useMemo(
     () => groups.map((group) => ({ label: group.name, value: group.id })),
@@ -260,15 +270,15 @@ export const useCompilationTemplateGroupOptions = (ownerTenantId?: string) => {
 };
 
 /**
- * Ids of template groups visible under the given owner tenant (the current
+ * Ids of template groups visible under the given owner user (the current
  * user's own when omitted). Groups resolve per tenant at run time, so a group
  * referenced by a shared pipeline only exists under the canvas owner's
  * tenant. `isFetched` must be checked before trusting `validIds` — the query
  * seeds `initialData: []`, so every id looks missing while loading.
  */
-export const useCompilationTemplateGroupValidIds = (ownerTenantId?: string) => {
+export const useCompilationTemplateGroupValidIds = (accessUserId?: string) => {
   const { groups, isFetched } =
-    useFetchAllCompilationTemplateGroups(ownerTenantId);
+    useFetchAllCompilationTemplateGroups(accessUserId);
 
   const validIds = useMemo(
     () => new Set(groups.map((group) => group.id)),

@@ -145,7 +145,7 @@ func newDiscordChannel(account discordAccount) *discordChannel {
 	}
 	return &discordChannel{
 		account: account,
-		client:  &http.Client{Timeout: account.Timeout},
+		client:  newSafeChannelHTTPClient(account.Timeout, channelURLPolicy{exactHosts: []string{"discord.com"}}),
 		seen:    map[string]time.Time{},
 		workers: map[string]*discordChatWorker{},
 	}
@@ -305,10 +305,10 @@ func (c *discordChannel) runGateway(ctx context.Context) error {
 
 	// set websocket connection
 	header := http.Header{}
-	dialer := *websocket.DefaultDialer
-	dialer.HandshakeTimeout = discordHandshakeTimeout
-
-	conn, _, err := dialer.DialContext(ctx, wsURL, header)
+	conn, _, err := dialSafeChannelWebSocket(ctx, wsURL, header, discordHandshakeTimeout, channelURLPolicy{
+		exactHosts:   []string{"gateway.discord.gg"},
+		hostSuffixes: []string{"discord.gg"},
+	})
 	if err != nil {
 		return err
 	}
@@ -624,7 +624,7 @@ func (c *discordChannel) requestJSON(ctx context.Context, method, path string, b
 		if resp.StatusCode == http.StatusTooManyRequests {
 			return newDiscordRateLimitError(resp.Header, respBody)
 		}
-		return fmt.Errorf("discord api status: %d, response: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("discord api status: %d, response: %.200s", resp.StatusCode, respBody)
 	}
 	if out != nil && len(bytes.TrimSpace(respBody)) > 0 {
 		return json.Unmarshal(respBody, out)
@@ -649,7 +649,7 @@ func newDiscordRateLimitError(header http.Header, body []byte) *discordRateLimit
 	return &discordRateLimitError{
 		RetryAfter: retryAfter,
 		Global:     payload.Global,
-		Response:   strings.TrimSpace(string(body)),
+		Response:   fmt.Sprintf("%.200s", strings.TrimSpace(string(body))),
 	}
 }
 

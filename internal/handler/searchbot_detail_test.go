@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -43,7 +44,7 @@ func setupSearchbotDetailHandlerDB(t *testing.T) {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.User{}, &entity.UserTenant{}, &entity.Search{}, &entity.APIToken{}); err != nil {
+	if err := db.AutoMigrate(&entity.User{}, &entity.Tenant{}, &entity.UserTenant{}, &entity.Search{}, &entity.APIToken{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -116,6 +117,9 @@ func TestSearchbotDetailSuccess(t *testing.T) {
 		Status:       &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create search: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, "tenant-1", "tenant-1"); err != nil {
+		t.Fatalf("prepare search permission fixture: %v", err)
 	}
 
 	r := newSearchbotDetailRouter()
@@ -253,6 +257,11 @@ func TestSearchbotDetailRejectsUnauthorizedSearchAccess(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to create search: %v", err)
 	}
+	for tenantID, memberID := range map[string]string{"tenant-1": "tenant-1", "user-2": "user-2"} {
+		if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, memberID); err != nil {
+			t.Fatalf("prepare search permission fixture for tenant %s: %v", tenantID, err)
+		}
+	}
 
 	r := newSearchbotDetailRouter()
 	w := httptest.NewRecorder()
@@ -269,7 +278,7 @@ func TestSearchbotDetailRejectsUnauthorizedSearchAccess(t *testing.T) {
 	}
 }
 
-func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
+func TestSearchbotDetailRedactsInternalErrorText(t *testing.T) {
 	setupSearchbotDetailHandlerDB(t)
 
 	status := "1"
@@ -287,6 +296,13 @@ func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
 		Status:          &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Tenant{
+		ID:        "tenant-1",
+		ParserIDs: "",
+		Status:    &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
 	}
 	if err := dao.DB.Create(&entity.UserTenant{
 		ID:       "ut-1",
@@ -327,7 +343,7 @@ func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
 
 	body := w.Body.String()
 	if strings.Contains(body, "no such table") {
-		t.Fatalf("response leaked internal error text: %s", body)
+		t.Fatalf("response exposed underlying database error: %s", body)
 	}
 
 	var resp map[string]interface{}
@@ -336,5 +352,8 @@ func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
 	}
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("code = %v, want %v", resp["code"], common.CodeServerError)
+	}
+	if resp["message"] != common.CodeServerError.Message() {
+		t.Fatalf("message = %v, want %q", resp["message"], common.CodeServerError.Message())
 	}
 }

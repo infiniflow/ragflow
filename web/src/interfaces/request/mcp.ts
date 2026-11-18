@@ -3,6 +3,7 @@ import { IPaginationRequestBody } from './base';
 
 export interface IMcpServerListRequestBody extends IPaginationRequestBody {
   tenant_id?: string;
+  access_user_id?: string;
 }
 
 export interface ITestMcpRequestBody {

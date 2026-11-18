@@ -57,7 +57,11 @@ To initialize the default superuser when starting Admin, add `--init-superuser` 
 RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
 ```
 
-If no superuser exists, this option currently creates `admin@ragflow.io` with the initial password `admin`. Change that password immediately after the first login. It does not reset the password of an existing superuser.
+If no superuser exists, this option creates `admin@ragflow.io`. Set
+`DEFAULT_SUPERUSER_PASSWORD` or `ADMIN_DEFAULT_PASSWORD` before initialization
+to choose its initial password. If neither variable is set, RAGFlow generates
+a random password and writes it to `logs/admin_bootstrap_password.txt`.
+Changing either variable after a superuser exists does not reset its password.
 
 To change the Admin listening port, set `admin.http_port` in the server configuration.
 
@@ -71,7 +75,16 @@ For the Go deployment, use `docker/docker-compose.yml` and its `.env` file. The 
 docker compose --env-file docker/.env -f docker/docker-compose.yml --profile cpu up -d
 ```
 
-The Go Compose deployment exposes the Admin Service on `9381` and the API server on `9380` by default. Use `ADMIN_SVR_HTTP_PORT` and `SVR_HTTP_PORT` to change the corresponding published host ports.
+Before first startup, replace `ADMIN_DEFAULT_PASSWORD` in `docker/.env` with a
+deployment-specific secret when the Admin Service is reachable by other hosts.
+The checked-in value is `admin`. The Go Compose deployment publishes the Admin
+Service on host port `9381` by default, so restrict that port to trusted
+administrators. Changing the password setting after the first superuser has
+been created does not change the account password.
+
+The API server is published on host port `9380` by default. Use
+`ADMIN_SVR_HTTP_PORT` and `SVR_HTTP_PORT` to change the corresponding published
+host ports.
 
 Use the Go Compose entry point documented in [Go Docker deployment](../../../docker/README.md). Initialize the first superuser with `--init-superuser` only when initial account setup is required.
 

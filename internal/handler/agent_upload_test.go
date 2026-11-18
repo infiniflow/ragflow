@@ -31,6 +31,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // uploadFakes is a paired pair of fakes used by the upload-handler
@@ -73,6 +74,7 @@ func makeUploadCtx(t *testing.T, n int) (*gin.Context, *httptest.ResponseRecorde
 	c.Request = req
 	c.Params = gin.Params{{Key: "canvas_id", Value: "c1"}}
 	c.Set("user", &entity.User{ID: "u-1"})
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "u-1", "u-1"))
 	return c, w
 }
 
@@ -94,6 +96,7 @@ func makeUploadCtxNoFile(t *testing.T) (*gin.Context, *httptest.ResponseRecorder
 	c.Request = req
 	c.Params = gin.Params{{Key: "canvas_id", Value: "c1"}}
 	c.Set("user", &entity.User{ID: "u-1"})
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "u-1", "u-1"))
 	return c, w
 }
 

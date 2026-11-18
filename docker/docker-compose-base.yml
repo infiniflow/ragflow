@@ -29,7 +29,7 @@ services:
         soft: -1
         hard: -1
     healthcheck:
-      test: ["CMD-SHELL", "curl http://localhost:9200"]
+      test: ["CMD-SHELL", "curl -fsS -u \"elastic:$${ELASTIC_PASSWORD}\" http://localhost:9200/_cluster/health >/dev/null"]
       interval: 10s
       timeout: 10s
       retries: 120
@@ -38,17 +38,17 @@ services:
     restart: unless-stopped
 
 
-  opensearch01:
+  opensearch39:
     profiles:
       - opensearch
-    image: opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:3.9.0
     volumes:
-      - osdata01:/usr/share/opensearch/data
+      - osdata39:/usr/share/opensearch/data
     ports:
       - ${OS_PORT}:9201
     env_file: .env
     environment:
-      - node.name=opensearch01
+      - node.name=opensearch39
       - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD}
       - bootstrap.memory_lock=false
@@ -66,7 +66,7 @@ services:
         soft: -1
         hard: -1
     healthcheck:
-      test: ["CMD-SHELL", "curl http://localhost:9201"]
+      test: ["CMD-SHELL", "curl -fsS -u \"admin:$${OPENSEARCH_PASSWORD}\" http://localhost:9201/_cluster/health >/dev/null"]
       interval: 10s
       timeout: 10s
       retries: 120
@@ -78,7 +78,7 @@ services:
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.7.4-x64-v3
+    image: infiniflow/infinity:v0.7.5-x64-v3
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -185,15 +185,25 @@ services:
 
 
   vastbase:
+    # `vastbase` serves the doc engine; `metadata-vastbase` additionally lets
+    # the same instance carry the business metadata (DB_TYPE=vastbase).
     profiles:
       - vastbase
+      - metadata-vastbase
     image: ${VB_IMAGE:-vastbase-g100-single-v1.4-3.0.9.31338-linux-x86_64:20260513112809}
     env_file: .env
     environment:
       - VB_PASSWORD=${VB_PASSWORD}
       - VB_USERNAME=${VB_USERNAME}
       - VB_VEC_DBNAME=${VB_VEC_DBNAME:-ragflow}
+      - VB_META_DBNAME=${VB_META_DBNAME:-rag_flow}
       - VB_DBCOMPATIBILITY=${VB_DBCOMPATIBILITY:-B}
+      # MySQL-dialect catalog compatibility: the metadata migrations probe the
+      # catalog with uppercase MySQL-style names (INFORMATION_SCHEMA.COLUMNS,
+      # STATISTICS, KEY_COLUMN_USAGE). lower_case_table_names=1 folds unquoted
+      # identifiers to lowercase so those views resolve; without it Vastbase
+      # keeps the written case and every probe fails.
+      - OTHER_PG_CONF=lower_case_table_names=1
     # Bind the published port to loopback by default: the database ships
     # default credentials, and RAGFlow reaches it over the shared `ragflow`
     # network. Remote access is an explicit opt-in through VB_BIND_ADDR
@@ -508,7 +518,7 @@ services:
 volumes:
   esdata01:
     driver: local
-  osdata01:
+  osdata39:
     driver: local
   infinity_data:
     driver: local

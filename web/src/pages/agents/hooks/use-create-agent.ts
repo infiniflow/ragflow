@@ -1,7 +1,7 @@
 import { AgentCategory } from '@/constants/agent';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useSetAgent } from '@/hooks/use-agent-request';
+import { useCreateAgent } from '@/hooks/use-agent-request';
 
 import { initialEmptyDsl } from '@/pages/agent/utils/dsl-bridge';
 import { useCallback } from 'react';
@@ -9,7 +9,7 @@ import { FlowType } from '../constant';
 import { FormSchemaType } from '../create-agent-form';
 
 export function useCreateAgentOrPipeline() {
-  const { loading, setAgent } = useSetAgent();
+  const { loading, createAgent } = useCreateAgent();
   const { navigateToAgent } = useNavigatePage();
   const {
     visible: creatingVisible,
@@ -23,7 +23,7 @@ export function useCreateAgentOrPipeline() {
       const canvasCategory = isAgent
         ? AgentCategory.AgentCanvas
         : AgentCategory.DataflowCanvas;
-      const ret = await setAgent({
+      const ret = await createAgent({
         title: data.name,
         dsl: initialEmptyDsl(isAgent),
         canvas_category: canvasCategory,
@@ -34,7 +34,7 @@ export function useCreateAgentOrPipeline() {
         navigateToAgent(ret.data.id, canvasCategory)();
       }
     },
-    [hideCreatingModal, navigateToAgent, setAgent],
+    [hideCreatingModal, navigateToAgent, createAgent],
   );
 
   return {

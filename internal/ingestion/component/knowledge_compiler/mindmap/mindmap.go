@@ -1,5 +1,5 @@
 // Package mindmap implements the "mindmap" variant of KnowledgeCompiler,
-// mirroring Python's MindMapExtractor: the source chunks are packed into
+// mirroring MindMapExtractor: the source chunks are packed into
 // token-budget batches; each batch gets one LLM call (system = the rendered
 // MIND_MAP_EXTRACTION_PROMPT, user = "Output:") whose markdown reply is
 // parsed (dictify semantics), list-to-kv converted, merged across batches,
@@ -55,11 +55,11 @@ func runBatches(ctx context.Context, jobs []func() error) error {
 
 // Run executes the mindmap variant.
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
-	docID := firstNonEmpty(inputs.DocID, deps.DatasetID)
+	docID := common.FirstNonEmpty(inputs.DocID, deps.DatasetID)
 	if docID == "" {
 		docID = "unknown"
 	}
-	llmID := firstNonEmpty(param.LLMID, inputs.LLMID)
+	llmID := common.FirstNonEmpty(param.LLMID, inputs.LLMID)
 	tenantID := deps.TenantID
 
 	if deps.Chat == nil {
@@ -138,7 +138,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	// Buffer every tree node in one slice; the component merges them into the
-	// upstream chunk stream (matching Python, which appends compiled units onto
+	// upstream chunk stream (matching , which appends compiled units onto
 	// the chunk list).
 	out := common.Outputs{
 		Products: products,
@@ -149,15 +149,17 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 
 // treeToProducts flattens the shaped mind-map tree into entity/relation Products
 // so mindmap participates in dataset-level merge exactly like graph (plan §1.2,
-// aligning with Python's dataset_structure_merger which merges
+// aligning with dataset_structure_merger which merges
 // knowledge_graph_kwd IN {entity,relation} rows for structure_mindmap too).
 //
 // Mapping:
 //   - each node (including the root) → an entity product (kind="entity",
 //     name = node id, type = "mind_map").
 //   - each parent→child edge → a relation product (kind="relation",
-//     from = parent id, to = child id, type = "related", matching Python's
-//     mindmap structure-graph projection).
+//
+// from = parent id, to = child id, type = "related", matching
+//
+//	mindmap structure-graph projection).
 //
 // The entity/relation discriminator is carried in Meta["kind"] so the consumer's
 // mergeStructureDataset buckets entities by (name,type) and relations by
@@ -228,7 +230,7 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 					Meta:     childMeta,
 				})
 			}
-			// Relation: parent → child edge (type = "related", Python default).
+			// Relation: parent → child edge (type = "related", default)
 			// A node may be repeated as the synthetic root when batch roots are
 			// merged; do not persist that self-loop.
 			if p.parent != child.ID {
@@ -268,7 +270,7 @@ func mindmapSourceChunkIDs(chunks []common.Chunk) []string {
 	seen := make(map[string]struct{}, len(chunks))
 	ids := make([]string, 0, len(chunks))
 	for i, chunk := range chunks {
-		if strings.TrimSpace(firstNonEmpty(chunk.Text, chunk.Content)) == "" {
+		if strings.TrimSpace(common.FirstNonEmpty(chunk.Text, chunk.Content)) == "" {
 			continue
 		}
 		id := strings.TrimSpace(chunk.ID)
@@ -425,20 +427,11 @@ func payloadJSON(payload map[string]any) string {
 func chunkTexts(chunks []common.Chunk) []string {
 	var out []string
 	for _, c := range chunks {
-		t := firstNonEmpty(c.Text, c.Content)
+		t := common.FirstNonEmpty(c.Text, c.Content)
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
 		out = append(out, t)
 	}
 	return out
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

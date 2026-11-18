@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -69,17 +70,23 @@ func NewSkillIndexerService() *SkillIndexerService {
 	}
 }
 
-// isElasticsearch checks if the engine is Elasticsearch
-func isElasticsearch(docEngine engine.DocEngine) bool {
-	return docEngine.GetType() == "elasticsearch"
+// usesTokenFields reports whether the engine expects explicit RAG-tokenized
+// xxx_tks fields alongside the stored original content.
+func usesTokenFields(docEngine engine.DocEngine) bool {
+	switch docEngine.GetType() {
+	case "elasticsearch", "opensearch":
+		return true
+	default:
+		return false
+	}
 }
 
 // IndexSkill indexes a single skill
 // Uses skill_id as doc_id for direct mapping, with version control for incremental updates
-// For ES: xxx fields store original content, xxx_tks fields store RAG-tokenized content (space-separated)
+// For ES/OpenSearch: xxx fields store original content, xxx_tks fields store RAG-tokenized content (space-separated)
 // For Infinity: only xxx fields with built-in rag-analyzer
-func (s *SkillIndexerService) IndexSkill(ctx context.Context, userID, spaceID string, skill SkillInfo, docEngine engine.DocEngine, embdID string) error {
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+func (s *SkillIndexerService) IndexSkill(ctx context.Context, spaceID string, skill SkillInfo, docEngine engine.DocEngine, embdID string) error {
+	tenantID, err := resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -121,10 +128,10 @@ func (s *SkillIndexerService) indexSkill(ctx context.Context, tenantID, spaceID 
 	if err != nil {
 		return fmt.Errorf("failed to get embedding dimension: %w", err)
 	}
-	vectorField := fmt.Sprintf("q_%d_vec", dimension)
+	vectorField := common.VectorColumnName(dimension)
 
 	// Determine engine type
-	isES := isElasticsearch(docEngine)
+	usesTokens := usesTokenFields(docEngine)
 
 	// Build base document
 	// Use skill.Version if available, otherwise use config.IndexVersion as fallback
@@ -154,9 +161,9 @@ func (s *SkillIndexerService) indexSkill(ctx context.Context, tenantID, spaceID 
 		doc[vectorField] = make([]float64, dimension)
 	}
 
-	// For ES: add tokenized fields for BM25 search
+	// For ES/OpenSearch: add tokenized fields for BM25 search
 	// For Infinity: fields have built-in analyzer, no need for xxx_tks
-	if isES {
+	if usesTokens {
 		nameTokens, _ := tokenizer.Tokenize(skill.Name)
 		tagsText := strings.Join(skill.Tags, " ")
 		tagsTokens, _ := tokenizer.Tokenize(tagsText)
@@ -209,8 +216,8 @@ func (s *SkillIndexerService) indexSkill(ctx context.Context, tenantID, spaceID 
 
 // BatchIndexSkills indexes multiple skills in batch
 // Optimized to use batch embedding API for better performance
-func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, userID, spaceID string, skills []SkillInfo, docEngine engine.DocEngine, embdID string) error {
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, spaceID string, skills []SkillInfo, docEngine engine.DocEngine, embdID string) error {
+	tenantID, err := resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -249,7 +256,7 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 		return fmt.Errorf("failed to get embedding dimension: %w", err)
 	}
 	common.Info(fmt.Sprintf("Using embedding dimension: %d", dimension))
-	vectorField := fmt.Sprintf("q_%d_vec", dimension)
+	vectorField := common.VectorColumnName(dimension)
 
 	// Generate embeddings in batch
 	common.Info(fmt.Sprintf("Generating embeddings for %d skills with embdID=%s", len(skills), embdID))
@@ -284,7 +291,7 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 			common.Info("Index already exists, skipping creation")
 		}
 	} else {
-		// For ES: just ensure index exists
+		// For ES/OpenSearch: just ensure index exists
 		if err := s.initializeIndex(ctx, tenantID, spaceID, docEngine, embdID); err != nil {
 			return fmt.Errorf("failed to ensure index exists: %w", err)
 		}
@@ -293,7 +300,7 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 	// Index all skills
 	now := time.Now()
 	timestamp := now.UnixMilli()
-	isES := isElasticsearch(docEngine)
+	usesTokens := usesTokenFields(docEngine)
 
 	var indexErrors []error
 	for i, skill := range skills {
@@ -338,8 +345,8 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 			}
 		}
 
-		// For ES: add tokenized fields for BM25 search
-		if isES {
+		// For ES/OpenSearch: add tokenized fields for BM25 search
+		if usesTokens {
 			nameTokens, _ := tokenizer.Tokenize(skill.Name)
 			tagsText := strings.Join(skill.Tags, " ")
 			tagsTokens, _ := tokenizer.Tokenize(tagsText)
@@ -374,8 +381,8 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 
 // DeleteSkillIndex deletes a skill's index by skill ID
 // Returns nil if the document doesn't exist (idempotent delete)
-func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, userID, spaceID, skillID string, docEngine engine.DocEngine) error {
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, spaceID, skillID string, docEngine engine.DocEngine) error {
+	tenantID, err := resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -409,8 +416,8 @@ func (s *SkillIndexerService) deleteSkillByName(ctx context.Context, tenantID, s
 
 // UpdateSkillVersion updates a skill's index when version changes
 // Deletes old version and indexes new version
-func (s *SkillIndexerService) UpdateSkillVersion(ctx context.Context, userID, spaceID string, skill SkillInfo, docEngine engine.DocEngine, embdID string) error {
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+func (s *SkillIndexerService) UpdateSkillVersion(ctx context.Context, spaceID string, skill SkillInfo, docEngine engine.DocEngine, embdID string) error {
+	tenantID, err := resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -432,8 +439,8 @@ func (s *SkillIndexerService) UpdateSkillVersion(ctx context.Context, userID, sp
 //  2. Traverse all skill folders under the space
 //  3. For each skill, get the latest version
 //  4. Reindex all skills
-func (s *SkillIndexerService) ReindexAll(ctx context.Context, userID, spaceID string, docEngine engine.DocEngine, embdID string) (map[string]interface{}, error) {
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+func (s *SkillIndexerService) ReindexAll(ctx context.Context, spaceID string, docEngine engine.DocEngine, embdID string) (map[string]interface{}, error) {
+	tenantID, err := resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationUpdate)
 	if err != nil {
 		return nil, err
 	}
@@ -865,8 +872,8 @@ func (s *SkillIndexerService) cleanupOldVersions(ctx context.Context, tenantID, 
 }
 
 // InitializeIndex initializes the skill search index for a tenant
-func (s *SkillIndexerService) InitializeIndex(ctx context.Context, userID, spaceID string, docEngine engine.DocEngine, embdID string) error {
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+func (s *SkillIndexerService) InitializeIndex(ctx context.Context, spaceID string, docEngine engine.DocEngine, embdID string) error {
+	tenantID, err := resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -890,7 +897,12 @@ func (s *SkillIndexerService) initializeIndex(ctx context.Context, tenantID, spa
 		return s.createIndex(ctx, tenantID, spaceID, docEngine, embdID)
 	}
 
-	common.Info("Skill search index already exists", zap.String("indexName", indexName))
+	common.Info("Skill search index already exists, ensuring vector mappings", zap.String("indexName", indexName))
+	if docEngine.GetType() != "infinity" {
+		if err := docEngine.CreateChunkStore(ctx, indexName, "skill", 0, "", ""); err != nil {
+			common.Warn("Failed to ensure skill index vector mappings", zap.String("indexName", indexName), zap.Error(err))
+		}
+	}
 	return nil
 }
 
@@ -941,8 +953,8 @@ func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tena
 }
 
 // EnsureIndex ensures the skill index exists for a tenant
-func (s *SkillIndexerService) EnsureIndex(ctx context.Context, userID, spaceID string, docEngine engine.DocEngine, embdID string) error {
-	return s.InitializeIndex(ctx, userID, spaceID, docEngine, embdID)
+func (s *SkillIndexerService) EnsureIndex(ctx context.Context, spaceID string, docEngine engine.DocEngine, embdID string) error {
+	return s.InitializeIndex(ctx, spaceID, docEngine, embdID)
 }
 
 // generateEmbedding generates embedding for text using the specified model
@@ -955,7 +967,7 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: tenantID}, embdID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
@@ -986,7 +998,7 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	}
 
 	common.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: tenantID}, embdID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
@@ -1021,7 +1033,7 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 		return 0, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: tenantID}, embdID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get embedding model: %w", err)
 	}

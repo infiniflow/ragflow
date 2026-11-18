@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// Package models — EinoChatModel thin wrapper (Phase 2 P0, plan §2.11.6 D1).
+// Package models — EinoChatModel thin wrapper.
 //
 // Bridges the existing RAGFlow provider-specific *ChatModel (OpenAI, Anthropic,
 // Gemini, …) to eino's model.BaseChatModel / model.ToolCallingChatModel
@@ -391,6 +391,7 @@ func (m *EinoChatModel) labelOf(idx int) string {
 }
 
 // generateOnce runs one Generate attempt against a single chain entry.
+// It captures normalized input immediately before the driver call when enabled.
 func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	if cm == nil || cm.ModelDriver == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil inner ModelDriver")
@@ -399,9 +400,9 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	if cm.ModelName == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
-	// ChatWithMessages does not take a context.Context today — Phase 0 kept
-	// the signature stable. We log a guard so a future context-aware
-	// signature can be slotted in without changing call sites.
+	// ChatWithMessages does not take a context.Context today; this guard
+	// lets a future context-aware signature be slotted in without changing
+	// call sites.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -430,7 +431,8 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	)
 	common.Debug("models: eino generate message skeleton",
 		zap.String("skeleton", describeInternalMessages(internal)))
-	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, internal, cm.APIConfig, chatCfg, nil)
+	captureModelInput(ctx, *cm.ModelName, internal)
+	resp, err := cm.ChatWithMessages(ctx, internal, chatCfg, nil)
 	if err != nil {
 		// The chat paths surface this to the user as `**ERROR**: <err>`
 		// (errorAnswerText in agentic-rag/agentic_rag_graph.go, chat_pipeline.go),
@@ -787,6 +789,7 @@ func containsToolResult(messages []Message) bool {
 // With a failover chain, a stream that fails BEFORE any delta was emitted
 // moves to the next model; once deltas have reached the client the call
 // cannot be replayed, so the error is surfaced as-is.
+// Opt-in input capture records each actual driver attempt, including failover.
 func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	if m == nil || len(m.chain) == 0 {
 		return nil, fmt.Errorf("models: EinoChatModel: empty model chain")
@@ -919,7 +922,8 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 			}
 			attemptCfg.ToolCallsResult = nil
 			attemptCfg.UsageResult = nil
-			err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, internalMessage, cm.APIConfig, attemptCfg, nil, sender)
+			captureModelInput(ctx, *cm.ModelName, internalMessage)
+			err := cm.ChatStreamlyWithSender(ctx, internalMessage, attemptCfg, nil, sender)
 			if err != nil {
 				// Same user-visible shape as generateOnce's error: lead with the
 				// model name and keep the provider's own sentence. Tagging it HERE

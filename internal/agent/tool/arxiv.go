@@ -19,16 +19,13 @@ package tool
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -48,6 +45,8 @@ const defaultArxivSortBy = "submittedDate"
 
 const arxivPromptMaxTokens = 200000
 
+const arxivMaxResponseBytes = 4 << 20
+
 var arxivDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+\-]+\)`)
 
 var arxivNewlinePattern = regexp.MustCompile(`\n+`)
@@ -55,9 +54,9 @@ var arxivNewlinePattern = regexp.MustCompile(`\n+`)
 // arxivParams carries the query and ArXiv search settings. Info exposes only
 // query to match Python's tool meta; top_n and sort_by come from node params.
 type arxivParams struct {
-	Query  string `json:"query"`
-	TopN   int    `json:"top_n"`
-	SortBy string `json:"sort_by"`
+	Query  string `json:"query" doc:"The search keywords to execute with arXiv. The keywords should be the most important words/terms(includes synonyms) from the original request." required:"true"`
+	TopN   int    `json:"top_n" schema:"-" component:"-"`
+	SortBy string `json:"sort_by" schema:"-" component:"-"`
 }
 
 // arxivResult is one entry in the model-facing result list.
@@ -142,30 +141,19 @@ func NewArxivToolWithParams(h *HTTPHelper, topN int, sortBy string) *ArxivTool {
 
 // Info returns the tool's metadata for the chat model.
 func (a *ArxivTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: arxivToolName,
-		Desc: arxivToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with arXiv. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(arxivToolName, arxivToolDescription, arxivParams{})
 }
 
 func (a *ArxivTool) ComponentSpec() ComponentSpec {
-	return ComponentSpec{
-		Inputs: map[string]string{"query": "Search query."},
-		Outputs: map[string]string{
-			"formalized_content": "Rendered arXiv references for downstream prompts.",
-			"json":               "arXiv paper list.",
-		},
-		InputForm: map[string]any{
-			"query": map[string]any{"name": "Query", "type": "line"},
-		},
+	spec := BuildComponentSpec(arxivParams{})
+	spec.Outputs = map[string]string{
+		"formalized_content": "Rendered arXiv references for downstream prompts.",
+		"json":               "arXiv paper list.",
 	}
+	spec.InputForm = map[string]any{
+		"query": map[string]any{"name": "Query", "type": "line"},
+	}
+	return spec
 }
 
 // buildArxivURL constructs the ArXiv /api/query URL.
@@ -180,7 +168,7 @@ func buildArxivURL(query string, topN int, sortBy string) string {
 	q.Set("search_query", "all:"+query)
 	q.Set("max_results", fmt.Sprintf("%d", topN))
 	q.Set("sortBy", sortBy)
-	return "http://export.arxiv.org/api/query?" + q.Encode()
+	return "https://export.arxiv.org/api/query?" + q.Encode()
 }
 
 // parseArxivAtom decodes the upstream Atom XML and returns the model-
@@ -281,10 +269,14 @@ func (a *ArxivTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 			fmt.Errorf("arxiv: upstream returned %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, arxivMaxResponseBytes+1))
 	if err != nil {
 		return arxivErrJSON(fmt.Errorf("arxiv: read body: %w", err)),
 			fmt.Errorf("arxiv: read body: %w", err)
+	}
+	if len(body) > arxivMaxResponseBytes {
+		return arxivErrJSON(fmt.Errorf("arxiv: response too large")),
+			fmt.Errorf("arxiv: response too large")
 	}
 
 	results, err := parseArxivAtom(body)
@@ -321,10 +313,9 @@ func buildArxivReferences(envelope map[string]any) ([]map[string]any, []map[stri
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(arxivHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(arxivHashInt(documentID, 500), 10)
 		title := arxivText(paper["title"])
 		resultURL := arxivText(paper["pdf_url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -369,12 +360,6 @@ func arxivText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func arxivHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateArxivRunes(value string, limit int) string {

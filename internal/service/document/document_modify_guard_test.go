@@ -30,19 +30,20 @@ import (
 // no task, COMPLETED, STOPPED, and FAILED may be edited.
 func TestValidateDocumentModifiable_TaskStatuses(t *testing.T) {
 	cases := []struct {
-		name       string
-		taskStatus *string
-		wantCode   common.ErrorCode
-		wantErr    bool
+		name            string
+		taskStatus      *string
+		wantCode        common.ErrorCode
+		wantErr         bool
+		wantStatusLabel string
 	}{
-		{"no task defaults to unstart", nil, common.CodeSuccess, false},
-		{"created rejected", sptr(common.CREATED), common.CodeDataError, true},
-		{"scheduled rejected", sptr(common.SCHEDULED), common.CodeDataError, true},
-		{"running rejected", sptr(common.RUNNING), common.CodeDataError, true},
-		{"stopping rejected", sptr(common.STOPPING), common.CodeDataError, true},
-		{"completed editable", sptr(common.COMPLETED), common.CodeSuccess, false},
-		{"stopped editable", sptr(common.STOPPED), common.CodeSuccess, false},
-		{"failed editable", sptr(common.FAILED), common.CodeSuccess, false},
+		{"no task defaults to unstart", nil, common.CodeSuccess, false, ""},
+		{"created rejected", sptr(common.CREATED), common.CodeDataError, true, "Queued"},
+		{"scheduled rejected", sptr(common.SCHEDULED), common.CodeDataError, true, "Queued"},
+		{"running rejected", sptr(common.RUNNING), common.CodeDataError, true, "Parsing"},
+		{"stopping rejected", sptr(common.STOPPING), common.CodeDataError, true, "Parsing"},
+		{"completed editable", sptr(common.COMPLETED), common.CodeSuccess, false, ""},
+		{"stopped editable", sptr(common.STOPPED), common.CodeSuccess, false, ""},
+		{"failed editable", sptr(common.FAILED), common.CodeSuccess, false, ""},
 	}
 
 	for _, tc := range cases {
@@ -55,7 +56,7 @@ func TestValidateDocumentModifiable_TaskStatuses(t *testing.T) {
 				insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", *tc.taskStatus)
 			}
 			svc := testDocumentService(t)
-			ctx := t.Context()
+			ctx := documentTestContext(t.Context())
 			doc := &entity.Document{ID: "doc-1"}
 			code, err := svc.validateDocumentModifiable(ctx, doc)
 			if tc.wantErr {
@@ -67,6 +68,9 @@ func TestValidateDocumentModifiable_TaskStatuses(t *testing.T) {
 				}
 				if !strings.Contains(err.Error(), "cannot be modified") {
 					t.Fatalf("err = %q missing sentinel phrase", err.Error())
+				}
+				if tc.wantStatusLabel != "" && !strings.Contains(err.Error(), `currently "`+tc.wantStatusLabel+`"`) {
+					t.Fatalf("err = %q missing display status %q", err.Error(), tc.wantStatusLabel)
 				}
 				return
 			}
@@ -91,8 +95,8 @@ func updateDatasetDocumentRejected(t *testing.T, status string, req *UpdateDatas
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", req, present)
+	ctx := documentTestContext(t.Context())
+	_, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", req, present)
 	if err == nil {
 		t.Fatalf("expected task-state rejection, got nil error (code=%v)", code)
 	}
@@ -117,8 +121,8 @@ func updateDatasetDocumentAllowed(t *testing.T, status string, req *UpdateDatase
 	}
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", req, present)
+	ctx := documentTestContext(t.Context())
+	_, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", req, present)
 	if err != nil && strings.Contains(err.Error(), "cannot be modified") {
 		t.Fatalf("editable doc was wrongly rejected: %v", err)
 	}
@@ -200,8 +204,8 @@ func TestUpdateDatasetDocumentRunningEmptyPresentNotRejected(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1",
+	ctx := documentTestContext(t.Context())
+	_, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{}, map[string]bool{})
 	if err != nil {
 		t.Fatalf("empty PATCH on RUNNING doc should not be rejected: code=%v err=%v", code, err)
@@ -230,8 +234,8 @@ func TestUpdateDatasetDocumentAllowsDoneRename(t *testing.T) {
 
 	name := "renamed.txt"
 	svc := testDocumentService(t)
-	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1",
+	ctx := documentTestContext(t.Context())
+	_, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{Name: &name},
 		map[string]bool{"name": true})
 	if err != nil && strings.Contains(err.Error(), "cannot be modified") {

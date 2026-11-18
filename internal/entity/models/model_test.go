@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"ragflow/internal/tokenizer"
@@ -259,7 +260,7 @@ func TestBedrockConfigPreservesEmbeddingMaxTokens(t *testing.T) {
 }
 
 func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
-	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocr.json", "monkeyocrv2.json", "paddleocr_local.json")
+	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocr.json", "monkeyocrv2.json", "paddleocr_local.json", "unlimited_ocr.json")
 	defer restore()
 
 	err := InitProviderManager(dir)
@@ -268,6 +269,20 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 
 	pm := GetProviderManager()
+
+	unlimitedOCR := pm.FindProvider("Unlimited-OCR-2")
+	if unlimitedOCR == nil {
+		t.Fatal("Unlimited-OCR-2 provider not found")
+	}
+	if _, ok := unlimitedOCR.ModelDriver.(*UnlimitedOCRModel); !ok {
+		t.Fatalf("Unlimited-OCR-2 ModelDriver=%T, want *models.UnlimitedOCRModel", unlimitedOCR.ModelDriver)
+	}
+	if unlimitedOCR.ModelDriver.Name() != "unlimited_ocr" {
+		t.Fatalf("Unlimited-OCR-2 Name()=%q, want unlimited_ocr", unlimitedOCR.ModelDriver.Name())
+	}
+	if unlimitedOCR.URLSuffix.DocumentParse != "file_parse" {
+		t.Errorf("Unlimited-OCR-2 doc_parse suffix=%q", unlimitedOCR.URLSuffix.DocumentParse)
+	}
 
 	minerU := pm.FindProvider("MinerU")
 	if minerU == nil {
@@ -962,15 +977,20 @@ func TestChatModelWithDefaults(t *testing.T) {
 	if config.ModelClass == nil || *config.ModelClass != "chat" {
 		t.Fatalf("ModelClass = %v, want chat", config.ModelClass)
 	}
-	if config.Thinking == nil || !*config.Thinking {
-		t.Fatalf("Thinking = %v, want true", config.Thinking)
+	if config.Thinking == nil || *config.Thinking {
+		t.Fatalf("Thinking = %v, want false even when the model defaults to thinking", config.Thinking)
 	}
 
 	modelClass := "custom"
-	thinking := false
+	thinking := true
 	config = model.withDefaults(&ChatConfig{ModelClass: &modelClass, Thinking: &thinking})
 	if config.ModelClass != &modelClass || config.Thinking != &thinking {
 		t.Fatal("explicit chat config values should not be overwritten by model defaults")
+	}
+
+	config = (&ChatModel{}).withDefaults(nil)
+	if config.Thinking == nil || *config.Thinking {
+		t.Fatalf("Thinking without metadata = %v, want false", config.Thinking)
 	}
 }
 
@@ -1013,4 +1033,45 @@ func sortedKeys(set map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// TestProviderManagerPublishIsVisibleToConcurrentReaders pins the publication
+// contract: InitProviderManager hands the catalog to an atomic pointer, so a
+// reader running while a publish is in flight observes a complete catalog
+// instead of racing on the field. Run with -race to catch a regression back to
+// a plain package variable.
+func TestProviderManagerPublishIsVisibleToConcurrentReaders(t *testing.T) {
+	saved := GetProviderManager()
+	published := &ProviderManager{Providers: []Provider{{Name: "atomic-fixture"}}}
+	setProviderManager(published)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				setProviderManager(published)
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(stop)
+		wg.Wait()
+		setProviderManager(saved)
+	})
+
+	for i := 0; i < 1000; i++ {
+		got := GetProviderManager()
+		if got == nil {
+			t.Fatal("GetProviderManager returned nil while a catalog was published")
+		}
+		if len(got.Providers) != 1 || got.Providers[0].Name != "atomic-fixture" {
+			t.Fatalf("reader observed a catalog that was never published: %+v", got)
+		}
+	}
 }

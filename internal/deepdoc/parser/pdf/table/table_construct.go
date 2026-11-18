@@ -10,16 +10,10 @@ import (
 	"ragflow/internal/parser/tableutil"
 )
 
-// constructTable produces an HTML table string from TSR cells and text boxes.
-// Both cells and boxes must be in the same coordinate space (crop pixel space).
-// Fills item.Rows so downstream consumers don't need to re-group cells.
-//
-// Python equivalent: TableStructureRecognizer.construct_table()
-// stripCaptionFromCells clears caption-like text from TSR cells.
-// This catches captions that fillCellTextFromBoxes missed (e.g. text
-// that doesn't match isCaptionBox patterns like "公司差旅费管理办法").
-// Only clears cells whose text matches caption patterns or that contain
-// only number+separator text (pure "1. ", "一、" etc. without data).
+// StripCaptionFromCells clears caption-like text from TSR cells. It catches
+// captions that fillCellTextFromBoxes missed (e.g. text that doesn't match
+// isCaptionBox patterns), clearing only cells whose text matches caption
+// patterns or contains only number+separator text.
 func StripCaptionFromCells(cells []pdf.TSRCell) {
 	for i := range cells {
 		t := strings.TrimSpace(cells[i].Text)
@@ -37,7 +31,88 @@ func StripCaptionFromCells(cells []pdf.TSRCell) {
 	// This pass is intentionally conservative — only clears clearly-non-data text.
 }
 
+// gridToStreamCells flattens a cross-page merged, Y-shifted, X-aligned
+// grid back into the row-major cell stream that the EE V/H renderer consumes,
+// dropping fully-empty phantom / edge columns first. Used only by the
+// RenderVH dispatch below (never by the OSS constructTableCore path).
+func gridToStreamCells(grid [][]pdf.TSRCell) []pdf.TSRCell {
+	if len(grid) == 0 {
+		return nil
+	}
+	grid = dropEmptyColumns(grid)
+	stream := make([]pdf.TSRCell, 0, len(grid)*len(grid[0]))
+	for _, row := range grid {
+		for _, c := range row {
+			if c.X1 <= c.X0 && c.Y1 <= c.Y0 {
+				continue
+			}
+			stream = append(stream, c)
+		}
+	}
+	return stream
+}
+
+// dropEmptyColumns removes columns with no text in any row (phantom/edge
+// bands the EE V/H renderer must not emit). See gridToStreamCells.
+func dropEmptyColumns(grid [][]pdf.TSRCell) [][]pdf.TSRCell {
+	if len(grid) == 0 {
+		return grid
+	}
+	nCols := len(grid[0])
+	keep := make([]bool, nCols)
+	for j := 0; j < nCols; j++ {
+		keep[j] = !columnIsEmpty(grid, j)
+	}
+	out := make([][]pdf.TSRCell, len(grid))
+	for i, row := range grid {
+		nr := make([]pdf.TSRCell, 0, nCols)
+		for j, c := range row {
+			if j < len(keep) && keep[j] {
+				nr = append(nr, c)
+			}
+		}
+		out[i] = nr
+	}
+	return out
+}
+
+// columnIsEmpty reports whether column j has no text in any row.
+func columnIsEmpty(grid [][]pdf.TSRCell, j int) bool {
+	for _, row := range grid {
+		if j < len(row) && strings.TrimSpace(row[j].Text) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// ConstructTable renders a table to HTML. The dispatch to the EE V/H
+// renderer (when item.RenderVH is set) is added by the enterprise build;
+// the OSS build always uses constructTableCore. All branches inside the
+// RenderVH block are EE-only: no OSS-built TableItem sets RenderVH.
 func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, item *pdf.TableItem) string {
+	if item != nil && item.RenderVH {
+		if item.GridUnified {
+			return ConstructTableVH(gridToStreamCells(item.Grid), nil, caption)
+		}
+		if len(item.VHPageSpans) > 0 {
+			return ConstructTableVHPaged(item.Cells, boxes, item.VHPageSpans, caption)
+		}
+		cropBoxes := make([]pdf.TextBox, len(boxes))
+		for i := range boxes {
+			cropBoxes[i] = BoxToCropSpace(boxes[i], item.Scale, item.CropOffX, item.CropOffY)
+		}
+		return ConstructTableVH(item.Cells, cropBoxes, caption)
+	}
+	return constructTableCore(cells, boxes, caption, item)
+}
+
+// constructTableCore produces an HTML table string from TSR cells and text
+// boxes. Both cells and boxes must be in the same coordinate space (crop pixel
+// space). Fills item.Rows so downstream consumers don't need to re-group cells.
+//
+// Python equivalent: TableStructureRecognizer.construct_table()
+func constructTableCore(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, item *pdf.TableItem) string {
 	// Strip caption-like text from cells (defense-in-depth: fillCellTextFromBoxes
 	// may include caption text that doesn't match isCaptionBox patterns).
 	StripCaptionFromCells(cells)
@@ -53,25 +128,10 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		rows = GroupTSRCellsToRows(cells)
 	}
 	if len(rows) > 0 && HasText(rows) {
-		// Clean up orphan columns then orphan rows (Python order: columns at
-		// construct_table:224-277, then rows at :279-333). Both passes mutate
-		// the same grid and may drop rows/columns, so item.Grid and item.Rows
-		// must be re-derived AFTER them (the old code set item.Rows before
-		// column cleanup, leaving it stale; item.Grid also went stale because
-		// CleanupOrphanRows returns a re-sliced header).
+		// Cleanup may drop rows/columns, so recompute item.Grid and item.Rows
+		// after both passes.
 		rows = CleanupOrphanColumns(rows)
-		// Drop all-empty rows. Python's construct_table groups boxes by their
-		// R annotation (tbl[i] is the boxes for row i; a TSR row with no
-		// overlapping box contributes no row). Its HTML emitter also skips
-		// rows whose rendered HTML stays at "<tr>" (no cell wrote anything).
-		// Go's grid is a TSR-row cross-product, so an extra "table row" that
-		// the model emits alongside a "table projected row header" (or any
-		// other TSR component with no OCR/text overlap) leaks through as a
-		// 5-cell row of empty strings, inflating item.Rows and the HTML. See
-		// 13_crosspage_table.pdf page 2: y0=885 "table row" sits on top of
-		// a "table projected row header" with no box overlap and survives
-		// every TSR cleanup pass. Drop it here so rows/Rows/HTML all match
-		// Python.
+		// TSR can emit an empty row component; drop it before orphan cleanup.
 		rows = DropAllEmptyRows(rows)
 		rows = CleanupOrphanRows(rows)
 		hdrs := HeaderSetWithBlockType(rows, boxes)
@@ -85,21 +145,10 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		}
 		return tableutil.RenderTableHTML(ToTableData(rows, caption, hdrs, spanInfo, covered))
 	}
-	// Fallback: boxes with R/C annotations.
-	if len(boxes) > 0 && BoxesHaveAnnotations(boxes) {
+	// Fallback: rebuild from boxes. GroupBoxesByRC uses R/C when present and
+	// falls back to Y/X grouping otherwise.
+	if len(boxes) > 0 {
 		rows := GroupBoxesByRC(boxes)
-		if HasText(rows) {
-			if item != nil {
-				item.Rows = RowsToStrings(rows)
-			}
-			spanInfo, covered := CalSpans(rows)
-			return tableutil.RenderTableHTML(ToTableData(rows, caption, BoxHeaderSet(rows, boxes), spanInfo, covered))
-		}
-	}
-	// Test-only: Y/X coordinate grouping (matching Python construct_table).
-	// Used by table_parity_test.go to verify pipeline with Python boxes.
-	if len(boxes) > 0 && !BoxesHaveAnnotations(boxes) {
-		rows := GroupBoxesByYX(boxes)
 		if HasText(rows) {
 			if item != nil {
 				item.Rows = RowsToStrings(rows)
@@ -183,7 +232,8 @@ func isDataSourceBox(text string) bool {
 // handles test TableItems or bare engines without DLA.
 func tableRegionBox(tbl *pdf.TableItem, ref *pdf.TextBox, html string) pdf.TextBox {
 	pg := 0
-	if len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0 {
+	hasPageNumber := len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0
+	if hasPageNumber {
 		pg = tbl.Positions[0].PageNumbers[0]
 	}
 	// A table merged across consecutive pages (MergeTablesAcrossPages appends
@@ -197,27 +247,31 @@ func tableRegionBox(tbl *pdf.TableItem, ref *pdf.TextBox, html string) pdf.TextB
 	// Use DLA region boundaries when set.
 	if tbl.RegionLeft != 0 || tbl.RegionRight != 0 || tbl.RegionTop != 0 || tbl.RegionBottom != 0 {
 		return pdf.TextBox{
-			X0:         tbl.RegionLeft,
-			X1:         tbl.RegionRight,
-			Top:        tbl.RegionTop,
-			Bottom:     tbl.RegionBottom,
-			Text:       html,
-			PageNumber: pg,
-			Pages:      pages,
-			LayoutType: pdf.LayoutTypeTable,
+			X0:            tbl.RegionLeft,
+			X1:            tbl.RegionRight,
+			Top:           tbl.RegionTop,
+			Bottom:        tbl.RegionBottom,
+			Text:          html,
+			PageNumber:    pg,
+			HasPageNumber: hasPageNumber,
+			Pages:         pages,
+			Positions:     tableRegionPositions(*tbl),
+			LayoutType:    pdf.LayoutTypeTable,
 		}
 	}
 	// Fallback: use anchor box coordinates.
 	x0, x1, top, bot := ref.X0, ref.X1, ref.Top, ref.Bottom
 	return pdf.TextBox{
-		X0:         x0,
-		X1:         x1,
-		Top:        top,
-		Bottom:     bot,
-		Text:       html,
-		PageNumber: pg,
-		Pages:      pages,
-		LayoutType: pdf.LayoutTypeTable,
+		X0:            x0,
+		X1:            x1,
+		Top:           top,
+		Bottom:        bot,
+		Text:          html,
+		PageNumber:    pg,
+		HasPageNumber: hasPageNumber,
+		Pages:         pages,
+		Positions:     tableRegionPositions(*tbl),
+		LayoutType:    pdf.LayoutTypeTable,
 	}
 }
 

@@ -2,11 +2,14 @@
 sidebar_position: 4
 sidebar_label: Configure Code Execution Sandbox
 title: Configure Code Execution Sandbox
+sidebar_custom_props: {
+  categoryIcon: LucideCodesandbox
+}
 ---
 
 # Configure Code Execution Sandbox
 
-Administrators configure the active code execution provider in **Admin > Sandbox Settings**. For provider selection, deployment, security, and troubleshooting guidance, start with [Code Execution Sandbox](../../sandbox/overview.md).
+Administrators configure the active code execution provider in **Admin > Sandbox**. For provider selection, deployment, security, and troubleshooting guidance, start with [Code Execution Sandbox](../../sandbox/overview.md).
 
 :::caution System-wide setting
 Saving a provider makes it active for subsequent Code component runs across this RAGFlow deployment. Test the configuration before replacing a provider that is already in use.
@@ -14,11 +17,9 @@ Saving a provider makes it active for subsequent Code component runs across this
 
 ## Select a provider
 
-![Select a sandbox provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_sandbox_provider.jpg)
-
 The page supports:
 
-| Provider | Detailed instructions |
+| Provider | Usage or detailed instructions |
 | --- | --- |
 | **Self-Managed** | [Quickstart with Self-Managed](../../sandbox/quickstart_with_self_managed.md) |
 | **SSH** | [Configure SSH](../../sandbox/configure_ssh_and_cloud_providers.md#configure-ssh) |
@@ -26,6 +27,10 @@ The page supports:
 | **E2B** | [Configure E2B](../../sandbox/configure_ssh_and_cloud_providers.md#configure-e2b) |
 | **Tenki** | [Configure Tenki](../../sandbox/configure_ssh_and_cloud_providers.md#configure-tenki) |
 | **UCloud Agent Sandbox** | [Configure UCloud Agent Sandbox](../../sandbox/configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox) |
+| **kosa8** | [Configure kosa8](../../sandbox/configure_ssh_and_cloud_providers.md#configure-kosa8) |
+| **Local** | Execute code directly on the current host process. |
+
+![Sandbox provider selection including Local](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_sandbox_provider.jpg)
 
 ## Test and save the configuration
 

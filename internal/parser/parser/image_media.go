@@ -27,11 +27,6 @@ import (
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 )
 
-const (
-	// MaxImagePayloadBytes bounds compressed image data accepted by media paths.
-	MaxImagePayloadBytes = 32 << 20
-)
-
 // EnvImageRasterMaxBytes names the environment variable that sets the
 // decoded-raster byte ceiling for image parsing (media dispatch and inline
 // vision images). It mirrors Python's picture.py, which imposes no image size

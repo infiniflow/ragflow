@@ -35,8 +35,8 @@ func CheckCanvasDependencies(ctx context.Context, db *gorm.DB, kind permission.R
 	if err != nil || state == nil {
 		return nil
 	}
-	canvasID, _ := state.Sys["canvas_id"].(string)
-	userID, _ := state.Sys["user_id"].(string)
+	canvasID, _ := state.GetSysString("canvas_id")
+	userID, _ := state.GetSysString("user_id")
 	canvasID = strings.TrimSpace(canvasID)
 	userID = strings.TrimSpace(userID)
 	if canvasID == "" {
@@ -44,6 +44,18 @@ func CheckCanvasDependencies(ctx context.Context, db *gorm.DB, kind permission.R
 	}
 	if userID == "" {
 		return permission.ErrUnauthenticated
+	}
+	tenantID := canvasTenantID(ctx)
+	contextUserID := permission.UserIDFromContext(ctx)
+	contextTenantID := permission.TenantIDFromContext(ctx)
+	if contextUserID != "" && contextUserID != userID {
+		return permission.ErrIdentityMismatch
+	}
+	if contextTenantID != "" && tenantID != "" && contextTenantID != tenantID {
+		return permission.ErrIdentityMismatch
+	}
+	if contextUserID == "" || contextTenantID == "" {
+		ctx = permission.WithIdentity(ctx, userID, tenantID)
 	}
 
 	checker := permission.NewDatabaseChecker(db)
@@ -59,7 +71,7 @@ func CheckCanvasDependencies(ctx context.Context, db *gorm.DB, kind permission.R
 		}
 		seen[id] = struct{}{}
 		dependency := permission.ResourceRef{Kind: kind, ID: id}
-		if err := checker.CheckDependency(ctx, permission.Subject{UserID: userID}, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
+		if err := checker.CheckDependency(ctx, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
 			return fmt.Errorf("%s %q: %w", kind, id, err)
 		}
 	}
@@ -73,10 +85,10 @@ func canvasTenantID(ctx context.Context) string {
 	if err != nil || state == nil {
 		return ""
 	}
-	if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+	if tenantID, _ := state.GetSysString("tenant_id"); tenantID != "" {
 		return tenantID
 	}
-	userID, _ := state.Sys["user_id"].(string)
+	userID, _ := state.GetSysString("user_id")
 	return userID
 }
 
@@ -96,7 +108,7 @@ func canvasDatasetIDs(ctx context.Context, explicit []string) []string {
 	if err != nil || state == nil {
 		return nil
 	}
-	if id, _ := state.Sys["dataset_id"].(string); id != "" {
+	if id, _ := state.GetSysString("dataset_id"); id != "" {
 		return []string{id}
 	}
 	return nil

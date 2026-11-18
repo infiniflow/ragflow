@@ -20,7 +20,7 @@ export interface ValidationError {
 
 export interface ValidationResult {
   valid: boolean;
-  errors?: ValidationError[];
+  errors: ValidationError[];
 }
 
 /**

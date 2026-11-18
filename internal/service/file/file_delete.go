@@ -16,7 +16,7 @@ import (
 
 // DeleteFiles deletes files and folders by ID after authorizing every entry in
 // each selected folder tree.
-func (s *FileService) DeleteFiles(ctx context.Context, userID string, fileIDs []string) error {
+func (s *FileService) DeleteFiles(ctx context.Context, fileIDs []string) error {
 	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, fileIDs)
 	if err != nil {
 		return err
@@ -29,15 +29,15 @@ func (s *FileService) DeleteFiles(ctx context.Context, userID string, fileIDs []
 	for _, fileID := range fileIDs {
 		file, ok := filesByID[fileID]
 		if !ok {
-			return errors.New("File or Folder not found!")
+			return errors.New("file or Folder not found")
 		}
 		if file.TenantID == "" {
-			return errors.New("Tenant not found!")
+			return errors.New("tenant not found")
 		}
 		if file.ParentID == file.ID {
-			return errors.New("Root folder cannot be deleted.")
+			return errors.New("root folder cannot be deleted")
 		}
-		if err := s.checkFileTreeAccess(ctx, userID, file, permission.OperationDelete); err != nil {
+		if err = s.checkFileTreeAccess(ctx, file, permission.OperationDelete); err != nil {
 			return err
 		}
 	}
@@ -48,11 +48,11 @@ func (s *FileService) DeleteFiles(ctx context.Context, userID string, fileIDs []
 			continue
 		}
 		if file.Type == FileTypeFolder {
-			if err := s.deleteFolderRecursive(ctx, file); err != nil {
-				return fmt.Errorf("Failed to delete folder: %w", err)
+			if err = s.deleteFolderRecursive(ctx, file); err != nil {
+				return fmt.Errorf("failed to delete folder: %w", err)
 			}
-		} else if err := s.deleteSingleFile(ctx, file); err != nil {
-			return fmt.Errorf("Failed to delete file: %w", err)
+		} else if err = s.deleteSingleFile(ctx, file); err != nil {
+			return fmt.Errorf("failed to delete file: %w", err)
 		}
 	}
 	return nil

@@ -19,13 +19,10 @@ package elasticsearch
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -100,7 +97,7 @@ func TestRunSQL_NoFilterAdded(t *testing.T) {
 	e := newTestEngine(t, srv.URL)
 	ctx := t.Context()
 
-	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	rows, err := e.RunSQL(ctx, "SELECT doc_id FROM ragflow_t1", "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -135,7 +132,7 @@ func TestRunSQL_WhitespaceNormalizedAndPercentStripped(t *testing.T) {
 
 	// Input SQL has multiple backticks/spaces and trailing % characters.
 	in := "SELECT   doc_id  FROM  `ragflow_t1`  WHERE  count  >  0  %"
-	_, err := e.RunSQL(ctx, "ragflow_t1", in, nil, "json")
+	_, err := e.RunSQL(ctx, in, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -198,7 +195,7 @@ func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		start := time.Now()
-		_, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json")
+		_, err := e.RunSQL(ctx, "SELECT 1", "json")
 		done <- result{elapsed: time.Since(start), err: err}
 	}()
 
@@ -255,7 +252,7 @@ func TestRunSQL_RetryOnTimeoutThenSucceed(t *testing.T) {
 
 	e := newTestEngine(t, srv.URL)
 	ctx := t.Context()
-	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json")
+	rows, err := e.RunSQL(ctx, "SELECT 1", "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -290,7 +287,7 @@ func TestRunSQL_NonTimeoutErrorSurfacesImmediately(t *testing.T) {
 
 	e := newTestEngine(t, srv.URL)
 	ctx := t.Context()
-	_, err := e.RunSQL(ctx, "ragflow_t1", "SELECT bad", nil, "json")
+	_, err := e.RunSQL(ctx, "SELECT bad", "json")
 	if err == nil {
 		t.Fatalf("RunSQL: got nil error, want error")
 	}
@@ -316,7 +313,7 @@ func TestRunSQL_RequestBodyHasFetchSizeAndFormat(t *testing.T) {
 	e := newTestEngine(t, srv.URL)
 
 	ctx := t.Context()
-	if _, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
+	if _, err := e.RunSQL(ctx, "SELECT 1", "json"); err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
 	cap.mu.Lock()
@@ -345,7 +342,7 @@ func TestRunSQL_EmptyRowsReturnsNilNil(t *testing.T) {
 	e := newTestEngine(t, srv.URL)
 
 	ctx := t.Context()
-	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	rows, err := e.RunSQL(ctx, "SELECT doc_id FROM ragflow_t1", "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -365,7 +362,7 @@ func TestRunSQL_PostsToSQLPath(t *testing.T) {
 	e := newTestEngine(t, srv.URL)
 
 	ctx := t.Context()
-	if _, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
+	if _, err := e.RunSQL(ctx, "SELECT 1", "json"); err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
 	cap.mu.Lock()
@@ -383,145 +380,4 @@ func TestRunSQL_PostsToSQLPath(t *testing.T) {
 func TestMain(m *testing.M) {
 	tokenizer.SetEngineType("infinity")
 	m.Run()
-}
-
-func TestPreprocess_WhitespaceAndBackticks(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"a  b", "a b"},
-		{"a   b   c", "a b c"},
-		{"a`b`c", "a b c"},
-		{"a `` b", "a b"},
-		{"  leading and trailing  ", " leading and trailing "},
-	}
-	for _, c := range cases {
-		if got := Preprocess(c.in); got != c.want {
-			t.Errorf("Preprocess(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestPreprocess_StripsPercent(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"count > 0 %", "count > 0 "},
-		{"100% match", "100 match"},
-		{"%%%", ""},
-	}
-	for _, c := range cases {
-		if got := Preprocess(c.in); got != c.want {
-			t.Errorf("Preprocess(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestPreprocess_LktksRewrite(t *testing.T) {
-	cases := []struct {
-		name   string
-		in     string
-		field  string
-		expect string
-	}{
-		{
-			"like with single-token value (ltks suffix)",
-			"select content_ltks like 'weather'",
-			"content_ltks",
-			"MATCH(content_ltks,",
-		},
-		{
-			"= with multi-word value (ltks suffix)",
-			"select content_ltks = 'final report'",
-			"content_ltks",
-			"MATCH(content_ltks,",
-		},
-		{
-			"tks (no l) suffix",
-			"select title_tks = 'hello'",
-			"title_tks",
-			"MATCH(title_tks,",
-		},
-		{
-			"leading-space anchor: no leading space means no match (mirrors Python regex)",
-			"content_ltks like 'weather'",
-			"content_ltks",
-			"content_ltks like 'weather'",
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := Preprocess(c.in)
-			isAnchorTest := c.expect == c.in
-			if isAnchorTest {
-				if got != c.in {
-					t.Errorf("Preprocess(%q) = %q, want unchanged (leading-space anchor should prevent match)", c.in, got)
-				}
-				return
-			}
-			if strings.Contains(got, c.field+" ") {
-				pattern := regexp.MustCompile(c.field + `( like | ?= ?)`)
-				if pattern.MatchString(got) {
-					t.Errorf("Preprocess(%q) = %q, still contains the original `<field> like/=` pattern", c.in, got)
-				}
-			}
-			if !strings.Contains(got, c.expect) {
-				t.Errorf("Preprocess(%q) = %q, want substring %q", c.in, got, c.expect)
-			}
-			if !strings.Contains(got, "minimum_should_match=30") {
-				t.Errorf("Preprocess(%q) = %q, want substring minimum_should_match=30", c.in, got)
-			}
-		})
-	}
-}
-
-func TestPreprocess_NoMatchLeavesSQLAlone(t *testing.T) {
-	in := "SELECT doc_id FROM ragflow_t1"
-	got := Preprocess(in)
-	if got != in {
-		t.Errorf("Preprocess(%q) = %q, want unchanged", in, got)
-	}
-}
-
-// fakeNetTimeoutErr implements net.Error with Timeout()==true.
-type fakeNetTimeoutErr struct{}
-
-func (fakeNetTimeoutErr) Error() string   { return "i/o timeout" }
-func (fakeNetTimeoutErr) Timeout() bool   { return true }
-func (fakeNetTimeoutErr) Temporary() bool { return true }
-
-func TestIsTimeoutError(t *testing.T) {
-	cases := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"nil error", nil, false},
-		{"context.DeadlineExceeded", context.DeadlineExceeded, true},
-		{"wrapped context.DeadlineExceeded", fmt.Errorf("wrap: %w", context.DeadlineExceeded), true},
-		{"net.Error.Timeout()==true", fakeNetTimeoutErr{}, true},
-		{"wrapped net.Error.Timeout", fmt.Errorf("wrap: %w", fakeNetTimeoutErr{}), true},
-		{"plain string 'i/o timeout'", errors.New("read tcp: i/o timeout"), true},
-		{"plain string 'deadline exceeded'", errors.New("context deadline exceeded"), true},
-		{"plain string 'connection timeout'", errors.New("connection timeout while reading"), true},
-		{"unrelated error", errors.New("parse: invalid character"), false},
-		{"EOF is not a timeout", errors.New("EOF"), false},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := isTimeoutError(c.err); got != c.want {
-				t.Errorf("isTimeoutError(%v) = %v, want %v", c.err, got, c.want)
-			}
-		})
-	}
-}
-
-func TestIsTimeoutError_NonTimeoutNetError(t *testing.T) {
-	e := &net.OpError{
-		Op:  "dial",
-		Err: errors.New("connection refused"),
-	}
-	if isTimeoutError(e) {
-		t.Errorf("isTimeoutError(connection-refused) = true, want false")
-	}
 }

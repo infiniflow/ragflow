@@ -221,7 +221,7 @@ func TestTCADPItemsKeepPageIdentityThroughNormalization(t *testing.T) {
 		if len(items) == 0 {
 			t.Fatalf("tcadpAnyToItems(%v) returned no items", raw)
 		}
-		result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems(items)})
+		result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems(items)})
 		if result.Err != nil {
 			t.Fatal(result.Err)
 		}

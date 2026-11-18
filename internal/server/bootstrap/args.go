@@ -21,7 +21,7 @@ package bootstrap
 // runners and the API server wiring can be moved into their own packages and
 // still receive the parsed arguments.
 type ServerArgs struct {
-	Mode          *string // admin | api | ingestor | syncer | deepdoc | migrate
+	Mode          *string // admin | api | ingestor | syncer | chatter | deepdoc | migrate
 	HelpFlag      bool
 	VersionFlag   bool
 	LogLevel      *string
@@ -33,18 +33,23 @@ type ServerArgs struct {
 	Name          *string // server name
 	EnablePProf   bool    // enable pprof
 
+	DisableChatChannels bool // API leaves channel ownership to a standalone chatter
+
 	// DeepdocInferenceConcurrency, when set, overrides the DeepDoc inference
 	// concurrency from env/config. nil means "unspecified".
 	DeepdocInferenceConcurrency *int
-	// IngestorMaxConcurrentWorkers, when set, overrides the ingestor worker
+	// IngestorConcurrentWorkers, when set, overrides the ingestor worker
 	// count (NATS consumer count K) from env/config. nil means "unspecified".
-	IngestorMaxConcurrentWorkers *int
+	IngestorConcurrentWorkers *int
 	// IngestorPageConcurrency, when set, overrides the per-document page
 	// concurrency (N) from env/config. nil means "unspecified".
 	IngestorPageConcurrency *int
 	// DeepdocInferenceCPUCores, when set, overrides the DeepDoc inference CPU-core
 	// budget from env/config. nil means "unspecified" (0 means "all cores").
 	DeepdocInferenceCPUCores *int
+	// IngestorTier, when set, restricts which ingestion lanes the ingestor
+	// consumes. nil means "unspecified" (default: the lowest-priority lane).
+	IngestorTier *string
 }
 
 // SelectedLogLevel resolves the effective log level: an explicit --log-level

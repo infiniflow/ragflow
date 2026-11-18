@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,98 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/utility"
 )
+
+const (
+	MinMinerURequestTimeout = 1 * time.Second
+	MaxMinerURequestTimeout = 24 * time.Hour
+)
+
+// ClampMinerUTimeout clamps duration into a safe operational window [1s, 24h],
+// preventing tiny-duration/zero deadline panics or numeric overflow.
+func ClampMinerUTimeout(d time.Duration) time.Duration {
+	if d <= 0 {
+		return minerUPollTimeout
+	}
+	if d < MinMinerURequestTimeout {
+		return MinMinerURequestTimeout
+	}
+	if d > MaxMinerURequestTimeout {
+		return MaxMinerURequestTimeout
+	}
+	return d
+}
+
+// parseMinerUTimeoutSetupValue extracts and clamps a duration from setup values,
+// safeguarding against integer and floating-point multiplication overflow before conversion.
+func parseMinerUTimeoutSetupValue(raw any) (time.Duration, bool) {
+	if raw == nil {
+		return 0, false
+	}
+	minSec := MinMinerURequestTimeout.Seconds()
+	maxSec := MaxMinerURequestTimeout.Seconds()
+	switch v := raw.(type) {
+	case int:
+		if v <= 0 {
+			return 0, false
+		}
+		if float64(v) < minSec {
+			return MinMinerURequestTimeout, true
+		}
+		if float64(v) > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v) * time.Second), true
+	case int64:
+		if v <= 0 {
+			return 0, false
+		}
+		if float64(v) < minSec {
+			return MinMinerURequestTimeout, true
+		}
+		if float64(v) > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v) * time.Second), true
+	case float64:
+		if v <= 0 {
+			return 0, false
+		}
+		if v < minSec {
+			return MinMinerURequestTimeout, true
+		}
+		if v > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v * float64(time.Second))), true
+	case string:
+		s := strings.TrimSpace(v)
+		if s == "" {
+			return 0, false
+		}
+		if sec, err := strconv.Atoi(s); err == nil && sec > 0 {
+			if float64(sec) < minSec {
+				return MinMinerURequestTimeout, true
+			}
+			if float64(sec) > maxSec {
+				return MaxMinerURequestTimeout, true
+			}
+			return ClampMinerUTimeout(time.Duration(sec) * time.Second), true
+		}
+		if secF, err := strconv.ParseFloat(s, 64); err == nil && secF > 0 {
+			if secF < minSec {
+				return MinMinerURequestTimeout, true
+			}
+			if secF > maxSec {
+				return MaxMinerURequestTimeout, true
+			}
+			return ClampMinerUTimeout(time.Duration(secF * float64(time.Second))), true
+		}
+		if d, err := time.ParseDuration(s); err == nil && d > 0 {
+			return ClampMinerUTimeout(d), true
+		}
+	}
+	return 0, false
+}
 
 // ErrPDFEngineUnavailable is returned by PDFParser.ParseWithResult
 // when the current build cannot construct the DeepDOC PDF backend.
@@ -59,7 +152,6 @@ type PDFParser struct {
 	Model      string // DeepDoc@buildin@ragflow
 	LibType    string // pdf_oxide, used by DeepDoc
 
-	FlattenMediaToText bool
 	RemoveTOC          bool
 	RemoveHeaderFooter bool
 	EnableMultiColumn  bool
@@ -77,12 +169,16 @@ type PDFParser struct {
 	// caller observes per-page parse progress (done/total). Only the deepdoc
 	// backend invokes it; remote engines poll opaque HTTP jobs and never call
 	// it, so the fraction simply stays where it was.
-	OnPageDone                        func(done, total int)
+	OnPageDone func(done, total int)
+	// OnModelCall reports the start and end of an individual DeepDOC model call.
+	// It is runtime-only and is wired by the ingestion parser component.
+	OnModelCall                       func(ctx context.Context, operation string) func()
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
 	MinerUServerURL                   string
 	MinerUPollTimeout                 time.Duration
+	MinerUTimeoutConfigured           bool
 	DoclingServerURL                  string
 	DoclingAPIKey                     string
 	DoclingDoOCR                      *bool
@@ -120,7 +216,7 @@ func NewPDFParser() *PDFParser {
 		ParseMethod:                    "deepdoc",
 		MinerUBackend:                  "",
 		MinerUPollTimeout:              minerUPollTimeout,
-		OpenDataLoaderTimeout:          600,
+		OpenDataLoaderTimeout:          openDataLoaderTimeoutSeconds,
 		SoMarkBaseURL:                  "https://somark.cn/api/v1",
 		SoMarkImageFormat:              "url",
 		SoMarkFormulaFormat:            "latex",
@@ -141,9 +237,6 @@ func (p *PDFParser) String() string {
 func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
-	}
-	if v, ok := setup["flatten_media_to_text"].(bool); ok {
-		p.FlattenMediaToText = v
 	}
 	if v, ok := setup["remove_toc"].(bool); ok {
 		p.RemoveTOC = v
@@ -169,11 +262,12 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["mineru_server_url"].(string); ok && v != "" {
 		p.MinerUServerURL = v
 	}
-	if v, ok := setup["mineru_timeout_seconds"].(int); ok && v > 0 {
-		p.MinerUPollTimeout = time.Duration(v) * time.Second
-	}
-	if v, ok := setup["mineru_timeout_seconds"].(float64); ok && v > 0 {
-		p.MinerUPollTimeout = time.Duration(v * float64(time.Second))
+	if d, ok := parseMinerUTimeoutSetupValue(setup["mineru_timeout"]); ok {
+		p.MinerUPollTimeout = d
+		p.MinerUTimeoutConfigured = true
+	} else if d, ok := parseMinerUTimeoutSetupValue(setup["mineru_timeout_seconds"]); ok {
+		p.MinerUPollTimeout = d
+		p.MinerUTimeoutConfigured = true
 	}
 	if v, ok := setup["docling_server_url"].(string); ok && v != "" {
 		p.DoclingServerURL = v
@@ -283,25 +377,46 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 // persists for its plain-text option (ParseDocumentType.PlainText), so they
 // are parse methods rather than model names.
 var pdfParseMethodSpellings = map[string]string{
-	"deepdoc":        "deepdoc",
-	"plain_text":     "plain_text",
-	"plaintext":      "plain_text",
-	"plain text":     "plain_text",
-	"mineru":         "mineru",
-	"monkeyocrv2":    "monkeyocrv2",
-	"docling":        "docling",
-	"opendataloader": "opendataloader",
-	"tcadp parser":   "tcadp",
-	"paddleocr":      "paddleocr",
-	"somark":         "somark",
+	"deepdoc":         "deepdoc",
+	"plain_text":      "plain_text",
+	"plaintext":       "plain_text",
+	"plain text":      "plain_text",
+	"mineru":          "mineru",
+	"monkeyocr":       "monkeyocr",
+	"monkeyocrv2":     "monkeyocrv2",
+	"unlimited_ocr":   "unlimited_ocr",
+	"unlimited-ocr-2": "unlimited_ocr",
+	"unlimited-ocr":   "unlimited_ocr",
+	"docling":         "docling",
+	"opendataloader":  "opendataloader",
+	"tcadp parser":    "tcadp",
+	"paddleocr":       "paddleocr",
+	"somark":          "somark",
 }
 
 // IsPDFParseMethod reports whether raw names a PDF parse method rather than
 // a VLM model selector. "@"-suffixed spellings such as "foo@mineru" are
 // layout_recognizer selectors resolved separately, so they report false.
+//
+// A method backed by a registered external analyzer factory (see
+// RegisterAnalyzerFactory — e.g. "deepdoc_ee" in the EE build) is a real PDF
+// parse method even though it is absent from the built-in whitelist: it is
+// routed to the DeepDoc dispatch path. Recognizing it here keeps
+// IsPDFParseMethod consistent with validateParseMethod and stops the routing
+// code (pdf_vision_dispatch.go and the ingestion config migration) from
+// misclassifying a registered method as a VLM model selector.
 func IsPDFParseMethod(raw string) bool {
-	_, ok := pdfParseMethodSpellings[strings.ToLower(strings.TrimSpace(raw))]
-	return ok
+	key := strings.ToLower(strings.TrimSpace(raw))
+	if _, ok := pdfParseMethodSpellings[key]; ok {
+		return true
+	}
+	// Registered external methods are keyed by their normalized token (see
+	// RegisterAnalyzerFactory / resolveDocAnalyzerForMethod), so look them up
+	// via normalizePDFParseMethod rather than the raw key.
+	if _, ok := analyzerFactories[normalizePDFParseMethod(raw)]; ok {
+		return true
+	}
+	return false
 }
 
 func normalizePDFParseMethod(raw string) string {
@@ -309,6 +424,8 @@ func normalizePDFParseMethod(raw string) string {
 	switch {
 	case strings.HasSuffix(method, "@mineru"):
 		return "mineru"
+	case strings.HasSuffix(method, "@monkeyocr"):
+		return "monkeyocr"
 	case strings.HasSuffix(method, "@paddleocr"):
 		return "paddleocr"
 	case strings.HasSuffix(method, "@somark"):
@@ -346,8 +463,8 @@ func (p *PDFParser) validateParseMethod() error {
 // ErrPDFEngineUnavailable while plain_text falls back to the pure-Go engine.
 func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	result := p.parseWithResult(ctx, filename, data)
-	if result.Err == nil && result.OutputFormat == "json" {
-		return p.NormalizeResult(ctx, filename, result)
+	if result.Err == nil {
+		return AttachPDFOutlines(p.NormalizeResult(ctx, filename, result), data)
 	}
 	return result
 }
@@ -374,7 +491,7 @@ func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data [
 	case "opendataloader":
 		return parsePDFWithOpenDataLoader(ctx, filename, data, p)
 	case "somark":
-		return parsePDFWithSoMark(filename, data, p)
+		return parsePDFWithSoMark(ctx, filename, data, p)
 	case "tcadp":
 		return parsePDFWithTCADP(ctx, filename, data, p)
 	}
@@ -383,11 +500,11 @@ func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data [
 	cfg.RemoveTOC = p.RemoveTOC
 	cfg.RemoveHeaderFooter = p.RemoveHeaderFooter
 	cfg.OnPageDone = p.OnPageDone
+	cfg.OnModelCall = p.OnModelCall
 	res := parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{
-		zoom:               cfg.Zoom,
-		enableMultiColumn:  p.EnableMultiColumn,
-		flattenMediaToText: p.FlattenMediaToText,
-		parseMethod:        p.ParseMethod,
+		zoom:              cfg.Zoom,
+		enableMultiColumn: p.EnableMultiColumn,
+		parseMethod:       p.ParseMethod,
 	}, deepdocpdf.NewParser(cfg).Parse)
 	if res.Err != nil {
 		if errors.Is(res.Err, deepdocpdf.ErrNoPDFData) ||
@@ -401,7 +518,6 @@ func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data [
 
 func emptyPDFResult(filename string) ParseResult {
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":       filename,
 			"page_count": 0,
@@ -536,8 +652,6 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 	if opts.enableMultiColumn && opts.pageWidth <= 0 {
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
-	// JSON media policy is applied once at the PDFParser result boundary.
-	opts.flattenMediaToText = false
 	applyPDFPostProcess(&processed, opts)
 	defer processed.Close()
 	// NOTE: PDF media (figure/table) is intentionally NOT cropped here under
@@ -567,7 +681,6 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":       filename,
 			"page_count": len(processed.PageHeight),

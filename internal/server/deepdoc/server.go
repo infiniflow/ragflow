@@ -20,8 +20,6 @@
 package deepdoc
 
 import (
-	"os"
-	"path/filepath"
 	goruntime "runtime"
 	"strconv"
 	"strings"
@@ -34,7 +32,6 @@ import (
 	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
-	"ragflow/internal/server/ingestor"
 )
 
 // inferenceTotalCores returns the CPU budget the DeepDoc inference config is
@@ -134,7 +131,7 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	// Resolve the per-document page concurrency (N) from CLI > env > config >
 	// default(2) and register it with the shared page worker pool. Fail fast on
 	// an out-of-range value.
-	pageConcurrency, err := ingestor.ResolveIngestorPageConcurrency(arguments, server.GetConfig().GetIngestorConfig().PageConcurrency)
+	pageConcurrency, err := server.GetConfig().GetIngestorPageConcurrency(arguments.IngestorPageConcurrency)
 	if err != nil {
 		return err
 	}
@@ -144,30 +141,10 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	return nil
 }
 
-// resolveDeepDocModelDir picks the model directory: the explicit DEEPDOC_MODEL_DIR
-// env, else the RAGFlow default model dir (internal/rag/res/deepdoc),
-// else the assets fetched by deps/download_deps.py. The first
-// candidate that actually contains the required weights wins.
+// resolveDeepDocModelDir delegates to common.DeepDocModelDir, the single
+// source of truth shared with runtime probes (e.g. /system/doc-analyzers).
 func resolveDeepDocModelDir() string {
-	if v := strings.TrimSpace(common.GetEnv(common.EnvDeepDocModelDir)); v != "" {
-		return v
-	}
-	wd, _ := os.Getwd()
-	// MODEL_ASSETS_DIR first: the shared model-asset root keeps this layout too, so one
-	// variable can point at the DeepDoc weights as well as the embedding tokenizers.
-	candidates := append([]string(nil), common.ModelAssetCandidates("huggingface.co/InfiniFlow/deepdoc")...)
-	candidates = append(candidates,
-		filepath.Join(wd, "internal", "rag", "res", "deepdoc"),
-		filepath.Join(wd, "huggingface.co", "InfiniFlow", "deepdoc"),
-	)
-	for _, c := range candidates {
-		if dirHasModels(c) {
-			return c
-		}
-	}
-	// None verified; return the canonical default so any error message points
-	// at the conventional location.
-	return filepath.Join(wd, "internal", "rag", "res", "deepdoc")
+	return common.DeepDocModelDir()
 }
 
 // resolveDeepDocDropScore returns the explicit DEEPDOC_DROP_SCORE env, else the
@@ -182,9 +159,4 @@ func resolveDeepDocDropScore() float64 {
 			zap.String("value", v), zap.Float64("default", infnative.DefaultDropScore))
 	}
 	return infnative.DefaultDropScore
-}
-
-// dirHasModels reports whether dir contains every required model files.
-func dirHasModels(dir string) bool {
-	return common.HasModelFiles(dir)
 }

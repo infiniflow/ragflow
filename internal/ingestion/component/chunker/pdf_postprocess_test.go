@@ -9,7 +9,7 @@ import (
 )
 
 func TestPDFTableNotesDoNotHideCellsDuringChunking(t *testing.T) {
-	result := parser.NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", parser.ParseResult{OutputFormat: "json", JSON: []parser.DocItem{
+	result := parser.NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", parser.ParseResult{JSON: []parser.DocItem{
 		parser.TableItem{Table: &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell value"}}}}, Extra: map[string]any{"text": "Footnote"}},
 	}})
 	if result.Err != nil {

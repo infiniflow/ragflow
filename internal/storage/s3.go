@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"go.uber.org/zap"
 )
 
@@ -240,12 +241,19 @@ func (s *S3Storage) removeObjects(ctx context.Context, bucket, prefix string) er
 	return nil
 }
 
+// deleteObjects deletes the supplied objects in batches of at most 1,000.
+// It includes Content-MD5 alongside the SDK checksum and returns on the first
+// request-level or per-object error.
 func (s *S3Storage) deleteObjects(ctx context.Context, bucket string, objects []types.ObjectIdentifier) error {
 	for len(objects) > 0 {
 		count := min(len(objects), 1000)
 		output, err := s.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 			Bucket: aws.String(bucket),
 			Delete: &types.Delete{Objects: objects[:count], Quiet: aws.Bool(true)},
+		}, func(options *s3.Options) {
+			// COS requires Content-MD5 for batch deletion in addition to the
+			// newer SDK's CRC32 checksum. Keep both on this operation only.
+			options.APIOptions = append(options.APIOptions, smithyhttp.AddContentChecksumMiddleware)
 		})
 		if err != nil {
 			return fmt.Errorf("delete S3 objects in %q: %w", bucket, err)

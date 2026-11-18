@@ -61,8 +61,8 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("expected output_format json, got %q", result.OutputFormat)
+	if !result.Produced() {
+		t.Fatalf("expected json output, got %t", result.Produced())
 	}
 	if len(result.JSON) != 2 {
 		t.Fatalf("expected body and header JSON items, got %d", len(result.JSON))
@@ -107,6 +107,121 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	}
 	if v, ok := header["doc_type_kwd"].(string); !ok || v != "text" {
 		t.Errorf("header doc_type_kwd: got %q", v)
+	}
+}
+
+// Outlook writes the encoded-words of a subject and a sender name in the
+// legacy charset of the mail: windows-1252 for Western Europe, iso-8859-2 for
+// Central Europe, koi8-r or windows-1251 for Russian. They reached the item
+// fields undecoded, as "=?windows-1252?Q?...?=".
+func TestEmailParser_EmlDecodesLegacyCharsetHeaders(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: =?iso-8859-2?Q?Pawe=B3_Kowalski?= <pawel@example.com>",
+		"To: =?koi8-r?B?8NLJ18XU?= <ivan@example.com>",
+		"Subject: =?windows-1252?Q?R=E9union_=93Budget_2025=94_=96_ordre_du_jour?=",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Body.",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"fields": []string{"from", "to", "subject", "body"}})
+	result := p.ParseWithResult(t.Context(), "legacy.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	item := result.JSON[0].ToMap()
+	for field, want := range map[string]string{
+		"from":    "Paweł Kowalski <pawel@example.com>",
+		"to":      "Привет <ivan@example.com>",
+		"subject": "Réunion “Budget 2025” – ordre du jour",
+	} {
+		if got, _ := item[field].(string); got != want {
+			t.Errorf("%s: got %q, want %q", field, got, want)
+		}
+	}
+}
+
+// A non-ASCII attachment name arrives as RFC 2047 encoded-words inside the
+// filename or name parameter, from Outlook, Gmail and Chinese mail clients
+// alike. Left encoded, the name had no extension and the attachment was not
+// parsed. 合同草稿.txt in base64 contains a "/".
+func TestEmailParser_EmlParsesAttachmentsWithEncodedNames(t *testing.T) {
+	b64 := func(charset string, raw []byte) string {
+		return "=?" + charset + "?B?" + base64.StdEncoding.EncodeToString(raw) + "?="
+	}
+	attachment := func(headers []string, text string) string {
+		return strings.Join(append(append([]string{"--b"}, headers...), "", text), "\r\n")
+	}
+	raw := strings.Join([]string{
+		"From: a@example.com",
+		"Subject: Attachments",
+		"MIME-Version: 1.0",
+		"Content-Type: multipart/mixed; boundary=b",
+		"",
+		"--b",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Body.",
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="` + b64("utf-8", []byte("Übersicht.txt")) + `"`,
+		}, "First attachment text."),
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="` + b64("gb2312", []byte{0xD4, 0xA4, 0xCB, 0xE3, 0xB1, 0xA8, 0xB8, 0xE6, '.', 't', 'x', 't'}) + `"`,
+		}, "Second attachment text."),
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="` + b64("utf-8", []byte("合同草稿.txt")) + `"`,
+		}, "Third attachment text."),
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="=?iso-8859-1?Q?R=E9sum=E9.txt?="`,
+		}, "Fourth attachment text."),
+		attachment([]string{
+			`Content-Type: text/plain; charset=utf-8; name="` + b64("utf-8", []byte("Notizen.txt")) + `"`,
+			"Content-Disposition: attachment",
+		}, "Fifth attachment text."),
+		"--b--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"fields": []string{"body", "attachments"}})
+	result := p.ParseWithResult(t.Context(), "attachments.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	var texts []string
+	for _, item := range result.JSON {
+		text, _ := item.ToMap()["text"].(string)
+		texts = append(texts, text)
+	}
+	joined := strings.Join(texts, "\n")
+	for _, want := range []string{"First", "Second", "Third", "Fourth", "Fifth"} {
+		if !strings.Contains(joined, want+" attachment text.") {
+			t.Errorf("%s attachment was not parsed; items: %q", want, texts)
+		}
+	}
+}
+
+// Three header charset labels the WHATWG lookup alone gets wrong: an ISO-8859-1
+// alias reads as windows-1252 like the label itself, a bare UTF-16 word honours
+// its byte order mark, and a charset WHATWG only knows as its replacement
+// decoder stays undecoded instead of turning into U+FFFD.
+func TestDecodeHeaderWord_CharsetLabelsBeyondTheWHATWGLookup(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"=?iso_8859-1?Q?=93Hi=94?=", "\u201cHi\u201d"},
+		{"=?iso8859-1?Q?=93Hi=94?=", "\u201cHi\u201d"},
+		{"=?l1?Q?=80?=", "\u20ac"},
+		{"=?UTF-16?B?/v8ASABp?=", "Hi"},
+		{"=?UTF-16?B?//5IAGkA?=", "Hi"},
+		{"=?UTF-16?B?AEgAaQ==?=", "Hi"},
+		{"=?iso-2022-kr?B?GyQpQw4hIQ8=?=", "=?iso-2022-kr?B?GyQpQw4hIQ8=?="},
+	} {
+		if got := decodeHeaderWord(tc.in); got != tc.want {
+			t.Errorf("decodeHeaderWord(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
@@ -161,8 +276,8 @@ func TestEmailParser_EmlTextChunkText(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("expected output_format json, got %q", result.OutputFormat)
+	if !result.Produced() {
+		t.Fatalf("expected json output, got %t", result.Produced())
 	}
 
 	item := result.JSON[0].ToMap()
@@ -352,8 +467,8 @@ func TestEmailParser_MsgTextOutputExcludesMetadata(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("output format = %q, want json", result.OutputFormat)
+	if !result.Produced() {
+		t.Fatalf("output = %t, want true", result.Produced())
 	}
 	if len(result.JSON) == 0 {
 		t.Fatalf("expected non-empty JSON items")
@@ -447,6 +562,43 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 	}
 	if fn, _ := atts[0]["filename"].(string); fn != "test.txt" {
 		t.Errorf("filename = %q, want test.txt", fn)
+	}
+}
+
+func TestEmailParser_HTMLAttachmentDoesNotCacheMedia(t *testing.T) {
+	const boundary = "html-media-boundary"
+	attachment := `<html><body><p>Embedded figure</p><img alt="attachment image" src="` +
+		htmlMediaDataURI + `"></body></html>`
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: HTML attachment",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Outer body.",
+		"--" + boundary,
+		"Content-Type: text/html; charset=utf-8; name=\"embedded.html\"",
+		"Content-Disposition: attachment; filename=\"embedded.html\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		base64.StdEncoding.EncodeToString([]byte(attachment)),
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"fields": []string{"from", "body", "attachments"},
+	})
+	ctx, cache := recordingMediaContext()
+	result := p.ParseWithResult(ctx, "message.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	if cache.putCalls != 0 {
+		t.Fatalf("unexpected media cache writes = %d", cache.putCalls)
 	}
 }
 
@@ -1069,7 +1221,7 @@ func TestRecoverParse_IsolatesPanic(t *testing.T) {
 // TestRecoverParse_PassesThrough verifies a normal parser result is returned
 // unchanged with panicked=false.
 func TestRecoverParse_PassesThrough(t *testing.T) {
-	want := ParseResult{OutputFormat: "json", JSON: []DocItem{NewTextJSONItem("hello")}}
+	want := ParseResult{JSON: []DocItem{NewTextJSONItem("hello")}}
 	res, panicked := recoverParse(func() ParseResult {
 		return want
 	})
@@ -1164,6 +1316,14 @@ func TestDecodeHeaderWord_Charsets(t *testing.T) {
 		{"euc-kr", encodedWord("euc-kr", []byte{0xC7, 0xD1, 0xB1, 0xB9}), "한국"},
 		{"iso-8859-1", encodedWord("iso-8859-1", []byte{'c', 'a', 'f', 0xE9}), "café"},
 		{"hz-gb-2312 keeps HZ escape decoding", encodedWord("hz-gb-2312", []byte("~{VPND~}")), "中文"},
+		// -- Outlook labels Western European subjects windows-1252, usually Q-encoded --
+		{"windows-1252", "=?Windows-1252?Q?Caf=E9_=93menu=94_=96_10_=80?=", "Café “menu” – 10 €"},
+		{"iso-8859-1 label reads Windows-1252 punctuation", encodedWord("iso-8859-1", []byte{0x93, 'Q', 'u', 'o', 't', 'e', 'd', 0x94}), "“Quoted”"},
+		{"latin1", encodedWord("latin1", []byte{0x85, 'f', 'r', 'i', 'a', 'n', 'd'}), "…friand"},
+		{"iso-8859-2", encodedWord("iso-8859-2", []byte{'Z', 'a', 0xBF, 0xF3, 0xB3, 0xE6}), "Zażółć"},
+		{"iso-8859-15", encodedWord("iso-8859-15", []byte{'1', '0', ' ', 0xA4}), "10 €"},
+		{"koi8-r", encodedWord("koi8-r", []byte{0xF0, 0xD2, 0xC9, 0xD7, 0xC5, 0xD4}), "Привет"},
+		{"windows-1251", encodedWord("windows-1251", []byte{0xCF, 0xF0, 0xE8, 0xE2, 0xE5, 0xF2}), "Привет"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1326,8 +1486,8 @@ func TestEmailParserJSONOmitsDuplicateHeaderText(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON: want non-empty items")
@@ -1339,8 +1499,10 @@ func TestEmailParserJSONOmitsDuplicateHeaderText(t *testing.T) {
 }
 
 // TestEmailParserTextOutputRemoved verifies the Email parser has no "text"
-// output path. A setup requesting output_format "text" must be ignored and the
-// result must be JSON, never a Text payload.
+// output path. A setup requesting produced "text" must be ignored and the
+// result must be JSON, identical to a default-config parse. This pins that the
+// removed text path cannot silently reappear: the "text" produced value must
+// not change the emitted JSON.
 func TestEmailParserTextOutputRemoved(t *testing.T) {
 	ctx := context.Background()
 	raw := strings.Join([]string{
@@ -1352,20 +1514,75 @@ func TestEmailParserTextOutputRemoved(t *testing.T) {
 		"Hello, world!",
 	}, "\r\n")
 
-	p := NewEmailParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "text",
-		"fields":        []string{"from", "to", "subject", "body"},
-	})
+	fields := []string{"from", "to", "subject", "body"}
 
-	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	withText := NewEmailParser()
+	withText.ConfigureFromSetup(map[string]any{
+		"produced": "text",
+		"fields":   fields,
+	})
+	textResult := withText.ParseWithResult(ctx, "test.eml", []byte(raw))
+
+	defaultCfg := NewEmailParser()
+	defaultCfg.ConfigureFromSetup(map[string]any{
+		"fields": fields,
+	})
+	defaultResult := defaultCfg.ParseWithResult(ctx, "test.eml", []byte(raw))
+
+	for _, result := range []ParseResult{textResult, defaultResult} {
+		if result.Err != nil {
+			t.Fatalf("unexpected error: %v", result.Err)
+		}
+		if !result.Produced() {
+			t.Fatalf("email must emit json, got produced=%t", result.Produced())
+		}
+		if len(result.JSON) == 0 {
+			t.Fatalf("email json output must contain items, got empty")
+		}
+	}
+
+	// The "text" produced config must be ignored: the JSON payload is
+	// identical to the default-config parse.
+	if len(textResult.JSON) != len(defaultResult.JSON) {
+		t.Fatalf("email json item count changed by produced=text: %d vs %d",
+			len(textResult.JSON), len(defaultResult.JSON))
+	}
+	for i := range textResult.JSON {
+		a, b := textResult.JSON[i].ToMap(), defaultResult.JSON[i].ToMap()
+		if a["text"] != b["text"] {
+			t.Errorf("email item %d text differs under produced=text: %q vs %q", i, a["text"], b["text"])
+		}
+		if a["doc_type_kwd"] != b["doc_type_kwd"] {
+			t.Errorf("email item %d doc_type_kwd differs under produced=text: %v vs %v", i, a["doc_type_kwd"], b["doc_type_kwd"])
+		}
+	}
+}
+
+func TestEmailParser_HTMLAttachmentTextWithoutMediaCache(t *testing.T) {
+	const boundary = "embedded-html"
+	attachment := `<p>before figure</p><img src="data:image/png;base64,aGVsbG8="><p>after figure</p>`
+	raw := strings.Join([]string{
+		"From: sender@test.com", "To: receiver@test.com", "Subject: HTML attachment",
+		"Content-Type: multipart/mixed; boundary=" + boundary, "",
+		"--" + boundary, "Content-Type: text/plain; charset=utf-8", "", "Outer body.",
+		"--" + boundary, "Content-Type: text/html; charset=utf-8; name=\"embedded.html\"",
+		"Content-Disposition: attachment; filename=\"embedded.html\"", "Content-Transfer-Encoding: base64", "",
+		base64.StdEncoding.EncodeToString([]byte(attachment)), "--" + boundary + "--",
+	}, "\r\n")
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"fields": []string{"from", "body", "attachments"}})
+	result := p.ParseWithResult(t.Context(), "message.eml", []byte(raw))
 	if result.Err != nil {
-		t.Fatalf("unexpected error: %v", result.Err)
+		t.Fatal(result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("email must ignore text output_format and emit json, got OutputFormat=%q", result.OutputFormat)
+	var texts []string
+	for _, item := range result.JSON {
+		if text, ok := item.ToMap()["text"].(string); ok {
+			texts = append(texts, text)
+		}
 	}
-	if len(result.JSON) == 0 {
-		t.Fatalf("email json output must contain items, got empty")
+	joined := strings.Join(texts, "\n")
+	if !strings.Contains(joined, "before figure") || !strings.Contains(joined, "after figure") {
+		t.Fatalf("attachment text missing: %q", joined)
 	}
 }

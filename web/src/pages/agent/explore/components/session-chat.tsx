@@ -4,16 +4,18 @@ import MarkdownContent from '@/components/next-markdown-content';
 import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { VirtualMessageList } from '@/components/virtual-message-list';
+import { AgentSessionSource } from '@/constants/agent';
 import { MessageType } from '@/constants/chat';
 import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
-import { IMessage, IReferenceObject } from '@/interfaces/database/chat';
+import { IMessage } from '@/interfaces/database/chat';
 import DebugContent from '@/pages/agent/debug-content';
 import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
 import { BeginQuery } from '@/pages/agent/interface';
 import { ParameterDialog } from '@/pages/agent/share/parameter-dialog';
-import { buildMessageUuidWithRole } from '@/utils/chat';
+import { buildReferenceObject } from '@/utils/chat';
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useExploreUrlParams } from '../hooks/use-explore-url-params';
@@ -21,6 +23,28 @@ import { useSendSessionMessage } from '../hooks/use-send-session-message';
 
 interface SessionChatProps {
   session?: IAgentLogResponse;
+}
+
+interface SessionInputState {
+  session?: IAgentLogResponse;
+  sessionId?: string;
+  isNew: boolean;
+  isWaiting: boolean;
+}
+
+function isSessionInputDisabled({
+  session,
+  sessionId,
+  isNew,
+  isWaiting,
+}: SessionInputState) {
+  const isChannelSession =
+    session?.id === sessionId &&
+    session?.source === AgentSessionSource.ChatChannel;
+  const isSessionDetailPending = Boolean(
+    sessionId && !isNew && session?.id !== sessionId,
+  );
+  return isWaiting || isChannelSession || isSessionDetailPending;
 }
 
 export function SessionChat({ session }: SessionChatProps) {
@@ -34,7 +58,7 @@ export function SessionChat({ session }: SessionChatProps) {
   const {
     value,
     derivedMessages,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     sendLoading,
     handleInputChange,
@@ -58,6 +82,12 @@ export function SessionChat({ session }: SessionChatProps) {
   const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
     sendFormMessage,
+  });
+  const inputDisabled = isSessionInputDisabled({
+    session,
+    sessionId,
+    isNew: isNew === 'true',
+    isWaiting,
   });
   // An in-flight stream only renders a loading state on the session it
   // belongs to, not on whichever session the user switched to. Before the
@@ -160,8 +190,11 @@ export function SessionChat({ session }: SessionChatProps) {
                 No messages in this session
               </div>
             ) : (
-              <div className="w-full pr-5">
-                {derivedMessages.map((message, i) => {
+              <VirtualMessageList
+                className="w-full pr-5"
+                items={derivedMessages}
+                virtualizer={virtualizer}
+                renderItem={(message, i) => {
                   const inputList = buildInputList(message);
                   const hasUserFillUpInputs =
                     message.role === MessageType.Assistant &&
@@ -174,17 +207,13 @@ export function SessionChat({ session }: SessionChatProps) {
                         isStreamingActiveSession &&
                         derivedMessages.length - 1 === i
                       }
-                      key={buildMessageUuidWithRole(message)}
                       item={message}
                       nickname={userInfo.nickname}
                       avatar={userInfo.avatar}
                       avatarDialog={canvasInfo?.avatar || ''}
                       reference={
                         findReferenceByMessageId(message.id) ||
-                        (session?.reference?.[
-                          Math.floor((i - 1) / 2)
-                        ] as unknown as IReferenceObject) ||
-                        {}
+                        buildReferenceObject(message.reference)
                       }
                       clickDocumentButton={clickDocumentButton}
                       index={i}
@@ -218,10 +247,9 @@ export function SessionChat({ session }: SessionChatProps) {
                         )}
                     </MessageItem>
                   );
-                })}
-              </div>
+                }}
+              />
             )}
-            <div ref={scrollRef} />
           </div>
         )}
         <section className="p-4">
@@ -232,8 +260,8 @@ export function SessionChat({ session }: SessionChatProps) {
           <NextMessageInput
             value={value}
             sendLoading={sendLoading}
-            disabled={isWaiting}
-            sendDisabled={sendLoading || isWaiting}
+            disabled={inputDisabled}
+            sendDisabled={sendLoading || inputDisabled}
             isUploading={isUploading || isWaiting}
             onPressEnter={handleSessionPressEnter}
             onInputChange={handleInputChange}

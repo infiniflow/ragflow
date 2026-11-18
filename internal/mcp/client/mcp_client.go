@@ -79,7 +79,7 @@ type FetchOptions struct {
 	HTTPClient *http.Client
 	// AllowPrivateHosts relaxes the public-routability requirement so
 	// self-hosted MCP servers on private/docker networks work. Callers source
-	// it from the deployment flag (RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS); scheme
+	// it from the deployment flag (ALLOW_ANY_HOST); scheme
 	// validation, DNS resolution, and IP pinning still apply.
 	AllowPrivateHosts bool
 	pinHostname       string
@@ -106,6 +106,8 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 	opts.pinIP = resolvedIP
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = utility.PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
+	} else {
+		opts.HTTPClient = restrictClientRedirects(opts.HTTPClient, opts.AllowPrivateHosts)
 	}
 
 	headers, headerErr := renderHeaders(opts.Headers, opts.Variables)

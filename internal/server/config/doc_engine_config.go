@@ -24,12 +24,29 @@ import (
 )
 
 type DocEngineConfig struct {
-	ES        ElasticsearchConfig `mapstructure:"es"`
-	Infinity  InfinityConfig      `mapstructure:"infinity"`
-	OceanBase OceanBaseConfig     `mapstructure:"oceanbase"`
-	SeekDB    OceanBaseConfig     `mapstructure:"seekdb"`
-	SereneDB  SereneDBConfig      `mapstructure:"serenedb"`
-	Vastbase  VastbaseConfig      `mapstructure:"vastbase"`
+	ES         ElasticsearchConfig `mapstructure:"es"`
+	OpenSearch OpenSearchConfig    `mapstructure:"os"`
+	Infinity   InfinityConfig      `mapstructure:"infinity"`
+	OceanBase  OceanBaseConfig     `mapstructure:"oceanbase"`
+	SeekDB     OceanBaseConfig     `mapstructure:"seekdb"`
+	SereneDB   SereneDBConfig      `mapstructure:"serenedb"`
+	Vastbase   VastbaseConfig      `mapstructure:"vastbase"`
+}
+
+type OpenSearchConfig struct {
+	Hosts    string `mapstructure:"hosts"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	// InsecureSkipVerify disables TLS certificate verification. It is off by
+	// default; enable it only for a development cluster with a self-signed
+	// certificate.
+	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"`
+	// CACertPath is the optional path to a PEM CA certificate bundle to trust.
+	CACertPath string `mapstructure:"ca_cert_path"`
+	// ClientCertPath is the optional path to a PEM client certificate for mTLS.
+	ClientCertPath string `mapstructure:"client_cert_path"`
+	// ClientKeyPath is the optional path to a PEM client private key for mTLS.
+	ClientKeyPath string `mapstructure:"client_key_path"`
 }
 
 // OceanBaseConfig mirrors the existing oceanbase/seekdb service_conf.yaml
@@ -103,6 +120,7 @@ type VastbaseConfig struct {
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 	c.parseInfinityConfig(v)
 	c.parseElasticsearchConfig(v)
+	c.parseOpenSearchConfig(v)
 	c.parseOceanBaseConfig(v, "oceanbase", &c.docEngine.OceanBase)
 	c.parseOceanBaseConfig(v, "seekdb", &c.docEngine.SeekDB)
 	c.parseSereneDBConfig(v)
@@ -368,6 +386,61 @@ func (e ElasticsearchConfig) ExportConfigs() map[string]interface{} {
 	esConfigs["username"] = e.Username
 	esConfigs["password"] = e.Password
 	return esConfigs
+}
+
+func (c *Config) parseOpenSearchConfig(v *viper.Viper) {
+	c.docEngine.OpenSearch.Hosts = "http://localhost:1201"
+	c.docEngine.OpenSearch.Username = "admin"
+	c.docEngine.OpenSearch.Password = "infini_rag_flow_OS_01"
+
+	// Fully qualified parent keys, not v.Sub("os"): Sub drops the root
+	// AutomaticEnv (env prefix/replacer), and IsSet("os") cannot see
+	// child environment variables, so an env-only deployment
+	// (RAGFLOW_OS_HOSTS, ... with no YAML section) would silently keep
+	// every default.
+	if v.IsSet("os.hosts") {
+		c.docEngine.OpenSearch.Hosts = v.GetString("os.hosts")
+	}
+	if v.IsSet("os.username") {
+		c.docEngine.OpenSearch.Username = v.GetString("os.username")
+	}
+	if v.IsSet("os.password") {
+		c.docEngine.OpenSearch.Password = v.GetString("os.password")
+	}
+	if v.IsSet("os.insecure_skip_verify") {
+		c.docEngine.OpenSearch.InsecureSkipVerify = v.GetBool("os.insecure_skip_verify")
+	}
+	if v.IsSet("os.ca_cert_path") {
+		c.docEngine.OpenSearch.CACertPath = v.GetString("os.ca_cert_path")
+	}
+	if v.IsSet("os.client_cert_path") {
+		c.docEngine.OpenSearch.ClientCertPath = v.GetString("os.client_cert_path")
+	}
+	if v.IsSet("os.client_key_path") {
+		c.docEngine.OpenSearch.ClientKeyPath = v.GetString("os.client_key_path")
+	}
+}
+
+func (c *Config) GetOpenSearchConfig() OpenSearchConfig {
+	return c.docEngine.OpenSearch
+}
+
+func (o OpenSearchConfig) ExportConfigs() map[string]interface{} {
+	osConfigs := make(map[string]interface{})
+	osConfigs["hosts"] = o.Hosts
+	osConfigs["username"] = o.Username
+	osConfigs["password"] = o.Password
+	osConfigs["insecure_skip_verify"] = o.InsecureSkipVerify
+	if o.CACertPath != "" {
+		osConfigs["ca_cert_path"] = o.CACertPath
+	}
+	if o.ClientCertPath != "" {
+		osConfigs["client_cert_path"] = o.ClientCertPath
+	}
+	if o.ClientKeyPath != "" {
+		osConfigs["client_key_path"] = o.ClientKeyPath
+	}
+	return osConfigs
 }
 
 func (c *Config) IsElasticConfigured() bool {

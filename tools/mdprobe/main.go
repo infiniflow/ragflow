@@ -45,7 +45,7 @@ func main() {
 	p.ConfigureFromSetup(map[string]any{})
 	res := p.ParseWithResult(context.Background(), filepath.Base(path), data)
 
-	fmt.Printf("file=%s bytes=%d output_format=%s items=%d\n", filepath.Base(path), len(data), res.OutputFormat, len(res.JSON))
+	fmt.Printf("file=%s bytes=%d produced=%t items=%d\n", filepath.Base(path), len(data), res.Produced(), len(res.JSON))
 	var total int
 	for i, item := range res.JSON {
 		m := item.ToMap()

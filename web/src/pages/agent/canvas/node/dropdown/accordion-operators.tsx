@@ -52,7 +52,11 @@ export function AccordionOperators({
       operators.filter((operator) => !blocked.has(operator));
   }, [getOperatorTypeFromId, nodeId]);
 
-  const foundation = allow([Operator.Agent, Operator.Retrieval]);
+  const foundation = allow([
+    Operator.Agent,
+    Operator.Retrieval,
+    Operator.ScoredSwitch,
+  ]);
   const dialog = allow([Operator.Message, Operator.UserFillUp]);
   const flow = allow([
     Operator.Switch,
@@ -94,7 +98,6 @@ export function AccordionOperators({
     Operator.Search1APISearch,
     Operator.Search1APICrawl,
     Operator.DocGenerator,
-    Operator.Browser,
   ]);
 
   return (

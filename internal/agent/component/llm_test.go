@@ -200,68 +200,52 @@ func TestLLM_Registered(t *testing.T) {
 	}
 }
 
-// TestLLM_ThinkingFieldRoundTrip guards the agent-component
-// portion of PR #15446 (thinking switch) and PR #16640 (gen_conf
-// forwarding). The agent component accepts `thinking` from the DSL
-// params (any non-empty, non-"default" value) and threads it through
-// LLMParam and the ChatInvokeRequest. Downstream (einoChatInvoker)
-// only acts on "enabled" / "disabled" and silently ignores other
-// values, so lenient forwarding is safe.
-func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
+func TestComponentThinkingDefaults(t *testing.T) {
 	t.Parallel()
-
-	// Case 1: "enabled" round-trips into LLMParam and ChatInvokeRequest.
-	enabled := mergeLLMParam(LLMParam{}, map[string]any{
-		"thinking":      "enabled",
-		"model_id":      "qwen3-max",
-		"system_prompt": "s",
-		"user_prompt":   "u",
-	})
-	if enabled.Thinking != "enabled" {
-		t.Errorf("Thinking = %q, want enabled", enabled.Thinking)
+	for _, tc := range []struct {
+		name   string
+		base   string
+		inputs map[string]any
+		want   string
+	}{
+		{name: "missing", want: "disabled"},
+		{name: "empty", inputs: map[string]any{"thinking": ""}, want: "disabled"},
+		{name: "default", inputs: map[string]any{"thinking": "default"}, want: "disabled"},
+		{name: "disabled", inputs: map[string]any{"thinking": "disabled"}, want: "disabled"},
+		{name: "enabled", inputs: map[string]any{"thinking": "enabled"}, want: "enabled"},
+		{name: "saved default", base: "default", want: "disabled"},
+		{name: "saved enabled", base: "enabled", want: "enabled"},
+		{name: "reset enabled to default", base: "enabled", inputs: map[string]any{"thinking": "default"}, want: "disabled"},
+		{name: "reset enabled to empty", base: "enabled", inputs: map[string]any{"thinking": ""}, want: "disabled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mergeLLMParam(LLMParam{Thinking: tc.base}, tc.inputs).Thinking; got != tc.want {
+				t.Errorf("LLM thinking = %q, want %q", got, tc.want)
+			}
+			if got := mergeAgentParam(AgentParam{Thinking: tc.base}, tc.inputs).Thinking; got != tc.want {
+				t.Errorf("Agent thinking = %q, want %q", got, tc.want)
+			}
+		})
 	}
+}
 
-	// Case 2: "disabled" also round-trips.
-	disabled := mergeLLMParam(LLMParam{}, map[string]any{
-		"thinking":    "disabled",
-		"model_id":    "kimi-k2.6",
-		"user_prompt": "u",
-	})
-	if disabled.Thinking != "disabled" {
-		t.Errorf("Thinking = %q, want disabled", disabled.Thinking)
-	}
-
-	// Case 3: empty / missing value → empty (system default).
-	defaulted := mergeLLMParam(LLMParam{}, map[string]any{
-		"model_id":    "glm-4.6",
-		"user_prompt": "u",
-	})
-	if defaulted.Thinking != "" {
-		t.Errorf("Thinking = %q, want empty (system default)", defaulted.Thinking)
-	}
-
-	// Case 4: "default" is explicitly rejected, matching Python's
-	// `self.thinking != "default"` gate in gen_conf().
-	defaultStr := mergeLLMParam(LLMParam{}, map[string]any{
-		"thinking":    "default",
-		"model_id":    "glm-4.6",
-		"user_prompt": "u",
-	})
-	if defaultStr.Thinking != "" {
-		t.Errorf(`Thinking = %q, want empty ("default" rejected)`, defaultStr.Thinking)
-	}
-
-	// Case 5: arbitrary / unknown values are leniently forwarded
-	// (matches Python gen_conf() which passes through any truthy
-	// non-"default" string). Downstream einoChatInvoker ignores
-	// unknown values, so this is safe.
-	arbitrary := mergeLLMParam(LLMParam{}, map[string]any{
-		"thinking":    "auto",
-		"model_id":    "glm-4.6",
-		"user_prompt": "u",
-	})
-	if arbitrary.Thinking != "auto" {
-		t.Errorf("arbitrary thinking = %q, want auto (lenient forwarding)", arbitrary.Thinking)
+func TestLLM_ForwardsThinkingParam(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok"}}
+	withStubInvoker(t, stub)
+	for _, thinking := range []string{"", "default", "disabled", "enabled"} {
+		t.Run(thinking, func(t *testing.T) {
+			c := NewLLMComponent(LLMParam{ModelID: "stub", Thinking: thinking})
+			if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "hello"}); err != nil {
+				t.Fatal(err)
+			}
+			want := "disabled"
+			if thinking == "enabled" {
+				want = "enabled"
+			}
+			if stub.captured.Thinking != want {
+				t.Fatalf("invoker thinking = %q, want %q", stub.captured.Thinking, want)
+			}
+		})
 	}
 }
 
@@ -275,6 +259,7 @@ func TestLLM_Invoke_CompositeModel_CustomContextOverride(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-comp-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -337,6 +322,7 @@ func TestLLM_Invoke_UUIDModel_CustomContextOverride(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-uuid-2",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -400,6 +386,7 @@ func TestLLM_Invoke_UUIDModel_ResolvesContentLength(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-uuid-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -459,6 +446,7 @@ func TestLLM_ResolvesTenantModelID(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "DeepSeek",
 	}).Error; err != nil {
@@ -577,7 +565,7 @@ func TestLLM_Invoke_UnresolvableModelFallsBackTo8192(t *testing.T) {
 
 // TestLLM_Invoke_UsesModelContentLengthBudget verifies that the message
 // fitting budget in Invoke is the chat model's context window
-// (content_length) resolved via dao.ResolveModelContentLength — NOT the
+// (content_length) resolved via modelcontext.ResolveModelContentLength - NOT the
 // canvas max_tokens / the 8192 fallback. A user prompt far larger than the
 // 8192 fallback (but well inside gpt-4o@openai's 128k window) must be passed
 // through to the invoker untrimmed.

@@ -69,25 +69,25 @@ func TestParseArgsDeepDocInferenceConcurrency(t *testing.T) {
 	}
 }
 
-// TestParseArgsIngestorMaxConcurrentWorkers pins the contract that the CLI
-// parser rejects a non-positive or non-integer --ingestor-max-concurrent-workers
+// TestParseArgsIngestorConcurrentWorkers pins the contract that the CLI
+// parser rejects a non-positive or non-integer --ingestor-concurrent-workers
 // up front (both the "--flag=value" and "--flag value" forms), and accepts a
 // positive value.
-func TestParseArgsIngestorMaxConcurrentWorkers(t *testing.T) {
+func TestParseArgsIngestorConcurrentWorkers(t *testing.T) {
 	cases := []struct {
 		name    string
 		args    []string
 		wantErr bool
 		want    int
 	}{
-		{"equals zero", []string{"prog", "--ingestor-max-concurrent-workers=0"}, true, 0},
-		{"equals negative", []string{"prog", "--ingestor-max-concurrent-workers=-3"}, true, 0},
-		{"equals nonint", []string{"prog", "--ingestor-max-concurrent-workers=abc"}, true, 0},
-		{"space zero", []string{"prog", "--ingestor-max-concurrent-workers", "0"}, true, 0},
-		{"space negative", []string{"prog", "--ingestor-max-concurrent-workers", "-3"}, true, 0},
-		{"space nonint", []string{"prog", "--ingestor-max-concurrent-workers", "abc"}, true, 0},
-		{"equals positive", []string{"prog", "--ingestor-max-concurrent-workers=12"}, false, 12},
-		{"space positive", []string{"prog", "--ingestor-max-concurrent-workers", "12"}, false, 12},
+		{"equals zero", []string{"prog", "--ingestor-concurrent-workers=0"}, true, 0},
+		{"equals negative", []string{"prog", "--ingestor-concurrent-workers=-3"}, true, 0},
+		{"equals nonint", []string{"prog", "--ingestor-concurrent-workers=abc"}, true, 0},
+		{"space zero", []string{"prog", "--ingestor-concurrent-workers", "0"}, true, 0},
+		{"space negative", []string{"prog", "--ingestor-concurrent-workers", "-3"}, true, 0},
+		{"space nonint", []string{"prog", "--ingestor-concurrent-workers", "abc"}, true, 0},
+		{"equals positive", []string{"prog", "--ingestor-concurrent-workers=12"}, false, 12},
+		{"space positive", []string{"prog", "--ingestor-concurrent-workers", "12"}, false, 12},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -105,8 +105,8 @@ func TestParseArgsIngestorMaxConcurrentWorkers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseArgs() error = %v, want nil for %v", err, tc.args)
 			}
-			if got.IngestorMaxConcurrentWorkers == nil || *got.IngestorMaxConcurrentWorkers != tc.want {
-				t.Fatalf("ingestorMaxConcurrentWorkers = %v, want %d for %v", got.IngestorMaxConcurrentWorkers, tc.want, tc.args)
+			if got.IngestorConcurrentWorkers == nil || *got.IngestorConcurrentWorkers != tc.want {
+				t.Fatalf("ingestorConcurrentWorkers = %v, want %d for %v", got.IngestorConcurrentWorkers, tc.want, tc.args)
 			}
 		})
 	}

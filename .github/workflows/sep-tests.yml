@@ -37,6 +37,12 @@ concurrency:
 # backend to build against github.com/infiniflow/onnxruntime_go.
 env:
   GOPRIVATE: github.com/infiniflow/onnxruntime_go
+  # Native static-lib cache location on infiniflow's self-hosted runners.
+  # build.sh resolves the libs from this dir (default ~/ragflow-native-libs);
+  # the offline-first contract keeps the version-keyed cache here so the
+  # fail-fast guard and the builder bind-mount both find it without an /opt
+  # pre-bake. Overridable per environment.
+  RAGFLOW_NATIVE_LIBS_DIR: /home/infiniflow/runners_work/runners_data/ragflow-native-libs
 
 jobs:
   ragflow_preflight:
@@ -204,25 +210,6 @@ jobs:
           echo "has_native_deepdoc_changes=${has_native_deepdoc}" >> $GITHUB_OUTPUT
           echo "Go: ${has_go}, Web: ${has_web}, Native DeepDoc: ${has_native_deepdoc}"
 
-  ragflow_python_sdk_unit:
-    name: ragflow_python_sdk_unit
-    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install Python SDK
-        run: |
-          uv venv --python 3.13
-          uv pip install -e sdk/python pytest
-
-      - name: Run Python SDK unit tests
-        run: .venv/bin/python -m pytest sdk/python/tests -q
-
   ragflow_tests_infinity:
     name: ragflow_tests_infinity
     needs: ragflow_preflight
@@ -262,6 +249,16 @@ jobs:
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
 
+          # Fail fast if the native-lib user cache is not mounted: a missing
+          # cache would otherwise surface as a cryptic cgo link error later.
+          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
+            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
+              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
+              exit 1
+            fi
+          done
+
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -271,11 +268,21 @@ jobs:
           trap cleanup_builder EXIT
 
           TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
+          # Mount the native static-lib user cache into the builder container.
+          # build.sh resolves the libs from RAGFLOW_NATIVE_LIBS_DIR (default
+          # ~/ragflow-native-libs); this pins the same root for the container and
+          # bind-mounts it read-only so the cgo link finds the versioned
+          # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
+          # the build host (populated by download_dev_deps.py); a missing mount is
+          # caught by the assert below, not by a cryptic cgo link error.
+          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
+            -e "RAGFLOW_NATIVE_LIBS_DIR=${RAGFLOW_NATIVE_LIBS_DIR}" \
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
+            -v "${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}:ro" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
@@ -296,6 +303,8 @@ jobs:
         #     (bpe_loader_anchors_test.go) are tagged `manual` and need the
         #     docker builder's /usr/share/infinity/resource, so they stay out
         #     of the default run.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
           set -euo pipefail
 
@@ -395,6 +404,27 @@ jobs:
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
+          # --build-context needs a BuildKit-enabled docker build with named
+          # context support (Docker 23+ / Buildx 0.8+). Check the CLI up front so
+          # an old runner fails with an actionable message instead of an
+          # "unknown flag" error after the build slot is acquired.
+          DOCKER_BUILD_HELP="$(sudo docker build --help 2>&1 || true)"
+          if [[ "${DOCKER_BUILD_HELP}" != *"--build-context"* ]]; then
+            echo "ERROR: docker build lacks --build-context (need Docker 23+ / Buildx 0.8+)." >&2
+            echo "       Upgrade Docker Engine or install the buildx plugin on this runner." >&2
+            exit 1
+          fi
+          # Same fail-fast guard as the Go unit-test step. Without the host cache
+          # the image build would silently fall back to downloading the native
+          # archives from GitHub; NATIVE_LIBS_REQUIRED=1 catches that inside the
+          # build instead of letting it go unnoticed.
+          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
+            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
+              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
+              exit 1
+            fi
+          done
           # Build-slot lock. MUST live on HOST-LOCAL storage shared by every runner
           # container on the SAME host. NOTE: ${RUNNER_WORKSPACE_PREFIX} is a host
           # bind mount (local), but its 'artifacts/' subdir is NFS — a flock on NFS
@@ -418,7 +448,14 @@ jobs:
             flock -w 4200 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}"
             ##sudo docker pull ubuntu:24.04
-            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build \
+              --build-arg NEED_MIRROR=1 \
+              --build-arg HTTPS_PROXY=${HTTPS_PROXY} \
+              --build-arg HTTP_PROXY=${HTTP_PROXY} \
+              --build-arg GITEE_TOKEN=${GITEE_TOKEN} \
+              --build-arg NATIVE_LIBS_REQUIRED=1 \
+              --build-context "native-libs=${NATIVE_LIBS_DIR}" \
+              -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
@@ -698,6 +735,8 @@ jobs:
         # between `docker compose up -d` and this one) and it registers the
         # providers, instances and tenant default models itself (so no fixture
         # step has to run first). No priority filtering: run it all.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
@@ -705,14 +744,31 @@ jobs:
             export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee: if tee fails (e.g. the
+          # artifacts dir is missing or NFS hiccups), the step must still reflect
+          # the real test outcome, not the tee failure.
+          set +eo pipefail
           ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_go_api_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
 
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        if: ${{ !cancelled() }}
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee (see Go API step above).
+          set +eo pipefail
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_sdk_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
 
       - name: Collect ragflow log Infinity
         if: ${{ !cancelled() }}
@@ -808,6 +864,16 @@ jobs:
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
 
+          # Fail fast if the native-lib user cache is not mounted: a missing
+          # cache would otherwise surface as a cryptic cgo link error later.
+          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
+            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
+              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
+              exit 1
+            fi
+          done
+
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -817,11 +883,21 @@ jobs:
           trap cleanup_builder EXIT
 
           TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
+          # Mount the native static-lib user cache into the builder container.
+          # build.sh resolves the libs from RAGFLOW_NATIVE_LIBS_DIR (default
+          # ~/ragflow-native-libs); this pins the same root for the container and
+          # bind-mounts it read-only so the cgo link finds the versioned
+          # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
+          # the build host (populated by download_dev_deps.py); a missing mount is
+          # caught by the assert below, not by a cryptic cgo link error.
+          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
+            -e "RAGFLOW_NATIVE_LIBS_DIR=${RAGFLOW_NATIVE_LIBS_DIR}" \
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
+            -v "${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}:ro" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
@@ -842,6 +918,8 @@ jobs:
         #     (bpe_loader_anchors_test.go) are tagged `manual` and need the
         #     docker builder's /usr/share/infinity/resource, so they stay out
         #     of the default run.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
           set -euo pipefail
 
@@ -955,6 +1033,27 @@ jobs:
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
+          # --build-context needs a BuildKit-enabled docker build with named
+          # context support (Docker 23+ / Buildx 0.8+). Check the CLI up front so
+          # an old runner fails with an actionable message instead of an
+          # "unknown flag" error after the build slot is acquired.
+          DOCKER_BUILD_HELP="$(sudo docker build --help 2>&1 || true)"
+          if [[ "${DOCKER_BUILD_HELP}" != *"--build-context"* ]]; then
+            echo "ERROR: docker build lacks --build-context (need Docker 23+ / Buildx 0.8+)." >&2
+            echo "       Upgrade Docker Engine or install the buildx plugin on this runner." >&2
+            exit 1
+          fi
+          # Same fail-fast guard as the Go unit-test step. Without the host cache
+          # the image build would silently fall back to downloading the native
+          # archives from GitHub; NATIVE_LIBS_REQUIRED=1 catches that inside the
+          # build instead of letting it go unnoticed.
+          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
+            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
+              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
+              exit 1
+            fi
+          done
           # Build-slot lock. MUST live on HOST-LOCAL storage shared by every runner
           # container on the SAME host. NOTE: ${RUNNER_WORKSPACE_PREFIX} is a host
           # bind mount (local), but its 'artifacts/' subdir is NFS — a flock on NFS
@@ -978,7 +1077,14 @@ jobs:
             flock -w 4200 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}"
             ##sudo docker pull ubuntu:24.04
-            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build \
+              --build-arg NEED_MIRROR=1 \
+              --build-arg HTTPS_PROXY=${HTTPS_PROXY} \
+              --build-arg HTTP_PROXY=${HTTP_PROXY} \
+              --build-arg GITEE_TOKEN=${GITEE_TOKEN} \
+              --build-arg NATIVE_LIBS_REQUIRED=1 \
+              --build-context "native-libs=${NATIVE_LIBS_DIR}" \
+              -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
@@ -1257,6 +1363,8 @@ jobs:
         # between `docker compose up -d` and this one) and it registers the
         # providers, instances and tenant default models itself (so no fixture
         # step has to run first). No priority filtering: run it all.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
@@ -1264,7 +1372,31 @@ jobs:
             export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee: if tee fails (e.g. the
+          # artifacts dir is missing or NFS hiccups), the step must still reflect
+          # the real test outcome, not the tee failure.
+          set +eo pipefail
           ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/es_go_api_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
+
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee (see Go API step above).
+          set +eo pipefail
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/es_sdk_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
 
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
@@ -1356,6 +1488,16 @@ jobs:
         # integration tests; the per-engine go jobs build the full server.
         run: |
           set -euo pipefail
+          # Fail fast if the native-lib user cache is not mounted: a missing
+          # cache would otherwise surface as a cryptic cgo link error later.
+          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
+            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
+              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
+              exit 1
+            fi
+          done
+
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_native_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -1365,11 +1507,21 @@ jobs:
           trap cleanup_builder EXIT
 
           TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
+          # Mount the native static-lib user cache into the builder container.
+          # build.sh resolves the libs from RAGFLOW_NATIVE_LIBS_DIR (default
+          # ~/ragflow-native-libs); this pins the same root for the container and
+          # bind-mounts it read-only so the cgo link finds the versioned
+          # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
+          # the build host (populated by download_dev_deps.py); a missing mount is
+          # caught by the assert below, not by a cryptic cgo link error.
+          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
+            -e "RAGFLOW_NATIVE_LIBS_DIR=${RAGFLOW_NATIVE_LIBS_DIR}" \
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
+            -v "${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}:ro" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
 
@@ -1456,6 +1608,16 @@ jobs:
         # starts only the dependency services, not the ragflow-cpu container.
         run: |
           set -euo pipefail
+          # Fail fast if the native-lib user cache is not mounted: a missing
+          # cache would otherwise surface as a cryptic cgo link error later.
+          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
+            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
+              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
+              exit 1
+            fi
+          done
+
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_go_int_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -1464,11 +1626,21 @@ jobs:
           }
           trap cleanup_builder EXIT
           TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
+          # Mount the native static-lib user cache into the builder container.
+          # build.sh resolves the libs from RAGFLOW_NATIVE_LIBS_DIR (default
+          # ~/ragflow-native-libs); this pins the same root for the container and
+          # bind-mounts it read-only so the cgo link finds the versioned
+          # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
+          # the build host (populated by download_dev_deps.py); a missing mount is
+          # caught by the assert below, not by a cryptic cgo link error.
+          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
+            -e "RAGFLOW_NATIVE_LIBS_DIR=${RAGFLOW_NATIVE_LIBS_DIR}" \
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
+            -v "${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}:ro" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
 
@@ -1856,6 +2028,7 @@ jobs:
           EXPOSE_MYSQL_PORT=$(_port EXPOSE_MYSQL_PORT)
           MINIO_PORT=$(_port MINIO_PORT)
           REDIS_PORT=$(_port REDIS_PORT)
+          KVROCKS_PORT=$(_port KVROCKS_PORT)
           EXPOSE_NATS_PORT=$(_port EXPOSE_NATS_PORT)
           EXPOSE_CLICKHOUSE_TCP_PORT=$(_port EXPOSE_CLICKHOUSE_TCP_PORT)
           export RAGFLOW_INFINITY_URI="host.docker.internal:${INFINITY_THRIFT_PORT}"
@@ -1863,6 +2036,10 @@ jobs:
           export RAGFLOW_MYSQL_PORT="${EXPOSE_MYSQL_PORT}"
           export RAGFLOW_MINIO_HOST="host.docker.internal:${MINIO_PORT}"
           export RAGFLOW_REDIS_HOST="host.docker.internal:${REDIS_PORT}"
+          # Test-only Kvrocks endpoint. Do not export RAGFLOW_KVROCKS_HOST here:
+          # that is a production config override and changes config-default tests.
+          export RAGFLOW_TEST_KVROCKS_ADDR="host.docker.internal:${KVROCKS_PORT}"
+          export KVROCKS_TEST_ADDR="${RAGFLOW_TEST_KVROCKS_ADDR}"
           export RAGFLOW_NATS_HOST=host.docker.internal
           export RAGFLOW_NATS_PORT="${EXPOSE_NATS_PORT}"
           export RAGFLOW_CLICKHOUSE_HOST=host.docker.internal

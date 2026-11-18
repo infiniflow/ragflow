@@ -21,9 +21,10 @@ package rag_analyzer
 /*
 #cgo CXXFLAGS: -std=c++20 -I${SRCDIR}/..
 #cgo linux LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread -lpcre2-8
-// Apple Silicon: Homebrew installs to /opt/homebrew; Intel Macs keep /usr/local.
-#cgo darwin,arm64 LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /opt/homebrew/lib/libpcre2-8.a
-#cgo darwin,amd64 LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
+// macOS links the static pcre2 the CMake build stages next to the tokenizer
+// archive: cgo cannot search library paths, and naming a Homebrew prefix here
+// breaks every host whose Homebrew lives elsewhere.
+#cgo darwin LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread ${SRCDIR}/cpp/cmake-build-release/libpcre2-8.a
 
 #include <stdlib.h>
 #include "cpp/rag_analyzer_c_api.h"
@@ -264,9 +265,9 @@ func (a *Analyzer) GetTermTag(term string) string {
 	return C.GoString(cResult)
 }
 
-// Copy creates a new independent analyzer instance from the current one
-// The new instance shares the loaded dictionaries but has independent internal state
-// This is useful for creating per-request analyzer instances in concurrent environments
+// Copy creates a new independent analyzer instance from the current one.
+// The instance shares the tokenizer dictionaries and owns an independent OpenCC converter.
+// This is useful for creating per-request analyzer instances in concurrent environments.
 func (a *Analyzer) Copy() *Analyzer {
 	if a.handle == nil {
 		return nil

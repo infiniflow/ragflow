@@ -138,19 +138,19 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 					t.Errorf("%s: Extractor %s has every modular sub-task disabled; the template's purpose requires at least one active", f, cpnID)
 				}
 
-				// The params must also survive CleanComponentParams: no
+				// The params must also survive BuildParserConfig: no
 				// dropped keys and any active sub-task left active with its
 				// prompt intact.
 				dslRaw, _ := json.Marshal(doc["dsl"])
-				cleaned := CleanComponentParams(dslRaw, map[string]any{cpnID: params})
+				cleaned := buildTestParserConfig(t, dslRaw, map[string]any{cpnID: params})
 				got, _ := cleaned[cpnID].(map[string]any)
 				if got == nil {
-					t.Errorf("%s: Extractor %s dropped by CleanComponentParams", f, cpnID)
+					t.Errorf("%s: Extractor %s dropped by BuildParserConfig", f, cpnID)
 					continue
 				}
 				for k := range params {
 					if _, kept := got[k]; !kept {
-						t.Errorf("%s: Extractor %s param %q dropped by CleanComponentParams", f, cpnID, k)
+						t.Errorf("%s: Extractor %s param %q dropped by BuildParserConfig", f, cpnID, k)
 					}
 				}
 				for _, k := range modularKeys {
@@ -159,14 +159,14 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 						continue
 					}
 					if !subTaskActive(k, got[k]) {
-						t.Errorf("%s: Extractor %s sub-task %q no longer active after CleanComponentParams: %#v", f, cpnID, k, got[k])
+						t.Errorf("%s: Extractor %s sub-task %q no longer active after BuildParserConfig: %#v", f, cpnID, k, got[k])
 						continue
 					}
 					if k == "summary" {
 						cleanedSummary, _ := got[k].(map[string]any)
 						prompt, _ := cleanedSummary["system_prompt"].(string)
 						if prompt == "" {
-							t.Errorf("%s: Extractor %s summary.system_prompt empty after CleanComponentParams", f, cpnID)
+							t.Errorf("%s: Extractor %s summary.system_prompt empty after BuildParserConfig", f, cpnID)
 						}
 					}
 				}

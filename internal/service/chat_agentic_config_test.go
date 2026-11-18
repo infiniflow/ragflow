@@ -19,7 +19,7 @@ func TestChatAgenticConfigPersistsAndResets(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 	t.Setenv("AGENTIC_RAG_CONFIG", filepath.Join("..", "..", "conf", "agentic_rag.yaml"))
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 
 	for _, override := range []any{
 		map[string]any{"content": "Use this saved instruction", "tools": []any{"grep_chunks", "list_chunks"}},
@@ -27,7 +27,7 @@ func TestChatAgenticConfigPersistsAndResets(t *testing.T) {
 		map[string]any{"tools": []any{"grep_chunks", "list_chunks"}},
 		nil,
 	} {
-		_, err := svc.PatchChat(ctx, "user-1", "chat-1", map[string]any{
+		_, err := svc.PatchChat(ctx, "chat-1", map[string]any{
 			"prompt_config": map[string]any{"agentic_rag": override},
 		})
 		if err != nil {
@@ -45,7 +45,7 @@ func TestChatAgenticConfigPersistsAndResets(t *testing.T) {
 		if chat.PromptConfig["system"] != "old system" || chat.PromptConfig["quote"] != true {
 			t.Fatalf("unrelated settings changed: %#v", chat.PromptConfig)
 		}
-		settings, err := reloaded.GetAgenticRAGConfig(ctx, "user-1", "chat-1")
+		settings, err := reloaded.GetAgenticRAGConfig(ctx, "chat-1")
 		if err != nil || settings == nil {
 			t.Fatalf("GetAgenticRAGConfig() = (%#v, %v)", settings, err)
 		}
@@ -72,8 +72,9 @@ func TestChatAgenticConfigPersistsAndResets(t *testing.T) {
 func TestChatAgenticConfigCreateAndPut(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 	svc := NewChatService()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	override := map[string]any{"content": "Created instruction", "tools": []any{"grep_chunks", "list_chunks"}}
-	result, code, err := svc.Create(t.Context(), "user-1", map[string]any{
+	result, code, err := svc.Create(ctx, map[string]any{
 		"name":          "Agentic configuration",
 		"prompt_config": map[string]any{"agentic_rag": override},
 	})
@@ -81,20 +82,20 @@ func TestChatAgenticConfigCreateAndPut(t *testing.T) {
 		t.Fatalf("Create() = (%d, %v)", code, err)
 	}
 	chatID := result["id"].(string)
-	chat, err := svc.chatDAO.GetByID(t.Context(), dao.DB, chatID)
+	chat, err := svc.chatDAO.GetByID(ctx, dao.DB, chatID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(chat.PromptConfig["agentic_rag"], override) {
 		t.Fatalf("create did not persist override: %#v", chat.PromptConfig)
 	}
-	_, err = svc.UpdateChat(t.Context(), "user-1", chatID, map[string]any{
+	_, err = svc.UpdateChat(ctx, chatID, map[string]any{
 		"prompt_config": map[string]any{"agentic_rag": nil, "system": "replacement"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err = svc.chatDAO.GetByID(t.Context(), dao.DB, chatID)
+	chat, err = svc.chatDAO.GetByID(ctx, dao.DB, chatID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,20 +125,21 @@ func TestChatAgenticConfigRejectsInvalidWrites(t *testing.T) {
 			db := setupChatRESTUpdateServiceTestDB(t)
 			createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 			svc := NewChatService()
+			ctx := serviceTestContext(t, "user-1", "user-1")
 			for _, method := range []string{"create", "put", "patch"} {
 				payload := map[string]any{"prompt_config": map[string]any{"agentic_rag": override}}
 				var err error
 				switch method {
 				case "create":
 					payload["name"] = "Invalid configuration"
-					_, _, err = svc.Create(t.Context(), "user-1", payload)
+					_, _, err = svc.Create(ctx, payload)
 				case "put":
-					_, err = svc.UpdateChat(t.Context(), "user-1", "chat-1", payload)
+					_, err = svc.UpdateChat(ctx, "chat-1", payload)
 				case "patch":
-					_, err = svc.PatchChat(t.Context(), "user-1", "chat-1", payload)
+					_, err = svc.PatchChat(ctx, "chat-1", payload)
 				}
-				if err == nil {
-					t.Fatalf("%s accepted invalid override %#v", method, override)
+				if err == nil || !strings.Contains(err.Error(), "agentic_rag") {
+					t.Fatalf("%s validation error = %v for invalid override %#v", method, err, override)
 				}
 			}
 			chat, err := svc.chatDAO.GetByID(t.Context(), dao.DB, "chat-1")
@@ -159,13 +161,14 @@ func TestChatAgenticConfigEnforcesPermissions(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "other-chat", "other-tenant")
 	svc := NewChatService()
-	if _, err := svc.GetAgenticRAGConfig(t.Context(), "user-1", "other-chat"); !errors.Is(err, permission.ErrPermissionDenied) {
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	if _, err := svc.GetAgenticRAGConfig(ctx, "other-chat"); !errors.Is(err, permission.ErrResourceNotFound) && !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("cross-tenant read error = %v", err)
 	}
-	_, err := svc.PatchChat(t.Context(), "user-1", "other-chat", map[string]any{
+	_, err := svc.PatchChat(ctx, "other-chat", map[string]any{
 		"prompt_config": map[string]any{"agentic_rag": map[string]any{"content": "Forbidden"}},
 	})
-	if !errors.Is(err, permission.ErrPermissionDenied) {
+	if !errors.Is(err, permission.ErrResourceNotFound) && !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("cross-tenant update error = %v", err)
 	}
 }

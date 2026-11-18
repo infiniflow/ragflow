@@ -17,7 +17,7 @@
 
 # Variables
 HOST_ADDRESS="${RAGFLOW_HOST_ADDRESS:-http://localhost:9380}"
-API_KEY="${RAGFLOW_API_KEY:-ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm}"
+API_KEY="${RAGFLOW_API_KEY:?Set RAGFLOW_API_KEY before running this example}"
 
 # Check for jq
 if ! command -v jq &> /dev/null; then

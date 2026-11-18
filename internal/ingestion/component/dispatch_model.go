@@ -24,18 +24,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/modelcontext"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
 
 type tenantModelExtra struct {
-	MaxTokens *int `json:"max_tokens"`
+	MaxTokens json.RawMessage `json:"max_tokens"`
 }
 
 type resolvedModelConfig struct {
@@ -63,40 +67,36 @@ func configuredAudioModelID(setup schema.ParserSetup) string {
 	return getStringOr(setup, "llm_id", "")
 }
 
-// defaultResolveTenantModelByType resolves the tenant's configured default for
-// modelType, requiring a nonempty default model reference first. It then tries
-// the enrolled tenant-model ID and falls back to the configured reference if
-// that ID is absent or cannot be resolved.
+// defaultResolveTenantModelByType resolves the current member's configured default.
 func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	tenantDAO := dao.NewTenantDAO()
-	tenant, err := tenantDAO.GetByID(ctx, db, tenantID)
+	membership, err := resolveDefaultModelMembership(ctx, db, tenantID)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, "", nil, 0, fmt.Errorf("load default model settings for tenant %s: %w", tenantID, err)
 	}
 	var modelID string
 	switch modelType {
 	case entity.ModelTypeChat:
-		modelID = tenant.LLMID
+		modelID = membership.LLMID
 	case entity.ModelTypeEmbedding:
-		modelID = tenant.EmbdID
+		modelID = membership.EmbdID
 	case entity.ModelTypeRerank:
-		modelID = tenant.RerankID
+		modelID = membership.RerankID
 	case entity.ModelTypeSpeech2Text:
-		modelID = tenant.ASRID
+		modelID = membership.ASRID
 	case entity.ModelTypeImage2Text:
-		modelID = tenant.Img2TxtID
+		modelID = membership.Img2TxtID
 	case entity.ModelTypeTTS:
-		modelID = *tenant.TTSID
+		modelID = stringValue(membership.TTSID)
 	case entity.ModelTypeOCR:
-		modelID = *tenant.OCRID
+		modelID = stringValue(membership.OCRID)
 	default:
 		return nil, "", nil, 0, fmt.Errorf("invalid model type: %s", modelType)
 	}
 	if modelID == "" {
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
-	if tenantModelID := tenantModelIDByType(tenant, modelType); tenantModelID != "" {
-		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, tenantModelID)
+	if tenantModelID := tenantModelIDByType(membership, modelType); tenantModelID != "" {
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, modelType, tenantModelID)
 		if err == nil {
 			return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
 		}
@@ -105,7 +105,7 @@ func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID 
 }
 
 // resolveTenantOCRModelByProvider resolves the tenant's first active OCR
-// model under the named provider (e.g. "PaddleOCR"), mirroring Python's
+// model under the named provider (e.g. "PaddleOCR"), mirroring
 // get_first_provider_model_name(tenant_id, provider_name, LLMType.OCR).
 // It walks provider -> instances -> models and returns the first model whose
 // model_type includes the OCR bit, resolved through resolveModelConfigByID.
@@ -116,8 +116,7 @@ var resolveTenantOCRModelByProvider = defaultResolveTenantOCRModelByProvider
 // model is resolved by ID; its resolution error is returned rather than trying
 // another model.
 func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	providerDAO := dao.NewTenantModelProviderDAO()
-	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+	provider, err := getTenantModelProviderByName(ctx, db, tenantID, providerName)
 	if err != nil {
 		// Some OCR capabilities are registered under sibling provider names
 		// (cloud vs. local). Tolerate the alternate spelling before giving up
@@ -126,7 +125,7 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 			if alias == providerName {
 				continue
 			}
-			if p, aerr := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, alias); aerr == nil {
+			if p, aerr := getTenantModelProviderByName(ctx, db, tenantID, alias); aerr == nil {
 				provider, err = p, nil
 				break
 			}
@@ -172,30 +171,42 @@ func ocrProviderAliases(providerName string) []string {
 		return []string{"PaddleOCR", "PaddleOCR.local"}
 	case "MinerU", "MinerU.Net":
 		return []string{"MinerU", "MinerU.Net"}
+	case "Unlimited-OCR-2", "Unlimited-OCR", "unlimited_ocr":
+		return []string{"Unlimited-OCR-2", "Unlimited-OCR", "unlimited_ocr"}
 	default:
 		return []string{providerName}
 	}
 }
 
-func tenantModelIDByType(tenant *entity.Tenant, modelType entity.ModelType) string {
-	if tenant == nil {
+func resolveDefaultModelMembership(ctx context.Context, db *gorm.DB, tenantID string) (*entity.UserTenant, error) {
+	membershipDAO := dao.NewUserTenantDAO()
+	userID := permission.UserIDFromContext(ctx)
+	contextTenantID := permission.TenantIDFromContext(ctx)
+	if userID != "" && (contextTenantID == "" || contextTenantID == tenantID) {
+		return membershipDAO.FilterByUserIDAndTenantID(ctx, db, userID, tenantID)
+	}
+	return membershipDAO.GetOwnerByTenantID(ctx, db, tenantID)
+}
+
+func tenantModelIDByType(membership *entity.UserTenant, modelType entity.ModelType) string {
+	if membership == nil {
 		return ""
 	}
 	switch modelType {
 	case entity.ModelTypeChat:
-		return stringValue(tenant.TenantLLMID)
+		return stringValue(membership.TenantLLMID)
 	case entity.ModelTypeEmbedding:
-		return stringValue(tenant.TenantEmbdID)
+		return stringValue(membership.TenantEmbdID)
 	case entity.ModelTypeRerank:
-		return stringValue(tenant.TenantRerankID)
+		return stringValue(membership.TenantRerankID)
 	case entity.ModelTypeSpeech2Text:
-		return stringValue(tenant.TenantASRID)
+		return stringValue(membership.TenantASRID)
 	case entity.ModelTypeImage2Text:
-		return stringValue(tenant.TenantImg2TxtID)
+		return stringValue(membership.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return stringValue(tenant.TenantTTSID)
+		return stringValue(membership.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return stringValue(tenant.TenantOCRID)
+		return stringValue(membership.TenantOCRID)
 	default:
 		return ""
 	}
@@ -209,17 +220,37 @@ func stringValue(value *string) string {
 }
 
 // defaultResolveModelConfig treats a reference without "@" as an exact tenant
-// model ID and a reference containing "@" as a provider-instance composite.
-// Failed ID lookups never fall through to composite or catalog resolution.
+// model ID or a gp- model group reference, and a reference containing "@" as
+// a provider-instance composite. Failed ID lookups never fall through to
+// composite or catalog resolution.
 func defaultResolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if !strings.Contains(modelRef, "@") {
-		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, modelType, modelRef)
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
 		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
 	}
 	return resolveModelConfigFromProviderInstance(ctx, db, tenantID, modelType, modelRef)
+}
+
+// resolveModelConfigByRef resolves a non-composite model reference — an exact
+// tenant-model ID or a gp- model group reference — to a driver config. A group
+// reference picks the group's current active member of the requested type and
+// resolves that member by ID, so failover stays a runtime decision and a
+// member marked inactive is skipped exactly like the model factory does.
+func resolveModelConfigByRef(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (*resolvedModelConfig, error) {
+	if groupID, ok := common.ParseGroupModelRef(modelRef); ok {
+		member, err := transaction.PickModelFromGroup(ctx, db, groupID, modelType)
+		if err != nil {
+			return nil, fmt.Errorf("pick model from group %s: %w", groupID, err)
+		}
+		if member == nil {
+			return nil, fmt.Errorf("model group %s has no available model", groupID)
+		}
+		modelRef = member.ID
+	}
+	return resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)
 }
 
 // resolveModelConfigByID resolves an enrolled model within tenantID before
@@ -234,8 +265,12 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 
 	// Scope the lookup itself so missing and foreign models are indistinguishable
 	// before exposing status, type, instance configuration, or driver details.
+	owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tenant owner for model lookup: %w", err)
+	}
 	providers := db.Session(&gorm.Session{}).Model(&entity.TenantModelProvider{}).
-		Select("id").Where("tenant_id = ?", tenantID)
+		Select("id").Where("tenant_id = ? AND user_id = ?", tenantID, owner.UserID)
 	scopedDB := db.Session(&gorm.Session{}).Where("provider_id IN (?)", providers)
 	modelObj, err := modelDAO.GetByID(ctx, scopedDB, modelID)
 	if err != nil {
@@ -263,6 +298,12 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	instance, err := instanceDAO.GetByID(ctx, db, modelObj.InstanceID)
 	if err != nil {
 		return nil, err
+	}
+	// A disabled instance must not be used: its credentials are no longer
+	// accepted by the provider, and running against it would hide that the
+	// selected deployment is unavailable. Mirrors the service-layer check.
+	if !strings.EqualFold(instance.Status, "active") {
+		return nil, fmt.Errorf("model instance %q is disabled", instance.InstanceName)
 	}
 
 	apiKey := instance.APIKey
@@ -293,8 +334,8 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 		if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
 			return nil, err
 		}
-		if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-			contextLength = *tenantExtra.MaxTokens
+		if maxTokens := modelcontext.MaxTokensFromJSON(tenantExtra.MaxTokens); maxTokens > 0 {
+			contextLength = maxTokens
 		}
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
@@ -305,23 +346,29 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 }
 
 func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	pureModelName, instanceName, providerName, err := parseCompositeModelName(modelName)
+	pureModelName, instanceName, providerName, err := common.ParseCompositeModelName(modelName)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
 	catalogName := modelModule.CatalogProviderName(providerName)
 
-	providerDAO := dao.NewTenantModelProviderDAO()
 	instanceDAO := dao.NewTenantModelInstanceDAO()
 	modelDAO := dao.NewTenantModelDAO()
 
-	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+	provider, err := getTenantModelProviderByName(ctx, db, tenantID, providerName)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
 	}
 	instance, err := instanceDAO.GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
+	}
+	// The instance named by the reference must be usable. A two-part
+	// "model@provider" reference names the "default" instance implicitly, so
+	// an inactive default fails here instead of being answered by another
+	// instance of the same provider.
+	if !strings.EqualFold(instance.Status, "active") {
+		return nil, "", nil, 0, fmt.Errorf("model instance %q is disabled", instanceName)
 	}
 
 	apiKey := instance.APIKey
@@ -359,8 +406,8 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 			if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
 				return nil, "", nil, 0, err
 			}
-			if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-				contextLength = *tenantExtra.MaxTokens
+			if maxTokens := modelcontext.MaxTokensFromJSON(tenantExtra.MaxTokens); maxTokens > 0 {
+				contextLength = maxTokens
 			}
 		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
@@ -397,20 +444,6 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	return driver, llmInfo.Name, apiConfig, contextLength, nil
 }
 
-func parseCompositeModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
-	parts := strings.Split(compositeName, "@")
-	switch len(parts) {
-	case 3:
-		return parts[0], parts[1], parts[2], nil
-	case 2:
-		return parts[0], "default", parts[1], nil
-	case 1:
-		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
-	}
-	n := len(parts)
-	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
-}
-
 func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {
 	if driver == nil {
 		return nil, fmt.Errorf("provider %s driver not found", providerName)
@@ -431,4 +464,12 @@ func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName,
 
 func errorsIsRecordNotFound(err error) bool {
 	return err != nil && (errors.Is(err, gorm.ErrRecordNotFound) || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
+}
+
+func getTenantModelProviderByName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (*entity.TenantModelProvider, error) {
+	owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, owner.UserID, providerName)
 }

@@ -33,12 +33,12 @@ func NewCompilationTemplateGroupDAO() *CompilationTemplateGroupDAO {
 	return &CompilationTemplateGroupDAO{}
 }
 
-// ListSaved returns the tenant's valid groups with optional keyword/scope
-// filtering and ordering, mirroring Python list_saved(). Built-in template
-// definitions are not persisted as a group and therefore never appear here.
-func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.DB, tenantID, keywords, scope string, terms []OrderTerm) ([]*entity.CompilationTemplateGroup, error) {
+// ListSaved returns a user's valid groups in a tenant with optional keyword/scope
+// filtering and ordering. Built-in template definitions are not persisted as
+// a group and therefore never appear here.
+func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.DB, tenantID, userID, keywords, scope string, terms []OrderTerm) ([]*entity.CompilationTemplateGroup, error) {
 	q := db.WithContext(ctx).
-		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid))
+		Where("tenant_id = ? AND user_id = ? AND status = ?", tenantID, userID, string(entity.StatusValid))
 	if keywords != "" {
 		q = q.Where("name LIKE ?", "%"+keywords+"%")
 	}
@@ -52,12 +52,11 @@ func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.
 	return groups, nil
 }
 
-// CountSavedByTenant counts the tenant's own valid groups, mirroring the
-// group_count query in Python get_owner_filter / get_category_filter.
-func (dao *CompilationTemplateGroupDAO) CountSavedByTenant(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
+// CountSavedByTenantAndUser counts a user's valid groups in a tenant.
+func (dao *CompilationTemplateGroupDAO) CountSavedByTenantAndUser(ctx context.Context, db *gorm.DB, tenantID, userID string) (int64, error) {
 	var count int64
 	err := db.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
-		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid)).
+		Where("tenant_id = ? AND user_id = ? AND status = ?", tenantID, userID, string(entity.StatusValid)).
 		Count(&count).Error
 	return count, err
 }

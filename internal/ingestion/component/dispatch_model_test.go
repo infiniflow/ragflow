@@ -66,12 +66,12 @@ func TestResolveModelConfigForStoredMistralOCRProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	const storedKey = `{"MISTRAL_OCR_API_KEY": "sk-env"}`
 	for _, row := range []interface{}{
-		&entity.TenantModelProvider{ID: "provider-mistral-ocr", TenantID: "tenant-1", ProviderName: "Mistral OCR"},
+		&entity.TenantModelProvider{ID: "provider-mistral-ocr", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "Mistral OCR"},
 		&entity.TenantModelInstance{ID: "instance-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceName: "default", APIKey: storedKey, Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceID: "instance-mistral-ocr", ModelName: "mistral-ocr-latest", ModelType: int(entity.ModelTypeOCR), Status: "active"},
 	} {
@@ -109,6 +109,94 @@ func TestResolveModelConfigForStoredMistralOCRProvider(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Models stored under "Unlimited-OCR-2" provider name resolve to the
+// UnlimitedOCR driver and catalog entry, by tenant model id and by composite
+// reference. This asserts that a tenant row with provider_name = "Unlimited-OCR-2"
+// resolves through CatalogProviderName -> FindProvider -> NewInstance and returns
+// driver.Name() == "unlimited_ocr".
+func TestResolveModelConfigForStoredUnlimitedOCRProvider(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	const storedKey = `{"unlimited_ocr_api_key": "sk-unlimited"}`
+	for _, row := range []interface{}{
+		&entity.TenantModelProvider{ID: "provider-unlimited-ocr", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "Unlimited-OCR-2"},
+		&entity.TenantModelInstance{ID: "instance-unlimited-ocr", ProviderID: "provider-unlimited-ocr", InstanceName: "default", APIKey: storedKey, Status: "active", Extra: `{"base_url":"http://127.0.0.1:18000"}`},
+		&entity.TenantModel{ID: "model-unlimited-ocr", ProviderID: "provider-unlimited-ocr", InstanceID: "instance-unlimited-ocr", ModelName: "Unlimited-OCR-2", ModelType: int(entity.ModelTypeOCR), Status: "active"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name      string
+		modelRef  string
+		wantModel string
+	}{
+		{name: "tenant model id", modelRef: "model-unlimited-ocr", wantModel: "Unlimited-OCR-2"},
+		{name: "enrolled composite", modelRef: "Unlimited-OCR-2@default@Unlimited-OCR-2", wantModel: "Unlimited-OCR-2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			driver, modelName, apiConfig, _, err := defaultResolveModelConfig(t.Context(), db, "tenant-1", entity.ModelTypeOCR, tc.modelRef)
+			if err != nil {
+				t.Fatalf("resolve %q: %v", tc.modelRef, err)
+			}
+			if driver == nil || driver.Name() != "unlimited_ocr" {
+				t.Fatalf("driver = %v, want the unlimited_ocr driver", driver)
+			}
+			if modelName != tc.wantModel {
+				t.Fatalf("model name = %q, want %q", modelName, tc.wantModel)
+			}
+			if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey != storedKey {
+				t.Fatalf("api config = %+v, want the stored key", apiConfig)
+			}
+		})
+	}
+
+	t.Run("resolveModelConfigByID directly", func(t *testing.T) {
+		resolved, err := resolveModelConfigByID(t.Context(), db, "tenant-1", entity.ModelTypeOCR, "model-unlimited-ocr")
+		if err != nil {
+			t.Fatalf("resolveModelConfigByID: %v", err)
+		}
+		if resolved.driver == nil || resolved.driver.Name() != "unlimited_ocr" {
+			t.Fatalf("resolved.driver = %v, want unlimited_ocr", resolved.driver)
+		}
+		if resolved.model.ModelName != "Unlimited-OCR-2" {
+			t.Fatalf("resolved.model = %q, want Unlimited-OCR-2", resolved.model.ModelName)
+		}
+	})
+
+	t.Run("resolveTenantOCRModelByProvider directly", func(t *testing.T) {
+		driver, modelName, _, _, err := defaultResolveTenantOCRModelByProvider(t.Context(), db, "tenant-1", "Unlimited-OCR-2")
+		if err != nil {
+			t.Fatalf("defaultResolveTenantOCRModelByProvider: %v", err)
+		}
+		if driver == nil || driver.Name() != "unlimited_ocr" {
+			t.Fatalf("driver = %v, want unlimited_ocr", driver)
+		}
+		if modelName != "Unlimited-OCR-2" {
+			t.Fatalf("modelName = %q, want Unlimited-OCR-2", modelName)
+		}
+	})
+
+	t.Run("disabled model returns error", func(t *testing.T) {
+		if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-unlimited-ocr").Update("status", "disabled").Error; err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		defer db.Model(&entity.TenantModel{}).Where("id = ?", "model-unlimited-ocr").Update("status", "active")
+
+		_, _, _, _, err := defaultResolveTenantOCRModelByProvider(t.Context(), db, "tenant-1", "Unlimited-OCR-2")
+		if err == nil {
+			t.Fatal("expected error for disabled model, got nil")
+		}
+	})
 }
 
 // TestResolveModelConfigInaccessibleIDs checks that missing and foreign model
@@ -262,12 +350,12 @@ func TestResolveModelConfigByIDScopedQuerySQL(t *testing.T) {
 		t.Fatalf("model queries=%d, want one scoped lookup: %+v", len(queries), queries)
 	}
 	query := queries[0]
-	const wantSQL = "SELECT * FROM `tenant_model` WHERE provider_id IN (SELECT `id` FROM `tenant_model_provider` WHERE tenant_id = ?) AND id = ? LIMIT 1"
+	const wantSQL = "SELECT * FROM `tenant_model` WHERE provider_id IN (SELECT `id` FROM `tenant_model_provider` WHERE tenant_id = ? AND user_id = ?) AND id = ? LIMIT 1"
 	if query.sql != wantSQL {
 		t.Errorf("scoped SQL=%q, want %q", query.sql, wantSQL)
 	}
-	if len(query.vars) != 2 || query.vars[0] != tenantID || query.vars[1] != modelID {
-		t.Errorf("bound vars=%#v, want tenant ID then model ID", query.vars)
+	if len(query.vars) != 3 || query.vars[0] != tenantID || query.vars[2] != modelID {
+		t.Errorf("bound vars=%#v, want tenant ID, owner user ID, then model ID", query.vars)
 	}
 	if strings.Contains(query.sql, tenantID) || strings.Contains(query.sql, modelID) {
 		t.Errorf("an ID was interpolated into SQL: %q", query.sql)
@@ -342,5 +430,128 @@ func TestResolveModelConfigChainedDBStatementIsolationFixedOnly(t *testing.T) {
 	_, _, _, _, err = defaultResolveModelConfig(t.Context(), db.Where("1 = ?", 0), "tenant-1", entity.ModelTypeOCR, "model-b")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("resolver dropped the caller's rejecting scope: %v", err)
+	}
+}
+
+// openDispatchModelTestDB opens an isolated in-memory database holding the
+// tenant model tables the dispatch resolvers read.
+func openDispatchModelTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	return db
+}
+
+// TestResolveModelConfig_InactiveInstanceIsAnExplicitFailure verifies that a
+// model whose instance is inactive fails with an explicit error on both
+// resolution paths, instead of running against the disabled instance's
+// credentials. A two-part "model@provider" reference names the "default"
+// instance implicitly, so an inactive default must fail the same way.
+func TestResolveModelConfig_InactiveInstanceIsAnExplicitFailure(t *testing.T) {
+	db := openDispatchModelTestDB(t)
+	for _, row := range []interface{}{
+		&entity.TenantModelProvider{ID: "provider-openai", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-default", ProviderID: "provider-openai", InstanceName: "default", APIKey: `{"OPENAI_API_KEY": "sk-inactive"}`, Status: "inactive"},
+		&entity.TenantModel{ID: "model-1", ProviderID: "provider-openai", InstanceID: "instance-default", ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	for _, tc := range []struct{ name, modelRef string }{
+		{name: "tenant model id", modelRef: "model-1"},
+		{name: "composite reference", modelRef: "gpt-4o@default@OpenAI"},
+		{name: "legacy two-part reference", modelRef: "gpt-4o@OpenAI"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			driver, modelName, apiConfig, contextLength, err := defaultResolveModelConfig(t.Context(), db, "tenant-1", entity.ModelTypeChat, tc.modelRef)
+			if err == nil {
+				t.Fatalf("an inactive instance must fail explicitly, got driver=%v model=%q", driver, modelName)
+			}
+			if !strings.Contains(strings.ToLower(err.Error()), "disabled") {
+				t.Fatalf("error does not report the disabled instance: %v", err)
+			}
+			if driver != nil || modelName != "" || apiConfig != nil || contextLength != 0 {
+				t.Fatal("failed resolution returned a partial configuration")
+			}
+		})
+	}
+}
+
+// TestResolveModelConfig_MaxTokensOverrideSetsContextWindowOnly verifies that
+// a tenant "max_tokens" override moves the resolved context window only: the
+// provider catalog's context_length is used when there is no override, and the
+// override never turns the model into an output-generation cap.
+func TestResolveModelConfig_MaxTokensOverrideSetsContextWindowOnly(t *testing.T) {
+	db := openDispatchModelTestDB(t)
+	for _, row := range []interface{}{
+		&entity.TenantModelProvider{ID: "provider-openai", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-default", ProviderID: "provider-openai", InstanceName: "default", Status: "active"},
+		&entity.TenantModel{ID: "model-1", ProviderID: "provider-openai", InstanceID: "instance-default", ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	catalogModel, err := dao.GetModelProviderManager().GetModelByName("OpenAI", "gpt-4o")
+	if err != nil {
+		t.Fatalf("resolve provider model: %v", err)
+	}
+	if catalogModel.ContextLength == nil {
+		t.Fatal("provider model has no context_length")
+	}
+
+	// Without an override the catalog context window is used.
+	_, _, _, contextLength, err := defaultResolveModelConfig(t.Context(), db, "tenant-1", entity.ModelTypeChat, "gpt-4o@default@OpenAI")
+	if err != nil {
+		t.Fatalf("resolve model config: %v", err)
+	}
+	if contextLength != *catalogModel.ContextLength {
+		t.Fatalf("context length = %d, want catalog context_length %d", contextLength, *catalogModel.ContextLength)
+	}
+
+	// The tenant override replaces the context window only.
+	if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-1").
+		Update("extra", `{"max_tokens": 2000}`).Error; err != nil {
+		t.Fatalf("set model extra: %v", err)
+	}
+	_, _, _, contextLength, err = defaultResolveModelConfig(t.Context(), db, "tenant-1", entity.ModelTypeChat, "gpt-4o@default@OpenAI")
+	if err != nil {
+		t.Fatalf("resolve model config with override: %v", err)
+	}
+	if contextLength != 2000 {
+		t.Fatalf("context length = %d, want the tenant max_tokens override 2000", contextLength)
+	}
+	if catalogModel.MaxOutput != nil && *catalogModel.MaxOutput == contextLength {
+		t.Fatalf("resolved context length %d equals the catalog max_output; the context window and the output cap are indistinguishable", contextLength)
+	}
+}
+
+func TestOCRProviderAliases(t *testing.T) {
+	tests := []struct {
+		provider string
+		want     []string
+	}{
+		{"PaddleOCR", []string{"PaddleOCR", "PaddleOCR.local"}},
+		{"PaddleOCR.local", []string{"PaddleOCR", "PaddleOCR.local"}},
+		{"MinerU", []string{"MinerU", "MinerU.Net"}},
+		{"MinerU.Net", []string{"MinerU", "MinerU.Net"}},
+		{"Unlimited-OCR-2", []string{"Unlimited-OCR-2", "Unlimited-OCR", "unlimited_ocr"}},
+		{"Unlimited-OCR", []string{"Unlimited-OCR-2", "Unlimited-OCR", "unlimited_ocr"}},
+		{"unlimited_ocr", []string{"Unlimited-OCR-2", "Unlimited-OCR", "unlimited_ocr"}},
+		{"Other", []string{"Other"}},
+	}
+	for _, tc := range tests {
+		got := ocrProviderAliases(tc.provider)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("ocrProviderAliases(%q) = %v, want %v", tc.provider, got, tc.want)
+		}
 	}
 }

@@ -15,9 +15,8 @@
 //
 
 // Package component — vision media enhancement: enriches parsed JSON items
-// with vision-model descriptions of embedded images/tables.
-// Mirrors Python's enhance_media_sections_with_vision
-// (rag/flow/parser/utils.py:162, called at parser.py:772/978/1115).
+// with vision-model descriptions of embedded images/tables so downstream
+// retrieval can use image and table content as text.
 
 package component
 
@@ -35,6 +34,7 @@ import (
 
 	"go.uber.org/zap"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
@@ -56,8 +56,8 @@ var (
 const (
 	visionEnhancementConcurrency int = 10
 	// visionChatTimeout bounds a single VLM call so a hung endpoint cannot
-	// occupy one of the concurrency slots indefinitely. Python wraps the
-	// per-image call in @timeout(30, 3) (deepdoc/parser/figure_parser.py).
+	// occupy one of the concurrency slots indefinitely. It wraps each
+	// per-image call with a 30-second timeout and 3 retries.
 	visionChatTimeout     = 30 * time.Second
 	visionMediaItemBudget = 10 * time.Second
 )
@@ -176,8 +176,9 @@ type visionImage struct {
 
 // maybeDispatchVisionEnhancement appends VLM descriptions to parsed image
 // resources and table regions. PDF OCR remains in the PDF parser; non-PDF
-// image text comes from this optional enhancement.
-// Mirrors Python's enhance_media_sections_with_vision in rag/flow/parser/utils.py:162.
+// image text comes from this optional enhancement. It is best-effort per
+// item: a failed image is counted in a warning and the rest of the parse
+// result is still returned.
 func maybeDispatchVisionEnhancement(
 	ctx context.Context,
 	db *gorm.DB,
@@ -189,20 +190,21 @@ func maybeDispatchVisionEnhancement(
 ) (parser.ParseResult, bool, error) {
 	w := window
 
-	// Only enhance successful JSON output format containing items.
-	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
+	// Only enhance successful results that carry JSON items. Produced()
+	// replaces the historical OutputFormat != "json" check.
+	if dispatched.Err != nil || len(dispatched.JSON) == 0 {
 		return stripBackendDescribedResult(dispatched), false, nil
 	}
 
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	family := resolveParserFamily(fileType)
-	// Captions follow the knowledge base language, which also drives
-	// tokenization. The family setup's lang is an OCR engine parameter
-	// (pdf_vision_dispatch.go), not an input here — see issue #20727.
-	language := resolveVisionLanguage(inputs)
+	// An explicit enhancement language wins; otherwise captions follow the
+	// knowledge base language, which also drives tokenization. The family
+	// setup's lang is an OCR engine parameter (pdf_vision_dispatch.go), not an
+	// input here — see issue #20727.
+	language := resolveVisionLanguage(inputs, vision.language)
 
-	// Collect visual resources, including Markdown images whose type is text
-	// because flatten_media_to_text is enabled. Items whose text already
+	// Collect visual resources. Items whose text already
 	// carries a backend-provided description (MinerU vlm_description) are
 	// skipped to avoid a duplicate second description and an extra VLM call.
 	var items []int
@@ -212,6 +214,10 @@ func maybeDispatchVisionEnhancement(
 			continue
 		}
 		if img, _ := m["image"].(string); img != "" {
+			items = append(items, i)
+			continue
+		}
+		if entity.MediaRefFromAny(m["media_ref"]) != nil {
 			items = append(items, i)
 			continue
 		}
@@ -248,7 +254,12 @@ func maybeDispatchVisionEnhancement(
 			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		}
 		if err == nil {
-			prompt, err = figureVisionPromptBuilder(language)
+			prompt = strings.TrimSpace(vision.systemPrompt)
+			if prompt == "" {
+				prompt, err = figureVisionPromptBuilder(language)
+			} else {
+				prompt += "\n\n" + visionResponseLanguageInstruction(language)
+			}
 			vlmReady = err == nil && driver != nil
 		}
 		resolveErr = err
@@ -281,6 +292,7 @@ func maybeDispatchVisionEnhancement(
 	modified := false
 	descriptions := make([]string, len(items))
 	failures := make([]string, len(items))
+	mediaFailures := make([]error, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
 	var settled atomic.Int64
@@ -305,7 +317,9 @@ func maybeDispatchVisionEnhancement(
 		}
 		var resource *visionImage
 		func() {
-			item := dispatched.JSON[itemIdx].ToMap()
+			// Clone before materializing: RawItem.ToMap returns the shared
+			// map, and filling in image bytes must not mutate the parse result.
+			item := maps.Clone(dispatched.JSON[itemIdx].ToMap())
 			if err := cropper.Prepare(ctx, item); err != nil {
 				if ctx.Err() == nil {
 					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
@@ -333,6 +347,13 @@ func maybeDispatchVisionEnhancement(
 				return
 			}
 			defer release()
+			// Materialize under the same admission as the crop: the decode
+			// and re-encode of a deferred image must not bypass the shared
+			// image memory limit.
+			if err := MaterializeMediaItem(itemCtx, item); err != nil {
+				mediaFailures[slot] = err
+				return
+			}
 			resource, err = cropper.Crop(itemCtx, item)
 			if err != nil || resource == nil {
 				cropErr := err
@@ -413,6 +434,11 @@ func maybeDispatchVisionEnhancement(
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
 		return stripBackendDescribedResult(dispatched), modified, err
+	}
+	for _, err := range mediaFailures {
+		if err != nil {
+			return stripBackendDescribedResult(dispatched), modified, fmt.Errorf("vision enhancement: materialize media: %w", err)
+		}
 	}
 	w.Report(ctx, 1.0)
 	failedItems := 0
@@ -504,10 +530,10 @@ func buildVisionMessages(prompt, imageBase64 string) []modelModule.Message {
 	}}
 }
 
-// extractVisionAnswer strips ```markdown fences from the VLM response.
-// Python calls clean_markdown_block inside vision_llm_chunk (rag/app/picture.py:198,
-// i.e., inside the invoker wrapper). Go applies it here post-invoker so that
-// visionChatInvoker stays a pure, swappable test seam — output is equivalent.
+// extractVisionAnswer strips ```markdown fences from the VLM response. It
+// applies the same markdown cleanup the invoker wrapper would, but here
+// post-invoker so visionChatInvoker stays a pure, swappable test seam —
+// output is equivalent.
 func extractVisionAnswer(resp *modelModule.ChatResponse) string {
 	if resp == nil || resp.Answer == nil {
 		return ""
@@ -524,12 +550,10 @@ func defaultVisionChatInvoker(
 ) (*modelModule.ChatResponse, error) {
 	chatCtx, cancel := context.WithTimeout(ctx, visionChatTimeout)
 	defer cancel()
-	vision := true
-	config := &modelModule.ChatConfig{Vision: &vision}
-	if _, ok := driver.(*modelModule.OllamaModel); ok {
-		thinking := false
-		config.Thinking = &thinking
-	}
+	config := &modelModule.ChatConfig{Vision: new(true), Thinking: new(false)}
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
-	return chatModel.ChatWithMessages(chatCtx, messages, config, nil)
+	finish := agentruntime.TrackIO(chatCtx, "Parser", "VLM", "operation=vision_enhancement")
+	resp, err := chatModel.ChatWithMessages(chatCtx, messages, config, nil)
+	finish()
+	return resp, err
 }

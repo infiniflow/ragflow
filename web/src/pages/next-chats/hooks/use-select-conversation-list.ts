@@ -1,8 +1,9 @@
-import { MessageType } from '@/constants/chat';
+import { ChatSessionSource, MessageType } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
   useFetchChatList,
   useFetchSessionList,
+  useGetChatSearchParams,
 } from '@/hooks/use-chat-request';
 import { IConversation } from '@/interfaces/database/chat';
 import { generateConversationId } from '@/utils/chat';
@@ -27,7 +28,10 @@ export const useSelectDerivedConversationList = () => {
   const [list, setList] = useState<Array<IConversation>>([]);
   const {
     data: conversationList,
+    total,
     loading,
+    loadingMore,
+    handleScroll,
     handleInputChange,
     searchString,
     setSearchString,
@@ -36,6 +40,7 @@ export const useSelectDerivedConversationList = () => {
   const { id: dialogId } = useParams();
   const prologue = useFindPrologueFromDialogList();
   const { setConversationBoth } = useChatUrlParams();
+  const { isNew } = useGetChatSearchParams();
 
   const addTemporaryConversation = useCallback(() => {
     const conversationId = generateConversationId();
@@ -50,6 +55,7 @@ export const useSelectDerivedConversationList = () => {
             id: conversationId,
             name: t('newConversation'),
             chat_id: dialogId,
+            source: ChatSessionSource.Normal,
             is_new: true,
             messages: [
               {
@@ -82,28 +88,24 @@ export const useSelectDerivedConversationList = () => {
     });
   }, []);
 
-  // When you first enter the page, select the top conversation card
-
-  // useEffect(() => {
-  //   setList((prevList) => {
-  //     const tempItems = prevList.filter((item) => item.is_new);
-  //     const existingTempIds = new Set(tempItems.map((t) => t.id));
-  //     const newItems = conversationList.filter(
-  //       (item) => !existingTempIds.has(item.id),
-  //     );
-  //     return [...tempItems, ...newItems];
-  //   });
-  // }, [conversationList]);
-
   useEffect(() => {
-    setList([...conversationList]);
-  }, [conversationList]);
+    setList((previous) => [
+      ...previous.filter(
+        (session) =>
+          session.is_new && session.chat_id === dialogId && isNew === 'true',
+      ),
+      ...conversationList,
+    ]);
+  }, [conversationList, dialogId, isNew]);
 
   return {
     list,
+    total,
     addTemporaryConversation,
     removeTemporaryConversation,
     loading,
+    loadingMore,
+    handleScroll,
     handleInputChange,
     searchString,
   };

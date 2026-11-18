@@ -22,8 +22,8 @@ func TestRESTSystemPublicContracts(t *testing.T) {
 		t.Fatalf("ping status/body=%d/%q", ping.Status, ping.Body)
 	}
 	version := restOK(t, restCall(t, &config, http.MethodGet, "/system/version", nil, nil))
-	if value, ok := version["data"].(string); !ok || value == "" {
-		t.Fatalf("version must be a nonempty string: %v", version)
+	if value, ok := object(t, version["data"])["version"].(string); !ok || value == "" {
+		t.Fatalf("data.version must be a nonempty string: %v", version)
 	}
 	systemConfig := restOK(t, restCall(t, &config, http.MethodGet, "/system/config", nil, nil))
 	configData := object(t, systemConfig["data"])
@@ -43,7 +43,7 @@ func TestRESTSystemPublicContracts(t *testing.T) {
 
 func TestRESTSystemProtectedContracts(t *testing.T) {
 	unauth := unauthenticatedConfig()
-	for _, path := range []string{"/system/status", "/system/stats", "/system/tokens", "/system/config/log"} {
+	for _, path := range []string{"/system/status", "/system/stats/chat", "/system/tokens", "/system/config/log"} {
 		result := restCall(t, &unauth, http.MethodGet, path, nil, nil)
 		if result.Status != http.StatusUnauthorized || result.JSON["code"] != float64(401) {
 			t.Fatalf("%s auth contract: status=%d body=%v", path, result.Status, result.JSON)
@@ -55,7 +55,7 @@ func TestRESTSystemProtectedContracts(t *testing.T) {
 			t.Fatalf("status missing %q: %v", key, status)
 		}
 	}
-	stats := object(t, restOK(t, restCall(t, TestConfig, http.MethodGet, "/system/stats", nil, nil))["data"])
+	stats := object(t, restOK(t, restCall(t, TestConfig, http.MethodGet, "/system/stats/chat", nil, nil))["data"])
 	for _, key := range []string{"pv", "uv", "speed", "tokens", "round", "thumb_up"} {
 		if _, ok := stats[key].([]any); !ok {
 			t.Fatalf("stats[%q] must be an array: %T", key, stats[key])
@@ -108,8 +108,8 @@ func TestRESTSystemTokenLifecycleAndRedaction(t *testing.T) {
 		}
 	}
 	repeated := restOK(t, restCall(t, TestConfig, http.MethodDelete, "/system/tokens/"+token, nil, nil))
-	if repeated["data"] != true {
-		t.Fatalf("repeated delete should be idempotent: %v", repeated)
+	if data, exists := repeated["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 

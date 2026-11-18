@@ -62,7 +62,6 @@ func (p *AudioParser) ParseWithResult(ctx context.Context, filename string, data
 	}
 
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name": filename,
 			"size": len(data),

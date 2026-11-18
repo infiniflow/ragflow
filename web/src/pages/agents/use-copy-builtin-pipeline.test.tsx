@@ -1,5 +1,22 @@
-import { renderHook } from '@testing-library/react';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AgentCategory } from '@/constants/agent';
 import { useCopyBuiltinPipeline } from './use-copy-builtin-pipeline';
 
 jest.mock('@/services/agent-service', () => ({
@@ -10,14 +27,10 @@ jest.mock('@/services/agent-service', () => ({
   },
 }));
 
-// Mock the heavy agent-request module so its transitive react-router/routes
-// import (which needs browser globals not present under jest) is not loaded.
-// Only the query-key builders used for cache invalidation are needed here.
-jest.mock('@/hooks/use-agent-request', () => ({
-  AgentKeys: {
-    list: () => ['fetchAgentListByPage'],
-    filters: () => ['fetchAgentFilters'],
-  },
+const mockNavigate = jest.fn();
+const mockNavigateToAgent = jest.fn(() => mockNavigate);
+jest.mock('@/hooks/logic-hooks/navigate-hooks', () => ({
+  useNavigatePage: () => ({ navigateToAgent: mockNavigateToAgent }),
 }));
 
 jest.mock('@/components/ui/message', () => ({
@@ -52,18 +65,21 @@ beforeEach(() => {
 });
 
 describe('useCopyBuiltinPipeline', () => {
-  it('fetches the builtin DSL and creates a user-owned dataflow pipeline', async () => {
+  it('fetches the builtin DSL, creates a user-owned pipeline and opens it for editing', async () => {
     agentService.getBuiltinPipeline.mockResolvedValue({
       data: { code: 0, message: 'ok', data: { dsl: { components: {} } } },
     });
     agentService.createAgent.mockResolvedValue({
-      data: { code: 0, message: 'ok', data: null },
+      data: { code: 0, message: 'ok', data: { id: 'new-canvas' } },
     });
 
     const { result } = renderHook(() => useCopyBuiltinPipeline(), {
       wrapper,
     });
-    const ret = await result.current.copy({ id: 'general', title: 'General' });
+    let ret;
+    await act(async () => {
+      ret = await result.current.copy({ id: 'general', title: 'General' });
+    });
 
     expect(agentService.getBuiltinPipeline).toHaveBeenCalledWith('general');
     expect(agentService.createAgent).toHaveBeenCalledWith({
@@ -73,10 +89,15 @@ describe('useCopyBuiltinPipeline', () => {
     });
     expect(message.success).toHaveBeenCalled();
     expect(message.error).not.toHaveBeenCalled();
+    expect(mockNavigateToAgent).toHaveBeenCalledWith(
+      'new-canvas',
+      AgentCategory.DataflowCanvas,
+    );
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(ret).not.toBeNull();
   });
 
-  it('shows an error and does not create when the builtin DSL is missing', async () => {
+  it('shows an error and does not create or navigate when the builtin DSL is missing', async () => {
     agentService.getBuiltinPipeline.mockResolvedValue({
       data: { code: 0, message: 'ok', data: { dsl: undefined } },
     });
@@ -84,14 +105,18 @@ describe('useCopyBuiltinPipeline', () => {
     const { result } = renderHook(() => useCopyBuiltinPipeline(), {
       wrapper,
     });
-    const ret = await result.current.copy({ id: 'general', title: 'General' });
+    let ret;
+    await act(async () => {
+      ret = await result.current.copy({ id: 'general', title: 'General' });
+    });
 
     expect(agentService.createAgent).not.toHaveBeenCalled();
     expect(message.error).toHaveBeenCalled();
+    expect(mockNavigateToAgent).not.toHaveBeenCalled();
     expect(ret).toBeNull();
   });
 
-  it('shows an error when createAgent reports a failure code', async () => {
+  it('shows an error and stays on the list when createAgent reports a failure code', async () => {
     agentService.getBuiltinPipeline.mockResolvedValue({
       data: { code: 0, message: 'ok', data: { dsl: { components: {} } } },
     });
@@ -102,10 +127,13 @@ describe('useCopyBuiltinPipeline', () => {
     const { result } = renderHook(() => useCopyBuiltinPipeline(), {
       wrapper,
     });
-    await result.current.copy({ id: 'general', title: 'General' });
+    await act(async () => {
+      await result.current.copy({ id: 'general', title: 'General' });
+    });
 
     expect(message.error).toHaveBeenCalledWith('boom');
     expect(message.success).not.toHaveBeenCalled();
+    expect(mockNavigateToAgent).not.toHaveBeenCalled();
   });
 
   it('shows a request error when the fetch rejects', async () => {
@@ -114,9 +142,12 @@ describe('useCopyBuiltinPipeline', () => {
     const { result } = renderHook(() => useCopyBuiltinPipeline(), {
       wrapper,
     });
-    await result.current.copy({ id: 'general', title: 'General' });
+    await act(async () => {
+      await result.current.copy({ id: 'general', title: 'General' });
+    });
 
     expect(message.error).toHaveBeenCalled();
     expect(agentService.createAgent).not.toHaveBeenCalled();
+    expect(mockNavigateToAgent).not.toHaveBeenCalled();
   });
 });

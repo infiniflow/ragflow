@@ -27,7 +27,7 @@ This guide provides simple Ollama and vLLM deployment examples for new RAGFlow u
 Ollama uses its registry name. vLLM downloads the model using its Hugging Face repository ID, while RAGFlow and other API clients use the name assigned by `--served-model-name`.
 
 :::note
-MiniCPM5-2B is a chat model, not an embedding model. To create and parse a RAGFlow knowledge base, you must also configure an embedding model. The Ollama instructions below use `qwen3-embedding:0.6b` as a lightweight example.
+MiniCPM5-2B is a chat model, not an embedding model. To create and parse a RAGFlow Dataset, you must also configure an embedding model. The Ollama instructions below use `qwen3-embedding:0.6b` as a lightweight example.
 :::
 
 ## Deploy MiniCPM5-2B Using Ollama
@@ -73,7 +73,7 @@ Pull the chat model:
 sudo docker exec ollama ollama pull openbmb/minicpm5-2b
 ```
 
-If you intend to create a knowledge base, also pull a lightweight embedding model:
+If you intend to create a Dataset, also pull a lightweight embedding model:
 
 ```bash
 sudo docker exec ollama ollama pull qwen3-embedding:0.6b
@@ -154,7 +154,7 @@ Successful verification indicates that RAGFlow can reach Ollama and call the sel
 ### 6. Use the Models in RAGFlow
 
 - Select `openbmb/minicpm5-2b` as the chat model in **Set default models** or your chat configuration.
-- Select `qwen3-embedding:0.6b` as the embedding model when creating a knowledge base.
+- Select `qwen3-embedding:0.6b` as the embedding model when creating a Dataset.
 
 ## Deploy MiniCPM5-2B Using vLLM
 
@@ -293,5 +293,5 @@ Select `MiniCPM5-2B` in **Set default models** or your chat configuration to sta
 Successful verification indicates that RAGFlow can reach the vLLM server and call `MiniCPM5-2B`.
 
 :::note
-You can use the vLLM chat model with an embedding model from another provider. For example, use `MiniCPM5-2B` from vLLM for chat and `qwen3-embedding:0.6b` from Ollama for knowledge-base embeddings.
+You can use the vLLM chat model with an embedding model from another provider. For example, use `MiniCPM5-2B` from vLLM for chat and `qwen3-embedding:0.6b` from Ollama for Dataset embeddings.
 :::

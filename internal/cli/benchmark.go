@@ -58,9 +58,17 @@ func (c *CLI) RunBenchmark(commandCount int, cmd *Command) (ResponseIf, error) {
 	nestedCmd.Params["iterations"] = iterations
 
 	if concurrency == 1 {
-		return c.runBenchmarkSingle(iterations, nestedCmd)
+		response, err := c.runBenchmarkSingle(iterations, nestedCmd)
+		if err != nil {
+			return nil, err
+		}
+		return response, nil
 	}
-	return c.runBenchmarkConcurrent(concurrency, iterations, nestedCmd)
+	response, err := c.runBenchmarkConcurrent(concurrency, iterations, nestedCmd)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
 }
 
 // runBenchmarkSingle runs benchmark with single concurrency (sequential execution)
@@ -137,7 +145,11 @@ func (c *CLI) runBenchmarkSingle(iterations int, nestedCmd *Command) (*Benchmark
 
 // runBenchmarkConcurrent runs benchmark with multiple concurrent workers
 func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
-	results := make([]map[string]interface{}, concurrency)
+	type workerResult struct {
+		response *BenchmarkResponse
+		err      error
+	}
+	results := make([]workerResult, concurrency)
 	var wg sync.WaitGroup
 
 	// For search_on_datasets, convert dataset names to IDs first
@@ -164,12 +176,12 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 		go func(idx int) {
 			defer wg.Done()
 
-			benchmarkResponse, _ := c.runBenchmarkSingle(iterations, nestedCmd)
-
-			results[idx] = map[string]interface{}{
-				"duration":      0.0,
-				"response_list": benchmarkResponse,
+			workerCmd := *nestedCmd
+			workerCmd.Params = make(map[string]interface{}, len(nestedCmd.Params))
+			for key, value := range nestedCmd.Params {
+				workerCmd.Params[key] = value
 			}
+			results[idx].response, results[idx].err = c.runBenchmarkSingle(iterations, &workerCmd)
 		}(i)
 	}
 
@@ -180,13 +192,15 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 	successCount := 0
 	failureCount := 0
 
-	for _, result := range results {
-		if result == nil {
-			continue
+	for i, result := range results {
+		if result.err != nil {
+			return nil, fmt.Errorf("benchmark worker %d: %w", i+1, result.err)
 		}
-		res, _ := result["response_list"].(*BenchmarkResponse)
-		successCount += res.SuccessCount
-		failureCount += res.FailureCount
+		if result.response == nil {
+			return nil, fmt.Errorf("benchmark worker %d returned no response", i+1)
+		}
+		successCount += result.response.SuccessCount
+		failureCount += result.response.FailureCount
 	}
 
 	//totalCommands := iterations * concurrency

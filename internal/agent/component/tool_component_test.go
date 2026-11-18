@@ -257,6 +257,13 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 			inputKey:  "stock_code",
 		},
 		{
+			name:      "YouComSearch",
+			toolName:  "YouComSearch",
+			params:    map[string]any{"api_key": "stored-key", "freshness": "week", "top_n": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
 			name:      "TavilyExtract",
 			toolName:  "TavilyExtract",
 			params:    map[string]any{"api_key": "stored-key", "extract_depth": "advanced", "format": "text", "outputs": map[string]any{"json": map[string]any{}}},
@@ -311,7 +318,7 @@ func TestToolBackedComponentWenCaiInvoke(t *testing.T) {
 }
 
 func TestToolBackedComponentRegisteredBuildWorkflow(t *testing.T) {
-	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "Search1APICrawl", "Search1APISearch", "SearXNG", "SofyaSearch", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
+	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "Search1APICrawl", "Search1APISearch", "SearXNG", "SofyaSearch", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance", "YouComSearch"} {
 		t.Run(componentName, func(t *testing.T) {
 			c := &canvas.Canvas{
 				Components: map[string]canvas.CanvasComponent{
@@ -462,6 +469,14 @@ func TestToolBackedComponentTavilyIntegration(t *testing.T) {
 	serverCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		serverCalls++
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		if body["include_raw_content"] != true {
+			t.Errorf("include_raw_content = %v, want true", body["include_raw_content"])
+		}
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write([]byte(`{"results":[{"title":"RAGFlow","url":"https://ragflow.io","raw_content":"RAG article","content":"fallback","score":0.8,"custom":"preserved"}]}`))
 	}))
@@ -486,7 +501,7 @@ func TestToolBackedComponentTavilyIntegration(t *testing.T) {
 	if serverCalls != 0 || len(empty["json"].([]any)) != 0 || empty["formalized_content"] != "" {
 		t.Fatalf("empty query result = %#v, server calls = %d", empty, serverCalls)
 	}
-	out, err := component.Invoke(runtime.WithState(t.Context(), state), nil, map[string]any{"query": "ragflow", "api_key": "key"})
+	out, err := component.Invoke(runtime.WithState(t.Context(), state), nil, map[string]any{"query": "ragflow", "api_key": "key", "include_raw_content": true})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -495,7 +510,7 @@ func TestToolBackedComponentTavilyIntegration(t *testing.T) {
 		t.Fatalf("formalized_content = %q", rendered)
 	}
 	results, ok := out["json"].([]any)
-	if !ok || len(results) != 1 || results[0].(map[string]any)["custom"] != "preserved" {
+	if !ok || len(results) != 1 || results[0].(map[string]any)["custom"] != "preserved" || results[0].(map[string]any)["raw_content"] != "RAG article" {
 		t.Fatalf("raw json results = %#v", out["json"])
 	}
 	chunks := state.GetRetrievalChunks()

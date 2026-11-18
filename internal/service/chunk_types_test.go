@@ -300,3 +300,24 @@ func TestGetPageSize_Valid(t *testing.T) {
 		t.Errorf("CoalesceInt(&50, 20) = %d, want 50", got)
 	}
 }
+
+func TestGetFloat(t *testing.T) {
+	tests := []struct {
+		name string
+		m    map[string]interface{}
+		key  string
+		want float64
+	}{
+		{"present", map[string]interface{}{"score": 3.5}, "score", 3.5},
+		{"missing", map[string]interface{}{}, "score", 0},
+		{"wrong type", map[string]interface{}{"score": "3.5"}, "score", 0},
+		{"nil value", map[string]interface{}{"score": nil}, "score", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getFloat(tt.m, tt.key); got != tt.want {
+				t.Errorf("getFloat() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

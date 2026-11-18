@@ -18,8 +18,12 @@ package chunker
 
 import (
 	"context"
-	"ragflow/internal/ingestion/component/schema"
+	"fmt"
 	"testing"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 )
 
 // slideChunksOf drives PageChunker.Invoke and returns the emitted maps.
@@ -116,5 +120,58 @@ func TestPageChunker_NilInput(t *testing.T) {
 	chunks := slideChunksOf(t, nil)
 	if len(chunks) != 0 {
 		t.Fatalf("expected 0 chunks for nil input, got %d", len(chunks))
+	}
+}
+
+func TestPageChunkerPreservesSlideTableItems(t *testing.T) {
+	table := map[string]any{"grid": []any{[]any{map[string]any{"text": "cell"}}}, "header_rows": 1}
+	chunks := slideChunksOf(t, map[string]any{"name": "deck.pptx", "output_format": "json", "json": []map[string]any{
+		{"text": "Before", "doc_type_kwd": "text", "slide_number": 1},
+		{"doc_type_kwd": "table", "slide_number": 1, "source_table_id": "table-1", "table": table},
+		{"doc_type_kwd": "image", "slide_number": 1, "parent_table_id": "table-1", "image": "one"},
+		{"doc_type_kwd": "table", "slide_number": 1, "source_table_id": "table-2", "table": table},
+		{"doc_type_kwd": "image", "slide_number": 1, "parent_table_id": "table-2", "image": "two"},
+		{"text": "After", "doc_type_kwd": "text", "slide_number": 1},
+	}})
+	if len(chunks) != 6 {
+		t.Fatalf("expected ordered text, tables and images: %#v", chunks)
+	}
+	if chunks[0]["text"] != "Before" || chunks[5]["text"] != "After" {
+		t.Fatalf("text order lost: %#v", chunks)
+	}
+	for _, index := range []int{1, 3} {
+		if chunks[index]["doc_type_kwd"] != "table" || chunks[index]["table"] == nil || chunks[index+1]["parent_table_id"] != chunks[index]["source_table_id"] {
+			t.Fatalf("table structure or image association lost: %#v", chunks)
+		}
+	}
+	for _, chunk := range chunks {
+		if got := fmt.Sprint(chunk["slide_number"]); got != "1" {
+			t.Fatalf("slide_number lost: %#v", chunk)
+		}
+	}
+}
+
+// TestPageChunkerPreservesTypedSlideTableItems covers the in-memory
+// []parser.DocItem leg, which bypasses the JSON-map decode path.
+func TestPageChunkerPreservesTypedSlideTableItems(t *testing.T) {
+	table := &entity.TableData{
+		Grid:       [][]entity.TableCell{{{Text: "cell"}}},
+		HeaderRows: 1,
+	}
+	maps := []map[string]any{
+		{"text": "Before", "doc_type_kwd": "text", "slide_number": 1},
+		{"doc_type_kwd": "table", "slide_number": 1, "source_table_id": "table-1", "table": table},
+		{"doc_type_kwd": "image", "slide_number": 1, "parent_table_id": "table-1", "image": "one"},
+	}
+	chunks := slideChunksOf(t, map[string]any{
+		"name": "deck.pptx", "output_format": "json", "json": parser.MapsToItems(maps),
+	})
+	if len(chunks) != len(maps) {
+		t.Fatalf("chunks = %d, want %d: %#v", len(chunks), len(maps), chunks)
+	}
+	for _, chunk := range chunks {
+		if got := fmt.Sprint(chunk["slide_number"]); got != "1" {
+			t.Fatalf("slide_number lost through typed DocItem input: %#v", chunk)
+		}
 	}
 }

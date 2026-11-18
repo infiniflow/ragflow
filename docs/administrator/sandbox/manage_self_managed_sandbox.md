@@ -31,7 +31,7 @@ If the service is not `healthy`, inspect its logs:
 docker compose logs --tail=200 sandbox-executor-manager
 ```
 
-The `/healthz` endpoint only confirms that Executor Manager is responding. To verify that it can create a Runner and execute code, open **Admin > Sandbox Settings**, select **Self-Managed**, and run **Test connection**. A successful test displays `PASSED`.
+The `/healthz` endpoint only confirms that Executor Manager is responding. To verify that it can create a Runner and execute code, open **Admin > Sandbox**, select **Self-Managed**, and run **Test connection**. A successful test displays `PASSED`.
 
 After deployment changes, also run a Code component to verify the complete path from RAGFlow through Executor Manager to the Runner.
 
@@ -72,7 +72,7 @@ The supplied RAGFlow Compose service publishes port `9385` on `127.0.0.1` only, 
    curl -f https://sandbox.example.com/healthz
    ```
 
-5. Open **Admin > Sandbox Settings** and select **Self-Managed**.
+5. Open **Admin > Sandbox** and select **Self-Managed**.
 6. Enter the remote URL in **Executor Manager Endpoint** and the matching token in **Executor Manager API Token**.
 7. Run **Test connection**, confirm `PASSED`, and save the configuration.
 
@@ -193,7 +193,7 @@ The Compose service accepts one configured token. Requests can fail between rest
    docker compose up -d sandbox-executor-manager
    ```
 
-4. In **Admin > Sandbox Settings**, enter the new token under **Self-Managed**.
+4. In **Admin > Sandbox**, enter the new token under **Self-Managed**.
 5. Run **Test connection**, confirm `PASSED`, and select **Save**.
 6. Run a Code component and confirm that execution succeeds.
 

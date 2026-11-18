@@ -17,6 +17,7 @@
 package utility
 
 import (
+	"fmt"
 	"ragflow/internal/common"
 	"sync"
 	"sync/atomic"
@@ -90,7 +91,10 @@ func (t *ScheduledTask) runSafely() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			common.Fatal("Task panicked", zap.String("name", t.Name), zap.Any("recover", r))
+			// A periodic job must never take the whole service down: log the panic
+			// and let the next tick run. common.Fatal would call os.Exit(1), which
+			// turns one bad tick into an outage for every tenant on this process.
+			common.Error("Task panicked", fmt.Errorf("panic: %v", r), zap.String("name", t.Name), zap.Any("recover", r))
 		}
 	}()
 

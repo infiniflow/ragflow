@@ -86,7 +86,9 @@ export enum LLMFactory {
   MinerUNet = 'MinerU.Net',
   PaddleOCR = 'PaddleOCR',
   PaddleOCRLocal = 'PaddleOCR.local',
+  MiniCPMOCR = 'MiniCPM-OCR',
   OpenDataLoader = 'OpenDataLoader',
+  UnlimitedOCR = 'Unlimited-OCR-2',
   SoMark = 'SoMark',
   N1n = 'n1n',
   Avian = 'Avian',
@@ -116,6 +118,21 @@ export enum LLMFactory {
   TrustedRouter = 'TrustedRouter',
   EmpirioLabs = 'EmpirioLabs AI',
   AIStupidLevel = 'AI Stupid Level',
+  Runcrate = 'Runcrate',
+  WorldRouter = 'WorldRouter',
+  CloudGPU = 'CloudGPU',
+  Obscurify = 'Obscurify.ai',
+  Cheapaimodel = 'cheapaimodel',
+  SystemOne = 'SystemOne',
+  Nace = 'Nace',
+  HostingerRouter = 'Hostinger Router',
+  Wally = 'Wally',
+  Shengsuanyun = 'Shengsuanyun',
+  Synap = 'Synap',
+  Wiro = 'Wiro AI',
+  Crusoe = 'Crusoe',
+  HopBase = 'HopBase',
+  GreenNode = 'GreenNode',
 }
 
 // Please lowercase the file name
@@ -185,6 +202,7 @@ export const IconMap = {
   [LLMFactory.MinerUNet]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
   [LLMFactory.PaddleOCRLocal]: 'paddleocr',
+  [LLMFactory.MiniCPMOCR]: 'minicpm-ocr',
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
   [LLMFactory.RAGcon]: 'ragcon',
@@ -199,6 +217,7 @@ export const IconMap = {
   [LLMFactory.OrcaRouter]: 'orcarouter',
   [LLMFactory.Qiniu]: 'qiniu',
   [LLMFactory.TokenHub]: 'tokenhub',
+  [LLMFactory.UnlimitedOCR]: 'unlimited-ocr',
   [LLMFactory.SoMark]: 'somark',
   [LLMFactory.NewAPI]: 'new-api',
   [LLMFactory.DaoXE]: 'daoxe',
@@ -214,27 +233,38 @@ export const IconMap = {
   [LLMFactory.TrustedRouter]: 'trustedrouter',
   [LLMFactory.EmpirioLabs]: 'empiriolabs',
   [LLMFactory.AIStupidLevel]: 'aistupidlevel',
+  [LLMFactory.Runcrate]: 'runcrate',
+  [LLMFactory.Nace]: 'nace',
+  [LLMFactory.WorldRouter]: 'worldrouter',
+  [LLMFactory.CloudGPU]: 'cloudgpu',
+  [LLMFactory.Obscurify]: 'obscurify',
+  [LLMFactory.HostingerRouter]: 'hostinger-router',
+  [LLMFactory.Cheapaimodel]: 'cheapaimodel',
+  [LLMFactory.Wally]: 'wally',
+  [LLMFactory.Shengsuanyun]: 'shengsuanyun',
+  [LLMFactory.Synap]: 'synap',
+  [LLMFactory.Wiro]: 'wiro',
+  [LLMFactory.Crusoe]: 'crusoe',
+  [LLMFactory.HopBase]: 'hopbase',
+  [LLMFactory.GreenNode]: 'greennode',
 };
 
 /**
  * Providers that may serve a given model type.
  *
- * The decision model is spoken to in the TypeSafe System One protocol, which
- * only the SystemOne provider implements. Another provider's model would be
- * accepted by the picker and then fail on the first call, so the choice is
- * narrowed at selection time rather than at request time.
- *
- * Types without an entry are unrestricted — listing every chat provider here
- * would be a second copy of the catalog that goes stale.
+ * Types without an entry are unrestricted — listing every provider here would
+ * be a second copy of the catalog that goes stale. Decision is intentionally
+ * unrestricted: the backend derives the System One endpoint from the selected
+ * instance's own base URL, so any provider that serves that path on its
+ * instances can offer decision models.
  */
-export const ModelTypeProviderMap: Record<string, string[]> = {
-  decision: ['SystemOne'],
-};
+export const ModelTypeProviderMap: Record<string, string[]> = {};
 
 export const ModelTypeToField: Record<string, string> = {
   chat: 'llm_id',
   decision: 'decision_id',
   embedding: 'embd_id',
+  scoring: 'scoring_id',
   vision: 'img2txt_id',
   asr: 'asr_id',
   rerank: 'rerank_id',
@@ -245,6 +275,7 @@ export const FieldToModelType: Record<string, string> = {
   llm_id: 'chat',
   decision_id: 'decision',
   embd_id: 'embedding',
+  scoring_id: 'scoring',
   img2txt_id: 'vision',
   asr_id: 'asr',
   rerank_id: 'rerank',
@@ -264,6 +295,21 @@ export const APIMapUrl = {
   [LLMFactory.EmpirioLabs]:
     'https://platform.empiriolabs.ai/dashboard/api-keys',
   [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
+  [LLMFactory.Runcrate]:
+    'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
+  [LLMFactory.Nace]: 'https://console.nace.ai/dashboard/api-keys',
+  [LLMFactory.WorldRouter]:
+    'https://worldrouter.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=provider&utm_campaign=integration',
+  [LLMFactory.CloudGPU]: 'https://cloudgpu.app/api/console',
+  [LLMFactory.Obscurify]: 'https://obscurify.ai/account',
+  [LLMFactory.HostingerRouter]: 'https://hpanel.hostinger.com/ai-router',
+  [LLMFactory.Cheapaimodel]:
+    'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
+  [LLMFactory.Wally]: 'https://console.runanywhere.ai',
+  [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
+  [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
+  [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
+  [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
@@ -314,6 +360,7 @@ export const APIMapUrl = {
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
   [LLMFactory.PaddleOCR]: 'https://aistudio.baidu.com/paddleocr',
+  [LLMFactory.MiniCPMOCR]: 'https://platform.modelbest.cn/console/keys',
   [LLMFactory.SoMark]: 'https://somark.cn/workbench/apikey',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',
@@ -348,7 +395,9 @@ export const APIMapUrl = {
   [LLMFactory.JiekouAI]: 'https://jiekou.ai',
   [LLMFactory.MinerU]: 'https://mineru.net',
   [LLMFactory.MinerUNet]: 'https://mineru.net',
+  [LLMFactory.UnlimitedOCR]: 'https://github.com/baidu/Unlimited-OCR',
   [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
+  [LLMFactory.Shengsuanyun]: 'https://www.shengsuanyun.com/zh/?from=ragflow',
 };

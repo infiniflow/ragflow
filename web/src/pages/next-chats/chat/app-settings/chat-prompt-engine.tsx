@@ -112,13 +112,6 @@ export function ChatPromptEngine({
               label={t('chat.keyword')}
               tooltip={t('chat.keywordTip')}
             ></SwitchFormField>
-            <ModelTreeSelectFormField
-              name={prefixName(prefix, 'decision_id')}
-              label={t('chat.decisionModel')}
-              tooltip={t('chat.decisionModelTip')}
-              modelTypes={ModelTypeMap.decision_id}
-              allowClear
-            />
             <FormField
               control={form.control}
               name={prefixName(prefix, 'prompt_config.system')}
@@ -171,10 +164,19 @@ export function ChatPromptEngine({
           open={agenticSettingOpen}
           onOpenChange={onAgenticSettingOpenChange}
         >
-          <AgenticTemplateFormField
-            name={prefixName(prefix, 'prompt_config.agentic_rag.content')}
-            config={agenticConfig}
-          />
+          <div className="space-y-8">
+            <ModelTreeSelectFormField
+              name={prefixName(prefix, 'decision_id')}
+              label={t('chat.decisionModel')}
+              tooltip={t('chat.decisionModelTip')}
+              modelTypes={ModelTypeMap.decision_id}
+              allowClear
+            />
+            <AgenticTemplateFormField
+              name={prefixName(prefix, 'prompt_config.agentic_rag.content')}
+              config={agenticConfig}
+            />
+          </div>
         </Collapse>
       </div>
     </Collapse>

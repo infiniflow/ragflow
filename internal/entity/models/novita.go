@@ -595,7 +595,7 @@ func (n *NovitaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -647,39 +647,39 @@ func (n *NovitaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 }
 
 func (n *NovitaModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", n.Name())
 }
 
 func (n *NovitaModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", n.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", n.Name())
 }
 
 func (n *NovitaModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", n.Name())
 }
 
 func (n *NovitaModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", n.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", n.Name())
 }
 
 // OCRFile OCR file
 func (n *NovitaModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", n.Name())
 }
 
 // ParseFile parse file
 func (n *NovitaModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", n.Name())
 }
 
 func (n *NovitaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", n.Name())
 }
 
 func (n *NovitaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", n.Name())
 }
 
 func (n *NovitaModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", n.Name())
 }

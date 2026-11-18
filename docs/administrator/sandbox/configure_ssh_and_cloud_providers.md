@@ -18,7 +18,7 @@ Saving a provider configuration makes it the active code execution provider for 
 Use the same workflow for every provider:
 
 1. Prepare the remote host or cloud account, credentials, and network access.
-2. Open **Admin > Sandbox Settings**.
+2. Open **Admin > Sandbox**.
 3. Select the provider and complete its settings.
 4. Select **Test connection**.
 5. Confirm that the result shows `PASSED`, then select **Save**.
@@ -53,7 +53,7 @@ Make sure that:
 
 RAGFlow verifies the SSH server's host key before sending credentials or running code. Confirm the server's host-key fingerprint with the server administrator, then add the verified key to the `known_hosts` file used by RAGFlow.
 
-For a server that listens on a non-default port, include the port when collecting the key. Replace `SSH_HOST` and `SSH_PORT` with the values configured in **Admin > Sandbox Settings**. For example, if the actual host is `sandbox.example.com` and the port is `2222`, use `[sandbox.example.com]:2222`.
+For a server that listens on a non-default port, include the port when collecting the key. Replace `SSH_HOST` and `SSH_PORT` with the values configured in **Admin > Sandbox**. For example, if the actual host is `sandbox.example.com` and the port is `2222`, use `[sandbox.example.com]:2222`.
 
 The `[SSH_HOST]:SSH_PORT` format is for non-default ports. For port `22`, use `SSH_HOST` without brackets or a port in the `ssh-keygen -F` and `ssh-keygen -R` commands.
 
@@ -137,7 +137,7 @@ In **SSH known_hosts File**, enter the path that is visible to the RAGFlow proce
 
 ### Configure the connection
 
-In **Admin > Sandbox Settings**, select **SSH** and configure:
+In **Admin > Sandbox**, select **SSH** and configure:
 
 | Setting | Required | Value |
 | --- | --- | --- |
@@ -177,7 +177,7 @@ Select **Test connection**. Confirm that the result shows `PASSED`, then select 
 
 ## Configure Aliyun Code Interpreter
 
-Prepare a RAM user with Code Interpreter permissions and [create an Alibaba Cloud AccessKey pair](https://help.aliyun.com/en/ram/user-guide/create-an-accesskey-pair). Then select **Aliyun Code Interpreter** in **Admin > Sandbox Settings** and configure:
+Prepare a RAM user with Code Interpreter permissions and [create an Alibaba Cloud AccessKey pair](https://help.aliyun.com/en/ram/user-guide/create-an-accesskey-pair). Then select **Aliyun Code Interpreter** in **Admin > Sandbox** and configure:
 
 | Setting | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -190,7 +190,7 @@ Prepare a RAM user with Code Interpreter permissions and [create an Alibaba Clou
 
 ## Configure E2B
 
-Create an API key in the [E2B dashboard](https://e2b.dev/dashboard). Then select **E2B** in **Admin > Sandbox Settings** and configure:
+Create an API key in the [E2B dashboard](https://e2b.dev/dashboard). Then select **E2B** in **Admin > Sandbox** and configure:
 
 | Setting | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -209,7 +209,7 @@ For source deployments, set `E2B_DOMAIN` in the RAGFlow process environment and 
 
 ## Configure Tenki
 
-Create an API key in the [Tenki console](https://app.tenki.cloud). For provider setup, see the [Tenki Sandbox Quickstart](https://tenki.cloud/docs/sandbox/quickstart). Then select **Tenki** in **Admin > Sandbox Settings** and configure:
+Create an API key in the [Tenki console](https://app.tenki.cloud). For provider setup, see the [Tenki Sandbox Quickstart](https://tenki.cloud/docs/sandbox/quickstart). Then select **Tenki** in **Admin > Sandbox** and configure:
 
 | Setting | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -230,7 +230,7 @@ Keep outbound networking disabled unless executed code requires it.
 
 ## Configure UCloud Agent Sandbox
 
-Obtain an API key from [UCloud ModelVerse API Keys](https://astraflow.ucloud.cn/modelverse/api-keys). Then select **UCloud Agent Sandbox** in **Admin > Sandbox Settings** and configure:
+Obtain an API key from [UCloud ModelVerse API Keys](https://astraflow.ucloud.cn/modelverse/api-keys). Then select **UCloud Agent Sandbox** in **Admin > Sandbox** and configure:
 
 | Setting | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -248,6 +248,25 @@ Obtain an API key from [UCloud ModelVerse API Keys](https://astraflow.ucloud.cn/
 | **Max Artifact Bytes** | No | `10485760` | Per returned file. |
 
 Keep internet access and insecure HTTP disabled unless required.
+
+## Configure kosa8
+
+Create an API key in the [kosa8 dashboard](https://app.kosa8.com). Each execution runs in a disposable kosa8 microVM sandbox started from the template for its language, and the sandbox is deleted when the run ends. Then select **kosa8** in **Admin > Sandbox** and configure:
+
+| Setting | Required | Default | Description |
+| --- | --- | --- | --- |
+| **API Key** | Yes | — | Begins with `k8c_live_`. |
+| **API Endpoint** | No | `https://api.kosa8.com` | Override for a self-hosted kosa8 deployment. Must use HTTPS. |
+| **Python Template** | No | `python` | Python 3.12 on Alpine. A custom template must provide `python3`, `sh`, and `timeout` (coreutils or busybox). |
+| **Node.js Template** | No | `node` | Node.js 22 on Alpine. A custom template must provide `node`, `sh`, and `timeout` (coreutils or busybox). |
+| **Allow Internet Access** | No | Disabled | Applied as the sandbox's egress policy before code runs. Enable only when required. |
+| **Timeout (seconds)** | No | `30` | Range: 1–600. |
+| **Max Sandbox Lifetime (seconds)** | No | `3600` | Range: 60–86400. kosa8 deletes a sandbox after this even if the run is interrupted. |
+| **Max Output Bytes** | No | `1048576` | Combined stdout and stderr. |
+| **Max Artifacts** | No | `20` | Number of returned files. |
+| **Max Artifact Bytes** | No | `10485760` | Per returned file. |
+
+The settings can also come from the `KOSA8_API_KEY`, `KOSA8_API_URL`, `KOSA8_PYTHON_TEMPLATE`, `KOSA8_NODE_TEMPLATE`, `KOSA8_TIMEOUT`, and `KOSA8_ALLOW_INTERNET` environment variables when `SANDBOX_PROVIDER_TYPE=kosa8`. Keep internet access disabled unless executed code requires it. Artifacts are read through the kosa8 files API; a kosa8 host without it runs code normally but returns no artifacts. A run longer than 90 seconds on a host that cannot time a streamed command is timed with the template's `timeout` command, and fails if the template has none.
 
 ## Verify code execution
 

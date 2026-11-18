@@ -34,19 +34,24 @@ func TestCompiledKnowledgeSurfaceIsReachable(t *testing.T) {
 		}
 	}
 
-	// The per-document panorama belongs to the same corpus products (a `graph`
-	// row is written by the compiler, like a navigation tree or an entity row),
-	// so it must be injected with the rest rather than left to a template.
+	// The navigation tools stay REGISTERED (a template may declare them) but are
+	// deliberately not injected any more: compiled evidence reaches the model
+	// with the ordinary search results, so navigating the structure is a second,
+	// costlier path to the same facts. A review that expects them injected would
+	// be reading the old contract.
 	injected := map[string]bool{}
 	for _, name := range compiledKnowledgeToolNames {
 		injected[name] = true
 	}
-	for _, name := range []string{
-		navigateTreeToolName,
-		navigateStructureToolName,
-		graphExploreToolName,
-		graphDocOutlineToolName,
-	} {
+	for _, name := range []string{navigateTreeToolName, navigateStructureToolName} {
+		if injected[name] {
+			t.Errorf("%s must not be injected: compiled evidence travels with search results", name)
+		}
+		if _, ok := reg[name]; !ok {
+			t.Errorf("%s must stay registered so a template can declare it", name)
+		}
+	}
+	for _, name := range []string{graphExploreToolName, graphDocOutlineToolName} {
 		if !injected[name] {
 			t.Errorf("%s is never injected: a template that omits it leaves it unreachable", name)
 		}
@@ -69,8 +74,6 @@ func TestCompiledKnowledgeNamesAreStable(t *testing.T) {
 	want := []string{
 		graphDocOutlineToolName,
 		graphExploreToolName,
-		navigateStructureToolName,
-		navigateTreeToolName,
 	}
 	sort.Strings(want)
 	if len(got) != len(want) {

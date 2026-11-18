@@ -156,3 +156,16 @@ func assertCoordTuple(t *testing.T, key string, got any, want []float64) {
 		}
 	}
 }
+
+// TestOneChunkerKeepsImgIDForTextlessItem covers the single-item guard: an
+// item kept alive by ImgID must carry that ID into the output chunk.
+func TestOneChunkerKeepsImgIDForTextlessItem(t *testing.T) {
+	out := emitOneFromItems([]schema.ChunkDoc{{DocType: "image", ImgID: "kb-1-chunk-1"}}, nil)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(chunks))
+	}
+	if chunks[0]["img_id"] != "kb-1-chunk-1" {
+		t.Fatalf("img_id = %v, want kb-1-chunk-1", chunks[0]["img_id"])
+	}
+}

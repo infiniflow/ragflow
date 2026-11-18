@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"ragflow/internal/entity"
@@ -38,6 +39,11 @@ type InvalidMCPServerOrderByError struct {
 
 func (e *InvalidMCPServerOrderByError) Error() string {
 	return fmt.Sprintf("AttributeError(%q)", fmt.Sprintf("type object 'MCPServer' has no attribute '%s'", e.Field))
+}
+
+type MCPServerListRow struct {
+	entity.MCPServer
+	Nickname *string `gorm:"column:nickname"`
 }
 
 // NewMCPServerDAO creates an MCP server DAO.
@@ -73,41 +79,80 @@ func (dao *MCPServerDAO) CreateMCPServer(ctx context.Context, db *gorm.DB, serve
 	return db.WithContext(ctx).Create(server).Error
 }
 
-// ListMCPServers returns MCP servers for one tenant with optional ID filtering.
-func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenantID string, ids []string, keywords string, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
+// ListMCPServers returns the authorized MCP server page and the total number
+// of authorized servers. Authorization is applied before counting and paging.
+func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenantID string, ids []string, keywords, orderby string, desc bool, page, pageSize int, authorize func(*gorm.DB) *gorm.DB) ([]*MCPServerListRow, int64, error) {
 	orderColumn, err := mcpServerOrderColumn(orderby)
 	if err != nil {
 		return nil, 0, err
 	}
-	var servers []*entity.MCPServer
+	if authorize == nil {
+		return nil, 0, fmt.Errorf("MCP server list requires an authorization scope")
+	}
+
+	baseQuery := func() *gorm.DB {
+		query := db.WithContext(ctx).Model(&entity.MCPServer{}).Where("tenant_id = ?", tenantID)
+		if len(ids) > 0 {
+			query = query.Where("mcp_server.id IN ?", ids)
+		}
+		if keywords != "" {
+			query = query.Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+		}
+		return authorize(query)
+	}
+
 	var total int64
-
-	query := db.WithContext(ctx).Model(&entity.MCPServer{}).Where("tenant_id = ?", tenantID)
-	if len(ids) > 0 {
-		query = query.Where("id IN ?", ids)
-	}
-
-	if keywords != "" {
-		query = query.Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
-	}
-
-	if err := query.Count(&total).Error; err != nil {
+	if err := baseQuery().Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
+	query := baseQuery()
 	orderDirection := "ASC"
 	if desc {
 		orderDirection = "DESC"
 	}
 	query = query.Order(orderColumn + " " + orderDirection)
-
-	if err := query.
-		Select("id", "name", "server_type", "url", "description", "variables", "create_date", "update_date").
-		Find(&servers).Error; err != nil {
+	if orderColumn != "mcp_server.id" {
+		query = query.Order("mcp_server.id ASC")
+	}
+	if page != 0 && pageSize != 0 {
+		start, stop := mcpServerPageRange(total, page, pageSize)
+		if stop <= start {
+			return []*MCPServerListRow{}, total, nil
+		}
+		query = query.Offset(start).Limit(stop - start)
+	}
+	query = query.Joins("LEFT JOIN user AS owner ON mcp_server.user_id = owner.id").
+		Select("mcp_server.id, mcp_server.user_id, mcp_server.tenant_id, mcp_server.name, mcp_server.server_type, mcp_server.url, mcp_server.description, mcp_server.variables, mcp_server.create_date, mcp_server.update_date, owner.nickname")
+	var servers []*MCPServerListRow
+	if err := query.Find(&servers).Error; err != nil {
 		return nil, 0, err
 	}
-
 	return servers, total, nil
+}
+
+func mcpServerPageRange(total int64, page, pageSize int) (int, int) {
+	pageValue := big.NewInt(int64(page))
+	pageSizeValue := big.NewInt(int64(pageSize))
+	startValue := new(big.Int).Sub(new(big.Int).Set(pageValue), big.NewInt(1))
+	startValue.Mul(startValue, pageSizeValue)
+	stopValue := new(big.Int).Mul(new(big.Int).Set(pageValue), pageSizeValue)
+	totalValue := big.NewInt(total)
+
+	clamp := func(value *big.Int) int {
+		value = new(big.Int).Set(value)
+		if value.Sign() < 0 {
+			value.Add(value, totalValue)
+		}
+		if value.Sign() < 0 {
+			return 0
+		}
+		if value.Cmp(totalValue) > 0 {
+			return int(total)
+		}
+		return int(value.Int64())
+	}
+	return clamp(startValue), clamp(stopValue)
 }
 
 // DeleteMCPServer deletes an MCP server owned by a tenant.
@@ -133,17 +178,17 @@ func (dao *MCPServerDAO) UpdateMCPServer(ctx context.Context, db *gorm.DB, id, t
 func mcpServerOrderColumn(orderby string) (string, error) {
 	switch orderby {
 	case "id":
-		return "id", nil
+		return "mcp_server.id", nil
 	case "name":
-		return "name", nil
+		return "mcp_server.name", nil
 	case "server_type":
-		return "server_type", nil
+		return "mcp_server.server_type", nil
 	case "url":
-		return "url", nil
+		return "mcp_server.url", nil
 	case "update_time", "update_date":
-		return "update_date", nil
+		return "mcp_server.update_date", nil
 	case "create_time", "create_date":
-		return "create_date", nil
+		return "mcp_server.create_date", nil
 	default:
 		return "", &InvalidMCPServerOrderByError{Field: orderby}
 	}

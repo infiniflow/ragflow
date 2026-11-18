@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -27,10 +28,23 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
+)
+
+const (
+	testResourcePermissionRead  int32 = 1
+	testResourcePermissionWrite int32 = 2
+	testRoleActionEnable        int32 = 1
+	testRoleActionRead          int32 = 2
 )
 
 // sptr returns a pointer to the given string.
 func sptr(s string) *string { return &s }
+
+func isAccessDeniedOrHidden(err error) bool {
+	return errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound)
+}
 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
@@ -43,6 +57,17 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
+	// An in-memory SQLite database is a separate database per connection. With
+	// the default pool, a concurrent query (e.g. the fire-and-forget ingest-log
+	// goroutine) opens a second connection that sees an empty schema and fails
+	// with "no such table". Pin the pool to a single connection so every query,
+	// on the test thread or the emit goroutine, reuses the migrated handle.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to acquire sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
 	if err = db.AutoMigrate(
 		&entity.Document{},
 		&entity.Knowledgebase{},
@@ -51,6 +76,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.IngestionTaskLog{},
 		&entity.PipelineOperationLog{},
 		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
 		&entity.File2Document{},
 		&entity.File{},
 		&entity.User{},
@@ -77,6 +103,44 @@ func pushServiceDB(t *testing.T, testDB *gorm.DB) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func serviceTestContext(t *testing.T, userID, tenantID string, additionalMemberIDs ...string) context.Context {
+	t.Helper()
+	if dao.DB != nil {
+		sqlDB, err := dao.DB.DB()
+		if err == nil && sqlDB.Ping() == nil {
+			memberIDs := append([]string{userID}, additionalMemberIDs...)
+			if dao.DB.Migrator().HasTable(&entity.UserTenant{}) {
+				for _, memberID := range memberIDs {
+					if memberID == "" {
+						continue
+					}
+					var count int64
+					if err := dao.DB.Model(&entity.UserTenant{}).Where("user_id = ? AND tenant_id = ?", memberID, tenantID).Count(&count).Error; err != nil {
+						t.Fatalf("check test tenant membership: %v", err)
+					}
+					if count != 0 {
+						continue
+					}
+					role := string(permission.RoleNormal)
+					if memberID == tenantID {
+						role = string(permission.RoleOwner)
+					}
+					status := entity.TenantMembershipStatusJoined
+					if err := dao.DB.Create(&entity.UserTenant{
+						ID: common.GenerateToken(), UserID: memberID, TenantID: tenantID, Role: role, Status: &status,
+					}).Error; err != nil {
+						t.Fatalf("create test tenant membership: %v", err)
+					}
+				}
+			}
+			if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, memberIDs...); err != nil {
+				t.Fatalf("prepare enterprise permission fixture: %v", err)
+			}
+		}
+	}
+	return permission.WithIdentity(t.Context(), userID, tenantID)
 }
 
 func getAPIConversationForTest(t *testing.T, db *gorm.DB, id string) *entity.API4Conversation {
@@ -152,7 +216,7 @@ func (fakeChatDocEngine) GetAggregation([]map[string]interface{}, string) []map[
 func (fakeChatDocEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
 	return nil
 }
-func (fakeChatDocEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
+func (fakeChatDocEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (fakeChatDocEngine) GetChunkIDs([]map[string]interface{}) []string { return nil }
@@ -184,6 +248,7 @@ func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum 
 	t.Helper()
 	kb := &entity.Knowledgebase{
 		ID:         id,
+		UserID:     "user-1",
 		TenantID:   tenantID,
 		Name:       "test-kb",
 		EmbdID:     "embd-1",
@@ -205,6 +270,7 @@ func insertTestDoc(t *testing.T, id, kbID string, tokenNum, chunkNum int64) {
 	doc := &entity.Document{
 		ID:           id,
 		KbID:         kbID,
+		UserID:       "user-1",
 		ParserID:     "naive",
 		ParserConfig: entity.JSONMap{},
 		TokenNum:     tokenNum,

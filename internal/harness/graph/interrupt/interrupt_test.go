@@ -148,11 +148,12 @@ func TestIsInterruptContext(t *testing.T) {
 	}
 }
 
-func TestSetResumeValues(t *testing.T) {
+func TestAppendResumeValues(t *testing.T) {
 	ctx := WithInterruptContext(context.Background())
 
-	// Set multiple resume values at once
-	SetResumeValues(ctx, []interface{}{"a", "b", "c"})
+	AppendResumeValue(ctx, "a")
+	AppendResumeValue(ctx, "b")
+	AppendResumeValue(ctx, "c")
 
 	// Check values
 	values := GetResumeValues(ctx)
@@ -161,15 +162,13 @@ func TestSetResumeValues(t *testing.T) {
 	}
 }
 
-func TestGlobalContext(t *testing.T) {
-	// Reset global context
-	Reset(context.Background())
-
-	// Test with nil context (should fall back to global)
-	AppendResumeValue(nil, "global_value")
-
-	values := GetResumeValues(nil)
-	if len(values) != 1 || values[0] != "global_value" {
-		t.Error("Should use global context when ctx is nil")
+func TestInterruptRequiresContext(t *testing.T) {
+	ctx := context.Background()
+	AppendResumeValue(ctx, "orphaned")
+	if values := GetResumeValues(ctx); len(values) != 0 {
+		t.Fatalf("resume values without an interrupt context = %v, want none", values)
+	}
+	if _, err := Interrupt(ctx, "input"); err != ErrMissingInterruptContext {
+		t.Fatalf("Interrupt error = %v, want %v", err, ErrMissingInterruptContext)
 	}
 }

@@ -215,6 +215,11 @@ const (
 	TokenError
 	TokenFatal
 	TokenPanic
+	TokenBy
+	TokenDate
+	TokenGroup
+	TokenGroups
+	TokenFeatures
 	// Literals
 	TokenIdentifier
 	TokenQuotedString

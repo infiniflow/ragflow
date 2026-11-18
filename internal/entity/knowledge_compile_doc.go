@@ -29,22 +29,13 @@ const (
 
 // KnowledgeCompileDataset is the MySQL scheduling row for the dataset-level
 // post-processing consumer (knowledge_compile_design.md §11.4, Option E). It is
-// the scheduling system of record: backlog_doc_ids holds the not-yet-processed
-// doc entries for the KB, inflight_doc_ids the ones a worker has claimed (the
-// closed batch), and the claim_* fields the owner/lease used for crash
-// recovery. NATS notify is only a wake-up; same-KB serialization comes from
-// these rows, not from the broker.
-//
-// The *_doc_ids columns store JSON arrays of knowledge_compile.BacklogEntry
-// (doc_id + event_type + seq) as LONGTEXT so the consumer can re-apply the same
-// out-of-order / tombstone guards as the broker-based design without re-reading
-// the queue, even when a backlog exceeds MySQL TEXT's 64 KiB limit.
+// the scheduling system of record together with KnowledgeCompileBacklog and
+// KnowledgeCompileInflight. The claim_* fields hold the owner/lease used for
+// crash recovery. NATS notify is only a wake-up; same-KB serialization comes
+// from locking this row before changing either queue, not from the broker.
 type KnowledgeCompileDataset struct {
-	DatasetID string `gorm:"primaryKey;column:dataset_id;size:64" json:"dataset_id"`
-	TenantID  string `gorm:"column:tenant_id;size:64;not null;default:''" json:"tenant_id"`
-	// No DDL default is set because the application writes "[]" explicitly.
-	BacklogDocIDs  string     `gorm:"column:backlog_doc_ids;type:longtext;not null" json:"backlog_doc_ids"`
-	InflightDocIDs string     `gorm:"column:inflight_doc_ids;type:longtext;not null" json:"inflight_doc_ids"`
+	DatasetID      string     `gorm:"primaryKey;column:dataset_id;size:64" json:"dataset_id"`
+	TenantID       string     `gorm:"column:tenant_id;size:64;not null;default:''" json:"tenant_id"`
 	ClaimOwner     string     `gorm:"column:claim_owner;size:64;not null;default:''" json:"claim_owner"`
 	ClaimToken     string     `gorm:"column:claim_token;size:64;not null;default:''" json:"claim_token"`
 	ClaimExpiresAt *time.Time `gorm:"column:claim_expires_at;default:null" json:"claim_expires_at"`
@@ -70,3 +61,27 @@ type KnowledgeCompileDataset struct {
 
 // TableName pins the scheduling table name.
 func (KnowledgeCompileDataset) TableName() string { return "knowledge_compile_docs" }
+
+// KnowledgeCompileEntry is an ordered queue event. Duplicate document events
+// are allowed; neither queue has a primary key. Positions are allocated while
+// holding the dataset scheduling row lock.
+type KnowledgeCompileEntry struct {
+	DatasetID     string   `gorm:"column:dataset_id;size:64;not null;index:,composite:queue,priority:1" json:"dataset_id"`
+	DocID         string   `gorm:"column:doc_id;size:64;not null" json:"doc_id"`
+	QueuePosition int64    `gorm:"column:queue_position;not null;index:,composite:queue,priority:2" json:"queue_position"`
+	EventType     string   `gorm:"column:event_type;size:32;not null" json:"event_type"`
+	Variants      []string `gorm:"column:variants;type:longtext;serializer:json" json:"variants,omitempty"`
+	TaskTypes     []string `gorm:"column:task_types;type:longtext;serializer:json" json:"task_types,omitempty"`
+}
+
+type KnowledgeCompileBacklog struct {
+	KnowledgeCompileEntry `gorm:"embedded"`
+}
+
+func (KnowledgeCompileBacklog) TableName() string { return "knowledge_compile_docs_backlog" }
+
+type KnowledgeCompileInflight struct {
+	KnowledgeCompileEntry `gorm:"embedded"`
+}
+
+func (KnowledgeCompileInflight) TableName() string { return "knowledge_compile_docs_inflight" }

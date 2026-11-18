@@ -341,17 +341,9 @@ func (s *recSession) Run(ctx context.Context, input []float32) ([]float32, error
 		return nil, err
 	}
 	defer opts.Destroy()
-	// Cancel an in-flight Run when the context is done. done closes once Run
-	// returns so the watcher exits even on the success path.
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = opts.Terminate()
-		case <-done:
-		}
-	}()
+	// Terminate an in-flight Run on cancellation, and join the watcher before
+	// opts.Destroy() runs (defers are LIFO).
+	defer watchRunOptions(ctx, opts)()
 
 	// Fresh input tensor per Run; freed right after the call. nil output →
 	// onnxruntime allocates the actual-shaped tensor.

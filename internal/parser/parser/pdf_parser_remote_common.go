@@ -22,9 +22,8 @@ func pdfItemsToResult(filename string, items []map[string]any, pageCount int) Pa
 	}
 	pageCount = normalizePDFPageCount(pageCount, items)
 	return ParseResult{
-		OutputFormat: "json",
-		File:         pdfFileMeta(filename, pageCount),
-		JSON:         MapsToItems(items),
+		File: pdfFileMeta(filename, pageCount),
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -51,7 +50,7 @@ func collectPDFPageNumbers(raw any) map[int]struct{} {
 	walk = func(node any) {
 		switch v := node.(type) {
 		case map[string]any:
-			for _, key := range []string{"page_number", "page_num", "page_no", "page_index", "page_idx", "page"} {
+			for _, key := range []string{"page number", "page_number", "page_num", "page_no", "page_index", "page_idx", "page"} {
 				if page := int(numberValue(v[key])); page > 0 {
 					pages[page] = struct{}{}
 				}
@@ -108,22 +107,5 @@ func rowsHaveText(rows [][]string) bool {
 }
 
 func pdfMarkdownToResult(ctx context.Context, filename, markdown string, pageCount int) ParseResult {
-	fileMeta := pdfFileMeta(filename, pageCount)
-	res := parsePDFMarkdown(ctx, filename, markdown)
-	if res.Err != nil {
-		if ctx.Err() != nil {
-			res.File = fileMeta
-			return res
-		}
-		// Same text fallback as NormalizeResult: keep the backend
-		// markdown as raw text instead of failing the task.
-		return ParseResult{
-			OutputFormat: "json",
-			File:         fileMeta,
-			Warnings:     append(res.Warnings, "markdown normalization fell back to text: "+res.Err.Error()),
-			JSON:         []DocItem{NewTextJSONItem(markdown)},
-		}
-	}
-	res.File = fileMeta
-	return res
+	return (&PDFParser{}).normalizePDFMarkdown(ctx, filename, markdown, pdfFileMeta(filename, pageCount))
 }

@@ -40,6 +40,7 @@ import (
 	"ragflow/internal/server"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"regexp"
 	"strings"
 	"time"
@@ -75,8 +76,6 @@ type Service struct {
 	BillingSubscriptionDAO *dao.BillingSubscriptionDAO
 	MemoryDAO              *dao.MemoryDAO
 	SearchDAO              *dao.SearchDAO
-	deleteEngine           engine.DocEngine
-	deleteStorage          storage.Storage
 }
 
 // NewService create admin service
@@ -143,26 +142,6 @@ func generateRandomHex(n int) string {
 	bytes := make([]byte, n)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
-}
-
-// ListUsers list all users
-func (s *Service) ListUsers(ctx context.Context, pageIndex, pageSize int, name, status, sort, orderBy string) ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(ctx, dao.DB, (pageIndex-1)*pageSize, pageSize, name, status, sort, orderBy)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]map[string]interface{}, 0, len(users))
-	for _, user := range users {
-		result = append(result, map[string]interface{}{
-			"email":        user.Email,
-			"nickname":     user.Nickname,
-			"create_date":  user.CreateTime,
-			"is_active":    user.IsActive,
-			"is_superuser": user.IsSuperuser,
-		})
-	}
-	return result, nil
 }
 
 // CreateUser create a new user
@@ -236,7 +215,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 
 	// 2. Create tenant (tenant_id = user_id)
 	// tenant name = nickname + "'s Kingdom" (same as Python)
-	tenantName := user.Nickname + "'s Kingdom"
+	tenantName := utility.TruncateRunes(user.Nickname+"'s Kingdom", common.TenantNameLimit)
 
 	// Get default model IDs from config
 	cfg := server.GetConfig()
@@ -265,20 +244,9 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     chatModel,
-		EmbdID:    embeddingModel,
-		ASRID:     asrModel,
-		Img2TxtID: vlmModel,
-		RerankID:  rerankModel,
-		TTSID:     ttsModel,
-		OCRID:     ocrModel,
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
-	}
-	if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
-		rollbackTx()
-		return nil, fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
 	}
 	if err = dao.NewTenantDAO().Create(ctx, tx, tenant); err != nil {
 		rollbackTx()
@@ -294,6 +262,13 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &userTenantStatus,
+		LLMID:     chatModel,
+		EmbdID:    embeddingModel,
+		ASRID:     asrModel,
+		Img2TxtID: vlmModel,
+		RerankID:  rerankModel,
+		TTSID:     ttsModel,
+		OCRID:     ocrModel,
 	}
 	if err = tx.Create(userTenant).Error; err != nil {
 		rollbackTx()
@@ -306,6 +281,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	file := &entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
+		UserID:    userID,
 		TenantID:  userID,
 		CreatedBy: userID,
 		Name:      "/",
@@ -360,25 +336,14 @@ func (s *Service) GetUserDetails(ctx context.Context, username string) (map[stri
 	}, nil
 }
 
-// DeleteUserResult result of delete user operation
-type DeleteUserResult struct {
-	Username        string   `json:"username"`
-	LangfuseCount   int      `json:"langfuse_count"`
-	MetadataTable   string   `json:"metadata_table"`
-	TenantCount     int      `json:"tenant_count"`
-	UserTenantCount int      `json:"user_tenant_count"`
-	UserCount       int      `json:"user_count"`
-	DeletedDetails  []string `json:"deleted_details"`
-}
-
 // DeleteUser delete user with cascade delete of all related data
 // Parameters:
 //   - username: email address of the user to delete
 //
 // Returns:
-//   - *DeleteUserResult
+//   - *servicepkg.DeleteUserResult
 //   - error: error message
-func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserResult, error) {
+func (s *Service) DeleteUser(ctx context.Context, username string) (*servicepkg.DeleteUserResult, error) {
 	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
@@ -403,7 +368,7 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserR
 		return nil, fmt.Errorf("user '%s' is admin account and cannot be deleted", username)
 	}
 
-	return s.deleteUserData(ctx, user)
+	return (servicepkg.UserDeletionService{}).Delete(ctx, user)
 }
 
 // ChangePassword change user password
@@ -717,6 +682,9 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	case "mysql":
 		mysqlStatus := s.getMySQLStatus(ctx)
 		results = append(results, mysqlStatus)
+	case "vastbase":
+		vastbaseConfig := globalConfig.GetVastbaseMetaConfig()
+		results = append(results, s.pingDatabaseStatus(ctx, "vastbase", vastbaseConfig.Host, vastbaseConfig.Port))
 	default:
 		mysqlConfig := globalConfig.GetMySQLConfig()
 		results = append(results, newServiceStatus("database", databaseType, mysqlConfig.Host, mysqlConfig.Port, "not available", time.Now(), "not supported database type"))
@@ -729,6 +697,8 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 		docHost, docPort = serviceEndpoint(globalConfig.GetInfinityConfig().URI, 0)
 	} else if docEngineImpl.GetType() == "elasticsearch" {
 		docHost, docPort = serviceEndpoint(globalConfig.GetElasticsearchConfig().Hosts, 0)
+	} else if docEngineImpl.GetType() == "opensearch" {
+		docHost, docPort = serviceEndpoint(globalConfig.GetOpenSearchConfig().Hosts, 0)
 	}
 	err := docEngineImpl.Ping(ctx)
 	if err == nil {
@@ -797,46 +767,6 @@ func (s *Service) GetServicesByType(serviceType string) ([]map[string]interface{
 	return nil, errors.New("get_services_by_type: not implemented")
 }
 
-// GetServiceDetails get service details
-func (s *Service) GetServiceDetails(configDict map[string]interface{}) ([]ServiceStatus, error) {
-	//serviceType, _ := configDict["service_type"].(string)
-	//name, _ := configDict["name"].(string)
-	//ctx := context.Background()
-	//
-	//// Call detail function based on service type
-	//switch serviceType {
-	//case "meta_data":
-	//	return s.getMySQLStatus(ctx), nil
-	//case "cache":
-	//	return s.getKvrocksStatus(ctx), nil
-	//case "message_queue":
-	//	host := configDict["host"].(string)
-	//	port := configDict["port"].(int)
-	//	return s.checkNatsAlive(name, host, port)
-	//case "retrieval":
-	//	// Check the extra.retrieval_type to determine which retrieval service
-	//	if extra, ok := configDict["extra"].(map[string]interface{}); ok {
-	//		if retrievalType, ok := extra["retrieval_type"].(string); ok {
-	//			if retrievalType == "infinity" {
-	//				return s.getInfinityStatus(name)
-	//			}
-	//		}
-	//	}
-	//	return s.getESClusterStats(name)
-	//case "ragflow_server":
-	//	return s.checkRAGFlowServerAlive(name)
-	//case "file_store":
-	//	return s.checkMinioAlive(name)
-	//case "olap":
-	//	return s.checkOlapAlive(name)
-	//case "tracing":
-	//	return s.checkTracingAlive(name)
-	//default:
-	//	return nil, nil
-	//}
-	return nil, nil
-}
-
 // getMySQLStatus gets MySQL service status
 func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 
@@ -859,6 +789,29 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 
 	mysqlConfig := server.GetConfig().GetMySQLConfig()
 	return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "alive", startTime, "")
+}
+
+// pingDatabaseStatus reports the SQL metadata database status for the
+// non-MySQL backends. The connectivity probe is the same SELECT 1 ping the
+// MySQL path uses; only the reported endpoint differs.
+func (s *Service) pingDatabaseStatus(ctx context.Context, name, host string, port int) ServiceStatus {
+	serviceType := "database"
+	startTime := time.Now()
+
+	sqlDB, err := dao.DB.DB()
+	if err != nil {
+		return newServiceStatus(serviceType, name, host, port, "not connected", startTime, err.Error())
+	}
+
+	// The DSN allows a 30s connect_timeout, so an unreachable host would
+	// otherwise hold ListServices for the full dial timeout.
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err = sqlDB.PingContext(pingCtx); err != nil {
+		return newServiceStatus(serviceType, name, host, port, "timeout", startTime, err.Error())
+	}
+
+	return newServiceStatus(serviceType, name, host, port, "alive", startTime, "")
 }
 
 // getKvrocksStatus gets the Kvrocks service status.
@@ -1187,7 +1140,7 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 		storageImpl = "minio"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "STORAGE",
+		"env":   "STORAGE_IMPL",
 		"value": storageImpl,
 	})
 
@@ -1542,16 +1495,12 @@ func (s *Service) InitDefaultAdmin() error {
 func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	status := "1"
 	role := "owner"
-	tenantName := nickname + "'s Kingdom"
+	tenantName := utility.TruncateRunes(nickname+"'s Kingdom", common.TenantNameLimit)
 
 	tenant := &entity.Tenant{
 		ID:   userID,
 		Name: &tenantName,
 	}
-	if err := dao.ApplyDefaultTenantInviteEnabled(context.Background(), dao.DB, tenant); err != nil {
-		return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
-	}
-
 	if err := dao.NewTenantDAO().Create(context.Background(), dao.DB, tenant); err != nil {
 		return err
 	}
@@ -1565,18 +1514,6 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	}
 
 	return dao.DB.Create(userTenant).Error
-}
-
-// ListAllModels list all models
-func (s *Service) ListAllModels(pageIndex, pageSize int) ([]map[string]interface{}, error) {
-	models, err := dao.GetModelProviderManager().ListAllModels()
-	if err != nil {
-		return nil, err
-	}
-	if pageSize > 0 && pageIndex >= 0 && pageIndex*pageSize < len(models) {
-		return models[pageIndex*pageSize : (pageIndex+1)*pageSize], nil
-	}
-	return models, nil
 }
 
 func (s *Service) GetModelByModelName(modelName string) (*modelModule.Model, error) {

@@ -101,6 +101,10 @@ Kvrocks provides the Redis-compatible cache. It is separate from the NATS JetStr
 - `REDIS_PASSWORD`
   The password used to access Kvrocks through its Redis-compatible protocol.
 
+:::tip NOTE
+Kvrocks holds the secret key that signs login tokens (when none is configured), the agent-run lease, distributed locks, and the media cache used during ingestion. The lease, the locks, and the media cache use Lua scripts.
+:::
+
 ### NATS
 
 NATS JetStream provides the message queue used by the Go services.
@@ -122,6 +126,8 @@ NATS JetStream provides the message queue used by the Go services.
   The public Nginx ports. Defaults to `80` and `443`.
 - `RAGFLOW_IMAGE`
   The Go RAGFlow image used by `docker-compose.yml`. Select the official Go image for the required release, or use the locally built `ragflow:go-local` image.
+- `RAGFLOW_CONNECTOR_KEY`
+  The key that encrypts the credentials of data source connectors in the database. Use 32 random bytes in standard base64, for example the output of `openssl rand -base64 32`. Not set by default, and then credentials are stored as plaintext. When the key is set, the database migration encrypts the credentials that are already stored. If the key is lost, stored credentials cannot be read: enter them again through the connector update API, or delete and re-create the connector.
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
@@ -183,9 +189,12 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 ### `S3` (Tigris)
 
-To use [Tigris](https://www.tigrisdata.com) as an S3-compatible storage backend, set `STORAGE_IMPL=AWS_S3` in `.env` and configure the `s3:` section:
+To use [Tigris](https://www.tigrisdata.com) as an S3-compatible storage backend, set `general.storage_engine: s3` in `service_conf.yaml`, set `STORAGE_IMPL=AWS_S3` in `.env`, and configure the `s3:` section:
 
 ```yaml
+general:
+  storage_engine: s3
+
 s3:
   access_key: 'tid_YOUR_ACCESS_KEY'
   secret_key: 'tsec_YOUR_SECRET_KEY'
@@ -202,6 +211,8 @@ s3:
 - `endpoint_url`: `https://t3.storage.dev`, or `https://fly.storage.tigris.dev` on Fly.io.
 - `addressing_style`: Must be `virtual`.
 - `bucket` / `prefix_path`: Optional. Enables single-bucket mode. Before changing the storage layout, create a recovery point by following [Backup and Restore (v1.x)](../upgrade_and_migration/backup_and_restore_v1.md).
+
+`STORAGE_IMPL` must match `general.storage_engine`. Go refuses a mismatch because selecting another backend does not migrate existing object keys. For an existing deployment, copy and verify its stored objects in the target backend before changing `general.storage_engine`.
 
 When using an external storage backend, you can remove the `minio` service from `docker-compose-base.yml`.
 

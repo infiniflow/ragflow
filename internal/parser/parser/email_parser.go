@@ -27,14 +27,18 @@ import (
 	"mime/quotedprintable"
 	"net/mail"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/AkmalOt/gomsg"
 	"go.uber.org/zap"
+	htmlcharset "golang.org/x/net/html/charset"
+	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/common"
+	charsetlib "ragflow/internal/parser/charset"
 	"ragflow/internal/utility"
 )
 
@@ -134,9 +138,8 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	}
 	items = append(items, extraItems...)
 	return ParseResult{
-		OutputFormat: "json",
-		File:         map[string]any{"name": filename},
-		JSON:         MapsToItems(items),
+		File: map[string]any{"name": filename},
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -172,20 +175,48 @@ func targetFieldsSet(fields []string) map[string]bool {
 
 // rfc2047Decoder decodes RFC 2047 encoded-words (e.g. "=?utf-8?B?...?=") in
 // header values. utf-8 is handled natively by mime; the CharsetReader covers
-// the non-UTF-8 charsets via charsetEncoding.
+// the non-UTF-8 charsets via charsetEncoding, and every other WHATWG label
+// (windows-1250 to windows-1258, iso-8859-2 to iso-8859-16, koi8-r, ...) via
+// htmlcharset.Lookup, as decodeWithCharset does for mail bodies. Three labels
+// need more than that:
+//   - every ISO-8859-1 alias (iso_8859-1, iso8859-1, l1, ...) is read as
+//     windows-1252, like the label mime decodes itself (see latin1EncodedWordRe);
+//   - a bare utf-16 starts with a byte order mark and is big-endian without one
+//     (RFC 2781), where WHATWG reads it as little-endian and skips the mark;
+//   - WHATWG maps iso-2022-kr, iso-2022-cn and the like to its replacement
+//     decoder, which turns the whole word into U+FFFD, so those stay undecoded.
 var rfc2047Decoder = &mime.WordDecoder{
 	CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
-		if enc, ok := charsetEncoding(charset); ok {
+		htmlEnc, htmlName := htmlcharset.Lookup(charset)
+		if htmlName == "windows-1252" {
+			return transform.NewReader(input, htmlEnc.NewDecoder()), nil
+		}
+		if strings.EqualFold(strings.TrimSpace(charset), "utf-16") {
+			return transform.NewReader(input, unicode.UTF16(unicode.BigEndian, unicode.UseBOM).NewDecoder()), nil
+		}
+		if enc, ok := charsetlib.CharsetEncoding(charset); ok {
 			return transform.NewReader(input, enc.NewDecoder()), nil
+		}
+		if htmlEnc != nil && htmlName != "replacement" {
+			return transform.NewReader(input, htmlEnc.NewDecoder()), nil
 		}
 		return nil, fmt.Errorf("email: unsupported header charset %q", charset)
 	},
 }
 
+// latin1EncodedWordRe matches the charset of an RFC 2047 encoded-word
+// labelled ISO-8859-1, with an optional RFC 2231 language suffix. Go's mime
+// package decodes iso-8859-1 itself, byte for byte, without asking the
+// CharsetReader, so the curly quotes, dashes and euro sign that Outlook writes
+// under that label came out as C1 control characters.
+var latin1EncodedWordRe = regexp.MustCompile(`(?i)=\?(?:iso-8859-1|latin1)(\*[^?]*)?\?`)
+
 // decodeHeaderWord decodes any RFC 2047 encoded-words in a header value,
-// leaving undecodable values untouched.
+// leaving undecodable values untouched. An ISO-8859-1 encoded-word is read as
+// windows-1252, as WHATWG specifies for that label and as the HTML path
+// already reads it; the two differ only in bytes 0x80-0x9F.
 func decodeHeaderWord(val string) string {
-	decoded, err := rfc2047Decoder.DecodeHeader(val)
+	decoded, err := rfc2047Decoder.DecodeHeader(latin1EncodedWordRe.ReplaceAllString(val, "=?windows-1252$1?"))
 	if err != nil {
 		return val
 	}
@@ -390,16 +421,24 @@ func isAttachmentPart(part *multipart.Part) bool {
 }
 
 // attachmentFilename extracts a filename from the part's
-// Content-Disposition or Content-Type headers.
+// Content-Disposition or Content-Type headers. Mail clients write a
+// non-ASCII name as RFC 2047 encoded-words inside the parameter, as in
+// filename="=?utf-8?B?...?=", and the mime package leaves them encoded. Such
+// a name has no file extension, so rechunkEmailAttachments skipped the
+// attachment; it is decoded here. The filename is decoded before
+// filepath.Base drops any directory from it, as part.FileName does, because a
+// base64 encoded-word can contain a "/".
 func attachmentFilename(part *multipart.Part) string {
-	if fn := part.FileName(); fn != "" {
-		return fn
+	if _, params, err := mime.ParseMediaType(part.Header.Get("Content-Disposition")); err == nil {
+		if fn := params["filename"]; fn != "" {
+			return filepath.Base(decodeHeaderWord(fn))
+		}
 	}
 	ct := part.Header.Get("Content-Type")
 	if ct != "" {
 		_, params, _ := mime.ParseMediaType(ct)
 		if name, ok := params["name"]; ok {
-			return name
+			return decodeHeaderWord(name)
 		}
 	}
 	return "attachment.bin"
@@ -410,7 +449,7 @@ func decodeMailPayload(payload []byte, charset string) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	decoded, _ := DecodeToUTF8(payload, charset)
+	decoded, _ := charsetlib.DecodeToUTF8(payload, charset)
 	return string(decoded)
 }
 
@@ -597,15 +636,16 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // attachment via naive_chunk and merges the resulting chunks into the same
 // document.
 //
-// KNOWN LIMITATION: re-chunk uses the default-config parser returned by
-// GetParser(ft) (and, for a nested email, only the top-level p.fields — no
-// tenant/setup language, parse_method, or OCR/VLM model). The extracted
-// attachment text may therefore differ from ingesting the same file as a
-// standalone document through the pipeline's tenant/setup-configured
-// parser. This is a deliberate, best-effort approximation for making
-// attachment content retrievable (the same simplification Python's
-// email.py naive_chunk makes), not a correctness bug; threading the full
-// tenant/setup config into re-chunk is intentionally out of scope here.
+// KNOWN LIMITATION: re-chunk uses the text-only, default-config parser
+// returned by GetTextOnlyParser (and, for a nested email, only the
+// top-level p.fields — no tenant/setup language, parse_method, or OCR/VLM
+// model). The extracted attachment text may therefore differ from ingesting
+// the same file as a standalone document through the pipeline's
+// tenant/setup-configured parser. This is a deliberate, best-effort
+// approximation for making attachment content retrievable (the same
+// simplification Python's email.py naive_chunk makes), not a correctness
+// bug; threading the full tenant/setup config into re-chunk is intentionally
+// out of scope here.
 //
 // Attachments whose extension has no text-oriented parser (images, audio,
 // video) are skipped: they carry no plain text in this pipeline and would
@@ -679,9 +719,12 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 				return ep.parseEmail(ctx, fn, []byte(payload), depth+1)
 			})
 		} else {
-			np, err := GetParser(ft)
+			np, actual, err := GetTextOnlyParser(ft, []byte(payload))
 			if err != nil {
 				continue
+			}
+			if actual != ft {
+				common.Warn(fmt.Sprintf("email attachment %q: requested format %s; detected %s; continuing with the %s parser", fn, ft, actual, actual))
 			}
 			res, panicked = recoverParse(func() ParseResult {
 				return np.ParseWithResult(ctx, fn, []byte(payload))
@@ -699,7 +742,7 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 		}
 
 		var texts []string
-		if res.OutputFormat == "json" && len(res.JSON) > 0 {
+		if len(res.JSON) > 0 {
 			for _, it := range res.JSON {
 				if t, ok := it.ToMap()["text"].(string); ok {
 					if t = strings.TrimSpace(t); t != "" {
