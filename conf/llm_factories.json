@@ -3544,6 +3544,14 @@
             "url": "https://api.hop-base.com/v1"
         },
         {
+            "name": "Standard Compute",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.stdcmpt.com/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",
