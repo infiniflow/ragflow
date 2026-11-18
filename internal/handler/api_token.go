@@ -70,6 +70,10 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	// Create key
 	key, err := h.systemService.CreateAPIKey(ctx, &req)
 	if err != nil {
+		if errors.Is(err, dao.ErrAPITokenLimitReached) {
+			common.Respond(c, http.StatusBadRequest, 400, nil, err.Error())
+			return
+		}
 		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to create key: "+err.Error())
 		return
 	}

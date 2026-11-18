@@ -1045,6 +1045,10 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 }
 
 func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValue string) error {
+	dataType, err := validateSystemSettingEE(varName, varValue)
+	if err != nil {
+		return err
+	}
 	settings, err := s.systemSettingsDAO.GetByName(ctx, db, varName)
 	if err != nil {
 		return err
@@ -1052,6 +1056,9 @@ func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValu
 
 	if len(settings) == 1 {
 		setting := &settings[0]
+		if dataType != "" {
+			setting.DataType = dataType
+		}
 		if err = entity.ValidateSystemSettingValue(*setting, varValue); err != nil {
 			return err
 		}
@@ -1061,7 +1068,9 @@ func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValu
 		return NewAdminException("Can't update more than 1 setting: " + varName)
 	}
 
-	dataType := entity.InferSystemSettingDataType(varName)
+	if dataType == "" {
+		dataType = entity.InferSystemSettingDataType(varName)
+	}
 	newSetting := &entity.SystemSettings{
 		Name:     varName,
 		Value:    varValue,
