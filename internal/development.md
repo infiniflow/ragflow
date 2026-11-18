@@ -432,9 +432,10 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
 ./bin/ragflow_server
 ```
 
-The OSS executable migrates the database, starts Admin and initializes the
+The OSS executable runs all services in one Go process. It migrates the database, starts Admin and initializes the
 superuser, waits for API readiness, then starts Ingestor, Syncer and Chatter.
-It supervises all services and stops them together on failure or shutdown.
+Services run as goroutines, sharing process-wide connections, model resources and
+tokenizers. They stop together on failure or shutdown.
 Admin defaults to port 9381 and API to 9380; change their configuration keys
 rather than passing a port flag. `bash build.sh --run` builds and starts this executable.
 
@@ -444,7 +445,16 @@ Admin discovery uses `admin.host` / `admin.http_port` or
 `ingestor.concurrent_workers` / `ingestor.page_concurrency` or
 `RAGFLOW_INGESTOR_CONCURRENT_WORKERS` / `RAGFLOW_INGESTOR_PAGE_CONCURRENCY`.
 Environment variables override the corresponding configuration values.
-`--profile` enables the API process's pprof listener.
+`--profile` enables profiling for the whole process.
+
+Validate startup and shutdown against isolated test dependencies with:
+
+```bash
+RAGFLOW_SINGLE_PROCESS_TEST_CONFIG=/absolute/path/to/test-service-conf.yaml bash build.sh --test-integration-go -run '^TestSingleProcessStartupAndShutdown$' ./cmd
+```
+
+The test migrates the supplied test database, checks both HTTP listeners and
+verifies that no child RAGFlow server is launched before shutting everything down.
 
 Leave `RAGFLOW_DEV_MODE` unset in production. It bypasses the code-versus-database
 version check and is intended only for development checkouts.

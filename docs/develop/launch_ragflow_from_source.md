@@ -126,9 +126,10 @@ From the repository root:
 ./bin/ragflow_server
 ```
 
-The OSS server runs database migrations first, starts Admin and initializes the
+The OSS server runs all services in one Go process. It runs database migrations first, starts Admin and initializes the
 superuser, waits for API readiness, then starts Ingestor, Syncer and Chatter.
-All services stop when the parent receives a shutdown signal or a child fails.
+Services run as goroutines with shared connections, model resources and tokenizers.
+All services stop together on cancellation or a service failure.
 Admin defaults to `9381` and API to `9380`. `bash build.sh --run` builds and
 starts the same server.
 

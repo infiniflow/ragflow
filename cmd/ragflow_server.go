@@ -26,14 +26,13 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"os/exec"
 	"os/signal"
-	"strings"
-	"sync"
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -47,169 +46,27 @@ import (
 	chatterpkg "ragflow/internal/server/chatter"
 	deepdocpkg "ragflow/internal/server/deepdoc"
 	ingestorpkg "ragflow/internal/server/ingestor"
+	"ragflow/internal/server/local"
 	syncerpkg "ragflow/internal/server/syncer"
 	billing "ragflow/internal/service/billing"
 	"ragflow/internal/storage"
 )
-
-const serviceChildEnv = "RAGFLOW_INTERNAL_SERVICE"
 
 var (
 	registerEditionFlags = func(_ *flag.FlagSet, _ *bootstrap.ServerArgs) func() error {
 		return func() error { return nil }
 	}
 	printHelp  = printStandaloneHelp
-	runEdition = runStandalone
+	runEdition = runService
 )
 
 func printStandaloneHelp(_ *bootstrap.ServerArgs) {
 	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, "RAGFlow Server - starts admin, API, ingestor, syncer and chatter.")
+	fmt.Fprintln(os.Stderr, "RAGFlow Server - runs admin, API, ingestor, syncer and chatter in one process.")
 	fmt.Fprintln(os.Stderr, "Database migration and superuser initialization run automatically.")
 	fmt.Fprintln(os.Stderr, "Default ports: admin 9381, API 9380.")
 	fmt.Fprintln(os.Stderr)
 	printCommonHelp()
-}
-
-func runStandalone(ctx context.Context, _ context.CancelFunc, args *bootstrap.ServerArgs) error {
-	if mode := os.Getenv(serviceChildEnv); mode != "" {
-		switch mode {
-		case "migrate", "admin", "api", "ingestor", "syncer", "chatter":
-		default:
-			return fmt.Errorf("invalid internal service %q", mode)
-		}
-		// The inherited pipe belongs only to a supervised child. It reports
-		// readiness without probing ports that another process might own.
-		ready := os.NewFile(3, "service-ready")
-		if ready == nil {
-			return errors.New("missing service readiness pipe")
-		}
-		defer ready.Close()
-		info, err := ready.Stat()
-		if err != nil {
-			return fmt.Errorf("inspect service readiness pipe: %w", err)
-		}
-		if info.Mode()&os.ModeNamedPipe == 0 {
-			return errors.New("service readiness descriptor is not a pipe")
-		}
-		syscall.CloseOnExec(int(ready.Fd()))
-		if err := os.Unsetenv(serviceChildEnv); err != nil {
-			return err
-		}
-		args.Mode = &mode
-		args.InitSuperUser = mode == "admin"
-		args.EnablePProf = args.EnablePProf && mode == "api"
-		args.Ready = func() error {
-			_, err := ready.Write([]byte{1})
-			return err
-		}
-		childCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		return runService(childCtx, cancel, args)
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	return superviseServices(ctx, executable, os.Args[1:])
-}
-
-// superviseServices owns every child until it exits. Failure of any service
-// stops the entire application; cancellation gives children time to clean up
-// before exec's WaitDelay forces termination.
-func superviseServices(ctx context.Context, executable string, argv []string) error {
-	ctx, cancel := context.WithCancel(ctx)
-	var children sync.WaitGroup
-	defer children.Wait()
-	defer cancel()
-
-	exits := make(chan error, 6)
-	start := func(mode string) (<-chan error, <-chan error, error) {
-		readPipe, writePipe, err := os.Pipe()
-		if err != nil {
-			return nil, nil, err
-		}
-		cmd := exec.CommandContext(ctx, executable, argv...)
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		for _, env := range os.Environ() {
-			if !strings.HasPrefix(env, serviceChildEnv+"=") {
-				cmd.Env = append(cmd.Env, env)
-			}
-		}
-		cmd.Env = append(cmd.Env, serviceChildEnv+"="+mode)
-		cmd.ExtraFiles = []*os.File{writePipe}
-		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-		cmd.WaitDelay = 40 * time.Second
-		if err := cmd.Start(); err != nil {
-			readPipe.Close()
-			writePipe.Close()
-			return nil, nil, fmt.Errorf("start %s: %w", mode, err)
-		}
-		writePipe.Close()
-		done := make(chan error, 1)
-		ready := make(chan error, 1)
-		children.Add(2)
-		go func() {
-			defer children.Done()
-			defer readPipe.Close()
-			var signal [1]byte
-			_, err := io.ReadFull(readPipe, signal[:])
-			ready <- err
-		}()
-		go func() {
-			defer children.Done()
-			err := cmd.Wait()
-			done <- err
-			if mode != "migrate" {
-				if err == nil {
-					err = errors.New("service exited unexpectedly")
-				}
-				exits <- fmt.Errorf("%s: %w", mode, err)
-			}
-		}()
-		return done, ready, nil
-	}
-
-	done, _, err := start("migrate")
-	if err != nil {
-		return err
-	}
-	select {
-	case err := <-done:
-		if err != nil {
-			return fmt.Errorf("migration: %w", err)
-		}
-	case <-ctx.Done():
-		return nil
-	}
-	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "chatter"} {
-		_, ready, err := start(mode)
-		if err != nil {
-			return err
-		}
-		if mode == "admin" || mode == "api" {
-			timer := time.NewTimer(5 * time.Minute)
-			defer timer.Stop()
-			select {
-			case <-timer.C:
-				return fmt.Errorf("%s startup timed out", mode)
-			case err := <-ready:
-				if err != nil {
-					return fmt.Errorf("%s did not become ready: %w", mode, err)
-				}
-			case err := <-exits:
-				return err
-			case <-ctx.Done():
-				return nil
-			}
-		}
-	}
-	select {
-	case err := <-exits:
-		return err
-	case <-ctx.Done():
-		return nil
-	}
 }
 
 // isStandaloneDeepDocServer reports whether st is a standalone DeepDoc
@@ -365,233 +222,276 @@ func main() {
 	}
 }
 
-func runService(ctx context.Context, cancel context.CancelFunc, arguments *bootstrap.ServerArgs) error {
-
-	// Initialize local variables (runtime variables from Redis)
-	err := server.InitLocalVariables()
-	if err != nil {
-		fmt.Printf("Failed to start %s server: %v\n", *arguments.Mode, err)
-		return err
+func runService(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.ServerArgs) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	combined := arguments.Mode == nil
+	serverType := common.ServerTypeAPI
+	serverName := "ragflow_server"
+	if !combined {
+		serverType = bootstrap.GetServerType(arguments)
+		serverName = bootstrap.TempServerName(serverType, arguments.Name)
 	}
-
-	serverType := bootstrap.GetServerType(arguments)
-
-	// The final service name is resolved after configuration is loaded.
-	serverName := bootstrap.TempServerName(serverType, arguments.Name)
-
+	if err := server.InitLocalVariables(); err != nil {
+		return fmt.Errorf("initialize local variables: %w", err)
+	}
 	logLevel := bootstrap.SelectedLogLevel(arguments, "")
-	higherThanInfo := common.LogLevelHigherThanInfo(logLevel)
-	if higherThanInfo {
+	if common.LogLevelHigherThanInfo(logLevel) {
 		logLevel = "info"
 	}
-
-	err = common.InitLogger(logLevel, common.FileOutput{}, serverName)
-	if err != nil {
-		panic("failed to initialize logger: " + err.Error())
+	if err := common.InitLogger(logLevel, common.FileOutput{}, serverName); err != nil {
+		return fmt.Errorf("initialize logger: %w", err)
 	}
-
-	// Initialize configuration
+	defer common.SyncLog()
 	var configPath string
 	if arguments.ConfigPath != nil {
 		configPath = *arguments.ConfigPath
 	}
-
-	if err = server.Init(configPath); err != nil {
-		common.Error("Failed to initialize configuration", err)
-		return err
+	if err := server.Init(configPath); err != nil {
+		return fmt.Errorf("initialize configuration: %w", err)
 	}
-
-	globalConfig := server.GetConfig()
-
-	// Resolve the effective log level once (CLI > config/env > default) and
-	// validate the final value: an invalid level from the config file or the
-	// environment must abort startup instead of being silently downgraded by
-	// the logger. The early logger above stays CLI-only because the config is
-	// not loaded yet at that point.
-	resolvedLogLevel, err := globalConfig.ResolveLogLevel(arguments.LogLevel)
+	config := server.GetConfig()
+	resolvedLogLevel, err := config.ResolveLogLevel(arguments.LogLevel)
 	if err != nil {
-		fmt.Printf("Failed to resolve log level: %v\n", err)
 		return err
 	}
-	globalConfig.SetLogLevel(resolvedLogLevel)
-
+	config.SetLogLevel(resolvedLogLevel)
 	var port int
-	switch serverType {
-	case common.ServerTypeAPI:
-		port, err = globalConfig.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.Port)
+	if combined || serverType == common.ServerTypeAPI {
+		port, err = config.ResolvePort(config.GetAPIServerConfig().HTTPPort, arguments.Port)
 		if err != nil {
-			fmt.Printf("Failed to resolve API server port: %v\n", err)
+			return fmt.Errorf("resolve API port: %w", err)
+		}
+		config.SetAPIServerHTTPPort(port)
+	}
+	if combined || serverType == common.ServerTypeAdmin {
+		port, err = config.ResolvePort(config.GetAdminServerConfig().HTTPPort, arguments.Port)
+		if err != nil {
+			return fmt.Errorf("resolve admin port: %w", err)
+		}
+		config.SetAdminHTTPPort(port)
+	}
+	if !combined {
+		arguments.Name = config.GetServerName(*arguments.Mode)
+		serverName, err = bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, port)
+		if err != nil {
 			return err
 		}
-		globalConfig.SetAPIServerHTTPPort(port)
-	case common.ServerTypeAdmin:
-		port, err = globalConfig.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, arguments.Port)
-		if err != nil {
-			fmt.Printf("Failed to resolve admin server port: %v\n", err)
-			return err
-		}
-		globalConfig.SetAdminHTTPPort(port)
-	case common.ServerTypeIngestion, common.ServerTypeFileSyncer, common.ServerTypeChatter, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend, common.ServerTypeDeepDocCPU, common.ServerTypeMigrate:
-		// No port embedding; the final name is derived below.
-	default:
-		return fmt.Errorf("invalid server mode: %v", serverType)
+		arguments.Name = &serverName
 	}
-
-	arguments.Name = globalConfig.GetServerName(*arguments.Mode)
-	serverName, err = bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, port)
-	if err != nil {
-		common.Error("invalid server mode", err)
-		return err
-	}
-
-	auditConfig := globalConfig.GetAuditConfig()
-	err = common.InitAudit(auditConfig.Type, auditConfig.GetFileOutput(), serverName)
-	if err != nil {
-		common.Error("Failed to initialize audit logger", err)
-		return err
-	}
-	defer func() {
-		common.SyncAudit()
-	}()
-
-	// set server name and log file path
 	server.SetServerName(serverName)
-
+	bootstrap.SetLogger(serverName, arguments)
+	if config.GetMode() == "debug" {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
+	local.InitAdminStatus()
+	auditConfig := config.GetAuditConfig()
+	if err := common.InitAudit(auditConfig.Type, auditConfig.GetFileOutput(), serverName); err != nil {
+		return fmt.Errorf("initialize audit logger: %w", err)
+	}
+	defer common.SyncAudit()
 	if arguments.EnablePProf {
 		if err := startPProf(pprofAddr()); err != nil {
 			common.Error("pprof server failed", err)
 		}
 	}
-
-	switch serverType {
-	case common.ServerTypeAPI, common.ServerTypeIngestion, common.ServerTypeChatter:
-		err = deepdocpkg.RegisterNativeDeepDoc(arguments)
-		if err != nil {
-			common.Error("Failed to register in-process DeepDoc backend", err)
-			return err
-		}
-	case common.ServerTypeDeepDocCPU, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend:
-		err = runDeepDoc(ctx, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
-			return err
-		}
-
-		return nil
-	default:
+	if isStandaloneDeepDocServer(serverType) {
+		return runDeepDoc(ctx, serverName, arguments)
 	}
-
-	// Print all configuration settings
-	common.Info(fmt.Sprintf("Starting %v server: %s, mode: %s", serverType, serverName, globalConfig.GetMode()))
+	runtimeNeeded := combined || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion || serverType == common.ServerTypeChatter
+	common.Info("Starting RAGFlow", zap.String("server", serverName))
 	server.PrintAll()
-
-	// Initialize database.
-	migrate := serverType == common.ServerTypeMigrate
-	if migrate {
-		common.Info("Running database migrations")
+	defer func() {
+		if dao.DB == nil {
+			return
+		}
+		db, err := dao.DB.DB()
+		if err != nil {
+			common.Error("Failed to get database for shutdown", err)
+			return
+		}
+		if err := db.Close(); err != nil {
+			common.Error("Failed to close database", err)
+		}
+	}()
+	if err := dao.InitDB(ctx, combined || serverType == common.ServerTypeMigrate); err != nil {
+		return fmt.Errorf("initialize database: %w", err)
 	}
-
-	err = dao.InitDB(ctx, migrate)
-	if err != nil {
-		common.Fatal("Failed to initialize database", zap.Error(err))
-	}
-	if migrate {
+	if serverType == common.ServerTypeMigrate {
 		common.Info("Database migrations completed")
 		return nil
 	}
-
-	err = checkDatabaseVersion(ctx)
-	if err != nil {
-		common.Fatal("Database has a newer version", zap.Error(err))
-	}
-
-	// Initialize doc engine
-	err = engine.InitDocEngine(ctx)
-	if err != nil {
-		common.Fatal("Failed to initialize doc engine", zap.Error(err))
-	}
-	defer engine.Close()
-
-	// Initialize Kvrocks cache
-	err = kvrocks.Init(ctx)
-	if err != nil {
-		common.Fatal("Failed to initialize Kvrocks", zap.Error(err))
-	}
-	defer kvrocks.Close()
-
-	err = storage.Init(ctx)
-	if err != nil {
-		common.Error("Failed to initialize storage factory", err)
-	}
-	defer storage.CloseStorage()
-
-	err = engine.InitMessageQueue()
-	if err != nil {
-		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
-	}
-
-	err = server.InitVariables(kvrocks.Get())
-	if err != nil {
-		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
-	}
-
-	// Billing owns the plan catalogue and the points/quota state machine.
-	// Both API and chatter execute conversations subject to billing enforcement.
-	if serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
-		if err = billing.Init(ctx, server.GetConfig().GetBillingConfig()); err != nil {
-			common.Fatal("Failed to initialize billing", zap.Error(err))
-		}
-		if err = billing.Start(ctx); err != nil {
-			common.Fatal("Failed to start billing", zap.Error(err))
-		}
-	}
-
-	err = server.StartServer(ctx, cancel, serverName, serverType)
-	if err != nil {
-		common.Error("Failed to start EE server", err)
+	if err := checkDatabaseVersion(ctx); err != nil {
 		return err
 	}
-	defer server.ShutdownServer(ctx)
-
-	if arguments.Name == nil {
-		arguments.Name = &serverName
+	if err := engine.InitDocEngine(ctx); err != nil {
+		return fmt.Errorf("initialize doc engine: %w", err)
 	}
+	defer func() {
+		if err := engine.Close(); err != nil {
+			common.Error("Failed to close doc engine", err)
+		}
+	}()
+	if err := kvrocks.Init(ctx); err != nil {
+		return fmt.Errorf("initialize Kvrocks: %w", err)
+	}
+	defer kvrocks.Close()
+	if err := storage.Init(ctx); err != nil {
+		return fmt.Errorf("initialize storage: %w", err)
+	}
+	defer storage.CloseStorage()
+	if err := engine.InitMessageQueue(); err != nil {
+		return fmt.Errorf("initialize message queue: %w", err)
+	}
+	if closer, ok := engine.GetMessageQueueEngine().(io.Closer); ok {
+		defer func() {
+			if err := closer.Close(); err != nil {
+				common.Error("Failed to close message queue", err)
+			}
+		}()
+	}
+	if err := server.InitVariables(kvrocks.Get()); err != nil {
+		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.Error(err))
+	}
+	if combined || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
+		if err := billing.Init(ctx, config.GetBillingConfig()); err != nil {
+			return fmt.Errorf("initialize billing: %w", err)
+		}
+		if err := billing.Start(ctx); err != nil {
+			return fmt.Errorf("start billing: %w", err)
+		}
+	}
+	if err := server.StartServer(ctx, cancel, serverName, serverType); err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer shutdownCancel()
+		if err := server.ShutdownServer(shutdownCtx); err != nil {
+			common.Error("Failed to stop server services", err)
+		}
+	}()
+	defer cancel()
+	var services *bootstrap.AgentServices
+	if runtimeNeeded {
+		if err := deepdocpkg.RegisterNativeDeepDoc(arguments); err != nil {
+			return fmt.Errorf("register in-process DeepDoc backend: %w", err)
+		}
+		closeTokenizer, err := bootstrap.InitializeAgentTokenizer()
+		if err != nil {
+			return err
+		}
+		defer closeTokenizer()
+		bootstrap.SetIngestLog(serverName)
+		defer common.SyncIngestLog()
+		services = bootstrap.NewAgentServices()
+	}
+	// Stop and join service work before closing any process-wide resource.
+	defer cancel()
+	if combined {
+		return runServices(ctx, cancel, arguments, services)
+	}
+	return runMode(ctx, cancel, arguments, services)
+}
 
-	switch serverType {
-	case common.ServerTypeChatter:
-		err = chatterpkg.Run(ctx, cancel, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start CHATTER: %v\n", err)
-			return err
-		}
-	case common.ServerTypeAPI:
-		err = apipkg.Run(ctx, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start API server: %v\n", err)
-			return err
-		}
-	case common.ServerTypeAdmin:
-		err = admin.Run(ctx, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start ADMIN server: %v\n", err)
-			return err
-		}
-	case common.ServerTypeIngestion:
-		err = ingestorpkg.Run(ctx, cancel, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
-			return err
-		}
-	case common.ServerTypeFileSyncer:
-		err = syncerpkg.Run(ctx, cancel, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start SYNCER: %v\n", err)
-			return err
-		}
+func runMode(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+	switch *args.Mode {
+	case "admin":
+		return admin.Run(ctx, args)
+	case "api":
+		return apipkg.Run(ctx, *args.Name, args, services)
+	case "ingestor":
+		return ingestorpkg.Run(ctx, cancel, args, services)
+	case "syncer":
+		return syncerpkg.Run(ctx, cancel, args)
+	case "chatter":
+		return chatterpkg.Run(ctx, args, services)
 	default:
-		return fmt.Errorf("invalid server mode: %v", serverType)
+		return fmt.Errorf("invalid server mode: %s", *args.Mode)
 	}
-	return nil
+}
+
+func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+	group, serviceCtx := errgroup.WithContext(ctx)
+	var workerReady []<-chan struct{}
+	waitReady := func(mode string, ready <-chan struct{}) error {
+		timer := time.NewTimer(5 * time.Minute)
+		defer timer.Stop()
+		select {
+		case <-ready:
+			return nil
+		case <-serviceCtx.Done():
+			return serviceCtx.Err()
+		case <-timer.C:
+			return fmt.Errorf("%s startup timed out", mode)
+		}
+	}
+	var startupErr error
+	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "chatter"} {
+		if serviceCtx.Err() != nil {
+			break
+		}
+		serviceArgs := *args
+		serviceArgs.Mode = &mode
+		serviceArgs.InitSuperUser = mode == "admin"
+		var port int
+		config := server.GetConfig()
+		if mode == "admin" {
+			port = config.GetAdminServerConfig().HTTPPort
+		} else if mode == "api" {
+			port = config.GetAPIServerConfig().HTTPPort
+		}
+		name, err := bootstrap.ResolveServerName(mode, config.GetServerName(mode), port)
+		if err != nil {
+			startupErr = err
+			break
+		}
+		serviceArgs.Name = &name
+		ready := make(chan struct{})
+		serviceArgs.Ready = func() error { close(ready); return nil }
+		group.Go(func() error {
+			err := runMode(serviceCtx, cancel, &serviceArgs, services)
+			if err != nil {
+				if errors.Is(err, context.Canceled) && serviceCtx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("%s: %w", mode, err)
+			}
+			if serviceCtx.Err() == nil {
+				return fmt.Errorf("%s exited unexpectedly", mode)
+			}
+			return nil
+		})
+		if mode == "admin" || mode == "api" {
+			if startupErr = waitReady(mode, ready); startupErr != nil {
+				break
+			}
+		} else {
+			workerReady = append(workerReady, ready)
+		}
+	}
+	if startupErr == nil {
+		for _, ready := range workerReady {
+			if startupErr = waitReady("worker", ready); startupErr != nil {
+				break
+			}
+		}
+	}
+	if startupErr == nil && serviceCtx.Err() == nil && args.Ready != nil {
+		startupErr = args.Ready()
+	}
+	if startupErr != nil {
+		cancel()
+	}
+	if err := group.Wait(); err != nil {
+		return err
+	}
+	if errors.Is(startupErr, context.Canceled) {
+		return nil
+	}
+	return startupErr
 }
 
 func checkDatabaseVersion(ctx context.Context) error {

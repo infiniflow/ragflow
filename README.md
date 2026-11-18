@@ -278,9 +278,9 @@ For document-engine changes, configuration updates, restarting services, and ret
    ./bin/ragflow_server
    ```
 
-   The OSS server migrates the database, starts Admin and initializes the
+   The OSS server runs all services in one Go process. It migrates the database, starts Admin and initializes the
    superuser, then starts API, Ingestor, Syncer, and Chatter. Admin listens on
-   `9381` and API on `9380` by default. Stop the parent process to stop all services.
+   `9381` and API on `9380` by default. Stop the process to stop all services.
    Configure service settings in `conf/service_conf.yaml` or environment variables.
 
 6. Inspect the available options with `./bin/ragflow_server --help`.

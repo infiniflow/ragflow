@@ -2,7 +2,7 @@
 
 This guide documents the Go implementation of RAGFlow. Use `docker/.env`, `docker/docker-compose.yml`, `Dockerfile`, and `docker/entrypoint.sh` for a Go deployment.
 
-The OSS image starts one supervised `bin/ragflow_server` application. It migrates
+The OSS image runs all services in one `bin/ragflow_server` process. It migrates
 the database, starts Admin and initializes the superuser, starts API, then runs
 Ingestor, Syncer and Chatter in parallel. The entrypoint renders configuration,
 starts nginx, and forwards server options unchanged. No service selection flags

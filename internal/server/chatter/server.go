@@ -24,32 +24,28 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
-	"ragflow/internal/server/local"
 )
 
 // Run owns the channel runtime until cancellation, including adapter shutdown.
-func Run(ctx context.Context, _ context.CancelFunc, serverName string, args *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
 	if !kvrocks.IsEnabled() {
 		return fmt.Errorf("chatter requires Kvrocks for shared channel runtime status")
 	}
-	bootstrap.SetLogger(serverName, args)
-	closeTokenizer, err := bootstrap.InitializeAgentTokenizer()
-	if err != nil {
-		return err
-	}
-	defer closeTokenizer()
-	bootstrap.SetIngestLog(serverName)
-	agentServices := bootstrap.NewAgentServices()
-	runtime, err := channels.Start(ctx, agentServices.AgentService)
+	runtime, err := channels.Start(ctx, services.AgentService)
 	if err != nil {
 		return fmt.Errorf("start chat-channel: %w", err)
 	}
 	defer runtime.Stop()
-	local.InitAdminStatus()
 	if hb := bootstrap.StartHeartbeat(common.ServerTypeChatter, fmt.Sprintf("chatter-%s", common.GenerateUUID()[:8]), 0, server.GetConfig().GetHeartbeatInterval()); hb != nil {
+		defer hb.Wait()
 		defer hb.Stop()
 	}
-	common.Info("Chat-channel process started")
+	common.Info("Chat-channel service started")
+	if args.Ready != nil {
+		if err := args.Ready(); err != nil {
+			return err
+		}
+	}
 	<-ctx.Done()
 	return nil
 }

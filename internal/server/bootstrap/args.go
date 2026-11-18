@@ -30,7 +30,7 @@ type ServerArgs struct {
 	Port          *int         // Used by admin, api
 	Name          *string      // server name
 	EnablePProf   bool         // enable pprof
-	Ready         func() error // called after the HTTP listener is ready
+	Ready         func() error // called after service startup
 
 	// DeepdocInferenceConcurrency, when set, overrides the DeepDoc inference
 	// concurrency from env/config. nil means "unspecified".

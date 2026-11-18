@@ -21,7 +21,6 @@ package syncer
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/server/local"
 
 	"ragflow/internal/common"
 	"ragflow/internal/server"
@@ -32,7 +31,7 @@ import (
 // Run starts the RAGFlow file syncer. It blocks until ctx is cancelled (OS
 // shutdown signal) or the syncer receives a shutdown command from the admin,
 // then gracefully stops the syncer.
-func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs) error {
 	globalConfig := server.GetConfig()
 	syncerConfig := globalConfig.GetSyncerConfig()
 	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs)
@@ -52,12 +51,6 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
 
-	// Init admin client status in syncer
-	local.InitAdminStatus()
-
-	// Set log level
-	bootstrap.SetLogger(serverName, args)
-
 	// Start heartbeat reporter to admin server
 	if hb := bootstrap.StartHeartbeat(
 		common.ServerTypeFileSyncer,
@@ -65,7 +58,16 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
+		defer hb.Wait()
 		defer hb.Stop()
+	}
+
+	var readyErr error
+	if args.Ready != nil {
+		readyErr = args.Ready()
+		if readyErr != nil {
+			cancel()
+		}
 	}
 
 	// Wait for either an OS shutdown signal or a shutdown command from the admin
@@ -81,5 +83,5 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	fileSyncer.Stop()
 	common.Info(fmt.Sprintf("File syncer %s shutdown complete", *args.Name))
 
-	return nil
+	return readyErr
 }

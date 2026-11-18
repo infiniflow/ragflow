@@ -29,7 +29,7 @@ Run `./bin/ragflow_server --help` to verify the binary starts and lists its opti
 ./bin/ragflow_server
 ```
 
-The OSS server migrates the database, starts Admin and initializes the superuser,
+The OSS server runs all services in one Go process. It migrates the database, starts Admin and initializes the superuser,
 then starts API, Ingestor, Syncer and Chatter. No mode or initialization flags
 are needed. Admin defaults to port `9381` and API to `9380`.
 
@@ -46,7 +46,7 @@ For processes on another host, set `admin.host` and `admin.http_port` in their s
 ## Start with Docker Compose
 
 For the Go deployment, use `docker/docker-compose.yml` and its `.env` file.
-The entrypoint starts the supervised server, which owns migration, superuser
+The entrypoint starts the single-process server, which owns migration, superuser
 initialization and service startup in the same order as a host-run server.
 
 ```bash

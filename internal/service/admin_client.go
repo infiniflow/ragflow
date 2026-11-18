@@ -29,32 +29,30 @@ import (
 	"go.uber.org/zap"
 )
 
-var licenseStatusCode common.ErrorCode
-var AdminServiceClient *AdminClient
-
 // AdminClient is responsible for sending heartbeat reports to the admin server
 type AdminClient struct {
-	client       *utility.HTTPClient
-	serverType   common.ServerType
-	serverName   string
-	host         string
-	port         int
-	version      string
-	lastSuccess  bool
-	attemptCount int
+	licenseStatusCode common.ErrorCode
+	client            *utility.HTTPClient
+	serverType        common.ServerType
+	serverName        string
+	host              string
+	port              int
+	version           string
+	lastSuccess       bool
+	attemptCount      int
 }
 
 // NewAdminClient creates a new heartbeat service instance
 func NewAdminClient(serverType common.ServerType, serverName, host string, port int) *AdminClient {
-	licenseStatusCode = common.CodeSuccess
 	return &AdminClient{
-		serverType:   serverType,
-		serverName:   serverName,
-		host:         host,
-		port:         port,
-		version:      common.GetRAGFlowVersion(),
-		lastSuccess:  false,
-		attemptCount: 0,
+		licenseStatusCode: common.CodeSuccess,
+		serverType:        serverType,
+		serverName:        serverName,
+		host:              host,
+		port:              port,
+		version:           common.GetRAGFlowVersion(),
+		lastSuccess:       false,
+		attemptCount:      0,
 	}
 }
 
@@ -153,8 +151,8 @@ func (h *AdminClient) SendHeartbeat() error {
 
 	responseCode := common.ErrorCode(code)
 	if responseCode != common.CodeLicenseValid {
-		if responseCode != licenseStatusCode {
-			licenseStatusCode = responseCode
+		if responseCode != h.licenseStatusCode {
+			h.licenseStatusCode = responseCode
 			common.Warn(fmt.Sprintf("Heartbeat response error: %s, code: %d", responseCode.Message(), responseCode))
 		}
 
@@ -166,7 +164,7 @@ func (h *AdminClient) SendHeartbeat() error {
 
 		return errors.New(errorMessage)
 	}
-	licenseStatusCode = responseCode
+	h.licenseStatusCode = responseCode
 
 	responseData := responseBody["data"]
 	err = h.UpdateClient(responseData)

@@ -26,7 +26,6 @@ import (
 
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
-	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
 	"ragflow/internal/service/dataset"
@@ -48,17 +47,12 @@ import (
 	"ragflow/internal/server/bootstrap"
 )
 
-func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
 	if !kvrocks.IsEnabled() {
 		return fmt.Errorf("API requires Kvrocks for shared channel runtime status")
 	}
-	closeTokenizer, err := bootstrap.InitializeAgentTokenizer()
-	if err != nil {
-		return err
-	}
-	defer closeTokenizer()
 
-	if err := startServer(ctx, serverName, args); err != nil {
+	if err := startServer(ctx, serverName, args, services); err != nil {
 		return err
 	}
 
@@ -68,25 +62,17 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 }
 
 // startServer owns the API listeners and background workers until ctx is canceled.
-func startServer(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs) error {
+func startServer(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs, agentServices *bootstrap.AgentServices) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	globalConfig := server.GetConfig()
-	serverMode := globalConfig.GetMode()
-	// Set Gin mode
-	if serverMode == "debug" {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
-	}
 
 	// Initialize service layer
 	userService := service.NewUserService()
 	userTenantService := service.NewUserTenantService()
 	documentService := document.NewDocumentService()
 	datasetsService := dataset.NewDatasetService()
-	agentServices := bootstrap.NewAgentServices()
 	metadataService := agentServices.MetadataService
 	chunkService := chunk.NewChunkService()
 	tenantService := service.NewTenantService()
@@ -220,7 +206,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// login audit records, so gin's trust-everything default would let any
 	// caller pick its own address.
 	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
-		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+		return fmt.Errorf("configure trusted proxies: %w", err)
 	}
 
 	// Middleware
@@ -320,16 +306,6 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
 	common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
 
-	// Initialize admin status (default: unavailable=1)
-	local.InitAdminStatus()
-
-	// Set log level
-	bootstrap.SetLogger(serverName, arguments)
-
-	// Initialize the ingestion lifecycle event sink (best-effort; stdout is
-	// always on, ingestor.log.path adds an optional rotated file). Flush it on shutdown.
-	bootstrap.SetIngestLog(serverName)
-
 	// Start server in a goroutine
 	go func() {
 		serve(serverName, srv, apiListener)
@@ -351,6 +327,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 		apiServerConfig.HTTPPort,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
+		defer hb.Wait()
 		defer hb.Stop()
 	}
 
@@ -365,7 +342,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	}
 	common.Info("Shutting down server...")
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer shutdownCancel()
 
 	if mcpCloser != nil {

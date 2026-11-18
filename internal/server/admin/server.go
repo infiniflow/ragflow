@@ -38,16 +38,8 @@ import (
 
 // Run starts the RAGFlow admin HTTP server. It blocks until ctx is cancelled,
 // then gracefully shuts the HTTP server down.
-func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 	globalConfig := server.GetConfig()
-	serverMode := globalConfig.GetMode()
-
-	// Set Gin mode
-	if serverMode == "debug" {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
-	}
 
 	adminService := adminapi.NewService()
 	adminHandler := adminapi.NewHandler(adminService)
@@ -73,7 +65,7 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	// Only honor X-Forwarded-For / X-Real-IP from the configured proxies
 	// (default: the loopback nginx bundled in the image), never from every peer.
 	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
-		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+		return fmt.Errorf("configure trusted proxies: %w", err)
 	}
 
 	// Middleware
@@ -110,11 +102,9 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow admin version: %s", common.GetRAGFlowVersion()))
 
-	// Set log level
-	bootstrap.SetLogger(serverName, args)
-
 	validator := utility.NewScheduledTask("Admin validator", globalConfig.GetHeartbeatInterval(), adminapi.CheckServicePeriodically)
 	validator.Start()
+	defer validator.Wait()
 	defer validator.Stop()
 	stopMetrics := startMetrics(ctx)
 	defer stopMetrics()
@@ -145,12 +135,13 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	common.Info("Shutting down RAGFlow HTTP server...")
 
 	// Create context with timeout for graceful shutdown
-	quitCtx, quitCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	quitCtx, quitCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer quitCancel()
 
 	// Shutdown HTTP server
 	if err := srv.Shutdown(quitCtx); err != nil {
-		common.Fatal("Server forced to shutdown", zap.Error(err))
+		srv.Close()
+		return fmt.Errorf("shutdown admin server: %w", err)
 	}
 
 	common.Info("Admin HTTP server exited")

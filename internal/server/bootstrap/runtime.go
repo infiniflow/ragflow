@@ -76,26 +76,26 @@ func SetIngestLog(serverName string) {
 
 // StartHeartbeat initializes and starts the heartbeat reporter to the admin
 // server. It is shared by the API, ingestor, and syncer server modes. The
-// caller must defer the returned *utility.ScheduledTask's Stop() method.
+// caller must stop and wait for the returned task before closing shared resources.
 func StartHeartbeat(serverType common.ServerType, serverID string, port int, heartBeatInterval time.Duration) *utility.ScheduledTask {
 	localIP, err := utility.GetLocalIP()
 	if err != nil {
 		common.Fatal("fail to get local ip address")
 	}
 
-	service.AdminServiceClient = service.NewAdminClient(
+	client := service.NewAdminClient(
 		serverType,
 		serverID,
 		localIP,
 		port,
 	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+	if err = client.InitHTTPClient(); err != nil {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 		return nil
 	}
 
 	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval, func() {
-		if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+		if err := client.SendHeartbeat(); err == nil {
 			local.SetAdminStatus(local.Available, "")
 		} else {
 			local.SetAdminStatus(local.Unavailable, err.Error())
