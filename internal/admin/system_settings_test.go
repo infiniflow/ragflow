@@ -43,3 +43,37 @@ func TestSetAPITokenLimitValidatesFirstSaveAndUpdate(t *testing.T) {
 		}
 	}
 }
+
+func TestSetAPITokenLimitValidatesResolvedName(t *testing.T) {
+	h, db := setupSetVariableHandler(t)
+	// Match MySQL's trailing-space-insensitive name comparison.
+	if err := db.Exec(`DROP TABLE system_settings`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE system_settings (
+		name TEXT PRIMARY KEY COLLATE RTRIM, source TEXT, data_type TEXT, value TEXT,
+		create_time INTEGER, create_date DATETIME, update_time INTEGER, update_date DATETIME
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.SystemSettings{Name: "api_key.max_count", Value: "16", DataType: "integer", Source: "admin"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"0", "-1", "1.5", `"invalid"`} {
+		response := putVariable(t, h, fmt.Sprintf(`{"var_name":"api_key.max_count ","var_value":%s}`, value))
+		if response.Code == int(common.CodeSuccess) {
+			t.Fatalf("accepted invalid limit %s through resolved name", value)
+		}
+	}
+	var stored entity.SystemSettings
+	if err := db.Where("name = ?", "api_key.max_count").Take(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Value != "16" {
+		t.Fatalf("invalid update changed saved limit: %s", stored.Value)
+	}
+	response := putVariable(t, h, `{"var_name":"api_key.max_count ","var_value":24}`)
+	if response.Code != int(common.CodeSuccess) {
+		t.Fatalf("valid update failed: %+v", response)
+	}
+}

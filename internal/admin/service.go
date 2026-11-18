@@ -1057,6 +1057,11 @@ func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValu
 
 	if len(settings) == 1 {
 		setting := &settings[0]
+		if strings.EqualFold(setting.Name, "api_key.max_count") {
+			if _, err := entity.ParseAPITokenLimit(varValue); err != nil {
+				return err
+			}
+		}
 		if err = entity.ValidateSystemSettingValue(*setting, varValue); err != nil {
 			return err
 		}
