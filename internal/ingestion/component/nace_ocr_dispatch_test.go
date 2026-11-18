@@ -29,6 +29,7 @@ import (
 	"sync"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -239,6 +240,15 @@ func TestDispatchPDFBackendParserNameForms(t *testing.T) {
 		return strings.HasSuffix(strings.ToLower(selector), "@nace")
 	}
 	isMiniCPMOCRModelSelector = func(context.Context, *gorm.DB, string, string) bool { return false }
+
+	// A parser branch falls back to its service URL from the environment when
+	// the resolver fails, so clear those URLs: no probe may send a request.
+	for _, name := range []string{
+		common.EnvMonkeyOCRv2ServerURL, common.EnvMonkeyOCRServerURL, common.EnvMonkeyOCRAPIServer,
+		common.EnvUnlimitedOCRServerURL, common.EnvUnlimitedOCRAPIServer,
+	} {
+		t.Setenv(name, "")
+	}
 
 	// route names the branch that took the selector: the resolver it called
 	// first, else the error text of the branch.
