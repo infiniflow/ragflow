@@ -1,10 +1,12 @@
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 
 import { ChatSessionSource, MessageType } from '@/constants/chat';
 import { SingleChatBox } from './single-chat-box';
 
 const mockHydrateFromServer = jest.fn();
 const mockUseGetChatSearchParams = jest.fn();
+const mockScrollToBottom = jest.fn();
+const mockMessageContainerRef = { current: null as HTMLDivElement | null };
 const mockNextMessageInput = jest.fn<null, [props: Record<string, unknown>]>(
   () => null,
 );
@@ -67,8 +69,10 @@ jest.mock('../../hooks/use-create-conversation', () => ({
 jest.mock('../../hooks/use-send-chat-message', () => ({
   useSendMessage: () => ({
     value: '',
-    scrollRef: { current: null },
-    messageContainerRef: { current: null },
+    virtualizer: null,
+    messageContainerRef: mockMessageContainerRef,
+    scrollToBottom: mockScrollToBottom,
+    isAtBottom: false,
     sendLoading: false,
     messages: mockMessages,
     isUploading: false,
@@ -117,6 +121,22 @@ describe('SingleChatBox conversation hydration', () => {
     mockUseGetChatSearchParams.mockReset();
     mockNextMessageInput.mockClear();
     mockMessageItem.mockClear();
+  });
+
+  it('keeps the scroll button outside the transcript and resumes following', () => {
+    mockUseGetChatSearchParams.mockReturnValue({ conversationId: 'current' });
+    mockScrollToBottom.mockClear();
+    const { getByRole } = render(
+      <SingleChatBox conversation={buildConversation('current')} />,
+    );
+    const button = getByRole('button');
+    expect(mockMessageContainerRef.current).not.toBeNull();
+    expect(mockMessageContainerRef.current?.contains(button)).toBe(false);
+    expect(button.parentElement).toBe(
+      mockMessageContainerRef.current?.parentElement,
+    );
+    fireEvent.click(button);
+    expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
   });
 
   it('ignores stale messages while the URL points to a new conversation', () => {

@@ -93,9 +93,14 @@ jest.mock('@/hooks/use-chat-request', () => ({
   useGetChatSearchParams: () => ({ conversationId: 'conversation-1' }),
   useUpdateChat: () => ({ updateChat: mockUpdateChat }),
 }));
-jest.mock('@/hooks/use-llm-request', () => ({
-  useFindLlmByUuid: () => mockFindLlmByUuid,
-}));
+jest.mock('@/hooks/use-llm-request', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  return {
+    useFindLlmByUuid: () => mockFindLlmByUuid,
+    ModelResourceAccessUserIdContext: React.createContext(undefined),
+    ModelResourceTenantIdContext: React.createContext(undefined),
+  };
+});
 jest.mock('@/hooks/use-user-setting-request', () => ({
   useFetchUserInfo: () => ({ data: { nickname: '', avatar: '' } }),
 }));
@@ -113,6 +118,10 @@ jest.mock('../../hooks/use-send-single-message', () => ({
     derivedMessages: [],
     handlePressEnter: mockHandlePressEnter,
     sendLoading: false,
+    virtualizer: null,
+    messageContainerRef: { current: null },
+    scrollToBottom: jest.fn(),
+    isAtBottom: true,
   }),
 }));
 jest.mock('../../hooks/use-upload-file', () => ({
