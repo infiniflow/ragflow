@@ -290,10 +290,8 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 			WriteTimeout:      0, // SSE streams outlive individual tool deadlines
 			IdleTimeout:       120 * time.Second,
 		}
-		go func() {
-			common.Info(fmt.Sprintf("MCP server starting on %s", mcpSrv.Addr))
-			serve("MCP", mcpSrv, mcpListener)
-		}()
+		common.Info(fmt.Sprintf("MCP server starting on %s", mcpSrv.Addr))
+		go serve("MCP", mcpSrv, mcpListener)
 	}
 
 	common.Info(
@@ -310,16 +308,6 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	go func() {
 		serve(serverName, srv, apiListener)
 	}()
-	if arguments.Ready != nil {
-		if err := arguments.Ready(); err != nil {
-			srv.Close()
-			if mcpSrv != nil {
-				mcpSrv.Close()
-			}
-			return fmt.Errorf("report API readiness: %w", err)
-		}
-	}
-
 	// Start heartbeat reporter to admin server
 	if hb := bootstrap.StartHeartbeat(
 		common.ServerTypeAPI,
@@ -329,6 +317,15 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	); hb != nil {
 		defer hb.Wait()
 		defer hb.Stop()
+	}
+	if arguments.Ready != nil {
+		if err := arguments.Ready(); err != nil {
+			srv.Close()
+			if mcpSrv != nil {
+				mcpSrv.Close()
+			}
+			return fmt.Errorf("report API readiness: %w", err)
+		}
 	}
 
 	// Wait for either shutdown signal or serving failure.

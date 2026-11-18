@@ -111,8 +111,8 @@ func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 
 	// Start HTTP server in a goroutine
 	serveErr := make(chan error, 1)
+	common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", adminConfig.HTTPPort))
 	go func() {
-		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", adminConfig.HTTPPort))
 		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
 		}

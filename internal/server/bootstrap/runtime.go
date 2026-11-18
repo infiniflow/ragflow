@@ -29,21 +29,17 @@ import (
 	"ragflow/internal/utility"
 )
 
-// SetLogger (re)initializes the process logger for the given server name using
-// the configured log settings plus any CLI overrides carried by args. It was
-// previously a private helper in package main; it lives here so the per-mode
-// runners (now in their own packages) can call it without reaching into main.
-func SetLogger(serverName string, arguments *ServerArgs) {
+// SetLogger opens the configured log destinations and keeps startup INFO logs visible.
+func SetLogger(serverName string, logLevel string) {
 	// log filename
 	logFileName := fmt.Sprintf("%s.log", serverName)
 
 	globalConfig := server.GetConfig()
 	logConfig := globalConfig.GetLogConfig()
 
-	// Reinitialize logger with the configured level and CLI overrides.
-	logLevel := SelectedLogLevel(arguments, logConfig.Level)
-
-	globalConfig.SetLogLevel(logLevel)
+	if common.LogLevelHigherThanInfo(logLevel) {
+		logLevel = "info"
+	}
 
 	fileOut := common.FileOutput{
 		Filename:   logFileName,
@@ -56,7 +52,7 @@ func SetLogger(serverName string, arguments *ServerArgs) {
 
 	common.SyncLog()
 	if err := common.InitLogger(logLevel, fileOut, serverName); err != nil {
-		common.Error("Failed to reinitialize logger with configured level", err)
+		common.Error("Failed to initialize startup logger", err)
 	}
 }
 

@@ -280,7 +280,17 @@ func runService(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.
 		arguments.Name = &serverName
 	}
 	server.SetServerName(serverName)
-	bootstrap.SetLogger(serverName, arguments)
+	bootstrap.SetLogger(serverName, resolvedLogLevel)
+	onReady := arguments.Ready
+	arguments.Ready = func() error {
+		if err := common.SetLogLevel(resolvedLogLevel); err != nil {
+			return fmt.Errorf("set runtime log level: %w", err)
+		}
+		if onReady != nil {
+			return onReady()
+		}
+		return nil
+	}
 	if config.GetMode() == "debug" {
 		gin.SetMode(gin.DebugMode)
 	} else {
@@ -302,7 +312,10 @@ func runService(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.
 	}
 	runtimeNeeded := combined || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion || serverType == common.ServerTypeChatter
 	common.Info("Starting RAGFlow", zap.String("server", serverName))
-	server.PrintAll()
+	// Keep the full configuration dump tied to the operator's chosen verbosity.
+	if !common.LogLevelHigherThanInfo(resolvedLogLevel) {
+		server.PrintAll()
+	}
 	defer func() {
 		if dao.DB == nil {
 			return

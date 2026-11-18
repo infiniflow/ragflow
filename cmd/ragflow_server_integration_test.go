@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
 )
@@ -43,6 +44,7 @@ func TestSingleProcessStartupAndShutdown(t *testing.T) {
 	var runErr error
 	args := &bootstrap.ServerArgs{
 		ConfigPath: &configPath,
+		LogLevel:   new("warn"),
 		Ready:      func() error { close(ready); return nil },
 	}
 	go func() {
@@ -66,6 +68,9 @@ func TestSingleProcessStartupAndShutdown(t *testing.T) {
 		t.Fatalf("server stopped before all services were ready: %v", runErr)
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
+	}
+	if got := common.GetLogLevel(); got != "warn" {
+		t.Errorf("log level after all services are ready = %q, want warn", got)
 	}
 	config := server.GetConfig()
 	client := &http.Client{Timeout: 10 * time.Second}
