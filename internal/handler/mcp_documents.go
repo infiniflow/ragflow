@@ -12,13 +12,11 @@ import (
 	"ragflow/internal/mcp"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
-	"ragflow/internal/service/document"
 )
 
 type mcpDocumentService interface {
 	ListDocumentsByDatasetIDWithOptions(context.Context, dao.DocumentListOptions, int, int) ([]*entity.DocumentListItem, int64, error)
 	GetDocumentMetadataByID(context.Context, string) (map[string]interface{}, error)
-	GetDocumentByID(context.Context, string) (*document.DocumentResponse, error)
 }
 
 type mcpChunkService interface {
@@ -94,18 +92,28 @@ func mcpListChunks(ctx context.Context, documents mcpDocumentService, chunks mcp
 	if err != nil {
 		return "", err
 	}
-	if err := service.CheckDocumentAccess(ctx, req.DocumentID, req.DatasetID, permission.OperationRead); err != nil {
-		return "", err
-	}
-	doc, err := documents.GetDocumentByID(ctx, req.DocumentID)
+	scope, err := documentReadAccessScope(ctx, req.DatasetID)
 	if err != nil {
 		return "", err
 	}
-	if doc.KbID != req.DatasetID {
+	// Read the same status projection as document discovery. It keeps the
+	// current ingestion task authoritative and handles documents without one.
+	rows, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{
+		KbID: req.DatasetID, DocIDs: []string{req.DocumentID},
+		DocIDFilterApplied: true, AccessScope: &scope,
+	}, 1, 1)
+	if err != nil {
+		return "", err
+	}
+	if len(rows) == 0 {
 		return "", permission.ErrResourceNotFound
 	}
-	if doc.IngestionStatus != common.COMPLETED {
-		return "", fmt.Errorf("document is not fully parsed (ingestion_status: %s); wait for parsing to complete", doc.IngestionStatus)
+	status := stringValue(rows[0].IngestionStatus)
+	if status == "" {
+		status = common.UNSTART
+	}
+	if status != common.COMPLETED {
+		return "", fmt.Errorf("document is not fully parsed (ingestion_status: %s); wait for parsing to complete", status)
 	}
 	// With no keywords, the existing chunk service sorts by document position
 	// and applies document and dataset permission checks before searching.
