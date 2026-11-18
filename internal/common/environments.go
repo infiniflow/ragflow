@@ -293,6 +293,7 @@ const (
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
 	EnvPaddleOCRAPIURL                   = "PADDLEOCR_API_URL"
 	EnvPaddleOCRAccessToken              = "PADDLEOCR_ACCESS_TOKEN"
+	EnvPaddleOCRTimeout                  = "PADDLEOCR_TIMEOUT"
 	EnvSOMarkBaseUrl                     = "SOMARK_BASE_URL"
 	EnvSOMarkAPIKey                      = "SOMARK_API_KEY"
 	EnvSOMarkImageFormat                 = "SOMARK_IMAGE_FORMAT"

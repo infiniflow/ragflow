@@ -1811,7 +1811,7 @@ func dispatchPaddleOCRPdf(
 	filename string,
 	binary []byte,
 	tenantID string,
-	_ schema.ParserSetup,
+	setup schema.ParserSetup,
 	modelID string,
 ) (parser.ParseResult, error) {
 	driver, modelName, apiConfig, err := resolvePaddleOCRModelForDispatch(ctx, db, tenantID, modelID)
@@ -1823,13 +1823,47 @@ func dispatchPaddleOCRPdf(
 			"parser: PaddleOCR requires a PaddleOCR OCR model; found %q. Please add a PaddleOCR OCR model to your tenant", driver.Name())
 	}
 
-	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, nil, nil)
+	ocrConfig := &modelModule.OCRConfig{Timeout: paddleOCRRequestTimeout(setup, apiConfig)}
+	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, ocrConfig, nil)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
 	}
 
 	result := parser.OCRPDFResult(ctx, "PaddleOCR", filename, binary, resp)
 	return result, result.Err
+}
+
+// paddleOCRRequestTimeout resolves the PaddleOCR parse timeout with precedence:
+//  1. setup["paddleocr_timeout"] / setup["paddleocr_timeout_seconds"] (authoritative; non-empty invalid values
+//     do not fall through to API config or env)
+//  2. apiConfig provider JSON (paddleocr_timeout, paddleocr_timeout_seconds, PADDLEOCR_TIMEOUT)
+//  3. PADDLEOCR_TIMEOUT environment variable
+//
+// It returns 0 when no valid value is configured, which keeps the driver default (20m).
+// Configured durations are clamped to [1s, 24h].
+func paddleOCRRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
+	value := ""
+	if raw, ok := setup["paddleocr_timeout"]; ok && raw != nil {
+		value = strings.TrimSpace(fmt.Sprint(raw))
+	}
+	if value == "" {
+		if raw, ok := setup["paddleocr_timeout_seconds"]; ok && raw != nil {
+			value = strings.TrimSpace(fmt.Sprint(raw))
+		}
+	}
+	if value == "" {
+		value = modelModule.ProviderJSONConfigValueFromAPIConfig(
+			apiConfig,
+			"paddleocr_timeout",
+			"paddleocr_timeout_seconds",
+			common.EnvPaddleOCRTimeout,
+		)
+	}
+	if value == "" {
+		value = strings.TrimSpace(os.Getenv(common.EnvPaddleOCRTimeout))
+	}
+	timeout, _ := parseOCRRequestTimeout(value)
+	return timeout
 }
 
 // isMiniCPMOCRModelSelector reports whether selector — a tenant model UUID or
