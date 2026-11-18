@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1028,6 +1029,60 @@ func TestDecodePerplexityWebSearchResultsAcceptsMissingResults(t *testing.T) {
 	if len(results) != 0 {
 		t.Fatalf("results = %#v, want empty", results)
 	}
+}
+
+func TestPerplexityWebSearchReachesAgenticCallbackWithoutTavilyFallback(t *testing.T) {
+	original := perplexityWebSearchHTTPClient
+	t.Cleanup(func() { perplexityWebSearchHTTPClient = original })
+	calls := 0
+	fail := false
+	perplexityWebSearchHTTPClient = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.String() != "https://api.perplexity.ai/search" || r.Header.Get("Authorization") != "Bearer pplx-test" {
+			t.Errorf("unexpected dispatched request: %s %s Authorization=%q", r.Method, r.URL, r.Header.Get("Authorization"))
+		}
+		var requestBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if requestBody["query"] != "ragflow" || requestBody["max_results"] != float64(6) || requestBody["search_type"] != "web" {
+			t.Errorf("request body = %#v", requestBody)
+		}
+		status := http.StatusOK
+		body := `{"results":[{"title":"RAGFlow","url":"https://example.com/ragflow","snippet":"An open-source RAG engine."}]}`
+		if fail {
+			status = http.StatusUnauthorized
+			body = `{"error":{"message":"credential-secret"}}`
+		}
+		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	config := map[string]interface{}{"web_search_provider": "perplexity", "perplexity_api_key": "pplx-test", "tavily_api_key": "other-test"}
+	service := &ChatPipelineService{}
+	agenticCallback := service.webSearchFunc(config)
+	if agenticCallback == nil {
+		t.Fatal("Perplexity agentic callback is nil")
+	}
+	if service.webSearchFunc(map[string]interface{}{"web_search_provider": "", "perplexity_api_key": "pplx-test"}) != nil {
+		t.Fatal("cleared provider retained an agentic callback")
+	}
+	hits, err := agenticCallback(t.Context(), "ragflow")
+	if err != nil || len(hits) != 1 || hits[0].Title != "RAGFlow" || hits[0].URL != "https://example.com/ragflow" || hits[0].Content != "An open-source RAG engine." || calls != 1 {
+		t.Fatalf("agentic result=%#v error=%v requests=%d", hits, err, calls)
+	}
+	fail = true
+	tavilyCalls := 0
+	_, err = retrieveWebSearchWithTavily(t.Context(), resolveWebSearchProvider(config), "ragflow", func(context.Context, string, string) (map[string]interface{}, error) {
+		tavilyCalls++
+		return nil, errors.New("unexpected Tavily fallback")
+	})
+	if err == nil || tavilyCalls != 0 {
+		t.Fatalf("failure error=%v Tavily requests=%d", err, tavilyCalls)
+	}
+	hits, err = agenticCallback(t.Context(), "ragflow")
+	if err == nil || err.Error() != "perplexity: authentication failed (401); update the API key" || len(hits) != 0 || calls != 3 {
+		t.Fatalf("agentic failure result=%#v error=%v requests=%d", hits, err, calls)
+	}
+	assertPerplexityErrorRedacted(t, err, "pplx-test", "credential-secret", "https://api.perplexity.ai/search")
 }
 
 func TestRetrieveSearch1APIWebSearchSendsBearerKeyAndUsesSnippets(t *testing.T) {
