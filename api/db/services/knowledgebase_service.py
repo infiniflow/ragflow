@@ -377,6 +377,23 @@ class KnowledgebaseService(CommonService):
             return None
         return kbs[0]
 
+    # Keys the table parser recomputes from scratch on every parse. They describe
+    # the current columns of the dataset's files, so a deep-merge would keep
+    # columns that no longer exist and can never be removed again.
+    PARSER_DERIVED_CONFIG_KEYS = frozenset({"field_map", "table_column_names"})
+
+    @classmethod
+    def document_parser_config(cls, parser_config):
+        """Copy a dataset parser_config for a new document, dropping derived keys.
+
+        The table parser writes field_map/table_column_names to the dataset only;
+        every reader resolves them from the dataset (see
+        rag/utils/table_es_metadata.merge_table_parser_config_from_kb). Copying
+        them into each document multiplies a large config across every row of
+        the document table without any consumer.
+        """
+        return {k: v for k, v in (parser_config or {}).items() if k not in cls.PARSER_DERIVED_CONFIG_KEYS}
+
     @classmethod
     @DB.connection_context()
     def update_parser_config(cls, id, config):
@@ -391,13 +408,11 @@ class KnowledgebaseService(CommonService):
         def dfs_update(old, new):
             # Deep update of nested configuration
             for k, v in new.items():
-                if k not in old:
+                if k in cls.PARSER_DERIVED_CONFIG_KEYS or k not in old:
                     old[k] = v
                     continue
                 if isinstance(v, dict) and isinstance(old[k], dict):
                     dfs_update(old[k], v)
-                elif isinstance(v, list) and isinstance(old[k], list):
-                    old[k] = list(set(old[k] + v))
                 else:
                     old[k] = v
 
@@ -411,7 +426,8 @@ class KnowledgebaseService(CommonService):
         if not e:
             raise LookupError(f"dataset({id}) not found.")
 
-        m.parser_config.pop("field_map", None)
+        for k in cls.PARSER_DERIVED_CONFIG_KEYS:
+            m.parser_config.pop(k, None)
         cls.update_by_id(id, {"parser_config": m.parser_config})
 
     @classmethod

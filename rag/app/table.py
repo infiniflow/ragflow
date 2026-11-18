@@ -204,28 +204,40 @@ class Excel(ExcelParser):
             return False
         return header_like_cells >= data_like_cells
 
+    @staticmethod
+    def _used_column_count(rows):
+        """Return the 1-based width of the sheet's used range.
+
+        openpyxl materialises a cell object for every column the worksheet
+        ``<dimension>`` tag declares, and Excel inflates that tag whenever a
+        style is applied to a far column even with no value written. A sheet
+        with four real columns can therefore yield 16384 cell objects per row,
+        16380 of them empty. Those trailing cells are not columns.
+
+        Bound the width by the last column holding a value in any row: a real
+        trailing column whose header cell is blank keeps its position, while
+        columns that are empty from the header down are dropped.
+        """
+        width = 0
+        for row in rows:
+            for idx in range(len(row) - 1, -1, -1):
+                value = row[idx].value
+                if value is not None and str(value).strip() != "":
+                    width = max(width, idx + 1)
+                    break
+        return width
+
     def _parse_simple_headers(self, rows):
         if not rows:
             return [], 0
         header_row = rows[0]
-        headers = []
-        for cell in header_row:
-            if cell.value is not None:
-                header_value = str(cell.value).strip()
-                if header_value:
-                    headers.append(header_value)
-            else:
-                pass
         final_headers = []
-        for i, cell in enumerate(header_row):
-            if cell.value is not None:
-                header_value = str(cell.value).strip()
-                if header_value:
-                    final_headers.append(header_value)
-                else:
-                    final_headers.append(f"Column_{i + 1}")
-            else:
-                final_headers.append(f"Column_{i + 1}")
+        for i in range(self._used_column_count(rows)):
+            cell = header_row[i] if i < len(header_row) else None
+            header_value = str(cell.value).strip() if cell is not None and cell.value is not None else ""
+            # Blank cells inside the used range keep a placeholder name so data
+            # rows stay aligned with their columns.
+            final_headers.append(header_value or f"Column_{i + 1}")
         return final_headers, 1
 
     def _parse_multi_level_headers(self, ws, rows):
@@ -272,7 +284,7 @@ class Excel(ExcelParser):
 
     def _build_hierarchical_headers(self, ws, rows, header_rows):
         headers = []
-        max_col = max(len(row) for row in rows[:header_rows]) if header_rows > 0 else 0
+        max_col = self._used_column_count(rows)
         merged_ranges = list(ws.merged_cells.ranges)
         for col_idx in range(max_col):
             header_parts = []
