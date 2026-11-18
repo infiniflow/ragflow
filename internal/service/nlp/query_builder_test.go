@@ -227,6 +227,7 @@ func TestQueryBuilder_Traditional2Simplified(t *testing.T) {
 	}
 }
 
+// TestQueryBuilder_Question tests building full-text query expressions across multilingual and identifier inputs.
 func TestQueryBuilder_Question(t *testing.T) {
 	qb := NewQueryBuilder()
 	tests := []struct {
@@ -277,6 +278,42 @@ func TestQueryBuilder_Question(t *testing.T) {
 			},
 			checkKeywords: func(keywords []string) bool {
 				// Should return extracted keywords
+				return len(keywords) > 0
+			},
+		},
+		{
+			name:     "Hyphenated bug ID",
+			txt:      "BUG-1234",
+			tbl:      "test",
+			minMatch: 0.5,
+			checkExpr: func(expr *types.MatchTextExpr) bool {
+				return expr != nil && strings.Contains(expr.MatchingText, "bug-1234")
+			},
+			checkKeywords: func(keywords []string) bool {
+				return len(keywords) > 0
+			},
+		},
+		{
+			name:     "Bug key with single char digit",
+			txt:      "KEY-1",
+			tbl:      "test",
+			minMatch: 0.5,
+			checkExpr: func(expr *types.MatchTextExpr) bool {
+				return expr != nil && strings.Contains(expr.MatchingText, "key-1")
+			},
+			checkKeywords: func(keywords []string) bool {
+				return len(keywords) > 0
+			},
+		},
+		{
+			name:     "Alphanumeric project code",
+			txt:      "PROJ_9821",
+			tbl:      "test",
+			minMatch: 0.5,
+			checkExpr: func(expr *types.MatchTextExpr) bool {
+				return expr != nil && strings.Contains(expr.MatchingText, "proj_9821")
+			},
+			checkKeywords: func(keywords []string) bool {
 				return len(keywords) > 0
 			},
 		},
