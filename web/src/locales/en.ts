@@ -3224,6 +3224,31 @@ Best for: Documents with flowing, contextually connected content — such as boo
       youComFreshnessMonth: 'Past month',
       youComFreshnessYear: 'Past year',
       youComApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
+      perplexitySearch: 'Perplexity',
+      perplexitySearchDescription:
+        'A web search component powered by the Perplexity Search API. Each result carries a title, URL, snippet and, when known, a publication date. Requires an API Key.',
+      perplexitySearchType: 'Search type',
+      perplexitySearchTypeTip:
+        'Web is the default search type. Fast prioritizes lower latency.',
+      perplexitySearchTypeWeb: 'Web',
+      perplexitySearchTypeFast: 'Fast',
+      perplexityRecency: 'Recency',
+      perplexityRecencyTip:
+        'Restrict results by how recently they were published.',
+      perplexityRecencyAny: 'Any time',
+      perplexityRecencyHour: 'Past hour',
+      perplexityRecencyDay: 'Past day',
+      perplexityRecencyWeek: 'Past week',
+      perplexityRecencyMonth: 'Past month',
+      perplexityRecencyYear: 'Past year',
+      perplexityDomainFilter: 'Domain filter',
+      perplexityDomainFilterTip:
+        'Comma-separated list of up to 20 domains. Use one mode per request: either list only the domains to search (for example "ragflow.io, docs.example.com"), or list only the domains to exclude with a "-" prefix (for example "-pinterest.com, -reddit.com"). Mixing the two is rejected. Leave blank to search the whole web.',
+      perplexityCountry: 'Country',
+      perplexityCountryTip:
+        'Optional ISO 3166-1 alpha-2 country code (for example US) used to prefer results from that country.',
+      perplexityApiKeyTip:
+        'Required. Create an API Key at perplexity.ai/account/api/keys.',
       sofyaSearch: 'Sofya',
       sofyaSearchDescription:
         'A web search component powered by Sofya. Results carry the content of each result page, or only its search snippet, depending on the search depth. An API Key is required.',
