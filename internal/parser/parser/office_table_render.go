@@ -476,6 +476,20 @@ func clampMergeRanges(ranges []mergeRange, present map[int]bool) []mergeRange {
 	return local
 }
 
+// occupiedCellInMerge reports whether any filled cell of row (1-based row
+// number) sits inside a merge rectangle.
+func occupiedCellInMerge(row []string, ranges []mergeRange, rowNum int) bool {
+	for c, v := range row {
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		if m, _ := mergeAt(ranges, rowNum, c+1); m != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // mergeTouchesRow reports whether any merge rectangle covers row.
 func mergeTouchesRow(ranges []mergeRange, row int) bool {
 	for _, m := range ranges {
@@ -1045,7 +1059,9 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 	// 3) Title-stub fallback: when row 1 is a lone title cell and no styled or
 	// contrast anchor was found, prefer the first text-majority row below it.
 	// A title followed by an unstyled header has no other signal to pick from.
-	if bestCandidate == 0 && rowNonEmpty(records[0]) <= 1 {
+	// Only a merge that covers the occupied cell itself blocks the fallback —
+	// an unrelated merge touching row 1 elsewhere must not disqualify it.
+	if bestCandidate == 0 && rowNonEmpty(records[0]) <= 1 && !occupiedCellInMerge(records[0], ranges, 1) {
 		stubScan := 12
 		if stubScan > n-1 {
 			stubScan = n - 1
@@ -1122,7 +1138,7 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 					numCells++
 				}
 			}
-			if ne > 0 && numCells*2 >= ne {
+			if numCells*2 >= rowNonEmpty(row) {
 				continue
 			}
 			return k + 1
@@ -1234,15 +1250,196 @@ func isSubtotalRow(row []string) bool {
 	return false
 }
 
-func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, int, []mergeRange, []string, error) {
+// formSheetPrefixLen is the row window scanned for form-style cover pages.
+// Kros "Krycí list" occupies roughly the first 45 rows; the budget table
+// follows later and must not dilute the narrow-row signal.
+const formSheetPrefixLen = 50
+
+// isFormSheet reports whether the top rows of a sheet look like a form/cover
+// page rather than a regular data table. The check scans at most the first
+// formSheetPrefixLen rows so that a budget table below the cover does not
+// mask the form prefix (e.g. E1.2 - Statika has a 43-row cover page
+// followed by a 29-column budget).
+func isFormSheet(rows [][]string, headerRow int) bool {
+	limit := len(rows)
+	if limit > formSheetPrefixLen {
+		limit = formSheetPrefixLen
+	}
+	if limit < 6 || isDenseSheetTable(rows[:limit], headerRow) {
+		return false
+	}
+	nonEmpty := 0
+	narrow := 0 // rows with ≤ 3 filled cells
+	kvRows := 0 // rows pairing a text label with a numeric cell
+	for _, row := range rows[:limit] {
+		w := rowNonEmpty(row)
+		if w == 0 {
+			continue
+		}
+		nonEmpty++
+		if w <= 3 {
+			narrow++
+		}
+		hasLabel, hasNumber := false, false
+		for _, cell := range row {
+			v := strings.TrimSpace(cell)
+			if v == "" {
+				continue
+			}
+			if isNumericCell(v) {
+				hasNumber = true
+			} else {
+				hasLabel = true
+			}
+		}
+		if hasLabel && hasNumber {
+			kvRows++
+		}
+	}
+	if nonEmpty < 4 || kvRows < 2 {
+		return false
+	}
+	return narrow*2 > nonEmpty // majority of prefix rows are narrow → form
+}
+
+func isDenseSheetTable(rows [][]string, headerRow int) bool {
+	if headerRow < 1 || headerRow >= len(rows) {
+		return false
+	}
+	prefixRows := 0
+	for _, row := range rows[:headerRow-1] {
+		if filled := rowNonEmpty(row); filled > 0 {
+			prefixRows++
+			if prefixRows > 1 || filled > 1 {
+				return false
+			}
+		}
+	}
+	var columns []int
+	for c, value := range rows[headerRow-1] {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if isNumericCell(value) {
+			return false
+		}
+		columns = append(columns, c)
+	}
+	if len(columns) < 2 || len(columns) > 3 {
+		return false
+	}
+	bodyRows := 0
+	for _, row := range rows[headerRow:] {
+		filled := rowNonEmpty(row)
+		if filled == 0 {
+			continue
+		}
+		if filled != len(columns) {
+			return false
+		}
+		for _, c := range columns {
+			if c >= len(row) || strings.TrimSpace(row[c]) == "" {
+				return false
+			}
+		}
+		bodyRows++
+	}
+	return bodyRows >= 3
+}
+
+// renderFormSheetKV extracts key-value pairs from the form prefix of a sheet
+// and renders them as a plain-text chunk. The sheet name is placed at the top
+// as context so retrieval matches on it (e.g. "E1.2 - Statika").
+//
+// Only the first formSheetPrefixLen rows are scanned; wide-table rows that
+// follow the cover page are ignored.
+//
+// Heuristic: for each non-empty row, if a text cell and a numeric cell
+// coexist (possibly separated by empty columns), they form a label→value
+// pair. Rows with only text cells contribute metadata lines.
+func renderFormSheetKV(sheet string, rows [][]string) string {
+	var b strings.Builder
+	b.WriteString("Sheet: ")
+	b.WriteString(sheet)
+	b.WriteByte('\n')
+
+	limit := len(rows)
+	if limit > formSheetPrefixLen {
+		limit = formSheetPrefixLen
+	}
+	for _, row := range rows[:limit] {
+		// Wide rows usually belong to a mixed table, not the sparse form.
+		// Preserve explicit alternating label/value pairs without mixing labels.
+		var cells []string
+		for _, cell := range row {
+			if v := strings.TrimSpace(cell); v != "" {
+				cells = append(cells, v)
+			}
+		}
+		if len(cells) > 3 {
+			paired := len(cells)%2 == 0
+			for i := 0; paired && i < len(cells); i += 2 {
+				paired = !isNumericCell(cells[i]) && isNumericCell(cells[i+1])
+			}
+			if !paired {
+				continue
+			}
+		}
+		var labels []string
+		var numbers []string
+		flush := func() {
+			if len(labels) > 0 && len(numbers) > 0 {
+				b.WriteString(strings.TrimSuffix(strings.Join(labels, " "), ":"))
+				b.WriteString(": ")
+				b.WriteString(strings.Join(numbers, ", "))
+				b.WriteByte('\n')
+			}
+			labels, numbers = nil, nil
+		}
+		for _, cell := range cells {
+			v := strings.TrimSpace(cell)
+			if v == "" {
+				continue
+			}
+			if isNumericCell(v) {
+				numbers = append(numbers, v)
+			} else {
+				if len(numbers) > 0 {
+					flush()
+				}
+				labels = append(labels, v)
+			}
+		}
+		if len(numbers) > 0 {
+			flush()
+		} else if len(labels) > 0 {
+			joined := strings.Join(labels, " ")
+			// Skip GUID-like and internal markers.
+			if len(joined) < 80 && !strings.ContainsAny(joined, "{}") {
+				b.WriteString(joined)
+				b.WriteByte('\n')
+			}
+		}
+	}
+	return b.String()
+}
+
+func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, [][]string, []int, int, []mergeRange, bool, []string, error) {
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return nil, nil, 0, nil, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
+		return nil, nil, nil, 0, nil, false, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
 	}
 	if len(rows) == 0 {
-		return nil, nil, 0, nil, nil, nil
+		return nil, nil, nil, 0, nil, false, nil, nil
 	}
 	rows = cleanIllegalControlChars(rows)
+	// rawRows feeds the form-sheet KV pass after buildSheetItems runs, and
+	// detached-merge materialization writes into the records backing arrays.
+	// Give rawRows independent rows so KV text sees the sheet as read.
+	rawRows := make([][]string, len(rows))
+	for i, r := range rows {
+		rawRows[i] = append([]string(nil), r...)
+	}
 
 	var warnings []string
 	ranges, err := mergeRanges(f, sheet)
@@ -1254,6 +1451,7 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 		warnings = append(warnings, fmt.Sprintf("read XLSX sheet %q table metadata: %v", sheet, err))
 	}
 	headerRow := detectHeaderRow(f, sheet, rows, tables, ranges)
+	hasTable := len(tables) > 0
 
 	// Pad the header row to the furthest merged column when a merge touches
 	// the header. excelize's GetRows truncates each row at its last valued
@@ -1279,5 +1477,5 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 	}
 	records = trimTrailingEmptyColumns(records)
 
-	return records, absDataRows, headerRow, ranges, warnings, nil
+	return records, rawRows, absDataRows, headerRow, ranges, hasTable, warnings, nil
 }
