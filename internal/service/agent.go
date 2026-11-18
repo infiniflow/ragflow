@@ -2623,9 +2623,14 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if answer == "" && shouldEmitMessage {
 				if failureText, ok := agentRunFailureText(err); ok {
 					emitAgentMessageEvents(emit, failureText, failureThinking, referencePayload)
-					if persistErr := s.persistAgentRunSession(ctx, canvasID, sessionID, messageID, userInput, failureText, thinking, referencePayload, dsl, state, true); persistErr != nil {
-						s.markAgentSessionFailed(ctx2, canvasID, sessionID, "persist session: "+persistErr.Error())
-						s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
+					// Run cancellation must not abort the failure bookkeeping:
+					// use one bounded context detached from the run ctx for the
+					// session persist and all failure markers in this branch.
+					persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx2), 15*time.Second)
+					defer persistCancel()
+					if persistErr := s.persistAgentRunSession(persistCtx, canvasID, sessionID, messageID, userInput, failureText, thinking, referencePayload, dsl, state, true); persistErr != nil {
+						s.markAgentSessionFailed(persistCtx, canvasID, sessionID, "persist session: "+persistErr.Error())
+						s.markRunFailed(persistCtx, runID, "persist session: "+persistErr.Error())
 						return nil, canvas.NewInternalRunError(
 							fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
 						)
@@ -2635,8 +2640,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 						Reference:  referencePayload,
 					})
 					emit("message_end", string(meData))
-					s.markAgentSessionFailed(ctx2, canvasID, sessionID, "invoke: "+err.Error())
-					s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
+					s.markAgentSessionFailed(persistCtx, canvasID, sessionID, "invoke: "+err.Error())
+					s.markRunFailed(persistCtx, runID, "invoke: "+err.Error())
 					// See above: the visible failure text does not make the
 					// run a success.
 					return state, err
@@ -2645,6 +2650,35 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			s.markAgentSessionFailed(ctx2, canvasID, sessionID, "invoke: "+err.Error())
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 			return nil, canvasInvokeError(err)
+		}
+
+		// A successful workflow that produced no visible answer is a silent
+		// failure: surface the labeled empty-response message instead of
+		// closing the stream as if the run succeeded. Attachment-only
+		// messages stay valid.
+		if answer == "" && !messageContentEmitted && emptyDownloadValue(downloads) && emptyAttachmentValue(attachment) {
+			if shouldEmitMessage {
+				emitAgentMessageEvents(emit, agentEmptyResponseText, failureThinking, referencePayload)
+			}
+			persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx2), 15*time.Second)
+			defer persistCancel()
+			if persistErr := s.persistAgentRunSession(persistCtx, canvasID, sessionID, messageID, userInput, agentEmptyResponseText, thinking, referencePayload, dsl, state, true); persistErr != nil {
+				s.markAgentSessionFailed(persistCtx, canvasID, sessionID, "persist session: "+persistErr.Error())
+				s.markRunFailed(persistCtx, runID, "persist session: "+persistErr.Error())
+				return nil, canvas.NewInternalRunError(
+					fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+				)
+			}
+			if shouldEmitMessage {
+				meData, _ := json.Marshal(canvas.MessageEndEvent{
+					Attachment: attachment,
+					Reference:  referencePayload,
+				})
+				emit("message_end", string(meData))
+			}
+			s.markAgentSessionFailed(persistCtx, canvasID, sessionID, "invoke: agent produced an empty response")
+			s.markRunFailed(persistCtx, runID, "invoke: agent produced an empty response")
+			return state, errors.New("agent produced an empty response")
 		}
 
 		// Persist the Agent answer for subsequent Agent prompts. The terminal
@@ -3245,6 +3279,10 @@ func tenantIDFromRoot(root map[string]any) string {
 	return ""
 }
 
+// agentEmptyResponseText is the user-facing message for runs that completed
+// without any assistant answer.
+const agentEmptyResponseText = "**ERROR**: The model endpoint returned an empty response. Please try again."
+
 // agentRunFailureText renders a visible technical-error message for run
 // failures that produced no content, so the client sees a reason instead
 // of a silently closed stream. The second return value is true only for
@@ -3267,7 +3305,7 @@ func agentRunFailureText(err error) (string, bool) {
 		}
 		return "**ERROR**: The agent run timed out before producing an answer. Please try again.", true
 	case strings.Contains(msg, "no choices in response"):
-		return "**ERROR**: The model endpoint returned an empty response. Please try again.", true
+		return agentEmptyResponseText, true
 	case strings.Contains(msg, "context canceled"):
 		return "**ERROR**: The connection was closed early. Please try again.", true
 	default:

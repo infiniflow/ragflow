@@ -540,12 +540,6 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite
 	done := make(chan error, 1)
 	go func() {
 		var firstErr error
-		// Cite mode holds content deltas for the grounding call. Models that
-		// inline <think>...</think> inside the content stream would otherwise
-		// be completely silent: stream the held reasoning part out as it
-		// completes so the client sees progress like non-cite runs.
-		var heldContent strings.Builder
-		emittedThinkLen := 0
 		iter := future.GetMessageStreams()
 		for {
 			msgStream, hasNext, err := iter.Next()
@@ -559,6 +553,14 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite
 			if msgStream == nil {
 				continue
 			}
+			// Cite mode holds content deltas for the grounding call. Models
+			// that inline <think>...</think> inside the content stream would
+			// otherwise be completely silent: stream the held reasoning part
+			// out as it completes so the client sees progress like non-cite
+			// runs. The parser state resets per stream so later ReAct turns
+			// emit their own inline reasoning.
+			var heldContent strings.Builder
+			emittedThinkLen := 0
 			for {
 				msg, err := msgStream.Recv()
 				if errors.Is(err, io.EOF) {
@@ -597,6 +599,11 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite
 							think := held[start+len("<think>"):]
 							if end := strings.Index(think, "</think>"); end >= 0 {
 								think = think[:end]
+							} else {
+								// A trailing fragment may still grow into the
+								// closing tag on the next delta — hold it back
+								// instead of leaking "</th" into the stream.
+								think = think[:len(think)-thinkClosingTagPrefixLen(think)]
 							}
 							if len(think) > emittedThinkLen {
 								runtime.EmitAgentMessage(ctx, "", think[emittedThinkLen:])
@@ -626,6 +633,19 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite
 		done <- firstErr
 	}()
 	return done
+}
+
+// thinkClosingTagPrefixLen returns the length of the longest suffix of s that
+// is a strict prefix of "</think>" — text that may still complete the closing
+// tag when the next delta arrives.
+func thinkClosingTagPrefixLen(s string) int {
+	const tag = "</think>"
+	for k := min(len(s), len(tag)-1); k > 0; k-- {
+		if strings.HasSuffix(s, tag[:k]) {
+			return k
+		}
+	}
+	return 0
 }
 
 // addToolCallMemory summarizes the tool calls observed in msg via
