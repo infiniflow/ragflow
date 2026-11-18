@@ -42,6 +42,7 @@ import (
 	"ragflow/internal/server/admin"
 	apipkg "ragflow/internal/server/api"
 	"ragflow/internal/server/bootstrap"
+	chatterpkg "ragflow/internal/server/chatter"
 	deepdocpkg "ragflow/internal/server/deepdoc"
 	ingestorpkg "ragflow/internal/server/ingestor"
 	syncerpkg "ragflow/internal/server/syncer"
@@ -110,21 +111,22 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	args := &bootstrap.ServerArgs{}
 
 	var (
-		logLevel           string
-		configPath         string
-		adminHost          string
-		name               string
-		port               int
-		deepdocConcurrency int
-		ingestorWorkers    int
-		pageConcurrency    int
-		cpuCores           int
-		ingestorTier       string
-		initSuperUser      bool
-		enablePProf        bool
-		helpFlag           bool
-		versionFlag        bool
-		modes              []string
+		logLevel            string
+		configPath          string
+		adminHost           string
+		name                string
+		port                int
+		deepdocConcurrency  int
+		ingestorWorkers     int
+		pageConcurrency     int
+		cpuCores            int
+		ingestorTier        string
+		initSuperUser       bool
+		enablePProf         bool
+		disableChatChannels bool
+		helpFlag            bool
+		versionFlag         bool
+		modes               []string
 	)
 
 	fs.StringVar(&logLevel, "log-level", "", "")
@@ -141,11 +143,12 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	fs.StringVar(&ingestorTier, "ingestor-tier", "", "")
 	fs.BoolVar(&initSuperUser, "init-superuser", false, "")
 	fs.BoolVar(&enablePProf, "profile", false, "")
+	fs.BoolVar(&disableChatChannels, "disable-chat-channels", false, "")
 	fs.BoolVar(&helpFlag, "help", false, "")
 	fs.BoolVar(&helpFlag, "h", false, "")
 	fs.BoolVar(&versionFlag, "version", false, "")
 	fs.BoolVar(&versionFlag, "v", false, "")
-	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "deepdoc", "migrate"} {
+	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "chatter", "deepdoc", "migrate"} {
 		fs.Var(modeFlag{name: mode, seen: &modes}, mode, "")
 	}
 
@@ -189,6 +192,8 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 			args.InitSuperUser = initSuperUser
 		case "profile":
 			args.EnablePProf = enablePProf
+		case "disable-chat-channels":
+			args.DisableChatChannels = disableChatChannels
 		case "help", "h":
 			args.HelpFlag = helpFlag
 		case "version", "v":
@@ -213,6 +218,9 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	if len(modes) > 0 {
 		mode := modes[len(modes)-1]
 		args.Mode = &mode
+	}
+	if seen["disable-chat-channels"] && (args.Mode == nil || *args.Mode != "api") {
+		return nil, errors.New("--disable-chat-channels is only valid with --api")
 	}
 
 	if args.LogLevel != nil {
@@ -282,7 +290,7 @@ func validateLogLevel(level string) error {
 func printHelp(args *bootstrap.ServerArgs) {
 	switch {
 	case args.Mode == nil || *args.Mode == "migrate":
-		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer|--deepdoc [OPTIONS]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer|--chatter|--deepdoc [OPTIONS]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       %s --migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
@@ -290,6 +298,7 @@ func printHelp(args *bootstrap.ServerArgs) {
 		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n")
 		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n")
+		fmt.Fprintf(os.Stderr, "  --chatter      \tRun chat channels in this process (API uses --disable-chat-channels)\n")
 		fmt.Fprintf(os.Stderr, "  --deepdoc      \tRun as DeepDoc server\n\n")
 		fmt.Fprintf(os.Stderr, "Standalone action (mutually exclusive with a mode):\n")
 		fmt.Fprintf(os.Stderr, "  --migrate      \tRun database migrations and exit\n\n")
@@ -310,11 +319,13 @@ func printHelp(args *bootstrap.ServerArgs) {
 		fmt.Fprintf(os.Stderr, "Run '%s --admin --help' for admin server options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --ingestor --help' for ingester options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --syncer --help' for syncer options.\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Run '%s --chatter --help' for chat channel options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --deepdoc --help' for DeepDoc server options.\n", os.Args[0])
 	case *args.Mode == "api":
 		fmt.Fprintf(os.Stderr, "Usage: %s --api [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow API Server\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
+		fmt.Fprintf(os.Stderr, "  --disable-chat-channels\tLeave chat channels to a standalone --chatter process\n")
 		fmt.Fprintf(os.Stderr, "  --port int     	\tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to configuration file\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version 	 \tPrint version information and exit\n")
@@ -358,6 +369,17 @@ func printHelp(args *bootstrap.ServerArgs) {
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
+	case *args.Mode == "chatter":
+		fmt.Fprintf(os.Stderr, "Usage: %s --chatter [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintln(os.Stderr, "RAGFlow Chat Channel Runtime")
+		fmt.Fprintln(os.Stderr, "Run alongside --api --disable-chat-channels; no API or MCP listener is started.")
+		fmt.Fprintln(os.Stderr, "\nOptions:")
+		fmt.Fprintln(os.Stderr, "  -f, --config string\tPath to configuration file")
+		fmt.Fprintln(os.Stderr, "  --name string\t\tServer name (default: chatter_server)")
+		fmt.Fprintln(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)")
+		fmt.Fprintln(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)")
+		fmt.Fprintln(os.Stderr, "  -v, --version\t\tPrint version information and exit")
+		fmt.Fprintln(os.Stderr, "  -h, --help\t\tShow this help message and exit")
 	case *args.Mode == "deepdoc":
 		fmt.Fprintf(os.Stderr, "Usage: %s --deepdoc [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow DeepDoc Inference Service - DeepDoc model inference service\n\n")
@@ -457,7 +479,7 @@ func main() {
 			os.Exit(1)
 		}
 		globalConfig.SetAdminHTTPPort(port)
-	case common.ServerTypeIngestion, common.ServerTypeFileSyncer, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend, common.ServerTypeDeepDocCPU, common.ServerTypeMigrate:
+	case common.ServerTypeIngestion, common.ServerTypeFileSyncer, common.ServerTypeChatter, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend, common.ServerTypeDeepDocCPU, common.ServerTypeMigrate:
 		// No port embedding; the final name is derived below.
 	default:
 		common.Error(fmt.Sprintf("invalid server mode: %v", serverType), nil)
@@ -484,7 +506,7 @@ func main() {
 	server.SetServerName(serverName)
 
 	switch serverType {
-	case common.ServerTypeAPI, common.ServerTypeIngestion:
+	case common.ServerTypeAPI, common.ServerTypeIngestion, common.ServerTypeChatter:
 		err = deepdocpkg.RegisterNativeDeepDoc(arguments)
 		if err != nil {
 			common.Error("Failed to register in-process DeepDoc backend", err)
@@ -565,9 +587,8 @@ func main() {
 	}
 
 	// Billing owns the plan catalogue and the points/quota state machine.
-	// It needs the database, cache and MQ to be ready, and only the API server
-	// serves billing routes.
-	if arguments.Mode != nil && *arguments.Mode == "api" {
+	// Both API and chatter execute conversations subject to billing enforcement.
+	if serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
 		if err = billing.Init(ctx, server.GetConfig().GetBillingConfig()); err != nil {
 			common.Fatal("Failed to initialize billing", zap.Error(err))
 		}
@@ -589,6 +610,13 @@ func main() {
 	}
 
 	switch serverType {
+	case common.ServerTypeChatter:
+		err = chatterpkg.Run(ctx, cancel, serverName, arguments)
+		if err != nil {
+			fmt.Printf("Failed to start CHATTER: %v\n", err)
+			common.SyncAudit()
+			os.Exit(1)
+		}
 	case common.ServerTypeAPI:
 		err = apipkg.Run(ctx, serverName, arguments)
 		if err != nil {

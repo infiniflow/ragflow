@@ -39,6 +39,7 @@ func TestResolveServerNameDefaults(t *testing.T) {
 		{"admin", 9381, "admin_server_9381"},
 		{"ingestor", 0, "ingestor_server"},
 		{"syncer", 0, "syncer_server"},
+		{"chatter", 0, "chatter_server"},
 		{"deepdoc", 0, "deepdoc_server"},
 		{"migrate", 0, "migrate"},
 	}
@@ -58,7 +59,7 @@ func TestResolveServerNameDefaults(t *testing.T) {
 // only affects api/admin; it must not leak into ingestor/syncer/deepdoc/migrate
 // names.
 func TestResolveServerNamePortIgnoredForNonHTTPModes(t *testing.T) {
-	for _, mode := range []string{"ingestor", "syncer", "deepdoc", "migrate"} {
+	for _, mode := range []string{"ingestor", "syncer", "chatter", "deepdoc", "migrate"} {
 		got, err := ResolveServerName(mode, nil, 65535)
 		if err != nil {
 			t.Fatalf("ResolveServerName(%q, nil, 65535) error = %v", mode, err)
@@ -72,7 +73,7 @@ func TestResolveServerNamePortIgnoredForNonHTTPModes(t *testing.T) {
 // TestResolveServerNameNameOverrideWins verifies an explicit --name overrides
 // the derived default for every known mode.
 func TestResolveServerNameNameOverrideWins(t *testing.T) {
-	for _, mode := range []string{"api", "admin", "ingestor", "syncer", "deepdoc", "migrate"} {
+	for _, mode := range []string{"api", "admin", "ingestor", "syncer", "chatter", "deepdoc", "migrate"} {
 		got, err := ResolveServerName(mode, strPtr("custom_name"), 1234)
 		if err != nil {
 			t.Fatalf("ResolveServerName(%q, name, 1234) error = %v", mode, err)
@@ -150,5 +151,11 @@ func TestTempServerName(t *testing.T) {
 	// Empty-name override is honored as empty (non-nil pointer wins).
 	if got := TempServerName("api", strPtr("")); got != "" {
 		t.Errorf("TempServerName(api, \"\") = %q, want empty", got)
+	}
+}
+
+func TestGetServerTypeChatter(t *testing.T) {
+	if got := GetServerType(&ServerArgs{Mode: new("chatter")}); got != common.ServerTypeChatter {
+		t.Fatalf("GetServerType(chatter) = %s", got)
 	}
 }

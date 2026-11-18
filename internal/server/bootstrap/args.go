@@ -21,7 +21,7 @@ package bootstrap
 // runners and the API server wiring can be moved into their own packages and
 // still receive the parsed arguments.
 type ServerArgs struct {
-	Mode          *string // admin | api | ingestor | syncer | deepdoc | migrate
+	Mode          *string // admin | api | ingestor | syncer | chatter | deepdoc | migrate
 	HelpFlag      bool
 	VersionFlag   bool
 	LogLevel      *string
@@ -32,6 +32,8 @@ type ServerArgs struct {
 	AdminPort     *int    // Used by api, ingestor, syncer, deepdoc for heartbeat, "ip:port"
 	Name          *string // server name
 	EnablePProf   bool    // enable pprof
+
+	DisableChatChannels bool // API leaves channel ownership to a standalone chatter
 
 	// DeepdocInferenceConcurrency, when set, overrides the DeepDoc inference
 	// concurrency from env/config. nil means "unspecified".

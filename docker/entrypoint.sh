@@ -14,6 +14,7 @@ function usage() {
     echo "  --disable-api-server                     Disables the web server (nginx + ragflow_server)."
     echo "  --disable-ingestor                       Disables ingestor."
     echo "  --disable-syncer                         Disables data source syncer."
+    echo "  --chatter                                Runs chat channels in a separate process alongside enabled services."
     echo "  --init-model-provider-tables             Run model provider table migrations and exit."
     echo "  --init-superuser                         Initializes the superuser."
     echo "  --ingestors=<num>                        Number of ingestors to run."
@@ -30,6 +31,7 @@ ENABLE_ADMIN_SERVER=0 # Default close admin server
 ENABLE_API_SERVER=1 # Default to enable web server
 ENABLE_INGESTOR=1  # Default to enable ingestor
 ENABLE_DATASYNC=1
+ENABLE_CHATTER=0
 
 INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
 INIT_MODEL_PROVIDER_TABLES=0
@@ -48,6 +50,10 @@ for arg in "$@"; do
       ;;
     --disable-syncer)
       ENABLE_DATASYNC=0
+      shift
+      ;;
+    --chatter)
+      ENABLE_CHATTER=1
       shift
       ;;
     --enable-adminserver)
@@ -120,7 +126,7 @@ function run_go_migrations() {
 # Whether any Go server mode will run. These are the processes that used to
 # carry --migrate, so the standalone migration must run before them.
 function go_backend_enabled() {
-    if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+    if [[ "${ENABLE_DATASYNC}" -eq 1 || "${ENABLE_CHATTER}" -eq 1 ]]; then
         return 0
     fi
     if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]] || [[ "${ENABLE_API_SERVER}" -eq 1 ]]; then
@@ -171,7 +177,16 @@ if [[ "${ENABLE_API_SERVER}" -eq 1 ]]; then
     /usr/sbin/nginx -c /etc/nginx/nginx.conf
 
     echo "Starting RAGFlow go server..."
-    run_with_restart "RAGFlow go server" bin/ragflow_server --api &
+    API_ARGS=()
+    if [[ "${ENABLE_CHATTER}" -eq 1 ]]; then
+        API_ARGS+=(--disable-chat-channels)
+    fi
+    run_with_restart "RAGFlow go server" bin/ragflow_server --api "${API_ARGS[@]}" &
+fi
+
+if [[ "${ENABLE_CHATTER}" -eq 1 ]]; then
+    echo "Starting chat channels..."
+    run_with_restart "Chat channel runtime" bin/ragflow_server --chatter &
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
