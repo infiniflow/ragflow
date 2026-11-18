@@ -42,6 +42,7 @@ import (
 	"slices"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/agent/workflowx"
 
 	"github.com/cloudwego/eino/compose"
@@ -372,7 +373,7 @@ func restoreLoopVariables(ctx context.Context, loopID string, data []byte) error
 		return err
 	}
 	var values map[string]any
-	if err := json.Unmarshal(data, &values); err != nil {
+	if err := runtime.UnmarshalCheckpointJSON(data, &values); err != nil {
 		return err
 	}
 	for name, value := range values {
