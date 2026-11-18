@@ -1629,7 +1629,7 @@ func TestDetectHeaderRow_RecoveryCountsFilledCellsInMergedRows(t *testing.T) {
 			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), value)
 		}
 	}
-	_, _, _, headerRow, _, _, err := readSpreadsheetRecords(f, "Sheet1")
+	_, _, _, headerRow, _, _, _, err := readSpreadsheetRecords(f, "Sheet1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1682,7 +1682,7 @@ func TestDetectHeaderRow_MergedFirstRowNeedsHeaderEvidence(t *testing.T) {
 					mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), value)
 				}
 			}
-			_, _, _, headerRow, _, _, err := readSpreadsheetRecords(f, "Sheet1")
+			_, _, _, headerRow, _, _, _, err := readSpreadsheetRecords(f, "Sheet1")
 			if err != nil {
 				t.Fatal(err)
 			}

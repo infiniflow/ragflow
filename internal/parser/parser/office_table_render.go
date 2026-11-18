@@ -476,6 +476,20 @@ func clampMergeRanges(ranges []mergeRange, present map[int]bool) []mergeRange {
 	return local
 }
 
+// occupiedCellInMerge reports whether any filled cell of row (1-based row
+// number) sits inside a merge rectangle.
+func occupiedCellInMerge(row []string, ranges []mergeRange, rowNum int) bool {
+	for c, v := range row {
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		if m, _ := mergeAt(ranges, rowNum, c+1); m != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // mergeTouchesRow reports whether any merge rectangle covers row.
 func mergeTouchesRow(ranges []mergeRange, row int) bool {
 	for _, m := range ranges {
@@ -1045,7 +1059,9 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 	// 3) Title-stub fallback: when row 1 is a lone title cell and no styled or
 	// contrast anchor was found, prefer the first text-majority row below it.
 	// A title followed by an unstyled header has no other signal to pick from.
-	if bestCandidate == 0 && rowNonEmpty(records[0]) <= 1 && !mergeTouchesRow(ranges, 1) {
+	// Only a merge that covers the occupied cell itself blocks the fallback —
+	// an unrelated merge touching row 1 elsewhere must not disqualify it.
+	if bestCandidate == 0 && rowNonEmpty(records[0]) <= 1 && !occupiedCellInMerge(records[0], ranges, 1) {
 		stubScan := 12
 		if stubScan > n-1 {
 			stubScan = n - 1
@@ -1408,16 +1424,22 @@ func renderFormSheetKV(sheet string, rows [][]string) string {
 	return b.String()
 }
 
-func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, [][]string, []int, int, []mergeRange, []string, error) {
+func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, [][]string, []int, int, []mergeRange, bool, []string, error) {
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return nil, nil, nil, 0, nil, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
+		return nil, nil, nil, 0, nil, false, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
 	}
 	if len(rows) == 0 {
-		return nil, nil, nil, 0, nil, nil, nil
+		return nil, nil, nil, 0, nil, false, nil, nil
 	}
 	rows = cleanIllegalControlChars(rows)
-	rawRows := append([][]string(nil), rows...)
+	// rawRows feeds the form-sheet KV pass after buildSheetItems runs, and
+	// detached-merge materialization writes into the records backing arrays.
+	// Give rawRows independent rows so KV text sees the sheet as read.
+	rawRows := make([][]string, len(rows))
+	for i, r := range rows {
+		rawRows[i] = append([]string(nil), r...)
+	}
 
 	var warnings []string
 	ranges, err := mergeRanges(f, sheet)
@@ -1429,6 +1451,7 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, [][]str
 		warnings = append(warnings, fmt.Sprintf("read XLSX sheet %q table metadata: %v", sheet, err))
 	}
 	headerRow := detectHeaderRow(f, sheet, rows, tables, ranges)
+	hasTable := len(tables) > 0
 
 	// Pad the header row to the furthest merged column when a merge touches
 	// the header. excelize's GetRows truncates each row at its last valued
@@ -1454,5 +1477,5 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, [][]str
 	}
 	records = trimTrailingEmptyColumns(records)
 
-	return records, rawRows, absDataRows, headerRow, ranges, warnings, nil
+	return records, rawRows, absDataRows, headerRow, ranges, hasTable, warnings, nil
 }
