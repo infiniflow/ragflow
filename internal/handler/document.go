@@ -69,6 +69,7 @@ type documentServiceIface interface {
 	GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
+	GetDocumentMetadataByIDs(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename string) (*document.ArtifactResponse, error)
 	GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error)
 	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
@@ -673,6 +674,10 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			latestEventsByRun = map[string]*service.IngestionEventItem{}
 		}
 	}
+	// Apply the post-query time filters first, then read metadata for the
+	// surviving documents in a single batch instead of one query per document.
+	eligibleDocs := make([]*entity.DocumentListItem, 0, len(documents))
+	docIDs := make([]string, 0, len(documents))
 	for _, doc := range documents {
 		if opts.CreateTimeFrom > 0 && doc.CreateTime != nil && *doc.CreateTime < opts.CreateTimeFrom {
 			continue
@@ -680,8 +685,18 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		if opts.CreateTimeTo > 0 && doc.CreateTime != nil && *doc.CreateTime > opts.CreateTimeTo {
 			continue
 		}
-		metaFields, err := h.documentService.GetDocumentMetadataByID(ctx, doc.ID)
-		if err != nil {
+		eligibleDocs = append(eligibleDocs, doc)
+		if doc != nil {
+			docIDs = append(docIDs, doc.ID)
+		}
+	}
+	var metaByDoc map[string]map[string]interface{}
+	if len(docIDs) > 0 {
+		metaByDoc, _ = h.documentService.GetDocumentMetadataByIDs(ctx, datasetID, docIDs)
+	}
+	for _, doc := range eligibleDocs {
+		metaFields := metaByDoc[doc.ID]
+		if metaFields == nil {
 			metaFields = make(map[string]interface{})
 		}
 

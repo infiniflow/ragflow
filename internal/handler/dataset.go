@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/compliance"
@@ -997,6 +998,47 @@ func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	common.RespondSuccess(c, st, "success")
 }
 
+// checkDatasetsReadable verifies read access to every requested dataset with
+// one shared resource load instead of one authorization round-trip per dataset.
+func checkDatasetsReadable(ctx context.Context, db *gorm.DB, datasetIDs []string) error {
+	if len(datasetIDs) == 0 {
+		return nil
+	}
+	refs := make([]permission.ResourceRef, 0, len(datasetIDs))
+	seen := make(map[string]bool, len(datasetIDs))
+	for _, id := range datasetIDs {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id})
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+
+	checker := permission.NewDatabaseChecker(db)
+	accessible, err := checker.FilterResources(ctx, refs, permission.OperationRead)
+	if err != nil {
+		return err
+	}
+	if len(accessible) == len(refs) {
+		return nil
+	}
+	// Only the failure path pays for a single-resource check, so the caller
+	// still receives the precise permission error for the offending dataset.
+	allowed := make(map[string]bool, len(accessible))
+	for _, ref := range accessible {
+		allowed[ref.ID] = true
+	}
+	for _, ref := range refs {
+		if !allowed[ref.ID] {
+			return checker.CheckResource(ctx, ref, permission.OperationRead)
+		}
+	}
+	return nil
+}
+
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
 // @Summary List flattened metadata for datasets
 // @Description Get flattened metadata for multiple datasets
@@ -1028,12 +1070,9 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	// Check access for each dataset
-	for _, datasetID := range datasetIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
-			respondPermissionError(c, err, false)
-			return
-		}
+	if err := checkDatasetsReadable(ctx, dao.DB, datasetIDs); err != nil {
+		respondPermissionError(c, err, false)
+		return
 	}
 
 	flattenedMeta, err := h.metadataService.GetFlattedMetaByKBs(ctx, datasetIDs)

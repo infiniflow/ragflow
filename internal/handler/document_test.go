@@ -149,6 +149,12 @@ type fakeDocumentService struct {
 	metadataErr            error
 	metadataKBID           string
 	metadataDocIDs         []string
+	metadataByIDsCalls     int
+	metadataByIDsKBID      string
+	metadataByIDsDocIDs    []string
+	metadataByIDsResult    map[string]map[string]interface{}
+	metadataByIDsErr       error
+	metadataSingleCalls    int
 	uploadLocalData        []map[string]interface{}
 	uploadLocalErrs        []string
 	uploadLocalKB          *entity.Knowledgebase
@@ -355,7 +361,17 @@ func (f *fakeDocumentService) HasActiveIngestionTasks(ctx context.Context, datas
 }
 
 func (f *fakeDocumentService) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error) {
+	f.metadataSingleCalls++
+	if f.metadataByIDsResult != nil {
+		return f.metadataByIDsResult[docID], nil
+	}
 	return nil, nil
+}
+func (f *fakeDocumentService) GetDocumentMetadataByIDs(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error) {
+	f.metadataByIDsCalls++
+	f.metadataByIDsKBID = kbID
+	f.metadataByIDsDocIDs = append([]string(nil), docIDs...)
+	return f.metadataByIDsResult, f.metadataByIDsErr
 }
 func (f *fakeDocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
 	f.uploadLocalKB = kb
