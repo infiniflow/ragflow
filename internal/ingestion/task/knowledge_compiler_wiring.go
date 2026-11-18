@@ -601,11 +601,25 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			return embedderVectorSize(ctx, embedder)
 		})
 
+		// Resolve the actual embedding model ID for provenance tracking. When
+		// embeddingModel is empty, the embedder falls back to the tenant default;
+		// resolve that here so products carry the same identifier the dataset
+		// stores as embd_id (service.ModelReference), including Builtin models
+		// whose ModelInfo.ID is empty but Name@Provider is not (#22134).
+		resolvedEmbdID := resolveCompilerEmbeddingModelID(embeddingModel, nil)
+		if resolvedEmbdID == "" {
+			defaultEmbd, derr := modelFactory.ResolveDefaultInfo(permission.WithTenantID(modelCtx, tenantID), entity.ModelTypeEmbedding)
+			if derr == nil {
+				resolvedEmbdID = resolveCompilerEmbeddingModelID("", defaultEmbd)
+			}
+		}
+
 		return kc.Deps{
-			Chat:            &kcChatInvoker{factory: modelFactory, tenantID: tenantID, llmID: llmID},
-			Embed:           embedder,
-			WikiPages:       &kcWikiPageStore{docEngine: kcWiringDeps.Engine},
-			WikiMapVersions: mapStore,
+			Chat:             &kcChatInvoker{factory: modelFactory, tenantID: tenantID, llmID: llmID},
+			Embed:            embedder,
+			WikiPages:        &kcWikiPageStore{docEngine: kcWiringDeps.Engine},
+			WikiMapVersions:  mapStore,
+			EmbeddingModelID: resolvedEmbdID,
 			// HistoricalKNN / Redis are optional (wiki historical dedup,
 			// datasetnav lock). They are wired separately when the
 			// surrounding pipeline supplies the backing services.
@@ -613,6 +627,18 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			ModelMaxOutput:  llmMaxOutput,
 		}, nil
 	}
+}
+
+// resolveCompilerEmbeddingModelID returns the embedding-model identifier that
+// should be stamped on Compiler products for Tokenizer provenance checks.
+// An explicit DSL/config id wins; otherwise ModelReference matches the
+// identifier datasets store as embd_id (including Builtin name@Provider when
+// ModelInfo.ID is empty).
+func resolveCompilerEmbeddingModelID(explicit string, defaultInfo *models.ModelInfo) string {
+	if id := strings.TrimSpace(explicit); id != "" {
+		return id
+	}
+	return service.ModelReference(defaultInfo)
 }
 
 // kcChatInvoker adapts a factory-created ChatModel to the knowledge compiler.

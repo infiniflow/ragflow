@@ -231,6 +231,11 @@ type Deps struct {
 	Redis           RedisClient         // optional (datasetnav)
 	TenantID        string
 	DatasetID       string
+	// EmbeddingModelID is the resolved embedding model identifier used by this
+	// Compiler run. It is stored on compiled products so the downstream Tokenizer
+	// can verify model provenance before reusing vectors (#22134). Empty when
+	// no embedder is configured.
+	EmbeddingModelID string
 	// ModelContextLen is the chat model's context window in tokens
 	// (content_length). Prompt-packing helpers use it to size input quotas.
 	ModelContextLen int
