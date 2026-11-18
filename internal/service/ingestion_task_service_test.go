@@ -932,6 +932,7 @@ func TestIngestionTaskServiceScheduleCreatedTasksContinuesAfterPublishFailure(t 
 func TestIngestionTaskServiceCreateAndEnqueueRejectsActiveExistingTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
@@ -939,8 +940,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRejectsActiveExistingTask(t *testin
 
 	ctx := t.Context()
 	_, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED})
-	if err == nil {
-		t.Fatal("expected CreateAndEnqueue to reject existing created task")
+	if err == nil || !strings.Contains(err.Error(), common.SCHEDULED) {
+		t.Fatalf("expected CreateAndEnqueue to reject the scheduled task, got %v", err)
 	}
 	if len(publisher.messages) != 0 {
 		t.Fatalf("expected no published messages, got %+v", publisher.messages)

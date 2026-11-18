@@ -51,9 +51,8 @@ func (dao *DocumentDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*e
 	return &document, nil
 }
 
-// GetByIDForUpdate fetches a document while holding the row lock used to
-// serialize creation of its ingestion-run identity. Callers must use a short
-// transaction and perform no external I/O while holding the lock.
+// GetByIDForUpdate locks the document until the caller's transaction ends.
+// Task creation and visibility changes use this same row even when no task exists.
 func (dao *DocumentDAO) GetByIDForUpdate(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
 	var document entity.Document
 	err := db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Take(&document, "id = ?", id).Error

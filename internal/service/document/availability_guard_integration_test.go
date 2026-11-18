@@ -4,6 +4,7 @@ package document
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine/elasticsearch"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
@@ -30,15 +32,8 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Requires an EMPTY throwaway MySQL database and a real Elasticsearch server:
-//
-//	RAGFLOW_TEST_MYSQL_DSN=... RAGFLOW_TEST_ES_URL=http://localhost:9200 \
-//	  bash build.sh --test-integration-go ./internal/service/document -run TestDocumentPublicationRejectsActiveStatusChanges
-//
-// Parser output is the input fixture. Publication, both status entry points,
-// MySQL task checks and ES writes/searches run their production code. No
-// externally prepared document, timing script or access token is required.
-func TestDocumentPublicationRejectsActiveStatusChanges(t *testing.T) {
+func availabilityTestStores(t *testing.T, extraModels ...any) (*gorm.DB, *gorm.DB, string) {
+	t.Helper()
 	dsn, esURL := os.Getenv("RAGFLOW_TEST_MYSQL_DSN"), os.Getenv("RAGFLOW_TEST_ES_URL")
 	if dsn == "" || esURL == "" {
 		t.Skip("requires RAGFLOW_TEST_MYSQL_DSN (empty test database) and RAGFLOW_TEST_ES_URL")
@@ -62,6 +57,7 @@ func TestDocumentPublicationRejectsActiveStatusChanges(t *testing.T) {
 	}
 	apiDB, publisherDB := openDB(), openDB()
 	models := []any{&entity.User{}, &entity.UserTenant{}, &entity.Tenant{}, &entity.Knowledgebase{}, &entity.Document{}, &entity.IngestionTask{}}
+	models = append(models, extraModels...)
 	for _, model := range models {
 		if apiDB.Migrator().HasTable(model) {
 			t.Fatal("refusing to modify an existing schema: use an empty throwaway database")
@@ -78,7 +74,19 @@ func TestDocumentPublicationRejectsActiveStatusChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	pushServiceDB(t, apiDB)
+	return apiDB, publisherDB, esURL
+}
 
+// Requires an EMPTY throwaway MySQL database and a real Elasticsearch server:
+//
+//	RAGFLOW_TEST_MYSQL_DSN=... RAGFLOW_TEST_ES_URL=http://localhost:9200 \
+//	  bash build.sh --test-integration-go ./internal/service/document -run TestDocumentPublicationRejectsActiveStatusChanges
+//
+// Parser output is the input fixture. Publication, both status entry points,
+// MySQL task checks and ES writes/searches run their production code. No
+// externally prepared document, timing script or access token is required.
+func TestDocumentPublicationRejectsActiveStatusChanges(t *testing.T) {
+	apiDB, publisherDB, esURL := availabilityTestStores(t)
 	for _, entry := range []string{"single", "batch"} {
 		for _, desired := range []int{0, 1} {
 			for _, heldBatch := range []int32{1, 3} {
@@ -258,5 +266,122 @@ func TestDocumentPublicationRejectsActiveStatusChanges(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestStatusUpdateSerializesTaskCreation(t *testing.T) {
+	_, observer, esURL := availabilityTestStores(t, &entity.PipelineOperationLog{})
+	upstream, err := url.Parse(esURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, prior := range []string{"", common.FAILED, common.STOPPED} {
+		docID := "doc-new"
+		if prior != "" {
+			docID = "doc-" + prior
+		}
+		t.Run(docID, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancel()
+			arrived, release := make(chan struct{}), make(chan struct{})
+			unblock := sync.OnceFunc(func() { close(release) })
+			pause := sync.OnceFunc(func() { close(arrived) })
+			forward := httputil.NewSingleHostReverseProxy(upstream)
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/_update_by_query") {
+					pause()
+					select {
+					case <-release:
+					case <-ctx.Done():
+						http.Error(w, "status update timed out", http.StatusGatewayTimeout)
+						return
+					}
+				}
+				forward.ServeHTTP(w, r)
+			}))
+			t.Cleanup(proxy.Close)
+			es, err := elasticsearch.NewEngine(ctx, config.ElasticsearchConfig{
+				Hosts: proxy.URL, Username: os.Getenv("RAGFLOW_TEST_ES_USERNAME"), Password: os.Getenv("RAGFLOW_TEST_ES_PASSWORD"),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tenantID := fmt.Sprintf("lock_%x", time.Now().UnixNano())
+			kbID, index := "kb-"+docID, "ragflow_"+tenantID
+			if err := es.CreateChunkStore(ctx, index, kbID, 2, "general", "English"); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+				defer stop()
+				if err := es.DropChunkStore(cleanup, index, kbID); err != nil {
+					t.Error(err)
+				}
+			})
+			if _, err := es.InsertChunks(ctx, []map[string]any{{"id": "source", "doc_id": docID, "available_int": 1}}, index, kbID, "English"); err != nil {
+				t.Fatal(err)
+			}
+			insertTestKB(t, kbID, tenantID, 2, 0, 1)
+			insertTestDoc(t, docID, kbID, 0, 1)
+			otherID := docID + "-other"
+			insertTestDoc(t, otherID, kbID, 0, 0)
+			if prior != "" {
+				insertTestIngestionTaskWithStatus(t, "task-"+docID, "user-1", docID, kbID, prior)
+			}
+			svc := testDocumentService(t)
+			svc.docEngine = es
+			svc.ingestionTaskSvc.SetTaskPublisher(&recordingTaskPublisher{})
+			actor := documentTestActorContext(ctx, "user-1", tenantID)
+			done := make(chan struct{})
+			var statusErr error
+			go func() {
+				defer close(done)
+				_, _, statusErr = svc.BatchUpdateDocumentStatus(actor, kbID, "0", []string{docID})
+			}()
+			defer func() { unblock(); <-done }()
+			select {
+			case <-arrived:
+			case <-done:
+				t.Fatalf("disable returned before ES update: %v", statusErr)
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			start := func(ctx context.Context, id string) error {
+				_, err := svc.ingestionTaskSvc.CreateAndEnqueue(ctx, &entity.IngestionTask{DocumentID: id, DatasetID: kbID, UserID: "user-1"})
+				return err
+			}
+			if err := start(ctx, otherID); err != nil {
+				t.Fatalf("independent document could not start: %v", err)
+			}
+			waitCtx, stop := context.WithTimeout(ctx, time.Second)
+			err = start(waitCtx, docID)
+			stop()
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("parse while disable was updating ES: got %v, want lock wait deadline", err)
+			}
+			current, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, observer, docID)
+			if err != nil || (prior == "" && current != nil) || (prior != "" && (current == nil || current.Status != prior)) {
+				t.Fatalf("blocked parse changed the persisted task: task=%v err=%v", current, err)
+			}
+			unblock()
+			<-done
+			if statusErr != nil {
+				t.Fatal(statusErr)
+			}
+			if err := start(ctx, docID); err != nil {
+				t.Fatalf("parse after disable: %v", err)
+			}
+			if _, _, err = svc.BatchUpdateDocumentStatus(actor, kbID, "1", []string{docID}); err == nil {
+				t.Fatal("enable succeeded after task creation")
+			}
+			doc, err := dao.NewDocumentDAO().GetByID(ctx, observer, docID)
+			if err != nil || doc.Status == nil || *doc.Status != "0" {
+				t.Fatalf("document not disabled: doc=%v err=%v", doc, err)
+			}
+			result, err := es.Search(ctx, &enginetypes.SearchRequest{IndexNames: []string{index}, KbIDs: []string{kbID}, Filter: map[string]any{"doc_id": docID, "available_int": 1}})
+			if err != nil || result.Total != 0 {
+				t.Fatalf("disabled chunk still searchable: result=%v err=%v", result, err)
+			}
+		})
 	}
 }

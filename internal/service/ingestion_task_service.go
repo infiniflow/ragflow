@@ -776,73 +776,75 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 // knowledge-base cache for batch callers (CreateForDocuments resolves one kb
 // for the whole batch). A nil cache behaves exactly like CreateAndEnqueue.
 func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, task *entity.IngestionTask, kbCache map[string]*entity.Knowledgebase) (*entity.IngestionTask, error) {
-	existing, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, task.DocumentID)
-	if err != nil {
-		return nil, err
-	}
-	if existing != nil {
+	var previousStatus string
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		doc, err := s.documentDAO.GetByIDForUpdate(ctx, tx, task.DocumentID)
+		if err != nil {
+			return err
+		}
+		if doc.KbID != task.DatasetID {
+			return fmt.Errorf("document %s does not belong to dataset %s", doc.ID, task.DatasetID)
+		}
+		existing, err := s.ingestionTaskDAO.GetByDocumentID(ctx, tx, doc.ID)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			task.Status = common.CREATED
+			_, err = s.ingestionTaskDAO.Create(ctx, tx, task)
+			return err
+		}
 		if existing.DatasetID != task.DatasetID {
-			return nil, fmt.Errorf("document id %s has an ingestion task in a different dataset", task.DocumentID)
+			return fmt.Errorf("document id %s has an ingestion task in a different dataset", doc.ID)
 		}
-		switch existing.Status {
+		task = existing
+		previousStatus = task.Status
+		switch previousStatus {
 		case common.CREATED:
-			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
-				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
-			}
-			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
-			if err = s.enqueueTask(existing.ID); err != nil {
-				s.settlePublishFailure(ctx, existing)
-				return nil, err
-			}
-			return s.markScheduledAfterPublish(ctx, existing.ID)
+			return nil
 		case common.FAILED, common.STOPPED:
-			originalStatus := existing.Status
-			existing, err = s.transition(ctx, existing.ID, common.CREATED)
+			updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, tx, task.ID, []string{previousStatus}, common.CREATED)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			if err = s.ingestionTaskDAO.ClearPipelineLogID(ctx, dao.DB, existing.ID); err != nil {
-				return nil, fmt.Errorf("clear previous run identity for task %s: %w", existing.ID, err)
-			}
-			existing.PipelineLogID = nil
-			// The previous run is terminal, so any leftover Redis cancel flag
-			// is stale: a genuine cancel of the new run can only come through
-			// RequestStop once the task is RUNNING again. Clear it so the
-			// re-queued task is not cancelled at the worker's pre-start check.
-			clearCancelFlag(ctx, existing.ID)
-			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
-				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
-					return nil, fmt.Errorf("ensure run identity for task %s: %w (rollback failed: %v)", existing.ID, err, rollbackErr)
+			if !updated {
+				current, err := s.ingestionTaskDAO.GetByIDForUpdate(ctx, tx, task.ID)
+				if err != nil {
+					return err
 				}
-				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
+				return &TaskStatusConflictError{TaskID: task.ID, ExpectedFrom: previousStatus, AttemptedTo: common.CREATED, ActualCurrent: current.Status}
 			}
-			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
-			if err = s.enqueueTask(existing.ID); err != nil {
-				s.settlePublishFailure(ctx, existing)
-				return nil, err
-			}
-			return s.markScheduledAfterPublish(ctx, existing.ID)
+			task.Status, task.PipelineLogID = common.CREATED, nil
+			return s.ingestionTaskDAO.ClearPipelineLogID(ctx, tx, task.ID)
 		default:
-			return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", task.DocumentID, existing.Status, existing.ID)
+			return fmt.Errorf("document id %s already exists, status: %s, task id: %s", doc.ID, task.Status, task.ID)
 		}
-	}
-	task.Status = common.CREATED
-	created, err := s.ingestionTaskDAO.Create(ctx, dao.DB, task)
+	})
 	if err != nil {
 		return nil, err
 	}
-	if err = s.ensureRunIdentity(ctx, created, kbCache); err != nil {
-		if rollbackErr := s.rollbackCreatedTask(ctx, created.ID); rollbackErr != nil {
-			return nil, fmt.Errorf("ensure run identity for task %s: %w (rollback failed: %v)", created.ID, err, rollbackErr)
-		}
-		return nil, fmt.Errorf("ensure run identity for task %s: %w", created.ID, err)
+	if previousStatus == common.FAILED || previousStatus == common.STOPPED {
+		clearCancelFlag(ctx, task.ID)
 	}
-	s.emitLifecycleEvent(ctx, created, "created", common.CREATED, "")
-	if err = s.enqueueTask(created.ID); err != nil {
-		s.settlePublishFailure(ctx, created)
+	if err := s.ensureRunIdentity(ctx, task, kbCache); err != nil {
+		var rollbackErr error
+		switch previousStatus {
+		case "":
+			rollbackErr = s.rollbackCreatedTask(ctx, task.ID)
+		case common.FAILED, common.STOPPED:
+			rollbackErr = s.rollbackRetriedTask(ctx, task.ID, previousStatus)
+		}
+		if rollbackErr != nil {
+			return nil, fmt.Errorf("ensure run identity for task %s: %w (rollback failed: %v)", task.ID, err, rollbackErr)
+		}
+		return nil, fmt.Errorf("ensure run identity for task %s: %w", task.ID, err)
+	}
+	s.emitLifecycleEvent(ctx, task, "created", common.CREATED, "")
+	if err := s.enqueueTask(task.ID); err != nil {
+		s.settlePublishFailure(ctx, task)
 		return nil, err
 	}
-	return s.markScheduledAfterPublish(ctx, created.ID)
+	return s.markScheduledAfterPublish(ctx, task.ID)
 }
 
 func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {

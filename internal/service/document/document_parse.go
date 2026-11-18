@@ -811,8 +811,45 @@ func firstStringField(m map[string]interface{}, keys ...string) string {
 	return ""
 }
 
-func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, status int) error {
+func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, documentID string, kb *entity.Knowledgebase, status int) (common.ErrorCode, error) {
 	statusStr := strconv.Itoa(status)
+	changed := false
+	code := common.CodeServerError
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		doc, err := s.documentDAO.GetByIDForUpdate(ctx, tx, documentID)
+		if err != nil {
+			return err
+		}
+		if doc.KbID != kb.ID {
+			code = common.CodeDataError
+			return errors.New("the dataset doesn't own the document")
+		}
+		if guardCode, err := s.validateDocumentModifiable(ctx, tx, doc); err != nil {
+			code = guardCode
+			return err
+		}
+		if err := s.reconcileDocumentAvailability(ctx, doc, kb, status); err != nil {
+			return err
+		}
+		if doc.Status != nil && *doc.Status == statusStr {
+			return nil
+		}
+		if err := s.documentDAO.UpdateByID(ctx, tx, documentID, map[string]interface{}{"status": statusStr}); err != nil {
+			return errors.New("database error (Document update)")
+		}
+		changed = true
+		return nil
+	})
+	if err != nil {
+		return code, err
+	}
+	if changed {
+		s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, kb.ID, documentID, status)
+	}
+	return common.CodeSuccess, nil
+}
+
+func (s *DocumentService) reconcileDocumentAvailability(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, status int) error {
 	// The index can disagree with the row after a partial write or a
 	// database rollback. Even an unchanged status must reconcile it.
 	// A completed index write can precede ApplyDocCounts. A zero scalar
@@ -822,30 +859,16 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 		if needsIndexUpdate {
 			return fmt.Errorf("document engine not initialized")
 		}
-	} else {
-		if !needsIndexUpdate {
-			exists, err := s.docEngine.ChunkStoreExists(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), doc.KbID)
-			if err != nil {
-				return fmt.Errorf("check document index: %w", err)
-			}
-			needsIndexUpdate = exists
-		}
-		if needsIndexUpdate {
-			if err := s.updateDocumentChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
-				return err
-			}
-		}
-	}
-	if doc.Status != nil && *doc.Status == statusStr {
 		return nil
 	}
-	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"status": statusStr}); err != nil {
-		return errors.New("database error (Document update)")
+	if !needsIndexUpdate {
+		exists, err := s.docEngine.ChunkStoreExists(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), doc.KbID)
+		if err != nil {
+			return fmt.Errorf("check document index: %w", err)
+		}
+		if !exists {
+			return nil
+		}
 	}
-	// A status transition changes document availability, not its parsed
-	// content. The status event handles dataset-level retraction/re-enable;
-	// scheduling a delayed Wiki recompilation here creates duplicate events
-	// and a visible 20-second oscillation.
-	s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, doc.ID, status)
-	return nil
+	return s.updateDocumentChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status)
 }

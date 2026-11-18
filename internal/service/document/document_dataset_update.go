@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
@@ -42,7 +43,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 	for _, doc := range documents {
 		documentByID[doc.ID] = doc
 	}
-	accessibleDocuments := make(map[string]*entity.Document, len(documentIDs))
+	accessibleDocuments := make(map[string]struct{}, len(documentIDs))
 	var permissionDenied error
 	otherFailures := 0
 	for _, docID := range documentIDs {
@@ -63,7 +64,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 			hasError = true
 			continue
 		}
-		accessibleDocuments[docID] = doc
+		accessibleDocuments[docID] = struct{}{}
 	}
 	if len(accessibleDocuments) == 0 {
 		if hasError {
@@ -81,17 +82,11 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 	}
 
 	for _, docID := range documentIDs {
-		doc, ok := accessibleDocuments[docID]
-		if !ok {
+		if _, ok := accessibleDocuments[docID]; !ok {
 			continue
 		}
 
-		if _, err := s.validateDocumentModifiable(ctx, doc); err != nil {
-			result[docID] = map[string]string{"error": err.Error()}
-			hasError = true
-			continue
-		}
-		if err := s.updateDocumentStatusOnly(ctx, doc, kb, statusInt); err != nil {
+		if _, err := s.updateDocumentStatusOnly(ctx, docID, kb, statusInt); err != nil {
 			result[docID] = map[string]string{"error": err.Error()}
 			hasError = true
 			continue
@@ -335,8 +330,8 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 	}
 
 	if present["enabled"] && req.Enabled != nil {
-		if err = s.updateDocumentStatusOnly(ctx, doc, kb, *req.Enabled); err != nil {
-			return nil, common.CodeServerError, err
+		if code, err := s.updateDocumentStatusOnly(ctx, documentID, kb, *req.Enabled); err != nil {
+			return nil, code, err
 		}
 	}
 
@@ -362,14 +357,14 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 
 // validateDocumentModifiable rejects document edits while the document is
 // actively parsing or scheduled.
-func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *entity.Document) (common.ErrorCode, error) {
+func (s *DocumentService) validateDocumentModifiable(ctx context.Context, db *gorm.DB, doc *entity.Document) (common.ErrorCode, error) {
 	if s.ingestionTaskDAO == nil {
 		return common.CodeServerError, errors.New("ingestion task DAO not initialized")
 	}
 	if doc == nil || doc.ID == "" {
 		return common.CodeDataError, errors.New("document is nil or has empty ID")
 	}
-	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, db, doc.ID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
 	}
@@ -393,7 +388,7 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 	}
 
 	if len(present) > 0 {
-		if code, err := s.validateDocumentModifiable(ctx, doc); err != nil {
+		if code, err := s.validateDocumentModifiable(ctx, dao.DB, doc); err != nil {
 			return code, err
 		}
 	}

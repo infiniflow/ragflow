@@ -105,7 +105,7 @@ func TestValidateDocumentModifiable_TaskStatuses(t *testing.T) {
 			svc := testDocumentService(t)
 			ctx := documentTestContext(t.Context())
 			doc := &entity.Document{ID: "doc-1"}
-			code, err := svc.validateDocumentModifiable(ctx, doc)
+			code, err := svc.validateDocumentModifiable(ctx, db, doc)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
