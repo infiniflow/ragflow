@@ -17,6 +17,54 @@
 from api.utils import api_utils
 
 
+def test_get_parser_config_parent_child_enabled_is_flattened_for_create_defaults():
+    parser_config = api_utils.get_parser_config(
+        "naive",
+        {"parent_child": {"use_parent_child": True, "children_delimiter": "。"}},
+    )
+
+    assert parser_config["enable_children"] is True
+    assert parser_config["children_delimiter"] == "。"
+
+
+def test_get_parser_config_parent_child_disabled_is_flattened_for_create_defaults():
+    parser_config = api_utils.get_parser_config("naive", {"parent_child": {"use_parent_child": False}})
+
+    assert parser_config["enable_children"] is False
+    assert parser_config["children_delimiter"] == ""
+
+
+def test_get_parser_config_explicit_empty_parent_child_is_flattened_as_disabled():
+    # An explicit but empty parent_child mapping still means "parent-child
+    # chunking disabled" and must take the disabled branch. Chunk methods
+    # without a parent_child default (qa, tag, ...) have no default block, so
+    # the mapping stays empty and used to be skipped by a truthiness check.
+    for chunk_method in ("naive", "qa", "tag"):
+        parser_config = api_utils.get_parser_config(chunk_method, {"parent_child": {}})
+
+        assert parser_config["enable_children"] is False, chunk_method
+        assert parser_config["children_delimiter"] == "", chunk_method
+
+
+def test_get_parser_config_without_parent_child_keeps_historical_key_set():
+    # A payload that carries no parent_child block must keep the historical
+    # key set: no flattened children_delimiter / enable_children for chunk
+    # methods without a parent_child default.
+    parser_config = api_utils.get_parser_config("qa", None)
+
+    assert "children_delimiter" not in parser_config
+    assert "enable_children" not in parser_config
+
+
+def test_get_parser_config_naive_default_keeps_children_delimiter():
+    # The naive default carries a parent_child block, so children_delimiter is
+    # flattened to "" while enable_children stays absent (pure default).
+    parser_config = api_utils.get_parser_config("naive", None)
+
+    assert parser_config["children_delimiter"] == ""
+    assert "enable_children" not in parser_config
+
+
 def test_get_data_openai_stream_chunk_matches_openai_shape(monkeypatch):
     monkeypatch.setattr(api_utils.time, "time", lambda: 1234567890.9)
 
