@@ -6,10 +6,7 @@ import { z } from 'zod';
 
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
-import {
-  RerankCandidatesCountFormField,
-  rerankCandidatesCountSchema,
-} from '@/components/rerank-candidates-count-item';
+import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import {
   MetadataFilter,
   MetadataFilterSchema,
@@ -57,6 +54,7 @@ export default function TestingForm({
   const ownerTenantId = useOwnerTenantId();
   const knowledgeBaseId = id;
 
+  const integerValidationMessage = t('knowledgeDetails.testIntegerValidation');
   const formSchema = z
     .object({
       question: z.string().min(1, {
@@ -66,8 +64,12 @@ export default function TestingForm({
       ...keywordsSimilarityWeightSchema,
       dataset_ids: z.array(z.string()).optional(),
       ...MetadataFilterSchema,
-      page_size: z.number().int().min(1).max(100),
-      ...rerankCandidatesCountSchema,
+      page_size: z.number().int(integerValidationMessage).min(1).max(100),
+      rerank_candidates_count: z
+        .number()
+        .int(integerValidationMessage)
+        .min(64)
+        .max(256),
     })
     .refine((values) => values.rerank_candidates_count >= values.page_size, {
       message: t('chat.rerankCandidatesCountValidation'),
@@ -101,6 +103,7 @@ export default function TestingForm({
     <Form {...form}>
       <form
         className="size-full min-h-0 flex flex-col"
+        noValidate
         onSubmit={form.handleSubmit(onSubmit)}
       >
         <div className="px-5 h-0 flex-1 min-h-0">
