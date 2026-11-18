@@ -1044,12 +1044,6 @@ func (p *wikiPipeline) runRefinePage(
 		if len(pending) == 0 {
 			return wikiPageResult{}, budgetErr
 		}
-		// Reject an indivisible oversized source before generating any drafts.
-		for _, block := range pending {
-			if err := p.checkWikiRefineBudget(request(block.Text, existingRaw)); err != nil {
-				return wikiPageResult{}, err
-			}
-		}
 		batched = true
 	}
 	contentRaw := existingRaw
@@ -1067,7 +1061,7 @@ func (p *wikiPipeline) runRefinePage(
 			overhead := p.wikiRefineTokenCount(base.SystemPrompt + "\n" + base.UserPrompt)
 			// Repack against the actual draft, including its wrapper. The input
 			// budget already reserves space for the next response and framing.
-			batch = common.PackBatches(pending, inputBudget-overhead, wikiRefineTokenizer{p.deps.Tokenizer})[0]
+			batch = wikiRefineSourcePrefix(pending, inputBudget-overhead, wikiRefineTokenizer{p.deps.Tokenizer})
 		}
 		var req common.ChatRequest
 		for {

@@ -46,9 +46,8 @@ func (p *wikiPipeline) checkWikiRefineBudget(req common.ChatRequest) error {
 	return nil
 }
 
-// Pack the rendered source blocks, including chunk markers and separators.
-// PackBatches deliberately leaves oversized chunks intact; the caller checks
-// every complete prompt before dispatch and reports those as REFINE errors.
+// Keep source blocks intact, including chunk markers and separators. Each
+// complete prompt is checked against the current draft before dispatch.
 func wikiRefineSourceBlocks(chunks []common.Chunk, ids []string) []common.Chunk {
 	var blocks []common.Chunk
 	if len(ids) == 0 {
@@ -76,6 +75,26 @@ func wikiRefineSourceBlocks(chunks []common.Chunk, ids []string) []common.Chunk 
 		}
 	}
 	return blocks
+}
+
+// Select only the next greedy prefix, without tokenizing the remaining suffix.
+// Always keep the first block for the full-prompt check, even when the separate
+// source allowance is exhausted: tokenizer counts need not be additive.
+func wikiRefineSourcePrefix(pending []common.Chunk, budget int, tok common.Tokenizer) []common.Chunk {
+	if len(pending) == 0 || budget <= 0 {
+		return pending[:min(len(pending), 1)]
+	}
+	count := 1
+	remaining := budget
+	for i, block := range pending {
+		tokens := tok.NumTokens(block.Text)
+		if tokens > remaining {
+			break
+		}
+		remaining -= tokens
+		count = i + 1
+	}
+	return pending[:count]
 }
 
 func joinWikiRefineSources(batch []common.Chunk) string {

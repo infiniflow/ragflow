@@ -444,3 +444,69 @@ func TestRunRefinePage_SingleBlankReplyKeepsPlaceholder(t *testing.T) {
 		t.Fatalf("single blank reply: page=%q error=%v", page.ContentRaw, err)
 	}
 }
+
+func TestRunRefinePage_LaterSourceUsesUpdatedDraft(t *testing.T) {
+	probe := refinePipeline()
+	var fixed int
+	probe.deps.Chat = chatFunc(func(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+		fixed = len(req.SystemPrompt) + 1 + len(req.UserPrompt) - len(buildSourceContext(probe.inputs.Chunks, []string{"c1"}))
+		return &common.ChatResponse{Content: "# Alpha"}, nil
+	})
+	if _, err := refineTestPage(probe); err != nil {
+		t.Fatal(err)
+	}
+	p := refineSourcePipeline(2, 300)
+	p.inputs.Chunks[1].Text = strings.Repeat("2", 700)
+	stored := "# Alpha\n\n" + strings.Repeat("x", 1000)
+	draft := stored[:len(stored)-200]
+	section := "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + stored + "\n"
+	p.deps.ModelMaxOutput = 2048
+	p.deps.ModelContextLen = fixed + len(section) + 600 + 2048 + wikiRefineSafetyTokens
+	p.deps.WikiPages = wikiStoreStub{slugHit: &common.WikiPageCandidate{Slug: "entity/alpha", ContentMDRaw: stored}}
+	calls := 0
+	p.deps.Chat = chatFunc(func(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+		calls++
+		if err := p.checkWikiRefineBudget(req); err != nil {
+			t.Fatal(err)
+		}
+		if calls == 1 {
+			if !strings.Contains(req.UserPrompt, "[CHUNK_ID c000]") || strings.Contains(req.UserPrompt, "[CHUNK_ID c001]") {
+				t.Fatal("first request should contain only the smaller source")
+			}
+			return &common.ChatResponse{Content: draft}, nil
+		}
+		if calls != 2 || !strings.Contains(req.UserPrompt, "[CHUNK_ID c001]") || !strings.Contains(req.UserPrompt, draft) {
+			t.Fatal("later source was not checked with the new draft")
+		}
+		return &common.ChatResponse{Content: stored}, nil
+	})
+	page, err := p.runRefinePage(wikiPlanPage{
+		Action: "UPDATE", Slug: "entity/alpha", Title: "Alpha", PageType: "entity", EntityNames: []string{"Alpha"},
+	}, []string{"entity/alpha"}, map[string]string{"entity/alpha": "Alpha"}, nil, buildWikiEntityLookup(p.reduced.Entities), nil)
+	if err != nil || calls != 2 || len(page.SourceChunkIDs) != 2 {
+		t.Fatalf("UPDATE result: err=%v calls=%d sources=%v", err, calls, page.SourceChunkIDs)
+	}
+}
+
+type refineCountingTokenizer struct{ calls int }
+
+func (c *refineCountingTokenizer) NumTokens(text string) int {
+	c.calls++
+	return len(text)
+}
+
+func TestRunRefinePage_ExhaustedAllowanceDoesNotScanSuffix(t *testing.T) {
+	p := refineSourcePipeline(400, 1400)
+	counter := &refineCountingTokenizer{}
+	p.deps.Tokenizer = counter
+	calls := 0
+	p.deps.Chat = chatFunc(func(context.Context, common.ChatRequest) (*common.ChatResponse, error) {
+		calls++
+		return &common.ChatResponse{Content: strings.Repeat("d", 4032)}, nil
+	})
+	_, err := refineTestPage(p)
+	assertRefineBudgetError(t, err)
+	if calls != 1 || counter.calls > 20 {
+		t.Fatalf("writer calls=%d token counts=%d, want one draft and bounded counting with 399 pending sources", calls, counter.calls)
+	}
+}
