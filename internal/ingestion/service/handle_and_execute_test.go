@@ -694,7 +694,8 @@ func TestHandleAndExecute_EarlierRedeliveryStillRuns(t *testing.T) {
 
 // failTaskStatusWrites makes the first n writes of ingestion_task.status =
 // FAILED return an error, as a database outage would, and counts every attempt.
-func failTaskStatusWrites(t *testing.T, db *gorm.DB, n int32) *atomic.Int32 {
+// onAttempt, when set, runs before each attempt with its 1-based number.
+func failTaskStatusWrites(t *testing.T, db *gorm.DB, n int32, onAttempt func(int32)) *atomic.Int32 {
 	t.Helper()
 	var attempts atomic.Int32
 	const name = "fail_task_status_failed"
@@ -703,7 +704,11 @@ func failTaskStatusWrites(t *testing.T, db *gorm.DB, n int32) *atomic.Int32 {
 		if !ok || dest["status"] != common.FAILED {
 			return
 		}
-		if attempts.Add(1) <= n {
+		attempt := attempts.Add(1)
+		if onAttempt != nil {
+			onAttempt(attempt)
+		}
+		if attempt <= n {
 			tx.AddError(errors.New("database unavailable"))
 		}
 	}); err != nil {
@@ -735,14 +740,33 @@ func TestHandleAndExecute_LastDeliveryRetriesMarkFailed(t *testing.T) {
 		Update("status", common.RUNNING).Error; err != nil {
 		t.Fatalf("set status RUNNING: %v", err)
 	}
-	attempts := failTaskStatusWrites(t, db, 2)
-
-	ingestor := newUnitIngestor("test-last-delivery-retry", 1, []string{"pdf"})
-	ingestor.heartbeatInterval = 5 * time.Millisecond
 	handle := &fakeTaskHandle{
 		msg:       common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask},
 		delivered: common.TaskMaxDeliver,
 	}
+	// The successful write waits until the heartbeat has renewed the lease
+	// at least once after the first failed write, so a heartbeat stopped
+	// during the retries makes the test fail instead of hang or pass.
+	var renewalsAtFirstFailure int64
+	renewedDuringRetry := false
+	attempts := failTaskStatusWrites(t, db, 2, func(attempt int32) {
+		switch attempt {
+		case 1:
+			renewalsAtFirstFailure = handle.inProgress.Load()
+		case 3:
+			deadline := time.Now().Add(2 * time.Second)
+			for time.Now().Before(deadline) {
+				if handle.inProgress.Load() > renewalsAtFirstFailure {
+					renewedDuringRetry = true
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}
+	})
+
+	ingestor := newUnitIngestor("test-last-delivery-retry", 1, []string{"pdf"})
+	ingestor.heartbeatInterval = 5 * time.Millisecond
 
 	ingestor.handleAndExecute(nil, handle)
 
@@ -752,8 +776,8 @@ func TestHandleAndExecute_LastDeliveryRetriesMarkFailed(t *testing.T) {
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
-	if handle.inProgress.Load() == 0 {
-		t.Fatal("no heartbeat while the FAILED write was retried")
+	if !renewedDuringRetry {
+		t.Fatal("no heartbeat between the first failed FAILED write and the successful one")
 	}
 	var task entity.IngestionTask
 	if err := db.First(&task, "id = ?", taskID).Error; err != nil {
@@ -778,7 +802,7 @@ func TestHandleAndExecute_LastDeliveryAcksWhenMarkFailedKeepsFailing(t *testing.
 		Update("status", common.RUNNING).Error; err != nil {
 		t.Fatalf("set status RUNNING: %v", err)
 	}
-	attempts := failTaskStatusWrites(t, db, 1<<30)
+	attempts := failTaskStatusWrites(t, db, 1<<30, nil)
 
 	oldLogger, oldSugar := common.Logger, common.Sugar
 	t.Cleanup(func() { common.Logger, common.Sugar = oldLogger, oldSugar })

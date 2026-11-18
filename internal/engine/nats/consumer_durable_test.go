@@ -78,8 +78,19 @@ func TestInitConsumer_ReplacesEphemeralConsumer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch from ephemeral consumer: %v", err)
 	}
-	for range batch.Messages() {
+	delivered := 0
+	for msg := range batch.Messages() {
 		// Delivered and left unacknowledged, as when an ingestor dies mid-task.
+		if got := msg.Subject(); got != common.TaskSubject {
+			t.Fatalf("delivered subject %q, want %q", got, common.TaskSubject)
+		}
+		delivered++
+	}
+	if err := batch.Error(); err != nil {
+		t.Fatalf("fetch from ephemeral consumer: %v", err)
+	}
+	if delivered != 1 {
+		t.Fatalf("ephemeral consumer delivered %d messages before the migration, want 1", delivered)
 	}
 
 	if err := queue.InitConsumer(common.TaskSubject); err != nil {
