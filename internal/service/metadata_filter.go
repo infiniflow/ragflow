@@ -845,6 +845,10 @@ func applyMetaDataFilter(
 		return docIDs
 	}
 
+	if method == "disabled" {
+		setDiag("disabled", nil, "and", 0)
+		return baseDocIDs
+	}
 	setDiag("unsupported", nil, "and", 0)
 	return baseDocIDs
 }

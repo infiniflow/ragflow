@@ -1145,6 +1145,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       metadataFilterUnsupported: '不支持的过滤方式',
       metadataFilterUnavailable: '过滤器信息不可用',
       metadataFilterMatchedDocuments: '匹配文档数：{{count}}',
+      metadataFilterLogic: {
+        and: '与',
+        or: '或',
+      },
       selfRag: 'Self-RAG',
       selfRagTip: '请参考: https://huggingface.co/papers/2310.11511',
       overview: '聊天 ID',

@@ -1,4 +1,5 @@
 import { IMetadataFilterDiagnostic } from '@/interfaces/database/chat';
+import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const FilterStatusKeys: Record<string, string> = {
@@ -24,20 +25,28 @@ function MetadataFilterEntry({
   const { t } = useTranslation();
   const statusKey = FilterStatusKeys[diagnostic.status];
   const status = statusKey ? t(statusKey) : diagnostic.status;
+  const logic = diagnostic.logic === 'or' ? 'or' : 'and';
 
   return (
     <div className="space-y-1">
-      <div className="text-text-secondary">
+      <div className="break-words text-text-secondary">
         {diagnostic.tool_name && <span>{diagnostic.tool_name}: </span>}
         <span>{status}</span>
       </div>
       {!!diagnostic.conditions?.length && (
         <ul className="list-disc pl-5 text-text-primary">
           {diagnostic.conditions.map((condition, index) => (
-            <li key={`${condition.key}-${condition.op}-${index}`}>
-              {condition.key} {condition.op}{' '}
-              {formatFilterValue(condition.value)}
-            </li>
+            <Fragment key={`${condition.key}-${condition.op}-${index}`}>
+              {index > 0 && (
+                <li className="list-none text-text-secondary">
+                  {t(`chat.metadataFilterLogic.${logic}`)}
+                </li>
+              )}
+              <li className="break-words">
+                {condition.key} {condition.op}{' '}
+                {formatFilterValue(condition.value)}
+              </li>
+            </Fragment>
           ))}
         </ul>
       )}

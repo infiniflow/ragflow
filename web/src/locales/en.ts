@@ -1256,6 +1256,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       metadataFilterUnsupported: 'Unsupported filter method',
       metadataFilterUnavailable: 'Filter information is unavailable',
       metadataFilterMatchedDocuments: 'Matched documents: {{count}}',
+      metadataFilterLogic: {
+        and: 'AND',
+        or: 'OR',
+      },
       selfRag: 'Self-RAG',
       selfRagTip: 'Please refer to: https://huggingface.co/papers/2310.11511',
       overview: 'Chat ID',

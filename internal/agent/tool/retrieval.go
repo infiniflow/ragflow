@@ -277,14 +277,14 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// attached (e.g. unit tests), we skip silently.
 	if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil && args.RetrievalFrom == "dataset" {
 		state.SetRetrievalReferences(referenceChunksFromRetrieval(chunks), referenceDocAggsFromRetrieval(chunks))
-		if diagnostics != nil {
+		if diagnostics != nil && diagnostics.Status != "" {
 			diagnostic := map[string]any{
 				"method":                 diagnostics.Method,
 				"status":                 diagnostics.Status,
 				"conditions":             diagnostics.Conditions,
 				"logic":                  diagnostics.Logic,
 				"matched_document_count": diagnostics.MatchedDocumentCount,
-				"tool_name":              retrievalToolName,
+				"tool_name":              r.name,
 				"query":                  args.Query,
 				"dataset_ids":            args.DatasetIDs,
 			}
