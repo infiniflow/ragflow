@@ -11,6 +11,9 @@ import GoogleScholarForm from './google-scholar-form';
 import KeenableForm from './keenable-form';
 import SofyaForm from './sofya-form';
 import Search1APIForm from './search1api-form';
+import AnySearchDiscoverForm from './anysearch-discover-form';
+import AnySearchExtractForm from './anysearch-extract-form';
+import AnySearchSearchForm from './anysearch-search-form';
 import YouComForm from './youcom-form';
 import PubMedForm from './pubmed-form';
 import QueritForm from './querit-form';
@@ -49,4 +52,7 @@ export const ToolFormConfigMap = {
   [Operator.SofyaSearch]: SofyaForm,
   [Operator.Search1APISearch]: Search1APIForm,
   [Operator.Search1APICrawl]: ApiKeyToolForm,
+  [Operator.AnySearchSearch]: AnySearchSearchForm,
+  [Operator.AnySearchDiscover]: AnySearchDiscoverForm,
+  [Operator.AnySearchExtract]: AnySearchExtractForm,
 };

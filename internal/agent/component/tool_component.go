@@ -137,6 +137,8 @@ var toolComponentRegistrations = []struct {
 }{
 	{componentName: "GitHub", toolName: "github"},
 	{componentName: "BGPT", toolName: "bgpt"},
+	{componentName: "AnySearchExtract", toolName: "anysearch_extract"},
+	{componentName: "AnySearchSearch", toolName: "anysearch_search"},
 	{componentName: "ArXiv", toolName: "arxiv"},
 	{componentName: "DuckDuckGo", toolName: "duckduckgo"},
 	{componentName: "Email", toolName: "email"},
