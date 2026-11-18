@@ -28,6 +28,7 @@ type UnavailableValueCheck = {
   validIds: Set<string>;
   isFetched: boolean;
   message: string;
+  getPendingMessage?: (value: string) => string | undefined;
 };
 
 /**
@@ -38,13 +39,27 @@ type UnavailableValueCheck = {
  */
 export function useUnavailableValueFormSchema<T extends z.ZodTypeAny>(
   schema: T,
-  { fieldName, validIds, isFetched, message }: UnavailableValueCheck,
+  {
+    fieldName,
+    validIds,
+    isFetched,
+    message,
+    getPendingMessage,
+  }: UnavailableValueCheck,
 ) {
   const formSchema = useMemo(() => {
     const path = fieldName.split('.');
     return schema.superRefine((data: any, ctx) => {
       const value = get(data, path) as string | undefined;
-      if (isFetched && value && !validIds.has(value)) {
+      if (!value) return;
+      const pendingMessage = getPendingMessage?.(value);
+      if (pendingMessage) {
+        ctx.addIssue({
+          path,
+          message: pendingMessage,
+          code: z.ZodIssueCode.custom,
+        });
+      } else if (isFetched && !validIds.has(value)) {
         ctx.addIssue({
           path,
           message,
@@ -52,17 +67,15 @@ export function useUnavailableValueFormSchema<T extends z.ZodTypeAny>(
         });
       }
     });
-  }, [schema, validIds, isFetched, fieldName, message]);
+  }, [schema, validIds, isFetched, fieldName, message, getPendingMessage]);
 
   return { formSchema };
 }
 
 /**
  * Availability check for a model field (default `llm_id`), validated against
- * the models visible under `resourceTenantId` (the current user's own when
- * omitted): a shared canvas runs with the owner's models, while an imported
- * dsl.json makes the importer the owner — references pointing anywhere else
- * get flagged.
+ * the resource tenant and access-user scope. A shared canvas uses its owner's
+ * resources, while imported DSL references use the importing user's scope.
  */
 export function useUnavailableModelFormSchema<T extends z.ZodTypeAny>(
   schema: T,
@@ -70,22 +83,33 @@ export function useUnavailableModelFormSchema<T extends z.ZodTypeAny>(
     fieldName = 'llm_id',
     modelTypes = ModelTypeMap.llm_id,
     resourceTenantId,
+    accessUserId,
+    ownerTenantId,
   }: {
     fieldName?: string;
     modelTypes?: string[];
     resourceTenantId?: string;
+    accessUserId?: string;
+    ownerTenantId?: string;
   } = {},
 ) {
   const { t } = useTranslation();
-  const { validIds, isFetched: modelsFetched } = useModelValidIds(
+  const {
+    validIds,
+    isFetched: directModelsFetched,
+    isSettled: modelsFetched,
+    getPendingMessage,
+  } = useModelValidIds(
     modelTypes,
-    resourceTenantId,
+    resourceTenantId ?? ownerTenantId,
+    accessUserId,
   );
 
   const { formSchema } = useUnavailableValueFormSchema(schema, {
     fieldName,
     validIds,
-    isFetched: modelsFetched,
+    isFetched: directModelsFetched,
+    getPendingMessage,
     message: t('common.modelUnavailable'),
   });
 

@@ -1133,7 +1133,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       agenticTemplateTooLong: '模板长度不能超过 32768 个字符',
       resetToDefault: '重置为默认',
       thinkingTip:
-        '仅控制官方模型供应商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
+        '默认关闭思考模式。如需使用，请选择开启，并确保模型支持思考模式。',
       quote: '显示引文',
       quoteTip: '是否应该显示原文出处？',
       selfRag: 'Self-RAG',
@@ -3135,6 +3135,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       query: '查询变量',
       queryRequired: '查询变量是必填项',
       queryTip: '选择您想要使用的变量',
+      highlight: '高亮',
+      highlightTip: '在检索到的片段中标记命中的词，并随片段一起返回高亮文本。',
       agent: '智能体',
       addAgent: '添加智能体',
       agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',

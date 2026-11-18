@@ -83,11 +83,11 @@ export function useCanvasChecklist({
   } = useFetchAllMemoryList(ownerUserId);
   // Model, template-group, and memory references use the canvas owner's
   // access scope. Dataset references are scoped separately by canvasID.
-  const { validIds: modelValidIds, isFetched: modelsFetched } =
+  const { validIds: modelValidIds, isSettled: modelsFetched } =
     useModelValidIds(ModelTypeMap.llm_id, resourceTenantId, ownerUserId);
   const {
     validIds: categorizeModelValidIds,
-    isFetched: categorizeModelsFetched,
+    isSettled: categorizeModelsFetched,
   } = useModelValidIds(
     ['chat', 'vision', 'decision'],
     resourceTenantId,

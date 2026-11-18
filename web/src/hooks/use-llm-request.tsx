@@ -16,6 +16,7 @@
 
 import message from '@/components/ui/message';
 import { ModelTypeToField } from '@/constants/llm';
+import { useAdditionalModelValidIds } from '@/ee/hooks/use-additional-model-valid-ids';
 import {
   IAddedModel,
   IAvailableProvider,
@@ -42,7 +43,7 @@ import {
 } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -201,24 +202,53 @@ export const useModelValidIds = (
   modelTypes: string[],
   resourceTenantId?: string,
   accessUserId?: string,
+  includeAdditionalValidIds = true,
 ) => {
+  const contextTenantId = useContext(ModelResourceTenantIdContext);
   const { data, isFetched, refetch } = useFetchAllAddedModels(
     undefined,
     resourceTenantId,
     accessUserId,
   );
-  const validIds = useMemo(
+  const directValidIds = useMemo(
     () => buildValidModelIds(data, modelTypes),
     [data, modelTypes],
   );
+  const {
+    validIds: additionalValidIds,
+    isSettled,
+    getPendingMessage,
+    resolveValidIds: resolveAdditionalValidIds,
+  } = useAdditionalModelValidIds({
+    modelTypes,
+    models: data,
+    modelsFetched: isFetched,
+    enabled: includeAdditionalValidIds,
+    ownerTenantId: resourceTenantId || contextTenantId,
+  });
+  const validIds = useMemo(
+    () => new Set([...directValidIds, ...additionalValidIds]),
+    [additionalValidIds, directValidIds],
+  );
 
-  const resolveValidIds = async () => {
+  const resolveValidIds = useCallback(async () => {
     const result = await refetch();
     if (result.isError) throw result.error;
-    return buildValidModelIds(result.data ?? [], modelTypes);
-  };
+    const freshModels = result.data ?? [];
+    const freshAdditionalIds = await resolveAdditionalValidIds(freshModels);
+    return new Set([
+      ...buildValidModelIds(freshModels, modelTypes),
+      ...freshAdditionalIds,
+    ]);
+  }, [modelTypes, refetch, resolveAdditionalValidIds]);
 
-  return { validIds, isFetched, resolveValidIds };
+  return {
+    validIds,
+    isFetched,
+    isSettled,
+    getPendingMessage,
+    resolveValidIds,
+  };
 };
 
 export function useFindLlmByUuid(

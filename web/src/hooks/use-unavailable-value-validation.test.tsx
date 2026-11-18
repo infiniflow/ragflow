@@ -25,6 +25,11 @@ import {
 const mockUseModelValidIds = jest.fn();
 const mockUseCompilationTemplateGroupValidIds = jest.fn();
 
+jest.mock('react-i18next', () => ({
+  ...jest.requireActual('react-i18next'),
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
 jest.mock('@/hooks/use-llm-request', () => ({
   useModelValidIds: (...args: unknown[]) => mockUseModelValidIds(...args),
 }));
@@ -125,18 +130,52 @@ describe('useUnavailableModelFormSchema', () => {
     ).toBe(true);
   });
 
-  it('validates against the given owner user', () => {
+  it('reports group pending without delaying direct model validation', () => {
+    const groupRef = 'gp-0123456789abcdef0123456789abcdef';
+    mockUseModelValidIds.mockReturnValue({
+      validIds: new Set(['m1']),
+      isFetched: true,
+      isSettled: false,
+      getPendingMessage: (value: string) =>
+        value === groupRef ? 'setting.modelGroupSelector.pending' : undefined,
+    });
+    const { result } = renderHook(() => useUnavailableModelFormSchema(Schema));
+
+    const pending = result.current.formSchema.safeParse({ llm_id: groupRef });
+    const unavailable = result.current.formSchema.safeParse({ llm_id: 'gone' });
+
+    expect(pending.success).toBe(false);
+    if (!pending.success) {
+      expect(pending.error.issues[0].path).toEqual(['llm_id']);
+      expect(pending.error.issues[0].message).toBe(
+        'setting.modelGroupSelector.pending',
+      );
+    }
+    expect(unavailable.success).toBe(false);
+    if (!unavailable.success) {
+      expect(unavailable.error.issues[0].message).toBe(
+        'common.modelUnavailable',
+      );
+    }
+    expect(result.current.modelsFetched).toBe(false);
+  });
+
+  it('validates against the resource tenant and access user', () => {
     mockUseModelValidIds.mockReturnValue({
       validIds: new Set(['m1']),
       isFetched: true,
     });
     renderHook(() =>
-      useUnavailableModelFormSchema(Schema, { resourceTenantId: 'owner-1' }),
+      useUnavailableModelFormSchema(Schema, {
+        resourceTenantId: 'tenant-1',
+        accessUserId: 'user-1',
+      }),
     );
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
       ['chat', 'vision'],
-      'owner-1',
+      'tenant-1',
+      'user-1',
     );
   });
 });

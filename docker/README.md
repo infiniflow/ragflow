@@ -4,6 +4,37 @@ This guide documents the Go implementation of RAGFlow. Use `docker/.env`, `docke
 
 The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bin/ragflow_server` binary. DeepDoc inference runs in-process. Select an official Go image tag documented in the corresponding release notes, or build the image locally as described below.
 
+Chat channels run inside the API process by default. Add `--chatter` to the
+entrypoint to launch them in a separate process alongside the enabled services:
+
+```bash
+bash docker/entrypoint.sh
+bash docker/entrypoint.sh --chatter
+```
+
+The second command passes `--disable-chat-channels` to the API and starts one
+`bin/ragflow_server --chatter` child. Existing service-disable flags still apply;
+chatter can also run with `--disable-api-server`. Channel configuration, saved
+conversations, webhook listener addresses and authenticated runtime-status routes
+stay the same. Both processes need the same service configuration and shared
+database, Kvrocks, storage and model resources.
+
+In separate-process mode, WhatsApp status and QR changes (including logout)
+appear on the next status publication, normally within 10 seconds. Stopping or
+replacing a channel removes its cached status immediately; a crashed chatter
+process loses its cached status after 30 seconds without a refresh.
+
+For a manual deployment, run these commands in separate process supervisors:
+
+```bash
+bin/ragflow_server --api --disable-chat-channels
+bin/ragflow_server --chatter
+```
+
+The binary selects one mode; `--api --chatter` does not launch both processes.
+Run one channel owner per deployment: starting standalone chatter alongside an API
+with embedded channels enabled would connect each channel twice.
+
 <details open>
 <summary><b>📗 Table of Contents</b></summary>
 

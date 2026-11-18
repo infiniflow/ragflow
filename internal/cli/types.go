@@ -219,6 +219,7 @@ const (
 	TokenDate
 	TokenGroup
 	TokenGroups
+	TokenFeatures
 	// Literals
 	TokenIdentifier
 	TokenQuotedString

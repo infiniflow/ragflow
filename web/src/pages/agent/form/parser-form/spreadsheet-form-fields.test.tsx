@@ -32,6 +32,7 @@ jest.mock('@/hooks/common-hooks', () => ({
 jest.mock('../../context', () => ({ useResourceTenantId: () => 'tenant-1' }));
 
 jest.mock('react-i18next', () => ({
+  ...jest.requireActual('react-i18next'),
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
