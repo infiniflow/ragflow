@@ -28,6 +28,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
+
+	"ragflow/internal/utility"
 )
 
 const (
@@ -795,8 +798,8 @@ func (m teamsMessage) toSourceDocument(team teamsTeam, channel teamsChannel, rep
 	blob := []byte(joined)
 
 	snippet := strings.TrimSpace(strings.ReplaceAll(joined, "\n", " "))
-	if len(snippet) > 50 {
-		snippet = strings.TrimRight(snippet[:50], " ") + "..."
+	if utf8.RuneCountInString(snippet) > 50 {
+		snippet = strings.TrimRight(utility.TruncateRunes(snippet, 50), " ") + "..."
 	}
 	semanticIdentifier := fmt.Sprintf("%s: %s", channel.DisplayName, snippet)
 	if snippet == "" {
