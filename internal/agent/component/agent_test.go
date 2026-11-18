@@ -769,19 +769,27 @@ func TestAgent_ForwardsThinkingParam(t *testing.T) {
 		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
 	})
 
-	cmp, err := New("Agent", map[string]any{
-		"model_id":    "stub",
-		"user_prompt": "hello",
-		"thinking":    "enabled",
-	})
-	if err != nil {
-		t.Fatalf("New(Agent): %v", err)
-	}
-	if _, err = cmp.Invoke(t.Context(), nil, nil); err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if gotThinking != "enabled" {
-		t.Fatalf("runner thinking = %q, want enabled", gotThinking)
+	for _, thinking := range []string{"", "default", "disabled", "enabled"} {
+		t.Run(thinking, func(t *testing.T) {
+			cmp, err := New("Agent", map[string]any{
+				"model_id":    "stub",
+				"user_prompt": "hello",
+				"thinking":    thinking,
+			})
+			if err != nil {
+				t.Fatalf("New(Agent): %v", err)
+			}
+			if _, err = cmp.Invoke(t.Context(), nil, nil); err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			want := "disabled"
+			if thinking == "enabled" {
+				want = "enabled"
+			}
+			if gotThinking != want {
+				t.Fatalf("runner thinking = %q, want %q", gotThinking, want)
+			}
+		})
 	}
 }
 

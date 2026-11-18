@@ -117,11 +117,12 @@ type imageOwnershipEngine struct {
 	fakeChatDocEngine
 	result  *types.SearchResult
 	request *types.SearchRequest
+	err     error
 }
 
 func (e *imageOwnershipEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.request = req
-	return e.result, nil
+	return e.result, e.err
 }
 func (f *fakeUploadStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	delete(f.objects, f.key(bucket, fnm))
@@ -517,7 +518,14 @@ func (f *failingDeleteMetadataEngine) UpdateMetadata(ctx context.Context, docID 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	return setupServiceTestDBWithDSN(t, ":memory:")
+	// Use a cache=shared in-memory database keyed by the test name (same scheme
+	// as setupConcurrentServiceTestDB). An ordinary ":memory:" SQLite database is a
+	// separate database per connection, so the fire-and-forget ingest-log goroutine
+	// opens a second connection that sees an empty schema and fails with "no such
+	// table". cache=shared lets every connection reuse the migrated schema while
+	// still isolating each test by name.
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	return setupServiceTestDBWithDSN(t, dsn)
 }
 
 func setupConcurrentServiceTestDB(t *testing.T) *gorm.DB {
@@ -657,6 +665,7 @@ func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum 
 	ensureTestTenantOwner(t, "user-1", tenantID)
 	kb := &entity.Knowledgebase{
 		ID:         id,
+		UserID:     "user-1",
 		TenantID:   tenantID,
 		Name:       "test-kb",
 		EmbdID:     "embd-1",
@@ -751,6 +760,7 @@ func insertTestDoc(t *testing.T, id, kbID string, tokenNum, chunkNum int64) {
 	doc := &entity.Document{
 		ID:           id,
 		KbID:         kbID,
+		UserID:       "user-1",
 		ParserID:     "naive",
 		ParserConfig: entity.JSONMap{},
 		CreatedBy:    "user-1",
@@ -2320,6 +2330,12 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	// Inject a deterministic default-lane resolver so the routing assertion is
+	// edition-independent (the community !ee default and the ee default are both
+	// covered by the resolver tests).
+	svc.ingestionTaskSvc.SetTierResolver(func(context.Context, string) (common.Tier, error) {
+		return common.TierDefault, nil
+	})
 	ctx := documentTestContext(t.Context())
 
 	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
@@ -2335,8 +2351,8 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 		t.Fatalf("StartParseDocuments: %v", err)
 	}
 
-	if publisher.subject != "tasks.RAGFLOW" {
-		t.Fatalf("subject = %q, want %q", publisher.subject, "tasks.RAGFLOW")
+	if publisher.subject != common.TaskSubject {
+		t.Fatalf("subject = %q, want %q", publisher.subject, common.TaskSubject)
 	}
 	if len(publisher.messages) != 1 {
 		t.Fatalf("expected 1 published message, got %d", len(publisher.messages))
@@ -2981,6 +2997,8 @@ func insertTestPreviewDoc(t *testing.T, db *gorm.DB, mockStorage *fakeUploadStor
 	doc := &entity.Document{
 		ID:           id,
 		KbID:         kbID,
+		UserID:       "user-1",
+		CreatedBy:    "user-1",
 		ParserID:     "naive",
 		ParserConfig: entity.JSONMap{},
 		Name:         &name,
@@ -3086,7 +3104,7 @@ func TestGetDocumentPreview_MissingObjectSurfacesStorageError(t *testing.T) {
 	loc := "doc.txt"
 	if err := db.Create(&entity.Document{
 		ID: "doc-prev-miss", KbID: "kb-prev-miss", ParserID: "naive",
-		ParserConfig: entity.JSONMap{}, Name: &name, Location: &loc,
+		UserID: "user-1", CreatedBy: "user-1", ParserConfig: entity.JSONMap{}, Name: &name, Location: &loc,
 		Suffix: "txt", Status: sptr("1"),
 	}).Error; err != nil {
 		t.Fatalf("insert test doc: %v", err)
@@ -3169,6 +3187,24 @@ func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	}
 	if err.Error() != "Permission denied" {
 		t.Fatalf("err = %q", err.Error())
+	}
+}
+
+func TestUpdateDatasetDocumentMissingDocumentReturnsDataError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+
+	svc := testDocumentService(t)
+	_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "missing-doc", &UpdateDatasetDocumentRequest{}, map[string]bool{})
+	if err == nil {
+		t.Fatal("expected missing-document error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err.Error() != "the dataset doesn't own the document" {
+		t.Fatalf("error = %q, want missing-document response", err.Error())
 	}
 }
 
@@ -4996,6 +5032,10 @@ func TestGetDocumentImageRejectsUnindexedObjectBeforeStorage(t *testing.T) {
 	if _, err := svc.GetDocumentImage(ctx, kbID+"-raw.pdf"); !errors.Is(err, ErrDocumentImageNotFound) {
 		t.Fatalf("GetDocumentImage() error = %v", err)
 	}
+	engine.err = errors.New("search ragflow_tenant-private: connection refused")
+	if _, err := svc.GetDocumentImage(ctx, kbID+"-raw.pdf"); err == nil || err.Error() != "Failed to find document image" {
+		t.Fatalf("GetDocumentImage() lookup failure = %v, want safe error", err)
+	}
 	if store.getCalls != 0 {
 		t.Fatalf("storage Get called %d times after ownership denial", store.getCalls)
 	}
@@ -5011,10 +5051,10 @@ func TestGetDocumentImageForDocumentAllowsIndexedSharedBucketImage(t *testing.T)
 	kbID := strings.Repeat("b", 32)
 	status := string(entity.StatusValid)
 	ensureTestTenantOwner(t, "user-1", "user-1")
-	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, UserID: "user-1", TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&entity.Document{ID: "doc-1", KbID: kbID, CreatedBy: "user-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: kbID, UserID: "user-1", CreatedBy: "user-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
 		t.Fatal(err)
 	}
 	imageID := "imagetemps-page-1.png"
@@ -5791,13 +5831,19 @@ func TestDownloadEmptyDocumentAndMissingBlob(t *testing.T) {
 
 type renameStoreEngine struct {
 	fakeChatDocEngine
-	exists   bool
-	storeErr error
-	err      error
-	updates  int
+	engineType string
+	exists     bool
+	storeErr   error
+	err        error
+	updates    int
 }
 
-func (e *renameStoreEngine) GetType() string { return "elasticsearch" }
+func (e *renameStoreEngine) GetType() string {
+	if e.engineType != "" {
+		return e.engineType
+	}
+	return "elasticsearch"
+}
 func (e *renameStoreEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
 	return e.exists, e.storeErr
 }
@@ -5806,39 +5852,43 @@ func (e *renameStoreEngine) UpdateChunks(context.Context, map[string]interface{}
 	return e.err
 }
 func TestRenameDocumentChunkStore(t *testing.T) {
-	for _, tc := range []struct {
-		chunks   int64
-		exists   bool
-		storeErr error
-		name     string
-		err      error
-		updates  int
-	}{
-		{name: "unparsed"}, {name: "zero count indexed", exists: true, updates: 1}, {name: "store error", storeErr: errors.New("store unavailable")}, {name: "parsed", chunks: 1, updates: 1}, {name: "engine error", chunks: 1, err: errors.New("unavailable"), updates: 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			db := setupServiceTestDB(t)
-			pushServiceDB(t, db)
-			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-			insertNamedTestDoc(t, "doc-1", "kb-1", "old.txt", 0, tc.chunks)
-			svc := testDocumentService(t)
-			engine := &renameStoreEngine{err: tc.err, exists: tc.exists, storeErr: tc.storeErr}
-			svc.docEngine = engine
-			doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
-			if err != nil {
-				t.Fatal(err)
-			}
-			kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = svc.updateDocumentNameOnly(t.Context(), doc, kb, "new.txt")
-			wantErr := tc.err
-			if tc.storeErr != nil {
-				wantErr = tc.storeErr
-			}
-			if !errors.Is(err, wantErr) || engine.updates != tc.updates {
-				t.Fatalf("rename error=%v updates=%d", err, engine.updates)
+	for _, engineType := range []string{"elasticsearch", "opensearch"} {
+		t.Run(engineType, func(t *testing.T) {
+			for _, tc := range []struct {
+				chunks   int64
+				exists   bool
+				storeErr error
+				name     string
+				err      error
+				updates  int
+			}{
+				{name: "unparsed"}, {name: "zero count indexed", exists: true, updates: 1}, {name: "store error", storeErr: errors.New("store unavailable")}, {name: "parsed", chunks: 1, updates: 1}, {name: "engine error", chunks: 1, err: errors.New("unavailable"), updates: 1},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					db := setupServiceTestDB(t)
+					pushServiceDB(t, db)
+					insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+					insertNamedTestDoc(t, "doc-1", "kb-1", "old.txt", 0, tc.chunks)
+					svc := testDocumentService(t)
+					engine := &renameStoreEngine{engineType: engineType, err: tc.err, exists: tc.exists, storeErr: tc.storeErr}
+					svc.docEngine = engine
+					doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+					if err != nil {
+						t.Fatal(err)
+					}
+					kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+					if err != nil {
+						t.Fatal(err)
+					}
+					err = svc.updateDocumentNameOnly(t.Context(), doc, kb, "new.txt")
+					wantErr := tc.err
+					if tc.storeErr != nil {
+						wantErr = tc.storeErr
+					}
+					if !errors.Is(err, wantErr) || engine.updates != tc.updates {
+						t.Fatalf("rename error=%v updates=%d", err, engine.updates)
+					}
+				})
 			}
 		})
 	}

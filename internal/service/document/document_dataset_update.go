@@ -55,7 +55,8 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 			continue
 		}
 		if err := service.CheckDocumentAccess(ctx, doc.ID, datasetID, permission.OperationUpdate); err != nil {
-			result[docID] = map[string]string{"error": "Permission denied"}
+			_, normalizedErr := permissionresponse.Normalize(err)
+			result[docID] = map[string]string{"error": normalizedErr.Error()}
 			if permissionresponse.IsPermissionError(err) {
 				permissionDenied = err
 			} else {
@@ -72,7 +73,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 				code, normalizedErr := permissionresponse.Normalize(permissionDenied)
 				return result, code, normalizedErr
 			}
-			return result, common.CodeServerError, fmt.Errorf("partial failure")
+			return result, common.CodeServerError, fmt.Errorf("partial failure: %v", result)
 		}
 		return result, common.CodeSuccess, nil
 	}
@@ -100,7 +101,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 			previousStatus = *doc.Status
 		}
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": status}); err != nil {
-			result[docID] = map[string]string{"error": "Database error (Document update)!"}
+			result[docID] = map[string]string{"error": "Database error (Document update): " + err.Error()}
 			hasError = true
 			continue
 		}
@@ -134,13 +135,15 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 	}
 
 	if hasError {
-		return result, common.CodeServerError, fmt.Errorf("partial failure")
+		return result, common.CodeServerError, fmt.Errorf("partial failure: %v", result)
 	}
 	return result, common.CodeSuccess, nil
 }
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	datasetRef := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
+	if err := checker.CheckResource(ctx, datasetRef, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -159,6 +162,10 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 			return nil, common.CodeDataError, errors.New("the dataset doesn't own the document")
 		}
 		return nil, common.CodeServerError, err
+	}
+	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, doc, req, present); err != nil {
 		return nil, code, err
@@ -379,7 +386,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("can not get document by id:%s", doc.ID)
 		}
-		return nil, common.CodeDataError, errors.New("database operation failed")
+		return nil, common.CodeDataError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	metaFields := map[string]interface{}{}
@@ -392,6 +399,17 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 		return nil, common.CodeServerError, err
 	}
 	return resp, common.CodeSuccess, nil
+}
+
+func activeTaskStatusLabel(status string) string {
+	switch status {
+	case common.CREATED, common.SCHEDULED:
+		return "Queued"
+	case common.RUNNING, common.STOPPING:
+		return "Parsing"
+	default:
+		return status
+	}
 }
 
 // validateDocumentModifiable rejects configuration edits while the document is
@@ -413,7 +431,7 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	switch {
 	case common.IsActiveTaskStatus(task.Status):
 		return common.CodeDataError, fmt.Errorf(
-			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", task.Status)
+			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", activeTaskStatusLabel(task.Status))
 	case common.IsTerminalTaskStatus(task.Status):
 		return common.CodeSuccess, nil
 	default:
@@ -566,7 +584,7 @@ func validateMetaFields(meta map[string]any) error {
 // fields with the dataset language, the way ingestion tokenized them.
 func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, newName string) error {
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"name": newName}); err != nil {
-		return errors.New("database error (Document rename)")
+		return fmt.Errorf("database error (Document rename): %w", err)
 	}
 
 	mappings, err := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
@@ -589,7 +607,8 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 	titleTks, _ := tok.Tokenize(newName)
 	titleSmTks, _ := tok.FineGrainedTokenize(titleTks)
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	if doc.ChunkNum == 0 && engine.Type(s.docEngine) == engine.EngineElasticsearch {
+	docEngineType := engine.Type(s.docEngine)
+	if doc.ChunkNum == 0 && (docEngineType == engine.EngineElasticsearch || docEngineType == engine.EngineOpenSearch) {
 		exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
 		if err != nil {
 			return err

@@ -45,12 +45,12 @@ var googleNewlinePattern = regexp.MustCompile(`\n+`)
 
 // googleParams is the JSON shape the model or canvas sends into InvokableRun.
 type googleParams struct {
-	APIKey   string `json:"api_key"`
-	Q        string `json:"q"`
-	Start    int    `json:"start"`
-	Num      int    `json:"num"`
-	Country  string `json:"country"`
-	Language string `json:"language"`
+	APIKey   string `json:"api_key" schema:"-"`
+	Q        string `json:"q" doc:"The search keywords to execute with Google. The keywords should be the most important words/terms(includes synonyms) from the original request." required:"true"`
+	Start    int    `json:"start,omitempty" doc:"Parameter defines the result offset. It skips the given number of results. It's used for pagination. (e.g., 0 (default) is the first page of results, 10 is the 2nd page of results, 20 is the 3rd page of results, etc.). Google Local Results only accepts multiples of 20(e.g. 20 for the second page results, 40 for the third page results, etc.) as the start value."`
+	Num      int    `json:"num,omitempty" doc:"Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results, 40 returns 40 results, and 100 returns 100 results). The use of num may introduce latency, and/or prevent the inclusion of specialized result types. It is better to omit this parameter unless it is strictly necessary to increase the number of results per page. Results are not guaranteed to have the number of results specified in num."`
+	Country  string `json:"country" schema:"-"`
+	Language string `json:"language" schema:"-"`
 }
 
 type googleResult map[string]any
@@ -91,27 +91,7 @@ func NewGoogleToolWithDefaults(h *HTTPHelper, defaults googleParams) *GoogleTool
 }
 
 func (g *GoogleTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: googleToolName,
-		Desc: googleToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"q": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with Google. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
-			},
-			"start": {
-				Type:     schema.Integer,
-				Desc:     "Parameter defines the result offset. It skips the given number of results. It's used for pagination. (e.g., 0 (default) is the first page of results, 10 is the 2nd page of results, 20 is the 3rd page of results, etc.). Google Local Results only accepts multiples of 20(e.g. 20 for the second page results, 40 for the third page results, etc.) as the start value.",
-				Required: false,
-			},
-			"num": {
-				Type:     schema.Integer,
-				Desc:     "Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results, 40 returns 40 results, and 100 returns 100 results). The use of num may introduce latency, and/or prevent the inclusion of specialized result types. It is better to omit this parameter unless it is strictly necessary to increase the number of results per page. Results are not guaranteed to have the number of results specified in num.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(googleToolName, googleToolDescription, googleParams{})
 }
 
 // InputForm returns the Google fields exposed through Agent tool aggregation.

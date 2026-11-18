@@ -438,20 +438,25 @@ func (c *Consumer) RebuildDataset(ctx context.Context, tenant, kb, mode string) 
 	if err != nil {
 		return fmt.Errorf("knowledge_compile: rebuild list docs: %w", err)
 	}
+	// Recover each document's compile variants from its compiled products. The
+	// read is batched (LoadDocProductsByDocs) and processed in bounded chunks so
+	// the in-flight product set never exceeds one batch (docProductsBatchSize)
+	// instead of the entire KB — the previous loop loaded one document at a time
+	// and released it; a single full-KB batch read would have retained every
+	// document's products (including vectors) until recovery finished.
+	variantsByDoc, err := c.recoverDocVariantsBatch(ctx, tenant, kb, docs)
+	if err != nil {
+		return fmt.Errorf("knowledge_compile: rebuild recover variants: %w", err)
+	}
 	for _, docID := range docs {
-		variants, taskTypes, rerr := c.recoverDocTypes(ctx, tenant, kb, docID)
-		if rerr != nil {
-			// O2a hard failure: abort the rebuild so an unknown template kind
-			// cannot leave the doc's dataset-level products unrebuilt.
-			return fmt.Errorf("knowledge_compile: rebuild recover variants %s: %w", docID, rerr)
-		}
-		if len(variants) == 0 {
+		vr := variantsByDoc[docID]
+		if len(vr.variants) == 0 {
 			// Documents without compiled products do not contribute to any
 			// dataset-level variant and must not enqueue an empty completion
 			// event that falls back to the legacy all-products path.
 			continue
 		}
-		if perr := rs.Publish(ctx, tenant, kb, docID, string(EventTypeCompleted), variants, taskTypes); perr != nil {
+		if perr := rs.Publish(ctx, tenant, kb, docID, string(EventTypeCompleted), vr.variants, vr.taskTypes); perr != nil {
 			return fmt.Errorf("knowledge_compile: rebuild republish %s: %w", docID, perr)
 		}
 	}
@@ -475,27 +480,11 @@ func (c *Consumer) defaultDocLister(ctx context.Context, tenant, kb string) ([]s
 	return dao.NewDocumentDAO().ListIDsByKBIDWithOptions(ctx, c.db, dao.DocumentListOptions{KbID: kb})
 }
 
-// recoverDocTypes reconstructs the compile-type and frontend task-type sets a
-// document produced by reading its persisted doc-level products and mapping
-// each product's canonical compilation kind through the
-// shared kind mappings.
-// It is used by RebuildDataset (B1) so the republished completed events carry
-// the variants needed to route the dataset-level re-compile (tree nav, structure
-// merge, wiki merge) — a nil/empty Variants would fall back to the legacy
-// unified path and tree nav could not be rebuilt.
-//
-// KindToVariant (O2a) is a fixed whitelist that HARD-FAILS on unknown kinds: a
-// product whose kind is not in the whitelist is a corrupt/unsupported state and
-// the rebuild must abort (returning an error) rather than silently drop the
-// variant and leave the doc's dataset-level products unrebuilt. A product
-// without an authoritative kind falls back to its reverse-mapped variant (which
-// itself must be whitelist-valid, enforced by KwdToVariant in the Reader). The
-// Both returned slices are sorted and de-duplicated.
-func (c *Consumer) recoverDocTypes(ctx context.Context, tenant, kb, docID string) ([]string, []string, error) {
-	products, err := c.reader.LoadDocProducts(ctx, tenant, kb, docID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("knowledge_compile: recover variants load doc %s: %w", docID, err)
-	}
+// recoverDocTypesFrom maps a document's already-loaded compiled products to its
+// variant and frontend task-type sets. Splitting the mapping from the read lets
+// the rebuild path reuse a single batch read (LoadDocProductsByDocs) instead of
+// one read per document.
+func recoverDocTypesFrom(products []kccommon.Product) ([]string, []string, error) {
 	seenVariants := map[string]struct{}{}
 	seenTaskTypes := map[string]struct{}{}
 	var variants []string
@@ -505,7 +494,7 @@ func (c *Consumer) recoverDocTypes(ctx context.Context, tenant, kb, docID string
 			v, err := kccommon.KindToVariant(p.Kind)
 			if err != nil {
 				// O2a hard failure: do not continue with an incomplete variant set.
-				return nil, nil, fmt.Errorf("knowledge_compile: recover variants doc %s kind %q: %w", docID, p.Kind, err)
+				return nil, nil, fmt.Errorf("knowledge_compile: recover variants kind %q: %w", p.Kind, err)
 			}
 			if _, dup := seenVariants[string(v)]; !dup {
 				seenVariants[string(v)] = struct{}{}
@@ -538,6 +527,43 @@ func (c *Consumer) recoverDocTypes(ctx context.Context, tenant, kb, docID string
 	sort.Strings(variants)
 	taskTypes := sortedTaskTypes(seenTaskTypes)
 	return variants, taskTypes, nil
+}
+
+// docVariantResult holds the recovered compile variants and frontend task types
+// for one document.
+type docVariantResult struct {
+	variants  []string
+	taskTypes []string
+}
+
+// recoverDocVariantsBatch loads the compiled products for the given documents and
+// maps each to its variant/task-type sets. Documents are walked in
+// docProductsBatchSize chunks so the products held in memory at any moment are
+// limited to a single batch instead of the whole KB (the previous loop loaded one
+// document at a time and released it; a single full-KB batch read would retain
+// every document's products — including vectors — until recovery finished).
+func (c *Consumer) recoverDocVariantsBatch(ctx context.Context, tenant, kb string, docs []string) (map[string]docVariantResult, error) {
+	out := make(map[string]docVariantResult, len(docs))
+	for start := 0; start < len(docs); start += docProductsBatchSize {
+		end := start + docProductsBatchSize
+		if end > len(docs) {
+			end = len(docs)
+		}
+		productsByDoc, err := c.reader.LoadDocProductsByDocs(ctx, tenant, kb, docs[start:end])
+		if err != nil {
+			return nil, err
+		}
+		for _, docID := range docs[start:end] {
+			variants, taskTypes, rerr := recoverDocTypesFrom(productsByDoc[docID])
+			if rerr != nil {
+				// O2a hard failure: abort the rebuild so an unknown template kind
+				// cannot leave the doc's dataset-level products unrebuilt.
+				return nil, fmt.Errorf("knowledge_compile: rebuild recover variants %s: %w", docID, rerr)
+			}
+			out[docID] = docVariantResult{variants: variants, taskTypes: taskTypes}
+		}
+	}
+	return out, nil
 }
 
 // filterWikiPageCandidates returns ONLY the wiki page products the dataset-level
@@ -885,10 +911,26 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		return err
 	}
 	entityMerged = append(entityMerged, topicMerged...)
-	if len(wikiDiff.affectedKeys) > 0 {
-		if err := c.deleteMissingScopedWikiPages(ctx, tenant, kb, token, wikiDiff.affectedKeys, entityMerged); err != nil {
+	// Load the dataset's merged wiki pages once and reuse the snapshot for both
+	// the scoped-page deletion and the topic-key seed below, instead of reading
+	// the same pages twice per merge step.
+	var existingPages []kccommon.Product
+	if pageReader, ok := c.reader.(mergedWikiPageReader); ok {
+		existingPages, err = pageReader.LoadMergedWikiPages(ctx, tenant, kb)
+		if err != nil {
 			return err
 		}
+	}
+	deletedIDs := []string{}
+	if len(wikiDiff.affectedKeys) > 0 {
+		deletedIDs, err = c.deleteMissingScopedWikiPages(ctx, tenant, kb, token, wikiDiff.affectedKeys, entityMerged, existingPages)
+		if err != nil {
+			return err
+		}
+	}
+	excluded := make(map[string]struct{}, len(deletedIDs))
+	for _, id := range deletedIDs {
+		excluded[id] = struct{}{}
 	}
 	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.58, "merging_by_slug", fmt.Sprintf("Merging knowledge pages by slug: %d", len(entityMerged)))
 	// Entity pages have stable page identity and must bypass topic-mode KNN and
@@ -905,23 +947,14 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// Diagnostics: after batch dedup, verify the per-doc products still carry
 	// their embedding before the KNN/merge path consumes cand.Vector. If
 	// candidates show 0 vectors while incoming had vectors, Dedup is dropping
-	// them and both the KNN lookups and the merged rows lose embeddings.
-	{
-		incomingVec, candVec := 0, 0
-		for _, p := range incoming {
-			if len(p.Vector) > 0 {
-				incomingVec++
-			}
-		}
-		for _, p := range candidates {
-			if len(p.Vector) > 0 {
-				candVec++
-			}
-		}
+	// them and both the KNN lookups and the merged rows lose embeddings. Gated to
+	// debug: the counting below allocates even in quiet production.
+	if common.IsDebugEnabled() {
+		inVec, candVec := computeDedupVectorAudit(incoming, candidates)
 		common.Info("knowledge_compile: dedup vector audit",
 			zap.String("kb_id", kb),
 			zap.Int("incoming", len(incoming)),
-			zap.Int("incoming_with_vector", incomingVec),
+			zap.Int("incoming_with_vector", inVec),
 			zap.Int("candidates", len(candidates)),
 			zap.Int("candidates_with_vector", candVec))
 	}
@@ -931,17 +964,9 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// against the wiki_page rows WriteMerged emits (they differ when KNN merges a
 	// candidate into an existing merged row, when DecideBatch returns distinct new
 	// rows, or when candidates of the same variant collapse in-memory). This is
-	// what explains "39 wiki_page written vs 21 KNN requests".
-	{
-		byVariant := map[string]int{}
-		var wikiPageSlugs []string
-		for _, cand := range candidates {
-			v := string(cand.Variant)
-			byVariant[v]++
-			if cand.Variant == kccommon.VariantWiki {
-				wikiPageSlugs = append(wikiPageSlugs, candidateIdentity(cand))
-			}
-		}
+	// what explains "39 wiki_page written vs 21 KNN requests". Gated to debug.
+	if common.IsDebugEnabled() {
+		byVariant, wikiPageSlugs := computeCandidatesBreakdown(candidates)
 		common.Info("knowledge_compile: candidates breakdown",
 			zap.String("kb_id", kb),
 			zap.Int("candidates", len(candidates)),
@@ -953,11 +978,6 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// mirroring _struct_doc_storage_dedup_batch. Candidates that KNN-hit
 	// the same existing merged row are grouped so the row is merged/updated once
 	// instead of being rewritten per candidate.
-	type mergeGroup struct {
-		existing   kccommon.Product
-		candidates []kccommon.Product
-		score      float64
-	}
 	groupsByID := make(map[string]*mergeGroup, len(candidates))
 	var (
 		unmatchedMu sync.Mutex
@@ -967,24 +987,10 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// Exact topic recall is independent of page-content KNN. A page can use
 	// different wording from the existing topic while still belonging to the
 	// same topic, so consult the current dataset pages before running KNN.
-	topicPagesByKey := make(map[string]kccommon.Product)
-	if pageReader, ok := c.reader.(mergedWikiPageReader); ok {
-		existingPages, err := pageReader.LoadMergedWikiPages(ctx, tenant, kb)
-		if err != nil {
-			return err
-		}
-		for _, page := range existingPages {
-			if !isTopicPage(page) {
-				continue
-			}
-			key := topicKey(productTopic(page))
-			if key != "" {
-				if _, exists := topicPagesByKey[key]; !exists {
-					topicPagesByKey[key] = page
-				}
-			}
-		}
-	}
+	// Seed with the surviving topic pages (excluding the ones this step just
+	// deleted), reproducing the post-deletion snapshot the previous double-read
+	// produced without a second engine query.
+	topicPagesByKey := buildTopicPagesByKey(existingPages, excluded)
 	// The KNN pass is docengine-bounded (vector search), not CPU-bounded, so we
 	// fan it out across the shared global compilerPool (vCPU-sized). Output order
 	// is irrelevant: merged rows are upserted by their idempotent dataset-level
@@ -1116,25 +1122,13 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		// Diagnostics: summarize the KNN groups before the LLM merge decision so
 		// the reader can see which existing merged rows were hit and by how many
 		// candidates (e.g. whether a "吕布" candidate hit an existing 吕布 row and
-		// was then judged by the LLM).
-		{
-			type groupDump struct {
-				Existing   string   `json:"existing"`
-				Candidates []string `json:"candidates"`
-				Score      float64  `json:"score"`
-			}
-			dumps := make([]groupDump, 0, len(groupsByID))
-			for _, g := range groupsByID {
-				cands := make([]string, 0, len(g.candidates))
-				for _, cand := range g.candidates {
-					cands = append(cands, candidateIdentity(cand))
-				}
-				dumps = append(dumps, groupDump{Existing: candidateIdentity(g.existing), Candidates: cands, Score: g.score})
-			}
+		// was then judged by the LLM). Gated to debug: the slice/map construction
+		// below allocates even in quiet production and is only useful when tracing.
+		if common.IsDebugEnabled() {
 			common.Info("knowledge_compile: KNN groups for DecideBatch",
 				zap.String("kb_id", kb),
 				zap.Int("groups", len(groupsByID)),
-				zap.Any("groups_detail", dumps))
+				zap.Any("groups_detail", computeKNNGroupDumps(groupsByID)))
 		}
 		batched := make([]MergeGroup, 0, len(groupsByID))
 		for _, g := range groupsByID {
@@ -1404,11 +1398,16 @@ type mergedWikiPageDeleter interface {
 	DeleteMergedWikiPages(ctx context.Context, tenant, kb string, ids []string) error
 }
 
-func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb, token string, affected map[string]struct{}, current []kccommon.Product) error {
-	reader, readerOK := c.reader.(mergedWikiPageReader)
+// deleteMissingScopedWikiPages removes the merged wiki pages whose contribution
+// was dropped by this batch (present in affectedKeys but no longer in current).
+// It takes the already-loaded merged pages (existingPages) so the merge step can
+// reuse a single LoadMergedWikiPages snapshot; the caller passes the same slice
+// it uses to seed the topic-key map, excluding the returned deleted IDs.
+func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb, token string, affected map[string]struct{}, current, existingPages []kccommon.Product) ([]string, error) {
+	_, readerOK := c.reader.(mergedWikiPageReader)
 	deleter, writerOK := c.writer.(mergedWikiPageDeleter)
 	if !readerOK || !writerOK {
-		return fmt.Errorf("knowledge_compile: scoped Wiki cleanup is unsupported")
+		return nil, fmt.Errorf("knowledge_compile: scoped Wiki cleanup is unsupported")
 	}
 	present := make(map[string]struct{}, len(current))
 	for _, page := range current {
@@ -1416,12 +1415,8 @@ func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb,
 			present[key] = struct{}{}
 		}
 	}
-	existing, err := reader.LoadMergedWikiPages(ctx, tenant, kb)
-	if err != nil {
-		return err
-	}
 	ids := make([]string, 0)
-	for _, page := range existing {
+	for _, page := range existingPages {
 		key := wikiPageMergeKey(page)
 		if _, scoped := affected[key]; !scoped {
 			continue
@@ -1431,11 +1426,39 @@ func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb,
 		}
 	}
 	if len(ids) == 0 {
-		return nil
+		return nil, nil
 	}
-	return c.withWriteLock(ctx, kb, token, func() error {
+	if err := c.withWriteLock(ctx, kb, token, func() error {
 		return deleter.DeleteMergedWikiPages(ctx, tenant, kb, ids)
-	})
+	}); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// buildTopicPagesByKey indexes the topic-mode merged pages by their topic key,
+// skipping any page whose ID is in excludedIDs. excludedIDs are the page IDs this
+// process deletes in the same merge step; skipping them reproduces the
+// post-deletion snapshot the merge step previously obtained via a second
+// LoadMergedWikiPages call, without a second read.
+func buildTopicPagesByKey(pages []kccommon.Product, excludedIDs map[string]struct{}) map[string]kccommon.Product {
+	out := make(map[string]kccommon.Product)
+	for _, page := range pages {
+		if !isTopicPage(page) {
+			continue
+		}
+		if _, del := excludedIDs[page.ID]; del {
+			continue
+		}
+		key := topicKey(productTopic(page))
+		if key == "" {
+			continue
+		}
+		if _, exists := out[key]; !exists {
+			out[key] = page
+		}
+	}
+	return out
 }
 
 func refreshWikiProductVectors(ctx context.Context, tenant string, products []kccommon.Product) []kccommon.Product {
@@ -1888,4 +1911,84 @@ func (c *Consumer) removeNavLocked(ctx context.Context, tenant, kb, token string
 		}
 		return nil
 	})
+}
+
+// mergeGroup groups the KNN/LLM merge candidates that resolve to the same
+// existing merged row, so the row is merged/updated once instead of being
+// rewritten per candidate.
+type mergeGroup struct {
+	existing   kccommon.Product
+	candidates []kccommon.Product
+	score      float64
+}
+
+// groupDump is the debug-only serialization of a mergeGroup for the KNN
+// pre-LLM-merge diagnostic log.
+type groupDump struct {
+	Existing   string   `json:"existing"`
+	Candidates []string `json:"candidates"`
+	Score      float64  `json:"score"`
+}
+
+// computeDedupVectorAudit counts how many incoming and post-dedup candidates
+// still carry an embedding, surfacing whether Dedup is dropping vectors before
+// the KNN/merge path consumes cand.Vector.
+func computeDedupVectorAudit(incoming, candidates []kccommon.Product) (int, int) {
+	incomingVec, candVec := 0, 0
+	for _, p := range incoming {
+		if len(p.Vector) > 0 {
+			incomingVec++
+		}
+	}
+	for _, p := range candidates {
+		if len(p.Vector) > 0 {
+			candVec++
+		}
+	}
+	return incomingVec, candVec
+}
+
+// computeCandidatesBreakdown breaks the KNN-input set down by variant and lists
+// the wiki_page slugs, so a reader can reconcile candidate counts against the
+// merged rows WriteMerged emits.
+func computeCandidatesBreakdown(candidates []kccommon.Product) (map[string]int, []string) {
+	byVariant := map[string]int{}
+	var wikiPageSlugs []string
+	for _, cand := range candidates {
+		v := string(cand.Variant)
+		byVariant[v]++
+		if cand.Variant == kccommon.VariantWiki {
+			wikiPageSlugs = append(wikiPageSlugs, candidateIdentity(cand))
+		}
+	}
+	return byVariant, wikiPageSlugs
+}
+
+// computeDocProductsVectorAudit counts how many loaded per-doc products carry an
+// embedding and the (deduped) vector dimensions, surfacing when
+// VectorFromChunkMap fails to restore the vector.
+func computeDocProductsVectorAudit(products []kccommon.Product) (int, map[int]int) {
+	vecCount := 0
+	dims := map[int]int{}
+	for _, p := range products {
+		if dim := len(p.Vector); dim > 0 {
+			vecCount++
+			dims[dim]++
+		}
+	}
+	return vecCount, dims
+}
+
+// computeKNNGroupDumps serializes the KNN groups before the LLM merge decision
+// for the debug-only diagnostic log.
+func computeKNNGroupDumps(groups map[string]*mergeGroup) []groupDump {
+	dumps := make([]groupDump, 0, len(groups))
+	for _, g := range groups {
+		cands := make([]string, 0, len(g.candidates))
+		for _, cand := range g.candidates {
+			cands = append(cands, candidateIdentity(cand))
+		}
+		dumps = append(dumps, groupDump{Existing: candidateIdentity(g.existing), Candidates: cands, Score: g.score})
+	}
+	return dumps
 }

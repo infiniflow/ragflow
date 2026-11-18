@@ -28,9 +28,7 @@ import (
 
 // Variables holds all runtime variables that can be changed during system operation
 // Unlike Config, these can be modified at runtime
-type Variables struct {
-	//SecretKey string `json:"secret_key"`
-}
+type Variables struct{}
 
 // VariableStore interface for persistent storage (e.g., Redis)
 type VariableStore interface {
@@ -61,32 +59,10 @@ func InitVariables(store VariableStore) error {
 	variablesOnce.Do(func() {
 		globalVariables = &Variables{}
 
-		//// secret key
-		//generatedKey, err := utility.GenerateSecretKey()
-		//if err != nil {
-		//	initErr = fmt.Errorf("failed to generate secret key: %w", err)
-		//}
-		//
-		//// Initialize SecretKey
-		//secretKey, err := GetOrCreateKey(store, SecretKeyRedisKey, generatedKey)
-		//if err != nil {
-		//	initErr = fmt.Errorf("failed to initialize secret key: %w", err)
-		//} else {
-		//	globalVariables.SecretKey = secretKey
-		//	common.Info("Secret key initialized from store")
-		//}
-
 		common.Info("Server variables initialized successfully")
 	})
 	return initErr
 }
-
-// GetVariables returns the global variables instance
-//func GetVariables() *Variables {
-//	variablesMu.RLock()
-//	defer variablesMu.RUnlock()
-//	return globalVariables
-//}
 
 // GetSecretKey returns the current secret key
 func GetSecretKey(ctx context.Context, store VariableStore) (string, error) {
@@ -105,16 +81,6 @@ func GetSecretKey(ctx context.Context, store VariableStore) (string, error) {
 	}
 	return secretKey, nil
 }
-
-// SetSecretKey updates the secret key at runtime
-//func SetSecretKey(key string) {
-//	variablesMu.Lock()
-//	defer variablesMu.Unlock()
-//	if globalVariables != nil {
-//		globalVariables.SecretKey = key
-//		common.Info("Secret key updated at runtime")
-//	}
-//}
 
 // GetOrCreateKey gets a key from store, or creates it if not exists
 // - If key exists in store, returns the stored value
@@ -190,7 +156,6 @@ func RefreshVariables(ctx context.Context, store VariableStore) error {
 		return err
 	}
 	if secretKey != "" {
-		//globalVariables.SecretKey = secretKey
 		common.Info("Secret key refreshed from store")
 	}
 
@@ -238,28 +203,6 @@ func (w *VariableWatcher) Stop() {
 	close(w.stopChan)
 	w.wg.Wait()
 	common.Info("Variable watcher stopped")
-}
-
-// SaveToStorage saves current variables to persistent storage
-func SaveToStorage(store VariableStore) error {
-	if store == nil {
-		return fmt.Errorf("store is nil")
-	}
-
-	variablesMu.RLock()
-	defer variablesMu.RUnlock()
-
-	if globalVariables == nil {
-		return fmt.Errorf("variables not initialized")
-	}
-
-	// Save SecretKey
-	//if !store.Set(SecretKeyRedisKey, globalVariables.SecretKey, SecretKeyTTL) {
-	//	return fmt.Errorf("failed to save secret key to store")
-	//}
-
-	common.Info("Variables saved to storage")
-	return nil
 }
 
 // WithTimeout creates a context with timeout for variable operations

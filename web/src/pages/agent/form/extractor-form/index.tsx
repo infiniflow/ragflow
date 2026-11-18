@@ -48,7 +48,7 @@ import { memo, useCallback, useEffect, useMemo } from 'react';
 import { useForm, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { initialExtractorValues } from '../../constant/pipeline';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -169,13 +169,13 @@ const ExtractorForm = ({
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
 
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
 
   const tagFileId = useWatch({
     control: form.control,
     name: 'tags.tag_file_id',
   });
-  const { treeData, loadData } = useTagFileTree(tagFileId, ownerTenantId);
+  const { treeData, loadData } = useTagFileTree(tagFileId, resourceTenantId);
 
   const keywordsEnabledRaw = useWatch({
     control: form.control,
@@ -263,7 +263,7 @@ const ExtractorForm = ({
     <Form {...form}>
       <FormWrapper>
         <LargeModelFormField
-          ownerTenantId={ownerTenantId}
+          resourceTenantId={resourceTenantId}
         ></LargeModelFormField>
 
         <div className="space-y-4">

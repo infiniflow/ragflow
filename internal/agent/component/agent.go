@@ -1638,22 +1638,11 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	apiKey := p.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
 	cm := models.NewChatModel(d, &modelID, cfg)
-	// Build ChatConfig when a generation parameter or Thinking is set.
-	var chatCfg *models.ChatConfig
-	if p.TopP != nil || p.Thinking != "" || p.MaxTokens != nil || p.Temperature != nil {
-		chatCfg = &models.ChatConfig{
-			TopP:        p.TopP,
-			MaxTokens:   p.MaxTokens,
-			Temperature: p.Temperature,
-		}
-		switch p.Thinking {
-		case "enabled":
-			t := true
-			chatCfg.Thinking = &t
-		case "disabled":
-			f := false
-			chatCfg.Thinking = &f
-		}
+	chatCfg := &models.ChatConfig{
+		TopP:        p.TopP,
+		MaxTokens:   p.MaxTokens,
+		Temperature: p.Temperature,
+		Thinking:    new(p.Thinking == "enabled"),
 	}
 	return models.NewEinoChatModel(cm, chatCfg), nil
 }
@@ -2027,8 +2016,11 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		p.Temperature = &f
 	}
 	gateSampler(inputs, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
-	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
+	if v, ok := stringFrom(inputs, "thinking"); ok {
 		p.Thinking = v
+	}
+	if p.Thinking == "" || p.Thinking == "default" {
+		p.Thinking = "disabled"
 	}
 	if v, ok := intFrom(inputs, "max_rounds"); ok {
 		p.MaxRounds = v

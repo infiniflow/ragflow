@@ -66,6 +66,7 @@ func createChatListTestChat(t *testing.T, db *gorm.DB, id, tenantID, name string
 	status := string(entity.StatusValid)
 	chat := &entity.Chat{
 		ID:           id,
+		UserID:       tenantID,
 		TenantID:     tenantID,
 		Name:         &name,
 		LLMID:        "model-a",
@@ -273,6 +274,7 @@ func TestChatServiceListChatsPaginatesOwnerBranch(t *testing.T) {
 		status := string(entity.StatusValid)
 		chat := &entity.Chat{
 			ID:           fmt.Sprintf("chat-%d", i),
+			UserID:       "user-1",
 			TenantID:     "user-1",
 			Name:         &name,
 			LLMID:        "model-a",

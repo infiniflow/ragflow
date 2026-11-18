@@ -94,6 +94,9 @@ export interface IAddedModel {
   instance_name: string;
   tenant_id?: string;
   tenant_name?: string;
+  user_id?: string;
+  nickname?: string;
+  features?: string[];
 }
 
 export interface IInstanceModel {
@@ -132,4 +135,5 @@ export interface IDefaultModel {
   model_name: string;
   model_provider: string;
   model_type: string;
+  tenant_id?: string;
 }

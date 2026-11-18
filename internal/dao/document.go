@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao/transaction"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"strings"
 
 	"gorm.io/gorm"
@@ -127,6 +128,7 @@ type DocumentListOptions struct {
 	Name               string
 	DocIDs             []string
 	DocIDFilterApplied bool
+	AccessScope        *permission.QueryScope
 	CreateTimeFrom     int64
 	CreateTimeTo       int64
 	OrderBy            string
@@ -310,6 +312,9 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 	}
 
 	query = query.Where(column("kb_id")+" = ?", opts.KbID)
+	if opts.AccessScope != nil {
+		query = opts.AccessScope.Apply(query)
+	}
 	if strings.TrimSpace(opts.Keywords) != "" {
 		query = query.Where("LOWER("+column("name")+") LIKE ?", "%"+strings.ToLower(strings.TrimSpace(opts.Keywords))+"%")
 	}

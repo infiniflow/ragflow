@@ -39,11 +39,25 @@ type parserSetupConfigurer interface {
 	ConfigureFromSetup(setup map[string]any)
 }
 
+// resolveParserFamily maps an already-selected parser type to its setup key.
+// A type name must not be reinterpreted as another filename extension.
 func resolveParserFamily(fileType utility.FileType) string {
-	if family := pythonFamilyName(string(fileType)); family != "" {
-		return family
+	switch fileType {
+	case utility.FileTypePPT, utility.FileTypePPTX:
+		return "slides"
+	case utility.FileTypeXLS, utility.FileTypeXLSX, utility.FileTypeCSV:
+		return "spreadsheet"
+	case utility.FileTypeMarkdown:
+		return "markdown"
+	case utility.FileTypeTXT:
+		return "text&code"
+	case utility.FileTypeVISUAL:
+		return "image"
+	case utility.FileTypeAURAL:
+		return "audio"
+	default:
+		return string(fileType)
 	}
-	return string(fileType)
 }
 
 func configureParserFromSetups(p any, fileType utility.FileType, setups map[string]schema.ParserSetup) {
@@ -172,7 +186,7 @@ func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, wi
 //
 // or the family name ("markdown"); both are normalized
 //
-//	   to the extension form via the pythonFamilyName / familyToExt
+//	   to the extension form via utility.GetFileType / familyToExt
 //	   lookup tables below.
 //	2. inputs["name"] — the resolved source filename.
 //	3. inputs["file"].name — fallback for callers that only supply a
@@ -202,7 +216,7 @@ func fileTypeFromInputs(inputs map[string]any) utility.FileType {
 		// Family-name lookup catches family identifiers
 		// ("slides", "spreadsheet", "text&code") that aren't valid
 		// file extensions.
-		if ft := familyToExt(pythonFamilyName(lower)); ft != utility.FileTypeOTHER {
+		if ft := familyToExt(lower); ft != utility.FileTypeOTHER {
 			return ft
 		}
 	}
@@ -217,9 +231,8 @@ func fileTypeFromInputs(inputs map[string]any) utility.FileType {
 	return utility.FileTypeOTHER
 }
 
-// familyToExt maps the family name back to the utility
-// extension form. Returns FileTypeOTHER for families whose parser
-// isn't yet wired (audio, video, image, email, epub, …).
+// familyToExt maps a setup family hint to its parser type. Unknown hints
+// return FileTypeOTHER.
 func familyToExt(family string) utility.FileType {
 	switch family {
 	case "pdf":
@@ -228,7 +241,7 @@ func familyToExt(family string) utility.FileType {
 		return utility.FileTypeDOC
 	case "docx":
 		return utility.FileTypeDOCX
-	case "slides":
+	case "slides", "pages":
 		return utility.FileTypePPTX
 	case "spreadsheet":
 		return utility.FileTypeXLSX
@@ -248,56 +261,12 @@ func familyToExt(family string) utility.FileType {
 		return utility.FileTypeVIDEO
 	case "email":
 		return utility.FileTypeEMAIL
-	case "audio":
+	case "audio", "aural":
 		return utility.FileTypeAURAL
 	case "picture", "image", "visual":
 		return utility.FileTypeVISUAL
 	}
 	return utility.FileTypeOTHER
-}
-
-// pythonFamilyName normalises a free-form file-type hint to the
-// family identifier used by ParserComponent setups
-// Returns "" when the hint is unknown.
-func pythonFamilyName(raw string) string {
-	if utility.IsVideoExtension(raw) || raw == "video" {
-		return "video"
-	}
-	switch raw {
-	case "pdf":
-		return "pdf"
-	case "doc":
-		return "doc"
-	case "docx":
-		return "docx"
-	case "ppt", "pptx", "pages", "slides":
-		return "slides"
-	case "xls", "xlsx", "spreadsheet":
-		return "spreadsheet"
-	case "csv":
-		return "spreadsheet"
-	case "html", "htm":
-		return "html"
-	case "md", "markdown", "mdx":
-		return "markdown"
-	case "epub":
-		return "epub"
-	case "json", "jsonl", "ldjson":
-		return "json"
-	case "text&code", "txt", "py", "js", "java", "c", "cpp", "h", "php",
-		"go", "ts", "sh", "cs", "kt", "sql":
-		return "text&code"
-	case "eml", "msg", "email":
-		return "email"
-	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
-		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus", "aural":
-		return "audio"
-	case "visual", "picture", "image",
-		"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif",
-		"webp", "svg", "ico", "avif", "heic", "apng":
-		return "image"
-	}
-	return ""
 }
 
 // ParserFileFamily normalises a free-form file-type/extension hint to the
@@ -307,7 +276,14 @@ func pythonFamilyName(raw string) string {
 // executor that injects the debug page cap into override_params) that need
 // to build the canonical ParserConfig[cpnID][family]["pages"] shape.
 func ParserFileFamily(ext string) string {
-	return pythonFamilyName(ext)
+	fileType := utility.GetFileType("file." + ext)
+	if fileType == utility.FileTypeOTHER {
+		fileType = familyToExt(ext)
+	}
+	if fileType == utility.FileTypeOTHER {
+		return ""
+	}
+	return resolveParserFamily(fileType)
 }
 
 // buildParserOutputs assembles the runtime output map from the

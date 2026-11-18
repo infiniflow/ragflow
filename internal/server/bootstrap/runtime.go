@@ -29,21 +29,17 @@ import (
 	"ragflow/internal/utility"
 )
 
-// SetLogger (re)initializes the process logger for the given server name using
-// the configured log settings plus any CLI overrides carried by args. It was
-// previously a private helper in package main; it lives here so the per-mode
-// runners (now in their own packages) can call it without reaching into main.
-func SetLogger(serverName string, arguments *ServerArgs) {
+// SetLogger opens the configured log destinations and keeps startup INFO logs visible.
+func SetLogger(serverName string, logLevel string) {
 	// log filename
 	logFileName := fmt.Sprintf("%s.log", serverName)
 
 	globalConfig := server.GetConfig()
 	logConfig := globalConfig.GetLogConfig()
 
-	// Reinitialize logger with the configured level and CLI overrides.
-	logLevel := SelectedLogLevel(arguments, logConfig.Level)
-
-	globalConfig.SetLogLevel(logLevel)
+	if common.LogLevelHigherThanInfo(logLevel) {
+		logLevel = "info"
+	}
 
 	fileOut := common.FileOutput{
 		Filename:   logFileName,
@@ -56,7 +52,7 @@ func SetLogger(serverName string, arguments *ServerArgs) {
 
 	common.SyncLog()
 	if err := common.InitLogger(logLevel, fileOut, serverName); err != nil {
-		common.Error("Failed to reinitialize logger with configured level", err)
+		common.Error("Failed to initialize startup logger", err)
 	}
 }
 
@@ -76,26 +72,26 @@ func SetIngestLog(serverName string) {
 
 // StartHeartbeat initializes and starts the heartbeat reporter to the admin
 // server. It is shared by the API, ingestor, and syncer server modes. The
-// caller must defer the returned *utility.ScheduledTask's Stop() method.
+// caller must stop and wait for the returned task before closing shared resources.
 func StartHeartbeat(serverType common.ServerType, serverID string, port int, heartBeatInterval time.Duration) *utility.ScheduledTask {
 	localIP, err := utility.GetLocalIP()
 	if err != nil {
 		common.Fatal("fail to get local ip address")
 	}
 
-	service.AdminServiceClient = service.NewAdminClient(
+	client := service.NewAdminClient(
 		serverType,
 		serverID,
 		localIP,
 		port,
 	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+	if err = client.InitHTTPClient(); err != nil {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 		return nil
 	}
 
 	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval, func() {
-		if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+		if err := client.SendHeartbeat(); err == nil {
 			local.SetAdminStatus(local.Available, "")
 		} else {
 			local.SetAdminStatus(local.Unavailable, err.Error())

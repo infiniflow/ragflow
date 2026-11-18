@@ -735,6 +735,7 @@ func TestUpdateSession_Success(t *testing.T) {
 		DialogID: "chat-1",
 		Name:     strPtr("old"),
 		Message:  json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
+		Source:   entity.ChatSessionSourceChatChannel,
 	}
 	store.dialogExists["user-1|chat-1"] = true
 
@@ -750,6 +751,7 @@ func TestUpdateSession_Success(t *testing.T) {
 		"name":    longName,
 		"user_id": "spoof",
 		"chat_id": "spoof-chat",
+		"source":  entity.ChatSessionSourceNormal,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -768,6 +770,12 @@ func TestUpdateSession_Success(t *testing.T) {
 	}
 	if _, ok := store.updateCalled[0].updates["chat_id"]; ok {
 		t.Fatalf("unexpected chat_id update: %#v", store.updateCalled[0].updates)
+	}
+	if _, ok := store.updateCalled[0].updates["source"]; ok {
+		t.Fatalf("unexpected source update: %#v", store.updateCalled[0].updates)
+	}
+	if resp.Source != entity.ChatSessionSourceChatChannel {
+		t.Fatalf("source=%q, want %q", resp.Source, entity.ChatSessionSourceChatChannel)
 	}
 	if !reflect.DeepEqual(resp.Messages, []map[string]interface{}{{"role": "assistant", "content": "hello"}}) {
 		t.Fatalf("messages=%#v", resp.Messages)
@@ -1513,6 +1521,7 @@ func TestBuildSessionPayload_EmptyCollectionsEncodeAsEmptyArrays(t *testing.T) {
 		ID:       "session-1",
 		DialogID: "chat-1",
 		Message:  nil,
+		Source:   entity.ChatSessionSourceChatChannel,
 	}, nil, false)
 
 	if payload.Messages == nil {
@@ -1525,6 +1534,9 @@ func TestBuildSessionPayload_EmptyCollectionsEncodeAsEmptyArrays(t *testing.T) {
 	}
 	if !strings.Contains(string(body), `"messages":[]`) {
 		t.Fatalf("messages did not encode as empty array: %s", string(body))
+	}
+	if !strings.Contains(string(body), `"source":"chat_channel"`) {
+		t.Fatalf("source did not encode as chat_channel: %s", string(body))
 	}
 	if strings.Contains(string(body), `"reference":`) {
 		t.Fatalf("unexpected session reference: %s", string(body))

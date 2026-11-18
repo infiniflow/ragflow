@@ -586,7 +586,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			}
 		}
 		if len(b.Vector) > 0 {
-			row["q_"+fmt.Sprintf("%d", len(b.Vector))+"_vec"] = f32ToF64Slice(b.Vector)
+			row[common.VectorColumnName(len(b.Vector))] = f32ToF64Slice(b.Vector)
 		}
 		rows = append(rows, row)
 	}
@@ -1047,7 +1047,7 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 	// and the Reader can reconstruct them (otherwise the vector is silently
 	// dropped and KNN search returns nothing for merged rows).
 	if dim := len(p.Vector); dim > 0 {
-		m[fmt.Sprintf("q_%d_vec", dim)] = p.Vector
+		m[common.VectorColumnName(dim)] = p.Vector
 	}
 	return m
 }

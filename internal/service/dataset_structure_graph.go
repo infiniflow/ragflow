@@ -320,20 +320,7 @@ func endpointTerms(value string) []string {
 	if value == "" {
 		return nil
 	}
-	return sortedUnique([]string{value, strings.ToLower(value)})
-}
-
-func sortedUnique(in []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, s := range in {
-		if s != "" && !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	sort.Strings(out)
-	return out
+	return common.DeduplicateSorted([]string{value, strings.ToLower(value)})
 }
 
 // normalizeRelationEndpoints aligns relation endpoints to returned entity ids.
