@@ -67,6 +67,16 @@ func TestAPITokenLimitConcurrentMySQL(t *testing.T) {
 	if err := db.Create(&entity.SystemSettings{Name: "api_key.max_count", Value: "24", Source: "admin", DataType: "integer"}).Error; err != nil {
 		t.Fatal(err)
 	}
+	// MySQL matches mixed-case names, so they must retain quota validation.
+	if err := db.Model(&entity.SystemSettings{}).Where("name = ?", "api_key.max_count").Updates(map[string]any{"name": "Api_Key.Max_Count", "value": "0"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := GetAPITokenLimit(t.Context(), db); err == nil {
+		t.Fatal("accepted non-positive limit through a mixed-case setting name")
+	}
+	if err := db.Model(&entity.SystemSettings{}).Where("name = ?", "api_key.max_count").Update("value", "24").Error; err != nil {
+		t.Fatal(err)
+	}
 	limit, err := GetAPITokenLimit(t.Context(), db)
 	if err != nil {
 		t.Fatal(err)
