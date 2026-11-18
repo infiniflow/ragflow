@@ -1964,34 +1964,39 @@ func mineruRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APICo
 	if value == "" {
 		value = os.Getenv("MINERU_TIMEOUT_SECONDS")
 	}
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return mineruDefaultTimeout
+	if timeout, ok := parseOCRRequestTimeout(strings.TrimSpace(value)); ok {
+		return timeout
 	}
+	return mineruDefaultTimeout
+}
+
+// parseOCRRequestTimeout reads a timeout given as seconds or as a duration string and clamps it
+// to [1s, 24h]. It reports false for an empty, non-positive, or unparseable value.
+func parseOCRRequestTimeout(value string) (time.Duration, bool) {
 	minSec := parser.MinMinerURequestTimeout.Seconds()
 	maxSec := parser.MaxMinerURequestTimeout.Seconds()
 	if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
 		if float64(seconds) < minSec {
-			return parser.MinMinerURequestTimeout
+			return parser.MinMinerURequestTimeout, true
 		}
 		if float64(seconds) > maxSec {
-			return parser.MaxMinerURequestTimeout
+			return parser.MaxMinerURequestTimeout, true
 		}
-		return clampMinerUTimeout(time.Duration(seconds) * time.Second)
+		return clampMinerUTimeout(time.Duration(seconds) * time.Second), true
 	}
 	if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds > 0 {
 		if seconds < minSec {
-			return parser.MinMinerURequestTimeout
+			return parser.MinMinerURequestTimeout, true
 		}
 		if seconds > maxSec {
-			return parser.MaxMinerURequestTimeout
+			return parser.MaxMinerURequestTimeout, true
 		}
-		return clampMinerUTimeout(time.Duration(seconds * float64(time.Second)))
+		return clampMinerUTimeout(time.Duration(seconds * float64(time.Second))), true
 	}
 	if d, err := time.ParseDuration(value); err == nil && d > 0 {
-		return clampMinerUTimeout(d)
+		return clampMinerUTimeout(d), true
 	}
-	return mineruDefaultTimeout
+	return 0, false
 }
 
 // mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
