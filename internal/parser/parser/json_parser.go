@@ -96,14 +96,12 @@ func parseJSONContent(text string) []map[string]any {
 		return parseJSONArray(trimmed)
 	}
 
-	// 2. Try single JSON object: {...}
+	// 2. Try single JSON object: {...}. Parse once with the number-preserving
+	// decoder; the standard-library pre-probe was redundant (both decoders
+	// accept the same top-level object syntax) and doubled the cost.
 	if strings.HasPrefix(trimmed, "{") {
-		// Prefer parsing as a single JSON object first (matches
-		// Python's json.loads(txt) whole-document test). Only fall
-		// back to JSONL when that fails and the content still looks
-		// line-delimited.
-		if err := json.Unmarshal([]byte(trimmed), &map[string]any{}); err == nil {
-			return parseSingleJSONObject(trimmed)
+		if obj, ok := parseSingleJSONObjectValue(trimmed); ok {
+			return singleObjectItems(obj)
 		}
 		if isJSONL(trimmed) {
 			return parseJSONLines(trimmed)
@@ -171,12 +169,18 @@ func parseJSONArray(text string) []map[string]any {
 	return items
 }
 
-// parseSingleJSONObject unmarshals a single JSON object and emits one item.
-func parseSingleJSONObject(text string) []map[string]any {
+// parseSingleJSONObjectValue unmarshals one JSON object with the
+// number-preserving decoder, returning (value, true) on success.
+func parseSingleJSONObjectValue(text string) (map[string]any, bool) {
 	var obj map[string]any
 	if err := unmarshalJSON([]byte(text), &obj); err != nil {
-		return []map[string]any{{"text": text, "doc_type_kwd": "text"}}
+		return nil, false
 	}
+	return obj, true
+}
+
+// singleObjectItems renders a decoded object into the single text item.
+func singleObjectItems(obj map[string]any) []map[string]any {
 	b, err := marshalJSON(obj)
 	if err != nil {
 		return []map[string]any{{"text": fmt.Sprintf("%v", obj), "doc_type_kwd": "text"}}

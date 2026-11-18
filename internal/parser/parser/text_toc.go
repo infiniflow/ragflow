@@ -68,8 +68,26 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 	if rules.entry != nil {
 		return removeTOCEntryList(items, heading, clean, rules.entry)
 	}
+	// Logical-deletion view: mark entries as dropped instead of doing an O(n)
+	// append-shift per removed entry, then compact once at the end. The loop
+	// below reads items[i] through the alive view, preserving the exact
+	// index semantics of the original in-place delete loop.
+	alive := make([]bool, len(items))
+	for i := range alive {
+		alive[i] = true
+	}
+	next := func(from int) int {
+		for from < len(items) && !alive[from] {
+			from++
+		}
+		return from
+	}
 	i := 0
 	for i < len(items) {
+		i = next(i)
+		if i >= len(items) {
+			break
+		}
 		text := itemText(items[i])
 		// Strip @@ suffix and whitespace before matching.
 		normalized := whitespacePattern.ReplaceAllString(clean(strings.SplitN(text, "@@", 2)[0]), "")
@@ -78,15 +96,15 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 			continue
 		}
 		// Drop the TOC heading.
-		items = append(items[:i], items[i+1:]...)
-		if i >= len(items) {
+		alive[i] = false
+		if i = next(i); i >= len(items) {
 			break
 		}
 		// Determine the prefix from the entry right after the heading.
 		prefix := tocPrefix(clean(itemText(items[i])), eng)
 		for prefix == "" {
-			items = append(items[:i], items[i+1:]...)
-			if i >= len(items) {
+			alive[i] = false
+			if i = next(i); i >= len(items) {
 				break
 			}
 			prefix = tocPrefix(clean(itemText(items[i])), eng)
@@ -95,8 +113,8 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 			break
 		}
 		// Drop the first TOC entry (the one that supplied the prefix).
-		items = append(items[:i], items[i+1:]...)
-		if i >= len(items) {
+		alive[i] = false
+		if i = next(i); i >= len(items) {
 			break
 		}
 		// Drop up to 128 following entries that start with prefix.
@@ -105,15 +123,28 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 			limit = len(items)
 		}
 		for j := i; j < limit; j++ {
+			if !alive[j] {
+				continue
+			}
 			if !strings.HasPrefix(clean(itemText(items[j])), prefix) {
 				continue
 			}
 			// Drop entries [i, j).
-			items = append(items[:i], items[j:]...)
+			for k := i; k < j; k++ {
+				alive[k] = false
+			}
 			break
 		}
 	}
-	return items
+	// Single write-index compaction preserves the original relative order.
+	w := 0
+	for i := range items {
+		if alive[i] {
+			items[w] = items[i]
+			w++
+		}
+	}
+	return items[:w]
 }
 
 // removeTOCEntryList drops a matched TOC heading and the entry items that
