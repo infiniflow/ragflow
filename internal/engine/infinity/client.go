@@ -26,6 +26,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -45,6 +46,12 @@ type infinityClient struct {
 	getDatabaseSeq      atomic.Uint64
 	getDatabaseInflight atomic.Int64
 
+	// dbConns maps the *infinity.Database handed to a caller back to the pooled
+	// connection it was checked out from, so a call that fails at the transport
+	// level can drop that exact socket (see dropConnectionFor). Entries live only
+	// for the duration of a checkout.
+	dbConns sync.Map
+
 	// Original URI from config, used by RunSQL to extract the host.
 	hostURI string
 
@@ -60,9 +67,9 @@ type infinityClient struct {
 // to this rather than becoming unbounded.
 const defaultPoolMaxSize = 4
 
-// defaultMaxIdleConnections caps how many established connections the pool
-// keeps idle for reuse, independent of the pool's hard open cap (MaxOpen).
-// It bounds idle socket retention on the Infinity server when MaxOpen is large.
+// defaultMaxIdleConnections is the idle cap (MaxIdle) for the Go Infinity
+// connection pool. Invalid or missing INFINITY_POOL_MAX_IDLE values fall back
+// to this rather than becoming unbounded.
 const defaultMaxIdleConnections = 2
 
 // defaultOperationTimeout bounds the total duration of a single pool operation
@@ -87,6 +94,26 @@ func resolvePoolMaxSize() int {
 		return defaultPoolMaxSize
 	}
 	return v
+}
+
+// resolvePoolMaxIdle reads INFINITY_POOL_MAX_IDLE and falls back to defaultMaxIdleConnections.
+// A value < 1 is rejected so idle retention stays bounded rather than unbounded.
+// The result is clamped to maxOpen so MaxIdle never exceeds the pool's hard open cap.
+func resolvePoolMaxIdle(maxOpen int) int {
+	idle := defaultMaxIdleConnections
+	if raw := os.Getenv("INFINITY_POOL_MAX_IDLE"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 1 {
+			common.Warn("INFINITY_POOL_MAX_IDLE must be a positive integer; using default",
+				zap.String("value", raw), zap.Int("default", defaultMaxIdleConnections))
+		} else {
+			idle = v
+		}
+	}
+	if idle > maxOpen {
+		idle = maxOpen
+	}
+	return idle
 }
 
 // NewInfinityClient creates a new Infinity client using the SDK
@@ -138,15 +165,10 @@ func NewInfinityClient(cfg config.InfinityConfig) (*infinityClient, error) {
 	common.Info("Connecting to Infinity")
 	uri := infinity.NetworkAddress{IP: host, Port: port}
 	maxOpen := resolvePoolMaxSize()
+	maxIdle := resolvePoolMaxIdle(maxOpen)
 	var pool *infinity.ConnectionPool
 	var err error
 	for i := 0; i < 24; i++ {
-		// Cap idle connections retained for reuse; never exceed the pool's
-		// hard open cap (MaxOpen).
-		maxIdle := maxOpen
-		if maxIdle > defaultMaxIdleConnections {
-			maxIdle = defaultMaxIdleConnections
-		}
 		poolCfg := infinity.DefaultConnectionPoolConfig(uri)
 		// Don't pre-open connections at process startup (InitialSize=0);
 		// connections are created lazily on first use. Keep MaxIdle so that
@@ -314,10 +336,15 @@ func (c *infinityClient) checkoutDatabase(ctx context.Context, caller string) (*
 			zap.Duration("elapsed", elapsed),
 			zap.Error(err),
 		)
+		if isConnectionLevelError(err) {
+			dropConnection(conn, caller)
+		}
 		release()
 		return nil, nil, err
 	}
+	c.dbConns.Store(db, conn)
 	wrappedRelease := func() {
+		c.dbConns.Delete(db)
 		inflight := c.getDatabaseInflight.Add(-1)
 		elapsed := time.Since(start)
 		common.Info("Infinity GetDatabase done",
@@ -331,6 +358,66 @@ func (c *infinityClient) checkoutDatabase(ctx context.Context, caller string) (*
 		release()
 	}
 	return db, wrappedRelease, nil
+}
+
+// dropConnectionFor closes the pooled connection behind a checked-out database
+// handle after a transport-level failure. Such a socket still reports
+// IsConnected(), so Put() would return it to the pool and desync the next
+// caller's Thrift stream — observed as "InfinityException(7018, ... EOF)".
+// Disconnecting first makes Put() evict it instead. caller names the operation
+// that failed, for the log.
+func (c *infinityClient) dropConnectionFor(db *infinity.Database, caller string) {
+	if c == nil || db == nil {
+		return
+	}
+	raw, ok := c.dbConns.Load(db)
+	if !ok {
+		return
+	}
+	conn, _ := raw.(*infinity.InfinityConnection)
+	dropConnection(conn, caller)
+}
+
+// dropConnection disconnects a connection whose call failed mid-flight so the
+// pool evicts it. Errors are logged and ignored: the socket is already suspect.
+func dropConnection(conn *infinity.InfinityConnection, caller string) {
+	if conn == nil || !conn.IsConnected() {
+		return
+	}
+	common.Warn("Infinity connection dropped after a transport-level failure",
+		zap.String("caller", caller),
+		zap.String("conn_ptr", fmt.Sprintf("%p", conn)))
+	if _, err := conn.Disconnect(); err != nil {
+		common.Warn("Infinity connection disconnect failed",
+			zap.String("caller", caller), zap.Error(err))
+	}
+}
+
+// isConnectionLevelError reports whether a failed Infinity call may have left the
+// socket in an unknown state (the reply was not fully read), in which case the
+// connection must not be reused. Infinity's own error codes for this are 7018
+// ("Failed to execute query: EOF") plus the thrift/transport failures below.
+func isConnectionLevelError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"eof",
+		"connection is dead",
+		"connection reset",
+		"broken pipe",
+		"i/o timeout",
+		"deadline exceeded",
+		"tprotocolexception",
+		"transport is not open",
+		"no route to host",
+	} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // Engine Infinity engine implementation using Go SDK

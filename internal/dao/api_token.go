@@ -43,12 +43,6 @@ func (dao *APITokenDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID
 	return tokens, err
 }
 
-// DeleteByTenantID deletes all API tokens by tenant ID (hard delete)
-func (dao *APITokenDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Where("tenant_id = ?", tenantID).Delete(&entity.APIToken{})
-	return result.RowsAffected, result.Error
-}
-
 // GetByAPIToken gets user by API token
 func (dao *APITokenDAO) GetByAPIToken(ctx context.Context, db *gorm.DB, token string) (*entity.APIToken, error) {
 	var apiToken entity.APIToken

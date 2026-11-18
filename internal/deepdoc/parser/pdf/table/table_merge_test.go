@@ -583,3 +583,38 @@ func TestMergeTablesAcrossPages_RealAdjacentAcrossPagesStillMerges(t *testing.T)
 		t.Errorf("merged table should record both pages, got %d positions", len(merged[0].Positions))
 	}
 }
+
+// TestMergeTablesAcrossPages_GenuineContinuationMergesWithoutMedianHeights
+// locks the #18688 bond cross-page regression fix's core insight: the
+// page-absolute Y shift is now gated by the SIGN of the page-local yDis. A
+// genuine continuation sits at the top of the next page, so its page-local
+// yDis is NEGATIVE and must NOT be shifted — it merges even when medianHeights
+// is unavailable (replay char-height is 0, so mh falls back to the default 10).
+//
+// Geometry: anchor page 0 near the bottom (local bottom=800), continuation
+// page 1 near the top (local top=50), page height 842 → page-local
+// yDis = (50+110-800-800)/2 = -720 (< 0) ⇒ no shift ⇒ MERGE. Under the
+// pre-fix #18688 code the shift would make yDis=122 (< mh*23=230) and also
+// merge, so this test mainly guards that the merge no longer depends on
+// medianHeights being populated for a legitimate continuation.
+func TestMergeTablesAcrossPages_GenuineContinuationMergesWithoutMedianHeights(t *testing.T) {
+	anchor := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 30, Right: 566, Top: 740, Bottom: 800}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "anchor_p0"}},
+	}
+	cont := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 30, Right: 566, Top: 50, Bottom: 110}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "cont_p1"}},
+	}
+	pageHeights := map[int]float64{0: 842, 1: 842}
+	// medianHeights=nil mimics the replay path (char-height 0).
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, cont}, nil, pageHeights)
+	if len(merged) != 1 {
+		t.Fatalf("genuine cross-page continuation: expected 1 merged table, got %d", len(merged))
+	}
+	if len(merged[0].Positions) != 2 {
+		t.Errorf("merged table should record both pages, got %d positions", len(merged[0].Positions))
+	}
+}

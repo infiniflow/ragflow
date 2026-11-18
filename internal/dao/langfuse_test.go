@@ -56,7 +56,7 @@ func TestLangfuseDAO_GetByTenantID_NotFound(t *testing.T) {
 	}
 }
 
-func TestLangfuseDAO_CRUD(t *testing.T) {
+func TestLangfuseDAO_CreateGetUpdate(t *testing.T) {
 	db := setupLangfuseTestDB(t)
 	pushDB(t, db)
 	dao := NewLangfuse()
@@ -104,17 +104,5 @@ func TestLangfuseDAO_CRUD(t *testing.T) {
 	}
 	if got.SecretKey != "sk-2" || got.PublicKey != "pk-2" || got.Host != "https://eu.langfuse.com" {
 		t.Fatalf("update not applied: %+v", got)
-	}
-
-	// 4. DeleteByTenantID
-	if err = dao.DeleteByTenantID(ctx, db, "tenant-1"); err != nil {
-		t.Fatalf("failed to delete: %v", err)
-	}
-	got, err = dao.GetByTenantID(ctx, db, "tenant-1")
-	if err != nil {
-		t.Fatalf("expected nil error after delete, got %v", err)
-	}
-	if got != nil {
-		t.Fatalf("expected row to be deleted, got %+v", got)
 	}
 }

@@ -1,0 +1,1325 @@
+//
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+package component
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"image"
+	"image/png"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/progress"
+	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/media"
+	"ragflow/internal/parser/parser"
+	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
+)
+
+type visionEnhanceFakeDriver struct {
+	modelModule.ModelDriver
+}
+
+type failingVisionImageCropper struct{ err error }
+
+func (failingVisionImageCropper) Prepare(context.Context, map[string]any) error { return nil }
+
+func (c failingVisionImageCropper) Crop(context.Context, map[string]any) (*visionImage, error) {
+	return nil, c.err
+}
+
+func (failingVisionImageCropper) Close() error { return nil }
+
+type admissionCheckingVisionCropper struct {
+	prepared bool
+	payload  string
+}
+
+func (c *admissionCheckingVisionCropper) Prepare(ctx context.Context, _ map[string]any) error {
+	acquireCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	release, err := parser.AcquireImageMedia(acquireCtx)
+	if err != nil {
+		return fmt.Errorf("source preparation ran while image materialization was admitted: %w", err)
+	}
+	release()
+	c.prepared = true
+	return nil
+}
+
+func (c *admissionCheckingVisionCropper) Crop(context.Context, map[string]any) (*visionImage, error) {
+	return &visionImage{VLMData: c.payload, VLMDataValidated: true}, nil
+}
+
+func (*admissionCheckingVisionCropper) Close() error { return nil }
+
+type visionEnhanceCaptureInvoker struct {
+	mu       sync.Mutex
+	images   []string
+	captured []modelModule.Message
+}
+
+func (c *visionEnhanceCaptureInvoker) invoke(
+	ctx context.Context,
+	driver modelModule.ModelDriver,
+	modelName string,
+	messages []modelModule.Message,
+	apiConfig *modelModule.APIConfig,
+) (*modelModule.ChatResponse, error) {
+	c.mu.Lock()
+	c.captured = append(c.captured, messages...)
+	if parts, ok := messages[0].Content.([]interface{}); ok && len(parts) >= 2 {
+		if img, ok := parts[1].(map[string]any); ok {
+			if url, ok := img["image_url"].(map[string]any); ok {
+				if u, ok := url["url"].(string); ok {
+					c.images = append(c.images, u)
+				}
+			}
+		}
+	}
+	c.mu.Unlock()
+	ans := "```markdown\na diagram of a pipeline\n```"
+	return &modelModule.ChatResponse{Answer: &ans}, nil
+}
+
+// swapVisionGlobals replaces injectable vars and restores them on t.Cleanup.
+func swapVisionGlobals(
+	t *testing.T,
+	resolver func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error),
+	invoker func(context.Context, modelModule.ModelDriver, string, []modelModule.Message, *modelModule.APIConfig) (*modelModule.ChatResponse, error),
+	prompt func(string) (string, error),
+) {
+	t.Helper()
+	origResolver := resolveTenantModelByType
+	origInvoker := visionChatInvoker
+	origPrompt := figureVisionPromptBuilder
+	t.Cleanup(func() {
+		resolveTenantModelByType = origResolver
+		visionChatInvoker = origInvoker
+		figureVisionPromptBuilder = origPrompt
+	})
+	if resolver != nil {
+		resolveTenantModelByType = resolver
+	}
+	if invoker != nil {
+		visionChatInvoker = invoker
+	}
+	if prompt != nil {
+		figureVisionPromptBuilder = prompt
+	}
+}
+
+func fakeResolver(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	return &visionEnhanceFakeDriver{}, "vision-model", &modelModule.APIConfig{}, 0, nil
+}
+
+func fakePrompt(language string) (string, error) {
+	return "describe the figure in " + language, nil
+}
+
+func visionTestPNGBase64(t *testing.T) string {
+	t.Helper()
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 20, 20))); err != nil {
+		t.Fatalf("encode image: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(encoded.Bytes())
+}
+
+func TestParserComponent_VisionEnhancementSwitchGatesEmbeddedImage(t *testing.T) {
+	previousAnalyzer := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = previousAnalyzer })
+	deepdoctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
+		return &deepdocpdf.MockDocAnalyzer{Healthy: true}, true
+	})
+
+	resolverCalls := 0
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		resolverCalls++
+		return fakeResolver(ctx, db, tenantID, modelType)
+	}, invoker.invoke, fakePrompt)
+	inputs := func() map[string]any {
+		return map[string]any{
+			"binary":    []byte(`<p><img src="data:image/png;base64,` + visionTestPNGBase64(t) + `" alt="figure"></p>`),
+			"file_type": "html",
+			"name":      "figure.html",
+			"tenant_id": "tenant-1",
+		}
+	}
+	ctx := media.WithCache(t.Context(), &materializeCache{data: picturePNG(t)})
+
+	defaultComponent, err := NewParserComponent(nil)
+	if err != nil {
+		t.Fatalf("NewParserComponent(nil): %v", err)
+	}
+	withoutVision, err := defaultComponent.Invoke(ctx, nil, inputs())
+	if err != nil {
+		t.Fatalf("default Invoke: %v", err)
+	}
+	if resolverCalls != 0 || len(invoker.images) != 0 {
+		t.Fatalf("default-off enhancement used model: %d resolves, %d VLM calls", resolverCalls, len(invoker.images))
+	}
+	jsonDocs, ok := withoutVision["json"].([]parser.DocItem)
+	withoutItems := parser.ItemsToMaps(jsonDocs)
+	if !ok || len(withoutItems) == 0 {
+		t.Fatalf("default JSON = %T/%v", withoutVision["json"], withoutVision["json"])
+	}
+
+	enabledComponent, err := NewParserComponent(map[string]any{"enable_vision_enhancement": true})
+	if err != nil {
+		t.Fatalf("NewParserComponent(enabled): %v", err)
+	}
+	withVision, err := enabledComponent.Invoke(ctx, nil, inputs())
+	if err != nil {
+		t.Fatalf("enabled Invoke: %v", err)
+	}
+	if resolverCalls != 1 || len(invoker.images) != 1 {
+		t.Fatalf("enabled enhancement used model %d/%d times, want 1/1", resolverCalls, len(invoker.images))
+	}
+	jsonDocs, ok = withVision["json"].([]parser.DocItem)
+	withItems := parser.ItemsToMaps(jsonDocs)
+	if !ok || len(withItems) == 0 {
+		t.Fatalf("enabled JSON = %T/%v", withVision["json"], withVision["json"])
+	}
+	withoutText, _ := withoutItems[0]["text"].(string)
+	withText, _ := withItems[0]["text"].(string)
+	if strings.Contains(withoutText, "a diagram of a pipeline") || !strings.Contains(withText, "a diagram of a pipeline") {
+		t.Fatalf("image texts without/with enhancement = %q / %q", withoutText, withText)
+	}
+}
+
+func TestVisionEnhancement_MaterializesMediaRef(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	uri := "data:image/png;base64," + visionTestPNGBase64(t)
+	html := `<p><img alt="figure" src="` + uri + `"></p>`
+	imageBytes, err := base64.StdEncoding.DecodeString(visionTestPNGBase64(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := &materializeCache{data: imageBytes}
+	ctx := media.WithCache(t.Context(), cache)
+	p := parser.NewHTMLParser()
+	parsed := p.ParseWithResult(ctx, "ref.html", []byte(html))
+	if parsed.Err != nil {
+		t.Fatal(parsed.Err)
+	}
+	if _, ok := parsed.JSON[0].ToMap()["image"]; ok {
+		t.Fatal("parser retained image bytes")
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		ctx, dao.DB, utility.FileTypeHTML, parsed,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want true")
+	}
+	if len(invoker.images) != 1 {
+		t.Fatalf("VLM calls = %d, want 1", len(invoker.images))
+	}
+	text, _ := res.JSON[0].ToMap()["text"].(string)
+	if !strings.Contains(text, "a diagram of a pipeline") {
+		t.Fatalf("enhanced text = %q, missing the VLM description", text)
+	}
+}
+
+func TestVisionEnhancement_MediaCacheMissFailsTask(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	cache := &materializeCache{err: media.ErrMediaNotFound}
+	ctx := media.WithCache(t.Context(), cache)
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{{
+			"text":         "figure",
+			"doc_type_kwd": "image",
+			"media_ref":    cacheMediaRef(),
+		}}),
+	}
+	_, _, err := maybeDispatchVisionEnhancement(
+		ctx, dao.DB, utility.FileTypeHTML, dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if !errors.Is(err, media.ErrMediaNotFound) {
+		t.Fatalf("maybeDispatchVisionEnhancement error = %v, want cache miss", err)
+	}
+	if len(invoker.images) != 0 {
+		t.Fatalf("VLM calls = %d, want none after cache miss", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_AppendsVLMToExistingText(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{{
+			"text":         "Existing caption",
+			"image":        visionTestPNGBase64(t),
+			"doc_type_kwd": "image",
+		}}),
+	}
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypeXLSX, dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want true")
+	}
+	want := "Existing caption\na diagram of a pipeline"
+	if got := res.JSON[0].ToMap()["text"]; got != want {
+		t.Errorf("enhanced text = %q, want %q", got, want)
+	}
+	if len(invoker.images) != 1 {
+		t.Errorf("VLM calls = %d, want 1", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancementPreparesPDFSourceBeforeImageAdmission(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	cropper := &admissionCheckingVisionCropper{payload: visionTestPNGBase64(t)}
+	originalFactory := visionImageCropperFactory
+	visionImageCropperFactory = func(context.Context, *gorm.DB, map[string]any) (visionImageCropper, error) {
+		return cropper, nil
+	}
+	t.Cleanup(func() { visionImageCropperFactory = originalFactory })
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{{
+			"image":        cropper.payload,
+			"doc_type_kwd": "image",
+		}}),
+	}
+	if _, _, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+		map[string]any{"tenant_id": "t1"}, visionSettings{}, progress.Window{},
+	); err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !cropper.prepared {
+		t.Fatal("PDF source preparation was not called before image admission")
+	}
+}
+
+func TestVisionEnhancement_ReportsVLMInvocationFailure(t *testing.T) {
+	swapVisionGlobals(t, fakeResolver, func(context.Context, modelModule.ModelDriver, string, []modelModule.Message, *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+		return nil, errors.New("VLM unavailable")
+	}, fakePrompt)
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{{
+			"image":        visionTestPNGBase64(t),
+			"doc_type_kwd": "image",
+		}}),
+	}
+	result, _, err := maybeDispatchVisionEnhancement(t.Context(), dao.DB, utility.FileTypeDOCX, dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "VLM unavailable") {
+		t.Fatalf("warnings = %v, want the VLM failure", result.Warnings)
+	}
+}
+
+func TestVisionEnhancement_CropFailureFallsBackToInlineImage(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	originalFactory := visionImageCropperFactory
+	visionImageCropperFactory = func(context.Context, *gorm.DB, map[string]any) (visionImageCropper, error) {
+		return failingVisionImageCropper{err: errors.New("crop failed")}, nil
+	}
+	t.Cleanup(func() { visionImageCropperFactory = originalFactory })
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{{
+			"image":        visionTestPNGBase64(t),
+			"doc_type_kwd": "image",
+		}}),
+	}
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+		map[string]any{"tenant_id": "t1"}, visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want inline VLM fallback")
+	}
+	if len(invoker.images) != 1 {
+		t.Fatalf("VLM calls = %d, want 1", len(invoker.images))
+	}
+	if !strings.HasPrefix(invoker.images[0], "data:image/png;base64,") {
+		t.Errorf("VLM image URL = %q, want inline PNG data URI", invoker.images[0])
+	}
+	if got, want := result.JSON[0].ToMap()["text"], "a diagram of a pipeline"; got != want {
+		t.Errorf("enhanced text = %q, want %q", got, want)
+	}
+}
+
+func TestVisionEnhancement_EnhancesPDFTablesRegardlessOfOCRProvider(t *testing.T) {
+	for _, parseMethod := range []string{"deepdoc", "mineru"} {
+		t.Run(parseMethod, func(t *testing.T) {
+			invoker := &visionEnhanceCaptureInvoker{}
+			swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+			dispatched := parser.ParseResult{
+				JSON: parser.MapsToItems([]map[string]any{{
+					"text":         "Existing table",
+					"image":        visionTestPNGBase64(t),
+					"doc_type_kwd": "table",
+				}}),
+			}
+			res, handled, err := maybeDispatchVisionEnhancement(
+				t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+				map[string]any{"tenant_id": "t1"},
+				visionSettings{}, progress.Window{})
+			if err != nil {
+				t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+			}
+			if !handled {
+				t.Fatal("handled = false, want VLM enhancement")
+			}
+			if got, want := res.JSON[0].ToMap()["text"], "Existing table\na diagram of a pipeline"; got != want {
+				t.Errorf("enhanced text = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestVisionEnhancement_EnhancesTableAndCellImages(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	imagePayload := visionTestPNGBase64(t)
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "<table><tr><td>figure</td></tr></table>", "image": imagePayload, "doc_type_kwd": "table"},
+			{
+				"text":            "cell alt",
+				"image":           imagePayload,
+				"doc_type_kwd":    "image",
+				"parent_table_id": "html-table-1",
+				"row_index":       1,
+				"column_index":    1,
+				"media_order":     1,
+			},
+		}),
+	}
+
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+		map[string]any{"tenant_id": "t1"}, visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want table and cell image VLM processing")
+	}
+	if got, want := result.JSON[0].ToMap()["text"], "<table><tr><td>figure</td></tr></table>\na diagram of a pipeline"; got != want {
+		t.Errorf("table text = %q, want %q", got, want)
+	}
+	cellWant := "cell alt\na diagram of a pipeline"
+	if got := result.JSON[1].ToMap()["text"]; got != cellWant {
+		t.Errorf("cell image text = %q, want %q", got, cellWant)
+	}
+	if len(invoker.images) != 2 {
+		t.Errorf("VLM calls = %d, want table plus cell image", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_EnhancesExternalPDFImage(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{{"text": "existing", "image": visionTestPNGBase64(t), "doc_type_kwd": "image"}}),
+	}
+
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+		map[string]any{"tenant_id": "t1"}, visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want VLM enhancement")
+	}
+	if got, want := result.JSON[0].ToMap()["text"], "existing\na diagram of a pipeline"; got != want {
+		t.Errorf("image text = %q, want %q", got, want)
+	}
+	if len(invoker.images) != 1 {
+		t.Errorf("VLM calls = %d, want 1", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
+	testCases := []struct {
+		name     string
+		fileType utility.FileType
+	}{
+		{"DOCX", utility.FileTypeDOCX},
+		{"PDF", utility.FileTypePDF},
+		{"Markdown", utility.FileTypeMarkdown},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var capturedLanguage string
+			// Per-subtest invoker and prompt — avoids implicit coupling between subtests.
+			invoker := &visionEnhanceCaptureInvoker{}
+			swapVisionGlobals(t, fakeResolver, invoker.invoke, func(language string) (string, error) {
+				capturedLanguage = language
+				return "describe the figure in " + language, nil
+			})
+
+			dispatched := parser.ParseResult{
+				JSON: parser.MapsToItems([]map[string]any{
+					{"text": "Intro paragraph", "image": nil, "doc_type_kwd": "text"},
+					{"text": "", "image": "aGVsbG8taW1hZ2U=", "doc_type_kwd": "image"},
+					{"text": "existing table", "image": "dGFibGUtaW1hZ2U=", "doc_type_kwd": "table"},
+					{"text": "<table></table>", "image": nil, "doc_type_kwd": "table"},
+				}),
+			}
+
+			res, handled, err := maybeDispatchVisionEnhancement(
+				t.Context(),
+				dao.DB,
+				tc.fileType,
+				dispatched,
+				map[string]any{"tenant_id": "t1", "lang": "Japanese"},
+				visionSettings{}, progress.Window{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !handled {
+				t.Fatal("handled = false, want true")
+			}
+			if len(res.JSON) != 4 {
+				t.Fatalf("JSON len = %d, want 4", len(res.JSON))
+			}
+			if got := res.JSON[0].ToMap()["text"].(string); got != "Intro paragraph" {
+				t.Errorf("text item text = %q, want unchanged", got)
+			}
+			// image item: VLM description cleaned of ```markdown and appended
+			if got, _ := res.JSON[1].ToMap()["text"].(string); got != "a diagram of a pipeline" {
+				t.Errorf("image item text = %q, want 'a diagram of a pipeline'", got)
+			}
+			// table item with image: VLM description appended with single \n
+			if got, _ := res.JSON[2].ToMap()["text"].(string); got != "existing table\na diagram of a pipeline" {
+				t.Errorf("table item text = %q, want 'existing table\\na diagram of a pipeline'", got)
+			}
+			if got, _ := res.JSON[3].ToMap()["text"].(string); got != "<table></table>" {
+				t.Errorf("table item without image text = %q, want unchanged", got)
+			}
+			if capturedLanguage != "Japanese" {
+				t.Errorf("figure prompt language = %q, want Japanese", capturedLanguage)
+			}
+		})
+	}
+}
+
+// TestVisionEnhancement_LanguagePriority pins the prompt-language chain:
+// explicit enhancement language > run-level dataset language (inputs) > English.
+// The family setup's lang is an OCR engine input, not a caption language.
+func TestVisionEnhancement_LanguagePriority(t *testing.T) {
+	tests := []struct {
+		name   string
+		inputs map[string]any
+		setups map[string]schema.ParserSetup
+		vision visionSettings
+		want   string
+	}{
+		{
+			name:   "explicit enhancement language wins over the dataset language",
+			inputs: map[string]any{"tenant_id": "t1", "lang": "Japanese"},
+			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
+			vision: visionSettings{language: "French"},
+			want:   "French",
+		},
+		{
+			name:   "dataset language wins over setup lang",
+			inputs: map[string]any{"tenant_id": "t1", "lang": "Japanese"},
+			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
+			want:   "Japanese",
+		},
+		{
+			name:   "family lang no longer drives captions; without a dataset language it is English",
+			inputs: map[string]any{"tenant_id": "t1"},
+			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
+			want:   "English",
+		},
+		{
+			name:   "english when neither is set",
+			inputs: map[string]any{"tenant_id": "t1"},
+			setups: nil,
+			want:   "English",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var capturedLanguage string
+			swapVisionGlobals(t, fakeResolver, (&visionEnhanceCaptureInvoker{}).invoke,
+				func(language string) (string, error) {
+					capturedLanguage = language
+					return "describe the figure in " + language, nil
+				})
+
+			dispatched := parser.ParseResult{
+				JSON: parser.MapsToItems([]map[string]any{
+					{"text": "", "image": "aGVsbG8taW1hZ2U=", "doc_type_kwd": "image"},
+				}),
+			}
+
+			_, handled, err := maybeDispatchVisionEnhancement(
+				t.Context(), dao.DB, utility.FileTypePDF, dispatched, tc.inputs,
+				tc.vision, progress.Window{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !handled {
+				t.Fatal("handled = false, want true")
+			}
+			if capturedLanguage != tc.want {
+				t.Errorf("figure prompt language = %q, want %q", capturedLanguage, tc.want)
+			}
+		})
+	}
+}
+
+func TestVisionEnhancement_UsesVisualPayloadRegardlessOfFileType(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "caption", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		}),
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypeOTHER,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want true for a visual payload in FileTypeOTHER")
+	}
+	if got, want := res.JSON[0].ToMap()["text"], "caption\na diagram of a pipeline"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+	if len(invoker.images) != 1 {
+		t.Fatalf("VLM calls = %d, want 1", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_EmptyOrNoTenantSkipped(t *testing.T) {
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		}),
+	}
+
+	// No tenant_id
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypeDOCX,
+		dispatched,
+		map[string]any{},
+		visionSettings{}, progress.Window{})
+	if err != nil || handled {
+		t.Errorf("handled=%v, err=%v, want false, nil for missing tenant_id", handled, err)
+	}
+	if res.JSON[0].ToMap()["text"] != "" {
+		t.Errorf("text = %q, want untouched", res.JSON[0].ToMap()["text"])
+	}
+}
+
+// TestVisionEnhancement_DispatchedErrSkipped ensures a failed parse result is
+// returned unchanged — enhancement must not touch items when dispatched.Err != nil.
+func TestVisionEnhancement_DispatchedErrSkipped(t *testing.T) {
+	parseErr := errors.New("parse failed")
+	dispatched := parser.ParseResult{
+		Err: parseErr,
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		}),
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("handled = true, want false when dispatched.Err is set")
+	}
+	if res.Err != parseErr {
+		t.Errorf("res.Err = %v, want original parse error preserved", res.Err)
+	}
+}
+
+// TestVisionEnhancement_ContextCancellation verifies that a cancelled context
+// propagates through visionChatInvoker and the enhancement is skipped without panic.
+func TestVisionEnhancement_ContextCancellation(t *testing.T) {
+	swapVisionGlobals(t, fakeResolver,
+		func(ctx context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			return nil, ctx.Err()
+		},
+		fakePrompt,
+	)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // pre-cancel
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		}),
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		ctx,
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if handled {
+		t.Error("handled = true with cancelled context, want false")
+	}
+	// text field should be untouched since invoker returned no answer.
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != "" {
+		t.Errorf("text = %q, want empty (no successful VLM response)", got)
+	}
+}
+
+// TestVisionEnhancement_NonStringImageFieldFiltered verifies that items with a
+// non-string image field (e.g., int) are silently skipped during target collection.
+func TestVisionEnhancement_NonStringImageFieldFiltered(t *testing.T) {
+	invokerCalled := false
+	swapVisionGlobals(t, fakeResolver,
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			invokerCalled = true
+			ans := "description"
+			return &modelModule.ChatResponse{Answer: &ans}, nil
+		},
+		fakePrompt,
+	)
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			// non-string image field — filtered by target collector
+			{"text": "para", "image": 12345, "doc_type_kwd": "image"},
+			// nil image — also filtered
+			{"text": "para2", "image": nil, "doc_type_kwd": "image"},
+		}),
+	}
+
+	_, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("handled = true, want false — no valid image targets")
+	}
+	if invokerCalled {
+		t.Error("invoker was called despite no valid image targets")
+	}
+}
+
+// TestVisionEnhancement_MoreThanConcurrencyItems verifies that N > visionEnhancementConcurrency
+// items are all processed without deadlock.
+func TestVisionEnhancement_MoreThanConcurrencyItems(t *testing.T) {
+	n := visionEnhancementConcurrency + 5
+	swapVisionGlobals(t, fakeResolver,
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			ans := "desc"
+			return &modelModule.ChatResponse{Answer: &ans}, nil
+		},
+		fakePrompt,
+	)
+
+	items := make([]map[string]any, n)
+	for i := range items {
+		items[i] = map[string]any{
+			"text":         fmt.Sprintf("item%d", i),
+			"image":        "aGVsbG8=",
+			"doc_type_kwd": "image",
+		}
+	}
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems(items),
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("handled = false, want true")
+	}
+	// All n items should have received a description appended.
+	for i, item := range parser.ItemsToMaps(res.JSON) {
+		got, _ := item["text"].(string)
+		if got == fmt.Sprintf("item%d", i) {
+			t.Errorf("item[%d] text unchanged %q, expected description appended", i, got)
+		}
+	}
+}
+
+// TestVisionEnhancement_PlainTextResponseNotTruncated verifies that a plain-text
+// (no fences) VLM response is returned verbatim — common.CleanMarkdownBlock
+// must not truncate it.
+func TestVisionEnhancement_PlainTextResponseNotTruncated(t *testing.T) {
+	plain := "A pipeline diagram showing three stages."
+	swapVisionGlobals(t, fakeResolver,
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			return &modelModule.ChatResponse{Answer: &plain}, nil
+		},
+		fakePrompt,
+	)
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		}),
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Error("handled = false, want true")
+	}
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != plain {
+		t.Errorf("plain text response = %q, want %q (must not be truncated)", got, plain)
+	}
+}
+
+// TestVisionEnhancement_PromptBuilderErrorSkipped verifies that a prompt build
+// failure skips enhancement silently (best-effort, nilerr is intentional).
+func TestVisionEnhancement_PromptBuilderErrorSkipped(t *testing.T) {
+	swapVisionGlobals(t,
+		fakeResolver,
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			t.Error("invoker should not be called when prompt builder fails")
+			return nil, nil
+		},
+		func(_ string) (string, error) {
+			return "", errors.New("prompt load failed")
+		},
+	)
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		}),
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("handled = true, want false when prompt builder fails")
+	}
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != "" {
+		t.Errorf("text = %q, want empty", got)
+	}
+}
+
+// TestVisionEnhancement_ModelResolveFailureSkipped verifies that a resolver error
+// (e.g., tenant has no IMAGE2TEXT model) skips enhancement silently.
+func TestVisionEnhancement_ModelResolveFailureSkipped(t *testing.T) {
+	swapVisionGlobals(t,
+		func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+			return nil, "", nil, 0, errors.New("no model")
+		},
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			t.Error("invoker should not be called when model resolve fails")
+			return nil, nil
+		},
+		fakePrompt,
+	)
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		}),
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if handled {
+		t.Error("handled = true, want false when model resolve fails")
+	}
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != "" {
+		t.Errorf("text = %q, want empty", got)
+	}
+}
+
+// TestVisionEnhancement_CancellationStopsSchedulingWithManyItems verifies that
+// cancellation stops scheduling when N > visionEnhancementConcurrency, without deadlock.
+func TestVisionEnhancement_CancellationStopsSchedulingWithManyItems(t *testing.T) {
+	n := visionEnhancementConcurrency + 5
+	swapVisionGlobals(t, fakeResolver,
+		func(ctx context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			// Simulate work that respects ctx.
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
+			ans := "desc"
+			return &modelModule.ChatResponse{Answer: &ans}, nil
+		},
+		fakePrompt,
+	)
+
+	items := make([]map[string]any, n)
+	for i := range items {
+		items[i] = map[string]any{
+			"text":         fmt.Sprintf("item%d", i),
+			"image":        "aGVsbG8=",
+			"doc_type_kwd": "image",
+		}
+	}
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems(items),
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // pre-cancel — dispatch loop should break immediately
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		ctx,
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if handled {
+		t.Error("handled = true with cancelled context, want false")
+	}
+	// No item should be modified when dispatch is cancelled before scheduling.
+	for i, item := range parser.ItemsToMaps(res.JSON) {
+		if got, _ := item["text"].(string); got != fmt.Sprintf("item%d", i) {
+			t.Errorf("item[%d] text = %q, want untouched after cancellation", i, got)
+		}
+	}
+}
+
+func TestBuildVisionMessages_PreventsDoublePrefix(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantURL string
+	}{
+		{
+			name:    "raw base64 gets png prefix",
+			input:   "aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "already png data uri is preserved without double prefix",
+			input:   "data:image/png;base64,aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "jpeg data uri is preserved as jpeg",
+			input:   "data:image/jpeg;base64,/9j/4AAQ",
+			wantURL: "data:image/jpeg;base64,/9j/4AAQ",
+		},
+		{
+			name:    "https url is preserved",
+			input:   "https://example.com/figure.png",
+			wantURL: "https://example.com/figure.png",
+		},
+		{
+			name:    "whitespace trimmed",
+			input:   "  data:image/png;base64,abc  ",
+			wantURL: "data:image/png;base64,abc",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			msgs := buildVisionMessages("describe", tc.input)
+			if len(msgs) != 1 {
+				t.Fatalf("len(msgs) = %d, want 1", len(msgs))
+			}
+			parts, ok := msgs[0].Content.([]interface{})
+			if !ok || len(parts) < 2 {
+				t.Fatalf("Content parts = %+v, want >= 2", msgs[0].Content)
+			}
+			img, ok := parts[1].(map[string]any)
+			if !ok {
+				t.Fatalf("parts[1] = %+v, want map[string]any", parts[1])
+			}
+			imgURL, ok := img["image_url"].(map[string]any)
+			if !ok {
+				t.Fatalf("img[image_url] = %+v, want map[string]any", img["image_url"])
+			}
+			got, _ := imgURL["url"].(string)
+			if got != tc.wantURL {
+				t.Errorf("image_url.url = %q, want %q", got, tc.wantURL)
+			}
+		})
+	}
+}
+
+func TestExtractVisionAnswer_CleansMarkdownBlock(t *testing.T) {
+	ans := "```markdown\n| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |\n```"
+	resp := &modelModule.ChatResponse{Answer: &ans}
+	got := extractVisionAnswer(resp)
+	want := "| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |"
+	if got != want {
+		t.Errorf("extractVisionAnswer = %q, want %q", got, want)
+	}
+}
+
+// TestExtractVisionAnswer_EdgeCases drives the shared
+// common.CleanMarkdownBlock through the vision-answer path; the cleanup
+// function itself is pinned in common.TestCleanMarkdownBlock.
+func TestExtractVisionAnswer_EdgeCases(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "standard markdown block",
+			input: "```markdown\nHello world\n```",
+			want:  "Hello world",
+		},
+		{
+			name:  "windows CRLF endings",
+			input: "```markdown\r\nHello world\r\n```",
+			want:  "Hello world",
+		},
+		{
+			name:  "nested code blocks preserved",
+			input: "```markdown\nText with ```nested``` blocks\n```",
+			want:  "Text with ```nested``` blocks",
+		},
+		{
+			name:  "mixed whitespace tabs",
+			input: "\t```markdown\t\n\tContent with tabs\n\t```\t",
+			want:  "Content with tabs",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "only markdown tags",
+			input: "```markdown```",
+			want:  "",
+		},
+		{
+			name:  "unwrapped text unchanged",
+			input: "Just plain text without markdown block",
+			want:  "Just plain text without markdown block",
+		},
+		{
+			name:  "unwrapped python block",
+			input: "```python\nprint('hello')\n```",
+			want:  "```python\nprint('hello')\n```",
+		},
+		{
+			name:  "unwrapped JSON block",
+			input: "```json\n{\"value\": 1}\n```",
+			want:  "```json\n{\"value\": 1}\n```",
+		},
+		{
+			name:  "unlabeled code block",
+			input: "```\ncode without a language\n```",
+			want:  "```\ncode without a language\n```",
+		},
+		{
+			name:  "prose ending with code block",
+			input: "Example:\n```python\nprint('hello')\n```",
+			want:  "Example:\n```python\nprint('hello')\n```",
+		},
+		{
+			name:  "multiple unwrapped code blocks",
+			input: "```python\nfirst()\n```\n\n```python\nsecond()\n```",
+			want:  "```python\nfirst()\n```\n\n```python\nsecond()\n```",
+		},
+		{
+			name:  "unwrapped CRLF block",
+			input: "  ```python\r\nprint('hello')\r\n```  ",
+			want:  "```python\r\nprint('hello')\r\n```",
+		},
+		{
+			name:  "closing fence without markdown opener",
+			input: "Unopened block\n```",
+			want:  "Unopened block\n```",
+		},
+		{
+			name:  "markdown wrapper around code example",
+			input: "```markdown\nExample:\n```python\nprint('hello')\n```\n```",
+			want:  "Example:\n```python\nprint('hello')\n```",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &modelModule.ChatResponse{Answer: &tc.input}
+			if got := extractVisionAnswer(resp); got != tc.want {
+				t.Errorf("extractVisionAnswer(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestVisionEnhancement_GlobalModelPreferredOverPDFParser(t *testing.T) {
+	origTenantResolver := resolveTenantModelByType
+	origModelResolver := resolveModelConfig
+	origInvoker := visionChatInvoker
+	origPrompt := figureVisionPromptBuilder
+	t.Cleanup(func() {
+		resolveTenantModelByType = origTenantResolver
+		resolveModelConfig = origModelResolver
+		visionChatInvoker = origInvoker
+		figureVisionPromptBuilder = origPrompt
+	})
+
+	tenantResolverCalled := false
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		tenantResolverCalled = true
+		return &visionEnhanceFakeDriver{}, "tenant-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	var gotRef string
+	var gotType entity.ModelType
+	resolveModelConfig = func(_ context.Context, _ *gorm.DB, _ string, modelType entity.ModelType, ref string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		gotRef = ref
+		gotType = modelType
+		return &visionEnhanceFakeDriver{}, "custom-model", &modelModule.APIConfig{}, 0, nil
+	}
+
+	invoker := &visionEnhanceCaptureInvoker{}
+	visionChatInvoker = invoker.invoke
+	figureVisionPromptBuilder = fakePrompt
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		}),
+	}
+
+	_, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{modelID: "custom-vlm@provider"}, progress.Window{})
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want true")
+	}
+	if gotRef != "custom-vlm@provider" {
+		t.Errorf("resolveModelConfig modelRef = %q, want %q", gotRef, "custom-vlm@provider")
+	}
+	if gotType != entity.ModelTypeImage2Text {
+		t.Errorf("resolveModelConfig modelType = %q, want %q", gotType, entity.ModelTypeImage2Text)
+	}
+	if tenantResolverCalled {
+		t.Error("tenant default resolver must not be called when the global model is set")
+	}
+}
+
+func TestVisionEnhancement_InvalidImageDataSkipped(t *testing.T) {
+	invokerCalled := false
+	swapVisionGlobals(t,
+		fakeResolver,
+		func(_ context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+			invokerCalled = true
+			return nil, nil
+		},
+		fakePrompt,
+	)
+
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "keep", "image": "!!!not-base64!!!", "doc_type_kwd": "image"},
+		}),
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(),
+		dao.DB,
+		utility.FileTypePDF,
+		dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if handled {
+		t.Error("handled = true, want false when invalid image data is skipped")
+	}
+	if invokerCalled {
+		t.Error("invoker must not be called for invalid image data")
+	}
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != "keep" {
+		t.Errorf("text = %q, want unchanged %q", got, "keep")
+	}
+}
+
+type deadlineCaptureDriver struct {
+	modelModule.ModelDriver
+	hasDeadline bool
+	remaining   time.Duration
+	config      *modelModule.ChatConfig
+}
+
+func (d *deadlineCaptureDriver) ChatWithMessages(
+	ctx context.Context,
+	_ string,
+	_ []modelModule.Message,
+	_ *modelModule.APIConfig,
+	config *modelModule.ChatConfig,
+	_ *common.ModelUsage,
+) (*modelModule.ChatResponse, error) {
+	deadline, ok := ctx.Deadline()
+	d.hasDeadline = ok
+	d.config = config
+	if ok {
+		d.remaining = time.Until(deadline)
+	}
+	ans := "ok"
+	return &modelModule.ChatResponse{Answer: &ans}, nil
+}
+
+func TestDefaultVisionChatInvoker_AppliesDeadline(t *testing.T) {
+	drv := &deadlineCaptureDriver{}
+	if _, err := defaultVisionChatInvoker(context.Background(), drv, "m", nil, nil); err != nil {
+		t.Fatalf("defaultVisionChatInvoker: %v", err)
+	}
+	if !drv.hasDeadline {
+		t.Fatal("vision chat context must have a deadline")
+	}
+	if drv.remaining <= 0 || drv.remaining > visionChatTimeout+time.Second {
+		t.Fatalf("deadline remaining = %v, want ~%v", drv.remaining, visionChatTimeout)
+	}
+	if drv.config == nil || drv.config.Vision == nil || !*drv.config.Vision {
+		t.Fatal("vision chat must enable vision")
+	}
+	if drv.config.Thinking == nil || *drv.config.Thinking {
+		t.Fatal("vision chat must disable thinking by default")
+	}
+}
+
+func TestParserComponent_VisionMediaCacheMissFails(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	cache := &materializeCache{err: media.ErrMediaNotFound}
+	ctx := media.WithCache(t.Context(), cache)
+	component, err := NewParserComponent(map[string]any{"enable_vision_enhancement": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = component.Invoke(ctx, nil, map[string]any{
+		"binary":    []byte(`<img alt="figure" src="data:image/png;base64,` + visionTestPNGBase64(t) + `">`),
+		"file_type": "html", "name": "figure.html", "tenant_id": "tenant-1",
+	})
+	if !errors.Is(err, media.ErrMediaNotFound) {
+		t.Fatalf("Invoke error = %v, want cache miss", err)
+	}
+}

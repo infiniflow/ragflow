@@ -18,19 +18,8 @@ package service
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
-
-	"ragflow/internal/utility"
-)
-
-var (
-	promptCache    = make(map[string]string)
-	promptMu       sync.RWMutex
-	promptsBaseDir string
 )
 
 // jsonFenceRE matches Markdown code fences around JSON responses.
@@ -40,44 +29,8 @@ var (
 // by trailing spaces (e.g. "```   \n") is left intact.
 var jsonFenceRE = regexp.MustCompile("```json\\n|```\\n*$")
 
-func init() {
-	root := utility.GetProjectRoot()
-	if _, err := os.Stat(filepath.Join(root, "rag", "prompts")); err == nil {
-		promptsBaseDir = root
-		return
-	}
-	// Final fallback
-	promptsBaseDir = "/ragflow"
-}
-
-// LoadPrompt loads a prompt by name from the rag/prompts/ directory.
-// It caches loaded prompts for subsequent calls.
-// Corresponds to rag/prompts/template.py:load_prompt()
-func LoadPrompt(name string) (string, error) {
-	promptMu.RLock()
-	if cached, ok := promptCache[name]; ok {
-		promptMu.RUnlock()
-		return cached, nil
-	}
-	promptMu.RUnlock()
-
-	promptPath := filepath.Join(promptsBaseDir, "rag", "prompts", fmt.Sprintf("%s.md", name))
-	content, err := os.ReadFile(promptPath)
-	if err != nil {
-		return "", fmt.Errorf("prompt file '%s.md' not found in rag/prompts/: %w", name, err)
-	}
-
-	cached := strings.TrimSpace(string(content))
-	promptMu.Lock()
-	promptCache[name] = cached
-	promptMu.Unlock()
-
-	return cached, nil
-}
-
 // RenderPrompt renders a prompt template with the given variables.
 // Supports {{ variable }} and {{ variable | filter(args) }} syntax.
-// Corresponds to rag/prompts/generator.py template rendering (Jinja2).
 func RenderPrompt(template string, data map[string]interface{}) string {
 	// Handle {{ variable | filter(args) }} syntax - capture filter arguments too
 	filterPattern := regexp.MustCompile(`\{\{\s*(\w+)\s*\|\s*(\w+)\s*\(\s*([^)]*)\s*\)\s*\}\}`)

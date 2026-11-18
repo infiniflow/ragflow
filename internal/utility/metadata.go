@@ -16,10 +16,12 @@
 
 package utility
 
+import "reflect"
+
 // UpdateMetadataTo merges metadata into an existing metadata map.
-// Only string and []string values are accepted. Existing keys are preserved
-// (not overwritten). List values are merged and deduplicated.
-// Mirrors Python: common.metadata_utils.update_metadata_to()
+// String lists are merged and deduplicated; incoming scalars otherwise win.
+// If either value at an existing key is a map or a non-string list or array,
+// the target value wins. Missing keys retain incoming values intact.
 func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 	if target == nil {
 		return nil
@@ -34,8 +36,8 @@ func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 	}
 
 	for k, v := range metaMap {
-		normVal := normalizeMetaValue(v)
-		if normVal == nil {
+		normVal, accepted := normalizeMetaValue(v)
+		if !accepted {
 			continue
 		}
 
@@ -45,15 +47,15 @@ func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 			continue
 		}
 
-		// Merge with existing value, mirroring Python
-		// common.metadata_utils.update_metadata_to exactly:
-		//   - both lists: extend + dedupe
-		//   - target is list, incoming is scalar: append + dedupe
-		//   - target is scalar (or any non-list): overwrite with the
-		//     incoming value (the stored/merged-in side wins), NOT a list.
-		targetList, targetIsList := existing.([]string)
+		if isStructuredMetadataValue(existing) || isStructuredMetadataValue(normVal) {
+			continue
+		}
+		targetList, targetIsList := metadataStringList(existing)
 		normList, normIsList := normVal.([]string)
-		if targetIsList {
+		_, normIsString := normVal.(string)
+		if targetIsList && (normIsList || normIsString) {
+			// Appending must not write into a backing array shared by the caller.
+			targetList = targetList[:len(targetList):len(targetList)]
 			if normIsList {
 				target[k] = dedupeStrings(append(targetList, normList...))
 			} else if s, ok := normVal.(string); ok {
@@ -61,46 +63,80 @@ func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 			}
 			continue
 		}
-		// target is a scalar: overwrite with the incoming value.
+		// Incoming scalars, including false, zero and null, win.
 		target[k] = normVal
 	}
 
 	return target
 }
 
-// normalizeMetaValue normalizes a metadata value.
-// Returns a string, []string, or nil if the value is not acceptable.
-func normalizeMetaValue(v any) any {
-	switch val := v.(type) {
-	case string:
-		if val == "" {
-			return nil
-		}
-		return val
-	case []string:
-		filtered := make([]string, 0, len(val))
-		for _, s := range val {
+// isStructuredMetadataValue recognizes maps and non-string slices or arrays.
+// Typed and JSON-decoded string lists use the string-list merge rules instead.
+func isStructuredMetadataValue(v any) bool {
+	if v == nil {
+		return false
+	}
+	if _, ok := metadataStringList(v); ok {
+		return false
+	}
+	switch reflect.TypeOf(v).Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array:
+		return true
+	default:
+		return false
+	}
+}
+
+// normalizeMetaValue filters empty strings without changing other value types.
+// The acceptance flag distinguishes a retained null from a skipped value.
+func normalizeMetaValue(v any) (any, bool) {
+	if s, ok := v.(string); ok {
+		return s, s != ""
+	}
+	if list, ok := metadataStringList(v); ok {
+		filtered := make([]string, 0, len(list))
+		for _, s := range list {
 			if s != "" {
 				filtered = append(filtered, s)
 			}
 		}
 		if len(filtered) == 0 {
-			return nil
+			return nil, false
 		}
-		return dedupeStrings(filtered)
+		return dedupeStrings(filtered), true
+	}
+	return v, true
+}
+
+// metadataStringList recognizes JSON-decoded string lists and string slices
+// or arrays, including named collection types.
+func metadataStringList(v any) ([]string, bool) {
+	switch list := v.(type) {
+	case []string:
+		return list, true
 	case []any:
-		filtered := make([]string, 0, len(val))
-		for _, elem := range val {
-			if s, ok := elem.(string); ok && s != "" {
-				filtered = append(filtered, s)
+		strings := make([]string, 0, len(list))
+		for _, item := range list {
+			s, ok := item.(string)
+			if !ok {
+				return nil, false
 			}
+			strings = append(strings, s)
 		}
-		if len(filtered) == 0 {
-			return nil
-		}
-		return dedupeStrings(filtered)
+		return strings, true
 	default:
-		return nil
+		value := reflect.ValueOf(v)
+		if !value.IsValid() || (value.Kind() != reflect.Slice && value.Kind() != reflect.Array) {
+			return nil, false
+		}
+		if value.Type().Elem().Kind() != reflect.String {
+			return nil, false
+		}
+		strings := make([]string, value.Len())
+		for i := range strings {
+			strings[i] = value.Index(i).String()
+		}
+		return strings, true
 	}
 }
 

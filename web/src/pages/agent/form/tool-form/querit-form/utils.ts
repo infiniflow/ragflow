@@ -1,5 +1,6 @@
 import {
   QueritFormSchema,
+  QueritDraftFormSchema,
   deserializeQueritFormValues,
   serializeQueritFormValues,
 } from '../../querit-form/utils';
@@ -13,7 +14,7 @@ export function deserializeQueritAgentFormValues(values: Record<string, any>) {
 export function validateQueritAgentFormValuesForPersistence(
   values: Record<string, any>,
 ) {
-  const result = QueritAgentFormSchema.safeParse(values);
+  const result = QueritDraftFormSchema.omit({ query: true }).safeParse(values);
   if (!result.success) {
     return undefined;
   }

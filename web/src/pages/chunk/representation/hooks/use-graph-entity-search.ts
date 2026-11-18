@@ -1,5 +1,8 @@
 import { type SelectWithSearchFlagOptionType } from '@/components/originui/select-with-search';
-import { getEntityDisplayName } from '@/components/structure-graph/adapters';
+import {
+  findEntityDisplayNameByKeyword,
+  getEntityDisplayName,
+} from '@/components/structure-graph/adapters';
 import { type ClickableNode } from '@/components/structure-graph/representation-renderer';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import { useFetchDocumentStructureGraph } from '@/hooks/use-document-request';
@@ -53,6 +56,9 @@ export function useGraphEntitySearch(
       ? selectedNodeId
       : '';
 
+  // Picking an option behaves like an Enter search: refetch the server-side
+  // keyword subgraph for that entity (fresh graph + entity count) and keep the
+  // node highlighted, in addition to the chunk navigation.
   const handleSelectEntity = useCallback(
     (name: string) => {
       if (!name) {
@@ -62,6 +68,8 @@ export function useGraphEntitySearch(
         return;
       }
       setSelectedNodeId(name);
+      setGraphKeywords(name);
+      setSearchKeyword('');
       const entity = (selectedTemplate?.entities ?? []).find(
         (item) => getEntityDisplayName(item) === name,
       );
@@ -76,11 +84,25 @@ export function useGraphEntitySearch(
     [selectedTemplate?.entities, onNodeClick],
   );
 
-  const handleNoMatchEnter = useCallback((keywords: string) => {
-    setGraphKeywords(keywords);
-    setSearchKeyword('');
-    setSelectedNodeId('');
-  }, []);
+  const handleNoMatchEnter = useCallback(
+    (keywords: string) => {
+      // Enter on a keyword that exactly names an entity must behave like
+      // picking it from the dropdown. Only unmatched text falls back to the
+      // raw keyword subgraph with no highlighted node.
+      const entityName = findEntityDisplayNameByKeyword(
+        selectedTemplate?.entities ?? [],
+        keywords,
+      );
+      if (entityName) {
+        handleSelectEntity(entityName);
+        return;
+      }
+      setGraphKeywords(keywords);
+      setSearchKeyword('');
+      setSelectedNodeId('');
+    },
+    [selectedTemplate?.entities, handleSelectEntity],
+  );
 
   const handleSearchKeywordChange = useCallback((value: string) => {
     setSearchKeyword(value);
@@ -118,7 +140,13 @@ export function useGraphEntitySearch(
     isGraphKind,
     entityOptions,
     searchKeyword,
-    graphSelectValue: selectedEntityName || graphKeywords,
+    // Mirror the fetch driver (debouncedSearchKeyword || graphKeywords): the
+    // two keyword inputs swap whenever the result kind flips isGraphKind, so
+    // when the expandable-input channel drove the current subgraph, show its
+    // keyword — not a stale graph keyword left behind by an earlier failed
+    // Enter search.
+    graphSelectValue:
+      selectedEntityName || debouncedSearchKeyword || graphKeywords,
     highlightNodeId: selectedEntityName || null,
     handleSelectEntity,
     handleNoMatchEnter,

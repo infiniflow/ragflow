@@ -548,6 +548,29 @@ func TestSlackConnectorOpenSyncResumesFromCheckpoint(t *testing.T) {
 	}
 }
 
+func TestSlackConnectorOpenSyncResumeRejectsMissingChannel(t *testing.T) {
+	withSlackTestHooks(t)
+	fixtures := &slackTestFixtures{
+		channelsJSON: `{"ok":true,"channels":[
+			{"id":"C1","name":"general","is_member":true},
+			{"id":"C2","name":"random","is_member":true}
+		],"response_metadata":{"next_cursor":""}}`,
+	}
+	server := newTestSlackServer(t, fixtures)
+	connector := mustSlackConnector(t, server.URL, nil)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume: &SyncCheckpoint{
+			Cursor:   "slack_channel_C3",
+			SourceID: "slack_channel_C3",
+		},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 func TestSlackConnectorOpenSyncCheckpointAdvancesPerChannel(t *testing.T) {
 	withSlackTestHooks(t)
 	fixtures := &slackTestFixtures{

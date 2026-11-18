@@ -27,34 +27,39 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 
 	"gopkg.in/yaml.v3"
-	"gorm.io/gorm"
 )
 
 // fillConfigDefaultLLM mirrors Python CompilationTemplateService.
 // fill_config_default_llm: when the config has no explicit llm_id it lazily
-// fills the tenant's default chat model id (read-side only; the DB row is left
+// fills the current member's default chat model id (read-side only; the DB row is left
 // untouched).
-func fillConfigDefaultLLM(ctx context.Context, tenantDAO *dao.TenantDAO, config entity.JSONMap, tenantID *string) entity.JSONMap {
-	if len(config) == 0 || tenantID == nil || *tenantID == "" {
+func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, tenantID string) entity.JSONMap {
+	if len(config) == 0 || tenantID == "" {
 		return config
 	}
 	if _, ok := config["llm_id"]; ok {
 		return config
 	}
-	tenant, err := tenantDAO.GetByID(ctx, dao.DB, *tenantID)
-	if err != nil || tenant == nil || tenant.TenantLLMID == nil {
+	info, err := NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeChat)
+	if err != nil {
+		return config
+	}
+	modelID := ModelReference(info)
+	if modelID == "" {
 		return config
 	}
 	out := make(entity.JSONMap, len(config)+1)
 	for k, v := range config {
 		out[k] = v
 	}
-	out["llm_id"] = *tenant.TenantLLMID
+	out["llm_id"] = modelID
 	return out
 }
 
@@ -101,56 +106,38 @@ type WikiPreset struct {
 }
 
 // CompilationTemplateService implements the read-side compilation template
-// operations (builtins palette + wiki presets) used by the REST APIs.
+// operations (read-only YAML palette + wiki presets) used by the REST APIs.
 type CompilationTemplateService struct {
-	templateDAO *dao.CompilationTemplateDAO
-	tenantDAO   *dao.TenantDAO
+	tenantDAO *dao.TenantDAO
 }
 
 // NewCompilationTemplateService creates a CompilationTemplateService.
 func NewCompilationTemplateService() *CompilationTemplateService {
 	return &CompilationTemplateService{
-		templateDAO: dao.NewCompilationTemplateDAO(),
-		tenantDAO:   dao.NewTenantDAO(),
+		tenantDAO: dao.NewTenantDAO(),
 	}
 }
 
-// ListBuiltins returns the built-in template palette with the tenant's default
-// LLM id lazily filled in, mirroring the Python list_builtins blueprint flow
-// (list from DB; if empty, seed from files and retry; then fill default LLM).
-func (s *CompilationTemplateService) ListBuiltins(ctx context.Context, tenantID string) ([]*BuiltinTemplate, error) {
-	templates, err := s.templateDAO.ListBuiltins(ctx, dao.DB)
+// ListBuiltins returns the read-only template palette loaded from the YAML
+// definitions. Built-in templates are never persisted in the database.
+func (s *CompilationTemplateService) ListBuiltins(ctx context.Context) ([]*BuiltinTemplate, error) {
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if len(templates) == 0 {
-		if err = s.seedBuiltins(ctx); err != nil {
-			return nil, err
-		}
-		templates, err = s.templateDAO.ListBuiltins(ctx, dao.DB)
-		if err != nil {
-			return nil, err
-		}
+	templates, err := loadBuiltinTemplates()
+	if err != nil {
+		return nil, err
 	}
-	out := make([]*BuiltinTemplate, 0, len(templates))
-	for _, t := range templates {
-		config := fillConfigDefaultLLM(ctx, s.tenantDAO, t.Config, t.TenantID)
-		out = append(out, &BuiltinTemplate{
-			ID:          t.ID,
-			Kind:        t.Kind,
-			DisplayName: t.Name,
-			Description: derefString(t.Description),
-			Config:      config,
-		})
+	for _, template := range templates {
+		template.Config = fillConfigDefaultLLM(ctx, template.Config, tenantID)
 	}
-	return s.sortBuiltins(out), nil
+	return s.sortBuiltins(templates), nil
 }
 
 // LoadWikiPresets loads the wiki page-structure presets from the
-// init_data/compilation_templates/wiki/*.yaml files, filesystem-fresh per call.
 func (s *CompilationTemplateService) LoadWikiPresets() ([]*WikiPreset, error) {
-	wikiDir := filepath.Join(utility.GetProjectBaseDirectory(),
-		"api", "db", "init_data", "compilation_templates", "wiki")
+	wikiDir := filepath.Join(utility.GetProjectBaseDirectory(), "internal", "ingestion", "knowledge_compile", "templates", "wiki")
 	entries, err := os.ReadDir(wikiDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -195,7 +182,7 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 	}
 	if name, ok := req["name"]; ok {
 		nameStr, ok2 := name.(string)
-		if !ok2 || strings.TrimSpace(nameStr) == "" || len([]byte(nameStr)) > 128 {
+		if !ok2 || common.ValidateNameRunes(nameStr, common.NameLimit128) != nil {
 			return errors.New("invalid template name")
 		}
 	}
@@ -307,16 +294,16 @@ func (s *CompilationTemplateService) sortBuiltins(templates []*BuiltinTemplate) 
 	return templates
 }
 
-// seedBuiltins loads the built-in templates from the init_data YAML files and
-// upserts them (as a safety net when the DB has no built-ins yet), mirroring
-// Python seed_builtins_from_files.
-func (s *CompilationTemplateService) seedBuiltins(ctx context.Context) error {
-	dir := filepath.Join(utility.GetProjectBaseDirectory(),
-		"api", "db", "init_data", "compilation_templates")
+func loadBuiltinTemplates() ([]*BuiltinTemplate, error) {
+	dir := filepath.Join(utility.GetProjectBaseDirectory(), "internal", "ingestion", "knowledge_compile", "templates")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil // directory absent is acceptable; nothing to seed
+		if os.IsNotExist(err) {
+			return []*BuiltinTemplate{}, nil
+		}
+		return nil, err
 	}
+	templates := make([]*BuiltinTemplate, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") && !strings.HasSuffix(entry.Name(), ".yml") {
 			continue
@@ -338,38 +325,15 @@ func (s *CompilationTemplateService) seedBuiltins(ctx context.Context) error {
 			continue
 		}
 		id := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-		desc := doc.Description
-		valid := string(entity.StatusValid)
-		tmpl := &entity.CompilationTemplate{
-			ID:        id,
-			Name:      doc.DisplayName,
-			Kind:      doc.Kind,
-			Config:    entity.JSONMap(doc.Config),
-			IsBuiltin: true,
-			Status:    &valid,
-		}
-		if doc.Description != "" {
-			tmpl.Description = &desc
-		}
-		_ = s.upsertBuiltin(ctx, tmpl)
+		templates = append(templates, &BuiltinTemplate{
+			ID:          id,
+			Kind:        doc.Kind,
+			DisplayName: doc.DisplayName,
+			Description: doc.Description,
+			Config:      entity.JSONMap(doc.Config),
+		})
 	}
-	return nil
-}
-
-func (s *CompilationTemplateService) upsertBuiltin(ctx context.Context, t *entity.CompilationTemplate) error {
-	existing, err := s.templateDAO.GetByID(ctx, dao.DB, t.ID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return s.templateDAO.Save(ctx, dao.DB, t)
-	}
-	if err != nil {
-		return err
-	}
-	m := map[string]interface{}{
-		"name": t.Name, "kind": t.Kind, "config": t.Config,
-		"description": t.Description, "is_builtin": true,
-		"status": t.Status,
-	}
-	return s.templateDAO.UpdateFields(ctx, dao.DB, existing.ID, m)
+	return templates, nil
 }
 
 func derefString(p *string) string {

@@ -176,7 +176,10 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 			kbID := fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprintf("%v", m["kb_id"]), "'", "''"))
 			idList[i] = fmt.Sprintf("(id = %s AND kb_id = %s)", docID, kbID)
 		}
-		filter := strings.Join(idList, " OR ")
+		// Balanced, not a flat chain: a bulk delete of many metadata rows would
+		// otherwise nest N levels deep and trip Infinity's Thrift expression depth
+		// limit (see joinBalanced).
+		filter := joinBalanced(idList, " OR ")
 		common.Debug(fmt.Sprintf("Deleting existing metadata with filter: %s", filter))
 		delResp, delErr := table.Delete(filter)
 		if delErr != nil {
@@ -586,7 +589,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 	// Build filter from req.Filter
 	var filterStr string
 	if req.Filter != nil {
-		filterStr = equivalentConditionToStr(req.Filter)
+		filterStr = equivalentConditionToStr(req.Filter, nil)
 	}
 
 	// Get database and table
@@ -803,14 +806,11 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 		return nil
 	}
 
-	// Get tenant ID from first KB
-	tenantID, err := dao.GetTenantIDByKBID(ctx, sqlDB, kbIDs[0])
+	groups, err := dao.GroupKBIDsByTenant(ctx, sqlDB, kbIDs)
 	if err != nil {
-		common.Warn("FilterDocIdsByMetaPushdown: failed to get tenant for KB", zap.String("kbID", kbIDs[0]), zap.Error(err))
+		common.Warn("FilterDocIdsByMetaPushdown: failed to resolve KB tenants", zap.Strings("kbIDs", kbIDs), zap.Error(err))
 		return nil
 	}
-
-	tableName := buildMetadataTableName(tenantID)
 
 	// Build SQL WHERE clause using the full meta_filter logic
 	whereClause, err := BuildInfinityFilter(conditions, logic)
@@ -818,6 +818,33 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 		common.Debug("FilterDocIdsByMetaPushdown: build filter failed", zap.String("error", err.Error()))
 		return nil
 	}
+
+	return collectMetadataDocIDs(groups, func(group dao.TenantKBIDs) []string {
+		return e.filterDocIDsByMetaInTenant(ctx, group.TenantID, group.KBIDs, whereClause)
+	})
+}
+
+// collectMetadataDocIDs combines complete tenant results within the push-down cap.
+// A failed tenant discards all results; zero matches returns a non-nil slice.
+func collectMetadataDocIDs(groups []dao.TenantKBIDs, query func(dao.TenantKBIDs) []string) []string {
+	docIDs := make([]string, 0)
+	for _, group := range groups {
+		ids := query(group)
+		if ids == nil {
+			return nil
+		}
+		docIDs = append(docIDs, ids...)
+		if len(docIDs) > metaPushdownMaxSize {
+			common.Warn("FilterDocIdsByMetaPushdown: combined result exceeds push-down cap, falling back to in-memory",
+				zap.Int("count", len(docIDs)), zap.Any("tenantGroups", groups))
+			return nil
+		}
+	}
+	return common.Deduplicate(docIDs)
+}
+
+func (e *Engine) filterDocIDsByMetaInTenant(ctx context.Context, tenantID string, kbIDs []string, whereClause string) []string {
+	tableName := buildMetadataTableName(tenantID)
 
 	// Add KB filter using IN clause. Escape any single quotes in the IDs
 	// defensively — KB IDs are normally UUIDs, but malformed input must
@@ -865,11 +892,9 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 		return nil
 	}
 
-	// Detect overflow via the SDK's ExtraInfo payload (a JSON string set
-	// when total_hits_count is requested). If we can't parse it, log
-	// and fall through — the in-memory path is still correct, just
-	// slower.
-	if total, parsed := totalHitsFromInfinityExtraInfo(qr.ExtraInfo); parsed {
+	// A partial tenant result cannot be combined into a definitive answer.
+	total, parsed := totalHitsFromInfinityExtraInfo(qr.ExtraInfo)
+	if parsed {
 		if total > int64(metaPushdownMaxSize) {
 			common.Warn("FilterDocIdsByMetaPushdown: result exceeds push-down cap, falling back to in-memory",
 				zap.Int64("total", total),
@@ -895,6 +920,9 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 				docIDs = append(docIDs, idStr)
 			}
 		}
+	}
+	if !parsed && len(docIDs) >= metaPushdownMaxSize {
+		return nil
 	}
 
 	common.Debug("FilterDocIdsByMetaPushdown returned doc IDs", zap.Int("count", len(docIDs)))

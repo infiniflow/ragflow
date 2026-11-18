@@ -44,6 +44,7 @@ import { useHandleFreedomChange } from './use-watch-change';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
+  enabledPrefix?: string;
   modelTypes?: string[];
   llmId?: string;
   llmSelectTestId?: string;
@@ -57,7 +58,10 @@ interface LlmSettingFieldItemsProps {
     | 'thinking'
   >;
   showCollapse?: boolean;
+  collapseOpen?: boolean;
+  onCollapseOpenChange?: (open: boolean) => void;
   ownerTenantId?: string;
+  llmRequired?: boolean;
 }
 
 export const LLMIdFormField = {
@@ -90,6 +94,7 @@ export const LlmSettingSchema = {
 
 export function LlmSettingFieldItems({
   prefix,
+  enabledPrefix,
   modelTypes,
   llmSelectTestId,
   llmOptionTestIdPrefix,
@@ -103,7 +108,10 @@ export function LlmSettingFieldItems({
   ],
   llmId,
   showCollapse = false,
+  collapseOpen,
+  onCollapseOpenChange,
   ownerTenantId,
+  llmRequired = false,
 }: LlmSettingFieldItemsProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
@@ -115,7 +123,17 @@ export function LlmSettingFieldItems({
     [prefix],
   );
 
-  const handleChange = useHandleFreedomChange(getFieldWithPrefix);
+  const getCheckFieldWithPrefix = useCallback(
+    (name: string) => {
+      return `${enabledPrefix ?? ''}${name}`;
+    },
+    [enabledPrefix],
+  );
+
+  const handleChange = useHandleFreedomChange(
+    getFieldWithPrefix,
+    getCheckFieldWithPrefix,
+  );
 
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
     label: t(camelCase(x)),
@@ -262,11 +280,11 @@ export function LlmSettingFieldItems({
           render={({ field }) => (
             <FormItem className="flex justify-between items-center">
               <FormLabel className="flex-1" tooltip={t('thinkingTip')}>
-                {t('thinking')}
+                {t('thinkingMode')}
               </FormLabel>
               <FormControl>
                 <Select
-                  value={field.value ?? 'default'}
+                  value={field.value ?? 'disabled'}
                   onValueChange={field.onChange}
                 >
                   <SelectTrigger className="flex-1 !m-0">
@@ -301,9 +319,16 @@ export function LlmSettingFieldItems({
         testId={llmSelectTestId}
         optionTestIdPrefix={llmOptionTestIdPrefix}
         ownerTenantId={ownerTenantId}
+        required={llmRequired}
       ></LLMFormField>
       {showCollapse ? (
-        <Collapse title={t('modelSetting')}>{settingFields}</Collapse>
+        <Collapse
+          title={t('modelSetting')}
+          open={collapseOpen}
+          onOpenChange={onCollapseOpenChange}
+        >
+          {settingFields}
+        </Collapse>
       ) : (
         settingFields
       )}

@@ -25,6 +25,8 @@ import (
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/wikisearch"
 )
 
@@ -34,7 +36,7 @@ import (
 // keywords. Input keeps query + keywords so the LLM's tool schema matches the
 // other search tools.
 //
-// The tool is scoped to the calling tenant and bound datasets, so results never
+// The tool is scoped to the canvas tenant and bound datasets, so results never
 // leak across tenants/KBs. When the wiki-search service is not configured, or the
 // bound datasets have no wiki artifacts, it returns an empty result so the agent
 // falls back to general hybrid search.
@@ -55,19 +57,12 @@ func newWikiQueryToolWithService(service wikisearch.Service) *WikiQueryTool {
 }
 
 type wikiQueryArgs struct {
-	Query    string `json:"query"`
-	Keywords string `json:"keywords,omitempty"`
+	Query    string `json:"query" doc:"The search query." required:"true"`
+	Keywords string `json:"keywords,omitempty" doc:"Comma-separated keywords to narrow results."`
 }
 
 func (w *WikiQueryTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: "wiki_query",
-		Desc: "Search the compiled wiki of the bound knowledge base(s). Returns rendered wiki page content as passages.",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query":    {Type: schema.String, Required: true, Desc: "The search query."},
-			"keywords": {Type: schema.String, Desc: "Comma-separated keywords to narrow results."},
-		}),
-	}, nil
+	return BuildToolInfo("wiki_query", "Search the compiled wiki of the bound knowledge base(s). Returns rendered wiki page content as passages.", wikiQueryArgs{})
 }
 
 // InvokableRun executes a wiki lookup. It never returns a hard error for an
@@ -85,6 +80,9 @@ func (w *WikiQueryTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	datasetIDs := canvasDatasetIDs(ctx, nil)
 	if svc == nil || tenantID == "" || len(datasetIDs) == 0 {
 		return emptyWikiResult(), nil
+	}
+	if err := CheckCanvasDependencies(ctx, dao.DB, permission.ResourceKindDataset, datasetIDs); err != nil {
+		return "", err
 	}
 	if !svc.AvailableFor(ctx, tenantID, datasetIDs) {
 		return emptyWikiResult(), nil

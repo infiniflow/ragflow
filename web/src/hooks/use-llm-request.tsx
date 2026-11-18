@@ -16,6 +16,7 @@
 
 import message from '@/components/ui/message';
 import { ModelTypeToField } from '@/constants/llm';
+import { useAdditionalModelValidIds } from '@/ee/hooks/use-additional-model-valid-ids';
 import {
   IAddedModel,
   IAvailableProvider,
@@ -42,7 +43,7 @@ import {
 } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -127,6 +128,7 @@ export const useFetchAllAddedModels = (
   const {
     data,
     isFetching: loading,
+    refetch,
     isFetched,
     isError,
   } = useQuery<IAddedModel[]>({
@@ -139,7 +141,7 @@ export const useFetchAllAddedModels = (
         params.type = modelType;
       }
       if (ownerTenantId) {
-        params.owner_tenant_id = ownerTenantId;
+        params.tenant_id = ownerTenantId;
       }
       const { data } = await llmService.listAllAddedModels({ params }, true);
 
@@ -150,7 +152,7 @@ export const useFetchAllAddedModels = (
   // `data` is seeded with `initialData: []`, so it can't tell a real empty
   // result apart from "fetch hasn't completed yet" — `isFetched` stays false
   // until a genuine response (or error) arrives.
-  return { data, loading, isFetched, isError };
+  return { data, loading, isFetched, isError, refetch };
 };
 
 /**
@@ -163,15 +165,51 @@ export const useFetchAllAddedModels = (
 export const useModelValidIds = (
   modelTypes: string[],
   ownerTenantId?: string,
+  includeAdditionalValidIds = true,
 ) => {
-  const { data, isFetched } = useFetchAllAddedModels(undefined, ownerTenantId);
-
-  const validIds = useMemo(
+  const { data, isFetched, refetch } = useFetchAllAddedModels(
+    undefined,
+    ownerTenantId,
+  );
+  const directValidIds = useMemo(
     () => buildValidModelIds(data, modelTypes),
     [data, modelTypes],
   );
+  const {
+    validIds: additionalValidIds,
+    isSettled,
+    getPendingMessage,
+    resolveValidIds: resolveAdditionalValidIds,
+  } = useAdditionalModelValidIds({
+    modelTypes,
+    models: data,
+    modelsFetched: isFetched,
+    enabled: includeAdditionalValidIds,
+    ownerTenantId,
+  });
+  const validIds = useMemo(
+    () => new Set([...directValidIds, ...additionalValidIds]),
+    [additionalValidIds, directValidIds],
+  );
 
-  return { validIds, isFetched };
+  const resolveValidIds = useCallback(async () => {
+    const result = await refetch();
+    if (result.isError) throw result.error;
+    const freshModels = result.data ?? [];
+    const freshAdditionalIds = await resolveAdditionalValidIds(freshModels);
+    return new Set([
+      ...buildValidModelIds(freshModels, modelTypes),
+      ...freshAdditionalIds,
+    ]);
+  }, [modelTypes, refetch, resolveAdditionalValidIds]);
+
+  return {
+    validIds,
+    isFetched,
+    isSettled,
+    getPendingMessage,
+    resolveValidIds,
+  };
 };
 
 export function useFindLlmByUuid() {
@@ -233,6 +271,7 @@ export const useFetchInstanceModels = (
     data,
     isFetching: loading,
     isSuccess,
+    isFetchedAfterMount,
   } = useQuery<IInstanceModel[]>({
     queryKey: LlmKeys.instanceModels(providerName, instanceName),
     initialData: [],
@@ -250,7 +289,7 @@ export const useFetchInstanceModels = (
     },
   });
 
-  return { data, loading, isSuccess };
+  return { data, loading, isSuccess, isFetchedAfterMount };
 };
 
 export type LlmItem = { name: string; logo: string } & IMyLlmValue;
@@ -349,7 +388,10 @@ export const useVerifyProviderConnection = () => {
     mutationKey: [LLMApiAction.VerifyProviderConnection],
     mutationFn: async (params: {
       provider_name: string;
-      api_key: string;
+      api_key?: string | Record<string, any>;
+      clear_api_key?: boolean;
+      use_saved_credentials?: boolean;
+      api_key_config?: Record<string, unknown>;
       base_url?: string;
       region?: string;
       model_info?: IModelInfo[];
@@ -367,21 +409,50 @@ export const useListProviderModels = () => {
   const { isPending: loading, mutateAsync } = useMutation({
     mutationKey: [LLMApiAction.ListProviderModels],
     mutationFn: async (params: IListProviderModelsRequestBody) => {
-      const { provider_name, api_key, base_url } = params;
+      const {
+        provider_name,
+        api_key,
+        base_url,
+        region,
+        use_saved_credentials,
+        api_key_config,
+        instance_name,
+        skipGlobalErrorNotification,
+      } = params;
       // GET /api/v1/providers/<provider_name>/models
       // The API accepts api_key and base_url as optional query parameters.
       // api_key is expected as a string; values in {} object form must be
       // JSON-stringified before being sent.
       const queryParams: Record<string, string> = {};
-      if (api_key) {
+      if (!use_saved_credentials && api_key !== undefined) {
         queryParams.api_key =
           typeof api_key === 'string' ? api_key : JSON.stringify(api_key);
       }
-      if (base_url) {
+      if (base_url !== undefined) {
         queryParams.base_url = base_url;
       }
+      if (region !== undefined) {
+        queryParams.region = region;
+      }
+      if (use_saved_credentials) {
+        queryParams.use_saved_credentials = 'true';
+        if (api_key_config !== undefined) {
+          queryParams.api_key_config = JSON.stringify(api_key_config);
+        }
+      }
+      // Identifies the saved instance used for credentials and fallback
+      // configuration when the form does not supply a value.
+      if (instance_name) {
+        queryParams.instance_name = instance_name;
+      }
       const { data } = await llmService.listProviderModels(
-        { provider_name, params: queryParams },
+        {
+          provider_name,
+          params: queryParams,
+          ...(skipGlobalErrorNotification
+            ? { skipGlobalErrorNotification }
+            : {}),
+        },
         true,
       );
       return data;
@@ -644,8 +715,15 @@ export const useUpdateProviderInstance = () => {
 export const useFetchDefaultModels = () => {
   const { data, isFetching: loading } = useQuery<IDefaultModel[]>({
     queryKey: LlmKeys.defaultModels(),
+    // Tenant default models change rarely, and every mutation that can change
+    // them invalidates this key explicitly, so hold the result for a while
+    // instead of refetching per observer — there is one per dataset row.
+    staleTime: 5 * 60 * 1000,
     initialData: [],
-    gcTime: 0,
+    // `initialData` alone would be timestamped as of now and so counted fresh
+    // for the whole stale window, meaning the seeded empty list would never be
+    // replaced by a real fetch. Backdate it so the first mount still fetches.
+    initialDataUpdatedAt: 0,
     queryFn: async () => {
       const { data } = await llmService.listDefaultModels({}, true);
       return data?.data?.models ?? [];

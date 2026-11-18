@@ -17,20 +17,18 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
-	"ragflow/internal/utility"
 )
 
 // openAICompatUsage mirrors the usage object emitted by the Python
@@ -105,15 +103,18 @@ type openAICompatCompletion struct {
 // chat-completion wire format. It deliberately does not use the normal
 // RAGFlow response helpers because those add the {code,data,message} REST
 // envelope and are not accepted by OpenAI-compatible clients.
-func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req *agentChatCompletionsRequest) {
+func (h *AgentHandler) handleOpenAICompat(c *gin.Context, req *agentChatCompletionsRequest) {
 	question := extractLastUserContent(req.Messages)
 	if req.SessionID == "" {
-		req.SessionID = utility.GenerateToken()
+		req.SessionID = common.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
-	runContext := service.WithOpenAICompatMessages(c.Request.Context(), req.Messages)
+	common.SetOperationResource(c, "session_id", req.SessionID)
+	runContext, cancel := context.WithCancel(service.WithOpenAICompatMessages(c.Request.Context(), req.Messages))
+	defer cancel()
 	events, err := h.chatRunner.RunAgent(
-		runContext, user.ID, req.AgentID, req.SessionID, "", question, req.Files,
+		runContext, req.AgentID, req.SessionID, "", question, req.Files,
 	)
 	if err != nil {
 		writeOpenAICompatError(c, err)
@@ -123,10 +124,16 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req
 	completionID := req.SessionID
 	promptTokens := countOpenAICompatPromptTokens(req.Messages)
 	if req.Stream {
+		common.FinishOperationLog(c)
 		h.streamOpenAICompat(c, events, completionID, req.AgentID, promptTokens)
 		return
 	}
 
+	// The non-stream path below collects the whole answer before writing it
+	// once, so http.Server.WriteTimeout applies to it exactly as it does to the
+	// stream branch. Clear the deadline before the collection starts, mirroring
+	// openai_chat.go which clears it before branching (issue #21649).
+	clearResponseWriteDeadline(c)
 	response, err := collectOpenAICompatCompletion(events, completionID, req.AgentID, promptTokens)
 	if err != nil {
 		writeOpenAICompatError(c, err)
@@ -135,12 +142,19 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req
 	c.JSON(http.StatusOK, response)
 }
 
+// streamOpenAICompat writes the OpenAI-compatible chat.completion.chunk stream
+// for an agent run: one `data: {...}` frame per canvas event, then
+// `data: [DONE]`. It clears the server write deadline first so an answer that
+// takes longer than http.Server.WriteTimeout is not truncated (issue #21649).
+// handleOpenAICompat already clears before starting the run, so this call keeps
+// the guarantee for the function's own contract and costs one syscall.
 func (h *AgentHandler) streamOpenAICompat(
 	c *gin.Context,
 	events <-chan canvas.RunEvent,
 	completionID, model string,
 	promptTokens int,
 ) {
+	clearResponseWriteDeadline(c)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -149,7 +163,7 @@ func (h *AgentHandler) streamOpenAICompat(
 	for ev := range events {
 		switch ev.Type {
 		case "error":
-			message := openAICompatRunEventMessage(ev, "Agent run failed.")
+			message := agentRunEventMessage(ev, "Agent run failed.")
 			chunk := newOpenAICompatStreamChunk(completionID, model, "**ERROR**: "+message, "error")
 			chunk.Choices[0].Delta.Error = map[string]string{
 				"message": message,
@@ -160,12 +174,12 @@ func (h *AgentHandler) streamOpenAICompat(
 			return
 		case "waiting_for_user":
 			chunk := newOpenAICompatStreamChunk(completionID, model, nil, "waiting_for_user")
-			chunk.Choices[0].Delta.WaitingForUser = openAICompatWaitingForUser(ev)
+			chunk.Choices[0].Delta.WaitingForUser = agentWaitingForUser(ev)
 			chunk.Usage = openAICompatUsageForCompletion(promptTokens, completionTokens)
 			_ = writeOpenAICompatSSE(c, chunk)
 			return
 		case "cancelled":
-			message := openAICompatRunEventMessage(ev, "Agent run was cancelled.")
+			message := agentRunEventMessage(ev, "Agent run was cancelled.")
 			chunk := newOpenAICompatStreamChunk(completionID, model, nil, "cancelled")
 			chunk.Choices[0].Delta.Cancelled = map[string]string{"message": message}
 			chunk.Usage = openAICompatUsageForCompletion(promptTokens, completionTokens)
@@ -226,24 +240,16 @@ func collectOpenAICompatCompletion(
 		if ev.Type == "error" {
 			return openAICompatCompletion{}, common.NewCodedError(
 				common.CodeServerError,
-				openAICompatRunEventMessage(ev, "Agent run failed."),
+				agentRunEventMessage(ev, "Agent run failed."),
 			)
 		}
 		if ev.Type == "waiting_for_user" {
-			waiting := openAICompatWaitingForUser(ev)
-			message := "Agent is waiting for user input."
-			if waiting.CpnID != "" {
-				message += " cpn_id: " + waiting.CpnID
-			}
-			if waiting.Tips != "" {
-				message += " " + waiting.Tips
-			}
-			return openAICompatCompletion{}, common.NewCodedError(common.CodeConflict, message)
+			return openAICompatCompletion{}, common.NewCodedError(common.CodeConflict, agentWaitingForUserMessage(ev))
 		}
 		if ev.Type == "cancelled" {
 			return openAICompatCompletion{}, common.NewCodedError(
 				common.CodeConflict,
-				openAICompatRunEventMessage(ev, "Agent run was cancelled."),
+				agentRunEventMessage(ev, "Agent run was cancelled."),
 			)
 		}
 		if ev.Type != "message" && ev.Type != "message_end" {
@@ -324,25 +330,6 @@ func openAICompatUsageForCompletion(promptTokens, completionTokens int) *openAIC
 	}
 }
 
-func openAICompatRunEventMessage(ev canvas.RunEvent, fallback string) string {
-	var payload canvas.ErrorEvent
-	if err := json.Unmarshal([]byte(ev.Data), &payload); err == nil && payload.Message != "" {
-		return payload.Message
-	}
-	if message := strings.TrimSpace(ev.Data); message != "" {
-		return message
-	}
-	return fallback
-}
-
-func openAICompatWaitingForUser(ev canvas.RunEvent) canvas.WaitingForUserEvent {
-	var waiting canvas.WaitingForUserEvent
-	if err := json.Unmarshal([]byte(ev.Data), &waiting); err != nil {
-		return canvas.WaitingForUserEvent{}
-	}
-	return waiting
-}
-
 func writeOpenAICompatSSE(c *gin.Context, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -369,7 +356,7 @@ func writeOpenAICompatError(c *gin.Context, err error) {
 	if errors.As(err, &codedErr) {
 		code, message = codedErr.Code, codedErr.Message
 	}
-	status, errorType := openAICompatErrorResponse(code, err)
+	status, errorType := openAICompatErrorResponse(code)
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"message": message,
@@ -378,11 +365,7 @@ func writeOpenAICompatError(c *gin.Context, err error) {
 	})
 }
 
-func openAICompatErrorResponse(code common.ErrorCode, err error) (int, string) {
-	if errors.Is(err, service.ErrAgentSessionBusy) {
-		return http.StatusConflict, "invalid_request_error"
-	}
-
+func openAICompatErrorResponse(code common.ErrorCode) (int, string) {
 	switch code {
 	case common.CodeArgumentError, common.CodeDataError, common.CodeBadRequest, common.CodeParamError:
 		return http.StatusBadRequest, "invalid_request_error"

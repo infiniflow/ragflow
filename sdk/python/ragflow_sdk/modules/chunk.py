@@ -29,6 +29,7 @@ class Chunk(Base):
     def __init__(self, rag, res_dict):
         self.id = ""
         self.content = ""
+        self.image_id = ""
         self.important_keywords = []
         self.tag_kwd = []
         self.questions = []

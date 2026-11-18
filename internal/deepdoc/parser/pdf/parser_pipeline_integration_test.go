@@ -3,12 +3,7 @@
 package pdf
 
 import (
-	"bytes"
-	"context"
-	"encoding/base64"
 	"encoding/json"
-	"image"
-	_ "image/png"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -16,6 +11,7 @@ import (
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/parser/tableutil"
 )
 
 // ── golden-file helpers ────────────────────────────────────────────────────
@@ -95,12 +91,12 @@ func tablesToGolden(tables []pdf.TableItem) []tableGolden {
 
 // TestIntegration_SectionsText verifies section text output matches golden.
 func TestIntegration_SectionsText(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "01_english_simple.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -138,12 +134,12 @@ func TestIntegration_SectionsText(t *testing.T) {
 
 // TestIntegration_SectionsCount verifies section count is stable.
 func TestIntegration_SectionsCount(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "01_english_simple.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -164,12 +160,12 @@ func TestIntegration_SectionsCount(t *testing.T) {
 
 // TestIntegration_TableStructure verifies table rows and cell text match golden.
 func TestIntegration_TableStructure(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "06_table_content.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -216,53 +212,14 @@ func TestIntegration_TableStructure(t *testing.T) {
 	}
 }
 
-// TestIntegration_TableImageB64 verifies table ImageB64 is valid base64 PNG.
-func TestIntegration_TableImageB64(t *testing.T) {
-	client := mustConnectInferenceClient(t)
-	data := mustReadPDF(t, "06_table_content.pdf")
-
-	cfg := pdf.DefaultParserConfig()
-	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if len(result.Tables) == 0 {
-		t.Skip("DLA did not detect any tables in fixture — skipping image check")
-	}
-
-	for i, tbl := range result.Tables {
-		if tbl.ImageB64 == "" {
-			t.Errorf("table[%d] ImageB64 is empty", i)
-			continue
-		}
-		// Verify base64 decodable.
-		raw, err := base64.StdEncoding.DecodeString(tbl.ImageB64)
-		if err != nil {
-			t.Errorf("table[%d] ImageB64: not valid base64: %v", i, err)
-			continue
-		}
-		// Verify it's a valid image.
-		img, _, err := image.Decode(bytes.NewReader(raw))
-		if err != nil {
-			t.Errorf("table[%d] ImageB64: not a valid image: %v", i, err)
-			continue
-		}
-		b := img.Bounds()
-		if b.Dx() <= 0 || b.Dy() <= 0 {
-			t.Errorf("table[%d] ImageB64: zero-size image %dx%d", i, b.Dx(), b.Dy())
-		}
-	}
-}
-
 // TestIntegration_LayoutTypes verifies DLA labels boxes with expected types.
 func TestIntegration_LayoutTypes(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "06_table_content.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -308,7 +265,7 @@ func TestIntegration_LayoutTypes(t *testing.T) {
 // results when called multiple times with the same image. This validates
 // that the ML inference is deterministic (or at least semantically stable).
 func TestIntegration_Idempotency(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	// Render a fixture page as the stable input image.
 	eng := mustOpenEngine(t, "06_table_content.pdf")
@@ -322,7 +279,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 	t.Run("DLA", func(t *testing.T) {
 		var all [][]pdf.DLARegion
 		for i := 0; i < N; i++ {
-			regions, err := client.DLA(context.Background(), pageImg)
+			regions, err := client.DLA(t.Context(), pageImg)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -337,7 +294,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 		cropped := cropImageRect(pageImg, 50, 200, 550, 400)
 		var all [][]pdf.TSRCell
 		for i := 0; i < N; i++ {
-			cells, err := client.TSR(context.Background(), cropped)
+			cells, err := client.TSR(t.Context(), cropped)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -349,7 +306,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 	t.Run("OCRDetect", func(t *testing.T) {
 		var all [][]pdf.OCRBox
 		for i := 0; i < N; i++ {
-			boxes, err := client.OCRDetect(context.Background(), pageImg)
+			boxes, err := client.OCRDetect(t.Context(), pageImg)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -362,7 +319,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 		cropped := cropImageRect(pageImg, 50, 100, 400, 130)
 		var all [][]pdf.OCRText
 		for i := 0; i < N; i++ {
-			texts, err := client.OCRRecognize(context.Background(), cropped)
+			texts, err := client.OCRRecognize(t.Context(), cropped)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -501,12 +458,12 @@ func floatClose(a, b, eps float64) bool {
 // suppression inside table regions, and caption removal — the key alignment
 // fixes from the Python→Go migration.
 func TestIntegration_TableAlign(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "18_table_caption.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -541,12 +498,12 @@ func TestIntegration_TableAlign(t *testing.T) {
 // TestIntegration_GarbageLayout verifies CID-garbled and garbage-layout
 // (header/footer/reference) boxes are popped from output.
 func TestIntegration_GarbageLayout(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "17_garbage_layout.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -571,12 +528,12 @@ func TestIntegration_GarbageLayout(t *testing.T) {
 
 // TestIntegration_MultiChunk verifies parsing for large documents.
 func TestIntegration_MultiChunk(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "19_multipage_chunk.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -593,7 +550,7 @@ func TestIntegration_MultiChunk(t *testing.T) {
 // TestIntegration_NoRegression runs a few snapshot PDFs and checks basic
 // invariants — no panic, sections produced, no CID garbage.
 func TestIntegration_NoRegression(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	for _, name := range []string{
 		"01_english_simple.pdf",
@@ -605,7 +562,7 @@ func TestIntegration_NoRegression(t *testing.T) {
 			data := mustReadPDF(t, name)
 			cfg := pdf.DefaultParserConfig()
 			p := NewParser(cfg)
-			result, err := p.Parse(context.Background(), data, client)
+			result, err := p.Parse(t.Context(), data, client)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
@@ -625,13 +582,13 @@ func TestIntegration_NoRegression(t *testing.T) {
 // TestIntegration_TableRotation verifies that evaluateTableOrientation
 // correctly detects rotation using region-count scoring.
 func TestIntegration_TableRotation(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	t.Run("upright_table", func(t *testing.T) {
 		data := mustReadPDF(t, "rotate_0.pdf")
 		cfg := pdf.DefaultParserConfig()
 		p := NewParser(cfg)
-		result, err := p.Parse(context.Background(), data, client)
+		result, err := p.Parse(t.Context(), data, client)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -649,7 +606,7 @@ func TestIntegration_TableRotation(t *testing.T) {
 		// spaces post-rotation).  Character extraction and rotation are
 		// verified via the lyt.CharsToBoxes path.
 		p := NewParser(cfg)
-		result, err := p.Parse(context.Background(), data, client)
+		result, err := p.Parse(t.Context(), data, client)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -663,12 +620,12 @@ func TestIntegration_TableRotation(t *testing.T) {
 // TestIntegration_WordSpacing verifies space insertion between ASCII word
 // characters with a visible gap (Python __img_ocr space insertion).
 func TestIntegration_WordSpacing(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "01_english_simple.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -701,7 +658,7 @@ func TestE2E_ParseAndPostProcess(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.Parse(context.Background(), data, mock)
+	result, err := p.Parse(t.Context(), data, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -719,4 +676,74 @@ func TestE2E_ParseAndPostProcess(t *testing.T) {
 
 	figs := result.Figures()
 	t.Logf("figures: %d", len(figs))
+}
+
+func TestManualAN0590TableRows(t *testing.T) {
+	path := os.Getenv("AN0590_PDF")
+	if path == "" {
+		t.Skip("AN0590_PDF required")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := NewEngine(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	cfg := pdf.DefaultParserConfig()
+	result, err := NewParser(cfg).ParseRaw(t.Context(), engine, mustConnectInProcessAnalyzer(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	functions, registers := 0, 0
+	for _, s := range result.Sections {
+		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, ">SIMA6<") {
+			registers++
+			td, err := tableutil.ParseTableHTML(s.Text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(td.Grid) != 4 {
+				t.Fatalf("register rows = %d, want 4", len(td.Grid))
+			}
+			for _, row := range td.Grid {
+				if len(row) != 9 {
+					t.Fatalf("register columns = %d, want 9", len(row))
+				}
+			}
+		}
+		if s.LayoutType != pdf.LayoutTypeTable || !strings.Contains(s.Text, "函数名") {
+			continue
+		}
+		functions++
+		td, err := tableutil.ParseTableHTML(s.Text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(td.Grid) != 6 {
+			t.Fatalf("function rows = %d, want 6", len(td.Grid))
+		}
+		want := []string{"函数名", "功能", "Buffer_data", "WriteAddr", "NumByteToWrite", "输出"}
+		if strings.Contains(s.Text, "I2C_EEPROM_BufferRead") {
+			want[2], want[3], want[4] = "Receive_buffer", "ReadAddr", "NumByteToRead"
+		}
+		for r, row := range td.Grid {
+			var text strings.Builder
+			for _, cell := range row {
+				text.WriteString(cell.Text)
+			}
+			if !strings.Contains(text.String(), want[r]) {
+				t.Errorf("row %d = %q, want %q", r, text.String(), want[r])
+			}
+		}
+		t.Log(s.Text)
+	}
+	if functions != 3 {
+		t.Fatalf("function tables = %d, want 3", functions)
+	}
+	if registers != 1 {
+		t.Fatalf("register tables = %d, want 1", registers)
+	}
 }

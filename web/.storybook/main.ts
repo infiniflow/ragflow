@@ -54,6 +54,7 @@ const config: StorybookConfig = {
     if (config.resolve) {
       config.resolve.alias = {
         ...config.resolve.alias,
+        '@/ee': path.resolve(__dirname, '../src/ee-stub'),
         '@': path.resolve(__dirname, '../src'),
       };
     }

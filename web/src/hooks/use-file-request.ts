@@ -15,6 +15,7 @@
  */
 
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import {
   IFetchFileListResult,
@@ -28,8 +29,14 @@ import {
 import fileManagerService from '@/services/file-manager-service';
 import api from '@/utils/api';
 import { downloadFileFromBlob } from '@/utils/file-util';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import request from '@/utils/request';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -85,6 +92,11 @@ export const useUploadFile = () => {
         formData.append('path', pathList[index]);
       });
       try {
+        // Return the full response (code + message + detail) so the caller
+        // can dispatch the upgrade modal for billing codes 2000-2007. The
+        // global request interceptor already shows the modal for 2000-2005,
+        // but returning the full payload keeps the page-level handler
+        // consistent with the dataset upload flow.
         const ret = await fileManagerService.uploadFile(formData);
         if (ret?.data.code === 0) {
           message.success(t('message.uploaded'));
@@ -93,9 +105,9 @@ export const useUploadFile = () => {
             queryKey: [FileApiAction.FetchFileList],
           });
         }
-        return ret?.data?.code;
+        return ret?.data;
       } catch {
-        return;
+        return undefined;
       }
     },
   });
@@ -193,7 +205,8 @@ export interface IListResult {
 }
 
 export const useFetchFileList = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const id = useGetFolderId();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
@@ -217,6 +230,19 @@ export const useFetchFileList = () => {
         page: pagination.current,
       });
 
+      // The requested folder was removed (e.g. by moving an ancestor into
+      // another folder, which recreates the subtree under new IDs). Surface
+      // it as an empty result flagged for redirect instead of an error, so
+      // React Query does not retry a folder that will never come back.
+      if (data?.code === 404) {
+        return {
+          files: [],
+          parent_folder: {} as IFolder,
+          total: 0,
+          folderNotFound: true,
+        };
+      }
+
       return data?.data;
     },
   });
@@ -232,10 +258,12 @@ export const useFetchFileList = () => {
   return {
     ...data,
     searchString,
+    setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total },
     setPagination,
     loading,
+    folderNotFound: data?.folderNotFound === true,
   };
 };
 
@@ -256,6 +284,7 @@ export const useDeleteFile = () => {
         });
         if (data.code === 0) {
           message.success(t('message.deleted'));
+          markListItemsDeleted(ListDeletionKey.FileList);
         }
         queryClient.invalidateQueries({
           queryKey: [FileApiAction.FetchFileList],
@@ -316,6 +345,58 @@ export const useRenameFile = () => {
   return { data, loading, renameFile: mutateAsync };
 };
 
+const LinkedDatasetsPollIntervalMs = 500;
+const LinkedDatasetsPollMaxAttempts = 6;
+
+// Returns true when every affected file row on the current page matches the
+// requested link: the selected datasets are present and, in 'replace' mode, no
+// other dataset is left behind — otherwise clearing the selection (empty kbIds)
+// would look done on the stale row. Rows that are not on the current page, or
+// folder rows (which never carry kbs_info), cannot be verified and are treated
+// as done.
+const areDatasetsLinked = (
+  queryClient: QueryClient,
+  fileIds: string[],
+  kbIds: string[],
+  mode: ConnectFileToKnowledgeMode,
+) => {
+  const cached = queryClient.getQueriesData<IFetchFileListResult>({
+    queryKey: [FileApiAction.FetchFileList],
+  })[0]?.[1] ?? { files: [] };
+  const verifiableFiles = (cached.files ?? []).filter(
+    (file) => fileIds.includes(file.id) && file.type !== 'folder',
+  );
+  if (verifiableFiles.length === 0) return true;
+  return verifiableFiles.every((file) => {
+    const linkedIds = (file.kbs_info ?? []).map((kb) => kb.kb_id);
+    return (
+      kbIds.every((kbId) => linkedIds.includes(kbId)) &&
+      (mode === 'add' || linkedIds.length === kbIds.length)
+    );
+  });
+};
+
+// Both backends respond to link-to-datasets before the file↔dataset mappings
+// are written (the conversion runs in the background), so the refetch right
+// after success can still see stale kbs_info. Poll until the change shows up in
+// the list data; give up after a bounded window.
+const waitUntilDatasetsLinked = async (
+  queryClient: QueryClient,
+  fileIds: string[],
+  kbIds: string[],
+  mode: ConnectFileToKnowledgeMode,
+) => {
+  for (let attempt = 0; attempt < LinkedDatasetsPollMaxAttempts; attempt++) {
+    if (areDatasetsLinked(queryClient, fileIds, kbIds, mode)) return;
+    await new Promise((resolve) =>
+      setTimeout(resolve, LinkedDatasetsPollIntervalMs),
+    );
+    await queryClient.refetchQueries({
+      queryKey: [FileApiAction.FetchFileList],
+    });
+  }
+};
+
 export const useConnectToKnowledge = () => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
@@ -338,38 +419,15 @@ export const useConnectToKnowledge = () => {
       });
       if (data.code === 0) {
         message.success(t('message.operated'));
-        const fileIdSet = new Set(params.fileIds);
-        queryClient.setQueriesData<IFetchFileListResult>(
-          {
-            queryKey: [FileApiAction.FetchFileList],
-          },
-          (oldData) => {
-            if (!oldData?.files) return oldData;
-            return {
-              ...oldData,
-              files: oldData.files.map((file) => {
-                if (!fileIdSet.has(file.id)) return file;
-                const kbsInfo =
-                  params.mode === 'replace'
-                    ? params.kbsInfo
-                    : [
-                        ...(file.kbs_info ?? []),
-                        ...params.kbsInfo.filter(
-                          (kb) =>
-                            !(file.kbs_info ?? []).some(
-                              (item) => item.kb_id === kb.kb_id,
-                            ),
-                        ),
-                      ];
-                return { ...file, kbs_info: kbsInfo };
-              }),
-            };
-          },
-        );
-        queryClient.invalidateQueries({
+        await queryClient.invalidateQueries({
           queryKey: [FileApiAction.FetchFileList],
-          refetchType: 'none',
         });
+        await waitUntilDatasetsLinked(
+          queryClient,
+          params.fileIds,
+          params.kbIds,
+          params.mode,
+        );
       }
       return data.code;
     },
@@ -383,11 +441,18 @@ export const useFetchPureFileList = () => {
     mutationKey: [FileApiAction.FetchPureFileList],
     gcTime: 0,
 
-    mutationFn: async (parentId: string) => {
+    mutationFn: async ({
+      parentId,
+      tenantId,
+    }: {
+      parentId: string;
+      tenantId?: string;
+    }) => {
       const { data } = await fileManagerService.listFile({
         parent_id: parentId,
         page_size: 100,
         page: 1,
+        ...(tenantId ? { tenant_id: tenantId } : {}),
       });
 
       return data;

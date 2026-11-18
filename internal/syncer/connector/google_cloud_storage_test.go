@@ -17,7 +17,7 @@ func TestGoogleCloudStorageConnectorOpenSyncUsesFingerprintAndFetch(t *testing.T
 	})
 
 	start := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
 		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
 		Fingerprints: map[string]string{
@@ -55,7 +55,7 @@ func TestGoogleCloudStorageConnectorOpenSyncUsesFingerprintAndFetch(t *testing.T
 	if !ok {
 		t.Fatalf("session does not implement Fetcher")
 	}
-	blob, err := fetcher.Fetch(context.Background(), *doc.FetchRef)
+	blob, err := fetcher.Fetch(t.Context(), *doc.FetchRef)
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestGoogleCloudStorageConnectorOpenSyncDefersListingUntilNextBatch(t *testi
 		return baseListObjects(ctx, startAfter, maxKeys)
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestGoogleCloudStorageConnectorOpenSyncFiltersImagesUnlessAllowed(t *testin
 		{Key: "docs/b.txt", LastModified: mustTime(t, "2026-01-02T00:00:00Z"), Size: 1, ETag: "b"},
 	}
 	connector := newTestGoogleCloudStorageConnector(t, objects)
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestGoogleCloudStorageConnectorOpenSyncFiltersImagesUnlessAllowed(t *testin
 
 	allowed := newTestGoogleCloudStorageConnector(t, objects)
 	allowed.allowImages = true
-	session, err = allowed.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err = allowed.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("allow images OpenSync: %v", err)
 	}
@@ -126,13 +126,71 @@ func TestGoogleCloudStorageConnectorOpenSyncFiltersImagesUnlessAllowed(t *testin
 	}
 }
 
+func TestGoogleCloudStorageConnectorOpenSyncResumesFromCheckpoint(t *testing.T) {
+	connector := newTestGoogleCloudStorageConnector(t, []googleCloudStorageObject{
+		{Key: "docs/a.txt", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1, ETag: "a"},
+		{Key: "docs/b.txt", LastModified: mustTime(t, "2026-01-02T00:00:00Z"), Size: 1, ETag: "b"},
+		{Key: "docs/c.txt", LastModified: mustTime(t, "2026-01-03T00:00:00Z"), Size: 1, ETag: "c"},
+	})
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
+		FromBeginning: true,
+		Resume: &SyncCheckpoint{
+			Cursor:   googleCloudStorageSourceID("bucket", "docs/b.txt"),
+			SourceID: googleCloudStorageSourceID("bucket", "docs/b.txt"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != googleCloudStorageSourceID("bucket", "docs/c.txt") {
+		t.Fatalf("documents = %+v", batch.Documents)
+	}
+}
+
+func TestGoogleCloudStorageConnectorOpenSyncResumeRejectsMissingAnchor(t *testing.T) {
+	connector := newTestGoogleCloudStorageConnector(t, []googleCloudStorageObject{
+		{Key: "docs/a.txt", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1, ETag: "a"},
+		{Key: "docs/c.txt", LastModified: mustTime(t, "2026-01-03T00:00:00Z"), Size: 1, ETag: "c"},
+	})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
+		FromBeginning: true,
+		Resume: &SyncCheckpoint{
+			Cursor:   googleCloudStorageSourceID("bucket", "docs/b.txt"),
+			SourceID: googleCloudStorageSourceID("bucket", "docs/b.txt"),
+		},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
+func TestGoogleCloudStorageConnectorOpenSyncResumeRejectsForeignCheckpoint(t *testing.T) {
+	connector := newTestGoogleCloudStorageConnector(t, []googleCloudStorageObject{
+		{Key: "docs/a.txt", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1, ETag: "a"},
+	})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
+		FromBeginning: true,
+		Resume: &SyncCheckpoint{
+			Cursor: "other:bucket:docs/a.txt",
+		},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 func TestGoogleCloudStorageConnectorOpenPruneReturnsSlimSnapshot(t *testing.T) {
 	connector := newTestGoogleCloudStorageConnector(t, []googleCloudStorageObject{
 		{Key: "docs/a.txt", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1, ETag: "a"},
 		{Key: "docs/b.txt", LastModified: mustTime(t, "2026-01-02T00:00:00Z"), Size: 1, ETag: "b"},
 		{Key: "docs/folder/", LastModified: mustTime(t, "2026-01-02T00:00:00Z"), Size: 0, ETag: "folder"},
 	})
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune: %v", err)
 	}
@@ -152,7 +210,7 @@ func TestGoogleCloudStorageConnectorOpenSyncIncludesMissingFingerprint(t *testin
 	connector := newTestGoogleCloudStorageConnector(t, []googleCloudStorageObject{
 		{Key: "docs/no-etag.txt", LastModified: mustTime(t, "2026-01-01T00:00:00Z"), Size: 1},
 	})
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		Fingerprints: map[string]string{"other": "fingerprint"},
 	})
 	if err != nil {

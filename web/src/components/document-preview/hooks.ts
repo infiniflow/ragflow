@@ -100,24 +100,6 @@ export const useGetDocumentUrl = (isAgent: boolean) => {
   return url;
 };
 
-export const useCatchError = (api: string) => {
-  const [error, setError] = useState('');
-  const fetchDocument = useCallback(async () => {
-    const ret = await axios.get(api);
-    const { data } = ret;
-    if (!(data instanceof ArrayBuffer) && data.code !== 0) {
-      setError(data.message);
-    }
-    return ret;
-  }, [api]);
-
-  useEffect(() => {
-    fetchDocument();
-  }, [fetchDocument]);
-
-  return { fetchDocument, error };
-};
-
 export const useFetchDocument = () => {
   const fetchDocument = useCallback(async (api: string) => {
     const ret = await axios.get(api, {
@@ -156,15 +138,9 @@ async function stripWpsDispImg(data: ArrayBuffer): Promise<ArrayBuffer> {
     modified = true;
     let cleaned = xml;
     // Remove <f> formula tags that reference DISPIMG
-    cleaned = cleaned.replace(
-      /<f\b[^>]*>[\s\S]*?DISPIMG[\s\S]*?<\/f>/g,
-      '',
-    );
+    cleaned = cleaned.replace(/<f\b[^>]*>[\s\S]*?DISPIMG[\s\S]*?<\/f>/g, '');
     // Replace cached <v> values that reference DISPIMG with a placeholder
-    cleaned = cleaned.replace(
-      /<v>[^<]*DISPIMG[^<]*<\/v>/g,
-      '<v>[图片]</v>',
-    );
+    cleaned = cleaned.replace(/<v>[^<]*DISPIMG[^<]*<\/v>/g, '<v>[图片]</v>');
     zip.file(path, cleaned);
   }
 
@@ -187,7 +163,9 @@ async function stripWpsDispImg(data: ArrayBuffer): Promise<ArrayBuffer> {
  * When such a prefix is detected, re-serialize the file with SheetJS (which
  * always emits a standard, prefix-free xlsx) so ExcelJS can parse it.
  */
-async function normalizeXlsxForExcelJS(data: ArrayBuffer): Promise<ArrayBuffer> {
+async function normalizeXlsxForExcelJS(
+  data: ArrayBuffer,
+): Promise<ArrayBuffer> {
   try {
     const zip = await JSZip.loadAsync(data);
     const workbookFile = zip.file('xl/workbook.xml');
@@ -209,12 +187,177 @@ async function normalizeXlsxForExcelJS(data: ArrayBuffer): Promise<ArrayBuffer> 
   }
 }
 
-export const useFetchExcel = (filePath: string) => {
+/**
+ * x-spreadsheet (used internally by @js-preview/excel) throws
+ * "Worksheet name ... cannot include any of the following characters:
+ * * ? : \ / [ ]" when a sheet name contains any of those characters. Files
+ * generated programmatically (not through Excel/WPS UI) can carry such names
+ * (e.g. "Visible:Data"), crashing the whole preview. Replace the illegal
+ * characters with underscores in xl/workbook.xml so the previewer renders.
+ */
+async function sanitizeSheetNames(data: ArrayBuffer): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(data);
+  const workbookFile = zip.file('xl/workbook.xml');
+  if (!workbookFile) return data;
+
+  const xml = await workbookFile.async('string');
+  const cleaned = xml.replace(
+    /(<sheet\b[^>]*\bname=")([^"]*)(")/g,
+    (_match, prefix: string, name: string, suffix: string) =>
+      prefix + name.replace(/[:\\/?*[\]]/g, '_') + suffix,
+  );
+  if (cleaned === xml) return data;
+
+  zip.file('xl/workbook.xml', cleaned);
+  return zip.generateAsync({
+    type: 'arraybuffer',
+    compression: 'DEFLATE',
+  });
+}
+
+/** x-spreadsheet Data instance used by @js-preview/excel (not a plain object). */
+type XsData = {
+  styles: Record<string, unknown>[];
+  rows: {
+    setCell: (
+      ri: number,
+      ci: number,
+      cell: { style?: number; text?: string },
+      type?: 'all' | 'text' | 'format',
+    ) => void;
+    getCellOrNew: (ri: number, ci: number) => { style?: number; text?: string };
+    getHeight?: (ri: number) => number;
+    len?: number;
+  };
+  cols?: { len?: number };
+  scroll?: { x: number; y: number };
+};
+
+type XsScrollbar = {
+  move: (offset: { top?: number; left?: number }) => unknown;
+};
+
+type XsInstance = {
+  datas: XsData[];
+  reRender?: () => void;
+  sheet: {
+    resetData: (data: XsData) => void;
+    data?: XsData & { row?: { height?: number } };
+    reload?: () => void;
+    table?: { render?: () => void };
+    verticalScrollbar?: XsScrollbar;
+    horizontalScrollbar?: XsScrollbar;
+  };
+  bottombar?: {
+    items: HTMLElement[];
+    clickSwap2?: (el: HTMLElement) => void;
+  };
+};
+
+/** Locate inside @js-preview/excel: switch sheet, paint range via Data API, scroll. */
+export function applyExcelSourceLocate(
+  previewer: ReturnType<typeof jsPreviewExcel.init>,
+  positions: number[][],
+) {
+  const xs = (previewer as { xs?: XsInstance }).xs;
+  if (!xs?.datas?.length) return;
+  const ranges = positions.flatMap((pos) => {
+    if (
+      !Array.isArray(pos) ||
+      pos.length < 5 ||
+      !pos.slice(0, 5).every((v) => Number.isInteger(v) && v > 0)
+    )
+      return [];
+    const sheetIdx = pos[0] - 1;
+    const data = xs.datas[sheetIdx];
+    if (!data?.styles || !data.rows?.setCell) return [];
+    const r1 = pos[1] - 1;
+    const r2 = Math.min(pos[2] - 1, (data.rows.len ?? Infinity) - 1);
+    const c1 = pos[3] - 1;
+    const c2 = Math.min(pos[4] - 1, (data.cols?.len ?? Infinity) - 1);
+    if (r2 < r1 || c2 < c1) return [];
+    return [{ sheetIdx, data, r1, r2, c1, c2 }];
+  });
+  const first = ranges[0];
+  if (!first) return;
+  const { sheetIdx, data, r1 } = first;
+
+  // The spreadsheet canvas is always rendered on a light sheet background
+  // regardless of app theme, so the locate highlight must use fixed light
+  // colors rather than theme tokens (which resolve to near-white text in dark
+  // mode and become invisible). Matches the yellow used by the PDF highlighter.
+  const stylesBySheet = new Map<XsData, Map<string, number>>();
+  for (const range of ranges) {
+    let styles = stylesBySheet.get(range.data);
+    if (!styles) {
+      styles = new Map();
+      stylesBySheet.set(range.data, styles);
+    }
+    for (let r = range.r1; r <= range.r2; r++) {
+      for (let c = range.c1; c <= range.c2; c++) {
+        const cell = range.data.rows.getCellOrNew(r, c);
+        const original = range.data.styles[cell.style ?? -1] ?? {};
+        if (original.bgcolor === '#ffe58f' && original.color === '#1a1a1a')
+          continue;
+        const highlight = { ...original, bgcolor: '#ffe58f', color: '#1a1a1a' };
+        const key = JSON.stringify(highlight);
+        let styleIdx = styles.get(key);
+        if (styleIdx === undefined) {
+          styleIdx = range.data.styles.push(highlight) - 1;
+          styles.set(key, styleIdx);
+        }
+        range.data.rows.setCell(r, c, { style: styleIdx }, 'format');
+      }
+    }
+  }
+
+  // clickSwap2 must run even when the target sheet is already on screen: it is
+  // the library's only hook that redraws images embedded in the sheet, and the
+  // reRender/render/reload calls below each clear the canvas first.
+  const tab = xs.bottombar?.items?.[sheetIdx];
+  if (tab && typeof xs.bottombar?.clickSwap2 === 'function') {
+    xs.bottombar.clickSwap2(tab);
+  } else {
+    xs.sheet.resetData(data);
+  }
+
+  const rowHeight =
+    data.rows.getHeight?.(0) || xs.sheet.data?.row?.height || 24;
+  let y = 0;
+  for (let r = 0; r < r1; r++) {
+    y += data.rows.getHeight?.(r) ?? rowHeight;
+  }
+
+  // Drive the scroll through the library scrollbar: setting data.scroll and
+  // re-rendering directly moves the canvas but leaves the scrollbar thumb at
+  // the top, so the user has to scroll down before they can scroll back up.
+  // move() sets the native scroll element, whose scroll event updates
+  // data.scroll and re-renders the table, keeping both in sync.
+  const vScrollbar = xs.sheet.verticalScrollbar;
+  if (vScrollbar?.move) {
+    xs.sheet.horizontalScrollbar?.move?.({ left: 0 });
+    vScrollbar.move({ top: y > 0 ? y - 1 : 0 });
+    return;
+  }
+
+  data.scroll = { ...(data.scroll || { x: 0, y: 0 }), x: 0, y };
+  if (xs.sheet.data && xs.sheet.data !== data) {
+    xs.sheet.data.scroll = {
+      ...(xs.sheet.data.scroll || { x: 0, y: 0 }),
+      x: 0,
+      y,
+    };
+  }
+  xs.reRender?.();
+  xs.sheet.table?.render?.();
+  xs.sheet.reload?.();
+}
+
+export const useFetchExcel = (filePath: string, positions?: number[][]) => {
   const [status, setStatus] = useState(true);
   const { fetchDocument } = useFetchDocument();
   const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
   const size = useSize(containerEl);
-  const { error } = useCatchError(filePath);
 
   const previewerRef = useRef<ReturnType<typeof jsPreviewExcel.init> | null>(
     null,
@@ -222,6 +365,10 @@ export const useFetchExcel = (filePath: string) => {
   // Cache the fetched ArrayBuffer so we don't re-fetch on every resize.
   const dataRef = useRef<ArrayBuffer | null>(null);
   const [dataReady, setDataReady] = useState(false);
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
+  const locateKey = JSON.stringify(positions ?? []);
+  const locateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // @js-preview/excel reads the container's width/height at init time and
   // exposes no public resize method, so the only way to make the spreadsheet
@@ -229,6 +376,10 @@ export const useFetchExcel = (filePath: string) => {
   const renderPreview = useCallback(async () => {
     if (!containerEl || !dataRef.current) return;
 
+    if (locateTimerRef.current != null) {
+      clearTimeout(locateTimerRef.current);
+      locateTimerRef.current = null;
+    }
     if (previewerRef.current) {
       previewerRef.current.destroy();
       previewerRef.current = null;
@@ -239,6 +390,18 @@ export const useFetchExcel = (filePath: string) => {
 
     try {
       await previewer.preview(dataRef.current);
+      const currentPositions = positionsRef.current;
+      if (currentPositions?.length) {
+        // bottombar tabs are created during loadData; apply after paint.
+        const run = () => {
+          if (previewerRef.current !== previewer) return;
+          applyExcelSourceLocate(previewer, currentPositions);
+        };
+        requestAnimationFrame(() => {
+          run();
+          locateTimerRef.current = setTimeout(run, 50);
+        });
+      }
       setStatus(true);
     } catch (e) {
       // oxlint-disable-next-line no-console
@@ -286,6 +449,7 @@ export const useFetchExcel = (filePath: string) => {
           let data = jsonFile.data;
           data = await normalizeXlsxForExcelJS(data);
           data = await stripWpsDispImg(data);
+          data = await sanitizeSheetNames(data);
           dataRef.current = data;
         } catch {
           // Not a valid ZIP or preprocessing failed — use original data
@@ -305,15 +469,26 @@ export const useFetchExcel = (filePath: string) => {
     };
   }, [filePath, fetchDocument]);
 
-  // Initial render + debounced re-render on container resize.
+  // Initial render + debounced re-render on container resize / locate target change.
   useEffect(() => {
     if (!dataReady || !containerEl) return;
     debouncedRender();
-  }, [dataReady, containerEl, size?.width, size?.height, debouncedRender]);
+  }, [
+    dataReady,
+    containerEl,
+    size?.width,
+    size?.height,
+    locateKey,
+    debouncedRender,
+  ]);
 
   // Tear down the previewer on unmount.
   useEffect(() => {
     return () => {
+      if (locateTimerRef.current != null) {
+        clearTimeout(locateTimerRef.current);
+        locateTimerRef.current = null;
+      }
       if (previewerRef.current) {
         previewerRef.current.destroy();
         previewerRef.current = null;
@@ -321,7 +496,7 @@ export const useFetchExcel = (filePath: string) => {
     };
   }, []);
 
-  return { status, containerRef: setContainerEl, error };
+  return { status, containerRef: setContainerEl };
 };
 
 export const useCatchDocumentError = (url: string) => {

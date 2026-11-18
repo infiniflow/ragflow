@@ -51,14 +51,14 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	}
 	defer engine.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	suffix := strconv.FormatInt(time.Now().UnixNano(), 10)
 	tableName := "ragflow_go_compat_" + suffix
 	datasetID := "kb-" + suffix
 	defer cleanupChunkStore(t, engine, tableName, "")
 
-	if err := engine.CreateChunkStore(ctx, tableName, datasetID, 2, "naive"); err != nil {
+	if err := engine.CreateChunkStore(ctx, tableName, datasetID, 2, "naive", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := engine.InsertChunks(ctx, []map[string]interface{}{{
@@ -66,7 +66,7 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 		"content_ltks": "hello oceanbase", "important_kwd": []string{"hello"},
 		"metadata":     map[string]interface{}{"_group_id": "group-1", "custom": "json-value"},
 		"custom_field": "kept-in-extra", "q_2_vec": []float64{0.25, 0.5},
-	}}, tableName, datasetID); err != nil {
+	}}, tableName, datasetID, ""); err != nil {
 		t.Fatal(err)
 	}
 	row, err := engine.GetChunk(ctx, tableName, "chunk-1", []string{datasetID})
@@ -127,13 +127,13 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	memoryA := "memory-a-" + suffix
 	memoryB := "memory-b-" + suffix
 	defer cleanupChunkStore(t, engine, memoryTable, "")
-	if err := engine.CreateChunkStore(ctx, memoryTable, memoryA, 2, ""); err != nil {
+	if err := engine.CreateChunkStore(ctx, memoryTable, memoryA, 2, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := engine.InsertChunks(ctx, []map[string]interface{}{
 		{"id": memoryA + "_1", "message_id": "1", "memory_id": memoryA, "content": "first", "content_embed": []float64{0.1, 0.2}},
 		{"id": memoryB + "_1", "message_id": "1", "memory_id": memoryB, "content": "second", "content_embed": []float64{0.3, 0.4}},
-	}, memoryTable, memoryA); err != nil {
+	}, memoryTable, memoryA, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := engine.DropChunkStore(ctx, memoryTable, memoryA); err != nil {
@@ -212,7 +212,7 @@ func envOr(name, fallback string) string {
 
 func cleanupChunkStore(t *testing.T, engine *Engine, tableName, datasetID string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	if err := engine.DropChunkStore(ctx, tableName, datasetID); err != nil {
 		t.Errorf("clean up chunk store %s: %v", tableName, err)
@@ -221,7 +221,7 @@ func cleanupChunkStore(t *testing.T, engine *Engine, tableName, datasetID string
 
 func cleanupMetadataStore(t *testing.T, engine *Engine, tenantID string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	if err := engine.DropMetadataStore(ctx, tenantID); err != nil {
 		t.Errorf("clean up metadata store for tenant %s: %v", tenantID, err)

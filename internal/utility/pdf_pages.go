@@ -2,6 +2,7 @@ package utility
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"sort"
 )
 
@@ -40,15 +41,20 @@ func NormalizePDFPages(raw any) ([][]int, error) {
 
 	ranges := make([][]int, 0, len(list))
 	for _, item := range list {
-		pair, ok := item.([]any)
+		var pair []any
+		pair, ok = item.([]any)
 		if !ok || len(pair) != 2 {
 			return nil, fmt.Errorf("invalid page range %v: must be a [from,to] pair", item)
 		}
-		from, ok := toInt(pair[0])
+
+		var from int
+		from, ok = common.ToInt(pair[0])
 		if !ok {
 			return nil, fmt.Errorf("invalid page range [%v,%v]: from must be an integer", pair[0], pair[1])
 		}
-		to, ok := toInt(pair[1])
+
+		var to int
+		to, ok = common.ToInt(pair[1])
 		if !ok {
 			return nil, fmt.Errorf("invalid page range [%v,%v]: to must be an integer", pair[0], pair[1])
 		}
@@ -82,21 +88,16 @@ func NormalizePDFPages(raw any) ([][]int, error) {
 	return merged, nil
 }
 
-// toInt coerces a JSON-decoded numeric value to int. Accepts int, int64, and
-// integral float64; rejects non-numeric or non-integral values.
-func toInt(v any) (int, bool) {
-	switch x := v.(type) {
-	case int:
-		return x, true
-	case int64:
-		return int(x), true
-	case float64:
-		// Reject non-integral floats (e.g. 1.5) — pages must be integers.
-		if x != float64(int(x)) {
-			return 0, false
-		}
-		return int(x), true
-	default:
-		return 0, false
+// PDFPageInRanges reports whether the 1-indexed page lies inside ranges, as
+// returned by NormalizePDFPages. Empty ranges select every page.
+func PDFPageInRanges(ranges [][]int, page int) bool {
+	if len(ranges) == 0 {
+		return true
 	}
+	for _, r := range ranges {
+		if page >= r[0] && page <= r[1] {
+			return true
+		}
+	}
+	return false
 }

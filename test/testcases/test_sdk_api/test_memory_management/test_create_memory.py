@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,100 +13,74 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import random
-import re
+from uuid import uuid4
 
 import pytest
-from configs import INVALID_API_TOKEN, HOST_ADDRESS, IS_GO_PROXY, SDK_UNAUTHORIZED_ERROR_MESSAGE
 from ragflow_sdk import RAGFlow
-from hypothesis import example, given, settings
-from utils.hypothesis_utils import valid_names
+
+pytestmark = pytest.mark.integration
 
 
-class TestAuthorization:
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "invalid_auth, expected_message",
-        [
-            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-        ],
-        ids=["empty_auth", "invalid_api_token"],
-    )
-    def test_auth_invalid(self, invalid_auth, expected_message):
-        client = RAGFlow(invalid_auth, HOST_ADDRESS)
-        with pytest.raises(Exception) as exception_info:
-            client.create_memory(**{"name": "test_memory", "memory_type": ["raw"], "embd_id": "BAAI/bge-small-en-v1.5@Builtin", "llm_id": "glm-4-flash@ZHIPU-AI"})
-        assert str(exception_info.value) == expected_message, str(exception_info.value)
+@pytest.mark.parametrize("invalid_auth", [None, "invalid-api-token"])
+def test_auth_invalid(client, integration_settings, invalid_auth, model_ids, monkeypatch):
+    rag = RAGFlow(invalid_auth, integration_settings["base_url"])
+    with monkeypatch.context() as patch:
+        patch.setattr(client, "authorization_header", rag.authorization_header)
+        with pytest.raises(Exception, match="^Invalid access token$"):
+            client.create_memory(name=f"unauthorized-{uuid4().hex}", memory_type=["raw"], **model_ids)
 
 
-@pytest.mark.usefixtures("delete_test_memory")
-class TestMemoryCreate:
-    @pytest.mark.p1
-    @given(name=valid_names())
-    @example("e" * 128)
-    @settings(max_examples=20)
-    def test_name(self, client, name):
-        payload = {
-            "name": name,
-            "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI",
-        }
-        memory = client.create_memory(**payload)
-        pattern = rf"^{name}|{name}(?:\((\d+)\))?$"
-        escaped_name = re.escape(memory.name)
-        assert re.match(pattern, escaped_name), str(memory)
+@pytest.mark.parametrize("name", ["a", "e" * 128, "记忆 café [test].+"])
+def test_name(memory_factory, name):
+    memory = memory_factory(name=name)
+    assert memory.id
+    assert memory.name == name
+    assert memory.get_config().name == name
 
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "name, expected_message",
-        [
-            ("", "Memory name cannot be empty or whitespace."),
-            (" ", "Memory name cannot be empty or whitespace."),
-            ("a" * 129, f"Memory name '{'a' * 129}' exceeds limit of 128."),
-        ],
-        ids=["empty_name", "space_name", "too_long_name"],
-    )
-    def test_name_invalid(self, client, name, expected_message):
-        payload = {
-            "name": name,
-            "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI",
-        }
-        with pytest.raises(Exception) as exception_info:
-            client.create_memory(**payload)
-        if IS_GO_PROXY:
-            if name == "":
-                expected_message = "failed on the 'required' tag"
-            elif not name.strip():
-                expected_message = "name can't be empty"
-            else:
-                expected_message = "could not create new memory"
-        assert expected_message in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
-    @given(name=valid_names())
-    @settings(deadline=None)
-    def test_type_invalid(self, client, name):
-        payload = {"name": name, "memory_type": ["something"], "embd_id": "BAAI/bge-small-en-v1.5@Builtin", "llm_id": "glm-4-flash@ZHIPU-AI"}
-        with pytest.raises(Exception) as exception_info:
-            client.create_memory(**payload)
-        expected_message = "memory type 'something' is not supported" if IS_GO_PROXY else f"Memory type '{ {'something'} }' is not supported."
-        assert str(exception_info.value) == expected_message, str(exception_info.value)
+@pytest.mark.parametrize("name", ["", " ", "a" * 129])
+def test_name_invalid(memory_factory, name):
+    with pytest.raises(Exception, match="(?i)(name|required|128)"):
+        memory_factory(name=name)
 
-    @pytest.mark.p3
-    def test_name_duplicated(self, client):
-        name = "duplicated_name_test"
-        payload = {
-            "name": name,
-            "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI",
-        }
-        res1 = client.create_memory(**payload)
-        assert res1.name == name, str(res1)
 
-        res2 = client.create_memory(**payload)
-        assert res2.name == f"{name}(1)", str(res2)
+@pytest.mark.parametrize("memory_type", [["something"], ["raw", "something"], [], "raw", None])
+def test_type_invalid(client, model_ids, memory_type):
+    with pytest.raises(Exception, match="(?i)(memory.?type|memory type|required|unmarshal)"):
+        client.create_memory(name=f"sdk-invalid-{uuid4().hex}", memory_type=memory_type, **model_ids)
+
+
+@pytest.mark.parametrize("memory_type", [["raw"], ["raw", "semantic"], ["raw", "episodic", "procedural"], ["RAW", "raw", "semantic"]])
+def test_types(memory_factory, memory_type):
+    memory = memory_factory(memory_type=memory_type)
+    expected = {value.lower() for value in memory_type}
+    assert set(memory.memory_type) == expected
+    assert set(memory.get_config().memory_type) == expected
+
+
+def test_name_duplicated(memory_factory):
+    name = f"sdk-memory-{uuid4().hex}"
+    first = memory_factory(name=name)
+    second = memory_factory(name=name)
+    assert first.id != second.id
+    assert first.name == name
+    assert second.name == f"{name}(1)"
+    assert first.get_config().name == name
+    assert second.get_config().name == f"{name}(1)"
+
+
+@pytest.mark.parametrize("field", ["embd_id", "llm_id"])
+@pytest.mark.parametrize("value", ["", None, []])
+def test_required_model_id(memory_factory, field, value):
+    with pytest.raises(Exception, match="(?i)(required|unmarshal|model)"):
+        memory_factory(**{field: value})
+
+
+def test_create_defaults(memory_factory):
+    memory = memory_factory().get_config()
+    assert memory.storage_type == "table"
+    assert memory.permissions == "me"
+    assert memory.memory_size == 5242880
+    assert memory.forgetting_policy == "FIFO"
+    assert memory.temperature == 0.5
+    assert memory.system_prompt

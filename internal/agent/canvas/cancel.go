@@ -25,7 +25,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	redis2 "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 )
 
 // cancelKeySuffix is appended to the session id to form the Redis key.
@@ -47,13 +47,13 @@ const RequestCancelTTL = 24 * time.Hour
 // a package-level variable so tests can override it with a miniredis
 // client (the production path goes through cache.Get()).
 var cancelClientFn = func() (*redis.Client, error) {
-	rc := redis2.Get()
+	rc := kvrocks.Get()
 	if rc == nil {
 		return nil, errors.New("cancel: redis cache not initialized")
 	}
 	c := rc.GetClient()
 	if c == nil {
-		return nil, errors.New("cancel: redis client not initialized")
+		return nil, errors.New("cancel: kvrocks client not initialized")
 	}
 	return c, nil
 }

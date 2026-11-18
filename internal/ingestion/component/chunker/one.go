@@ -15,11 +15,10 @@
 //
 
 // OneChunker emits a single chunk per upstream document. It is the
-// faithful Go port of the Python `one` chunk method
-// (rag/app/one.py) and also covers the `picture` / `audio` methods,
-// whose Python chunk() functions return exactly one chunk per file
-// (rag/app/picture.py, rag/app/audio.py) — the latter additionally
-// carrying the raw image / media context, which this chunker preserves.
+// faithful Go port of the `one` chunk method and also covers the `picture`
+// / `audio` methods, whose chunk() functions return exactly one chunk per
+// file — the latter additionally carrying the raw image / media context,
+// which this chunker preserves.
 //
 // Unlike TokenChunker in "one" mode (which drops per-item media
 // context), OneChunker carries the image attachment and doc_type of a
@@ -29,16 +28,14 @@ package chunker
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
-
-const ComponentNameOneChunker = "OneChunker"
 
 type oneChunkerParam struct{}
 
@@ -72,17 +69,14 @@ func (c *OneChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	return c.invoke(ctx, inputs)
 }
 
+// invoke collapses the decoded upstream payload into a single chunk.
 func (c *OneChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	switch upstream.OutputFormat {
@@ -113,13 +107,12 @@ func emitOne(text, docType string) map[string]any {
 	}
 	return chunkOutputs([]schema.ChunkDoc{{
 		// Strip parser coordinate tags so they never reach embedding/index,
-		// matching the Python flow chunker's tag-free "one" output
-		// (rag/flow/chunker/token_chunker.py delimiter_mode one). The legacy
-		// rag/app/one.py predates tag stripping and is intentionally out of
+		// matching the flow chunker's tag-free "one" output
+		// ( delimiter_mode one). The legacy
+		// predates tag stripping and is intentionally out of
 		// scope here.
 		Text:    removeTag(text),
 		DocType: docType,
-		CKType:  docType,
 	}})
 }
 
@@ -127,7 +120,7 @@ func emitOne(text, docType string) map[string]any {
 // chunk. When the payload is a single item, its media context (image)
 // and doc_type are preserved. When it is many items, their text is
 // concatenated and the first available image attachment is carried over —
-// mirroring the Python "one chunk per file" behavior for picture/audio,
+// mirroring the "one chunk per file" behavior for picture/audio
 // where each upstream item is one page/slide/transcript segment of the
 // same source file.
 func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
@@ -142,23 +135,27 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		it := src[0]
 		docType := itemDocType(it)
 		text := itemTextOrFallback(it)
-		if strings.TrimSpace(text) == "" && it.Image == "" {
+		if strings.TrimSpace(text) == "" && !hasMediaPayload(it) {
 			return emptyOutputs()
 		}
 		out := schema.ChunkDoc{
 			// Strip parser coordinate tags (see emitOne).
 			Text:         removeTag(text),
 			DocType:      docType,
-			CKType:       docType,
 			Image:        it.Image,
+			ImgID:        it.ImgID,
+			MediaRef:     it.MediaRef,
 			Positions:    it.Positions,
 			PDFPositions: it.PDFPositions,
+			Sheet:        it.Sheet,
+			SheetIndex:   it.SheetIndex,
 		}
 		return chunkOutputs([]schema.ChunkDoc{out})
 	}
 
 	var parts []string
 	var img string
+	var mediaRef *entity.MediaRef
 	for _, it := range src {
 		if t := itemTextOrFallback(it); t != "" {
 			// Strip parser coordinate tags before joining (see emitOne).
@@ -167,20 +164,24 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		if img == "" && it.Image != "" {
 			img = it.Image
 		}
+		if mediaRef == nil && it.MediaRef != nil {
+			mediaRef = it.MediaRef
+		}
 	}
 	merged := strings.Join(parts, "\n")
-	if strings.TrimSpace(merged) == "" && img == "" {
+	if strings.TrimSpace(merged) == "" && img == "" && mediaRef == nil {
 		return emptyOutputs()
 	}
-	out := schema.ChunkDoc{Text: merged, DocType: "text", CKType: "text"}
-	// Multi-item merge produces a single text-only chunk mirroring Python
-	// one.py:166-168. Per-item Positions/PDFPositions are intentionally
+	out := schema.ChunkDoc{Text: merged, DocType: "text"}
+	// Multi-item merge produces a single text-only chunk mirroring
+	// . Per-item Positions/PDFPositions are intentionally
 	// not carried — merging coordinates from different source items would
 	// produce meaningless composite geometry, and the downstream
 	// processChunkPositions would map them to incorrect pages.
 	if img != "" {
 		out.Image = img
 	}
+	out.MediaRef = mediaRef
 	return chunkOutputs([]schema.ChunkDoc{out})
 }
 

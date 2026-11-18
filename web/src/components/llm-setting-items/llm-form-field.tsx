@@ -25,6 +25,7 @@ export type LLMFormFieldProps = {
   optionTestIdPrefix?: string;
   config?: any;
   ownerTenantId?: string;
+  required?: boolean;
 };
 
 export function LLMFormField({
@@ -32,11 +33,16 @@ export function LLMFormField({
   config,
   modelTypes,
   ownerTenantId,
+  required = false,
 }: LLMFormFieldProps) {
   const { t } = useTranslation();
 
   return (
-    <RAGFlowFormItem name={name || 'llm_id'} label={t('chat.model')}>
+    <RAGFlowFormItem
+      name={name || 'llm_id'}
+      label={t('chat.model')}
+      required={required}
+    >
       <ModelTreeSelect
         allowClear={config?.allowClear ?? false}
         modelTypes={modelTypes}

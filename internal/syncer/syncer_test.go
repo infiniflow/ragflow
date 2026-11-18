@@ -199,13 +199,30 @@ type closingLocker struct {
 	db *gorm.DB
 }
 
-func (l closingLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bool) {
+func (l closingLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bool, error) {
 	sqlDB, _ := l.db.DB()
 	_ = sqlDB.Close()
-	return ConnectorLockLease{}, false
+	return ConnectorLockLease{}, false, nil
 }
 
 func (l closingLocker) Unlock(connectorID, kbID string) {}
+
+type cancelingErrorLocker struct {
+	cancel      context.CancelFunc
+	beforeError func()
+}
+
+func (l cancelingErrorLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bool, error) {
+	if l.cancel != nil {
+		l.cancel()
+	}
+	if l.beforeError != nil {
+		l.beforeError()
+	}
+	return ConnectorLockLease{}, false, errors.New("lock backend unavailable")
+}
+
+func (l cancelingErrorLocker) Unlock(connectorID, kbID string) {}
 
 // DeleteDocument records one delete.
 func (d *fakeDeleter) DeleteDocument(ctx context.Context, docID string) error {
@@ -222,6 +239,11 @@ func setupSyncerDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite connection: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err = db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.Knowledgebase{}, &entity.SyncLogs{}, &entity.Document{}); err != nil {
 		t.Fatalf("migrate sqlite: %v", err)
 	}
@@ -243,14 +265,18 @@ func insertTaskContext(t *testing.T, db *gorm.DB, connectorID, kbID, taskID, tas
 	}
 	if existingConnector == 0 {
 		if err := db.Create(&entity.Connector{
-			ID:          connectorID,
-			TenantID:    "tenant-1",
-			Name:        connectorID,
-			Source:      "mock",
-			InputType:   "poll",
-			Config:      entity.JSONMap{"sync_deleted_files": true},
-			RefreshFreq: 0,
-			PruneFreq:   0,
+			ID:        connectorID,
+			TenantID:  "tenant-1",
+			Name:      connectorID,
+			Source:    "mock",
+			InputType: "poll",
+			Config:    entity.ConnectorConfig{"sync_deleted_files": true},
+			// Keep frequencies positive: taskDelay treats freq <= 0 as
+			// "no periodic reschedule" (fail-closed against hot-loop
+			// republishing), so a zero fixture would silently suppress
+			// every startup-publish expectation below.
+			RefreshFreq: 5,
+			PruneFreq:   5,
 			TimeoutSecs: 60,
 			Status:      dao.SyncStatusSchedule,
 			BaseModel:   entity.BaseModel{UpdateDate: &now, UpdateTime: &ts},
@@ -340,8 +366,12 @@ func newCoordinator(taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskServi
 }
 
 func newCoordinatorWithCheckpoints(taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskService, registry *syncerconnector.Registry, sink service.DocumentSink, pruneService *service.SyncPruneService, store service.DocumentStore, checkpoints SyncCheckpointStore) *TaskCoordinator {
+	return newCoordinatorWithConfigAndCheckpoints(taskDAO, taskService, registry, sink, pruneService, store, checkpoints, SyncRunnerConfig{ItemRetryCount: 1, ItemRetryBaseDelay: time.Millisecond})
+}
+
+func newCoordinatorWithConfigAndCheckpoints(taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskService, registry *syncerconnector.Registry, sink service.DocumentSink, pruneService *service.SyncPruneService, store service.DocumentStore, checkpoints SyncCheckpointStore, syncRunnerConfig SyncRunnerConfig) *TaskCoordinator {
 	executor := NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 16})
-	return NewTaskCoordinator(SyncRunnerConfig{ItemRetryCount: 1, ItemRetryBaseDelay: time.Millisecond}, taskDAO, taskService, registry, sink, pruneService, service.NewDocumentIDResolver(store), executor, checkpoints)
+	return NewTaskCoordinator(syncRunnerConfig, taskDAO, taskService, registry, sink, pruneService, service.NewDocumentIDResolver(store), executor, checkpoints)
 }
 
 // TestClaimBlocksSameConnectorKBRunningTasks verifies DB-backed task mutual exclusion.
@@ -698,8 +728,9 @@ func TestNATSTaskWorkerClaimsAndAcksOnSuccess(t *testing.T) {
 	}
 }
 
-// TestNATSTaskWorkerAcksUnclaimableMessage verifies duplicate/stale messages do not redeliver forever.
-func TestNATSTaskWorkerAcksUnclaimableMessage(t *testing.T) {
+// TestNATSTaskWorkerNacksRunningUnclaimableMessage keeps a delivery pending
+// until the active owner completes or restores the task to schedule state.
+func TestNATSTaskWorkerNacksRunningUnclaimableMessage(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error; err != nil {
@@ -710,6 +741,20 @@ func TestNATSTaskWorkerAcksUnclaimableMessage(t *testing.T) {
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
 	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1", Handle: handle})
+	if handle.acks != 0 || handle.nacks != 1 {
+		t.Fatalf("settlement acks=%d nacks=%d", handle.acks, handle.nacks)
+	}
+}
+
+func TestNATSTaskWorkerAcksMissingTaskMessage(t *testing.T) {
+	db := setupSyncerDB(t)
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "missing-task", TaskType: common.TaskTypeSyncer}}
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, nil, nil)
+
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "missing-task", Handle: handle})
+
 	if handle.acks != 1 || handle.nacks != 0 {
 		t.Fatalf("settlement acks=%d nacks=%d", handle.acks, handle.nacks)
 	}
@@ -746,6 +791,75 @@ func TestNATSTaskWorkerRetriesStillScheduledUnclaimedTask(t *testing.T) {
 	scheduler.timerMu.Unlock()
 	if timer == nil {
 		t.Fatalf("scheduled prune retry timer was not registered")
+	}
+}
+
+// TestNATSTaskWorkerPublishesLockErrorRetryAfterCancellation verifies that a
+// restored task is still published when worker cancellation races with a lock error.
+func TestNATSTaskWorkerPublishesLockErrorRetryAfterCancellation(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	published := make(chan string, 1)
+	broker := &fakeSyncTaskBroker{onPublish: func(taskID string) { published <- taskID }}
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, broker)
+	t.Cleanup(scheduler.stopTimers)
+	ctx, cancel := context.WithCancel(t.Context())
+	failedReschedule := false
+	worker := NewTaskWorker(
+		make(chan TaskEnvelope, 1),
+		taskDAO,
+		taskService,
+		nil,
+		cancelingErrorLocker{
+			cancel: cancel,
+			beforeError: func() {
+				if err := db.Callback().Update().Before("gorm:update").Register("test:fail_first_reschedule", func(tx *gorm.DB) {
+					if !failedReschedule && tx.Statement.Table == "sync_logs" {
+						failedReschedule = true
+						tx.AddError(errors.New("temporary reschedule failure"))
+					}
+				}); err != nil {
+					t.Fatalf("register reschedule failure callback: %v", err)
+				}
+			},
+		},
+	).WithScheduler(scheduler)
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
+
+	worker.handle(ctx, TaskEnvelope{TaskID: "task-1", Handle: handle})
+
+	if handle.acks != 1 || handle.nacks != 0 {
+		t.Fatalf("settlement acks=%d nacks=%d, want ack without nack", handle.acks, handle.nacks)
+	}
+	if !failedReschedule {
+		t.Fatal("reschedule failure callback was not exercised")
+	}
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load restored task: %v", err)
+	}
+	if task.Status != dao.SyncStatusSchedule {
+		t.Fatalf("task status = %s, want schedule", task.Status)
+	}
+	scheduler.timerMu.Lock()
+	timer := scheduler.timers["task-1"]
+	if timer != nil {
+		timer.Reset(time.Millisecond)
+	}
+	scheduler.timerMu.Unlock()
+	if timer == nil {
+		t.Fatal("lock-error retry timer was not registered")
+	}
+
+	select {
+	case taskID := <-published:
+		if taskID != "task-1" {
+			t.Fatalf("published task ID = %q, want task-1", taskID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("lock-error retry was not published after worker cancellation")
 	}
 }
 
@@ -1118,6 +1232,43 @@ func TestCancelStopsRunningSync(t *testing.T) {
 	}
 }
 
+func TestCheckTaskCanceledDuringQuery(t *testing.T) {
+	queryErr := errors.New("interrupted (9)")
+	for _, tt := range []struct {
+		name     string
+		cancel   bool
+		queryErr error
+		wantErr  error
+	}{
+		{"canceled_query_error", true, queryErr, context.Canceled},
+		{"canceled_successful_query", true, nil, context.Canceled},
+		{"query_error", false, queryErr, queryErr},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupSyncerDB(t)
+			insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			// Cancel as the status query returns, independent of goroutine timing.
+			if err := db.Callback().Query().After("gorm:query").Register("test:cancel_status_query", func(tx *gorm.DB) {
+				if tt.cancel {
+					cancel()
+				}
+				if tt.queryErr != nil {
+					tx.AddError(tt.queryErr)
+				}
+			}); err != nil {
+				t.Fatalf("register query callback: %v", err)
+			}
+
+			if err := checkTaskCanceled(dao.NewSyncTaskDAO(db), ctx, "task-1"); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("checkTaskCanceled error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // TestSyncRunnerResultWaitHonorsCancel verifies Run does not block forever waiting for job results after cancellation.
 func TestSyncRunnerResultWaitHonorsCancel(t *testing.T) {
 	db := setupSyncerDB(t)
@@ -1161,7 +1312,7 @@ func TestSyncRunnerResultWaitHonorsCancel(t *testing.T) {
 func TestBatchFailureDoesNotAdvanceWaterline(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(2), "retry_count": int64(2), "error_class": "non_transient"}).Error
 	taskDAO := dao.NewSyncTaskDAO(db)
 	taskService := service.NewSyncTaskService(taskDAO)
 	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "bad", Blob: []byte("x"), UpdatedAt: time.Now()}}}}}
@@ -1175,6 +1326,12 @@ func TestBatchFailureDoesNotAdvanceWaterline(t *testing.T) {
 	}
 	if task.Status != dao.SyncStatusFail {
 		t.Fatalf("status = %s, want fail", task.Status)
+	}
+	if task.ErrorCount != 3 {
+		t.Fatalf("error_count = %d, want 3", task.ErrorCount)
+	}
+	if !strings.Contains(task.ErrorMsg, "failed after 2 retries") || !strings.Contains(task.ErrorMsg, "boom") {
+		t.Fatalf("error_msg = %q", task.ErrorMsg)
 	}
 	if task.PollRangeEnd != nil {
 		t.Fatalf("poll_range_end advanced on failure")
@@ -1207,11 +1364,40 @@ func TestTransientFailureReschedulesTask(t *testing.T) {
 	}
 }
 
-// TestTransientFailureFailsAfterThreeRetries verifies retryable errors become terminal after the retry budget.
+// TestNonTransientFailureReschedulesTask verifies every task execution error
+// (not only "transient" ones) keeps the same task scheduled for retry.
+func TestNonTransientFailureReschedulesTask(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{{SourceID: "bad", Blob: []byte("x"), UpdatedAt: time.Now()}}}}}
+	sink := &fakeSink{errBySourceID: map[string]error{"bad": errors.New("boom")}}
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}), NewConnectorLock())
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != dao.SyncStatusSchedule {
+		t.Fatalf("status = %s, want schedule", task.Status)
+	}
+	if task.ErrorCount != 1 {
+		t.Fatalf("error_count = %d, want 1", task.ErrorCount)
+	}
+	if !strings.Contains(task.ErrorMsg, "boom") {
+		t.Fatalf("error_msg = %q, want boom", task.ErrorMsg)
+	}
+}
+
+// TestTransientFailureFailsAfterThreeRetries verifies whitelisted (transient)
+// errors become terminal after their retry budget: 3 retries plus the final attempt.
 func TestTransientFailureFailsAfterThreeRetries(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
-	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(2)}).Error; err != nil {
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{"status": dao.SyncStatusRunning, "error_count": int64(3), "retry_count": int64(3), "error_class": "transient"}).Error; err != nil {
 		t.Fatalf("mark running: %v", err)
 	}
 	taskDAO := dao.NewSyncTaskDAO(db)
@@ -1227,11 +1413,106 @@ func TestTransientFailureFailsAfterThreeRetries(t *testing.T) {
 	if task.Status != dao.SyncStatusFail {
 		t.Fatalf("status = %s, want fail", task.Status)
 	}
-	if task.ErrorCount != 3 {
-		t.Fatalf("error_count = %d, want 3", task.ErrorCount)
+	if task.ErrorCount != 4 {
+		t.Fatalf("error_count = %d, want 4", task.ErrorCount)
 	}
-	if !strings.Contains(task.ErrorMsg, "failed after 3 transient retries") || !strings.Contains(task.ErrorMsg, "unexpected EOF") {
+	if !strings.Contains(task.ErrorMsg, "failed after 3 retries") || !strings.Contains(task.ErrorMsg, "unexpected EOF") {
 		t.Fatalf("error_msg = %q", task.ErrorMsg)
+	}
+}
+
+// TestEncryptedCredentialsWithoutKeyFailAfterRetries verifies a lost
+// RAGFLOW_CONNECTOR_KEY ends a built-in connector task as FAIL through the
+// normal retry budget, and the stored error leaks no secret.
+func TestEncryptedCredentialsWithoutKeyFailAfterRetries(t *testing.T) {
+	const key = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+	t.Setenv(common.EnvRAGFlowConnectorKey, key)
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	if err := db.Model(&entity.Connector{}).Where("id = ?", "conn-1").Updates(map[string]any{
+		"source": "github",
+		"config": entity.ConnectorConfig{"repository_owner": "octo", "credentials": map[string]any{"github_access_token": "tok-123"}},
+	}).Error; err != nil {
+		t.Fatalf("set github connector: %v", err)
+	}
+	var connector entity.Connector
+	if err := db.First(&connector, "id = ?", "conn-1").Error; err != nil {
+		t.Fatalf("load connector: %v", err)
+	}
+	ciphertext, _ := connector.Config["credentials"].(string)
+	if !strings.HasPrefix(ciphertext, "enc:v1:") {
+		t.Fatalf("stored credentials = %#v, want an enc:v1: string", connector.Config["credentials"])
+	}
+	t.Setenv(common.EnvRAGFlowConnectorKey, "")
+
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	registry := syncerconnector.NewRegistry()
+	syncerconnector.RegisterBuiltIns(registry)
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, registry, &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
+
+	var task entity.SyncLogs
+	for attempt := 1; attempt <= 3; attempt++ {
+		claimed, err := taskService.Claim(t.Context(), "task-1")
+		if err != nil || !claimed {
+			t.Fatalf("attempt %d: claim = (%v, %v), want (true, nil)", attempt, claimed, err)
+		}
+		worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+		if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+			t.Fatalf("load task: %v", err)
+		}
+		if attempt < 3 && task.Status != dao.SyncStatusSchedule {
+			t.Fatalf("attempt %d: status = %s, want schedule for a retry", attempt, task.Status)
+		}
+	}
+	if task.Status != dao.SyncStatusFail {
+		t.Fatalf("status = %s, want fail", task.Status)
+	}
+	if !strings.Contains(task.ErrorMsg, "RAGFLOW_CONNECTOR_KEY is not set") {
+		t.Fatalf("error_msg = %q, want the missing key error", task.ErrorMsg)
+	}
+	for _, secret := range []string{strings.TrimPrefix(ciphertext, "enc:v1:"), key, "tok-123"} {
+		if strings.Contains(task.ErrorMsg, secret) {
+			t.Fatalf("error_msg = %q leaks %q", task.ErrorMsg, secret)
+		}
+	}
+}
+
+// TestErrorClassSwitchResetsRetryBudget verifies a task that switches failure
+// classes starts a fresh retry budget: failures accumulated under one class
+// must not consume the retries of a different class.
+func TestErrorClassSwitchResetsRetryBudget(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	// The task already exhausted the non-transient budget (3 failures), then
+	// hits a transient error with its own larger budget.
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Updates(map[string]any{
+		"status":      dao.SyncStatusRunning,
+		"error_count": int64(3),
+		"retry_count": int64(3),
+		"error_class": "non_transient",
+	}).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	connector := &connectormock.Connector{SyncErrAt: 1} // unexpected EOF (transient)
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != dao.SyncStatusSchedule {
+		t.Fatalf("status = %s, want schedule (fresh transient budget)", task.Status)
+	}
+	if task.ErrorCount != 4 {
+		t.Fatalf("error_count = %d, want 4 (total across classes)", task.ErrorCount)
+	}
+	if task.RetryCount != 1 {
+		t.Fatalf("retry_count = %d, want 1 (reset on class change)", task.RetryCount)
+	}
+	if task.ErrorClass != "transient" {
+		t.Fatalf("error_class = %q, want transient", task.ErrorClass)
 	}
 }
 
@@ -1381,6 +1662,224 @@ func TestSyncCheckpointStopsBeforeFailedBatch(t *testing.T) {
 	}
 	if task.TotalDocsIndexed != 2 {
 		t.Fatalf("total docs indexed = %d, want 2", task.TotalDocsIndexed)
+	}
+}
+
+// TestSyncRunnerRestartsAfterInvalidOpenSyncResume verifies a stale resume anchor restarts
+// the same task window with a cleared checkpoint.
+func TestSyncRunnerRestartsAfterInvalidOpenSyncResume(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	checkpoints := newMemorySyncCheckpointStore()
+	windowStart := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(time.Hour)
+	updatedAt := windowStart.Add(30 * time.Minute)
+	initialCheckpoint := &syncerconnector.SyncCheckpoint{Cursor: "cursor-1", SourceID: "source-1", UpdatedAt: &updatedAt}
+	if err := checkpoints.SaveSyncCheckpoint(t.Context(), "task-1", syncerconnector.SyncCheckpointState{
+		Version:       1,
+		TaskID:        "task-1",
+		ConnectorID:   "conn-1",
+		KBID:          "kb-1",
+		WindowStart:   &windowStart,
+		WindowEnd:     windowEnd,
+		NextCommitSeq: 2,
+		Checkpoint:    initialCheckpoint,
+		Added:         1,
+	}); err != nil {
+		t.Fatalf("save checkpoint: %v", err)
+	}
+
+	source := syncerconnector.SourceDocument{SourceID: "source-2", Blob: []byte("b"), UpdatedAt: windowEnd}
+	connector := &connectormock.Connector{
+		OpenSyncResumeInvalidAt: 1,
+		SyncBatches: []syncerconnector.SyncBatch{{
+			Documents:  []syncerconnector.SourceDocument{source},
+			Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-2", SourceID: "source-2", UpdatedAt: &windowEnd},
+		}},
+	}
+	sink := &fakeSink{}
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinatorWithConfigAndCheckpoints(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}, checkpoints, SyncRunnerConfig{
+		ItemRetryCount:        1,
+		ItemRetryBaseDelay:    time.Millisecond,
+		MaxAnchorRestartCount: 2,
+	}), NewConnectorLock())
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+
+	if len(connector.SyncRequests) != 2 {
+		t.Fatalf("sync requests = %d, want 2", len(connector.SyncRequests))
+	}
+	initialRequest := connector.SyncRequests[0]
+	if initialRequest.Resume == nil || initialRequest.Resume.Cursor != "cursor-1" || initialRequest.Resume.SourceID != "source-1" {
+		t.Fatalf("initial resume = %+v, want cursor-1/source-1", initialRequest.Resume)
+	}
+	restartRequest := connector.SyncRequests[1]
+	if restartRequest.Resume != nil {
+		t.Fatalf("restart resume = %+v, want nil", restartRequest.Resume)
+	}
+	if initialRequest.TaskID != "task-1" || initialRequest.ConnectorID != "conn-1" || initialRequest.KBID != "kb-1" {
+		t.Fatalf("initial request identity = %+v", initialRequest)
+	}
+	if restartRequest.TaskID != initialRequest.TaskID || restartRequest.ConnectorID != initialRequest.ConnectorID || restartRequest.KBID != initialRequest.KBID {
+		t.Fatalf("restart request identity = %+v, want %+v", restartRequest, initialRequest)
+	}
+	if restartRequest.WindowStart == nil || !restartRequest.WindowStart.Equal(*initialRequest.WindowStart) || !restartRequest.WindowEnd.Equal(initialRequest.WindowEnd) {
+		t.Fatalf("restart window = %+v, want same as %+v", restartRequest.WindowStart, initialRequest.WindowStart)
+	}
+	if sink.callCount() != 1 {
+		t.Fatalf("sink calls = %d, want 1", sink.callCount())
+	}
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != dao.SyncStatusDone {
+		t.Fatalf("status = %s, want done", task.Status)
+	}
+	if task.TotalDocsIndexed != 1 {
+		t.Fatalf("total docs indexed = %d, want 1", task.TotalDocsIndexed)
+	}
+}
+
+// TestSyncRunnerRestartsAfterInvalidNextBatchResume verifies pending work is collected
+// before the same source window is reprocessed from the beginning.
+func TestSyncRunnerRestartsAfterInvalidNextBatchResume(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	checkpoints := newMemorySyncCheckpointStore()
+	windowStart := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(time.Hour)
+	if err := checkpoints.SaveSyncCheckpoint(t.Context(), "task-1", syncerconnector.SyncCheckpointState{
+		Version:       1,
+		TaskID:        "task-1",
+		ConnectorID:   "conn-1",
+		KBID:          "kb-1",
+		WindowStart:   &windowStart,
+		WindowEnd:     windowEnd,
+		NextCommitSeq: 1,
+	}); err != nil {
+		t.Fatalf("save checkpoint: %v", err)
+	}
+
+	firstTime := windowStart.Add(10 * time.Minute)
+	secondTime := windowStart.Add(20 * time.Minute)
+	connector := &connectormock.Connector{
+		NextBatchResumeInvalidAt:    2,
+		NextBatchResumeFirstSession: true,
+		SyncBatches: []syncerconnector.SyncBatch{
+			{
+				Documents:  []syncerconnector.SourceDocument{{SourceID: "source-1", Blob: []byte("a"), UpdatedAt: firstTime}},
+				Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-1", SourceID: "source-1", UpdatedAt: &firstTime},
+			},
+			{
+				Documents:  []syncerconnector.SourceDocument{{SourceID: "source-2", Blob: []byte("b"), UpdatedAt: secondTime}},
+				Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "cursor-2", SourceID: "source-2", UpdatedAt: &secondTime},
+			},
+		},
+	}
+	sink := &fakeSink{}
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinatorWithConfigAndCheckpoints(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}, checkpoints, SyncRunnerConfig{
+		ItemRetryCount:        1,
+		ItemRetryBaseDelay:    time.Millisecond,
+		MaxAnchorRestartCount: 2,
+	}), NewConnectorLock())
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+
+	if len(connector.SyncRequests) != 2 {
+		t.Fatalf("sync requests = %d, want 2", len(connector.SyncRequests))
+	}
+	for _, request := range connector.SyncRequests {
+		if request.Resume != nil {
+			t.Fatalf("resume = %+v, want nil for full-window restart", request.Resume)
+		}
+		if request.WindowStart == nil || !request.WindowStart.Equal(windowStart) || !request.WindowEnd.Equal(windowEnd) {
+			t.Fatalf("window = %+v/%s, want %s/%s", request.WindowStart, request.WindowEnd, windowStart, windowEnd)
+		}
+	}
+	if sink.callCount() != 3 {
+		t.Fatalf("sink calls = %d, want first-pass document plus 2 reprocessed documents", sink.callCount())
+	}
+	state, err := checkpoints.LoadSyncCheckpoint(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("load checkpoint: %v", err)
+	}
+	if state != nil {
+		t.Fatalf("checkpoint = %+v, want deleted after success", state)
+	}
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != dao.SyncStatusDone {
+		t.Fatalf("status = %s, want done", task.Status)
+	}
+	if task.TotalDocsIndexed != 2 {
+		t.Fatalf("total docs indexed = %d, want 2", task.TotalDocsIndexed)
+	}
+}
+
+// TestSyncRunnerStopsAfterRepeatedInvalidResumeAnchors verifies the restart budget is bounded.
+func TestSyncRunnerStopsAfterRepeatedInvalidResumeAnchors(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	checkpoints := newMemorySyncCheckpointStore()
+	windowStart := time.Date(2026, 8, 12, 1, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(time.Hour)
+	updatedAt := windowStart.Add(30 * time.Minute)
+	if err := checkpoints.SaveSyncCheckpoint(t.Context(), "task-1", syncerconnector.SyncCheckpointState{
+		Version:       1,
+		TaskID:        "task-1",
+		ConnectorID:   "conn-1",
+		KBID:          "kb-1",
+		WindowStart:   &windowStart,
+		WindowEnd:     windowEnd,
+		NextCommitSeq: 2,
+		Checkpoint:    &syncerconnector.SyncCheckpoint{Cursor: "cursor-1", SourceID: "source-1", UpdatedAt: &updatedAt},
+	}); err != nil {
+		t.Fatalf("save checkpoint: %v", err)
+	}
+
+	taskContext, err := taskDAO.GetTaskContext(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("get context: %v", err)
+	}
+	executor := NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 1})
+	queue, err := executor.RegisterTask(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("register task: %v", err)
+	}
+	defer executor.Close()
+	defer queue.Close()
+
+	connector := &connectormock.Connector{OpenSyncResumeInvalidAlways: true}
+	runner := NewSyncRunner(SyncRunnerConfig{
+		ItemRetryCount:        1,
+		ItemRetryBaseDelay:    time.Millisecond,
+		MaxAnchorRestartCount: 1,
+	}, taskDAO, taskService, &fakeSink{}, service.NewDocumentIDResolver(fakeStore{}), queue, checkpoints)
+	if _, err := runner.Run(t.Context(), taskContext, connector); !errors.Is(err, syncerconnector.ErrSyncResumeInvalid) {
+		t.Fatalf("Run error = %v, want ErrSyncResumeInvalid", err)
+	}
+	if len(connector.SyncRequests) != 2 {
+		t.Fatalf("sync requests = %d, want 2", len(connector.SyncRequests))
+	}
+	if connector.SyncRequests[0].Resume == nil || connector.SyncRequests[1].Resume != nil {
+		t.Fatalf("sync request resumes = %+v / %+v, want checkpoint then nil", connector.SyncRequests[0].Resume, connector.SyncRequests[1].Resume)
+	}
+	state, err := checkpoints.LoadSyncCheckpoint(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("load checkpoint: %v", err)
+	}
+	if state == nil || state.RestartCount != 1 || state.Checkpoint != nil {
+		t.Fatalf("checkpoint = %+v, want restart_count 1 and cleared resume", state)
 	}
 }
 

@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -25,6 +26,27 @@ import (
 
 	"ragflow/internal/entity"
 )
+
+func TestChatChannelAgentColumnMigration(t *testing.T) {
+	db := setupChatChannelTestDB(t)
+	if err := db.Migrator().DropColumn(&entity.ChatChannel{}, "AgentID"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO chat_channel (id, tenant_id, name, channel, config, chat_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"existing", "owner", "old channel", "telegram", "{}", "chat", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&entity.ChatChannel{}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := NewChatChannel().GetByID(t.Context(), db, "existing")
+	if err != nil || row.ChatID == nil || *row.ChatID != "chat" || row.AgentID != nil {
+		t.Fatalf("existing record changed: %+v %v", row, err)
+	}
+	if err := db.Model(row).Update("agent_id", "agent").Error; err != nil {
+		t.Fatalf("new agent column unavailable: %v", err)
+	}
+}
 
 // setupChatChannelTestDB initializes an in-memory SQLite database for ChatChannel DAO tests.
 func setupChatChannelTestDB(t *testing.T) *gorm.DB {
@@ -38,7 +60,7 @@ func setupChatChannelTestDB(t *testing.T) *gorm.DB {
 	}
 
 	// Migrate chat_channel and dialog (entity.Chat) tables
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}); err != nil {
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserCanvas{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -75,8 +97,8 @@ func TestChatChannelDAO_CRUD(t *testing.T) {
 		t.Fatalf("failed to create chat channel: %v", err)
 	}
 
-	// 2. Test GetByID
-	res, err := dao.GetByID(ctx, db, "chan-1", "tenant-1")
+	// 2. Test GetByID (id-only lookup; tenant isolation is enforced by callers)
+	res, err := dao.GetByID(ctx, db, "chan-1")
 	if err != nil {
 		t.Fatalf("failed to get chat channel: %v", err)
 	}
@@ -91,23 +113,23 @@ func TestChatChannelDAO_CRUD(t *testing.T) {
 		t.Fatalf("expected corp_id %q, got %v", "ww123456", cred["corp_id"])
 	}
 
-	// 2b. Test tenant isolation for GetByID
-	_, err = dao.GetByID(ctx, db, "chan-1", "tenant-2")
-	if err == nil {
-		t.Fatalf("expected error (not found) when getting with wrong tenant, got nil")
+	// 2b. GetByID exposes the channel regardless of tenant; callers check tenant
+	_, err = dao.GetByID(ctx, db, "chan-1")
+	if err != nil {
+		t.Fatalf("expected to load channel by id, got error: %v", err)
 	}
 
 	// 3. Test UpdateByID
 	updates := map[string]interface{}{
 		"name": "Updated WeCom Bot",
 	}
-	// Try updating with wrong tenant
+	// Try updating with wrong tenant: must report not-found (no cross-tenant write)
 	err = dao.UpdateByID(ctx, db, "chan-1", "tenant-2", updates)
-	if err != nil {
-		t.Fatalf("failed to run UpdateByID with wrong tenant: %v", err)
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected not-found for UpdateByID with wrong tenant, got: %v", err)
 	}
-	// Verify it was NOT updated (should still be "Test WeCom Bot" since wrong tenant was used)
-	res, err = dao.GetByID(ctx, db, "chan-1", "tenant-1")
+	// Verify it was NOT updated
+	res, err = dao.GetByID(ctx, db, "chan-1")
 	if err != nil {
 		t.Fatalf("failed to get chat channel: %v", err)
 	}
@@ -121,7 +143,7 @@ func TestChatChannelDAO_CRUD(t *testing.T) {
 		t.Fatalf("failed to update chat channel: %v", err)
 	}
 
-	res, err = dao.GetByID(ctx, db, "chan-1", "tenant-1")
+	res, err = dao.GetByID(ctx, db, "chan-1")
 	if err != nil {
 		t.Fatalf("failed to get updated chat channel: %v", err)
 	}
@@ -129,13 +151,13 @@ func TestChatChannelDAO_CRUD(t *testing.T) {
 		t.Fatalf("expected updated Name %q, got %q", "Updated WeCom Bot", res.Name)
 	}
 
-	// 3b. Test DeleteByID with wrong tenant (should not delete)
+	// 3b. Test DeleteByID with wrong tenant (must report not-found, no deletion)
 	err = dao.DeleteByID(ctx, db, "chan-1", "tenant-2")
-	if err != nil {
-		t.Fatalf("failed to delete with wrong tenant: %v", err)
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected not-found for DeleteByID with wrong tenant, got: %v", err)
 	}
 	// Verify it still exists for tenant-1
-	_, err = dao.GetByID(ctx, db, "chan-1", "tenant-1")
+	_, err = dao.GetByID(ctx, db, "chan-1")
 	if err != nil {
 		t.Fatalf("expected chat channel to still exist for tenant-1, got error: %v", err)
 	}
@@ -146,7 +168,7 @@ func TestChatChannelDAO_CRUD(t *testing.T) {
 		t.Fatalf("failed to delete chat channel: %v", err)
 	}
 
-	_, err = dao.GetByID(ctx, db, "chan-1", "tenant-1")
+	_, err = dao.GetByID(ctx, db, "chan-1")
 	if err == nil {
 		t.Fatalf("expected record not found error, got nil")
 	}
@@ -212,9 +234,9 @@ func TestChatChannelDAO_ListByTenantID(t *testing.T) {
 
 	// Perform query
 	ctx := t.Context()
-	list, err := dao.ListByTenantID(ctx, db, "tenant-1")
+	list, err := dao.ListByIDs(ctx, db, []string{"chan-1", "chan-2"})
 	if err != nil {
-		t.Fatalf("ListByTenantID failed: %v", err)
+		t.Fatalf("ListByIDs failed: %v", err)
 	}
 
 	// Verify count and order (create_time DESC, so cc2 should be index 0)

@@ -1,0 +1,326 @@
+package parser
+
+import (
+	"encoding/base64"
+	"strings"
+	"testing"
+
+	"ragflow/internal/entity"
+)
+
+// TestBuildPPTXJSONSections feeds office_oxide presentation IR JSON
+// directly into buildPPTXJSONSections and asserts one JSON item per
+// slide (section), including empty slides. Pure Go, runs under !cgo.
+func TestBuildPPTXJSONSections(t *testing.T) {
+	tests := []struct {
+		name      string
+		irJSON    string
+		wantTexts []string // one entry per expected slide item
+		wantRows  [][]string
+		wantErr   bool
+	}{
+		{
+			name: "multi slide paragraphs",
+			irJSON: `{"sections":[
+				{"elements":[{"type":"paragraph","content":[{"type":"text","text":"Slide One"}]}]},
+				{"elements":[{"type":"paragraph","content":[{"type":"text","text":"Slide Two"}]}]}
+			]}`,
+			wantTexts: []string{"Slide One", "Slide Two"},
+		},
+		{
+			name: "empty slide retained",
+			irJSON: `{"sections":[
+				{"elements":[{"type":"paragraph","content":[{"type":"text","text":"First"}]}]},
+				{"elements":[]},
+				{"elements":[{"type":"paragraph","content":[{"type":"text","text":"Third"}]}]}
+			]}`,
+			wantTexts: []string{"First", "", "Third"},
+		},
+		{
+			name: "bullet list with nested sub-list",
+			irJSON: `{"sections":[{"elements":[
+				{"type":"paragraph","content":[{"type":"text","text":"Agenda"}]},
+				{"type":"list","items":[
+					{"content":[{"type":"paragraph","content":[{"type":"text","text":"First point"}]}]},
+					{"content":[{"type":"paragraph","content":[{"type":"text","text":"Second point"}]}],
+					 "nested":{"items":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Sub point"}]}]}]}}
+				]}
+			]}]}`,
+			wantTexts: []string{"Agenda\nFirst point\nSecond point\nSub point"},
+		},
+		{
+			name: "table cells",
+			irJSON: `{"sections":[{"elements":[
+				{"type":"table","rows":[
+					{"cells":[
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]},
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"H2"}]}]}
+					]},
+					{"cells":[
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"a"}]}]},
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"b"}]}]}
+					]}
+				]}
+			]}]}`,
+			wantRows: [][]string{{"H1", "H2"}, {"a", "b"}},
+		},
+		{
+			name: "hard line break keeps newline",
+			irJSON: `{"sections":[{"elements":[
+				{"type":"paragraph","content":[
+					{"type":"text","text":"before"},
+					{"type":"line_break"},
+					{"type":"text","text":"after"}
+				]}
+			]}]}`,
+			wantTexts: []string{"before\nafter"},
+		},
+		{
+			// Internal newlines emitted by the shared IR walker (e.g. between
+			// table rows or list items) are preserved as-is. The element-level
+			// split (one element -> one value or none if empty) is the only
+			// collapse applied at this layer; per-line collapse across
+			// elements happens only at element boundaries, where blank
+			// elements are dropped.
+			name: "consecutive line breaks inside one element stay as newlines",
+			irJSON: `{"sections":[{"elements":[
+				{"type":"paragraph","content":[
+					{"type":"text","text":"before"},
+					{"type":"line_break"},
+					{"type":"line_break"},
+					{"type":"text","text":"after"}
+				]}
+			]}]}`,
+			wantTexts: []string{"before\n\nafter"},
+		},
+		{
+			// Element-level collapse: a blank element between two text
+			// elements is dropped, leaving a single newline between the
+			// non-empty element values.
+			name: "blank element between two text elements is dropped",
+			irJSON: `{"sections":[{"elements":[
+				{"type":"paragraph","content":[{"type":"text","text":"before"}]},
+				{"type":"paragraph","content":[]},
+				{"type":"paragraph","content":[{"type":"text","text":"after"}]}
+			]}]}`,
+			wantTexts: []string{"before\nafter"},
+		},
+		{
+			name:      "bare text block passes through",
+			irJSON:    `{"sections":[{"elements":[{"type":"text","text":"loose text"}]}]}`,
+			wantTexts: []string{"loose text"},
+		},
+		{
+			// bwbd.pptx regression: office_oxide wraps grouped slide shapes
+			// (graphicFrame tables) in a text_box, so the slide's text_box
+			// content is a table, not paragraphs. Previously flattened to "".
+			name: "text_box wrapping table keeps text",
+			irJSON: `{"sections":[{"elements":[{"type":"text_box","content":[
+				{"type":"table","rows":[
+					{"cells":[
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"Q1"}]}]},
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"A1"}]}]}
+					]}
+				]}
+			]}]}]}`,
+			wantRows: [][]string{{"Q1", "A1"}},
+		},
+		{
+			// Same flattening path with a list inside the text_box: the
+			// old paragraph-only walk dropped the whole block.
+			name: "text_box wrapping list keeps text",
+			irJSON: `{"sections":[{"elements":[{"type":"text_box","content":[
+				{"type":"list","items":[
+					{"content":[{"type":"paragraph","content":[{"type":"text","text":"li1"}]}]},
+					{"content":[{"type":"paragraph","content":[{"type":"text","text":"li2"}]}]}
+				]}
+			]}]}]}`,
+			wantTexts: []string{"li1\nli2"},
+		},
+		{
+			// Nested text boxes recurse through the same walker.
+			name: "nested text_box keeps text",
+			irJSON: `{"sections":[{"elements":[{"type":"text_box","content":[
+				{"type":"paragraph","content":[{"type":"text","text":"outer"}]},
+				{"type":"text_box","content":[
+					{"type":"paragraph","content":[{"type":"text","text":"inner"}]}
+				]}
+			]}]}]}`,
+			wantTexts: []string{"outer\ninner"},
+		},
+		{
+			// Table cell holding a list: joinCellText must recurse instead
+			// of reading paragraph runs only.
+			name: "table cell wrapping list keeps text",
+			irJSON: `{"sections":[{"elements":[{"type":"table","rows":[
+				{"cells":[
+					{"content":[
+						{"type":"paragraph","content":[{"type":"text","text":"head"}]},
+						{"type":"list","items":[
+							{"content":[{"type":"paragraph","content":[{"type":"text","text":"li1"}]}]},
+							{"content":[{"type":"paragraph","content":[{"type":"text","text":"li2"}]}]}
+						]}
+					]}
+				]}
+			]}]}]}`,
+			wantRows: [][]string{{"head\nli1\nli2"}},
+		},
+		{
+			name:    "invalid JSON",
+			irJSON:  "{not json",
+			wantErr: true,
+		},
+		{
+			name:      "no sections yields no items",
+			irJSON:    `{"sections":[]}`,
+			wantTexts: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items, err := buildPPTXJSONSections(tt.irJSON, nil)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("buildPPTXJSONSections: want error, got items %+v", items)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("buildPPTXJSONSections: %v", err)
+			}
+			if tt.wantRows != nil {
+				if len(items) != 1 {
+					t.Fatalf("items=%#v", items)
+				}
+				requireTableRows(t, items[0], tt.wantRows)
+				if items[0]["slide_number"] != 1 {
+					t.Fatalf("slide lost: %#v", items[0])
+				}
+				return
+			}
+			if len(items) != len(tt.wantTexts) {
+				t.Fatalf("items = %d, want %d: %+v", len(items), len(tt.wantTexts), items)
+			}
+			for i, want := range tt.wantTexts {
+				if got := items[i]["text"]; got != want {
+					t.Errorf("item %d text = %q, want %q", i, got, want)
+				}
+				if got := items[i]["slide_number"]; got != i+1 {
+					t.Errorf("item %d slide_number = %v, want %d", i, got, i+1)
+				}
+				if got := items[i]["doc_type_kwd"]; got != "text" {
+					t.Errorf("item %d doc_type_kwd = %v, want text", i, got)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildPPTXJSONSections_ExtractsSlideImagesInOrder(t *testing.T) {
+	images := [][]byte{officeTestPNG(t, 1), officeTestPNG(t, 2), officeTestPNG(t, 3)}
+	irJSON := `{"sections":[{"elements":[
+		{"type":"paragraph","content":[{"type":"text","text":"slide text"}]},
+		{"type":"image","data":"` + base64.StdEncoding.EncodeToString(images[0]) + `"},
+		{"type":"table","rows":[{"cells":[{"content":[{"type":"image","data":"` + base64.StdEncoding.EncodeToString(images[1]) + `"}]}]}]}
+	]},{"elements":[{"type":"image","data":"` + base64.StdEncoding.EncodeToString(images[2]) + `"}]}]}`
+
+	sink, cache := officeMediaTestSink(t, officeMediaFormatPPTX)
+	items, err := buildPPTXJSONSections(irJSON, sink)
+	if err != nil {
+		t.Fatalf("buildPPTXJSONSections: %v", err)
+	}
+	if sink.err != nil {
+		t.Fatalf("sink error: %v", sink.err)
+	}
+	want := []struct {
+		docType string
+		text    string
+		image   int
+		slide   int
+		order   int
+	}{
+		{docType: "text", text: "slide text", slide: 1},
+		{docType: "image", image: 0, slide: 1, order: 1},
+		{docType: "table", slide: 1},
+		{docType: "image", image: 1, slide: 1, order: 2},
+		{docType: "image", image: 2, slide: 2, order: 1},
+	}
+	if len(items) != len(want) {
+		t.Fatalf("items = %+v, want %d slide/text and image items", items, len(want))
+	}
+	if len(cache.puts) != len(images) {
+		t.Fatalf("cache writes = %d, want %d", len(cache.puts), len(images))
+	}
+	for i, w := range want {
+		item := items[i]
+		if item["doc_type_kwd"] != w.docType || item["slide_number"] != w.slide {
+			t.Errorf("item %d identity = %+v, want type %q slide %d", i, item, w.docType, w.slide)
+		}
+		if w.docType == "image" {
+			requireOfficeMediaRef(t, item)
+			if item["media_order"] != w.order {
+				t.Errorf("item %d media_order = %v, want %d", i, item["media_order"], w.order)
+			}
+			if string(cache.puts[w.image].data) != string(images[w.image]) {
+				t.Errorf("item %d cache payload mismatch", i)
+			}
+		}
+		if w.docType == "text" && item["text"] != w.text {
+			t.Errorf("item %d text = %v, want %q", i, item["text"], w.text)
+		}
+	}
+}
+
+// TestItemsAllEmpty pins the all-empty fallback gate: empty and whitespace
+// items trigger the PlainText salvage, any non-empty item does not.
+func TestItemsAllEmpty(t *testing.T) {
+	tests := []struct {
+		name  string
+		items []map[string]any
+		want  bool
+	}{
+		{name: "nil", items: nil, want: true},
+		{name: "empty", items: []map[string]any{}, want: true},
+		{
+			name:  "all empty",
+			items: []map[string]any{{"text": ""}, {"text": "  \n "}},
+			want:  true,
+		},
+		{
+			name:  "one non-empty",
+			items: []map[string]any{{"text": ""}, {"text": "hello"}},
+			want:  false,
+		},
+		{
+			name: "image reference",
+			items: []map[string]any{{"text": "", "doc_type_kwd": "image", "media_ref": &entity.MediaRef{
+				Format: "pptx",
+				Kind:   entity.MediaKindKV,
+				Scope:  "run-1",
+				SHA256: strings.Repeat("a", 64),
+			}}},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := itemsAllEmpty(tt.items); got != tt.want {
+				t.Errorf("itemsAllEmpty = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestItemsFromPlainText pins the whole-document plain-text salvage used
+// when the structured IR is unusable: non-empty text becomes a single
+// trimmed item; blank text yields an empty, non-nil slice.
+func TestItemsFromPlainText(t *testing.T) {
+	items := itemsFromPlainText("  whole deck text  ")
+	if len(items) != 1 || items[0]["text"] != "whole deck text" || items[0]["doc_type_kwd"] != "text" {
+		t.Fatalf("items = %+v, want a single trimmed text item", items)
+	}
+	items = itemsFromPlainText("   ")
+	if items == nil || len(items) != 0 {
+		t.Fatalf("items = %+v, want an empty non-nil slice", items)
+	}
+}

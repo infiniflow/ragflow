@@ -1,15 +1,16 @@
 package chunker
 
 import (
-	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"strings"
 	"testing"
 )
 
 // TestTokenChunker_BareDelimiterHonored locks the #17723 fix: a bare
 // (non-backtick) delimiter entry is now honored by TokenChunker. The payload
-// is split on the delimiter into paragraphs (the delimiter is DROPPED, matching
-// Python naive_merge), and those paragraphs are then merged by token_size.
+// is split on the delimiter into paragraphs (the delimiter is RETAINED
+// losslessly, since a bare delimiter is a split hint, not a delete instruction),
+// and those paragraphs are then merged by token_size.
 // Regression guard for the "bare entries are active" contract.
 func TestTokenChunker_BareDelimiterHonored(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
@@ -21,7 +22,7 @@ func TestTokenChunker_BareDelimiterHonored(t *testing.T) {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	const text = "alpha::beta::gamma::delta"
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          text,
@@ -29,7 +30,7 @@ func TestTokenChunker_BareDelimiterHonored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatalf("no chunks produced")
 	}
@@ -37,16 +38,16 @@ func TestTokenChunker_BareDelimiterHonored(t *testing.T) {
 	for _, ck := range chunks {
 		joined.WriteString(ck["text"].(string))
 	}
-	// No content dropped, and the bare "::" is split away (not preserved inside
-	// a chunk). Python's naive_merge rebuilds each paragraph with a leading
-	// "\n", so the joined text equals the source with "::" replaced by "\n".
-	const want = "alpha\nbeta\ngamma\ndelta"
+	// Lossless: the joined text reproduces the source exactly, with the bare
+	// "::" delimiter retained inside each chunk (a delimiter is a split hint,
+	// not a delete instruction).
+	const want = "alpha::beta::gamma::delta"
 	if joined.String() != want {
 		t.Errorf("bare delimiter not honored: joined=%q want %q (chunks=%v)", joined.String(), want, chunkTexts(chunks))
 	}
 	for _, ck := range chunks {
-		if strings.Contains(ck["text"].(string), "::") {
-			t.Errorf("bare delimiter leaked into chunk: %q", ck["text"].(string))
+		if !strings.Contains(ck["text"].(string), "::") {
+			t.Errorf("bare delimiter dropped from chunk: %q", ck["text"].(string))
 		}
 	}
 }
@@ -65,7 +66,7 @@ func TestTokenChunker_MultiByteBacktickDelimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "第一部分段落第二部分",
@@ -73,7 +74,9 @@ func TestTokenChunker_MultiByteBacktickDelimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	// Custom (backtick) delimiters are DROPPED, mirroring Python's
+	// naive_merge has_custom branch: "段落" is split away, not preserved.
 	want := []string{"第一部分", "第二部分"}
 	if len(chunks) != len(want) {
 		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
@@ -84,8 +87,9 @@ func TestTokenChunker_MultiByteBacktickDelimiter(t *testing.T) {
 		}
 	}
 
-	// Longest delimiter must win over its shorter prefix: `段落` (2 runes)
-	// beats `段` (1 rune), so "A段落B" splits on "段落", not "段".
+	// Longest delimiter must still win over its shorter prefix: `段落` (2 runes)
+	// beats `段` (1 rune), so "A段落B" splits on "段落", not "段" — and the
+	// delimiter is dropped from both chunks.
 	c2, err := NewTokenChunker(map[string]any{
 		"delimiters":       []string{"`段落`", "`段`"},
 		"chunk_token_size": float64(1024),
@@ -93,7 +97,7 @@ func TestTokenChunker_MultiByteBacktickDelimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out2, err := c2.Invoke(context.Background(), nil, map[string]any{
+	out2, err := c2.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "A段落B",
@@ -101,7 +105,7 @@ func TestTokenChunker_MultiByteBacktickDelimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks2, _ := out2["chunks"].([]map[string]any)
+	chunks2, _ := schema.ChunkCarrierToMaps(out2["chunks"])
 	if len(chunks2) != 2 || chunks2[0]["text"].(string) != "A" || chunks2[1]["text"].(string) != "B" {
 		t.Errorf("longest delimiter not preferred: got %v", chunkTexts(chunks2))
 	}

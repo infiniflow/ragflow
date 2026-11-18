@@ -40,6 +40,14 @@ func TestHasWrappedDelimiter(t *testing.T) {
 	}
 }
 
+func TestParseDelimiterField(t *testing.T) {
+	got := ParseDelimiterField("\n!?;。；！？`---`")
+	want := []string{"\n", "!", "?", ";", "。", "；", "！", "？", "`---`"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ParseDelimiterField = %#v, want %#v", got, want)
+	}
+}
+
 func TestCompileDelimiterPattern(t *testing.T) {
 	if CompileDelimiterPattern(nil) != nil {
 		t.Fatal("empty list should yield nil")
@@ -243,6 +251,17 @@ func TestCompileDelimiterPatternListChildrenPrefixOrder(t *testing.T) {
 	pat = CompileDelimiterPatternList([]string{"。", "###"}, true)
 	if got := pat.String(); got != `###|。` {
 		t.Errorf("pattern = %q, want %q", got, `###|。`)
+	}
+}
+
+func TestCustomDelimiterPrefixes(t *testing.T) {
+	got := CustomDelimiterPrefixes([]string{"\n", "`问：`", "`##`"})
+	want := []string{"问：", "##"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("CustomDelimiterPrefixes = %#v, want %#v", got, want)
+	}
+	if CustomDelimiterPrefixes([]string{"\n", "!"}) != nil {
+		t.Fatal("expected nil when no backtick entries")
 	}
 }
 

@@ -46,7 +46,7 @@
 // SSE wire contract (matches the handler envelope):
 //   - RunEvent.Type == "message"          → {data: <string>}
 //   - RunEvent.Type == "waiting_for_user" → {cpn_id: <string>}
-//   - RunEvent.Type == "error"            → {message: <string>}
+//   - RunEvent.Type == "error"            → {message: <string>, kind?: <string>}
 //   - RunEvent.Type == "cancelled"        → {message: <string>}
 package canvas
 
@@ -55,7 +55,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/utility"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -119,10 +118,13 @@ type MessageEvent struct {
 }
 
 // MessageEndEvent is the JSON payload for Type=="message_end" frames.
+// Attachment mirrors Python's _build_message_end: the {doc_id, format,
+// file_name} descriptor of a Message-component file export, present
+// only when one was produced.
 type MessageEndEvent struct {
-	Status     *string       `json:"status,omitempty"`
-	Attachment []interface{} `json:"attachment,omitempty"`
-	Reference  interface{}   `json:"reference,omitempty"`
+	Status     *string        `json:"status,omitempty"`
+	Attachment map[string]any `json:"attachment,omitempty"`
+	Reference  interface{}    `json:"reference,omitempty"`
 }
 
 // WaitingForUserEvent is the JSON payload for Type=="waiting_for_user"
@@ -135,9 +137,11 @@ type WaitingForUserEvent struct {
 	Inputs map[string]any `json:"inputs,omitempty"`
 }
 
-// ErrorEvent is the JSON payload for Type=="error" frames.
+// ErrorEvent is the JSON payload for Type=="error" frames. Kind is present
+// only when adapters must apply special handling, such as internal redaction.
 type ErrorEvent struct {
 	Message string `json:"message"`
+	Kind    string `json:"kind,omitempty"`
 }
 
 // CancelledEvent is an alias for ErrorEvent because both terminal payloads
@@ -263,13 +267,16 @@ func (r *Runner) Run(
 	out := make(chan RunEvent, 8)
 
 	if run == nil {
-		pushErr(ctx, out, "canvas: nil RunFunc", sessionID)
+		pushErr(ctx, out, "agent: nil RunFunc", sessionID)
 		close(out)
 		return out
 	}
 
-	// Generate the message identifier the RunFunc and SSE envelope need.
-	messageID := utility.GenerateToken()
+	// Reuse a persisted question's identifier for the RunFunc and SSE envelope.
+	messageID, _ := root["__message_id__"].(string)
+	if messageID == "" {
+		messageID = common.GenerateToken()
+	}
 
 	// Inject the output channel + metadata so the RunFunc can emit
 	// events during execution (workflow_started, node_started,
@@ -358,7 +365,19 @@ func (r *Runner) Run(
 				push(ctx, out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(WaitingForUserEvent{CpnID: runErr.Error()}), MessageID: messageID, CreatedAt: nowUnix(), SessionID: sessionID})
 				return
 			}
-			pushErr(ctx, out, runErr.Error(), sessionID)
+			errorEvent := runErrorEvent(runErr)
+			if errorEvent.Kind == RunErrorKindInternal {
+				common.Error("canvas runner internal error", runErr,
+					zap.String("canvas", canvasID),
+					zap.String("session", sessionID))
+			}
+			push(ctx, out, RunEvent{
+				Type:      "error",
+				Data:      safeEventJSON(errorEvent),
+				MessageID: messageID,
+				CreatedAt: nowUnix(),
+				SessionID: sessionID,
+			})
 			return
 		}
 	}()
@@ -477,51 +496,4 @@ func safeEventJSON(v any) string {
 // nowUnix returns the current Unix timestamp in seconds.
 func nowUnix() int64 {
 	return time.Now().Unix()
-}
-
-// extractAnswerFromState is kept for reference but is no longer called
-// by the Runner — answer extraction now happens in buildRunFunc.
-// Remove in a follow-up cleanup pass once all tests pass.
-func extractAnswerFromState(state *CanvasState) (string, []interface{}) {
-	if state == nil {
-		return "", nil
-	}
-	snap := state.Snapshot()
-	var answer string
-	var reference []interface{}
-	// First pass: look for an "answer" key (preferred).
-	for _, bucket := range snap {
-		if a, ok := bucket["answer"].(string); ok && a != "" {
-			answer = a
-			break
-		}
-	}
-	// Second pass: fall back to "result" then "content" if
-	// no "answer" was found.
-	if answer == "" {
-		for _, bucket := range snap {
-			if r, ok := bucket["result"].(string); ok && r != "" {
-				answer = r
-				break
-			}
-		}
-	}
-	if answer == "" {
-		for _, bucket := range snap {
-			if c, ok := bucket["content"].(string); ok && c != "" {
-				answer = c
-				break
-			}
-		}
-	}
-	// Collect references (best-effort, no precedence).
-	for _, bucket := range snap {
-		if r, ok := bucket["reference"].([]interface{}); ok {
-			reference = append(reference, r...)
-		}
-	}
-	if answer == "" {
-		answer = "Run completed with no surfaceable answer."
-	}
-	return answer, reference
 }

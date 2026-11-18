@@ -52,7 +52,6 @@ public:
     bool Stem(const std::string& term, std::string& resultWord);
 
 private:
-    // int stemLang_; ///< language for stemming
-
+    Language language_; ///< currently initialized language
     void* stem_function_; ///< stemming function
 };

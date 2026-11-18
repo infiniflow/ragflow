@@ -1,4 +1,0 @@
-numpy
-pandas
-matplotlib
-requests

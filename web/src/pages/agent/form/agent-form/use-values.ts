@@ -33,6 +33,7 @@ export function useValues(node?: RAGFlowNodeType) {
 
     return {
       ...omitToolsAndMcp(formData),
+      tool_timeout: get(formData, 'tool_timeout', 10),
       prompts: get(formData, 'prompts.0.content', ''),
     };
   }, [defaultValues, node?.data?.form]);

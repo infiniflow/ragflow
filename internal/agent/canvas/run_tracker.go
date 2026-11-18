@@ -31,7 +31,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	redis2 "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 )
 
 // runKeyPrefix is the Redis Hash key namespace for run metadata.
@@ -78,13 +78,13 @@ type RunTracker struct {
 	ttl    time.Duration
 }
 
-// NewRunTracker returns a tracker wired to the global Redis client. When
+// NewRunTracker returns a tracker wired to the global Kvrocks client. When
 // the cache is uninitialized, client is nil; methods error in that case
 // rather than panicking, and tests can inject a client via struct-literal
 // construction.
 func NewRunTracker(ttl time.Duration) *RunTracker {
 	var client *redis.Client
-	if rc := redis2.Get(); rc != nil {
+	if rc := kvrocks.Get(); rc != nil {
 		client = rc.GetClient()
 	}
 	return &RunTracker{client: client, ttl: ttl}
@@ -93,7 +93,7 @@ func NewRunTracker(ttl time.Duration) *RunTracker {
 // NewRunTrackerWithClient returns a tracker wired to a caller-supplied
 // redis.Client. The intended use is tests that want to drive the
 // RunTracker against an in-memory miniredis without touching the
-// global Redis cache, but the helper is exported so non-test callers
+// global Kvrocks cache, but the helper is exported so non-test callers
 // (multi-tenant deployments, custom Redis pools) can inject a
 // dedicated client without going through the global cache singleton.
 func NewRunTrackerWithClient(client *redis.Client, ttl time.Duration) *RunTracker {
@@ -118,7 +118,7 @@ func (t *RunTracker) setRunFields(ctx context.Context, runID string, values ...i
 // run would leak the hash.
 func (t *RunTracker) Start(ctx context.Context, runID, canvasID, tenantID, parentRunID string) error {
 	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
+		return errors.New("run tracker: kvrocks client not initialized")
 	}
 	now := time.Now().UnixMilli()
 	key := runKey(runID)
@@ -141,7 +141,7 @@ func (t *RunTracker) Start(ctx context.Context, runID, canvasID, tenantID, paren
 // §2.6) must call this once before the run goroutine returns.
 func (t *RunTracker) AttachCheckpoint(ctx context.Context, runID, checkpointID string) error {
 	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
+		return errors.New("run tracker: kvrocks client not initialized")
 	}
 	return t.setRunFields(ctx, runID, "checkpoint_id", checkpointID)
 }
@@ -154,7 +154,7 @@ func (t *RunTracker) AttachCheckpoint(ctx context.Context, runID, checkpointID s
 // calls compose.ResumeWithData with it. The ONLY writer of "interrupt_id".
 func (t *RunTracker) AttachInterrupt(ctx context.Context, runID, interruptID string) error {
 	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
+		return errors.New("run tracker: kvrocks client not initialized")
 	}
 	return t.setRunFields(ctx, runID, runFieldInterruptID, interruptID)
 }
@@ -165,7 +165,7 @@ func (t *RunTracker) AttachInterrupt(ctx context.Context, runID, interruptID str
 // "fresh run, do a normal Invoke".
 func (t *RunTracker) GetInterruptID(ctx context.Context, runID string) (string, bool, error) {
 	if t == nil || t.client == nil {
-		return "", false, errors.New("run tracker: redis client not initialized")
+		return "", false, errors.New("run tracker: kvrocks client not initialized")
 	}
 	v, err := t.client.HGet(ctx, runKey(runID), runFieldInterruptID).Result()
 	if errors.Is(err, redis.Nil) {
@@ -185,7 +185,7 @@ func (t *RunTracker) GetInterruptID(ctx context.Context, runID string) (string, 
 // UserFillUp checkpoint.
 func (t *RunTracker) ClearInterruptID(ctx context.Context, runID string) error {
 	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
+		return errors.New("run tracker: kvrocks client not initialized")
 	}
 	return t.client.HDel(ctx, runKey(runID), runFieldInterruptID).Err()
 }
@@ -193,7 +193,7 @@ func (t *RunTracker) ClearInterruptID(ctx context.Context, runID string) error {
 // MarkSucceeded transitions the run to status=1 and stamps finished_at.
 func (t *RunTracker) MarkSucceeded(ctx context.Context, runID string) error {
 	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
+		return errors.New("run tracker: kvrocks client not initialized")
 	}
 	return t.setRunFields(ctx, runID,
 		"status", runStatusSucceeded,
@@ -204,7 +204,7 @@ func (t *RunTracker) MarkSucceeded(ctx context.Context, runID string) error {
 // MarkFailed transitions the run to status=2 and records the reason.
 func (t *RunTracker) MarkFailed(ctx context.Context, runID, reason string) error {
 	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
+		return errors.New("run tracker: kvrocks client not initialized")
 	}
 	return t.setRunFields(ctx, runID,
 		"status", runStatusFailed,
@@ -216,7 +216,7 @@ func (t *RunTracker) MarkFailed(ctx context.Context, runID, reason string) error
 // MarkCancelled transitions the run to status=3 and sets the cancel flag.
 func (t *RunTracker) MarkCancelled(ctx context.Context, runID string) error {
 	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
+		return errors.New("run tracker: kvrocks client not initialized")
 	}
 	key := runKey(runID)
 	pipe := t.client.Pipeline()
@@ -236,7 +236,7 @@ func (t *RunTracker) MarkCancelled(ctx context.Context, runID string) error {
 // means another instance already owns the session.
 func (t *RunTracker) RegisterActiveSession(ctx context.Context, active ActiveSession) (bool, error) {
 	if t == nil || t.client == nil {
-		return false, errors.New("run tracker: redis client not initialized")
+		return false, errors.New("run tracker: kvrocks client not initialized")
 	}
 	const script = `
 if redis.call("EXISTS", KEYS[1]) == 1 then return 0 end
@@ -258,7 +258,7 @@ return 1`
 // result means the session is not running.
 func (t *RunTracker) GetActiveSession(ctx context.Context, sessionID string) (*ActiveSession, error) {
 	if t == nil || t.client == nil {
-		return nil, errors.New("run tracker: redis client not initialized")
+		return nil, errors.New("run tracker: kvrocks client not initialized")
 	}
 	fields, err := t.client.HGetAll(ctx, activeSessionKey(sessionID)).Result()
 	if err != nil || len(fields) == 0 {
@@ -276,7 +276,7 @@ func (t *RunTracker) GetActiveSession(ctx context.Context, sessionID string) (*A
 // RefreshActiveSession extends the lease only while token still owns it.
 func (t *RunTracker) RefreshActiveSession(ctx context.Context, sessionID, token string) (bool, error) {
 	if t == nil || t.client == nil {
-		return false, errors.New("run tracker: redis client not initialized")
+		return false, errors.New("run tracker: kvrocks client not initialized")
 	}
 	const script = `if redis.call("HGET", KEYS[1], "token") == ARGV[1] then return redis.call("PEXPIRE", KEYS[1], ARGV[2]) end return 0`
 	result, err := t.client.Eval(ctx, script, []string{activeSessionKey(sessionID)}, token,
@@ -289,7 +289,7 @@ func (t *RunTracker) RefreshActiveSession(ctx context.Context, sessionID, token 
 // run.
 func (t *RunTracker) ReleaseActiveSession(ctx context.Context, sessionID, token string) (bool, error) {
 	if t == nil || t.client == nil {
-		return false, errors.New("run tracker: redis client not initialized")
+		return false, errors.New("run tracker: kvrocks client not initialized")
 	}
 	const script = `
 if redis.call("HGET", KEYS[1], "token") ~= ARGV[1] then return 0 end
@@ -306,7 +306,7 @@ return 1`
 // a newer run after its lease has been replaced or released.
 func (t *RunTracker) RequestCancelActiveSession(ctx context.Context, sessionID, token string) (bool, error) {
 	if t == nil || t.client == nil {
-		return false, errors.New("run tracker: redis client not initialized")
+		return false, errors.New("run tracker: kvrocks client not initialized")
 	}
 	const script = `
 if redis.call("HGET", KEYS[1], "token") ~= ARGV[1] then return 0 end
@@ -365,7 +365,7 @@ func (t *RunTracker) leaseTTL() time.Duration {
 // MarkWaiting records a normal UserFillUp pause. It is not a failure.
 func (t *RunTracker) MarkWaiting(ctx context.Context, runID string) error {
 	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
+		return errors.New("run tracker: kvrocks client not initialized")
 	}
 	key := runKey(runID)
 	pipe := t.client.Pipeline()
@@ -380,7 +380,7 @@ func (t *RunTracker) MarkWaiting(ctx context.Context, runID string) error {
 // if they need to distinguish from a key that exists with no fields.
 func (t *RunTracker) Get(ctx context.Context, runID string) (map[string]string, error) {
 	if t == nil || t.client == nil {
-		return nil, errors.New("run tracker: redis client not initialized")
+		return nil, errors.New("run tracker: kvrocks client not initialized")
 	}
 	return t.client.HGetAll(ctx, runKey(runID)).Result()
 }

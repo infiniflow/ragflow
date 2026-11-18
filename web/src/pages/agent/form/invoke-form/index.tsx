@@ -2,22 +2,16 @@ import { Collapse } from '@/components/collapse';
 import { FormContainer } from '@/components/form-container';
 import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { useIsDarkTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Editor, { loader } from '@monaco-editor/react';
 import { Plus } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { initialInvokeValues } from '../../constant';
@@ -85,6 +79,10 @@ function InvokeForm({ node }: INextOperatorForm) {
     node,
   });
 
+  const handleAddVariable = useCallback(() => {
+    showModal();
+  }, [showModal]);
+
   const variables = useWatch({ control: form.control, name: 'variables' });
 
   const isDarkTheme = useIsDarkTheme();
@@ -95,99 +93,39 @@ function InvokeForm({ node }: INextOperatorForm) {
     <Form {...form}>
       <FormWrapper>
         <FormContainer>
-          <FormField
-            control={form.control}
-            name="url"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flow.url')}</FormLabel>
-                <FormControl>
-                  <PromptEditor
-                    value={field.value}
-                    onChange={field.onChange}
-                    placeholder="http://"
-                    showToolbar={false}
-                    multiLine={false}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
+          <RAGFlowFormItem name="url" label={t('flow.url')}>
+            <PromptEditor
+              placeholder="http://"
+              showToolbar={false}
+              multiLine={false}
+            />
+          </RAGFlowFormItem>
+          <RAGFlowFormItem name="method" label={t('flow.method')}>
+            <SelectWithSearch options={MethodOptions} />
+          </RAGFlowFormItem>
+          <RAGFlowFormItem name="timeout" label={t('flow.timeout')}>
+            {(field) => (
+              <TimeoutInput value={field.value} onChange={field.onChange} />
             )}
-          />
-          <FormField
-            control={form.control}
-            name="method"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flow.method')}</FormLabel>
-                <FormControl>
-                  <SelectWithSearch {...field} options={MethodOptions} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
+          </RAGFlowFormItem>
+          <RAGFlowFormItem name="headers" label={t('flow.headers')}>
+            {(field) => (
+              <Editor
+                height={200}
+                defaultLanguage="json"
+                theme={isDarkTheme ? 'vs-dark' : undefined}
+                value={field.value}
+                onChange={field.onChange}
+              />
             )}
-          />
-          <FormField
-            control={form.control}
-            name="timeout"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flow.timeout')}</FormLabel>
-                <FormControl>
-                  <TimeoutInput {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="headers"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flow.headers')}</FormLabel>
-                <FormControl>
-                  <Editor
-                    height={200}
-                    defaultLanguage="json"
-                    theme={isDarkTheme ? 'vs-dark' : undefined}
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="proxy"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flow.proxy')}</FormLabel>
-                <FormControl>
-                  <Input {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
+          </RAGFlowFormItem>
+          <RAGFlowFormItem name="proxy" label={t('flow.proxy')}>
+            <Input />
+          </RAGFlowFormItem>
+          <SwitchFormField
             name="clean_html"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel tooltip={t('flow.cleanHtmlTip')}>
-                  {t('flow.cleanHtml')}
-                </FormLabel>
-                <FormControl>
-                  <Switch
-                    onCheckedChange={field.onChange}
-                    checked={field.value}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+            label={t('flow.cleanHtml')}
+            tooltip={t('flow.cleanHtmlTip')}
           />
           {/* Create a hidden field to make Form instance record this */}
           <FormField
@@ -199,13 +137,7 @@ function InvokeForm({ node }: INextOperatorForm) {
         <Collapse
           title={<div>{t('flow.parameter')}</div>}
           rightContent={
-            <Button
-              variant={'ghost'}
-              onClick={(e) => {
-                e.preventDefault();
-                showModal();
-              }}
-            >
+            <Button variant={'ghost'} type="button" onClick={handleAddVariable}>
               <Plus />
             </Button>
           }

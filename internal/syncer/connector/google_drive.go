@@ -167,7 +167,10 @@ func (c *GoogleDriveConnector) OpenSync(ctx context.Context, request SyncRequest
 		windowStart: request.WindowStart,
 		windowEnd:   request.WindowEnd,
 	}
-	return session.applyResume(request.Resume), nil
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // OpenPrune opens one complete Google Drive prune snapshot session.
@@ -329,7 +332,7 @@ func (c *GoogleDriveConnector) listFilePage(ctx context.Context, scope googleDri
 		return googleDriveFilePage{}, err
 	}
 	query := url.Values{
-		"fields":   {"nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,webViewLink,shortcutDetails,owners(emailAddress),size,md5Checksum,fileExtension)"},
+		"fields":   {"nextPageToken,incompleteSearch,files(id,name,mimeType,modifiedTime,createdTime,webViewLink,shortcutDetails,owners(emailAddress),size,md5Checksum,fileExtension)"},
 		"pageSize": {strconv.Itoa(googleDriveItemsPerPage)},
 		"orderBy":  {"modifiedTime"},
 		"q":        {googleDriveFileQuery(scope, windowStart, windowEnd)},
@@ -358,11 +361,15 @@ func (c *GoogleDriveConnector) listFilePage(ctx context.Context, scope googleDri
 	return page, err
 }
 
+// listFilePageWithRetry retries rate limits and rejects incomplete search results.
 func (c *GoogleDriveConnector) listFilePageWithRetry(ctx context.Context, scope googleDriveScope, pageToken string, windowStart *time.Time, windowEnd time.Time) (googleDriveFilePage, error) {
 	var lastErr error
 	for attempt := 1; attempt <= googleDriveListRetryCount; attempt++ {
 		page, err := c.listFilePage(ctx, scope, pageToken, windowStart, windowEnd)
 		if err == nil {
+			if page.IncompleteSearch {
+				return googleDriveFilePage{}, fmt.Errorf("Google Drive file search is incomplete; narrow the connector's retrieval scope and retry")
+			}
 			return page, nil
 		}
 		lastErr = err
@@ -379,6 +386,7 @@ func (c *GoogleDriveConnector) listFilePageWithRetry(ctx context.Context, scope 
 	return googleDriveFilePage{}, lastErr
 }
 
+// listFolderIDs lists child folders, failing if any page reports an incomplete search.
 func (c *GoogleDriveConnector) listFolderIDs(ctx context.Context, userEmail, parentID string) ([]string, error) {
 	if c.listFolders != nil {
 		return c.listFolders(ctx, userEmail, parentID)
@@ -392,7 +400,7 @@ func (c *GoogleDriveConnector) listFolderIDs(ctx context.Context, userEmail, par
 	for {
 		query := url.Values{
 			"corpora":                   {"allDrives"},
-			"fields":                    {"nextPageToken,files(id)"},
+			"fields":                    {"nextPageToken,incompleteSearch,files(id)"},
 			"includeItemsFromAllDrives": {"true"},
 			"supportsAllDrives":         {"true"},
 			"pageSize":                  {strconv.Itoa(googleDriveItemsPerPage)},
@@ -404,6 +412,9 @@ func (c *GoogleDriveConnector) listFolderIDs(ctx context.Context, userEmail, par
 		var page googleDriveFilePage
 		if err = c.getJSON(ctx, client, "https://www.googleapis.com/drive/v3/files?"+query.Encode(), &page); err != nil {
 			return nil, err
+		}
+		if page.IncompleteSearch {
+			return nil, fmt.Errorf("Google Drive folder search for %s is incomplete; narrow the connector's retrieval scope and retry", parentID)
 		}
 		for _, file := range page.Files {
 			if file.ID != "" {
@@ -568,7 +579,7 @@ type googleDriveSyncSession struct {
 	folderSeen       map[string]struct{}
 	resumePageToken  string
 	resumePageOffset int
-	resumeFilename   string
+	resumeSourceID   string
 }
 
 // NextBatch returns the next Google Drive document batch.
@@ -640,10 +651,13 @@ func (s *googleDriveSyncSession) nextDocumentPage(ctx context.Context) ([]google
 			document:   doc,
 			checkpoint: s.syncCheckpoint(scope, requestPageToken, pageOffset, doc),
 			offset:     pageOffset,
-			filename:   syncSourceDocumentFilenameFromDocument(doc),
 		})
 	}
-	docs := s.filterSeenDocuments(s.filterResumedDocuments(requestPageToken, candidates))
+	docs, err := s.filterResumedDocuments(requestPageToken, candidates)
+	if err != nil {
+		return nil, err
+	}
+	docs = s.filterSeenDocuments(docs)
 	if page.NextPageToken == "" {
 		if err = s.finishScope(ctx, scope); err != nil {
 			return nil, err
@@ -702,14 +716,21 @@ func (s *googleDriveSyncSession) filterSeenDocuments(candidates []googleDriveBuf
 	return filtered
 }
 
-// applyResume apply resume if checkpoint is available
-func (s *googleDriveSyncSession) applyResume(checkpoint *SyncCheckpoint) *googleDriveSyncSession {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return s
+// applyResume restores the Google Drive source anchor when a checkpoint is available.
+func (s *googleDriveSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("google drive sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor googleDriveSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return s
+		return fmt.Errorf("google drive sync cursor is invalid: %w", ErrSyncResumeInvalid)
+	}
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	if sourceID == "" {
+		return fmt.Errorf("google drive sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	if len(cursor.Scopes) > 0 && cursor.ScopeIndex >= 0 && cursor.ScopeIndex < len(cursor.Scopes) {
 		scopes := make([]googleDriveScope, 0, len(cursor.Scopes))
@@ -726,49 +747,38 @@ func (s *googleDriveSyncSession) applyResume(checkpoint *SyncCheckpoint) *google
 			s.scopes = append(s.scopes, scope)
 			s.scopeIndex = len(s.scopes) - 1
 		}
+	} else {
+		return fmt.Errorf("google drive sync cursor has no valid scope: %w", ErrSyncResumeInvalid)
 	}
 	s.pageToken = cursor.PageToken
 	s.resumePageToken = cursor.PageToken
-	s.resumeFilename = cursor.Filename
+	s.resumeSourceID = sourceID
 	if cursor.Offset > 0 {
 		s.resumePageOffset = cursor.Offset
 	}
-	return s
+	return nil
 }
 
-func (s *googleDriveSyncSession) filterResumedDocuments(pageToken string, candidates []googleDriveBufferedDocument) []googleDriveBufferedDocument {
-	if s.resumePageOffset <= 0 {
-		return candidates
+func (s *googleDriveSyncSession) filterResumedDocuments(pageToken string, candidates []googleDriveBufferedDocument) ([]googleDriveBufferedDocument, error) {
+	if s.resumeSourceID == "" {
+		return candidates, nil
 	}
 	if pageToken != s.resumePageToken {
-		s.clearResumeOffset()
-		return candidates
+		return nil, fmt.Errorf("google drive resume page %q no longer matches checkpoint page %q: %w", pageToken, s.resumePageToken, ErrSyncResumeInvalid)
 	}
-	if s.resumePageOffset <= len(candidates) && candidates[s.resumePageOffset-1].filename == s.resumeFilename {
-		filtered := candidates[:0]
-		for _, candidate := range candidates {
-			if candidate.offset > s.resumePageOffset {
-				filtered = append(filtered, candidate)
-			}
-		}
-		s.clearResumeOffset()
-		return filtered
-	}
-
-	filtered := candidates[:0]
-	for _, candidate := range candidates {
-		if candidate.offset >= s.resumePageOffset {
-			filtered = append(filtered, candidate)
+	for index, candidate := range candidates {
+		if candidate.document.SourceID == s.resumeSourceID {
+			s.clearResumeOffset()
+			return candidates[index+1:], nil
 		}
 	}
-	s.clearResumeOffset()
-	return filtered
+	return nil, fmt.Errorf("google drive resume anchor %q was not found on page %q: %w", s.resumeSourceID, pageToken, ErrSyncResumeInvalid)
 }
 
 func (s *googleDriveSyncSession) clearResumeOffset() {
 	s.resumePageOffset = 0
 	s.resumePageToken = ""
-	s.resumeFilename = ""
+	s.resumeSourceID = ""
 }
 
 func (s *googleDriveSyncSession) syncCheckpoint(scope googleDriveScope, pageToken string, offset int, doc SourceDocument) *SyncCheckpoint {
@@ -782,7 +792,7 @@ func (s *googleDriveSyncSession) syncCheckpoint(scope googleDriveScope, pageToke
 		ScopeIndex: s.scopeIndex,
 		PageToken:  pageToken,
 		Offset:     offset,
-		Filename:   syncSourceDocumentFilenameFromDocument(doc),
+		SourceID:   doc.SourceID,
 	})
 	if err != nil {
 		return nil
@@ -810,7 +820,6 @@ type googleDriveBufferedDocument struct {
 	document   SourceDocument
 	checkpoint *SyncCheckpoint
 	offset     int
-	filename   string
 }
 
 type googleDriveSyncCursor struct {
@@ -819,7 +828,7 @@ type googleDriveSyncCursor struct {
 	ScopeIndex int                      `json:"scope_index"`
 	PageToken  string                   `json:"page_token,omitempty"`
 	Offset     int                      `json:"offset"`
-	Filename   string                   `json:"filename"`
+	SourceID   string                   `json:"source_id,omitempty"`
 }
 
 type googleDriveScopeCursor struct {
@@ -996,8 +1005,9 @@ type googleDriveListRequest struct {
 }
 
 type googleDriveFilePage struct {
-	NextPageToken string            `json:"nextPageToken"`
-	Files         []googleDriveFile `json:"files"`
+	NextPageToken    string            `json:"nextPageToken"`
+	IncompleteSearch bool              `json:"incompleteSearch"`
+	Files            []googleDriveFile `json:"files"`
 }
 
 type googleDriveDrivePage struct {

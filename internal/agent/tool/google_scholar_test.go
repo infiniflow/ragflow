@@ -117,7 +117,7 @@ func TestGoogleScholar_BuildURL(t *testing.T) {
 			wantNum:    "5",
 			wantHost:   "scholar.google.com",
 			wantQuery:  "ai",
-			wantParams: map[string]string{"as_vis": "1"},
+			wantParams: map[string]string{"as_sdt": "1,33", "as_vis": ""},
 		},
 		{
 			name:      "include patents (default)",
@@ -143,7 +143,8 @@ func TestGoogleScholar_BuildURL(t *testing.T) {
 				"scisbd": "1",
 				"as_ylo": "2019",
 				"as_yhi": "2023",
-				"as_vis": "1",
+				"as_sdt": "1,33",
+				"as_vis": "",
 			},
 		},
 	}
@@ -277,7 +278,7 @@ func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
 	if scholar.defaults.TopN != 7 || scholar.defaults.SortBy != "date" || scholar.defaults.YearLow != 2020 || scholar.defaults.Patents == nil || *scholar.defaults.Patents {
 		t.Fatalf("defaults = %+v", scholar.defaults)
 	}
-	for _, params := range []map[string]any{{"top_n": 0}, {"top_n": 1.5}, {"sort_by": "newest"}, {"patents": "yes"}} {
+	for _, params := range []map[string]any{{"top_n": 0}, {"top_n": 1.5}, {"sort_by": "data"}, {"sort_by": "newest"}, {"patents": "yes"}} {
 		if _, err := BuildByName("google_scholar", params); err == nil {
 			t.Fatalf("BuildByName(%#v) succeeded", params)
 		}
@@ -347,8 +348,11 @@ func TestGoogleScholar_MergesNodeLevelDefaults(t *testing.T) {
 		if q.Get("as_yhi") != "2024" {
 			t.Errorf("as_yhi = %q, want 2024", q.Get("as_yhi"))
 		}
-		if q.Get("as_vis") != "1" {
-			t.Errorf("as_vis = %q, want 1", q.Get("as_vis"))
+		if q.Get("as_sdt") != "1,33" {
+			t.Errorf("as_sdt = %q, want 1,33", q.Get("as_sdt"))
+		}
+		if q.Has("as_vis") {
+			t.Errorf("as_vis = %q, want unset", q.Get("as_vis"))
 		}
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 		_, _ = w.Write([]byte(cannedScholarHTML))

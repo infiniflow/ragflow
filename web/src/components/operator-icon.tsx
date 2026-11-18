@@ -17,12 +17,12 @@
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import queritLogo from '@/assets/querit.png';
+import search1apiLogo from '@/assets/search1api.png';
 import { cn } from '@/lib/utils';
 import {
   Columns3Cog,
   FileCode,
   FileText,
-  Globe,
   HousePlus,
   Infinity as InfinityIcon,
   LogOut,
@@ -73,10 +73,13 @@ export const SVGIconMap = {
   [Operator.SearXNG]: 'searxng',
   [Operator.KeenableSearch]: 'keenable',
   [Operator.YouComSearch]: 'youcom',
+  [Operator.SofyaSearch]: 'sofya',
   [Operator.TavilyExtract]: 'tavily',
   [Operator.TavilySearch]: 'tavily',
   [Operator.QueritContents]: 'querit',
   [Operator.QueritSearch]: 'querit',
+  [Operator.Search1APISearch]: 'search1api',
+  [Operator.Search1APICrawl]: 'search1api',
   [Operator.Wikipedia]: 'wikipedia',
   [Operator.YahooFinance]: 'yahoo-finance',
   [Operator.WenCai]: 'wencai',
@@ -87,11 +90,11 @@ export const LucideIconMap = {
   [Operator.Loop]: InfinityIcon,
   [Operator.ExitLoop]: LogOut,
   [Operator.DocGenerator]: FileText,
-  [Operator.Browser]: Globe,
   [Operator.Compiler]: Columns3Cog,
   [Operator.File]: LucideFile,
   [Operator.Parser]: LucideFilePlay,
   [Operator.Tokenizer]: LucideListPlus,
+  [Operator.GeneralChunker]: LucideBlocks,
   [Operator.TokenChunker]: LucideBlocks,
   [Operator.TitleChunker]: LucideHeading,
   [Operator.Extractor]: LucideFileStack,
@@ -129,6 +132,16 @@ const OperatorIcon = ({ name, className }: IProps) => {
     return (
       <img
         src={queritLogo}
+        alt=""
+        className={cn('size-5 object-contain', className)}
+      />
+    );
+  }
+
+  if (name === Operator.Search1APISearch || name === Operator.Search1APICrawl) {
+    return (
+      <img
+        src={search1apiLogo}
         alt=""
         className={cn('size-5 object-contain', className)}
       />

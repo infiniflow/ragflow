@@ -59,9 +59,9 @@ func TestMergeByTokenSizeFromJSON_TKNumsConsistency(t *testing.T) {
 			}
 			items := [][]schema.ChunkDoc{
 				{
-					{Text: aText, DocType: "text", CKType: "text", TKNums: intPtr(aN)},
-					{Text: bText, DocType: "text", CKType: "text", TKNums: intPtr(bN)},
-					{Text: cText, DocType: "text", CKType: "text", TKNums: intPtr(cN)},
+					{Text: aText, DocType: "text", TKNums: intPtr(aN)},
+					{Text: bText, DocType: "text", TKNums: intPtr(bN)},
+					{Text: cText, DocType: "text", TKNums: intPtr(cN)},
 				},
 			}
 			got := mergeByTokenSizeFromJSON(items, budget, overlapPct)
@@ -70,9 +70,11 @@ func TestMergeByTokenSizeFromJSON_TKNumsConsistency(t *testing.T) {
 				t.Fatalf("want 2 chunks (merged a+b + fresh c), got %d (a=%d b=%d c=%d budget=%d)", len(merged), aN, bN, cN, budget)
 			}
 
-			// chunk0 is the merge of a and b.
-			if merged[0].Text != aText+"\n"+bText {
-				t.Errorf("chunk0 text mismatch:\n got=%q\nwant=%q", merged[0].Text, aText+"\n"+bText)
+			// chunk0 is the merge of a and b. The JSON merge joins with "" (each
+			// unit carries its own retained delimiter), so the merged text is the
+			// direct concatenation.
+			if merged[0].Text != aText+bText {
+				t.Errorf("chunk0 text mismatch:\n got=%q\nwant=%q", merged[0].Text, aText+bText)
 			}
 			// Merge path: TKNums is the running sum, not the re-tokenized text.
 			if got0 := intValue(merged[0].TKNums); got0 != aN+bN {

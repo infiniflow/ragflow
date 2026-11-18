@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -19,7 +18,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/table"
 	"ragflow/internal/deepdoc/parser/pdf/tool"
@@ -40,7 +38,7 @@ import (
 //
 // For read-only comparison, see compare_test.go (no CGO needed).
 func TestBatchResults(t *testing.T) {
-	setupLogger()
+	setupLogger(t)
 
 	pdfDir := filepath.Join("testdata", "real_pdfs")
 	all := listRealPDFs(t, pdfDir)
@@ -52,14 +50,8 @@ func TestBatchResults(t *testing.T) {
 	}
 	pdfs := all[:min(count, len(all))]
 
-	ddClient, err := inf.NewClient(common.GetEnv(common.EnvDeepDocURL))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ddClient.Health() {
-		t.Fatalf("DeepDoc service not available at %s (DLA+TSR required)", ddClient.BaseURL())
-	}
-	deepDoc := pdf.DocAnalyzer(ddClient)
+	ddClient := mustConnectInProcessAnalyzer(t)
+	deepDoc := ddClient
 
 	variant := "ocr"
 	t.Logf("DeepDoc available — DLA+TSR+OCR enabled (%d PDFs)", len(pdfs))
@@ -71,15 +63,16 @@ func TestBatchResults(t *testing.T) {
 
 // ── helpers ─────────────────────────────────────────────────────────
 
-func setupLogger() {
-	level := slog.LevelInfo
+func setupLogger(t *testing.T) {
+	restoreLoggerGlobals(t)
+	level := "info"
 	switch common.GetEnv(common.EnvBatchLogLevel) {
 	case "debug":
-		level = slog.LevelDebug
+		level = "debug"
 	case "warn":
-		level = slog.LevelWarn
+		level = "warn"
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	_ = common.InitLogger(level, common.FileOutput{}, "")
 }
 
 type outputDirs struct {
@@ -173,6 +166,7 @@ func processPDFs(t *testing.T, pdfDir string, pdfs []string, deepDoc pdf.DocAnal
 	t.Helper()
 	var results []tool.BatchResult
 	totalChars := 0
+	ctx := t.Context()
 
 	for i, name := range pdfs {
 		label := fmt.Sprintf("[%d/%d] %s", i+1, len(pdfs), name)
@@ -187,7 +181,7 @@ func processPDFs(t *testing.T, pdfDir string, pdfs []string, deepDoc pdf.DocAnal
 		}
 
 		// ── parse ──
-		res, err := parseOne(pdfDir, name, deepDoc)
+		res, err := parseOne(ctx, pdfDir, name, deepDoc)
 		if err != nil {
 			results = append(results, tool.BatchResult{File: name, Error: err.Error()})
 			t.Logf("%s — %v", label, err)
@@ -213,7 +207,7 @@ type parseOneResult struct {
 	result pdf.ParseResult
 }
 
-func parseOne(pdfDir, name string, deepDoc pdf.DocAnalyzer) (*parseOneResult, error) {
+func parseOne(ctx context.Context, pdfDir, name string, deepDoc pdf.DocAnalyzer) (*parseOneResult, error) {
 	data, err := os.ReadFile(filepath.Join(pdfDir, name))
 	if err != nil {
 		return nil, fmt.Errorf("read: %w", err)
@@ -231,7 +225,7 @@ func parseOne(pdfDir, name string, deepDoc pdf.DocAnalyzer) (*parseOneResult, er
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
 	t0 := time.Now()
-	parsed, err := p.ParseRaw(context.Background(), eng, deepDoc)
+	parsed, err := p.ParseRaw(ctx, eng, deepDoc)
 	elapsed := time.Since(t0).Seconds()
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)

@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-	"time"
 )
 
 type JieKouAIModel struct {
@@ -33,16 +32,11 @@ type JieKouAIModel struct {
 }
 
 func NewJieKouAIModel(baseURL map[string]string, urlSuffix URLSuffix) *JieKouAIModel {
-	// JieKouAI's methods issue requests without a per-call context deadline, so
-	// keep an explicit 120s client-level timeout to bound them. Built on the
-	// shared transport via NewDriverHTTPClient.
-	client := NewDriverHTTPClient(false)
-	client.Timeout = 120 * time.Second
 	return &JieKouAIModel{
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: client,
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -108,11 +102,10 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -129,7 +122,7 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -150,11 +143,10 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		modelConfig.UsageResult = nil
 	}
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), j.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
@@ -185,11 +177,10 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, request Em
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), j.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": model,
@@ -271,11 +262,10 @@ func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, request R
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), j.baseModel.URLSuffix.Rerank)
 
 	reqBody := map[string]interface{}{
 		"model":     model,
@@ -341,27 +331,27 @@ func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, request R
 }
 
 func (j *JieKouAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", j.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", j.Name())
 }
 
 func (j *JieKouAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", j.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", j.Name())
 }
 
 func (j *JieKouAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", j.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", j.Name())
 }
 
 func (j *JieKouAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", j.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", j.Name())
 }
 
 func (j *JieKouAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", j.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", j.Name())
 }
 
 func (j *JieKouAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", j.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", j.Name())
 }
 
 func (j *JieKouAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -370,13 +360,15 @@ func (j *JieKouAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Models)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -421,7 +413,7 @@ func (j *JieKouAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 }
 
 func (j *JieKouAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", j.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", j.Name())
 }
 
 func (j *JieKouAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -430,9 +422,13 @@ func (j *JieKouAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfi
 }
 
 func (j *JieKouAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s no such method", j.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", j.Name())
 }
 
 func (j *JieKouAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s no such method", j.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", j.Name())
+}
+
+func (j *JieKouAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", j.Name())
 }

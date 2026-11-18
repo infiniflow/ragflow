@@ -17,7 +17,6 @@
 package connector
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,8 +30,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	md "github.com/JohannesKaufmann/html-to-markdown"
 )
 
 const (
@@ -125,7 +122,9 @@ func (c *MoodleConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		batchSize: c.batchSize,
 	}
 	if request.Resume != nil {
-		session.applyResume(request.Resume)
+		if err := session.applyResume(request.Resume); err != nil {
+			return nil, err
+		}
 	}
 	return session, nil
 }
@@ -374,7 +373,7 @@ func addMoodleToken(fileURL, token string) string {
 }
 
 func moodleHTMLToMarkdown(html string) (string, error) {
-	converter := md.NewConverter("", true, &md.Options{EmDelimiter: "*"})
+	converter := newMarkdownConverter()
 	out, err := converter.ConvertString(html)
 	if err != nil {
 		return "", fmt.Errorf("Moodle HTML to Markdown conversion failed: %w", err)
@@ -668,6 +667,8 @@ type moodleSyncSession struct {
 	request             SyncRequest
 	batchSize           int
 	resumeAfterCourseID int64
+	resumeCourseSet     bool
+	resumeCourseChecked bool
 
 	coursesLoaded     bool
 	courses           []moodleCourse
@@ -691,6 +692,19 @@ func (s *moodleSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 				}
 				s.courses = courses
 				s.coursesLoaded = true
+				if s.resumeCourseSet && !s.resumeCourseChecked {
+					found := false
+					for _, course := range s.courses {
+						if course.ID == s.resumeAfterCourseID {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return SyncBatch{}, fmt.Errorf("moodle resume course %d was not found in the current listing: %w", s.resumeAfterCourseID, ErrSyncResumeInvalid)
+					}
+					s.resumeCourseChecked = true
+				}
 			}
 			if s.courseIndex >= len(s.courses) {
 				s.done = true
@@ -743,17 +757,22 @@ func (s *moodleSyncSession) Close() error {
 	return nil
 }
 
-func (s *moodleSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *moodleSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	const prefix = "moodle_course_"
-	if !strings.HasPrefix(sourceID, prefix) {
-		return
+	if sourceID == "" || !strings.HasPrefix(sourceID, prefix) {
+		return fmt.Errorf("moodle sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	courseID, err := strconv.ParseInt(strings.TrimPrefix(sourceID, prefix), 10, 64)
 	if err != nil {
-		return
+		return fmt.Errorf("moodle sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
 	s.resumeAfterCourseID = courseID
+	s.resumeCourseSet = true
+	return nil
 }
 
 type moodlePruneSession struct {
@@ -866,166 +885,44 @@ func capitalizeMoodleType(mtype string) string {
 // ---------------------------------------------------------------------------
 
 func validateMoodleURLForSSRF(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return &ConnectorValidationError{Message: "Moodle URL must include a hostname."}
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return &ConnectorValidationError{Message: fmt.Sprintf("Unsupported URL scheme for Moodle connector: %q. Only http/https are allowed.", parsed.Scheme)}
-	}
-	hostname := parsed.Hostname()
-	if hostname == "" {
-		return &ConnectorValidationError{Message: "Moodle URL must include a hostname."}
-	}
-	if strings.EqualFold(hostname, "localhost") {
-		return &ConnectorValidationError{Message: fmt.Sprintf("Moodle URL hostname %q is not allowed (localhost is blocked).", hostname)}
-	}
-	addrs, err := net.LookupIP(hostname)
-	if err != nil {
-		// Resolution failure is not an SSRF condition by itself; the
-		// per-request check surfaces it if it matters.
-		return nil
-	}
-	if restAPISSRFAllowLoopback {
-		allLoopback := true
-		for _, addr := range addrs {
-			if !addr.IsLoopback() {
-				allLoopback = false
-				break
-			}
-		}
-		if allLoopback {
-			return nil
-		}
-		// Not all loopback — fall through to normal validation.
-	}
-	for _, addr := range addrs {
-		if !restAPIIPIsGlobal(restAPIEffectiveIP(addr)) {
-			return &ConnectorValidationError{Message: fmt.Sprintf(
-				"Moodle URL %q resolves to disallowed address %s (localhost, private, link-local, reserved, or multicast addresses are blocked).",
-				rawURL, addr)}
-		}
-	}
-	return nil
+	return validateConnectorURL(rawURL)
 }
 
 // moodleAssertURLSafe validates a per-request URL for SSRF, HTTPS, and
 // same-origin policy. It returns the hostname and first validated IP so the
 // caller can pin DNS for the actual dial.
 func moodleAssertURLSafe(ctx context.Context, rawURL, originURL string) (string, net.IP, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "", nil, fmt.Errorf("Moodle URL is missing a host.")
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", nil, fmt.Errorf("Disallowed URL scheme: %q. Only [http https] are allowed.", parsed.Scheme)
-	}
-	hostname := parsed.Hostname()
-	if hostname == "" {
-		return "", nil, fmt.Errorf("Moodle URL is missing a host.")
-	}
 	// Reject cross-origin targets: every request must go to the configured
 	// Moodle host.
 	if originURL != "" {
 		if origin, err := url.Parse(originURL); err == nil && origin.Hostname() != "" {
-			if !strings.EqualFold(hostname, origin.Hostname()) {
-				return "", nil, fmt.Errorf("Moodle URL host %q does not match configured origin %q.", hostname, origin.Hostname())
+			parsed, err := url.Parse(rawURL)
+			if err != nil {
+				return "", nil, fmt.Errorf("Moodle URL is missing a host.")
+			}
+			if !strings.EqualFold(parsed.Hostname(), origin.Hostname()) {
+				return "", nil, fmt.Errorf("Moodle URL host %q does not match configured origin %q.", parsed.Hostname(), origin.Hostname())
 			}
 		}
 	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
-	if err != nil {
-		return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
-	}
-	if len(addrs) == 0 {
-		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
-	}
-	if restAPISSRFAllowLoopback {
-		allLoopback := true
-		for _, addr := range addrs {
-			if !addr.IP.IsLoopback() {
-				allLoopback = false
-				break
-			}
-		}
-		if allLoopback {
-			return hostname, addrs[0].IP, nil
-		}
-		// Not all loopback — fall through to normal validation.
-	}
-	var first net.IP
-	for _, addr := range addrs {
-		if !restAPIIPIsGlobal(restAPIEffectiveIP(addr.IP)) {
-			return "", nil, fmt.Errorf("Moodle URL resolves to a non-public address (%s), which is not allowed.", addr.IP)
-		}
-		if first == nil {
-			first = addr.IP
-		}
-	}
-	if first == nil {
-		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
-	}
-	return hostname, first, nil
+	return assertConnectorURLSafe(rawURL)
 }
 
 // moodleHTTPDo sends an HTTP request with DNS-pinned transport and manual
 // redirect handling. Each hop is independently validated for SSRF, HTTPS, and
 // same-origin policy, preventing DNS rebinding and redirect-based bypasses.
 func (c *MoodleConnector) moodleHTTPDo(ctx context.Context, method, rawURL string, body []byte, headers map[string]string) (*http.Response, error) {
-	currentURL := rawURL
-	currentMethod := method
-	currentBody := body
-	for hop := 0; hop <= moodleMaxRedirects; hop++ {
-		hostname, pinIP, err := moodleAssertURLSafe(ctx, currentURL, c.moodleURL)
-		if err != nil {
-			return nil, err
-		}
-		transport := newRestAPIPinnedTransport(hostname, pinIP)
-		client := &http.Client{
-			Transport: transport,
-			Timeout:   moodleRequestTimeout,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-		var bodyReader io.Reader
-		if currentBody != nil {
-			bodyReader = bytes.NewReader(currentBody)
-		}
-		req, err := http.NewRequestWithContext(ctx, currentMethod, currentURL, bodyReader)
-		if err != nil {
-			transport.CloseIdleConnections()
-			return nil, err
-		}
-		for k, v := range headers {
-			req.Header.Set(k, v)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			transport.CloseIdleConnections()
-			return nil, err
-		}
-		if !restAPIIsRedirect(resp.StatusCode) {
-			resp.Body = &restAPICloseIdleBody{body: resp.Body, transport: transport}
-			return resp, nil
-		}
-		location := resp.Header.Get("Location")
-		resp.Body.Close()
-		transport.CloseIdleConnections()
-		if location == "" {
-			return nil, fmt.Errorf("Moodle redirect with empty Location header")
-		}
-		nextURL, err := restAPIResolveURL(currentURL, location)
-		if err != nil {
-			return nil, err
-		}
-		currentURL = nextURL
-		if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther {
-			currentMethod = http.MethodGet
-			currentBody = nil
-		}
-	}
-	return nil, fmt.Errorf("Moodle request stopped after %d redirects", moodleMaxRedirects)
+	return connectorRequest(ctx, connectorRequestOptions{
+		Method:       method,
+		RawURL:       rawURL,
+		Body:         body,
+		Headers:      headers,
+		Timeout:      moodleRequestTimeout,
+		MaxRedirects: moodleMaxRedirects,
+		Validate: func(raw string) (string, net.IP, error) {
+			return moodleAssertURLSafe(context.Background(), raw, c.moodleURL)
+		},
+	})
 }
 
 // moodleRedactedURL strips query and fragment from a URL so that tokens or

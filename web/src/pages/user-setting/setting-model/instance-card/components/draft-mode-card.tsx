@@ -16,7 +16,7 @@
 
 import { DynamicForm, DynamicFormRef } from '@/components/dynamic-form';
 import { LLMFactory } from '@/constants/llm';
-import { useCallback, type RefObject } from 'react';
+import { type RefObject } from 'react';
 import { AimlapiGetKeyButton } from '../aimlapi-get-key-button';
 import { DRAFT_INSTANCE_SENTINEL, DraftModeCardProps } from '../interface';
 import { ModelsSection } from '../models-section';
@@ -26,12 +26,10 @@ import { InstanceNameSection } from './instance-name-section';
 /**
  * The draft (unsaved) variant of the provider instance card.
  *
- * Renders the instance name input section at the top (without a Save
- * button - the parent drives save through the imperative ref API),
- * followed by the form fields, verify button, and per-instance models
- * section. All fields are editable from the start; there is no
- * fieldset lock - the user can fill in everything and submit via the
- * top-of-page Save button.
+ * Renders the instance name input section at the top (paired with the
+ * delete and Save buttons for this draft), followed by the form fields,
+ * verify button, and per-instance models section. All fields are
+ * editable from the start; there is no fieldset lock.
  */
 export function DraftModeCard({
   formFields,
@@ -39,6 +37,8 @@ export function DraftModeCard({
   formRef,
   handleVerify,
   handleDelete,
+  handleSave,
+  saving,
   handleInstanceModelsEdited,
   providerName,
   instanceName,
@@ -48,22 +48,14 @@ export function DraftModeCard({
   setDraftName,
   verifyTransform,
 }: DraftModeCardProps) {
-  // On success, fold the OAuth-issued key into the current form values so it
-  // lands in the (editable) api_key field without clobbering other inputs.
-  const handleAimlapiKey = useCallback(
-    (key: string) => {
-      const current = formRef.current?.getValues() ?? {};
-      formRef.current?.reset({ ...current, api_key: key });
-    },
-    [formRef],
-  );
-
   return (
     <div className="px-5 py-3 flex flex-col gap-4 bg-bg-card rounded-xl ">
       <InstanceNameSection
         draftName={draftName}
         setDraftName={setDraftName}
         handleDelete={handleDelete}
+        handleSave={handleSave}
+        saving={saving}
       />
 
       <DynamicForm.Root
@@ -76,11 +68,9 @@ export function DraftModeCard({
         resetOptions={{ keepDirtyValues: true }}
       />
 
-      {providerName === LLMFactory.AIMLAPI && (
-        <AimlapiGetKeyButton onKey={handleAimlapiKey} />
-      )}
+      {providerName === LLMFactory.AIMLAPI && <AimlapiGetKeyButton />}
 
-      {providerName !== LLMFactory.OpenAiAPICompatible && (
+      {/* {providerName !== LLMFactory.OpenAiAPICompatible && (
         <div className="pt-3">
           <VerifyButton
             onVerify={handleVerify}
@@ -88,7 +78,7 @@ export function DraftModeCard({
             formRef={formRef}
           />
         </div>
-      )}
+      )} */}
 
       <div className="pt-3">
         <ModelsSection

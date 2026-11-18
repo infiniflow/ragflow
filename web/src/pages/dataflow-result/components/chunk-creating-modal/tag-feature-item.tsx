@@ -26,8 +26,20 @@ export const TagFeatureItem = () => {
   const { data: knowledgeConfiguration } = useFetchKnowledgeBaseConfiguration();
   const form = useFormContext();
   const tagKnowledgeIds = useMemo(() => {
-    return knowledgeConfiguration?.parser_config?.tag_kb_ids ?? [];
-  }, [knowledgeConfiguration?.parser_config?.tag_kb_ids]);
+    const configuredIds =
+      knowledgeConfiguration?.parser_config?.tag_kb_ids ?? [];
+    // The ingestion pipeline keeps the tag vocabulary on the dataset's own
+    // chunks and never writes tag-set references into parser_config.tag_kb_ids,
+    // so fall back to aggregating the current dataset's tags through the
+    // aggregation endpoint (GET /datasets/tags/aggregation).
+    if (configuredIds.length === 0 && knowledgeConfiguration?.id) {
+      return [knowledgeConfiguration.id];
+    }
+    return configuredIds;
+  }, [
+    knowledgeConfiguration?.id,
+    knowledgeConfiguration?.parser_config?.tag_kb_ids,
+  ]);
 
   const options = useMemo(() => {
     return list.map((x) => ({

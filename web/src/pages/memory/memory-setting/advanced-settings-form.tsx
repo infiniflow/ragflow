@@ -1,16 +1,17 @@
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
+import NumberInput from '@/components/originui/number-input';
 import { SingleFormSlider } from '@/components/ui/dual-range-slider';
-import { NumberInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
+import { showPermissionField } from '@/ee/constants/feature-flags';
 import { t } from 'i18next';
 import { ListChevronsDownUp, ListChevronsUpDown } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
 
 export const advancedSettingsFormSchema = {
-  permissions: z.string().optional(),
+  ...(showPermissionField ? { permissions: z.string().optional() } : {}),
   storage_type: z.enum(['table', 'graph']).optional(),
   forgetting_policy: z.enum(['LRU', 'FIFO']).optional(),
   temperature: z.number().optional(),
@@ -18,7 +19,7 @@ export const advancedSettingsFormSchema = {
   user_prompt: z.string().optional(),
 };
 export const defaultAdvancedSettingsForm = {
-  permissions: '',
+  ...(showPermissionField ? { permissions: '' } : {}),
   storage_type: '',
   forgetting_policy: '',
   temperature: 0,
@@ -44,36 +45,37 @@ export const AdvancedSettingsForm = () => {
       </div>
       {showAdvancedSettings && (
         <>
-          <RenderField
-            field={{
-              name: 'permissions',
-              label: t('memory.config.permission'),
-              required: false,
-              horizontal: true,
-              // hideLabel: true,
-              type: FormFieldType.Custom,
-              render: (field) => (
-                <RadioGroup
-                  defaultValue="me"
-                  className="flex"
-                  {...field}
-                  onValueChange={(value) => {
-                    console.log(value);
-                    field.onChange(value);
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <RadioGroupItem value="me" id="r1" />
-                    <Label htmlFor="r1">{t('memory.config.onlyMe')}</Label>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <RadioGroupItem value="team" id="r2" />
-                    <Label htmlFor="r2">{t('memory.config.team')}</Label>
-                  </div>
-                </RadioGroup>
-              ),
-            }}
-          />
+          {showPermissionField && (
+            <RenderField
+              field={{
+                name: 'permissions',
+                label: t('memory.config.permission'),
+                required: false,
+                horizontal: true,
+                // hideLabel: true,
+                type: FormFieldType.Custom,
+                render: (field) => (
+                  <RadioGroup
+                    defaultValue="me"
+                    className="flex"
+                    {...field}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <RadioGroupItem value="me" id="r1" />
+                      <Label htmlFor="r1">{t('memory.config.onlyMe')}</Label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <RadioGroupItem value="team" id="r2" />
+                      <Label htmlFor="r2">{t('memory.config.team')}</Label>
+                    </div>
+                  </RadioGroup>
+                ),
+              }}
+            />
+          )}
           <RenderField
             field={{
               name: 'storage_type',
@@ -122,13 +124,13 @@ export const AdvancedSettingsForm = () => {
                     disabled={false}
                   ></SingleFormSlider>
                   <NumberInput
-                    className={cn(
-                      'h-6 w-10 p-1 border border-border-button rounded-sm',
-                    )}
+                    className={cn('h-6 w-16')}
                     max={1}
                     step={0.01}
                     min={0}
+                    precision={2}
                     {...field}
+                    hideIcons
                   ></NumberInput>
                 </div>
               ),

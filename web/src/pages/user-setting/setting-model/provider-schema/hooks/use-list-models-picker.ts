@@ -25,6 +25,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { modelNameKey } from '@/utils/llm-util';
 import type { ProviderConfig } from '../types';
 
 // Derive is_tools from a model descriptor's `features` array. A model is
@@ -189,8 +190,15 @@ export const useListModelsPicker = ({
           : { apiKey: values.api_key ?? '', baseUrl: values.base_url };
         const res = await listProviderModels({
           provider_name: llmFactory,
-          api_key: viewMode ? '' : ((verifyArgs as any).apiKey ?? ''),
-          base_url: viewMode ? '' : ((verifyArgs as any).baseUrl ?? ''),
+          // Trimmed before sending: a key copied out of a console commonly
+          // carries a trailing newline, and the upstream reports that as an
+          // invalid key rather than as a whitespace problem.
+          api_key: viewMode
+            ? ''
+            : String((verifyArgs as any).apiKey ?? '').trim(),
+          base_url: viewMode
+            ? ''
+            : String((verifyArgs as any).baseUrl ?? '').trim(),
           region: (verifyArgs as any).region,
           model_info: (verifyArgs as any).modelInfo ?? modelInfoList,
           ...(viewMode && initialValues?.instance_name
@@ -207,7 +215,7 @@ export const useListModelsPicker = ({
             const matched = res.data.filter((m: IProviderModelItem) =>
               seed.some(
                 (s) =>
-                  s.model_name === m.name &&
+                  modelNameKey(s.model_name) === modelNameKey(m.name) &&
                   modelTypesMatch(s.model_type, m.model_types),
               ),
             );
@@ -243,7 +251,9 @@ export const useListModelsPicker = ({
     if (selectionLockRef.current) return;
     selectionLockRef.current = true;
     setSelectedModelItemsState((prev) => {
-      const idx = prev.findIndex((p) => p.name === model.name);
+      const idx = prev.findIndex(
+        (p) => modelNameKey(p.name) === modelNameKey(model.name),
+      );
       if (idx >= 0) {
         const next = prev.slice();
         next.splice(idx, 1);
@@ -326,7 +336,9 @@ export const useListModelsPicker = ({
       const oldName = editingModel?.name;
       if (!oldName) return;
       const replace = (items: IProviderModelItem[]) =>
-        items.map((m) => (m.name === oldName ? updated : m));
+        items.map((m) =>
+          modelNameKey(m.name) === modelNameKey(oldName) ? updated : m,
+        );
       setModelsState(replace);
       setSelectedModelItemsState(replace);
       setEditDialogOpen(false);

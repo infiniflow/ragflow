@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	syncerconnector "ragflow/internal/syncer/connector"
 )
 
@@ -56,7 +58,7 @@ func TestUpdateConnectorSchedulePublishesSyncerTask(t *testing.T) {
 		Name:        "conn-1",
 		Source:      "rss",
 		InputType:   "poll",
-		Config:      entity.JSONMap{},
+		Config:      entity.ConnectorConfig{},
 		Status:      string(entity.TaskStatusCancel),
 		RefreshFreq: 0,
 		PruneFreq:   0,
@@ -89,7 +91,7 @@ func TestUpdateConnectorSchedulePublishesSyncerTask(t *testing.T) {
 	}
 	t.Cleanup(func() { getSyncerTaskPublisher = previousPublisher })
 
-	_, code, err := NewConnectorService().UpdateConnector(context.Background(), "conn-1", "user-1", &UpdateConnectorRequest{
+	_, code, err := NewConnectorService().UpdateConnector(serviceTestContext(t, "user-1", "user-1"), "conn-1", &UpdateConnectorRequest{
 		Status: string(entity.TaskStatusSchedule),
 	})
 	if err != nil {
@@ -114,7 +116,7 @@ func TestUpdateConnectorSchedulePublishesSyncerTask(t *testing.T) {
 func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	if err := db.AutoMigrate(&entity.Connector{}, &entity.SyncLogs{}); err != nil {
+	if err := db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.Knowledgebase{}, &entity.SyncLogs{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("migrate connector tables: %v", err)
 	}
 	if err := db.Create(&entity.Connector{
@@ -123,13 +125,26 @@ func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 		Name:        "conn-1",
 		Source:      "gmail",
 		InputType:   "poll",
-		Config:      entity.JSONMap{},
+		Config:      entity.ConnectorConfig{},
 		Status:      string(entity.TaskStatusFail),
 		RefreshFreq: 0,
 		PruneFreq:   0,
 		TimeoutSecs: 60,
 	}).Error; err != nil {
 		t.Fatalf("insert connector: %v", err)
+	}
+	valid := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-1", TenantID: "user-1", CreatedBy: "user-1", Name: "kb-1", EmbdID: "embd",
+		Permission: string(entity.TenantPermissionMe), Status: &valid,
+	}).Error; err != nil {
+		t.Fatalf("insert knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: "conn-1-kb-1", ConnectorID: "conn-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("insert connector dataset link: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{ID: "owner-user-1", UserID: "user-1", TenantID: "user-1", Role: string(permission.RoleOwner), Status: &valid}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
 	}
 	if err := db.Create(&entity.SyncLogs{
 		ID:            "task-1",
@@ -138,7 +153,7 @@ func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 		TaskType:      dao.TaskTypeSync,
 		Status:        string(entity.TaskStatusFail),
 		FromBeginning: stringPtr("1"),
-		ErrorMsg:      "sync task failed after 3 transient retries: unexpected EOF",
+		ErrorMsg:      "sync task failed after 2 retries, last error: unexpected EOF",
 		ErrorCount:    3,
 	}).Error; err != nil {
 		t.Fatalf("insert sync log: %v", err)
@@ -165,7 +180,7 @@ func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 		getSyncCheckpointLoader = previousLoader
 	})
 
-	ok, code, err := NewConnectorService().ResumeFailedSync(context.Background(), "conn-1", "user-1", &ResumeFailedSyncRequest{KbID: "kb-1", TaskID: "task-1"})
+	ok, code, err := NewConnectorService().ResumeFailedSync(serviceTestContext(t, "user-1", "user-1"), "conn-1", &ResumeFailedSyncRequest{KbID: "kb-1", TaskID: "task-1"})
 	if err != nil {
 		t.Fatalf("ResumeFailedSync error: %v", err)
 	}
@@ -206,7 +221,7 @@ func TestRebuildConnectorDeletesOldSyncCheckpointsBeforePublishing(t *testing.T)
 		Name:        "conn-1",
 		Source:      "gmail",
 		InputType:   "poll",
-		Config:      entity.JSONMap{},
+		Config:      entity.ConnectorConfig{},
 		Status:      string(entity.TaskStatusFail),
 		RefreshFreq: 0,
 		PruneFreq:   0,
@@ -215,13 +230,21 @@ func TestRebuildConnectorDeletesOldSyncCheckpointsBeforePublishing(t *testing.T)
 		t.Fatalf("insert connector: %v", err)
 	}
 	if err := db.Create(&entity.Knowledgebase{
-		ID:        "kb-1",
-		TenantID:  "user-1",
-		Name:      "kb-1",
-		CreatedBy: "user-1",
-		EmbdID:    "embd",
+		ID:         "kb-1",
+		TenantID:   "user-1",
+		Name:       "kb-1",
+		CreatedBy:  "user-1",
+		EmbdID:     "embd",
+		Permission: string(entity.TenantPermissionMe),
+		Status:     sptr(string(entity.StatusValid)),
 	}).Error; err != nil {
 		t.Fatalf("insert kb: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "ut-owner", UserID: "user-1", TenantID: "user-1",
+		Role: "owner", Status: sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
 	}
 	if err := db.Create(&entity.Connector2Kb{ID: "conn-1-kb-1", ConnectorID: "conn-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
 		t.Fatalf("insert connector mapping: %v", err)
@@ -249,7 +272,7 @@ func TestRebuildConnectorDeletesOldSyncCheckpointsBeforePublishing(t *testing.T)
 		getSyncCheckpointDeleter = previousDeleter
 	})
 
-	ok, code, err := NewConnectorService().RebuildConnector(context.Background(), "conn-1", "user-1", "kb-1")
+	ok, code, err := NewConnectorService().RebuildConnector(serviceTestContext(t, "user-1", "user-1"), "conn-1", "kb-1")
 	if err != nil {
 		t.Fatalf("RebuildConnector error: %v", err)
 	}
@@ -271,6 +294,56 @@ func TestRebuildConnectorDeletesOldSyncCheckpointsBeforePublishing(t *testing.T)
 	}
 }
 
+func TestRebuildConnectorRejectsCrossTenantAndUnboundKB(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.Knowledgebase{}, &entity.SyncLogs{}); err != nil {
+		t.Fatalf("migrate connector tables: %v", err)
+	}
+	if err := db.Create(&entity.Connector{
+		ID: "conn-1", TenantID: "user-1", Name: "conn-1", Source: "gmail",
+		InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusSchedule),
+		RefreshFreq: 0, PruneFreq: 0, TimeoutSecs: 60,
+	}).Error; err != nil {
+		t.Fatalf("insert connector: %v", err)
+	}
+	// kb-1 is owned by the caller but is never bound to conn-1.
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "user-1", Name: "kb-1", CreatedBy: "user-1", EmbdID: "embd", Permission: string(entity.TenantPermissionMe), Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+		t.Fatalf("insert kb-1: %v", err)
+	}
+	// kb-foreign belongs to another tenant.
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-foreign", TenantID: "user-2", Name: "kb-foreign", CreatedBy: "user-2", EmbdID: "embd", Permission: string(entity.TenantPermissionMe), Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+		t.Fatalf("insert kb-foreign: %v", err)
+	}
+	if err := db.Create([]entity.UserTenant{
+		{ID: "ut-owner-1", UserID: "user-1", TenantID: "user-1", Role: "owner", Status: sptr(string(entity.StatusValid))},
+		{ID: "ut-owner-2", UserID: "user-2", TenantID: "user-2", Role: "owner", Status: sptr(string(entity.StatusValid))},
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owners: %v", err)
+	}
+
+	svc := NewConnectorService()
+
+	// The caller can access kb-1, but conn-1 is not bound to it: denied before
+	// any documents are listed or deleted.
+	ok, code, err := svc.RebuildConnector(serviceTestContext(t, "user-1", "user-1"), "conn-1", "kb-1")
+	if err == nil || !errors.Is(err, ErrConnectorNotBoundToKB) {
+		t.Fatalf("err = %v, want ErrConnectorNotBoundToKB", err)
+	}
+	if ok || code != common.CodeAuthenticationError {
+		t.Fatalf("ok/code = %v/%v, want false/authentication error", ok, code)
+	}
+
+	// The caller cannot access a cross-tenant kb at all: denied up front.
+	ok, code, err = svc.RebuildConnector(serviceTestContext(t, "user-1", "user-1"), "conn-1", "kb-foreign")
+	if err == nil || (!errors.Is(err, permission.ErrResourceNotFound) && !errors.Is(err, permission.ErrPermissionDenied)) {
+		t.Fatalf("err = %v, want hidden cross-tenant resource", err)
+	}
+	if ok || (code != common.CodeForbidden && code != common.CodeNotFound) {
+		t.Fatalf("ok/code = %v/%v, want false/denied", ok, code)
+	}
+}
+
 func TestUpdateConnectorScheduleDoesNotDuplicateRunningTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -284,7 +357,7 @@ func TestUpdateConnectorScheduleDoesNotDuplicateRunningTask(t *testing.T) {
 		Name:        "conn-1",
 		Source:      "rss",
 		InputType:   "poll",
-		Config:      entity.JSONMap{},
+		Config:      entity.ConnectorConfig{},
 		Status:      string(entity.TaskStatusRunning),
 		RefreshFreq: 0,
 		PruneFreq:   0,
@@ -327,7 +400,7 @@ func TestUpdateConnectorScheduleDoesNotDuplicateRunningTask(t *testing.T) {
 	}
 	t.Cleanup(func() { getSyncerTaskPublisher = previousPublisher })
 
-	_, code, err := NewConnectorService().UpdateConnector(context.Background(), "conn-1", "user-1", &UpdateConnectorRequest{
+	_, code, err := NewConnectorService().UpdateConnector(serviceTestContext(t, "user-1", "user-1"), "conn-1", &UpdateConnectorRequest{
 		Status: string(entity.TaskStatusSchedule),
 	})
 	if err != nil {

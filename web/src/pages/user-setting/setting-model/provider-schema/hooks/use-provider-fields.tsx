@@ -14,15 +14,19 @@
  *  limitations under the License.
  */
 
-import { FormFieldConfig, FormFieldType } from "@/components/dynamic-form";
-import { Input } from "@/components/ui/input";
-import { InputSelect } from "@/components/ui/input-select";
-import { useTranslate } from "@/hooks/common-hooks";
-import { useMemo } from "react";
-import { ControllerRenderProps, FieldValues } from "react-hook-form";
-import { LIST_MODEL_FIELD_NAMES, LIST_MODEL_PROVIDERS } from "../constants";
-import { FACTORIES_WITH_BASE_URL, getProviderConfig } from "../field-config";
-import type { FieldConfig, SelectOption } from "../types";
+import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
+import { Input } from '@/components/ui/input';
+import { InputSelect } from '@/components/ui/input-select';
+import { useTranslate } from '@/hooks/common-hooks';
+import { useMemo } from 'react';
+import { ControllerRenderProps, FieldValues } from 'react-hook-form';
+import {
+  LIST_MODEL_FIELD_NAMES,
+  LIST_MODEL_PROVIDERS,
+  URL_HINT_FIELD_NAMES,
+} from '../constants';
+import { getProviderConfig } from '../field-config';
+import type { FieldConfig, SelectOption } from '../types';
 
 interface UseProviderFieldsParams {
   llmFactory: string;
@@ -31,6 +35,10 @@ interface UseProviderFieldsParams {
   initialValues?: Record<string, any>;
   baseUrlOptions?: SelectOption[];
   hideWhenInstanceExists: (values: Record<string, any>) => boolean;
+  // Display-only example endpoint from the provider catalog
+  // (`GET /providers` → `url_hint`), rendered as the endpoint field's
+  // placeholder. Never used as a form value.
+  urlHint?: string;
 }
 
 /**
@@ -45,15 +53,15 @@ const resolveText = (
   t: (key: string) => string,
 ): string | undefined => {
   if (!val) return undefined;
-  const key = typeof val === "function" ? val(factory) : val;
+  const key = typeof val === 'function' ? val(factory) : val;
   return t(key);
 };
 
 /** Set value by nested path (supports paths like 'model_info.model_type'). */
-const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 const setNestedValue = (obj: any, path: string, value: any) => {
-  const keys = path.split(".");
+  const keys = path.split('.');
   let current = obj;
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
@@ -94,8 +102,9 @@ export const useProviderFields = ({
   initialValues,
   baseUrlOptions,
   hideWhenInstanceExists,
+  urlHint,
 }: UseProviderFieldsParams) => {
-  const { t } = useTranslate("setting");
+  const { t } = useTranslate('setting');
 
   const config = useMemo(() => getProviderConfig(llmFactory), [llmFactory]);
 
@@ -110,49 +119,49 @@ export const useProviderFields = ({
 
   // Resolve the shouldRender string token to an actual predicate.
   const resolveShouldRender = useMemo(() => {
-    return (sr: FieldConfig["shouldRender"]) => {
+    return (sr: FieldConfig['shouldRender']) => {
       if (!sr) return undefined;
-      if (typeof sr === "function") return sr;
+      if (typeof sr === 'function') return sr;
 
       switch (sr) {
-        case "hideWhenInstanceExists":
+        case 'hideWhenInstanceExists':
           return hideWhenInstanceExists;
-        case "modelTypeIncludesChat":
+        case 'modelTypeIncludesChat':
           return (values: any) => {
             const mt = values?.model_type;
-            if (Array.isArray(mt)) return mt.includes("chat");
-            return mt === "chat";
+            if (Array.isArray(mt)) return mt.includes('chat');
+            return mt === 'chat';
           };
-        case "modelTypeSupportsToolCall":
+        case 'modelTypeSupportsToolCall':
           return (values: any) => {
             const mt = values?.model_type;
             if (Array.isArray(mt)) {
               return (
-                mt.includes("chat") ||
-                mt.includes("vision") ||
-                mt.includes("image2text")
+                mt.includes('chat') ||
+                mt.includes('vision') ||
+                mt.includes('image2text')
               );
             }
-            return mt === "chat" || mt === "vision" || mt === "image2text";
+            return mt === 'chat' || mt === 'vision' || mt === 'image2text';
           };
-        case "modelTypeIncludesTtsAndNotExists":
+        case 'modelTypeIncludesTtsAndNotExists':
           return (values: any) => {
             if (!hideWhenInstanceExists(values)) return false;
             const mt = values?.model_type;
-            if (Array.isArray(mt)) return mt.includes("tts");
-            return mt === "tts";
+            if (Array.isArray(mt)) return mt.includes('tts');
+            return mt === 'tts';
           };
-        case "showBaseUrl":
-          return () =>
-            FACTORIES_WITH_BASE_URL.some((x) => x === llmFactory) ||
-            llmFactory?.toLowerCase() === "Anthropic".toLowerCase();
-        case "showGroupId":
-          return () => llmFactory?.toLowerCase() === "Minimax".toLowerCase();
+        // Driven by the provider catalog (`GET /providers`): a provider needs a
+        // base_url iff it advertises one or more URLs in its `url` map.
+        case 'showBaseUrl':
+          return () => (baseUrlOptions?.length ?? 0) > 0;
+        case 'showGroupId':
+          return () => llmFactory?.toLowerCase() === 'Minimax'.toLowerCase();
         default:
           return undefined;
       }
     };
-  }, [hideWhenInstanceExists, llmFactory]);
+  }, [hideWhenInstanceExists, llmFactory, baseUrlOptions]);
 
   // For each inputSelect field, build a URL → regionKey map from its
   // options (either inline `field.options` or the shared `baseUrlOptions`).
@@ -162,7 +171,7 @@ export const useProviderFields = ({
   const baseUrlRegionMaps = useMemo(() => {
     const maps: Record<string, Map<string, string>> = {};
     config.fields.forEach((field) => {
-      if (field.type !== "inputSelect") return;
+      if (field.type !== 'inputSelect') return;
       const options =
         field.options && field.options.length > 0
           ? field.options
@@ -191,7 +200,10 @@ export const useProviderFields = ({
           !hasModelNameField || !LIST_MODEL_FIELD_NAMES.has(field.name),
       )
       .map((field) => {
-        const placeholderText = resolveText(field.placeholder, llmFactory, t);
+        const placeholderText =
+          urlHint && URL_HINT_FIELD_NAMES.has(field.name)
+            ? urlHint
+            : resolveText(field.placeholder, llmFactory, t);
         const tooltipText = resolveText(field.tooltip, llmFactory, t);
         const validation = field.validation
           ? {
@@ -201,7 +213,7 @@ export const useProviderFields = ({
                 : undefined,
             }
           : undefined;
-        const baseField: Omit<FormFieldConfig, "type"> = {
+        const baseField: Omit<FormFieldConfig, 'type'> = {
           name: field.name,
           label: t(field.label),
           required: field.required,
@@ -221,17 +233,17 @@ export const useProviderFields = ({
           // are rendered as disabled.
           disabled: !!viewMode && !LIST_MODEL_FIELD_NAMES.has(field.name),
           dependencies:
-            field.shouldRender === "modelTypeIncludesChat" ||
-            field.shouldRender === "modelTypeSupportsToolCall" ||
-            field.shouldRender === "modelTypeIncludesTtsAndNotExists"
-              ? ["model_type"]
-              : ["model_type", "instance_name"].includes(field.name)
-                ? ["model_type", "instance_name"]
+            field.shouldRender === 'modelTypeIncludesChat' ||
+            field.shouldRender === 'modelTypeSupportsToolCall' ||
+            field.shouldRender === 'modelTypeIncludesTtsAndNotExists'
+              ? ['model_type']
+              : ['model_type', 'instance_name'].includes(field.name)
+                ? ['model_type', 'instance_name']
                 : undefined,
         };
 
         // inputSelect type: use the InputSelect component, options come from baseUrlOptions
-        if (field.type === "inputSelect") {
+        if (field.type === 'inputSelect') {
           const inputSelectOptions: SelectOption[] =
             field.options && field.options.length > 0
               ? field.options
@@ -244,7 +256,7 @@ export const useProviderFields = ({
               return inputSelectOptions.length > 0 ? (
                 <InputSelect
                   {...fieldProps}
-                  value={(fieldProps.value ?? "") as string}
+                  value={(fieldProps.value ?? '') as string}
                   onChange={(value) => fieldProps.onChange(value)}
                   options={inputSelectOptions as any}
                   placeholder={placeholderText}
@@ -273,6 +285,7 @@ export const useProviderFields = ({
     llmFactory,
     hasModelNameField,
     viewMode,
+    urlHint,
   ]);
 
   const defaultValues: FieldValues = useMemo(() => {
@@ -291,11 +304,11 @@ export const useProviderFields = ({
       // original key in the URL object is 'default' (e.g.
       // `availableProviders.url.default`). If no such option exists,
       // leave the field empty so the user picks one explicitly.
-      if (f.type === "inputSelect") {
+      if (f.type === 'inputSelect') {
         const urlMap = baseUrlRegionMaps[f.name];
         if (urlMap) {
           for (const [url, regionKey] of urlMap.entries()) {
-            if (regionKey === "default") {
+            if (regionKey === 'default') {
               setNestedValue(result, f.name, url);
               return;
             }
@@ -304,9 +317,9 @@ export const useProviderFields = ({
       }
     });
     // For configurations without a default model_type, assign an empty array (multi-select field)
-    const mtField = config.fields.find((f) => f.name === "model_type");
+    const mtField = config.fields.find((f) => f.name === 'model_type');
     if (mtField && mtField.defaultValue === undefined) {
-      setNestedValue(result, "model_type", []);
+      setNestedValue(result, 'model_type', []);
     }
     return result;
   }, [editMode, viewMode, initialValues, config.fields, baseUrlRegionMaps]);

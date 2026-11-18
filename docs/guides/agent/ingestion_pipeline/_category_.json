@@ -6,6 +6,6 @@
     "description": "Configure and use Ingestion Pipeline in RAGFlow Agents."
   },
   "customProps": {
-    "categoryIcon": "RagAiAgent"
+    "categoryIcon": "RagPipeline"
   }
 }

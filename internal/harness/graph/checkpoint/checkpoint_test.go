@@ -1,12 +1,11 @@
 package checkpoint
 
 import (
-	"context"
 	"testing"
 )
 
 func TestMemorySaver(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	saver := NewMemorySaver()
 
 	threadID := "test-thread-1"
@@ -49,7 +48,7 @@ func TestMemorySaver(t *testing.T) {
 }
 
 func TestMemorySaverMultipleVersions(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	saver := NewMemorySaver()
 
 	threadID := "test-thread-2"
@@ -94,7 +93,7 @@ func TestMemorySaverMultipleVersions(t *testing.T) {
 }
 
 func TestMemorySaverMultipleThreads(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	saver := NewMemorySaver()
 
 	// Save checkpoints for different threads
@@ -170,7 +169,7 @@ func TestDeepCopySlice(t *testing.T) {
 }
 
 func TestMemorySaverWithMetadata(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	saver := NewMemorySaver()
 
 	threadID := "test-thread-meta"
@@ -208,7 +207,7 @@ func TestMemorySaverWithMetadata(t *testing.T) {
 }
 
 func TestMemorySaverCheckpointID(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	saver := NewMemorySaver()
 
 	threadID := "test-thread-id"

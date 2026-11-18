@@ -39,8 +39,8 @@ func TestPPTXParser_ParseWithResult_CGO(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want %q", res.OutputFormat, "json")
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if got := res.File["format"]; got != "pptx" {
 		t.Errorf("File[format] = %v, want %q", got, "pptx")
@@ -50,22 +50,85 @@ func TestPPTXParser_ParseWithResult_CGO(t *testing.T) {
 	}
 }
 
-// TestPPTParser_ParseWithResult_CGO verifies that PPTParser
-// delegates correctly to PPTXParser{format:"ppt"} and produces
-// output with File["format"] = "ppt".
-func TestPPTParser_ParseWithResult_CGO(t *testing.T) {
+// TestPPTXParser_ParseWithResult_MultiSlide_CGO is the regression test
+// for the one-chunk-per-slide contract: a multi-slide deck must emit
+// one JSON item per slide, each carrying that slide's text only.
+// office_oxide's PlainText concatenates slides without a delimiter, so
+// splitting must come from the structured IR sections.
+func TestPPTXParser_ParseWithResult_MultiSlide_CGO(t *testing.T) {
 	ctx := t.Context()
-	p := NewPPTParser()
-	// Use PPTX content — office_oxide may reject it with format="ppt"
-	// hint (expects OLE binary). When it does, skip gracefully; when
-	// it succeeds, verify the metadata contract.
-	data := buildPPTX(t, "Hello")
-	res := p.ParseWithResult(ctx, "test.ppt", data)
-	if res.Err != nil {
-		t.Skip("PPTParser with PPTX data (expected maybe to fail):", res.Err)
+	p := NewPPTXParser()
+
+	w := officeOxide.NewPptxWriter()
+	s1 := w.AddSlide()
+	w.SetSlideTitle(s1, "Slide One Title")
+	w.AddSlideText(s1, "First slide body about the Alpha topic.")
+	s2 := w.AddSlide()
+	w.SetSlideTitle(s2, "Slide Two Title")
+	w.AddSlideText(s2, "Second slide body about the Beta topic.")
+	data, err := w.ToBytes()
+	if err != nil {
+		t.Fatalf("PptxWriter.ToBytes: %v", err)
 	}
-	if got := res.File["format"]; got != "ppt" {
-		t.Errorf("File[format] = %v, want %q", got, "ppt")
+
+	res := p.ParseWithResult(ctx, "deck.pptx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 2 {
+		t.Fatalf("JSON items = %d, want 2 (one per slide): %#v", len(res.JSON), res.JSON)
+	}
+	for i, want := range []struct {
+		text     string
+		slideNum int
+	}{
+		{"Slide One Title\nFirst slide body about the Alpha topic.", 1},
+		{"Slide Two Title\nSecond slide body about the Beta topic.", 2},
+	} {
+		it := res.JSON[i].ToMap()
+		if got := it["text"]; got != want.text {
+			t.Errorf("item %d text = %q, want %q", i, got, want.text)
+		}
+		if got := it["slide_number"]; got != want.slideNum {
+			t.Errorf("item %d slide_number = %v, want %d", i, got, want.slideNum)
+		}
+		if got := it["doc_type_kwd"]; got != "text" {
+			t.Errorf("item %d doc_type_kwd = %v, want text", i, got)
+		}
+	}
+}
+
+// TestPPTXParser_ParseWithResult_EmptySlide_CGO verifies that a slide
+// without extractable text still yields its own JSON item with an
+// empty text field, so slide numbering stays aligned with the deck.
+func TestPPTXParser_ParseWithResult_EmptySlide_CGO(t *testing.T) {
+	ctx := t.Context()
+	p := NewPPTXParser()
+
+	w := officeOxide.NewPptxWriter()
+	s1 := w.AddSlide()
+	w.SetSlideTitle(s1, "Only Title")
+	w.AddSlide() // empty slide
+	s3 := w.AddSlide()
+	w.SetSlideTitle(s3, "Third Title")
+	w.AddSlideText(s3, "Third body.")
+	data, err := w.ToBytes()
+	if err != nil {
+		t.Fatalf("PptxWriter.ToBytes: %v", err)
+	}
+
+	res := p.ParseWithResult(ctx, "deck.pptx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 3 {
+		t.Fatalf("JSON items = %d, want 3 (one per slide): %#v", len(res.JSON), res.JSON)
+	}
+	if got := res.JSON[1].ToMap()["text"]; got != "" {
+		t.Errorf("empty slide text = %q, want empty", got)
+	}
+	if got := res.JSON[1].ToMap()["slide_number"]; got != 2 {
+		t.Errorf("empty slide slide_number = %v, want 2", got)
 	}
 }
 
@@ -78,8 +141,7 @@ func TestPPTParser_TCADPFileType(t *testing.T) {
 	// PPTParser delegates to PPTXParser{format:"ppt"}.
 	p := NewPPTParser()
 	setup := map[string]any{
-		"parse_method":  "tcadp",
-		"output_format": "json",
+		"parse_method": "tcadp",
 	}
 	p.ConfigureFromSetup(setup)
 
@@ -91,9 +153,6 @@ func TestPPTParser_TCADPFileType(t *testing.T) {
 	if p.pptx.ParseMethod != "tcadp" {
 		t.Errorf("PPTParser.pptx.ParseMethod = %q, want %q", p.pptx.ParseMethod, "tcadp")
 	}
-	if p.pptx.OutputFormat != "json" {
-		t.Errorf("PPTParser.pptx.OutputFormat = %q, want %q", p.pptx.OutputFormat, "json")
-	}
 }
 
 // TestPPTXParser_TCADPFileType verifies that a PPTXParser
@@ -104,8 +163,7 @@ func TestPPTXParser_TCADPFileType(t *testing.T) {
 		t.Fatalf("NewPPTXParser().format = %q, want pptx", p.format)
 	}
 	setup := map[string]any{
-		"parse_method":  "tcadp",
-		"output_format": "json",
+		"parse_method": "tcadp",
 	}
 	p.ConfigureFromSetup(setup)
 	if p.ParseMethod != "tcadp" {
@@ -167,7 +225,6 @@ func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, w
 
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "tcadp",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 	})
 	ctx := t.Context()
@@ -178,8 +235,8 @@ func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, w
 	if gotFileType != wantFileType {
 		t.Errorf("TCADP request file_type = %q, want %q", gotFileType, wantFileType)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatalf("JSON items = 0, want the fixture's parsed content")
@@ -207,7 +264,6 @@ func TestPPTXParser_TCADPDownloadHTTPError(t *testing.T) {
 	p := NewPPTXParser()
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "tcadp",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 	})
 	ctx := t.Context()

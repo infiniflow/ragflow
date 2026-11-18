@@ -22,8 +22,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
+
+	"github.com/google/uuid"
 
 	"ragflow/internal/common"
 )
@@ -39,7 +46,7 @@ func NewAliyunModel(baseURL map[string]string, urlSuffix URLSuffix) *AliyunModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -61,11 +68,10 @@ func (a *AliyunModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -95,7 +101,7 @@ func (a *AliyunModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -108,11 +114,10 @@ func (a *AliyunModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
@@ -182,25 +187,6 @@ func aliyunToolChoice(modelName string, messages []Message, configured *string) 
 	return choice
 }
 
-type aliyunEmbeddingResponse struct {
-	Data   []aliyunEmbeddingData `json:"data"`
-	Model  string                `json:"model"`
-	Object string                `json:"object"`
-	Usage  aliyunUsage           `json:"usage"`
-	ID     string                `json:"id"`
-}
-
-type aliyunEmbeddingData struct {
-	Embedding []float64 `json:"embedding"`
-	Index     int       `json:"index"`
-	Object    string    `json:"object"`
-}
-
-type aliyunUsage struct {
-	PromptTokens int `json:"prompt_tokens"`
-	TotalTokens  int `json:"total_tokens"`
-}
-
 // Embed embeds a list of texts into embeddings
 func (a *AliyunModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -221,61 +207,249 @@ func (a *AliyunModel) Embed(ctx context.Context, modelName *string, request Embe
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Embedding)
-
-	reqBody := map[string]interface{}{
-		"model": *modelName,
-		"input": request.Texts,
+	// Tongyi-Qianwen text embeddings are asymmetric (query vs document), and only
+	// the native API can express that distinction (text_type). Every call therefore
+	// goes to the native API, exactly as Python's QWenEmbed does
+	// (embedding_model.py): a recognized DashScope host is mapped onto its /api/v1
+	// root, and an unrecognized base URL is IGNORED — the dashscope SDK keeps its own
+	// endpoint (DASHSCOPE_HTTP_BASE_URL, else
+	// https://dashscope.aliyuncs.com/api/<DASHSCOPE_API_VERSION|v1>) and QWenEmbed
+	// only warns once at construction time (:121-127, :134-138). There is
+	// deliberately no OpenAI-compatible fallback: that endpoint cannot send
+	// text_type, so it would encode query-side embeddings (dense seed / retrieval
+	// query) in document space. Use the OpenAI-API-Compatible / vLLM factory for a
+	// private gateway — Python requires the same choice.
+	if nativeRoot := aliyunNativeEmbeddingRoot(baseURL); nativeRoot != "" {
+		return a.embedNative(ctx, nativeRoot, *modelName, request, apiConfig, modelUsage)
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	// Unrecognized host: warn once per host, then use the SDK's default native root.
+	aliyunWarnIgnoredBaseURL(baseURL)
+	return a.embedNative(ctx, aliyunSDKDefaultNativeRoot(), *modelName, request, apiConfig, modelUsage)
+}
+
+// aliyunIgnoredHostWarned dedups the unrecognized-host warning to once per host.
+var aliyunIgnoredHostWarned sync.Map
+
+// aliyunWarnSink writes the warning line. Tests replace it to capture the warning
+// without going through the logger.
+var aliyunWarnSink = func(format string, args ...any) { common.StdLogger().Printf(format, args...) }
+
+// aliyunWarnIgnoredBaseURL reports, once per host and never per call, that the
+// configured base URL is not a DashScope host and is therefore ignored in favour
+// of the SDK default endpoint — Python QWenEmbed warns once at construction time
+// instead (embedding_model.py:121-127).
+func aliyunWarnIgnoredBaseURL(baseURL string) {
+	host := aliyunBaseURLHost(baseURL)
+	if host == "" {
+		return
+	}
+	if _, seen := aliyunIgnoredHostWarned.LoadOrStore(host, struct{}{}); seen {
+		return
+	}
+	aliyunWarnSink(
+		"[Qwen embedding] base URL host %q is not a DashScope host, so the configured base URL is ignored: "+
+			"using the native text-embedding API at %s instead (Python QWenEmbed behaviour). Point the base URL at "+
+			"dashscope.aliyuncs.com / dashscope-intl.aliyuncs.com, or end it with /api/v1 to address a "+
+			"native-compatible endpoint directly.", host, aliyunSDKDefaultNativeRoot())
+}
+
+// aliyunSDKDefaultNativeRoot mirrors the dashscope SDK's default native API root
+// (dashscope/common/env.py:14-23): DASHSCOPE_HTTP_BASE_URL when set, else
+// https://dashscope.aliyuncs.com/api/<DASHSCOPE_API_VERSION|v1>. It is where
+// Python's QWenEmbed ends up when the configured base URL is not a DashScope host,
+// and the only override that still carries text_type.
+func aliyunSDKDefaultNativeRoot() string {
+	if root := strings.TrimSpace(os.Getenv("DASHSCOPE_HTTP_BASE_URL")); root != "" {
+		return strings.TrimRight(root, "/")
+	}
+	version := strings.TrimSpace(os.Getenv("DASHSCOPE_API_VERSION"))
+	if version == "" {
+		version = "v1"
+	}
+	return fmt.Sprintf("https://dashscope.aliyuncs.com/api/%s", version)
+}
+
+// aliyunBaseURLHost returns the lowercase host of a configured base URL for log
+// lines. Only the host is used, so credentials, path and query string cannot leak
+// (Python's _dashscope_base_url_for_log is strict the same way,
+// embedding_model.py:73-75).
+func aliyunBaseURLHost(baseURL string) string {
+	raw := strings.TrimSpace(baseURL)
+	if raw == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(raw); err == nil && parsed.Hostname() != "" {
+		return strings.ToLower(parsed.Hostname())
+	}
+	// Schemeless config (e.g. "gateway.internal/v1"): the first path segment is the
+	// host.
+	return strings.ToLower(strings.SplitN(strings.TrimPrefix(raw, "//"), "/", 2)[0])
+}
+
+// aliyunNativeEmbeddingPath is the DashScope native text-embedding endpoint,
+// appended to the native API root ("https://<host>/api/v1").
+const aliyunNativeEmbeddingPath = "services/embeddings/text-embedding/text-embedding"
+
+// aliyunNativeEmbedBatchSize mirrors Python QWenEmbed.encode's batch_size = 4.
+const aliyunNativeEmbedBatchSize = 4
+
+// aliyunNativeEmbeddingRoot maps a configured DashScope base URL onto the native
+// API root, mirroring Python embedding_model._dashscope_native_http_api_url
+// (rag/llm/embedding_model.py:80-128): an already-native base is kept as-is,
+// known DashScope hosts (CN and international) are mapped to their /api/v1 root,
+// and anything else returns "" so the caller falls back to the dashscope SDK's
+// default native root (aliyunSDKDefaultNativeRoot), as Python QWenEmbed does.
+// Matching on the parsed hostname (never a substring of the full URL) prevents a
+// crafted query string from selecting the native API.
+func aliyunNativeEmbeddingRoot(baseURL string) string {
+	u := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if u == "" {
+		return ""
+	}
+	if strings.HasSuffix(u, "/api/v1") {
+		return u
+	}
+	parsed, err := url.Parse(u)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return ""
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	host := strings.ToLower(parsed.Hostname())
+	switch {
+	case host == "dashscope-intl.aliyuncs.com" || strings.HasSuffix(host, ".dashscope-intl.aliyuncs.com"):
+		return "https://dashscope-intl.aliyuncs.com/api/v1"
+	case host == "dashscope.aliyuncs.com" || strings.HasSuffix(host, ".dashscope.aliyuncs.com"):
+		return "https://dashscope.aliyuncs.com/api/v1"
+	default:
+		return ""
 	}
+}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+type aliyunNativeEmbedInput struct {
+	Texts []string `json:"texts"`
+}
 
-	resp, err := a.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+type aliyunNativeEmbedRequest struct {
+	Model      string                 `json:"model"`
+	Input      aliyunNativeEmbedInput `json:"input"`
+	Parameters map[string]interface{} `json:"parameters,omitempty"`
+}
+
+type aliyunNativeEmbedResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	// RequestID is the DashScope request id every native response carries (the same
+	// id Python surfaces in its ModelException messages).
+	RequestID string `json:"request_id"`
+	Output    struct {
+		Embeddings []struct {
+			// TextIndex is a pointer so an absent/null key is distinguishable
+			// from index 0: Python does embds[e["text_index"]] and raises
+			// KeyError when the key is missing (wrapped into EmbeddingError).
+			TextIndex *int      `json:"text_index"`
+			Embedding []float64 `json:"embedding"`
+		} `json:"embeddings"`
+	} `json:"output"`
+	Usage struct {
+		TotalTokens int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// embedNative calls the DashScope native text-embedding API, the only transport
+// that carries text_type ("document" for encode, "query" for encode_queries —
+// Python QWenEmbed). Inputs are sent in batches of 4 like Python; the response's
+// text_index is relative to the batch, so it is offset back to the caller's
+// slice before being returned.
+//
+// The response is reassembled exactly like Python QWenEmbed.encode: each batch's
+// chunk is sized by the NUMBER OF RETURNED EMBEDDINGS and every vector is
+// PLACED at its batch-relative text_index (never appended in response order),
+// because consumers such as NavEmbedder read the slice positionally and discard
+// EmbeddingData.Index. As in Python, a duplicate text_index overwrites the
+// earlier vector, a gap leaves an empty vector in that slot, and a text_index
+// outside the returned chunk raises — a NEGATIVE text_index counts from the end
+// of the chunk (embds[-1] is the last slot), exactly like a Python list
+// assignment.
+func (a *AliyunModel) embedNative(ctx context.Context, root, modelName string, request EmbedRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	textType := "document"
+	if request.Query {
+		textType = "query"
 	}
-	defer resp.Body.Close()
+	endpoint := fmt.Sprintf("%s/%s", strings.TrimRight(root, "/"), aliyunNativeEmbeddingPath)
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	embeddings := make([]EmbeddingData, 0, len(request.Texts))
+	for start := 0; start < len(request.Texts); start += aliyunNativeEmbedBatchSize {
+		end := min(start+aliyunNativeEmbedBatchSize, len(request.Texts))
+		batch := request.Texts[start:end]
+
+		jsonData, err := json.Marshal(aliyunNativeEmbedRequest{
+			Model:      modelName,
+			Input:      aliyunNativeEmbedInput{Texts: batch},
+			Parameters: map[string]interface{}{"text_type": textType},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		callCtx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+		req, err := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, bytes.NewBuffer(jsonData))
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+		resp, err := a.baseModel.httpClient.Do(req)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		cancel()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read response: %w", readErr)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("aliyun native embeddings API error: %s, body: %s", resp.Status, string(body))
+		}
+
+		var parsed aliyunNativeEmbedResponse
+		if err = json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if parsed.Code != "" {
+			return nil, fmt.Errorf("aliyun native embeddings API error: %s: %s", parsed.Code, parsed.Message)
+		}
+		// Mirror Python QWenEmbed.encode:
+		//   embds = [[] for _ in range(len(resp["output"]["embeddings"]))]
+		//   for e in resp["output"]["embeddings"]:
+		//       embds[e["text_index"]] = e["embedding"]
+		//   res.extend(embds)
+		// including Python list-assignment indexing: a negative text_index
+		// counts from the END of the chunk (embds[-1] is the last slot), and out
+		// of range in either direction raises.
+		embds := make([]EmbeddingData, len(parsed.Output.Embeddings))
+		for _, item := range parsed.Output.Embeddings {
+			if item.TextIndex == nil {
+				return nil, fmt.Errorf("aliyun native embeddings response item missing text_index")
+			}
+			idx := *item.TextIndex
+			if idx < 0 {
+				idx += len(embds)
+			}
+			if idx < 0 || idx >= len(embds) {
+				return nil, fmt.Errorf("aliyun native embeddings response index %d out of range for %d embeddings", *item.TextIndex, len(embds))
+			}
+			embds[idx] = EmbeddingData{
+				Embedding: item.Embedding,
+				Index:     len(embeddings) + idx,
+			}
+		}
+		embeddings = append(embeddings, embds...)
+		recordResponseUsage(modelUsage, parsed.RequestID, &TokenUsage{TotalTokens: parsed.Usage.TotalTokens}, "embedding")
 	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("aliyun embeddings API error: %s, body: %s", resp.Status, string(body))
-	}
-
-	var parsed aliyunEmbeddingResponse
-	if err = json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	var embeddings []EmbeddingData
-	for _, dataElem := range parsed.Data {
-		var embeddingData EmbeddingData
-		embeddingData.Embedding = dataElem.Embedding
-		embeddingData.Index = dataElem.Index
-		embeddings = append(embeddings, embeddingData)
-	}
-	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
-		PromptTokens: parsed.Usage.PromptTokens,
-		TotalTokens:  parsed.Usage.TotalTokens,
-	}, "embedding")
-
 	return embeddings, nil
 }
 
@@ -318,7 +492,7 @@ func (a *AliyunModel) Rerank(ctx context.Context, modelName *string, request Rer
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Rerank)
+	url := joinURL(baseURL, a.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -382,13 +556,349 @@ func (a *AliyunModel) Rerank(ctx context.Context, modelName *string, request Rer
 	return rerankResponse, nil
 }
 
-// TranscribeAudio transcribe audio
+// aliyunASRRequest is the DashScope multimodal-generation request for Qwen ASR
+// models. It mirrors dashscope.MultiModalConversation: the audio is a data URL
+// on the shared multimodal-generation endpoint.
+type aliyunASRRequest struct {
+	Model      string               `json:"model"`
+	Input      aliyunASRInput       `json:"input"`
+	Parameters *aliyunASRParameters `json:"parameters,omitempty"`
+}
+
+type aliyunASRInput struct {
+	Messages []aliyunASRMessage `json:"messages"`
+}
+
+type aliyunASRMessage struct {
+	Role    string                 `json:"role"`
+	Content []aliyunASRContentPart `json:"content"`
+}
+
+type aliyunASRContentPart struct {
+	Audio string `json:"audio,omitempty"`
+	Text  string `json:"text,omitempty"`
+}
+
+type aliyunASRParameters struct {
+	ResultFormat string                 `json:"result_format,omitempty"`
+	ASROptions   map[string]interface{} `json:"asr_options,omitempty"`
+}
+
+// aliyunASRResponse is the non-streaming DashScope multimodal-generation
+// response. The transcription lives in
+// output.choices[0].message.content[*].text.
+type aliyunASRResponse struct {
+	Output struct {
+		Choices []struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	} `json:"output"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"request_id"`
+}
+
+// TranscribeAudio transcribes an audio file with a DashScope ASR model
+// (qwen-asr-flash / qwen-audio-asr). It calls the same synchronized
+// multimodal-generation endpoint used for TTS, but the audio field must be a
+// URL DashScope can read: a public http(s) URL or an oss:// object in
+// DashScope's temporary storage. Base64 data URLs are rejected with
+// "InvalidParameter: url error", so a local file is uploaded first.
 func (a *AliyunModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if file == nil || strings.TrimSpace(*file) == "" {
+		return nil, fmt.Errorf("audio file is required")
+	}
+	if strings.TrimSpace(a.baseModel.URLSuffix.ASR) == "" {
+		return nil, fmt.Errorf("aliyun ASR URL suffix is required")
+	}
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
+	audio, err := os.ReadFile(*file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read audio file: %w", err)
+	}
+	if len(audio) == 0 {
+		return nil, fmt.Errorf("audio file is empty")
+	}
+
+	contextText, options := aliyunASROptions(asrConfig)
+	asrEndpoint, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.ASR)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	defer cancel()
+
+	audioURL, err := a.uploadAudio(ctx, asrEndpoint, *apiConfig.ApiKey, strings.TrimSpace(*modelName), *file, audio)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBody := aliyunASRRequest{
+		Model: strings.TrimSpace(*modelName),
+		Input: aliyunASRInput{Messages: []aliyunASRMessage{
+			{Role: "system", Content: []aliyunASRContentPart{{Text: contextText}}},
+			{Role: "user", Content: []aliyunASRContentPart{{Audio: audioURL}}},
+		}},
+		Parameters: &aliyunASRParameters{ResultFormat: "message", ASROptions: options},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", asrEndpoint, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("X-DashScope-SSE", "disable")
+	// DashScope only resolves oss:// objects from its temporary upload space
+	// when this header is present; without it the request fails as a URL error.
+	req.Header.Set("X-DashScope-OssResourceResolve", "enable")
+
+	resp, err := a.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
+	}
+
+	body, err := readModelResponseBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var parsed aliyunASRResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse aliyun ASR response: %w, body: %s", err, string(body))
+	}
+	if parsed.Code != "" {
+		return nil, fmt.Errorf("aliyun ASR API error: %s: %s", parsed.Code, parsed.Message)
+	}
+	if len(parsed.Output.Choices) == 0 {
+		return nil, fmt.Errorf("aliyun ASR response has no choices, body: %s", string(body))
+	}
+
+	var text strings.Builder
+	for _, part := range parsed.Output.Choices[0].Message.Content {
+		text.WriteString(part.Text)
+	}
+	return &ASRResponse{Text: text.String()}, nil
 }
 
 func (a *AliyunModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+	// The synchronized DashScope ASR endpoint has no incremental-result
+	// stream; forward the finished transcription as a single chunk.
+	resp, err := a.TranscribeAudio(ctx, modelName, file, apiConfig, asrConfig, modelUsage)
+	if err != nil {
+		return err
+	}
+	chunk := resp.Text
+	return sender(&chunk, nil)
+}
+
+// aliyunASROptions splits the caller's ASRConfig into the recognition context
+// (system message text) and the DashScope asr_options. The defaults match the
+// legacy dashscope.MultiModalConversation path; only documented options are
+// forwarded so a stray UI parameter cannot fail the request.
+func aliyunASROptions(asrConfig *ASRConfig) (string, map[string]interface{}) {
+	options := map[string]interface{}{"enable_lid": true, "enable_itn": false}
+	if asrConfig == nil || asrConfig.Params == nil {
+		return "", options
+	}
+	contextText, _ := asrConfig.Params["context"].(string)
+	if raw, ok := asrConfig.Params["asr_options"].(map[string]interface{}); ok {
+		for key, value := range raw {
+			options[key] = value
+		}
+	}
+	for _, key := range []string{"language", "enable_lid", "enable_itn"} {
+		if value, ok := asrConfig.Params[key]; ok {
+			options[key] = value
+		}
+	}
+	return contextText, options
+}
+
+// aliyunUploadsPath is the DashScope endpoint handing out a temporary OSS
+// upload policy. The ASR endpoint cannot read a local file, so the audio is
+// uploaded here first and referenced as oss://<upload_dir>/<file>.
+const aliyunUploadsPath = "/api/v1/uploads"
+
+// aliyunUploadPolicy is the credential set DashScope returns for one upload.
+type aliyunUploadPolicy struct {
+	Policy              string `json:"policy"`
+	Signature           string `json:"signature"`
+	UploadDir           string `json:"upload_dir"`
+	UploadHost          string `json:"upload_host"`
+	OSSAccessKeyID      string `json:"oss_access_key_id"`
+	XOSSObjectACL       string `json:"x_oss_object_acl"`
+	XOSSForbidOverwrite string `json:"x_oss_forbid_overwrite"`
+}
+
+// aliyunUploadPolicyResponse is the getPolicy envelope; DashScope may report
+// failures in Code/Message with an HTTP 200 status.
+type aliyunUploadPolicyResponse struct {
+	RequestID string             `json:"request_id"`
+	Data      aliyunUploadPolicy `json:"data"`
+	Code      string             `json:"code"`
+	Message   string             `json:"message"`
+}
+
+// aliyunAudioExt lower-cases the filename extension for the OSS object key
+// and keeps it URL-safe: a dot followed by alphanumerics only. Anything else
+// ("clip.wav#1" -> ".wav#1", bare ".", no extension) falls back to ".wav".
+func aliyunAudioExt(filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if len(ext) > 1 && strings.TrimFunc(ext[1:], func(r rune) bool {
+		return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+	}) == "" {
+		return ext
+	}
+	return ".wav"
+}
+
+// uploadAudio stores audio in DashScope's temporary OSS space and returns the
+// oss:// URL to send as the ASR audio field. The policy endpoint is derived
+// from the ASR endpoint's origin, so the configured region is preserved.
+func (a *AliyunModel) uploadAudio(ctx context.Context, asrEndpoint, apiKey, model, filename string, audio []byte) (string, error) {
+	endpoint, err := url.Parse(asrEndpoint)
+	if err != nil {
+		return "", fmt.Errorf("parse aliyun ASR endpoint: %w", err)
+	}
+	if endpoint.Scheme == "" || endpoint.Host == "" {
+		return "", fmt.Errorf("aliyun ASR endpoint %q is not an absolute URL", asrEndpoint)
+	}
+	policyURL := url.URL{
+		Scheme:   endpoint.Scheme,
+		Host:     endpoint.Host,
+		Path:     aliyunUploadsPath,
+		RawQuery: url.Values{"action": {"getPolicy"}, "model": {model}}.Encode(),
+	}
+	policyReq, err := http.NewRequestWithContext(ctx, http.MethodGet, policyURL.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("create aliyun upload policy request: %w", err)
+	}
+	policyReq.Header.Set("Authorization", "Bearer "+apiKey)
+	// The getPolicy endpoint documents this header even though the request has
+	// no body.
+	policyReq.Header.Set("Content-Type", "application/json")
+	policyResp, err := a.baseModel.httpClient.Do(policyReq)
+	if err != nil {
+		return "", fmt.Errorf("request aliyun upload policy: %w", err)
+	}
+	defer policyResp.Body.Close()
+	if policyResp.StatusCode != http.StatusOK {
+		body, readErr := readModelErrorBody(policyResp.Body)
+		if readErr != nil {
+			return "", fmt.Errorf("aliyun upload policy failed with status %d; failed to read error response: %w", policyResp.StatusCode, readErr)
+		}
+		return "", &APIStatusError{Status: policyResp.StatusCode, Body: string(body)}
+	}
+	body, err := readModelResponseBody(policyResp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read aliyun upload policy: %w", err)
+	}
+	var policy aliyunUploadPolicyResponse
+	if err := json.Unmarshal(body, &policy); err != nil {
+		return "", fmt.Errorf("decode aliyun upload policy: %w", err)
+	}
+	if policy.Code != "" {
+		return "", &APIStatusError{Status: policyResp.StatusCode, Body: string(body)}
+	}
+	data := policy.Data
+	if data.UploadHost == "" || data.UploadDir == "" || data.OSSAccessKeyID == "" || data.Signature == "" || data.Policy == "" {
+		return "", fmt.Errorf("aliyun upload policy response is incomplete")
+	}
+
+	// The object name lands inside an oss:// URL the provider later resolves,
+	// so it must stay URL-safe. A generated name keeps a normalised extension,
+	// which is what the provider reads for the audio format, and drops
+	// everything else a caller-supplied filename may carry (spaces, '#',
+	// non-ASCII).
+	objectName := uuid.NewString() + aliyunAudioExt(filename)
+	objectKey := strings.Trim(data.UploadDir, "/") + "/" + objectName
+	fields := [][2]string{
+		{"OSSAccessKeyId", data.OSSAccessKeyID},
+		{"policy", data.Policy},
+		{"Signature", data.Signature},
+		{"key", objectKey},
+		{"success_action_status", "200"},
+	}
+	// The policy decides which optional form fields are signed; sending an
+	// empty value for one OSS did not sign makes the upload fail.
+	if data.XOSSObjectACL != "" {
+		fields = append(fields, [2]string{"x-oss-object-acl", data.XOSSObjectACL})
+	}
+	if data.XOSSForbidOverwrite != "" {
+		fields = append(fields, [2]string{"x-oss-forbid-overwrite", data.XOSSForbidOverwrite})
+	}
+
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	for _, field := range fields {
+		if err := writer.WriteField(field[0], field[1]); err != nil {
+			return "", fmt.Errorf("write aliyun upload form field %s: %w", field[0], err)
+		}
+	}
+	part, err := writer.CreateFormFile("file", objectName)
+	if err != nil {
+		return "", fmt.Errorf("create aliyun upload file part: %w", err)
+	}
+	if _, err := part.Write(audio); err != nil {
+		return "", fmt.Errorf("write aliyun upload audio: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("finish aliyun upload form: %w", err)
+	}
+
+	uploadHost := data.UploadHost
+	if !strings.Contains(uploadHost, "://") {
+		uploadHost = "https://" + uploadHost
+	}
+	uploadReq, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadHost, &form)
+	if err != nil {
+		return "", fmt.Errorf("create aliyun upload request to %s: %w", uploadHost, err)
+	}
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadResp, err := a.baseModel.httpClient.Do(uploadReq)
+	if err != nil {
+		return "", fmt.Errorf("upload audio to aliyun at %s: %w", uploadHost, err)
+	}
+	defer uploadResp.Body.Close()
+	if uploadResp.StatusCode < 200 || uploadResp.StatusCode >= 300 {
+		body, readErr := readModelErrorBody(uploadResp.Body)
+		if readErr != nil {
+			return "", fmt.Errorf("aliyun audio upload failed with status %d; failed to read error response: %w", uploadResp.StatusCode, readErr)
+		}
+		return "", &APIStatusError{Status: uploadResp.StatusCode, Body: string(body)}
+	}
+	return "oss://" + objectKey, nil
 }
 
 // aliyunTTSDefaultVoice is used when the caller does not specify a voice;
@@ -441,11 +951,10 @@ func (a *AliyunModel) AudioSpeech(ctx context.Context, modelName *string, audioC
 		return nil, fmt.Errorf("aliyun TTS URL suffix is required")
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), strings.TrimPrefix(a.baseModel.URLSuffix.TTS, "/"))
 
 	input := aliyunTTSInput{Text: *audioContent, Voice: aliyunTTSDefaultVoice}
 	if ttsConfig != nil {
@@ -555,12 +1064,12 @@ func (a *AliyunModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 
 // OCRFile OCR file
 func (a *AliyunModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", a.Name())
 }
 
 // ParseFile parse file
 func (a *AliyunModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", a.Name())
 }
 
 type AliyunModelItem struct {
@@ -591,7 +1100,7 @@ func (a *AliyunModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Models)
+	url := joinURL(baseURL, a.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -636,7 +1145,7 @@ func (a *AliyunModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (a *AliyunModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", a.Name())
 }
 
 func (a *AliyunModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -648,9 +1157,13 @@ func (a *AliyunModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 }
 
 func (a *AliyunModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", a.Name())
 }
 
 func (a *AliyunModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", a.Name())
+}
+
+func (a *AliyunModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", a.Name())
 }

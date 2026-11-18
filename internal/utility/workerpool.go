@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	workerPoolStateRunning uint32 = 0
 	workerPoolStateStopped uint32 = 1
 )
 
@@ -33,7 +32,7 @@ type WorkerPoolFuture[T any, R any] struct {
 	ch <-chan WorkerPoolResult[T, R]
 }
 
-// Wait blocks until the task completes or ctx is cancelled.
+// Wait blocks until the task completes or ctx is canceled.
 func (f WorkerPoolFuture[T, R]) Wait(ctx context.Context) (WorkerPoolResult[T, R], error) {
 	select {
 	case <-ctx.Done():
@@ -125,14 +124,17 @@ func NewWorkerPool[T any, R any](workers, queueSize int, handler WorkerPoolHandl
 func (p *WorkerPool[T, R]) start(workers int) {
 	for range workers {
 		p.workerWg.Add(1)
+		atomic.AddInt64(&p.liveWorkers, 1)
 		go p.worker()
 	}
 }
 
 func (p *WorkerPool[T, R]) worker() {
-	atomic.AddInt64(&p.liveWorkers, 1)
+	retired := false
 	defer func() {
-		atomic.AddInt64(&p.liveWorkers, -1)
+		if !retired {
+			atomic.AddInt64(&p.liveWorkers, -1)
+		}
 		p.workerWg.Done()
 	}()
 
@@ -164,9 +166,14 @@ func (p *WorkerPool[T, R]) worker() {
 		}
 		p.markDone()
 
+		p.mu.Lock()
 		if atomic.LoadInt64(&p.liveWorkers) > atomic.LoadInt64(&p.desiredWorkers) {
+			atomic.AddInt64(&p.liveWorkers, -1)
+			retired = true
+			p.mu.Unlock()
 			return
 		}
+		p.mu.Unlock()
 	}
 }
 
@@ -191,7 +198,7 @@ func (p *WorkerPool[T, R]) Resize(workers int) {
 		return
 	}
 
-	current := int(atomic.LoadInt64(&p.desiredWorkers))
+	current := int(atomic.LoadInt64(&p.liveWorkers))
 	atomic.StoreInt64(&p.desiredWorkers, int64(workers))
 	if workers > current {
 		p.start(workers - current)
@@ -296,6 +303,12 @@ func (p *WorkerPool[T, R]) StopWait() {
 func (p *WorkerPool[T, R]) Stats() WorkerPoolStats {
 	submitted := atomic.LoadUint64(&p.submittedTotal)
 	completed := atomic.LoadUint64(&p.completedTotal)
+	// A task can complete before its submission is counted, and the two loads
+	// above are not a consistent snapshot. Clamp the difference to avoid underflow.
+	var pending uint64
+	if submitted >= completed {
+		pending = submitted - completed
+	}
 
 	return WorkerPoolStats{
 		DesiredWorkers: int(atomic.LoadInt64(&p.desiredWorkers)),
@@ -305,6 +318,6 @@ func (p *WorkerPool[T, R]) Stats() WorkerPoolStats {
 		SubmittedTotal: submitted,
 		CompletedTotal: completed,
 		FailedTotal:    atomic.LoadUint64(&p.failedTotal),
-		PendingTotal:   submitted - completed,
+		PendingTotal:   pending,
 	}
 }

@@ -41,7 +41,7 @@ func TestNotionConnectorOpenSyncReadsRootPageChildrenAndAttachment(t *testing.T)
 		return []byte("pdf-body"), nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestNotionConnectorOpenSyncDefersTraversalUntilNextBatch(t *testing.T) {
 		return []byte("pdf-body"), nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestNotionConnectorOpenSyncUsesIncrementalWindowAndResume(t *testing.T) {
 		return notionBlockPage{Results: []notionBlock{notionTestTextBlock(blockID+"-block", "paragraph", blockID+" body")}}, nil
 	}
 	start := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
 		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
 	})
@@ -122,7 +122,7 @@ func TestNotionConnectorOpenSyncUsesIncrementalWindowAndResume(t *testing.T) {
 		t.Fatalf("documents = %+v", batch.Documents)
 	}
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
 		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
 		Resume:      batch.Checkpoint,
@@ -144,7 +144,7 @@ func TestNotionConnectorResumeMissingCheckpointFails(t *testing.T) {
 		return notionBlockPage{Results: []notionBlock{notionTestTextBlock(blockID+"-block", "paragraph", blockID+" body")}}, nil
 	}
 	start := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
 		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
 		Resume:      &SyncCheckpoint{SourceID: "missing"},
@@ -152,8 +152,8 @@ func TestNotionConnectorResumeMissingCheckpointFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
-	if _, err = session.NextBatch(context.Background()); err == nil || errors.Is(err, io.EOF) {
-		t.Fatalf("NextBatch = %v, want missing checkpoint error", err)
+	if _, err = session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("NextBatch = %v, want ErrSyncResumeInvalid", err)
 	}
 }
 
@@ -180,7 +180,7 @@ func TestNotionConnectorIncrementalSearchContinuesPastTooNewPages(t *testing.T) 
 		return notionBlockPage{Results: []notionBlock{notionTestTextBlock(blockID+"-block", "paragraph", blockID+" body")}}, nil
 	}
 	start := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
 		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
 	})
@@ -202,11 +202,49 @@ func TestNotionConnectorFileRejectsOversizedBody(t *testing.T) {
 	}))
 	defer server.Close()
 
+	withConnectorLoopbackTestHook(t)
 	connector := newTestNotionConnector(t)
 	connector.fileMaxBytes = 4
-	_, err := connector.file(context.Background(), server.URL)
+	_, err := connector.file(t.Context(), server.URL)
 	if err == nil || !strings.Contains(err.Error(), "exceeds maximum size") {
 		t.Fatalf("file err = %v, want maximum size error", err)
+	}
+}
+
+func TestNotionConnectorFileRejectsPrivateURL(t *testing.T) {
+	previous := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = previous })
+
+	requests := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- struct{}{}
+		_, _ = io.WriteString(w, "internal response")
+	}))
+	defer server.Close()
+
+	connector := newTestNotionConnector(t)
+	_, err := connector.file(t.Context(), server.URL)
+	if err == nil {
+		t.Fatal("file accepted a private URL, want SSRF rejection")
+	}
+	select {
+	case <-requests:
+		t.Fatal("private URL received a request, want none")
+	default:
+	}
+}
+
+func TestNotionConnectorFileRejectsPrivateRedirect(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusFound)
+	}))
+	defer server.Close()
+
+	connector := newTestNotionConnector(t)
+	if _, err := connector.file(t.Context(), server.URL); err == nil {
+		t.Fatal("file followed a redirect to a private metadata address, want SSRF rejection")
 	}
 }
 
@@ -222,7 +260,7 @@ func TestNotionConnectorOpenPruneReturnsPageAndAttachmentIDs(t *testing.T) {
 		}
 		return notionBlockPage{}, nil
 	}
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune: %v", err)
 	}

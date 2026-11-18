@@ -15,6 +15,7 @@
  */
 
 import { Modal } from '@/components/ui/modal/modal';
+import { useEmptyModelWarning } from '@/ee/hooks/use-empty-model-warning';
 import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
 import { useEffect, useRef } from 'react';
@@ -32,6 +33,7 @@ export const useWarnEmptyModel = (
   const { t } = useTranslation();
   const warnedRef = useRef(false);
   const { navigateToModelSetting } = useNavigatePage();
+  const { isChecking, showWarning } = useEmptyModelWarning();
 
   useEffect(() => {
     if (
@@ -39,10 +41,15 @@ export const useWarnEmptyModel = (
       !warnedRef.current &&
       !isWarningVisible &&
       !loading &&
+      !isChecking &&
       (isEmpty(embdId) || isEmpty(llmId)) &&
       typeof embdId === 'string' &&
       typeof llmId === 'string'
     ) {
+      if (showWarning()) {
+        return;
+      }
+
       warnedRef.current = true;
       isWarningVisible = true;
       Modal.warning({
@@ -62,5 +69,14 @@ export const useWarnEmptyModel = (
         },
       });
     }
-  }, [showEmptyModelWarn, embdId, llmId, loading, navigateToModelSetting, t]);
+  }, [
+    showEmptyModelWarn,
+    embdId,
+    llmId,
+    loading,
+    navigateToModelSetting,
+    t,
+    isChecking,
+    showWarning,
+  ]);
 };

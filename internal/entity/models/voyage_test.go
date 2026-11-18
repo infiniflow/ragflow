@@ -443,3 +443,29 @@ func TestVoyageEmbedTrimsTrailingSlashInBaseURL(t *testing.T) {
 		t.Errorf("path=%q want %q (no double slash)", sawPath, "/v1/embeddings")
 	}
 }
+
+func TestVoyageEmbedInputTypeFollowsQuery(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	baseURL, bodies := captureEmbedBodies(t, openAIShapeEmbeddingBody)
+	m := newVoyageForTest(baseURL)
+	apiKey := "test-key"
+	model := "voyage-3.5"
+
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(query): %v", err)
+	}
+	if got := (*bodies)[0]["input_type"]; got != "document" {
+		t.Errorf("document input_type = %v, want document", got)
+	}
+	if got := (*bodies)[1]["input_type"]; got != "query" {
+		t.Errorf("query input_type = %v, want query", got)
+	}
+}
+
+// TestNvidiaEmbedInputTypeFollowsQuery pins Python NvidiaEmbed: encode sends
+// input_type="passage", encode_queries sends "query" (the Go port previously
+// hardcoded "query" for BOTH, embedding indexed documents in the query space).

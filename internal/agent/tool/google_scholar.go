@@ -18,10 +18,8 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -54,12 +52,12 @@ var googleScholarNewlinePattern = regexp.MustCompile(`\n+`)
 // Patents uses *bool so the zero value (nil) means "not set" → default
 // true (include patents). False means explicitly exclude patents.
 type googleScholarParams struct {
-	Query    string `json:"query"`
-	TopN     int    `json:"top_n"`
-	SortBy   string `json:"sort_by"`
-	YearLow  int    `json:"year_low"`
-	YearHigh int    `json:"year_high"`
-	Patents  *bool  `json:"patents"`
+	Query    string `json:"query" doc:"The search keyword to execute with Google Scholar. The keywords should be the most important words/terms(includes synonyms) from the original request." required:"true"`
+	TopN     int    `json:"top_n" schema:"-"`
+	SortBy   string `json:"sort_by" schema:"-"`
+	YearLow  int    `json:"year_low" schema:"-"`
+	YearHigh int    `json:"year_high" schema:"-"`
+	Patents  *bool  `json:"patents" schema:"-"`
 }
 
 // googleScholarResult is one row in the parsed result list.
@@ -122,17 +120,7 @@ func NewGoogleScholarToolWithDefaults(h *HTTPHelper, defaults googleScholarParam
 // include top_n / sort_by / year_low / year_high / patents.
 // Those are canvas-form-only parameters passed by the component wrapper.
 func (g *GoogleScholarTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: googleScholarToolName,
-		Desc: googleScholarToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keyword to execute with Google Scholar. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(googleScholarToolName, googleScholarToolDescription, googleScholarParams{})
 }
 
 func (g *GoogleScholarTool) ComponentSpec() ComponentSpec {
@@ -177,8 +165,10 @@ func buildGoogleScholarURL(query string, maxResults int, sortBy string, yearLow,
 	if yearHigh > 0 {
 		q.Set("as_yhi", strconv.Itoa(yearHigh))
 	}
+	// as_sdt is Scholar's patents switch (as_vis toggles citations), matching
+	// scholarly's _construct_url: as_sdt={1-patents},33.
 	if patents != nil && !*patents {
-		q.Set("as_vis", "1")
+		q.Set("as_sdt", "1,33")
 	}
 
 	return googleScholarEndpoint + "?" + q.Encode()
@@ -254,10 +244,9 @@ func buildGoogleScholarReferences(envelope map[string]any) ([]map[string]any, []
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(googleScholarHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(googleScholarHashInt(documentID, 500), 10)
 		title := googleScholarText(paper["title"])
 		resultURL := googleScholarText(paper["link"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -304,12 +293,6 @@ func googleScholarText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func googleScholarHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateGoogleScholarRunes(value string, limit int) string {

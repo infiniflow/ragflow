@@ -10,6 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
@@ -67,7 +69,7 @@ func TestParseMemoryMessagePath(t *testing.T) {
 func TestForgetMessageRejectsMalformedPath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	h := NewMemoryHandler(service.NewMemoryService())
+	h := NewMemoryHandler(service.NewMemoryService(dao.DB, engine.Get()))
 	router.DELETE("/api/v1/messages/:memory_message", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
 		h.ForgetMessage(c)
@@ -87,5 +89,26 @@ func TestForgetMessageRejectsMalformedPath(t *testing.T) {
 	}
 	if code := common.ErrorCode(res["code"].(float64)); code != common.CodeArgumentError {
 		t.Fatalf("code = %v, want %v; body=%s", code, common.CodeArgumentError, w.Body.String())
+	}
+}
+
+func TestSearchMessageRejectsInvalidSimilarity(t *testing.T) {
+	for _, field := range []string{"similarity_threshold", "keywords_similarity_weight"} {
+		for _, value := range []string{"-0.1", "1.1", "invalid", "nan", "inf"} {
+			t.Run(field+value, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(w)
+				c.Set("user", &entity.User{ID: "user-1"})
+				c.Request = httptest.NewRequest("GET", "/messages/search?"+field+"="+value, nil)
+				(&MemoryHandler{}).SearchMessage(c)
+				var payload struct{ Code int }
+				if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+					t.Fatal(err)
+				}
+				if payload.Code != 101 {
+					t.Fatalf("response=%s", w.Body.String())
+				}
+			})
+		}
 	}
 }

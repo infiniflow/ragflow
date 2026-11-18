@@ -27,16 +27,18 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/service"
+
+	"go.uber.org/zap"
 )
 
 // ChatHandler chat handler
 type ChatHandler struct {
-	chatService *service.ChatService
-	userService *service.UserService
-	searchSvc   *service.SearchService
-	tenantSvc   *service.TenantService
-	llm         *service.ModelProviderService
-	chunkSvc    service.Retriever
+	chatService  *service.ChatService
+	userService  *service.UserService
+	searchSvc    *service.SearchService
+	tenantSvc    *service.TenantService
+	modelFactory *service.ModelFactory
+	chunkSvc     service.Retriever
 }
 
 // NewChatHandler create chat handler
@@ -48,10 +50,10 @@ func NewChatHandler(chatService *service.ChatService, userService *service.UserS
 }
 
 // SetMindMapDependencies sets dependencies used by POST /api/v1/chat/mindmap.
-func (h *ChatHandler) SetMindMapDependencies(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ModelProviderService, chunkSvc service.Retriever) {
+func (h *ChatHandler) SetMindMapDependencies(searchSvc *service.SearchService, tenantSvc *service.TenantService, modelFactory *service.ModelFactory, chunkSvc service.Retriever) {
 	h.searchSvc = searchSvc
 	h.tenantSvc = tenantSvc
-	h.llm = llm
+	h.modelFactory = modelFactory
 	h.chunkSvc = chunkSvc
 }
 
@@ -66,82 +68,85 @@ type ChatMindMapRequest struct {
 // @Summary List Chats
 // @Description Get list of chats (dialogs) for the current user
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Success 200 {object} service.ListChatsResponse
 // @Router /api/v1/chats [get]
 func (h *ChatHandler) ListChats(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
 	// Parse query parameters
 	keywords := c.Query("keywords")
-
-	page := 0
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
+	// Exact id and name filters take precedence over the fuzzy keyword
+	// search, as in the Python route and the API reference.
+	id := c.Query("id")
+	name := c.Query("name")
+	if id != "" || name != "" {
+		keywords = ""
 	}
 
-	pageSize := 0
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
-			pageSize = ps
-		}
-	}
-
-	orderby := c.DefaultQuery("orderby", "create_time")
-	switch orderby {
-	case "create_time", "update_time", "name":
-	default:
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
+	}
+
+	// `sort` supersedes the older pair, so a request it can order is not rejected
+	// for the spelling of an `orderby` that will not be read.
+	sortTerms := sortTermsFromQuery(c)
+	orderBy := c.DefaultQuery("orderby", "create_time")
+	if len(sortTerms) == 0 {
+		switch orderBy {
+		case "create_time", "update_time", "name":
+		default:
+			common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("invalid orderby field: %s", orderBy))
+			return
+		}
 	}
 
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = !strings.EqualFold(descStr, "false")
 	}
+	terms := orderTerms(sortTerms, orderBy, desc)
 
 	ownerIDs := getOwnerIDs(c)
 	ctx := c.Request.Context()
 
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
-	result, err := h.chatService.ListChats(ctx, userID, "1", keywords, page, pageSize, orderby, desc, ownerIDs)
+	result, err := h.chatService.ListChats(ctx, "1", keywords, id, name, page, pageSize, terms, ownerIDs)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // Create creates a chat.
 // @Summary Create Chat
 // @Description Create a chat, aligned with Python POST /api/v1/chats.
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Param request body service.CreateChatRequest true "chat configuration"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chats [post]
 func (h *ChatHandler) Create(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+	common.StartOperationLog(c, "create_chat")
+	defer common.FinishOperationLog(c)
+
+	user, errorCode, err := billingQuotaUser(c)
+	if err != nil {
+		common.RespondError(c, errorCode, err.Error())
+		return
+	}
+	if !billingEnforceApps(c, user.ID) {
 		return
 	}
 
 	var req map[string]interface{}
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.UseNumber()
-	if err := decoder.Decode(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+	if err = decoder.Decode(&req); err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 	if req == nil {
@@ -149,44 +154,44 @@ func (h *ChatHandler) Create(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.chatService.Create(ctx, user.ID, req)
+	result, code, err := h.chatService.Create(ctx, req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.SetOperationResource(c, "chat_id", result["id"])
+	common.RespondSuccess(c, result, "success")
 }
 
 // MindMap generates a query mind map for chat search results.
 // @Summary Generate Chat Mind Map
 // @Description Retrieves related chunks and asks the configured chat model to summarize them into a mind map.
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Param request body ChatMindMapRequest true "Mind map parameters"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chat/mindmap [post]
 func (h *ChatHandler) MindMap(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	var req ChatMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
+	if strings.TrimSpace(req.SearchID) != "" {
+		common.StartOperationLog(c, "request_search_mindmap")
+		defer common.FinishOperationLog(c)
+		common.SetOperationResource(c, "search_id", req.SearchID)
+	}
+
 	if strings.TrimSpace(req.Question) == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
 	ctx := c.Request.Context()
 	searchConfig := map[string]interface{}{}
-	modelTenantID := user.ID
+	var modelTenantID string
 	if req.SearchID != "" {
 		if h.searchSvc == nil {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
@@ -194,6 +199,9 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		}
 		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
 		if err != nil {
+			if respondPermissionErrorIf(c, err, true) {
+				return
+			}
 			jsonInternalError(c, err)
 			return
 		}
@@ -205,7 +213,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 
 	kbIDs := mergeMindMapKbIDs(stringSliceFromConfig(searchConfig, "kb_ids"), req.KbIDs)
 	if len(kbIDs) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
@@ -214,88 +222,83 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		KbIDs:         kbIDs,
 		SearchID:      req.SearchID,
 		SearchConfig:  searchConfig,
-		AuthUserID:    user.ID,
 		ModelTenantID: modelTenantID,
 		ChunkSvc:      h.chunkSvc,
-		LLM:           h.llm,
+		LLM:           h.modelFactory,
 		TenantSvc:     h.tenantSvc,
 	})
 	if err != nil {
-		jsonInternalError(c, err)
+		common.Warn("mindmap failed", zap.String("error", err.Error()))
+		common.RespondError(c, common.CodeOperatingError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, mindMap, "success")
+	common.RespondSuccess(c, mindMap, "success")
 }
 
 func (h *ChatHandler) DeleteChat(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
+	common.StartOperationLog(c, "delete_chat")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
 
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 
 	ctx := c.Request.Context()
-	if err := h.chatService.DeleteChat(ctx, userID, chatID); err != nil {
-		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
+	if err := h.chatService.DeleteChat(ctx, chatID); err != nil {
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // BulkDeleteChats soft deletes multiple chats owned by the current user.
 func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
+	common.StartOperationLog(c, "delete_chats")
+	defer common.FinishOperationLog(c)
+
 	if c.Request.Body == nil || c.Request.ContentLength == 0 {
-		common.SuccessWithData(c, map[string]interface{}{}, "success")
+		common.RespondSuccess(c, map[string]interface{}{}, "success")
 		return
 	}
 
 	var req service.BulkDeleteChatsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
+	common.SetOperationResource(c, "chat_ids", req.IDs)
+	common.SetOperationResource(c, "delete_all", req.DeleteAll)
 	ctx := c.Request.Context()
 	if len(req.IDs) == 0 && !req.DeleteAll {
 		if req.ChatID != "" {
-			if err := h.chatService.DeleteChat(ctx, userID, req.ChatID); err != nil {
-				if err.Error() == "no authorization" {
-					common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
+			common.SetOperationResource(c, "chat_id", req.ChatID)
+			if err := h.chatService.DeleteChat(ctx, req.ChatID); err != nil {
+				if respondPermissionErrorIf(c, err, true) {
 					return
 				}
-				common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+				common.RespondError(c, common.CodeDataError, err.Error())
 				return
 			}
 
-			common.SuccessWithData(c, true, "success")
+			common.RespondSuccess(c, nil, "success")
 			return
 		}
 
-		common.SuccessWithData(c, map[string]interface{}{}, "success")
+		common.RespondSuccess(c, map[string]interface{}{}, "success")
 		return
 	}
 
-	result, err := h.chatService.BulkDeleteChats(ctx, userID, &req)
+	result, err := h.chatService.BulkDeleteChats(ctx, &req)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -306,15 +309,13 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 		}
 	}
 
-	common.SuccessWithData(c, result, message)
+	common.RespondSuccess(c, result, message)
 }
 
 // GetChat get chat detail
 // @Summary Get Chat Detail
 // @Description Get detail of a chat by ID
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Param chat_id path string true "chat ID"
 // @Success 200 {object} service.GetChatResponse
 // @Router /api/v1/chats/{chat_id} [get]
@@ -322,70 +323,81 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 // Python implementation details:
 // - Route: @manager.route("/chats/<chat_id>", methods=["GET"])
 func (h *ChatHandler) GetChat(c *gin.Context) {
-	// Get current user from context (same as Python current_user)
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
 	// Get chat_id from path parameter (same as Python <chat_id>)
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 
 	// Get chat detail with permission check
 	ctx := c.Request.Context()
-	chat, err := h.chatService.GetChat(ctx, userID, chatID)
+	chat, err := h.chatService.GetChat(ctx, chatID)
 	if err != nil {
-		errMsg := err.Error()
-		// Check if it's an authorization error
-		if errMsg == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		// Not found error
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	// Build response (same as Python _build_chat_response)
 	// The service already returns GetChatResponse with DatasetIDs and KBNames
 	result := map[string]interface{}{
-		"id":                       chat.ID,
-		"tenant_id":                chat.TenantID,
-		"name":                     chat.Name,
-		"description":              chat.Description,
-		"icon":                     chat.Icon,
-		"language":                 chat.Language,
-		"llm_id":                   chat.LLMID,
-		"llm_setting":              chat.LLMSetting,
-		"prompt_type":              chat.PromptType,
-		"prompt_config":            chat.PromptConfig,
-		"meta_data_filter":         chat.MetaDataFilter,
-		"similarity_threshold":     chat.SimilarityThreshold,
-		"vector_similarity_weight": chat.VectorSimilarityWeight,
-		"top_n":                    chat.TopN,
-		"rerank_candidates_count":  chat.RerankCandidatesCount,
-		"top_k":                    chat.TopK,
-		"do_refer":                 chat.DoRefer,
-		"rerank_id":                chat.RerankID,
-		"dataset_ids":              chat.DatasetIDs,
-		"kb_names":                 chat.KBNames,
-		"status":                   chat.Status,
-		"create_time":              chat.CreateTime,
-		"create_date":              chat.CreateDate,
-		"update_time":              chat.UpdateTime,
-		"update_date":              chat.UpdateDate,
-		"tenant_llm_id":            chat.TenantLLMID,
-		"tenant_rerank_id":         chat.TenantRerankID,
+		"id":                         chat.ID,
+		"tenant_id":                  chat.TenantID,
+		"name":                       chat.Name,
+		"description":                chat.Description,
+		"icon":                       chat.Icon,
+		"language":                   chat.Language,
+		"llm_id":                     chat.LLMID,
+		"llm_setting":                chat.LLMSetting,
+		"prompt_type":                chat.PromptType,
+		"prompt_config":              chat.PromptConfig,
+		"meta_data_filter":           chat.MetaDataFilter,
+		"keywords_similarity_weight": 1 - chat.VectorSimilarityWeight,
+		"similarity_threshold":       chat.SimilarityThreshold,
+		"top_n":                      chat.TopN,
+		"rerank_candidates_count":    chat.RerankCandidatesCount,
+		"top_k":                      chat.TopK,
+		"do_refer":                   chat.DoRefer,
+		"rerank_id":                  chat.RerankID,
+		"dataset_ids":                chat.DatasetIDs,
+		"kb_names":                   chat.KBNames,
+		"status":                     chat.Status,
+		"create_time":                chat.CreateTime,
+		"create_date":                chat.CreateDate,
+		"update_time":                chat.UpdateTime,
+		"update_date":                chat.UpdateDate,
+		"tenant_llm_id":              chat.TenantLLMID,
+		"tenant_rerank_id":           chat.TenantRerankID,
+		// The per-chat decision model override. Without it the settings form
+		// resets to empty after saving and the field looks unset.
+		"decision_id":        chat.DecisionID,
+		"tenant_decision_id": chat.TenantDecisionID,
 	}
 
 	// Return success response
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
+}
+
+// GetAgenticRAGConfig returns defaults and effective Agentic RAG settings.
+func (h *ChatHandler) GetAgenticRAGConfig(c *gin.Context) {
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
+		return
+	}
+	settings, err := h.chatService.GetAgenticRAGConfig(c.Request.Context(), chatID)
+	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, settings, "success")
 }
 
 // UpdateChat updates a chat by ID using REST PUT semantics.
@@ -399,21 +411,19 @@ func (h *ChatHandler) PatchChat(c *gin.Context) {
 }
 
 func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
+	common.StartOperationLog(c, "update_chat")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
 
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
+		common.RespondError(c, common.CodeBadRequest, "chat_id is required")
 		return
 	}
 
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -421,18 +431,17 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 	var err error
 	ctx := c.Request.Context()
 	if patch {
-		result, err = h.chatService.PatchChat(ctx, user.ID, chatID, req)
+		result, err = h.chatService.PatchChat(ctx, chatID, req)
 	} else {
-		result, err = h.chatService.UpdateChat(ctx, user.ID, chatID, req)
+		result, err = h.chatService.UpdateChat(ctx, chatID, req)
 	}
 	if err != nil {
-		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
+		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }

@@ -35,7 +35,7 @@ package component
 import (
 	"context"
 	"fmt"
-	"maps"
+	"math"
 	"strconv"
 	"strings"
 
@@ -81,7 +81,7 @@ func (s *SwitchComponent) Name() string { return s.name }
 // scheduler's MultiBranch condition consumes this list via
 // NewGraphMultiBranch so every declared target fires.
 func (s *SwitchComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("Switch: %w", err)
 	}
@@ -226,7 +226,7 @@ func normalizeLegacyGroup(group map[string]any) (string, []any) {
 		operator, _ := item["operator"].(string)
 		clause := map[string]any{
 			"left": left,
-			"op":   normalizeLegacySwitchOperator(operator),
+			"op":   operator,
 		}
 		if v, ok := item["value"]; ok {
 			clause["right"] = v
@@ -254,12 +254,16 @@ func legacySwitchLeft(item map[string]any) string {
 	return cpnRef
 }
 
-func normalizeLegacySwitchOperator(op string) string {
+func normalizeSwitchOperator(op string) string {
 	switch op {
-	case "", "=":
+	case "", "=", "==":
 		return "=="
-	case "<>":
+	case "<>", "≠", "!=":
 		return "!="
+	case "≥":
+		return ">="
+	case "≤":
+		return "<="
 	default:
 		return op
 	}
@@ -347,16 +351,14 @@ func legacySwitchDefaultTarget(merged map[string]any) string {
 func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, error) {
 	left, _ := clause["left"].(string)
 	op, _ := clause["op"].(string)
-	if op == "" {
-		op = "=="
-	}
+	op = normalizeSwitchOperator(op)
 
 	// "empty" / "not empty" don't read `right`.
 	if op == "empty" {
-		return isEmptyValue(leftValue(left, state)), nil
+		return isEmptyValue(leftValueForEmpty(left, state)), nil
 	}
 	if op == "not empty" {
-		return !isEmptyValue(leftValue(left, state)), nil
+		return !isEmptyValue(leftValueForEmpty(left, state)), nil
 	}
 
 	right := clause["right"]
@@ -396,10 +398,18 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
 		return strings.HasSuffix(strings.ToLower(ls), strings.ToLower(rs)), nil
 	case ">", "<", ">=", "<=":
+		// An operand that does not parse as a number makes the clause a
+		// non-match instead of an error: the comparison value comes
+		// straight from the condition config and defaults to "" (the
+		// component's check() only requires a branch target), so a
+		// numeric variable against an empty or text value used to abort
+		// the whole canvas run. Falling through to the next condition or
+		// the else targets matches how the string operators already
+		// tolerate unparseable operands.
 		ln, lok := numericize(lv)
 		rn, rok := numericize(right)
 		if !lok || !rok {
-			return false, fmt.Errorf("operator %q requires numeric operands (left=%T, right=%T)", op, lv, right)
+			return false, nil
 		}
 		switch op {
 		case ">":
@@ -408,7 +418,7 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 			return ln < rn, nil
 		case ">=":
 			return ln >= rn, nil
-		case "<=":
+		default:
 			return ln <= rn, nil
 		}
 	}
@@ -435,6 +445,21 @@ func leftValue(left string, state *runtime.CanvasState) any {
 		return left
 	}
 	return resolved
+}
+
+func leftValueForEmpty(left string, state *runtime.CanvasState) any {
+	if !runtime.VarRefPattern.MatchString(left) {
+		return left
+	}
+	match := runtime.VarRefPattern.FindStringSubmatch(left)
+	if len(match) < 2 {
+		return left
+	}
+	value, err := state.GetVar(match[1])
+	if err != nil {
+		return left
+	}
+	return value
 }
 
 // equalValues compares two any values with a forgiving type coercion
@@ -491,26 +516,28 @@ func indexOf(s, sub string) int {
 
 // numericize attempts to convert v to float64. Returns ok=false if v
 // is a string that doesn't parse as a number (e.g. an LLM response);
-// numeric operators will then error out with a clear message.
+// numeric operators treat that as a non-match rather than an error.
 func numericize(v any) (float64, bool) {
+	var n float64
 	switch x := v.(type) {
 	case int:
-		return float64(x), true
+		n = float64(x)
 	case int64:
-		return float64(x), true
+		n = float64(x)
 	case float64:
-		return x, true
+		n = x
 	case float32:
-		return float64(x), true
+		n = float64(x)
 	case string:
 		f, err := strconv.ParseFloat(x, 64)
 		if err != nil {
 			return 0, false
 		}
-		return f, true
+		n = f
 	default:
 		return 0, false
 	}
+	return n, !math.IsNaN(n) && !math.IsInf(n, 0)
 }
 
 // isEmptyValue reports whether a value is "empty" by the canvas DSL
@@ -528,13 +555,6 @@ func isEmptyValue(v any) bool {
 	}
 	return false
 }
-
-// mapsCopyDup is a no-op duplicate alias kept for symmetry with the
-// begin.go / message.go helpers in the package; here Switch doesn't
-// need to copy maps but the alias documents the convention.
-var _ = mapsCopyDup
-
-func mapsCopyDup(dst, src map[string]any) { maps.Copy(dst, src) }
 
 func init() {
 	Register(componentNameSwitch, NewSwitchComponent)

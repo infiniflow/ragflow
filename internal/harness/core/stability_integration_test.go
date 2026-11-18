@@ -47,13 +47,13 @@ func TestStability_ReActGraph_FullLifecycle(t *testing.T) {
 		IterationsLeft: 10,
 		MaxIterations:  10,
 	}
-	_, err = cg.Invoke(context.Background(), state)
+	_, err = cg.Invoke(t.Context(), state)
 	if err != nil {
 		t.Fatalf("graph Invoke: %v", err)
 	}
 
 	// Verify checkpoints were saved
-	ctx := context.Background()
+	ctx := t.Context()
 	checkpoints, err := store.List(ctx, map[string]interface{}{
 		constants.ConfigKeyThreadID: "lifecycle-thread",
 	}, 10)
@@ -88,7 +88,7 @@ func TestStability_LongMessageHistory(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&memBefore)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := runner.Run(ctx, msgs)
 	var gotResponse bool
 	for {
@@ -132,7 +132,7 @@ func TestStability_ParallelWorkflow_SharedStateRace(t *testing.T) {
 			agents[i] = NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName(fmt.Sprintf("p_%d", i))
 		}
 
-		ctx := context.Background()
+		ctx := t.Context()
 		par, err := NewParallel(ctx, &ParallelConfig{
 			Name: "p0_par", Description: "parallel state race test",
 			SubAgents: agents,
@@ -180,9 +180,9 @@ func TestStability_CheckpointCorruption(t *testing.T) {
 
 	t.Run("corrupted_data_returns_error", func(t *testing.T) {
 		store := &memStore{data: make(map[string][]byte)}
-		store.Set(context.Background(), "corrupt", []byte{0x00, 0x01, 0x02, 0x03})
+		store.Set(t.Context(), "corrupt", []byte{0x00, 0x01, 0x02, 0x03})
 
-		_, _, _, err := loadCheckpoint(store, context.Background(), "corrupt")
+		_, _, _, err := loadCheckpoint(store, t.Context(), "corrupt")
 		if err == nil {
 			t.Error("expected error loading corrupted checkpoint, got nil")
 		} else {
@@ -193,7 +193,7 @@ func TestStability_CheckpointCorruption(t *testing.T) {
 	t.Run("checkpoint_roundtrip_with_events", func(t *testing.T) {
 		store := newCancelTestStore()
 		cid := "test-rt"
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := saveCheckpoint(store, ctx, cid, false, &InterruptInfo{}, &InterruptSignal{
 			ID: "test", Info: "test-data",
@@ -212,6 +212,31 @@ func TestStability_CheckpointCorruption(t *testing.T) {
 		t.Logf("checkpoint roundtrip: info=%v", info)
 	})
 
+	t.Run("checkpoint_restores_resume_state", func(t *testing.T) {
+		store := newCancelTestStore()
+		cid := "resume-state"
+		wantState := "waiting-for-approval"
+		signal := &InterruptSignal{
+			Address: Address{{Type: AddressSegmentAgent, ID: "agent"}},
+			State:   wantState,
+		}
+		if err := saveCheckpoint(store, t.Context(), cid, false, &InterruptInfo{Data: "approve"}, signal); err != nil {
+			t.Fatalf("saveCheckpoint: %v", err)
+		}
+
+		_, _, info, err := loadCheckpoint(store, t.Context(), cid)
+		if err != nil {
+			t.Fatalf("loadCheckpoint: %v", err)
+		}
+		if !info.WasInterrupted {
+			t.Fatal("WasInterrupted = false, want true")
+		}
+		gotState, ok := info.InterruptState.(string)
+		if !ok || gotState != wantState {
+			t.Fatalf("InterruptState = %#v, want %#v", info.InterruptState, wantState)
+		}
+	})
+
 	t.Run("partial_checkpoint_after_cancel", func(t *testing.T) {
 		m := newCancelTestChatModel(nil)
 		m.addResp("cancel response")
@@ -222,7 +247,7 @@ func TestStability_CheckpointCorruption(t *testing.T) {
 
 		cancelOpt, cancelFunc := WithCancel()
 		runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
-		ctx := context.Background()
+		ctx := t.Context()
 
 		cid := "partial-cp"
 		iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("run")},
@@ -260,6 +285,58 @@ func TestStability_CheckpointCorruption(t *testing.T) {
 	})
 }
 
+type checkpointResumeTestAgent struct {
+	resumeInfo *ResumeInfo
+}
+
+func (a *checkpointResumeTestAgent) Name(context.Context) string { return "checkpoint_resume" }
+func (a *checkpointResumeTestAgent) Description(context.Context) string {
+	return "checkpoint resume test agent"
+}
+
+func (a *checkpointResumeTestAgent) Run(ctx context.Context, _ *AgentInput, _ ...RunOption) *AsyncIterator[*AgentEvent] {
+	iter, gen := NewAsyncIteratorPair[*AgentEvent]()
+	go func() {
+		defer gen.Close()
+		gen.Send(StatefulInterrupt(ctx, "approval required", "saved-state"))
+	}()
+	return iter
+}
+
+func (a *checkpointResumeTestAgent) Resume(_ context.Context, info *ResumeInfo, _ ...RunOption) *AsyncIterator[*AgentEvent] {
+	a.resumeInfo = info
+	iter, gen := NewAsyncIteratorPair[*AgentEvent]()
+	gen.Send(EventFromMessage(schema.AssistantMessage("resumed"), nil, schema.RoleAssistant, ""))
+	gen.Close()
+	return iter
+}
+
+func TestRunner_ResumeRestoresInterruptState(t *testing.T) {
+	agent := &checkpointResumeTestAgent{}
+	store := newCancelTestStore()
+	runner := NewRunner(t.Context(), RunnerConfig[*schema.Message]{
+		Agent:           agent,
+		CheckPointStore: store,
+	})
+	cid := "resume-stateful-agent"
+	initial := drainAgentEvents(t, runner.Run(t.Context(), []*schema.Message{schema.UserMessage("start")}, WithCheckPointID(cid)))
+	if len(initial) == 0 || initial[0].Action == nil || initial[0].Action.Interrupted == nil {
+		t.Fatal("initial run did not emit an interrupt")
+	}
+
+	resumed, err := runner.Resume(t.Context(), cid)
+	if err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	resumedEvents := drainAgentEvents(t, resumed)
+	if len(resumedEvents) == 0 || resumedEvents[0].Err != nil {
+		t.Fatalf("resume events = %#v", resumedEvents)
+	}
+	if agent.resumeInfo == nil || !agent.resumeInfo.WasInterrupted || agent.resumeInfo.InterruptState != "saved-state" {
+		t.Fatalf("resume info = %#v, want interrupted with saved state", agent.resumeInfo)
+	}
+}
+
 // ============================================================
 // P0-5: 10-layer nested agent cancel propagation
 // ============================================================
@@ -274,7 +351,7 @@ func TestStability_NestedAgentCancelPropagation(t *testing.T) {
 		agents[i] = NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName(fmt.Sprintf("seq_%c", 'a'+i))
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	var current Agent = agents[depth-1]
 	for i := depth - 2; i >= 0; i-- {
 		inner := current
@@ -293,7 +370,7 @@ func TestStability_NestedAgentCancelPropagation(t *testing.T) {
 	cancelOpt, cancelFunc := WithCancel()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: current, CheckPointStore: store})
 
-	ctx = context.Background()
+	ctx = t.Context()
 	cid := "nested-cancel"
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("go")},
 		WithCheckPointID(cid), cancelOpt)
@@ -341,7 +418,7 @@ func TestStability_GoroutineLeak_AllPaths(t *testing.T) {
 				model.addResp("ok")
 				agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("leak_test")
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
-				iter := runner.Run(context.Background(), []*schema.Message{schema.UserMessage("test")})
+				iter := runner.Run(t.Context(), []*schema.Message{schema.UserMessage("test")})
 				for {
 					ev, ok := iter.Next()
 					if !ok {
@@ -357,7 +434,7 @@ func TestStability_GoroutineLeak_AllPaths(t *testing.T) {
 				innerM := &mockModel{}
 				innerM.addResp("inner")
 				inner := NewReActAgent(&ReActConfig[*schema.Message]{Model: innerM}).WithName("inner")
-				ctx := context.Background()
+				ctx := t.Context()
 				agentTool := NewAgentTool(ctx, inner)
 
 				parentM := &forcedToolModel{
@@ -389,7 +466,7 @@ func TestStability_GoroutineLeak_AllPaths(t *testing.T) {
 				m2.addResp("b")
 				a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("a")
 				a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("b")
-				ctx := context.Background()
+				ctx := t.Context()
 				seq, _ := NewSequential(ctx, &SequentialConfig{Name: "seq", SubAgents: []Agent{a1, a2}})
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: seq})
 				iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("go")})
@@ -411,7 +488,7 @@ func TestStability_GoroutineLeak_AllPaths(t *testing.T) {
 				m2.addResp("b")
 				a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("a")
 				a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("b")
-				ctx := context.Background()
+				ctx := t.Context()
 				par, _ := NewParallel(ctx, &ParallelConfig{Name: "par", SubAgents: []Agent{a1, a2}})
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: par})
 				iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("go")})
@@ -433,7 +510,7 @@ func TestStability_GoroutineLeak_AllPaths(t *testing.T) {
 				agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("cancel_leak")
 				cancelOpt, cancelFunc := WithCancel()
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
-				ctx := context.Background()
+				ctx := t.Context()
 				iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("go")}, cancelOpt)
 				time.Sleep(10 * time.Millisecond)
 				cancelFunc(WithCancelMode(CancelImmediate))
@@ -453,7 +530,7 @@ func TestStability_GoroutineLeak_AllPaths(t *testing.T) {
 				model.addResp("streamed")
 				agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("stream_leak")
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, EnableStreaming: true})
-				iter := runner.Run(context.Background(), []*schema.Message{schema.UserMessage("test")})
+				iter := runner.Run(t.Context(), []*schema.Message{schema.UserMessage("test")})
 				for {
 					ev, ok := iter.Next()
 					if !ok {
@@ -535,7 +612,7 @@ func TestStability_RetryStorm_CircuitBreaker(t *testing.T) {
 		}).WithName("retry_test")
 		agent.name = "retry_test"
 
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 		var ok bool
 		for {
@@ -572,7 +649,7 @@ func TestStability_RetryStorm_CircuitBreaker(t *testing.T) {
 		}).WithName("all_fail")
 		agent.name = "all_fail"
 
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 		gotError := false
 		for {
@@ -606,7 +683,7 @@ func TestStability_RetryStorm_CircuitBreaker(t *testing.T) {
 				}).WithName(fmt.Sprintf("storm_%d", id))
 				agent.name = fmt.Sprintf("storm_%d", id)
 
-				ctx := context.Background()
+				ctx := t.Context()
 				iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 				gotError := false
 				for {

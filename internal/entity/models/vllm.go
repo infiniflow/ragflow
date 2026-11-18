@@ -39,7 +39,7 @@ func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(true),
+			httpClient:       common.GetSchemeSafeHTTPClient(),
 		},
 	}
 }
@@ -50,6 +50,40 @@ func (v *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (v *VllmModel) Name() string {
 	return "VLLM"
+}
+
+// applyVllmCompatibleThinking maps Qwen3 controls to the chat-template payload
+// expected by vLLM while preserving the generic thinking payload for other models.
+func applyVllmCompatibleThinking(reqBody map[string]interface{}, modelName string, config *ChatConfig) {
+	modelNameLower := strings.ToLower(modelName)
+	if strings.Contains(modelNameLower, "qwen3") {
+		enableThinking := false
+		if config != nil && config.Thinking != nil {
+			enableThinking = *config.Thinking
+		}
+		if strings.Contains(modelNameLower, "-preview") || strings.Contains(modelNameLower, "2.4t-a95b") {
+			enableThinking = true
+		}
+
+		chatTemplateKwargs, ok := reqBody["chat_template_kwargs"].(map[string]interface{})
+		if !ok {
+			chatTemplateKwargs = map[string]interface{}{}
+		}
+		chatTemplateKwargs["enable_thinking"] = enableThinking
+		reqBody["chat_template_kwargs"] = chatTemplateKwargs
+		delete(reqBody, "thinking")
+		delete(reqBody, "enable_thinking")
+		return
+	}
+
+	if config == nil || config.Thinking == nil {
+		return
+	}
+	thinkingType := "disabled"
+	if *config.Thinking {
+		thinkingType = "enabled"
+	}
+	reqBody["thinking"] = map[string]interface{}{"type": thinkingType}
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
@@ -66,37 +100,24 @@ func (v *VllmModel) ChatWithMessages(ctx context.Context, modelName string, mess
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
-		}
-	}
+	applyVllmCompatibleThinking(reqBody, modelName, chatModelConfig)
 
 	body, err := v.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -113,26 +134,15 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
-
-	if modelConfig.Thinking != nil {
-		if *modelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
-	}
+	applyVllmCompatibleThinking(reqBody, modelName, modelConfig)
 
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
@@ -143,10 +153,16 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 
 // Encode encodes a list of texts into embeddings
 type vllmEmbeddingResponse struct {
+	ID   string `json:"id"`
 	Data []struct {
 		Index     int       `json:"index"`
 		Embedding []float64 `json:"embedding"`
 	} `json:"data"`
+	// llama-server and vLLM report the request's token usage alongside the vectors.
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Embed embeds a list of texts into embeddings
@@ -175,7 +191,7 @@ func (v *VllmModel) Embed(ctx context.Context, modelName *string, request EmbedR
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Embedding)
+	url := joinURL(baseURL, v.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -231,6 +247,15 @@ func (v *VllmModel) Embed(ctx context.Context, modelName *string, request EmbedR
 		embeddings = append(embeddings, embeddingData)
 	}
 
+	// The provider's own token count is the oracle the ingest path calibrates its
+	// tokenizer against (see internal/tokenizer: ObserveUsage). Without it a
+	// llama-server deployment that counts with the calibrated estimate never leaves
+	// its default ratio. This mirrors OpenAIModel.Embed.
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "embedding")
+
 	return embeddings, nil
 }
 
@@ -251,7 +276,7 @@ func (v *VllmModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Lis
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, v.baseModel.URLSuffix.Models)
+	url := joinURL(baseURL, v.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -302,7 +327,7 @@ func (v *VllmModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Lis
 }
 
 func (v *VllmModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", v.Name())
 }
 
 // CheckConnection verifies that the configured vLLM base URL is reachable
@@ -325,10 +350,16 @@ type vllmRerankRequest struct {
 // field is intentionally ignored — callers reconstruct text from the
 // original input via Index.
 type vllmRerankResponse struct {
+	ID      string `json:"id"`
 	Results []struct {
 		Index          int     `json:"index"`
 		RelevanceScore float64 `json:"relevance_score"`
 	} `json:"results"`
+	// vLLM reports the request's token usage alongside the scores.
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Rerank scores documents against the query using a vLLM rerank model
@@ -366,7 +397,7 @@ func (v *VllmModel) Rerank(ctx context.Context, modelName *string, request Reran
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Rerank)
+	url := joinURL(baseURL, v.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -429,41 +460,52 @@ func (v *VllmModel) Rerank(ctx context.Context, modelName *string, request Reran
 		})
 	}
 
+	// Report the provider's token usage, mirroring OpenAIModel.Embed and this
+	// driver's Embed, so rerank calls are counted instead of always reporting zero.
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "rerank")
+
 	return &rerankResponse, nil
 }
 
 // TranscribeAudio transcribe audio
 func (v *VllmModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", v.Name())
 }
 
 func (v *VllmModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", v.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", v.Name())
 }
 
 // AudioSpeech convert text to audio
 func (v *VllmModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", v.Name())
 }
 
 func (v *VllmModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", v.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", v.Name())
 }
 
 // OCRFile OCR file
 func (v *VllmModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", v.Name())
 }
 
 // ParseFile parse file
 func (v *VllmModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", v.Name())
 }
 
 func (v *VllmModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", v.Name())
 }
 
 func (v *VllmModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", v.Name())
+}
+
+func (v *VllmModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", v.Name())
 }

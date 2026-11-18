@@ -70,6 +70,7 @@ export const initialLlmBaseValues = {
   frequency_penalty: 0.7,
   presence_penalty: 0.4,
   max_tokens: 256,
+  thinking: 'disabled' as const,
 };
 
 export enum AgentCategory {
@@ -79,6 +80,7 @@ export enum AgentCategory {
 
 export enum AgentQuery {
   Category = 'category',
+  CanvasCategory = 'canvas_category',
 }
 
 export enum Operator {
@@ -86,7 +88,6 @@ export enum Operator {
   Retrieval = 'Retrieval',
   Categorize = 'Categorize',
   Message = 'Message',
-  RewriteQuestion = 'RewriteQuestion',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
   PubMed = 'PubMed',
@@ -119,8 +120,10 @@ export enum Operator {
   BGPT = 'BGPT',
   KeenableSearch = 'KeenableSearch',
   YouComSearch = 'YouComSearch',
+  SofyaSearch = 'SofyaSearch',
+  Search1APISearch = 'Search1APISearch',
+  Search1APICrawl = 'Search1APICrawl',
   DocGenerator = 'DocGenerator',
-  Browser = 'Browser',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   ListOperations = 'ListOperations',
@@ -129,8 +132,14 @@ export enum Operator {
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
+  GeneralChunker = 'GeneralChunker',
   TokenChunker = 'TokenChunker',
   TitleChunker = 'TitleChunker',
+  ManualChunker = 'ManualChunker',
+  TableChunker = 'TableChunker',
+  QAChunker = 'QAChunker',
+  OneChunker = 'OneChunker',
+  PageChunker = 'PageChunker',
   Extractor = 'Extractor',
   Compiler = 'Compiler',
   Loop = 'Loop',
@@ -155,6 +164,21 @@ export enum ComparisonOperator {
   In = 'in',
   NotIn = 'not in',
 }
+
+export const CanvasSwitchOperators: ComparisonOperator[] = [
+  ComparisonOperator.Equal,
+  ComparisonOperator.NotEqual,
+  ComparisonOperator.GreatThan,
+  ComparisonOperator.GreatEqual,
+  ComparisonOperator.LessThan,
+  ComparisonOperator.LessEqual,
+  ComparisonOperator.Contains,
+  ComparisonOperator.NotContains,
+  ComparisonOperator.StartWith,
+  ComparisonOperator.EndWith,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
+];
 
 export const SwitchOperatorOptions = [
   { value: ComparisonOperator.Equal, label: 'equal', icon: 'equal' },

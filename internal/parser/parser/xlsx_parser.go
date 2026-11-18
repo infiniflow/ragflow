@@ -26,23 +26,16 @@ import (
 )
 
 type XLSXParser struct {
-	libType                        string
+	textOnly                       bool
 	ParseMethod                    string
-	OutputFormat                   string
-	ChunkRows                      int
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
 }
 
-func NewXLSXParser(libType string) (*XLSXParser, error) {
-	if libType == "" {
-		libType = "excelize"
-	}
+func NewXLSXParser(_ string) (*XLSXParser, error) {
 	return &XLSXParser{
-		libType:                        libType,
-		ChunkRows:                      defaultTableChunkRows,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -59,10 +52,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
-	p.ChunkRows = decodeChunkRows(setup)
+	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
@@ -79,7 +69,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 
 func normalizeXLSXParseMethod(raw string) string {
 	method := strings.ToLower(strings.TrimSpace(raw))
-	if method == "tcadp parser" {
+	if method == "tcadp parser" || method == "tcadp" {
 		return "tcadp"
 	}
 	// "deepdoc" / "deepdoc parser" is the default spreadsheet parse_method
@@ -98,11 +88,10 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseSpreadsheetWithTCADP(
-			filename, data, "XLSX",
+		return parseWithTCADP(
+			ctx, filename, data, "XLSX",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
-			p.OutputFormat,
 		)
 	case "", "excelize":
 		// Continue with the local Excelize parser.
@@ -113,26 +102,84 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
+	var sink *officeMediaSink
+	if !p.textOnly {
+		sink = newOfficeMediaSink(ctx, officeMediaFormatXLSX)
+	}
+	items, warnings, sheets, err := parseXLSXBytes(data, sink)
+	if err == nil {
+		if sink != nil && sink.err != nil {
+			return ParseResult{Err: sink.err}
+		}
+		if ctx.Err() != nil {
+			return ParseResult{Err: ctx.Err()}
+		}
+		warnings = append(warnings, sink.warnings()...)
+		return xlsxParseResult(filename, items, warnings, sheets)
+	}
+	if ctx.Err() != nil {
+		return ParseResult{Err: ctx.Err()}
+	}
+
+	normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data)
+	if normalizeErr != nil {
+		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; normalize: %v", err, normalizeErr)}
+	}
+	if !changed {
+		return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
+	}
+	// Normalization changes only workbook sheet names. Reuse source memo and
+	// admissions: already cached image bytes are identical on the second pass.
+	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, sink)
+	if retryErr != nil {
+		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
+	}
+	if sink != nil && sink.err != nil {
+		return ParseResult{Err: sink.err}
+	}
+	if ctx.Err() != nil {
+		return ParseResult{Err: ctx.Err()}
+	}
+	warnings = append(normalizeWarnings, warnings...)
+	warnings = append(warnings, sink.warnings()...)
+	return xlsxParseResult(filename, items, warnings, sheets)
+}
+
+func parseXLSXBytes(data []byte, sink *officeMediaSink) ([]map[string]any, []string, int, error) {
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("xlsx open: %w", err)}
+		return nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
 	}
 	defer f.Close()
 
 	sheets := f.GetSheetList()
-	chunkRows := p.ChunkRows
-	if chunkRows <= 0 {
-		chunkRows = defaultTableChunkRows
+	items := make([]map[string]any, 0)
+	warnings := make([]string, 0)
+	for sheetIdx, sheet := range sheets {
+		records, dataRows, headerRow, ranges, sheetWarnings, err := readSpreadsheetRecords(f, sheet)
+		if err != nil {
+			return nil, warnings, len(sheets), err
+		}
+		warnings = append(warnings, sheetWarnings...)
+		images, imageWarnings := extractXLSXImages(f, sheet, sink)
+		for _, image := range images {
+			row, _ := numericItemInt(image["row_start"])
+			col, _ := numericItemInt(image["col_start"])
+			image["sheet_index"] = sheetIdx + 1
+			image["positions"] = [][]float64{{float64(sheetIdx + 1), float64(row), float64(row), float64(col), float64(col)}}
+		}
+		// One wire shape for every spreadsheet sheet: segmented HTML tables
+		// with row-aligned positions, images interleaved at their anchors.
+		items = append(items, buildSheetItems(records, sheet, sheetIdx+1, headerRow, dataRows, images, ranges)...)
+		warnings = append(warnings, imageWarnings...)
 	}
+	return items, warnings, len(sheets), nil
+}
 
-	var html strings.Builder
-	for _, sheet := range sheets {
-		html.WriteString(renderSheetTables(f, sheet, chunkRows))
-	}
-
+func xlsxParseResult(filename string, items []map[string]any, warnings []string, sheets int) ParseResult {
 	return ParseResult{
-		OutputFormat: "html",
-		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": len(sheets)},
-		HTML:         html.String(),
+		File:     map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
+		JSON:     MapsToItems(items),
+		Warnings: warnings,
 	}
 }

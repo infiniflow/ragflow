@@ -25,32 +25,44 @@ func TestResolveVisionLanguage(t *testing.T) {
 	tests := []struct {
 		name     string
 		inputs   map[string]any
-		fallback string
+		override string
 		want     string
 	}{
 		{
-			name:     "dataset language takes precedence",
+			name:     "explicit enhancement language wins",
+			inputs:   map[string]any{"lang": "Japanese"},
+			override: "French",
+			want:     "French",
+		},
+		{
+			name:     "explicit enhancement language is trimmed",
+			inputs:   map[string]any{"lang": "Japanese"},
+			override: " French ",
+			want:     "French",
+		},
+		{
+			name:     "empty override falls back to the dataset language",
 			inputs:   map[string]any{"lang": " Japanese "},
-			fallback: "Chinese",
+			override: "",
 			want:     "Japanese",
 		},
 		{
-			name:     "configured fallback is used",
+			name:     "empty values default to English",
 			inputs:   map[string]any{"lang": ""},
-			fallback: " Korean ",
-			want:     "Korean",
+			override: "",
+			want:     defaultVisionLanguage,
 		},
 		{
-			name:     "empty values default to English",
+			name:     "absent language defaults to English",
 			inputs:   nil,
-			fallback: "",
+			override: "",
 			want:     defaultVisionLanguage,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := resolveVisionLanguage(tt.inputs, tt.fallback); got != tt.want {
+			if got := resolveVisionLanguage(tt.inputs, tt.override); got != tt.want {
 				t.Fatalf("resolveVisionLanguage() = %q, want %q", got, tt.want)
 			}
 		})
@@ -69,35 +81,31 @@ func TestRenderFigureVisionLanguage(t *testing.T) {
 	}
 }
 
-func TestBuildFigureVisionPromptRendersLanguageAndContext(t *testing.T) {
-	prompt, err := buildFigureVisionPrompt("Context above", "Context below", "Japanese")
+func TestBuildFigureVisionPromptRendersLanguage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	prompt, err := buildFigureVisionPrompt("Japanese")
 	if err != nil {
 		t.Fatalf("buildFigureVisionPrompt: %v", err)
 	}
 
-	for _, want := range []string{
-		"Write all descriptions and field values in Japanese.",
-		"Context above",
-		"Context below",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt does not contain %q", want)
-		}
+	if !strings.Contains(prompt, "Write all descriptions and field values in Japanese.") {
+		t.Fatalf("prompt does not contain language directive, got: %q", prompt)
 	}
-	for _, unresolved := range []string{"{{ language }}", "{{ context_above }}", "{{ context_below }}"} {
+	for _, unresolved := range []string{"{{ language }}", "{{language}}"} {
 		if strings.Contains(prompt, unresolved) {
 			t.Fatalf("prompt contains unresolved placeholder %q", unresolved)
 		}
 	}
 
-	secondPrompt, err := buildFigureVisionPrompt("", "", "Chinese")
+	// Verify language is rendered separately for each request.
+	secondPrompt, err := buildFigureVisionPrompt("Chinese")
 	if err != nil {
-		t.Fatalf("buildFigureVisionPrompt with cached template: %v", err)
+		t.Fatalf("buildFigureVisionPrompt for second language: %v", err)
 	}
 	if !strings.Contains(secondPrompt, "Write all descriptions and field values in Chinese.") {
-		t.Fatalf("cached prompt did not render the second request language")
+		t.Fatalf("prompt did not render the second request language")
 	}
 	if strings.Contains(secondPrompt, "in Japanese.") {
-		t.Fatalf("cached prompt leaked the previous request language")
+		t.Fatalf("prompt leaked the previous request language")
 	}
 }

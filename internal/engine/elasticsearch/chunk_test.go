@@ -20,10 +20,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/internal/esoscommon"
+	"ragflow/internal/engine/types"
+
+	"github.com/elastic/go-elasticsearch/v8"
 )
 
 // makeResponse builds a SearchResponse with `n` synthetic hits whose id
@@ -147,8 +153,8 @@ func TestSortValuesEqual(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := sortValuesEqual(tc.a, tc.b); got != tc.want {
-				t.Errorf("sortValuesEqual(%#v, %#v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			if got := esoscommon.SortValuesEqual(tc.a, tc.b); got != tc.want {
+				t.Errorf("esoscommon.SortValuesEqual(%#v, %#v) = %v, want %v", tc.a, tc.b, got, tc.want)
 			}
 		})
 	}
@@ -366,6 +372,27 @@ func TestSearchAfterPaginateLimitLargerThanBatchSize(t *testing.T) {
 	}
 }
 
+func TestBuildBoolQueryFromConditionUsesLegacyGraphFallback(t *testing.T) {
+	got := buildBoolQueryFromCondition(map[string]interface{}{"knowledge_graph_kwd": "entity"}, nil, false, false)
+	outer, ok := got["bool"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing bool wrapper: %v", got)
+	}
+	filters, ok := outer["filter"].([]interface{})
+	if !ok || len(filters) != 1 {
+		t.Fatalf("graph filter = %#v, want one compatibility clause", outer["filter"])
+	}
+	encoded, err := json.Marshal(filters[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"type_kwd", "knowledge_graph_kwd"} {
+		if !strings.Contains(string(encoded), "\""+field+"\":\"entity\"") {
+			t.Errorf("graph filter %s does not match %s: %s", field, field, encoded)
+		}
+	}
+}
+
 // TestBuildBoolQueryFromConditionIDFilter is the regression for the
 // "id filter encoded as a nested array inside bool.should" bug.
 //
@@ -375,17 +402,45 @@ func TestSearchAfterPaginateLimitLargerThanBatchSize(t *testing.T) {
 // `should: [{...}, {...}]`. ES rejects the nested form as malformed.
 // This test pins down the flat shape for the list, string, and int
 // branches.
+//
+// The id restriction must also stay out of the top-level bool.should:
+// Search appends rank_feature clauses to that slot, and a top-level
+// minimum_should_match=1 then let any rank-feature-carrying document satisfy
+// the id scope. id is emitted as a mandatory filter clause whose nested bool
+// keeps the id/_id alternative, exactly as the Python reference does
+// (rag/utils/es_conn.py: scalar id -> term, list -> terms).
 func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
-	check := func(name string, cond map[string]interface{}, wantFields []string) {
+	check := func(name string, cond map[string]interface{}, wantFields []string, wantOp string) {
 		t.Helper()
 		got := buildBoolQueryFromCondition(cond, nil, false, false)
 		outer, ok := got["bool"].(map[string]interface{})
 		if !ok {
 			t.Fatalf("%s: missing bool wrapper: %v", name, got)
 		}
-		should, ok := outer["should"].([]interface{})
+		if _, exists := outer["should"]; exists {
+			t.Fatalf("%s: id leaked into the top-level should slot: %v", name, outer["should"])
+		}
+		if _, exists := outer["minimum_should_match"]; exists {
+			t.Fatalf("%s: top-level minimum_should_match would also bind rank_feature clauses", name)
+		}
+		filter, ok := outer["filter"].([]interface{})
+		if !ok || len(filter) != 1 {
+			t.Fatalf("%s: filter = %v, want the single id restriction", name, outer["filter"])
+		}
+		wrapper, ok := filter[0].(map[string]interface{})
 		if !ok {
-			t.Fatalf("%s: should is not []interface{}: %T", name, outer["should"])
+			t.Fatalf("%s: filter[0] is %T, want map[string]interface{}", name, filter[0])
+		}
+		inner, ok := wrapper["bool"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s: filter[0] carries no bool: %v", name, wrapper)
+		}
+		if inner["minimum_should_match"] != 1 {
+			t.Fatalf("%s: id bool minimum_should_match = %v, want 1", name, inner["minimum_should_match"])
+		}
+		should, ok := inner["should"].([]interface{})
+		if !ok {
+			t.Fatalf("%s: should is not []interface{}: %T", name, inner["should"])
 		}
 		if len(should) != len(wantFields) {
 			t.Fatalf("%s: should length = %d, want %d (raw=%v)", name, len(should), len(wantFields), should)
@@ -398,19 +453,13 @@ func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s: should[%d] is %T, want map[string]interface{} (nested array bug) — raw=%v", name, i, el, el)
 			}
-			if inner, ok := m["term"].(map[string]interface{}); ok {
-				for f := range inner {
-					seenFields[f] = true
-				}
-				continue
+			clause, ok := m[wantOp].(map[string]interface{})
+			if !ok {
+				t.Fatalf("%s: should[%d] = %v, want %q clause", name, i, m, wantOp)
 			}
-			if terms, ok := m["terms"].(map[string]interface{}); ok {
-				for f := range terms {
-					seenFields[f] = true
-				}
-				continue
+			for f := range clause {
+				seenFields[f] = true
 			}
-			t.Fatalf("%s: should[%d] missing term/terms: %v", name, i, m)
 		}
 		for _, want := range wantFields {
 			if !seenFields[want] {
@@ -421,15 +470,90 @@ func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 
 	check("list_value", map[string]interface{}{
 		"id": []interface{}{"a", "b", "c"},
-	}, []string{"id", "_id"})
+	}, []string{"id", "_id"}, "terms")
+
+	check("string_list_value", map[string]interface{}{
+		"id": []string{"a", "b", "c"},
+	}, []string{"id", "_id"}, "terms")
 
 	check("string_value", map[string]interface{}{
 		"id": "doc-42",
-	}, []string{"id", "_id"})
+	}, []string{"id", "_id"}, "term")
 
 	check("int_value", map[string]interface{}{
 		"id": 42,
-	}, []string{"id", "_id"})
+	}, []string{"id", "_id"}, "term")
+
+	// A typed []string must be handled too: callers built from typed helpers
+	// (e.g. list_chunks' ChunkScope) pass []string, and the generic loop below
+	// skips the "id" key — without this branch the query carries NO id filter
+	// and a scoped read silently fetches the whole document (an 11-chunk
+	// window returned 3.8MB instead of ~17KB).
+	check("string_slice_value", map[string]interface{}{
+		"id": []string{"a", "b", "c"},
+	}, []string{"id", "_id"}, "terms")
+}
+
+// TestRankFeatureDoesNotWidenChunkIDScope pins why id must be a filter clause:
+// Search appends rank_feature queries to bool.should, so an id restriction
+// living in that slot is satisfied by the rank feature alone once
+// minimum_should_match=1 is set, and a chunk-id-scoped read returns unrelated
+// chunks.
+func TestRankFeatureDoesNotWidenChunkIDScope(t *testing.T) {
+	var captured map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Error(err)
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"hits": map[string]interface{}{
+				"total": map[string]interface{}{"value": 0},
+				"hits":  []interface{}{},
+			},
+		}); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer server.Close()
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{client: client}
+	if _, err := eng.Search(context.Background(), &types.SearchRequest{
+		IndexNames:  []string{"ragflow_t1"},
+		KbIDs:       []string{"kb1"},
+		Limit:       10,
+		Filter:      map[string]interface{}{"id": []string{"chunk-a"}},
+		RankFeature: map[string]float64{common.PAGERANK_FLD: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	query, ok := captured["query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("captured body carries no query: %v", captured)
+	}
+	boolMap, ok := query["bool"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query carries no bool: %v", query)
+	}
+	if _, exists := boolMap["minimum_should_match"]; exists {
+		t.Fatalf("top-level minimum_should_match also binds the rank_feature clauses: %v", boolMap)
+	}
+	encoded, err := json.Marshal(boolMap["filter"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"id":["chunk-a"]`) {
+		t.Fatalf("id restriction is not a mandatory filter clause: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"minimum_should_match":1`) {
+		t.Fatalf("id filter lost the id/_id alternative: %s", encoded)
+	}
 }
 
 // paginationGRID mirrors the (page_size, top) grid from
@@ -448,90 +572,6 @@ var paginationGRID = func() []struct{ size, topK int } {
 	return out
 }()
 
-// paginate replays the (block-fetch + in-block slice) math that
-// calculatePagination's window is consumed by: for every page whose start is
-// inside the candidate pool, return the in-block page slice. The block is
-// window-aligned, so on the aligned invariant every page is full and the
-// concatenation reconstructs [0, cap).
-func paginate(total, size, topK int) (window, capN int, surfaced []int) {
-	window = rerankWindow(size, topK)
-	capN = total
-	if topK > 0 && capN > topK {
-		capN = topK
-	}
-	for page := 1; (page-1)*size < capN; page++ {
-		globalOffset := (page - 1) * size
-		blockIndex := globalOffset / window
-		blockStart := blockIndex * window
-		block := make([]int, 0, window)
-		for i := blockStart; i < blockStart+window && i < capN; i++ {
-			block = append(block, i)
-		}
-		begin := globalOffset % window
-		end := min(begin+size, len(block))
-		surfaced = append(surfaced, block[begin:end]...)
-	}
-	return window, capN, surfaced
-}
-
-func TestRerankWindowIsPageAligned(t *testing.T) {
-	for _, g := range paginationGRID {
-		window := rerankWindow(g.size, g.topK)
-		if window < 1 {
-			t.Errorf("rerankWindow(%d, %d) = %d, want >= 1", g.size, g.topK, window)
-		}
-		if g.size > 1 && window%g.size != 0 {
-			t.Errorf("rerankWindow(%d, %d) = %d, want multiple of %d", g.size, g.topK, window, g.size)
-		}
-	}
-}
-
-func TestRerankWindowPaginationReconstructsPool(t *testing.T) {
-	// Walking every page reconstructs the candidate pool exactly: in order,
-	// no gaps, no duplicates, and no short interior pages.
-	const total = 250
-	for _, g := range paginationGRID {
-		window, capN, surfaced := paginate(total, g.size, g.topK)
-		if len(surfaced) != capN {
-			t.Errorf("size=%d topK=%d: surfaced %d, want %d (window=%d)",
-				g.size, g.topK, len(surfaced), capN, window)
-			continue
-		}
-		for i, v := range surfaced {
-			if v != i {
-				t.Errorf("size=%d topK=%d: surfaced[%d] = %d, want %d (window=%d)",
-					g.size, g.topK, i, v, i, window)
-				break
-			}
-		}
-	}
-}
-
-func TestCalculatePaginationReportedRegression(t *testing.T) {
-	// The reported case: size=10, topK=1024. Legacy min(..., 64) clamped the
-	// window to 64 (not a multiple of 10), so page 7 (global offset 60) used
-	// to return only 4 of 10 results. With the fix, the window is 70 and
-	// page 7 is full and contiguous.
-	_, limit := calculatePagination(7, 10, 1024)
-	if limit != 70 {
-		t.Fatalf("calculatePagination(7, 10, 1024) limit = %d, want 70", limit)
-	}
-	if limit%10 != 0 {
-		t.Fatalf("calculatePagination(7, 10, 1024) limit = %d, want multiple of 10", limit)
-	}
-
-	// And the simulated end-to-end page walk covers positions 60..69 fully.
-	_, capN, surfaced := paginate(250, 10, 1024)
-	if capN < 70 || len(surfaced) < 70 {
-		t.Fatalf("paginate(250, 10, 1024) returned cap=%d surfaced=%d, want >= 70", capN, len(surfaced))
-	}
-	for i := 60; i < 70; i++ {
-		if surfaced[i] != i {
-			t.Errorf("page 7: surfaced[%d] = %d, want %d", i, surfaced[i], i)
-		}
-	}
-}
-
 func TestFormatOrderedTagFeas(t *testing.T) {
 	tagFeas := map[string]any{
 		"价格咨询": 4,
@@ -541,7 +581,7 @@ func TestFormatOrderedTagFeas(t *testing.T) {
 		"质量投诉": 3,
 	}
 
-	raw, ok := formatOrderedTagFeas(tagFeas)
+	raw, ok := esoscommon.FormatOrderedTagFeas(tagFeas)
 	if !ok {
 		t.Fatal("expected formatOrderedTagFeas to succeed")
 	}
@@ -557,7 +597,7 @@ func TestFormatOrderedTagFeas(t *testing.T) {
 		"HighTag": json.Number("8.7"),
 		"MidTag":  float64(5.6),
 	}
-	rawNum, okNum := formatOrderedTagFeas(tagFeasWithJSONNumber)
+	rawNum, okNum := esoscommon.FormatOrderedTagFeas(tagFeasWithJSONNumber)
 	if !okNum {
 		t.Fatal("expected formatOrderedTagFeas with json.Number to succeed")
 	}
@@ -579,5 +619,28 @@ func TestFormatOrderedTagFeas(t *testing.T) {
 	encodedStr := buf.String()
 	if !strings.Contains(encodedStr, `"tag_feas":{"活动咨询":9,"服务投诉":6,"价格咨询":4,"正面评价":3,"质量投诉":3}`) {
 		t.Fatalf("encoded JSON does not preserve score-descending order:\n%s", encodedStr)
+	}
+}
+
+func TestBuildQueryStringQueryMinimumShouldMatchHalfUp(t *testing.T) {
+	tests := []struct {
+		fraction float64
+		want     string
+	}{
+		{0.29, "29%"},
+		{0.125, "13%"},
+		{0.135, "14%"},
+		{0.0, "0%"},
+		{1.0, "100%"},
+	}
+	for _, tc := range tests {
+		query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
+			MatchingText: "hello",
+			ExtraOptions: map[string]interface{}{"minimum_should_match": tc.fraction},
+		}, false, false)
+		got := query["query_string"].(map[string]interface{})["minimum_should_match"].(string)
+		if got != tc.want {
+			t.Errorf("buildQueryStringQuery minimum_should_match for %g = %q, want %q", tc.fraction, got, tc.want)
+		}
 	}
 }

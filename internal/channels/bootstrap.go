@@ -18,24 +18,26 @@ package channels
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/channels/core"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
 const (
-	reconcileInterval      = 10 * time.Second
-	initialStartRetryDelay = 10 * time.Second
-	maxStartRetryDelay     = 5 * time.Minute
+	reconcileInterval       = 10 * time.Second
+	initialStartRetryDelay  = 10 * time.Second
+	maxStartRetryDelay      = 5 * time.Minute
+	channelFinalSendTimeout = 30 * time.Second
+	channelShutdownTimeout  = 30 * time.Second
 )
 
 type runningChannel struct {
@@ -50,9 +52,15 @@ type failedChannel struct {
 }
 
 type Runtime struct {
-	mu      sync.Mutex
-	running map[string]runningChannel
-	failed  map[string]failedChannel
+	agentService *service.AgentService
+	mu           sync.Mutex
+	running      map[string]runningChannel
+	failed       map[string]failedChannel
+	cancel       context.CancelFunc
+	done         chan struct{}
+	stopping     bool
+	messages     sync.WaitGroup
+	statusCache  *service.ChatChannelRuntimeCache
 }
 
 // NewRuntime creates an empty chat-channel runtime reconciler.
@@ -60,33 +68,59 @@ func NewRuntime() *Runtime {
 	return &Runtime{
 		running: map[string]runningChannel{},
 		failed:  map[string]failedChannel{},
+		done:    make(chan struct{}),
 	}
 }
 
 // Start launches the chat-channel runtime reconciler in the background.
-func Start(ctx context.Context) (*Runtime, error) {
+func Start(ctx context.Context, agentService *service.AgentService) (*Runtime, error) {
 	channelRuntime := NewRuntime()
-	service.SetChatChannelRuntimeProvider(whatsappRuntimeSnapshotMap)
-
-	if err := channelRuntime.Reconcile(ctx); err != nil {
-		return channelRuntime, fmt.Errorf("failed to reconcile channel: %w", err)
+	channelRuntime.agentService = agentService
+	service.SetChatChannelRuntimeProvider(func(_ context.Context, row *entity.ChatChannel) (map[string]any, bool) {
+		return whatsappRuntimeSnapshotMap(row.ID)
+	})
+	if kvrocks.IsEnabled() {
+		channelRuntime.statusCache = service.NewChatChannelRuntimeCache(kvrocks.Get().GetClient())
 	}
 
-	go channelRuntime.Run(ctx)
+	if _, err := desiredChannels(ctx); err != nil {
+		return channelRuntime, fmt.Errorf("failed to load chat channels: %w", err)
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	channelRuntime.cancel = cancel
+	go channelRuntime.Run(runCtx)
 	return channelRuntime, nil
+}
+
+// Stop cancels reconciliation and waits for adapter cleanup and active messages.
+func (r *Runtime) Stop() {
+	if r.cancel != nil {
+		r.cancel()
+	}
+	<-r.done
 }
 
 // Run reconciles configured chat channels until the context is cancelled.
 func (r *Runtime) Run(ctx context.Context) {
 	ticker := time.NewTicker(reconcileInterval)
 	defer ticker.Stop()
-	defer r.stopAll(ctx)
+	defer close(r.done)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), channelShutdownTimeout)
+		defer cancel()
+		r.stopAll(shutdownCtx)
+	}()
 
 	// check channel's status periodically
 	for {
-		if err := r.Reconcile(ctx); err != nil {
-			log.Printf("chat channel reconcile failed: %v", err)
+		if ctx.Err() != nil {
+			return
 		}
+		if err := r.Reconcile(ctx); err != nil {
+			common.Error("chat channel reconcile failed", err)
+		}
+		r.publishRuntimeSnapshots(ctx)
 		select {
 		case <-ctx.Done():
 			return
@@ -104,12 +138,14 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 	}
 
 	var toStop []core.Channel
+	var removedIDs []string
 	r.mu.Lock()
 	for accountID, entry := range r.running {
 		wanted, ok := desired[accountID]
 		if !ok || wanted.fingerprint != entry.fingerprint {
 			delete(r.running, accountID)
 			toStop = append(toStop, entry.channel)
+			removedIDs = append(removedIDs, accountID)
 		}
 	}
 
@@ -121,6 +157,9 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 	}
 	r.mu.Unlock()
 
+	for _, accountID := range removedIDs {
+		r.deleteRuntimeSnapshot(ctx, accountID)
+	}
 	for _, ch := range toStop {
 		stopChannel(ctx, ch)
 	}
@@ -132,8 +171,8 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 			break
 		}
 	}
-	if err = syncWhatsAppGateway(ctx, activeWhatsApp); err != nil && activeWhatsApp {
-		log.Printf("failed to sync WhatsApp gateway: %v", err)
+	if err := syncWhatsAppGateway(ctx, activeWhatsApp); err != nil && activeWhatsApp {
+		common.Error("failed to sync WhatsApp gateway", err)
 		reconcileErr = fmt.Errorf("sync WhatsApp gateway: %w", err)
 	}
 
@@ -147,8 +186,8 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		if isRunning || retryPending {
 			continue
 		}
-		if err = r.startChannel(ctx, accountID, wanted); err != nil {
-			log.Printf("failed to start chat channel %s (%s): %v", accountID, wanted.channel, err)
+		if err := r.startChannel(ctx, accountID, wanted); err != nil {
+			common.Error("failed to start chat channel", err, zap.String("account_id", accountID), zap.String("channel", wanted.channel))
 			r.recordStartFailure(accountID, wanted.fingerprint, now)
 			if reconcileErr == nil {
 				reconcileErr = fmt.Errorf("failed to start chat channel %s: %w", accountID, err)
@@ -216,7 +255,7 @@ func desiredChannels(ctx context.Context) (map[string]desiredChannel, error) {
 		out[row.ID] = desiredChannel{
 			channel:     row.Channel,
 			credential:  credential,
-			fingerprint: fingerprint(row.Channel, credential),
+			fingerprint: service.ChatChannelRuntimeFingerprint(row.Channel, credential),
 		}
 	}
 	return out, nil
@@ -236,16 +275,6 @@ func credentialFromConfig(config entity.JSONMap) map[string]any {
 	return map[string]any{}
 }
 
-// fingerprint returns a stable hash for the configuration that requires a channel restart.
-func fingerprint(channel string, credential map[string]any) string {
-	payload, _ := json.Marshal(map[string]any{
-		"channel":    channel,
-		"credential": credential,
-	})
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:])
-}
-
 // startChannel builds a platform channel, attaches the RAG bridge, and starts it.
 func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted desiredChannel) error {
 	ch, err := buildChannel(accountID, wanted)
@@ -257,7 +286,49 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 	}
 
 	channelService := service.NewChatChannelService()
+	if r.agentService != nil {
+		channelService = service.NewChatChannelServiceWithAgentService(r.agentService)
+	}
 	ch.SetMessageHandler(func(ctx context.Context, msg core.IncomingMessage) error {
+		r.mu.Lock()
+		if r.stopping {
+			r.mu.Unlock()
+			return context.Canceled
+		}
+		r.messages.Add(1)
+		r.mu.Unlock()
+		defer r.messages.Done()
+		outgoing := core.OutgoingMessage{ChatID: msg.ChatID, ReplyToMessageID: msg.MessageID}
+
+		// A streaming channel owns its own message lifecycle: cumulative text goes
+		// to SendStream, and the bridge sends the complete answer if streaming fails.
+		var onDelta func(string)
+		var text chan string
+		var sent chan error
+		if streamer, ok := ch.(core.StreamingChannel); ok && streamer.StreamEnabled() {
+			text = make(chan string, 1)
+			sent = make(chan error, 1)
+			go func() {
+				sent <- streamer.SendStream(ctx, outgoing, text)
+			}()
+			onDelta = func(value string) {
+				// Keep only the newest cumulative snapshot; the channel must not
+				// build a backlog while the platform renders older text.
+				select {
+				case text <- value:
+				default:
+					select {
+					case <-text:
+					default:
+					}
+					select {
+					case text <- value:
+					default:
+					}
+				}
+			}
+		}
+
 		answer, err := channelService.HandleIncomingMessage(ctx, service.ChatChannelIncomingMessage{
 			Channel:   msg.Channel,
 			AccountID: msg.AccountID,
@@ -266,15 +337,34 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 			MessageID: msg.MessageID,
 			SenderID:  msg.SenderID,
 			Text:      msg.Text,
-		})
+		}, onDelta)
+
+		if text != nil {
+			// Streaming updates may have been coalesced. Make the final snapshot
+			// available before closing so a successful stream always has the full answer.
+			if answer != "" {
+				onDelta(answer)
+			}
+			close(text)
+			streamErr := <-sent
+			if streamErr == nil {
+				return err
+			}
+			if err == nil && answer == "" {
+				// The model produced nothing, so there is nothing to deliver.
+				return nil
+			}
+			common.Warn("chat channel stream failed, sending the answer as one message", zap.Error(streamErr), zap.String("channel", ch.ChannelID()), zap.String("account_id", accountID))
+		}
 		if err != nil || answer == "" {
 			return err
 		}
-		return ch.Send(ctx, core.OutgoingMessage{
-			ChatID:           msg.ChatID,
-			Text:             answer,
-			ReplyToMessageID: msg.MessageID,
-		})
+		// The turn's context may already be past its deadline, so the fallback send gets a
+		// context that cannot be cancelled by it.
+		sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), channelFinalSendTimeout)
+		defer cancel()
+		outgoing.Text = answer
+		return ch.Send(sendCtx, outgoing)
 	})
 	if err = ch.Start(ctx); err != nil {
 		return err
@@ -282,7 +372,7 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 	r.mu.Lock()
 	r.running[accountID] = runningChannel{channel: ch, fingerprint: wanted.fingerprint}
 	r.mu.Unlock()
-	log.Printf("started chat channel %s:%s", ch.ChannelID(), accountID)
+	common.Info("started chat channel", zap.String("channel", ch.ChannelID()), zap.String("account_id", accountID))
 	return nil
 }
 
@@ -336,16 +426,60 @@ func (r *Runtime) stopAll(ctx context.Context) {
 	r.mu.Lock()
 	running := r.running
 	r.running = map[string]runningChannel{}
+	r.stopping = true
 	r.mu.Unlock()
-	for _, entry := range running {
+	for accountID, entry := range running {
+		r.deleteRuntimeSnapshot(ctx, accountID)
 		stopChannel(ctx, entry.channel)
 	}
 	_ = syncWhatsAppGateway(ctx, false)
+	drained := make(chan struct{})
+	go func() {
+		r.messages.Wait()
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-ctx.Done():
+		common.Warn("chat channel shutdown timed out waiting for active messages")
+	}
+}
+
+func (r *Runtime) publishRuntimeSnapshots(ctx context.Context) {
+	if r.statusCache == nil {
+		return
+	}
+	r.mu.Lock()
+	running := make(map[string]string, len(r.running))
+	for accountID, entry := range r.running {
+		if entry.channel.ChannelID() == "whatsapp" {
+			running[accountID] = entry.fingerprint
+		}
+	}
+	r.mu.Unlock()
+	for accountID, configFingerprint := range running {
+		snapshot, ok := whatsappRuntimeSnapshotMap(accountID)
+		if !ok {
+			r.deleteRuntimeSnapshot(ctx, accountID)
+			continue
+		}
+		if err := r.statusCache.Publish(ctx, accountID, configFingerprint, snapshot); err != nil {
+			common.Warn("failed to publish chat-channel runtime status", zap.Error(err), zap.String("account_id", accountID))
+		}
+	}
+}
+
+func (r *Runtime) deleteRuntimeSnapshot(ctx context.Context, accountID string) {
+	if r.statusCache != nil {
+		if err := r.statusCache.Delete(ctx, accountID); err != nil {
+			common.Warn("failed to clear chat-channel runtime status", zap.Error(err), zap.String("account_id", accountID))
+		}
+	}
 }
 
 // stopChannel stops one platform channel and logs any shutdown error.
 func stopChannel(ctx context.Context, ch core.Channel) {
 	if err := ch.Stop(ctx); err != nil {
-		log.Printf("failed to stop chat channel %s:%s: %v", ch.ChannelID(), ch.AccountID(), err)
+		common.Error("failed to stop chat channel", err, zap.String("channel", ch.ChannelID()), zap.String("account_id", ch.AccountID()))
 	}
 }

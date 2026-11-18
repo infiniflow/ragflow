@@ -1,9 +1,12 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -17,7 +20,7 @@ func TestGmailConnectorOpenSync(t *testing.T) {
 	start := mustTime(t, "2026-01-02T00:00:00Z")
 	end := mustTime(t, "2026-01-03T00:00:00Z")
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -72,7 +75,7 @@ func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
 		return gmailTestThread(threadID, "Fri, 02 Jan 2026 03:04:05 +0000")
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -87,7 +90,7 @@ func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
 		t.Fatalf("first checkpoint = %+v, want thread-2", first.Checkpoint)
 	}
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -103,8 +106,17 @@ func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
 	}
 }
 
-// TestGmailConnectorResumeUsesFilenameWhenOffsetChanged verifies page deletions resume from the current filename offset.
-func TestGmailConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
+func TestGmailConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector := newFixtureGmailConnector()
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
+// TestGmailConnectorResumeRejectsMissingRemoteAnchor verifies a deleted list item invalidates the saved anchor.
+func TestGmailConnectorResumeRejectsMissingRemoteAnchor(t *testing.T) {
 	connector := newFixtureGmailConnector()
 	connector.GmailConnector.batchSize = 2
 	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
@@ -115,7 +127,7 @@ func TestGmailConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
 	connector.GmailConnector.getThread = func(ctx context.Context, userEmail, threadID string) (gmailThread, error) {
 		return gmailTestThreadWithSubject(threadID, threadID, "Fri, 02 Jan 2026 03:04:05 +0000")
 	}
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -137,19 +149,16 @@ func TestGmailConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
 			ID string `json:"id"`
 		}{{ID: "thread-1"}, {ID: "thread-3"}}}, nil
 	}
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
-	second, err := resumed.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("resume NextBatch failed: %v", err)
+	_, err = resumed.NextBatch(context.Background())
+	if err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
 	}
-	if len(second.Documents) != 1 || second.Documents[0].SourceID != "thread-3" {
-		t.Fatalf("resume documents = %+v, want thread-3", second.Documents)
-	}
-	if resumeListCalls != 1 {
-		t.Fatalf("resume list calls = %d, want one checkpoint page", resumeListCalls)
+	if resumeListCalls == 0 {
+		t.Fatalf("resume should have listed the current remote page")
 	}
 }
 
@@ -219,7 +228,7 @@ func TestGmailOwnersMetadataSorted(t *testing.T) {
 // TestGmailConnectorOpenPrune verifies Gmail prune emits thread IDs only.
 func TestGmailConnectorOpenPrune(t *testing.T) {
 	connector := newFixtureGmailConnector()
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
@@ -241,15 +250,15 @@ func TestGmailConnectorClientForUserCachesByMailbox(t *testing.T) {
 		return &http.Client{}, nil
 	}
 
-	first, err := connector.clientForUser(context.Background(), "a@example.com")
+	first, err := connector.clientForUser(t.Context(), "a@example.com")
 	if err != nil {
 		t.Fatalf("first client: %v", err)
 	}
-	second, err := connector.clientForUser(context.Background(), "a@example.com")
+	second, err := connector.clientForUser(t.Context(), "a@example.com")
 	if err != nil {
 		t.Fatalf("second client: %v", err)
 	}
-	other, err := connector.clientForUser(context.Background(), "b@example.com")
+	other, err := connector.clientForUser(t.Context(), "b@example.com")
 	if err != nil {
 		t.Fatalf("other client: %v", err)
 	}
@@ -324,5 +333,64 @@ func TestGmailTimeRangeQuery(t *testing.T) {
 	end := time.Unix(200, 0).UTC()
 	if got := gmailTimeRangeQuery(&start, end); got != "after:101 before:200" {
 		t.Fatalf("query = %q", got)
+	}
+}
+
+// Exercise the HTTP path: the regular fixtures bypass loadThread and therefore
+// cannot catch fields projections that remove body data before decoding.
+func TestGmailSyncRequestsCompleteMimePayload(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(fmt.Sprintf("nested=%t", nested), func(t *testing.T) {
+			c, err := NewGmailConnector(map[string]any{"batch_size": 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.listUsers = func(context.Context) ([]string, error) { return []string{"reader@example.com"}, nil }
+			c.httpClientForUser = func(context.Context, string) (*http.Client, error) {
+				return &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					var result any
+					if strings.HasSuffix(req.URL.Path, "/threads") {
+						result = map[string]any{"threads": []map[string]string{{"id": "thread-1"}}}
+					} else {
+						payload := map[string]any{"mimeType": "text/plain", "headers": []map[string]string{{"name": "Subject", "value": "Body projection regression"}}, "body": map[string]string{"data": base64.RawURLEncoding.EncodeToString([]byte("invoice amount 125"))}}
+						if nested {
+							payload = map[string]any{"mimeType": "multipart/mixed", "headers": payload["headers"], "parts": []any{map[string]any{"mimeType": "multipart/alternative", "parts": []any{payload}}}}
+						}
+						fields := req.URL.Query().Get("fields")
+						// Model Google's documented partial-response behavior for
+						// the old narrow projection versus a complete payload.
+						switch fields {
+						case "id,messages(id,labelIds,payload(headers,parts(body(data),mimeType)))":
+							delete(payload, "body")
+							delete(payload, "mimeType")
+							if nested {
+								payload["parts"] = []any{map[string]string{"mimeType": "multipart/alternative"}}
+							}
+						case "", "id,messages(id,labelIds,payload)":
+						default:
+							t.Fatalf("fixture does not model fields %q", fields)
+						}
+						result = map[string]any{"id": "thread-1", "messages": []any{map[string]any{"id": "message-1", "payload": payload}}}
+					}
+					data, err := json.Marshal(result)
+					if err != nil {
+						return nil, err
+					}
+					return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data))}, nil
+				})}, nil
+			}
+			session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close()
+			batch, err := session.NextBatch(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(batch.Documents) != 1 || !strings.Contains(string(batch.Documents[0].Blob), "invoice amount 125") {
+				t.Fatalf("mail body missing from synced document: %+v", batch.Documents)
+			}
+		})
 	}
 }

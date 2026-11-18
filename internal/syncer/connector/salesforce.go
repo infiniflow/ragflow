@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -29,8 +30,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 const (
@@ -250,7 +249,9 @@ func (c *SalesforceConnector) OpenSync(ctx context.Context, request SyncRequest)
 		windowEnd:   request.WindowEnd,
 		cursors:     map[string]salesforceObjectCursor{},
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -362,22 +363,24 @@ func salesforceHostAllowed(host string) bool {
 		strings.HasSuffix(host, ".lightning.force.com")
 }
 
+// salesforceAssertURLSafe validates a Salesforce request URL for SSRF and the
+// approved-host policy, returning the hostname and the IP to pin. Every hop of
+// a Salesforce request (including redirects) must stay on an approved
+// Salesforce host over HTTPS so credentials are only ever transmitted to the
+// intended provider.
+func salesforceAssertURLSafe(rawURL string) (string, net.IP, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !salesforceHostAllowed(parsed.Hostname()) {
+		return "", nil, fmt.Errorf("Salesforce request URL must use HTTPS on an approved Salesforce host")
+	}
+	return assertConnectorURLSafe(rawURL)
+}
+
 // requestAccessToken performs the OAuth2 client-credentials exchange, validating
 // the token endpoint for SSRF, HTTPS, and the approved Salesforce host policy
 // before any credentials are transmitted.
 func (c *SalesforceConnector) requestAccessToken(ctx context.Context) (salesforceToken, error) {
 	tokenURL := c.instanceBaseURL() + "/services/oauth2/token"
-	hostname, resolvedIP, err := utility.AssertURLSafe(tokenURL)
-	if err != nil {
-		return salesforceToken{}, &ConnectorMissingCredentialError{Message: fmt.Sprintf("Salesforce token request failed: %v", err)}
-	}
-	if !salesforceHostAllowed(hostname) {
-		return salesforceToken{}, &ConnectorMissingCredentialError{Message: "Salesforce instance_url is not an approved Salesforce host"}
-	}
-	parsedURL, err := url.Parse(tokenURL)
-	if err != nil || !strings.EqualFold(parsedURL.Scheme, "https") {
-		return salesforceToken{}, &ConnectorMissingCredentialError{Message: "Salesforce OAuth token endpoint must use HTTPS"}
-	}
 	form := url.Values{
 		"grant_type":    {"client_credentials"},
 		"client_id":     {c.clientID},
@@ -385,13 +388,14 @@ func (c *SalesforceConnector) requestAccessToken(ctx context.Context) (salesforc
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, salesforceRequestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return salesforceToken{}, &ConnectorMissingCredentialError{Message: fmt.Sprintf("Salesforce token request failed: %v", err)}
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	client := utility.PinnedHTTPClient(hostname, resolvedIP, salesforceRequestTimeout)
-	resp, err := client.Do(req)
+	resp, err := connectorRequest(requestCtx, connectorRequestOptions{
+		Method:   http.MethodPost,
+		RawURL:   tokenURL,
+		Body:     []byte(form.Encode()),
+		Headers:  map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+		Timeout:  salesforceRequestTimeout,
+		Validate: salesforceAssertURLSafe,
+	})
 	if err != nil {
 		return salesforceToken{}, &ConnectorMissingCredentialError{Message: fmt.Sprintf("Salesforce token request failed: %v", err)}
 	}
@@ -451,7 +455,7 @@ func (c *SalesforceConnector) apiURL(snap salesforceToken, path string) (string,
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		parsed, err := url.Parse(path)
 		if err != nil {
-			return "", fmt.Errorf("Salesforce pagination URL is invalid: %v", err)
+			return "", fmt.Errorf("Salesforce pagination URL is invalid: %w", err)
 		}
 		if !strings.EqualFold(parsed.Scheme, "https") || !salesforceHostAllowed(parsed.Hostname()) {
 			return "", fmt.Errorf("Salesforce pagination URL must use HTTPS on an approved Salesforce host")
@@ -508,26 +512,15 @@ func (c *SalesforceConnector) getJSON(ctx context.Context, path string, out any)
 
 // doGet performs one authenticated GET with SSRF protection.
 func (c *SalesforceConnector) doGet(ctx context.Context, apiURL, token string) (int, []byte, error) {
-	parsed, err := url.Parse(apiURL)
-	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !salesforceHostAllowed(parsed.Hostname()) {
-		return 0, nil, fmt.Errorf("Salesforce request URL must use HTTPS on an approved Salesforce host")
-	}
-	hostname, resolvedIP, err := utility.AssertURLSafe(apiURL)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:   http.MethodGet,
+		RawURL:   apiURL,
+		Headers:  map[string]string{"Accept": "application/json", "Authorization": "Bearer " + token},
+		Timeout:  salesforceRequestTimeout,
+		Validate: salesforceAssertURLSafe,
+	})
 	if err != nil {
-		return 0, nil, err
-	}
-	client := utility.PinnedHTTPClient(hostname, resolvedIP, salesforceRequestTimeout)
-	requestCtx, cancel := context.WithTimeout(ctx, salesforceRequestTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return 0, nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, nil, err
+		return 0, nil, connectorUnsafeErr(err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024))
@@ -725,6 +718,9 @@ type salesforceSyncSession struct {
 	latestISO   string
 	latestID    string
 	buffer      []salesforceBufferedDocument
+
+	resumeAnchor  *salesforceResumeAnchor
+	resumeChecked bool
 }
 
 type salesforceBufferedDocument struct {
@@ -732,22 +728,159 @@ type salesforceBufferedDocument struct {
 	checkpoint *SyncCheckpoint
 }
 
+type salesforceResumeAnchor struct {
+	sourceID     string
+	object       string
+	recordID     string
+	objectCursor salesforceObjectCursor
+}
+
 // applyResume restores the per-object cursor map from a saved checkpoint.
-func (s *salesforceSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+// A checkpoint must carry a source anchor and a valid cursor for that object;
+// remote anchor existence is checked by validateResume on the first NextBatch.
+func (s *salesforceSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("salesforce sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor salesforceSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("salesforce sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
-	if len(cursor.Cursors) > 0 {
-		s.cursors = cursor.Cursors
+	object, recordID, ok := salesforceSourceIDParts(checkpoint.SourceID)
+	if !ok {
+		return fmt.Errorf("salesforce sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
+	if !salesforceHasObject(s.objects, object) {
+		return fmt.Errorf("salesforce resume anchor %q was not found in the current object listing: %w", checkpoint.SourceID, ErrSyncResumeInvalid)
+	}
+	if len(cursor.Cursors) == 0 {
+		return fmt.Errorf("salesforce sync cursor has no object positions: %w", ErrSyncResumeInvalid)
+	}
+	for name, objectCursor := range cursor.Cursors {
+		if !salesforceHasObject(s.objects, name) {
+			return fmt.Errorf("salesforce sync cursor references unknown object %q: %w", name, ErrSyncResumeInvalid)
+		}
+		if objectCursor.SystemModstamp == "" || objectCursor.Id == "" {
+			return fmt.Errorf("salesforce sync cursor has an invalid position for object %q: %w", name, ErrSyncResumeInvalid)
+		}
+		if _, err := parseSalesforceTime(objectCursor.SystemModstamp); err != nil {
+			return fmt.Errorf("salesforce sync cursor has an invalid timestamp for object %q: %w", name, ErrSyncResumeInvalid)
+		}
+	}
+	objectCursor, ok := cursor.Cursors[object]
+	if !ok {
+		return fmt.Errorf("salesforce sync cursor has no position for object %q: %w", object, ErrSyncResumeInvalid)
+	}
+	if objectCursor.Id != recordID {
+		return fmt.Errorf("salesforce sync cursor does not match source anchor %q: %w", checkpoint.SourceID, ErrSyncResumeInvalid)
+	}
+	s.cursors = cursor.Cursors
+	s.resumeAnchor = &salesforceResumeAnchor{
+		sourceID:     checkpoint.SourceID,
+		object:       object,
+		recordID:     recordID,
+		objectCursor: objectCursor,
+	}
+	return nil
+}
+
+// validateResume verifies the saved anchor still exists at the same position
+// before the resumed session emits any documents.
+func (s *salesforceSyncSession) validateResume(ctx context.Context) error {
+	if s.resumeAnchor == nil || s.resumeChecked {
+		return nil
+	}
+	s.resumeChecked = true
+	anchor := s.resumeAnchor
+	expectedModified, err := parseSalesforceTime(anchor.objectCursor.SystemModstamp)
+	if err != nil {
+		return fmt.Errorf("salesforce sync cursor has an invalid timestamp for object %q: %w", anchor.object, ErrSyncResumeInvalid)
+	}
+	if s.windowStart != nil && expectedModified.Before(*s.windowStart) {
+		return fmt.Errorf("salesforce resume anchor %q is outside the sync window: %w", anchor.sourceID, ErrSyncResumeInvalid)
+	}
+	if !s.windowEnd.IsZero() && expectedModified.After(s.windowEnd) {
+		return fmt.Errorf("salesforce resume anchor %q is outside the sync window: %w", anchor.sourceID, ErrSyncResumeInvalid)
+	}
+
+	soql := fmt.Sprintf("SELECT Id,SystemModstamp FROM %s WHERE Id = '%s'", anchor.object, salesforceDataLiteral(anchor.recordID))
+	var page salesforceQueryPage
+	if err := s.connector.getJSON(ctx, "/query?q="+url.QueryEscape(soql), &page); err != nil {
+		var unavailable *salesforceObjectUnavailableError
+		if errors.As(err, &unavailable) {
+			return fmt.Errorf("salesforce resume object %q is no longer available: %w", anchor.object, ErrSyncResumeInvalid)
+		}
+		return err
+	}
+	for _, record := range page.Records {
+		if stringRecordValue(record, "Id") != anchor.recordID {
+			continue
+		}
+		modified, err := parseSalesforceTime(stringRecordValue(record, "SystemModstamp"))
+		if err != nil || !modified.Equal(expectedModified) {
+			return fmt.Errorf("salesforce resume anchor %q is no longer at the saved position: %w", anchor.sourceID, ErrSyncResumeInvalid)
+		}
+		return nil
+	}
+	return fmt.Errorf("salesforce resume anchor %q was not found in the current source: %w", anchor.sourceID, ErrSyncResumeInvalid)
+}
+
+// salesforceSourceIDParts splits the document SourceID anchor into an SObject
+// name and record ID. Salesforce IDs do not contain slashes, so a SourceID with
+// any extra separator or invalid character is not a usable resume anchor.
+func salesforceSourceIDParts(sourceID string) (string, string, bool) {
+	object, recordID, ok := strings.Cut(sourceID, "/")
+	if !ok || !salesforceObjectNameValid(object) || !salesforceRecordIDValid(recordID) {
+		return "", "", false
+	}
+	return object, recordID, true
+}
+
+func salesforceObjectNameValid(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func salesforceRecordIDValid(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func salesforceDataLiteral(value string) string {
+	return strings.ReplaceAll(value, "'", "\\'")
+}
+
+func salesforceHasObject(objects []string, name string) bool {
+	for _, object := range objects {
+		if object == name {
+			return true
+		}
+	}
+	return false
 }
 
 // NextBatch returns the next Salesforce document batch.
 func (s *salesforceSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
+	if err := s.validateResume(ctx); err != nil {
+		return SyncBatch{}, err
+	}
 	documents := make([]SourceDocument, 0, s.batchSize)
 	var checkpoint *SyncCheckpoint
 	if len(s.buffer) > 0 {

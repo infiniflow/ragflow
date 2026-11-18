@@ -127,10 +127,12 @@ export const AddedChannelCard = (props: IAddedChannelCardProps) => {
           >
             <div className="flex flex-col gap-0.5">
               <div className="text-sm text-text-primary">{item.name}</div>
-              {item.chat_id ? (
+              {item.chat_id || item.agent_id ? (
                 <div className="text-xs text-text-secondary flex items-center gap-1">
                   <Link2 size={12} />
-                  {item.dialog_name || item.chat_id}
+                  {item.agent_id
+                    ? `[${t('setting.chatChannelAgent')}] ${item.agent_name || item.agent_id}`
+                    : item.dialog_name || item.chat_id}
                 </div>
               ) : (
                 <div className="text-xs text-text-secondary/60">
@@ -154,7 +156,7 @@ export const AddedChannelCard = (props: IAddedChannelCardProps) => {
               >
                 <Settings size={14} />
               </Button>
-              {channel.channel === ChatChannelKey.WHATSAPP && (
+              {channel.id === ChatChannelKey.WHATSAPP && (
                 <Button
                   variant={'ghost'}
                   className="rounded-lg px-2 py-1 bg-transparent hover:bg-bg-card"

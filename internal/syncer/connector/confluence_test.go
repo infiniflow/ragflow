@@ -45,7 +45,7 @@ func TestConfluenceConnectorSyncPagesCommentsAndAttachments(t *testing.T) {
 	if page.SourceID != server.URL+"/wiki/display/SPACE/Page" {
 		t.Fatalf("page SourceID = %q", page.SourceID)
 	}
-	if page.SemanticIdentifier != "Page" {
+	if page.SemanticIdentifier != "Engineering / Root / Page" {
 		t.Fatalf("page SemanticIdentifier = %q", page.SemanticIdentifier)
 	}
 	if !strings.Contains(string(page.Blob), "Hello Confluence") || !strings.Contains(string(page.Blob), "Comment text") {
@@ -67,6 +67,9 @@ func TestConfluenceConnectorSyncPagesCommentsAndAttachments(t *testing.T) {
 	}
 	if attachment.Extension != ".txt" {
 		t.Fatalf("attachment Extension = %q", attachment.Extension)
+	}
+	if attachment.SemanticIdentifier != "Engineering / Root / Page / file.txt" {
+		t.Fatalf("attachment SemanticIdentifier = %q", attachment.SemanticIdentifier)
 	}
 	if string(attachment.Blob) != "attachment bytes" {
 		t.Fatalf("attachment Blob = %q", string(attachment.Blob))
@@ -115,6 +118,21 @@ func TestConfluenceConnectorResume(t *testing.T) {
 	}
 	if len(batch.Documents) != 1 || batch.Documents[0].Extension != ".txt" || batch.Documents[0].SourceID == first.Documents[0].SourceID {
 		t.Fatalf("resumed batch = %#v first = %#v", batch.Documents, first.Documents)
+	}
+}
+
+func TestConfluenceConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	server := newConfluenceFixtureServer(t, http.StatusOK)
+	defer server.Close()
+
+	connector := newTestConfluenceConnector(t, server.URL, map[string]any{"batch_size": 1})
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		WindowEnd:     confluenceTestTime(t, "2026-01-03T00:00:00Z"),
+		Resume:        &SyncCheckpoint{},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
 }
 
@@ -181,6 +199,7 @@ func newTestConfluenceConnector(t *testing.T, wikiBase string, overrides map[str
 
 func newConfluenceFixtureServer(t *testing.T, validateStatus int) *httptest.Server {
 	t.Helper()
+	withConnectorLoopbackTestHook(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if validateStatus != http.StatusOK && strings.HasPrefix(r.URL.Path, "/wiki/rest/api/space") {
 			http.Error(w, "unauthorized", validateStatus)
@@ -324,5 +343,67 @@ func TestConfluenceCQLQuoteEscapesBackslashes(t *testing.T) {
 	want := `path\\name\'s`
 	if got != want {
 		t.Fatalf("confluenceCQLQuote() = %q, want %q", got, want)
+	}
+}
+
+// TestConfluenceCQLUpperBoundCoversWholeMinute pins the exclusive upper bound for
+// pages and attachments. CQL cannot express the seconds of the window end, so an
+// inclusive `<=` on the truncated value drops the rest of that minute and the
+// next window's lower bound skips those pages and attachments forever.
+func TestConfluenceCQLUpperBoundCoversWholeMinute(t *testing.T) {
+	connector := newTestConfluenceConnector(t, "https://example.atlassian.net/wiki", map[string]any{
+		"index_mode": "page",
+		"page_id":    "123",
+	})
+	end := mustTime(t, "2026-01-04T00:00:30Z")
+
+	cases := map[string]string{
+		"page":       connector.pageCQL(nil, end, false),
+		"attachment": connector.attachmentCQL("123", nil, end, false),
+	}
+	for name, cql := range cases {
+		if !strings.Contains(cql, `lastmodified < '2026-01-04 00:01'`) {
+			t.Fatalf("%s CQL = %q, want an exclusive bound at the next minute tick", name, cql)
+		}
+		if strings.Contains(cql, `lastmodified <=`) {
+			t.Fatalf("%s CQL = %q, want no inclusive upper bound", name, cql)
+		}
+	}
+}
+
+func TestConfluenceSemanticIdentifierAlwaysUsesFullPath(t *testing.T) {
+	// Every identifier carries the full hierarchical path: space, ancestors, title.
+	got := confluenceSemanticIdentifier("Engineering", []string{"Root"}, "Page")
+	if got != "Engineering / Root / Page" {
+		t.Fatalf("first occurrence identifier = %q, want full path", got)
+	}
+	if again := confluenceSemanticIdentifier("Engineering", []string{"Root"}, "Page"); again != got {
+		t.Fatalf("later occurrence identifier = %q, want stable %q", again, got)
+	}
+	if bare := confluenceSemanticIdentifier("", nil, "Standalone"); bare != "Standalone" {
+		t.Fatalf("no-space identifier = %q, want title only", bare)
+	}
+	if unnamed := confluenceSemanticIdentifier("Space", nil, ""); unnamed != "Space / Untitled" {
+		t.Fatalf("untitled identifier = %q, want Space / Untitled", unnamed)
+	}
+}
+
+func TestConfluenceWindowKeepsWhatTheCQLAlreadyReturned(t *testing.T) {
+	// CQL accepts minute precision only, so pageCQL asks for everything from the
+	// start of the waterline minute. The previous run's upper bound is the same
+	// minute, so a page updated just before the waterline is covered by neither
+	// run unless filtering accepts the same lower bound the query sent.
+	start := mustTime(t, "2026-10-27T10:05:30Z")
+	end := mustTime(t, "2026-10-27T10:06:00Z")
+	if got := confluenceCQLTime(start); got != "2026-10-27 10:05" {
+		t.Fatalf("confluenceCQLTime(%v) = %q, want minute precision", start, got)
+	}
+	inside := mustTime(t, "2026-10-27T10:05:10Z")
+	if !inConfluenceWindow(inside, &start, end) {
+		t.Fatalf("page updated at %v was dropped although the CQL lower bound covers it", inside)
+	}
+	before := mustTime(t, "2026-10-27T10:04:59Z")
+	if inConfluenceWindow(before, &start, end) {
+		t.Fatalf("page updated at %v belongs to the previous window", before)
 	}
 }

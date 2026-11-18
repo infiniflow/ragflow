@@ -283,7 +283,10 @@ func (c *DiscordConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 		upperBound = request.WindowEnd
 	}
 
-	resumeTarget, resumeBefore := discordResumePosition(targets, request.Resume)
+	resumeTarget, resumeBefore, err := discordResumePosition(targets, request.Resume)
+	if err != nil {
+		return nil, err
+	}
 	return &discordSyncSession{
 		connector:          c,
 		iter:               newDiscordMessageIterator(c, targets, lowerBound, upperBound, resumeTarget, resumeBefore),
@@ -292,27 +295,34 @@ func (c *DiscordConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 }
 
 // discordResumePosition returns the target and before cursor to continue from,
-// or empty values when the checkpoint does not match the current enumeration.
-func discordResumePosition(targets []discordTarget, checkpoint *SyncCheckpoint) (string, string) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return "", ""
+// or ErrSyncResumeInvalid when the checkpoint does not match the current
+// enumeration.
+func discordResumePosition(targets []discordTarget, checkpoint *SyncCheckpoint) (string, string, error) {
+	if checkpoint == nil {
+		return "", "", nil
+	}
+	if checkpoint.Cursor == "" {
+		return "", "", fmt.Errorf("discord sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor discordSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return "", ""
+		return "", "", fmt.Errorf("discord sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
 	if cursor.Target == "" || cursor.Message == "" {
-		return "", ""
+		return "", "", fmt.Errorf("discord sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	if cursor.Targets == "" {
+		return "", "", fmt.Errorf("discord sync cursor has no target listing: %w", ErrSyncResumeInvalid)
 	}
 	if cursor.Targets != "" && cursor.Targets != discordCursorFingerprint(targets) {
-		return "", ""
+		return "", "", fmt.Errorf("discord resume anchor %q was not found in the current target listing: %w", cursor.Target, ErrSyncResumeInvalid)
 	}
 	for _, target := range targets {
 		if target.channelID == cursor.Target {
-			return cursor.Target, cursor.Message
+			return cursor.Target, cursor.Message, nil
 		}
 	}
-	return "", ""
+	return "", "", fmt.Errorf("discord resume anchor %q was not found in the current target listing: %w", cursor.Target, ErrSyncResumeInvalid)
 }
 
 // discordSyncCursor is the resume position serialized into SyncCheckpoint.Cursor.
@@ -325,7 +335,7 @@ type discordSyncCursor struct {
 }
 
 // discordCursorFingerprint summarizes the ordered target list so a resume can
-// detect enumeration changes and fall back to a full re-scan.
+// detect enumeration changes and reject a stale resume.
 func discordCursorFingerprint(targets []discordTarget) string {
 	ids := make([]string, 0, len(targets))
 	for _, target := range targets {

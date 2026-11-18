@@ -583,7 +583,7 @@ func TestBuildWorkflow_LoopInstallsOneNode(t *testing.T) {
 					"loop_variables": []any{},
 				}},
 				Upstream: []string{"begin"}, Downstream: []string{"msg"}},
-			"msg": {Obj: CanvasComponentObj{ComponentName: "Message"},
+			"msg": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "done"}},
 				Upstream: []string{"loop"}},
 		},
 	}
@@ -801,7 +801,7 @@ func TestBuildWorkflow_LoopSharesOuterCanvasState(t *testing.T) {
 	state := NewCanvasState("run-1", "task-1")
 	ctx := WithState(t.Context(), state)
 
-	got, _, err := GetStateFromContext[*CanvasState](ctx)
+	got, err := GetStateFromContext(ctx)
 	if err != nil {
 		t.Fatalf("GetStateFromContext: %v", err)
 	}
@@ -854,7 +854,7 @@ func TestBuildWorkflow_LoopWithBody(t *testing.T) {
 					"maximum_loop_count": 10,
 				}},
 				Upstream: []string{"begin"}, Downstream: []string{"a"}},
-			"a": {Obj: CanvasComponentObj{ComponentName: "Message"},
+			"a": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "loop body"}},
 				Upstream: []string{"loop"}, Downstream: []string{"b"}},
 			"b": {Obj: CanvasComponentObj{ComponentName: "LLM"},
 				Upstream: []string{"a"}},
@@ -903,11 +903,11 @@ func TestBuildWorkflow_LoopBodyWithMultiTerminalCompiles(t *testing.T) {
 				Downstream: []string{"left", "right"},
 			},
 			"left": {
-				Obj:      CanvasComponentObj{ComponentName: "Message"},
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "left"}},
 				Upstream: []string{"branch"},
 			},
 			"right": {
-				Obj:      CanvasComponentObj{ComponentName: "Message"},
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "right"}},
 				Upstream: []string{"branch"},
 			},
 		},

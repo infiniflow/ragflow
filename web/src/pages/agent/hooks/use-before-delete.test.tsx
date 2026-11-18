@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { Edge } from '@xyflow/react';
+import { Edge, Node } from '@xyflow/react';
 import { NodeHandleId, Operator } from '../constant';
 import useGraphStore from '../store';
 import { useBeforeDelete } from './use-before-delete';
@@ -32,6 +32,13 @@ const createEdge = (
   ...options,
 });
 
+// OnBeforeDelete's declared return includes `boolean`, but this hook always
+// resolves to the nodes/edges object; the assertions below only read that form.
+type BeforeDeleteResult = {
+  nodes: Node[];
+  edges: Edge[];
+};
+
 describe('useBeforeDelete', () => {
   beforeEach(() => {
     useGraphStore.setState({
@@ -53,7 +60,7 @@ describe('useBeforeDelete', () => {
       }),
       createNode('message:0', Operator.Message, { parentId: 'iteration:0' }),
       createNode('message:1', Operator.Message, { parentId: 'message:0' }),
-      createNode('generate:0', Operator.Generate),
+      createNode('generate:0', Operator.Retrieval),
     ];
 
     const edges = [
@@ -66,12 +73,12 @@ describe('useBeforeDelete', () => {
     useGraphStore.setState({ nodes, edges });
 
     const { result } = renderHook(() => useBeforeDelete());
-    let deletion;
+    let deletion: BeforeDeleteResult | undefined;
     await act(async () => {
-      deletion = await result.current.handleBeforeDelete({
+      deletion = (await result.current.handleBeforeDelete({
         nodes: [nodes[0] as any],
         edges: [],
-      });
+      })) as BeforeDeleteResult;
     });
 
     expect(deletion?.nodes.map((node) => node.id).sort()).toEqual(
@@ -102,21 +109,98 @@ describe('useBeforeDelete', () => {
     });
 
     const { result } = renderHook(() => useBeforeDelete());
-    let beginDeletion;
-    let startDeletion;
+    let beginDeletion: BeforeDeleteResult | undefined;
+    let startDeletion: BeforeDeleteResult | undefined;
     await act(async () => {
-      beginDeletion = await result.current.handleBeforeDelete({
+      beginDeletion = (await result.current.handleBeforeDelete({
         nodes: [beginNode as any],
         edges: [],
-      });
-      startDeletion = await result.current.handleBeforeDelete({
+      })) as BeforeDeleteResult;
+      startDeletion = (await result.current.handleBeforeDelete({
         nodes: [iterationStartNode as any],
         edges: [],
-      });
+      })) as BeforeDeleteResult;
     });
 
     expect(beginDeletion?.nodes).toEqual([]);
     expect(startDeletion?.nodes).toEqual([]);
+  });
+
+  it('allows deleting a selected edge inside iteration without deleting nodes', async () => {
+    const nodes = [
+      createNode('iteration:0', Operator.Iteration, { type: 'group' }),
+      createNode('iterationStart:0', Operator.IterationStart, {
+        parentId: 'iteration:0',
+        type: 'iterationStartNode',
+      }),
+      createNode('message:0', Operator.Message, { parentId: 'iteration:0' }),
+      createNode('message:1', Operator.Message, { parentId: 'iteration:0' }),
+    ];
+    const selectedEdge = createEdge('e1', 'message:0', 'message:1');
+    const edges = [
+      createEdge('e0', 'iterationStart:0', 'message:0'),
+      selectedEdge,
+    ];
+
+    useGraphStore.setState({ nodes, edges });
+
+    const { result } = renderHook(() => useBeforeDelete());
+    let deletion: BeforeDeleteResult | undefined;
+    await act(async () => {
+      deletion = (await result.current.handleBeforeDelete({
+        nodes: [],
+        edges: [selectedEdge],
+      })) as BeforeDeleteResult;
+    });
+
+    expect(deletion?.nodes).toEqual([]);
+    expect(deletion?.edges.map((edge) => edge.id)).toEqual(['e1']);
+  });
+
+  it('does not delete edges of protected nodes when those nodes are rejected', async () => {
+    const beginNode = createNode('begin', Operator.Begin);
+    const messageNode = createNode('message:0', Operator.Message);
+    const edge = createEdge('e1', 'begin', 'message:0');
+
+    useGraphStore.setState({
+      nodes: [beginNode, messageNode],
+      edges: [edge],
+    });
+
+    const { result } = renderHook(() => useBeforeDelete());
+    let deletion: BeforeDeleteResult | undefined;
+    await act(async () => {
+      deletion = (await result.current.handleBeforeDelete({
+        nodes: [beginNode as any],
+        edges: [edge],
+      })) as BeforeDeleteResult;
+    });
+
+    expect(deletion?.nodes).toEqual([]);
+    expect(deletion?.edges).toEqual([]);
+  });
+
+  it('deletes edges of a protected node when the other end is deleted', async () => {
+    const beginNode = createNode('begin', Operator.Begin);
+    const messageNode = createNode('message:0', Operator.Message);
+    const edge = createEdge('e1', 'begin', 'message:0');
+
+    useGraphStore.setState({
+      nodes: [beginNode, messageNode],
+      edges: [edge],
+    });
+
+    const { result } = renderHook(() => useBeforeDelete());
+    let deletion: BeforeDeleteResult | undefined;
+    await act(async () => {
+      deletion = (await result.current.handleBeforeDelete({
+        nodes: [beginNode as any, messageNode as any],
+        edges: [edge],
+      })) as BeforeDeleteResult;
+    });
+
+    expect(deletion?.nodes.map((node) => node.id)).toEqual(['message:0']);
+    expect(deletion?.edges.map((edge) => edge.id)).toEqual(['e1']);
   });
 
   it('preserves agent downstream cleanup', async () => {
@@ -138,12 +222,12 @@ describe('useBeforeDelete', () => {
     useGraphStore.setState({ nodes, edges });
 
     const { result } = renderHook(() => useBeforeDelete());
-    let deletion;
+    let deletion: BeforeDeleteResult | undefined;
     await act(async () => {
-      deletion = await result.current.handleBeforeDelete({
+      deletion = (await result.current.handleBeforeDelete({
         nodes: [nodes[0] as any],
         edges,
-      });
+      })) as BeforeDeleteResult;
     });
 
     expect(deletion?.nodes.map((node) => node.id).sort()).toEqual(
@@ -164,7 +248,7 @@ describe('useBeforeDelete', () => {
       createNode('agent:0', Operator.Agent, { parentId: 'iteration:0' }),
       createNode('tool:0', Operator.Tool),
       createNode('message:0', Operator.Message),
-      createNode('generate:0', Operator.Generate),
+      createNode('generate:0', Operator.Retrieval),
     ];
 
     const edges = [
@@ -181,12 +265,12 @@ describe('useBeforeDelete', () => {
     useGraphStore.setState({ nodes, edges });
 
     const { result } = renderHook(() => useBeforeDelete());
-    let deletion;
+    let deletion: BeforeDeleteResult | undefined;
     await act(async () => {
-      deletion = await result.current.handleBeforeDelete({
+      deletion = (await result.current.handleBeforeDelete({
         nodes: [nodes[0] as any],
         edges: [],
-      });
+      })) as BeforeDeleteResult;
     });
 
     expect(deletion?.nodes.map((node) => node.id).sort()).toEqual(

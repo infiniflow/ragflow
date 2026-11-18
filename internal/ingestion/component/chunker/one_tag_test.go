@@ -28,11 +28,11 @@ import (
 // coordinate tags into the single emitted chunk.
 func TestOneChunkerStripsCoordTagsJSON(t *testing.T) {
 	items := []schema.ChunkDoc{
-		{Text: "Sentence one@@1\t2\t3\t4##", CKType: "text"},
-		{Text: "Sentence two@@1\t2\t3\t4##", CKType: "text"},
+		{Text: "Sentence one@@1\t2\t3\t4##"},
+		{Text: "Sentence two@@1\t2\t3\t4##"},
 	}
 	out := emitOneFromItems(items, nil)
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("want 1 chunk, got %d", len(chunks))
 	}
@@ -49,7 +49,7 @@ func TestOneChunkerStripsCoordTagsJSON(t *testing.T) {
 // path also strips coordinate tags before emitting.
 func TestOneChunkerStripsCoordTagsText(t *testing.T) {
 	out := emitOne("Hello world@@1\t2\t3\t4##", "text")
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("want 1 chunk, got %d", len(chunks))
 	}

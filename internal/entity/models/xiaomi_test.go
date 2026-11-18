@@ -33,10 +33,13 @@ func newXiaomiServer(t *testing.T, expectedPath string, handler func(t *testing.
 			t.Errorf("read body: %v", err)
 			return
 		}
+		// GET requests (e.g. ListModels) carry no body.
 		var body map[string]interface{}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Errorf("unmarshal: %v\nraw=%s", err, string(raw))
-			return
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Errorf("unmarshal: %v\nraw=%s", err, string(raw))
+				return
+			}
 		}
 		handler(t, r, body, w)
 	}))
@@ -367,10 +370,6 @@ func TestXiaomiUnsupportedMethods(t *testing.T) {
 	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"d"}}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: %v", err)
 	}
-	// CheckConnection IS implemented — verifies API config and base URL are reachable.
-	if err := m.CheckConnection(ctx, cfg); err != nil {
-		t.Errorf("CheckConnection: %v", err)
-	}
 	// TranscribeAudio IS implemented; with nil file it returns input validation error.
 	if _, err := m.TranscribeAudio(ctx, &model, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "file is missing") {
 		t.Errorf("TranscribeAudio: %v", err)
@@ -381,5 +380,143 @@ func TestXiaomiUnsupportedMethods(t *testing.T) {
 	}
 	if _, err := m.OCRFile(ctx, &model, nil, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
+	}
+}
+
+func newXiaomiListModelsForTest(baseURL string) *XiaomiModel {
+	return NewXiaomiModel(
+		map[string]string{"default": baseURL},
+		URLSuffix{Chat: "v1/chat/completions", Models: "models"},
+	)
+}
+
+func TestXiaomiListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newXiaomiServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected method GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"mimo-v2.5","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-pro","object":"model","owned_by":"xiaomi"}]}`))
+	})
+	defer srv.Close()
+
+	m := newXiaomiListModelsForTest(srv.URL + "/v1")
+	apiKey := "test-key"
+	models, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+
+	names := make([]string, 0, len(models))
+	for _, model := range models {
+		names = append(names, model.Name)
+	}
+	if got := strings.Join(names, ","); got != "mimo-v2.5,mimo-v2.5-pro" {
+		t.Fatalf("models=%v, want [mimo-v2.5 mimo-v2.5-pro]", names)
+	}
+
+	// The remote payload only carries ids, so the catalog must backfill types.
+	wantTypes := []string{"chat", "vision"}
+	for _, want := range wantTypes {
+		found := false
+		for _, got := range models[0].ModelTypes {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("mimo-v2.5 model_types=%v, want to contain %q", models[0].ModelTypes, want)
+		}
+	}
+}
+
+// The upstream payload only carries ids, and it advertises models the local
+// catalog does not list (the tts variants in Xiaomi's docs). Those entries
+// must still come back typed so the picker does not show them as chat-only.
+func TestXiaomiListModelsTypesModelsMissingFromCatalog(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newXiaomiServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"mimo-v2.5","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-asr","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-pro","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-tts","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-tts-voiceclone","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-tts-voicedesign","object":"model","owned_by":"xiaomi"}]}`))
+	})
+	defer srv.Close()
+
+	m := newXiaomiListModelsForTest(srv.URL + "/v1")
+	apiKey := "test-key"
+	models, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+
+	byName := make(map[string][]string, len(models))
+	for _, model := range models {
+		byName[model.Name] = model.ModelTypes
+	}
+	if len(byName) != 6 {
+		t.Fatalf("models=%v, want 6 entries", byName)
+	}
+	for _, name := range []string{"mimo-v2.5-tts-voiceclone", "mimo-v2.5-tts-voicedesign"} {
+		types, ok := byName[name]
+		if !ok {
+			t.Fatalf("model %q missing from %v", name, byName)
+		}
+		if len(types) != 1 || types[0] != "tts" {
+			t.Errorf("%s model_types=%v, want [tts]", name, types)
+		}
+	}
+}
+
+func TestXiaomiListModelsRejectsProviderError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newXiaomiServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		http.Error(w, "bad key", http.StatusUnauthorized)
+	})
+	defer srv.Close()
+
+	m := newXiaomiListModelsForTest(srv.URL + "/v1")
+	apiKey := "test-key"
+	if _, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "401") {
+		t.Errorf("ListModels error=%v, want status 401", err)
+	}
+}
+
+func TestXiaomiListModelsRequiresURLSuffix(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	// No server: the driver must fail before issuing a request.
+	m := newXiaomiForTest("http://unused")
+	apiKey := "test-key"
+	if _, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "models URL suffix is not configured") {
+		t.Errorf("ListModels error=%v, want missing URL suffix", err)
+	}
+}
+
+func TestXiaomiCheckConnectionUsesListModels(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	apiKey := "test-key"
+
+	srv := newXiaomiServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"mimo-v2.5-pro"}]}`))
+	})
+	defer srv.Close()
+
+	if err := newXiaomiListModelsForTest(srv.URL+"/v1").CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
+		t.Errorf("CheckConnection: %v", err)
+	}
+
+	rejected := newXiaomiServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		http.Error(w, "bad key", http.StatusUnauthorized)
+	})
+	defer rejected.Close()
+
+	if err := newXiaomiListModelsForTest(rejected.URL+"/v1").CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err == nil {
+		t.Error("CheckConnection: expected an error for a rejected key")
 	}
 }

@@ -85,13 +85,14 @@ type deferredNodeRegistryCtxKey struct{}
 
 type deferredNodeRegistry struct {
 	mu          sync.Mutex
-	completions map[string]func()
+	completions map[string]func(err error)
 }
 
 // ComponentExecutionOptions carries compile-time graph decisions into a
 // component invocation without leaking internal flags into DSL parameters.
 type ComponentExecutionOptions struct {
 	DeferAgentToMessage        bool
+	DeferLLMToMessage          bool
 	SuppressAgentMessageEvents bool
 }
 
@@ -109,11 +110,11 @@ func ComponentExecutionOptionsFromContext(ctx context.Context) ComponentExecutio
 // lazy stream.
 func WithDeferredNodeRegistry(ctx context.Context) context.Context {
 	return context.WithValue(ctx, deferredNodeRegistryCtxKey{}, &deferredNodeRegistry{
-		completions: make(map[string]func()),
+		completions: make(map[string]func(err error)),
 	})
 }
 
-func RegisterDeferredNode(ctx context.Context, nodeID string, complete func()) {
+func RegisterDeferredNode(ctx context.Context, nodeID string, complete func(err error)) {
 	registry, _ := ctx.Value(deferredNodeRegistryCtxKey{}).(*deferredNodeRegistry)
 	if registry == nil || nodeID == "" || complete == nil {
 		return
@@ -123,7 +124,7 @@ func RegisterDeferredNode(ctx context.Context, nodeID string, complete func()) {
 	registry.mu.Unlock()
 }
 
-func CompleteDeferredNode(ctx context.Context, nodeID string) {
+func CompleteDeferredNode(ctx context.Context, nodeID string, err error) {
 	registry, _ := ctx.Value(deferredNodeRegistryCtxKey{}).(*deferredNodeRegistry)
 	if registry == nil {
 		return
@@ -133,17 +134,21 @@ func CompleteDeferredNode(ctx context.Context, nodeID string) {
 	delete(registry.completions, nodeID)
 	registry.mu.Unlock()
 	if complete != nil {
-		complete()
+		complete(err)
 	}
 }
 
-func CompleteAllDeferredNodes(ctx context.Context) {
+func CompleteAllDeferredNodes(ctx context.Context, errs ...error) {
 	registry, _ := ctx.Value(deferredNodeRegistryCtxKey{}).(*deferredNodeRegistry)
 	if registry == nil {
 		return
 	}
+	var err error
+	if len(errs) > 0 {
+		err = errs[0]
+	}
 	registry.mu.Lock()
-	callbacks := make([]func(), 0, len(registry.completions))
+	callbacks := make([]func(error), 0, len(registry.completions))
 	for nodeID, complete := range registry.completions {
 		callbacks = append(callbacks, complete)
 		delete(registry.completions, nodeID)
@@ -151,7 +156,7 @@ func CompleteAllDeferredNodes(ctx context.Context) {
 	registry.mu.Unlock()
 	for _, complete := range callbacks {
 		if complete != nil {
-			complete()
+			complete(err)
 		}
 	}
 }
@@ -460,29 +465,15 @@ func ResetAgentMessageEmission(ctx context.Context) {
 	state.mu.Unlock()
 }
 
-// GetStateFromContext extracts a typed state attached via WithState.
-// Returns the state and a nil *sync.Mutex for *CanvasState (the
-// embedded RWMutex is what callers actually contend on through
-// helper methods); the *sync.Mutex return value mirrors eino's
-// getState shape for API parity.
-//
-// The generic type parameter is needed for compatibility with eino's
-// compose.getState[S] signature so callers can write the same shape
-// whether they're reading our state or eino's.
-func GetStateFromContext[S any](ctx context.Context) (S, *sync.Mutex, error) {
-	var zero S
+// GetStateFromContext extracts the per-run CanvasState attached via WithState.
+func GetStateFromContext(ctx context.Context) (*CanvasState, error) {
 	v := ctx.Value(stateCtxKey{})
 	if v == nil {
-		return zero, nil, fmt.Errorf("canvas: no state in context")
+		return nil, fmt.Errorf("agent: no state in context")
 	}
-	s, ok := v.(S)
+	s, ok := v.(*CanvasState)
 	if !ok {
-		return zero, nil, fmt.Errorf("canvas: state type mismatch: have %T, want %T", v, zero)
+		return nil, fmt.Errorf("agent: state type mismatch: have %T, want *CanvasState", v)
 	}
-	// For *CanvasState the returned *sync.Mutex is nil on purpose:
-	// CanvasState exposes its own sync.RWMutex via the exported
-	// methods (GetVar / SetVar / ReadVars), all of which lock
-	// internally. Callers reading *CanvasState should prefer the
-	// self-locking methods over holding the mutex themselves.
-	return s, nil, nil
+	return s, nil
 }

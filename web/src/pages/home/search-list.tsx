@@ -1,11 +1,13 @@
 import { HomeCard } from '@/components/home-card';
 import { IconFont } from '@/components/icon-font';
 import { MoreButton } from '@/components/more-button';
+import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useEffect } from 'react';
 import { useFetchSearchList, useRenameSearch } from '../next-searches/hooks';
 import { SearchDropdown } from '../next-searches/search-dropdown';
+import { useShowPrivilegeDialog } from '@/ee/pages/next-searches/use-show-privilege-dialog';
 
 export function SearchList({
   setListLength,
@@ -24,6 +26,12 @@ export function SearchList({
     onSearchRenameOk,
     initialSearchName,
   } = useRenameSearch();
+  const {
+    privilegeModalVisible,
+    hidePrivilegeModal,
+    handShowPrivilegeModal,
+    recordWithSourceType,
+  } = useShowPrivilegeDialog();
   const onSearchRenameConfirm = (name: string) => {
     onSearchRenameOk(name, () => {
       refetchList();
@@ -45,6 +53,7 @@ export function SearchList({
             <SearchDropdown
               dataset={x}
               showSearchRenameModal={showSearchRenameModal}
+              showPrivilegeModal={handShowPrivilegeModal(x)}
             >
               <MoreButton></MoreButton>
             </SearchDropdown>
@@ -59,6 +68,12 @@ export function SearchList({
           loading={searchRenameLoading}
           title={<IconFont name="search" className="size-6"></IconFont>}
         ></RenameDialog>
+      )}
+      {privilegeModalVisible && (
+        <PrivilegeManagementDialog
+          hideModal={hidePrivilegeModal}
+          initialValues={recordWithSourceType}
+        />
       )}
     </>
   );

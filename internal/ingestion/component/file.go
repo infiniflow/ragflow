@@ -14,28 +14,33 @@
 //  limitations under the License.
 //
 
-// Package component implements File ingestion component (Phase 2.1) — port of python `rag/flow/file.py`.
+// Package component implements the File ingestion component (Phase 2.1) — the
+// Go port of the upstream file ingestion path.
 //
 // SCOPE (honest):
 //
-//   - DOC-ID PATH: matched. The python component only resolves the
+//   - DOC-ID PATH: matched. The component only resolves the
 //     document record and emits `name`; it does NOT fetch the binary.
 //     The Go port now mirrors that ownership boundary.
 //
 //   - BINARY FETCH: intentionally delegated to Parser. This matches the
-//     Python runtime, where Parser resolves
-//     `File2DocumentService.get_storage_address(...)` and performs the
-//     storage GET itself.
 //
-//   - ASYNC RACE / DOCUMENT-LEVEL LOCKING: not applicable in Go;
-//     the python `self._canvas.callback(1, ...)` short-circuit is
-//     replicated via `runtime.TrackProgress(0/1/...)` so a pipeline
-//     observer sees Started/Done transitions.
+// runtime, where Parser resolves
 //
-//   - PROGRESS: implemented via `runtime.TrackProgress`. With a
-//     nil callback (the production pipeline wires its own sink),
-//     the wrapper is a no-op so this component stays free of any
-//     GUI / Redis state.
+//	  `File2DocumentService.get_storage_address(...)` and performs the
+//	  storage GET itself.
+//
+//	- ASYNC RACE / DOCUMENT-LEVEL LOCKING: not applicable in Go;
+//
+// the `self._canvas.callback(1, ...)` short-circuit is
+//
+//	  replicated via `runtime.TrackProgress(0/1/...)` so a pipeline
+//	  observer sees Started/Done transitions.
+//
+//	- PROGRESS: implemented via `runtime.TrackProgress`. With a
+//	  nil callback (the production pipeline wires its own sink),
+//	  the wrapper is a no-op so this component stays free of any
+//	  GUI / Redis state.
 package component
 
 import (
@@ -50,15 +55,16 @@ import (
 	"gorm.io/gorm"
 )
 
-const ComponentNameFile = "File"
+const ComponentNameFile = schema.ComponentNameFile
 
 // FileComponent resolves document/file metadata and forwards enough
 // identity for downstream Parser to fetch bytes.
 //
-// Inputs (per rag/flow/file.py:File._invoke):
+// Inputs (per File._invoke)
 //
-//	doc_id  (string, optional)            — python: self._canvas._doc_id
-//	file    (list[map], optional)         — python: kwargs.get("file")[0]
+// doc_id (string, optional) — self._canvas._doc_id
+// file (list[map], optional) — kwargs.get("file")[0]
+//
 //	bucket  (string, optional)            — storage bucket override for tests/admin paths
 //	path    (string, optional)            — storage object key override for tests/admin paths
 //
@@ -97,9 +103,9 @@ func NewFileComponent(params map[string]any) (runtime.Component, error) {
 	return &FileComponent{}, nil
 }
 
-// Inputs returns the parameter metadata. Matches the python
+// Inputs returns the parameter metadata. Matches the
 // File._invoke kwargs. The canonical upstream field is `file`,
-// matching the Python runtime contract.
+// matching the runtime contract
 func (c *FileComponent) Inputs() map[string]string {
 	return map[string]string{
 		"doc_id": "Optional upstream document ID (mirrors python self._canvas._doc_id).",
@@ -109,7 +115,7 @@ func (c *FileComponent) Inputs() map[string]string {
 	}
 }
 
-// Outputs returns the parameter metadata. Mirrors the python
+// Outputs returns the parameter metadata. Mirrors the
 // set_output contract (see schema.FileOutputs).
 func (c *FileComponent) Outputs() map[string]string {
 	return map[string]string{
@@ -124,16 +130,16 @@ func (c *FileComponent) Outputs() map[string]string {
 
 // Invoke resolves document/file metadata for downstream Parser use.
 //
-// The implementation mirrors the python flow's two paths:
+// # The implementation mirrors the flow's two paths
 //
-//  1. doc_id is set (python: `self._canvas._doc_id`) — resolve
+//  1. doc_id is set (`self._canvas._doc_id`) — resolve
 //     the document name and emit metadata only.
 //  2. doc_id is empty — pull the first file descriptor out of
 //     `file` and use its `name`/`id` directly.
 func (c *FileComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// Parse the wire input through the schema type so the
 	// validation errors match the package convention.
-	in, err := parseFileInputs(ctx, inputs)
+	in, err := parseFileInputs(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -181,9 +187,9 @@ type fileInputs struct {
 }
 
 // parseFileInputs parses and validates the upstream input map.
-// Mirrors python's branching on `self._canvas._doc_id` vs.
+// Mirrors branching on `self._canvas._doc_id` vs
 // `kwargs.get("file")[0]`.
-func parseFileInputs(ctx context.Context, inputs map[string]any) (fileInputs, error) {
+func parseFileInputs(ctx context.Context, db *gorm.DB, inputs map[string]any) (fileInputs, error) {
 	if inputs == nil {
 		return fileInputs{}, fmt.Errorf("file: inputs map is nil")
 	}
@@ -208,7 +214,7 @@ func parseFileInputs(ctx context.Context, inputs map[string]any) (fileInputs, er
 	}
 
 	if out.docID == "" {
-		// Fall through to the file-list path. Python uses
+		// Fall through to the file-list path. uses
 		// `kwargs.get("file")[0]`; Go keeps that same public key.
 		if v, ok := inputs["file"]; ok {
 			switch list := v.(type) {
@@ -223,7 +229,7 @@ func parseFileInputs(ctx context.Context, inputs map[string]any) (fileInputs, er
 						// Convention: when `id` is a storage key, we treat
 						// it as the `path` only when no explicit path is
 						// provided. Bucket remains empty (must be set
-						// separately). The python code does the same.
+						// separately). The code does the same
 						out.path = id
 					}
 				}
@@ -253,7 +259,7 @@ func parseFileInputs(ctx context.Context, inputs map[string]any) (fileInputs, er
 		out.path = v
 	}
 	if out.docID != "" {
-		name, err := resolveDocumentName(ctx, out.docID)
+		name, err := resolveDocumentName(ctx, db, out.docID)
 		if err != nil {
 			return fileInputs{}, fmt.Errorf("file: resolve doc_id %q: %w", out.docID, err)
 		}

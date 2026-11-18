@@ -18,7 +18,6 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -51,9 +50,9 @@ var searxngNewlinePattern = regexp.MustCompile(`\n+`)
 // searxng_url are model inputs; searxng_url may also be node configuration,
 // while top_n is Canvas-only configuration.
 type searxngParams struct {
-	Query      string `json:"query"`
-	SearXNGURL string `json:"searxng_url"`
-	TopN       int    `json:"top_n"`
+	Query      string `json:"query" doc:"The search keywords to execute with SearXNG. The keywords should be the most important words/terms(includes synonyms) from the original request." required:"true"`
+	SearXNGURL string `json:"searxng_url,omitempty" doc:"The base URL of your SearXNG instance (e.g., http://localhost:4000). This is required to connect to your SearXNG server."`
+	TopN       int    `json:"top_n" schema:"-"`
 }
 
 type searxngEnvelope struct {
@@ -104,22 +103,7 @@ func newSearXNGToolWithDefaults(helper *HTTPHelper, defaults searxngParams) *Sea
 
 // Info exposes the Python model-call schema, not Canvas-only configuration.
 func (s *SearXNGTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: searxngToolName,
-		Desc: searxngToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with SearXNG. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
-			},
-			"searxng_url": {
-				Type:     schema.String,
-				Desc:     "The base URL of your SearXNG instance (e.g., http://localhost:4000). This is required to connect to your SearXNG server.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(searxngToolName, searxngToolDescription, searxngParams{})
 }
 
 func buildSearXNGURL(baseURL, query string) string {
@@ -287,10 +271,9 @@ func buildSearXNGReferences(envelope map[string]any) ([]map[string]any, []map[st
 			continue
 		}
 
-		documentID := strconv.Itoa(hashSearXNGString(content, 100000000))
-		displayID := strconv.Itoa(hashSearXNGString(documentID, 500))
 		title := searxngText(item["title"])
 		resultURL := searxngText(item["url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":                displayID,
 			"chunk_id":          documentID,
@@ -361,15 +344,6 @@ func searxngText(value any) string {
 
 func searxngPromptField(value any) string {
 	return searxngNewlinePattern.ReplaceAllString(searxngText(value), " ")
-}
-
-func hashSearXNGString(value string, modulus int) int {
-	digest := sha1.Sum([]byte(value))
-	result := 0
-	for _, part := range digest {
-		result = (result*256 + int(part)) % modulus
-	}
-	return result
 }
 
 func searxngJSON(env searxngEnvelope) string {

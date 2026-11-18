@@ -91,9 +91,11 @@ def _install_scholarly_stub():
 _install_rag_llm_stubs()
 _install_scholarly_stub()
 
+import time
+
 import pytest
 import requests
-from test.testcases.configs import API_PROXY_SCHEME, EMAIL, HOST_ADDRESS, PASSWORD, SILICONFLOW_API_KEY, VERSION, ZHIPU_AI_API_KEY
+from test.testcases.configs import EMAIL, HOST_ADDRESS, PASSWORD, SILICONFLOW_API_KEY, VERSION, ZHIPU_AI_API_KEY
 
 MARKER_EXPRESSIONS = {
     "p1": "p1",
@@ -148,14 +150,36 @@ def login():
     return auth
 
 
+_ADMIN_BOOTSTRAP_REASON = "admin server not connected"
+
+
+def _auth_with_admin_bootstrap_retry():
+    deadline = time.monotonic() + 120
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            register()
+        except Exception as exc:
+            message = str(exc)
+            if _ADMIN_BOOTSTRAP_REASON in message:
+                last_error = exc
+                time.sleep(2)
+                continue
+            print(exc)
+        try:
+            return login()
+        except Exception as exc:
+            if _ADMIN_BOOTSTRAP_REASON in str(exc):
+                last_error = exc
+                time.sleep(2)
+                continue
+            raise
+    raise last_error or Exception("Timed out waiting for admin server during auth bootstrap")
+
+
 @pytest.fixture(scope="session")
 def auth():
-    try:
-        register()
-    except Exception as e:
-        print(e)
-    auth = login()
-    return auth
+    return _auth_with_admin_bootstrap_retry()
 
 
 @pytest.fixture(scope="session")
@@ -177,24 +201,14 @@ def get_added_models(auth, factory_name):
     res = response.json()
     if res.get("code") != 0:
         raise Exception(res.get("message"))
-    # Go server (post-Python port) serializes this field as `model_provider`
-    # in the RESTful `/api/v1/models` response. Fall back to the legacy
-    # `provider_name` key so this conftest works against both.
-    added_factory = {model.get("model_provider") or model["provider_name"] for model in res.get("data", [])}
-    if API_PROXY_SCHEME == "go":
-        added_factory = {provider.casefold() for provider in added_factory}
-        factory_name = factory_name.casefold()
-    if factory_name in added_factory:
-        return True
-    return False
+    added_factory = {model["provider_name"].casefold() for model in res.get("data", [])}
+    return factory_name.casefold() in added_factory
 
 
 def _response_json_or_warning(response, action: str) -> dict:
     try:
         return response.json()
     except ValueError:
-        if API_PROXY_SCHEME != "go":
-            raise
         message = response.text.strip() or response.reason or "empty response body"
         return {
             "code": response.status_code or -1,

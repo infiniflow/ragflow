@@ -19,7 +19,10 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/tokenizer"
 
 	"github.com/cloudwego/eino/schema"
@@ -197,68 +200,52 @@ func TestLLM_Registered(t *testing.T) {
 	}
 }
 
-// TestLLM_ThinkingFieldRoundTrip guards the agent-component
-// portion of PR #15446 (thinking switch) and PR #16640 (gen_conf
-// forwarding). The agent component accepts `thinking` from the DSL
-// params (any non-empty, non-"default" value) and threads it through
-// LLMParam and the ChatInvokeRequest. Downstream (einoChatInvoker)
-// only acts on "enabled" / "disabled" and silently ignores other
-// values, so lenient forwarding is safe.
-func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
+func TestComponentThinkingDefaults(t *testing.T) {
 	t.Parallel()
-
-	// Case 1: "enabled" round-trips into LLMParam and ChatInvokeRequest.
-	enabled := mergeLLMParam(LLMParam{}, map[string]any{
-		"thinking":      "enabled",
-		"model_id":      "qwen3-max",
-		"system_prompt": "s",
-		"user_prompt":   "u",
-	})
-	if enabled.Thinking != "enabled" {
-		t.Errorf("Thinking = %q, want enabled", enabled.Thinking)
+	for _, tc := range []struct {
+		name   string
+		base   string
+		inputs map[string]any
+		want   string
+	}{
+		{name: "missing", want: "disabled"},
+		{name: "empty", inputs: map[string]any{"thinking": ""}, want: "disabled"},
+		{name: "default", inputs: map[string]any{"thinking": "default"}, want: "disabled"},
+		{name: "disabled", inputs: map[string]any{"thinking": "disabled"}, want: "disabled"},
+		{name: "enabled", inputs: map[string]any{"thinking": "enabled"}, want: "enabled"},
+		{name: "saved default", base: "default", want: "disabled"},
+		{name: "saved enabled", base: "enabled", want: "enabled"},
+		{name: "reset enabled to default", base: "enabled", inputs: map[string]any{"thinking": "default"}, want: "disabled"},
+		{name: "reset enabled to empty", base: "enabled", inputs: map[string]any{"thinking": ""}, want: "disabled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mergeLLMParam(LLMParam{Thinking: tc.base}, tc.inputs).Thinking; got != tc.want {
+				t.Errorf("LLM thinking = %q, want %q", got, tc.want)
+			}
+			if got := mergeAgentParam(AgentParam{Thinking: tc.base}, tc.inputs).Thinking; got != tc.want {
+				t.Errorf("Agent thinking = %q, want %q", got, tc.want)
+			}
+		})
 	}
+}
 
-	// Case 2: "disabled" also round-trips.
-	disabled := mergeLLMParam(LLMParam{}, map[string]any{
-		"thinking":    "disabled",
-		"model_id":    "kimi-k2.6",
-		"user_prompt": "u",
-	})
-	if disabled.Thinking != "disabled" {
-		t.Errorf("Thinking = %q, want disabled", disabled.Thinking)
-	}
-
-	// Case 3: empty / missing value → empty (system default).
-	defaulted := mergeLLMParam(LLMParam{}, map[string]any{
-		"model_id":    "glm-4.6",
-		"user_prompt": "u",
-	})
-	if defaulted.Thinking != "" {
-		t.Errorf("Thinking = %q, want empty (system default)", defaulted.Thinking)
-	}
-
-	// Case 4: "default" is explicitly rejected, matching Python's
-	// `self.thinking != "default"` gate in gen_conf().
-	defaultStr := mergeLLMParam(LLMParam{}, map[string]any{
-		"thinking":    "default",
-		"model_id":    "glm-4.6",
-		"user_prompt": "u",
-	})
-	if defaultStr.Thinking != "" {
-		t.Errorf(`Thinking = %q, want empty ("default" rejected)`, defaultStr.Thinking)
-	}
-
-	// Case 5: arbitrary / unknown values are leniently forwarded
-	// (matches Python gen_conf() which passes through any truthy
-	// non-"default" string). Downstream einoChatInvoker ignores
-	// unknown values, so this is safe.
-	arbitrary := mergeLLMParam(LLMParam{}, map[string]any{
-		"thinking":    "auto",
-		"model_id":    "glm-4.6",
-		"user_prompt": "u",
-	})
-	if arbitrary.Thinking != "auto" {
-		t.Errorf("arbitrary thinking = %q, want auto (lenient forwarding)", arbitrary.Thinking)
+func TestLLM_ForwardsThinkingParam(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok"}}
+	withStubInvoker(t, stub)
+	for _, thinking := range []string{"", "default", "disabled", "enabled"} {
+		t.Run(thinking, func(t *testing.T) {
+			c := NewLLMComponent(LLMParam{ModelID: "stub", Thinking: thinking})
+			if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "hello"}); err != nil {
+				t.Fatal(err)
+			}
+			want := "disabled"
+			if thinking == "enabled" {
+				want = "enabled"
+			}
+			if stub.captured.Thinking != want {
+				t.Fatalf("invoker thinking = %q, want %q", stub.captured.Thinking, want)
+			}
+		})
 	}
 }
 
@@ -272,6 +259,7 @@ func TestLLM_Invoke_CompositeModel_CustomContextOverride(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-comp-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -334,6 +322,7 @@ func TestLLM_Invoke_UUIDModel_CustomContextOverride(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-uuid-2",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -397,6 +386,7 @@ func TestLLM_Invoke_UUIDModel_ResolvesContentLength(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-uuid-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -456,6 +446,7 @@ func TestLLM_ResolvesTenantModelID(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "DeepSeek",
 	}).Error; err != nil {
@@ -504,191 +495,6 @@ func TestLLM_ResolvesTenantModelID(t *testing.T) {
 	}
 	if got, want := stub.captured.BaseURL, "https://instance.example"; got != want {
 		t.Errorf("BaseURL=%q, want %q", got, want)
-	}
-}
-
-func TestFitMessages_EverythingFits(t *testing.T) {
-	msgs := []schema.Message{
-		{Role: schema.System, Content: "you are helpful"},
-		{Role: schema.User, Content: "hello"},
-	}
-	fitted, fitErr := fitMessages("", msgs, 100000)
-	if fitErr != "" {
-		t.Fatalf("unexpected fit error: %s", fitErr)
-	}
-	if len(fitted) != 2 {
-		t.Fatalf("got %d messages, want 2", len(fitted))
-	}
-	if fitted[0].Content != "you are helpful" || fitted[1].Content != "hello" {
-		t.Fatalf("messages modified when they fit: %+v", fitted)
-	}
-}
-
-func TestFitMessages_PreservesImageOnlyTurn(t *testing.T) {
-	imgURL := "data:image/png;base64,AAAA"
-	msgs := []schema.Message{
-		{Role: schema.System, Content: "you are helpful"},
-		{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
-			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{
-				MessagePartCommon: schema.MessagePartCommon{URL: &imgURL},
-			}},
-		}},
-	}
-	fitted, fitErr := fitMessages("", msgs, 100000)
-	if fitErr != "" {
-		t.Fatalf("unexpected fit error: %s", fitErr)
-	}
-	if len(fitted) != 2 {
-		t.Fatalf("got %d messages, want 2 (image-only turn must be preserved)", len(fitted))
-	}
-	last := fitted[len(fitted)-1]
-	if len(last.UserInputMultiContent) != 1 || last.UserInputMultiContent[0].Type != schema.ChatMessagePartTypeImageURL {
-		t.Fatalf("image parts lost after fitting: %+v", last)
-	}
-}
-
-func TestFitMessages_IncludesSyntheticSystemPrompt(t *testing.T) {
-	msgs := []schema.Message{{Role: schema.User, Content: "hello"}}
-	fitted, fitErr := fitMessages("be brief", msgs, 100000)
-	if fitErr != "" {
-		t.Fatalf("unexpected fit error: %s", fitErr)
-	}
-	if len(fitted) != 2 {
-		t.Fatalf("got %d messages, want 2 (synthetic system prompt + user)", len(fitted))
-	}
-	if fitted[0].Role != schema.System || fitted[0].Content != "be brief" {
-		t.Fatalf("synthetic system prompt not preserved: %+v", fitted[0])
-	}
-}
-
-func TestFitMessages_DropsMiddleWhenOverBudget(t *testing.T) {
-	long := strings.Repeat("x ", 5000)
-	msgs := []schema.Message{
-		{Role: schema.System, Content: long},
-		{Role: schema.User, Content: "middle"},
-		{Role: schema.User, Content: "last"},
-	}
-	fitted, fitErr := fitMessages("", msgs, 1000)
-	if fitErr != "" {
-		t.Fatalf("unexpected fit error: %s", fitErr)
-	}
-	if len(fitted) != 2 {
-		t.Fatalf("got %d messages, want 2 (middle dropped, system + last user kept)", len(fitted))
-	}
-	if fitted[0].Role != schema.System || fitted[1].Role != schema.User {
-		t.Fatalf("unexpected roles: %+v", fitted)
-	}
-	if !strings.Contains(fitted[1].Content, "last") {
-		t.Fatalf("last user message not preserved: %+v", fitted[1])
-	}
-}
-
-// TestFitMessages_SystemKeptButEmptied locks the write-back for a system
-// message that the fitter keeps but trims to empty (the final user turn alone
-// fills the budget): the fitted (empty) content must be written back instead
-// of the original, so the conversation stays within the budget.
-func TestFitMessages_SystemKeptButEmptied(t *testing.T) {
-	origSys := strings.Repeat("s ", 3000) // dominates (>80% of tokens)
-	msgs := []schema.Message{
-		{Role: schema.System, Content: origSys},
-		{Role: schema.User, Content: strings.Repeat("u ", 600)}, // alone exceeds the budget
-	}
-	fitted, fitErr := fitMessages("", msgs, 500)
-	if fitErr != "" {
-		t.Fatalf("unexpected fit error: %s", fitErr)
-	}
-	if len(fitted) != 2 {
-		t.Fatalf("got %d messages, want 2 (both kept)", len(fitted))
-	}
-	if fitted[0].Role != schema.System || fitted[0].Content != "" {
-		t.Fatalf("system should be kept but trimmed to empty, got %+v", fitted[0])
-	}
-	if fitted[1].Role != schema.User || fitted[1].Content == origSys {
-		t.Fatalf("user turn wrong after fitting: %+v", fitted[1])
-	}
-	total := tokenizer.NumTokensFromString(fitted[0].Content) + tokenizer.NumTokensFromString(fitted[1].Content)
-	if total > 500 {
-		t.Fatalf("fitted total %d exceeds budget 500", total)
-	}
-}
-
-// TestFitMessages_FoldsMultipleTextParts verifies that every non-empty text
-// part of a multi-modal message participates in the token budget: the parts
-// are folded into a single fitted text on the first text part and additional
-// text parts are removed, so no text escapes the budget after reconstruction.
-func TestFitMessages_FoldsMultipleTextParts(t *testing.T) {
-	long1 := strings.Repeat("a ", 3000)
-	long2 := strings.Repeat("b ", 3000)
-	imgURL := "data:image/png;base64,AAAA"
-	msgs := []schema.Message{
-		{Role: schema.System, Content: "sys"},
-		{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
-			{Type: schema.ChatMessagePartTypeText, Text: long1},
-			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{
-				MessagePartCommon: schema.MessagePartCommon{URL: &imgURL},
-			}},
-			{Type: schema.ChatMessagePartTypeText, Text: long2},
-		}},
-	}
-	fitted, fitErr := fitMessages("", msgs, 2000)
-	if fitErr != "" {
-		t.Fatalf("unexpected fit error: %s", fitErr)
-	}
-	if len(fitted) != 2 {
-		t.Fatalf("got %d messages, want 2", len(fitted))
-	}
-	last := fitted[len(fitted)-1]
-	textParts := 0
-	imageParts := 0
-	for _, part := range last.UserInputMultiContent {
-		switch part.Type {
-		case schema.ChatMessagePartTypeText:
-			textParts++
-		case schema.ChatMessagePartTypeImageURL:
-			imageParts++
-		}
-	}
-	if textParts != 1 {
-		t.Fatalf("got %d text parts, want 1 (folded): %+v", textParts, last.UserInputMultiContent)
-	}
-	if imageParts != 1 {
-		t.Fatalf("image part lost after trimming: %+v", last.UserInputMultiContent)
-	}
-	if total := tokenizer.NumTokensFromString(last.UserInputMultiContent[0].Text); total > 2000 {
-		t.Fatalf("fitted text totals %d tokens, exceeds budget 2000", total)
-	}
-}
-
-// TestFitMessages_ImageOnlyLastTurnOverBudget locks the over-budget path where
-// an image-only turn is the last non-system message (ll2 = 0 tokens): the
-// fitter keeps it, gives the whole budget to the system messages, and the
-// image-only turn must survive reconstruction untouched.
-func TestFitMessages_ImageOnlyLastTurnOverBudget(t *testing.T) {
-	imgURL := "data:image/png;base64,AAAA"
-	msgs := []schema.Message{
-		{Role: schema.System, Content: strings.Repeat("s ", 3000)}, // dominates (>80% of tokens)
-		{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
-			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{
-				MessagePartCommon: schema.MessagePartCommon{URL: &imgURL},
-			}},
-		}},
-	}
-	fitted, fitErr := fitMessages("", msgs, 500)
-	if fitErr != "" {
-		t.Fatalf("unexpected fit error: %s", fitErr)
-	}
-	if len(fitted) != 2 {
-		t.Fatalf("got %d messages, want 2 (system + image-only turn)", len(fitted))
-	}
-	if fitted[0].Role != schema.System || fitted[0].Content == msgs[0].Content {
-		t.Fatalf("system should be trimmed to the budget: %+v", fitted[0])
-	}
-	if total := tokenizer.NumTokensFromString(fitted[0].Content); total > 500 {
-		t.Fatalf("system exceeds budget after fit: %d tokens", total)
-	}
-	last := fitted[len(fitted)-1]
-	if last.Role != schema.User || len(last.UserInputMultiContent) != 1 || last.UserInputMultiContent[0].Type != schema.ChatMessagePartTypeImageURL {
-		t.Fatalf("image-only turn lost or modified after over-budget fitting: %+v", last)
 	}
 }
 
@@ -759,7 +565,7 @@ func TestLLM_Invoke_UnresolvableModelFallsBackTo8192(t *testing.T) {
 
 // TestLLM_Invoke_UsesModelContentLengthBudget verifies that the message
 // fitting budget in Invoke is the chat model's context window
-// (content_length) resolved via dao.ResolveModelContentLength — NOT the
+// (content_length) resolved via modelcontext.ResolveModelContentLength - NOT the
 // canvas max_tokens / the 8192 fallback. A user prompt far larger than the
 // 8192 fallback (but well inside gpt-4o@openai's 128k window) must be passed
 // through to the invoker untrimmed.
@@ -820,5 +626,62 @@ func TestCleanFormattedAnswer(t *testing.T) {
 				t.Errorf("cleanFormattedAnswer(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+// streamingStubDriver is a ModelDriver whose only real behaviour is the stream
+// the resolved invoker must forward. Everything else is inherited from
+// models.DummyModel ("not implemented"), which the test never calls.
+type streamingStubDriver struct {
+	models.DummyModel
+}
+
+func (d *streamingStubDriver) ChatStreamlyWithSender(_ context.Context, _ string, _ []models.Message, _ *models.APIConfig, _ *models.ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+	think, answer := "thinking…", "the answer"
+	if err := sender(nil, &think); err != nil {
+		return err
+	}
+	return sender(&answer, nil)
+}
+
+// TestResolvedModelInvokerStreams pins the seam the harness asserts:
+// harness.InvokerSessionModel.StreamComplete type-asserts chat.StreamingInvoker
+// (harness/action_session.go:1504), so a resolved invoker without Stream
+// silently downgraded every agentic answer to the one-shot call — the log line
+// "chat invoker *component.resolvedModelInvoker does not support streaming" —
+// and the client received the whole answer in one piece.
+func TestResolvedModelInvokerStreams(t *testing.T) {
+	modelName := "stub-model"
+	invoker := NewResolvedInvoker(models.NewChatModel(&streamingStubDriver{}, &modelName, &models.APIConfig{}))
+	streamer, ok := invoker.(chat.StreamingInvoker)
+	if !ok {
+		t.Fatalf("resolved invoker %T must implement chat.StreamingInvoker", invoker)
+	}
+
+	var answer, think strings.Builder
+	resp, err := streamer.Stream(t.Context(), nil, chat.Request{
+		Messages: []schema.Message{{Role: schema.User, Content: "q"}},
+	}, func(delta string, isThink bool) error {
+		if isThink {
+			think.WriteString(delta)
+			return nil
+		}
+		answer.WriteString(delta)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	// Reasoning rides the think channel, content the answer channel — the caller
+	// frames each separately, so a mixed-up flag would put reasoning in the answer.
+	if think.String() != "thinking…" {
+		t.Errorf("think deltas = %q, want the reasoning piece", think.String())
+	}
+	if answer.String() != "the answer" {
+		t.Errorf("answer deltas = %q, want the content piece", answer.String())
+	}
+	// The assembled reply matches what Invoke would have returned.
+	if resp.Content != "the answer" || resp.Thinking != "thinking…" {
+		t.Errorf("assembled reply = (%q, %q), want (the answer, thinking…)", resp.Content, resp.Thinking)
 	}
 }

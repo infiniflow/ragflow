@@ -15,6 +15,7 @@
  */
 
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
+import { isEqual } from 'lodash';
 import { useCallback, useState } from 'react';
 import {
   FilterChange,
@@ -42,13 +43,19 @@ const mergeFilterValue = (
   filterValue: FilterValue,
   ids: string[],
 ): FilterValue => {
-  const value = {} as FilterValue;
+  const value: FilterValue = {};
   for (const key in filterValue) {
-    if (Array.isArray(filterValue[key])) {
-      const keyIds = filterValue[key] as string[];
-      value[key] = ids.filter((id) => keyIds.includes(id));
-    } else if (typeof filterValue[key] === 'object') {
-      value[key] = mergeFilterValue(filterValue[key], ids);
+    const fieldValue = filterValue[key];
+    if (Array.isArray(fieldValue)) {
+      value[key] = ids.filter((id) => fieldValue.includes(id));
+    } else {
+      const nestedValue: Record<string, string[]> = {};
+      for (const nestedKey in fieldValue) {
+        nestedValue[nestedKey] = ids.filter((id) =>
+          fieldValue[nestedKey].includes(id),
+        );
+      }
+      value[key] = nestedValue;
     }
   }
   return value;
@@ -81,7 +88,11 @@ export function useHandleFilterSubmit() {
       if (!preValue) return preValue;
 
       const newValue: FilterValue = mergeFilterValue(preValue, validFields);
-      return newValue;
+      // Keep the previous reference when nothing was actually pruned, so a
+      // catalog refresh (e.g. the document poll invalidating the filter
+      // counts every 5s) doesn't trigger a throwaway state update and the
+      // re-render churn that follows.
+      return isEqual(preValue, newValue) ? preValue : newValue;
     });
   }, []);
 

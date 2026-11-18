@@ -194,7 +194,11 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
           }
           break;
         case FormFieldType.Segmented:
-          fieldSchema = z.string();
+          fieldSchema = field.options?.every(
+            (option) => typeof option.value === 'string',
+          )
+            ? z.string()
+            : z.union([z.string(), z.boolean(), z.number()]);
           break;
         case FormFieldType.Number:
           fieldSchema = z.coerce.number();
@@ -942,10 +946,14 @@ const DynamicForm = {
                 const shouldShow = field.shouldRender
                   ? field.shouldRender(formValues)
                   : true;
+                // `shouldRender === false` unmounts the field entirely (no DOM),
+                // instead of leaving it hidden. `field.hidden` keeps the previous
+                // hidden-class behavior since it's a separate static concern.
+                if (!shouldShow) return null;
                 return (
                   <div
                     key={field.name}
-                    className={cn({ hidden: field.hidden || !shouldShow })}
+                    className={cn({ hidden: field.hidden })}
                   >
                     <RenderField
                       field={field}

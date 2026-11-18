@@ -43,6 +43,26 @@ body,
   height: 100%;
 }
 
+/* @js-preview/excel gives the sheet tab bar a fixed 40px height but floats the
+   tabs (`.x-spreadsheet-menu > li { float: left }`) with no horizontal overflow
+   handling. A workbook with several sheets therefore wraps the tabs onto a
+   second row that spills past the bar, which pushes a vertical scrollbar onto
+   the previewer container and steals 10px of its width. Keep the tabs on one
+   scrollable row instead, the way Excel does. */
+.x-spreadsheet-bottombar {
+  overflow-x: auto;
+  overflow-y: hidden;
+
+  .x-spreadsheet-menu {
+    display: flex;
+    flex-wrap: nowrap;
+  }
+
+  &::-webkit-scrollbar {
+    height: 4px;
+  }
+}
+
 /* Scroll bar stylings */
 ::-webkit-scrollbar {
   width: 10px;

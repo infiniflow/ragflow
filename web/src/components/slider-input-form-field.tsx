@@ -43,6 +43,7 @@ type SliderInputFormFieldProps = {
   className?: string;
   numberInputClassName?: string;
   percentage?: boolean;
+  integer?: boolean;
   sliderTestId?: string;
   numberInputTestId?: string;
 } & FormLayoutType;
@@ -64,6 +65,7 @@ export const SliderInputFormField = forwardRef<
       numberInputClassName,
       layout = FormLayout.Horizontal,
       percentage = false,
+      integer = false,
       sliderTestId,
       numberInputTestId,
     },
@@ -131,6 +133,7 @@ export const SliderInputFormField = forwardRef<
                   min={displayMin}
                   step={displayStep}
                   hideIcons
+                  integer={integer}
                   value={
                     percentage ? Math.round(field.value * 100) : field.value
                   }

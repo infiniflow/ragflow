@@ -38,14 +38,6 @@ import (
 // the Python Canvas.
 var ErrGraphRAGNotSupported = errors.New("GraphRAG 检索暂不支持，请使用 Python Canvas 或关闭 use_kg")
 
-// ErrRetrievalServiceMissing is returned when the
-// internal/service/nlp RetrievalService is not registered. Wire a
-// real implementation via SetRetrievalService at boot to resolve.
-var ErrRetrievalServiceMissing = errors.New(
-	"Retrieval service not yet implemented (service not registered) — " +
-		"use Python Canvas or implement internal/service/nlp/retrieval.go",
-)
-
 // retrievalToolName preserves the Python typo ("dateset") for backward
 // compatibility with existing Canvas DSLs that reference the tool by name.
 const retrievalToolName = "search_my_dateset"
@@ -56,22 +48,29 @@ const retrievalToolDescription = "This tool can be utilized for relevant content
 // accept both `query` (canonical) and `dataset_ids` / `use_kg` etc. to
 // match the Python ToolMeta field set.
 type retrievalArgs struct {
-	Query                    string         `json:"query"`
-	DatasetIDs               []string       `json:"dataset_ids,omitempty"`
-	KBIDs                    []string       `json:"kb_ids,omitempty"`
-	MemoryIDs                []string       `json:"memory_ids,omitempty"`
-	TopN                     int            `json:"top_n,omitempty"`
-	RerankCandidatesCount    int            `json:"rerank_candidates_count,omitempty"`
-	TopK                     int            `json:"top_k,omitempty"`
-	KeywordsSimilarityWeight *float64       `json:"keywords_similarity_weight,omitempty"`
-	UseKG                    bool           `json:"use_kg,omitempty"`
-	SimilarityThreshold      *float64       `json:"similarity_threshold,omitempty"`
-	RerankID                 string         `json:"rerank_id,omitempty"`
-	CrossLanguages           []string       `json:"cross_languages,omitempty"`
-	TOCEnhance               bool           `json:"toc_enhance,omitempty"`
-	MetaDataFilter           map[string]any `json:"meta_data_filter,omitempty"`
-	RetrievalFrom            string         `json:"retrieval_from,omitempty"`
-	EmptyResponse            string         `json:"empty_response,omitempty"`
+	Query                    string         `json:"query" doc:"The keywords to search the dataset. The keywords should be the most important words/terms (including synonyms) from the original request." required:"true"`
+	DatasetIDs               []string       `json:"dataset_ids,omitempty" schema:"-"`
+	KBIDs                    []string       `json:"kb_ids,omitempty" schema:"-"`
+	MemoryIDs                []string       `json:"memory_ids,omitempty" schema:"-"`
+	UserID                   string         `json:"user_id,omitempty" schema:"-"`
+	TopN                     int            `json:"top_n,omitempty" schema:"-"`
+	RerankCandidatesCount    int            `json:"rerank_candidates_count,omitempty" schema:"-"`
+	TopK                     int            `json:"top_k,omitempty" schema:"-"`
+	KeywordsSimilarityWeight *float64       `json:"keywords_similarity_weight,omitempty" schema:"-"`
+	UseKG                    bool           `json:"use_kg,omitempty" schema:"-"`
+	SimilarityThreshold      *float64       `json:"similarity_threshold,omitempty" schema:"-"`
+	RerankID                 string         `json:"rerank_id,omitempty" schema:"-"`
+	CrossLanguages           []string       `json:"cross_languages,omitempty" schema:"-"`
+	Highlight                *bool          `json:"highlight,omitempty" schema:"-"`
+	MetaDataFilter           map[string]any `json:"meta_data_filter,omitempty" schema:"-"`
+	RetrievalFrom            string         `json:"retrieval_from,omitempty" schema:"-"`
+	EmptyResponse            string         `json:"empty_response,omitempty" schema:"-"`
+	// FunctionName is the agent-visible tool name from the DSL. It is not
+	// exposed to the model as part of the tool arguments.
+	FunctionName string `json:"-"`
+	// Description is the agent-visible tool description from the DSL. It is
+	// not exposed to the model as part of the tool arguments.
+	Description string `json:"-"`
 }
 
 // retrievalResult is the JSON shape returned to the model. The `_ERROR`
@@ -92,6 +91,7 @@ type chunkPayload struct {
 	Content    string  `json:"content,omitempty"`
 	DocumentID string  `json:"document_id,omitempty"`
 	Score      float64 `json:"score,omitempty"`
+	Highlight  string  `json:"highlight,omitempty"`
 }
 
 // RetrievalTool is the Retrieval tool. It validates the input
@@ -101,6 +101,8 @@ type chunkPayload struct {
 // surfaces ErrRetrievalServiceMissing.
 type RetrievalTool struct {
 	defaults retrievalArgs
+	name     string
+	desc     string
 }
 
 // NewRetrievalTool returns a RetrievalTool implementing eino's
@@ -115,23 +117,21 @@ func NewRetrievalToolWithDefaults(defaults retrievalArgs) *RetrievalTool {
 	if len(defaults.DatasetIDs) == 0 && len(defaults.KBIDs) != 0 {
 		defaults.DatasetIDs = append([]string(nil), defaults.KBIDs...)
 	}
-	return &RetrievalTool{defaults: defaults}
+	name := defaults.FunctionName
+	if strings.TrimSpace(name) == "" {
+		name = retrievalToolName
+	}
+	desc := defaults.Description
+	if strings.TrimSpace(desc) == "" {
+		desc = retrievalToolDescription
+	}
+	return &RetrievalTool{defaults: defaults, name: name, desc: desc}
 }
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
 // the Python RetrievalParam ToolMeta (plan, field alignment).
 func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: retrievalToolName,
-		Desc: retrievalToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The keywords to search the dataset. The keywords should be the most important words/terms (including synonyms) from the original request.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(r.name, r.desc, retrievalArgs{})
 }
 
 // InvokableRun executes the tool. It validates the input and
@@ -151,6 +151,11 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		return "", err
 	}
 	args.Query = resolvedQuery
+	resolvedUserID, err := resolveRetrievalUserID(ctx, args.UserID)
+	if err != nil {
+		return "", err
+	}
+	args.UserID = resolvedUserID
 	common.Debug("agent retrieval tool: parsed arguments",
 		zap.String("query", args.Query),
 		zap.Strings("dataset_ids", args.DatasetIDs),
@@ -196,6 +201,9 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// ErrRetrievalServiceMissing; once a real impl is installed
 	// via SetRetrievalService (or SetSimpleRetrievalService for
 	// dev), the chunks flow through normally.
+	//
+	// Agentic: no dense-only rescue — a row the query's own words never
+	// matched is not evidence the model asked for.
 	searchReq := RetrievalRequest{
 		Query:                    args.Query,
 		DatasetIDs:               args.DatasetIDs,
@@ -206,11 +214,13 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		KeywordsSimilarityWeight: args.KeywordsSimilarityWeight,
 		UseKG:                    args.UseKG,
 		SimilarityThreshold:      args.SimilarityThreshold,
+		AllowDenseFallback:       new(false),
 		RerankID:                 args.RerankID,
 		CrossLanguages:           append([]string(nil), args.CrossLanguages...),
-		TOCEnhance:               args.TOCEnhance,
+		Highlight:                highlightEnabled(args.Highlight),
 		MetaDataFilter:           cloneStringAnyMap(args.MetaDataFilter),
 		RetrievalFrom:            args.RetrievalFrom,
+		UserID:                   args.UserID,
 		TenantID:                 retrievalTenantID(ctx),
 	}
 
@@ -239,6 +249,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 			Content:    c.Content,
 			DocumentID: c.DocumentID,
 			Score:      c.Score,
+			Highlight:  c.Highlight,
 		})
 	}
 	formalizedContent := renderChunks(chunks, args.Query)
@@ -253,7 +264,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// citation grounding call can read them. The recording is
 	// best-effort — when the canvas state is not
 	// attached (e.g. unit tests), we skip silently.
-	if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil && len(chunks) > 0 && args.RetrievalFrom == "dataset" {
+	if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil && len(chunks) > 0 && args.RetrievalFrom == "dataset" {
 		state.SetRetrievalReferences(referenceChunksFromRetrieval(chunks), referenceDocAggsFromRetrieval(chunks))
 	}
 	result, err := stubJSONWithErr(out)
@@ -291,6 +302,9 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	if args.EmptyResponse == "" {
 		args.EmptyResponse = r.defaults.EmptyResponse
 	}
+	if args.UserID == "" {
+		args.UserID = r.defaults.UserID
+	}
 	if args.RerankID == "" {
 		args.RerankID = r.defaults.RerankID
 	}
@@ -309,9 +323,15 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	if args.RetrievalFrom == "" && len(args.MemoryIDs) > 0 {
 		args.RetrievalFrom = "memory"
 	}
-	args.TOCEnhance = args.TOCEnhance || r.defaults.TOCEnhance
+	if args.Highlight == nil {
+		args.Highlight = r.defaults.Highlight
+	}
 	args.UseKG = args.UseKG || r.defaults.UseKG
 	return args
+}
+
+func highlightEnabled(value *bool) bool {
+	return value != nil && *value
 }
 
 func cloneStringAnyMap(src map[string]any) map[string]any {
@@ -326,7 +346,7 @@ func cloneStringAnyMap(src map[string]any) map[string]any {
 }
 
 func resolveRetrievalQuery(ctx context.Context, query string) (string, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return query, nil
 	}
@@ -337,8 +357,56 @@ func resolveRetrievalQuery(ctx context.Context, query string) (string, error) {
 	return resolved, nil
 }
 
+// resolveRetrievalUserID resolves the memory user_id filter. Mirrors Python's
+// Retrieval._retrieve_memory: a variable reference — `{sys.user_id}` template
+// or bare `sys.*` / `env.*` / `component@param` form — is looked up in the
+// canvas state; anything else is a literal user id and passes through.
+//
+// Two deliberate divergences from Python, which resolves only the fully
+// braced form and passes bare refs through literally (agent/tools/retrieval.py
+// `_retrieve_memory`):
+//
+//   - bare ref forms are resolved too, so a canvas storing `sys.user_id`
+//     unbraced still filters per user; as a corollary, a literal user id
+//     that collides with a live state variable name is substituted (RAGFlow
+//     user ids are UUID-like and never look like refs);
+//   - an unset bare `sys.*` / `env.*` ref resolves to "" (no user filter)
+//     instead of the literal ref string, which could never match a real user
+//     id and would silently empty the result. Bare `component@param` refs
+//     keep the literal fallback because an "@" in the value is ambiguous
+//     with an email-style literal user id.
+func resolveRetrievalUserID(ctx context.Context, userID string) (string, error) {
+	trimmed := strings.TrimSpace(userID)
+	if trimmed == "" {
+		return "", nil
+	}
+	state, err := runtime.GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return trimmed, nil
+	}
+	if strings.ContainsAny(trimmed, "{}") {
+		resolved, err := runtime.ResolveTemplateAuto(trimmed, state)
+		if err != nil {
+			return "", fmt.Errorf("retrieval: resolve user_id variable: %w", err)
+		}
+		return strings.TrimSpace(resolved), nil
+	}
+	if value, getErr := state.GetVar(trimmed); getErr == nil && value != nil {
+		if text, ok := value.(string); ok {
+			return text, nil
+		}
+		return fmt.Sprintf("%v", value), nil
+	}
+	if strings.HasPrefix(trimmed, "sys.") || strings.HasPrefix(trimmed, "env.") {
+		// An unset sys./env. ref cannot be a literal user id; treat it as
+		// "no user filter" per the RetrievalRequest.UserID contract.
+		return "", nil
+	}
+	return trimmed, nil
+}
+
 func resolveRetrievalDatasetIDs(ctx context.Context, datasetIDs []string) ([]string, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return compactStrings(datasetIDs), nil
 	}
@@ -379,7 +447,7 @@ func resolveRetrievalFilter(ctx context.Context, filter map[string]any) (map[str
 	if filter == nil {
 		return nil, nil
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return cloneStringAnyMap(filter), nil
 	}
@@ -451,14 +519,14 @@ func renderMemoryChunks(chunks []RetrievalChunk) string {
 }
 
 func retrievalTenantID(ctx context.Context) string {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return ""
 	}
-	if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+	if tenantID, _ := state.GetSysString("tenant_id"); tenantID != "" {
 		return tenantID
 	}
-	userID, _ := state.Sys["user_id"].(string)
+	userID, _ := state.GetSysString("user_id")
 	return userID
 }
 

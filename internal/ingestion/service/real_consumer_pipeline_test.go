@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -21,7 +22,12 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 	}
 
 	for {
-		handles, _ := natsEngine.GetMessages(1)
+		pullCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+		handles, err := natsEngine.PullMessages(pullCtx, 1)
+		cancel()
+		if err != nil {
+			t.Fatalf("drain queue: %v", err)
+		}
 		if len(handles) == 0 {
 			break
 		}
@@ -58,13 +64,15 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 		TaskID:   ingestionTask.ID,
 		TaskType: common.TaskTypeIngestionTask,
 	})
-	if err := natsEngine.PublishTask("tasks.RAGFLOW", payload); err != nil {
+	if err := natsEngine.PublishTask(common.DefaultTierSubject(), payload); err != nil {
 		t.Fatalf("PublishTask: %v", err)
 	}
 
-	handles, err := natsEngine.GetMessages(1)
+	pullCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	handles, err := natsEngine.PullMessages(pullCtx, 1)
 	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
+		t.Fatalf("PullMessages: %v", err)
 	}
 	if len(handles) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(handles))
@@ -79,7 +87,7 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 	}
 
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, common.CREATED, common.RUNNING)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, []string{common.CREATED}, common.RUNNING)
 	if err != nil {
 		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}

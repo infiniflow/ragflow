@@ -62,6 +62,7 @@ func (m *GreenPTModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		switch models[i].Name {
 		case "green-s", "green-s-pro":
 			models[i].ModelTypes = []string{"asr"}
+			models[i].ModelTypesInferred = false
 		}
 	}
 	return models, nil
@@ -77,11 +78,10 @@ func (m *GreenPTModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -103,7 +103,7 @@ func (m *GreenPTModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function
@@ -120,11 +120,10 @@ func (m *GreenPTModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		chatModelConfig.UsageResult = nil
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
@@ -170,11 +169,10 @@ func (m *GreenPTModel) TranscribeAudio(ctx context.Context, modelName *string, f
 	}
 	defer audio.Close()
 
-	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	endpoint, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	endpoint := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(m.baseModel.URLSuffix.ASR, "/"))
 	query := url.Values{"model": {*modelName}}
 	if asrConfig != nil {
 		for key, value := range asrConfig.Params {
@@ -224,4 +222,8 @@ func (m *GreenPTModel) TranscribeAudio(ctx context.Context, modelName *string, f
 		return nil, fmt.Errorf("GreenPT ASR response contains no transcript")
 	}
 	return &ASRResponse{Text: result.Results.Channels[0].Alternatives[0].Transcript}, nil
+}
+
+func (g *GreenPTModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", g.Name())
 }

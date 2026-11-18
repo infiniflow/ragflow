@@ -20,6 +20,7 @@ package entity
 type MCPServer struct {
 	ID          string  `gorm:"column:id;primaryKey;size:32" json:"id"`
 	Name        string  `gorm:"column:name;size:255;not null" json:"name"`
+	UserID      string  `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
 	TenantID    string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	URL         string  `gorm:"column:url;size:2048;not null" json:"url"`
 	ServerType  string  `gorm:"column:server_type;size:32;not null" json:"server_type"`

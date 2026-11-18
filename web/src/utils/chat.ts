@@ -18,13 +18,20 @@ import {
   ChatVariableEnabledField,
   EmptyConversationId,
 } from '@/constants/chat';
-import { IMessage, Message } from '@/interfaces/database/chat';
-import { omit } from 'lodash';
+import {
+  IMessage,
+  IReference,
+  IReferenceObject,
+  Message,
+} from '@/interfaces/database/chat';
+import type { CompletionChunk } from '@/services/chat-completion-stream';
 import { v4 as uuid } from 'uuid';
 import {
+  buildCitationDisplayMap,
   citationMarkerReg,
   normalizeCitationDigits,
   parseCitationIndex,
+  resolveCitationChunk,
 } from './citation-utils';
 
 export const isConversationIdExist = (conversationId: string) => {
@@ -41,11 +48,28 @@ export const buildMessageUuid = (message: Partial<Message | IMessage>) => {
 export const buildMessageListWithUuid = (messages?: Message[]) => {
   return (
     messages?.map((x: Message | IMessage) => ({
-      ...omit(x, 'reference'),
+      ...x,
       id: buildMessageUuid(x),
     })) ?? []
   );
 };
+
+export const buildReferenceObject = (
+  reference?: IReference,
+): IReferenceObject => ({
+  chunks: Object.fromEntries(
+    (reference?.chunks ?? []).map((chunk, index) => [
+      chunk.citation_id ?? String(index),
+      chunk,
+    ]),
+  ),
+  doc_aggs: Object.fromEntries(
+    Object.values(reference?.doc_aggs ?? {}).map((document) => [
+      document.doc_id,
+      document,
+    ]),
+  ),
+});
 
 export const generateConversationId = () => {
   return uuid().replace(/-/g, '');
@@ -57,6 +81,43 @@ export const buildMessageUuidWithRole = (
 ) => {
   return `${message.role}_${message.id}`;
 };
+
+/** Merges streamed deltas, replacing the visible text with a final answer. */
+export function mergeAnswerChunk(
+  previousAnswer: string,
+  chunk: CompletionChunk,
+): string {
+  const currentAnswer = chunk.answer || '';
+
+  let nextAnswer: string;
+  if (chunk.final && currentAnswer) {
+    // Final answers can add or repair citations anywhere in the text.
+    // Keep streamed thinking when the final payload only contains the answer.
+    const thinkEnd = previousAnswer.lastIndexOf('</think>');
+    const thinking =
+      thinkEnd >= 0 &&
+      !currentAnswer.includes('<think>') &&
+      !currentAnswer.includes('</think>')
+        ? previousAnswer.slice(0, thinkEnd + '</think>'.length) + '\n\n'
+        : '';
+    nextAnswer = thinking + currentAnswer;
+  } else if (previousAnswer && currentAnswer.startsWith(previousAnswer)) {
+    nextAnswer = currentAnswer;
+  } else {
+    nextAnswer = previousAnswer + currentAnswer;
+  }
+
+  if (chunk.start_to_think === true) {
+    nextAnswer = nextAnswer + '<think>';
+  }
+
+  if (chunk.end_to_think === true) {
+    // Keep the answer's first Markdown heading on its own line.
+    nextAnswer = nextAnswer + '</think>\n\n';
+  }
+
+  return nextAnswer;
+}
 
 // Preprocess LaTeX equations to be rendered by KaTeX
 // ref: https://github.com/remarkjs/react-markdown/issues/785
@@ -181,6 +242,17 @@ export function unescapeAngleBrackets(content: string): string {
     .replace(new RegExp(GT_MARKER, 'g'), '&gt;');
 }
 
+/**
+ * Decode the &lt;/&gt; entities restored by unescapeAngleBrackets.
+ * react-markdown decodes character references in prose, but code blocks and
+ * inline code are literal, so the entities would render as-is there. Code
+ * renderers call this to show the original < and > the model emitted.
+ */
+export function decodeAngleBracketEntities(content: string): string {
+  if (!content) return content;
+  return content.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
 export function setInitialChatVariableEnabledFieldValue(
   field: ChatVariableEnabledField,
 ) {
@@ -206,7 +278,13 @@ export function setChatVariableEnabledFieldValuePage() {
 
 const oldReg = /(#{2}[0-9\u0660-\u0669\u06F0-\u06F9]+\${2})/g;
 export const currentReg = citationMarkerReg;
-export { normalizeCitationDigits, parseCitationIndex };
+export {
+  buildCitationDisplayMap,
+  normalizeCitationDigits,
+  parseCitationIndex,
+  resolveCitationChunk,
+};
+export type { CitationKey } from './citation-utils';
 
 // To be compatible with the old index matching mode
 export const replaceTextByOldReg = (text: string) => {

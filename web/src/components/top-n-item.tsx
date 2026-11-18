@@ -41,6 +41,8 @@ export function TopNFormField({
       max={max}
       tooltip={t('topNTip')}
       layout={FormLayout.Vertical}
+      min={1}
+      integer
     ></SliderInputFormField>
   );
 }

@@ -16,9 +16,11 @@
 
 import { memo } from 'react';
 
-import { Images } from '@/constants/common';
+import { AudioExtensions, Images } from '@/constants/common';
+import { AudioPreviewer } from './audio-preview';
 import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
+import { EpubPreviewer } from './epub-preview';
 import { ExcelCsvPreviewer } from './excel-preview';
 import { ImagePreviewer } from './image-preview';
 import { Md } from './md';
@@ -31,6 +33,7 @@ type PreviewProps = {
   fileType: string;
   className?: string;
   url: string;
+  positions?: number[][];
 };
 const DocumentPreview = function ({
   fileType,
@@ -38,6 +41,7 @@ const DocumentPreview = function ({
   highlights,
   setWidthAndHeight,
   url,
+  positions,
 }: PreviewProps & Partial<IProps>) {
   const isPdf = fileType === 'pdf';
 
@@ -85,24 +89,38 @@ const DocumentPreview = function ({
           <VideoPreviewer className={className} url={url} />
         </section>
       )}
+      {AudioExtensions.indexOf(fileType) > -1 && (
+        <section>
+          <AudioPreviewer className={className} url={url} />
+        </section>
+      )}
       {['ppt', 'pptx'].indexOf(fileType) > -1 && (
         <section>
           <PptPreviewer className={className} url={url} />
         </section>
       )}
-      {['xlsx'].indexOf(fileType) > -1 && (
-        <section>
-          <ExcelCsvPreviewer className={className} url={url} />
+      {['xlsx', 'xls'].indexOf(fileType) > -1 && (
+        <section className="h-full">
+          <ExcelCsvPreviewer
+            className={className}
+            url={url}
+            positions={positions}
+          />
         </section>
       )}
       {['csv'].indexOf(fileType) > -1 && (
-        <section>
+        <section className="h-full">
           <CSVFileViewer className={className} url={url} />
         </section>
       )}
       {['md', 'mdx'].indexOf(fileType) > -1 && (
         <section>
           <Md className={className} url={url} />
+        </section>
+      )}
+      {['epub'].indexOf(fileType) > -1 && (
+        <section>
+          <EpubPreviewer className={className} url={url} />
         </section>
       )}
     </>

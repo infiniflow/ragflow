@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+{{range .Lists}}<w:abstractNum w:abstractNumId="{{.ID}}"><w:multiLevelType w:val="singleLevel"/><w:lvl w:ilvl="0"><w:start w:val="{{.Start}}"/><w:numFmt w:val="{{if .Ordered}}decimal{{else}}bullet{{end}}"/><w:lvlText w:val="{{if .Ordered}}%1.{{else}}•{{end}}"/><w:lvlJc w:val="left"/><w:pPr><w:tabs><w:tab w:val="num" w:pos="{{.Indent}}"/></w:tabs><w:ind w:left="{{.Indent}}" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>
+{{end}}{{range .Lists}}<w:num w:numId="{{.ID}}"><w:abstractNumId w:val="{{.ID}}"/></w:num>
+{{end}}</w:numbering>

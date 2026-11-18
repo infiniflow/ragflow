@@ -36,7 +36,7 @@ type TaggedChunk struct {
 // ExtractorFromUpstream is the upstream payload consumed by the
 // Extractor component.
 //
-// The Python Extractor (rag/flow/extractor/extractor.py) does NOT
+// The Extractor does NOT
 // validate a Pydantic *FromUpstream schema; instead it pulls inputs
 // from the canvas's input-elements map:
 //
@@ -69,25 +69,34 @@ type ExtractorFromUpstream struct {
 	Chunks []map[string]any `json:"chunks,omitempty"`
 }
 
-// Validate enforces no required fields today; the Python component
+// Validate enforces no required fields today; the component
 // happily runs on an empty input set (it produces a single output
 // chunk from the LLM call).
 func (ExtractorFromUpstream) Validate() error { return nil }
 
 // KeywordExtractConfig configures automatic keyword extraction.
+// Enabled is the single execution gate; TopN is the extraction count and
+// must be >= 1 when Enabled (enforced at canvas build time for params that
+// carry an explicit "enabled" key; legacy DSLs without it derive Enabled
+// from TopN > 0 — see NewExtractorComponent).
 type KeywordExtractConfig struct {
+	Enabled      bool   `json:"enabled"`
 	TopN         int    `json:"top_n"`
 	SystemPrompt string `json:"system_prompt,omitempty"`
 }
 
 // QuestionExtractConfig configures automatic question generation.
+// Same Enabled/TopN contract as KeywordExtractConfig.
 type QuestionExtractConfig struct {
+	Enabled      bool   `json:"enabled"`
 	TopN         int    `json:"top_n"`
 	SystemPrompt string `json:"system_prompt,omitempty"`
 }
 
 // TagExtractConfig configures automatic tag extraction.
+// Same Enabled/TopN contract as KeywordExtractConfig.
 type TagExtractConfig struct {
+	Enabled   bool   `json:"enabled"`
 	TopN      int    `json:"top_n"`
 	TagFileID string `json:"tag_file_id,omitempty"`
 }
@@ -134,8 +143,8 @@ func (p *ExtractorParam) Validate() error {
 }
 
 // ExtractorOutputs is the result of invoking the Extractor component.
-// Mirrors what the Python component sets via `self.set_output(...)` at
-// rag/flow/extractor/extractor.py:_invoke:
+// Mirrors what the component sets via `self.set_output(...)` at
+// its _invoke entrypoint.
 //
 //	self.set_output("output_format", "chunks")
 //	self.set_output("chunks", chunks)
@@ -144,11 +153,11 @@ type ExtractorOutputs struct {
 	OutputFormat string `json:"output_format,omitempty"`
 
 	// Chunks is the enriched chunk list. Each chunk is enriched with
-	// modular extraction fields (important_kwd, question_kwd, tag_kwd,
+	// modular extraction fields (important_kwd, question_kwd, tag_feas,
 	// summary, metadata).
 	Chunks []map[string]any `json:"chunks,omitempty"`
 
 	// Error is set when the component short-circuits with an error
-	// message (Python: set_output("_ERROR", ...)).
+	// message (: set_output("_ERROR", ...))
 	Error string `json:"_ERROR,omitempty"`
 }
