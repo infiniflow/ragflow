@@ -90,6 +90,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { resolveValidIds } = useModelValidIds(
     ModelTypeMap.llm_id,
     agent?.tenant_id,
+    agent?.user_id,
   );
 
   const handleRun = useCallback(

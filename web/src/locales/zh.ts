@@ -557,6 +557,7 @@ export default {
         '此项用于设置混合相似度分数中的关键词相似度权重。向量与关键词相似度权重的总和必须等于 1.0。',
       testText: '测试文本',
       testTextPlaceholder: '请输问题！',
+      testIntegerValidation: '请输入整数',
       testingLabel: '运行',
       similarity: '混合相似度',
       termSimilarity: '关键词相似度',

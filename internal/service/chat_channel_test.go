@@ -364,6 +364,9 @@ func TestGetOrCreateForChannelNamesFromFirstQueryAndChannelName(t *testing.T) {
 	if session.DialogID != "dialog-1" {
 		t.Fatalf("unexpected dialog id: %s", session.DialogID)
 	}
+	if session.Source != entity.ChatSessionSourceChatChannel {
+		t.Fatalf("source=%q, want %q", session.Source, entity.ChatSessionSourceChatChannel)
+	}
 	if session.Name == nil || *session.Name != "(channel: Discord 客服) 你好，帮我查一下退款政策" {
 		t.Fatalf("unexpected session name: %v", session.Name)
 	}

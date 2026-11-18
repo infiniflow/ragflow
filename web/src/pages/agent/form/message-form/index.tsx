@@ -165,10 +165,7 @@ function MessageForm({ node }: INextOperatorForm) {
             </FormItem>
           </>
         )}
-        <MemoriesFormField
-          label={t('flow.saveToMemory')}
-          canvasID={canvasID}
-        ></MemoriesFormField>
+        <MemoriesFormField label={t('flow.saveToMemory')} />
         <UserIdFormField></UserIdFormField>
       </FormWrapper>
     </Form>

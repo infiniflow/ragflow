@@ -43,7 +43,7 @@ import {
 } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { createContext, useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -52,6 +52,13 @@ import {
   parseModelValue,
 } from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
+
+export const ModelResourceAccessUserIdContext = createContext<
+  string | undefined
+>(undefined);
+export const ModelResourceTenantIdContext = createContext<string | undefined>(
+  undefined,
+);
 
 export const enum LLMApiAction {
   AllModels = 'allModels',
@@ -76,6 +83,18 @@ export const LlmKeys = {
   addedProviders: () => [LLMApiAction.AddedProviders] as const,
   allModels: (modelType?: string) =>
     [LLMApiAction.AllModels, modelType] as const,
+  allModelsByScope: (
+    modelType?: string,
+    resourceTenantId?: string,
+    accessUserId?: string,
+    ownerIDs?: string[],
+  ) =>
+    [
+      ...LlmKeys.allModels(modelType),
+      resourceTenantId,
+      accessUserId,
+      ownerIDs,
+    ] as const,
   providerInstances: (providerName: string) =>
     [LLMApiAction.AddedProviders, providerName, 'instances'] as const,
   providerInstance: (providerName: string, id: string) =>
@@ -123,8 +142,14 @@ export const useFetchAddedProviders = () => {
 
 export const useFetchAllAddedModels = (
   modelType?: string,
-  ownerTenantId?: string,
+  resourceTenantId?: string,
+  accessUserId?: string,
+  ownerIDs?: string[],
 ) => {
+  const contextTenantId = useContext(ModelResourceTenantIdContext);
+  const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
+  const modelResourceTenantId = resourceTenantId || contextTenantId;
+  const modelAccessUserId = accessUserId ?? contextAccessUserId;
   const {
     data,
     isFetching: loading,
@@ -132,18 +157,32 @@ export const useFetchAllAddedModels = (
     isFetched,
     isError,
   } = useQuery<IAddedModel[]>({
-    queryKey: [...LlmKeys.allModels(modelType), ownerTenantId],
+    queryKey: LlmKeys.allModelsByScope(
+      modelType,
+      modelResourceTenantId,
+      modelAccessUserId,
+      ownerIDs,
+    ),
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
       const params: IListAllModelsRequestParams = {};
+      if (modelResourceTenantId) {
+        params.tenant_id = modelResourceTenantId;
+      }
       if (modelType) {
         params.type = modelType;
       }
-      if (ownerTenantId) {
-        params.tenant_id = ownerTenantId;
+      if (modelAccessUserId) {
+        params.access_user_id = modelAccessUserId;
       }
-      const { data } = await llmService.listAllAddedModels({ params }, true);
+      if (ownerIDs?.length) {
+        params.owner_ids = ownerIDs;
+      }
+      const { data } = await llmService.listAllAddedModels(
+        { params, paramsSerializer: { indexes: null } },
+        true,
+      );
 
       return data?.data ?? [];
     },
@@ -164,12 +203,15 @@ export const useFetchAllAddedModels = (
  */
 export const useModelValidIds = (
   modelTypes: string[],
-  ownerTenantId?: string,
+  resourceTenantId?: string,
+  accessUserId?: string,
   includeAdditionalValidIds = true,
 ) => {
+  const contextTenantId = useContext(ModelResourceTenantIdContext);
   const { data, isFetched, refetch } = useFetchAllAddedModels(
     undefined,
-    ownerTenantId,
+    resourceTenantId,
+    accessUserId,
   );
   const directValidIds = useMemo(
     () => buildValidModelIds(data, modelTypes),
@@ -185,7 +227,7 @@ export const useModelValidIds = (
     models: data,
     modelsFetched: isFetched,
     enabled: includeAdditionalValidIds,
-    ownerTenantId,
+    ownerTenantId: resourceTenantId || contextTenantId,
   });
   const validIds = useMemo(
     () => new Set([...directValidIds, ...additionalValidIds]),
@@ -212,8 +254,15 @@ export const useModelValidIds = (
   };
 };
 
-export function useFindLlmByUuid() {
-  const { data: models } = useFetchAllAddedModels();
+export function useFindLlmByUuid(
+  resourceTenantId?: string,
+  accessUserId?: string,
+) {
+  const { data: models } = useFetchAllAddedModels(
+    undefined,
+    resourceTenantId,
+    accessUserId,
+  );
 
   return (uuid: string) => {
     const parsed = parseModelValue(uuid);

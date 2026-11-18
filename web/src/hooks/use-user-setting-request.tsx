@@ -58,11 +58,14 @@ export const enum UserSettingApiAction {
   FetchLangfuseConfig = 'fetchLangfuseConfig',
 }
 
-export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
+export const useFetchUserInfo = (
+  enabled = true,
+): ResponseGetType<IUserInfo> => {
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.UserInfo],
     initialData: {},
     gcTime: 0,
+    enabled,
     queryFn: async () => {
       const { data } = await userService.userInfo();
 

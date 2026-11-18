@@ -141,7 +141,9 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 }
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	datasetRef := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
+	if err := checker.CheckResource(ctx, datasetRef, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -160,6 +162,10 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 			return nil, common.CodeDataError, errors.New("the dataset doesn't own the document")
 		}
 		return nil, common.CodeServerError, err
+	}
+	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, doc, req, present); err != nil {
 		return nil, code, err
@@ -601,7 +607,8 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 	titleTks, _ := tok.Tokenize(newName)
 	titleSmTks, _ := tok.FineGrainedTokenize(titleTks)
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	if doc.ChunkNum == 0 && engine.Type(s.docEngine) == engine.EngineElasticsearch {
+	docEngineType := engine.Type(s.docEngine)
+	if doc.ChunkNum == 0 && (docEngineType == engine.EngineElasticsearch || docEngineType == engine.EngineOpenSearch) {
 		exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
 		if err != nil {
 			return err

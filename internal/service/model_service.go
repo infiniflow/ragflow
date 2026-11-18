@@ -160,38 +160,35 @@ func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context) ([]map
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
-	providerRows, err := m.modelProviderDAO.ListByTenantIDAndUserID(ctx, dao.DB, ownedTenantID, userID)
+	providerRows, err := m.listReadableModelProvidersForUserEE(ctx, ownedTenantID, userID)
+	if err != nil {
+		if permissionresponse.IsPermissionError(err) {
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
+			return nil, code, normalizedErr
+		}
+		return nil, common.CodeServerError, err
+	}
+	providerIDs := make([]string, 0, len(providerRows))
+	for _, provider := range providerRows {
+		providerIDs = append(providerIDs, provider.ID)
+	}
+	providersWithInstances, err := m.modelInstanceDAO.ListProviderIDsWithInstances(ctx, dao.DB, providerIDs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	providerRefs := make([]permission.ResourceRef, 0, len(providerRows))
-	providerByID := make(map[string]*entity.TenantModelProvider, len(providerRows))
-	for _, provider := range providerRows {
-		providerRefs = append(providerRefs, permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID})
-		providerByID[provider.ID] = provider
-	}
-	accessibleProviders, err := permission.NewDatabaseChecker(dao.DB).FilterResources(
-		ctx,
-
-		providerRefs,
-		permission.OperationRead,
-	)
-	if err != nil {
-		code, normalizedErr := permissionresponse.NormalizeHidden(err)
-		return nil, code, normalizedErr
+	hasInstanceByID := make(map[string]bool, len(providersWithInstances))
+	for _, providerID := range providersWithInstances {
+		hasInstanceByID[providerID] = true
 	}
 
 	type listedProvider struct {
-		id   string
-		info map[string]interface{}
+		nameKey string
+		info    map[string]interface{}
 	}
-	listed := make([]listedProvider, 0, len(accessibleProviders))
-	seenProviderNames := make(map[string]struct{}, len(accessibleProviders))
-	for _, providerRef := range accessibleProviders {
-		providerRow := providerByID[providerRef.ID]
-		if providerRow == nil {
-			continue
-		}
+	listed := make([]listedProvider, 0, len(providerRows))
+	seenProviderNames := make(map[string]struct{}, len(providerRows))
+	hasInstanceByName := make(map[string]bool, len(providerRows))
+	for _, providerRow := range providerRows {
 		providerName := providerRow.ProviderName
 		// Mirror Python's list_providers tenant branch: silently skip system-excluded
 		// factory names (e.g. "Builtin", "Youdao", "FastEmbed", "BAAI",
@@ -201,6 +198,7 @@ func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context) ([]map
 			continue
 		}
 		providerKey := strings.ToLower(providerName)
+		hasInstanceByName[providerKey] = hasInstanceByName[providerKey] || hasInstanceByID[providerRow.ID]
 		if _, exists := seenProviderNames[providerKey]; exists {
 			continue
 		}
@@ -219,24 +217,12 @@ func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context) ([]map
 		// override it with providerName (the DB value), which may differ in
 		// case from historical ToLower writes.
 
-		listed = append(listed, listedProvider{id: providerRow.ID, info: provider})
+		listed = append(listed, listedProvider{nameKey: providerKey, info: provider})
 		seenProviderNames[providerKey] = struct{}{}
-	}
-	providerIDs := make([]string, 0, len(listed))
-	for _, provider := range listed {
-		providerIDs = append(providerIDs, provider.id)
-	}
-	providersWithInstances, err := m.modelInstanceDAO.ListProviderIDsWithInstances(ctx, dao.DB, providerIDs)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	hasInstance := make(map[string]bool, len(providerIDs))
-	for _, providerID := range providersWithInstances {
-		hasInstance[providerID] = true
 	}
 	result := make([]map[string]interface{}, 0, len(listed))
 	for _, provider := range listed {
-		provider.info["has_instance"] = hasInstance[provider.id]
+		provider.info["has_instance"] = hasInstanceByName[provider.nameKey]
 		result = append(result, provider.info)
 	}
 
@@ -1847,10 +1833,10 @@ func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, insta
 	return taskResponse, common.CodeSuccess, nil
 }
 
-// ListModelsForUserInTenant returns models available to the current user in the requested
-// tenant context, filtered by the user's resource permissions. Provider and
-// instance configuration comes from the tenant owner.
-func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, requestedTenantID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
+// ListModelsForUserInTenant returns models available to the current user in the
+// requested tenant context. ownerIDs filters by resource owner, while
+// accessUserID intersects visibility with another user's permissions.
+func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, requestedTenantID string, ownerIDs []string, accessUserID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
 	tenant, code, err := m.resolveModelListTenant(ctx, requestedTenantID)
 	if err != nil {
 		return nil, code, err
@@ -1859,6 +1845,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 		return []map[string]interface{}{}, common.CodeSuccess, nil
 	}
 	tenantID := tenant.ID
+	ownerIDs = common.DeduplicateTrimmed(ownerIDs)
 	tenantName := ""
 	if tenant.Name != nil {
 		tenantName = *tenant.Name
@@ -1884,20 +1871,20 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	}
 
 	checker := permission.NewDatabaseChecker(dao.DB)
-	tenantOwner, err := m.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("get tenant owner for model listing: %w", err)
-	}
-	providerScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
+	providerScope, err := queryScopeForAccessUser(ctx, checker, permission.ScopeQuery{
+		TenantID:  tenantID,
 		Kind:      permission.ResourceKindModelProvider,
 		Operation: permission.OperationRead,
-	})
+	}, accessUserID)
 	if err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
 	providerQuery := providerScope.Apply(dao.DB.Model(&entity.TenantModelProvider{}))
-	providers, err := m.modelProviderDAO.ListByTenantIDAndUserID(ctx, providerQuery, tenantID, tenantOwner.UserID)
+	if len(ownerIDs) > 0 {
+		providerQuery = providerQuery.Where("tenant_model_provider.user_id IN ?", ownerIDs)
+	}
+	providers, err := m.listModelProvidersForTenantEE(ctx, providerQuery, tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1926,18 +1913,20 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	}
 
 	// Apply model visibility in SQL so hidden model rows are never loaded into
-	// the service layer. Model access for a tenant is limited to its owner's
-	// provider configuration; personal model settings remain in the provider
-	// management endpoints.
-	modelScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
+	// the service layer. Model access follows the instance's tenant resource
+	// permissions.
+	modelScope, err := queryScopeForAccessUser(ctx, checker, permission.ScopeQuery{
+		TenantID:  tenantID,
 		Kind:      permission.ResourceKindModel,
 		Operation: permission.OperationRead,
-	})
+	}, accessUserID)
 	if err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
-	modelRecords, err := m.modelDAO.ListByTenantIDAndModelType(ctx, dao.DB, tenantID, int(modelTypeFilterBin), modelScope.Apply)
+	modelRecords, err := m.modelDAO.ListByTenantIDAndModelType(ctx, dao.DB, tenantID, int(modelTypeFilterBin), func(query *gorm.DB) *gorm.DB {
+		return modelScope.Apply(query).Where("tenant_model.provider_id IN ?", providerIDs)
+	})
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2054,6 +2043,9 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 			}
 		}
 	}
+	if err := m.setModelOwnerInfoEE(ctx, added, providerInfoByID); err != nil {
+		return nil, common.CodeServerError, err
+	}
 
 	// Sort by factory rank desc, provider_name, instance_name, model rank desc, name.
 	sort.Slice(added, func(i, j int) bool {
@@ -2133,7 +2125,7 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
-func buildUnlimitedOCRProviderConfig(config map[string]any) map[string]interface{} {
+func buildUnlimitedOCRProviderConfig(config map[string]interface{}) map[string]interface{} {
 	if config == nil {
 		return nil
 	}
@@ -2144,7 +2136,6 @@ func buildUnlimitedOCRProviderConfig(config map[string]any) map[string]interface
 	}
 }
 
-// ensureUnlimitedOCRFromEnv registers the local Unlimited-OCR-2 provider with zero friction.
 func (m *ModelProviderService) ensureUnlimitedOCRFromEnv(ctx context.Context, tenantID string) error {
 	config := collectEnvConfig(unlimitedOCREnvKeys, unlimitedOCRDefaultConfig)
 	if config == nil {

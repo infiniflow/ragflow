@@ -357,12 +357,17 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 // Used to echo back already-selected datasets whose names are not present
 // in the first page of the paginated list. `canvasID` limits results to
 // datasets usable by both the canvas owner and the current user.
-export const listDatasetByIds = (ids: string[], canvasID?: string) =>
+export const listDatasetByIds = (
+  ids: string[],
+  canvasID?: string,
+  accessUserID?: string,
+) =>
   request.get(api.kbList, {
     params: {
       ids: ids.join(','),
       page_size: ids.length,
       ...(canvasID ? { canvas_id: canvasID } : {}),
+      ...(accessUserID ? { access_user_id: accessUserID } : {}),
     },
   });
 

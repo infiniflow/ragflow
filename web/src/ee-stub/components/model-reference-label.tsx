@@ -6,5 +6,6 @@ type ModelReferenceLabelProps = {
 };
 
 export function ModelReferenceLabel(props: ModelReferenceLabelProps) {
-  return <LLMLabel {...props} />;
+  const { ownerTenantId, ...labelProps } = props;
+  return <LLMLabel {...labelProps} resourceTenantId={ownerTenantId} />;
 }

@@ -43,7 +43,11 @@ export function ChatCard({
           <MoreButton></MoreButton>
         </ChatDropdown>
       }
-      sharedBadge={<SharedBadge>{data.nickname}</SharedBadge>}
+      sharedBadge={
+        <SharedBadge userId={data.user_id} ownerNickname={data.nickname}>
+          {data.nickname}
+        </SharedBadge>
+      }
       onClick={handleCardClick}
     />
   );
