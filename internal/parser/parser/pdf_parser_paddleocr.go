@@ -51,7 +51,7 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 			pageCount = page.Index + 1
 		}
 		size := sizes[page.Index]
-		if paddleOCRPositive(page.Width) && paddleOCRPositive(page.Height) && paddleOCRPositive(size[0]) && paddleOCRPositive(size[1]) && !paddleOCRAspectRatioMatches(page, size) {
+		if paddleOCRPageMismatch(page, size) {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s page %d: OCR dimensions %gx%g do not match PDF aspect ratio %gx%g; coordinates omitted", provider, page.Index+1, page.Width, page.Height, size[0], size[1]))
 			size = [2]float64{}
 		}
@@ -164,6 +164,13 @@ func paddleOCRMediaItem(page models.OCRPage, text string, position []any) DocIte
 		fields["positions"], fields["_pdf_positions"] = matrix, matrix
 	}
 	return DocItemFromMap(fields)
+}
+
+// paddleOCRPageMismatch reports whether a page's OCR image dimensions do not
+// match the PDF page's aspect ratio, so its pixel boxes cannot be placed. A
+// Normalized page gives boxes as page fractions and is never a mismatch.
+func paddleOCRPageMismatch(page models.OCRPage, size [2]float64) bool {
+	return !page.Normalized && paddleOCRPositive(page.Width) && paddleOCRPositive(page.Height) && paddleOCRPositive(size[0]) && paddleOCRPositive(size[1]) && !paddleOCRAspectRatioMatches(page, size)
 }
 
 // paddleOCRBlockPosition scales a block box onto the PDF page. A Normalized

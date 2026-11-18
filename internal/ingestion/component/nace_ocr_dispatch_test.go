@@ -36,8 +36,9 @@ import (
 
 // A Nace NDI model picked as the PDF parser uploads the PDF, parses the
 // configured pages and yields structured PDF items instead of falling through
-// to the image2text VLM path, whichever setup field names it. A result with
-// Markdown but no layout blocks still yields its text.
+// to the image2text VLM path, whichever setup field names it. A composite
+// selector on an instance named like another parser (MinerU) still reaches
+// Nace. A result with Markdown but no layout blocks still yields its text.
 func TestDispatch_PDFNaceOCR(t *testing.T) {
 	withSSRFBypass(t)
 	var mu sync.Mutex
@@ -78,12 +79,13 @@ func TestDispatch_PDFNaceOCR(t *testing.T) {
 	origSelector, origResolve := isNaceOCRModelSelector, resolveModelConfig
 	t.Cleanup(func() { isNaceOCRModelSelector, resolveModelConfig = origSelector, origResolve })
 	modelID := "7c1d2e3f4a5b46c7d8e9f0a1b2c3d4e5"
+	composite := "ndi-parse-low@mineru-prod@Nace"
 	isNaceOCRModelSelector = func(_ context.Context, _ *gorm.DB, tenantID, selector string) bool {
-		return tenantID == "test-tenant" && selector == modelID
+		return tenantID == "test-tenant" && (selector == modelID || selector == composite)
 	}
 	baseURL, apiKey := server.URL+"/v1", "nace-secret"
 	resolveModelConfig = func(_ context.Context, _ *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-		if tenantID != "test-tenant" || modelType != entity.ModelTypeOCR || modelRef != modelID {
+		if tenantID != "test-tenant" || modelType != entity.ModelTypeOCR || (modelRef != modelID && modelRef != composite) {
 			return nil, "", nil, 0, fmt.Errorf("unexpected model resolution: tenant=%q type=%v ref=%q", tenantID, modelType, modelRef)
 		}
 		driver := modelModule.NewNaceModel(nil, modelModule.URLSuffix{OCR: "documents/parse"})
@@ -96,8 +98,9 @@ func TestDispatch_PDFNaceOCR(t *testing.T) {
 		answer     string
 		texts      []string
 	}{
-		"parse_method":      {pdf: map[string]any{"parse_method": modelID}},
-		"layout_recognizer": {pdf: map[string]any{"layout_recognizer": modelID}},
+		"parse_method":                   {pdf: map[string]any{"parse_method": modelID}},
+		"layout_recognizer":              {pdf: map[string]any{"layout_recognizer": modelID}},
+		"composite on a mineru instance": {pdf: map[string]any{"layout_recognizer": composite}},
 		"pages": {
 			pdf:        map[string]any{"parse_method": modelID, "pages": []any{[]any{1, 2}, []any{5, 5}}},
 			pageRanges: []any{map[string]any{"start": float64(1), "end": float64(2)}, map[string]any{"start": float64(5), "end": float64(5)}},
@@ -142,6 +145,32 @@ func TestDispatch_PDFNaceOCR(t *testing.T) {
 				t.Fatalf("page_ranges=%v, want %v", pageRanges, tc.pageRanges)
 			}
 		})
+	}
+}
+
+// A composite selector names MinerU by its provider only; every other form
+// matches as before.
+func TestNamesMinerU(t *testing.T) {
+	for _, tc := range []struct {
+		value  string
+		prefix bool
+		want   bool
+	}{
+		{"mineru", false, true},
+		{"mineru", true, true},
+		{"mineru-pipeline", true, true},
+		{"mineru-pipeline", false, false},
+		{"deepdoc", true, false},
+		{"mineru-model@default@mineru", false, true},
+		{"mineru-model@default@mineru", true, true},
+		{"mineru-model@mineru.net", true, true},
+		{"ndi-parse-low@mineru-prod@nace", true, false},
+		{"ndi-parse-low@mineru-prod@nace", false, false},
+		{"mineru-model@default@nace", true, false},
+	} {
+		if got := namesMinerU(tc.value, tc.prefix); got != tc.want {
+			t.Errorf("namesMinerU(%q, %v)=%v, want %v", tc.value, tc.prefix, got, tc.want)
+		}
 	}
 }
 

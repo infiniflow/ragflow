@@ -66,13 +66,19 @@ const (
 	naceNDIZeroRetentionCode        = "wait_required_for_zero_retention"
 	naceNDIZeroRetentionWaitSeconds = 60
 
+	// naceNDIOCRFailedCode is the error of a job whose page_ranges run far
+	// past the last page.
+	naceNDIOCRFailedCode = "ocr_failed"
+
 	naceNDIMaxPollInterval = 10 * time.Second
 	// naceNDIMaxAttempts bounds the sends of one request: the first and two
 	// retries. A cleanup DELETE is sent at most naceNDIDeleteAttempts times.
 	naceNDIMaxAttempts    = 3
 	naceNDIDeleteAttempts = 2
-	naceNDICleanupTimeout = 30 * time.Second
-	naceNDIUploadTTL      = 600
+	// naceNDIMaxRetryAfter is the longest Retry-After honoured; a longer one
+	// falls back to the usual backoff.
+	naceNDIMaxRetryAfter = 30 * time.Second
+	naceNDIUploadTTL     = 600
 	// naceNDIResponseHeaderTimeout is the default wait for an answer's
 	// headers; a held read takes up to 25 s and a held create up to 60 s.
 	// LLM_HTTP_RESPONSE_HEADER_TIMEOUT cannot set it below
@@ -101,10 +107,15 @@ const (
 
 // naceNDIPollInterval is the first pause between job reads that come back
 // unfinished; it grows up to naceNDIMaxPollInterval. naceNDIRetryDelay is the
-// pause before a transient failure is retried. Tests shorten both.
+// pause before a transient failure is retried. Tests shorten them.
 var (
 	naceNDIPollInterval = time.Second
 	naceNDIRetryDelay   = time.Second
+	// naceNDICleanupTimeout bounds the cleanup of one job or file.
+	naceNDICleanupTimeout = 30 * time.Second
+	// naceNDIDeletePollDelay is the pause before a file deletion answered 202
+	// without Retry-After is checked again.
+	naceNDIDeletePollDelay = time.Second
 )
 
 // naceNDIAPITransport sends every NDI API call (upload grant, parse job
@@ -173,6 +184,8 @@ type naceNDIError struct {
 	Message   string
 	Retryable bool
 	RequestID string
+	// RetryAfter is the wait a 429 or 503 asked for; 0 when it gave none.
+	RetryAfter time.Duration
 	// Err is the failure that kept the error body from being read.
 	Err error
 }
@@ -250,6 +263,9 @@ type naceNDISelection struct {
 	Send [][]int
 	// Keep is the pages kept from the result; nil keeps every page.
 	Keep [][]int
+	// Whole says why the whole document is parsed for a selection that Send
+	// does not carry; the warning about dropped pages names it.
+	Whole string
 }
 
 // VerifyOCRConnection checks the key against the model catalog, so verifying
@@ -339,6 +355,15 @@ func (m *NaceModel) OCRFile(ctx context.Context, modelName *string, content []by
 	}
 
 	job, err := m.ndiParse(ctx, apiConfig, parseURL, source, mode, selection.Send)
+	// NDI fails a job whose page_ranges run far past the last page with
+	// ocr_failed, at no charge. The whole document is then parsed once and
+	// filtered to the selection.
+	var ended *naceNDIJobEnded
+	if selection.Send != nil && errors.As(err, &ended) && ended.code == naceNDIOCRFailedCode {
+		common.Warn("Nace NDI: the selected pages failed to parse; parsing the whole document", zap.Error(err))
+		selection.Send, selection.Whole = nil, "NDI could not parse the selected pages (ocr_failed)"
+		job, err = m.ndiParse(ctx, apiConfig, parseURL, source, mode, nil)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("nace: parse: %w", err)
 	}
@@ -425,7 +450,7 @@ func naceNDIPageSelection(ocrConfig *OCRConfig) naceNDISelection {
 	if len(merged) <= naceNDIMaxRanges && total <= naceNDIMaxRangePages {
 		return naceNDISelection{Send: merged, Keep: merged}
 	}
-	return naceNDISelection{Keep: merged}
+	return naceNDISelection{Keep: merged, Whole: fmt.Sprintf("the page selection is larger than one parse accepts (%d ranges, %d pages)", naceNDIMaxRanges, naceNDIMaxRangePages)}
 }
 
 func naceNDIPageSelected(ranges [][]int, page int) bool {
@@ -470,7 +495,7 @@ func (m *NaceModel) ndiUpload(ctx context.Context, apiConfig *APIConfig, content
 		}
 		common.Warn("Nace NDI: upload failed, retrying", zap.Int("attempt", attempt), zap.Error(err))
 		select {
-		case <-time.After(time.Duration(attempt) * naceNDIRetryDelay):
+		case <-time.After(naceNDIRetryWait(ctx, err, attempt)):
 		case <-ctx.Done():
 			if mayHaveStored {
 				m.ndiRemoveUpload(ctx, apiConfig, filePath, content)
@@ -517,28 +542,33 @@ func (m *NaceModel) ndiUploadOnce(ctx context.Context, apiConfig *APIConfig, fil
 	if err != nil {
 		return nil, false, err
 	}
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
+	// The multipart framing is built around the file, so the body reads the
+	// file in place instead of a copy.
+	var frame bytes.Buffer
+	writer := multipart.NewWriter(&frame)
 	if err := writer.WriteField("metadata", string(metadata)); err != nil {
 		return nil, false, err
 	}
 	header := make(textproto.MIMEHeader)
 	header.Set("Content-Disposition", `form-data; name="file"; filename="document.pdf"`)
 	header.Set("Content-Type", "application/pdf")
-	part, err := writer.CreatePart(header)
-	if err != nil {
+	if _, err := writer.CreatePart(header); err != nil {
 		return nil, false, err
 	}
-	if _, err := part.Write(content); err != nil {
-		return nil, false, err
-	}
+	headLen := frame.Len()
 	if err := writer.Close(); err != nil {
 		return nil, false, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, grant.UploadURL, &body)
+	head, tail := frame.Bytes()[:headLen], frame.Bytes()[headLen:]
+	body := func() io.ReadCloser {
+		return io.NopCloser(io.MultiReader(bytes.NewReader(head), bytes.NewReader(content), bytes.NewReader(tail)))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, grant.UploadURL, body())
 	if err != nil {
 		return nil, false, naceNDIRedactError(err)
 	}
+	req.ContentLength = int64(len(head) + len(content) + len(tail))
+	req.GetBody = func() (io.ReadCloser, error) { return body(), nil }
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	// The grant's token authorizes this one upload; the API key is not sent.
 	req.Header.Set("X-Upload-Token", grant.Token)
@@ -763,7 +793,11 @@ func (m *NaceModel) ndiWait(ctx context.Context, apiConfig *APIConfig, job *nace
 
 // naceNDIJobEnded is a job that ended without a result: it failed or was
 // cancelled.
-type naceNDIJobEnded struct{ text string }
+type naceNDIJobEnded struct {
+	text string
+	// code is the error code of a failed job.
+	code string
+}
 
 func (e *naceNDIJobEnded) Error() string { return e.text }
 
@@ -781,13 +815,13 @@ func naceNDIJobFailure(job *naceNDIJob) error {
 		}
 		detail += message
 	}
-	return &naceNDIJobEnded{text: fmt.Sprintf("job %s failed: %s", job.JobID, detail)}
+	return &naceNDIJobEnded{text: fmt.Sprintf("job %s failed: %s", job.JobID, detail), code: job.Error.Code}
 }
 
 // ndiDeleteJob deletes the parse job: it cancels a running job and erases a
 // finished job's result.
 func (m *NaceModel) ndiDeleteJob(ctx context.Context, apiConfig *APIConfig, jobURL, jobID string) {
-	if err := m.ndiDelete(ctx, apiConfig, jobURL); err != nil {
+	if err := m.ndiDelete(ctx, apiConfig, jobURL, false); err != nil {
 		common.Warn("Nace NDI: failed to delete parse job", zap.String("job_id", jobID), zap.Error(err))
 	}
 }
@@ -797,7 +831,7 @@ func (m *NaceModel) ndiDeleteJob(ctx context.Context, apiConfig *APIConfig, jobU
 func (m *NaceModel) ndiDeleteFile(ctx context.Context, apiConfig *APIConfig, file *naceNDIFile) {
 	fileURL, err := m.baseModel.EndpointURL(apiConfig, naceNDIFilesPath+"/"+neturl.PathEscape(file.WorkspaceID)+"/files/"+neturl.PathEscape(file.FileID))
 	if err == nil {
-		err = m.ndiDelete(ctx, apiConfig, fileURL)
+		err = m.ndiDelete(ctx, apiConfig, fileURL, true)
 	}
 	if err != nil {
 		common.Warn("Nace NDI: failed to delete uploaded file", zap.String("file_id", file.FileID), zap.Error(err))
@@ -805,18 +839,49 @@ func (m *NaceModel) ndiDeleteFile(ctx context.Context, apiConfig *APIConfig, fil
 }
 
 // ndiDelete runs after ctx may have ended, so it uses a detached context
-// bounded by its own timeout. A transient failure is retried once.
-func (m *NaceModel) ndiDelete(ctx context.Context, apiConfig *APIConfig, target string) error {
+// bounded by its own timeout. A transient failure is retried once. With
+// confirm, a deletion answered 202 (still deleting) is sent again after
+// Retry-After (or naceNDIDeletePollDelay) until NDI confirms it (200, 204, or
+// 404 once it was in progress) or the timeout ends.
+func (m *NaceModel) ndiDelete(ctx context.Context, apiConfig *APIConfig, target string, confirm bool) error {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), naceNDICleanupTimeout)
 	defer cancel()
-	return m.ndiCall(cleanupCtx, m.ndiClient(), naceNDIDeleteAttempts, func(ctx context.Context) (*http.Request, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, target, nil)
-		if err != nil {
-			return nil, err
+	for pending := false; ; pending = true {
+		var reply naceNDIDeleteReply
+		err := m.ndiCall(cleanupCtx, m.ndiClient(), naceNDIDeleteAttempts, func(ctx context.Context) (*http.Request, error) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodDelete, target, nil)
+			if err != nil {
+				return nil, err
+			}
+			m.baseModel.applyAuth(req, apiConfig)
+			return req, nil
+		}, &reply)
+		var apiErr *naceNDIError
+		if pending && errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+			return nil
 		}
-		m.baseModel.applyAuth(req, apiConfig)
-		return req, nil
-	}, nil)
+		if pending && err != nil && cleanupCtx.Err() != nil {
+			return fmt.Errorf("deletion not confirmed: still in progress after %v", naceNDICleanupTimeout)
+		}
+		if err != nil || !confirm || reply.status != http.StatusAccepted {
+			return err
+		}
+		wait := reply.retryAfter
+		if wait <= 0 {
+			wait = naceNDIDeletePollDelay
+		}
+		select {
+		case <-time.After(wait):
+		case <-cleanupCtx.Done():
+			return fmt.Errorf("deletion not confirmed: still in progress after %v", naceNDICleanupTimeout)
+		}
+	}
+}
+
+// naceNDIDeleteReply keeps the status and Retry-After of a DELETE answer.
+type naceNDIDeleteReply struct {
+	status     int
+	retryAfter time.Duration
 }
 
 // ndiCall sends the request build makes and decodes a 2xx JSON reply into out.
@@ -834,11 +899,37 @@ func (m *NaceModel) ndiCall(ctx context.Context, client *http.Client, attempts i
 		}
 		common.Warn("Nace NDI: request failed, retrying", zap.String("method", req.Method), zap.String("path", req.URL.Path), zap.Error(err))
 		select {
-		case <-time.After(time.Duration(attempt) * naceNDIRetryDelay):
+		case <-time.After(naceNDIRetryWait(ctx, err, attempt)):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+// naceNDIRetryWait is the pause before sending a failed request again: the
+// Retry-After of a 429 or 503 when it is at most naceNDIMaxRetryAfter and
+// ends before ctx does, else a backoff of attempt times naceNDIRetryDelay.
+func naceNDIRetryWait(ctx context.Context, err error, attempt int) time.Duration {
+	var apiErr *naceNDIError
+	if errors.As(err, &apiErr) && apiErr.RetryAfter > 0 && apiErr.RetryAfter <= naceNDIMaxRetryAfter {
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > apiErr.RetryAfter {
+			return apiErr.RetryAfter
+		}
+	}
+	return time.Duration(attempt) * naceNDIRetryDelay
+}
+
+// naceNDIRetryAfter reads a Retry-After value in seconds or as an HTTP date;
+// 0 when it is missing, invalid or not in the future.
+func naceNDIRetryAfter(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if seconds, err := strconv.Atoi(value); err == nil {
+		return time.Duration(min(max(seconds, 0), 1<<20)) * time.Second
+	}
+	if at, err := http.ParseTime(value); err == nil && at.After(now) {
+		return at.Sub(now)
+	}
+	return 0
 }
 
 func naceNDIDo(client *http.Client, req *http.Request, out any) error {
@@ -853,6 +944,9 @@ func naceNDIDo(client *http.Client, req *http.Request, out any) error {
 			return &naceNDIError{Status: resp.StatusCode, Message: "failed to read error response", Err: readErr}
 		}
 		apiErr := naceNDIErrorFrom(resp.StatusCode, body)
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
+			apiErr.RetryAfter = naceNDIRetryAfter(resp.Header.Get("Retry-After"), time.Now())
+		}
 		if apiErr.RequestID != "" {
 			common.Warn("Nace NDI: request refused", zap.String("method", req.Method), zap.String("path", req.URL.Path), zap.Int("status", apiErr.Status), zap.String("code", apiErr.Code), zap.String("request_id", apiErr.RequestID))
 		}
@@ -865,18 +959,24 @@ func naceNDIDo(client *http.Client, req *http.Request, out any) error {
 	if err != nil {
 		return &naceNDIBadAnswer{err: fmt.Errorf("failed to read response: %w", err), jobID: naceNDIPartialJobID(body)}
 	}
+	if reply, ok := out.(*naceNDIDeleteReply); ok {
+		reply.status, reply.retryAfter = resp.StatusCode, naceNDIRetryAfter(resp.Header.Get("Retry-After"), time.Now())
+		return nil
+	}
 	if out == nil {
 		return nil
 	}
 	if err := json.Unmarshal(body, out); err != nil {
-		return &naceNDIBadAnswer{err: fmt.Errorf("failed to parse response: %w", err)}
+		// Malformed JSON fills nothing, so the job id is read leniently, as
+		// from a cut-short answer.
+		return &naceNDIBadAnswer{err: fmt.Errorf("failed to parse response: %w", err), jobID: naceNDIPartialJobID(body)}
 	}
 	return nil
 }
 
 // naceNDIBadAnswer is a 2xx answer that was cut short or did not decode: the
 // call may have taken effect although its result is unknown. jobID is the job
-// id read from the part of a cut-short answer that arrived, if any.
+// id read from the part that arrived or from the malformed answer, if any.
 type naceNDIBadAnswer struct {
 	err   error
 	jobID string
@@ -1079,21 +1179,16 @@ func naceNDIBox(block naceNDIBlock) []float64 {
 func naceNDIResponse(result *naceNDIParseResult, selection naceNDISelection) *OCRFileResponse {
 	doc := result.Document
 	response := &OCRFileResponse{}
-	truncated := false
 	for _, disclosure := range result.Disclosures {
-		if disclosure.Code == "content_truncated" {
-			truncated = true
-		}
 		warning := "Nace NDI: " + naceNDIClip(disclosure.Code)
 		if disclosure.Target != "" {
 			warning += " (" + naceNDIClip(disclosure.Target) + ")"
 		}
 		response.Warnings = append(response.Warnings, warning)
 	}
-	var markdown []rune
-	if !truncated {
-		markdown = []rune(doc.Markdown)
-	}
+	// A truncated result's Markdown is a preview, a prefix of the whole: a
+	// span inside it still gives a block its text, and one past it gives none.
+	markdown := []rune(doc.Markdown)
 	pages := make([]OCRPage, min(max(doc.PageCount, 0), naceNDIMaxPages))
 	overCap := doc.PageCount > naceNDIMaxPages
 	outside := false
@@ -1150,7 +1245,7 @@ func naceNDIResponse(result *naceNDIParseResult, selection naceNDISelection) *OC
 		response.Warnings = append(response.Warnings, fmt.Sprintf("Nace NDI: only the first %d pages were kept", naceNDIMaxPages))
 	}
 	if outside && selection.Send == nil {
-		response.Warnings = append(response.Warnings, fmt.Sprintf("Nace NDI: the page selection is larger than one parse accepts (%d ranges, %d pages), so the whole document was parsed and billed and only the selected pages were kept", naceNDIMaxRanges, naceNDIMaxRangePages))
+		response.Warnings = append(response.Warnings, fmt.Sprintf("Nace NDI: %s, so the whole document was parsed and billed and only the selected pages were kept", selection.Whole))
 	}
 	for i := range pages {
 		pages[i].Index = i

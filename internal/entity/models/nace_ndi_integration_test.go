@@ -73,14 +73,21 @@ func naceNDISyntheticPDF() []byte {
 	return buf.Bytes()
 }
 
-// TestNaceOCRFileLive parses page 1 of a synthetic PDF with production NDI
-// through OCRFile and checks that the parse job and the uploaded file are
-// deleted afterwards. It runs one billed low-effort parse of one page, so it
-// needs NACE_NDI_LIVE_INTEGRATION=1 and NACE_API_KEY; NACE_BASE_URL optionally
-// overrides the API base URL.
+// TestNaceOCRFileLive parses a synthetic one-page PDF with production NDI
+// through OCRFile, twice, and checks that every parse job and the uploaded
+// file are deleted afterwards:
+//   - pages 1-600 are more than one parse accepts (500 pages), so the whole
+//     document is parsed without page_ranges and filtered locally;
+//   - pages 1-300 are sent as page_ranges; NDI fails a range that far past the
+//     last page with ocr_failed, so the driver parses the whole document once
+//     more and keeps the selected pages.
+//
+// It runs two billed low-effort parses of one page (the failed job is not
+// billed), so it needs NACE_NDI_LIVE_INTEGRATION=1 and NACE_API_KEY;
+// NACE_BASE_URL optionally overrides the API base URL.
 func TestNaceOCRFileLive(t *testing.T) {
 	if os.Getenv("NACE_NDI_LIVE_INTEGRATION") != "1" {
-		t.Skip("set NACE_NDI_LIVE_INTEGRATION=1 and NACE_API_KEY to run one billed parse with the live Nace API")
+		t.Skip("set NACE_NDI_LIVE_INTEGRATION=1 and NACE_API_KEY to run two billed parses with the live Nace API")
 	}
 	key := strings.TrimSpace(os.Getenv("NACE_API_KEY"))
 	if key == "" {
@@ -91,48 +98,63 @@ func TestNaceOCRFileLive(t *testing.T) {
 		baseURL = "https://console.nace.ai/v1"
 	}
 	driver := NewNaceModel(map[string]string{"default": baseURL}, URLSuffix{Models: "models", OCR: "documents/parse"})
-	recorder := &naceNDIRecorder{base: naceNDITransport(naceNDIAPITransport)}
 	previous := naceNDIAPITransport
-	naceNDIAPITransport = recorder
 	t.Cleanup(func() { naceNDIAPITransport = previous })
 
-	model := "ndi-parse-low"
-	resp, err := driver.OCRFile(t.Context(), &model, naceNDISyntheticPDF(), nil, &APIConfig{ApiKey: &key}, &OCRConfig{Pages: [][]int{{1, 1}}}, nil)
-	if err != nil {
-		t.Fatalf("OCRFile: %v", err)
-	}
-	if resp.Text == nil || !strings.Contains(*resp.Text, "Widget count: 42") {
-		t.Fatalf("text=%v", resp.Text)
-	}
-	if len(resp.Pages) != 1 || !resp.Pages[0].Normalized || len(resp.Pages[0].Blocks) == 0 {
-		t.Fatalf("pages=%+v", resp.Pages)
-	}
-	for _, block := range resp.Pages[0].Blocks {
-		if len(block.BBox) != 4 || block.BBox[0] < 0 || block.BBox[2] > 1 || block.BBox[1] < 0 || block.BBox[3] > 1 {
-			t.Errorf("block %q box=%v", block.Text, block.BBox)
-		}
-		t.Logf("block label=%s box=%.3f text=%q", block.Label, block.BBox, block.Text)
-	}
+	for _, tc := range []struct {
+		name   string
+		pages  [][]int
+		parses int
+	}{
+		{"over the parse limit", [][]int{{1, 600}}, 1},
+		{"ocr_failed fallback", [][]int{{1, 300}}, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := &naceNDIRecorder{base: naceNDITransport(previous)}
+			naceNDIAPITransport = recorder
+			model := "ndi-parse-low"
+			resp, err := driver.OCRFile(t.Context(), &model, naceNDISyntheticPDF(), nil, &APIConfig{ApiKey: &key}, &OCRConfig{Pages: tc.pages}, nil)
+			if err != nil {
+				t.Fatalf("OCRFile: %v", err)
+			}
+			if resp.Text == nil || !strings.Contains(*resp.Text, "Widget count: 42") {
+				t.Fatalf("text=%v", resp.Text)
+			}
+			if len(resp.Pages) != 1 || !resp.Pages[0].Normalized || len(resp.Pages[0].Blocks) == 0 {
+				t.Fatalf("pages=%+v", resp.Pages)
+			}
+			for _, block := range resp.Pages[0].Blocks {
+				if len(block.BBox) != 4 || block.BBox[0] < 0 || block.BBox[2] > 1 || block.BBox[1] < 0 || block.BBox[3] > 1 {
+					t.Errorf("block %q box=%v", block.Text, block.BBox)
+				}
+				t.Logf("block label=%s box=%.3f text=%q", block.Label, block.BBox, block.Text)
+			}
 
-	// A job DELETE answers 2xx when done. A file DELETE confirms the deletion
-	// only with 200 ("deleted"); 202 ("deleting") is accepted, not confirmed.
-	deleted := map[string]bool{}
-	for _, entry := range recorder.log {
-		t.Log(entry)
-		fields := strings.Fields(entry)
-		if len(fields) != 3 || fields[0] != http.MethodDelete {
-			continue
-		}
-		switch {
-		case strings.Contains(fields[1], "/documents/jobs/") && strings.HasPrefix(fields[2], "2"):
-			deleted["job"] = true
-		case strings.Contains(fields[1], "/documents/workspaces/") && fields[2] == "200":
-			deleted["file"] = true
-		case strings.Contains(fields[1], "/documents/workspaces/") && fields[2] == "202":
-			t.Errorf("the file deletion was accepted (202 deleting) but not confirmed")
-		}
-	}
-	if !deleted["job"] || !deleted["file"] {
-		t.Fatalf("the parse job and the uploaded file were not both confirmed deleted: %v", recorder.log)
+			// A job DELETE answers 2xx when done. A file DELETE confirms the
+			// deletion only with 200 ("deleted"); 202 ("deleting") is
+			// accepted, not confirmed.
+			seen := map[string]int{}
+			for _, entry := range recorder.log {
+				t.Log(entry)
+				fields := strings.Fields(entry)
+				if len(fields) != 3 {
+					continue
+				}
+				switch {
+				case fields[0] == http.MethodPost && strings.HasSuffix(fields[1], "/documents/parse"):
+					seen["parse"]++
+				case fields[0] != http.MethodDelete:
+				case strings.Contains(fields[1], "/documents/jobs/") && strings.HasPrefix(fields[2], "2"):
+					seen["job"]++
+				case strings.Contains(fields[1], "/documents/workspaces/") && fields[2] == "200":
+					seen["file"]++
+				case strings.Contains(fields[1], "/documents/workspaces/") && fields[2] == "202":
+					t.Errorf("the file deletion was accepted (202 deleting) but not confirmed")
+				}
+			}
+			if seen["parse"] != tc.parses || seen["job"] != tc.parses || seen["file"] != 1 {
+				t.Fatalf("want %d parse jobs, each deleted, and the uploaded file deleted: %v", tc.parses, recorder.log)
+			}
+		})
 	}
 }

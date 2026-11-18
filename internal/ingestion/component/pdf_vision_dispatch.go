@@ -178,13 +178,10 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	}
 
 	// MinerU dispatch: parse_method "mineru", a layout_recognizer naming
-	// MinerU, a composite model@instance@provider selector naming MinerU in
-	// either field, or a bare tenant model UUID (in either field) that
-	// resolves to a MinerU OCR model.
-	isMinerUMatch := methodLower == "mineru" ||
-		strings.HasPrefix(layoutLower, "mineru") ||
-		strings.Contains(layoutLower, "@mineru") ||
-		strings.Contains(methodLower, "@mineru")
+	// MinerU, a composite model@instance@provider selector whose provider is
+	// MinerU in either field, or a bare tenant model UUID (in either field)
+	// that resolves to a MinerU OCR model.
+	isMinerUMatch := namesMinerU(methodLower, false) || namesMinerU(layoutLower, true)
 	minerUSelector := layout
 	if strings.TrimSpace(minerUSelector) == "" {
 		minerUSelector = method
@@ -3040,6 +3037,19 @@ func isMinerUDriver(driver modelModule.ModelDriver) bool {
 // the dispatch path is chosen instead of falling through to the image2text
 // VLM path.
 var isMinerULayoutModelID = defaultIsMinerULayoutModelID
+
+// namesMinerU reports whether a lower-case parse_method or layout_recognizer
+// value names MinerU. A composite model@instance@provider selector is decided
+// by its provider (MinerU or MinerU.Net), so another provider's model on an
+// instance named "mineru..." is not taken. Any other value names MinerU when
+// it is "mineru", or, for a layout_recognizer (prefix), starts with it.
+func namesMinerU(value string, prefix bool) bool {
+	if strings.Contains(value, "@") {
+		_, _, provider, err := common.ParseCompositeModelName(value)
+		return err == nil && strings.HasPrefix(provider, "mineru")
+	}
+	return value == "mineru" || (prefix && strings.HasPrefix(value, "mineru"))
+}
 
 func defaultIsMinerULayoutModelID(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
 	selector = strings.TrimSpace(selector)
