@@ -136,8 +136,11 @@ func InsertCitationMarkers(final string, chunkIDs []string) string {
 // id the model could invent. The two helpers below turn those handles into the
 // reference list the client resolves.
 
-// citedRefRE matches the `[ID:n]` handle the model writes.
-var citedRefRE = regexp.MustCompile(`\[ID:(\d+)\]`)
+// citedRefRE matches the canonical `[ID:n]` handle and the bare `[n]` form
+// accepted by the agentic citation contract. Bare numeric markers are bounded
+// by the evidence registry before they can resolve, so ordinary bracketed
+// numbers such as years remain untouched when they do not name a passage.
+var citedRefRE = regexp.MustCompile(`(?i)\[(?:id\s*:\s*)?(\d+)\]`)
 
 // commaCitationRE matches a handle group the model compressed into ONE marker
 // ("[ID:47, ID:115]") instead of writing one marker per passage.
