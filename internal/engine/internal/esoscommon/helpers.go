@@ -2,6 +2,9 @@ package esoscommon
 
 import (
 	"cmp"
+	"context"
+	"errors"
+	"net"
 	"regexp"
 	"slices"
 	"strings"
@@ -49,4 +52,27 @@ func CompileHighlightPattern(keywords []string) *regexp.Regexp {
 		}
 	}
 	return regexp.MustCompile("(?i)" + strings.Join(parts, "|"))
+}
+
+// IsTimeoutError detects connection-level and per-attempt timeouts
+// via context.DeadlineExceeded, net.Error.Timeout(), and substring
+// matches (for SDKs that wrap without typed errors).
+func IsTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	msg := err.Error()
+	for _, sub := range []string{"i/o timeout", "deadline exceeded", "connection timeout", "context deadline"} {
+		if strings.Contains(msg, sub) {
+			return true
+		}
+	}
+	return false
 }

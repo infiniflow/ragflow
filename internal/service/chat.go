@@ -157,11 +157,15 @@ func (s *ChatService) ListChats(ctx context.Context, status, keywords, id, name 
 		}
 		chat.Chat.OperatorPermission = access.PermissionMask
 		kbNames, datasetIDs := s.getDatasetNamesAndIDs(ctx, chat.KBIDs)
+		nickname := ""
+		if chat.Nickname != nil {
+			nickname = *chat.Nickname
+		}
 		chatsWithKBNames = append(chatsWithKBNames, &ChatWithKBNames{
 			Chat:         &chat.Chat,
 			KBNames:      kbNames,
 			DatasetIDs:   datasetIDs,
-			Nickname:     ownerNickname(chat.Nickname, chat.TenantID),
+			Nickname:     nickname,
 			TenantAvatar: chat.TenantAvatar,
 		})
 	}
@@ -170,13 +174,6 @@ func (s *ChatService) ListChats(ctx context.Context, status, keywords, id, name 
 		Total: total,
 		Chats: chatsWithKBNames,
 	}, nil
-}
-
-func ownerNickname(nickname *string, tenantID string) string {
-	if nickname != nil && strings.TrimSpace(*nickname) != "" {
-		return *nickname
-	}
-	return tenantID
 }
 
 type CreateChatRequest struct {

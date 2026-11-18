@@ -1643,6 +1643,10 @@ Failure:
 
 Starts, cancels, or reruns ingestion for documents. Use this endpoint for documents in datasets configured with an ingestion pipeline.
 
+:::note
+Each document is ingested with the parser selection stored on its own record: its `parser_id`, or the pipeline and pinned version captured when parser settings were last applied to it. This is not necessarily the dataset's current parsing mode. After changing the dataset's parsing mode, call `POST /api/v1/datasets/{dataset_id}/documents/apply-parser-config` to update the dataset's existing documents. Otherwise, ingestion continues with each document's previously saved selection.
+:::
+
 #### Request
 
 - Method: POST

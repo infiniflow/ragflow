@@ -19,6 +19,11 @@ export enum MessageType {
   User = 'user',
 }
 
+export enum ChatSessionSource {
+  Normal = 'normal',
+  ChatChannel = 'chat_channel',
+}
+
 export enum ChatVariableEnabledField {
   TemperatureEnabled = 'temperatureEnabled',
   TopPEnabled = 'topPEnabled',

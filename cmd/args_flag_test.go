@@ -163,7 +163,7 @@ func TestParseArgsBoolFlagForms(t *testing.T) {
 // TestParseArgsModeFlags covers every mode flag in both dash forms and the
 // last-one-wins rule across dash forms.
 func TestParseArgsModeFlags(t *testing.T) {
-	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "deepdoc", "migrate"} {
+	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "chatter", "deepdoc", "migrate"} {
 		for _, form := range []string{"--" + mode, "-" + mode} {
 			args, err := parseArgsFrom([]string{"ragflow_server", form})
 			if err != nil {
@@ -627,5 +627,33 @@ func TestParseArgsModeBoolSynonyms(t *testing.T) {
 		if args.Mode != nil {
 			t.Errorf("parseArgsFrom(%q) mode = %v, want nil (falsy boolean selects no mode)", argv, args.Mode)
 		}
+	}
+}
+
+func TestParseArgsChatterSelection(t *testing.T) {
+	args, err := parseArgsFrom([]string{"ragflow_server", "--chatter"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if args.Mode == nil || *args.Mode != "chatter" {
+		t.Fatalf("mode = %v, want chatter", args.Mode)
+	}
+	for _, mode := range []string{"admin", "ingestor", "syncer", "deepdoc", "migrate", "chatter"} {
+		if _, err := parseArgsFrom([]string{"ragflow_server", "--" + mode, "--disable-chat-channels"}); err == nil {
+			t.Errorf("%s accepted API-only --disable-chat-channels", mode)
+		}
+	}
+	for _, flag := range []string{"--disable-chat-channels", "--disable-chat-channels=true", "--disable-chat-channels=false"} {
+		args, err := parseArgsFrom([]string{"ragflow_server", "--api", flag})
+		if err != nil {
+			t.Fatalf("API disable switch: %v", err)
+		}
+		if want := flag != "--disable-chat-channels=false"; args.DisableChatChannels != want {
+			t.Errorf("%s: DisableChatChannels = %v, want %v", flag, args.DisableChatChannels, want)
+		}
+	}
+	args, err = parseArgsFrom([]string{"ragflow_server", "--api"})
+	if err != nil || args.DisableChatChannels {
+		t.Fatalf("default API must keep embedded channels: args=%+v, error=%v", args, err)
 	}
 }

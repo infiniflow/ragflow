@@ -105,7 +105,6 @@ func (s *SearchService) ListSearches(ctx context.Context, keywords string, page,
 		searchApps[i] = s.toSearchAppResponse(search)
 		searchApps[i]["operator_permission"] = access.PermissionMask
 	}
-
 	return &ListSearchAppsResponse{
 		SearchApps: searchApps,
 		Total:      total,
@@ -114,8 +113,13 @@ func (s *SearchService) ListSearches(ctx context.Context, keywords string, page,
 
 // toSearchAppResponse converts search model to response format
 func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[string]interface{} {
+	nickname := search.UserID
+	if search.Nickname != nil && strings.TrimSpace(*search.Nickname) != "" {
+		nickname = *search.Nickname
+	}
 	result := map[string]interface{}{
 		"id":            search.ID,
+		"user_id":       search.UserID,
 		"tenant_id":     search.TenantID,
 		"name":          search.Name,
 		"description":   search.Description,
@@ -124,7 +128,7 @@ func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[s
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
 		"search_config": BuildSearchConfigResponse(map[string]interface{}(search.SearchConfig)),
-		"nickname":      ownerNickname(search.Nickname, search.TenantID),
+		"nickname":      nickname,
 	}
 
 	if search.Avatar != nil {

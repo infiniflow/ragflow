@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
@@ -113,6 +116,53 @@ func TestSaveActionBindingSafeCombinationSkipsRiskAck(t *testing.T) {
 		t.Fatalf("a read-only, non-callable binding must not need an acknowledgement")
 	}
 }
+
+// The addresses round-trip through the JSON column and come back in the order
+// they were saved: the first entry is the default, so order carries meaning.
+func TestModelMCPServersPersistThroughJSONColumn(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.CompilationTemplate{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	const tenantID = "tenant-1"
+	const templateID = "0123456789abcdef0123456789abcdef"
+	status := string(entity.StatusValid)
+	row := &entity.CompilationTemplate{
+		ID:       templateID,
+		TenantID: strPointer(tenantID),
+		Name:     "model",
+		Kind:     "wiki",
+		Config:   entity.JSONMap{},
+		Status:   &status,
+	}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatalf("seed template: %v", err)
+	}
+
+	svc := NewActionBindingService()
+	if err := svc.SetModelMCPServers(context.Background(), db, tenantID, templateID, []string{
+		" https://b.example/mcp ",
+		"https://a.example/mcp",
+		"https://b.example/mcp",
+		"",
+	}); err != nil {
+		t.Fatalf("set servers: %v", err)
+	}
+
+	got, err := svc.ModelMCPServers(context.Background(), db, tenantID, templateID)
+	if err != nil {
+		t.Fatalf("read servers: %v", err)
+	}
+	if len(got) != 2 || got[0] != "https://b.example/mcp" || got[1] != "https://a.example/mcp" {
+		t.Fatalf("stored servers = %v, want the two unique addresses in entry order", got)
+	}
+}
+
+func strPointer(value string) *string { return &value }
 
 // A model may front several upstream systems, so its addresses are a list. The
 // list is normalised once here because the picker, the tool cache and the

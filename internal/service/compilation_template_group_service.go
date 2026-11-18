@@ -88,10 +88,41 @@ type GroupListItem struct {
 	Templates   []*TemplateListItem `json:"templates"`
 }
 
-// ListSaved returns the tenant's groups with nested templates. Mirrors Python
-// list_saved(). total is derived from the full (unpaginated) result set.
-func (s *CompilationTemplateGroupService) ListSaved(ctx context.Context, tenantID, keywords, scope string, terms []dao.OrderTerm) ([]*GroupListItem, error) {
-	groups, err := s.groupDAO.ListSaved(ctx, dao.DB, tenantID, keywords, scope, terms)
+// ListSaved returns the selected user's groups in the current tenant with
+// nested templates. total is derived from the full (unpaginated) result set.
+func (s *CompilationTemplateGroupService) ListSaved(ctx context.Context, accessUserID, keywords, scope string, terms []dao.OrderTerm) ([]*GroupListItem, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	accessUserID = strings.TrimSpace(accessUserID)
+	if accessUserID == "" {
+		accessUserID = userID
+	}
+	if accessUserID != userID {
+		scope, err := queryScopeForAccessUser(ctx, permission.NewDatabaseChecker(dao.DB), permission.ScopeQuery{
+			TenantID:  tenantID,
+			Kind:      permission.ResourceKindCanvas,
+			Operation: permission.OperationRead,
+		}, accessUserID)
+		if err != nil {
+			return nil, err
+		}
+		var accessibleCanvasID string
+		if err := scope.Apply(dao.DB.WithContext(ctx).Model(&entity.UserCanvas{})).
+			Where("user_canvas.user_id = ? AND user_canvas.tenant_id = ?", accessUserID, tenantID).
+			Limit(1).Pluck("user_canvas.id", &accessibleCanvasID).Error; err != nil {
+			return nil, fmt.Errorf("check compilation template group access: %w", err)
+		}
+		if accessibleCanvasID == "" {
+			return nil, permission.ErrPermissionDenied
+		}
+	}
+	groups, err := s.groupDAO.ListSaved(ctx, dao.DB, tenantID, accessUserID, keywords, scope, terms)
 	if err != nil {
 		return nil, err
 	}

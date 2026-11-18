@@ -1,9 +1,6 @@
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import * as PopoverPrimitive from '@radix-ui/react-popover';
 import {
   ChevronDown,
   ChevronRight,
@@ -148,6 +145,7 @@ function TreeSelectNodeList(props: TreeSelectRowsProps) {
 }
 
 interface TreeSelectDropdownProps {
+  dropdownHeader?: React.ReactNode;
   showSearch?: boolean;
   searchTerm: string;
   onSearchTermChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -159,6 +157,7 @@ interface TreeSelectDropdownProps {
 }
 
 function TreeSelectDropdown({
+  dropdownHeader,
   showSearch,
   searchTerm,
   onSearchTermChange,
@@ -177,6 +176,7 @@ function TreeSelectDropdown({
 
   return (
     <>
+      {dropdownHeader}
       {showSearch && (
         <div className="flex items-center border-b px-3 py-2">
           <Search className="h-4 w-4 mr-2 flex-shrink-0 text-text-disabled" />
@@ -211,6 +211,9 @@ function TreeSelectDropdown({
 
 interface TreeSelectProps {
   data: TreeSelectNode[];
+  dropdownHeader?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   value?: string;
   onChange?: (value: string) => void;
   placeholder?: string;
@@ -263,6 +266,9 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
   function TreeSelect(
     {
       data,
+      dropdownHeader,
+      open: controlledOpen,
+      onOpenChange,
       value,
       onChange,
       placeholder,
@@ -283,7 +289,15 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
     },
     ref,
   ) {
-    const [open, setOpen] = useState(false);
+    const [internalOpen, setInternalOpen] = useState(false);
+    const open = controlledOpen ?? internalOpen;
+    const handleOpenChange = useCallback(
+      (nextOpen: boolean) => {
+        if (controlledOpen === undefined) setInternalOpen(nextOpen);
+        onOpenChange?.(nextOpen);
+      },
+      [controlledOpen, onOpenChange],
+    );
     const [searchTerm, setSearchTerm] = useState('');
     // Mount with defaultExpandAll means expanded from the first paint: the
     // render-phase adjustment below only fires on a data identity change, so
@@ -355,11 +369,11 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
           handleToggle(node.id);
         } else {
           onChange?.(node.id);
-          setOpen(false);
+          handleOpenChange(false);
           setSearchTerm('');
         }
       },
-      [onChange, handleToggle],
+      [onChange, handleToggle, handleOpenChange],
     );
 
     const handleClear = useCallback(
@@ -398,7 +412,7 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
     );
 
     return (
-      <Popover open={open} onOpenChange={setOpen}>
+      <PopoverPrimitive.Root open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild disabled={disabled}>
           <button
             ref={ref}
@@ -438,6 +452,7 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
           sideOffset={4}
         >
           <TreeSelectDropdown
+            dropdownHeader={dropdownHeader}
             showSearch={showSearch}
             searchTerm={searchTerm}
             onSearchTermChange={handleSearchTermChange}
@@ -448,7 +463,7 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
             onSelectNode={handleSelect}
           />
         </PopoverContent>
-      </Popover>
+      </PopoverPrimitive.Root>
     );
   },
 );

@@ -47,6 +47,7 @@ export function useDisableDifferenceEmbeddingDataset(
   name: string,
   canvasID?: string,
   allowEmptyDatasets = false,
+  accessUserId?: string,
 ) {
   const form = useFormContext();
   const datasetId = useWatch({ name, control: form.control });
@@ -57,7 +58,14 @@ export function useDisableDifferenceEmbeddingDataset(
     loading,
     handleScroll,
     hasNextPage,
-  } = useFetchKnowledgeList(false, debouncedSearchString, undefined, canvasID);
+  } = useFetchKnowledgeList(
+    false,
+    debouncedSearchString,
+    undefined,
+    canvasID,
+    undefined,
+    accessUserId,
+  );
   const selectedDatasetIds = useMemo(
     () => (Array.isArray(datasetId) ? datasetId : []),
     [datasetId],
@@ -70,6 +78,7 @@ export function useDisableDifferenceEmbeddingDataset(
   const { data: selectedDatasets } = useFetchDatasetsByIds(
     selectedDatasetIds,
     canvasID,
+    accessUserId,
   );
 
   const datasetList = useMemo(() => {
@@ -150,6 +159,7 @@ export function KnowledgeBaseFormField({
   required = false,
   canvasID,
   allowEmptyDatasets = false,
+  accessUserId,
 }: {
   showVariable?: boolean;
   name?: string;
@@ -168,6 +178,7 @@ export function KnowledgeBaseFormField({
    * reads as empty while being the only place there is anything to read.
    */
   allowEmptyDatasets?: boolean;
+  accessUserId?: string;
 }) {
   const { t } = useTranslation();
 
@@ -178,7 +189,12 @@ export function KnowledgeBaseFormField({
     searchString,
     handleScroll,
     hasNextPage,
-  } = useDisableDifferenceEmbeddingDataset(name, canvasID, allowEmptyDatasets);
+  } = useDisableDifferenceEmbeddingDataset(
+    name,
+    canvasID,
+    allowEmptyDatasets,
+    accessUserId,
+  );
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 

@@ -322,7 +322,7 @@ func GetDefaultSkillMapping(vf VectorFieldSpec) map[string]interface{} {
 
 	// Vector columns follow the shared "q_<dim>_vec" convention. The only
 	// engine-specific part is the mapping syntax, injected through vf.
-	vectorDims := []int{3072, 2560, 1536, 1024, 768, 512, 256}
+	vectorDims := []int{4096, 3584, 3072, 2560, 2048, 1536, 1024, 768, 512, 384, 256}
 	properties := map[string]interface{}{
 		"skill_id": map[string]interface{}{
 			"type":  "keyword",
@@ -725,6 +725,11 @@ func MemoryMessageVectorProperty(vectorSize int, vf VectorFieldSpec) map[string]
 		"index":    true,
 		vf.SimKey:  vf.SimValue,
 	}
+}
+
+// SkillVectorProperty returns the vector mapping property for a skill index.
+func SkillVectorProperty(vectorSize int, vf VectorFieldSpec) map[string]interface{} {
+	return MemoryMessageVectorProperty(vectorSize, vf)
 }
 
 func NormalizeMemoryMessageChunks(chunks []map[string]interface{}) {

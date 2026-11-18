@@ -115,6 +115,12 @@ function SystemSetting() {
         tooltip: t('embeddingModelTip'),
       },
       {
+        id: 'scoring_id',
+        label: t('scoringModel'),
+        value: defaultModelDictionary.scoring_id ?? '',
+        tooltip: t('scoringModelTip'),
+      },
+      {
         id: 'img2txt_id',
         label: t('img2txtModel'),
         value: defaultModelDictionary.img2txt_id ?? '',

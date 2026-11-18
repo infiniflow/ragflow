@@ -1,4 +1,4 @@
-import { MessageType } from '@/constants/chat';
+import { ChatSessionSource, MessageType } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
   useFetchChatList,
@@ -55,6 +55,7 @@ export const useSelectDerivedConversationList = () => {
             id: conversationId,
             name: t('newConversation'),
             chat_id: dialogId,
+            source: ChatSessionSource.Normal,
             is_new: true,
             messages: [
               {

@@ -1,4 +1,8 @@
-import { MessageType, WebSearchProvider } from '@/constants/chat';
+import {
+  ChatSessionSource,
+  MessageType,
+  WebSearchProvider,
+} from '@/constants/chat';
 import { IAttachment } from '@/hooks/use-send-message';
 import { IOntologyReceipt } from './ontology-retrieval';
 
@@ -123,6 +127,7 @@ export interface IDialog {
   prompt_type: string;
   status: string;
   tenant_id: string;
+  user_id?: string;
   update_date: string;
   update_time: number;
   keywords_similarity_weight?: number;
@@ -157,6 +162,7 @@ export interface IConversation {
   avatar: string;
   messages: Message[];
   name: string;
+  source: ChatSessionSource;
   update_date: string;
   update_time: number;
   is_new: true;

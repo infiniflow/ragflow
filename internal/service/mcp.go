@@ -88,6 +88,9 @@ type UpdateMCPServerRequest map[string]json.RawMessage
 // MCPServerListItem is an MCP server item in the list response.
 type MCPServerListItem struct {
 	ID                 string         `json:"id"`
+	UserID             string         `json:"user_id"`
+	TenantID           string         `json:"tenant_id"`
+	Nickname           string         `json:"nickname"`
 	Name               string         `json:"name"`
 	ServerType         string         `json:"server_type"`
 	URL                string         `json:"url"`
@@ -548,7 +551,7 @@ func headerOrVariablesChanged(req UpdateMCPServerRequest) bool {
 }
 
 // ListMCPServers lists MCP servers belonging to a tenant the caller can use.
-func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID, accessUserID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
@@ -566,16 +569,18 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID strin
 	}
 
 	checker := permission.NewDatabaseChecker(dao.DB)
-	queryScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
+	queryScope, err := queryScopeForAccessUser(ctx, checker, permission.ScopeQuery{
 		TenantID:  tenantID,
 		Kind:      permission.ResourceKindMCPServer,
-		Operation: permission.OperationRead,
-	})
+		Operation: permission.OperationUse,
+	}, accessUserID)
 	if err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
-	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, tenantID, ids, keywords, orderby, desc, page, pageSize, queryScope.Apply)
+	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, tenantID, ids, keywords, orderby, desc, page, pageSize, func(query *gorm.DB) *gorm.DB {
+		return queryScope.Apply(query)
+	})
 	if err != nil {
 		var orderbyErr *dao.InvalidMCPServerOrderByError
 		if errors.As(err, &orderbyErr) {
@@ -598,7 +603,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID strin
 		}
 		for _, ref := range refs {
 			access, ok := accesses[ref]
-			if !ok || !access.Allows(permission.OperationRead) {
+			if !ok || !access.Allows(permission.OperationUse) {
 				continue
 			}
 			permissionMasks[ref.ID] = access.PermissionMask
@@ -614,8 +619,15 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID strin
 		if variables == nil {
 			variables = entity.JSONMap{}
 		}
+		nickname := ""
+		if server.Nickname != nil {
+			nickname = *server.Nickname
+		}
 		items = append(items, &MCPServerListItem{
 			ID:                 server.ID,
+			UserID:             server.UserID,
+			TenantID:           server.TenantID,
+			Nickname:           nickname,
 			Name:               server.Name,
 			ServerType:         server.ServerType,
 			URL:                server.URL,

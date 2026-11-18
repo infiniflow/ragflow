@@ -281,7 +281,8 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			} else {
 				tenantEmbdID = ""
 			}
-			modelCtx := permission.WithTenantID(ctx, lockedKB.TenantID)
+			// Resolve the model in the dataset tenant without changing the caller.
+			modelCtx := permission.WithIdentity(ctx, permission.UserIDFromContext(ctx), lockedKB.TenantID)
 			ok, message := d.verifyEmbeddingAvailability(modelCtx, effectiveEmbdID, lockedKB.TenantID)
 			if !ok {
 				txCode = common.CodeDataError

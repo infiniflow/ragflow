@@ -926,26 +926,18 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 			}
 			return s.markScheduledAfterPublish(ctx, existing.ID)
 		case common.FAILED, common.STOPPED:
-			originalStatus := existing.Status
-			existing, err = s.transition(ctx, existing.ID, common.CREATED)
+			boundLogID, err := s.retryWithFreshRunIdentity(ctx, existing, kbCache)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("retry run identity for task %s: %w", existing.ID, err)
 			}
-			if err = s.ingestionTaskDAO.ClearPipelineLogID(ctx, dao.DB, existing.ID); err != nil {
-				return nil, fmt.Errorf("clear previous run identity for task %s: %w", existing.ID, err)
-			}
-			existing.PipelineLogID = nil
+			existing.PipelineLogID = &boundLogID
+			existing.Status = common.CREATED
 			// The previous run is terminal, so any leftover Redis cancel flag
 			// is stale: a genuine cancel of the new run can only come through
-			// RequestStop once the task is RUNNING again. Clear it so the
-			// re-queued task is not cancelled at the worker's pre-start check.
+			// RequestStop once the task is RUNNING again. Clear it after the
+			// run identity commits so the re-queued task is not cancelled at
+			// the worker's pre-start check.
 			clearCancelFlag(ctx, existing.ID)
-			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
-				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
-					return nil, fmt.Errorf("ensure run identity for task %s: %w (rollback failed: %v)", existing.ID, err, rollbackErr)
-				}
-				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
-			}
 			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
 			if err = s.enqueueTask(ctx, existing, kbCache); err != nil {
 				s.settlePublishFailure(ctx, existing)
@@ -975,15 +967,66 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 	return s.markScheduledAfterPublish(ctx, created.ID)
 }
 
-func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{common.CREATED}, status)
+// retryWithFreshRunIdentity reopens a terminal task for a new run. The status
+// transition, old-binding release, and new-run creation/binding all commit in
+// one short transaction, so an external observer never sees a runnable task
+// whose replacement run identity is not ready yet. On any failure the whole
+// transaction rolls back, leaving the task terminal with its prior binding and
+// run count intact.
+func (s *IngestionTaskService) retryWithFreshRunIdentity(ctx context.Context, task *entity.IngestionTask, kbCache map[string]*entity.Knowledgebase) (string, error) {
+	if task == nil || task.ID == "" || task.DocumentID == "" || s.pipelineLogDAO == nil {
+		return "", errors.New("run identity requires a task, document, and pipeline log DAO")
+	}
+	input, err := s.buildOpenLogInput(ctx, task, kbCache)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if !updated {
-		return s.newTaskStatusConflictError(ctx, taskID, common.CREATED, status)
+	input.OperationStatus = string(entity.TaskStatusUnstart)
+	var boundLogID string
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		lockedDocument, err := s.documentDAO.GetByIDForUpdate(ctx, tx, task.DocumentID)
+		if err != nil {
+			return err
+		}
+		lockedTask, err := s.ingestionTaskDAO.GetByIDForUpdate(ctx, tx, task.ID)
+		if err != nil {
+			return err
+		}
+		if lockedTask.DocumentID != lockedDocument.ID || lockedTask.DatasetID != input.KbID {
+			return fmt.Errorf("task %s no longer matches document or dataset", lockedTask.ID)
+		}
+		if !statusInSet(lockedTask.Status, []string{common.FAILED, common.STOPPED}) {
+			return &TaskStatusConflictError{TaskID: task.ID, ExpectedFrom: "FAILED/STOPPED", AttemptedTo: common.CREATED, ActualCurrent: lockedTask.Status}
+		}
+		if err := s.ingestionTaskDAO.ClearPipelineLogID(ctx, tx, lockedTask.ID); err != nil {
+			return err
+		}
+		updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, tx, lockedTask.ID, []string{common.FAILED, common.STOPPED}, common.CREATED)
+		if err != nil {
+			return err
+		}
+		if !updated {
+			return &TaskStatusConflictError{TaskID: task.ID, ExpectedFrom: "FAILED/STOPPED", AttemptedTo: common.CREATED, ActualCurrent: lockedTask.Status}
+		}
+		runCount, err := s.pipelineLogDAO.NextRunCount(ctx, tx, lockedTask.DocumentID)
+		if err != nil {
+			return err
+		}
+		input.RunCount = runCount
+		log, err := s.pipelineLogDAO.CreateOpenLog(ctx, tx, input)
+		if err != nil {
+			return err
+		}
+		if err := s.ingestionTaskDAO.UpdatePipelineLogID(ctx, tx, lockedTask.ID, log.ID); err != nil {
+			return err
+		}
+		boundLogID = log.ID
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
-	return nil
+	return boundLogID, nil
 }
 
 func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID string) error {

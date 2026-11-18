@@ -897,7 +897,12 @@ func (s *SkillIndexerService) initializeIndex(ctx context.Context, tenantID, spa
 		return s.createIndex(ctx, tenantID, spaceID, docEngine, embdID)
 	}
 
-	common.Info("Skill search index already exists", zap.String("indexName", indexName))
+	common.Info("Skill search index already exists, ensuring vector mappings", zap.String("indexName", indexName))
+	if docEngine.GetType() != "infinity" {
+		if err := docEngine.CreateChunkStore(ctx, indexName, "skill", 0, "", ""); err != nil {
+			common.Warn("Failed to ensure skill index vector mappings", zap.String("indexName", indexName), zap.Error(err))
+		}
+	}
 	return nil
 }
 

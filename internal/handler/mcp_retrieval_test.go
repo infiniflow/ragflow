@@ -36,7 +36,7 @@ type recordingDatasetService struct {
 	searchErr error
 }
 
-func (f *recordingDatasetService) ListDatasets(_ context.Context, _, _ string, page, pageSize int, _ []dao.OrderTerm, _ string, _ []string, _ string, _ []string, _ string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (f *recordingDatasetService) ListDatasets(_ context.Context, _, _ string, page, pageSize int, _ []dao.OrderTerm, _ string, _ []string, _, _ string, _ []string, _ string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	f.listCalls++
 	f.listPages = append(f.listPages, page)
 	f.listSizes = append(f.listSizes, pageSize)
