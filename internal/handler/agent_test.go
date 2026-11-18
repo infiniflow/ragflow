@@ -356,34 +356,47 @@ func TestCreateAgentUsesAuthenticatedUserID(t *testing.T) {
 	}
 }
 
-func TestCreateAgentSessionUsesServerSourceAndAgentBinding(t *testing.T) {
-	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPost, "/api/v1/agents/canvas-1/sessions")
-	c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-1"}}
-	c.Request.Body = io.NopCloser(strings.NewReader(`{"source":"chat_channel"}`))
-	if err := db.Create(&entity.UserCanvas{ID: "canvas-1", UserID: "user-1", TenantID: sptr("user-1"), DSL: entity.JSONMap{}}).Error; err != nil {
-		t.Fatal(err)
+func TestCreateAgentSessionSourceAndAgentBinding(t *testing.T) {
+	tests := []struct {
+		name        string
+		requestBody string
+		wantSource  string
+	}{
+		{name: "channel source is server controlled", requestBody: `{"source":"chat_channel"}`, wantSource: string(entity.AgentSessionSourceAgent)},
+		{name: "custom source is preserved", requestBody: `{"source":"sdk"}`, wantSource: "sdk"},
+		{name: "missing source defaults to agent", requestBody: `{}`, wantSource: string(entity.AgentSessionSourceAgent)},
 	}
-	NewAgentHandler(t.Context(), service.NewAgentService(), nil).CreateAgentSession(c)
-	var response struct {
-		Code int
-		Data map[string]any
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	if response.Code != 0 || response.Data["agent_id"] != "canvas-1" {
-		t.Fatalf("response: %s", w.Body.String())
-	}
-	if response.Data["source"] != string(entity.AgentSessionSourceAgent) {
-		t.Fatalf("response source = %v, want %q: %s", response.Data["source"], entity.AgentSessionSourceAgent, w.Body.String())
-	}
-	sessionID, _ := response.Data["id"].(string)
-	var stored entity.API4Conversation
-	if err := db.Where("id = ?", sessionID).Take(&stored).Error; err != nil {
-		t.Fatalf("load created session: %v", err)
-	}
-	if stored.Source == nil || *stored.Source != string(entity.AgentSessionSourceAgent) {
-		t.Fatalf("persisted source = %v, want %q", stored.Source, entity.AgentSessionSourceAgent)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, w, db := setupGinContextWithUserAndDB(t, http.MethodPost, "/api/v1/agents/canvas-1/sessions")
+			c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-1"}}
+			c.Request.Body = io.NopCloser(strings.NewReader(tt.requestBody))
+			if err := db.Create(&entity.UserCanvas{ID: "canvas-1", UserID: "user-1", TenantID: sptr("user-1"), DSL: entity.JSONMap{}}).Error; err != nil {
+				t.Fatal(err)
+			}
+			NewAgentHandler(t.Context(), service.NewAgentService(), nil).CreateAgentSession(c)
+			var response struct {
+				Code int
+				Data map[string]any
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != 0 || response.Data["agent_id"] != "canvas-1" {
+				t.Fatalf("response: %s", w.Body.String())
+			}
+			if response.Data["source"] != tt.wantSource {
+				t.Fatalf("response source = %v, want %q: %s", response.Data["source"], tt.wantSource, w.Body.String())
+			}
+			sessionID, _ := response.Data["id"].(string)
+			var stored entity.API4Conversation
+			if err := db.Where("id = ?", sessionID).Take(&stored).Error; err != nil {
+				t.Fatalf("load created session: %v", err)
+			}
+			if stored.Source == nil || *stored.Source != tt.wantSource {
+				t.Fatalf("persisted source = %v, want %q", stored.Source, tt.wantSource)
+			}
+		})
 	}
 }
 

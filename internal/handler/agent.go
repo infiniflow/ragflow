@@ -989,8 +989,9 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 
 	canvasID := c.Param("canvas_id")
 	var body struct {
-		Name string          `json:"name"`
-		DSL  json.RawMessage `json:"dsl"`
+		Name   string          `json:"name"`
+		Source string          `json:"source"`
+		DSL    json.RawMessage `json:"dsl"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
 		common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
@@ -1000,6 +1001,7 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 	row, code, err := h.agentService.CreateAgentSession(ctx, &service.CreateAgentSessionRequest{
 		AgentID: canvasID,
 		Name:    body.Name,
+		Source:  body.Source,
 		DSL:     body.DSL,
 	})
 	if err != nil {

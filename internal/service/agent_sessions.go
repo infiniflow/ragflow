@@ -585,6 +585,7 @@ func (s *AgentService) UpdateAgentTags(ctx context.Context, canvasID string, tag
 type CreateAgentSessionRequest struct {
 	AgentID  string
 	Name     string
+	Source   string
 	DSL      json.RawMessage
 	Messages json.RawMessage
 }
@@ -669,7 +670,10 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		return nil, common.CodeDataError, err
 	}
 	var namePtr = &name
-	source := string(entity.AgentSessionSourceAgent)
+	source := strings.TrimSpace(req.Source)
+	if source == "" || source == string(entity.AgentSessionSourceChatChannel) {
+		source = string(entity.AgentSessionSourceAgent)
+	}
 
 	id := common.GenerateUUID()
 
