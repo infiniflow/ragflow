@@ -41,12 +41,14 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 		return err
 	}
 
-	common.Info("\n     _______ __        _____\n" +
-		"    / ____(_) /__     / ___/__  ______  ________  _____\n" +
-		"   / /_  / / / _ \\    \\__ \\/ / / / __ \\/ ___/ _ \\/ ___/\n" +
-		"  / __/ / / /  __/   ___/ / /_/ / / / / /__/  __/ /\n" +
-		" /_/   /_/_/\\___/   /____/\\__, /_/ /_/\\___/\\___/_/\n" +
-		"                           /____/    \n")
+	if common.GetRAGFlowType() == common.EnterpriseEdition {
+		common.Info("\n     _______ __        _____\n" +
+			"    / ____(_) /__     / ___/__  ______  ________  _____\n" +
+			"   / /_  / / / _ \\    \\__ \\/ / / / __ \\/ ___/ _ \\/ ___/\n" +
+			"  / __/ / / /  __/   ___/ / /_/ / / / / /__/  __/ /\n" +
+			" /_/   /_/_/\\___/   /____/\\__, /_/ /_/\\___/\\___/_/\n" +
+			"                           /____/    \n")
+	}
 
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))

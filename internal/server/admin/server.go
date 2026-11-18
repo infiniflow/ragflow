@@ -91,13 +91,15 @@ func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 		return fmt.Errorf("listen admin server on %s: %w", addr, err)
 	}
 	defer listener.Close()
-	// Print RAGFlow Admin logo
-	common.Info("" +
-		"\n        ____  ___   ______________                 ___       __          _     \n" +
-		"       / __ \\/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ \n" +
-		"      / /_/ / /| |/ / __/ /_  / / __ \\ | /| / /  / /| |/ __  / __ `__ \\/ / __ \\ \n" +
-		"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /\n" +
-		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
+	if common.GetRAGFlowType() == common.EnterpriseEdition {
+		// Print RAGFlow Admin logo
+		common.Info("" +
+			"\n        ____  ___   ______________                 ___       __          _     \n" +
+			"       / __ \\/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ \n" +
+			"      / /_/ / /| |/ / __/ /_  / / __ \\ | /| / /  / /| |/ __  / __ `__ \\/ / __ \\ \n" +
+			"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /\n" +
+			"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
+	}
 
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow admin version: %s", common.GetRAGFlowVersion()))

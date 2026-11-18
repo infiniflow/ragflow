@@ -36,6 +36,15 @@ func Run(ctx context.Context, args *bootstrap.ServerArgs, services *bootstrap.Ag
 		return fmt.Errorf("start chat-channel: %w", err)
 	}
 	defer runtime.Stop()
+
+	if common.GetRAGFlowType() == common.EnterpriseEdition {
+		common.Info("\n  ____ _           _   _\n" +
+			" / ___| |__   __ _| |_| |_ ___ _ __\n" +
+			"| |   | '_ \\ / _` | __| __/ _ \\ '__|\n" +
+			"| |___| | | | (_| | |_| ||  __/ |\n" +
+			" \\____|_| |_|\\__,_|\\__|\\__\\___|_|\n")
+	}
+
 	if hb := bootstrap.StartHeartbeat(common.ServerTypeChatter, fmt.Sprintf("chatter-%s", common.GenerateUUID()[:8]), 0, server.GetConfig().GetHeartbeatInterval()); hb != nil {
 		defer hb.Wait()
 		defer hb.Stop()
