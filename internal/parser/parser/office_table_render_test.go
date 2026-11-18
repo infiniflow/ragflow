@@ -1718,4 +1718,24 @@ func TestAxisToRCAbsoluteReferences(t *testing.T) {
 	if got := rangeTopRow("$A$5:$D$20"); got != 5 {
 		t.Errorf("rangeTopRow(%q) = %d, want 5", "$A$5:$D$20", got)
 	}
+	for _, axis := range []string{"A$$1", "$A$$1", "A$1$", "$A1$", "A $1", "A0", "$A$0"} {
+		if row, col := axisToRC(axis); row != 0 || col != 0 {
+			t.Errorf("axisToRC(%q) = (%d, %d), want malformed", axis, row, col)
+		}
+	}
+}
+
+func TestDetectHeaderRow_TableRangeMustFitRows(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	records := [][]string{{"Name", "Count"}, {"Alice", "1"}, {"Bob", "2"}}
+	tables := []excelize.Table{{Range: "$A$2:$B$3"}}
+	if got := detectHeaderRow(f, "Sheet1", records, tables, nil); got != 2 {
+		t.Fatalf("valid table top row: got %d, want 2", got)
+	}
+
+	tables[0].Range = "$A$5:$B$8"
+	if got := detectHeaderRow(f, "Sheet1", records, tables, nil); got != 1 {
+		t.Fatalf("out-of-range table top row: got %d, want fallback 1", got)
+	}
 }
