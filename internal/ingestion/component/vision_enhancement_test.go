@@ -627,6 +627,28 @@ func TestVisionEnhancement_LanguagePriority(t *testing.T) {
 	}
 }
 
+func TestVisionEnhancement_SendsCustomPromptWithLanguage(t *testing.T) {
+	capture := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, capture.invoke, nil)
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": "", "image": visionTestPNGBase64(t), "doc_type_kwd": "image"},
+		}),
+	}
+	vision := visionSettings{systemPrompt: "Extract the key metrics.", language: "French"}
+	inputs := map[string]any{"tenant_id": "t1", "lang": "Japanese"}
+	_, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched, inputs, vision, progress.Window{},
+	)
+	if err != nil || !handled {
+		t.Fatalf("maybeDispatchVisionEnhancement: handled=%t, err=%v", handled, err)
+	}
+	got, ok := firstUserText(capture.captured)
+	if !ok || !strings.Contains(got, "Extract the key metrics.") || !strings.Contains(got, "Respond in French.") {
+		t.Fatalf("VLM user text = %q, want the custom prompt and explicit response language", got)
+	}
+}
+
 func TestVisionEnhancement_UsesVisualPayloadRegardlessOfFileType(t *testing.T) {
 	invoker := &visionEnhanceCaptureInvoker{}
 	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
