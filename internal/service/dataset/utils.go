@@ -85,6 +85,7 @@ func datasetListItemToMap(latestByCanvas map[string]string, kb *entity.Knowledge
 	// matching Python's full-row dict response.
 	item := map[string]interface{}{
 		"id":                         kb.ID,
+		"user_id":                    kb.UserID,
 		"name":                       kb.Name,
 		"avatar":                     stringPointerValue(kb.Avatar),
 		"language":                   stringPointerValue(kb.Language),
@@ -123,6 +124,7 @@ func datasetListItemToMap(latestByCanvas map[string]string, kb *entity.Knowledge
 func datasetToMap(ctx context.Context, kb *entity.Knowledgebase) map[string]interface{} {
 	item := map[string]interface{}{
 		"id":                         kb.ID,
+		"user_id":                    kb.UserID,
 		"tenant_id":                  kb.TenantID,
 		"name":                       kb.Name,
 		"embedding_model":            kb.EmbdID,

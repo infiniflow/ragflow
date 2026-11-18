@@ -1,4 +1,4 @@
-// Package docguard holds regression guards for repository documentation and
+// Package buildguard holds regression guards for repository documentation and
 // build glue that the native-lib versioned-cache change (PR #22099) must keep
 // correct. These are plain unit tests (no build tag) so they run in the default
 // `bash build.sh --test` tier and in CI.
@@ -10,7 +10,7 @@
 // un-expanded `v*` include glob, a glob+`head -1` version resolution that pins
 // the oldest cache version, and stale `/opt` pre-bake prose — fail a test rather
 // than relying on prose review alone.
-package docguard
+package buildguard
 
 import (
 	"os"

@@ -47,6 +47,10 @@ func renderFigureVisionLanguage(prompt, language string) string {
 	return strings.ReplaceAll(prompt, "{{language}}", language)
 }
 
+func visionResponseLanguageInstruction(language string) string {
+	return "Respond in " + normalizeVisionLanguage(language) + "."
+}
+
 func defaultImageVisionPrompt(language string) string {
-	return "Describe this image in detail. Respond in " + normalizeVisionLanguage(language) + ". Preserve all visible text in its original language; do not translate it."
+	return "Describe this image in detail. " + visionResponseLanguageInstruction(language) + " Preserve all visible text in its original language; do not translate it."
 }

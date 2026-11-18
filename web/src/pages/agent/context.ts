@@ -11,12 +11,12 @@ export const AgentFormContext = createContext<RAGFlowNodeType | undefined>(
   undefined,
 );
 
-export const OwnerTenantIdContext = createContext<string | undefined>(
+export const ResourceTenantIdContext = createContext<string | undefined>(
   undefined,
 );
 
 // oxlint-disable-next-line react-refresh/only-export-components
-export const useOwnerTenantId = () => useContext(OwnerTenantIdContext);
+export const useResourceTenantId = () => useContext(ResourceTenantIdContext);
 
 // CanvasReadonlyContext marks the canvas as view-only (e.g. the built-in
 // pipeline preview page). Node/toolbar/form components consume it to disable

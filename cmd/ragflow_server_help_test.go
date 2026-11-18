@@ -72,3 +72,16 @@ func TestPrintHelpIngestorDocumentsIngestorTier(t *testing.T) {
 		t.Fatalf("admin help must not document --ingestor-tier:\n%s", adminHelp)
 	}
 }
+
+func TestPrintHelpChatter(t *testing.T) {
+	for _, mode := range []string{"api", "chatter"} {
+		help := captureHelpStderr(t, func() { printHelp(&bootstrap.ServerArgs{Mode: new(mode)}) })
+		want := "--disable-chat-channels"
+		if mode == "chatter" {
+			want = "--chatter"
+		}
+		if !strings.Contains(help, want) {
+			t.Fatalf("%s help missing %s: %s", mode, want, help)
+		}
+	}
+}

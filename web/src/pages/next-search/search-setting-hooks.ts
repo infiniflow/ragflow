@@ -92,16 +92,27 @@ export type SearchSettingFormData = z.infer<
  * been deleted.
  * Only validate selected models when their corresponding feature is enabled.
  */
-export const useSearchSettingFormSchema = () => {
+export const useSearchSettingFormSchema = (
+  resourceTenantId?: string,
+  accessUserId?: string,
+) => {
   const { t } = useTranslation();
-  const { validIds: validRerankIds, isFetched: modelsFetched } =
-    useModelValidIds(ModelTypeMap.rerank_id);
-  const { validIds: validLlmIds } = useModelValidIds(ModelTypeMap.llm_id);
+  const {
+    validIds: validRerankIds,
+    isFetched: rerankModelsFetched,
+    isSettled: rerankModelsSettled,
+    getPendingMessage: getRerankPendingMessage,
+  } = useModelValidIds(ModelTypeMap.rerank_id, resourceTenantId, accessUserId);
+  const {
+    validIds: validLlmIds,
+    isFetched: llmModelsFetched,
+    isSettled: llmModelsSettled,
+    getPendingMessage: getLlmPendingMessage,
+  } = useModelValidIds(ModelTypeMap.llm_id, resourceTenantId, accessUserId);
 
   const formSchema = useMemo(
     () =>
       buildSearchSettingFormSchema(t).superRefine((formData, ctx) => {
-        if (!modelsFetched) return;
         const {
           use_rerank,
           rerank_id,
@@ -110,29 +121,58 @@ export const useSearchSettingFormSchema = () => {
           query_mindmap,
           llm_setting,
         } = formData.search_config;
-        if (use_rerank && rerank_id && !validRerankIds.has(rerank_id)) {
-          ctx.addIssue({
-            path: ['search_config', 'rerank_id'],
-            message: t('common.modelUnavailable'),
-            code: z.ZodIssueCode.custom,
-          });
+        if (use_rerank && rerank_id) {
+          const pendingMessage = getRerankPendingMessage(rerank_id);
+          if (pendingMessage) {
+            ctx.addIssue({
+              path: ['search_config', 'rerank_id'],
+              message: pendingMessage,
+              code: z.ZodIssueCode.custom,
+            });
+          } else if (rerankModelsFetched && !validRerankIds.has(rerank_id)) {
+            ctx.addIssue({
+              path: ['search_config', 'rerank_id'],
+              message: t('common.modelUnavailable'),
+              code: z.ZodIssueCode.custom,
+            });
+          }
         }
         if (
           (summary || related_search || query_mindmap) &&
-          llm_setting?.llm_id &&
-          !validLlmIds.has(llm_setting.llm_id)
+          llm_setting?.llm_id
         ) {
-          ctx.addIssue({
-            path: ['search_config', 'llm_setting', 'llm_id'],
-            message: t('common.modelUnavailable'),
-            code: z.ZodIssueCode.custom,
-          });
+          const llmId = llm_setting.llm_id;
+          const pendingMessage = getLlmPendingMessage(llmId);
+          if (pendingMessage) {
+            ctx.addIssue({
+              path: ['search_config', 'llm_setting', 'llm_id'],
+              message: pendingMessage,
+              code: z.ZodIssueCode.custom,
+            });
+          } else if (llmModelsFetched && !validLlmIds.has(llmId)) {
+            ctx.addIssue({
+              path: ['search_config', 'llm_setting', 'llm_id'],
+              message: t('common.modelUnavailable'),
+              code: z.ZodIssueCode.custom,
+            });
+          }
         }
       }),
-    [modelsFetched, validRerankIds, validLlmIds, t],
+    [
+      rerankModelsFetched,
+      llmModelsFetched,
+      validRerankIds,
+      validLlmIds,
+      getRerankPendingMessage,
+      getLlmPendingMessage,
+      t,
+    ],
   );
 
-  return { formSchema, modelsFetched };
+  return {
+    formSchema,
+    modelsFetched: rerankModelsSettled && llmModelsSettled,
+  };
 };
 
 /**

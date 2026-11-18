@@ -368,13 +368,15 @@ func describeImage(
 		return "", []string{fmt.Sprintf("image VLM enhancement skipped: model unavailable: %v", err)}
 	}
 
-	prompt := defaultImageVisionPrompt(lang)
 	// The global enhancement prompt wins; the image family's legacy system_prompt
 	// (the key the parser's image branch used) stays readable for canvases
 	// saved before the move. Do NOT read setup["prompt"] here — that key is for
 	// the video family, not image.
-	if v := common.FirstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
-		prompt = v
+	prompt := common.FirstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", ""))
+	if prompt == "" {
+		prompt = defaultImageVisionPrompt(lang)
+	} else {
+		prompt += "\n\n" + visionResponseLanguageInstruction(lang)
 	}
 	messages := []modelModule.Message{{
 		Role: "user",

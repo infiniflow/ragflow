@@ -619,6 +619,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'This sets the weight of keyword similarity in the combined similarity score. The total of the vector and keyword weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
+      testIntegerValidation: 'Please enter an integer',
       testingLabel: 'Run',
       similarity: 'Hybrid similarity',
       termSimilarity: 'Term similarity',
@@ -3636,6 +3637,9 @@ This process aggregates variables from multiple branches into a single variable 
       switchPromptMessage:
         'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
       queryRequired: 'Query is required',
+      highlight: 'Highlight',
+      highlightTip:
+        'Mark the matched words in retrieved chunks. The highlight text is returned with each chunk.',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add agent',

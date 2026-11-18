@@ -35,6 +35,7 @@ const (
 	ServerTypeAPI           ServerType = "api"            // API server
 	ServerTypeIngestion     ServerType = "ingestor"       // Ingestion server
 	ServerTypeFileSyncer    ServerType = "syncer"         // File syncer server
+	ServerTypeChatter       ServerType = "chatter"        // Chat channel runtime
 	ServerTypeDeepDocGPU    ServerType = "deepdoc_gpu"    // DeepDoc GPU server
 	ServerTypeDeepDocCPU    ServerType = "deepdoc_cpu"    // DeepDoc CPU server
 	ServerTypeDeepDocAscend ServerType = "deepdoc_ascend" // DeepDoc Ascend server

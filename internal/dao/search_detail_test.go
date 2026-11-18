@@ -65,6 +65,7 @@ func TestSearchDAOGetDetailByID(t *testing.T) {
 	searchAvatar := "search-avatar"
 	if err := db.Create(&entity.Search{
 		ID:           "search-1",
+		UserID:       "tenant-1",
 		Avatar:       &searchAvatar,
 		TenantID:     "tenant-1",
 		Name:         "Search App",
