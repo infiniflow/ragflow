@@ -572,18 +572,14 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID, acce
 	queryScope, err := queryScopeForAccessUser(ctx, checker, permission.ScopeQuery{
 		TenantID:  tenantID,
 		Kind:      permission.ResourceKindMCPServer,
-		Operation: permission.OperationRead,
+		Operation: permission.OperationUse,
 	}, accessUserID)
 	if err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, tenantID, ids, keywords, orderby, desc, page, pageSize, func(query *gorm.DB) *gorm.DB {
-		query = queryScope.Apply(query)
-		if userID := strings.TrimSpace(accessUserID); userID != "" {
-			query = query.Where("mcp_server.user_id = ?", userID)
-		}
-		return query
+		return queryScope.Apply(query)
 	})
 	if err != nil {
 		var orderbyErr *dao.InvalidMCPServerOrderByError
@@ -607,7 +603,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID, acce
 		}
 		for _, ref := range refs {
 			access, ok := accesses[ref]
-			if !ok || !access.Allows(permission.OperationRead) {
+			if !ok || !access.Allows(permission.OperationUse) {
 				continue
 			}
 			permissionMasks[ref.ID] = access.PermissionMask

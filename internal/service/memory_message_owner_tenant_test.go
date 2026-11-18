@@ -10,7 +10,7 @@ import (
 	"ragflow/internal/entity"
 )
 
-func TestUpdateMemoryTeamMemberDoesNotResolveInaccessibleOwnerModel(t *testing.T) {
+func TestUpdateMemoryTeamMemberResolvesTenantVisibleOwnerModel(t *testing.T) {
 	setupMemoryMessageTestDB(t)
 
 	status := "1"
@@ -61,8 +61,8 @@ func TestUpdateMemoryTeamMemberDoesNotResolveInaccessibleOwnerModel(t *testing.T
 	if err != nil {
 		t.Fatalf("get updated memory: %v", err)
 	}
-	if updated.TenantLLMID != nil {
-		t.Fatalf("tenant_llm_id = %v, want unset because the member has no model grant", updated.TenantLLMID)
+	if updated.TenantLLMID == nil || *updated.TenantLLMID != "tenant-llm-owner" {
+		t.Fatalf("tenant_llm_id = %v, want owner-tenant model tenant-llm-owner", updated.TenantLLMID)
 	}
 	if updated.LLMID != llmID {
 		t.Fatalf("llm_id = %q, want saved model name %q", updated.LLMID, llmID)

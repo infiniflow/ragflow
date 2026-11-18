@@ -517,6 +517,13 @@ func TestListMCPServersAppliesAuthorizationBeforeSQLPagination(t *testing.T) {
 	}
 	pushServiceDB(t, db)
 	addMCPOwnerMembership(t, db, "owner", "tenant-1")
+	active := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID: "mcp-target-member", UserID: "target-user", TenantID: "tenant-1",
+		Role: string(permission.RoleNormal), Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create MCP target membership: %v", err)
+	}
 	for _, server := range []*entity.MCPServer{
 		{ID: "mcp-c", UserID: "owner", TenantID: "tenant-1", Name: "charlie", URL: "https://example.test/c", ServerType: mcpServerTypeSSE},
 		{ID: "mcp-a", UserID: "owner", TenantID: "tenant-1", Name: "alpha", URL: "https://example.test/a", ServerType: mcpServerTypeSSE},
@@ -537,10 +544,9 @@ func TestListMCPServersAppliesAuthorizationBeforeSQLPagination(t *testing.T) {
 		t.Fatalf("ListMCPServers() = %#v, want total 4 and page [mcp-b]", listed)
 	}
 	listed, code, err = NewMCPService().ListMCPServers(ctx, "tenant-1", "target-user", nil, "", 0, 0, "name", false)
-	if err != nil || code != common.CodeSuccess || listed.Total != 1 || len(listed.MCPServers) != 1 || listed.MCPServers[0].ID != "mcp-target" {
-		t.Fatalf("ListMCPServers(access_user_id) = (code %d, %#v, %v), want only target user's server", code, listed, err)
+	if err != nil || code != common.CodeSuccess || listed.Total != 4 || len(listed.MCPServers) != 4 {
+		t.Fatalf("ListMCPServers(access_user_id) = (code %d, %#v, %v), want all tenant MCP servers usable by the selected user", code, listed, err)
 	}
-	active := string(entity.StatusValid)
 	if err := db.Create(&entity.UserTenant{
 		ID: "mcp-member-tenant-1", UserID: "member", TenantID: "tenant-1", Role: string(permission.RoleNormal), Status: &active,
 	}).Error; err != nil {
@@ -548,8 +554,8 @@ func TestListMCPServersAppliesAuthorizationBeforeSQLPagination(t *testing.T) {
 	}
 	memberCtx := serviceTestContext(t, "member", "tenant-1")
 	listed, code, err = NewMCPService().ListMCPServers(memberCtx, "tenant-1", "target-user", nil, "", 0, 0, "name", false)
-	if err != nil || code != common.CodeSuccess || listed.Total != 0 || len(listed.MCPServers) != 0 {
-		t.Fatalf("member ListMCPServers(access_user_id) = (code %d, %#v, %v), want no unreadable servers", code, listed, err)
+	if err != nil || code != common.CodeSuccess || listed.Total != 4 || len(listed.MCPServers) != 4 {
+		t.Fatalf("member ListMCPServers(access_user_id) = (code %d, %#v, %v), want tenant-visible MCP servers the member can use", code, listed, err)
 	}
 }
 

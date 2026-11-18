@@ -163,6 +163,11 @@ func setupDifyTest(t *testing.T, userID string) (*DifyRetrievalHandler, *gin.Eng
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get Dify test database connection: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("migrate Dify test tables: %v", err)
 	}

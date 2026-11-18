@@ -953,6 +953,11 @@ func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
 
 func TestUploadDocumentsHandler_DeniesNonNormalTeamRole(t *testing.T) {
 	db := setupUploadHandlerDB(t, "admin")
+	if err := db.Model(&entity.Knowledgebase{}).
+		Where("id = ?", strings.ReplaceAll(uploadTestDatasetID, "-", "")).
+		Update("created_by", "owner-1").Error; err != nil {
+		t.Fatalf("make dataset owned by tenant owner: %v", err)
+	}
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
