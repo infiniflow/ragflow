@@ -732,6 +732,11 @@ func trimTrailingEmptyColumns(records [][]string) [][]string {
 
 // ──────────────────────────────────────────────────────────── axis helpers
 
+const (
+	maxExcelRow    = 1_048_576
+	maxExcelColumn = 16_384
+)
+
 // axisToRC parses an "A1"-style cell reference into 1-based (row, col).
 // Excel marks an absolute row or column with "$", and a reference can carry
 // either marker on its own ("$A1", "A$1") or both ("$A$1"). Each marker is only
@@ -770,9 +775,13 @@ func axisToRC(axis string) (row, col int) {
 	}
 	c := 0
 	for _, ch := range strings.ToUpper(axis[columnStart:columnEnd]) {
-		c = c*26 + int(ch-'A'+1)
+		digit := int(ch - 'A' + 1)
+		if c > (maxExcelColumn-digit)/26 {
+			return 0, 0
+		}
+		c = c*26 + digit
 	}
-	if r < 1 || c < 1 {
+	if r < 1 || r > maxExcelRow || c < 1 {
 		return 0, 0
 	}
 	return r, c

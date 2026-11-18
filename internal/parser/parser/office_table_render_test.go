@@ -1708,6 +1708,7 @@ func TestAxisToRCAbsoluteReferences(t *testing.T) {
 		{"$B2", 2, 2},
 		{"A$5", 5, 1},
 		{"$AA$10", 10, 27},
+		{"$XFD$1048576", 1_048_576, 16_384},
 	}
 	for _, tc := range cases {
 		row, col := axisToRC(tc.axis)
@@ -1718,7 +1719,18 @@ func TestAxisToRCAbsoluteReferences(t *testing.T) {
 	if got := rangeTopRow("$A$5:$D$20"); got != 5 {
 		t.Errorf("rangeTopRow(%q) = %d, want 5", "$A$5:$D$20", got)
 	}
-	for _, axis := range []string{"A$$1", "$A$$1", "A$1$", "$A1$", "A $1", "A0", "$A$0"} {
+	for _, axis := range []string{
+		"A$$1",
+		"$A$$1",
+		"A$1$",
+		"$A1$",
+		"A $1",
+		"A0",
+		"$A$0",
+		"XFE2",
+		"A1048577",
+		"ZZZZZZZZZZZZZZZZZZZZ1",
+	} {
 		if row, col := axisToRC(axis); row != 0 || col != 0 {
 			t.Errorf("axisToRC(%q) = (%d, %d), want malformed", axis, row, col)
 		}
