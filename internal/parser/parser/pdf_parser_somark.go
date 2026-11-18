@@ -273,7 +273,7 @@ func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string
 // of budget, so the caller can tell "user went away" from "SoMark too slow".
 func soMarkPollDeadlineError(taskID, lastStatus string, err error) error {
 	if errors.Is(err, context.Canceled) {
-		return fmt.Errorf("parser: SoMark task %s cancelled: %w", taskID, err)
+		return fmt.Errorf("parser: SoMark task %s cancelled (last status=%q): %w", taskID, lastStatus, err)
 	}
 	return fmt.Errorf("parser: SoMark task %s timed out (last status=%q): %w", taskID, lastStatus, err)
 }

@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -720,5 +721,41 @@ func TestSoMarkPollRejectsPermanentHTTPErrorBeforeReadingBody(t *testing.T) {
 	}
 	if got := polls.Load(); got != 1 {
 		t.Fatalf("polls = %d, want 1 (a 4xx is terminal)", got)
+	}
+}
+
+func TestSoMarkPollCancelledErrorIncludesLastStatus(t *testing.T) {
+	withSSRFBypass(t)
+	// A long interval keeps the loop in the wait path so the cancellation is
+	// observed there, after a status has been recorded.
+	withSoMarkPollInterval(t, 500*time.Millisecond)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	polled := make(chan struct{}, 1)
+	var polls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if polls.Add(1) == 1 {
+			select {
+			case polled <- struct{}{}:
+			default:
+			}
+		}
+		_, _ = w.Write([]byte(`{"code":0,"data":{"status":"RUNNING"}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	go func() {
+		<-polled
+		// Let the client finish reading the response before cancelling, so the
+		// cancellation is observed in the wait path rather than mid-read.
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+	_, err := soMarkPoll(ctx, server.URL, "task-1", "")
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if !strings.Contains(err.Error(), `last status="RUNNING"`) {
+		t.Fatalf("error = %v, want the cancelled message to carry the last status", err)
 	}
 }
