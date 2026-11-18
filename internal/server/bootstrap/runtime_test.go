@@ -38,7 +38,7 @@ import (
 
 func TestHeartbeatReportersKeepSeparateIdentities(t *testing.T) {
 	var mu sync.Mutex
-	reports := map[string]int{}
+	reports := map[string]common.ServerType{}
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var message common.BaseMessage
 		if err := json.NewDecoder(r.Body).Decode(&message); err != nil {
@@ -47,7 +47,7 @@ func TestHeartbeatReportersKeepSeparateIdentities(t *testing.T) {
 			return
 		}
 		mu.Lock()
-		reports[message.ServerName]++
+		reports[message.ServerName] = message.ServerType
 		mu.Unlock()
 		fmt.Fprintf(w, `{"code":%d}`, common.CodeLicenseValid)
 	}))
@@ -74,24 +74,34 @@ func TestHeartbeatReportersKeepSeparateIdentities(t *testing.T) {
 	if api == nil {
 		t.Fatal("API heartbeat did not start")
 	}
-	defer api.Wait()
-	defer api.Stop()
+	api.Stop()
+	api.Wait()
 	ingestor := StartHeartbeat(common.ServerTypeIngestion, "ingestor-test", 0, time.Hour)
 	if ingestor == nil {
 		t.Fatal("ingestor heartbeat did not start")
 	}
-	defer ingestor.Wait()
-	defer ingestor.Stop()
-	// Successful reporters skip ten ticks before their next HTTP request.
-	for range 11 {
-		api.Job()
-	}
-	for range 11 {
-		ingestor.Job()
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if reports["api-test"] != 2 || reports["ingestor-test"] != 2 {
-		t.Fatalf("reports = %v, want two reports from each service", reports)
+	ingestor.Stop()
+	ingestor.Wait()
+
+	for _, reporter := range []struct {
+		name       string
+		serverType common.ServerType
+		job        func()
+	}{
+		{"api-test", common.ServerTypeAPI, api.Job},
+		{"ingestor-test", common.ServerTypeIngestion, ingestor.Job},
+	} {
+		mu.Lock()
+		clear(reports)
+		mu.Unlock()
+		// Drive enough ticks to send a heartbeat even if the startup report succeeded.
+		for range 11 {
+			reporter.job()
+		}
+		mu.Lock()
+		if len(reports) != 1 || reports[reporter.name] != reporter.serverType {
+			t.Errorf("reports = %v, want only %s (%s)", reports, reporter.name, reporter.serverType)
+		}
+		mu.Unlock()
 	}
 }
