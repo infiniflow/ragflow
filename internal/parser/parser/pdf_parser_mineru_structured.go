@@ -14,7 +14,7 @@ const minerUBoxScale = 1000.0
 // minerUItemsFromZip reads MinerU content_list.json, or structured_content.json
 // when the zip has no usable content list, into parser items. Page identity,
 // block type, and caption text stay on the block that produced them.
-// middle.json page sizes turn normalized boxes into PDF-point positions.
+// Middle JSON page sizes turn normalized boxes into PDF-point positions.
 // A zip without those JSON members returns nil so the caller can use markdown.
 func minerUItemsFromZip(zipBytes []byte) ([]map[string]any, int) {
 	if len(zipBytes) == 0 {
@@ -36,7 +36,7 @@ func minerUItemsFromZip(zipBytes []byte) ([]map[string]any, int) {
 			dest = &contentList
 		case strings.HasSuffix(name, "structured_content.json") && len(structured) == 0:
 			dest = &structured
-		case strings.HasSuffix(name, "middle.json") && len(middle) == 0:
+		case (strings.HasSuffix(name, "middle_json.json") || strings.HasSuffix(name, "middle.json")) && len(middle) == 0:
 			dest = &middle
 		default:
 			continue
@@ -370,7 +370,7 @@ func minerUContentItem(item map[string]any, sizes map[int][2]float64) map[string
 	if text == "" && len(positions) == 0 {
 		return nil
 	}
-	if (typ == "table" || typ == "text" || typ == "title" || typ == "list" || typ == "code" || typ == "equation" || typ == "") && text == "" {
+	if (typ == "table" || typ == "text" || typ == "title" || typ == "list" || typ == "code" || typ == "") && text == "" {
 		return nil
 	}
 	jsonItem := map[string]any{
