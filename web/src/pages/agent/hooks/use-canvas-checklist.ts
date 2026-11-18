@@ -93,6 +93,8 @@ export function useCanvasChecklist({
     resourceTenantId,
     ownerUserId,
   );
+  const { validIds: scoringModelValidIds, isFetched: scoringModelsFetched } =
+    useModelValidIds(ModelTypeMap.scoring_id, resourceTenantId, ownerUserId);
   const {
     groups: templateGroups,
     isFetched: templateGroupsFetched,
@@ -120,6 +122,9 @@ export function useCanvasChecklist({
       categorizeModelValidIds: categorizeModelsFetched
         ? categorizeModelValidIds
         : undefined,
+      scoringModelValidIds: scoringModelsFetched
+        ? scoringModelValidIds
+        : undefined,
       staleDatasetIds: datasetsSettled ? staleDatasetIds : undefined,
       // The groups query fetches only the first page (page_size: 100) — a
       // full page means some groups live beyond it, so hold off instead of
@@ -144,6 +149,8 @@ export function useCanvasChecklist({
       modelValidIds,
       categorizeModelsFetched,
       categorizeModelValidIds,
+      scoringModelsFetched,
+      scoringModelValidIds,
       datasetsSettled,
       staleDatasetIds,
       templateGroups,
