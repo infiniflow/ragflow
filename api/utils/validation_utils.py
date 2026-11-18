@@ -467,6 +467,26 @@ class ParserConfig(Base):
             raise ValueError("parser_config.ext is not supported; send parser configuration fields directly")
         return value
 
+    @field_validator("task_page_size", mode="before")
+    @classmethod
+    def coerce_zero_task_page_size_to_unset(cls, v: Any) -> Any:
+        """Map the web dialog's ``0`` sentinel to ``None`` ("unset").
+
+        The v0.27.x chunk-method dialog schema coerces a stored ``null``
+        to ``0`` (``z.coerce.number()``) and submits it on every save, and
+        the ``ge=1`` constraint then rejects the whole update, so no other
+        field can be saved either (issue #19039). Only that documented
+        sentinel is remapped here (``0``/``0.0``/``False`` - the falsy
+        values the runtime ``or 12`` fallback in ``queue_tasks`` also
+        treats as unset). Everything else falls through to the normal
+        strict ``int | None`` + ``ge=1`` validation, so negatives,
+        fractions, non-finite numbers and unparseable input keep failing
+        with a clean 422 instead of being silently dropped or truncated.
+        """
+        if v == 0:
+            return None
+        return v
+
     @field_validator("table_column_roles", mode="before")
     @classmethod
     def legacy_vectorize_table_column_role(cls, v: Any) -> Any:
