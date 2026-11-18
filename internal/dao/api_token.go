@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/entity"
-	"strconv"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -44,10 +43,7 @@ func GetAPITokenLimit(ctx context.Context, db *gorm.DB) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := entity.ValidateSystemSettingValue(setting, setting.Value); err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(setting.Value)
+	return entity.ParseAPITokenLimit(setting.Value)
 }
 
 // APITokenDAO API token data access object

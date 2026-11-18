@@ -41,13 +41,6 @@ func FormatSystemSettings(settings []SystemSettings) []map[string]interface{} {
 }
 
 func ValidateSystemSettingValue(setting SystemSettings, value string) error {
-	if strings.EqualFold(setting.Name, "api_key.max_count") {
-		limit, err := strconv.Atoi(value)
-		if err != nil || limit < 1 {
-			return fmt.Errorf("api_key.max_count must be a positive integer")
-		}
-		return nil
-	}
 	dataType := strings.ToLower(setting.DataType)
 	switch dataType {
 	case "string":
