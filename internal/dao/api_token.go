@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/entity"
+	"strconv"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -29,6 +30,25 @@ import (
 var ErrAPITokenLimitReached = errors.New("API key limit reached")
 
 const DefaultAPITokenLimit = 16
+
+// GetAPITokenLimit reads the global per-tenant limit without caching admin changes.
+func GetAPITokenLimit(ctx context.Context, db *gorm.DB) (int, error) {
+	if db == nil {
+		return 0, errors.New("database is unavailable")
+	}
+	var setting entity.SystemSettings
+	err := db.WithContext(ctx).Where("name = ?", "api_key.max_count").Take(&setting).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return DefaultAPITokenLimit, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if err := entity.ValidateSystemSettingValue(setting, setting.Value); err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(setting.Value)
+}
 
 // APITokenDAO API token data access object
 type APITokenDAO struct{}
