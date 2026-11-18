@@ -100,7 +100,3 @@ func (e *Engine) indexExists(ctx context.Context, indexName string) (bool, error
 		return false, fmt.Errorf("opensearch returned error status %d for index %s: %s", resp.StatusCode, indexName, string(bodyBytes))
 	}
 }
-
-func buildMetadataIndexName(tenantID string) string {
-	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
-}

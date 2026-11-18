@@ -1,9 +1,16 @@
 import { useListMcpServer } from '@/hooks/use-mcp-request';
-import { useOwnerTenantId } from '../context';
+import { ModelResourceAccessUserIdContext } from '@/hooks/use-llm-request';
+import { useContext } from 'react';
+import { useResourceTenantId } from '../context';
 
 export function useFindMcpById() {
-  const ownerTenantId = useOwnerTenantId();
-  const { data } = useListMcpServer(ownerTenantId, Boolean(ownerTenantId));
+  const resourceTenantId = useResourceTenantId();
+  const accessUserId = useContext(ModelResourceAccessUserIdContext);
+  const { data } = useListMcpServer(
+    resourceTenantId,
+    Boolean(resourceTenantId),
+    accessUserId,
+  );
 
   const findMcpById = (id: string) =>
     data.mcp_servers.find((item) => item.id === id);

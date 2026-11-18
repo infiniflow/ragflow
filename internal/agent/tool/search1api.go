@@ -61,9 +61,6 @@ var search1APIGeneralServices = []string{
 
 var search1APINewsServices = []string{"google", "bing", "duckduckgo", "yahoo", "hackernews", "reuters"}
 
-// search1APIServices is every service the model may pick, across both channels.
-var search1APIServices = append(slices.Clone(search1APIGeneralServices), "hackernews", "reuters")
-
 // "any" means no recency limit and is not sent.
 var search1APITimeRanges = []string{"any", "day", "week", "month", "year"}
 
@@ -78,11 +75,11 @@ var search1APIEndpoints = map[string]string{
 // max_results is decoded loosely: a missing, blank or non-numeric value means
 // "use the node's Top N" rather than failing the run.
 type search1APIArgs struct {
-	Query         string `json:"query"`
-	Channel       string `json:"channel"`
-	SearchService string `json:"search_service"`
-	TimeRange     string `json:"time_range"`
-	MaxResults    any    `json:"max_results"`
+	Query         string `json:"query" doc:"The search keywords to execute with Search1API. The most important words/terms (and synonyms) from the original request." required:"true"`
+	Channel       string `json:"channel,omitempty" doc:"Search channel: \"news\" for current events, \"general\" for a broader web search. Leave it out to use the channel set on the node." enum:"general,news"`
+	SearchService string `json:"search_service,omitempty" doc:"The search service to query. General channel: google, bing, bingcn, duckduckgo, yahoo, yandex, youtube, x, reddit, github, arxiv, wechat, bilibili, imdb, wikipedia, baidu, 360, quark. News channel: google, bing, duckduckgo, yahoo, hackernews, reuters. Leave it out to use the service set on the node." enum:"google,bing,bingcn,duckduckgo,yahoo,yandex,youtube,x,reddit,github,arxiv,wechat,bilibili,imdb,wikipedia,baidu,360,quark,hackernews,reuters"`
+	TimeRange     string `json:"time_range,omitempty" doc:"Restrict results by recency: \"day\", \"week\", \"month\", \"year\", or \"any\" (default) for no limit." enum:"any,day,week,month,year"`
+	MaxResults    any    `json:"max_results,omitempty" doc:"Number of results to return, 1 to 50. Leave it out to use the Top N set on the node." type:"integer"`
 }
 
 // search1APIDefaults holds the node-level configuration. The model's
@@ -152,44 +149,7 @@ func newSearch1APITool(h *HTTPHelper, apiKey string, defaults search1APIDefaults
 
 // Info returns the tool's metadata for the chat model.
 func (s *Search1APITool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: search1APIToolName,
-		Desc: search1APIToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with Search1API. The most important words/terms (and synonyms) from the original request.",
-				Required: true,
-			},
-			"channel": {
-				Type:     schema.String,
-				Desc:     `Search channel: "news" for current events, "general" for a broader web search. Leave it out to use the channel set on the node.`,
-				Enum:     search1APIChannels,
-				Required: false,
-			},
-			"search_service": {
-				Type: schema.String,
-				Desc: fmt.Sprintf(
-					"The search service to query. The general channel supports: %s. The news channel supports: %s. Leave it out to use the service set on the node.",
-					strings.Join(search1APIGeneralServices, ", "),
-					strings.Join(search1APINewsServices, ", "),
-				),
-				Enum:     search1APIServices,
-				Required: false,
-			},
-			"time_range": {
-				Type:     schema.String,
-				Desc:     `Restrict results by recency: "day", "week", "month", "year", or "any" (default) for no limit.`,
-				Enum:     search1APITimeRanges,
-				Required: false,
-			},
-			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Number of results to return, 1 to 50. Leave it out to use the Top N set on the node.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(search1APIToolName, search1APIToolDescription, search1APIArgs{})
 }
 
 // InvokableRun performs the Search1API search.

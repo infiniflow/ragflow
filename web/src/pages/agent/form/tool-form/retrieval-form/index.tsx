@@ -6,6 +6,7 @@ import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 
+import { SwitchFormField } from '@/components/switch-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
 import {
@@ -19,7 +20,7 @@ import { omit } from 'lodash';
 import { useForm } from 'react-hook-form';
 import { useParams } from 'react-router';
 import { z } from 'zod';
-import { useOwnerTenantId } from '../../../context';
+import { useResourceTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
@@ -41,7 +42,7 @@ export const FormSchema = z
 const RetrievalForm = () => {
   const defaultValues = omit(useValues(), 'top_k');
 
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   const { id: canvasID } = useParams();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
@@ -77,7 +78,7 @@ const RetrievalForm = () => {
             {hideKnowledgeGraphField || (
               <>
                 <RerankFormFields
-                  ownerTenantId={ownerTenantId}
+                  resourceTenantId={resourceTenantId}
                 ></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>
@@ -86,6 +87,11 @@ const RetrievalForm = () => {
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+                <SwitchFormField
+                  name="highlight"
+                  label={t('flow.highlight')}
+                  tooltip={t('flow.highlightTip')}
+                ></SwitchFormField>
               </>
             )}
           </FormContainer>

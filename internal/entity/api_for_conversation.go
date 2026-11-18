@@ -18,6 +18,14 @@ package entity
 
 import "encoding/json"
 
+// AgentSessionSource identifies the path that created an agent session.
+type AgentSessionSource string
+
+const (
+	AgentSessionSourceAgent       AgentSessionSource = "agent"
+	AgentSessionSourceChatChannel AgentSessionSource = "chat_channel"
+)
+
 // API4Conversation API for conversation model. Messages are
 // hydrated from the ordered message table.
 type API4Conversation struct {

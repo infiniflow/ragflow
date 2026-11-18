@@ -57,10 +57,6 @@ os:
   # Optional: skip TLS certificate verification for a self-signed development
   # cluster. Leave it off (the default) for any HTTPS deployment.
   # insecure_skip_verify: false
-  # Optional hybrid (BM25 + KNN) search tuning. The connector self-provisions the
-  # normalization search pipeline on start-up (requires OpenSearch >= 2.10).
-  # hybrid_search_pipeline: 'ragflow_hybrid_pipeline'
-  # hybrid_search_weights: [0.5, 0.5]   # [text/BM25 leg, vector/KNN leg]
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   postgres_port: 5432
@@ -134,14 +130,12 @@ otel:
 ingestor:
   mq_type: 'nats'
   # NATS consumer worker count (K). How many ingestion tasks run in parallel.
-  # Override with the env var RAGFLOW_INGESTOR_CONCURRENT_WORKERS, or the
-  # CLI flag --ingestor-concurrent-workers (highest precedence).
+  # Override with RAGFLOW_INGESTOR_CONCURRENT_WORKERS (highest precedence).
   # Valid range [1, 256]. Default 1.
   concurrent_workers: 1
   # Process-wide page concurrency (N). Total PDF pages parsed concurrently across
   # the whole process (shared by all ingestor workers). Override with the env var
-  # RAGFLOW_INGESTOR_PAGE_CONCURRENCY, or the CLI flag --ingestor-page-concurrency
-  # (highest precedence). Valid range [1, 16]. Default 2.
+  # RAGFLOW_INGESTOR_PAGE_CONCURRENCY (highest precedence). Valid range [1, 16]. Default 2.
   page_concurrency: 2
   compiler_pool_size: 0
   # log:

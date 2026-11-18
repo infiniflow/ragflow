@@ -63,6 +63,7 @@ export type CanvasChecklistInputs = {
   memoryIds?: Set<string>;
   modelValidIds?: Set<string>;
   categorizeModelValidIds?: Set<string>;
+  scoringModelValidIds?: Set<string>;
   staleDatasetIds?: Set<string>;
   compilationTemplateGroupIds?: Set<string>;
   variables?: Record<string, any>;
@@ -433,6 +434,7 @@ export function collectCanvasIssues({
   memoryIds,
   modelValidIds,
   categorizeModelValidIds,
+  scoringModelValidIds,
   staleDatasetIds,
   compilationTemplateGroupIds,
   variables,
@@ -924,7 +926,9 @@ export function collectCanvasIssues({
     const validModelIds =
       label === Operator.Categorize
         ? (categorizeModelValidIds ?? modelValidIds)
-        : modelValidIds;
+        : label === Operator.ScoredSwitch
+          ? scoringModelValidIds
+          : modelValidIds;
     if (
       validModelIds &&
       typeof (form?.model_id ?? form?.llm_id) === 'string' &&

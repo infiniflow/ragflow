@@ -328,6 +328,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
 		return err
 	}
+	cleanupPreviewArtifacts(ctx, doc)
 
 	if s.docEngine == nil {
 		return nil

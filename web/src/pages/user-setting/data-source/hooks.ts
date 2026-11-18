@@ -40,9 +40,9 @@ import {
 } from './interface';
 
 const DataSourceKeys = {
-  list: (tenantId?: string) =>
-    tenantId
-      ? (['data-source', tenantId] as const)
+  list: (accessUserId?: string) =>
+    accessUserId
+      ? (['data-source', accessUserId] as const)
       : (['data-source'] as const),
   detail: (id?: string | null) => ['data-source-detail', id] as const,
   logs: (
@@ -53,14 +53,14 @@ const DataSourceKeys = {
   logsPrefix: (id?: string | null) => ['data-source-logs', id] as const,
 };
 
-export const useListDataSource = (tenantId?: string, enabled = true) => {
+export const useListDataSource = (accessUserId?: string, enabled = true) => {
   const { dataSourceInfo } = useDataSourceInfo();
   const { data: list, isFetching } = useQuery<IDataSource[]>({
-    queryKey: DataSourceKeys.list(tenantId),
+    queryKey: DataSourceKeys.list(accessUserId),
     enabled,
     queryFn: async () => {
       const { data } = await dataSourceService.dataSourceList(
-        tenantId ? { tenant_id: tenantId } : undefined,
+        accessUserId ? { access_user_id: accessUserId } : undefined,
       );
       return data.data;
     },

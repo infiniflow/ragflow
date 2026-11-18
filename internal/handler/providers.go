@@ -1711,9 +1711,11 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 func (h *ProviderHandler) ListModelsForUserInTenant(c *gin.Context) {
 	modelType := c.Query("type")
 	tenantID := c.Query("tenant_id")
+	ownerIDs := getOwnerIDs(c)
+	accessUserID := c.Query("access_user_id")
 	ctx := c.Request.Context()
 
-	models, code, err := h.modelProviderService.ListModelsForUserInTenant(ctx, tenantID, modelType)
+	models, code, err := h.modelProviderService.ListModelsForUserInTenant(ctx, tenantID, ownerIDs, accessUserID, modelType)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
