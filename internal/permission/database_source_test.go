@@ -286,6 +286,132 @@ func TestDisabledDocumentRemainsReadableWithinDataset(t *testing.T) {
 	}
 }
 
+func TestDatasetAndDocumentQueryScopesUseResourceOwners(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate permission tables: %v", err)
+	}
+
+	valid := string(entity.StatusValid)
+	datasets := []entity.Knowledgebase{
+		{ID: "private-dataset", UserID: "dataset-owner", TenantID: "tenant-1", CreatedBy: "tenant-owner", Permission: string(entity.TenantPermissionMe), Status: &valid},
+		{ID: "team-dataset", UserID: "dataset-owner", TenantID: "tenant-1", CreatedBy: "tenant-owner", Permission: string(entity.TenantPermissionTeam), Status: &valid},
+	}
+	for i := range datasets {
+		if err := db.Create(&datasets[i]).Error; err != nil {
+			t.Fatalf("create dataset %q: %v", datasets[i].ID, err)
+		}
+	}
+	documents := []entity.Document{
+		{ID: "private-owned-document", KbID: "private-dataset", UserID: "dataset-owner", CreatedBy: "tenant-owner", Status: &valid, ParserConfig: entity.JSONMap{}},
+		{ID: "private-other-document", KbID: "private-dataset", UserID: "document-owner", CreatedBy: "dataset-owner", Status: &valid, ParserConfig: entity.JSONMap{}},
+		{ID: "team-document", KbID: "team-dataset", UserID: "document-owner", CreatedBy: "document-owner", Status: &valid, ParserConfig: entity.JSONMap{}},
+	}
+	for i := range documents {
+		if err := db.Create(&documents[i]).Error; err != nil {
+			t.Fatalf("create document %q: %v", documents[i].ID, err)
+		}
+	}
+	memberships := []entity.UserTenant{
+		{ID: "tenant-owner-membership", UserID: "tenant-owner", TenantID: "tenant-1", Role: string(RoleOwner), Status: &valid},
+		{ID: "dataset-owner-membership", UserID: "dataset-owner", TenantID: "tenant-1", Role: string(RoleNormal), Status: &valid},
+		{ID: "team-reader-membership", UserID: "team-reader", TenantID: "tenant-1", Role: string(RoleNormal), Status: &valid},
+	}
+	for i := range memberships {
+		if err := db.Create(&memberships[i]).Error; err != nil {
+			t.Fatalf("create membership %q: %v", memberships[i].ID, err)
+		}
+	}
+	if _, err := ListReadableDocumentIDs(WithIdentity(context.Background(), "team-reader", "tenant-1"), db, []string{"private-dataset"}, []string{}); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("ListReadableDocumentIDs(private dataset, empty selection) error = %v, want permission denied", err)
+	}
+	if documentIDs, err := ListReadableDocumentIDs(WithIdentity(context.Background(), "team-reader", "tenant-1"), db, []string{"team-dataset"}, []string{}); err != nil || len(documentIDs) != 0 {
+		t.Fatalf("ListReadableDocumentIDs(team dataset, empty selection) = %v, %v, want no documents", documentIDs, err)
+	}
+
+	checker := newCommunityDatabaseChecker(db)
+	for _, tc := range []struct {
+		userID    string
+		wantIDs   []string
+		wantCheck map[string]bool
+		wantDocs  map[string]bool
+	}{
+		{userID: "dataset-owner", wantIDs: []string{"private-dataset", "team-dataset"}, wantCheck: map[string]bool{"private-dataset": true, "team-dataset": true}, wantDocs: map[string]bool{"private-owned-document": true, "private-other-document": false, "team-document": true}},
+		{userID: "tenant-owner", wantIDs: nil, wantCheck: map[string]bool{"private-dataset": false, "team-dataset": false}, wantDocs: map[string]bool{"private-owned-document": false, "private-other-document": false, "team-document": false}},
+		{userID: "team-reader", wantIDs: []string{"team-dataset"}, wantCheck: map[string]bool{"private-dataset": false, "team-dataset": true}, wantDocs: map[string]bool{"private-owned-document": false, "private-other-document": false, "team-document": true}},
+	} {
+		t.Run(tc.userID, func(t *testing.T) {
+			ctx := WithIdentity(context.Background(), tc.userID, "tenant-1")
+			datasetScope, err := checker.QueryScope(ctx, ScopeQuery{Kind: ResourceKindDataset, Operation: OperationRead})
+			if err != nil {
+				t.Fatalf("QueryScope(datasets) error: %v", err)
+			}
+			var datasetIDs []string
+			if err := datasetScope.Apply(db.Model(&entity.Knowledgebase{})).Order("knowledgebase.id").Pluck("knowledgebase.id", &datasetIDs).Error; err != nil {
+				t.Fatalf("query datasets: %v", err)
+			}
+			if len(datasetIDs) != len(tc.wantIDs) {
+				t.Fatalf("dataset QueryScope IDs = %v, want %v", datasetIDs, tc.wantIDs)
+			}
+			for i := range datasetIDs {
+				if datasetIDs[i] != tc.wantIDs[i] {
+					t.Fatalf("dataset QueryScope IDs = %v, want %v", datasetIDs, tc.wantIDs)
+				}
+			}
+			for datasetID, wantAllowed := range tc.wantCheck {
+				err := checker.CheckResource(ctx, ResourceRef{Kind: ResourceKindDataset, ID: datasetID}, OperationRead)
+				if allowed := err == nil; allowed != wantAllowed {
+					t.Errorf("CheckResource(%s) allowed = %v, want %v (err=%v)", datasetID, allowed, wantAllowed, err)
+				}
+			}
+			for documentID, wantAllowed := range tc.wantDocs {
+				err := checker.CheckResource(ctx, ResourceRef{Kind: ResourceKindDocument, ID: documentID}, OperationRead)
+				if allowed := err == nil; allowed != wantAllowed {
+					t.Errorf("CheckResource(%s) allowed = %v, want %v (err=%v)", documentID, allowed, wantAllowed, err)
+				}
+			}
+
+			for _, documentCase := range []struct {
+				datasetID  string
+				wantIDs    []string
+				parentRead bool
+			}{
+				{datasetID: "private-dataset", wantIDs: []string{"private-owned-document"}, parentRead: tc.userID == "dataset-owner"},
+				{datasetID: "team-dataset", wantIDs: []string{"team-document"}, parentRead: tc.userID == "dataset-owner" || tc.userID == "team-reader"},
+			} {
+				documentScope, err := checker.QueryScope(ctx, ScopeQuery{
+					Kind: ResourceKindDocument, Parent: ResourceRef{Kind: ResourceKindDataset, ID: documentCase.datasetID}, Operation: OperationRead,
+				})
+				if !documentCase.parentRead {
+					if !errors.Is(err, ErrPermissionDenied) {
+						t.Errorf("QueryScope(documents for %s) error = %v, want permission denied", documentCase.datasetID, err)
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatalf("QueryScope(documents for %s) error: %v", documentCase.datasetID, err)
+				}
+				var documentIDs []string
+				if err := documentScope.Apply(db.Model(&entity.Document{})).Order("document.id").Pluck("document.id", &documentIDs).Error; err != nil {
+					t.Fatalf("query documents for %s: %v", documentCase.datasetID, err)
+				}
+				if len(documentIDs) != len(documentCase.wantIDs) {
+					t.Errorf("document QueryScope IDs for %s = %v, want %v", documentCase.datasetID, documentIDs, documentCase.wantIDs)
+					continue
+				}
+				for i := range documentIDs {
+					if documentIDs[i] != documentCase.wantIDs[i] {
+						t.Errorf("document QueryScope IDs for %s = %v, want %v", documentCase.datasetID, documentIDs, documentCase.wantIDs)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestDatabaseCheckerScopesDatasetsToMembershipAndVisibility(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

@@ -292,7 +292,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		emptyLabels := map[string]float64{}
 		return &service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels, Total: 0}, nil
 	}
-	if filter != nil {
+	if filter != nil && len(docIDs) > 0 {
 		// Get flattened metadata
 		metadataSvc := service.NewMetadataService()
 		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(ctx, []string(req.Datasets))

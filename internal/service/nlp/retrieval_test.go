@@ -27,11 +27,13 @@ func TestSplitRetrievalDocIDsPreservesDatasetProducts(t *testing.T) {
 		requestedIDs        []string
 		wantDocumentIDs     []string
 		wantProductIDs      []string
+		wantNilDocuments    bool
 		wantNonNilDocuments bool
 	}{
 		{
-			name:           "empty selection includes products for all selected datasets",
-			wantProductIDs: []string{"kb-1", "kb-2"},
+			name:             "empty selection includes products for all selected datasets",
+			wantProductIDs:   []string{"kb-1", "kb-2"},
+			wantNilDocuments: true,
 		},
 		{
 			name:            "explicit document and product selection",
@@ -55,6 +57,9 @@ func TestSplitRetrievalDocIDsPreservesDatasetProducts(t *testing.T) {
 			documentIDs, productIDs := SplitRetrievalDocIDs(datasetIDs, tc.requestedIDs)
 			if !slices.Equal(documentIDs, tc.wantDocumentIDs) {
 				t.Fatalf("document IDs = %v, want %v", documentIDs, tc.wantDocumentIDs)
+			}
+			if tc.wantNilDocuments && documentIDs != nil {
+				t.Fatal("document IDs are non-nil, want nil for an unrestricted document selection")
 			}
 			if tc.wantNonNilDocuments && documentIDs == nil {
 				t.Fatal("document IDs = nil, want an explicit empty selection")

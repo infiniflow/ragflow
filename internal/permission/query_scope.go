@@ -58,9 +58,6 @@ func (s QueryScope) Intersect(other QueryScope) QueryScope {
 // the current user in the given datasets. A nil candidate list means all
 // readable documents; a non-nil empty list matches no documents.
 func ListReadableDocumentIDs(ctx context.Context, db *gorm.DB, datasetIDs, candidateIDs []string) ([]string, error) {
-	if candidateIDs != nil && len(candidateIDs) == 0 {
-		return []string{}, nil
-	}
 	checker := NewDatabaseChecker(db)
 	seenDatasets := make(map[string]struct{}, len(datasetIDs))
 	seenDocuments := make(map[string]struct{})
@@ -82,6 +79,9 @@ func ListReadableDocumentIDs(ctx context.Context, db *gorm.DB, datasetIDs, candi
 		})
 		if err != nil {
 			return nil, err
+		}
+		if candidateIDs != nil && len(candidateIDs) == 0 {
+			continue
 		}
 		query := db.WithContext(ctx).Table("document").Select("document.id").Where("document.kb_id = ? AND document.status = ?", datasetID, string(entity.StatusValid))
 		if candidateIDs != nil {
