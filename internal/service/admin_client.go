@@ -34,27 +34,23 @@ var AdminServiceClient *AdminClient
 
 // AdminClient is responsible for sending heartbeat reports to the admin server
 type AdminClient struct {
-	client       *utility.HTTPClient
-	serverType   common.ServerType
-	serverName   string
-	host         string
-	port         int
-	version      string
-	lastSuccess  bool
-	attemptCount int
+	client     *utility.HTTPClient
+	serverType common.ServerType
+	serverName string
+	host       string
+	port       int
+	version    string
 }
 
 // NewAdminClient creates a new heartbeat service instance
 func NewAdminClient(serverType common.ServerType, serverName, host string, port int) *AdminClient {
 	licenseStatusCode = common.CodeSuccess
 	return &AdminClient{
-		serverType:   serverType,
-		serverName:   serverName,
-		host:         host,
-		port:         port,
-		version:      common.GetRAGFlowVersion(),
-		lastSuccess:  false,
-		attemptCount: 0,
+		serverType: serverType,
+		serverName: serverName,
+		host:       host,
+		port:       port,
+		version:    common.GetRAGFlowVersion(),
 	}
 }
 
@@ -87,16 +83,6 @@ func (h *AdminClient) InitHTTPClient() error {
 
 // SendHeartbeat sends a heartbeat message to the admin server
 func (h *AdminClient) SendHeartbeat() error {
-
-	if h.attemptCount < 10 {
-		if h.lastSuccess {
-			h.attemptCount++
-			return nil
-		}
-	}
-	h.attemptCount = 0
-	h.lastSuccess = false
-
 	if h.client == nil {
 		if err := h.InitHTTPClient(); err != nil {
 			common.Error("failed to initialize HTTP client", err)
@@ -179,8 +165,6 @@ func (h *AdminClient) SendHeartbeat() error {
 		zap.String("server_id", h.serverName),
 		zap.String("server_type", string(h.serverType)),
 	)
-
-	h.lastSuccess = true
 
 	return nil
 }

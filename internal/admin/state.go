@@ -36,6 +36,13 @@ var GlobalServerStore = &ServerStore{
 	servers: make(map[string]*common.BaseMessage),
 }
 
+func getHeartbeatStatus(reportedAt, now time.Time, interval time.Duration) string {
+	if now.Sub(reportedAt) < 5*interval {
+		return "alive"
+	}
+	return "timeout"
+}
+
 // UpdateServerInfo updates or adds a server status
 func (s *ServerStore) UpdateServerInfo(serverName string, status *common.BaseMessage) error {
 
