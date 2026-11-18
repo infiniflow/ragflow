@@ -26,8 +26,8 @@ class _DummyStreamResponse:
     def __init__(self, lines):
         self._lines = lines
 
-    def iter_lines(self, decode_unicode=True):
-        del decode_unicode
+    def iter_lines(self, decode_unicode=True, delimiter=None):
+        del decode_unicode, delimiter
         for line in self._lines:
             yield line
 

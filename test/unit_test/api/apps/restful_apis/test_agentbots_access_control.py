@@ -25,6 +25,7 @@ loading or executing another tenant's agent.
 
 import asyncio
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -49,11 +50,12 @@ async def _passthrough_thread_pool_exec(fn, *args, **kwargs):
     return fn(*args, **kwargs)
 
 
-def _load_bot_api(monkeypatch, *, accessible, calls, kb_accessible=True, search_config=None):
+def _load_bot_api(monkeypatch, *, accessible, calls, kb_accessible=True, search_config=None, frames=None):
     """Load bot_api.py with the minimum stubs required.
 
     `accessible` is what the stubbed `UserCanvasService.accessible` returns.
     `calls` is a dict used to record whether the agent-loading paths were hit.
+    `frames` overrides the SSE strings the stubbed agent completion yields.
     """
     user_canvas_service = SimpleNamespace(
         accessible=lambda *_a, **_k: accessible,
@@ -65,8 +67,11 @@ def _load_bot_api(monkeypatch, *, accessible, calls, kb_accessible=True, search_
         calls["completion"] = True
 
         async def _gen():
-            yield 'data: {"event":"message","data":{"content":"ok"}}\n\n'
-            yield 'data: {"event":"message_end","data":{"content":"ok"}}\n\n'
+            for frame in frames or (
+                'data: {"event":"message","data":{"content":"ok"}}\n\n',
+                'data: {"event":"message_end","data":{"content":"ok"}}\n\n',
+            ):
+                yield frame
 
         return _gen()
 
@@ -233,3 +238,24 @@ class TestAgentBotAccessControl:
         module.get_request_json = request_json
         assert asyncio.run(module.ask_about_embedded(tenant_id="attacker"))["code"] == 102
         assert "async_ask" not in calls
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\x85"])
+def test_completions_keep_frames_with_unicode_line_separators(monkeypatch, separator):
+    # canvas_service.completion serializes frames with ensure_ascii=False, so these
+    # separators reach the parser raw inside the JSON payload.
+    content = f"first{separator}second"
+    reference = {"chunks": [{"content": f"chunk{separator}text"}]}
+    frames = [
+        "data:" + json.dumps({"event": "message", "data": {"content": content}}, ensure_ascii=False) + "\n\n",
+        "data:" + json.dumps({"event": "message_end", "data": {"reference": reference}}, ensure_ascii=False) + "\n\n",
+    ]
+    module = _load_bot_api(monkeypatch, accessible=True, calls={}, frames=frames)
+
+    result = asyncio.run(module.agent_bot_completions(agent_id="own-agent"))
+
+    assert result["code"] == 0
+    assert result["data"]["event"] == "message_end"
+    assert result["data"]["data"]["content"] == content
+    assert result["data"]["data"]["reference"] == reference
