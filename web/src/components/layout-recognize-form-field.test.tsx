@@ -86,7 +86,7 @@ function Fixture({
               ? 'parser_config.layout_recognize'
               : 'setups.0.parse_method'
           }
-          ownerTenantId="owner-tenant"
+          resourceTenantId="owner-tenant"
           showMineruOptions={showOptions}
           showPaddleocrOptions={false}
         />
@@ -113,7 +113,7 @@ describe('MinerU PDF options', () => {
       screen.getByRole('switch', { name: /Table Recognition/ }),
     ).toBeChecked();
     expect(useModelTree).toHaveBeenCalledWith(
-      expect.objectContaining({ ownerTenantId: 'owner-tenant' }),
+      expect.objectContaining({ resourceTenantId: 'owner-tenant' }),
     );
   });
 

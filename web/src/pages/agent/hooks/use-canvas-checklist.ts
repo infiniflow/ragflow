@@ -63,9 +63,14 @@ function collectAllDatasetIds(nodes: RAGFlowNodeType[]): string[] {
  * the user. Run checks blocking rules synchronously, without this debounce.
  */
 export function useCanvasChecklist({
-  ownerTenantId,
+  resourceTenantId,
+  ownerUserId,
   canvasID,
-}: { ownerTenantId?: string; canvasID?: string } = {}) {
+}: {
+  resourceTenantId?: string;
+  ownerUserId?: string;
+  canvasID?: string;
+} = {}) {
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
   const editedNodeFormIds = useGraphStore((state) => state.editedNodeFormIds);
@@ -75,21 +80,24 @@ export function useCanvasChecklist({
     data: memoryList,
     isLoading: memoryLoading,
     isError: memoryError,
-  } = useFetchAllMemoryList(canvasID);
-  // Model and template-group references use the canvas owner's tenant.
-  // Dataset and memory references are scoped by canvasID so both the canvas
-  // owner and current user can use the resource.
-  const { validIds: modelValidIds, isFetched: modelsFetched } =
-    useModelValidIds(ModelTypeMap.llm_id, ownerTenantId);
+  } = useFetchAllMemoryList(ownerUserId);
+  // Model, template-group, and memory references use the canvas owner's
+  // access scope. Dataset references are scoped separately by canvasID.
+  const { validIds: modelValidIds, isSettled: modelsFetched } =
+    useModelValidIds(ModelTypeMap.llm_id, resourceTenantId, ownerUserId);
   const {
     validIds: categorizeModelValidIds,
-    isFetched: categorizeModelsFetched,
-  } = useModelValidIds(['chat', 'vision', 'decision'], ownerTenantId);
+    isSettled: categorizeModelsFetched,
+  } = useModelValidIds(
+    ['chat', 'vision', 'decision'],
+    resourceTenantId,
+    ownerUserId,
+  );
   const {
     groups: templateGroups,
     isFetched: templateGroupsFetched,
     isError: templateGroupsError,
-  } = useFetchAllCompilationTemplateGroups(ownerTenantId);
+  } = useFetchAllCompilationTemplateGroups(ownerUserId);
   const datasetIds = useMemo(() => collectAllDatasetIds(nodes), [nodes]);
   const { staleDatasetIds, settled: datasetsSettled } = useStaleDatasetIds(
     datasetIds,

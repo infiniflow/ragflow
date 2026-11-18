@@ -1498,7 +1498,7 @@ func (c *CLI) CommonListFeaturesCommand(commandCount int, cmd *Command) (Respons
 	var httpClient *HTTPClient
 	switch c.Config.CLIMode {
 	case AdminMode:
-		baseURL := fmt.Sprintf("/admin/features")
+		baseURL := fmt.Sprintf("/admin/system/features")
 		httpClient = c.AdminServerClient
 		resp, err = httpClient.Request(commandCount, "GET", baseURL, httpClient.AuthKind(), nil, nil)
 	case APIMode:

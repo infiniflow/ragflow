@@ -230,10 +230,11 @@ export function NextMessageInput({
     // Mirror the send button's disabled condition so pressing Enter with an
     // empty message does nothing — previously it cleared the uploaded file
     // list without sending anything.
-    if (sendDisabled || isUploading || sendLoading || !value.trim()) return;
+    if (disabled || sendDisabled || isUploading || sendLoading || !value.trim())
+      return;
     pressEnter();
     setFiles([]);
-  }, [sendDisabled, isUploading, sendLoading, value, pressEnter]);
+  }, [disabled, sendDisabled, isUploading, sendLoading, value, pressEnter]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -333,7 +334,9 @@ export function NextMessageInput({
                   size="icon-lg"
                   variant="transparent"
                   className="rounded-full border-0"
-                  disabled={(isUploading || sendLoading) && !showInternet}
+                  disabled={
+                    disabled || ((isUploading || sendLoading) && !showInternet)
+                  }
                   data-testid="chat-detail-add-menu"
                 >
                   <Plus className="size-5" />
@@ -350,7 +353,7 @@ export function NextMessageInput({
                   <FileUploadTrigger asChild>
                     <DropdownMenuItem
                       justifyBetween={false}
-                      disabled={isUploading || sendLoading}
+                      disabled={disabled || isUploading || sendLoading}
                       data-testid="chat-detail-attach"
                       className="items-center justify-start gap-2 px-3 py-2"
                     >
@@ -362,6 +365,7 @@ export function NextMessageInput({
                 {showInternet && (
                   <DropdownMenuItem
                     justifyBetween={false}
+                    disabled={disabled}
                     onClick={handleInternetSelect}
                     data-testid="chat-detail-internet-toggle"
                     className="items-center justify-start gap-2 px-3 py-2"
@@ -388,6 +392,7 @@ export function NextMessageInput({
                 variant="transparent"
                 size="icon-xs"
                 className="size-5 shrink-0 rounded-full border-0 text-accent-primary hover:bg-accent-primary-5 hover:text-accent-primary focus-visible:bg-accent-primary-5 focus-visible:text-accent-primary"
+                disabled={disabled}
                 onClick={handleInternetRemove}
                 data-testid="chat-detail-internet-remove"
                 aria-label={`${t('common.delete')} ${t('chat.webSearch')}`}
@@ -420,6 +425,7 @@ export function NextMessageInput({
                   value={enableThinking}
                   options={thinkingOptions}
                   onChange={handleThinkingChange}
+                  disabled={disabled}
                   triggerClassName="h-9 w-fit border-0 !bg-transparent px-2 text-sm shadow-none hover:!bg-transparent focus-visible:!bg-transparent"
                   testId="chat-detail-thinking-toggle"
                 />
@@ -439,17 +445,23 @@ export function NextMessageInput({
               </Button>
             ) : (
               <>
-                <AudioButton
-                  onOk={setAudioInputValue}
-                  testId="chat-detail-audio-toggle"
-                />
+                <fieldset disabled={disabled} className="contents">
+                  <AudioButton
+                    onOk={setAudioInputValue}
+                    testId="chat-detail-audio-toggle"
+                  />
+                </fieldset>
 
                 <Button
                   type="submit"
                   size="icon-lg"
                   className="rounded-full"
                   disabled={
-                    sendDisabled || isUploading || sendLoading || !value.trim()
+                    disabled ||
+                    sendDisabled ||
+                    isUploading ||
+                    sendLoading ||
+                    !value.trim()
                   }
                   data-testid="chat-detail-send"
                 >

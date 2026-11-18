@@ -22,8 +22,8 @@ interface IProps {
 export function EmbeddingModelItem({
   line = 1,
   isEdit,
-  ownerTenantId,
-}: IProps & { ownerTenantId?: string }) {
+  resourceTenantId,
+}: IProps & { resourceTenantId?: string }) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const { data: knowledgeDetails } = useFetchDatasetPipelineConfiguration({
@@ -58,7 +58,7 @@ export function EmbeddingModelItem({
                   field={field}
                   disabled={disabled}
                   testId="ds-settings-basic-embedding-model-select"
-                  ownerTenantId={ownerTenantId}
+                  resourceTenantId={resourceTenantId}
                 ></EmbeddingSelect>
               </FormControl>
             </div>
@@ -77,13 +77,13 @@ export const LLMSelect = ({
   isEdit,
   field,
   disabled = false,
-  ownerTenantId,
+  resourceTenantId,
 }: {
   isEdit: boolean;
   field: FieldValues;
   name?: string;
   disabled?: boolean;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   return (
@@ -95,7 +95,7 @@ export const LLMSelect = ({
       disabled={disabled && !isEdit}
       value={field.value}
       placeholder={t('embeddingModelPlaceholder')}
-      ownerTenantId={ownerTenantId}
+      resourceTenantId={resourceTenantId}
     />
   );
 };

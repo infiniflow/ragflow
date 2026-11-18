@@ -209,9 +209,9 @@ func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
 		t.Fatalf("seed user tenant: %v", err)
 	}
 	for _, memory := range []*entity.Memory{
-		{ID: "mem-1", Name: "one", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic | dao.MemoryTypeEpisodic | dao.MemoryTypeProcedural, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
-		{ID: "mem-2", Name: "two", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
-		{ID: "mem-3", Name: "three", TenantID: "user-1", MemoryType: dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionTeam), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-1", Name: "one", UserID: "user-1", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic | dao.MemoryTypeEpisodic | dao.MemoryTypeProcedural, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-2", Name: "two", UserID: "user-1", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-3", Name: "three", UserID: "user-1", TenantID: "user-1", MemoryType: dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionTeam), ForgettingPolicy: string(ForgettingPolicyFIFO)},
 	} {
 		if err := dao.DB.Create(memory).Error; err != nil {
 			t.Fatalf("seed memory: %v", err)
@@ -271,10 +271,10 @@ func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
 	}
 	oldest, middle, newest := int64(100), int64(200), int64(300)
 	for _, memory := range []*entity.Memory{
-		{ID: "mem-episodic", Name: "episodic oldest", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeEpisodic, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &oldest}},
-		{ID: "mem-procedural", Name: "procedural middle", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeProcedural, StorageType: "alpha", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &middle}},
-		{ID: "mem-semantic", Name: "semantic newest", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &newest}},
-		{ID: "mem-shared", Name: "shared noncanonical storage", TenantID: "user-1", MemoryType: dao.MemoryTypeSemantic, StorageType: "zeta", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionTeam), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &newest}},
+		{ID: "mem-episodic", Name: "episodic oldest", UserID: "user-1", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeEpisodic, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &oldest}},
+		{ID: "mem-procedural", Name: "procedural middle", UserID: "user-1", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeProcedural, StorageType: "alpha", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &middle}},
+		{ID: "mem-semantic", Name: "semantic newest", UserID: "user-1", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &newest}},
+		{ID: "mem-shared", Name: "shared noncanonical storage", UserID: "user-1", TenantID: "user-1", MemoryType: dao.MemoryTypeSemantic, StorageType: "zeta", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionTeam), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &newest}},
 	} {
 		if err := dao.DB.Create(memory).Error; err != nil {
 			t.Fatalf("seed memory: %v", err)
@@ -482,6 +482,7 @@ func TestListMemoriesUsesTenantModelIDForDisplayName(t *testing.T) {
 	if err := dao.DB.Create(&entity.Memory{
 		ID:               "mem-with-tenant-models",
 		Name:             "With tenant models",
+		UserID:           "user-1",
 		TenantID:         "user-1",
 		MemoryType:       dao.MemoryTypeRaw,
 		StorageType:      "table",
@@ -521,6 +522,7 @@ func TestListMemoriesFallsBackToRawModelIDWithoutTenantModelID(t *testing.T) {
 	if err := dao.DB.Create(&entity.Memory{
 		ID:               "mem-without-tenant-models",
 		Name:             "Without tenant models",
+		UserID:           "user-1",
 		TenantID:         "user-1",
 		MemoryType:       dao.MemoryTypeRaw,
 		StorageType:      "table",
@@ -549,17 +551,13 @@ func TestListMemoriesFallsBackToRawModelIDWithoutTenantModelID(t *testing.T) {
 	}
 }
 
-// A caller may not list memories of a tenant they have not joined, even when
-// the target memories carry the team permission. Python list_memory clamps the
-// requested tenant_id filter to the caller's joined tenants; the Go port
-// passed the requested ids straight through, so ?tenant_id=<foreign> listed
-// that tenant's team-shared memories.
-func TestListMemoriesRejectsUnjoinedTenantFilter(t *testing.T) {
+// Filtering by owner_ids does not bypass the memory permission scope.
+func TestListMemoriesOwnerFilterDoesNotBypassPermissions(t *testing.T) {
 	setupMemoryMessageTestDB(t)
 
 	for _, u := range []*entity.User{
 		{ID: "user-1", Nickname: "Caller"},
-		{ID: "tenant-2", Nickname: "Foreign owner"},
+		{ID: "owner-2", Nickname: "Foreign owner"},
 	} {
 		if err := dao.DB.Create(u).Error; err != nil {
 			t.Fatalf("seed user: %v", err)
@@ -568,6 +566,7 @@ func TestListMemoriesRejectsUnjoinedTenantFilter(t *testing.T) {
 	if err := dao.DB.Create(&entity.Memory{
 		ID:               "mem-foreign-team",
 		Name:             "Foreign team memory",
+		UserID:           "owner-2",
 		TenantID:         "tenant-2",
 		MemoryType:       dao.MemoryTypeRaw,
 		StorageType:      "table",
@@ -579,7 +578,7 @@ func TestListMemoriesRejectsUnjoinedTenantFilter(t *testing.T) {
 		t.Fatalf("seed memory: %v", err)
 	}
 
-	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(serviceTestContext(t, "user-1", "user-1"), []string{"tenant-2"}, nil, "", "", 1, 10, "")
+	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(serviceTestContext(t, "user-1", "user-1"), []string{"owner-2"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -588,15 +587,15 @@ func TestListMemoriesRejectsUnjoinedTenantFilter(t *testing.T) {
 	}
 }
 
-// A caller who has joined the tenant may still use the tenant_id filter, and a
-// mixed filter keeps only the joined ids.
-func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
+// The owner_ids filter is a resource-owner user ID filter, independent of the
+// tenant boundary used by permission checks.
+func TestListMemoriesFiltersByResourceOwnerUserID(t *testing.T) {
 	setupMemoryMessageTestDB(t)
 
 	for _, u := range []*entity.User{
 		{ID: "user-1", Nickname: "Caller"},
-		{ID: "tenant-2", Nickname: "Joined owner"},
-		{ID: "tenant-3", Nickname: "Foreign owner"},
+		{ID: "owner-2", Nickname: "Joined owner"},
+		{ID: "owner-3", Nickname: "Foreign owner"},
 	} {
 		if err := dao.DB.Create(u).Error; err != nil {
 			t.Fatalf("seed user: %v", err)
@@ -615,6 +614,7 @@ func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
 		{
 			ID:               "mem-joined-team",
 			Name:             "Joined team memory",
+			UserID:           "owner-2",
 			TenantID:         "tenant-2",
 			MemoryType:       dao.MemoryTypeRaw,
 			StorageType:      "table",
@@ -626,6 +626,7 @@ func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
 		{
 			ID:               "mem-foreign-team",
 			Name:             "Foreign team memory",
+			UserID:           "owner-3",
 			TenantID:         "tenant-3",
 			MemoryType:       dao.MemoryTypeRaw,
 			StorageType:      "table",
@@ -643,71 +644,20 @@ func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "tenant-2", "tenant-2")
 	grantServiceTestResource(t, "tenant-2", "memory", "mem-joined-team", "user-1", testResourcePermissionRead)
 
-	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, []string{"tenant-2"}, nil, "", "", 1, 10, "")
+	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, []string{"owner-2"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
 	if resp.TotalCount != 1 || len(resp.MemoryList) != 1 || resp.MemoryList[0]["id"] != "mem-joined-team" {
-		t.Fatalf("joined tenant filter must return its team memory, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
+		t.Fatalf("owner_ids must return only the matching owner, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
 	}
 
-	resp, err = NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, []string{"tenant-2", "tenant-3"}, nil, "", "", 1, 10, "")
+	resp, err = NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, []string{"owner-2", "owner-3"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
 	if resp.TotalCount != 1 || len(resp.MemoryList) != 1 || resp.MemoryList[0]["id"] != "mem-joined-team" {
-		t.Fatalf("mixed filter must drop the unjoined tenant, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
-	}
-}
-
-func TestListMemoriesForCanvasUsesCallerOwnerIntersection(t *testing.T) {
-	setupMemoryMessageTestDB(t)
-	if err := dao.DB.AutoMigrate(&entity.UserCanvas{}); err != nil {
-		t.Fatalf("migrate canvas table: %v", err)
-	}
-	if err := dao.DB.Create(&[]*entity.User{
-		{ID: "canvas-owner", Nickname: "Canvas owner"},
-		{ID: "caller", Nickname: "Caller"},
-	}).Error; err != nil {
-		t.Fatalf("seed users: %v", err)
-	}
-	status := "1"
-	for _, membership := range []*entity.UserTenant{
-		{ID: "owner-membership", UserID: "canvas-owner", TenantID: "canvas-owner", Role: string(permission.RoleOwner), InvitedBy: "canvas-owner", Status: &status},
-		{ID: "caller-membership", UserID: "caller", TenantID: "canvas-owner", Role: string(permission.RoleNormal), InvitedBy: "canvas-owner", Status: &status},
-	} {
-		if err := dao.DB.Create(membership).Error; err != nil {
-			t.Fatalf("seed membership: %v", err)
-		}
-	}
-	canvas := entity.UserCanvas{
-		ID:         "canvas-1",
-		UserID:     "canvas-owner",
-		TenantID:   sptr("canvas-owner"),
-		Permission: string(TenantPermissionTeam),
-	}
-	if err := dao.DB.Create(&canvas).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
-	}
-	ctx := serviceTestContext(t, "caller", "canvas-owner", "canvas-owner")
-	grantServiceTestResource(t, "canvas-owner", "canvas", "canvas-1", "caller", testResourcePermissionRead)
-	grantServiceTestResource(t, "canvas-owner", "memory", "memory-shared", "caller", testResourcePermissionRead)
-	for _, memory := range []*entity.Memory{
-		{ID: "memory-shared", Name: "Shared", TenantID: "canvas-owner", EmbdID: "embd", LLMID: "llm", Permissions: string(TenantPermissionTeam)},
-		{ID: "memory-caller-only", Name: "Caller only", TenantID: "caller", EmbdID: "embd", LLMID: "llm", Permissions: string(TenantPermissionMe)},
-		{ID: "memory-owner-only", Name: "Owner only", TenantID: "canvas-owner", EmbdID: "embd", LLMID: "llm", Permissions: string(TenantPermissionMe)},
-	} {
-		if err := dao.DB.Create(memory).Error; err != nil {
-			t.Fatalf("seed memory %s: %v", memory.ID, err)
-		}
-	}
-
-	response, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, nil, nil, "", "", 1, 30, canvas.ID)
-	if err != nil {
-		t.Fatalf("ListMemories(canvas): %v", err)
-	}
-	if response.TotalCount != 1 || len(response.MemoryList) != 1 || response.MemoryList[0]["id"] != "memory-shared" {
-		t.Fatalf("canvas memory list = %#v (total=%d), want only memory-shared", response.MemoryList, response.TotalCount)
+		t.Fatalf("mixed owner filter must retain only accessible matching owners, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
 	}
 }
 

@@ -953,6 +953,11 @@ func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
 
 func TestUploadDocumentsHandler_DeniesNonNormalTeamRole(t *testing.T) {
 	db := setupUploadHandlerDB(t, "admin")
+	if err := db.Model(&entity.Knowledgebase{}).
+		Where("id = ?", strings.ReplaceAll(uploadTestDatasetID, "-", "")).
+		Update("created_by", "owner-1").Error; err != nil {
+		t.Fatalf("make dataset owned by tenant owner: %v", err)
+	}
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
@@ -1917,7 +1922,7 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 	if fake.metadataKBID != "ds-1" {
 		t.Fatalf("expected kbID ds-1, got %q", fake.metadataKBID)
 	}
-	if len(fake.metadataDocIDs) != 2 || fake.metadataDocIDs[0] != "doc-1" || fake.metadataDocIDs[1] != "doc-2" {
+	if len(fake.metadataDocIDs) != 1 || fake.metadataDocIDs[0] != "doc-1" {
 		t.Fatalf("unexpected docIDs: %#v", fake.metadataDocIDs)
 	}
 

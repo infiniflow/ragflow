@@ -57,10 +57,6 @@ os:
   # Optional: skip TLS certificate verification for a self-signed development
   # cluster. Leave it off (the default) for any HTTPS deployment.
   # insecure_skip_verify: false
-  # Optional hybrid (BM25 + KNN) search tuning. The connector self-provisions the
-  # normalization search pipeline on start-up (requires OpenSearch >= 2.10).
-  # hybrid_search_pipeline: 'ragflow_hybrid_pipeline'
-  # hybrid_search_weights: [0.5, 0.5]   # [text/BM25 leg, vector/KNN leg]
 infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   postgres_port: 5432

@@ -49,6 +49,8 @@ func (s *ServerStore) UpdateServerInfo(serverName string, status *common.BaseMes
 		s.servers[serverName] = status
 	case common.ServerTypeFileSyncer:
 		s.servers[serverName] = status
+	case common.ServerTypeChatter:
+		s.servers[serverName] = status
 	default:
 		return fmt.Errorf("unknown server type: %s", status.ServerType)
 	}
