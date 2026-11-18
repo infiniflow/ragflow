@@ -4,7 +4,7 @@
 # Contribution counts and selection method: reviewer-assignments.md.
 
 # Default for root files and new folders.
-* @xugangqiang
+* @wangq8
 
 # Root documentation and build/CI files.
 /*.md @Yannnnnnny
@@ -87,12 +87,12 @@
 /internal/harness/prebuilt/ @yingfeng
 /internal/harness/replay/ @yingfeng
 /internal/ingestion/ @xugangqiang
-/internal/ingestion/compilation/ @xugangqiang
+/internal/ingestion/compilation/ @buua436
 /internal/ingestion/component/ @xugangqiang
-/internal/ingestion/knowledge_compile/ @xugangqiang
+/internal/ingestion/knowledge_compile/ @buua436
 /internal/ingestion/registry/ @6ba3i
 /internal/mcp/ @6ba3i
-/internal/mcp/client/ @xugangqiang
+/internal/mcp/client/ @6ba3i
 /internal/modelcontext/ @buua436
 /internal/observability/ @xugangqiang
 /internal/parser/ @xugangqiang
@@ -103,9 +103,9 @@
 /internal/rag/prompts/ @yingfeng
 /internal/rag/res/ @6ba3i
 /internal/router/ @wangq8
-/internal/server/ @xugangqiang
+/internal/server/ @wangq8
 /internal/server/admin/ @wangq8
-/internal/server/api/ @xugangqiang
+/internal/server/api/ @wangq8
 /internal/server/bootstrap/ @xugangqiang
 /internal/server/config/ @xugangqiang
 /internal/server/deepdoc/ @xugangqiang
