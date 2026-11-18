@@ -3,7 +3,7 @@ import MessageItem from '@/components/message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { VirtualMessageList } from '@/components/virtual-message-list';
-import { MessageType } from '@/constants/chat';
+import { ChatSessionSource, MessageType } from '@/constants/chat';
 import { useFetchChat, useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
@@ -56,6 +56,8 @@ export function SingleChatBox({ conversation }: IProps) {
   const { conversationId } = useGetChatSearchParams();
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
+  const isChannelConversation =
+    conversation.source === ChatSessionSource.ChatChannel;
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -112,9 +114,13 @@ export function SingleChatBox({ conversation }: IProps) {
                 clickDocumentButton={clickDocumentButton}
                 index={i}
                 isLast={(messages?.length ?? 0) - 1 === i}
-                removeMessageById={removeMessageById}
+                removeMessageById={
+                  isChannelConversation ? undefined : removeMessageById
+                }
                 deleteDisabled={message.awaitingServerId}
-                regenerateMessage={regenerateMessage}
+                regenerateMessage={
+                  isChannelConversation ? undefined : regenerateMessage
+                }
                 sendLoading={sendLoading}
               />
             )}
@@ -135,8 +141,8 @@ export function SingleChatBox({ conversation }: IProps) {
 
       <div className="p-5 pt-0">
         <NextMessageInput
-          disabled={disabled}
-          sendDisabled={sendDisabled}
+          disabled={disabled || isChannelConversation}
+          sendDisabled={sendDisabled || isChannelConversation}
           sendLoading={sendLoading}
           value={value}
           resize="vertical"

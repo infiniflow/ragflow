@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { ChatSessionSource } from '@/constants/chat';
 import { useCallback, useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { MultipleChatBox } from './next-multiple-chat-box';
@@ -22,18 +23,30 @@ function MockLargeModelFormFieldWithoutFilter() {
 }
 
 type MockNextMessageInputProps = {
+  disabled: boolean;
+  sendDisabled: boolean;
   onPressEnter(params: {
     enableInternet: boolean;
     enableThinking: boolean;
   }): void;
 };
 
-function MockNextMessageInput({ onPressEnter }: MockNextMessageInputProps) {
+function MockNextMessageInput({
+  onPressEnter,
+  disabled,
+  sendDisabled,
+}: MockNextMessageInputProps) {
   const handleClick = useCallback(() => {
     onPressEnter({ enableInternet: false, enableThinking: false });
   }, [onPressEnter]);
 
-  return <button data-testid="mock-send-message" onClick={handleClick} />;
+  return (
+    <button
+      data-testid="mock-send-message"
+      disabled={disabled || sendDisabled}
+      onClick={handleClick}
+    />
+  );
 }
 
 jest.mock('@/components/large-model-form-field', () => ({
@@ -126,7 +139,7 @@ jest.mock('react-router', () => ({
   useParams: () => ({ id: 'dialog-1' }),
 }));
 
-function renderMultipleChatBox() {
+function renderMultipleChatBox(source = ChatSessionSource.Normal) {
   return render(
     <TooltipProvider>
       <MultipleChatBox
@@ -135,7 +148,7 @@ function renderMultipleChatBox() {
         removeChatBox={jest.fn()}
         addChatBox={jest.fn()}
         stopOutputMessage={jest.fn()}
-        conversation={{} as never}
+        conversation={{ source } as never}
       />
     </TooltipProvider>,
   );
@@ -206,6 +219,12 @@ describe('MultipleChatBox model settings', () => {
     );
     expect(request.params.llm_setting).not.toHaveProperty('maxTokensEnabled');
     expect(request.params.llm_setting).not.toHaveProperty('parameter');
+  });
+
+  it('disables the message input for channel conversations', () => {
+    renderMultipleChatBox(ChatSessionSource.ChatChannel);
+
+    expect(screen.getByTestId('mock-send-message')).toBeDisabled();
   });
 
   it('omits disabled parameters and UI flags from multi-model messages', () => {

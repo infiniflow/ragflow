@@ -24,11 +24,12 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
 )
 
 func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10", "tags^5", "description^3", "content^1"},
 	}, true, false)
@@ -42,7 +43,7 @@ func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
 }
 
 func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10"},
 	}, false, false)
@@ -57,7 +58,7 @@ func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
 func TestBuildQueryStringQueryLowercasesMatchingText(t *testing.T) {
 	// The *_tks/*_ltks fields are whitespace-analyzed and store lowercase
 	// tokens; a capitalized query term must not silently match nothing.
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "Isabel Wood co-lead Ross Feldner Bob Musil Bird Watch Wonder Program",
 	}, false, false)
 
@@ -73,7 +74,7 @@ func TestBuildQueryStringQueryKeepsBooleanOperators(t *testing.T) {
 	// Only AND/OR/NOT are operators, and only in upper case: a folded "or" is a
 	// term clause, which re-bases minimum_should_match and turns a 94-hit search
 	// into a 32-hit one (see lowerCaseQueryText).
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: `(病毒 OR 勒索)^0.3 (系统)^0.2 ("系统 因为 勒索"~2)^1.5 OR ("MES"^0.7)`,
 	}, false, false)
 
@@ -240,12 +241,12 @@ func TestDeleteChunksScopesToDataset(t *testing.T) {
 
 func TestElideQueryVectorRedactsOpenSearchKNNBody(t *testing.T) {
 	body := []byte(`{"query":{"knn":{"q_2_vec":{"vector":[0.1,0.2],"k":3}}}}`)
-	elided := elideQueryVector(body)
+	elided := esoscommon.ElideQueryVector(body, esoscommon.VectorFieldName)
 	if strings.Contains(elided, "0.1") {
-		t.Fatalf("elideQueryVector left the embedding in %s", elided)
+		t.Fatalf("ElideQueryVector left the embedding in %s", elided)
 	}
 	if !strings.Contains(elided, `"vector":"<elided>"`) {
-		t.Fatalf("elideQueryVector = %s, want the vector replaced", elided)
+		t.Fatalf("ElideQueryVector = %s, want the vector replaced", elided)
 	}
 }
 
@@ -799,7 +800,7 @@ func assertEqual(t *testing.T, got, want interface{}) {
 // their storage counterparts and content is tokenized before write,
 // mirroring Python memory/utils/es_conn.py:map_message_to_es_fields.
 func TestMapMemoryMessageToESDoc(t *testing.T) {
-	doc := mapMemoryMessageToESDoc(map[string]interface{}{
+	doc := esoscommon.MapMemoryMessageToESDoc(map[string]interface{}{
 		"id":           "mem-1_42",
 		"doc_id":       "mem-1",
 		"message_id":   int64(42),
@@ -845,7 +846,7 @@ func TestMapMemoryMessageToESDoc(t *testing.T) {
 // the update path recomputes tokenized_content_ltks before write, same
 // as the Python update path.
 func TestMapMemoryMessageESUpdateFieldsRefreshesTokens(t *testing.T) {
-	doc := mapMemoryMessageESUpdateFields(map[string]interface{}{
+	doc := esoscommon.MapMemoryMessageESUpdateFields(map[string]interface{}{
 		"content": "fresh content",
 		"status":  0,
 	})
@@ -856,4 +857,66 @@ func TestMapMemoryMessageESUpdateFieldsRefreshesTokens(t *testing.T) {
 		t.Fatalf("tokenized_content_ltks = %#v, want refreshed tokenized string", doc["tokenized_content_ltks"])
 	}
 	assertEqual(t, doc["status_int"], 0)
+}
+
+// A memory keyword search publishes "session_id_contains"; the filter must
+// land on the mapped "session_id" keyword field with query metacharacters
+// escaped, never on the unmapped "session_id_contains" key.
+func TestOpenSearchSessionIDContainsFiltersOnSessionID(t *testing.T) {
+	query := buildBoolQueryFromConditionRaw(map[string]interface{}{
+		"session_id_contains": `ready*set?`,
+	}, nil, false, true)
+	if query == nil {
+		t.Fatal("buildBoolQueryFromConditionRaw returned nil for session_id_contains")
+	}
+	raw, err := json.Marshal(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t, string(raw), `{"bool":{"filter":[{"wildcard":{"session_id":"*ready\\*set\\?*"}}]}}`)
+
+	query = buildBoolQueryFromConditionRaw(map[string]interface{}{
+		"session_id": "sess-42",
+	}, nil, false, true)
+	if query == nil {
+		t.Fatal("buildBoolQueryFromConditionRaw returned nil for session_id")
+	}
+	raw, err = json.Marshal(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t, string(raw), `{"bool":{"filter":[{"wildcard":{"session_id":"*sess-42*"}}]}}`)
+
+	// A non-string contains value has no wildcard form; it must be dropped
+	// rather than turned into a term on the unmapped key.
+	if query = buildBoolQueryFromConditionRaw(map[string]interface{}{
+		"session_id_contains": 42,
+	}, nil, false, true); query != nil {
+		t.Fatalf("non-string session_id_contains produced %#v, want nil", query)
+	}
+}
+
+// rank_features values arrive as nested objects; the projection must keep
+// them parseable as the JSON string the reranker reads.
+func TestOpenSearchGetFieldsMarshalsRankFeatures(t *testing.T) {
+	engine := &Engine{}
+	tags := map[string]interface{}{"ml": float64(3), "kb": float64(1)}
+	got := engine.GetFields([]map[string]interface{}{
+		{"id": "chunk-1", "tag_feas": tags},
+	}, []string{"id", "tag_feas"})
+
+	fieldMap, ok := got["chunk-1"]
+	if !ok {
+		t.Fatalf("GetFields keys=%v, want chunk-1", got)
+	}
+	raw, ok := fieldMap["tag_feas"].(string)
+	if !ok {
+		t.Fatalf("tag_feas = %#v (%T), want JSON string", fieldMap["tag_feas"], fieldMap["tag_feas"])
+	}
+	var parsed map[string]float64
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("tag_feas %q is not the JSON form the reranker parses: %v", raw, err)
+	}
+	assertEqual(t, parsed["ml"], float64(3))
+	assertEqual(t, parsed["kb"], float64(1))
 }

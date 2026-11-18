@@ -16,6 +16,11 @@
 
 package entity
 
+import (
+	"fmt"
+	"strconv"
+)
+
 // APIToken API token model
 type APIToken struct {
 	TenantID string  `gorm:"column:tenant_id;size:32;not null;primaryKey" json:"tenant_id"`
@@ -30,4 +35,13 @@ type APIToken struct {
 // TableName specify table name
 func (APIToken) TableName() string {
 	return "api_token"
+}
+
+// ParseAPITokenLimit validates the configured per-tenant key capacity.
+func ParseAPITokenLimit(value string) (int, error) {
+	limit, err := strconv.Atoi(value)
+	if err != nil || limit < 1 {
+		return 0, fmt.Errorf("api_key.max_count must be a positive integer")
+	}
+	return limit, nil
 }

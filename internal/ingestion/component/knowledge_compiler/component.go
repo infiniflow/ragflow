@@ -451,7 +451,7 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 			}
 		}
 		if len(p.Vector) > 0 {
-			if err := doc.SetExtraValue(fmt.Sprintf("q_%d_vec", len(p.Vector)), p.Vector); err != nil {
+			if err := doc.SetExtraValue(clog.VectorColumnName(len(p.Vector)), p.Vector); err != nil {
 				return nil, err
 			}
 		}

@@ -157,11 +157,15 @@ func (s *ChatService) ListChats(ctx context.Context, status, keywords, id, name 
 		}
 		chat.Chat.OperatorPermission = access.PermissionMask
 		kbNames, datasetIDs := s.getDatasetNamesAndIDs(ctx, chat.KBIDs)
+		nickname := ""
+		if chat.Nickname != nil {
+			nickname = *chat.Nickname
+		}
 		chatsWithKBNames = append(chatsWithKBNames, &ChatWithKBNames{
 			Chat:         &chat.Chat,
 			KBNames:      kbNames,
 			DatasetIDs:   datasetIDs,
-			Nickname:     ownerNickname(chat.Nickname, chat.TenantID),
+			Nickname:     nickname,
 			TenantAvatar: chat.TenantAvatar,
 		})
 	}
@@ -170,13 +174,6 @@ func (s *ChatService) ListChats(ctx context.Context, status, keywords, id, name 
 		Total: total,
 		Chats: chatsWithKBNames,
 	}, nil
-}
-
-func ownerNickname(nickname *string, tenantID string) string {
-	if nickname != nil && strings.TrimSpace(*nickname) != "" {
-		return *nickname
-	}
-	return tenantID
 }
 
 type CreateChatRequest struct {
@@ -1034,16 +1031,13 @@ func (s *ChatService) updateChatREST(ctx context.Context, chatID string, req map
 
 	if len(updates) > 0 {
 		if err = s.chatDAO.UpdateByID(ctx, dao.DB, chatID, updates); err != nil {
-			if patch {
-				return nil, errors.New("failed to update chat")
-			}
-			return nil, errors.New("chat not found")
+			return nil, fmt.Errorf("failed to update chat: %w", err)
 		}
 	}
 
 	updatedChat, err := s.chatDAO.GetByID(ctx, dao.DB, chatID)
 	if err != nil {
-		return nil, errors.New("failed to retrieve updated chat")
+		return nil, fmt.Errorf("failed to retrieve updated chat: %w", err)
 	}
 	return s.buildRESTChatResponse(ctx, updatedChat), nil
 }
@@ -1309,7 +1303,7 @@ func (s *ChatService) DeleteChat(ctx context.Context, chatID string) error {
 	if err := s.chatDAO.UpdateByID(ctx, dao.DB, chatID, map[string]interface{}{
 		"status": string(entity.StatusInvalid),
 	}); err != nil {
-		return fmt.Errorf("failed to delete chat %s", chatID)
+		return fmt.Errorf("failed to delete chat %s: %w", chatID, err)
 	}
 
 	return nil
@@ -1380,7 +1374,7 @@ func (s *ChatService) BulkDeleteChats(ctx context.Context, req *BulkDeleteChatsR
 		if err := s.chatDAO.UpdateByID(ctx, dao.DB, chatID, map[string]interface{}{
 			"status": string(entity.StatusInvalid),
 		}); err != nil {
-			errorsList = append(errorsList, fmt.Sprintf("Failed to delete chat %s", chatID))
+			errorsList = append(errorsList, fmt.Sprintf("Failed to delete chat %s: %v", chatID, err))
 			continue
 		}
 		successCount++

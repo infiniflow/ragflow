@@ -1491,6 +1491,31 @@ func (c *CLI) CommonUseAdminServerCommand(commandCount int, cmd *Command) (Respo
 	return &result, nil
 }
 
+func (c *CLI) CommonListFeaturesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+
+	var resp *Response
+	var err error
+	var httpClient *HTTPClient
+	switch c.Config.CLIMode {
+	case AdminMode:
+		baseURL := fmt.Sprintf("/admin/system/features")
+		httpClient = c.AdminServerClient
+		resp, err = httpClient.Request(commandCount, "GET", baseURL, httpClient.AuthKind(), nil, nil)
+	case APIMode:
+		baseURL := fmt.Sprintf("/system/features")
+		httpClient = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		resp, err = httpClient.Request(commandCount, "GET", baseURL, httpClient.AuthKind(), nil, nil)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to list features: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "list features")
+}
+
 func (c *CLI) getDatasetIDByName(datasetName string) (string, error) {
 	response, err := c.APIListDatasetsCommand(1, nil)
 	if err != nil {

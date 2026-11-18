@@ -18,6 +18,7 @@ package knowledge_compile
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -47,6 +48,10 @@ type Reader interface {
 	// document (doc_id == source_doc). Bounded by one document, never the whole
 	// KB.
 	LoadDocProducts(ctx context.Context, tenant, kb, docID string) ([]kccommon.Product, error)
+	// LoadDocProductsByDocs returns the per-document compiled rows for many
+	// documents in one query, grouped by doc_id. It is the batch form of
+	// LoadDocProducts used to avoid one query per document.
+	LoadDocProductsByDocs(ctx context.Context, tenant, kb string, docIDs []string) (map[string][]kccommon.Product, error)
 
 	// SearchSimilar runs a dense (KNN) search over the existing merged rows of
 	// the given variant and returns the single most-similar row whose score is
@@ -152,6 +157,30 @@ var wikiSelectFields = []string{
 // LoadDocProducts pages until the engine returns fewer than a full page.
 const loadDocProductsLimit = 5000
 
+// pageThrough issues req against eng, paging with plain from/size, and invokes
+// visit for every page's chunks. It stops after the final (short) page so a
+// result set larger than one page is read completely without silent
+// truncation or looping. req.Offset is advanced on each iteration; callers must
+// not set it beforehand. req.Limit is left to the caller (typically
+// loadDocProductsLimit).
+func pageThrough(ctx context.Context, eng engine.DocEngine, req *types.SearchRequest, limit int, visit func(chunks []map[string]interface{}) error) error {
+	for offset := 0; ; offset += limit {
+		req.Offset = offset
+		res, err := eng.Search(ctx, req)
+		if err != nil {
+			return err
+		}
+		if res != nil {
+			if err := visit(res.Chunks); err != nil {
+				return err
+			}
+		}
+		if len(res.Chunks) < limit {
+			return nil
+		}
+	}
+}
+
 // LoadDocProducts returns the per-document compiled rows for a single document.
 // It is bounded to one document, so the consumer never loads the whole KB. The
 // results are paged so a document with more than loadDocProductsLimit rows is
@@ -162,20 +191,15 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 	}
 	eng := r.eng
 	var out []kccommon.Product
-	offset := 0
-	for {
-		res, err := eng.Search(ctx, &types.SearchRequest{
-			IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
-			KbIDs:        []string{kb},
-			Filter:       map[string]interface{}{"doc_id": docID},
-			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
-			Limit:        loadDocProductsLimit,
-			Offset:       offset,
-		})
-		if err != nil {
-			return nil, err
-		}
-		for _, c := range res.Chunks {
+	req := &types.SearchRequest{
+		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
+		KbIDs:        []string{kb},
+		Filter:       map[string]interface{}{"doc_id": docID},
+		SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
+		Limit:        loadDocProductsLimit,
+	}
+	if err := pageThrough(ctx, eng, req, loadDocProductsLimit, func(chunks []map[string]interface{}) error {
+		for _, c := range chunks {
 			// Only compiled products carry compile_kwd; skip ordinary source chunks.
 			if _, ok := c["compile_kwd"]; !ok || types.IsNavigationRow(c) {
 				continue
@@ -190,30 +214,153 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 				out = append(out, p)
 			}
 		}
-		if len(res.Chunks) < loadDocProductsLimit {
-			break
-		}
-		offset += loadDocProductsLimit
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	// Diagnostics: count how many loaded per-doc products carry an embedding
 	// and report the (deduped) vector dimensions. If this shows 0/empty while
 	// per-doc rows in ES do have q_<dim>_vec, VectorFromChunkMap is failing to
-	// restore the vector and the merged rows will end up embedding-less.
-	vecCount := 0
-	dims := map[int]int{}
-	for _, p := range out {
-		if dim := len(p.Vector); dim > 0 {
-			vecCount++
-			dims[dim]++
+	// restore the vector and the merged rows will end up embedding-less. Gated to
+	// debug: the map construction below allocates even in quiet production.
+	if common.IsDebugEnabled() {
+		vecCount, dims := computeDocProductsVectorAudit(out)
+		common.Info("knowledge_compile: LoadDocProducts vector audit",
+			zap.String("kb_id", kb),
+			zap.String("doc_id", docID),
+			zap.Int("products", len(out)),
+			zap.Int("with_vector", vecCount),
+			zap.Any("vector_dims", dims))
+	}
+	return out, nil
+}
+
+// docProductsBatchSize bounds how many doc_ids are sent in a single IN filter so a
+// batch read over a large KB does not build an unbounded query.
+const docProductsBatchSize = 500
+
+// LoadDocProductsByDocs returns the per-document compiled products for many
+// documents in one query (doc_id IN [...]) instead of one query per document.
+// Results are grouped by doc_id; documents with no compiled rows map to an empty
+// (non-nil) slice so callers can distinguish "no products" from "missing".
+//
+// Each doc_id IN sub-batch is read with a single bounded query. Because plain
+// from/size cannot page past the engine result window (MAX_RESULT_WINDOW), a
+// sub-batch whose aggregated compiled rows would force a page beyond the window
+// falls back to one bounded per-document read per document (the pre-PR behavior)
+// instead of erroring — a product-dense large KB must not lose or mis-read
+// merged state during a rebuild.
+func (r engineReader) LoadDocProductsByDocs(ctx context.Context, tenant, kb string, docIDs []string) (map[string][]kccommon.Product, error) {
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
+	}
+	if len(docIDs) == 0 {
+		return map[string][]kccommon.Product{}, nil
+	}
+	out := make(map[string][]kccommon.Product, len(docIDs))
+	for _, docID := range docIDs {
+		out[docID] = nil // ensure every requested doc has an entry
+	}
+	fields := append(append([]string(nil), compiledSelectFields...), wikiSelectFields...)
+	for start := 0; start < len(docIDs); start += docProductsBatchSize {
+		end := start + docProductsBatchSize
+		if end > len(docIDs) {
+			end = len(docIDs)
+		}
+		batch := docIDs[start:end]
+		local, overflow, err := r.loadDocProductsBatch(ctx, tenant, kb, batch, fields)
+		if err != nil {
+			return nil, err
+		}
+		if overflow {
+			// The sub-batch's compiled rows exceed the engine result window, so a
+			// single doc_id IN read cannot page past it without erroring. Fall
+			// back to one bounded per-document read per document: each document
+			// is bounded to itself and never aggregates to the window, so the
+			// read stays correct for product-dense batches.
+			for _, docID := range batch {
+				ps, perr := r.LoadDocProducts(ctx, tenant, kb, docID)
+				if perr != nil {
+					return nil, perr
+				}
+				out[docID] = ps
+			}
+			continue
+		}
+		for docID, ps := range local {
+			out[docID] = ps
 		}
 	}
-	common.Info("knowledge_compile: LoadDocProducts vector audit",
-		zap.String("kb_id", kb),
-		zap.String("doc_id", docID),
-		zap.Int("products", len(out)),
-		zap.Int("with_vector", vecCount),
-		zap.Any("vector_dims", dims))
 	return out, nil
+}
+
+// errBatchOverflow is returned by loadDocProductsBatch's paging visitor to signal
+// that the next page would exceed the engine result window; the caller falls
+// back to per-document reads instead of letting the engine reject the query.
+var errBatchOverflow = errors.New("knowledge_compile: batch read reached result window")
+
+// loadDocProductsBatch reads the compiled products for a slice of doc_ids with a
+// single doc_id IN query, paging with plain from/size. It returns the products
+// grouped by doc_id. If the aggregate result set is large enough that the next
+// page would require offset+limit > MAX_RESULT_WINDOW (which the engine rejects
+// for plain from/size), it stops paging early and reports overflow=true so the
+// caller can fall back to per-document reads rather than erroring.
+func (r engineReader) loadDocProductsBatch(ctx context.Context, tenant, kb string, batch []string, fields []string) (map[string][]kccommon.Product, bool, error) {
+	local := make(map[string][]kccommon.Product, len(batch))
+	req := &types.SearchRequest{
+		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
+		KbIDs:        []string{kb},
+		Filter:       map[string]interface{}{"doc_id": docIDInterfaceSlice(batch), "exists": "compile_kwd"},
+		SelectFields: fields,
+		Limit:        loadDocProductsLimit,
+	}
+	overflow := false
+	err := pageThrough(ctx, r.eng, req, loadDocProductsLimit, func(chunks []map[string]interface{}) error {
+		// The next page would land at offset+limit, and that fetch needs
+		// (offset+limit)+limit <= MAX_RESULT_WINDOW. If it would not, stop now
+		// and let the caller fall back to per-document reads for this batch.
+		// A next page (offset+limit) is only fetched when this page is full, and
+		// only then could a deep page exceed the engine result window. Signal
+		// overflow only in that case, so a short final page never triggers the
+		// per-document fallback.
+		if len(chunks) == loadDocProductsLimit && req.Offset+2*loadDocProductsLimit > common.MAX_RESULT_WINDOW {
+			overflow = true
+			return errBatchOverflow
+		}
+		for _, c := range chunks {
+			// Only compiled products carry compile_kwd; skip ordinary source chunks.
+			if _, ok := c["compile_kwd"]; !ok || types.IsNavigationRow(c) {
+				continue
+			}
+			rowVariant, verr := KwdToVariant(asString(c["compile_kwd"]))
+			if verr != nil {
+				continue
+			}
+			if p, ok := productFromChunkMap(c, tenant, rowVariant); ok {
+				if docID, _ := c["doc_id"].(string); docID != "" {
+					local[docID] = append(local[docID], p)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errBatchOverflow) {
+			return local, true, nil
+		}
+		return nil, false, err
+	}
+	return local, overflow, nil
+}
+
+// docIDInterfaceSlice converts a string doc_id list into the []interface{} form
+// the engine's IN filter expects.
+func docIDInterfaceSlice(docIDs []string) []interface{} {
+	out := make([]interface{}, len(docIDs))
+	for i, d := range docIDs {
+		out[i] = d
+	}
+	return out
 }
 
 func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id string) (kccommon.Product, error) {
@@ -248,30 +395,22 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 		return nil, errEngineNotConfigured
 	}
 	eng := r.eng
-	filter := map[string]interface{}{"available_int": 1, "scope_kwd": "dataset", "type_kwd": compileKwdWikiPage}
 	var pages []kccommon.Product
-	for offset := 0; ; offset += loadDocProductsLimit {
-		res, err := eng.Search(ctx, &types.SearchRequest{
-			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
-			Limit: loadDocProductsLimit, Offset: offset,
-			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
-			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
-			Filter:       filter,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if res == nil || len(res.Chunks) == 0 {
-			break
-		}
-		for _, row := range res.Chunks {
+	req := &types.SearchRequest{
+		IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
+		Limit:        loadDocProductsLimit,
+		SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
+		Filter:       map[string]interface{}{"available_int": 1, "scope_kwd": "dataset", "type_kwd": compileKwdWikiPage},
+	}
+	if err := pageThrough(ctx, eng, req, loadDocProductsLimit, func(chunks []map[string]interface{}) error {
+		for _, row := range chunks {
 			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && kccommon.MetaString(product.Meta, "kind") == "page" {
 				pages = append(pages, product)
 			}
 		}
-		if len(res.Chunks) < loadDocProductsLimit {
-			break
-		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return pages, nil
 }
@@ -300,28 +439,21 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 		filter["doc_id"] = enabledIDs
 	}
 	var pages []kccommon.Product
-	for offset := 0; ; offset += loadDocProductsLimit {
-		res, err := eng.Search(ctx, &types.SearchRequest{
-			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
-			Limit: loadDocProductsLimit, Offset: offset,
-			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
-			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
-			Filter:       filter,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if res == nil || len(res.Chunks) == 0 {
-			break
-		}
-		for _, row := range res.Chunks {
+	req := &types.SearchRequest{
+		IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
+		Limit:        loadDocProductsLimit,
+		SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
+		Filter:       filter,
+	}
+	if err := pageThrough(ctx, eng, req, loadDocProductsLimit, func(chunks []map[string]interface{}) error {
+		for _, row := range chunks {
 			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && kccommon.MetaString(product.Meta, "kind") == "page" {
 				pages = append(pages, product)
 			}
 		}
-		if len(res.Chunks) < loadDocProductsLimit {
-			break
-		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return pages, nil
 }
@@ -537,7 +669,7 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 		},
 		MatchExprs: []interface{}{
 			&types.MatchDenseExpr{
-				VectorColumnName: fmt.Sprintf("q_%d_vec", dim),
+				VectorColumnName: common.VectorColumnName(dim),
 				EmbeddingData:    vector,
 				DistanceType:     "cosine",
 				TopN:             topN,

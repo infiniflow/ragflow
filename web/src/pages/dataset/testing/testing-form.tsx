@@ -6,10 +6,7 @@ import { z } from 'zod';
 
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
-import {
-  RerankCandidatesCountFormField,
-  rerankCandidatesCountSchema,
-} from '@/components/rerank-candidates-count-item';
+import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import {
   MetadataFilter,
   MetadataFilterSchema,
@@ -40,7 +37,7 @@ import { Send } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import { useOwnerTenantId } from '../contexts/knowledge-base-context';
+import { useResourceTenantId } from '../contexts/knowledge-base-context';
 
 type TestingFormProps = Pick<
   ReturnType<typeof useTestRetrieval>,
@@ -54,9 +51,10 @@ export default function TestingForm({
 }: TestingFormProps) {
   const { t } = useTranslation();
   const { id } = useParams();
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   const knowledgeBaseId = id;
 
+  const integerValidationMessage = t('knowledgeDetails.testIntegerValidation');
   const formSchema = z
     .object({
       question: z.string().min(1, {
@@ -66,8 +64,12 @@ export default function TestingForm({
       ...keywordsSimilarityWeightSchema,
       dataset_ids: z.array(z.string()).optional(),
       ...MetadataFilterSchema,
-      page_size: z.number().int().min(1).max(100),
-      ...rerankCandidatesCountSchema,
+      page_size: z.number().int(integerValidationMessage).min(1).max(100),
+      rerank_candidates_count: z
+        .number()
+        .int(integerValidationMessage)
+        .min(64)
+        .max(256),
     })
     .refine((values) => values.rerank_candidates_count >= values.page_size, {
       message: t('chat.rerankCandidatesCountValidation'),
@@ -100,15 +102,18 @@ export default function TestingForm({
   return (
     <Form {...form}>
       <form
-        className="size-full flex flex-col"
+        className="size-full min-h-0 flex flex-col"
+        noValidate
         onSubmit={form.handleSubmit(onSubmit)}
       >
-        <div className="px-5 h-0 flex-1">
+        <div className="px-5 h-0 flex-1 min-h-0">
           <FormContainer className="p-5 h-full overflow-auto">
             <SimilaritySliderFormField
               isTooltipShown={true}
             ></SimilaritySliderFormField>
-            <RerankFormFields ownerTenantId={ownerTenantId}></RerankFormFields>
+            <RerankFormFields
+              resourceTenantId={resourceTenantId}
+            ></RerankFormFields>
             <CrossLanguageFormField
               name={'cross_languages'}
             ></CrossLanguageFormField>
@@ -118,7 +123,7 @@ export default function TestingForm({
           </FormContainer>
         </div>
 
-        <footer className="flex-0 p-5">
+        <footer className="shrink-0 p-5">
           <FormField
             control={form.control}
             name="question"

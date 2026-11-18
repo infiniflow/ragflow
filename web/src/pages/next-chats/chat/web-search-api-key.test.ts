@@ -111,6 +111,44 @@ describe('getWebSearchApiKey', () => {
     expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
   });
 
+  it('uses only the selected Keirolabs key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.Keirolabs,
+      keirolabs_api_key: 'keirolabs-test',
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBe('keirolabs-test');
+  });
+
+  it('does not fall back to Tavily when Keirolabs is selected without a key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.Keirolabs,
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
+  });
+
+  it('uses only the selected Perplexity key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.Perplexity,
+      perplexity_api_key: 'pplx-test',
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBe('pplx-test');
+  });
+
+  it('does not fall back to Tavily when Perplexity is selected without a key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.Perplexity,
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
+  });
+
   it('uses only the selected SearchApi key', () => {
     const promptConfig = {
       web_search_provider: WebSearchProvider.SearchApi,
@@ -306,11 +344,17 @@ describe('provider key field mapping', () => {
     expect(getWebSearchApiKeyField(WebSearchProvider.Firecrawl)).toBe(
       'firecrawl_api_key',
     );
+    expect(getWebSearchApiKeyField(WebSearchProvider.Keirolabs)).toBe(
+      'keirolabs_api_key',
+    );
     expect(getWebSearchApiKeyField(WebSearchProvider.Linkup)).toBe(
       'linkup_api_key',
     );
     expect(getWebSearchApiKeyField(WebSearchProvider.Parallel)).toBe(
       'parallel_api_key',
+    );
+    expect(getWebSearchApiKeyField(WebSearchProvider.Perplexity)).toBe(
+      'perplexity_api_key',
     );
     expect(getWebSearchApiKeyField(WebSearchProvider.Querit)).toBe(
       'querit_api_key',

@@ -40,7 +40,7 @@ func validateRetrievalWindow(page, pageSize int) error {
 // the MCP retrieval entry point can be tested against a recording fake without
 // standing up the full DatasetService.
 type mcpDatasetService interface {
-	ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error)
+	ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, accessUserID, parserID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error)
 	SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest) (*service.SearchDatasetsResponse, error)
 	GetDataset(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error)
 }
@@ -63,7 +63,7 @@ func mcpRetrieval(ctx context.Context, ds mcpDatasetService, req mcp.RetrievalRe
 		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
 			data, total, _, err := ds.ListDatasets(ctx,
 				"", "", page, pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}},
-				"", nil, "", nil, "",
+				"", nil, "", "", nil, "",
 			)
 			return data, total, err
 		}, common.MaxPageSize)

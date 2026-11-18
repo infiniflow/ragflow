@@ -669,10 +669,10 @@ func (s *FileService) MoveFiles(ctx context.Context, srcFileIDs []string, destFi
 	}
 	file := filesByID[srcFileIDs[0]]
 	if err := s.fileDAO.UpdateByID(ctx, dao.DB, file.ID, map[string]interface{}{"name": newName}); err != nil {
-		return errors.New("Database error (File rename)!")
+		return fmt.Errorf("Database error (File rename)!: %w", err)
 	}
 	if err := s.renameLinkedDocuments(ctx, file.ID, newName); err != nil {
-		return errors.New("Database error (Document rename)!")
+		return fmt.Errorf("Database error (Document rename)!: %w", err)
 	}
 	return nil
 }
@@ -695,7 +695,7 @@ func (s *FileService) checkSourcesDisjoint(ctx context.Context, files []*entity.
 	for _, file := range files {
 		ancestors, err := s.fileDAO.GetAllParentFolders(ctx, dao.DB, file.ID)
 		if err != nil {
-			return false, "failed to check source folder hierarchy"
+			return false, "failed to check source folder hierarchy: " + err.Error()
 		}
 		for _, ancestor := range ancestors {
 			if ancestor.ID == file.ID {

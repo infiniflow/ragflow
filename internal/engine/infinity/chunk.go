@@ -122,7 +122,7 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	}
 
 	// Determine vector column name
-	vectorColName := fmt.Sprintf("q_%d_vec", vecSize)
+	vectorColName := common.VectorColumnName(vecSize)
 
 	// Check if table already exists
 	exists, err := e.tableExistsWithDB(db, tableName)
@@ -1285,7 +1285,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 			// Add vector match if provided
 			if hasVectorMatch {
-				vecFieldName := fmt.Sprintf("q_%d_vec", len(vectorData))
+				vecFieldName := common.VectorColumnName(len(vectorData))
 				dataType := "float"
 				distanceType := "cosine"
 

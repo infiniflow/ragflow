@@ -68,11 +68,13 @@ interface IProps
   avatarDialog?: string | null;
   agentName?: string;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
-  index: number;
+  index?: number;
   showLikeButton?: boolean;
   showLoudspeaker?: boolean;
   showLog?: boolean;
   isShare?: boolean;
+  hideTitle?: boolean;
+  className?: string;
 }
 
 function MessageItem({
@@ -95,6 +97,8 @@ function MessageItem({
   children,
   showLog,
   isShare,
+  hideTitle = false,
+  className,
   nickname,
 }: IProps) {
   const { theme } = useTheme();
@@ -182,7 +186,7 @@ function MessageItem({
 
   return (
     <div
-      className={classNames(styles.messageItem, {
+      className={classNames(styles.messageItem, className, {
         [styles.messageItemLeft]: item.role === MessageType.Assistant,
         [styles.messageItemRight]: item.role === MessageType.User,
       })}
@@ -219,65 +223,69 @@ function MessageItem({
               ></SvgIcon>
             ))}
           <section className="flex-col gap-2 flex-1">
-            <div className="flex justify-between items-center">
-              {isShare && isAssistant && (
-                <Button
-                  variant={'transparent'}
-                  onClick={() => setShowThinking((think) => !think)}
-                >
-                  <div className="flex items-center gap-1">
-                    <div className="">
-                      <Atom
-                        className={startedNodeList(item) ? 'animate-spin' : ''}
-                      />
+            {hideTitle || (
+              <div className="flex justify-between items-center">
+                {isShare && isAssistant && (
+                  <Button
+                    variant={'transparent'}
+                    onClick={() => setShowThinking((think) => !think)}
+                  >
+                    <div className="flex items-center gap-1">
+                      <div className="">
+                        <Atom
+                          className={
+                            startedNodeList(item) ? 'animate-spin' : ''
+                          }
+                        />
+                      </div>
+                      Thinking
+                      {showThinking ? <ChevronUp /> : <ChevronDown />}
                     </div>
-                    Thinking
-                    {showThinking ? <ChevronUp /> : <ChevronDown />}
-                  </div>
-                </Button>
-              )}
-              <div className="space-x-1">
-                {isAssistant ? (
-                  <>
-                    {isShare && !sendLoading && !isEmpty(item.content) && (
-                      <AssistantGroupButton
-                        messageId={item.id}
-                        content={messageContent}
-                        prompt={item.prompt}
-                        showLikeButton={showLikeButton}
-                        audioBinary={item.audio_binary}
-                        showLoudspeaker={showLoudspeaker}
-                        showLog={showLog}
-                        attachment={item.attachment}
-                        isShare={isShare}
-                      ></AssistantGroupButton>
-                    )}
-                    {!isShare && (
-                      <AssistantGroupButton
-                        messageId={item.id}
-                        content={messageContent}
-                        prompt={item.prompt}
-                        showLikeButton={showLikeButton}
-                        audioBinary={item.audio_binary}
-                        showLoudspeaker={showLoudspeaker}
-                        showLog={showLog}
-                        attachment={item.attachment}
-                      ></AssistantGroupButton>
-                    )}
-                  </>
-                ) : (
-                  <UserGroupButton
-                    content={messageContent}
-                    messageId={item.id}
-                    removeMessageById={removeMessageById}
-                    regenerateMessage={
-                      regenerateMessage && handleRegenerateMessage
-                    }
-                    sendLoading={sendLoading}
-                  ></UserGroupButton>
+                  </Button>
                 )}
+                <div className="space-x-1">
+                  {isAssistant ? (
+                    <>
+                      {isShare && !sendLoading && !isEmpty(item.content) && (
+                        <AssistantGroupButton
+                          messageId={item.id}
+                          content={messageContent}
+                          prompt={item.prompt}
+                          showLikeButton={showLikeButton}
+                          audioBinary={item.audio_binary}
+                          showLoudspeaker={showLoudspeaker}
+                          showLog={showLog}
+                          attachment={item.attachment}
+                          isShare={isShare}
+                        ></AssistantGroupButton>
+                      )}
+                      {!isShare && (
+                        <AssistantGroupButton
+                          messageId={item.id}
+                          content={messageContent}
+                          prompt={item.prompt}
+                          showLikeButton={showLikeButton}
+                          audioBinary={item.audio_binary}
+                          showLoudspeaker={showLoudspeaker}
+                          showLog={showLog}
+                          attachment={item.attachment}
+                        ></AssistantGroupButton>
+                      )}
+                    </>
+                  ) : (
+                    <UserGroupButton
+                      content={messageContent}
+                      messageId={item.id}
+                      removeMessageById={removeMessageById}
+                      regenerateMessage={
+                        regenerateMessage && handleRegenerateMessage
+                      }
+                      sendLoading={sendLoading}
+                    ></UserGroupButton>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {isAssistant &&
               currentEventListWithoutMessageById &&

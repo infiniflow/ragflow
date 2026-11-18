@@ -24,8 +24,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/opensearch-project/opensearch-go/v4"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
+
+	"github.com/opensearch-project/opensearch-go/v4"
 )
 
 func TestCompilationSearchReadsBothGenerationsInOneRequest(t *testing.T) {
@@ -141,7 +143,7 @@ func matchesCompilationQuery(query, row map[string]interface{}) bool {
 	for _, operator := range []string{"term", "terms"} {
 		if clause, ok := query[operator].(map[string]interface{}); ok {
 			for field, expected := range clause {
-				if items, ok := conditionTermsList(expected); ok {
+				if items, ok := esoscommon.ConditionTermsList(expected); ok {
 					matched := false
 					for _, value := range items {
 						matched = matched || fmt.Sprint(row[field]) == fmt.Sprint(value)

@@ -31,13 +31,13 @@ const DefaultRerankId = 'rerank_id';
 
 interface RerankFormFieldProps {
   name?: string;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
   required?: boolean;
 }
 
 function RerankFormField({
   name = DefaultRerankId,
-  ownerTenantId,
+  resourceTenantId,
   required = false,
 }: RerankFormFieldProps) {
   const form = useFormContext();
@@ -57,7 +57,7 @@ function RerankFormField({
               modelTypes={['rerank']}
               allowClear
               placeholder={t('rerankPlaceholder')}
-              ownerTenantId={ownerTenantId}
+              resourceTenantId={resourceTenantId}
               {...field}
             />
           </FormControl>
@@ -74,13 +74,13 @@ export const rerankFormSchema = {
 
 interface RerankFormFieldsProps {
   prefix?: string;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
   required?: boolean;
 }
 
 export function RerankFormFields({
   prefix = '',
-  ownerTenantId,
+  resourceTenantId,
   required = false,
 }: RerankFormFieldsProps) {
   const rerankIdName = prefixName(prefix, DefaultRerankId);
@@ -88,7 +88,7 @@ export function RerankFormFields({
   return (
     <RerankFormField
       name={rerankIdName}
-      ownerTenantId={ownerTenantId}
+      resourceTenantId={resourceTenantId}
       required={required}
     ></RerankFormField>
   );

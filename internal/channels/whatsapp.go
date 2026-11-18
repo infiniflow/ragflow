@@ -76,8 +76,10 @@ type whatsappRuntimeSnapshot struct {
 type whatsappChannel struct {
 	account whatsappAccount
 
+	lifecycleMu         sync.Mutex
 	mu                  sync.Mutex
 	cancel              context.CancelFunc
+	runDone             chan struct{}
 	handler             core.MessageHandler
 	client              *http.Client
 	allowDefaultGateway bool
@@ -186,27 +188,57 @@ func (c *whatsappChannel) SetMessageHandler(handler core.MessageHandler) {
 
 // Start begins the WhatsApp gateway session and event websocket loop.
 func (c *whatsappChannel) Start(ctx context.Context) error {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
 	c.mu.Lock()
 	if c.cancel != nil {
-		c.mu.Unlock()
-		return nil
+		select {
+		case <-c.runDone:
+			c.cancel()
+		default:
+			c.mu.Unlock()
+			return nil
+		}
 	}
 	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
 	c.cancel = cancel
+	c.runDone = done
 	c.status = "connecting"
 	c.lastErr = ""
 	c.mu.Unlock()
 
 	liveWhatsAppChannels.Store(c.account.AccountID, c)
-	go c.run(runCtx)
+	go func() {
+		defer close(done)
+		c.run(runCtx)
+	}()
 	return nil
 }
 
 // Stop cancels the WhatsApp event loop and asks the gateway to stop the session.
 func (c *whatsappChannel) Stop(ctx context.Context) error {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
 	c.mu.Lock()
 	cancel := c.cancel
+	done := c.runDone
+	c.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	liveWhatsAppChannels.Delete(c.account.AccountID)
+	if done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	c.mu.Lock()
 	c.cancel = nil
+	c.runDone = nil
 	c.status = "stopped"
 	c.lastErr = ""
 	c.qrDataURL = ""
@@ -219,10 +251,6 @@ func (c *whatsappChannel) Stop(ctx context.Context) error {
 	c.workers = map[string]*whatsappChatWorker{}
 	c.mu.Unlock()
 
-	if cancel != nil {
-		cancel()
-	}
-	liveWhatsAppChannels.Delete(c.account.AccountID)
 	_ = c.requestJSON(ctx, http.MethodPost, fmt.Sprintf("whatsapp/%s/stop", url.PathEscape(c.sessionKey())), map[string]any{
 		"account_id":  c.account.AccountID,
 		"session_key": c.sessionKey(),
@@ -281,7 +309,11 @@ func (c *whatsappChannel) run(ctx context.Context) {
 		if err := c.runEvents(ctx); err != nil && ctx.Err() == nil {
 			c.setError(err)
 			common.Error("whatsapp: event loop error", err, zap.String("account_id", c.account.AccountID))
-			time.Sleep(defaultReconnect)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(defaultReconnect):
+			}
 		}
 	}
 }

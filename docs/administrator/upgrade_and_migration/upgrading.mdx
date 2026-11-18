@@ -1,13 +1,13 @@
 ---
 sidebar_position: 1
-title: Upgrading
-sidebar_label: Upgrading
+title: Upgrade to Nightly or a Release
+sidebar_label: Upgrade to Nightly or a Release
 slug: /upgrade_ragflow
 sidebar_custom_props: {
-  categoryIcon: LucideArrowBigUpDash
+  categoryIcon: LucidePackageCheck
 }
 ---
-# Upgrading
+# Upgrade to Nightly or a Release
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -87,7 +87,9 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
 
 ### Do I Need to Back Up My Datasets Before Upgrading RAGFlow?
 
-No, you do not need to. Upgrading RAGFlow in itself will *not* remove your uploaded data or dataset settings. However, `docker compose --env-file docker/.env -f docker/docker-compose.yml down -v` removes Docker container volumes and causes data loss.
+Yes. Before upgrading, stop all data-writing processes, create a complete backup of your configuration and persistent data from the same stopped deployment, and verify that it can be restored. Start with the [Migration Guide](./start_here.md), then follow [Backup and Restore (v0.x)](./backup_and_restore_v0.md) or [Backup and Restore (v1.x)](./backup_and_restore_v1.md) for your current version. Keep the verified backup until the upgraded deployment passes verification.
+
+Upgrading is intended to preserve your uploaded data and dataset settings, but a failed migration may require restoring the complete pre-upgrade backup. The command `docker compose --env-file docker/.env -f docker/docker-compose.yml down -v` removes Docker container volumes and causes data loss.
 
 ### Upgrade RAGFlow in an Offline Environment (Without Internet Access)
 

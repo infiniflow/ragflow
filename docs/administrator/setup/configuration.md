@@ -101,6 +101,10 @@ Kvrocks provides the Redis-compatible cache. It is separate from the NATS JetStr
 - `REDIS_PASSWORD`
   The password used to access Kvrocks through its Redis-compatible protocol.
 
+:::tip NOTE
+Kvrocks holds the secret key that signs login tokens (when none is configured), the agent-run lease, distributed locks, and the media cache used during ingestion. The lease, the locks, and the media cache use Lua scripts.
+:::
+
 ### NATS
 
 NATS JetStream provides the message queue used by the Go services.

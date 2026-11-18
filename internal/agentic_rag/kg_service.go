@@ -20,11 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"sync"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 )
@@ -372,7 +372,7 @@ func (a *KgAdapter) seedVector(ctx context.Context, tenantID, text string) []flo
 func (a *KgAdapter) seedSearch(ctx context.Context, tenantID, kbID string, docs []string, text, scopeKwd string, seedVec []float64) []map[string]interface{} {
 	if len(seedVec) > 0 {
 		dense := &enginetypes.MatchDenseExpr{
-			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(seedVec)),
+			VectorColumnName:  common.VectorColumnName(len(seedVec)),
 			EmbeddingData:     seedVec,
 			EmbeddingDataType: "float",
 			DistanceType:      "cosine",

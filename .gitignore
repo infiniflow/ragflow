@@ -287,6 +287,10 @@ internal/cpp/cmake-build-release
 
 # downloaded native static-lib artifacts (fetched by deps/download_deps.py)
 deps/*.zip
+# runtime assets fetched by deps/download_deps.py: CJK font for DeepDoc OCR
+# rendering, and the native static libs fetched by tools/scripts/download_dev_deps.py
+deps/NotoSansCJKsc-VF.ttf*
+deps/native-*.tar.gz
 
 # external DeepDoc testdata, fetched on demand via scripts/fetch_deepdoc_testdata.sh
 # (symlinked into place from ~/.cache/ragflow-testdata; never committed)

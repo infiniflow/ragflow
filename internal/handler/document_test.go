@@ -477,6 +477,11 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-owner", members...); err != nil {
 		t.Fatalf("prepare document permission fixture: %v", err)
 	}
+	if accessible {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-owner", "document", "doc-1", "user-1", "read", "write"); err != nil {
+			t.Fatalf("grant document access: %v", err)
+		}
+	}
 
 	orig := dao.DB
 	dao.DB = db
@@ -953,6 +958,11 @@ func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
 
 func TestUploadDocumentsHandler_DeniesNonNormalTeamRole(t *testing.T) {
 	db := setupUploadHandlerDB(t, "admin")
+	if err := db.Model(&entity.Knowledgebase{}).
+		Where("id = ?", strings.ReplaceAll(uploadTestDatasetID, "-", "")).
+		Update("created_by", "owner-1").Error; err != nil {
+		t.Fatalf("make dataset owned by tenant owner: %v", err)
+	}
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
@@ -1917,7 +1927,7 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 	if fake.metadataKBID != "ds-1" {
 		t.Fatalf("expected kbID ds-1, got %q", fake.metadataKBID)
 	}
-	if len(fake.metadataDocIDs) != 2 || fake.metadataDocIDs[0] != "doc-1" || fake.metadataDocIDs[1] != "doc-2" {
+	if len(fake.metadataDocIDs) != 1 || fake.metadataDocIDs[0] != "doc-1" {
 		t.Fatalf("unexpected docIDs: %#v", fake.metadataDocIDs)
 	}
 
@@ -2178,7 +2188,7 @@ func TestGetDocumentPreview_EmptyFile(t *testing.T) {
 	}
 }
 
-func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
+func TestGetDocumentPreview_ReturnsStorageError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := &DocumentHandler{
 		documentService: &fakeDocumentService{},
@@ -2197,13 +2207,8 @@ func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
 		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
 	}
 	msg, _ := resp["message"].(string)
-	if msg != "Failed to load document preview" {
-		t.Fatalf("expected generic message, got %v", resp["message"])
-	}
-	// The storage detail (bucket/key, transport error) must stay in the
-	// server log, not in the client-visible message.
-	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "b/k") {
-		t.Fatalf("storage detail leaked to client: %v", resp["message"])
+	if !strings.Contains(msg, "Failed to load document preview:") || !strings.Contains(msg, "connection refused") || !strings.Contains(msg, "b/k") {
+		t.Fatalf("response missing underlying storage error: %v", resp["message"])
 	}
 }
 
@@ -2292,9 +2297,6 @@ func TestDownloadDocument_LookupErrorReturnsServerError(t *testing.T) {
 	if resp["message"] != "Failed to download document" {
 		t.Fatalf("unexpected client-visible error: %v", resp["message"])
 	}
-	if strings.Contains(w.Body.String(), "database connection failed") {
-		t.Fatal("database error detail leaked to the client")
-	}
 }
 
 func TestDownloadDocument_ServiceErrorReturnsServerError(t *testing.T) {
@@ -2319,11 +2321,8 @@ func TestDownloadDocument_ServiceErrorReturnsServerError(t *testing.T) {
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
 	}
-	if resp["message"] != "Failed to download document" {
+	if resp["message"] != "Failed to download document: database connection failed" {
 		t.Fatalf("unexpected client-visible error: %v", resp["message"])
-	}
-	if strings.Contains(w.Body.String(), "database connection failed") {
-		t.Fatal("database error detail leaked to the client")
 	}
 }
 

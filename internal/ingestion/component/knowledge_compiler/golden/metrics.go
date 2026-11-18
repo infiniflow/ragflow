@@ -2,8 +2,8 @@ package golden
 
 import (
 	"encoding/json"
-	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -152,7 +152,7 @@ func extraFloat(c schema.ChunkDoc, key string) (float64, bool) {
 // hasVector reports whether the chunk carries any q_<dim>_vec embedding.
 func hasVector(c schema.ChunkDoc) bool {
 	for k := range c.Extra {
-		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+		if common.IsVectorColumn(k) {
 			return true
 		}
 	}

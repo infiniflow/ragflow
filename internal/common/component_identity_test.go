@@ -208,3 +208,38 @@ func TestIsParserComponent(t *testing.T) {
 		})
 	}
 }
+
+func TestRegisterComponentNameValidatesComponentKeys(t *testing.T) {
+	const name = "ExtensionChunker"
+	if IsComponentName(name) {
+		t.Fatalf("%q is already registered", name)
+	}
+	t.Cleanup(func() { delete(componentNameExtensions, name) })
+	RegisterComponentName(name)
+	RegisterComponentName(name)
+	if !IsComponentName(name) {
+		t.Fatalf("registered name %q is not canonical", name)
+	}
+	for _, tc := range []struct {
+		key  string
+		want bool
+	}{
+		{"ExtensionChunker:Node", true}, {"extensionchunker:Node", false},
+		{"ExtensionChunker:", false}, {"ExtensionChunker", false},
+	} {
+		if got := IsComponentKey(tc.key); got != tc.want {
+			t.Errorf("IsComponentKey(%q) = %v, want %v", tc.key, got, tc.want)
+		}
+	}
+}
+
+func TestRegisterComponentNameIgnoresEmptyName(t *testing.T) {
+	t.Cleanup(func() { delete(componentNameExtensions, "") })
+	RegisterComponentName("")
+	if IsComponentName("") {
+		t.Fatal("empty name became canonical")
+	}
+	if IsComponentKey(":Node") {
+		t.Fatal("empty component kind became valid")
+	}
+}

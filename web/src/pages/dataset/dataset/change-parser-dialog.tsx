@@ -3,6 +3,7 @@ import { DocumentPipelineDialog } from '@/components/document-pipeline-dialog';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useTranslation } from 'react-i18next';
+import { isDocumentProcessing } from './utils';
 
 type ChangeParserDialogProps = {
   record: IDocumentInfo;
@@ -27,6 +28,7 @@ export function ChangeParserDialog({
       onOk={onOk}
       hideModal={hideModal}
       loading={loading}
+      saveDisabled={isDocumentProcessing(record)}
     ></DocumentPipelineDialog>
   );
 }
