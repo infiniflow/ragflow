@@ -25,9 +25,11 @@ import (
 // ServiceConnector implements the Connector interface using in-process
 // service layer calls, avoiding HTTP round-trips to self.
 type ServiceConnector struct {
-	listDatasets func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	listChats    func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	retrieval    func(ctx context.Context, req RetrievalRequest) (string, error)
+	listDatasets  func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	listChats     func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	retrieval     func(ctx context.Context, req RetrievalRequest) (string, error)
+	listDocuments func(context.Context, ListDocumentsRequest) (string, error)
+	listChunks    func(context.Context, ListChunksRequest) (string, error)
 }
 
 // NewServiceConnector creates a ServiceConnector.
@@ -37,11 +39,15 @@ func NewServiceConnector(
 	listDatasetsFunc func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
 	listChatsFunc func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
 	retrievalFunc func(ctx context.Context, req RetrievalRequest) (string, error),
+	listDocumentsFunc func(context.Context, ListDocumentsRequest) (string, error),
+	listChunksFunc func(context.Context, ListChunksRequest) (string, error),
 ) *ServiceConnector {
 	return &ServiceConnector{
-		listDatasets: listDatasetsFunc,
-		listChats:    listChatsFunc,
-		retrieval:    retrievalFunc,
+		listDatasets:  listDatasetsFunc,
+		listChats:     listChatsFunc,
+		retrieval:     retrievalFunc,
+		listDocuments: listDocumentsFunc,
+		listChunks:    listChunksFunc,
 	}
 }
 
@@ -99,4 +105,12 @@ func listText(data []map[string]any, chats bool) (string, error) {
 
 func (c *ServiceConnector) Retrieval(ctx context.Context, req RetrievalRequest) (string, error) {
 	return c.retrieval(ctx, req)
+}
+
+func (c *ServiceConnector) ListDocuments(ctx context.Context, req ListDocumentsRequest) (string, error) {
+	return c.listDocuments(ctx, req)
+}
+
+func (c *ServiceConnector) ListChunks(ctx context.Context, req ListChunksRequest) (string, error) {
+	return c.listChunks(ctx, req)
 }

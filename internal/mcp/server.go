@@ -16,6 +16,23 @@ type Connector interface {
 	ListDatasets(context.Context, int, int, string, bool) (string, error)
 	ListChats(context.Context, int, int, string, bool) (string, error)
 	Retrieval(context.Context, RetrievalRequest) (string, error)
+	ListDocuments(context.Context, ListDocumentsRequest) (string, error)
+	ListChunks(context.Context, ListChunksRequest) (string, error)
+}
+
+type ListDocumentsRequest struct {
+	DatasetID string `json:"dataset_id"`
+	Keywords  string `json:"keywords,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Page      int    `json:"page"`
+	PageSize  int    `json:"page_size"`
+}
+
+type ListChunksRequest struct {
+	DatasetID  string `json:"dataset_id"`
+	DocumentID string `json:"document_id"`
+	Page       int    `json:"page"`
+	PageSize   int    `json:"page_size"`
 }
 
 type RetrievalRequest struct {
@@ -65,6 +82,14 @@ func newServer(ctx context.Context, connector Connector) *sdk.Server {
 		text, err := connector.ListChats(ctx, input.Page, input.PageSize, "create_time", true)
 		return textResult(text), nil, err
 	})
+	sdk.AddTool(server, tools[3], func(ctx context.Context, _ *sdk.CallToolRequest, input ListDocumentsRequest) (*sdk.CallToolResult, any, error) {
+		text, err := connector.ListDocuments(ctx, input)
+		return textResult(text), nil, err
+	})
+	sdk.AddTool(server, tools[4], func(ctx context.Context, _ *sdk.CallToolRequest, input ListChunksRequest) (*sdk.CallToolResult, any, error) {
+		text, err := connector.ListChunks(ctx, input)
+		return textResult(text), nil, err
+	})
 	requestContext := ctx
 	server.AddReceivingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
 		return func(ctx context.Context, method string, req sdk.Request) (sdk.Result, error) {
@@ -87,7 +112,7 @@ func newServer(ctx context.Context, connector Connector) *sdk.Server {
 				result.CacheScope = "private"
 				for i, tool := range tools {
 					copy := *tool
-					if i == 2 {
+					if tool.Name == "ragflow_list_chats" {
 						copy.Description += chats
 					} else {
 						copy.Description += datasets
@@ -99,7 +124,7 @@ func newServer(ctx context.Context, connector Connector) *sdk.Server {
 			if method == "tools/call" {
 				call := req.(*sdk.CallToolRequest)
 				switch call.Params.Name {
-				case "ragflow_retrieval", "ragflow_list_datasets", "ragflow_list_chats":
+				case "ragflow_retrieval", "ragflow_list_datasets", "ragflow_list_chats", "ragflow_list_documents", "ragflow_list_chunks":
 				default:
 					result := textResult(fmt.Sprintf("Tool not found: %s", call.Params.Name))
 					result.IsError = true

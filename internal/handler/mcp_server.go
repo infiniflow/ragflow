@@ -28,15 +28,19 @@ import (
 	"ragflow/internal/permission"
 	"ragflow/internal/server/config"
 	"ragflow/internal/service"
+	"ragflow/internal/service/chunk"
 	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/document"
 )
 
 // MCPServerHandler handles MCP protocol requests (JSON-RPC over HTTP).
 // It exposes RAGFlow capabilities as MCP tools to external AI clients.
 type MCPServerHandler struct {
-	listDatasetsFunc func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	listChatsFunc    func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	retrievalFunc    func(ctx context.Context, req mcp.RetrievalRequest) (string, error)
+	listDatasetsFunc  func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	listChatsFunc     func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	retrievalFunc     func(ctx context.Context, req mcp.RetrievalRequest) (string, error)
+	listDocumentsFunc func(context.Context, mcp.ListDocumentsRequest) (string, error)
+	listChunksFunc    func(context.Context, mcp.ListChunksRequest) (string, error)
 }
 
 // NewMCPServerHandler shares the service callbacks between API and standalone transports.
@@ -51,12 +55,18 @@ func NewMCPServerHandler(ds *dataset.DatasetService, chats *service.ChatService)
 		retrievalFunc: func(ctx context.Context, req mcp.RetrievalRequest) (string, error) {
 			return mcpRetrieval(ctx, ds, req)
 		},
+		listDocumentsFunc: func(ctx context.Context, req mcp.ListDocumentsRequest) (string, error) {
+			return mcpListDocuments(ctx, document.NewDocumentService(), req)
+		},
+		listChunksFunc: func(ctx context.Context, req mcp.ListChunksRequest) (string, error) {
+			return mcpListChunks(ctx, document.NewDocumentService(), chunk.NewChunkService(), req)
+		},
 	}
 }
 
 func (h *MCPServerHandler) newTransport(resolveUser func(context.Context, string) (string, error), opts mcp.Options) *mcp.Handler {
 	return mcp.NewHandler(resolveUser, func() mcp.Connector {
-		return mcp.NewServiceConnector(h.listDatasetsFunc, h.listChatsFunc, h.retrievalFunc)
+		return mcp.NewServiceConnector(h.listDatasetsFunc, h.listChatsFunc, h.retrievalFunc, h.listDocumentsFunc, h.listChunksFunc)
 	}, opts)
 }
 

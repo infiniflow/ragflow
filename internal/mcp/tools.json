@@ -116,5 +116,80 @@
         }
       }
     }
+  },
+  {
+    "name": "ragflow_list_documents",
+    "description": "List documents in an accessible dataset, optionally filtering by name. Returns document metadata, ingestion_status, and total with pagination. Available datasets:",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dataset_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "ID of an accessible dataset."
+        },
+        "keywords": {
+          "type": "string",
+          "description": "Optional document-name keyword filter."
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional exact document name."
+        },
+        "page": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "dataset_id"
+      ]
+    }
+  },
+  {
+    "name": "ragflow_list_chunks",
+    "description": "Read a fully parsed document in document order, without similarity filtering or the retrieval rerank window. Returns chunks with content, positions and important_keywords, document information, and total with pagination. Available datasets:",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dataset_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "ID of an accessible dataset."
+        },
+        "document_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "Document ID belonging to dataset_id."
+        },
+        "page": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "dataset_id",
+        "document_id"
+      ]
+    }
   }
 ]
