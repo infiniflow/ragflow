@@ -7,7 +7,8 @@
     "embedding": "embeddings",
     "rerank": "rerank",
     "asr": "audio/transcriptions",
-    "tts": "audio/speech"
+    "tts": "audio/speech",
+    "decision": "systemone"
   },
   "class": "local",
   "models": []
