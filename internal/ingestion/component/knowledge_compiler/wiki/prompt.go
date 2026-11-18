@@ -378,7 +378,19 @@ func wikiTemplateFields(parserConfig map[string]any, section string) []any {
 	return nil
 }
 
+func normalizeWikiGuidanceLanguage(language string) string {
+	switch strings.ToLower(strings.TrimSpace(language)) {
+	case "chinese", "zh":
+		return "zh"
+	case "english", "en":
+		return "en"
+	default:
+		return language
+	}
+}
+
 func wikiTypeGuidance(fields []any, language string) string {
+	language = normalizeWikiGuidanceLanguage(language)
 	var lines []string
 	for _, raw := range fields {
 		field, ok := raw.(map[string]any)

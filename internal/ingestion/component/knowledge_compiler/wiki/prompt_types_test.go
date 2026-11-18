@@ -86,11 +86,49 @@ func TestWikiMapPromptTypeGuidanceLocalization(t *testing.T) {
 		map[string]any{"type": "sensor", "description": map[string]any{"zh": "Installed sensor.", "en": "English description."}, "rule": map[string]any{"en": "Keep the sensor ID."}},
 		map[string]any{"type": "technician", "description": map[string]any{"fr": "Do not select an unrelated language."}, "rule": "  "},
 	}}}
-	prompt, _ := buildWikiMapPrompt("doc-1", nil, cfg, "zh")
-	if want := "sensor: Installed sensor.\nKeep the sensor ID.\ntechnician"; !strings.Contains(prompt, want) {
-		t.Errorf("localized type guidance missing %q", want)
+	for _, language := range []string{"zh", "Chinese", " chinese "} {
+		t.Run(language, func(t *testing.T) {
+			prompt, _ := buildWikiMapPrompt("doc-1", nil, cfg, language)
+			if want := "sensor: Installed sensor.\nKeep the sensor ID.\ntechnician"; !strings.Contains(prompt, want) {
+				t.Errorf("localized type guidance missing %q", want)
+			}
+			if strings.Contains(prompt, "English description.") || strings.Contains(prompt, "Do not select an unrelated language.") {
+				t.Error("selected wrong-language guidance")
+			}
+		})
 	}
-	if strings.Contains(prompt, "English description.") || strings.Contains(prompt, "Do not select an unrelated language.") {
-		t.Error("selected wrong-language guidance")
+}
+
+func TestWikiMapPromptTypeGuidanceUnknownLanguage(t *testing.T) {
+	cfg := map[string]any{"entity": map[string]any{"fields": []any{
+		map[string]any{"type": "sensor", "description": map[string]any{"custom-language": "Custom guidance.", "en": "English fallback."}, "rule": map[string]any{"en": "Fallback rule."}},
+	}}}
+	prompt, _ := buildWikiMapPrompt("doc-1", nil, cfg, "custom-language")
+	if !strings.Contains(prompt, "sensor: Custom guidance.\nFallback rule.") || strings.Contains(prompt, "English fallback.") {
+		t.Error("unknown language key or English fallback was lost")
+	}
+}
+
+func TestWikiMapPromptTypeGuidancePreservesGlobalLanguage(t *testing.T) {
+	cfg := map[string]any{
+		"global_rules": map[string]any{"Chinese": "Global display-name rules.", "zh": "Global code rules."},
+		"entity": map[string]any{"fields": []any{map[string]any{
+			"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."},
+		}}},
+	}
+	for _, tc := range []struct{ language, want, reject string }{
+		{"Chinese", "Global display-name rules.", "Global code rules."},
+		{"zh", "Global code rules.", "Global display-name rules."},
+	} {
+		prompt, _ := buildWikiMapPrompt("doc-1", nil, cfg, tc.language)
+		if !strings.Contains(prompt, "sensor: Chinese sensor.") || !strings.Contains(prompt, tc.want) || strings.Contains(prompt, tc.reject) {
+			t.Errorf("type language normalization changed global-rule selection for %q", tc.language)
+		}
+	}
+	for _, language := range []string{"en", "English", " english "} {
+		prompt, _ := buildWikiMapPrompt("doc-1", nil, cfg, language)
+		if !strings.Contains(prompt, "sensor: English sensor.") || strings.Contains(prompt, "Chinese sensor.") {
+			t.Errorf("language %q selected wrong type guidance", language)
+		}
 	}
 }

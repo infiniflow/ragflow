@@ -100,6 +100,7 @@ func (c *claimRequestChat) Chat(ctx context.Context, req common.ChatRequest) (*c
 func TestVersionedMapRefreshesSavedGuidance(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
+		language  string
 		config    map[string]any
 		oldKey    string
 		oldActive string
@@ -161,7 +162,7 @@ func TestVersionedMapRefreshesSavedGuidance(t *testing.T) {
 			config:    map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "  ", "description": "ignored", "rule": "ignored"}}}},
 			oldKey:    "7fb96c2e0a8534a5adf4f84647b890f612580d69f8ece3a1314ce370b56f0524",
 			oldActive: "91d9b232e7b7f6e185289f7b2bc48d5857b573dd1922524256da58e3f36d7674",
-			wantCalls: 0,
+			wantCalls: 1,
 			guidance:  []string{},
 		},
 		{
@@ -172,8 +173,33 @@ func TestVersionedMapRefreshesSavedGuidance(t *testing.T) {
 			wantCalls: 1,
 			guidance:  []string{"sensor", "Installed sensor", "Keep ID", "Extract audited financial claims.", "Use legal entity names."},
 		},
+		{
+			name: "existing v1 Chinese type guidance", language: "Chinese",
+			config: map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."}}}}},
+			oldKey: "b104b7f474c8c09cf9f8095bb03176e4bd3bdd2d2959dcf16c06bdf3f27d38fc", oldActive: "4182bced78ac95cf5fe0a5913bd37aa210cd286a3c5ed42dd3c880c7b9200bdd", wantCalls: 1,
+			guidance: []string{"Chinese sensor."},
+		},
+		{
+			name: "existing v1 zh type guidance", language: "zh",
+			config: map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."}}}}},
+			oldKey: "6405d7664430c02c4462a76c52e47b83aa762e6a2a5a2db72bd25887aba46b10", oldActive: "6c26634c23f8c1fdbaa937f3353b2b538fe248ff98c882670a44f1fb5a26aef1", wantCalls: 0,
+		},
+		{
+			name: "existing v1 en type guidance", language: "en",
+			config: map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."}}}}},
+			oldKey: "e18c502d1791c1a165ae7338a431b0a19da3aee241740e80397d8947329e2893", oldActive: "80f1a1d15b01bae259c0386d5d0f46395aa8722677cdeb09de6435135fc05aa2", wantCalls: 0,
+		},
+		{
+			name: "existing v1 custom-language type guidance", language: "custom-language",
+			config: map[string]any{"entity": map[string]any{"fields": []any{map[string]any{"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."}}}}},
+			oldKey: "da72efcb958244bd99dd0a2ce33736381b687d49c390d0135aa3d9433a3a7d17", oldActive: "3beb8f2d2636be76758591d2157344a06632cc47390cb8dc57d93a52e0cee897", wantCalls: 0,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			language := tc.language
+			if language == "" {
+				language = "English"
+			}
 			oldExtract := wikiExtract{Claims: []wikiClaim{{Statement: "cached without guidance", Subject: "Alpha", SourceChunkIDs: []string{"c1"}}}}
 			oldPayload, err := json.Marshal(oldExtract)
 			if err != nil {
@@ -191,7 +217,7 @@ func TestVersionedMapRefreshesSavedGuidance(t *testing.T) {
 			newPipeline := func() *wikiPipeline {
 				return &wikiPipeline{
 					ctx: t.Context(), deps: common.Deps{Chat: chat, WikiMapVersions: store},
-					param: common.Param{TemplateID: "tpl-claim", Language: "English", TemplateConfig: tc.config},
+					param: common.Param{TemplateID: "tpl-claim", Language: language, TemplateConfig: tc.config},
 					inputs: common.Inputs{
 						Chunks:          []common.Chunk{{ID: "c1", Text: "Alpha exists."}},
 						VariantSpecific: map[string]any{"parser_config": tc.config},
@@ -398,5 +424,26 @@ func TestSplitWikiExtractByChunkDropsUnknownProvenance(t *testing.T) {
 	}
 	if got := len(parts["c2"].Topics); got != 1 || parts["c2"].Topics[0].Path != "Knowledge/Shared" {
 		t.Fatalf("c2 topics = %#v, want only source-less fallback", parts["c2"].Topics)
+	}
+}
+
+func TestWikiMapFingerprintPreservesGlobalLanguage(t *testing.T) {
+	config := map[string]any{
+		"global_rules": map[string]any{"Chinese": "Global display-name rules.", "zh": "Global code rules."},
+		"entity": map[string]any{"fields": []any{map[string]any{
+			"type": "sensor", "description": map[string]any{"zh": "Chinese sensor.", "en": "English sensor."},
+		}}},
+	}
+	fingerprints := make(map[string]string)
+	for _, language := range []string{"Chinese", "zh"} {
+		pipeline := &wikiPipeline{param: common.Param{TemplateID: "tpl-1", Language: language, TemplateConfig: config}}
+		fingerprint, err := pipeline.wikiMapTemplateFingerprint()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fingerprints[language] = fingerprint
+	}
+	if fingerprints["Chinese"] == fingerprints["zh"] {
+		t.Fatal("distinct global rules share a MAP cache identity")
 	}
 }

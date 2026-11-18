@@ -216,26 +216,31 @@ func (p *wikiPipeline) wikiMapTemplateFingerprint() (string, error) {
 		claimGuidanceFormat = "statement-subject-v1"
 	}
 	typeGuidanceFormat := ""
-	if wikiTypeGuidance(wikiTemplateFields(mapConfig, "entity"), p.param.Language) != "" ||
-		wikiTypeGuidance(wikiTemplateFields(mapConfig, "relation"), p.param.Language) != "" {
+	typeGuidanceLanguage := ""
+	if len(wikiTemplateFields(mapConfig, "entity")) > 0 || len(wikiTemplateFields(mapConfig, "relation")) > 0 {
 		typeGuidanceFormat = "type-description-rule-v1"
+		if normalized := normalizeWikiGuidanceLanguage(p.param.Language); normalized != p.param.Language {
+			typeGuidanceLanguage = normalized
+		}
 	}
 	payload, err := json.Marshal(struct {
-		TemplateID          string         `json:"template_id"`
-		TemplateConfig      map[string]any `json:"template_config"`
-		Language            string         `json:"language"`
-		SystemPrompt        string         `json:"system_prompt"`
-		UserTemplate        string         `json:"user_template"`
-		ClaimGuidanceFormat string         `json:"claim_guidance_format,omitempty"`
-		TypeGuidanceFormat  string         `json:"type_guidance_format,omitempty"`
+		TemplateID           string         `json:"template_id"`
+		TemplateConfig       map[string]any `json:"template_config"`
+		Language             string         `json:"language"`
+		SystemPrompt         string         `json:"system_prompt"`
+		UserTemplate         string         `json:"user_template"`
+		ClaimGuidanceFormat  string         `json:"claim_guidance_format,omitempty"`
+		TypeGuidanceFormat   string         `json:"type_guidance_format,omitempty"`
+		TypeGuidanceLanguage string         `json:"type_guidance_language,omitempty"`
 	}{
-		TemplateID:          p.param.TemplateID,
-		TemplateConfig:      mapConfig,
-		Language:            p.param.Language,
-		SystemPrompt:        wikiMapSystem,
-		UserTemplate:        wikiMapUserTemplate,
-		ClaimGuidanceFormat: claimGuidanceFormat,
-		TypeGuidanceFormat:  typeGuidanceFormat,
+		TemplateID:           p.param.TemplateID,
+		TemplateConfig:       mapConfig,
+		Language:             p.param.Language,
+		SystemPrompt:         wikiMapSystem,
+		UserTemplate:         wikiMapUserTemplate,
+		ClaimGuidanceFormat:  claimGuidanceFormat,
+		TypeGuidanceFormat:   typeGuidanceFormat,
+		TypeGuidanceLanguage: typeGuidanceLanguage,
 	})
 	if err != nil {
 		return "", fmt.Errorf("wiki: fingerprint MAP template: %w", err)

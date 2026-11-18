@@ -18,6 +18,7 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -143,10 +144,10 @@ func compileDirtyWikiDocument(ctx context.Context, request knowledge_compile.Wik
 		if err != nil {
 			return fmt.Errorf("Wiki dirty compile document %s: %w", request.DocumentID, err)
 		}
+		if len(states) != 1 {
+			return fmt.Errorf("Wiki dirty compile document %s: template %s returned no complete active plan", request.DocumentID, templateID)
+		}
 		activeStates = append(activeStates, states...)
-	}
-	if len(affectedSlugs) == 0 && len(removedSlugs) == 0 {
-		return persistDirtyWikiActiveStates(ctx, request, activeStates)
 	}
 	return replaceDirtyWikiProducts(ctx, request, compiled, appcommon.DeduplicateTrimmed(affectedSlugs), appcommon.DeduplicateTrimmed(removedSlugs), activeStates, false)
 }
@@ -301,8 +302,19 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		}
 		return err
 	}
+	if dirty.TenantID != request.TenantID || dirty.DatasetID != request.DatasetID {
+		return fmt.Errorf("Wiki dirty compile: request does not match dirty document scope")
+	}
 	if dirty.Revision != request.Revision {
 		return nil
+	}
+	var plannedSlugs map[string]struct{}
+	if !fullReplace {
+		var err error
+		plannedSlugs, err = dirtyWikiPlannedSlugs(request, activeStates)
+		if err != nil {
+			return err
+		}
 	}
 	docEngine := kcWiringDeps.Engine
 	if docEngine == nil {
@@ -313,7 +325,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		IndexNames:   []string{indexName},
 		KbIDs:        []string{request.DatasetID},
 		Limit:        10000,
-		SelectFields: []string{"id", "compile_kwd", "slug_kwd", "parent_id"},
+		SelectFields: []string{"id", "compile_kwd", "type_kwd", "slug_kwd", "parent_id"},
 		Filter: map[string]any{
 			"doc_id":        []string{request.DocumentID},
 			"type_kwd":      []string{"wiki_page", "wiki_section"},
@@ -323,10 +335,18 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	if err != nil {
 		return err
 	}
+	// A partial result cannot establish which persisted pages are obsolete.
+	if !fullReplace && existing != nil && (existing.Total > int64(len(existing.Chunks)) || len(existing.Chunks) >= 10000) {
+		return fmt.Errorf("Wiki dirty compile: persisted product search is incomplete")
+	}
 	newIDs := make(map[string]struct{}, len(rows))
+	newPageSlugs := make(map[string]struct{})
 	for _, row := range rows {
 		if id := anyString(row["id"]); id != "" {
 			newIDs[id] = struct{}{}
+		}
+		if enginetypes.CompilationRowType(row) == "wiki_page" {
+			newPageSlugs[anyString(row["slug_kwd"])] = struct{}{}
 		}
 	}
 	if len(rows) > 0 {
@@ -334,8 +354,24 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 			return err
 		}
 	}
-	affected := make(map[string]struct{}, len(affectedSlugs)+len(removedSlugs))
+	affected := make(map[string]struct{}, len(affectedSlugs)+len(removedSlugs)+len(newPageSlugs))
+	// Emitted rows use the writer's canonical slug, while affected plan slugs
+	// may still be bare. Regeneration must also retract the old page sections.
+	for slug := range newPageSlugs {
+		affected[slug] = struct{}{}
+	}
+	removed := make(map[string]struct{}, len(removedSlugs))
+	for _, slug := range removedSlugs {
+		removed[slug] = struct{}{}
+	}
 	for _, slug := range append(append([]string(nil), affectedSlugs...), removedSlugs...) {
+		_, stillPlanned := plannedSlugs[slug]
+		_, wasRemoved := removed[slug]
+		_, regenerated := newPageSlugs[slug]
+		if !fullReplace && wasRemoved && stillPlanned && !regenerated {
+			// Another template still owns this unchanged page and emitted no row.
+			continue
+		}
 		affected[slug] = struct{}{}
 	}
 	affectedPageIDs := make(map[string]struct{})
@@ -344,7 +380,9 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 			if enginetypes.CompilationRowType(row) != "wiki_page" {
 				continue
 			}
-			if _, ok := affected[anyString(row["slug_kwd"])]; ok {
+			slug := anyString(row["slug_kwd"])
+			_, stillPlanned := plannedSlugs[slug]
+			if _, ok := affected[slug]; ok || !stillPlanned {
 				affectedPageIDs[anyString(row["id"])] = struct{}{}
 			}
 		}
@@ -382,10 +420,8 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	if err := putWikiActiveStates(ctx, docEngine, activeStates); err != nil {
 		return err
 	}
-	// Do not wake the dataset consumer when this document never had any Wiki
-	// products and the dirty replacement produced none. A full replacement with
-	// existing products still publishes so the consumer can retract them.
-	if len(rows) == 0 && (existing == nil || len(existing.Chunks) == 0) {
+	// Active snapshots can change without changing any persisted page products.
+	if len(rows) == 0 && len(staleIDs) == 0 {
 		return nil
 	}
 	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"}, []string{kc.TaskTypeWiki})
@@ -404,25 +440,52 @@ func clearWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, requ
 	return nil
 }
 
-func persistDirtyWikiActiveStates(ctx context.Context, request knowledge_compile.WikiDirtyRequest, states []kc.WikiMapActiveState) error {
+// The snapshots carry complete plans, including pages omitted by incremental
+// REFINE. Compare their union with stored products after a template changes its
+// cache namespace; the new namespace has no prior plan to report removed slugs.
+func dirtyWikiPlannedSlugs(request knowledge_compile.WikiDirtyRequest, states []kc.WikiMapActiveState) (map[string]struct{}, error) {
 	if len(states) == 0 {
-		return nil
+		return nil, fmt.Errorf("Wiki dirty compile: complete active plans are required")
 	}
-	var dirty entity.WikiDocumentDirty
-	if err := kcWiringDeps.DB.WithContext(ctx).Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil
+	slugs := make(map[string]struct{})
+	for _, state := range states {
+		if state.Key == "" || state.TenantID != request.TenantID || state.DatasetID != request.DatasetID || state.DocumentID != request.DocumentID {
+			return nil, fmt.Errorf("Wiki dirty compile: active plan has invalid scope")
 		}
-		return err
+		var snapshot struct {
+			Plan json.RawMessage `json:"plan"`
+		}
+		if err := json.Unmarshal(state.Payload, &snapshot); err != nil {
+			return nil, fmt.Errorf("Wiki dirty compile: decode active plan: %w", err)
+		}
+		if len(snapshot.Plan) == 0 {
+			return nil, fmt.Errorf("Wiki dirty compile: active snapshot is missing its complete plan")
+		}
+		var pages []struct {
+			Slug     string `json:"slug"`
+			PageType string `json:"page_type"`
+		}
+		if err := json.Unmarshal(snapshot.Plan, &pages); err != nil {
+			return nil, fmt.Errorf("Wiki dirty compile: decode planned pages: %w", err)
+		}
+		for _, page := range pages {
+			if strings.TrimSpace(page.Slug) == "" {
+				return nil, fmt.Errorf("Wiki dirty compile: planned page has no slug")
+			}
+			// Match the chunk writer's full <page_type>/<slug> identity. Plans
+			// already normalize an omitted page type to concept.
+			slug := page.Slug
+			if !strings.Contains(slug, "/") {
+				pageType := strings.TrimSpace(page.PageType)
+				if pageType == "" {
+					pageType = "concept"
+				}
+				slug = pageType + "/" + slug
+			}
+			slugs[slug] = struct{}{}
+		}
 	}
-	if dirty.Revision != request.Revision {
-		return nil
-	}
-	docEngine := kcWiringDeps.Engine
-	if docEngine == nil {
-		return fmt.Errorf("Wiki dirty compile: document engine is unavailable")
-	}
-	return putWikiActiveStates(ctx, docEngine, states)
+	return slugs, nil
 }
 
 func putWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, states []kc.WikiMapActiveState) error {
