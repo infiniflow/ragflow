@@ -518,7 +518,7 @@ func searchClaimsForQuestion(ctx context.Context, tenantID string, datasetIDs, d
 		Limit:              limit,
 		IncludeUnavailable: true,
 		MatchExprs: []interface{}{&enginetypes.MatchDenseExpr{
-			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vec)),
+			VectorColumnName:  common.VectorColumnName(len(vec)),
 			EmbeddingData:     vec,
 			EmbeddingDataType: "float",
 			DistanceType:      "cosine",

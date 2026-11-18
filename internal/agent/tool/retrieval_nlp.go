@@ -198,18 +198,38 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	}
 	// Dataset authorization must use the caller identity established by the
 	// agent run, not req.UserID, which is a configurable per-user memory filter.
-	userID := ""
+	userID := permission.UserIDFromContext(ctx)
 	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
-		userID, _ = state.GetSysString("user_id")
+		runtimeUserID, _ := state.GetSysString("user_id")
+		if runtimeUserID = strings.TrimSpace(runtimeUserID); runtimeUserID != "" {
+			if userID != "" && userID != runtimeUserID {
+				return nil, permission.ErrIdentityMismatch
+			}
+			userID = runtimeUserID
+		}
 	}
 	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID := canvasTenantID(ctx)
+	contextTenantID := permission.TenantIDFromContext(ctx)
+	if contextTenantID != "" && tenantID != "" && contextTenantID != tenantID {
+		return nil, permission.ErrIdentityMismatch
+	}
+	if permission.UserIDFromContext(ctx) == "" || contextTenantID == "" {
+		if contextTenantID == "" {
+			contextTenantID = tenantID
+		}
+		ctx = permission.WithIdentity(ctx, userID, contextTenantID)
+	}
 	checker := permission.NewDatabaseChecker(db)
 	if err := CheckCanvasDependencies(ctx, db, permission.ResourceKindDataset, datasets.kbIDs); err != nil {
 		_, permissionErr := permissionresponse.Normalize(err)
 		return nil, permissionErr
 	}
 	for _, datasetID := range datasets.kbIDs {
-		if err := checker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		if err := checker.CheckResource(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindDataset, ID: datasetID,
 		}, permission.OperationUse); err != nil {
 			_, permissionErr := permissionresponse.Normalize(err)
@@ -344,7 +364,7 @@ func nlpRequestFromRetrieval(
 		PageSize:           topN,
 		EmbeddingModel:     embeddingModel,
 		Aggs:               boolPtr(false),
-		Highlight:          boolPtr(false),
+		Highlight:          boolPtr(req.Highlight),
 		AllowDenseFallback: req.AllowDenseFallback,
 		VectorOnly:         req.KeywordsSimilarityWeight != nil && *req.KeywordsSimilarityWeight < 0.01,
 	}
@@ -570,6 +590,7 @@ func translateChunk(raw map[string]any) RetrievalChunk {
 		MomID:            StringFromMap(raw, "mom_id"),
 		ChunkIndex:       IntFromMap(raw, "chunk_order_int"),
 		PageNum:          IntFromMap(raw, "page_num_int"),
+		Highlight:        StringFromMap(raw, "highlight"),
 		Score:            scoreFromMap(raw),
 		TermSimilarity:   scoreValueFromMap(raw, "term_similarity"),
 		VectorSimilarity: scoreValueFromMap(raw, "vector_similarity"),

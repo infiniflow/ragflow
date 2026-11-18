@@ -70,6 +70,7 @@ export function useClientSearch<T>({
   return {
     filteredData,
     searchKeyword,
+    hasActiveSearch: Boolean(debouncedSearchKeyword.trim()),
     handleSearchChange,
     clearSearch,
     isSearching: debouncedSearchKeyword !== searchKeyword,

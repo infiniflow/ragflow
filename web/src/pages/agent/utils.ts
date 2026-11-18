@@ -1,4 +1,4 @@
-import { FileType, FileTypeSuffixMap } from '@/constants/file';
+import { FileType } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -39,6 +39,10 @@ import {
   TypesWithArray,
   WebhookSecurityAuthType,
 } from './constant';
+import {
+  ScoredSwitchEscalateHandleId,
+  showsScoredSwitchEscalateHandle,
+} from './scored-switch';
 import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
@@ -170,6 +174,43 @@ function buildCategorize(edges: Edge[], nodes: Node[], nodeId: string) {
   return omit(params, 'items');
 }
 
+function buildScoredSwitch(edges: Edge[], nodes: Node[], nodeId: string) {
+  const node = nodes.find((x) => x.id === nodeId);
+  const params = { ...(node?.data.form ?? {}) } as Record<string, any>;
+  if (node && node.data.label === Operator.ScoredSwitch) {
+    const subEdges = edges.filter((x) => x.source === nodeId);
+    const items = (params.items || []) as Array<{
+      name: string;
+      description?: string;
+      uuid: string;
+    }>;
+    const escalateEnabled = showsScoredSwitchEscalateHandle(
+      params.escalate_enabled,
+      params.field_mode,
+    );
+    params.escalate_enabled = escalateEnabled;
+    params.options = items.map((item) => ({
+      name: item.name,
+      description: item.description,
+      uuid: item.uuid,
+      to: filterTargetsBySourceHandleId(subEdges, item.uuid),
+    }));
+    params.escalate_to = escalateEnabled
+      ? filterTargetsBySourceHandleId(subEdges, ScoredSwitchEscalateHandleId)
+      : [];
+    params.field_to =
+      params.field_mode === true
+        ? filterTargetsBySourceHandleId(subEdges, NodeHandleId.End)
+        : [];
+    if (Array.isArray(params.tasks)) {
+      params.tasks = params.tasks.map((task: Record<string, unknown>) =>
+        omit(task, '_key'),
+      );
+    }
+  }
+  return omit(params, 'items');
+}
+
 const buildOperatorParams = (operatorName: string) =>
   removeUselessDataInTheOperator(operatorName);
 
@@ -228,15 +269,11 @@ export function transformParserParams(params: ParserFormSchemaType) {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
         Omit<ParserFormSchemaType['setups'][0], 'pages'> & {
-          suffix: string[];
-        } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
           pages: number[][];
         }
-      > = {
-        suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
-      };
+      > = {};
 
       switch (cur.fileFormat) {
         case FileType.PDF:
@@ -247,6 +284,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
             mineru_lang: cur.mineru_lang,
             mineru_formula_enable: cur.mineru_formula_enable,
             mineru_table_enable: cur.mineru_table_enable,
+            unlimited_ocr_crop_mode: cur.unlimited_ocr_crop_mode,
+            unlimited_ocr_no_repeat_ngram_size:
+              cur.unlimited_ocr_no_repeat_ngram_size,
+            unlimited_ocr_page_guard: cur.unlimited_ocr_page_guard,
             lang: cur.lang,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
@@ -313,6 +354,12 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
+        case FileType.TextMarkdown:
+          filteredSetup = {
+            ...filteredSetup,
+            remove_toc: cur.remove_toc || false,
           };
           break;
         case FileType.Audio:
@@ -444,6 +491,7 @@ export function transformGeneralChunkerParams(
   return result;
 }
 
+// Resolve active heading settings and preserve independent media-context budgets.
 export function transformTitleChunkerParams(
   params: TitleChunkerFormSchemaType,
 ) {
@@ -488,6 +536,8 @@ export function transformTitleChunkerParams(
     hierarchy: Number(hierarchyValue || 0),
     include_heading_content: Boolean(params.include_heading_content),
     root_chunk_as_heading: Boolean(params.root_chunk_as_heading),
+    table_context_size: Number(params.table_context_size ?? 0),
+    image_context_size: Number(params.image_context_size ?? 0),
     ...(chunkTokenCap === undefined || chunkTokenCap === null
       ? {}
       : { chunk_token_cap: Number(chunkTokenCap) }),
@@ -740,6 +790,9 @@ export const buildDslComponentsByGraph = (
         }
         case Operator.Categorize:
           params = buildCategorize(edges, nodes, id);
+          break;
+        case Operator.ScoredSwitch:
+          params = buildScoredSwitch(edges, nodes, id);
           break;
 
         case Operator.Switch: {
@@ -1009,6 +1062,15 @@ export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
       };
       return pre;
     }, {});
+  }
+  if (nodeData?.label === Operator.ScoredSwitch) {
+    form.escalate_to = [];
+    if (Array.isArray(form.options)) {
+      form.options = form.options.map((option: Record<string, any>) => ({
+        ...option,
+        to: [],
+      }));
+    }
   }
 
   return {

@@ -70,7 +70,7 @@ const ChatApiKeyModal = ({
                       <TableCell className="font-medium break-all">
                         {tokenItem.token}
                       </TableCell>
-                      <TableCell>{formatDate(tokenItem.create_date)}</TableCell>
+                      <TableCell>{formatDate(tokenItem.create_time)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <CopyToClipboard text={tokenItem.token} />

@@ -19,6 +19,20 @@ int main() {
     const fs::path opencc_path = resource_path / "opencc";
     fs::create_directories(opencc_path);
 
+    const fs::path invalid_opencc_path = resource_path / "invalid_opencc";
+    fs::create_directories(invalid_opencc_path);
+    bool rejected_missing_config = false;
+    try {
+        OpenCC missing_config(invalid_opencc_path.string());
+    } catch (const std::exception&) {
+        rejected_missing_config = true;
+    }
+    if (!rejected_missing_config) {
+        std::cerr << "OpenCC accepted a missing configuration in an existing directory\n";
+        fs::remove_all(resource_path);
+        return 1;
+    }
+
     {
         std::ofstream config(opencc_path / "zht2zhs.ini");
         config << "title = test\n"

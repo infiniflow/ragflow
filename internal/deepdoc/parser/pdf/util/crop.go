@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"sort"
 
 	"go.uber.org/zap"
 
@@ -635,6 +636,21 @@ func CropMediaSectionPositions(positions []pdf.Position, decodedImages map[int]i
 		}
 	}
 	plan.segments = body
+	// Captions are appended to source metadata after the primary region, so
+	// stitch in page and reading order. The parser canonicalizes section
+	// positions, but serialized _pdf_positions can come from any parser
+	// backend: the renderer enforces the order it stitches in instead of
+	// trusting the caller.
+	sort.SliceStable(plan.segments, func(i, j int) bool {
+		a, b := plan.segments[i], plan.segments[j]
+		if a.page != b.page {
+			return a.page < b.page
+		}
+		if a.y0 != b.y0 {
+			return a.y0 < b.y0
+		}
+		return a.x0 < b.x0
+	})
 	if len(plan.segments) == 0 {
 		return ""
 	}

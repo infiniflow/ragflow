@@ -47,9 +47,9 @@ var credentialQueryParams = map[string]struct{}{
 }
 
 // validateURLForSSRF parses rawURL and rejects any target whose host
-// resolves (via DNS) to a non-public IP. The check is repeated against
-// every returned A/AAAA record because a name that resolves to a mix
-// of public and private IPs is also dangerous (DNS-rebinding /
+// resolves (via DNS) to a non-public IP unless ALLOW_ANY_HOST is enabled.
+// The check covers every returned A/AAAA record because a name that resolves
+// to a mix of public and private IPs is also dangerous (DNS-rebinding /
 // multi-A-record pinning).
 func validateURLForSSRF(rawURL string) error {
 	_, _, err := ResolveAndValidate(rawURL)
@@ -57,7 +57,8 @@ func validateURLForSSRF(rawURL string) error {
 }
 
 // ResolveAndValidate parses rawURL, performs the SSRF blocklist checks,
-// and returns the first non-public IP that the host resolves to. The
+// and returns the first validated IP that the host resolves to. ALLOW_ANY_HOST
+// permits non-public addresses while preserving scheme and DNS checks. The
 // returned IP is safe to dial directly (bypassing a fresh DNS lookup)
 // which defeats DNS-rebinding attacks: an attacker cannot swap a
 // public record for a private one between this lookup and the connect,
@@ -153,17 +154,16 @@ func isNonGlobalIP(ip net.IP) bool {
 	return err != nil
 }
 
-// allowAnyHost reports the in-memory test override. ValidateDBHost also
-// honors ALLOW_ANY_HOST; ResolveAndValidate does not.
+// allowAnyHost reads the shared environment opt-in for private addresses.
 func allowAnyHost() bool {
-	return common.AllowAnyHostForTest
+	return common.AllowConfiguredPrivateHost()
 }
 
 // ValidateDBHost parses host (literal IP or DNS name), verifies it
-// resolves only to public IPs, and returns the validated address as a
-// string. The returned value is safe to pass to a SQL driver instead
-// of the original hostname so the connection is pinned at the
-// transport layer — closing the DNS-rebinding window between
+// resolves only to public IPs unless ALLOW_ANY_HOST is enabled, and returns
+// the validated address as a string. The returned value is safe to pass to a
+// SQL driver instead of the original hostname so the connection is pinned
+// at the transport layer — closing the DNS-rebinding window between
 // validation and the actual TCP connect. Mirrors the SSRF guard
 // applied to `test_db_connection` (PR #15609, Python
 // agent/tools/exesql.py).
@@ -179,14 +179,8 @@ func ValidateDBHost(host string) (string, error) {
 		return "", fmt.Errorf("%w: empty host", ErrSSRFBlocked)
 	}
 
-	// Operator opt-in. ResolveAndValidate does not use this path, so
-	// user-controlled URLs stay strict.
 	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
 		return pinned, err
-	}
-	// In-memory test hook. Still resolve so the SQL dial stays pinned.
-	if allowAnyHost() {
-		return common.ResolveHostPin(host)
 	}
 
 	// Short-circuit the well-known host aliases DNS lookups may also

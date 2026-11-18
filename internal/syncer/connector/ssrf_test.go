@@ -525,7 +525,7 @@ func TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback(t *testing.T) {
 
 // TestAssertConnectorHostSafeHonorsAllowAnyHost checks that a private
 // connector host is pinned when ALLOW_ANY_HOST is set, and that URL
-// connector checks stay strict.
+// connector checks honor the same opt-in.
 func TestAssertConnectorHostSafeHonorsAllowAnyHost(t *testing.T) {
 	t.Setenv(common.EnvAllowAnyHost, "1")
 	connectorAllowLoopbackForTest = false
@@ -533,7 +533,10 @@ func TestAssertConnectorHostSafeHonorsAllowAnyHost(t *testing.T) {
 
 	orig := common.LookupHost
 	common.LookupHost = func(host string) ([]string, error) {
-		if host == "host.docker.internal" {
+		if ip := net.ParseIP(host); ip != nil {
+			return []string{ip.String()}, nil
+		}
+		if host == "host.docker.internal" || host == "localhost" {
 			return []string{"192.168.65.254"}, nil
 		}
 		return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
@@ -555,8 +558,15 @@ func TestAssertConnectorHostSafeHonorsAllowAnyHost(t *testing.T) {
 	if _, err = assertConnectorHostSafe("missing.internal"); err == nil {
 		t.Fatal("unresolvable host must still fail when ALLOW_ANY_HOST is set")
 	}
-	if err = validateConnectorURL("http://10.0.0.5/x"); err == nil {
-		t.Fatal("ALLOW_ANY_HOST must not relax URL connector checks")
+	for _, rawURL := range []string{"http://10.0.0.5/x", "http://host.docker.internal/x", "http://localhost/x"} {
+		if err = validateConnectorURL(rawURL); err != nil {
+			t.Fatalf("validateConnectorURL(%q) = %v, want nil when ALLOW_ANY_HOST is set", rawURL, err)
+		}
+	}
+	for _, rawURL := range []string{"ftp://10.0.0.5/x", "http:///path", "http://missing.internal/x"} {
+		if err = validateConnectorURL(rawURL); err == nil {
+			t.Fatalf("validateConnectorURL(%q) must still fail when ALLOW_ANY_HOST is set", rawURL)
+		}
 	}
 }
 

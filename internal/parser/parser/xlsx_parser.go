@@ -52,7 +52,6 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -70,7 +69,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 
 func normalizeXLSXParseMethod(raw string) string {
 	method := strings.ToLower(strings.TrimSpace(raw))
-	if method == "tcadp parser" {
+	if method == "tcadp parser" || method == "tcadp" {
 		return "tcadp"
 	}
 	// "deepdoc" / "deepdoc parser" is the default spreadsheet parse_method

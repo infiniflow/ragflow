@@ -21,15 +21,17 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"strconv"
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
@@ -49,8 +51,8 @@ type KBServiceIface interface {
 
 // ModelCreator supplies typed model instances to Dify retrieval.
 type ModelCreator interface {
-	NewEmbeddingModel(ctx context.Context, access service.Identity, modelRef string) (*modelModule.EmbeddingModel, error)
-	NewDefaultChatModel(ctx context.Context, access service.Identity) (*modelModule.ChatModel, error)
+	NewEmbeddingModel(ctx context.Context, modelRef string) (*modelModule.EmbeddingModel, error)
+	NewDefaultChatModel(ctx context.Context) (*modelModule.ChatModel, error)
 }
 
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
@@ -99,6 +101,18 @@ type difyMetadataCondition struct {
 	Logic      string          `json:"logic"`
 }
 
+func canIncludeDifyKnowledgeGraph(readableDocumentIDs []string, totalDocuments int64, hasMetadataFilter bool) bool {
+	if hasMetadataFilter || totalDocuments <= 0 || int64(len(readableDocumentIDs)) != totalDocuments {
+		return false
+	}
+	for _, documentID := range readableDocumentIDs {
+		if documentID == service.NoMatchDocIDSentinel {
+			return false
+		}
+	}
+	return true
+}
+
 // toMetaFilterConditions converts Dify-format conditions to internal MetaFilterConditions.
 func (c difyMetadataCondition) toMetaFilterConditions() []service.MetaFilterCondition {
 	if len(c.Conditions) == 0 {
@@ -130,7 +144,7 @@ type difyRecord struct {
 // --- Handler ---
 
 type resourcePermissionChecker interface {
-	CheckResource(context.Context, permission.Subject, permission.ResourceRef, permission.Operation) error
+	CheckResource(context.Context, permission.ResourceRef, permission.Operation) error
 }
 
 // DifyRetrievalHandler handles Dify-compatible retrieval requests.
@@ -169,16 +183,16 @@ func NewDifyRetrievalHandler(
 // Retrieval handles POST/GET /api/v1/dify/retrieval.
 // Matches Python: api/apps/restful_apis/dify_retrieval_api.py::retrieval()
 func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
-	user, errCode, errMsg := GetUser(c)
+	_, errCode, errMsg := GetUser(c)
 	if errCode != common.CodeSuccess {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, errCode, nil, errMsg)
+		common.Respond(c, http.StatusUnauthorized, errCode, nil, errMsg)
 		return
 	}
 
 	var req difyRetrievalRequest
 	if c.Request.Method == http.MethodGet {
 		if err := c.ShouldBindQuery(&req); err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid query parameters")
+			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid query parameters: "+err.Error())
 			return
 		}
 		// Manually extract top_k and score_threshold from query (flat params, not nested)
@@ -200,28 +214,32 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		}
 	} else {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid request body")
+			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid request body: "+err.Error())
 			return
 		}
 	}
 
 	if req.KnowledgeID == "" || req.Query == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "knowledge_id and query are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "knowledge_id and query are required")
 		return
 	}
 
 	ctx := c.Request.Context()
+	if err := compliance.ValidateQuestion(ctx, req.Query); err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 	kb, err := h.kbSvc.GetKnowledgebaseByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
+			common.Respond(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
 		} else {
-			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "failed to query knowledge base")
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, "failed to query knowledge base: "+err.Error())
 		}
 		return
 	}
 
-	if err := h.permissionChecker.CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KnowledgeID}, permission.OperationUse); err != nil {
+	if err := h.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KnowledgeID}, permission.OperationUse); err != nil {
 		respondHTTPPermissionError(c, err, false)
 		return
 	}
@@ -238,17 +256,17 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	pageSize := 1024
 	if topK != nil {
 		if *topK < 1 || *topK > 1024 {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be between 1 and 1024")
+			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be between 1 and 1024")
 			return
 		}
 		pageSize = *topK
 	}
 
 	// Get embedding model
-	access := service.Identity{UserID: user.ID, TenantID: kb.TenantID}
-	embModel, err := h.modelFactory.NewEmbeddingModel(ctx, access, kb.EmbdID)
+	ctx = permission.WithTenantID(ctx, kb.TenantID)
+	embModel, err := h.modelFactory.NewEmbeddingModel(ctx, kb.EmbdID)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
 		return
 	}
 
@@ -257,7 +275,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// actually supplied, and matched nothing, narrow the search to the
 	// no-match sentinel.
 	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs(ctx, []string{req.KnowledgeID})
-	docIDs := make([]string, 0)
+	var docIDs []string
 	if metaErr == nil && req.MetadataCondition != nil && len(req.MetadataCondition.Conditions) > 0 {
 		logic := req.MetadataCondition.Logic
 		if logic == "" {
@@ -268,6 +286,15 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		if len(docIDs) == 0 {
 			docIDs = []string{service.NoMatchDocIDSentinel}
 		}
+	}
+	docIDs, err = service.ListReadableDocumentIDs(ctx, []string{req.KnowledgeID}, docIDs)
+	if err != nil {
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to resolve readable documents: %v", err))
+		return
+	}
+	readableDocumentIDs := append([]string(nil), docIDs...)
+	if len(docIDs) == 0 {
+		docIDs = []string{service.NoMatchDocIDSentinel}
 	}
 
 	// Hand the label result over unconditionally: an empty map says "issue no
@@ -281,36 +308,50 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// Keep 64 as the floor so a small top_k still ranks the same candidates.
 	rerankWindow := max(pageSize, 64)
 	sr := &nlp.RetrievalRequest{
-		Question:              req.Query,
-		TenantIDs:             []string{kb.TenantID},
-		KbIDs:                 []string{req.KnowledgeID},
-		DocIDs:                docIDs,
-		Page:                  1,
-		PageSize:              pageSize,
-		RerankCandidatesCount: &rerankWindow,
-		KNNTopK:               topK,
-		SimilarityThreshold:   scoreThreshold,
-		EmbeddingModel:        embModel,
-		Language:              entity.KnowledgebasesLanguage(kbs),
+		Question:                   req.Query,
+		TenantIDs:                  []string{kb.TenantID},
+		KbIDs:                      []string{req.KnowledgeID},
+		DocIDs:                     docIDs,
+		DocumentPermissionsChecked: true,
+		Page:                       1,
+		PageSize:                   pageSize,
+		RerankCandidatesCount:      &rerankWindow,
+		KNNTopK:                    topK,
+		SimilarityThreshold:        scoreThreshold,
+		EmbeddingModel:             embModel,
+		Language:                   entity.KnowledgebasesLanguage(kbs),
 	}
 	sr.RankFeature = &rankFeature
 
 	result, err := h.retrievalSvc.Retrieval(c.Request.Context(), sr)
 	if err != nil {
 		if strings.Contains(err.Error(), "not_found") {
-			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "No chunk found! Check the chunk status please!")
+			common.Respond(c, http.StatusNotFound, common.CodeNotFound, nil, "No chunk found! Check the chunk status please!")
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
 
 	// Enrich with child chunks
 	chunks := nlp.RetrievalByChildren(result.Chunks, []string{kb.TenantID}, h.docEngine, c.Request.Context())
 
-	// KG retrieval (optional)
-	if req.UseKG {
-		chatModel, kgErr := h.modelFactory.NewDefaultChatModel(ctx, access)
+	// Graph rows aggregate content across source documents and cannot currently
+	// be filtered by the caller's readable document IDs. Include them only when
+	// the request is unfiltered and every document in the dataset is readable.
+	hasMetadataFilter := req.MetadataCondition != nil && len(req.MetadataCondition.Conditions) > 0
+	canReadWholeDataset := false
+	if req.UseKG && !hasMetadataFilter && len(readableDocumentIDs) > 0 {
+		var totalDocuments int64
+		if err := dao.DB.WithContext(ctx).Model(&entity.Document{}).
+			Where("kb_id = ?", req.KnowledgeID).Count(&totalDocuments).Error; err != nil {
+			common.Warn("KG retrieval: failed to check readable document coverage", zap.String("kbID", req.KnowledgeID), zap.Error(err))
+		} else {
+			canReadWholeDataset = canIncludeDifyKnowledgeGraph(readableDocumentIDs, totalDocuments, hasMetadataFilter)
+		}
+	}
+	if req.UseKG && canReadWholeDataset {
+		chatModel, kgErr := h.modelFactory.NewDefaultChatModel(ctx)
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))
 		} else if chatModel != nil {
@@ -347,7 +388,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		var docs []*entity.Document
 		docs, err = h.docDAO.GetByIDs(ctx, dao.DB, allDocIDs)
 		if err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to load documents: %v", err))
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to load documents: %v", err))
 			return
 		}
 		for _, d := range docs {
@@ -409,5 +450,5 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 // HealthCheck Health check returns a simple health check response.
 func (h *DifyRetrievalHandler) HealthCheck(c *gin.Context) {
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }

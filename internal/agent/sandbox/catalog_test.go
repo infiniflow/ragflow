@@ -10,10 +10,10 @@ import (
 
 func TestCatalogOrderAndFreshSchemas(t *testing.T) {
 	providers := ListProviders()
-	if len(providers) != 7 {
-		t.Fatalf("provider count = %d, want 7", len(providers))
+	if len(providers) != 8 {
+		t.Fatalf("provider count = %d, want 8", len(providers))
 	}
-	for i, want := range []string{"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "local"} {
+	for i, want := range []string{"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "kosa8", "local"} {
 		if got := providers[i]["id"]; got != want {
 			t.Errorf("provider %d = %v, want %q", i, got, want)
 		}
@@ -41,6 +41,7 @@ func TestCatalogValidationBoundaries(t *testing.T) {
 		"e2b":                    {"api_key": "key"},
 		"tenki":                  {"api_key": "key", "timeout": 30, "max_lifetime": 3600, "max_output_bytes": 1024, "max_artifact_bytes": 1024},
 		"ucloud_agent_sandbox":   {"api_key": "key"},
+		"kosa8":                  {"api_key": "key", "timeout": 30, "max_lifetime": 3600},
 	}
 	for provider, base := range baselines {
 		t.Run(provider, func(t *testing.T) {
@@ -169,6 +170,15 @@ func TestValidateConfigTypesRangesAndProviderRules(t *testing.T) {
 	}
 	if err := ValidateConfig("ucloud_agent_sandbox", map[string]any{"api_key": "key", "template": ""}); err == nil {
 		t.Fatal("empty UCloud template accepted")
+	}
+	if err := ValidateConfig("kosa8", map[string]any{"api_key": "key", "base_url": "http://kosa8.example.com"}); err == nil {
+		t.Fatal("plain-HTTP kosa8 endpoint accepted")
+	}
+	if err := ValidateConfig("kosa8", map[string]any{"api_key": "key", "timeout": 601}); err == nil {
+		t.Fatal("kosa8 timeout above 600 accepted")
+	}
+	if err := ValidateConfig("kosa8", map[string]any{"api_key": "key", "python_template": " "}); err == nil {
+		t.Fatal("empty kosa8 template accepted")
 	}
 }
 

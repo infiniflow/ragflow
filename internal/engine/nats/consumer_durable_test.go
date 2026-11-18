@@ -25,15 +25,20 @@ import (
 	"ragflow/internal/common"
 )
 
+// defaultConsumerName is the default lane's task consumer (RAGFLOW_CONSUMER).
+func defaultConsumerName() string {
+	return tierStreams[defaultTier()].consumerName
+}
+
 func assertDurableTaskConsumer(t *testing.T, queue *NatsEngine) {
 	t.Helper()
-	consumer, err := queue.stream.Consumer(t.Context(), taskConsumerName)
+	consumer, err := queue.stream.Consumer(t.Context(), defaultConsumerName())
 	if err != nil {
 		t.Fatalf("task consumer: %v", err)
 	}
 	cfg := consumer.CachedInfo().Config
-	if cfg.Durable != taskConsumerName {
-		t.Errorf("Durable = %q, want %q", cfg.Durable, taskConsumerName)
+	if cfg.Durable != defaultConsumerName() {
+		t.Errorf("Durable = %q, want %q", cfg.Durable, defaultConsumerName())
 	}
 	if cfg.InactiveThreshold != 0 {
 		t.Errorf("InactiveThreshold = %s, want 0 (never reaped)", cfg.InactiveThreshold)
@@ -56,10 +61,10 @@ func TestInitConsumer_ReplacesEphemeralConsumer(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	ephemeral, err := queue.stream.CreateOrUpdateConsumer(t.Context(), jetstream.ConsumerConfig{
-		Name:          taskConsumerName,
+		Name:          defaultConsumerName(),
 		AckPolicy:     jetstream.AckExplicitPolicy,
 		MaxDeliver:    16,
-		FilterSubject: "tasks.>",
+		FilterSubject: common.TaskSubject,
 		AckWait:       60 * time.Second,
 	})
 	if err != nil {
@@ -108,7 +113,7 @@ func TestNatsMessageHandle_NumDelivered(t *testing.T) {
 }
 
 func TestTaskConsumerMaxDeliverMatchesIngestorLimit(t *testing.T) {
-	consumer, err := newTaskQueue(t).stream.Consumer(t.Context(), taskConsumerName)
+	consumer, err := newTaskQueue(t).stream.Consumer(t.Context(), defaultConsumerName())
 	if err != nil {
 		t.Fatalf("task consumer: %v", err)
 	}

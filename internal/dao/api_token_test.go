@@ -64,7 +64,7 @@ func TestAPI4ConversationDAOGetBySessionID(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
 	ctx := t.Context()
-	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "session-1", "agent-1")
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "session-1", "agent-1", true)
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestAPI4ConversationDAOGetBySessionIDWrongAgent(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
 	ctx := t.Context()
-	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "session-1", "agent-2")
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "session-1", "agent-2", true)
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestAPI4ConversationDAOGetBySessionIDNoRows(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
 	ctx := t.Context()
-	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "missing-session", "agent-1")
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "missing-session", "agent-1", true)
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}

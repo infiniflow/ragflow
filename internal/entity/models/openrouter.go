@@ -68,13 +68,7 @@ func (o *OpenRouterModel) ChatWithMessages(ctx context.Context, modelName string
 	}
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
-	if chatModelConfig != nil {
-		if chatModelConfig.Effort != nil {
-			reqBody["reasoning"] = map[string]interface{}{
-				"effort": chatModelConfig.Effort,
-			}
-		}
-	}
+	applyOpenRouterReasoningConfig(reqBody, chatModelConfig)
 
 	body, err := o.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
@@ -110,20 +104,29 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
-	if modelConfig != nil {
-		if modelConfig.Thinking != nil {
-			reqBody["reasoning"] = map[string]interface{}{"enabled": *modelConfig.Thinking}
-		}
-		if modelConfig.Effort != nil {
-			reqBody["reasoning"] = map[string]interface{}{"effort": *modelConfig.Effort}
-		}
-	}
+	applyOpenRouterReasoningConfig(reqBody, modelConfig)
 
 	return o.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
 		// OpenRouter emits reasoning under delta.reasoning (not
 		// delta.reasoning_content), so it uses its own ParserConfig.
 		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenRouterParserConfig, sender)
 	})
+}
+
+func applyOpenRouterReasoningConfig(reqBody map[string]any, config *ChatConfig) {
+	if config == nil {
+		return
+	}
+	reasoning := map[string]any{}
+	if config.Thinking != nil {
+		reasoning["enabled"] = *config.Thinking
+	}
+	if config.Effort != nil && (config.Thinking == nil || *config.Thinking) {
+		reasoning["effort"] = *config.Effort
+	}
+	if len(reasoning) > 0 {
+		reqBody["reasoning"] = reasoning
+	}
 }
 
 // OpenRouterEmbeddingResponse mirrors OpenRouter's embeddings response.
@@ -432,7 +435,7 @@ func (o *OpenRouterModel) TranscribeAudio(ctx context.Context, modelName *string
 }
 
 func (o *OpenRouterModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", o.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", o.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -499,17 +502,17 @@ func (o *OpenRouterModel) AudioSpeech(ctx context.Context, modelName *string, au
 }
 
 func (o *OpenRouterModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", o.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", o.Name())
 }
 
 // OCRFile OCR file
 func (o *OpenRouterModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", o.Name())
 }
 
 // ParseFile parse file
 func (o *OpenRouterModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", o.Name())
 }
 
 func (o *OpenRouterModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -632,13 +635,13 @@ func (o *OpenRouterModel) CheckConnection(ctx context.Context, apiConfig *APICon
 }
 
 func (o *OpenRouterModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", o.Name())
 }
 
 func (o *OpenRouterModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", o.Name())
 }
 
 func (o *OpenRouterModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", o.Name())
 }

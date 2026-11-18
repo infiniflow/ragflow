@@ -6,6 +6,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/permission/testsupport"
@@ -57,7 +58,10 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 			if err := testsupport.PrepareEnterprisePermissionFixture(db, "owner", "owner", "member"); err != nil {
 				t.Fatalf("prepare permission fixture: %v", err)
 			}
-			ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: tt.userID, TenantID: "owner"})
+			if tt.name == "member team" {
+				grantChunkDocumentReadWrite(t, db, "owner", "member", "doc-1")
+			}
+			ctx := permission.WithIdentity(t.Context(), tt.userID, "owner")
 			for _, op := range []struct {
 				name string
 				run  func(*ChunkService) error
@@ -68,17 +72,17 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 					}}
 					_, err := s.Get(ctx, &service.GetChunkRequest{
 						DatasetID: "kb-1", DocumentID: "doc-1", ChunkID: "chunk-1",
-					}, tt.userID)
+					})
 					return err
 				}},
 				{"list", func(s *ChunkService) error {
 					s.docEngine = &listChunksSearchEngine{}
-					_, err := s.List(ctx, &service.ListChunksRequest{DatasetID: "kb-1", DocID: "doc-1"}, tt.userID)
+					_, err := s.List(ctx, &service.ListChunksRequest{DatasetID: "kb-1", DocID: "doc-1"})
 					return err
 				}},
 				{"switch", func(s *ChunkService) error {
 					s.docEngine = &updateChunkTestEngine{}
-					return s.SwitchChunks(ctx, tt.userID, "kb-1", "doc-1", 0, []string{"chunk-1"})
+					return s.SwitchChunks(ctx, "kb-1", "doc-1", 0, []string{"chunk-1"})
 				}},
 				{"update", func(s *ChunkService) error {
 					s.docEngine = &updateChunkTestEngine{existingChunk: map[string]interface{}{
@@ -86,11 +90,34 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 					}}
 					return s.UpdateChunk(ctx, &service.UpdateChunkRequest{
 						DatasetID: "kb-1", DocumentID: "doc-1", ChunkID: "chunk-1",
-					}, tt.userID)
+					})
 				}},
 				{"remove", func(s *ChunkService) error {
 					s.docEngine = &parseTestDocEngine{}
-					_, err := s.RemoveChunks(ctx, &service.RemoveChunksRequest{DatasetID: "kb-1", DocID: "doc-1", DeleteAll: true}, tt.userID)
+					_, err := s.RemoveChunks(ctx, &service.RemoveChunksRequest{DatasetID: "kb-1", DocID: "doc-1", DeleteAll: true})
+					return err
+				}},
+				{"add", func(s *ChunkService) error {
+					s.docEngine = &addChunkTestEngine{}
+					s.getKnowledgebaseByIDFunc = func(id string) (*entity.Knowledgebase, error) {
+						return &entity.Knowledgebase{ID: id, TenantID: "owner", EmbdID: "embedding"}, nil
+					}
+					s.getEmbeddingModelFunc = func(string, string) (*models.EmbeddingModel, error) {
+						driver := &stubEmbeddingDriver{embeddings: []models.EmbeddingData{
+							{Embedding: []float64{1, 2}},
+							{Embedding: []float64{3, 4}},
+						}}
+						modelName := "embedding"
+						return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
+					}
+					s.tokenizeFunc = func(text, _ string) (string, error) { return text, nil }
+					s.fineGrainedTokenizeFunc = func(text, _ string) (string, error) { return text, nil }
+					s.numTokensFunc = func(text string) int { return len(text) }
+					s.incrementChunkStatsFunc = func(string, string, int64, int64, float64) error { return nil }
+					s.markWikiDirtyFunc = func(string, string, string, []string) {}
+					_, err := s.AddChunk(ctx, &service.AddChunkRequest{
+						DatasetID: "kb-1", DocumentID: "doc-1", Content: "chunk body",
+					})
 					return err
 				}},
 			} {

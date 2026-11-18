@@ -1,4 +1,8 @@
-import { MessageType, WebSearchProvider } from '@/constants/chat';
+import {
+  ChatSessionSource,
+  MessageType,
+  WebSearchProvider,
+} from '@/constants/chat';
 import { IAttachment } from '@/hooks/use-send-message';
 
 export interface IDocumentDownloadInfo {
@@ -49,6 +53,7 @@ export interface PromptConfig {
   brave_api_key?: string;
   exa_api_key?: string;
   firecrawl_api_key?: string;
+  keirolabs_api_key?: string;
   linkup_api_key?: string;
   parallel_api_key?: string;
   querit_api_key?: string;
@@ -102,19 +107,23 @@ export interface IDialog {
   prompt_type: string;
   status: string;
   tenant_id: string;
+  user_id?: string;
   update_date: string;
   update_time: number;
   keywords_similarity_weight?: number;
   similarity_threshold: number;
   top_k: number;
   top_n: number;
+  meta_data_filter?: MetaDataFilter;
+  operator_permission: number;
+  nickname: string;
+  prefetch_size: number;
   rerank_candidates_count: number;
   rerank_id?: string;
   tenant_rerank_id?: string;
-  meta_data_filter: MetaDataFilter;
 }
 
-interface MetaDataFilter {
+export interface MetaDataFilter {
   manual: Manual[];
   method: string;
 }
@@ -133,6 +142,7 @@ export interface IConversation {
   avatar: string;
   messages: Message[];
   name: string;
+  source: ChatSessionSource;
   update_date: string;
   update_time: number;
   is_new: true;
@@ -158,11 +168,17 @@ export interface Message {
 export interface IReferenceChunk {
   citation_id?: string;
   id: string;
+  chunk_id?: string;
   content: null;
+  content_with_weight?: string;
   document_id: string;
+  doc_id?: string;
   document_name: string;
+  docnm_kwd?: string;
   dataset_id: string;
+  kb_id?: string;
   image_id: string;
+  img_id?: string;
   similarity: number;
   vector_similarity: number;
   term_similarity: number;

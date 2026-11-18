@@ -61,7 +61,7 @@ func assertNativeOCRTextAndImage(t *testing.T, result parser.ParseResult) {
 // reading of canvases saved before the ocr_enabled switch existed.
 func TestMaybeDispatchImageNativeOCRWithoutVision(t *testing.T) {
 	registerNativeOCRModels(t)
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
+	result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL,
 		"picture_ocr.png", pictureOCRFixture, nil, defaultSetups(), false, visionSettings{})
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestMaybeDispatchImageNativeOCRWithoutVision(t *testing.T) {
 // would only ever be exercised against a fake analyzer.
 func TestMaybeDispatchImageNativeOCRWithSwitch(t *testing.T) {
 	registerNativeOCRModels(t)
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
+	result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL,
 		"picture_ocr.png", pictureOCRFixture, nil, imageSetupsWithSwitch(true), false, visionSettings{})
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestMaybeDispatchImageNativeOCRWithSwitch(t *testing.T) {
 // dispatch says so instead of failing silently.
 func TestMaybeDispatchImageNativeSwitchOffRunsNoOCR(t *testing.T) {
 	registerNativeOCRModels(t)
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
+	result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL,
 		"picture_ocr.png", pictureOCRFixture, nil, imageSetupsWithSwitch(false), false, visionSettings{})
 	if err != nil || result.Err != nil {
 		t.Fatalf("degraded config must not error: err = %v, result.Err = %v", err, result.Err)

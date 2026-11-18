@@ -29,11 +29,8 @@ import (
 	"ragflow/internal/entity"
 )
 
-// The datasets API mirrors the Python contract, whose error bodies always
-// carry the three keys `code`, `data` and `message` (api/utils/api_utils.py
-// get_json_result). These tests pin the `data` key on CreateDataset error
-// branches and keep UpdateDataset from writing a second response after
-// parseJSONRequestObject already answered.
+// Dataset errors omit absent data. Malformed requests must receive exactly
+// one JSON response, including when parseJSONRequestObject already answered.
 
 func newDatasetErrorResponseRouter(method, path string, handlerFn func(*gin.Context)) *gin.Engine {
 	gin.SetMode(gin.TestMode)
@@ -45,7 +42,7 @@ func newDatasetErrorResponseRouter(method, path string, handlerFn func(*gin.Cont
 	return r
 }
 
-func assertDatasetErrorBodyHasDataKey(t *testing.T, r *gin.Engine, method, target, body string, wantCode common.ErrorCode) map[string]interface{} {
+func assertDatasetErrorBodyOmitsData(t *testing.T, r *gin.Engine, method, target, body string, wantCode common.ErrorCode) map[string]interface{} {
 	t.Helper()
 
 	resp := httptest.NewRecorder()
@@ -64,8 +61,8 @@ func assertDatasetErrorBodyHasDataKey(t *testing.T, r *gin.Engine, method, targe
 	if gotCode, ok := parsed["code"].(float64); !ok || int(gotCode) != int(wantCode) {
 		t.Fatalf("code=%v want=%d body=%s", parsed["code"], int(wantCode), resp.Body.String())
 	}
-	if _, ok := parsed["data"]; !ok {
-		t.Fatalf("error body lost the `data` key (Python get_json_result always sends it): body=%s", resp.Body.String())
+	if _, ok := parsed["data"]; ok {
+		t.Fatalf("error body must omit absent data: body=%s", resp.Body.String())
 	}
 	if _, ok := parsed["message"].(string); !ok {
 		t.Fatalf("error body lost the `message` key: body=%s", resp.Body.String())
@@ -73,49 +70,49 @@ func assertDatasetErrorBodyHasDataKey(t *testing.T, r *gin.Engine, method, targe
 	return parsed
 }
 
-func TestCreateDatasetExtraFieldKeepsDataInBody(t *testing.T) {
+func TestCreateDatasetExtraFieldOmitsData(t *testing.T) {
 	r := newDatasetErrorResponseRouter(http.MethodPost, "/api/v1/datasets", func(c *gin.Context) {
 		h := &DatasetsHandler{}
 		h.CreateDataset(c)
 	})
 
-	body := assertDatasetErrorBodyHasDataKey(t, r, http.MethodPost, "/api/v1/datasets",
+	body := assertDatasetErrorBodyOmitsData(t, r, http.MethodPost, "/api/v1/datasets",
 		`{"name":"kb","ext":{}}`, common.CodeArgumentError)
 	if body["message"] != "extra inputs are not permitted: ext" {
 		t.Fatalf("message=%v", body["message"])
 	}
 }
 
-func TestCreateDatasetUnknownFieldKeepsDataInBody(t *testing.T) {
+func TestCreateDatasetUnknownFieldOmitsData(t *testing.T) {
 	r := newDatasetErrorResponseRouter(http.MethodPost, "/api/v1/datasets", func(c *gin.Context) {
 		h := &DatasetsHandler{}
 		h.CreateDataset(c)
 	})
 
-	body := assertDatasetErrorBodyHasDataKey(t, r, http.MethodPost, "/api/v1/datasets",
+	body := assertDatasetErrorBodyOmitsData(t, r, http.MethodPost, "/api/v1/datasets",
 		`{"name":"kb","bogus_field":1}`, common.CodeArgumentError)
 	if body["message"] != "extra inputs are not permitted: bogus_field" {
 		t.Fatalf("message=%v", body["message"])
 	}
 }
 
-func TestCreateDatasetMalformedJSONKeepsDataInBody(t *testing.T) {
+func TestCreateDatasetMalformedJSONOmitsData(t *testing.T) {
 	r := newDatasetErrorResponseRouter(http.MethodPost, "/api/v1/datasets", func(c *gin.Context) {
 		h := &DatasetsHandler{}
 		h.CreateDataset(c)
 	})
 
-	assertDatasetErrorBodyHasDataKey(t, r, http.MethodPost, "/api/v1/datasets",
+	assertDatasetErrorBodyOmitsData(t, r, http.MethodPost, "/api/v1/datasets",
 		`{"name":`, common.CodeArgumentError)
 }
 
-func TestCreateDatasetMissingNameKeepsDataInBody(t *testing.T) {
+func TestCreateDatasetMissingNameOmitsData(t *testing.T) {
 	r := newDatasetErrorResponseRouter(http.MethodPost, "/api/v1/datasets", func(c *gin.Context) {
 		h := &DatasetsHandler{}
 		h.CreateDataset(c)
 	})
 
-	assertDatasetErrorBodyHasDataKey(t, r, http.MethodPost, "/api/v1/datasets",
+	assertDatasetErrorBodyOmitsData(t, r, http.MethodPost, "/api/v1/datasets",
 		`{"parser_config":{}}`, common.CodeDataError)
 }
 
@@ -139,31 +136,31 @@ func TestUpdateDatasetRespondsExactlyOnceOnMalformedRequest(t *testing.T) {
 	if gotCode, ok := parsed["code"].(float64); !ok || int(gotCode) != int(common.CodeArgumentError) {
 		t.Fatalf("code=%v want=%d body=%s", parsed["code"], int(common.CodeArgumentError), resp.Body.String())
 	}
-	if _, ok := parsed["data"]; !ok {
-		t.Fatalf("error body lost the `data` key: body=%s", resp.Body.String())
+	if _, ok := parsed["data"]; ok {
+		t.Fatalf("error body must omit absent data: body=%s", resp.Body.String())
 	}
 }
 
-func TestDeleteDatasetsExtraFieldKeepsDataInBody(t *testing.T) {
+func TestDeleteDatasetsExtraFieldOmitsData(t *testing.T) {
 	r := newDatasetErrorResponseRouter(http.MethodDelete, "/api/v1/datasets", func(c *gin.Context) {
 		h := &DatasetsHandler{}
 		h.DeleteDatasets(c)
 	})
 
-	body := assertDatasetErrorBodyHasDataKey(t, r, http.MethodDelete, "/api/v1/datasets",
+	body := assertDatasetErrorBodyOmitsData(t, r, http.MethodDelete, "/api/v1/datasets",
 		`{"ids":["a"],"bogus":1}`, common.CodeArgumentError)
 	if body["message"] != "extra inputs are not permitted: bogus" {
 		t.Fatalf("message=%v", body["message"])
 	}
 }
 
-func TestDeleteDatasetsDuplicateIDsKeepsDataInBody(t *testing.T) {
+func TestDeleteDatasetsDuplicateIDsOmitsData(t *testing.T) {
 	r := newDatasetErrorResponseRouter(http.MethodDelete, "/api/v1/datasets", func(c *gin.Context) {
 		h := &DatasetsHandler{}
 		h.DeleteDatasets(c)
 	})
 
-	body := assertDatasetErrorBodyHasDataKey(t, r, http.MethodDelete, "/api/v1/datasets",
+	body := assertDatasetErrorBodyOmitsData(t, r, http.MethodDelete, "/api/v1/datasets",
 		`{"ids":["a","a"]}`, common.CodeArgumentError)
 	if body["message"] != "duplicate ids: 'a'" {
 		t.Fatalf("message=%v", body["message"])
@@ -187,7 +184,7 @@ func TestDeleteDatasetsRespondsExactlyOnceOnMalformedRequest(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
 		t.Fatalf("response body is not one JSON object (a second response was appended): %v body=%s", err, resp.Body.String())
 	}
-	if _, ok := parsed["data"]; !ok {
-		t.Fatalf("error body lost the `data` key: body=%s", resp.Body.String())
+	if _, ok := parsed["data"]; ok {
+		t.Fatalf("error body must omit absent data: body=%s", resp.Body.String())
 	}
 }

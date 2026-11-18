@@ -44,11 +44,10 @@ func setupUserListDB(t *testing.T) *gorm.DB {
 	}
 	created := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	createdAt := created.UnixMilli()
-	role := int32(7)
 	users := []entity.User{
-		{ID: "a", Email: "alice@example.com", Nickname: "Reader", IsActive: "1", RoleID: &role, Status: userListTestString("0")},
+		{ID: "a", Email: "alice@example.com", Nickname: "Reader", IsActive: "1", Status: userListTestString("0")},
 		{ID: "b", Email: "bob@example.com", Nickname: "ALICE", IsActive: "0"},
-		{ID: "c", Email: "carol@example.com", Nickname: "100%_Ready!", IsActive: "1", RoleID: &role},
+		{ID: "c", Email: "carol@example.com", Nickname: "100%_Ready!", IsActive: "1"},
 	}
 	for i := range users {
 		users[i].CreateTime = &createdAt
@@ -147,7 +146,7 @@ func TestUserListCreationTimeOrder(t *testing.T) {
 
 func TestUserListCountsCallerConditionsBeforePagination(t *testing.T) {
 	db := setupUserListDB(t)
-	query := db.Where("user.role_id = ?", 7)
+	query := db.Where("user.id <> ?", "b")
 	active := true
 	users, total, err := NewUserDAO().List(t.Context(), query, UserListOptions{Active: &active, Offset: 1, Limit: 1})
 	if err != nil || total != 2 || len(users) != 1 || users[0].ID != "c" {
@@ -163,14 +162,14 @@ func TestUserListCountsCallerConditionsBeforePagination(t *testing.T) {
 func TestUserListQueryDryRun(t *testing.T) {
 	db := setupUserListDB(t)
 	inactive := false
-	query := userListQuery(t.Context(), db.Session(&gorm.Session{DryRun: true}).Where("user.role_id = ?", 7), "a%_", &inactive)
+	query := userListQuery(t.Context(), db.Session(&gorm.Session{DryRun: true}).Where("user.id <> ?", "b"), "a%_", &inactive)
 	result := query.Find(&[]entity.User{})
 	sql := result.Statement.SQL.String()
 	if !strings.Contains(sql, "LOWER(`user`.`email`) LIKE ? ESCAPE '!' OR LOWER(`user`.`nickname`) LIKE ? ESCAPE '!'") ||
 		!strings.Contains(sql, "`user`.`is_active` = ?") || strings.Contains(sql, "`user`.`status`") {
 		t.Fatalf("unexpected SQL: %s", sql)
 	}
-	if !reflect.DeepEqual(result.Statement.Vars, []interface{}{7, "%a!%!_%", "%a!%!_%", "0"}) {
+	if !reflect.DeepEqual(result.Statement.Vars, []interface{}{"b", "%a!%!_%", "%a!%!_%", "0"}) {
 		t.Fatalf("unexpected bindings: %#v", result.Statement.Vars)
 	}
 }

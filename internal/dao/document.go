@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao/transaction"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"strings"
 
 	"gorm.io/gorm"
@@ -127,6 +128,7 @@ type DocumentListOptions struct {
 	Name               string
 	DocIDs             []string
 	DocIDFilterApplied bool
+	AccessScope        *permission.QueryScope
 	CreateTimeFrom     int64
 	CreateTimeTo       int64
 	OrderBy            string
@@ -310,6 +312,9 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 	}
 
 	query = query.Where(column("kb_id")+" = ?", opts.KbID)
+	if opts.AccessScope != nil {
+		query = opts.AccessScope.Apply(query)
+	}
 	if strings.TrimSpace(opts.Keywords) != "" {
 		query = query.Where("LOWER("+column("name")+") LIKE ?", "%"+strings.ToLower(strings.TrimSpace(opts.Keywords))+"%")
 	}
@@ -512,10 +517,23 @@ func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(ctx context.Context, db *gor
 	return &document, err
 }
 
-// CountByTenantID counts documents by tenant ID
+// CountByTenantID counts documents belonging to datasets owned by a tenant.
 func (dao *DocumentDAO) CountByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
 	var count int64
-	err := db.WithContext(ctx).Model(&entity.Document{}).Where("created_by = ?", tenantID).Count(&count).Error
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Joins("JOIN knowledgebase ON knowledgebase.id = document.kb_id").
+		Where("knowledgebase.tenant_id = ?", tenantID).
+		Count(&count).Error
+	return count, err
+}
+
+// CountByUserID counts documents attributed to a user. created_by may contain
+// either a user ID or a tenant ID, so it is not a reliable user scope.
+func (dao *DocumentDAO) CountByUserID(ctx context.Context, db *gorm.DB, userID string) (int64, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Where("user_id = ?", userID).
+		Count(&count).Error
 	return count, err
 }
 

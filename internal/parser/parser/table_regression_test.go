@@ -26,9 +26,9 @@ func TestTableRegressionMarkdownMixedBackticksKeepTrailingCells(t *testing.T) {
 }
 
 func TestTableRegressionDOCXCaptionAfterNestedTable(t *testing.T) {
-	ir := `{"sections":[{"elements":[{"type":"text_box","content":[{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Nested"}]}]}]}]}]},{"type":"paragraph","content":[{"type":"text","text":"Outer Caption"}]},{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Outer"}]}]}]}]}]}]}`
+	ir := `{"sections":[{"elements":[{"type":"text_box","content":[{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Nested"}]}]}]}]}]},{"type":"paragraph","style":"Caption","content":[{"type":"text","text":"Outer Caption"}]},{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Outer"}]}]}]}]}]}]}`
 
-	after := buildDOCXJSONSectionsWithCaptions(ir, nil, []string{"Outer Caption"})
+	after := buildDOCXJSONSections(ir, nil)
 	if len(after) != 2 {
 		t.Fatalf("expected two tables without duplicate caption text: %#v", after)
 	}
@@ -37,17 +37,16 @@ func TestTableRegressionDOCXCaptionAfterNestedTable(t *testing.T) {
 			if tableRowsContain(td, "Nested") && td.Caption != "" {
 				t.Error("nested table stole the outer caption")
 			}
-			if tableRowsContain(td, "Outer") && td.Caption != "Outer Caption" {
+			if tableRowsContain(td, "Outer") && td.Caption != "Outer Caption" { // caption from preceding Caption-styled paragraph
 				t.Error("outer table lost its caption")
 			}
 		}
 	}
 }
 
-func TestTableRegressionMarkdownFlattenBesideTable(t *testing.T) {
+func TestTableRegressionMarkdownImageBesideTable(t *testing.T) {
 	source := "![logo](data:image/png;base64,aGVsbG8=) Before <table><tr><td>A</td><td>B</td></tr></table> After"
 	p, _ := NewMarkdownParser(GoMarkdown)
-	p.FlattenMediaToText = true
 	after := p.ParseWithResult(t.Context(), "x.md", []byte(source))
 	if after.Err != nil || len(after.JSON) == 0 {
 		t.Fatalf("result=%+v", after)
@@ -56,9 +55,6 @@ func TestTableRegressionMarkdownFlattenBesideTable(t *testing.T) {
 	for _, item := range after.JSON {
 		if item.ToMap()["image"] != nil {
 			payloads++
-		}
-		if item.ToMap()["doc_type_kwd"] == "image" {
-			t.Error("flatten_media_to_text ignored")
 		}
 	}
 	if payloads != 1 {
@@ -148,7 +144,7 @@ func TestTableRegressionMarkdownRawHTMLImageBudget(t *testing.T) {
 	doc := markdownNew().Parse([]byte(source))
 	budget := newMediaBudgetForTest()
 	var items []map[string]any
-	walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{budget: budget})
+	walkMarkdownBlocksWithImages(t.Context(), doc, &items, true, &htmlWalkState{budget: budget})
 	images := 0
 	for _, item := range items {
 		if item["doc_type_kwd"] == "image" && item["image"] != nil {

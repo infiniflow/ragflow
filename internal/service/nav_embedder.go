@@ -19,7 +19,9 @@ package service
 import (
 	"context"
 	"fmt"
+
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"strings"
 )
 
@@ -59,12 +61,11 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 	}
 	name := e.embdModelName
 	var model *modelModule.EmbeddingModel
-	access := Identity{TenantID: tenantID}
 	var err error
 	if name == "" {
-		model, err = e.modelFactory.NewDefaultEmbeddingModel(ctx, access)
+		model, err = e.modelFactory.NewDefaultEmbeddingModel(permission.WithTenantID(ctx, tenantID))
 	} else {
-		model, err = e.modelFactory.NewEmbeddingModel(ctx, access, name)
+		model, err = e.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), name)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)

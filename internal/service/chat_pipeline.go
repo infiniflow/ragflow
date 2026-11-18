@@ -21,12 +21,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
+
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	ragprompts "ragflow/internal/rag/prompts"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/graph"
@@ -221,7 +225,6 @@ type ThinkEvent struct {
 //   - kwargs: extra parameters (doc_ids, knowledge, quote, etc.).
 func (s *ChatPipelineService) AsyncChat(
 	ctx context.Context,
-	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -243,7 +246,19 @@ func (s *ChatPipelineService) AsyncChat(
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
-	if err := validateChatDatasetAccess(ctx, userID, chat.KBIDs); err != nil {
+	if err := validateChatDatasetAccess(ctx, chat.KBIDs); err != nil {
+		return nil, err
+	}
+	question, err := NormalizeOpenAIMessageContent(lastMsg["content"])
+	if err != nil {
+		return nil, err
+	}
+	if err := compliance.ValidateQuestion(ctx, question); err != nil {
+		if ctx.Err() != nil {
+			out := make(chan AsyncChatResult)
+			close(out)
+			return out, nil
+		}
 		return nil, err
 	}
 
@@ -292,12 +307,12 @@ func (s *ChatPipelineService) AsyncChat(
 		if useWebSearch {
 			ctx = agentic_rag.WithWebSearch(ctx, s.webSearchFunc(chat.PromptConfig))
 		}
-		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, quoteEnabled(kwargs, chat.PromptConfig))
+		return s.agenticRag(ctx, chat, messages, stream, kwargs, quoteEnabled(kwargs, chat.PromptConfig))
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
 	if !hasKBs && !useWebSearch {
-		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
+		return s.AsyncChatSolo(ctx, chat, messages, stream, kwargs)
 	}
 	if kwargs == nil {
 		kwargs = make(map[string]interface{})
@@ -461,7 +476,7 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 			}
 			var images []string
-			textAttachmentsList, images = splitFileAttachments(ctx, userID, files, modelType == "image2text")
+			textAttachmentsList, images = splitFileAttachments(ctx, files, modelType == "image2text")
 			imageFiles, hasImageAttachments = gateImageAttachments(chat.LLMID, modelType, images)
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			// Log counts only: attachment payloads are base64 images or
@@ -475,7 +490,7 @@ func (s *ChatPipelineService) AsyncChat(
 		var historyImageFiles []string
 		for _, previous := range messages[:len(messages)-1] {
 			if previous["role"] == "user" && previous["files"] != nil {
-				_, images := s.splitChatAttachments(ctx, userID, previous["files"])
+				_, images := s.splitChatAttachments(ctx, previous["files"])
 				modelType, _ := llmModelConfig["model_type"].(string)
 				images, _ = gateImageAttachments(chat.LLMID, modelType, images)
 				historyImageFiles = append(historyImageFiles, images...)
@@ -877,7 +892,13 @@ func (s *ChatPipelineService) AsyncChat(
 				kbinfos["chunks"] = served
 			}
 		}
-		knowledges = s.kbPrompt(kbinfos, modelMaxTokens)
+		// The passages get what the window leaves after the system prompt, the
+		// citation rules appended to it and the completion reserve.
+		chatCfg := BuildChatConfig(chat, kwargs)
+		systemTemplate, _ := promptConfig["system"].(string)
+		modelMaxOutput, _ := llmModelConfig["max_output"].(int)
+		reserve := completionReserve(chatCfg, modelMaxOutput, modelMaxTokens)
+		knowledges = s.kbPrompt(kbinfos, s.knowledgeTokenBudget(modelMaxTokens, systemTemplate, kwargs, quote, reserve))
 		common.Info("Phase 10: Build LLM Request")
 		common.Debug("Knowledge prompt",
 			zap.String("question", strings.Join(questions, " ")),
@@ -907,10 +928,7 @@ func (s *ChatPipelineService) AsyncChat(
 		//      otherwise see an empty reply.
 		if emptyResponseApplies(len(knowledges), attachments, hasImageAttachments) {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
-				finalReference := kbinfos
-				if !quote {
-					finalReference = map[string]interface{}{}
-				}
+				finalReference := emptyResponseReference(kbinfos, knowledges, quote)
 				if !sendResult(AsyncChatResult{
 					Answer:    emptyResp,
 					Reference: map[string]interface{}{},
@@ -1013,7 +1031,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// Fit messages within token budget.
 		usedTokenCount, llmMessages := s.messageFitIn(llmMessages, int(float64(modelMaxTokens)*0.95))
 		for i := range llmMessages[:len(llmMessages)-1] {
-			llmMessages[i] = s.chatHistoryMessage(ctx, userID, llmMessages[i], modelType, factoryName)
+			llmMessages[i] = s.chatHistoryMessage(ctx, llmMessages[i], modelType, factoryName)
 		}
 		common.Debug("Messages fitted in token budget",
 			zap.Int("model max_tokens", modelMaxTokens),
@@ -1051,7 +1069,6 @@ func (s *ChatPipelineService) AsyncChat(
 			return
 		}
 
-		chatCfg := BuildChatConfig(chat, kwargs)
 		// The citation template joins the prompt only when the request is issued
 		// (prompt+prompt4citation, below), which is after messageFitIn sized the
 		// window — so its tokens are added here by hand. They are deliberately NOT
@@ -1475,7 +1492,6 @@ func (s *ChatPipelineService) deepResearchProgressCallback(ctx context.Context, 
 // Equivalent to Python's async_chat_solo() in dialog_service.py:289-337.
 func (s *ChatPipelineService) AsyncChatSolo(
 	ctx context.Context,
-	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -1537,7 +1553,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
 				var images []string
-				attachmentsStr, images = s.splitChatAttachments(ctx, userID, files)
+				attachmentsStr, images = s.splitChatAttachments(ctx, files)
 				imageFiles, _ = gateImageAttachments(chat.LLMID, modelType, images)
 				common.Info("AsyncChatSolo: file attachments resolved",
 					zap.Bool("vision_model", isImage2Text),
@@ -1554,7 +1570,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				continue
 			}
 			if i < len(messages)-1 {
-				m = s.chatHistoryMessage(ctx, userID, m, modelType, factoryName)
+				m = s.chatHistoryMessage(ctx, m, modelType, factoryName)
 			}
 			llmMessage := normalizeLLMMessage(m)
 			content := llmMessage["content"]
@@ -1572,12 +1588,12 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Construct the selected chat model through the factory.
-		access := Identity{UserID: userID, TenantID: chat.TenantID}
+		modelCtx := permission.WithTenantID(ctx, chat.TenantID)
 		var chatModel *modelModule.ChatModel
 		if strings.TrimSpace(chat.LLMID) == "" {
-			chatModel, err = s.ModelFactory.NewDefaultChatModel(ctx, access)
+			chatModel, err = s.ModelFactory.NewDefaultChatModel(modelCtx)
 		} else {
-			chatModel, err = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
+			chatModel, err = s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 		}
 		if err != nil {
 			sendResult(AsyncChatResult{
@@ -1591,7 +1607,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		var ttsModel *modelModule.TTSModel
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
-				ttsModel, err = s.ModelFactory.NewDefaultTTSModel(ctx, access)
+				ttsModel, err = s.ModelFactory.NewDefaultTTSModel(modelCtx)
 				if err != nil || ttsModel == nil {
 					common.Warn("AsyncChatSolo: TTS lookup failed; proceeding without TTS",
 						zap.String("tenant_id", chat.TenantID),
@@ -1829,13 +1845,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 //
 // Downstream ConvertLastUserMsgToMultimodal → parseDataURIOrB64 accepts the
 // returned data URIs directly.
-func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, userID string, files interface{}) (string, []string) {
+func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, files interface{}) (string, []string) {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
 		// this FileService MUST NOT be used for DeleteFiles.
 		fileSvc := file.NewFileService(nil)
-		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
+		texts, images, err := fileSvc.GetFileContents(ctx, fileDicts)
 		if err != nil {
 			common.Warn("GetFileContents failed in splitChatAttachments",
 				zap.Error(err))
@@ -2071,13 +2087,13 @@ func tokenizeText(text string) string {
 // models reject them at the provider (e.g. Zhipu GLM error 1210:
 // messages.content.type only allows 'text').
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
-	access := Identity{TenantID: chat.TenantID}
+	ctx = permission.WithTenantID(ctx, chat.TenantID)
 	var info *modelModule.ModelInfo
 	var err error
 	if strings.TrimSpace(chat.LLMID) == "" {
-		info, err = s.ModelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
+		info, err = s.ModelFactory.ResolveDefaultInfo(ctx, entity.ModelTypeChat)
 	} else {
-		info, err = s.ModelFactory.ResolveInfo(ctx, access, entity.ModelTypeChat, chat.LLMID)
+		info, err = s.ModelFactory.ResolveInfo(ctx, entity.ModelTypeChat, chat.LLMID)
 	}
 	if err != nil {
 		return nil, "", "", "", err
@@ -2096,8 +2112,8 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 
 // buildLLMModelConfig returns only the public metadata needed by RAG's token
 // fitting and attachment dispatch. The persisted legacy max_tokens value is
-// the input/context budget; generated output limits are enforced by ChatModel
-// against ModelInfo.MaxOutput.
+// the input/context budget; max_output is the catalog output limit, which
+// sizes the completion reserve and which ChatModel enforces on generation.
 func (s *ChatPipelineService) buildLLMModelConfig(info *modelModule.ModelInfo) (map[string]interface{}, string, string, string, error) {
 	if info == nil {
 		return nil, "", "", "", fmt.Errorf("chat model metadata is unavailable")
@@ -2110,6 +2126,7 @@ func (s *ChatPipelineService) buildLLMModelConfig(info *modelModule.ModelInfo) (
 		"model_type":  "chat",
 		"llm_name":    info.Name,
 		"max_tokens":  contextLength,
+		"max_output":  info.MaxOutput,
 		"llm_factory": info.ProviderName,
 	}
 	return cfg, info.Name, info.ProviderName, "", nil
@@ -2153,7 +2170,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 		if kbs[0].EmbdID != "" {
 			embdTenantID := kbs[0].TenantID
-			model, err := s.ModelFactory.NewEmbeddingModel(ctx, Identity{TenantID: embdTenantID}, kbs[0].EmbdID)
+			model, err := s.ModelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, embdTenantID), kbs[0].EmbdID)
 			if err != nil {
 				common.Warn("Failed to get embedding model for chat retrieval",
 					zap.String("embdID", kbs[0].EmbdID),
@@ -2166,25 +2183,25 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	}
 
 	// Chat model.
-	access := Identity{TenantID: chat.TenantID}
+	modelCtx := permission.WithTenantID(ctx, chat.TenantID)
 	var chatModel *modelModule.ChatModel
 	if strings.TrimSpace(chat.LLMID) == "" {
-		chatModel, _ = s.ModelFactory.NewDefaultChatModel(ctx, access)
+		chatModel, _ = s.ModelFactory.NewDefaultChatModel(modelCtx)
 	} else {
-		chatModel, _ = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
+		chatModel, _ = s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 	}
 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankModel, _ = s.ModelFactory.NewRerankModel(ctx, access, chat.RerankID)
+		rerankModel, _ = s.ModelFactory.NewRerankModel(modelCtx, chat.RerankID)
 	}
 
 	// TTS model.
 	var ttsModel *modelModule.TTSModel
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
-			ttsModel, _ = s.ModelFactory.NewDefaultTTSModel(ctx, access)
+			ttsModel, _ = s.ModelFactory.NewDefaultTTSModel(modelCtx)
 		}
 	}
 
@@ -2259,6 +2276,18 @@ func emptyResponseApplies(knowledgeCount int, attachments string, imageAttachmen
 	return knowledgeCount == 0 && attachments == "" && !imageAttachments
 }
 
+// emptyResponseReference is the reference the empty-response fallback closes
+// the stream with. With citations off it is empty. With citations on it is the
+// retrieval result, unless retrieval returned chunks but none of them entered
+// the prompt (no room in the knowledge budget): then it is empty too, so the
+// client never gets sources for passages the answer could not have used.
+func emptyResponseReference(kbinfos map[string]interface{}, knowledges []string, quote bool) map[string]interface{} {
+	if !quote || (len(knowledges) == 0 && len(chunksFromKBInfos(kbinfos)) > 0) {
+		return map[string]interface{}{}
+	}
+	return kbinfos
+}
+
 // splitFileAttachments mirrors Python's `split_file_attachments` at
 // dialog_service.py:371-392. It separates `messages[-1]["files"]`
 // into text-file content and image attachments.
@@ -2276,13 +2305,13 @@ func emptyResponseApplies(knowledgeCount int, attachments string, imageAttachmen
 //     URIs → image files.
 //     - raw=true: all items go to textAttachments (Python's FileService.get_files
 //     with raw=True pre-separates images, so non-image content arrives here).
-func splitFileAttachments(ctx context.Context, userID string, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
+func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
 	// ── Mode 1: file dicts (Python-compatible) ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
 		// this FileService MUST NOT be used for DeleteFiles.
 		fileSvc := file.NewFileService(nil)
-		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
+		texts, images, err := fileSvc.GetFileContents(ctx, fileDicts)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",
 				zap.Error(err))
@@ -2557,47 +2586,18 @@ func (s *ChatPipelineService) enrichChunksWithMetadata(ctx context.Context, kbin
 	s.MetadataSvc.EnrichChunksWithDocMetadata(ctx, chunks, tenantID, fields)
 }
 
-// kbPrompt builds knowledge prompt blocks from retrieved chunks.
-// Mirrors Python's kb_prompt() in rag/prompts/generator.py.
+// kbPrompt builds knowledge prompt blocks from retrieved chunks, keeping
+// blocks until their tokens, headers included, pass 97% of maxTokens. A
+// non-positive maxTokens leaves no room for any block.
 func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens int) []string {
 	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
-	if !ok || len(chunksRaw) == 0 {
+	if !ok || len(chunksRaw) == 0 || maxTokens <= 0 {
 		return nil
 	}
 
-	// Pass 1: count content tokens to determine how many chunks fit.
-	type chunkContent struct {
-		content string
-	}
-	contents := make([]chunkContent, 0, len(chunksRaw))
-	for _, ck := range chunksRaw {
-		c := getMapString(ck, "content_with_weight", "content")
-		if c == "" {
-			continue
-		}
-		contents = append(contents, chunkContent{content: c})
-	}
-
-	usedTokenCount := 0
-	chunksNum := 0
-	for _, cc := range contents {
-		usedTokenCount += graph.NumTokensFromString(cc.content)
-		chunksNum++
-		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
-			common.Warn("Not all the retrieval into prompt",
-				zap.Int("kept", chunksNum),
-				zap.Int("total", len(contents)))
-			break
-		}
-	}
-
-	// Pass 2: format chunks with tree structure, capped at chunksNum.
-	if chunksNum > len(chunksRaw) {
-		chunksNum = len(chunksRaw)
-	}
 	var result []string
-	for i := 0; i < chunksNum; i++ {
-		ck := chunksRaw[i]
+	usedTokenCount := 0
+	for i, ck := range chunksRaw {
 		c := getMapString(ck, "content_with_weight", "content")
 		if c == "" {
 			continue
@@ -2623,6 +2623,14 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 		cnt += "\n└── Content:\n"
 		cnt += c
 		result = append(result, cnt)
+
+		usedTokenCount += graph.NumTokensFromString(cnt)
+		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
+			common.Warn("Not all the retrieval into prompt",
+				zap.Int("kept", len(result)),
+				zap.Int("total", len(chunksRaw)))
+			break
+		}
 	}
 
 	return result
@@ -2744,11 +2752,11 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 	return result
 }
 
-func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, userID string, message map[string]interface{}, modelType, factory string) map[string]interface{} {
+func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, message map[string]interface{}, modelType, factory string) map[string]interface{} {
 	if message["role"] != "user" || message["files"] == nil {
 		return message
 	}
-	_, images := s.splitChatAttachments(ctx, userID, message["files"])
+	_, images := s.splitChatAttachments(ctx, message["files"])
 	images, _ = gateImageAttachments("", modelType, images)
 	msg := normalizeLLMMessage(message)
 	converted, err := common.ConvertLastUserMsgToMultimodal(msg, images, factory)
@@ -2790,15 +2798,15 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	access := Identity{TenantID: chat.TenantID}
+	modelCtx := permission.WithTenantID(ctx, chat.TenantID)
 	if strings.TrimSpace(chat.LLMID) == "" {
-		model, err := s.ModelFactory.NewDefaultChatModel(ctx, access)
+		model, err := s.ModelFactory.NewDefaultChatModel(modelCtx)
 		if err != nil {
 			return nil
 		}
 		return model
 	}
-	model, err := s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
+	model, err := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 	if err != nil {
 		return nil
 	}
@@ -3508,20 +3516,22 @@ func (s *ChatPipelineService) useSQL(
 		}
 	}
 
-	// Step 1.5: inject the kb_id WHERE filter for ES / OS / OceanBase.
-	// No-op for Infinity (the table name already encodes the KB scope).
-	// Mirrors add_kb_filter at dialog_service.py:992-1021, called from
-	// get_table right after normalize_sql.
+	// Step 1.5: constrain the SQL to the authorized kb_ids for ES / OS /
+	// OceanBase. No-op for Infinity (the table name already encodes the KB
+	// scope). When the scope cannot be enforced safely, skip SQL retrieval so
+	// the caller falls back to vector search instead of running an unfiltered
+	// query.
 	if filtered, ok := addKBFilter(sqlText, engineName, kbs); ok {
 		sqlText = filtered
 	} else {
-		common.Warn("SQL retrieval: invalid kb_id UUID; SQL will run unfiltered")
+		common.Warn("SQL retrieval: SQL cannot be scoped to the authorized datasets; falling back")
+		return nil, nil
 	}
 
 	// Step 2: try to execute. On failure, repair once with the
 	// engine-specific execution-error prompt so the LLM regenerates
 	// correctly (Flow B at dialog_service.py:1164-1205).
-	rows, execErr := docEngine.RunSQL(ctx, tableName, sqlText, kbIDStrings(kbs), "json")
+	rows, execErr := docEngine.RunSQL(ctx, sqlText, "json")
 	if execErr != nil {
 		common.Debug("SQL retrieval: initial execution failed, attempting repair",
 			zap.String("sql", sqlText), zap.Error(execErr))
@@ -3533,10 +3543,12 @@ func (s *ChatPipelineService) useSQL(
 			return nil, nil
 		}
 		// Re-apply the kb filter after the LLM-driven repair.
-		if filtered, ok := addKBFilter(repaired, engineName, kbs); ok {
-			repaired = filtered
+		filtered, ok := addKBFilter(repaired, engineName, kbs)
+		if !ok {
+			common.Warn("SQL retrieval: repaired SQL cannot be scoped to the authorized datasets; falling back")
+			return nil, nil
 		}
-		rows, execErr = docEngine.RunSQL(ctx, tableName, repaired, kbIDStrings(kbs), "json")
+		rows, execErr = docEngine.RunSQL(ctx, filtered, "json")
 		if execErr != nil {
 			common.Warn("SQL retrieval: repaired SQL also failed", zap.Error(execErr))
 			return nil, nil
@@ -3563,19 +3575,23 @@ func (s *ChatPipelineService) useSQL(
 			ctx, chatModel, sysPrompt, tableName, question, sqlText, expectedCol, engineName, fieldMap,
 		)
 		if repairErr == nil && repaired != "" {
-			// Re-apply the kb filter after the LLM-driven repair.
-			if filtered, ok := addKBFilter(repaired, engineName, kbs); ok {
-				repaired = filtered
-			}
-			repairedRows, repairedErr := docEngine.RunSQL(ctx, tableName, repaired, kbIDStrings(kbs), "json")
-			if repairedErr == nil && len(repairedRows) > 0 && hasSourceColumns(repairedRows) {
-				common.Debug("SQL retrieval: missing-columns repair succeeded",
-					zap.String("sql", repaired))
-				rows = repairedRows
-				sqlText = repaired
+			// Re-apply the kb filter after the LLM-driven repair. The current
+			// rows are already scope-safe, so when the repaired SQL cannot be
+			// scoped we keep them instead of running an unfiltered query.
+			filtered, ok := addKBFilter(repaired, engineName, kbs)
+			if !ok {
+				common.Warn("SQL retrieval: repaired SQL cannot be scoped to the authorized datasets; keeping the scoped result")
 			} else {
-				common.Warn("SQL retrieval: missing-columns repair did not yield source columns; using best-effort answer",
-					zap.String("sql", repaired))
+				repairedRows, repairedErr := docEngine.RunSQL(ctx, filtered, "json")
+				if repairedErr == nil && len(repairedRows) > 0 && hasSourceColumns(repairedRows) {
+					common.Debug("SQL retrieval: missing-columns repair succeeded",
+						zap.String("sql", filtered))
+					rows = repairedRows
+					sqlText = filtered
+				} else {
+					common.Warn("SQL retrieval: missing-columns repair did not yield source columns; using best-effort answer",
+						zap.String("sql", filtered))
+				}
 			}
 		} else if repairErr != nil {
 			common.Warn("SQL retrieval: missing-columns repair failed; using best-effort answer",
@@ -3634,23 +3650,257 @@ func isValidUUID(s string) bool {
 	return uuidRe.MatchString(s)
 }
 
-// addKBFilter injects a validated kb_id WHERE filter into sqlText for
-// ES / OS / OceanBase engines. Infinity is a no-op because the table
-// name already encodes the KB scope. Mirrors dialog_service.py:992-1021.
+// scalarWord is one unquoted SQL word plus its parenthesis depth.
+type scalarWord struct {
+	word       string
+	start, end int
+	depth      int
+}
+
+func isScalarWordStart(c byte) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
+}
+
+func isScalarWordByte(c byte) bool {
+	return isScalarWordStart(c) || c >= '0' && c <= '9' || c == '$'
+}
+
+// scalarDollarQuoteDelimiter returns the delimiter of a PostgreSQL dollar-quoted
+// string starting at start (either "$$" or "$tag$"). ok is false when start does
+// not open one, e.g. for the "$1" bind placeholder.
+func scalarDollarQuoteDelimiter(sqlText string, start int) (string, bool) {
+	i := start + 1
+	if i < len(sqlText) && sqlText[i] == '$' {
+		return "$$", true
+	}
+	if i >= len(sqlText) || !isScalarWordStart(sqlText[i]) {
+		return "", false
+	}
+	for i < len(sqlText) && (isScalarWordStart(sqlText[i]) || sqlText[i] >= '0' && sqlText[i] <= '9') {
+		i++
+	}
+	if i >= len(sqlText) || sqlText[i] != '$' {
+		return "", false
+	}
+	return sqlText[start : i+1], true
+}
+
+// sqlScanDialect selects the lexical differences between the engines
+// addKBFilter runs against. The scan never guesses: a construct it cannot skip
+// exactly makes it fail, which callers treat as "do not execute".
+type sqlScanDialect struct {
+	// backslashEscapes enables MySQL-family backslash escapes in quoted strings.
+	backslashEscapes bool
+	// hashLineComments treats "#" as a line comment (MySQL/OceanBase). It is
+	// refused rather than skipped because a "#" would swallow any filter the
+	// wrapper appends on the same line.
+	hashLineComments bool
+	// executableComments refuses "/*! ... */" (MySQL/OceanBase), whose contents
+	// the server executes and which could therefore hide a set operation.
+	executableComments bool
+	// dollarQuotes enables $$...$$ and $tag$...$tag$ literals (PostgreSQL).
+	dollarQuotes bool
+	// nestedBlockComments enables PostgreSQL's nested "/* /* */ */".
+	nestedBlockComments bool
+}
+
+func sqlScanDialectFor(engineName string) sqlScanDialect {
+	switch {
+	case engine.IsOceanBaseFamily(engineName):
+		return sqlScanDialect{backslashEscapes: true, hashLineComments: true, executableComments: true}
+	case engine.IsVastbase(engineName), engineName == string(engine.EngineSereneDB):
+		return sqlScanDialect{dollarQuotes: true, nestedBlockComments: true}
+	default:
+		// Elasticsearch / OpenSearch / unknown: standard literals only.
+		return sqlScanDialect{}
+	}
+}
+
+// scanScalarWords tokenizes sqlText, skipping quoted strings, quoted
+// identifiers, dollar-quoted strings, and comments. It records only unquoted
+// words plus their parenthesis depth, which is all that is needed to locate the
+// top-level WHERE clause without being fooled by keywords inside literals or
+// comments.
 //
-// Returns the (possibly modified) SQL and a boolean indicating whether
-// all kb_ids passed UUID validation. When validation fails, the SQL is
-// returned unchanged — the engine will likely reject the un-filtered
-// query, triggering the repair path (Python's `_assert_valid_uuid` raises
-// ValueError, which `get_table`'s try/except catches and routes to the
-// repair flow).
+// lineComments lists the byte ranges of line comments (from "--" to the
+// terminating newline or end of input). Callers use it to avoid appending SQL
+// onto a commented-out line.
 //
-// If the SQL already has a WHERE clause with `kb_id =`, the filter is
-// not duplicated. Otherwise a fresh WHERE is appended, or `kb_id = '...'
-// AND` is prepended to an existing WHERE.
+// Parentheses must balance: a ')' at depth 0 or a positive depth at the end
+// would let a predicate escape the wrapping parentheses, so both make the scan
+// fail. Unterminated literals and comments also fail so callers can fail closed
+// instead of guessing.
+func scanScalarWords(sqlText string, dialect sqlScanDialect) (words []scalarWord, lineComments [][2]int, ok bool) {
+	words = make([]scalarWord, 0, len(sqlText)/4)
+	depth := 0
+	for i := 0; i < len(sqlText); {
+		c := sqlText[i]
+		if c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' {
+			i++
+			continue
+		}
+		if c == '-' && i+1 < len(sqlText) && sqlText[i+1] == '-' {
+			// MySQL-family SQL treats "--" as a comment only when followed by
+			// whitespace or a control character. Otherwise it is SQL syntax.
+			if dialect.hashLineComments && (i+2 >= len(sqlText) || sqlText[i+2] > ' ') {
+				return nil, nil, false
+			}
+			start := i
+			i += 2
+			for i < len(sqlText) && sqlText[i] != '\n' && sqlText[i] != '\r' {
+				i++
+			}
+			lineComments = append(lineComments, [2]int{start, i})
+			continue
+		}
+		if dialect.hashLineComments && c == '#' {
+			// A "#" comment runs to end of line and would swallow anything the
+			// wrapper appends after it. Refuse instead of trying to place the
+			// filter around it.
+			return nil, nil, false
+		}
+		if c == '/' && i+1 < len(sqlText) && sqlText[i+1] == '*' {
+			if dialect.executableComments && i+2 < len(sqlText) && sqlText[i+2] == '!' {
+				// Executable comment: the server runs its contents, so the scan
+				// would not see statements (e.g. a UNION) hidden inside it.
+				return nil, nil, false
+			}
+			i += 2
+			commentDepth := 1
+			for i < len(sqlText) && commentDepth > 0 {
+				if i+1 < len(sqlText) && sqlText[i] == '/' && sqlText[i+1] == '*' {
+					if !dialect.nestedBlockComments {
+						return nil, nil, false
+					}
+					commentDepth++
+					i += 2
+					continue
+				}
+				if i+1 < len(sqlText) && sqlText[i] == '*' && sqlText[i+1] == '/' {
+					commentDepth--
+					i += 2
+					continue
+				}
+				i++
+			}
+			if commentDepth != 0 {
+				return nil, nil, false
+			}
+			continue
+		}
+		if c == '\'' || c == '"' || c == '`' {
+			quote := c
+			escapes := quote != '`' && dialect.backslashEscapes
+			if dialect.dollarQuotes && quote == '\'' && i > 0 &&
+				(sqlText[i-1] == 'E' || sqlText[i-1] == 'e') &&
+				(i == 1 || !isScalarWordByte(sqlText[i-2])) {
+				escapes = true // PostgreSQL E'...' escape string.
+			}
+			i++
+			closed := false
+			for i < len(sqlText) {
+				if sqlText[i] == '\\' && i+1 < len(sqlText) {
+					// OceanBase's SQL mode may make backslash an ordinary
+					// character. Refuse quote boundaries that depend on it.
+					if dialect.backslashEscapes && sqlText[i+1] == quote {
+						return nil, nil, false
+					}
+					if escapes {
+						i += 2
+						continue
+					}
+					// PostgreSQL's plain-string behavior depends on the server
+					// setting. Refuse ambiguous quote escapes in either mode.
+					if dialect.dollarQuotes && quote == '\'' && sqlText[i+1] == '\'' {
+						return nil, nil, false
+					}
+				}
+				if sqlText[i] == quote {
+					if i+1 < len(sqlText) && sqlText[i+1] == quote {
+						i += 2
+						continue
+					}
+					i++
+					closed = true
+					break
+				}
+				i++
+			}
+			if !closed {
+				return nil, nil, false
+			}
+			continue
+		}
+		if dialect.dollarQuotes && c == '$' {
+			if delim, isQuote := scalarDollarQuoteDelimiter(sqlText, i); isQuote {
+				bodyStart := i + len(delim)
+				closeOffset := strings.Index(sqlText[bodyStart:], delim)
+				if closeOffset < 0 {
+					return nil, nil, false
+				}
+				i = bodyStart + closeOffset + len(delim)
+				continue
+			}
+		}
+		if c == '(' {
+			depth++
+			i++
+			continue
+		}
+		if c == ')' {
+			// A ')' without a matching '(' means the predicate would close the
+			// wrapper early and let OR escape the injected scope.
+			if depth == 0 {
+				return nil, nil, false
+			}
+			depth--
+			i++
+			continue
+		}
+		if isScalarWordStart(c) {
+			start := i
+			i++
+			for i < len(sqlText) && isScalarWordByte(sqlText[i]) {
+				i++
+			}
+			words = append(words, scalarWord{
+				word:  strings.ToUpper(sqlText[start:i]),
+				start: start,
+				end:   i,
+				depth: depth,
+			})
+			continue
+		}
+		i++
+	}
+	if depth != 0 {
+		return nil, nil, false
+	}
+	return words, lineComments, true
+}
+
+// addKBFilter constrains sqlText to the caller's authorized kb_ids. Infinity is
+// a no-op because its table name already encodes the KB scope.
+//
+// The authorized filter is always ANDed onto the top-level predicate, with the
+// model's own predicate wrapped in parentheses. This means a model-written
+// `kb_id = '<other>'` is neutralized rather than trusted: the resulting
+// predicate is a contradiction and yields zero rows. The filter is never
+// skipped just because the text already mentions kb_id.
+//
+// Returns the rewritten SQL and whether the result is safe to execute. It
+// returns false when a kb_id is not a UUID, or when the statement shape cannot
+// be scoped safely (set operations, unterminated literals/comments). Callers
+// must not execute the SQL when it is false.
 func addKBFilter(sqlText, engineName string, kbs []*entity.Knowledgebase) (string, bool) {
 	if engineName == "infinity" || len(kbs) == 0 {
 		return sqlText, true
+	}
+	// ES and OceanBase remove backticks after this rewrite. Refuse them so
+	// engine preprocessing cannot expose SQL syntax hidden from the scan.
+	if strings.Contains(sqlText, "`") &&
+		(engine.IsOceanBaseFamily(engineName) || engineName == "elasticsearch" || engineName == "opensearch") {
+		return sqlText, false
 	}
 
 	// Validate all kb_ids as UUIDs.
@@ -3672,20 +3922,98 @@ func addKBFilter(sqlText, engineName string, kbs []*entity.Knowledgebase) (strin
 		kbFilter = "(" + strings.Join(parts, " OR ") + ")"
 	}
 
-	lower := strings.ToLower(sqlText)
-	if !strings.Contains(lower, "where ") {
-		// No WHERE clause: append one. Honor ORDER BY if present.
-		if oIdx := strings.Index(lower, "order by"); oIdx >= 0 {
-			sqlText = sqlText[:oIdx] + " WHERE " + kbFilter + "  order by " + sqlText[oIdx+len("order by"):]
-		} else {
-			sqlText += " WHERE " + kbFilter
-		}
-	} else if !strings.Contains(lower, "kb_id =") && !strings.Contains(lower, "kb_id=") {
-		// Has WHERE but no kb_id: insert "kb_id = '...' AND" after WHERE.
-		whereRe := regexp.MustCompile(`(?i)\bwhere\b `)
-		sqlText = whereRe.ReplaceAllString(sqlText, "where "+kbFilter+" and ")
+	// ES removes '%' before execution. Do the same before locating SQL clauses
+	// so that removal cannot create comments after the filter is injected.
+	if engineName == "elasticsearch" || engineName == "opensearch" {
+		sqlText = strings.ReplaceAll(sqlText, "%", "")
 	}
-	return sqlText, true
+
+	words, lineComments, ok := scanScalarWords(sqlText, sqlScanDialectFor(engineName))
+	if !ok {
+		return sqlText, false
+	}
+
+	// Set operations cannot be scoped from the first arm alone: the second arm
+	// would bypass the injected predicate. Refuse instead of guessing.
+	for _, w := range words {
+		if w.depth == 0 && (w.word == "UNION" || w.word == "INTERSECT" || w.word == "EXCEPT") {
+			return sqlText, false
+		}
+	}
+
+	whereIdx := -1
+	for i, w := range words {
+		if w.depth == 0 && w.word == "WHERE" {
+			whereIdx = i
+			break
+		}
+	}
+
+	// The predicate ends at the first top-level trailing clause after WHERE, or
+	// at end of statement. Comments after WHERE stay inside the predicate: they
+	// may sit mid-expression (`1=1 -- note\n OR 1=1`), and cutting there would
+	// leave the trailing OR outside the wrapper and make it always true.
+	endPos := len(sqlText)
+	scanFrom := 0
+	if whereIdx >= 0 {
+		scanFrom = whereIdx + 1
+	}
+	for i := scanFrom; i < len(words); i++ {
+		w := words[i]
+		if w.depth != 0 {
+			continue
+		}
+		switch w.word {
+		case "GROUP", "HAVING", "ORDER", "LIMIT", "OFFSET":
+			endPos = w.start
+		}
+		if endPos != len(sqlText) {
+			break
+		}
+	}
+
+	// A line comment running to the end of its line swallows anything appended
+	// on that line. When the insertion point falls at the end of such a
+	// comment, terminate the comment with a newline first so the injected text
+	// starts on a fresh line.
+	lineCommentSwallows := func(pos int) bool {
+		for _, lc := range lineComments {
+			if pos > lc[0] && pos <= lc[1] {
+				return true
+			}
+		}
+		return false
+	}
+
+	if whereIdx < 0 {
+		head := strings.TrimRight(sqlText[:endPos], " \t\r\n")
+		sep := " WHERE "
+		if lineCommentSwallows(len(head)) {
+			sep = "\nWHERE "
+		}
+		tail := strings.TrimSpace(sqlText[endPos:])
+		if tail != "" {
+			return head + sep + kbFilter + " " + tail, true
+		}
+		return head + sep + kbFilter, true
+	}
+
+	whereWord := words[whereIdx]
+	predicateRaw := sqlText[whereWord.end:endPos]
+	predicate := strings.TrimSpace(predicateRaw)
+	if predicate == "" {
+		return sqlText, false
+	}
+	closeParen := ")"
+	if lineCommentSwallows(whereWord.end + len(strings.TrimRight(predicateRaw, " \t\r\n"))) {
+		closeParen = "\n)"
+	}
+	rewritten := sqlText[:whereWord.start] +
+		"WHERE (" + predicate + closeParen + " AND (" + kbFilter + ")"
+	if tail := strings.TrimSpace(sqlText[endPos:]); tail != "" {
+		rewritten += " " + tail
+	}
+	return rewritten, true
 }
 
 // generateSQL calls the chat model to produce a SQL SELECT.
@@ -4113,35 +4441,57 @@ func extractSourceColumnIndexes(rows []map[string]interface{}) (docIDIdx, docNam
 	return
 }
 
-// WHERE-clause extraction for the aggregate secondary fetch.
-// Mirrors dialog_service.py:1321.
-var whereClauseRe = regexp.MustCompile(`(?i)\bwhere\b(.+?)(?:\bgroup by\b|\border by\b|\blimit\b|$)`)
-
-// limitClauseRe detects whether a SQL already has a LIMIT clause.
-var limitClauseRe = regexp.MustCompile(`(?i)\blimit\b`)
-
-// buildChunkFetchSQL extracts the WHERE clause from the original SQL
-// and constructs a secondary SQL to fetch source chunks. Mirrors
-// dialog_service.py:1327-1331. Returns ("", false) when no WHERE is
-// present. The `multiKB` flag controls whether `kb_id` is included
+// buildChunkFetchSQL extracts the top-level WHERE predicate from the original
+// SQL and constructs a secondary query to fetch source chunks. Returns
+// ("", false) when scanning fails or no predicate is present.
+// The `multiKB` flag controls whether `kb_id` is included
 // in the SELECT list (single-kb queries don't need it because the
 // caller already knows the kb_id).
-func buildChunkFetchSQL(originalSQL, tableName, expectedCol string, multiKB bool) (string, bool) {
-	m := whereClauseRe.FindStringSubmatch(originalSQL)
-	if len(m) < 2 {
+func buildChunkFetchSQL(originalSQL, tableName, expectedCol string, multiKB bool, engineName string) (string, bool) {
+	words, lineComments, ok := scanScalarWords(originalSQL, sqlScanDialectFor(engineName))
+	if !ok {
 		return "", false
 	}
-	where := strings.TrimSpace(m[1])
+	start, end := -1, len(originalSQL)
+predicate:
+	for _, word := range words {
+		if word.depth != 0 {
+			continue
+		}
+		if start < 0 {
+			if word.word == "WHERE" {
+				start = word.end
+			}
+			continue
+		}
+		switch word.word {
+		case "GROUP", "HAVING", "ORDER", "LIMIT", "OFFSET":
+			end = word.start
+			break predicate
+		}
+	}
+	if start < 0 {
+		return "", false
+	}
+	where := strings.TrimSpace(originalSQL[start:end])
+	if where == "" {
+		return "", false
+	}
 	kbCol := ""
 	if multiKB {
 		kbCol = ", kb_id"
 	}
 	sql := fmt.Sprintf("select doc_id, %s%s from %s where %s",
 		expectedCol, kbCol, tableName, where)
-	if !limitClauseRe.MatchString(sql) {
-		sql += " limit 20"
+	limitSeparator := " "
+	predicateEnd := len(strings.TrimRight(originalSQL[:end], " \t\r\n"))
+	for _, comment := range lineComments {
+		if predicateEnd > comment[0] && predicateEnd <= comment[1] {
+			limitSeparator = "\n"
+			break
+		}
 	}
-	return sql, true
+	return sql + limitSeparator + "limit 20", true
 }
 
 // toIfaceSlice converts a []map[string]interface{} to []interface{} for
@@ -4186,14 +4536,28 @@ func (s *ChatPipelineService) fetchAggregateChunks(
 		return nil, nil
 	}
 
-	chunksSQL, ok := buildChunkFetchSQL(originalSQL, tableName, expectedCol, multiKB)
+	engineName := docEngine.GetType()
+	chunksSQL, ok := buildChunkFetchSQL(originalSQL, tableName, expectedCol, multiKB, engineName)
 	if !ok {
 		common.Debug("SQL retrieval: aggregate secondary fetch skipped (no WHERE clause)",
 			zap.String("sql", originalSQL))
 		return nil, nil
 	}
 
-	rows, err := docEngine.RunSQL(ctx, tableName, chunksSQL, kbIDs, "json")
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	kbs := make([]*entity.Knowledgebase, len(kbIDs))
+	for i, kbID := range kbIDs {
+		kbs[i] = &entity.Knowledgebase{ID: kbID}
+	}
+	chunksSQL, ok = addKBFilter(chunksSQL, engineName, kbs)
+	if !ok {
+		common.Warn("SQL retrieval: aggregate secondary fetch cannot be scoped to the authorized datasets; skipping")
+		return nil, nil
+	}
+
+	rows, err := docEngine.RunSQL(ctx, chunksSQL, "json")
 	if err != nil {
 		common.Warn("SQL retrieval: aggregate secondary fetch failed",
 			zap.String("sql", chunksSQL), zap.Error(err))
@@ -4477,7 +4841,7 @@ func kbTenantIDStrings(kbs []*entity.Knowledgebase) []string {
 // per-request overrides) into a typed ChatConfig for the LLM driver.
 // Dialog values are read first; request config values win when present.
 func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelModule.ChatConfig {
-	cfg := &modelModule.ChatConfig{}
+	cfg := &modelModule.ChatConfig{Thinking: new(false)}
 
 	if dialog.LLMSetting != nil {
 		if v, ok := dialog.LLMSetting["stream"].(bool); ok {
@@ -4485,6 +4849,8 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		}
 		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
 			cfg.Thinking = &v
+		} else if v, ok := dialog.LLMSetting["thinking"].(string); ok {
+			cfg.Thinking = new(v == "enabled")
 		}
 		if v, ok := chatConfigPositiveInt(dialog.LLMSetting["max_tokens"]); ok {
 			i := v
@@ -4525,6 +4891,8 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		}
 		if v, ok := config["thinking"].(bool); ok {
 			cfg.Thinking = &v
+		} else if v, ok := config["thinking"].(string); ok {
+			cfg.Thinking = new(v == "enabled")
 		}
 		if v, ok := chatConfigPositiveInt(config["max_tokens"]); ok {
 			i := v
@@ -4560,6 +4928,43 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 	}
 
 	return cfg
+}
+
+// defaultCompletionReserve is the completion room kept when neither the chat
+// nor the model catalog sets an output limit. It matches the web UI model presets.
+const defaultCompletionReserve = 4096
+
+// completionReserve is the room kept for the answer in a window of
+// modelMaxTokens: the chat's max_tokens when set, honoured exactly; otherwise
+// the model's catalog output limit, else defaultCompletionReserve, both capped
+// at a quarter of the window so a large catalog limit cannot take it all.
+func completionReserve(cfg *modelModule.ChatConfig, modelMaxOutput, modelMaxTokens int) int {
+	if cfg != nil && cfg.MaxTokens != nil && *cfg.MaxTokens > 0 {
+		return *cfg.MaxTokens
+	}
+	reserve := defaultCompletionReserve
+	if modelMaxOutput > 0 {
+		reserve = modelMaxOutput
+	}
+	return min(reserve, modelMaxTokens/4)
+}
+
+// knowledgeTokenBudget is the room the retrieved passages may take in a window
+// of modelMaxTokens: what the system prompt, the citation rules sent after it
+// (when quoting) and the completion reserve leave. The system prompt is measured
+// as formatPrompt renders it from kwargs, with the knowledge left out, so a
+// prompt parameter carrying a large value is counted. formatPrompt writes the
+// passages at every {knowledge} of the template, and AsyncChat appends them once
+// to a template without one, so the room is split across those insertions.
+func (s *ChatPipelineService) knowledgeTokenBudget(modelMaxTokens int, systemTemplate string, kwargs map[string]interface{}, quote bool, reserve int) int {
+	params := maps.Clone(kwargs)
+	delete(params, "knowledge")
+	used := graph.NumTokensFromString(s.formatPrompt(systemTemplate, params)) + reserve
+	if quote {
+		used += graph.NumTokensFromString(ragprompts.CitationPrompt(""))
+	}
+	insertions := max(strings.Count(systemTemplate, "{knowledge}"), 1)
+	return max(modelMaxTokens-used, 0) / insertions
 }
 
 func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {

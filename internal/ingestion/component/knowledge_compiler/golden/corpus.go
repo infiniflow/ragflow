@@ -4,7 +4,7 @@
 //
 // The corpus is intentionally small and stable so that Go-side product counts
 // and clustering structure can be LOCKED as a required CI gate. When a live
-// Python baseline is available, the same corpus is fed to
+// baseline is available, the same corpus is fed to
 // rag/advanced_rag/knowlege_compile to produce the reference numbers recorded
 // beside the fixtures in this package.
 package golden

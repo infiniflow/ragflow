@@ -17,7 +17,8 @@
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -28,28 +29,14 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { LlmModelType } from '@/constants/knowledge';
-import { t } from 'i18next';
+import { cn } from '@/lib/utils';
 import { Funnel } from 'lucide-react';
+import { useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { NextInnerLLMSelectProps, NextLLMSelect } from './llm-select/next';
 import { Button } from './ui/button';
-
-const ModelTypes = [
-  {
-    title: t('flow.allModels'),
-    value: 'all',
-  },
-  {
-    title: t('flow.textOnlyModels'),
-    value: LlmModelType.Chat,
-  },
-  {
-    title: t('flow.multimodalModels'),
-    value: LlmModelType.Image2text,
-  },
-];
 
 export const LargeModelFilterFormSchema = {
   llm_filter: z.string().optional(),
@@ -57,17 +44,35 @@ export const LargeModelFilterFormSchema = {
 
 type LargeModelFormFieldProps = Pick<
   NextInnerLLMSelectProps,
-  'ownerTenantId'
+  'resourceTenantId'
 > & {
   name?: string;
 };
 export function LargeModelFormField({
-  ownerTenantId,
+  resourceTenantId,
   name = 'llm_id',
 }: LargeModelFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
   const filter = useWatch({ control: form.control, name: 'llm_filter' });
+
+  const modelTypes = useMemo(
+    () => [
+      {
+        title: t('flow.allModels'),
+        value: 'all',
+      },
+      {
+        title: t('flow.textOnlyModels'),
+        value: LlmModelType.Chat,
+      },
+      {
+        title: t('flow.multimodalModels'),
+        value: LlmModelType.Image2text,
+      },
+    ],
+    [t],
+  );
 
   return (
     <>
@@ -89,20 +94,29 @@ export function LargeModelFormField({
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant={'ghost'}>
-                            <Funnel className="text-text-disabled" />
+                            <Funnel
+                              className={cn(
+                                filter && filter !== 'all'
+                                  ? 'text-accent-primary'
+                                  : 'text-text-disabled',
+                              )}
+                            />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
-                          {ModelTypes.map((x) => (
-                            <DropdownMenuItem
-                              key={x.value}
-                              onClick={() => {
-                                field.onChange(x.value);
-                              }}
-                            >
-                              {x.title}
-                            </DropdownMenuItem>
-                          ))}
+                          <DropdownMenuRadioGroup
+                            value={field.value || 'all'}
+                            onValueChange={field.onChange}
+                          >
+                            {modelTypes.map((x) => (
+                              <DropdownMenuRadioItem
+                                key={x.value}
+                                value={x.value}
+                              >
+                                {x.title}
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </FormControl>
@@ -114,7 +128,7 @@ export function LargeModelFormField({
                 <NextLLMSelect
                   {...field}
                   filter={filter}
-                  ownerTenantId={ownerTenantId}
+                  resourceTenantId={resourceTenantId}
                 />
               </FormControl>
             </section>
@@ -129,13 +143,13 @@ export function LargeModelFormField({
 
 type LargeModelFormFieldWithoutFilterProps = Pick<
   NextInnerLLMSelectProps,
-  'triggerTestId' | 'optionTestIdPrefix' | 'ownerTenantId'
+  'triggerTestId' | 'optionTestIdPrefix' | 'resourceTenantId'
 >;
 
 export function LargeModelFormFieldWithoutFilter({
   triggerTestId,
   optionTestIdPrefix,
-  ownerTenantId,
+  resourceTenantId,
 }: LargeModelFormFieldWithoutFilterProps = {}) {
   const form = useFormContext();
 
@@ -150,7 +164,7 @@ export function LargeModelFormFieldWithoutFilter({
               {...field}
               triggerTestId={triggerTestId}
               optionTestIdPrefix={optionTestIdPrefix}
-              ownerTenantId={ownerTenantId}
+              resourceTenantId={resourceTenantId}
             />
           </FormControl>
           <FormMessage />

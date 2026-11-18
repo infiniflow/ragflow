@@ -60,7 +60,7 @@ func TestCompilationQueueCountsPreserveDuplicatesAndRouting(t *testing.T) {
 		}{
 			{"", 6}, {"Graph", 4}, {"Timeline", 3}, {"PageIndex", 2}, {"Wiki", 2},
 		} {
-			count, err := countCompilationStatusEntries(db, table, "kb", tc.kind)
+			count, err := countCompilationStatusEntries(t.Context(), db, table, "kb", tc.kind)
 			if err != nil || count != tc.want {
 				t.Fatalf("%s kind=%q count=%d want=%d err=%v", table, tc.kind, count, tc.want, err)
 			}
@@ -99,7 +99,7 @@ func TestGetDatasetCompilationStatus_NoRowIsIdle(t *testing.T) {
 	insertCompilationOwnerKB(t, "kb-no-row", "user-1")
 
 	st, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		withDatasetTestContext(t.Context(), "user-1", "user-1"), "user-1", "kb-no-row", "graph")
+		withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-no-row", "graph")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestGetDatasetCompilationStatus_FullOutput(t *testing.T) {
 	}
 
 	st, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		withDatasetTestContext(t.Context(), "user-1", "user-1"), "user-1", "kb-full", "graph")
+		withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-full", "graph")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestGetDatasetCompilationStatus_Unauthorized(t *testing.T) {
 	}
 
 	st, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		withDatasetTestContext(t.Context(), "user-2", "user-1"), "user-2", "kb-other", "graph")
+		withDatasetTestContext(t.Context(), "user-2", "user-1"), "kb-other", "graph")
 	if err == nil {
 		t.Fatalf("expected authorization error, got nil (status=%+v)", st)
 	}
@@ -211,7 +211,7 @@ func TestGetDatasetCompilationStatus_Unauthorized(t *testing.T) {
 func TestGetDatasetCompilationStatus_EmptyID(t *testing.T) {
 	setupCompilationStatusTestDB(t)
 	_, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		t.Context(), "user-1", "", "graph")
+		t.Context(), "", "graph")
 	if err == nil {
 		t.Fatal("expected error for empty dataset_id")
 	}

@@ -49,18 +49,18 @@ var tavilyNewlinePattern = regexp.MustCompile(`\n+`)
 // api_key may be omitted when the env var TAVILY_API_KEY is set; the tool
 // resolves it from the environment in that case.
 type tavilyParams struct {
-	APIKey                   string   `json:"api_key"`
-	Query                    string   `json:"query"`
-	MaxResults               int      `json:"max_results"`
-	SearchDepth              string   `json:"search_depth"`
-	Topic                    string   `json:"topic"`
-	Days                     int      `json:"days"`
-	IncludeAnswer            bool     `json:"include_answer"`
-	IncludeRawContent        bool     `json:"include_raw_content"`
-	IncludeImages            bool     `json:"include_images"`
-	IncludeImageDescriptions bool     `json:"include_image_descriptions"`
-	IncludeDomains           []string `json:"include_domains"`
-	ExcludeDomains           []string `json:"exclude_domains"`
+	APIKey                   string   `json:"api_key,omitempty" schema:"-"`
+	Query                    string   `json:"query" doc:"Search query" required:"true"`
+	MaxResults               int      `json:"max_results,omitempty" schema:"-"`
+	SearchDepth              string   `json:"search_depth,omitempty" schema:"-"`
+	Topic                    string   `json:"topic,omitempty" doc:"Search topic: \"general\" (default) or \"news\"."`
+	Days                     int      `json:"days,omitempty" schema:"-"`
+	IncludeAnswer            bool     `json:"include_answer,omitempty" schema:"-"`
+	IncludeRawContent        bool     `json:"include_raw_content,omitempty" schema:"-"`
+	IncludeImages            bool     `json:"include_images,omitempty" schema:"-"`
+	IncludeImageDescriptions bool     `json:"include_image_descriptions,omitempty" schema:"-"`
+	IncludeDomains           []string `json:"include_domains,omitempty" doc:"Domains that search results must include."`
+	ExcludeDomains           []string `json:"exclude_domains,omitempty" doc:"Domains that search results must exclude."`
 }
 
 // tavilyRequestBody is the JSON body POSTed to the Tavily /search endpoint.
@@ -93,10 +93,10 @@ type tavilyEnvelope struct {
 }
 
 type tavilyExtractParams struct {
-	APIKey       string `json:"api_key"`
-	URLs         any    `json:"urls"`
-	ExtractDepth string `json:"extract_depth"`
-	Format       string `json:"format"`
+	APIKey       string `json:"api_key,omitempty" schema:"-"`
+	URLs         any    `json:"urls" type:"array" doc:"The URLs to extract content from." required:"true"`
+	ExtractDepth string `json:"extract_depth,omitempty" doc:"Extraction depth: \"basic\" (default) or \"advanced\"."`
+	Format       string `json:"format,omitempty" doc:"Output format: \"markdown\" (default) or \"text\"."`
 }
 
 type tavilyExtractRequestBody struct {
@@ -216,60 +216,12 @@ func defaultTavilyEnvKey() string { return common.GetEnv(common.EnvTavilyAPIKey)
 
 // Info returns the tool's metadata for the chat model.
 func (t *TavilyTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: tavilyToolName,
-		Desc: tavilyToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Search query",
-				Required: true,
-			},
-			"topic": {
-				Type:     schema.String,
-				Desc:     `Search topic: "general" (default) or "news".`,
-				Required: false,
-			},
-			"include_domains": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Domains that search results must include.",
-				Required: false,
-			},
-			"exclude_domains": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Domains that search results must exclude.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(tavilyToolName, tavilyToolDescription, tavilyParams{})
 }
 
 // Info returns the Tavily Extract tool metadata for the chat model.
 func (t *TavilyExtractTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: tavilyExtractToolName,
-		Desc: "Extract web page content from one or more specified URLs using Tavily Extract.",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"urls": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "The URLs to extract content from.",
-				Required: true,
-			},
-			"extract_depth": {
-				Type:     schema.String,
-				Desc:     `Extraction depth: "basic" (default) or "advanced".`,
-				Required: false,
-			},
-			"format": {
-				Type:     schema.String,
-				Desc:     `Output format: "markdown" (default) or "text".`,
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(tavilyExtractToolName, "Extract web page content from one or more specified URLs using Tavily Extract.", tavilyExtractParams{})
 }
 
 // tavilyEndpoint is the Tavily /search URL. Exposed as a package var so

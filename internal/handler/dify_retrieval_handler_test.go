@@ -22,17 +22,21 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 
@@ -44,7 +48,7 @@ import (
 type mockKBService struct {
 	KBServiceIface
 	getKnowledgebaseByIDFn func(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
-	checkAccessFn          func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
+	checkAccessFn          func(ctx context.Context, datasetID string, operation permission.Operation) error
 }
 
 func (m *mockKBService) GetKnowledgebaseByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
@@ -56,21 +60,21 @@ func (m *mockKBService) GetKnowledgebaseByID(ctx context.Context, kbID string) (
 	}, nil
 }
 
-func (m *mockKBService) CheckResource(ctx context.Context, subject permission.Subject, resource permission.ResourceRef, operation permission.Operation) error {
+func (m *mockKBService) CheckResource(ctx context.Context, resource permission.ResourceRef, operation permission.Operation) error {
 	if m.checkAccessFn != nil {
-		return m.checkAccessFn(ctx, subject, resource.ID, operation)
+		return m.checkAccessFn(ctx, resource.ID, operation)
 	}
 	return nil
 }
 
 type mockModelFactory struct{}
 
-func (mockModelFactory) NewEmbeddingModel(context.Context, service.Identity, string) (*modelModule.EmbeddingModel, error) {
+func (mockModelFactory) NewEmbeddingModel(context.Context, string) (*modelModule.EmbeddingModel, error) {
 	name := "test-model"
 	return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &name, &modelModule.APIConfig{}, 0), nil
 }
 
-func (mockModelFactory) NewDefaultChatModel(context.Context, service.Identity) (*modelModule.ChatModel, error) {
+func (mockModelFactory) NewDefaultChatModel(context.Context) (*modelModule.ChatModel, error) {
 	name := "test-model"
 	return modelModule.NewChatModel(&modelModule.DummyModel{}, &name, &modelModule.APIConfig{}), nil
 }
@@ -154,7 +158,42 @@ func (m *mockDocEngine) GetChunk(ctx context.Context, _, _ string, _ []string) (
 
 // --- Helper ---
 
-func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
+func setupDifyTest(t *testing.T, userID string) (*DifyRetrievalHandler, *gin.Engine) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get Dify test database connection: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate Dify test tables: %v", err)
+	}
+	previousDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previousDB })
+
+	status := string(entity.StatusValid)
+	kb := entity.Knowledgebase{
+		ID: "kb1", UserID: userID, TenantID: "tenant1", Name: "test", CreatedBy: userID,
+		Permission: string(entity.TenantPermissionMe), Status: &status,
+	}
+	if err := db.Create(&kb).Error; err != nil {
+		t.Fatalf("create Dify test dataset: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "tenant1-" + userID, UserID: userID, TenantID: "tenant1",
+		Role: string(permission.RoleOwner), Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("create Dify test membership: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant1", userID); err != nil {
+		t.Fatalf("prepare Dify permission fixture: %v", err)
+	}
+
 	kbSvc := &mockKBService{}
 	h := &DifyRetrievalHandler{
 		kbSvc:             kbSvc,
@@ -170,6 +209,7 @@ func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: userID})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), userID, "tenant1"))
 	})
 	r.POST("/api/v1/dify/retrieval", h.Retrieval)
 	r.GET("/api/v1/dify/retrieval", h.Retrieval)
@@ -195,7 +235,7 @@ func setupDifyTestNoAuth() (*DifyRetrievalHandler, *gin.Engine) {
 // --- Tests ---
 
 func TestDifyRetrieval_HealthCheck(t *testing.T) {
-	_, r := setupDifyTest("user1")
+	_, r := setupDifyTest(t, "user1")
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/dify/retrieval/health", nil)
 	r.ServeHTTP(w, req)
@@ -207,13 +247,16 @@ func TestDifyRetrieval_HealthCheck(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["data"] != true {
-		t.Errorf("expected data=true, got %v", resp["data"])
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected success, got %v", resp)
+	}
+	if data, exists := resp["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 
 func TestDifyRetrieval_Basic(t *testing.T) {
-	_, r := setupDifyTest("user1")
+	_, r := setupDifyTest(t, "user1")
 	body := `{"knowledge_id": "kb1", "query": "test question"}`
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
@@ -234,7 +277,7 @@ func TestDifyRetrieval_Basic(t *testing.T) {
 }
 
 func TestDifyRetrieval_IncludesCustomDocumentMetadata(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	h.metadataSvc = &mockMetadataService{
 		searchMetadataByKBs: func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
 			return &service.SearchMetadataResponse{
@@ -269,7 +312,7 @@ func TestDifyRetrieval_IncludesCustomDocumentMetadata(t *testing.T) {
 // A custom metadata key named doc_id or document_id must not replace the
 // identifiers the handler sets.
 func TestDifyRetrieval_DocumentIDsOverrideCustomMetadata(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	h.metadataSvc = &mockMetadataService{
 		searchMetadataByKBs: func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
 			return &service.SearchMetadataResponse{
@@ -318,7 +361,7 @@ func firstRecordMetadata(t *testing.T, body []byte) map[string]interface{} {
 }
 
 func TestDifyRetrieval_GET(t *testing.T) {
-	_, r := setupDifyTest("user1")
+	_, r := setupDifyTest(t, "user1")
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/dify/retrieval?knowledge_id=kb1&query=test", nil)
 	r.ServeHTTP(w, req)
@@ -329,7 +372,7 @@ func TestDifyRetrieval_GET(t *testing.T) {
 }
 
 func TestDifyRetrieval_MissingArgs(t *testing.T) {
-	_, r := setupDifyTest("user1")
+	_, r := setupDifyTest(t, "user1")
 	tests := []struct {
 		name string
 		body string
@@ -352,7 +395,7 @@ func TestDifyRetrieval_MissingArgs(t *testing.T) {
 }
 
 func TestDifyRetrieval_KBNotFound(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	h.kbSvc = &mockKBService{
 		getKnowledgebaseByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
 			return nil, gorm.ErrRecordNotFound
@@ -381,9 +424,9 @@ func TestDifyRetrieval_NoAuth(t *testing.T) {
 }
 
 func TestDifyRetrieval_Unauthorized(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	kbSvc := &mockKBService{
-		checkAccessFn: func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error {
+		checkAccessFn: func(ctx context.Context, datasetID string, operation permission.Operation) error {
 			if operation != permission.OperationUse {
 				t.Errorf("dataset operation = %q, want %q", operation, permission.OperationUse)
 			}
@@ -403,7 +446,7 @@ func TestDifyRetrieval_Unauthorized(t *testing.T) {
 }
 
 func TestDifyRetrieval_WithMetadataFilter(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	h.metadataSvc = &mockMetadataService{
 		getFlattedMetaFn: func(ctx context.Context, kbIDs []string) (common.MetaData, error) {
 			return common.MetaData{}, nil
@@ -420,7 +463,15 @@ func TestDifyRetrieval_WithMetadataFilter(t *testing.T) {
 }
 
 func TestDifyRetrieval_EmptyMetadataConditionDoesNotUseSentinel(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
+	status := string(entity.StatusValid)
+	documentName := "test.txt"
+	if err := dao.DB.Create(&entity.Document{
+		ID: "doc1", KbID: "kb1", UserID: "user1", ParserID: string(entity.ParserTypeNaive),
+		ParserConfig: entity.JSONMap{}, CreatedBy: "user1", Name: &documentName, Suffix: "txt", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("create readable test document: %v", err)
+	}
 	var docIDs []string
 	h.retrievalSvc = &mockRetrievalService{
 		retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
@@ -440,13 +491,13 @@ func TestDifyRetrieval_EmptyMetadataConditionDoesNotUseSentinel(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if len(docIDs) != 0 {
-		t.Fatalf("DocIDs = %v, want an unscoped search", docIDs)
+	if len(docIDs) != 1 || docIDs[0] != "doc1" {
+		t.Fatalf("DocIDs = %v, want the readable document and no sentinel", docIDs)
 	}
 }
 
 func TestDifyRetrieval_UnmatchedMetadataConditionUsesSentinel(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	var docIDs []string
 	h.retrievalSvc = &mockRetrievalService{
 		retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
@@ -473,7 +524,7 @@ func TestDifyRetrieval_UnmatchedMetadataConditionUsesSentinel(t *testing.T) {
 }
 
 func TestDifyRetrieval_InvalidJSON(t *testing.T) {
-	_, r := setupDifyTest("user1")
+	_, r := setupDifyTest(t, "user1")
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader("{invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -484,7 +535,7 @@ func TestDifyRetrieval_InvalidJSON(t *testing.T) {
 }
 
 func TestDifyRetrieval_UseKG(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	h.metadataSvc = &mockMetadataService{
 		labelQuestionFn: func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
 			return map[string]float64{"tag_1": 0.8}
@@ -500,10 +551,32 @@ func TestDifyRetrieval_UseKG(t *testing.T) {
 	}
 }
 
+func TestCanIncludeDifyKnowledgeGraphRequiresAllReadableDocuments(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		readableDocumentIDs []string
+		totalDocuments      int64
+		hasMetadataFilter   bool
+		want                bool
+	}{
+		{name: "all documents readable", readableDocumentIDs: []string{"doc-1", "doc-2"}, totalDocuments: 2, want: true},
+		{name: "unreadable document", readableDocumentIDs: []string{"doc-1"}, totalDocuments: 2},
+		{name: "no readable documents", totalDocuments: 1},
+		{name: "no-match sentinel", readableDocumentIDs: []string{service.NoMatchDocIDSentinel}, totalDocuments: 1},
+		{name: "metadata filter", readableDocumentIDs: []string{"doc-1"}, totalDocuments: 1, hasMetadataFilter: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := canIncludeDifyKnowledgeGraph(test.readableDocumentIDs, test.totalDocuments, test.hasMetadataFilter); got != test.want {
+				t.Fatalf("canIncludeDifyKnowledgeGraph() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
 func strPtr(s string) *string { return &s }
 
 func TestDifyRetrieval_KBDBError(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	h.kbSvc = &mockKBService{
 		getKnowledgebaseByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
 			return nil, errors.New("connection refused")
@@ -520,7 +593,7 @@ func TestDifyRetrieval_KBDBError(t *testing.T) {
 }
 
 func TestDifyRetrieval_DocLoadError(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	h.docDAO = &mockDocDAO{
 		getByIDsFn: func(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 			return nil, errors.New("db unavailable")
@@ -537,7 +610,7 @@ func TestDifyRetrieval_DocLoadError(t *testing.T) {
 }
 
 func TestDifyRetrieval_RetrievalNotFound(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	h.retrievalSvc = &mockRetrievalService{
 		retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
 			return nil, errors.New("no chunk found: not_found")
@@ -565,7 +638,7 @@ func TestDifyRetrieval_RerankWindowCoversTopK(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h, r := setupDifyTest("user1")
+			h, r := setupDifyTest(t, "user1")
 			var got *nlp.RetrievalRequest
 			h.retrievalSvc = &mockRetrievalService{
 				retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
@@ -596,7 +669,7 @@ func TestDifyRetrieval_RerankWindowCoversTopK(t *testing.T) {
 func TestDifyRetrieval_TopKOutOfRange(t *testing.T) {
 	for _, topK := range []string{"0", "-1", "1025"} {
 		t.Run(topK, func(t *testing.T) {
-			h, r := setupDifyTest("user1")
+			h, r := setupDifyTest(t, "user1")
 			h.retrievalSvc = &mockRetrievalService{
 				retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
 					t.Fatal("retrieval must not run for an out-of-range top_k")
@@ -636,7 +709,7 @@ func captureRetrievalRequest(h *DifyRetrievalHandler) **nlp.RetrievalRequest {
 // retrieval layer as a non-nil pointer to an empty map; a nil pointer makes the
 // nlp layer substitute its {pagerank_fea: 10} default.
 func TestDifyRetrieval_NoTagSourceSendsEmptyRankFeature(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	h.metadataSvc = &mockMetadataService{
 		labelQuestionFn: func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
 			return nil
@@ -665,7 +738,7 @@ func TestDifyRetrieval_NoTagSourceSendsEmptyRankFeature(t *testing.T) {
 }
 
 func TestDifyRetrieval_TagSourceForwardsRankFeatures(t *testing.T) {
-	h, r := setupDifyTest("user1")
+	h, r := setupDifyTest(t, "user1")
 	h.metadataSvc = &mockMetadataService{
 		labelQuestionFn: func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
 			return map[string]float64{"tag_1": 0.8}

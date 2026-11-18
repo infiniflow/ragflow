@@ -30,6 +30,8 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/internal/esoscommon"
+	"ragflow/internal/engine/metafilter"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
 
@@ -38,7 +40,7 @@ import (
 
 // CreateMetadataStore creates the document metadata index
 func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error {
-	indexName := buildMetadataIndexName(tenantID)
+	indexName := esoscommon.BuildMetadataIndexName(tenantID)
 
 	// Check if index already exists
 	exists, err := e.indexExists(ctx, indexName)
@@ -89,7 +91,7 @@ func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error
 // InsertMetadata inserts documents into tenant's metadata index
 // If a document with the same id and kb_id already exists, it will be updated with the new value
 func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
-	indexName := buildMetadataIndexName(tenantID)
+	indexName := esoscommon.BuildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.InsertMetadata called", zap.String("index_name", indexName), zap.String("tenant_id", tenantID), zap.Int("doc_count", len(metadata)))
 
 	if len(metadata) == 0 {
@@ -159,9 +161,50 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 		return nil, fmt.Errorf("failed to parse bulk response: %w", err)
 	}
 
-	// Check for errors in bulk response
-	if errors, ok := bulkResponse["errors"].(bool); ok && errors {
-		common.Warn("Bulk request had some errors")
+	// Check for errors in bulk response. ES reports a 200 at the top level
+	// even when individual bulk items fail, so inspect the items and surface
+	// the reasons instead of returning success while metadata was silently
+	// dropped.
+	if hasErrs, ok := bulkResponse["errors"].(bool); ok && hasErrs {
+		var failures []string
+		failed := 0
+		if items, ok := bulkResponse["items"].([]interface{}); ok {
+			for _, it := range items {
+				im, ok := it.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for _, op := range im {
+					om, ok := op.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					errObj, ok := om["error"].(map[string]interface{})
+					if !ok {
+						continue
+					}
+					failed++
+					reason, _ := errObj["reason"].(string)
+					docID, _ := om["_id"].(string)
+					switch {
+					case docID != "" && reason != "":
+						failures = append(failures, docID+": "+reason)
+					case docID != "":
+						failures = append(failures, docID)
+					case reason != "":
+						failures = append(failures, reason)
+					}
+				}
+			}
+		}
+		shown := failures
+		if len(shown) > 5 {
+			shown = shown[:5]
+		}
+		common.Error("Elasticsearch bulk request had item errors",
+			fmt.Errorf("index %s: %d failed items; first failures: %v", indexName, failed, shown))
+		return nil, fmt.Errorf("elasticsearch bulk request had %d item errors (index %s); first failures: %v",
+			failed, indexName, shown)
 	}
 
 	common.Info("ElasticsearchConnection.InsertMetadata result", zap.String("index_name", indexName), zap.Int("count", len(metadata)))
@@ -178,7 +221,7 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 // The metadata index must already exist; the service layer is responsible
 // for creating it before writing.
 func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
-	indexName := buildMetadataIndexName(tenantID)
+	indexName := esoscommon.BuildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.UpdateMetadata called", zap.String("index_name", indexName), zap.String("docID", docID), zap.String("datasetID", datasetID))
 
 	// Build the document ID for update
@@ -258,7 +301,7 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID str
 // The condition is a map used to build an ES query (e.g., map["kb_id"]="xxx")
 // Returns the number of deleted documents
 func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
-	indexName := buildMetadataIndexName(tenantID)
+	indexName := esoscommon.BuildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.DeleteMetadata called", zap.String("index_name", indexName), zap.Any("condition", condition))
 
 	// Check if index exists
@@ -319,6 +362,15 @@ func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interf
 		deleted = int64(d)
 	}
 
+	// delete_by_query can answer 200 while only part of the work was done.
+	// Surface that so callers do not treat leftover metadata as deleted.
+	if timedOut, _ := result["timed_out"].(bool); timedOut {
+		return deleted, fmt.Errorf("elasticsearch delete metadata by query timed out after deleting %d metadata documents from %s", deleted, indexName)
+	}
+	if failures, ok := result["failures"].([]interface{}); ok && len(failures) > 0 {
+		return deleted, fmt.Errorf("elasticsearch delete metadata by query reported %d failures after deleting %d metadata documents from %s", len(failures), deleted, indexName)
+	}
+
 	common.Info("ElasticsearchConnection.DeleteMetadata completes", zap.String("index_name", indexName), zap.Int64("deleted_count", deleted))
 	return deleted, nil
 }
@@ -326,7 +378,7 @@ func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interf
 // DeleteMetadataKeys deletes specific metadata keys from a document's meta_fields.
 // If deleting those keys leaves no metadata entries, the metadata document is removed.
 func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
-	indexName := buildMetadataIndexName(tenantID)
+	indexName := esoscommon.BuildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.DeleteMetadataKeys called", zap.String("index_name", indexName), zap.String("docID", docID), zap.Any("keys", keys))
 
 	// Check if index exists
@@ -521,13 +573,13 @@ func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID
 
 // DropMetadataStore drops a metadata index from Elasticsearch
 func (e *Engine) DropMetadataStore(ctx context.Context, tenantID string) error {
-	indexName := buildMetadataIndexName(tenantID)
+	indexName := esoscommon.BuildMetadataIndexName(tenantID)
 	return e.dropIndex(ctx, indexName)
 }
 
 // MetadataStoreExists checks if a metadata index exists in Elasticsearch
 func (e *Engine) MetadataStoreExists(ctx context.Context, tenantID string) (bool, error) {
-	indexName := buildMetadataIndexName(tenantID)
+	indexName := esoscommon.BuildMetadataIndexName(tenantID)
 	return e.indexExists(ctx, indexName)
 }
 
@@ -541,7 +593,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 		return nil, fmt.Errorf("tenantID cannot be empty")
 	}
 
-	indexName := buildMetadataIndexName(tenantID)
+	indexName := esoscommon.BuildMetadataIndexName(tenantID)
 
 	exists, err := e.indexExists(ctx, indexName)
 	if err != nil {
@@ -571,7 +623,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 
 	// Add sorting if order_by specified
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
-		sort := parseOrderByExpr(req.OrderBy)
+		sort := esoscommon.ParseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
 			queryBody["sort"] = sort
 		}
@@ -718,7 +770,7 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	}
 
 	// Check if push-down is supported
-	if !IsPushdownSupported(conditions) {
+	if !metafilter.IsPushdownSupported(conditions) {
 		common.Debug("FilterDocIdsByMetaPushdown: push-down not supported for some filters")
 		return nil
 	}
@@ -730,7 +782,7 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	}
 	indexNames := make([]string, 0, len(groups))
 	for _, group := range groups {
-		indexName := buildMetadataIndexName(group.TenantID)
+		indexName := esoscommon.BuildMetadataIndexName(group.TenantID)
 		exists, err := e.indexExists(ctx, indexName)
 		if err != nil || !exists {
 			return nil
@@ -739,7 +791,7 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	}
 
 	// Build the filter query using the full meta_filter logic
-	queryBody, err := BuildMetaFilterQuery(conditions, logic, kbIDs)
+	queryBody, err := metafilter.BuildMetaFilterQuery(conditions, logic, kbIDs)
 	if err != nil {
 		common.Debug("FilterDocIdsByMetaPushdown: build query failed", zap.String("error", err.Error()))
 		return nil
@@ -784,8 +836,8 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 
 	// Extract doc IDs before the cap check so we can use uniqueDocIDs to
 	// detect silent truncation when the ES total isn't available.
-	docIDs := ExtractDocIDs(result)
-	uniqueDocIDs := dedupeStrings(docIDs)
+	docIDs := metafilter.ExtractDocIDs(result)
+	uniqueDocIDs := esoscommon.DedupeStrings(docIDs)
 
 	// Detect silent truncation: the push-down is a fast path, not the
 	// system of record. If the query matched more than metaPushdownMaxSize
@@ -793,7 +845,7 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	// the truth, and the caller treats non-nil as definitive. Surface a
 	// warning (parity with the Python reference) AND bail out so the
 	// caller falls back to the in-memory meta_filter, which is correct.
-	total, totalOK := totalHitsFromESResponse(result)
+	total, totalOK := esoscommon.TotalHitsFromSearchResponse(result)
 	switch {
 	case !totalOK && len(uniqueDocIDs) >= metaPushdownMaxSize:
 		// ES didn't report a verifiable total but we filled the cap. The
@@ -816,51 +868,4 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	}
 
 	return docIDs
-}
-
-// dedupeStrings returns the unique values of s, preserving first-seen order.
-func dedupeStrings(s []string) []string {
-	if len(s) == 0 {
-		return s
-	}
-	seen := make(map[string]struct{}, len(s))
-	out := make([]string, 0, len(s))
-	for _, v := range s {
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
-	}
-	return out
-}
-
-// totalHitsFromESResponse extracts the exact total hit count from an ES
-// search response. Returns ok=false when the field is missing or in an
-// unexpected shape; callers should treat that as "cannot verify" rather
-// than "no overflow".
-func totalHitsFromESResponse(esResponse map[string]interface{}) (int64, bool) {
-	hitsRoot, ok := esResponse["hits"].(map[string]interface{})
-	if !ok {
-		return 0, false
-	}
-	totalRoot, ok := hitsRoot["total"].(map[string]interface{})
-	if !ok {
-		return 0, false
-	}
-	// ES encodes numeric JSON values as float64 in Go's default decoder.
-	if v, ok := totalRoot["value"].(float64); ok {
-		return int64(v), true
-	}
-	// Some clients / older versions return int64 directly.
-	if v, ok := totalRoot["value"].(int64); ok {
-		return v, true
-	}
-	if v, ok := totalRoot["value"].(json.Number); ok {
-		n, err := v.Int64()
-		if err == nil {
-			return n, true
-		}
-	}
-	return 0, false
 }

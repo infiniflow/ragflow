@@ -796,6 +796,40 @@ describe('collectCanvasIssues: stale resources', () => {
     );
   });
 
+  it('accepts a scoring model for Scored Switch while keeping Agent chat-only', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('ScoredSwitch:s1', 'ScoredSwitch', {
+          llm_id: 'scoring-model',
+        }),
+        makeNode('Agent:a1', 'Agent', { llm_id: 'scoring-model' }),
+      ],
+      modelValidIds: new Set(['chat-model']),
+      scoringModelValidIds: new Set(['scoring-model']),
+    });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'common.modelUnavailable'),
+    ).toEqual([
+      expect.objectContaining({ nodeId: 'Agent:a1', blocksRun: true }),
+    ]);
+  });
+
+  it('does not flag Scored Switch while the scoring model list is unsettled', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('ScoredSwitch:s1', 'ScoredSwitch', {
+          llm_id: 'scoring-model',
+        }),
+      ],
+      modelValidIds: new Set(['chat-model']),
+    });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'common.modelUnavailable'),
+    ).toHaveLength(0);
+  });
+
   it('accepts a decision model for Categorize while keeping Agent chat-only', () => {
     const issues = collect({
       nodes: [

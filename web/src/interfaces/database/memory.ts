@@ -4,7 +4,9 @@ export interface IMemory {
   id: string;
   memory_type: string[];
   name: string;
-  owner_name: string;
+  nickname?: string;
+  user_id?: string;
+  operator_permission?: number;
   permissions: string;
   storage_type: string;
   tenant_id: string;
