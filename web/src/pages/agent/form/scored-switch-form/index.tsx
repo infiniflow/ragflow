@@ -29,7 +29,7 @@ import { memo, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { ScoredSwitchEscalateHandleId } from '../../scored-switch';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
@@ -52,9 +52,9 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
     resolver: zodResolver(FormSchema),
   });
   useWatchFormChange(node?.id, form);
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   const { data: addedModels, isFetched: modelsFetched } =
-    useFetchAllAddedModels(undefined, ownerTenantId);
+    useFetchAllAddedModels(undefined, resourceTenantId);
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
   const savedFieldMode = useWatch({
     control: form.control,
@@ -173,7 +173,7 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
           label={t('flow.scoredSwitchModel')}
           tooltip={t('flow.scoredSwitchModelTip')}
           modelTypes={ModelTypeMap.scoring_id}
-          ownerTenantId={ownerTenantId}
+          resourceTenantId={resourceTenantId}
         ></ModelTreeSelectFormField>
         {imageSupport && !fieldMode && (
           <FormField
