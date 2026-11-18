@@ -49,7 +49,9 @@ export function Output({
               {x.title}: <span className="text-text-secondary">{x.type}</span>
             </div>
             {x.description ? (
-              <p className="mt-0.5 text-xs text-text-secondary">{x.description}</p>
+              <p className="mt-0.5 text-xs text-text-secondary">
+                {x.description}
+              </p>
             ) : null}
           </li>
         ))}

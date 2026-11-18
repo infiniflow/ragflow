@@ -2148,9 +2148,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       modelFeatureYesNoTip:
         '只有打开时，Scored Switch 才能提出是否问题并读取概率。',
       modelFeatureLevels: '有序等级',
-      modelFeatureLevelsTip: '只有打开时，Scored Switch 才能按有序等级给案例打分。',
+      modelFeatureLevelsTip:
+        '只有打开时，Scored Switch 才能按有序等级给案例打分。',
       modelFeatureFields: '字段提取',
-      modelFeatureFieldsTip: '只有打开时，Scored Switch 才发送类型化字段，并且不选择分支。',
+      modelFeatureFieldsTip:
+        '只有打开时，Scored Switch 才发送类型化字段，并且不选择分支。',
       modelFeatureFieldText: '文本字段',
       modelFeatureFieldTextTip: '提取一段文本。值可以是空。',
       modelFeatureFieldDate: '日期字段',
@@ -2678,7 +2680,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       scoredSwitchYesNo: '是否问题',
       scoredSwitchYesNoTip: '模型返回“是”的概率，0 到 1。没有单独的出口。',
       scoredSwitchLevels: '有序等级',
-      scoredSwitchLevelsTip: '模型返回等级上的位置，可以落在两级之间。没有单独的出口。',
+      scoredSwitchLevelsTip:
+        '模型返回等级上的位置，可以落在两级之间。没有单独的出口。',
       scoredSwitchBox: '在图像中定位',
       scoredSwitchBoxTip:
         '返回目标框的四条边，都是 0 到 1 的比例。没有单独的出口。',
@@ -2697,7 +2700,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       scoredSwitchImageTip:
         '可选的图片变量。PNG、JPEG 或 WebP 会和案例一起发送。留空则只发送文本。',
       scoredSwitchInstructions: '说明',
-      scoredSwitchInstructionsTip: '和选项一起发送的问题。留空则使用默认的选择题。',
+      scoredSwitchInstructionsTip:
+        '和选项一起发送的问题。留空则使用默认的选择题。',
       scoredSwitchAddOption: '添加选项',
       scoredSwitchEscalate: '移交',
       scoredSwitchOptionMinimum: '至少添加两个选项',

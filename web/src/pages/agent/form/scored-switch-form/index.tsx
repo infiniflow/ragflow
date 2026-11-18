@@ -176,143 +176,145 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
           ownerTenantId={ownerTenantId}
         ></ModelTreeSelectFormField>
         {imageSupport && !fieldMode && (
-        <FormField
-          control={form.control}
-          name="request_format"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t('flow.scoredSwitchRequestFormatTip')}>
-                {t('flow.scoredSwitchRequestFormat')}
-              </FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="content_parts">
-                    {t('flow.scoredSwitchContentParts')}
-                  </SelectItem>
-                  <SelectItem value="assets">
-                    {t('flow.scoredSwitchAssets')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>
-                {t('flow.scoredSwitchRequestFormatTip')}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+          <FormField
+            control={form.control}
+            name="request_format"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel tooltip={t('flow.scoredSwitchRequestFormatTip')}>
+                  {t('flow.scoredSwitchRequestFormat')}
+                </FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="content_parts">
+                      {t('flow.scoredSwitchContentParts')}
+                    </SelectItem>
+                    <SelectItem value="assets">
+                      {t('flow.scoredSwitchAssets')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  {t('flow.scoredSwitchRequestFormatTip')}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         )}
         {!fieldMode && (
-        <>
-        <FormField
-          control={form.control}
-          name="instructions"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t('flow.scoredSwitchInstructionsTip')}>
-                {t('flow.scoredSwitchInstructions')}
-              </FormLabel>
-              <FormControl>
-                <BlurTextarea {...field} rows={3} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <Separator />
-        <ScoredSwitchOptions nodeId={node?.id}></ScoredSwitchOptions>
-        <ScoredSwitchTasks
-          allowYesNo={yesNoSupport}
-          allowLevels={levelSupport}
-          allowBox={boxSupport}
-        ></ScoredSwitchTasks>
-        <Separator />
-        <FormField
-          control={form.control}
-          name="escalate_enabled"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between gap-4">
-              <FormLabel
-                className="w-fit"
-                tooltip={t('flow.scoredSwitchEscalateToLlmTip')}
-              >
-                {t('flow.scoredSwitchEscalateToLlm')}
-              </FormLabel>
-              <FormControl>
-                <Switch
-                  className="!m-0"
-                  checked={field.value !== false}
-                  onCheckedChange={(checked) => {
-                    field.onChange(checked);
-                    if (!checked && node?.id) {
-                      deleteEdges(node.id, ScoredSwitchEscalateHandleId);
-                      updateNodeInternals(node.id);
-                    }
-                  }}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        {escalateEnabled !== false && (
           <>
             <FormField
               control={form.control}
-              name="margin_threshold"
+              name="instructions"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel tooltip={t('flow.scoredSwitchMarginThresholdTip')}>
-                    {t('flow.scoredSwitchMarginThreshold')}
+                  <FormLabel tooltip={t('flow.scoredSwitchInstructionsTip')}>
+                    {t('flow.scoredSwitchInstructions')}
                   </FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      {...field}
-                    />
+                    <BlurTextarea {...field} rows={3} />
                   </FormControl>
-                  <FormDescription>
-                    {t('flow.scoredSwitchMarginThresholdTip')}
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
+            <Separator />
+            <ScoredSwitchOptions nodeId={node?.id}></ScoredSwitchOptions>
+            <ScoredSwitchTasks
+              allowYesNo={yesNoSupport}
+              allowLevels={levelSupport}
+              allowBox={boxSupport}
+            ></ScoredSwitchTasks>
+            <Separator />
             <FormField
               control={form.control}
-              name="min_top_score"
+              name="escalate_enabled"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel tooltip={t('flow.scoredSwitchMinTopScoreTip')}>
-                    {t('flow.scoredSwitchMinTopScore')}
+                <FormItem className="flex flex-row items-center justify-between gap-4">
+                  <FormLabel
+                    className="w-fit"
+                    tooltip={t('flow.scoredSwitchEscalateToLlmTip')}
+                  >
+                    {t('flow.scoredSwitchEscalateToLlm')}
                   </FormLabel>
                   <FormControl>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      {...field}
+                    <Switch
+                      className="!m-0"
+                      checked={field.value !== false}
+                      onCheckedChange={(checked) => {
+                        field.onChange(checked);
+                        if (!checked && node?.id) {
+                          deleteEdges(node.id, ScoredSwitchEscalateHandleId);
+                          updateNodeInternals(node.id);
+                        }
+                      }}
                     />
                   </FormControl>
-                  <FormDescription>
-                    {t('flow.scoredSwitchMinTopScoreTip')}
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
+            {escalateEnabled !== false && (
+              <>
+                <FormField
+                  control={form.control}
+                  name="margin_threshold"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel
+                        tooltip={t('flow.scoredSwitchMarginThresholdTip')}
+                      >
+                        {t('flow.scoredSwitchMarginThreshold')}
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('flow.scoredSwitchMarginThresholdTip')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="min_top_score"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel tooltip={t('flow.scoredSwitchMinTopScoreTip')}>
+                        {t('flow.scoredSwitchMinTopScore')}
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('flow.scoredSwitchMinTopScoreTip')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            )}
           </>
-        )}
-        </>
         )}
         {fieldMode && (
           <>
@@ -336,7 +338,10 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
               name="include_quantiles"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between gap-4">
-                  <FormLabel className="w-fit" tooltip={t('flow.scoredSwitchQuantilesTip')}>
+                  <FormLabel
+                    className="w-fit"
+                    tooltip={t('flow.scoredSwitchQuantilesTip')}
+                  >
                     {t('flow.scoredSwitchQuantiles')}
                   </FormLabel>
                   <FormControl>
@@ -354,7 +359,10 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
               name="return_state_text"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between gap-4">
-                  <FormLabel className="w-fit" tooltip={t('flow.scoredSwitchStateTextTip')}>
+                  <FormLabel
+                    className="w-fit"
+                    tooltip={t('flow.scoredSwitchStateTextTip')}
+                  >
                     {t('flow.scoredSwitchStateText')}
                   </FormLabel>
                   <FormControl>

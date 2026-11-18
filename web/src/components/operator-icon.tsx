@@ -32,9 +32,9 @@ import {
   LucideFileStack,
   LucideHeading,
   LucideListPlus,
-} from "lucide-react";
-import { Component } from "react";
-import { Operator } from "../constants/agent";
+} from 'lucide-react';
+import { Component } from 'react';
+import { Operator } from '../constants/agent';
 
 interface IProps {
   name: Operator;
@@ -190,7 +190,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
       <SvgErrorBoundary fallback={<Empty />}>
         <IconFontFill
           name={Icon}
-          className={cn("size-5 ", className)}
+          className={cn('size-5 ', className)}
         ></IconFontFill>
       </SvgErrorBoundary>
     );
@@ -199,7 +199,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
   if (LucideIcon) {
     return (
       <SvgErrorBoundary fallback={<Empty />}>
-        <LucideIcon className={cn("size-5", className)} />
+        <LucideIcon className={cn('size-5', className)} />
       </SvgErrorBoundary>
     );
   }
@@ -209,8 +209,8 @@ const OperatorIcon = ({ name, className }: IProps) => {
       <SvgErrorBoundary fallback={<Empty />}>
         <SvgIcon
           name={svgIcon}
-          width={"100%"}
-          className={cn("size-5 fill-current", className)}
+          width={'100%'}
+          className={cn('size-5 fill-current', className)}
         ></SvgIcon>
       </SvgErrorBoundary>
     );

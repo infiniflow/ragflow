@@ -81,7 +81,10 @@ export function ScoredSwitchTasks({
   return (
     <div className="space-y-3">
       {visible.map((task) => (
-        <div key={task.id} className="space-y-2 rounded-md border border-border-button p-3">
+        <div
+          key={task.id}
+          className="space-y-2 rounded-md border border-border-button p-3"
+        >
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-text-secondary">
               {task.type === 'noul'

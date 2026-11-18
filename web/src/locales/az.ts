@@ -2852,9 +2852,11 @@ Nümunə: Virtual host üslubu`,
       scoredSwitchQuestionRequired: 'Hər əlavə sual üçün təlimat lazımdır',
       scoredSwitchLevelMinimum: 'Ən azı iki səviyyə əlavə edin',
       scoredSwitchFieldMinimum: 'Ən azı bir sahə əlavə edin',
-      scoredSwitchFieldNameInvalid: 'Sahə adı hərf və ya alt xətt ilə başlamalıdır',
+      scoredSwitchFieldNameInvalid:
+        'Sahə adı hərf və ya alt xətt ilə başlamalıdır',
       scoredSwitchListItemsRequired: 'Siyahı üçün element növü lazımdır',
-      scoredSwitchEstimateBoundsRequired: 'Qiymətləndirmə üçün minimum və maksimum lazımdır',
+      scoredSwitchEstimateBoundsRequired:
+        'Qiymətləndirmə üçün minimum və maksimum lazımdır',
       scoredSwitchForecastRequired: 'Proqnoz üçün üfüq və interval lazımdır',
       scoredSwitchDecimalsRange: 'Onluqlar 0 ilə 6 arasında olmalıdır',
       relevantDescription:

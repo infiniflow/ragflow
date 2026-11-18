@@ -792,12 +792,15 @@ export default {
       retrievalDescription: `Komponen yang mengambil informasi dari basis pengetahuan yang ditentukan dan mengembalikan 'Respon kosong' jika tidak ada informasi yang ditemukan. Pastikan basis pengetahuan yang benar dipilih.`,
       generateDescription: `Komponen yang meminta LLM untuk menghasilkan respons. Pastikan prompt diatur dengan benar.`,
       categorizeDescription: `Komponen yang menggunakan LLM untuk mengklasifikasikan input pengguna ke dalam kategori yang telah ditentukan. Pastikan Anda menentukan nama, deskripsi, dan contoh untuk setiap kategori, bersama dengan komponen berikutnya yang sesuai.`,
-      scoredSwitchQuestionRequired: 'Setiap pertanyaan tambahan memerlukan petunjuk',
+      scoredSwitchQuestionRequired:
+        'Setiap pertanyaan tambahan memerlukan petunjuk',
       scoredSwitchLevelMinimum: 'Tambahkan setidaknya dua tingkat',
       scoredSwitchFieldMinimum: 'Tambahkan setidaknya satu bidang',
-      scoredSwitchFieldNameInvalid: 'Nama bidang harus diawali huruf atau garis bawah',
+      scoredSwitchFieldNameInvalid:
+        'Nama bidang harus diawali huruf atau garis bawah',
       scoredSwitchListItemsRequired: 'Daftar memerlukan jenis item',
-      scoredSwitchEstimateBoundsRequired: 'Estimasi memerlukan nilai minimum dan maksimum',
+      scoredSwitchEstimateBoundsRequired:
+        'Estimasi memerlukan nilai minimum dan maksimum',
       scoredSwitchForecastRequired: 'Prakiraan memerlukan horizon dan interval',
       scoredSwitchDecimalsRange: 'Desimal harus dari 0 sampai 6',
       relevantDescription: `Komponen yang menggunakan LLM untuk menilai apakah output hulu relevan dengan kueri terbaru pengguna. Pastikan Anda menentukan komponen berikutnya untuk setiap hasil penilaian.`,

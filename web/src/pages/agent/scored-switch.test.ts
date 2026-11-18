@@ -1,6 +1,4 @@
-import {
-  showsScoredSwitchEscalateHandle,
-} from './scored-switch';
+import { showsScoredSwitchEscalateHandle } from './scored-switch';
 
 describe('showsScoredSwitchEscalateHandle', () => {
   it('shows the escalate handle by default', () => {

@@ -93,10 +93,8 @@ export function useCanvasChecklist({
     resourceTenantId,
     ownerUserId,
   );
-  const {
-    validIds: scoringModelValidIds,
-    isFetched: scoringModelsFetched,
-  } = useModelValidIds(ModelTypeMap.scoring_id, ownerTenantId);
+  const { validIds: scoringModelValidIds, isFetched: scoringModelsFetched } =
+    useModelValidIds(ModelTypeMap.scoring_id, ownerTenantId);
   const {
     groups: templateGroups,
     isFetched: templateGroupsFetched,

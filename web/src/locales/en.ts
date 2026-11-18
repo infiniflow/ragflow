@@ -2576,7 +2576,8 @@ Example: Virtual Hosted Style`,
       modelFeatureFieldsTip:
         'Scored Switch sends typed fields and does not choose a branch only when this is on.',
       modelFeatureFieldText: 'Text fields',
-      modelFeatureFieldTextTip: 'Extract a span of text. The value may be null.',
+      modelFeatureFieldTextTip:
+        'Extract a span of text. The value may be null.',
       modelFeatureFieldDate: 'Date fields',
       modelFeatureFieldDateTip: 'Extract or calculate a date.',
       modelFeatureFieldTime: 'Time fields',
@@ -3122,7 +3123,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       scoredSwitchListItemsRequired: 'A list needs an item type',
       scoredSwitchEstimateBoundsRequired:
         'An estimate needs a minimum and a maximum',
-      scoredSwitchForecastRequired: 'A forecast needs a horizon and an interval',
+      scoredSwitchForecastRequired:
+        'A forecast needs a horizon and an interval',
       scoredSwitchDecimalsRange: 'Decimals must be from 0 to 6',
       scoredSwitchFieldText: 'Text',
       scoredSwitchFieldDate: 'Date',
@@ -3148,7 +3150,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       scoredSwitchQuantiles: 'Include quantiles',
       scoredSwitchQuantilesTip: 'Add 99 percentiles to estimates.',
       scoredSwitchStateText: 'Return source text',
-      scoredSwitchStateTextTip: 'Return the text that character spans index into.',
+      scoredSwitchStateTextTip:
+        'Return the text that character spans index into.',
       scoredSwitchFieldImageTip:
         'Up to 4 embedded PNG, JPEG, or WebP images. Remote addresses are not accepted. Leave this empty to send text only.',
       scoredSwitchUnit_seconds: 'Seconds',

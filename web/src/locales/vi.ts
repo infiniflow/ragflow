@@ -836,9 +836,11 @@ export default {
       scoredSwitchQuestionRequired: 'Mỗi câu hỏi bổ sung cần hướng dẫn',
       scoredSwitchLevelMinimum: 'Thêm ít nhất hai mức',
       scoredSwitchFieldMinimum: 'Thêm ít nhất một trường',
-      scoredSwitchFieldNameInvalid: 'Tên trường phải bắt đầu bằng chữ cái hoặc dấu gạch dưới',
+      scoredSwitchFieldNameInvalid:
+        'Tên trường phải bắt đầu bằng chữ cái hoặc dấu gạch dưới',
       scoredSwitchListItemsRequired: 'Danh sách cần kiểu mục',
-      scoredSwitchEstimateBoundsRequired: 'Ước lượng cần giá trị nhỏ nhất và lớn nhất',
+      scoredSwitchEstimateBoundsRequired:
+        'Ước lượng cần giá trị nhỏ nhất và lớn nhất',
       scoredSwitchForecastRequired: 'Dự báo cần khoảng xa và khoảng cách',
       scoredSwitchDecimalsRange: 'Số chữ số thập phân phải từ 0 đến 6',
       relevantDescription: `Một thành phần sử dụng LLM để đánh giá xem đầu ra phía thượng nguồn có liên quan đến truy vấn mới nhất của người dùng hay không. Đảm bảo bạn chỉ định thành phần tiếp theo cho mỗi kết quả đánh giá.`,

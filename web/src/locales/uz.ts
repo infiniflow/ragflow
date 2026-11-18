@@ -2738,12 +2738,15 @@ export default {
         'LLMdan javoblar generatsiya qilishni so‘raydigan komponent. Prompt to‘g‘ri belgilanganiga ishonch hosil qiling.',
       categorizeDescription:
         'LLM yordamida foydalanuvchi kirishlarini oldindan belgilangan toifalarga tasniflaydigan komponent. Har bir toifa uchun nom, tavsif va misollarni, hamda mos keyingi komponentni belgilang.',
-      scoredSwitchQuestionRequired: 'Har bir qo‘shimcha savol uchun ko‘rsatma kerak',
+      scoredSwitchQuestionRequired:
+        'Har bir qo‘shimcha savol uchun ko‘rsatma kerak',
       scoredSwitchLevelMinimum: 'Kamida ikkita daraja qo‘shing',
       scoredSwitchFieldMinimum: 'Kamida bitta maydon qo‘shing',
-      scoredSwitchFieldNameInvalid: 'Maydon nomi harf yoki pastki chiziq bilan boshlanishi kerak',
+      scoredSwitchFieldNameInvalid:
+        'Maydon nomi harf yoki pastki chiziq bilan boshlanishi kerak',
       scoredSwitchListItemsRequired: 'Ro‘yxat uchun element turi kerak',
-      scoredSwitchEstimateBoundsRequired: 'Baholash uchun eng past va eng yuqori qiymat kerak',
+      scoredSwitchEstimateBoundsRequired:
+        'Baholash uchun eng past va eng yuqori qiymat kerak',
       scoredSwitchForecastRequired: 'Bashorat uchun ufqlik va oraliq kerak',
       scoredSwitchDecimalsRange: 'O‘nliklar 0 dan 6 gacha bo‘lishi kerak',
       relevantDescription:
