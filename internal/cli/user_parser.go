@@ -1091,17 +1091,17 @@ func (p *Parser) parseAPIShowGroup() (*Command, error) {
 		return p.parseAPIShowGroupStats()
 	}
 
-	groupName, err := p.parseQuotedString()
+	groupID, err := p.parseQuotedString()
 	if err != nil {
-		return nil, fmt.Errorf("expected group name: %w", err)
+		return nil, fmt.Errorf("expected group id: %w", err)
 	}
-	p.nextToken() // consume group_name
+	p.nextToken() // consume group_id
 
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 	cmd := NewCommand("api_show_model_group")
-	cmd.Params["group_name"] = groupName
+	cmd.Params["group_id"] = groupID
 	return cmd, nil
 }
 
@@ -1201,8 +1201,8 @@ func (p *Parser) parseAPIShowGroupStats() (*Command, error) {
 	return cmd, nil
 }
 
-// ADD 'model@instance@provider' GROUP 'group_name';
-// DELETE 'model@instance@provider' GROUP 'group_name';
+// ADD 'model@instance@provider' GROUP 'group_id';
+// DELETE 'model@instance@provider' GROUP 'group_id';
 func (p *Parser) parseAPIAddGroupModel() (*Command, error) {
 	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
@@ -1215,11 +1215,11 @@ func (p *Parser) parseAPIAddGroupModel() (*Command, error) {
 	}
 	p.nextToken() // consume GROUP
 
-	groupName, err := p.parseQuotedString()
+	groupID, err := p.parseQuotedString()
 	if err != nil {
-		return nil, fmt.Errorf("expected group name: %w", err)
+		return nil, fmt.Errorf("expected group id: %w", err)
 	}
-	p.nextToken() // consume group_name
+	p.nextToken() // consume group_id
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -1234,11 +1234,11 @@ func (p *Parser) parseAPIAddGroupModel() (*Command, error) {
 	} else {
 		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
 	}
-	cmd.Params["group_name"] = groupName
+	cmd.Params["group_id"] = groupID
 	return cmd, nil
 }
 
-// DELETE 'model@instance@provider' GROUP 'group_name';
+// DELETE 'model@instance@provider' GROUP 'group_id';
 func (p *Parser) parseAPIDeleteGroupModel() (*Command, error) {
 	modelNameOrID, err := p.parseQuotedString()
 	if err != nil {
@@ -1251,11 +1251,11 @@ func (p *Parser) parseAPIDeleteGroupModel() (*Command, error) {
 	}
 	p.nextToken() // consume GROUP
 
-	groupName, err := p.parseQuotedString()
+	groupID, err := p.parseQuotedString()
 	if err != nil {
-		return nil, fmt.Errorf("expected group name: %w", err)
+		return nil, fmt.Errorf("expected group id: %w", err)
 	}
-	p.nextToken() // consume group_name
+	p.nextToken() // consume group_id
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -1270,7 +1270,7 @@ func (p *Parser) parseAPIDeleteGroupModel() (*Command, error) {
 
 	cmd := NewCommand("api_delete_group_model")
 	cmd.Params["composite_model_name"] = modelNameOrID
-	cmd.Params["group_name"] = groupName
+	cmd.Params["group_id"] = groupID
 	return cmd, nil
 }
 
@@ -2118,15 +2118,15 @@ func (p *Parser) parseAPIDeleteProvider() (*Command, error) {
 	return cmd, nil
 }
 
-// DELETE GROUP 'group_name';
+// DELETE GROUP 'group_id';
 func (p *Parser) parseAPIDeleteGroup() (*Command, error) {
 	p.nextToken() // consume GROUP
 
-	groupName, err := p.parseQuotedString()
+	groupID, err := p.parseQuotedString()
 	if err != nil {
-		return nil, fmt.Errorf("expected group name: %w", err)
+		return nil, fmt.Errorf("expected group id: %w", err)
 	}
-	p.nextToken() // consume group_name
+	p.nextToken() // consume group_id
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -2134,7 +2134,7 @@ func (p *Parser) parseAPIDeleteGroup() (*Command, error) {
 	}
 
 	cmd := NewCommand("api_delete_model_group")
-	cmd.Params["group_name"] = groupName
+	cmd.Params["group_id"] = groupID
 	return cmd, nil
 }
 
