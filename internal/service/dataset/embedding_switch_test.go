@@ -38,6 +38,9 @@ type switchProbeEngine struct {
 	chunk      map[string]interface{}
 	searchErr  error
 	searchHits int
+	// onGetChunk runs after the stored chunk was read, inside the preflight
+	// window before the update takes its row lock.
+	onGetChunk func()
 }
 
 func (e *switchProbeEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
@@ -56,6 +59,9 @@ func (e *switchProbeEngine) Search(context.Context, *types.SearchRequest) (*type
 }
 
 func (e *switchProbeEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	if e.onGetChunk != nil {
+		e.onGetChunk()
+	}
 	if e.chunk == nil {
 		return nil, nil
 	}
@@ -233,5 +239,47 @@ func TestUpdateDatasetRejectsIncompatibleEmbeddingSwitch(t *testing.T) {
 	}
 	if persisted.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
 		t.Fatalf("expected embd_id to stay unchanged, got %q", persisted.EmbdID)
+	}
+}
+
+// The probe compared the vectors of the binding it read. When another update
+// moves that binding before the row lock is taken, the stored vectors were
+// rebuilt or replaced in between: the recorded validation no longer describes
+// them, so the switch has to be retried against the current row.
+func TestUpdateDatasetRejectsSwitchWhenBindingMovesBeforeTheRowLock(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Dataset")
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("chunk_num", 5).Error; err != nil {
+		t.Fatalf("seed chunk_num: %v", err)
+	}
+	stubDimensionProbe(t, 384, nil)
+
+	engine := &switchProbeEngine{chunk: chunkWithVector(384)}
+	engine.onGetChunk = func() {
+		if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").
+			Update("embd_id", "rebuilt-384@Builtin").Error; err != nil {
+			t.Fatalf("move the binding: %v", err)
+		}
+	}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = engine
+
+	embeddingModel := "big-384@Builtin"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &embeddingModel})
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("UpdateDataset = (%d, %v), want the switch rejected until the row is re-validated", code, err)
+	}
+	if !strings.Contains(err.Error(), "retry the request") {
+		t.Fatalf("error %q does not ask for a retry", err)
+	}
+
+	var persisted entity.Knowledgebase
+	if err := dao.DB.Where("id = ?", "kb-1").First(&persisted).Error; err != nil {
+		t.Fatalf("load dataset: %v", err)
+	}
+	if persisted.EmbdID != "rebuilt-384@Builtin" {
+		t.Fatalf("embd_id = %q, want the concurrent binding kept", persisted.EmbdID)
 	}
 }

@@ -906,6 +906,118 @@ func TestUpdateDatasetPublishesTasksCommittedByFailedAttempt(t *testing.T) {
 	}
 }
 
+// A retry can find chunks instead of the empty dataset the failed attempt saw.
+// Its transaction then commits the switch itself, so no pending binding marks
+// the recovery: the rows the earlier attempt left scheduled still need their
+// publish, and a later retry that repeats the model never re-enters this path.
+func TestUpdateDatasetPublishesTasksWhenRetrySwitchesNonEmptyDataset(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateConnector(t, "connector-1", "tenant-1")
+
+	eng := &recordingChunkStoreEngine{
+		storeMissing: true,
+		err:          errors.New("index creation failed"),
+		failCalls:    2,
+	}
+	publisher := &recordingSyncTaskPublisher{}
+	previous := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(publisher)
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previous) })
+
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+	stubDimensionProbe(t, 1024, nil)
+
+	model := "BAAI/bge-m3@Builtin"
+	req := service.UpdateDatasetRequest{
+		EmbeddingModel: &model,
+		Connectors:     &[]service.DatasetConnectorRequest{{ID: "connector-1"}},
+	}
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", req); err == nil || code != common.CodeServerError {
+		t.Fatalf("first UpdateDataset = (%d, %v), want a server error", code, err)
+	}
+	if len(publisher.published) != 0 {
+		t.Fatalf("published tasks = %v before the store was ready, want none", publisher.published)
+	}
+
+	var taskIDs []string
+	if err := dao.DB.Model(&entity.SyncLogs{}).Where("kb_id = ?", "kb-1").Pluck("id", &taskIDs).Error; err != nil {
+		t.Fatalf("read committed tasks: %v", err)
+	}
+	if len(taskIDs) != 1 {
+		t.Fatalf("committed tasks = %v, want the single task the failed attempt scheduled", taskIDs)
+	}
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("chunk_num", 1).Error; err != nil {
+		t.Fatalf("land a chunk before the retry: %v", err)
+	}
+
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", req); err != nil || code != common.CodeSuccess {
+		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
+	}
+	var kb entity.Knowledgebase
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != model {
+		t.Fatalf("embd_id = %q, want the in-transaction switch to %q", kb.EmbdID, model)
+	}
+	if len(publisher.published) != 1 || publisher.published[0] != taskIDs[0] {
+		t.Fatalf("published tasks = %v, want the retry to publish %v", publisher.published, taskIDs)
+	}
+}
+
+// The saved PageRank has to reach the chunk store even when a later step
+// fails: a retry re-submits the same value, finds it persisted already, and
+// schedules no propagation of its own.
+func TestUpdateDatasetPropagatesPagerankWhenPendingTaskReadFails(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &pagerankRecordingEngine{
+		recordingChunkStoreEngine: recordingChunkStoreEngine{storeMissing: true},
+	}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	if err := db.Migrator().DropTable(&entity.SyncLogs{}); err != nil {
+		t.Fatalf("drop sync_logs: %v", err)
+	}
+
+	model := "BAAI/bge-m3@Builtin"
+	pagerank := int64(30)
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{
+		EmbeddingModel: &model,
+		Pagerank:       &pagerank,
+	})
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("UpdateDataset = (%d, %v), want the pending-task read to fail the request", code, err)
+	}
+	if eng.updateChunksCalls != 1 {
+		t.Fatalf("pagerank updates = %d, want the saved value propagated before the failed step", eng.updateChunksCalls)
+	}
+}
+
+// pagerankRecordingEngine reports PageRank support and counts the propagation
+// writes the update schedules.
+type pagerankRecordingEngine struct {
+	recordingChunkStoreEngine
+	updateChunksCalls int
+}
+
+func (e *pagerankRecordingEngine) SupportsPageRank() bool { return true }
+
+func (e *pagerankRecordingEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
+	e.updateChunksCalls++
+	return nil
+}
+
 // The transaction accepts the switch only when the plan prepared that model. A
 // plan that ran while the dataset still had chunks prepared nothing, so the
 // switch it would commit has no vector column behind it.

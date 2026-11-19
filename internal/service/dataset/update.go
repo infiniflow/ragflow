@@ -151,7 +151,12 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	// must neither trigger engine and provider work nor learn the dataset's
 	// vector dimension from the rejection. The update is authorized again under
 	// the row lock, which stays the authority.
+	// switchValidated is only evidence for the binding the probe ran against:
+	// the stored vectors it compared belong to that model, and a row that names
+	// another one by the time the lock is taken — its chunks were rebuilt or
+	// replaced in between — was never validated.
 	switchValidated := false
+	switchValidatedEmbdID := ""
 	if embdIDProvided && embeddingSwitchNeedsCheck(kb, embdID) {
 		if accessErr := permission.NewDatabaseChecker(dao.DB).CheckResource(
 			ctx,
@@ -165,6 +170,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			return nil, code, switchErr
 		}
 		switchValidated = true
+		switchValidatedEmbdID = kb.EmbdID
 	}
 
 	if req.ParserConfig != nil {
@@ -344,11 +350,13 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 				updates["embd_id"] = effectiveEmbdID
 				updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
 			case lockedKB.ChunkNum != 0:
-				// The switch rule ran against the row preflight read, which was
-				// empty, so its dimension probe never ran. Chunks committed since
-				// then need that check, and the probe cannot run under this row
-				// lock; a retry reruns the preflight against the non-empty row.
-				if !switchValidated {
+				// The probe ran against the row preflight read. Chunks committed
+				// since then need that check, and so does a dataset whose binding
+				// moved in between: its vectors were rebuilt or replaced, and the
+				// recorded validation no longer describes what is stored. The probe
+				// cannot run under this row lock, so both cases ask for a retry
+				// that reruns the preflight against the current row.
+				if !switchValidated || lockedKB.EmbdID != switchValidatedEmbdID {
 					txCode = common.CodeServerError
 					return errors.New("dataset changed while the embedding model was being prepared; retry the request")
 				}
@@ -649,6 +657,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		}
 		return nil, txCode, err
 	}
+	// The saved PageRank has to reach the chunk store even when a later step
+	// fails: a retry sees the value already persisted, so its requested value
+	// equals the locked one and it schedules no propagation of its own.
+	if pagerankUpdate != nil {
+		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
+			return nil, common.CodeServerError, err
+		}
+	}
 	var recoveredTaskIDs []string
 	if pendingEmbdID != "" {
 		if storePlan.createEmbdID != "" && updatedKB != nil && updatedKB.ChunkNum == 0 {
@@ -673,6 +689,17 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			return nil, common.CodeServerError, fmt.Errorf(
 				"dataset settings were saved, but the embedding model could not be switched: %w", bindErr)
 		}
+	} else if embdIDProvided {
+		// The binding is settled here: this transaction moved it because the
+		// dataset held chunks by then, or the row already named the requested
+		// model. Either way an earlier attempt can have committed the same links
+		// and tasks without publishing them, and a retry that repeats the model
+		// has no other path into this recovery.
+		recoveredTaskIDs, err = pendingDatasetSyncTaskIDs(ctx, updatedKB)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf(
+				"dataset settings were saved, but the connector tasks of an earlier attempt could not be read; retry the request: %w", err)
+		}
 	}
 	// Publish connector tasks only after the chunk store is ready: a task the
 	// syncer picks up earlier would run against a store whose vector column for
@@ -683,12 +710,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	publishIDs := scheduledTaskIDs
 	publishIDs = append(publishIDs, recoveredTaskIDs...)
 	publishDatasetSyncerTasks(publishIDs)
-
-	if pagerankUpdate != nil {
-		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
-			return nil, common.CodeServerError, err
-		}
-	}
 
 	data := datasetToMap(ctx, updatedKB)
 	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
