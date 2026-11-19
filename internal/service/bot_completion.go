@@ -449,18 +449,14 @@ func (s *BotService) ChatbotCompletion(
 //     reference object; only the final frame carries the retrieval
 //     reference.
 //   - The final frame's `answer` is empty whenever text was already
-//     streamed as deltas (python async_chat sets final["answer"] = ""),
-//     so accumulating consumers do not double the text. The full text
-//     is sent when nothing was streamed (single-shot results such as
-//     the structured-SQL path) and on error finals, so a mid-stream
-//     pipeline failure still reaches the wire after partial deltas.
-//   - The persisted assistant turn is the raw streamed text, NOT the
-//     decorated final answer. The decorated text carries server-side
-//     [ID:n] citation markers; persisting it feeds fabricated markers
-//     back into the next turn's prompt, and models that imitate the
-//     history format then emit markers for turns whose retrieval
-//     returned nothing — which the widget renders as a citation icon
-//     with "Reference unavailable".
+//     streamed as deltas, so accumulating consumers do not double the
+//     text. Authoritative final results are the exception: they contain
+//     the compacted answer that must replace the streamed text. The full
+//     text is also sent when nothing was streamed and on error finals.
+//   - Ordinary turns persist the raw streamed text because decorated
+//     answers carry server-side [ID:n] citation markers. Authoritative
+//     results are already the canonical, compacted answer, so that final
+//     answer is persisted instead.
 func (s *BotService) streamChatbotTurn(
 	ctx context.Context,
 	session *entity.API4Conversation,
@@ -509,7 +505,7 @@ func (s *BotService) streamChatbotTurn(
 				// Save the completed answer before delivering the final SSE frame.
 				if !errored {
 					persisted := rawAnswer
-					if persisted == "" {
+					if persisted == "" || res.AnswerIsAuthoritative {
 						persisted = fullAnswer
 					}
 					saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -519,7 +515,7 @@ func (s *BotService) streamChatbotTurn(
 					cancel()
 				}
 				finalData := ""
-				if rawAnswer == "" || errored {
+				if rawAnswer == "" || errored || res.AnswerIsAuthoritative {
 					// The final frame is the only carrier of the text
 					// when nothing was streamed as deltas; on a
 					// pipeline-level error it must still carry the

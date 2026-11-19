@@ -142,6 +142,18 @@ func TestCitedIDsFromMarkers(t *testing.T) {
 	}
 }
 
+func TestCitedIDsFromMarkersAcceptsBareNumericMarkers(t *testing.T) {
+	r := NewEvidenceRegistry()
+	r.Stamp("c1") // [ID:0]
+	r.Stamp("c2") // [ID:1]
+
+	got := CitedIDsFromMarkers("fact A [1]\nfact B [0]\nignored [9]", r)
+	want := []string{"c2", "c1"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("CitedIDsFromMarkers = %v, want %v", got, want)
+	}
+}
+
 func TestCitedIDsFromMarkersNoSignal(t *testing.T) {
 	if got := CitedIDsFromMarkers("plain [ID:0]", nil); got != nil {
 		t.Errorf("nil registry returned %v, want nil", got)
@@ -168,6 +180,33 @@ func TestResolveCitationsCompactsAndDrops(t *testing.T) {
 	}
 	if len(cited) != 2 || cited[0] != "c3" || cited[1] != "c1" {
 		t.Fatalf("cited = %v, want [c3 c1]", cited)
+	}
+}
+
+func TestResolveCitationsAcceptsBareNumericMarkers(t *testing.T) {
+	r := NewEvidenceRegistry()
+	r.Stamp("c1") // [ID:0]
+	r.Stamp("c2") // [ID:1]
+
+	marked, cited := ResolveCitations("A [1]\nB [0]", r, []string{"c2", "c1"})
+	if marked != "A [ID:0]\nB [ID:1]" {
+		t.Fatalf("marked = %q, want compacted canonical handles", marked)
+	}
+	if fmt.Sprint(cited) != "[c2 c1]" {
+		t.Fatalf("cited = %v, want [c2 c1]", cited)
+	}
+}
+
+func TestResolveCitationsPreservesUnresolvedBareNumericMarkers(t *testing.T) {
+	r := NewEvidenceRegistry()
+	r.Stamp("c1")
+
+	marked, cited := ResolveCitations("Year [2024]; evidence [0]", r, []string{"c1"})
+	if marked != "Year [2024]; evidence [ID:0]" {
+		t.Fatalf("marked = %q, want unresolved bare number preserved", marked)
+	}
+	if fmt.Sprint(cited) != "[c1]" {
+		t.Fatalf("cited = %v, want [c1]", cited)
 	}
 }
 
