@@ -76,7 +76,7 @@ func (s *Scanner) ScanSkill(skillName, source, trustLevel string, files map[stri
 // scanFile scans a single file for threats
 func (s *Scanner) scanFile(filename, content string) []Finding {
 	var findings []Finding
-	lines := strings.Split(content, "\n")
+	lines := logicalLines(content)
 
 	for _, pattern := range s.patterns {
 		re, err := regexp.Compile("(?i:" + pattern.Pattern + ")")
@@ -84,14 +84,14 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 			continue
 		}
 
-		for i, line := range lines {
-			if matches := re.FindString(line); matches != "" {
+		for _, line := range lines {
+			if matches := re.FindString(line.text); matches != "" {
 				findings = append(findings, Finding{
 					PatternID:   pattern.PatternID,
 					Severity:    pattern.Severity,
 					Category:    pattern.Category,
 					File:        filename,
-					Line:        i + 1,
+					Line:        line.number,
 					Match:       strings.TrimSpace(matches),
 					Description: pattern.Description,
 				})
@@ -99,14 +99,14 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 		}
 	}
 
-	for i, line := range lines {
-		if operand, ok := scanQuotedRmExpansion(line); ok {
+	for _, line := range lines {
+		if operand, ok := scanQuotedRmExpansion(line.text); ok {
 			findings = append(findings, Finding{
 				PatternID:   "rm_quoted_expansion",
 				Severity:    "high",
 				Category:    "destructive",
 				File:        filename,
-				Line:        i + 1,
+				Line:        line.number,
 				Match:       strings.TrimSpace(operand),
 				Description: "recursive rm of a quoted operand with a separator before an expansion",
 			})
@@ -114,6 +114,58 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 	}
 
 	return findings
+}
+
+// logicalLine is one shell command line after backslash continuations are
+// folded: number is the physical line the logical line starts on, text no
+// longer carries the removed `\<newline>` pairs.
+type logicalLine struct {
+	number int
+	text   string
+}
+
+// logicalLines folds `\`-continued physical lines into logical commands so a
+// rule sees one command even when its operand is written on the next line. A
+// backslash inside single quotes is literal and does not continue the line,
+// matching the shell.
+func logicalLines(content string) []logicalLine {
+	var lines []logicalLine
+	var buf []byte
+	number, start := 1, 1
+	inSingle, escaped := false, false
+
+	for i := 0; i < len(content); i++ {
+		c := content[i]
+		if c == '\n' {
+			if escaped && !inSingle {
+				buf = buf[:len(buf)-1]
+				escaped = false
+				number++
+				continue
+			}
+			lines = append(lines, logicalLine{number: start, text: string(buf)})
+			buf = buf[:0]
+			number++
+			start = number
+			escaped, inSingle = false, false
+			continue
+		}
+		buf = append(buf, c)
+		switch {
+		case escaped:
+			escaped = false
+		case inSingle:
+			if c == '\'' {
+				inSingle = false
+			}
+		case c == '\\':
+			escaped = true
+		case c == '\'':
+			inSingle = true
+		}
+	}
+	lines = append(lines, logicalLine{number: start, text: string(buf)})
+	return lines
 }
 
 // scanQuotedRmExpansion is a quote-aware pass that stays out of
@@ -176,36 +228,146 @@ func scanQuotedRmExpansion(line string) (string, bool) {
 // reach the quoted-operand pass. A quoted word is never a prefix, so
 // `"echo" rm` stays a command of echo.
 func isCommandPosition(line string, i int, code []bool) bool {
-	// Inside a larger word only a path head keeps rm a command (`/bin/rm`);
-	// anything else (`myrm`, `transform-rm`) is not an rm invocation.
+	// The executable word must be exactly "rm" or a path whose basename is
+	// "rm" (`/bin/rm`, `./rm`). A longer basename (`transform`,
+	// `/usr/bin/tr.rm`) names a different program and must not match.
 	wordStart := i
 	for wordStart > 0 && line[wordStart-1] != ' ' && line[wordStart-1] != '\t' && !isCommandSeparator(line, wordStart-1, code) {
 		wordStart--
 	}
-	if wordStart < i {
-		switch head := line[wordStart:i]; head[0] {
-		case '/', '.':
-		default:
+	if head := line[wordStart:i]; head != "" {
+		if (head[0] != '/' && head[0] != '.') || !strings.HasSuffix(head, "/") {
 			return false
 		}
 	}
+	var words []string
 	for j := wordStart; j > 0; {
 		for j > 0 && (line[j-1] == ' ' || line[j-1] == '\t') {
 			j--
 		}
 		if j == 0 || isCommandSeparator(line, j-1, code) {
-			return true
+			break
 		}
 		start := j
 		for start > 0 && line[start-1] != ' ' && line[start-1] != '\t' && !isCommandSeparator(line, start-1, code) {
 			start--
 		}
-		if !isCommandPrefix(line[start:j]) {
-			return false
-		}
+		words = append(words, line[start:j])
 		j = start
 	}
+	for l, r := 0, len(words)-1; l < r; l, r = l+1, r-1 {
+		words[l], words[r] = words[r], words[l]
+	}
+	return prefixChainLeadsToCommand(words)
+}
+
+// prefixChainLeadsToCommand reports whether the tokens before the executable
+// word are only variable assignments and command wrappers, each with the
+// options and arguments it takes: `sudo -u root rm` and `xargs -n 1 rm` reach
+// an rm, while `echo rm` does not.
+func prefixChainLeadsToCommand(words []string) bool {
+	for k := 0; k < len(words); {
+		word := words[k]
+		if isAssignment(word) {
+			k++
+			continue
+		}
+		if !isCommandWrapper(word) {
+			return false
+		}
+		k++
+		for k < len(words) && strings.HasPrefix(words[k], "-") {
+			option := words[k]
+			k++
+			if wrapperOptionTakesValue(word, option) && k < len(words) && !strings.HasPrefix(words[k], "-") {
+				k++
+			}
+		}
+		if word == "env" {
+			for k < len(words) && isAssignment(words[k]) {
+				k++
+			}
+		}
+	}
 	return true
+}
+
+// isAssignment reports whether word is a leading NAME=VALUE variable
+// assignment.
+func isAssignment(word string) bool {
+	name, _, ok := strings.Cut(word, "=")
+	if !ok || name == "" {
+		return false
+	}
+	// A variable name cannot start with a digit.
+	if name[0] >= '0' && name[0] <= '9' {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		if !isShellWordByte(name[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// isCommandWrapper reports whether word is a command wrapper that preserves
+// the wrapped command's identity.
+func isCommandWrapper(word string) bool {
+	switch word {
+	case "sudo", "exec", "env", "nohup", "nice", "command", "xargs":
+		return true
+	}
+	return false
+}
+
+// wrapperOptionTakesValue reports whether option consumes the next word when
+// it follows the given wrapper. An attached value (`-uroot`, `--user=root`)
+// consumes nothing further.
+func wrapperOptionTakesValue(wrapper, option string) bool {
+	if strings.HasPrefix(option, "--") {
+		if strings.ContainsRune(option, '=') {
+			return false
+		}
+		return takesValue(wrapper, option[2:])
+	}
+	// An attached short value (`-uroot`) leaves nothing to consume.
+	if len(option) > 2 {
+		return false
+	}
+	return takesValue(wrapper, option[1:])
+}
+
+func takesValue(wrapper, name string) bool {
+	switch wrapper {
+	case "sudo":
+		switch name {
+		case "u", "g", "h", "p", "C", "T", "r", "t", "U", "D", "R",
+			"user", "group", "host", "prompt", "close-from", "command-timeout",
+			"role", "type", "other-user", "chdir", "chroot":
+			return true
+		}
+	case "env":
+		switch name {
+		case "u", "C", "S", "unset", "chdir", "split-string":
+			return true
+		}
+	case "nice":
+		switch name {
+		case "n", "adjustment":
+			return true
+		}
+	case "xargs":
+		switch name {
+		case "a", "d", "E", "I", "L", "n", "P", "s",
+			"arg-file", "delimiter", "eof", "replace", "max-lines",
+			"max-args", "max-procs", "max-chars":
+			return true
+		}
+	case "exec":
+		return name == "a"
+	}
+	return false
 }
 
 // isCommandSeparator reports whether the byte at pos ends a shell command
@@ -216,29 +378,6 @@ func isCommandSeparator(line string, pos int, code []bool) bool {
 	}
 	switch line[pos] {
 	case ';', '|', '&', '(':
-		return true
-	}
-	return false
-}
-
-// isCommandPrefix reports whether word is a prefix token another command word
-// may follow: a variable assignment or a command wrapper that preserves the
-// wrapped command's identity.
-func isCommandPrefix(word string) bool {
-	if name, _, ok := strings.Cut(word, "="); ok && name != "" {
-		for i := 0; i < len(name); i++ {
-			if !isShellWordByte(name[i]) {
-				return false
-			}
-		}
-		// A variable name cannot start with a digit.
-		if name[0] >= '0' && name[0] <= '9' {
-			return false
-		}
-		return true
-	}
-	switch word {
-	case "sudo", "exec", "env", "nohup", "nice", "command", "xargs":
 		return true
 	}
 	return false

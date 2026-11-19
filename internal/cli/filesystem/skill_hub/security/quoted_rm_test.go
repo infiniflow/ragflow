@@ -39,6 +39,11 @@ func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 		`$(rm -rf "a; $T")`,
 		`echo && rm -rf "a; $T"`,
 		`FOO=1 rm -rf "a; $T"`,
+		`sudo -n rm -rf "a; $T"`,
+		`sudo -u root rm -rf "a; $T"`,
+		`sudo -uroot rm -rf "a; $T"`,
+		`sudo --user=root rm -rf "a; $T"`,
+		`xargs -n 1 rm -rf "a; $T"`,
 	}
 
 	for _, line := range lines {
@@ -70,6 +75,10 @@ func TestScanSkillIgnoresRmQuotedExpansion(t *testing.T) {
 		`echo "rm -rf a; $T"`,
 		`echo rm -rf "a; $T"`,
 		`echo -n rm -rf "a; $T"`,
+		`sudo -u root echo rm -rf "a; $T"`,
+		`/usr/bin/tr.rm -rf "a; $T"`,
+		`./build.rm -rf "a; $T"`,
+		`sudo -u root transform -rf "a; $T"`,
 		`rmdir "a; $T"`,
 		`rm -fd "a; $T"`,
 	}
@@ -85,6 +94,38 @@ func TestScanSkillIgnoresRmQuotedExpansion(t *testing.T) {
 	}
 }
 
+func TestScanSkillJoinsBackslashContinuations(t *testing.T) {
+	cases := []string{
+		"#!/bin/sh\nrm -rf \\\n  \"build; $HOME\"\n",
+		"#!/bin/sh\nsudo -u root rm -rf \\\n  \"build; $HOME\"\n",
+		"#!/bin/sh\nrm -rf \"build;\\\n$HOME\"\n",
+	}
+	for _, content := range cases {
+		t.Run(content, func(t *testing.T) {
+			findings := scanContent(content)
+			if !hasPattern(findings, "rm_quoted_expansion") {
+				t.Fatalf("%q did not raise rm_quoted_expansion: %v", content, findings)
+			}
+			for _, finding := range findings {
+				if finding.PatternID == "rm_quoted_expansion" && finding.Line != 2 {
+					t.Fatalf("%q reported line %d, want the logical line's first physical line 2", content, finding.Line)
+				}
+			}
+		})
+	}
+}
+
+func TestScanSkillKeepsSingleQuotedBackslashLiteral(t *testing.T) {
+	// Inside single quotes a backslash does not continue the line, so the
+	// operand stays split across two physical lines and hides nothing.
+	content := "#!/bin/sh\nrm -rf 'build;\\\n$HOME'\n"
+	for _, finding := range scanContent(content) {
+		if finding.PatternID == "rm_quoted_expansion" {
+			t.Fatalf("single-quoted backslash raised rm_quoted_expansion: %v", finding)
+		}
+	}
+}
+
 func hasPattern(findings []Finding, id string) bool {
 	for _, finding := range findings {
 		if finding.PatternID == id {
@@ -95,7 +136,11 @@ func hasPattern(findings []Finding, id string) bool {
 }
 
 func scanLine(line string) []Finding {
+	return scanContent("#!/bin/sh\n" + line + "\n")
+}
+
+func scanContent(content string) []Finding {
 	return NewScanner().ScanSkill("skill", "github", "community", map[string][]byte{
-		"install.sh": []byte("#!/bin/sh\n" + line + "\n"),
+		"install.sh": []byte(content),
 	}).Findings
 }
