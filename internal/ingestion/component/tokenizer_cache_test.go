@@ -19,6 +19,8 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -125,6 +127,44 @@ func (m *memCacheStore) countEmbKeys() int {
 func chunkWithID(id, text string) schema.ChunkDoc {
 	doc, _ := schema.ChunkDocFromMap(map[string]any{"id": id, "text": text})
 	return doc
+}
+
+func TestEmbedChunks_LargeRunReusesCacheWithoutBackfill(t *testing.T) {
+	ctx := t.Context()
+	comp, stub := withStubEmbedder(t, 4096)
+	comp.param.Fields = []string{"text"}
+	store := newMemCacheStore()
+	chunks := []schema.ChunkDoc{chunkWithID("cached", "already embedded")}
+	cached, _, err := comp.embedChunks(ctx, "tenant", "kb", "", chunks, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := vecOf(t, cached[0], "q_4096_vec")
+	for i := range 300 {
+		chunks = append(chunks, chunkWithID(fmt.Sprintf("chunk-%d", i), "fresh text"))
+	}
+	out, _, err := comp.embedChunks(ctx, "tenant", "kb", "", chunks, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.countEmbKeys() != 1 {
+		t.Fatalf("large document should retain only the previously cached vector, got %d keys", store.countEmbKeys())
+	}
+	if !slices.Equal(vecOf(t, out[0], "q_4096_vec"), want) {
+		t.Fatal("previously cached vector was not preserved")
+	}
+	for _, batch := range stub.callInputs[1:] {
+		for _, input := range batch {
+			if input != "fresh text" {
+				t.Fatalf("unexpected input sent to embedder for the large run: %q", input)
+			}
+		}
+	}
+	for _, chunk := range out {
+		if len(vecOf(t, chunk, "q_4096_vec")) != 4096 {
+			t.Fatal("a vector is missing from the index payload")
+		}
+	}
 }
 
 func TestEmbedChunks_PerChunkCacheMissThenHit(t *testing.T) {
