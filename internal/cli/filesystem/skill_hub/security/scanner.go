@@ -126,8 +126,9 @@ type logicalLine struct {
 
 // logicalLines folds `\`-continued physical lines into logical commands so a
 // rule sees one command even when its operand is written on the next line. A
-// backslash inside single quotes is literal and does not continue the line,
-// matching the shell.
+// backslash inside single quotes or a comment is literal and does not continue
+// the line, matching the shell. A comment ends at its physical newline, so the
+// newline after `# ...\` must survive: the next line still runs.
 func logicalLines(content string) []logicalLine {
 	var lines []logicalLine
 	var buf []byte
@@ -135,12 +136,12 @@ func logicalLines(content string) []logicalLine {
 	// Double-quote state matters: an apostrophe is literal text inside a
 	// double-quoted span, so it must not open single-quote mode and swallow the
 	// backslash-newline that follows.
-	inSingle, inDouble, escaped := false, false, false
+	inSingle, inDouble, escaped, comment, wordStart := false, false, false, false, true
 
 	for i := 0; i < len(content); i++ {
 		c := content[i]
 		if c == '\n' {
-			if escaped && !inSingle {
+			if escaped && !inSingle && !comment {
 				buf = buf[:len(buf)-1]
 				escaped = false
 				number++
@@ -150,13 +151,14 @@ func logicalLines(content string) []logicalLine {
 			buf = buf[:0]
 			number++
 			start = number
-			escaped, inSingle, inDouble = false, false, false
+			escaped, inSingle, inDouble, comment, wordStart = false, false, false, false, true
 			continue
 		}
 		buf = append(buf, c)
 		switch {
 		case escaped:
 			escaped = false
+			wordStart = false
 		case inSingle:
 			if c == '\'' {
 				inSingle = false
@@ -170,12 +172,23 @@ func logicalLines(content string) []logicalLine {
 			case '"':
 				inDouble = false
 			}
+		case comment:
+			// Comment text runs to the physical newline; nothing in it is code.
 		case c == '\\':
 			escaped = true
+			wordStart = false
 		case c == '\'':
 			inSingle = true
+			wordStart = false
 		case c == '"':
 			inDouble = true
+			wordStart = false
+		case c == '#' && wordStart:
+			comment = true
+		case c == ' ', c == '\t', c == ';', c == '&', c == '|':
+			wordStart = true
+		default:
+			wordStart = false
 		}
 	}
 	lines = append(lines, logicalLine{number: start, text: string(buf)})
@@ -235,54 +248,50 @@ func scanQuotedRmExpansion(line string) (string, bool) {
 }
 
 // isCommandPosition reports whether the "rm" starting at offset i sits at a
-// shell command position: preceded by nothing, by a command separator, or by
-// a chain of command prefixes — variable assignments, sudo/env and friends,
-// or the path head of the executable itself (`/bin/rm`, `./rm`). An rm that
-// is a word of another command (`echo rm -rf ...`) is inert and must not
-// reach the quoted-operand pass. A quoted word is never a prefix, so
-// `"echo" rm` stays a command of echo.
+// shell command position: preceded by nothing, by a command separator, by a
+// keyword that starts a command (`then`, `do`), or by a chain of command
+// prefixes — variable assignments, sudo/env and friends, or the path head of
+// the executable itself (`/bin/rm`, `bin/rm`, `./rm`). An rm that is a word of
+// another command (`echo rm -rf ...`) is inert and must not reach the
+// quoted-operand pass. A quoted word is never a prefix, so `"echo" rm` stays a
+// command of echo.
 func isCommandPosition(line string, i int, code []bool) bool {
 	// The executable word must be exactly "rm" or a path whose basename is
-	// "rm" (`/bin/rm`, `./rm`). A longer basename (`transform`,
+	// "rm" (`/bin/rm`, `bin/rm`, `./rm`). A longer basename (`transform`,
 	// `/usr/bin/tr.rm`) names a different program and must not match.
 	wordStart := i
 	for wordStart > 0 && line[wordStart-1] != ' ' && line[wordStart-1] != '\t' && !isCommandSeparator(line, wordStart-1, code) {
 		wordStart--
 	}
-	if head := line[wordStart:i]; head != "" {
-		if (head[0] != '/' && head[0] != '.') || !strings.HasSuffix(head, "/") {
-			return false
+	if head := line[wordStart:i]; head != "" && !strings.HasSuffix(head, "/") {
+		return false
+	}
+	// Words before the executable are split with quote awareness, so an
+	// assignment or wrapper option value that holds spaces (`LABEL="a b" rm`)
+	// stays one word instead of splitting into fragments.
+	prefix := line[:wordStart]
+	lastSeparator := -1
+	for pos := 0; pos < len(prefix); pos++ {
+		if isCommandSeparator(prefix, pos, code) {
+			lastSeparator = pos
 		}
 	}
-	var words []string
-	for j := wordStart; j > 0; {
-		for j > 0 && (line[j-1] == ' ' || line[j-1] == '\t') {
-			j--
-		}
-		if j == 0 || isCommandSeparator(line, j-1, code) {
-			break
-		}
-		start := j
-		for start > 0 && line[start-1] != ' ' && line[start-1] != '\t' && !isCommandSeparator(line, start-1, code) {
-			start--
-		}
-		words = append(words, line[start:j])
-		j = start
-	}
-	for l, r := 0, len(words)-1; l < r; l, r = l+1, r-1 {
-		words[l], words[r] = words[r], words[l]
-	}
-	return prefixChainLeadsToCommand(words)
+	return prefixChainLeadsToCommand(shellWords(prefix[lastSeparator+1:]))
 }
 
 // prefixChainLeadsToCommand reports whether the tokens before the executable
-// word are only variable assignments and command wrappers, each with the
-// options and arguments it takes: `sudo -u root rm` and `xargs -n 1 rm` reach
-// an rm, while `echo rm` does not.
+// word are only variable assignments, shell keywords that start a command
+// (`then`, `do`), and command wrappers, each with the options and arguments it
+// takes: `sudo -u root rm` and `if true; then rm` reach an rm, while
+// `echo rm` does not.
 func prefixChainLeadsToCommand(words []string) bool {
 	for k := 0; k < len(words); {
 		word := words[k]
 		if isAssignment(word) {
+			k++
+			continue
+		}
+		if isCommandKeyword(word) {
 			k++
 			continue
 		}
@@ -304,6 +313,18 @@ func prefixChainLeadsToCommand(words []string) bool {
 		}
 	}
 	return true
+}
+
+// isCommandKeyword reports whether word is a shell keyword that ends a
+// compound-command header and is directly followed by a command of its own
+// (`if ...; then rm`). Keywords are only accepted ahead of a wrapper chain, so
+// `echo then rm` still fails on its first word.
+func isCommandKeyword(word string) bool {
+	switch word {
+	case "if", "then", "elif", "else", "while", "until", "do", "time", "!":
+		return true
+	}
+	return false
 }
 
 // isAssignment reports whether word is a leading NAME=VALUE variable

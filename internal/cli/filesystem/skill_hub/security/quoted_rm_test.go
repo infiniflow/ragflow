@@ -44,6 +44,12 @@ func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 		`sudo -uroot rm -rf "a; $T"`,
 		`sudo --user=root rm -rf "a; $T"`,
 		`xargs -n 1 rm -rf "a; $T"`,
+		`bin/rm -rf "a; $T"`,
+		`./build/bin/rm -rf "a; $T"`,
+		`LABEL="a b" rm -rf "a; $T"`,
+		`if true; then rm -rf "a; $T"; fi`,
+		`for f in a b; do rm -rf "a; $T"; done`,
+		`while true; do rm -rf "a; $T"; done`,
 	}
 
 	for _, line := range lines {
@@ -76,6 +82,8 @@ func TestScanSkillIgnoresRmQuotedExpansion(t *testing.T) {
 		`echo rm -rf "a; $T"`,
 		`echo -n rm -rf "a; $T"`,
 		`sudo -u root echo rm -rf "a; $T"`,
+		`echo then rm -rf "a; $T"`,
+		`echo do rm -rf "a; $T"`,
 		`/usr/bin/tr.rm -rf "a; $T"`,
 		`./build.rm -rf "a; $T"`,
 		`sudo -u root transform -rf "a; $T"`,
@@ -132,6 +140,21 @@ func TestScanSkillKeepsSingleQuotedBackslashLiteral(t *testing.T) {
 	for _, finding := range scanContent(content) {
 		if finding.PatternID == "rm_quoted_expansion" {
 			t.Fatalf("single-quoted backslash raised rm_quoted_expansion: %v", finding)
+		}
+	}
+}
+
+func TestScanSkillKeepsCommentNewline(t *testing.T) {
+	// A comment ends at its physical newline, so the backslash at its end
+	// continues nothing and the next line still runs.
+	content := "#!/bin/sh\n# note \\\nrm -rf \"p;/../victim$SUFFIX\"\n"
+	findings := scanContent(content)
+	if !hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("missing quoted expansion after a comment: %v", findings)
+	}
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" && finding.Line != 3 {
+			t.Fatalf("reported line %d, want the physical line 3", finding.Line)
 		}
 	}
 }
