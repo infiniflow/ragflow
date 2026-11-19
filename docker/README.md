@@ -2,38 +2,15 @@
 
 This guide documents the Go implementation of RAGFlow. Use `docker/.env`, `docker/docker-compose.yml`, `Dockerfile`, and `docker/entrypoint.sh` for a Go deployment.
 
-The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bin/ragflow_server` binary. DeepDoc inference runs in-process. Select an official Go image tag documented in the corresponding release notes, or build the image locally as described below.
+The OSS image runs all services in one `bin/ragflow_server` process. It migrates
+the database, starts Admin and initializes the superuser, starts API, then runs
+Ingestor, Syncer and Chatter in parallel. The entrypoint renders configuration,
+starts nginx, and forwards server options unchanged. No service selection flags
+are needed. Stop the container to stop all services.
 
-Chat channels run inside the API process by default. Add `--chatter` to the
-entrypoint to launch them in a separate process alongside the enabled services:
-
-```bash
-bash docker/entrypoint.sh
-bash docker/entrypoint.sh --chatter
-```
-
-The second command passes `--disable-chat-channels` to the API and starts one
-`bin/ragflow_server --chatter` child. Existing service-disable flags still apply;
-chatter can also run with `--disable-api-server`. Channel configuration, saved
-conversations, webhook listener addresses and authenticated runtime-status routes
-stay the same. Both processes need the same service configuration and shared
-database, Kvrocks, storage and model resources.
-
-In separate-process mode, WhatsApp status and QR changes (including logout)
-appear on the next status publication, normally within 10 seconds. Stopping or
-replacing a channel removes its cached status immediately; a crashed chatter
-process loses its cached status after 30 seconds without a refresh.
-
-For a manual deployment, run these commands in separate process supervisors:
-
-```bash
-bin/ragflow_server --api --disable-chat-channels
-bin/ragflow_server --chatter
-```
-
-The binary selects one mode; `--api --chatter` does not launch both processes.
-Run one channel owner per deployment: starting standalone chatter alongside an API
-with embedded channels enabled would connect each channel twice.
+DeepDoc inference runs in-process; the OSS server does not launch a standalone
+DeepDoc service. For inbound channel webhooks, publish the configured listener
+ports on the RAGFlow container.
 
 <details open>
 <summary><b>📗 Table of Contents</b></summary>
@@ -82,7 +59,7 @@ sudo sysctl -w vm.max_map_count=262144
 
 This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
 
-The `v1.0.0-rc1` tag and later release tags use the Go implementation. The entrypoint migrates the default MySQL metadata database first, then starts the Go Syncer, Admin server, API server, and Ingestor. Open `http://localhost` after the HTTP health check succeeds.
+The `v1.0.0-rc1` tag and later release tags use the Go implementation. The server runs migrations and initializes the superuser before starting its services. Open `http://localhost` after the HTTP health check succeeds.
 
 For local image builds, use the [Go image build guide](../docs/develop/build_docker_image.mdx).
 

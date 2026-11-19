@@ -1045,6 +1045,11 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 }
 
 func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValue string) error {
+	if strings.EqualFold(varName, "api_key.max_count") {
+		if _, err := entity.ParseAPITokenLimit(varValue); err != nil {
+			return err
+		}
+	}
 	settings, err := s.systemSettingsDAO.GetByName(ctx, db, varName)
 	if err != nil {
 		return err
@@ -1052,6 +1057,11 @@ func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValu
 
 	if len(settings) == 1 {
 		setting := &settings[0]
+		if strings.EqualFold(setting.Name, "api_key.max_count") {
+			if _, err := entity.ParseAPITokenLimit(varValue); err != nil {
+				return err
+			}
+		}
 		if err = entity.ValidateSystemSettingValue(*setting, varValue); err != nil {
 			return err
 		}

@@ -76,9 +76,6 @@ func NewRuntime() *Runtime {
 func Start(ctx context.Context, agentService *service.AgentService) (*Runtime, error) {
 	channelRuntime := NewRuntime()
 	channelRuntime.agentService = agentService
-	service.SetChatChannelRuntimeProvider(func(_ context.Context, row *entity.ChatChannel) (map[string]any, bool) {
-		return whatsappRuntimeSnapshotMap(row.ID)
-	})
 	if kvrocks.IsEnabled() {
 		channelRuntime.statusCache = service.NewChatChannelRuntimeCache(kvrocks.Get().GetClient())
 	}

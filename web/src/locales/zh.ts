@@ -1293,6 +1293,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       linkupApiKeyMessage: '请输入你的 Linkup API Key',
       parallelApiKeyTip: '选择 Parallel 后，将使用其搜索摘录补充知识库检索。',
       parallelApiKeyMessage: '请输入你的 Parallel API Key',
+      perplexityApiKeyTip:
+        '选择 Perplexity 后，将使用 Perplexity Search API 的搜索结果补充知识库检索。',
+      perplexityApiKeyMessage: '请输入你的 Perplexity API Key',
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入 Querit API Key',
@@ -3355,6 +3358,29 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       youComFreshnessMonth: '一个月内',
       youComFreshnessYear: '一年内',
       youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
+      perplexitySearch: 'Perplexity',
+      perplexitySearchDescription:
+        '由 Perplexity Search API 驱动的网页搜索组件。每条结果包含标题、URL、摘要，以及（如已知）发布日期。需要 API Key。',
+      perplexitySearchType: '搜索类型',
+      perplexitySearchTypeTip: 'Web 是默认搜索类型。Fast 优先降低延迟。',
+      perplexitySearchTypeWeb: 'Web',
+      perplexitySearchTypeFast: 'Fast',
+      perplexityRecency: '时间范围',
+      perplexityRecencyTip: '按发布时间限制搜索结果。',
+      perplexityRecencyAny: '不限',
+      perplexityRecencyHour: '过去一小时',
+      perplexityRecencyDay: '过去一天',
+      perplexityRecencyWeek: '过去一周',
+      perplexityRecencyMonth: '过去一月',
+      perplexityRecencyYear: '过去一年',
+      perplexityDomainFilter: '域名过滤',
+      perplexityDomainFilterTip:
+        '以逗号分隔，最多 20 个域名。每次请求只能使用一种模式：要么只列出要搜索的域名（例如 "ragflow.io, docs.example.com"），要么只列出要排除的域名并加 "-" 前缀（例如 "-pinterest.com, -reddit.com"）。两者混用会被拒绝。留空则搜索整个网络。',
+      perplexityCountry: '国家/地区',
+      perplexityCountryTip:
+        '可选的 ISO 3166-1 alpha-2 国家代码（例如 US），用于优先返回该国家/地区的结果。',
+      perplexityApiKeyTip:
+        '必填。请在 perplexity.ai/account/api/keys 创建 API Key。',
       sofyaSearch: 'Sofya',
       sofyaSearchDescription:
         '基于 Sofya 的网络搜索组件。根据搜索深度，结果附带结果页面的正文内容或仅附带搜索摘要。需要配置 API Key。',

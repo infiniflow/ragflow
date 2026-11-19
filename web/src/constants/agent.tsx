@@ -127,6 +127,7 @@ export enum Operator {
   BGPT = 'BGPT',
   KeenableSearch = 'KeenableSearch',
   YouComSearch = 'YouComSearch',
+  PerplexitySearch = 'PerplexitySearch',
   SofyaSearch = 'SofyaSearch',
   Search1APISearch = 'Search1APISearch',
   Search1APICrawl = 'Search1APICrawl',
