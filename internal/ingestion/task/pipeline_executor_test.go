@@ -1307,6 +1307,45 @@ func TestCountOriginalChunkIDs(t *testing.T) {
 	}
 }
 
+// TestWrittenChunkIDsCoversEveryRowTheRunWrote pins the set the history
+// finalizer diffs against. A run writes source chunks, the parent rows
+// materialised from them and the compiler's products, and all of them exist in
+// the document's open chunk history. Diffing the source-only set would
+// tombstone the parent and compiled rows the same run just created, and
+// AppendParseBaseline never rewrites version 0, so that damage would be
+// permanent.
+func TestWrittenChunkIDsCoversEveryRowTheRunWrote(t *testing.T) {
+	chunks := []map[string]any{
+		{"id": "source-1"},
+		{"id": "source-1"}, // duplicate text: one engine row
+		{"id": "wiki-page-1", "compile_kwd": "wiki_page"},
+	}
+	parents := []map[string]any{
+		{"id": "parent-1"},
+		{"id": "parent-1"},
+	}
+	indexChunks := make([]map[string]any, 0, len(chunks)+len(parents))
+	indexChunks = append(indexChunks, chunks...)
+	indexChunks = append(indexChunks, parents...)
+
+	want := []string{"source-1", "wiki-page-1", "parent-1"}
+	got := writtenChunkIDs(indexChunks)
+	if len(got) != len(want) {
+		t.Fatalf("written ids = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("written ids = %v, want %v", got, want)
+		}
+	}
+
+	// The document counter keeps counting source chunks only: parent rows and
+	// compiled products are derived artifacts.
+	if n := countOriginalChunkIDs(chunks); n != 1 {
+		t.Fatalf("source chunk count = %d, want 1", n)
+	}
+}
+
 func TestMergeCompiledVariants(t *testing.T) {
 	if got := mergeCompiledVariants(nil, nil); got != nil {
 		t.Fatalf("empty variants = %v, want nil", got)
