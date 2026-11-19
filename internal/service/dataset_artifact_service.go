@@ -24,6 +24,7 @@ import (
 	"golang.org/x/text/language"
 
 	"gorm.io/gorm"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -423,6 +424,89 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 		}
 	}
 	return s.GetWikiPage(ctx, tenantID, datasetID, pageType, slug)
+}
+
+// restorableWikiPageFields are the page fields a restore writes back. They are
+// the ones a snapshot carries and the engine indexes: taking the snapshot's own
+// keys would also write back ids and hashes, which describe that moment's
+// document rather than the page.
+var restorableWikiPageFields = []string{
+	"content_with_weight",
+	"title_kwd",
+	"summary_with_weight",
+	"topic_kwd",
+	"entity_names_kwd",
+	"entity_type_kwd",
+	"outlinks_kwd",
+	"related_kb_pages_kwd",
+	"source_chunk_ids",
+	"source_doc_ids",
+	"compile_kwd",
+	"plan_kwd",
+	"scope_kwd",
+}
+
+// RestoreWikiPage writes a page as a version recorded it: every field the
+// snapshot carries, not only the body. A page whose summary and links still
+// describe a later edit is not the page the version described, so the whole
+// document moves together.
+//
+// The page is found by its identity. When the engine no longer holds it the page
+// is rebuilt from the snapshot, because a restore has to put back the pages the
+// version had and not only fix the ones that survived - and the snapshot is the
+// only thing that remembers them.
+func (s *DatasetArtifactService) RestoreWikiPage(ctx context.Context, tenantID, datasetID, pageType, slug string, page map[string]any) (bool, error) {
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return false, fmt.Errorf("document engine is not initialized")
+	}
+	if len(page) == 0 {
+		return false, nil
+	}
+	slugKwd := pageType + "/" + slug
+	filter := map[string]interface{}{
+		"type_kwd":      []string{CompileKwdWikiPage},
+		"page_type_kwd": []string{pageType},
+		"slug_kwd":      []string{slugKwd},
+		"available_int": 1, // merged dataset-level page only
+	}
+	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 1, nil)
+	if err != nil {
+		return false, err
+	}
+
+	fields := make(map[string]interface{}, len(restorableWikiPageFields)+2)
+	for _, key := range restorableWikiPageFields {
+		if value, ok := page[key]; ok {
+			fields[key] = value
+		}
+	}
+	// The identity travels with the content so a rebuilt page is addressable by
+	// the same slug the snapshot was written under.
+	fields["slug_kwd"] = slugKwd
+	fields["page_type_kwd"] = pageType
+	fields["available_int"] = 1
+
+	indexName := wikiIndexName(tenantID)
+	if len(chunks) > 0 {
+		id, _ := chunks[0]["id"].(string)
+		if id == "" {
+			return false, fmt.Errorf("wiki page chunk has no id")
+		}
+		cond := map[string]interface{}{"id": id, "kb_id": datasetID}
+		if err := docEngine.UpdateChunks(ctx, cond, fields, indexName, datasetID); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	fields["id"] = common.GenerateUUID()
+	fields["kb_id"] = datasetID
+	fields["type_kwd"] = CompileKwdWikiPage
+	if _, err := docEngine.InsertChunks(ctx, []map[string]interface{}{fields}, indexName, datasetID, ""); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // WikiTopicItem is a single topic entry returned by ListWikiTopics.

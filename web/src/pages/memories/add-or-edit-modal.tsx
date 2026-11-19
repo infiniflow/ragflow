@@ -57,6 +57,7 @@ export const AddOrEditModal = memo(function AddOrEditModal(props: IProps) {
       }
       showfooter={false}
       confirmLoading={props.loading}
+      maskClosable={false}
     >
       <DynamicForm.Root
         fields={fields}

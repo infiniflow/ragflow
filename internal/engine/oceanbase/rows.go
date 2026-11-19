@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -271,7 +272,7 @@ func buildQualifiedSelectFields(fields []string, kind, tableAlias string) (strin
 // request next to it ("*", "compile_kwd") must not turn the row into a partial
 // projection that drops the rest of extra.
 func chunkSelectionNeedsSchema(fields []string) bool {
-	if containsString(fields, "*") {
+	if slices.Contains(fields, "*") {
 		return false
 	}
 	for _, field := range fields {
@@ -302,7 +303,7 @@ func chunkFieldsFromExtra(fields []string, tableColumns map[string]bool) map[str
 }
 
 func buildSelectFieldsWithAlias(fields []string, kind, tableAlias string, tableColumns map[string]bool) (string, []string, error) {
-	if len(fields) == 0 || containsString(fields, "*") {
+	if len(fields) == 0 || slices.Contains(fields, "*") {
 		// Chunk columns grow additively on existing tables, so a static default
 		// list breaks a read that runs before CreateChunkStore. SELECT * follows
 		// the table's real schema.
@@ -315,7 +316,7 @@ func buildSelectFieldsWithAlias(fields []string, kind, tableAlias string, tableC
 		}
 		fields = defaultFields(kind)
 	}
-	if !containsString(fields, identifierField(kind)) {
+	if !slices.Contains(fields, identifierField(kind)) {
 		fields = append([]string{identifierField(kind)}, fields...)
 	}
 	expressions := make([]string, 0, len(fields))
@@ -369,13 +370,4 @@ func identifierField(kind string) string {
 		return "skill_id"
 	}
 	return "id"
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }

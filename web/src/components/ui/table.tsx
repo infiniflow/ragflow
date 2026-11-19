@@ -4,9 +4,17 @@ import { cn } from '@/lib/utils';
 
 const Table = React.forwardRef<
   HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement> & { rootClassName?: string }
->(({ className, rootClassName, ...props }, ref) => (
+  React.HTMLAttributes<HTMLTableElement> & {
+    rootClassName?: string;
+    // rootRef exposes the scroll container. The table itself is not the element
+    // that scrolls — the wrapper is — so a caller that has to know how far down
+    // the reader is (an infinite-scroll list) needs this ref rather than the
+    // forwarded one.
+    rootRef?: React.Ref<HTMLDivElement>;
+  }
+>(({ className, rootClassName, rootRef, ...props }, ref) => (
   <div
+    ref={rootRef}
     className={cn(
       'relative w-full overflow-auto rounded-2xl bg-bg-card scrollbar-auto',
       rootClassName,

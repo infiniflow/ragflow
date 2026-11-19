@@ -149,6 +149,12 @@ type fakeDocumentService struct {
 	metadataErr            error
 	metadataKBID           string
 	metadataDocIDs         []string
+	metadataByIDsCalls     int
+	metadataByIDsKBID      string
+	metadataByIDsDocIDs    []string
+	metadataByIDsResult    map[string]map[string]interface{}
+	metadataByIDsErr       error
+	metadataSingleCalls    int
 	uploadLocalData        []map[string]interface{}
 	uploadLocalErrs        []string
 	uploadLocalKB          *entity.Knowledgebase
@@ -355,7 +361,17 @@ func (f *fakeDocumentService) HasActiveIngestionTasks(ctx context.Context, datas
 }
 
 func (f *fakeDocumentService) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error) {
+	f.metadataSingleCalls++
+	if f.metadataByIDsResult != nil {
+		return f.metadataByIDsResult[docID], nil
+	}
 	return nil, nil
+}
+func (f *fakeDocumentService) GetDocumentMetadataByIDs(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error) {
+	f.metadataByIDsCalls++
+	f.metadataByIDsKBID = kbID
+	f.metadataByIDsDocIDs = append([]string(nil), docIDs...)
+	return f.metadataByIDsResult, f.metadataByIDsErr
 }
 func (f *fakeDocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
 	f.uploadLocalKB = kb
@@ -915,7 +931,7 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 }
 
-func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
+func TestUploadDocumentsHandler_LocalPartialFailureReturnsUploadedDocuments(t *testing.T) {
 	db := setupUploadHandlerDB(t, "normal")
 	orig := dao.DB
 	dao.DB = db
@@ -948,8 +964,13 @@ func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("expected server error code for partial upload, got %v", resp)
 	}
-	if _, ok := resp["data"]; ok {
-		t.Fatalf("error response must omit data: %v", resp)
+	docs, ok := resp["data"].([]interface{})
+	if !ok || len(docs) != 1 {
+		t.Fatalf("expected the successfully uploaded document, got %v", resp)
+	}
+	doc, ok := docs[0].(map[string]interface{})
+	if !ok || doc["id"] != "doc-1" || doc["dataset_id"] != "ds-1" || doc["ingestion_status"] != "UNSTART" {
+		t.Fatalf("expected a mapped document, got %v", docs[0])
 	}
 	if !strings.Contains(resp["message"].(string), "bad.exe") {
 		t.Fatalf("expected failed file in message, got %v", resp["message"])

@@ -21,6 +21,8 @@ package deepdoc
 
 import (
 	"fmt"
+	"os"
+	native "ragflow/internal/deepdoc/native"
 	goruntime "runtime"
 	"strconv"
 	"strings"
@@ -28,7 +30,6 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	"ragflow/internal/deepdoc/native"
 	pdf "ragflow/internal/deepdoc/parser/pdf"
 	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/server"
@@ -52,6 +53,19 @@ func inferenceTotalCores() int {
 	return n
 }
 
+// resolveDeviceSpec picks the DeepDoc device spec from CLI and env, trimming
+// whitespace and defaulting to "cpu". A non-blank CLI value wins over env; a
+// blank CLI value falls back to env; both blank resolve to "cpu".
+func resolveDeviceSpec(cli, env string) string {
+	if spec := strings.TrimSpace(cli); spec != "" {
+		return spec
+	}
+	if spec := strings.TrimSpace(env); spec != "" {
+		return spec
+	}
+	return "cpu"
+}
+
 // RegisterNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
 // inference backend. The server is built with -tags cgo and links ONNX Runtime
 // statically (libonnxruntime.a, resolved at runtime via dlopen(NULL) from the
@@ -65,6 +79,20 @@ func inferenceTotalCores() int {
 func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	modelDir := resolveDeepDocModelDir()
 	dropScore := resolveDeepDocDropScore()
+
+	// Resolve the device policy. The default build accepts only cpu; a gpu
+	// request fails fast here via native.ParseDevice. CLI overrides env. No
+	// silent fallback to CPU.
+	cliDevice := ""
+	if arguments.DeepdocDevice != nil {
+		cliDevice = *arguments.DeepdocDevice
+	}
+	deviceSpec := resolveDeviceSpec(cliDevice, os.Getenv(common.EnvDeepDocDevice))
+	dev, err := native.ParseDevice(deviceSpec)
+	if err != nil {
+		return fmt.Errorf("invalid DeepDoc device: %w", err)
+	}
+	native.SetDevice(dev)
 
 	if err := infnative.Register(modelDir, dropScore); err != nil {
 		common.Warn("in-process DeepDoc backend unavailable",

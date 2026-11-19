@@ -66,6 +66,84 @@ func TestCanvasState_MarshalUnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestCanvasState_RestoreKeepsExactLargeIntegerToolIDs(t *testing.T) {
+	t.Parallel()
+
+	// The Querit tool returns JSON numbers, including IDs larger than int64.
+	// After an interrupt, downstream nodes must see the same numeric IDs.
+	const largeID = json.Number("11099848653006015581")
+	const negativeID = json.Number("-9007199254740993")
+	src := NewCanvasState("run-1", "session-1")
+	src.SetVar("search_0", "result", map[string]any{
+		"records": []any{map[string]any{"id": largeID}, map[string]any{"id": negativeID}},
+		"count":   2,
+		"score":   0.25,
+	})
+	wire, err := json.Marshal(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dst CanvasState
+	if err := json.Unmarshal(wire, &dst); err != nil {
+		t.Fatal(err)
+	}
+	result, err := dst.GetVar("search_0@result")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := result.(map[string]any)
+	records := got["records"].([]any)
+	for i, want := range []json.Number{largeID, negativeID} {
+		if id := records[i].(map[string]any)["id"]; id != want {
+			t.Errorf("record %d ID = %v (%T), want %s (json.Number)", i, id, id, want)
+		}
+	}
+	if got["count"] != float64(2) || got["score"] != float64(0.25) {
+		t.Errorf("ordinary restored numbers changed type or value: count=%v (%T), score=%v (%T)",
+			got["count"], got["count"], got["score"], got["score"])
+	}
+}
+
+func TestCanvasState_RestoreNumberTypesAtSafeIntegerBoundary(t *testing.T) {
+	t.Parallel()
+
+	var state CanvasState
+	// Raw JSON also covers old checkpoint payloads and both typed slice fields.
+	const wire = `{"history":[{"values":[9007199254740991,-9007199254740991,9007199254740992,-9007199254740992]}],"memory":[{"values":[1.25,1e3]}]}`
+	if err := json.Unmarshal([]byte(wire), &state); err != nil {
+		t.Fatal(err)
+	}
+	checks := []struct {
+		got  []any
+		want []any
+	}{
+		{state.History[0]["values"].([]any), []any{float64(9007199254740991), float64(-9007199254740991), json.Number("9007199254740992"), json.Number("-9007199254740992")}},
+		{state.Memory[0]["values"].([]any), []any{float64(1.25), float64(1000)}},
+	}
+	for _, check := range checks {
+		for i, want := range check.want {
+			if got := check.got[i]; got != want {
+				t.Errorf("value %d = %v (%T), want %v (%T)", i, got, got, want, want)
+			}
+		}
+	}
+}
+
+func TestCanvasState_RestoreRejectsInvalidPayloadWithoutChangingState(t *testing.T) {
+	t.Parallel()
+
+	for _, wire := range []string{`{"run_id":"new","env":{"overflow":1e400}}`, `{"run_id":"new"} {}`} {
+		state := NewCanvasState("old", "session")
+		state.SetEnv("kept", "value")
+		if err := state.UnmarshalJSON([]byte(wire)); err == nil {
+			t.Fatalf("UnmarshalJSON accepted %s", wire)
+		}
+		if state.RunID != "old" || state.Env["kept"] != "value" {
+			t.Fatalf("invalid checkpoint changed state: run=%q, env=%#v", state.RunID, state.Env)
+		}
+	}
+}
+
 func TestCanvasState_UnmarshalInitializesMutableState(t *testing.T) {
 	t.Parallel()
 

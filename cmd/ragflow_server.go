@@ -52,23 +52,6 @@ import (
 	"ragflow/internal/storage"
 )
 
-var (
-	registerEditionFlags = func(_ *flag.FlagSet, _ *bootstrap.ServerArgs) func() error {
-		return func() error { return nil }
-	}
-	printHelp  = printStandaloneHelp
-	runEdition = runService
-)
-
-func printStandaloneHelp(_ *bootstrap.ServerArgs) {
-	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
-	fmt.Fprintln(os.Stderr, "RAGFlow Server - runs admin, API, ingestor, syncer and chatter in one process.")
-	fmt.Fprintln(os.Stderr, "Database migration and superuser initialization run automatically.")
-	fmt.Fprintln(os.Stderr, "Default ports: admin 9381, API 9380.")
-	fmt.Fprintln(os.Stderr)
-	printCommonHelp()
-}
-
 // isStandaloneDeepDocServer reports whether st is a standalone DeepDoc
 // inference server (CPU/GPU/Ascend). These boot the ONNX runtime only and never
 // the full RAGFlow infrastructure, so main() returns early for them before
@@ -133,12 +116,14 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	fs.StringVar(&logLevel, "log-level", "", "")
 	fs.StringVar(&configPath, "config", "", "")
 	fs.StringVar(&configPath, "f", "", "")
+	var deepdocDevice string
+	fs.StringVar(&deepdocDevice, "deepdoc-device", "", "")
 	fs.BoolVar(&args.EnablePProf, "profile", false, "")
 	fs.BoolVar(&args.HelpFlag, "help", false, "")
 	fs.BoolVar(&args.HelpFlag, "h", false, "")
 	fs.BoolVar(&args.VersionFlag, "version", false, "")
 	fs.BoolVar(&args.VersionFlag, "v", false, "")
-	finish := registerEditionFlags(fs, args)
+	finish := registerFlags(fs, args)
 
 	if len(argv) > 0 {
 		if err := fs.Parse(argv[1:]); err != nil {
@@ -160,6 +145,8 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 			args.LogLevel = &logLevel
 		case "config", "f":
 			args.ConfigPath = &configPath
+		case "deepdoc-device":
+			args.DeepdocDevice = &deepdocDevice
 		}
 	})
 	if err := finish(); err != nil {
@@ -216,13 +203,16 @@ func main() {
 		return
 	}
 
-	if err := runEdition(ctx, cancel, arguments); err != nil {
+	if err := runServer(ctx, cancel, arguments); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start RAGFlow: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runService(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.ServerArgs) error {
+func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.ServerArgs) error {
+	if err := validateServerMode(arguments); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	combined := arguments.Mode == nil
@@ -403,27 +393,10 @@ func runService(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.
 	}
 	// Stop and join service work before closing any process-wide resource.
 	defer cancel()
-	if combined {
-		return runServices(ctx, cancel, arguments, services)
+	if common.GetRAGFlowType() == common.EnterpriseEdition {
+		return runEnterpriseServices(ctx, cancel, arguments, services)
 	}
-	return runMode(ctx, cancel, arguments, services)
-}
-
-func runMode(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
-	switch *args.Mode {
-	case "admin":
-		return admin.Run(ctx, args)
-	case "api":
-		return apipkg.Run(ctx, *args.Name, args, services)
-	case "ingestor":
-		return ingestorpkg.Run(ctx, cancel, args, services)
-	case "syncer":
-		return syncerpkg.Run(ctx, cancel, args)
-	case "chatter":
-		return chatterpkg.Run(ctx, args, services)
-	default:
-		return fmt.Errorf("invalid server mode: %s", *args.Mode)
-	}
+	return runServices(ctx, cancel, arguments, services)
 }
 
 func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
@@ -442,9 +415,9 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 		}
 	}
 	var startupErr error
-	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "chatter"} {
-		if serviceCtx.Err() != nil {
-			break
+	startService := func(mode string, run func(context.Context, *bootstrap.ServerArgs) error) {
+		if startupErr != nil || serviceCtx.Err() != nil {
+			return
 		}
 		serviceArgs := *args
 		serviceArgs.Mode = &mode
@@ -459,13 +432,13 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 		name, err := bootstrap.ResolveServerName(mode, config.GetServerName(mode), port)
 		if err != nil {
 			startupErr = err
-			break
+			return
 		}
 		serviceArgs.Name = &name
 		ready := make(chan struct{})
 		serviceArgs.Ready = func() error { close(ready); return nil }
 		group.Go(func() error {
-			err := runMode(serviceCtx, cancel, &serviceArgs, services)
+			err := run(serviceCtx, &serviceArgs)
 			if err != nil {
 				if errors.Is(err, context.Canceled) && serviceCtx.Err() != nil {
 					return nil
@@ -478,13 +451,24 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 			return nil
 		})
 		if mode == "admin" || mode == "api" {
-			if startupErr = waitReady(mode, ready); startupErr != nil {
-				break
-			}
+			startupErr = waitReady(mode, ready)
 		} else {
 			workerReady = append(workerReady, ready)
 		}
 	}
+	startService("admin", admin.Run)
+	startService("api", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+		return apipkg.Run(ctx, *args.Name, args, services)
+	})
+	startService("ingestor", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+		return ingestorpkg.Run(ctx, cancel, args, services)
+	})
+	startService("syncer", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+		return syncerpkg.Run(ctx, cancel, args)
+	})
+	startService("chatter", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+		return chatterpkg.Run(ctx, args, services)
+	})
 	if startupErr == nil {
 		for _, ready := range workerReady {
 			if startupErr = waitReady("worker", ready); startupErr != nil {

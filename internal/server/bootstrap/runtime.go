@@ -18,15 +18,9 @@ package bootstrap
 
 import (
 	"fmt"
-	"time"
-
-	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	"ragflow/internal/server"
-	"ragflow/internal/server/local"
-	"ragflow/internal/service"
-	"ragflow/internal/utility"
 )
 
 // SetLogger opens the configured log destinations and keeps startup INFO logs visible.
@@ -68,35 +62,4 @@ func SetIngestLog(serverName string) {
 	if err := common.InitIngestLog(ingestLogConfig.Type, ingestLogConfig.GetFileOutput(), serverName); err != nil {
 		common.Error("Failed to initialize ingest log sink", err)
 	}
-}
-
-// StartHeartbeat initializes and starts the heartbeat reporter to the admin
-// server. It is shared by the API, ingestor, and syncer server modes. The
-// caller must stop and wait for the returned task before closing shared resources.
-func StartHeartbeat(serverType common.ServerType, serverID string, port int, heartBeatInterval time.Duration) *utility.ScheduledTask {
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
-
-	client := service.NewAdminClient(
-		serverType,
-		serverID,
-		localIP,
-		port,
-	)
-	if err = client.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-		return nil
-	}
-
-	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval, func() {
-		if err := client.SendHeartbeat(); err == nil {
-			local.SetAdminStatus(local.Available, "")
-		} else {
-			local.SetAdminStatus(local.Unavailable, err.Error())
-		}
-	})
-	heartbeatReporter.Start()
-	return heartbeatReporter
 }

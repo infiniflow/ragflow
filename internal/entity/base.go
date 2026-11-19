@@ -40,6 +40,49 @@ func autoModelTime() (int64, time.Time) {
 	return now.UnixMilli(), now.Truncate(time.Second)
 }
 
+// DBTimeMillis reads the metadata database's clock in milliseconds.
+//
+// The version history orders rows by the moment they were written, and two
+// application instances can disagree about "now": a chunk version stamped by a
+// fast instance looks newer than a dataset version stamped later by a slow one,
+// and a restore replays the wrong half of the history. Reading the clock from the
+// database that stores the rows puts every writer on one timeline - the anchor a
+// content restore replays to (dataset_version.create_time) and the rows it
+// selects (chunk_version.create_time) are stamped by the same clock, whatever the
+// instances' local clocks say.
+//
+// It answers only for the dialects this tree runs on. Unknown dialects report an
+// error so the caller can fall back to the local clock rather than fail the
+// write.
+func DBTimeMillis(db *gorm.DB) (int64, error) {
+	if db == nil {
+		return 0, fmt.Errorf("no database handle to read the clock from")
+	}
+	var expr string
+	switch name := db.Dialector.Name(); name {
+	case "mysql":
+		expr = "CAST(UNIX_TIMESTAMP(NOW(3)) * 1000 AS SIGNED)"
+	case "postgres":
+		// clock_timestamp() rather than now(): now() is the transaction start,
+		// and two statements of one history write would then share a moment even
+		// when they are seconds apart.
+		expr = "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)"
+	case "sqlite":
+		expr = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)"
+	default:
+		return 0, fmt.Errorf("no database clock expression for dialect %q", name)
+	}
+	var millis int64
+	row := db.Raw("SELECT " + expr).Row()
+	if row == nil {
+		return 0, fmt.Errorf("failed to read the database clock")
+	}
+	if err := row.Scan(&millis); err != nil {
+		return 0, fmt.Errorf("failed to read the database clock: %w", err)
+	}
+	return millis, nil
+}
+
 func statementHasTimeField(tx *gorm.DB, fieldNames ...string) bool {
 	if tx == nil || tx.Statement == nil {
 		return false

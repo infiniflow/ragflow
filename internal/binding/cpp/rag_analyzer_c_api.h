@@ -127,6 +127,60 @@ char* ThincNER_Tokenize(const char* text, const char* lang);
 // Free a string returned by ThincNER_Predict or ThincNER_Tokenize.
 void ThincNER_FreeString(char* ptr);
 
+// ---------------------------------------------------------------------------
+// SentencePiece Unigram vocabulary (XLM-R family)
+//
+// The lookup structure is the Darts-clone double-array already used by
+// DartsTrie, because a per-node map trie costs ~96 MB for the 250k-piece XLM-R
+// vocabulary while the double-array costs single-digit MB. Viterbi runs on this
+// side: every step needs an O(1) trie transition, so a cgo round trip per byte
+// would dominate the counting itself.
+// ---------------------------------------------------------------------------
+
+// Opaque pointer to an SPMVocab
+typedef void* SPMVocabHandle;
+
+// Build a vocabulary from the pieces that participate in segmentation.
+//   keys/key_lens/ids: num_keys entries; ids[i] indexes into scores.
+//   scores: per-piece Unigram score, indexed by the piece index.
+//   unk_score/unk_id: the <unk> piece's score and index (-1 when absent).
+//   byte_by_value: 256 entries mapping a byte to its "<0xXX>" piece index
+//                  (-1 when absent); only read when byte_fallback is true.
+// Returns: handle, or NULL on failure
+SPMVocabHandle SPM_Vocab_Create(
+    const char* const* keys,
+    const uint32_t* key_lens,
+    const int32_t* ids,
+    uint32_t num_keys,
+    const float* scores,
+    uint32_t num_scores,
+    float unk_score,
+    int32_t unk_id,
+    const int32_t* byte_by_value,
+    bool byte_fallback);
+
+// Destroy a vocabulary created by SPM_Vocab_Create
+void SPM_Vocab_Destroy(SPMVocabHandle handle);
+
+// Run Unigram Viterbi over text.
+//   out_ids/out_ids_capacity: when out_ids is non-NULL it must hold `len`
+//     entries (a token never consumes fewer than one byte); the chosen piece ids
+//     are written there.
+// Returns: 0 on success, negative on failure; out_count receives the token count
+int SPM_Vocab_Viterbi(
+    SPMVocabHandle handle,
+    const char* text,
+    uint32_t len,
+    int32_t* out_ids,
+    uint32_t out_ids_capacity,
+    int32_t* out_count);
+
+// Bytes held by the double-array (diagnostics and tests)
+uint64_t SPM_Vocab_ArrayBytes(SPMVocabHandle handle);
+
+// Bytes held by the per-piece score table (diagnostics and tests)
+uint64_t SPM_Vocab_ScoresBytes(SPMVocabHandle handle);
+
 #ifdef __cplusplus
 }
 #endif

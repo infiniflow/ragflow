@@ -3,6 +3,7 @@ import { supportsSourceLocate } from '../source-locate';
 describe('supportsSourceLocate', () => {
   it('accepts every previewable document extension, case-insensitively', () => {
     expect(supportsSourceLocate('pdf')).toBe(true);
+    expect(supportsSourceLocate('docx')).toBe(true);
     expect(supportsSourceLocate('XLSX')).toBe(true);
     expect(supportsSourceLocate('xls')).toBe(true);
     // Support follows the previewable set rather than a hand-picked list: a

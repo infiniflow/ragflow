@@ -555,6 +555,7 @@ func setupModelProviderServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&entity.User{},
 		&entity.UserTenant{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},

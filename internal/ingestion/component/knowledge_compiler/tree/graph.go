@@ -5,26 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
-
-// stringsContains reports whether s contains substring sub.
-func stringsContains(s, sub string) bool {
-	return strings.Contains(s, sub)
-}
-
-// strSliceContains reports whether s contains v.
-func strSliceContains(s []string, v string) bool {
-	for _, e := range s {
-		if e == v {
-			return true
-		}
-	}
-	return false
-}
 
 // stringsJoinNonEmpty joins the non-empty parts with sep.
 func stringsJoinNonEmpty(parts []string, sep string) string {
@@ -131,16 +117,16 @@ func collapseUnary(node *graphNode) *graphNode {
 		var descriptions []string
 		descriptions = append(descriptions, parentDesc)
 		if childTitle != "" && childTitle != parentTitle &&
-			!stringsContains(childDesc, childTitle) {
+			!strings.Contains(childDesc, childTitle) {
 			descriptions = append(descriptions, childTitle)
 		}
-		if childDesc != "" && !strSliceContains(descriptions, childDesc) {
+		if childDesc != "" && !slices.Contains(descriptions, childDesc) {
 			descriptions = append(descriptions, childDesc)
 		}
 
 		sourceChunkIDs := append([]string{}, collapsed.sourceChunkIDs...)
 		for _, id := range child.sourceChunkIDs {
-			if id != "" && !strSliceContains(sourceChunkIDs, id) {
+			if id != "" && !slices.Contains(sourceChunkIDs, id) {
 				sourceChunkIDs = append(sourceChunkIDs, id)
 			}
 		}

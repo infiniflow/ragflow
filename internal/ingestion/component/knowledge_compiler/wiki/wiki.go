@@ -1554,7 +1554,7 @@ func (p *wikiPipeline) mergeWikiPageContent(existingMD, newMD, slug string) (str
 	if merged == "" {
 		return fallback, nil
 	}
-	minAcceptable := int(float64(maxInt(len(existingMD), len(newMD))) * wikiMergeShrinkRatio)
+	minAcceptable := int(float64(max(len(existingMD), len(newMD))) * wikiMergeShrinkRatio)
 	if len(merged) < minAcceptable {
 		return fallback, nil
 	}
@@ -3274,13 +3274,6 @@ func cosine32(a, b []float32) float64 {
 		dot += float64(a[i]) * float64(b[i])
 	}
 	return dot / (na * nb)
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // wikiHistoricalK is the K used for the historical-dedup KNN lookup.

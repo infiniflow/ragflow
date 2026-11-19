@@ -266,7 +266,10 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
 
       return Array.from(fieldMap.values());
     });
-    setShouldSave(true);
+    // The values dialog only updates the table the reader is looking at. The
+    // modal's own Save is the one write: confirming here and then saving again
+    // sent the same edit twice, and the server - which reads the metadata before
+    // it writes - recorded one version per request.
     setIsAddValueMode(false);
   };
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -69,7 +70,7 @@ func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig,
 	var known []string
 	for _, n := range nodes {
 		v := strings.TrimSpace(stringOf(n[idField]))
-		if v == "" || containsString(known, v) {
+		if v == "" || slices.Contains(known, v) {
 			continue
 		}
 		known = append(known, v)
@@ -1192,13 +1193,4 @@ func stringOf(v any) string {
 	default:
 		return ""
 	}
-}
-
-func containsString(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }

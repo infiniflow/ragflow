@@ -1,5 +1,6 @@
 import { Operator } from '@/constants/agent';
 import { FileType, FileTypeSuffixMap } from '@/constants/file';
+import { getEnterpriseDocumentParserLabel } from '@/ee/pages/dataset/dataset/document-parser-label';
 import type { IDocumentInfo } from '@/interfaces/database/document';
 import { getExtension } from '@/utils/document-util';
 import {
@@ -86,8 +87,9 @@ export const getDocumentProgressMessage = (
 ) => document.latest_ingestion_event?.message || '-';
 
 /**
- * Parser label for a document. A built-in pipeline renders its parser id with
- * the first letter capitalized ("general" -> "General"); a canvas pipeline
+ * Parser label for a document. A built-in pipeline uses an edition-provided
+ * display name when available, then capitalizes the parser id's first letter
+ * ("general" -> "General"); a canvas pipeline
  * keeps the user-chosen title (falling back to the raw id) untouched. "naive"
  * is the legacy alias of the built-in general pipeline. The parse column shows
  * this for built-in parsers, and as the fallback for pipeline documents until
@@ -103,7 +105,8 @@ export const getDocumentParserLabel = (
   if (pipeline_id) {
     return pipeline_name || pipeline_id;
   }
-  return upperFirst(chunk_method === 'naive' ? 'general' : chunk_method);
+  const parserId = chunk_method === 'naive' ? 'general' : chunk_method;
+  return getEnterpriseDocumentParserLabel(parserId) ?? upperFirst(parserId);
 };
 
 /**

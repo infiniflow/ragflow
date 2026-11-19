@@ -55,6 +55,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 	if err = db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
+	installDatasetTestChunkHistory(t)
 	return db
 }
 

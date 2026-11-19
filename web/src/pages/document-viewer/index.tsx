@@ -16,6 +16,7 @@ import Md from '@/components/document-preview/md';
 import PdfPreview from '@/components/document-preview/pdf-preview';
 import { PptPreviewer } from '@/components/document-preview/ppt-preview';
 import { TxtPreviewer } from '@/components/document-preview/txt-preview';
+import { CadPreview } from '@/ee/components/document-preview/cad-preview';
 import { previewHtmlFile } from '@/utils/file-util';
 import CSVFileViewer from '@/components/document-preview/csv-preview';
 // import styles from './index.less';
@@ -59,6 +60,7 @@ const DocumentViewer = () => {
       {ext === 'pdf' && (
         <PdfPreview url={api} className="!h-dvh p-5"></PdfPreview>
       )}
+      <CadPreview className="!h-dvh p-5" fileType={ext ?? ''} url={api} />
       {(ext === 'xlsx' || ext === 'xls') && (
         <ExcelCsvPreviewer url={api}></ExcelCsvPreviewer>
       )}
