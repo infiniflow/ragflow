@@ -68,6 +68,22 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 	if rules.entry != nil {
 		return removeTOCEntryList(items, heading, clean, rules.entry)
 	}
+	// Fast path: if no item is a TOC heading, return unchanged without paying
+	// for the deletion bitmap or a full-slice self-copy (most documents).
+	isHeading := func(text string) bool {
+		normalized := whitespacePattern.ReplaceAllString(clean(strings.SplitN(text, "@@", 2)[0]), "")
+		return heading.MatchString(normalized)
+	}
+	hasHeading := false
+	for _, item := range items {
+		if isHeading(itemText(item)) {
+			hasHeading = true
+			break
+		}
+	}
+	if !hasHeading {
+		return items
+	}
 	// Logical-deletion view: mark entries as dropped instead of doing an O(n)
 	// append-shift per removed entry, then compact once at the end. The loop
 	// below reads items[i] through the alive view, preserving the exact
@@ -90,8 +106,7 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 		}
 		text := itemText(items[i])
 		// Strip @@ suffix and whitespace before matching.
-		normalized := whitespacePattern.ReplaceAllString(clean(strings.SplitN(text, "@@", 2)[0]), "")
-		if !heading.MatchString(normalized) {
+		if !isHeading(text) {
 			i++
 			continue
 		}
@@ -144,6 +159,9 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 			w++
 		}
 	}
+	// Clear the vacated tail so removed item maps are not retained by the
+	// backing array beyond the returned slice length.
+	clear(items[w:])
 	return items[:w]
 }
 

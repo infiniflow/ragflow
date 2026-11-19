@@ -40,7 +40,7 @@ func TestSplitByCharSuffixEquivalence(t *testing.T) {
 		// suffix's CJK ratio crosses 0.3 partway, so early chunks are "en" and
 		// late chunks are "zh" — a single whole-string DetectLanguage would
 		// collapse them all and break equivalence.
-		{"en-then-cjk", "hello" + "中文测试文本"},
+		{"en-then-cjk", "abcdefghijklmnop" + "中文测试文本"},
 		{"cjk-then-en", "中文测试" + "hello world"},
 		{"emoji", "a😀b😀c中文"},
 		{"empty", ""},
@@ -71,5 +71,30 @@ func BenchmarkSplitByCharSuffix(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		runSplitByChar(text)
+	}
+}
+
+// The en-then-cjk adversarial fixture must actually cross the 0.3 threshold:
+// early chunks "en", late chunks "zh". This guards against a fixture that
+// silently stops exercising the per-suffix language flip.
+func TestSplitByCharLanguageFlipFixture(t *testing.T) {
+	got := splitByCharReference("abcdefghijklmnop" + "中文测试文本")
+	sawEN, sawZH := false, false
+	prev := ""
+	for _, c := range got {
+		lang := c.Metadata["language"]
+		if lang != prev {
+			t.Logf("flip at %q: %s", c.Content, lang)
+		}
+		if lang == "en" {
+			sawEN = true
+		}
+		if lang == "zh" {
+			sawZH = true
+		}
+		prev = lang.(string)
+	}
+	if !sawEN || !sawZH {
+		t.Fatalf("fixture must produce both en and zh chunks; sawEN=%v sawZH=%v", sawEN, sawZH)
 	}
 }

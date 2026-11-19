@@ -167,9 +167,12 @@ func trimSystems(sys []Message, budget int, counts []int) {
 	for i := range sys {
 		limit := remaining
 		if i < len(sys)-1 {
-			tokens := NumTokensFromString(sys[i].Content)
-			if useCounts {
-				tokens = counts[i]
+			// Only tokenize the original content in the fallback path. When
+			// counts are provided they already hold the pre-trim count, so
+			// re-encoding here would discard the result and waste work.
+			tokens := counts[i]
+			if !useCounts {
+				tokens = NumTokensFromString(sys[i].Content)
 			}
 			limit = int(float64(budget) * float64(tokens) / float64(total))
 			if limit > remaining {

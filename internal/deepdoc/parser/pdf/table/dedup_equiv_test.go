@@ -60,15 +60,20 @@ func BenchmarkAnnotateBoxLayoutsBucketed(b *testing.B) {
 		}
 	}
 	b.ReportAllocs()
+	clean := append([]pdf.TextBox(nil), boxes...)
 	for i := 0; i < b.N; i++ {
+		// AnnotateBoxLayouts writes LayoutType/LayoutNo onto boxes; without a
+		// reset, later iterations skip already-annotated boxes and never reach
+		// the candidate scan the benchmark is meant to measure.
+		copy(boxes, clean)
 		AnnotateBoxLayouts(boxes, regions, 1, 0)
 	}
 }
 
 // ---- 3.5 compressColIndices single-pass equivalence ----
 
-// Grid fixture with distinct C labels across rows, including a box with a
-// C value that is absent from the rank map must be skipped (rank-missing edge).
+// Dense-grid fixture: C labels 0..7 all appear in rank, so this exercises the
+// row→column mapping but NOT a rank-missing C (which the old code skips).
 func gridFixture() []pdf.TextBox {
 	var boxes []pdf.TextBox
 	for r := 0; r < 12; r++ {

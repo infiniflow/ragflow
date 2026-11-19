@@ -36,7 +36,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"strconv"
 	"strings"
 
 	"ragflow/internal/parser/charset"
@@ -96,17 +96,22 @@ func parseJSONContent(text string) []map[string]any {
 		return parseJSONArray(trimmed)
 	}
 
-	// 2. Try single JSON object: {...}. Parse once with the number-preserving
-	// decoder; the standard-library pre-probe was redundant (both decoders
-	// accept the same top-level object syntax) and doubled the cost.
+	// 2. Try single JSON object: {...}. Use a syntax-only framing check before
+	// building the map: a multi-object JSONL payload or trailing data is
+	// rejected here without allocating/decoding the trailing value (the old
+	// standard-library probe did this too, but by decoding twice).
 	if strings.HasPrefix(trimmed, "{") {
-		if obj, ok := parseSingleJSONObjectValue(trimmed); ok {
-			return singleObjectItems(obj)
+		if !json.Valid([]byte(trimmed)) {
+			if isJSONL(trimmed) {
+				return parseJSONLines(trimmed)
+			}
+			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
 		}
-		if isJSONL(trimmed) {
-			return parseJSONLines(trimmed)
+		obj, ok := parseSingleJSONObjectValue(trimmed)
+		if !ok || !numbersInFloat64Range(obj) {
+			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
 		}
-		return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
+		return singleObjectItems(obj)
 	}
 
 	// 3. Fallback: treat as text.
@@ -235,6 +240,32 @@ func parseJSONLines(text string) []map[string]any {
 	return items
 }
 
+// numbersInFloat64Range reports whether every json.Number in v is within the
+// float64 range. The removed float64 probe rejected documents containing a
+// number like 1e400 (which overflows float64); the number-preserving decoder
+// accepts them. Rechecking here keeps the single-object path byte-identical
+// with the old probe: such documents still fall back to raw text.
+func numbersInFloat64Range(v any) bool {
+	switch x := v.(type) {
+	case json.Number:
+		_, err := strconv.ParseFloat(string(x), 64)
+		return err == nil
+	case map[string]any:
+		for _, child := range x {
+			if !numbersInFloat64Range(child) {
+				return false
+			}
+		}
+	case []any:
+		for _, child := range x {
+			if !numbersInFloat64Range(child) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // unmarshalJSON is json.Unmarshal with each number kept as written, as a
 // json.Number. Decoded into a float64, an id above 2^53 changed digits
 // (12345678901234567890 became 12345678901234567000) and 1.50 became 1.5.
@@ -245,7 +276,10 @@ func unmarshalJSON(data []byte, v any) error {
 	if err := decoder.Decode(v); err != nil {
 		return err
 	}
-	if _, err := decoder.Token(); err != io.EOF {
+	// Reject trailing data at its opening byte without decoding/allocating the
+	// trailing value (Token() would decode it). InputOffset is the byte count
+	// consumed by Decode; anything but JSON whitespace after it is trailing data.
+	if len(bytes.TrimSpace(data[decoder.InputOffset():])) > 0 {
 		return errors.New("json: data after the top-level value")
 	}
 	return nil

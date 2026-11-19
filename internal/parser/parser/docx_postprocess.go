@@ -132,6 +132,9 @@ func removeTOCWord(items []map[string]any, outlines []docxOutline, eng bool) []m
 				w++
 			}
 		}
+		// Clear the vacated tail so removed item maps are not retained by the
+		// backing array beyond the surviving slice length.
+		clear(items[w:])
 		items = items[:w]
 	}
 
