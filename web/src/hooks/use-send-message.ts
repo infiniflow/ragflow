@@ -24,7 +24,7 @@ import {
 import { BeginQuery } from '@/pages/agent/interface';
 import { getAuthorization } from '@/utils/authorization-util';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export enum MessageEventType {
   WorkflowStarted = 'workflow_started',
@@ -109,6 +109,8 @@ export type IChatEvent = INodeEvent | IMessageEvent | IMessageEndEvent;
 
 export type IEventList = Array<IChatEvent>;
 
+type SendMessageResponse = { response: Response; data: ResponseType };
+
 const parseAgentEventData = (data: any) => {
   if (typeof data !== 'string') return data;
 
@@ -134,29 +136,56 @@ const normalizeAgentEvent = (value: any) => {
 export const useSendMessageBySSE = (url: string) => {
   const [answerList, setAnswerList] = useState<IEventList>([]);
   const [done, setDone] = useState(true);
-  const timer = useRef<any>();
+  const timer = useRef<ReturnType<typeof setTimeout>>();
   const sseRef = useRef<AbortController>();
+  const requestIdRef = useRef(0);
 
-  const initializeSseRef = useCallback(() => {
-    sseRef.current = new AbortController();
+  const clearResetTimer = useCallback(() => {
+    if (timer.current !== undefined) {
+      clearTimeout(timer.current);
+      timer.current = undefined;
+    }
   }, []);
 
   const resetAnswerList = useCallback(() => {
-    if (timer.current) {
-      clearTimeout(timer.current);
-    }
+    clearResetTimer();
+    const requestId = requestIdRef.current;
     timer.current = setTimeout(() => {
-      setAnswerList([]);
-      clearTimeout(timer.current);
+      if (requestIdRef.current === requestId) {
+        setAnswerList([]);
+      }
+      timer.current = undefined;
     }, 1000);
-  }, []);
+  }, [clearResetTimer]);
+
+  useEffect(() => {
+    return () => {
+      requestIdRef.current += 1;
+      clearResetTimer();
+      sseRef.current?.abort();
+    };
+  }, [clearResetTimer]);
 
   const send = useCallback(
     async (
       body: any,
       controller?: AbortController,
-    ): Promise<{ response: Response; data: ResponseType } | undefined> => {
-      initializeSseRef();
+    ): Promise<{
+      result: SendMessageResponse | undefined;
+      isCurrent: () => boolean;
+    }> => {
+      const requestId = ++requestIdRef.current;
+      // Callers must check ownership after await, even if this promise settled
+      // before the next request started.
+      const complete = (result?: SendMessageResponse) => ({
+        result,
+        isCurrent: () => requestIdRef.current === requestId,
+      });
+      sseRef.current?.abort();
+      const requestController = controller ?? new AbortController();
+      sseRef.current = requestController;
+      clearResetTimer();
+      setAnswerList([]);
       try {
         setDone(false);
         const response = await fetch(url, {
@@ -166,7 +195,7 @@ export const useSendMessageBySSE = (url: string) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(body),
-          signal: controller?.signal || sseRef.current?.signal,
+          signal: requestController.signal,
         });
         // SSE streams (text/event-stream) emit `data: {...}\n\n` frames, not
         // a single JSON document. The .clone().json() call below is kept
@@ -192,7 +221,7 @@ export const useSendMessageBySSE = (url: string) => {
           } catch {
             // Non-JSON error body; fall back to the HTTP status text.
           }
-          return {
+          return complete({
             response,
             data: {
               code: response.status,
@@ -200,7 +229,7 @@ export const useSendMessageBySSE = (url: string) => {
               message: errorMessage,
               status: response.status,
             },
-          };
+          });
         }
 
         const reader = response?.body
@@ -213,7 +242,11 @@ export const useSendMessageBySSE = (url: string) => {
           // oxlint-disable-next-line no-constant-condition
           while (true) {
             const x = await reader?.read();
-            if (!x) {
+            if (
+              !x ||
+              requestIdRef.current !== requestId ||
+              requestController.signal.aborted
+            ) {
               break;
             }
             const { done, value } = x;
@@ -250,6 +283,12 @@ export const useSendMessageBySSE = (url: string) => {
               lastEventData = val as ResponseType;
 
               setAnswerList((list) => {
+                if (
+                  requestIdRef.current !== requestId ||
+                  requestController.signal.aborted
+                ) {
+                  return list;
+                }
                 const nextList = [...list];
                 nextList.push(val);
                 return nextList;
@@ -267,7 +306,7 @@ export const useSendMessageBySSE = (url: string) => {
         }
 
         const responseData = await responseDataPromise;
-        return {
+        return complete({
           response,
           data:
             responseData ??
@@ -278,16 +317,18 @@ export const useSendMessageBySSE = (url: string) => {
               message: 'success',
               status: response.status,
             } as ResponseType),
-        };
+        });
       } catch (e) {
         console.warn(e);
-        return undefined;
+        return complete();
       } finally {
-        setDone(true);
-        resetAnswerList();
+        if (requestIdRef.current === requestId) {
+          setDone(true);
+          resetAnswerList();
+        }
       }
     },
-    [initializeSseRef, url, resetAnswerList],
+    [clearResetTimer, url, resetAnswerList],
   );
 
   const stopOutputMessage = useCallback(() => {
