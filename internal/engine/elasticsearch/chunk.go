@@ -2153,6 +2153,7 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 }
 
 func (e *Engine) searchChunkInDataset(ctx context.Context, baseName, chunkID, datasetID string) (map[string]interface{}, bool, error) {
+	// ES 9.x omits dense_vector fields from a default _source, so project explicitly.
 	searchReq := map[string]interface{}{
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{
@@ -2162,6 +2163,7 @@ func (e *Engine) searchChunkInDataset(ctx context.Context, baseName, chunkID, da
 				},
 			},
 		},
+		"_source": []string{"*"},
 	}
 
 	body, err := json.Marshal(searchReq)
