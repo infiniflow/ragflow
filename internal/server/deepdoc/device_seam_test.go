@@ -19,11 +19,14 @@
 package deepdoc
 
 import (
-	"strings"
 	"testing"
 
 	native "ragflow/internal/deepdoc/native"
 )
+
+// CPU-acceptance and canonical rendering are edition-neutral contracts and run
+// in every build. The GPU-rejection / invalid-value / no-op-hook assertions are
+// default-build only and live in device_seam_default_test.go.
 
 // TestParseDeviceAcceptsCPU pins the accepted CPU spellings.
 func TestParseDeviceAcceptsCPU(t *testing.T) {
@@ -35,40 +38,6 @@ func TestParseDeviceAcceptsCPU(t *testing.T) {
 		}
 		if cfg.UseGPU {
 			t.Errorf("ParseDevice(%q) UseGPU = true, want false", spec)
-		}
-	}
-}
-
-// TestParseDeviceGPURequestsReportEnterpriseEdition pins the distinguishing
-// condition for a well-formed GPU request: rejected with a clear hint.
-func TestParseDeviceGPURequestsReportEnterpriseEdition(t *testing.T) {
-	for _, spec := range []string{"gpu", "gpu:0", "gpu:3", "GPU:1"} {
-		_, err := native.ParseDevice(spec)
-		if err == nil {
-			t.Errorf("ParseDevice(%q) error = nil, want enterprise-edition rejection", spec)
-			continue
-		}
-		if !strings.Contains(err.Error(), "enterprise edition") {
-			t.Errorf("ParseDevice(%q) error = %q, want 'enterprise edition' hint", spec, err.Error())
-		}
-	}
-}
-
-// TestParseDeviceInvalidValueReportsInvalid is the adversarial counterpart:
-// malformed / unknown specs must be classified as invalid values and must NOT
-// falsely claim the value is a GPU request needing the enterprise edition.
-func TestParseDeviceInvalidValueReportsInvalid(t *testing.T) {
-	for _, spec := range []string{"tpu", "cuda", "cpuu", "npu:0", "gpu:abc", "gpu:-1", "0"} {
-		_, err := native.ParseDevice(spec)
-		if err == nil {
-			t.Errorf("ParseDevice(%q) error = nil, want invalid-value rejection", spec)
-			continue
-		}
-		if !strings.Contains(err.Error(), "invalid device") {
-			t.Errorf("ParseDevice(%q) error = %q, want 'invalid device' hint", spec, err.Error())
-		}
-		if strings.Contains(err.Error(), "enterprise edition") {
-			t.Errorf("ParseDevice(%q) error = %q, must NOT mention 'enterprise edition' for a malformed value", spec, err.Error())
 		}
 	}
 }
@@ -88,14 +57,5 @@ func TestDeviceConfigString(t *testing.T) {
 		if got := c.cfg.String(); got != c.want {
 			t.Errorf("DeviceConfig%+v.String() = %q, want %q", c.cfg, got, c.want)
 		}
-	}
-}
-
-// TestDefaultBuildHooksAreNoOps guards that the default edition's session/EP
-// hooks stay inert: ApplyDeviceOptions and RegisterExecutionProvider must not
-// error in a CPU-only build.
-func TestDefaultBuildHooksAreNoOps(t *testing.T) {
-	if err := native.RegisterExecutionProvider(); err != nil {
-		t.Errorf("RegisterExecutionProvider() = %v, want nil", err)
 	}
 }
