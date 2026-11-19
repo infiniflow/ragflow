@@ -54,8 +54,6 @@ export const CompilationTemplateGroupKeys = {
       CompilationTemplateGroupApiAction.FetchCompilationTemplateGroup,
       id,
     ] as const,
-  scoped: (tenantId?: string, accessUserId?: string) =>
-    [...CompilationTemplateGroupKeys.all(), tenantId, accessUserId] as const,
   all: () =>
     [CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups] as const,
 };
@@ -212,22 +210,32 @@ export const useDeleteCompilationTemplateGroup = () => {
   return { data, loading, deleteGroup };
 };
 
-export const useFetchAllCompilationTemplateGroups = (accessUserId?: string) => {
+export const useFetchAllCompilationTemplateGroups = (
+  accessUserId?: string | null,
+) => {
   const contextTenantId = useContext(ModelResourceTenantIdContext);
   const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
-  const groupAccessUserId = accessUserId ?? contextAccessUserId;
+  const waitingForAccessUser =
+    accessUserId === null ||
+    (accessUserId === undefined && contextAccessUserId === null);
+  const groupAccessUserId =
+    accessUserId === undefined
+      ? (contextAccessUserId ?? undefined)
+      : (accessUserId ?? undefined);
   const {
     data,
     isFetching: loading,
     isFetched,
     isError,
   } = useQuery<ICompilationTemplateGroup[]>({
-    queryKey: CompilationTemplateGroupKeys.scoped(
+    queryKey: [
+      ...CompilationTemplateGroupKeys.all(),
       contextTenantId,
       groupAccessUserId,
-    ),
+    ],
     initialData: [],
     gcTime: 0,
+    enabled: !waitingForAccessUser,
     queryFn: async () => {
       const params: {
         keywords: string;
@@ -257,7 +265,9 @@ export const useFetchAllCompilationTemplateGroups = (accessUserId?: string) => {
   return { groups: data ?? [], loading, isFetched, isError };
 };
 
-export const useCompilationTemplateGroupOptions = (accessUserId?: string) => {
+export const useCompilationTemplateGroupOptions = (
+  accessUserId?: string | null,
+) => {
   const { groups, isFetched, isError } =
     useFetchAllCompilationTemplateGroups(accessUserId);
 
@@ -276,7 +286,9 @@ export const useCompilationTemplateGroupOptions = (accessUserId?: string) => {
  * tenant. `isFetched` must be checked before trusting `validIds` — the query
  * seeds `initialData: []`, so every id looks missing while loading.
  */
-export const useCompilationTemplateGroupValidIds = (accessUserId?: string) => {
+export const useCompilationTemplateGroupValidIds = (
+  accessUserId?: string | null,
+) => {
   const { groups, isFetched } =
     useFetchAllCompilationTemplateGroups(accessUserId);
 

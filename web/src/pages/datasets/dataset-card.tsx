@@ -54,7 +54,10 @@ export function DatasetCard({
         </DatasetDropdown>
       }
       sharedBadge={
-        <SharedBadge userId={dataset.user_id} ownerNickname={dataset.nickname}>
+        <SharedBadge
+          userId={dataset.user_id}
+          ownerNickname={dataset.nickname}
+        >
           {dataset.nickname}
         </SharedBadge>
       }

@@ -27,10 +27,6 @@ const mockFetchModels = jest.fn().mockReturnValue({
 
 jest.mock('@/hooks/use-llm-request', () => ({
   useFetchAllAddedModels: (...args: unknown[]) => mockFetchModels(...args),
-  useModelValidIds: () => ({ isSettled: true }),
-}));
-jest.mock('@/hooks/use-user-setting-request', () => ({
-  useFetchTenantInfo: () => ({ data: {} }),
 }));
 jest.mock('@/components/svg-icon', () => ({ LlmIcon: () => null }));
 jest.mock('@/components/llm-select/llm-label', () => ({
@@ -49,9 +45,7 @@ jest.mock('@/components/message-history-window-size-item', () => ({
 jest.mock('../../constant', () => ({
   initialCategorizeValues: { outputs: {} },
 }));
-jest.mock('../../context', () => ({
-  useResourceTenantId: () => 'canvas-owner',
-}));
+jest.mock('../../context', () => ({ useResourceTenantId: () => 'canvas-owner' }));
 jest.mock('../../store', () => ({
   __esModule: true,
   default: (select: any) => select({ updateNodeForm: mockUpdateNodeForm }),

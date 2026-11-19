@@ -35,7 +35,10 @@ export function MemoryCard({
         </MemoryDropdown>
       }
       sharedBadge={
-        <SharedBadge userId={data?.user_id} ownerNickname={data?.nickname}>
+        <SharedBadge
+          userId={data?.user_id}
+          ownerNickname={data?.nickname}
+        >
           {data?.nickname}
         </SharedBadge>
       }

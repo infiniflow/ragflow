@@ -21,12 +21,18 @@ const buildPipelineNodeId = (pipelineId: string) =>
   buildParserOptionValue(ParserOptionKind.Pipeline, pipelineId);
 
 // Combines the cached pipeline/version catalog with builtin parser leaves.
-export function useParserTreeData({ value }: { value?: string }) {
+export function useParserTreeData({
+  value,
+  accessUserId,
+}: {
+  value?: string;
+  accessUserId?: string;
+}) {
   const { t } = useTranslation();
   const { options: builtinOptions, loading: builtinLoading } =
     useFetchBuiltinPipelines();
   const { data: pipelines = [], loading: pipelineLoading } =
-    useFetchPipelineVersionCatalog();
+    useFetchPipelineVersionCatalog(true, accessUserId);
 
   const selectedPipelineId = useMemo(() => {
     const parsed = parseParserOptionValue(value);
@@ -84,50 +90,54 @@ export function useParserTreeData({ value }: { value?: string }) {
           },
         ];
       } else {
-        children = versions.map((version): TreeSelectNode => ({
-          id: buildParserOptionValue(
-            ParserOptionKind.Pipeline,
-            item.id,
-            version.id,
-          ),
-          // The alias joins the plain-text title so TreeSelect search
-          // matches it; `label` renders it as secondary text instead.
-          title: version.alias
-            ? `${version.name} ${version.alias}`
-            : version.name,
-          searchKeywords: version.alias ? [version.alias] : undefined,
-          // The trigger display needs the alias and the unpolluted title
-          // (title above has the alias joined in for search). The dropdown
-          // row caps the alias at a fixed width — the popover is w-auto, so
-          // an uncapped alias would blow it wide instead of truncating.
-          data: version.alias
-            ? { title: version.name, alias: version.alias }
-            : undefined,
-          label: (
-            <PipelineVersionLabel
-              title={version.name}
-              alias={version.alias}
-              aliasClassName="max-w-60"
-            />
-          ),
-        }));
+        children = versions.map(
+          (version): TreeSelectNode => ({
+            id: buildParserOptionValue(
+              ParserOptionKind.Pipeline,
+              item.id,
+              version.id,
+            ),
+            // The alias joins the plain-text title so TreeSelect search
+            // matches it; `label` renders it as secondary text instead.
+            title: version.alias
+              ? `${version.name} ${version.alias}`
+              : version.name,
+            searchKeywords: version.alias ? [version.alias] : undefined,
+            // The trigger display needs the alias and the unpolluted title
+            // (title above has the alias joined in for search). The dropdown
+            // row caps the alias at a fixed width — the popover is w-auto, so
+            // an uncapped alias would blow it wide instead of truncating.
+            data: version.alias
+              ? { title: version.name, alias: version.alias }
+              : undefined,
+            label: (
+              <PipelineVersionLabel
+                title={version.name}
+                alias={version.alias}
+                aliasClassName="max-w-60"
+              />
+            ),
+          }),
+        );
       }
       return { id: nodeId, title: item.name, children };
     });
 
-    const builtins = builtinOptions.map((option): TreeSelectNode => ({
-      id: buildParserOptionValue(ParserOptionKind.BuiltIn, option.value),
-      title: option.label,
-      searchKeywords: [option.label],
-      label: (
-        <span className="flex items-center gap-1.5 min-w-0">
-          <span className="truncate">{option.label}</span>
-          <span className="shrink-0 rounded-md bg-bg-card px-1.5 py-0.5 text-xs text-text-secondary">
-            {builtInTag}
+    const builtins = builtinOptions.map(
+      (option): TreeSelectNode => ({
+        id: buildParserOptionValue(ParserOptionKind.BuiltIn, option.value),
+        title: option.label,
+        searchKeywords: [option.label],
+        label: (
+          <span className="flex items-center gap-1.5 min-w-0">
+            <span className="truncate">{option.label}</span>
+            <span className="shrink-0 rounded-md bg-bg-card px-1.5 py-0.5 text-xs text-text-secondary">
+              {builtInTag}
+            </span>
           </span>
-        </span>
-      ),
-    }));
+        ),
+      }),
+    );
 
     // Pipeline branches first, builtin leaves below — the same ordering the
     // flat parser select used.
