@@ -153,7 +153,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
             <CarouselItem
               key={index}
               className="
-              basis-full
+              basis-auto
               @sm:basis-1/2
               @md:basis-1/3
               @lg:basis-1/4
