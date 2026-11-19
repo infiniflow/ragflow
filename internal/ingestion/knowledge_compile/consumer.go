@@ -1410,12 +1410,21 @@ type mergedWikiPageDeleter interface {
 // excluding both returned ID sets.
 func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb, token string, affected map[string]struct{}, current, existingPages []kccommon.Product) ([]string, []string, error) {
 	missing, superseded := wikiPageRowIDsToDelete(tenant, kb, affected, current, existingPages)
+	// The reader capability is required by the batch's scope, not by the rows
+	// the snapshot happened to carry: a partial reader yields an empty snapshot,
+	// so an affected page would otherwise look up to date and the stale row
+	// would survive silently. The writer capability is only needed when a
+	// deletion actually has to run.
+	if len(affected) > 0 {
+		if _, ok := c.reader.(mergedWikiPageReader); !ok {
+			return nil, nil, fmt.Errorf("knowledge_compile: scoped Wiki cleanup is unsupported")
+		}
+	}
 	if len(missing) == 0 {
 		return nil, superseded, nil
 	}
-	_, readerOK := c.reader.(mergedWikiPageReader)
-	deleter, writerOK := c.writer.(mergedWikiPageDeleter)
-	if !readerOK || !writerOK {
+	deleter, ok := c.writer.(mergedWikiPageDeleter)
+	if !ok {
 		return nil, nil, fmt.Errorf("knowledge_compile: scoped Wiki cleanup is unsupported")
 	}
 	if err := c.withWriteLock(ctx, kb, token, func() error {

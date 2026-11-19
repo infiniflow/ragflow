@@ -171,3 +171,25 @@ func TestSelectMergedWikiTopicPathUsesSourceSupport(t *testing.T) {
 		t.Fatalf("selected topic = %q, want path supported by two documents", got)
 	}
 }
+
+// A batch that scopes a Wiki page must not treat an empty deletion set as
+// "nothing to do": a reader without LoadMergedWikiPages produces that empty
+// set, so the stale row would survive unnoticed. The error must depend on the
+// batch scope, not on the snapshot the reader returned. A non-Wiki batch has
+// no scoped pages, so a partial reader stays fine.
+func TestDeleteMissingScopedWikiPagesChecksReaderCapabilityByScope(t *testing.T) {
+	page := kccommon.Product{Variant: kccommon.VariantWiki, Meta: map[string]any{
+		"kind": "page", "page_type": "entity", "slug": "alpha",
+	}}
+	scoped := map[string]struct{}{wikiPageMergeKey(page): {}}
+
+	c := &Consumer{reader: &fakeReader{}, writer: &fakeWriter{}}
+	_, _, err := c.deleteMissingScopedWikiPages(t.Context(), "tenant-1", "kb-1", "token", scoped, []kccommon.Product{page}, nil)
+	if err == nil {
+		t.Fatalf("scoped batch with a partial reader reported success")
+	}
+
+	if _, _, err := c.deleteMissingScopedWikiPages(t.Context(), "tenant-1", "kb-1", "token", nil, nil, nil); err != nil {
+		t.Fatalf("non-Wiki batch must not require cleanup support: %v", err)
+	}
+}
