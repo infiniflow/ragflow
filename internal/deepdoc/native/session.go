@@ -269,9 +269,10 @@ func newSessionOptions(weights *weightSet) (*ort.SessionOptions, error) {
 		opts.Destroy()
 		return nil, err
 	}
-	// Device selection hook: the enterprise build appends the CUDA EP here
-	// when DEEPDOC_DEVICE=gpu; the OSS build is a no-op (ParseDevice rejects
-	// gpu at startup). Fail-fast semantics live in the EE implementation.
+	// Device selection hook: an accelerator-capable build appends its EP here
+	// when the device selects gpu; the default build is a no-op (ParseDevice
+	// rejects gpu at startup). Fail-fast semantics live in the edition that
+	// provides the accelerator EP.
 	if err := ApplyDeviceOptions(opts); err != nil {
 		opts.Destroy()
 		return nil, fmt.Errorf("apply device execution provider: %w", err)
