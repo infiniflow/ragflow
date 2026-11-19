@@ -21,18 +21,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
-	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"go.uber.org/zap"
 
 	"ragflow/internal/channels/core"
@@ -76,14 +75,14 @@ type feishuAccount struct {
 type feishuChannel struct {
 	account feishuAccount
 
-	mu       sync.Mutex
-	ctx      context.Context
-	cancel   context.CancelFunc
-	handler  core.MessageHandler
-	rest     *lark.Client
-	wsClient *larkws.Client
-	seen     map[string]time.Time
-	workers  map[string]*feishuWorker
+	mu      sync.Mutex
+	ctx     context.Context
+	cancel  context.CancelFunc
+	handler core.MessageHandler
+	rest    *lark.Client
+	client  *http.Client
+	seen    map[string]time.Time
+	workers map[string]*feishuWorker
 }
 
 type feishuWorker struct {
@@ -106,6 +105,7 @@ func newFeishuChannel(account feishuAccount) *feishuChannel {
 	}
 	transportPolicy := channelURLPolicy{exactHosts: []string{"open.feishu.cn", "open.larksuite.com"}}
 	safeClient := newSafeChannelHTTPClient(account.Timeout, transportPolicy)
+	ch.client = safeClient
 	ch.rest = lark.NewClient(
 		account.AppID,
 		account.AppSecret,
@@ -180,7 +180,6 @@ func (c *feishuChannel) Start(ctx context.Context) error {
 func (c *feishuChannel) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	cancel := c.cancel
-	wsClient := c.wsClient
 
 	c.cancel = nil
 	c.seen = map[string]time.Time{}
@@ -191,9 +190,6 @@ func (c *feishuChannel) Stop(ctx context.Context) error {
 		cancel()
 	}
 
-	if wsClient != nil {
-		wsClient.Close()
-	}
 	return nil
 }
 
@@ -421,28 +417,11 @@ func (c *feishuChannel) finishStreamCard(ctx context.Context, cardID string, seq
 	return nil
 }
 
-// run keeps the SDK WebSocket client active until the channel stops.
+// run reconnects the Feishu WebSocket session until the channel stops.
 func (c *feishuChannel) run(ctx context.Context) {
 	attempts := 0
 	for ctx.Err() == nil {
-		connected := false
-		wsDialer := *websocket.DefaultDialer
-		wsDialer.HandshakeTimeout = c.account.Timeout
-		wsClient := larkws.NewClient(
-			c.account.AppID,
-			c.account.AppSecret,
-			larkws.WithDomain(feishuBaseURL(c.account.Domain)),
-			larkws.WithHttpClient(newSafeChannelHTTPClient(c.account.Timeout, channelURLPolicy{exactHosts: []string{"open.feishu.cn", "open.larksuite.com"}})),
-			larkws.WithWebSocketDialer(newChannelSDKWebSocketDialer(&wsDialer)),
-			larkws.WithEventHandler(c.eventDispatcher()),
-			larkws.WithLogLevel(larkcore.LogLevelInfo),
-			larkws.WithAutoReconnect(false),
-			larkws.WithOnReady(func() { connected = true }),
-		)
-		c.mu.Lock()
-		c.wsClient = wsClient
-		c.mu.Unlock()
-		err := wsClient.Start(ctx)
+		connected, err := c.runWebSocketSession(ctx)
 		if ctx.Err() != nil {
 			return
 		}

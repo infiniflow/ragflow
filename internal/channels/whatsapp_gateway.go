@@ -37,6 +37,7 @@ import (
 
 const (
 	gatewayStartTimeout = 30 * time.Second
+	gatewayProbeEvery   = 500 * time.Millisecond
 	gatewayStopTimeout  = 10 * time.Second
 )
 
@@ -241,11 +242,11 @@ func gatewayReachable(ctx context.Context) bool {
 func waitForGateway(ctx context.Context, timeout time.Duration) error {
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	for attempt := 1; waitCtx.Err() == nil; attempt++ {
+	for waitCtx.Err() == nil {
 		if gatewayReachable(waitCtx) {
 			return nil
 		}
-		if !waitForContext(waitCtx, channelRetryDelay(attempt)) {
+		if !waitForContext(waitCtx, gatewayProbeEvery) {
 			break
 		}
 	}

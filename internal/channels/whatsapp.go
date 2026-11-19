@@ -42,6 +42,7 @@ const (
 	dockerGatewayBaseURL  = "http://host.docker.internal:3005"
 	defaultTimeout        = 30 * time.Second
 	startTimeout          = 2 * time.Minute
+	statusPollInterval    = 3 * time.Second
 	wsHandshakeTimeout    = 2 * time.Minute
 	wsReadTimeout         = 2 * time.Minute
 	wsPingInterval        = 30 * time.Second
@@ -418,7 +419,7 @@ func (c *whatsappChannel) runEvents(ctx context.Context) error {
 func (c *whatsappChannel) waitForStatus(ctx context.Context) error {
 	waitCtx, cancel := context.WithTimeout(ctx, startTimeout)
 	defer cancel()
-	for attempt := 1; waitCtx.Err() == nil; attempt++ {
+	for waitCtx.Err() == nil {
 		var response map[string]any
 		if err := c.requestJSON(waitCtx, http.MethodGet, fmt.Sprintf("whatsapp/%s/status", url.PathEscape(c.sessionKey())), nil, &response); err == nil {
 			if data, ok := response["data"].(map[string]any); ok {
@@ -426,7 +427,7 @@ func (c *whatsappChannel) waitForStatus(ctx context.Context) error {
 			}
 			return nil
 		}
-		if !waitForContext(waitCtx, channelRetryDelay(attempt)) {
+		if !waitForContext(waitCtx, statusPollInterval) {
 			break
 		}
 	}
