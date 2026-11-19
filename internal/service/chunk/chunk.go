@@ -102,7 +102,7 @@ type ChunkService struct {
 	// a fake to avoid the MQ publisher.
 	cancelIngestionTaskFunc func(ctx context.Context, doc *entity.Document) error
 	getEmbeddingModelFunc   func(string, string) (*models.EmbeddingModel, error)
-	incrementChunkStatsFunc func(string, string, int64, int64, float64) error
+	incrementChunkStatsFunc func(string, string, int64, int64, float64, string) error
 	decrementChunkStatsFunc func(string, string, int64, int64, float64) error
 	storeChunkImageFunc     func(string, string, string, []byte, string) (string, error)
 	removeChunkImageFunc    func(string, string) error
@@ -1878,7 +1878,22 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 
 	tokenNum := int64(s.numTokens(req.Content))
-	if err = s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
+	if err = s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0, kb.EmbdID); err != nil {
+		if errors.Is(err, errChunkEmbeddingChanged) {
+			// The dataset's binding moved after this chunk was embedded with the
+			// model it read, so the stored vector belongs to a model the dataset
+			// no longer queries. Drop the chunk and let the caller retry against
+			// the dataset's current model.
+			if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{
+				"id":     []interface{}{chunkID},
+				"doc_id": req.DocumentID,
+			}, indexName, req.DatasetID); delErr != nil {
+				common.Warn("chunk add: failed to remove the chunk inserted just before the embedding model switched",
+					zap.String("dataset_id", req.DatasetID), zap.String("chunk_id", chunkID), zap.Error(delErr))
+			}
+			return nil, addChunkError{code: common.CodeServerError,
+				message: "the dataset's embedding model changed while the chunk was being added; retry the request"}
+		}
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
 	}
 	s.markWikiDirty(ctx, kb.TenantID, req.DatasetID, req.DocumentID, []string{chunkID})
@@ -1916,6 +1931,10 @@ func (s *ChunkService) markWikiDirty(ctx context.Context, tenantID, datasetID, d
 			zap.String("document_id", documentID), zap.Error(err))
 	}
 }
+
+// errChunkEmbeddingChanged reports that the dataset switched its embedding
+// model between the write that read it and the count that publishes the chunk.
+var errChunkEmbeddingChanged = errors.New("dataset embedding model changed during chunk write")
 
 type addChunkError struct {
 	code    common.ErrorCode
@@ -2092,9 +2111,9 @@ func (s *ChunkService) getEmbeddingModel(ctx context.Context, tenantID, embdID s
 	return embeddingModel, nil
 }
 
-func (s *ChunkService) incrementChunkStats(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
+func (s *ChunkService) incrementChunkStats(docID, kbID string, tokenNum, chunkNum int64, duration float64, embdID string) error {
 	if s.incrementChunkStatsFunc != nil {
-		return s.incrementChunkStatsFunc(docID, kbID, tokenNum, chunkNum, duration)
+		return s.incrementChunkStatsFunc(docID, kbID, tokenNum, chunkNum, duration, embdID)
 	}
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&entity.Document{}).
@@ -2111,16 +2130,31 @@ func (s *ChunkService) incrementChunkStats(docID, kbID string, tokenNum, chunkNu
 			return fmt.Errorf("document not found")
 		}
 
-		result = tx.Model(&entity.Knowledgebase{}).
-			Where("id = ?", kbID).
-			Updates(map[string]interface{}{
-				"token_num": gorm.Expr("token_num + ?", tokenNum),
-				"chunk_num": gorm.Expr("chunk_num + ?", chunkNum),
-			})
+		kbQuery := tx.Model(&entity.Knowledgebase{}).Where("id = ?", kbID)
+		if embdID != "" {
+			// The count publishes the chunk. Tying it to the embedding model the
+			// caller embedded with keeps a model switch from committing while a
+			// chunk it cannot describe is already in the store: a switch guarded
+			// on chunk_num sees this write, and this write sees the switch.
+			kbQuery = kbQuery.Where("embd_id = ?", embdID)
+		}
+		result = kbQuery.Updates(map[string]interface{}{
+			"token_num": gorm.Expr("token_num + ?", tokenNum),
+			"chunk_num": gorm.Expr("chunk_num + ?", chunkNum),
+		})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
+			if embdID != "" {
+				var exists int64
+				if err := tx.Model(&entity.Knowledgebase{}).Where("id = ?", kbID).Count(&exists).Error; err != nil {
+					return err
+				}
+				if exists > 0 {
+					return errChunkEmbeddingChanged
+				}
+			}
 			return fmt.Errorf("knowledgebase not found")
 		}
 		return nil

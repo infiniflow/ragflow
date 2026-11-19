@@ -151,6 +151,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	// must neither trigger engine and provider work nor learn the dataset's
 	// vector dimension from the rejection. The update is authorized again under
 	// the row lock, which stays the authority.
+	switchValidated := false
 	if embdIDProvided && embeddingSwitchNeedsCheck(kb, embdID) {
 		if accessErr := permission.NewDatabaseChecker(dao.DB).CheckResource(
 			ctx,
@@ -163,6 +164,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		if code, switchErr := d.validateEmbeddingSwitch(ctx, kb, embdID); switchErr != nil {
 			return nil, code, switchErr
 		}
+		switchValidated = true
 	}
 
 	if req.ParserConfig != nil {
@@ -335,12 +337,24 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 					tenantEmbdID = target.ID
 				}
 			}
-			if effectiveEmbdID == lockedKB.EmbdID || lockedKB.ChunkNum != 0 {
+			switch {
+			case effectiveEmbdID == lockedKB.EmbdID:
 				// Nothing can fail after this transaction that would need the binding
 				// to move, so it is updated like every other field.
 				updates["embd_id"] = effectiveEmbdID
 				updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
-			} else {
+			case lockedKB.ChunkNum != 0:
+				// The switch rule ran against the row preflight read, which was
+				// empty, so its dimension probe never ran. Chunks committed since
+				// then need that check, and the probe cannot run under this row
+				// lock; a retry reruns the preflight against the non-empty row.
+				if !switchValidated {
+					txCode = common.CodeServerError
+					return errors.New("dataset changed while the embedding model was being prepared; retry the request")
+				}
+				updates["embd_id"] = effectiveEmbdID
+				updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
+			default:
 				// An empty dataset keeps the previous binding here. An existing store
 				// was extended before this transaction; a missing one is created
 				// afterwards, and only a successful creation commits the switch. A
@@ -635,15 +649,25 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		}
 		return nil, txCode, err
 	}
+	var recoveredTaskIDs []string
 	if pendingEmbdID != "" {
 		if storePlan.createEmbdID != "" && updatedKB != nil && updatedKB.ChunkNum == 0 {
 			if createErr := d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID); createErr != nil {
-				// The binding was not part of the transaction above, so the row still
-				// names the previous model and a retry prepares the store again.
+				// This request never wrote the binding, so a retry prepares the
+				// store again. Which model the row names by now is not stated: a
+				// concurrent update may have moved it since the transaction.
 				return nil, common.CodeServerError, fmt.Errorf(
-					"dataset settings were saved, but the chunk store for embedding model %s could not be created, so the previous embedding model was kept; retry the request to switch: %w",
+					"dataset settings were saved, but the chunk store for embedding model %s could not be created and the embedding model was not switched; retry the request to switch: %w",
 					storePlan.createEmbdID, createErr)
 			}
+		}
+		// Recovered tasks are read before the binding moves: a failed read after
+		// the switch would leave them pending with nothing to re-enter this path,
+		// because an unchanged model never repeats the recovery.
+		recoveredTaskIDs, err = pendingDatasetSyncTaskIDs(ctx, updatedKB)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf(
+				"dataset settings were saved, but the connector tasks of an earlier attempt could not be read, so the embedding model was not switched; retry the request: %w", err)
 		}
 		if bindErr := d.commitEmbeddingBinding(ctx, previousKB, updatedKB, pendingEmbdID, pendingTenantEmbdID); bindErr != nil {
 			return nil, common.CodeServerError, fmt.Errorf(
@@ -657,9 +681,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	// re-submits already existed, so the rows that attempt committed still need
 	// their publish.
 	publishIDs := scheduledTaskIDs
-	if pendingEmbdID != "" {
-		publishIDs = append(publishIDs, pendingDatasetSyncTaskIDs(ctx, updatedKB)...)
-	}
+	publishIDs = append(publishIDs, recoveredTaskIDs...)
 	publishDatasetSyncerTasks(publishIDs)
 
 	if pagerankUpdate != nil {
@@ -781,20 +803,18 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 
 // pendingDatasetSyncTaskIDs returns the dataset's still-scheduled connector
 // tasks, which are the ones a failed attempt committed without publishing.
-func pendingDatasetSyncTaskIDs(ctx context.Context, kb *entity.Knowledgebase) []string {
+func pendingDatasetSyncTaskIDs(ctx context.Context, kb *entity.Knowledgebase) ([]string, error) {
 	if ctx == nil || kb == nil {
-		return nil
+		return nil, nil
 	}
 	var ids []string
 	err := dao.DB.WithContext(ctx).Model(&entity.SyncLogs{}).
 		Where("kb_id = ? AND status = ?", kb.ID, dao.SyncStatusSchedule).
 		Pluck("id", &ids).Error
 	if err != nil {
-		common.Warn("pending syncer tasks could not be read",
-			zap.String("dataset_id", kb.ID), zap.Error(err))
-		return nil
+		return nil, fmt.Errorf("read the dataset's scheduled syncer tasks: %w", err)
 	}
-	return ids
+	return ids, nil
 }
 
 func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID string) (*entity.Knowledgebase, common.ErrorCode, error) {
@@ -835,8 +855,8 @@ type chunkStorePlan struct {
 	// createEmbdID is the model whose store must be created after the commit.
 	// Creating a store fixes its analyzer and dimensions, so doing it before a
 	// transaction that can still roll back would leave a store the row never
-	// asked for. A failed creation restores the previous binding, so the retry
-	// takes the preparation path again.
+	// asked for. The binding moves only after creation succeeds, so a failed
+	// creation leaves the retry on the preparation path.
 	createEmbdID string
 }
 
@@ -858,8 +878,8 @@ func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, k
 	// Re-submitting the current model is not a model change. Probing the
 	// provider here would make a rename fail while the provider is down, and a
 	// store missing in that state is not something this update can have left
-	// behind: a failed creation restores the previous binding first, so the
-	// retry of that request still sees a model change.
+	// behind: a failed creation never moves the binding, so the retry of that
+	// request still sees a model change.
 	if embdID == kb.EmbdID {
 		return plan, common.CodeSuccess, nil
 	}

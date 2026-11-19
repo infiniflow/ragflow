@@ -1235,7 +1235,7 @@ func TestAddChunkSuccess(t *testing.T) {
 			modelName := "embed-1"
 			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 		},
-		incrementChunkStatsFunc: func(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
+		incrementChunkStatsFunc: func(docID, kbID string, tokenNum, chunkNum int64, duration float64, embdID string) error {
 			if docID != documentID || kbID != datasetID || duration != 0 {
 				t.Fatalf("unexpected increment args doc=%s kb=%s duration=%v", docID, kbID, duration)
 			}
@@ -1389,7 +1389,7 @@ func TestAddChunkPersistsTagKwdOnlyWhenProvided(t *testing.T) {
 				modelName := "embed-1"
 				return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 			},
-			incrementChunkStatsFunc: func(_, _ string, _, _ int64, _ float64) error { return nil },
+			incrementChunkStatsFunc: func(_, _ string, _, _ int64, _ float64, _ string) error { return nil },
 			tokenizeFunc:            func(text, _ string) (string, error) { return text, nil },
 			fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text + "_fg", nil },
 			numTokensFunc:           func(text string) int { return len(text) },
@@ -1572,7 +1572,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 			modelName := "embed-1"
 			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 		},
-		incrementChunkStatsFunc: func(string, string, int64, int64, float64) error { return nil },
+		incrementChunkStatsFunc: func(string, string, int64, int64, float64, string) error { return nil },
 		storeChunkImageFunc: func(bucket, chunkID, currentImageID string, imageBinary []byte, mode string) (string, error) {
 			storeCalls++
 			if bucket != datasetID || chunkID == "" || len(imageBinary) == 0 {
@@ -1656,7 +1656,7 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 			modelName := "embed-1"
 			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 		},
-		incrementChunkStatsFunc: func(string, string, int64, int64, float64) error {
+		incrementChunkStatsFunc: func(string, string, int64, int64, float64, string) error {
 			incrementCalls++
 			return nil
 		},
@@ -1682,6 +1682,83 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 	importantKwd, ok := engine.insertedChunks[0]["important_kwd"].([]string)
 	if !ok || len(importantKwd) != 0 {
 		t.Fatalf("important_kwd = %#v, want empty []string", engine.insertedChunks[0]["important_kwd"])
+	}
+}
+
+// TestAddChunkDropsChunkWhenEmbeddingModelSwitchesMidWrite covers the write
+// window a chunk_num=0 guard on the binding cannot see: the chunk is already in
+// the store when the dataset switches models, so publishing its count would
+// name a model whose space the stored vector is not in.
+func TestAddChunkDropsChunkWhenEmbeddingModelSwitchesMidWrite(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
+	insertChunkTestKB(t, datasetID, userID)
+	insertChunkTestDoc(t, documentID, datasetID)
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", datasetID).
+		Update("embd_id", "embed-1").Error; err != nil {
+		t.Fatalf("seed embedding model: %v", err)
+	}
+	ctx := chunkTestContext(t, userID, userID)
+
+	engine := &addChunkTestEngine{}
+	engine.afterInsert = func() {
+		if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", datasetID).
+			Update("embd_id", "embed-2").Error; err != nil {
+			t.Fatalf("switch embedding model: %v", err)
+		}
+	}
+	svc := &ChunkService{
+		docEngine:              engine,
+		kbDAO:                  dao.NewKnowledgebaseDAO(),
+		documentDAO:            dao.NewDocumentDAO(),
+		checkDatasetAccessFunc: func(string) error { return nil },
+		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
+			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
+		},
+		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
+			driver := &stubEmbeddingDriver{
+				embeddings: []models.EmbeddingData{
+					{Embedding: []float64{1, 2}},
+					{Embedding: []float64{3, 4}},
+				},
+			}
+			modelName := "embed-1"
+			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
+		},
+		tokenizeFunc:            func(text, _ string) (string, error) { return text, nil },
+		fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text + "_fg", nil },
+		numTokensFunc:           func(text string) int { return len(text) },
+	}
+
+	_, err := svc.AddChunk(ctx, &service.AddChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		Content:    "chunk body",
+	})
+	if err == nil {
+		t.Fatal("AddChunk() published a chunk embedded with the replaced model")
+	}
+	ids, ok := engine.deleteChunksCondition["id"].([]interface{})
+	if !ok || len(ids) != 1 {
+		t.Fatalf("deleted ids = %#v, want the chunk inserted before the switch", engine.deleteChunksCondition["id"])
+	}
+	var kb entity.Knowledgebase
+	if err := db.Where("id = ?", datasetID).First(&kb).Error; err != nil {
+		t.Fatalf("load dataset: %v", err)
+	}
+	if kb.ChunkNum != 0 {
+		t.Fatalf("dataset chunk_num = %d, want 0", kb.ChunkNum)
+	}
+	if kb.EmbdID != "embed-2" {
+		t.Fatalf("dataset embd_id = %q, want the switched model", kb.EmbdID)
+	}
+	var doc entity.Document
+	if err := db.Where("id = ?", documentID).First(&doc).Error; err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	if doc.ChunkNum != 7 {
+		t.Fatalf("document chunk_num = %d, want the seeded 7 (the counter update rolled back)", doc.ChunkNum)
 	}
 }
 
@@ -2369,8 +2446,11 @@ type addChunkTestEngine struct {
 	insertDataset  string
 	insertLanguage string
 	insertErr      error
-	searchReq      *types.SearchRequest
-	searchResp     *types.SearchResult
+	// afterInsert runs once a chunk is in the store, inside the window a
+	// concurrent embedding-model switch used to slip through.
+	afterInsert func()
+	searchReq   *types.SearchRequest
+	searchResp  *types.SearchResult
 }
 
 func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
@@ -2378,7 +2458,13 @@ func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string
 	e.insertIndex = baseName
 	e.insertDataset = datasetID
 	e.insertLanguage = language
-	return nil, e.insertErr
+	if e.insertErr != nil {
+		return nil, e.insertErr
+	}
+	if e.afterInsert != nil {
+		e.afterInsert()
+	}
+	return nil, nil
 }
 
 func (e *addChunkTestEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
