@@ -361,6 +361,14 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 	// Marks for Python-style pop removal.
 	dropped := make([]bool, len(boxes))
 
+	// Bucket candidates by label once so each priority type scans only its
+	// own regions instead of filtering the full list on every box. Indices
+	// are kept so cands[bestJ].typeIndex and tie-break order stay identical.
+	candsByLabel := make(map[string][]int)
+	for j := range cands {
+		candsByLabel[cands[j].label] = append(candsByLabel[cands[j].label], j)
+	}
+
 	// Priority order matching Python's findLayout loop.
 	priorityOrder := []string{
 		pdf.LayoutTypeFooter, pdf.LayoutTypeHeader, pdf.LayoutTypeReference,
@@ -385,10 +393,8 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 			bestOverlap := 0.0
 			bestRegionOverlap := 0.0
 			bestJ := -1
-			for j, r := range cands {
-				if r.label != ty {
-					continue
-				}
+			for _, j := range candsByLabel[ty] {
+				r := cands[j]
 				ix0 := math.Max(r.x0, boxes[i].X0)
 				iy0 := math.Max(r.y0, boxes[i].Top)
 				ix1 := math.Min(r.x1, boxes[i].X1)
