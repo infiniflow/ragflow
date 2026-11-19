@@ -67,12 +67,12 @@ bash build.sh --all
 
 Use `--all` for the initial build from a fresh checkout. After the native libraries and C++ bindings are available, use `bash build.sh --go` for subsequent Go-only rebuilds.
 
-Before starting Admin, start the required dependencies and complete the standalone database migration as described in [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services) and [Migrate and launch the Go backend](../../develop/launch_ragflow_from_source.md#3-migrate-and-launch-the-go-backend). The CLI does not start or migrate the server for you.
+Start the required dependencies as described in [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services), then follow [Launch the Go backend](../../develop/launch_ragflow_from_source.md#3-launch-the-go-backend). The OSS server runs database migrations and initializes the superuser automatically, then runs Admin, API, Ingestor, Syncer and Chatter in one Go process. The CLI connects to this server; it does not start it.
 
-For a source-development checkout, start the Admin Service with `RAGFLOW_DEV_MODE=true` to bypass the code and database version downgrade check. This setting does not run database migrations or change the schema. Do not set it in production. Start Admin before the API server, ingestors, and syncers:
+From the repository root, start all backend services:
 
 ```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
+./bin/ragflow_server
 ```
 
 If this creates the first superuser, its email is `admin@ragflow.io`. Its initial
