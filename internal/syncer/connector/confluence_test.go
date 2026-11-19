@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -200,7 +201,12 @@ func newTestConfluenceConnector(t *testing.T, wikiBase string, overrides map[str
 func newConfluenceFixtureServer(t *testing.T, validateStatus int) *httptest.Server {
 	t.Helper()
 	withConnectorLoopbackTestHook(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httptest.NewServer(confluenceFixtureHandler(t, validateStatus))
+}
+
+func confluenceFixtureHandler(t *testing.T, validateStatus int) http.Handler {
+	t.Helper()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if validateStatus != http.StatusOK && strings.HasPrefix(r.URL.Path, "/wiki/rest/api/space") {
 			http.Error(w, "unauthorized", validateStatus)
 			return
@@ -234,8 +240,7 @@ func newConfluenceFixtureServer(t *testing.T, validateStatus int) *httptest.Serv
 			t.Errorf("unexpected request %s", r.URL.String())
 			http.Error(w, "unexpected request", http.StatusInternalServerError)
 		}
-	}))
-	return server
+	})
 }
 
 func confluenceHasBasicAuth(r *http.Request, username, password string) bool {
@@ -346,29 +351,105 @@ func TestConfluenceCQLQuoteEscapesBackslashes(t *testing.T) {
 	}
 }
 
-// TestConfluenceCQLUpperBoundCoversWholeMinute pins the exclusive upper bound for
-// pages and attachments. CQL cannot express the seconds of the window end, so an
-// inclusive `<=` on the truncated value drops the rest of that minute and the
-// next window's lower bound skips those pages and attachments forever.
-func TestConfluenceCQLUpperBoundCoversWholeMinute(t *testing.T) {
-	connector := newTestConfluenceConnector(t, "https://example.atlassian.net/wiki", map[string]any{
-		"index_mode": "page",
-		"page_id":    "123",
-	})
-	end := mustTime(t, "2026-01-04T00:00:30Z")
+func TestConfluenceSyncWindowsAcrossTimeZones(t *testing.T) {
+	start := confluenceTestTime(t, "2026-11-06T10:33:30Z")
+	end := confluenceTestTime(t, "2026-11-06T10:35:10Z")
+	for _, offset := range []int{-7, 0, 8} {
+		zone := time.FixedZone(fmt.Sprintf("UTC%+d", offset), offset*3600)
+		t.Run(zone.String(), func(t *testing.T) {
+			for _, full := range []bool{true, false} {
+				t.Run(fmt.Sprintf("full=%t", full), func(t *testing.T) {
+					pageTime := confluenceTestTime(t, "2026-11-06T18:33:10+08:00")
+					attachmentTime := end
+					if full {
+						pageTime = confluenceTestTime(t, "2026-11-06T17:08:00+08:00")
+						attachmentTime = pageTime.Add(time.Minute)
+					}
+					withConnectorLoopbackTestHook(t)
+					fixture := confluenceFixtureHandler(t, http.StatusOK)
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						cql := r.URL.Query().Get("cql")
+						var content map[string]any
+						var modifiedAt time.Time
+						switch {
+						case strings.HasPrefix(cql, "type=page"):
+							content, modifiedAt = confluenceFixturePage(), pageTime
+						case strings.HasPrefix(cql, "type=attachment"):
+							content, modifiedAt = confluenceFixtureAttachment(), attachmentTime
+						default:
+							fixture.ServeHTTP(w, r)
+							return
+						}
+						if full && strings.Contains(cql, " and lastmodified ") {
+							t.Errorf("full scan has a date restriction: %s", cql)
+						}
+						var results []map[string]any
+						if confluenceTestCQLIncludes(t, cql, modifiedAt, zone) {
+							content["version"] = map[string]any{"when": modifiedAt.In(zone).Format(time.RFC3339)}
+							results = append(results, content)
+						}
+						if !full && strings.HasPrefix(cql, "type=attachment") {
+							// The broad query can return attachments beyond the exact window.
+							future := end.Add(time.Second)
+							if confluenceTestCQLIncludes(t, cql, future, zone) {
+								extra := confluenceFixtureAttachment()
+								extra["version"] = map[string]any{"when": future.In(zone).Format(time.RFC3339)}
+								extra["_links"] = map[string]any{"download": "/outside-window.txt"}
+								results = append(results, extra)
+							}
+						}
+						writeConfluenceJSON(t, w, map[string]any{"results": results})
+					}))
+					defer server.Close()
 
-	cases := map[string]string{
-		"page":       connector.pageCQL(nil, end, false),
-		"attachment": connector.attachmentCQL("123", nil, end, false),
+					connector := newTestConfluenceConnector(t, server.URL, map[string]any{
+						"index_mode": "page",
+						"page_id":    "123",
+					})
+					session, err := connector.OpenSync(context.Background(), SyncRequest{
+						FromBeginning: full,
+						WindowStart:   &start,
+						WindowEnd:     end,
+					})
+					if err != nil {
+						t.Fatalf("OpenSync: %v", err)
+					}
+					defer session.Close()
+					batch, err := session.NextBatch(context.Background())
+					if err != nil {
+						t.Fatalf("NextBatch: %v", err)
+					}
+					if len(batch.Documents) != 2 {
+						t.Fatalf("got %d documents, want the page and its in-window attachment", len(batch.Documents))
+					}
+					if !batch.Documents[0].UpdatedAt.Equal(pageTime) || !batch.Documents[1].UpdatedAt.Equal(attachmentTime) {
+						t.Fatalf("timestamps = %v and %v, want %v and %v", batch.Documents[0].UpdatedAt, batch.Documents[1].UpdatedAt, pageTime, attachmentTime)
+					}
+				})
+			}
+		})
 	}
-	for name, cql := range cases {
-		if !strings.Contains(cql, `lastmodified < '2026-01-04 00:01'`) {
-			t.Fatalf("%s CQL = %q, want an exclusive bound at the next minute tick", name, cql)
+}
+
+// Confluence interprets CQL date literals in its configured time zone.
+func confluenceTestCQLIncludes(t *testing.T, cql string, modifiedAt time.Time, zone *time.Location) bool {
+	t.Helper()
+	for _, op := range []string{">=", "<"} {
+		_, literal, ok := strings.Cut(cql, "lastmodified "+op+" '")
+		if !ok {
+			continue
 		}
-		if strings.Contains(cql, `lastmodified <=`) {
-			t.Fatalf("%s CQL = %q, want no inclusive upper bound", name, cql)
+		literal, _, _ = strings.Cut(literal, "'")
+		bound, err := time.ParseInLocation("2006-01-02 15:04", literal, zone)
+		if err != nil {
+			t.Errorf("parse CQL date %q: %v", literal, err)
+			return false
+		}
+		if op == ">=" && modifiedAt.Before(bound) || op == "<" && !modifiedAt.Before(bound) {
+			return false
 		}
 	}
+	return true
 }
 
 func TestConfluenceSemanticIdentifierAlwaysUsesFullPath(t *testing.T) {
@@ -389,10 +470,7 @@ func TestConfluenceSemanticIdentifierAlwaysUsesFullPath(t *testing.T) {
 }
 
 func TestConfluenceWindowKeepsWhatTheCQLAlreadyReturned(t *testing.T) {
-	// CQL accepts minute precision only, so pageCQL asks for everything from the
-	// start of the waterline minute. The previous run's upper bound is the same
-	// minute, so a page updated just before the waterline is covered by neither
-	// run unless filtering accepts the same lower bound the query sent.
+	// Include the waterline minute to preserve overlap between consecutive runs.
 	start := mustTime(t, "2026-10-27T10:05:30Z")
 	end := mustTime(t, "2026-10-27T10:06:00Z")
 	if got := confluenceCQLTime(start); got != "2026-10-27 10:05" {
