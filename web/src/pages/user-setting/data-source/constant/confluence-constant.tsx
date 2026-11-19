@@ -113,25 +113,4 @@ export const confluenceConstant = (t: TFunction) => [
       </div>
     ),
   },
-  {
-    label: t('setting.dataSourceFieldSpaceKey'),
-    name: 'config.space',
-    type: FormFieldType.Text,
-    required: false,
-    hidden: true,
-  },
-  {
-    label: t('setting.dataSourceFieldPageId'),
-    name: 'config.page_id',
-    type: FormFieldType.Text,
-    required: false,
-    hidden: true,
-  },
-  {
-    label: t('setting.dataSourceFieldIndexRecursively'),
-    name: 'config.index_recursively',
-    type: FormFieldType.Checkbox,
-    required: false,
-    hidden: true,
-  },
 ];
