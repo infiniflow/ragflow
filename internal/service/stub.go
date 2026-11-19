@@ -50,6 +50,17 @@ func (s *ModelFactory) pickGroupModel(_ context.Context, _, _ string, _ entity.M
 	return nil, fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
 }
 
+func authorizeNonOwnerModelConfiguration(context.Context, *entity.TenantModelProvider, *entity.TenantModelInstance, []*entity.TenantModel) error {
+	return errModelConfigUnavailable
+}
+
+func authorizeModelMetadataReadEE(_ context.Context, identity *modelIdentity) error {
+	if identity == nil || identity.providerEntity == nil {
+		return errModelConfigUnavailable
+	}
+	return nil
+}
+
 func (m *ModelProviderService) listModelProvidersForTenantEE(ctx context.Context, query *gorm.DB, tenantID string) ([]*entity.TenantModelProvider, error) {
 	tenantOwner, err := m.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
@@ -64,6 +75,14 @@ func (*ModelProviderService) setModelOwnerInfoEE(context.Context, []map[string]i
 
 func (m *ModelProviderService) listReadableModelProvidersForUserEE(ctx context.Context, tenantID, userID string) ([]*entity.TenantModelProvider, error) {
 	return m.modelProviderDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, userID)
+}
+
+func (m *ModelProviderService) providersForInstanceList(ctx context.Context, providerIDOrName string) ([]*entity.TenantModelProvider, error) {
+	provider, err := m.resolveProviderInTenant(ctx, providerIDOrName, permission.OperationRead)
+	if err != nil {
+		return nil, err
+	}
+	return []*entity.TenantModelProvider{provider}, nil
 }
 
 func queryScopeForAccessUser(ctx context.Context, checker *permission.Checker, query permission.ScopeQuery, _ string) (permission.QueryScope, error) {
