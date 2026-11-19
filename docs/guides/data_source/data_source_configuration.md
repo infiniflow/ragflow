@@ -635,6 +635,14 @@ The REST API data source is used to synchronize data returned by custom business
 - **Pagination Type**: Select the pagination method and complete its settings.
 - **Advanced Settings**: Enable to configure additional request settings.
 
+For a GET endpoint that accepts time bounds, enable **Dynamic time windows**.
+Specify the start and end query parameter names, the initial sync time, and the
+request and record timestamp formats. Provide a stable record ID and a record
+timestamp field. Use the optional maximum window size if the endpoint limits
+the time range of a request. Pages and retries within a window reuse the same
+bounds. The next successful incremental sync advances the window from the
+previous cutoff.
+
 Click **Test connection** to check the completed settings, then **Confirm** to create the connection.
 
 ![REST API](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/REST_API.jpg)

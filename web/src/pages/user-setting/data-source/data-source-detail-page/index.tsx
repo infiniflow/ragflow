@@ -32,12 +32,14 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 import {
   DataSourceFormDefaultValues,
+  DataSourceKey,
   getCommonExtraDefaultValues,
   getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
   useDataSourceInfo,
 } from '../constant';
+import { RestAPIWindowToggleKey } from '../constant/rest-api-window-constant';
 import {
   useAddDataSource,
   useFetchDataSourceDetail,
@@ -157,6 +159,9 @@ const SourceDetailPage = () => {
       ] as FieldValues,
       getCommonExtraDefaultValues(),
       detail as FieldValues,
+      detail.source === DataSourceKey.REST_API && detail.config?.request_window
+        ? { config: { [RestAPIWindowToggleKey]: true, show_advanced: true } }
+        : undefined,
     );
   }, [detail]);
 

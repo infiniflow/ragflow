@@ -67,6 +67,7 @@ type restAPIConfig struct {
 	PaginationType     string
 	PaginationConfig   map[string]any
 	PollTimestampField string
+	RequestWindow      *restAPIRequestWindow
 	RequestBody        map[string]any
 	FieldTypeHints     map[string]string
 	FieldDefaultValues map[string]any
@@ -261,6 +262,11 @@ func parseRestAPIConfig(config map[string]any) (*restAPIConfig, error) {
 	if v := restAPIConfigFloat(config["request_delay"]); v >= 0 {
 		cfg.RequestDelay = v
 	}
+	window, err := parseRestAPIRequestWindow(cfg, config["request_window"])
+	if err != nil {
+		return nil, err
+	}
+	cfg.RequestWindow = window
 	return cfg, nil
 }
 
@@ -479,6 +485,9 @@ func (c *RestAPIConnector) ValidateLive(ctx context.Context) error {
 	if err := c.prepare(); err != nil {
 		return err
 	}
+	if c.cfg.RequestWindow != nil {
+		return c.validateRequestWindowLive(ctx)
+	}
 	params := map[string]any{}
 	switch c.cfg.PaginationType {
 	case restAPIPaginationPage:
@@ -543,6 +552,21 @@ func (c *RestAPIConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 		windowStart:   windowStart,
 		windowEnd:     request.WindowEnd.UTC(),
 	}
+	if window := c.cfg.RequestWindow; window != nil {
+		if request.WindowEnd.IsZero() {
+			return nil, newRestAPIWindowError("the sync cutoff is required")
+		}
+		start := window.initialStart
+		if windowStart != nil && windowStart.After(start) {
+			start = window.requestFormat.normalize(*windowStart)
+		}
+		session.iterator.runEnd = window.requestFormat.normalize(request.WindowEnd)
+		if start.Before(session.iterator.runEnd) {
+			session.iterator.openWindow(start)
+		} else {
+			session.iterator.finished = true
+		}
+	}
 	if err := session.applyResume(request.Resume); err != nil {
 		return nil, err
 	}
@@ -584,6 +608,9 @@ func (c *RestAPIConnector) fetchPage(ctx context.Context, params map[string]any)
 			break
 		}
 		sleepFor := delay + time.Duration(rand.Float64()*float64(restAPIRetryJitter))
+		if c.cfg.RequestWindow != nil {
+			sleepFor = max(sleepFor, c.pageRequestDelay())
+		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -651,6 +678,12 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 		SensitiveHeaders: sensitiveHeaders,
 		Timeout:          restAPIRequestTimeout,
 		MaxRedirects:     restAPIMaxRedirects,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			if c.cfg.RequestWindow != nil && connectorOrigin(req.URL.String()) != connectorOrigin(currentURL) {
+				return newRestAPIWindowError("the API redirected to another origin")
+			}
+			return nil
+		},
 		Prepare: func(req *http.Request, hop connectorRequestHop) error {
 			if hop.Method == http.MethodPost && req.Header.Get("Content-Type") == "" {
 				req.Header.Set("Content-Type", "application/json")
@@ -659,6 +692,18 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 				req.SetBasicAuth(currentAuth.username, currentAuth.password)
 			}
 			if encoded := restAPIEncodeParams(queryParams); encoded != "" {
+				if c.cfg.RequestWindow != nil {
+					values, err := url.ParseQuery(encoded)
+					if err != nil {
+						return err
+					}
+					query := req.URL.Query()
+					for key, value := range values {
+						query[key] = value
+					}
+					req.URL.RawQuery = query.Encode()
+					return nil
+				}
 				sep := "?"
 				if strings.Contains(hop.URL, "?") {
 					sep = "&"
@@ -680,9 +725,14 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 			}
 			wait := restAPI429DefaultWait
 			if raw := resp.Header.Get("Retry-After"); raw != "" {
-				if seconds, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && seconds >= 0 {
+				if seconds, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); err == nil && seconds >= 0 && seconds <= math.MaxInt64/int64(time.Second) {
 					wait = time.Duration(seconds) * time.Second
+				} else if retryAt, err := http.ParseTime(raw); err == nil {
+					wait = max(time.Until(retryAt), 0)
 				}
+			}
+			if c.cfg.RequestWindow != nil {
+				wait = max(wait, c.pageRequestDelay())
 			}
 			return wait, true
 		},
@@ -695,7 +745,9 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 			if status == http.StatusMovedPermanently || status == http.StatusFound || status == http.StatusSeeOther {
 				hop.Method = http.MethodGet
 				hop.Body = nil
-				queryParams = nil
+				if c.cfg.RequestWindow == nil {
+					queryParams = nil
+				}
 			}
 			hop.URL = nextURL
 			return hop
@@ -741,6 +793,12 @@ func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
 	var value any
 	if err := decoder.Decode(&value); err != nil {
 		return nil, &ConnectorValidationError{Message: "REST API response is not valid JSON"}
+	}
+	if c.cfg.RequestWindow != nil {
+		var extra any
+		if decoder.Decode(&extra) != io.EOF {
+			return nil, newRestAPIWindowError("the response must contain a single JSON value")
+		}
 	}
 	return value, nil
 }
@@ -879,6 +937,9 @@ type restAPIItemIterator struct {
 	finished    bool
 	lastPos     *restAPISyncCursor
 	seenCursors map[string]struct{}
+	window      *restAPIWindowRange
+	runEnd      time.Time
+	fetched     bool
 }
 
 func newRestAPIItemIterator(c *RestAPIConnector) *restAPIItemIterator {
@@ -910,13 +971,41 @@ func newRestAPIItemIterator(c *RestAPIConnector) *restAPIItemIterator {
 	return it
 }
 
+// openWindow restarts pagination while retaining the run cutoff and request delay.
+func (it *restAPIItemIterator) openWindow(start time.Time) {
+	next := newRestAPIItemIterator(it.c)
+	window := it.c.cfg.RequestWindow.segment(start, it.runEnd)
+	next.window = &window
+	next.runEnd = it.runEnd
+	next.fetched = it.fetched
+	*it = *next
+}
+
+func (c *RestAPIConnector) pageRequestDelay() time.Duration {
+	return time.Duration(c.cfg.RequestDelay * float64(time.Second))
+}
+
 // nextPage returns the items of the next page, or nil when iteration is done.
 func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, error) {
-	if it.finished || it.pageCount >= it.c.cfg.MaxPages {
+	if it.finished {
+		if it.window == nil || !it.window.end.Before(it.runEnd) {
+			return nil, nil
+		}
+		it.openWindow(it.window.end)
+	}
+	if it.pageCount >= it.c.cfg.MaxPages {
+		if it.window != nil {
+			return nil, newRestAPIWindowError("max_pages reached before the window was complete")
+		}
 		return nil, nil
 	}
 	it.lastPos = it.positionCursor()
 	params := map[string]any{}
+	if it.window != nil {
+		window := it.c.cfg.RequestWindow
+		params[window.startParam] = window.requestFormat.encode(it.window.start)
+		params[window.endParam] = window.requestFormat.encode(it.window.end)
+	}
 	switch it.c.cfg.PaginationType {
 	case restAPIPaginationPage:
 		it.c.applyPagePagination(params, it.page, it.perPage)
@@ -927,11 +1016,11 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 			it.c.applyCursorPagination(params, it.cursor)
 		}
 	}
-	if it.pageCount > 0 && it.c.cfg.RequestDelay > 0 {
+	if it.fetched && it.c.cfg.RequestDelay > 0 {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(time.Duration(it.c.cfg.RequestDelay * float64(time.Second))):
+		case <-time.After(it.c.pageRequestDelay()):
 		}
 	}
 
@@ -947,9 +1036,22 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 		return nil, &ConnectorValidationError{Message: fmt.Sprintf("REST API page fetch failed: %v", err)}
 	}
 
-	items := restAPIExtractItems(response, it.c.cfg.ItemsPath)
+	it.fetched = true
+	var items []map[string]any
+	if it.window != nil {
+		items, err = extractRestAPIWindowItems(response, it.c.cfg.ItemsPath)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		items = restAPIExtractItems(response, it.c.cfg.ItemsPath)
+	}
 	hasNext, reportsHasNext := restAPIExtractHasNextPage(response, it.c.cfg.PaginationConfig)
-	if len(items) == 0 && !(it.c.cfg.PaginationType == restAPIPaginationCursor && reportsHasNext && hasNext) {
+	if it.window != nil && it.c.cfg.PaginationType != restAPIPaginationNone &&
+		strings.TrimSpace(stringConfig(it.c.cfg.PaginationConfig["has_next_page_field"])) != "" && !reportsHasNext {
+		return nil, newRestAPIWindowError("has_next_page_field must contain a boolean")
+	}
+	if it.window == nil && len(items) == 0 && !(it.c.cfg.PaginationType == restAPIPaginationCursor && reportsHasNext && hasNext) {
 		it.finished = true
 		return nil, nil
 	}
@@ -959,15 +1061,13 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 	case restAPIPaginationNone:
 		it.finished = true
 	case restAPIPaginationPage:
-		if len(items) < it.perPage {
-			it.finished = true
-		} else {
+		it.finished = it.isPaginationFinished(len(items), it.perPage, reportsHasNext, hasNext)
+		if !it.finished {
 			it.page++
 		}
 	case restAPIPaginationOffset:
-		if len(items) < it.limit {
-			it.finished = true
-		} else {
+		it.finished = it.isPaginationFinished(len(items), it.limit, reportsHasNext, hasNext)
+		if !it.finished {
 			it.offset += it.limit
 		}
 	case restAPIPaginationCursor:
@@ -975,11 +1075,22 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 			it.finished = true
 			break
 		}
-		next := restAPIExtractNextCursor(response, it.c.cfg.PaginationConfig)
+		var next string
+		if it.window != nil {
+			next, err = extractRestAPIWindowNextCursor(response, it.c.cfg.PaginationConfig)
+			if err != nil {
+				return nil, err
+			}
+			if hasNext && next == "" {
+				return nil, newRestAPIWindowError("the next page is missing a cursor")
+			}
+		} else {
+			next = restAPIExtractNextCursor(response, it.c.cfg.PaginationConfig)
+		}
 		if next == "" {
 			it.finished = true
 		} else if _, repeated := it.seenCursors[next]; repeated {
-			return nil, fmt.Errorf("rest api pagination repeated cursor %q: %w", next, ErrSyncResumeInvalid)
+			return nil, fmt.Errorf("rest api pagination repeated a cursor: %w", ErrSyncResumeInvalid)
 		} else {
 			it.seenCursors[next] = struct{}{}
 			it.cursor = next
@@ -988,18 +1099,33 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 	return items, nil
 }
 
-// positionCursor returns the position of the page that was just fetched. It is
-// nil for pagination_type=none, which never emits checkpoints.
+func (it *restAPIItemIterator) isPaginationFinished(count, pageSize int, reportsHasNext, hasNext bool) bool {
+	if it.window != nil && reportsHasNext {
+		return !hasNext
+	}
+	return count < pageSize
+}
+
+// positionCursor records the page position before the page is fetched.
 func (it *restAPIItemIterator) positionCursor() *restAPISyncCursor {
+	pos := &restAPISyncCursor{}
 	switch it.c.cfg.PaginationType {
 	case restAPIPaginationPage:
-		return &restAPISyncCursor{Page: it.page, SourceID: ""}
+		pos.Page = it.page
 	case restAPIPaginationOffset:
-		return &restAPISyncCursor{Offset: it.offset, SourceID: ""}
+		pos.Offset = it.offset
 	case restAPIPaginationCursor:
-		return &restAPISyncCursor{Cursor: it.cursor, SourceID: ""}
+		pos.Cursor = it.cursor
+	default:
+		if it.window == nil {
+			return nil
+		}
 	}
-	return nil
+	if it.window != nil {
+		pos.WindowStart = it.window.start.Format(time.RFC3339Nano)
+		pos.PagesRead = it.pageCount
+	}
+	return pos
 }
 
 // currentPagePosition returns the position of the page fetched by the most
@@ -1457,6 +1583,16 @@ func (c *RestAPIConnector) itemToDocument(item map[string]any) (SourceDocument, 
 	} else {
 		rawID = restAPIHash128("rest_api_item:" + restAPIStableText(item))
 	}
+	if c.cfg.RequestWindow != nil {
+		switch extractRestAPIField(item, c.cfg.IDField).(type) {
+		case string, json.Number, int, int64, float64:
+			if strings.TrimSpace(rawID) == "" {
+				return SourceDocument{}, newRestAPIWindowError("id_field must contain a non-empty ID")
+			}
+		default:
+			return SourceDocument{}, newRestAPIWindowError("id_field must contain a string or numeric ID")
+		}
+	}
 	docID := restAPIHash128("rest_api:" + rawID)
 
 	var contentText string
@@ -1485,7 +1621,17 @@ func (c *RestAPIConnector) itemToDocument(item map[string]any) (SourceDocument, 
 		}
 	}
 
-	updatedAt := c.extractTimestamp(item)
+	var updatedAt *time.Time
+	if window := c.cfg.RequestWindow; window != nil {
+		timestamp, err := window.responseFormat.parse(extractRestAPIField(item, c.cfg.PollTimestampField))
+		if err != nil || timestamp.IsZero() || timestamp.Year() < 1 || timestamp.Year() > 9999 {
+			return SourceDocument{}, newRestAPIWindowError("poll_timestamp_field does not match response_time_format")
+		}
+		timestamp = timestamp.UTC()
+		updatedAt = &timestamp
+	} else {
+		updatedAt = c.extractTimestamp(item)
+	}
 	if updatedAt == nil {
 		now := time.Now().UTC()
 		updatedAt = &now
@@ -1880,13 +2026,14 @@ func restAPITimeISO(t time.Time) string {
 // ---------------------------------------------------------------------------
 
 // restAPISyncCursor is the resume position serialized into SyncCheckpoint.Cursor.
-// It stores the current page to fetch and the source document that was last
-// committed from that page; pagination_type=none never produces a checkpoint.
+// It stores the current page and the source document last committed on that page.
 type restAPISyncCursor struct {
-	Page     int    `json:"page,omitempty"`
-	Offset   int    `json:"offset,omitempty"`
-	Cursor   string `json:"cursor,omitempty"`
-	SourceID string `json:"source_id,omitempty"`
+	Page        int    `json:"page,omitempty"`
+	Offset      int    `json:"offset,omitempty"`
+	Cursor      string `json:"cursor,omitempty"`
+	SourceID    string `json:"source_id,omitempty"`
+	WindowStart string `json:"window_start,omitempty"`
+	PagesRead   int    `json:"pages_read,omitempty"`
 }
 
 // restAPIBufferedDocument carries the checkpoint position for an individual
@@ -1928,9 +2075,20 @@ func (s *restAPISyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if sourceID == "" {
 		return fmt.Errorf("rest api sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
+	if s.connector.cfg.RequestWindow != nil {
+		start, err := time.Parse(time.RFC3339Nano, cursor.WindowStart)
+		if err != nil || s.iterator.window == nil || start.Before(s.iterator.window.start) ||
+			!start.Before(s.iterator.runEnd) || cursor.PagesRead < 0 || cursor.PagesRead >= s.connector.cfg.MaxPages {
+			return fmt.Errorf("rest api checkpoint does not match the active time window: %w", ErrSyncResumeInvalid)
+		}
+		s.iterator.openWindow(start.UTC())
+		s.iterator.pageCount = cursor.PagesRead
+	} else if cursor.WindowStart != "" {
+		return fmt.Errorf("rest api checkpoint requires request_window: %w", ErrSyncResumeInvalid)
+	}
 	switch s.connector.cfg.PaginationType {
 	case restAPIPaginationPage:
-		if cursor.Page <= 0 || cursor.Offset != 0 || cursor.Cursor != "" {
+		if cursor.Page < s.iterator.page || cursor.Offset != 0 || cursor.Cursor != "" {
 			return fmt.Errorf("rest api sync cursor does not match page pagination: %w", ErrSyncResumeInvalid)
 		}
 		s.iterator.page = cursor.Page
@@ -1944,8 +2102,13 @@ func (s *restAPISyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 			return fmt.Errorf("rest api sync cursor does not match cursor pagination: %w", ErrSyncResumeInvalid)
 		}
 		s.iterator.cursor = cursor.Cursor
+		if cursor.Cursor != "" {
+			s.iterator.seenCursors[cursor.Cursor] = struct{}{}
+		}
 	default:
-		return fmt.Errorf("rest api sync checkpoint cannot resume pagination_type=none: %w", ErrSyncResumeInvalid)
+		if s.iterator.window == nil || cursor.Page != 0 || cursor.Offset != 0 || cursor.Cursor != "" || cursor.PagesRead != 0 {
+			return fmt.Errorf("rest api sync checkpoint does not match pagination_type=none: %w", ErrSyncResumeInvalid)
+		}
 	}
 	position := cursor
 	position.SourceID = ""
@@ -1978,7 +2141,8 @@ func restAPISyncCursorPositionEqual(left, right *restAPISyncCursor) bool {
 	if left == nil || right == nil {
 		return false
 	}
-	return left.Page == right.Page && left.Offset == right.Offset && left.Cursor == right.Cursor
+	return left.Page == right.Page && left.Offset == right.Offset && left.Cursor == right.Cursor &&
+		left.WindowStart == right.WindowStart && left.PagesRead == right.PagesRead
 }
 
 // restAPISyncCheckpoint records the current page position plus the document
@@ -2017,10 +2181,16 @@ func (s *restAPISyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		for _, item := range items {
 			doc, err := s.connector.itemToDocument(item)
 			if err != nil {
-				// Items that fail conversion are skipped with a warning.
+				if s.iterator.window != nil {
+					return SyncBatch{}, err
+				}
 				continue
 			}
-			if !s.fromBeginning && s.windowStart != nil {
+			if window := s.iterator.window; window != nil {
+				if !restAPIDocInTimeWindow(doc.UpdatedAt, window.start, window.end) {
+					continue
+				}
+			} else if !s.fromBeginning && s.windowStart != nil {
 				if !restAPIDocInTimeWindow(doc.UpdatedAt, *s.windowStart, s.windowEnd) {
 					continue
 				}

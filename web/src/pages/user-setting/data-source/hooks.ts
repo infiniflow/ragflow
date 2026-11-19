@@ -305,7 +305,8 @@ export const useTestDataSource = (
   const [loading, setLoading] = useState(false);
 
   const handleTest = useCallback(async () => {
-    const values = formRef.current?.getFilteredValues();
+    const form = formRef.current;
+    const values = form?.getValues();
     const source = values?.source;
     const connectorID = id || values?.id || connectorId || source;
     if (!connectorID || !source) return;
@@ -318,20 +319,17 @@ export const useTestDataSource = (
         return !field.shouldRender || field.shouldRender(values);
       })
       .map((field) => field.name);
-    const isValid = await formRef.current?.trigger(
+    const config = form?.getFilteredValues()?.config;
+    const isValid = await form?.trigger(
       fields.length > 0 ? fieldNames : undefined,
     );
     if (!isValid) return;
 
     setLoading(true);
     try {
-      const config =
-        values?.config && typeof values.config === 'object'
-          ? values.config
-          : {};
       const { data } = await testDataSource(connectorID, {
         source,
-        config,
+        config: config && typeof config === 'object' ? config : {},
       });
       if (data.code === 0) {
         message.success(t('setting.dataSourceTestSuccess'));
