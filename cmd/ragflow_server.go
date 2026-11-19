@@ -116,6 +116,8 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	fs.StringVar(&logLevel, "log-level", "", "")
 	fs.StringVar(&configPath, "config", "", "")
 	fs.StringVar(&configPath, "f", "", "")
+	var deepdocDevice string
+	fs.StringVar(&deepdocDevice, "deepdoc-device", "", "")
 	fs.BoolVar(&args.EnablePProf, "profile", false, "")
 	fs.BoolVar(&args.HelpFlag, "help", false, "")
 	fs.BoolVar(&args.HelpFlag, "h", false, "")
@@ -143,6 +145,8 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 			args.LogLevel = &logLevel
 		case "config", "f":
 			args.ConfigPath = &configPath
+		case "deepdoc-device":
+			args.DeepdocDevice = &deepdocDevice
 		}
 	})
 	if err := finish(); err != nil {
