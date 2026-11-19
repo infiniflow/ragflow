@@ -441,26 +441,11 @@ func (s *BotService) ChatbotCompletion(
 	return s.streamChatbotTurn(ctx, session, req.Question, messageID, results), common.CodeSuccess, nil
 }
 
-// streamChatbotTurn translates pipeline results into python-shaped
-// chatbot SSE frames and persists the finished turn. It mirrors
-// conversation_service.py structure_answer:
-//
-//   - Every non-final frame forwards only its own delta with an empty
-//     reference object; only the final frame carries the retrieval
-//     reference.
-//   - The final frame's `answer` is empty whenever text was already
-//     streamed as deltas (python async_chat sets final["answer"] = ""),
-//     so accumulating consumers do not double the text. The full text
-//     is sent when nothing was streamed (single-shot results such as
-//     the structured-SQL path) and on error finals, so a mid-stream
-//     pipeline failure still reaches the wire after partial deltas.
-//   - The persisted assistant turn is the raw streamed text, NOT the
-//     decorated final answer. The decorated text carries server-side
-//     [ID:n] citation markers; persisting it feeds fabricated markers
-//     back into the next turn's prompt, and models that imitate the
-//     history format then emit markers for turns whose retrieval
-//     returned nothing — which the widget renders as a citation icon
-//     with "Reference unavailable".
+// streamChatbotTurn forwards pipeline deltas as SSE and persists the finished
+// turn. The final frame carries the decorated answer and its retrieval
+// reference, so the client can update citations after displaying the deltas.
+// Standard streamed replies persist their raw text to keep generated citation
+// markers out of the next turn's prompt.
 func (s *BotService) streamChatbotTurn(
 	ctx context.Context,
 	session *entity.API4Conversation,
@@ -473,8 +458,7 @@ func (s *BotService) streamChatbotTurn(
 		// rawAnswer is the accumulated wire text (deltas plus the
 		// <think>/</think> tags the marker frames stand for), i.e. what
 		// the client already rendered. fullAnswer additionally tracks
-		// the decorated final answer for error detection and the
-		// no-delta fallback.
+		// the decorated final answer for error detection and final delivery.
 		var rawAnswer, fullAnswer string
 		var finalRef map[string]any
 
@@ -506,10 +490,11 @@ func (s *BotService) streamChatbotTurn(
 					finalRef = res.Reference
 				}
 				errored := strings.HasPrefix(fullAnswer, "**ERROR**")
+				useFinalAnswer := rawAnswer == "" || (res.AnswerIsAuthoritative && res.Answer != "")
 				// Save the completed answer before delivering the final SSE frame.
 				if !errored {
 					persisted := rawAnswer
-					if persisted == "" {
+					if useFinalAnswer {
 						persisted = fullAnswer
 					}
 					saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -518,13 +503,8 @@ func (s *BotService) streamChatbotTurn(
 					}
 					cancel()
 				}
-				finalData := ""
-				if rawAnswer == "" || errored {
-					// The final frame is the only carrier of the text
-					// when nothing was streamed as deltas; on a
-					// pipeline-level error it must still carry the
-					// error text even after partial deltas, or the
-					// client would see a silently truncated answer.
+				finalData := res.Answer
+				if errored {
 					finalData = fullAnswer
 				}
 				if !sendFrame(ChatbotSSEFrame{

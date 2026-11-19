@@ -702,20 +702,7 @@ func seedStreamTurnSession(t *testing.T, id, question, messageID string) {
 	}
 }
 
-// TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText pins
-// the python iframe wire contract for the final SSE frame and the
-// persisted turn:
-//
-//   - The final frame carries the retrieval reference but an empty
-//     `answer` whenever text was already streamed as deltas (python
-//     async_chat sets final["answer"] = "").
-//   - The persisted assistant turn is the raw streamed text, NOT the
-//     decorated final answer. Persisting the decorated text leaks the
-//     server-inserted [ID:n] markers into the next turn's prompt
-//     history; models that imitate the history format then emit
-//     citation markers on turns whose retrieval returned nothing, and
-//     the widget renders those as "Reference unavailable" icons.
-func TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText(t *testing.T) {
+func TestStreamChatbotTurnSendsCitedNaiveAnswer(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -729,9 +716,8 @@ func TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText(t *testing.T
 	results := make(chan AsyncChatResult, 5)
 	results <- AsyncChatResult{Answer: "答案", Reference: map[string]any{}}
 	results <- AsyncChatResult{Answer: "第一段", Reference: map[string]any{}}
-	// Decorated final answer with server-inserted markers — must not
-	// reach the wire (deltas exist) nor the persisted history.
-	results <- AsyncChatResult{Answer: "答案第一段 [ID:0][ID:1]", Reference: ref, Final: true}
+	const finalAnswer = "答案第一段 [ID:0][ID:1]"
+	results <- AsyncChatResult{Answer: finalAnswer, Reference: ref, Final: true}
 	close(results)
 
 	sess := &entity.API4Conversation{ID: "sess-s1", DialogID: "dlg-s1", UserID: "tenant-1"}
@@ -747,8 +733,8 @@ func TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText(t *testing.T
 	if !final.Final {
 		t.Fatalf("frame 2 must be final: %+v", final)
 	}
-	if final.Data != "" {
-		t.Errorf("final frame answer = %q, want empty (deltas already streamed)", final.Data)
+	if final.Data != finalAnswer {
+		t.Errorf("final frame answer = %q, want cited answer %q", final.Data, finalAnswer)
 	}
 	if !reflect.DeepEqual(final.Reference, ref) {
 		t.Errorf("final frame reference = %+v, want the retrieval reference", final.Reference)
@@ -767,6 +753,54 @@ func TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText(t *testing.T
 	}
 	if got := turns[1]["content"]; got != "答案第一段" {
 		t.Errorf("persisted assistant content = %v, want raw streamed text without server-inserted markers", got)
+	}
+}
+
+func TestStreamChatbotTurnSendsAndPersistsAuthoritativeAnswer(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	const sessionID = "sess-agentic"
+	const messageID = "msg-agentic"
+	const question = "What did the source say?"
+	const streamedAnswer = "The source reported a gain. [ID:7]"
+	const finalAnswer = "The source reported a gain. [ID:0]"
+	seedStreamTurnSession(t, sessionID, question, messageID)
+	session := &entity.API4Conversation{ID: sessionID, DialogID: "dlg-s1", UserID: "tenant-1"}
+	svc := NewBotService(nil)
+
+	reference := map[string]any{
+		"chunks":   []any{map[string]any{"id": "cited-chunk"}},
+		"doc_aggs": []any{},
+	}
+	results := make(chan AsyncChatResult, 2)
+	results <- AsyncChatResult{Answer: streamedAnswer}
+	results <- AsyncChatResult{
+		Answer:                finalAnswer,
+		Reference:             reference,
+		Final:                 true,
+		AnswerIsAuthoritative: true,
+	}
+	close(results)
+
+	var frames []ChatbotSSEFrame
+	for frame := range svc.streamChatbotTurn(t.Context(), session, question, messageID, results) {
+		frames = append(frames, frame)
+	}
+	if len(frames) != 3 || frames[0].Data != streamedAnswer || !frames[2].Done {
+		t.Fatalf("want the original delta, final frame and done frame, got %+v", frames)
+	}
+	if final := frames[1]; !final.Final || final.Data != finalAnswer || !reflect.DeepEqual(final.Reference, reference) {
+		t.Errorf("final frame = %+v, want rewritten answer %q and reference %+v", final, finalAnswer, reference)
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, session.ID, session.DialogID, true, dao.ConversationHistoryOptions{IncludeReference: true})
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	turns := parseChatbotTurns(row.Message)
+	if len(turns) != 2 || turns[1]["content"] != finalAnswer || !reflect.DeepEqual(turns[1]["reference"], reference) {
+		t.Errorf("persisted turns = %+v, want the rewritten answer and its reference", turns)
 	}
 }
 
@@ -954,8 +988,8 @@ func TestStreamChatbotTurn_ReasoningFieldForwardedAsStreamText(t *testing.T) {
 	if frames[1].Data != "推理中" {
 		t.Errorf("reasoning frame must forward the reasoning text, got %+v", frames[1])
 	}
-	if frames[4].Final && frames[4].Data != "" {
-		t.Errorf("final frame answer = %q, want empty (deltas already streamed)", frames[4].Data)
+	if !frames[4].Final || frames[4].Data != "<think>推理中</think>结论" {
+		t.Errorf("expected a final answer with reasoning, got %+v", frames[4])
 	}
 
 	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s6", "dlg-s1", true)
