@@ -113,7 +113,7 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 					s.tokenizeFunc = func(text, _ string) (string, error) { return text, nil }
 					s.fineGrainedTokenizeFunc = func(text, _ string) (string, error) { return text, nil }
 					s.numTokensFunc = func(text string) int { return len(text) }
-					s.incrementChunkStatsFunc = func(string, string, int64, int64, float64) error { return nil }
+					s.incrementChunkStatsFunc = func(string, string, int64, int64, float64, string) error { return nil }
 					s.markWikiDirtyFunc = func(string, string, string, []string) {}
 					_, err := s.AddChunk(ctx, &service.AddChunkRequest{
 						DatasetID: "kb-1", DocumentID: "doc-1", Content: "chunk body",

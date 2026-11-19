@@ -450,8 +450,8 @@ func TestUpdateDatasetKeepsPreviousBindingWhenCreationFails(t *testing.T) {
 	if err == nil || code != common.CodeServerError {
 		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
 	}
-	if !strings.Contains(err.Error(), "the previous embedding model was kept") {
-		t.Fatalf("error %q does not say the binding was kept", err)
+	if !strings.Contains(err.Error(), "the embedding model was not switched") {
+		t.Fatalf("error %q does not say the switch failed", err)
 	}
 	if eng.calls != 2 {
 		t.Fatalf("chunk store calls = %d, want two attempts", eng.calls)
@@ -559,6 +559,90 @@ func TestUpdateDatasetKeepsPreviousBindingWhenChunksAppearBeforeSwitch(t *testin
 	}
 }
 
+// A chunk can land between the preflight read and the row lock. The dimension
+// rule ran against an empty row, so the switch must be rejected and left to a
+// retry that evaluates it against the chunks the locked row now holds.
+func TestUpdateDatasetRejectsSwitchWhenChunksArriveBeforeTheRowLock(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{}
+	eng.onCreate = func() {
+		if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("chunk_num", 1).Error; err != nil {
+			t.Errorf("seed concurrent chunk_num: %v", err)
+		}
+	}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	model := "BAAI/bge-m3@Builtin"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+	}
+	if !strings.Contains(err.Error(), "dataset changed while the embedding model was being prepared") {
+		t.Fatalf("error %q does not ask for a retry", err)
+	}
+	var kb entity.Knowledgebase
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
+		t.Fatalf("embd_id = %q, want the previous model kept", kb.EmbdID)
+	}
+}
+
+// The recovered tasks are read before the binding moves. When that read fails,
+// the row must still name the previous model, so another retry re-enters the
+// recovery instead of treating the switch as already done.
+func TestUpdateDatasetKeepsBindingWhenPendingTaskReadFails(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{storeMissing: true}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	if err := db.Migrator().DropTable(&entity.SyncLogs{}); err != nil {
+		t.Fatalf("drop sync_logs: %v", err)
+	}
+
+	model := "BAAI/bge-m3@Builtin"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+	}
+	if !strings.Contains(err.Error(), "the embedding model was not switched") {
+		t.Fatalf("error %q does not say the switch failed", err)
+	}
+	var kb entity.Knowledgebase
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
+		t.Fatalf("embd_id = %q, want the previous model kept", kb.EmbdID)
+	}
+
+	if err := db.AutoMigrate(&entity.SyncLogs{}); err != nil {
+		t.Fatalf("restore sync_logs: %v", err)
+	}
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != model {
+		t.Fatalf("embd_id = %q, want the committed model %q", kb.EmbdID, model)
+	}
+}
+
 // A failed embedding probe never reaches CreateChunkStore. The binding was not
 // committed either, so a retry after the provider recovers prepares the store
 // and switches the model.
@@ -581,8 +665,8 @@ func TestUpdateDatasetKeepsPreviousBindingWhenProbeFails(t *testing.T) {
 	if err == nil || code != common.CodeServerError {
 		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
 	}
-	if !strings.Contains(err.Error(), "the previous embedding model was kept") {
-		t.Fatalf("error %q does not say the binding was kept", err)
+	if !strings.Contains(err.Error(), "the embedding model was not switched") {
+		t.Fatalf("error %q does not say the switch failed", err)
 	}
 	if eng.calls != 0 || !eng.storeMissing {
 		t.Fatalf("create calls = %d, store missing = %v, want the store untouched", eng.calls, eng.storeMissing)
