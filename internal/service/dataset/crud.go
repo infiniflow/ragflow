@@ -301,7 +301,12 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		if err := d.kbDAO.Create(ctx, tx, kb); err != nil {
 			return err
 		}
-		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID})
+		if err := permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}); err != nil {
+			return err
+		}
+		// Version 0 describes the dataset as created, so every later change has a
+		// starting point to diff against and restore to.
+		return d.seedDatasetBaselineVersionTxEE(ctx, tx, kb, userID)
 	}); err != nil {
 		if dao.IsDuplicateKeyErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("dataset name '%s' already exists", name)
@@ -575,10 +580,25 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 		if err := tx.Where("id = ?", kb.ID).Delete(&entity.Knowledgebase{}).Error; err != nil {
 			return fmt.Errorf("delete dataset error for %s: %w", kb.ID, err)
 		}
+		// The history names a dataset that no longer exists, so nothing can
+		// restore it; drop it in the same transaction.
+		if err := d.deleteDatasetVersionsTxEE(ctx, tx, kb.ID); err != nil {
+			return fmt.Errorf("delete dataset error for %s", kb.ID)
+		}
+		// The per-chunk history and index state of the removed documents have no
+		// other collector: the removed-document cleanup only walks removal rows,
+		// and a dataset delete never writes one.
+		if err := deleteDatasetChunkRuntimeTxEE(ctx, tx, kb.ID); err != nil {
+			return fmt.Errorf("delete dataset content history for %s: %w", kb.ID, err)
+		}
 		return nil
 	}); err != nil {
 		return err
 	}
+	// The metadata values of the removed documents live in the document engine,
+	// which the transaction above cannot reach: drop them once the rows that
+	// named them are committed away.
+	deleteDatasetMetadataStatesEE(ctx, kb.ID)
 	common.Info("Deleted dataset", zap.String("dataset", datasetNameID), zap.String("kb_id", kb.ID))
 	return nil
 }

@@ -19,6 +19,7 @@ package nats
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"strconv"
 	"testing"
@@ -107,9 +108,11 @@ func TestPublishTaskDeliversRepeatedTaskIDs(t *testing.T) {
 // older deployment (1MB MaxBytes, server-default Duplicates) must be migrated
 // in place by Init instead of being left stale behind an "already exists" error.
 // The server-side config is the merge base: fields the wanted config does not
-// own (Subjects, Retention, Duplicates) must survive the update. This guards
+// own (Retention, Duplicates) must survive the update, and a stream whose
+// subjects already match the wanted ones must keep them untouched. This guards
 // the same migration contract as the pre-tiering single stream, now applied to
-// the default lane.
+// the default lane. The lane-rename case is covered separately by
+// TestInitMigratesStaleTierSubjects.
 func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	host, port := newEmbeddedNatsServer(t)
 
@@ -176,9 +179,80 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	if got := info.Config.Retention; got != jetstream.WorkQueuePolicy {
 		t.Fatalf("Retention after migration = %v, want WorkQueuePolicy (must not be reset)", got)
 	}
-	if len(info.Config.Subjects) != len(primary.subjects) || info.Config.Subjects[0] != primary.subjects[0] {
-		t.Fatalf("Subjects after migration = %v, want %v (must not be reset)", info.Config.Subjects, primary.subjects)
+	if !equalSubjects(info.Config.Subjects, primary.subjects) {
+		t.Fatalf("Subjects after migration = %v, want %v", info.Config.Subjects, primary.subjects)
 	}
+}
+
+// TestInitMigratesStaleTierSubjects: a stream left over from before a lane
+// rename must have its subjects migrated by Init, otherwise publishes to the
+// new subject fail with "nats: no response from stream" (JetStream 503 no
+// responders: no stream matches the subject) and the failure repeats on every
+// restart. Reproduces the tasks.RAGFLOW.medium -> medium.tasks.RAGFLOW rename.
+func TestInitMigratesStaleTierSubjects(t *testing.T) {
+	host, port := newEmbeddedNatsServer(t)
+
+	nc, err := nats.Connect("nats://" + net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		t.Fatalf("connect stale stream creator: %v", err)
+	}
+	defer nc.Close()
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatalf("jetstream context: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	primary := tierStreams[defaultTier()]
+	staleSubject := "tasks.RAGFLOW.stale"
+	if _, err = js.CreateStream(ctx, jetstream.StreamConfig{
+		Name:      primary.streamName,
+		Subjects:  []string{staleSubject},
+		Retention: jetstream.WorkQueuePolicy,
+		Storage:   jetstream.FileStorage,
+	}); err != nil {
+		t.Fatalf("create stream with stale subject: %v", err)
+	}
+	// Precondition: the new subject has no stream behind it, which is exactly
+	// what the deployment sees after a rename.
+	if err = natsPublishOnce(ctx, js, primary.subjects[0]); !errors.Is(err, jetstream.ErrNoStreamResponse) {
+		t.Fatalf("precondition: publish to %q = %v, want ErrNoStreamResponse", primary.subjects[0], err)
+	}
+
+	engine := NewNatsEngine(host, port)
+	if err := engine.Init(); err != nil {
+		t.Fatalf("Init over stale-subject stream: %v", err)
+	}
+
+	info, err := engine.streams[defaultTier()].Info(ctx)
+	if err != nil {
+		t.Fatalf("stream info after migration: %v", err)
+	}
+	if !equalSubjects(info.Config.Subjects, primary.subjects) {
+		t.Fatalf("Subjects after migration = %v, want %v", info.Config.Subjects, primary.subjects)
+	}
+
+	// The regression guard: publishing to the lane's current subject must now
+	// land a message instead of returning "no response from stream".
+	if err := engine.PublishTask(primary.subjects[0], []byte(`{"task_id":"stale-1","task_type":"ingestion_task"}`)); err != nil {
+		t.Fatalf("PublishTask(%q) after subject migration: %v", primary.subjects[0], err)
+	}
+	if info, err = engine.streams[defaultTier()].Info(ctx); err != nil {
+		t.Fatalf("stream info after publish: %v", err)
+	} else if info.State.Msgs != 1 {
+		t.Fatalf("stream holds %d messages, want 1", info.State.Msgs)
+	}
+}
+
+// natsPublishOnce publishes directly through a JetStream handle so the test can
+// assert the pre-migration failure mode without going through PublishTask's
+// retry/context handling.
+func natsPublishOnce(ctx context.Context, js jetstream.JetStream, subject string) error {
+	pubCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	_, err := js.Publish(pubCtx, subject, []byte("{}"))
+	return err
 }
 
 // TestInitConsumerSetsAckWaitAndBackOff: the consumer must carry an explicit

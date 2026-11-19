@@ -16,7 +16,11 @@
 
 package entity
 
-import "time"
+import (
+	"time"
+
+	"ragflow/internal/common"
+)
 
 // Document document model
 type Document struct {
@@ -43,6 +47,22 @@ type Document struct {
 	ContentHash       *string    `gorm:"column:content_hash;size:32;index;default:''" json:"content_hash,omitempty"`
 	Suffix            string     `gorm:"column:suffix;size:32;not null;index" json:"suffix"`
 	Status            *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
+	// RestoredVersion is the dataset version the current content was replayed
+	// from, when it came from a restore rather than a parse: the chunk history
+	// at or before that number was written back to the document engine. It is
+	// null for content no restore touched - the hash a parse produced - and is
+	// cleared when a new parse is queued, because that content is about to be
+	// replaced by fresh output.
+	//
+	// It is a marker on its own, not a status: with ChunkNum it answers what a
+	// restore produced - a value with ChunkNum > 0 means the version's chunks came
+	// back, a value with ChunkNum == 0 means the version held none (or the replay
+	// left the document without any). The run outcome stays on the ingestion task,
+	// which a restore deliberately does not touch.
+	RestoredVersion *int64 `gorm:"column:restored_version" json:"restored_version,omitempty"`
+	// RestoredFromParse marks a restored document whose history recorded a parse
+	// with no chunks. Not a column: readers fill it beside RestoredVersion.
+	RestoredFromParse bool `gorm:"-" json:"-"`
 	BaseModel
 }
 
@@ -75,6 +95,7 @@ type DocumentListItem struct {
 	ProcessDuration   float64    `gorm:"column:process_duration" json:"process_duration"`
 	ContentHash       *string    `gorm:"column:content_hash" json:"content_hash,omitempty"`
 	Suffix            string     `gorm:"column:suffix" json:"suffix"`
+	RestoredVersion   *int64     `gorm:"column:restored_version" json:"restored_version,omitempty"`
 	IngestionStatus   *string    `gorm:"column:ingestion_status" json:"ingestion_status,omitempty"`
 	PipelineLogID     *string    `gorm:"column:pipeline_log_id" json:"-"`
 	Status            *string    `gorm:"column:status" json:"status,omitempty"`
@@ -87,4 +108,37 @@ type DocumentListItem struct {
 // TableName specify table name
 func (Document) TableName() string {
 	return "document"
+}
+
+// IngestionStatusWith is the status the document shows, given the status of its
+// latest ingestion task ("" when it has none).
+//
+// It is the run's status, except for content a restore put back: a restore does
+// not run the pipeline, so the task still describes whatever ran last, while the
+// restored content is the version's. For those documents - the ones carrying
+// RestoredVersion - the content decides the terminal state: chunks came back means
+// completed, none came back means unstarted. A run in flight still wins, and a
+// document no restore touched returns exactly the value it always did, so no
+// ingestion outcome is re-read from the content counters.
+//
+// buildDocumentListIngestionStatusExpression (dao/document.go) is the same rule in
+// SQL, for the list that filters and sorts on it in the database.
+func (d *Document) IngestionStatusWith(taskStatus string) string {
+	if d == nil {
+		return common.UNSTART
+	}
+	switch taskStatus {
+	case common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING:
+		return taskStatus
+	}
+	if d.RestoredVersion != nil {
+		if d.ChunkNum > 0 || d.RestoredFromParse {
+			return common.COMPLETED
+		}
+		return common.UNSTART
+	}
+	if taskStatus == "" {
+		return common.UNSTART
+	}
+	return taskStatus
 }

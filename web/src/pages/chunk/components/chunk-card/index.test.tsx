@@ -22,6 +22,15 @@ jest.mock('@/ee/hooks/logic-hooks/use-permission', () => ({
   useDatasetEditButtonDisabled: () => false,
 }));
 
+// The history entry is an enterprise seam: it exists in one edition and is a
+// no-op in the other, and its real tree reaches the app-wide i18n instance this
+// test replaces. The card's own behaviour is what is under test here, so the
+// seam is stubbed and the enterprise tree exercises it on its own.
+jest.mock(
+  '@/ee/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-creating-modal/chunk-version-entry',
+  () => ({ ChunkVersionEntry: () => null }),
+);
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,

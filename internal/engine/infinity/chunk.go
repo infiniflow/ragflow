@@ -1581,7 +1581,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	defer release()
 
 	// Chunk tables are per dataset: ragflow_<tenant>_<datasetID>.
-	baseName := fmt.Sprintf("ragflow_%s", tenantID)
+	baseName := chunkTableBaseName(tenantID)
 	tableNames := make([]string, 0, len(req.KbIDs))
 	for _, kbID := range req.KbIDs {
 		if kbID == "" {
@@ -1988,6 +1988,12 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 
 	if val, ok := chunk["tag_kwd"].(string); ok {
 		chunk["tag_kwd"], _ = splitKeywordList("tag_kwd", val)
+	}
+
+	// Drop the storage-column aliases the mappings derived from, as GetFields
+	// does: an editor echoing "a,b" back as a keyword list gets a 400.
+	for _, col := range []string{"docnm", "important_keywords", "questions", "content", "authors"} {
+		delete(chunk, col)
 	}
 
 	return chunk, nil

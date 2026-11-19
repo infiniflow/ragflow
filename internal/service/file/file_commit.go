@@ -505,7 +505,31 @@ type PageEditCommitInput struct {
 	AuthorID   string
 	OldContent string
 	NewContent string
+	// Page is the whole page as the engine holds it - content, title, summary,
+	// topic, entities, links, source ids. It is what the snapshot stores, because
+	// a restore has to put the page back whole: the body alone leaves the page's
+	// summary and links describing a version that no longer exists.
+	//
+	// A caller that has no whole page (an edit that only knows the body) leaves it
+	// nil and the snapshot falls back to the body, exactly as the history stored
+	// pages before it carried whole documents.
+	Page map[string]any
 }
+
+// pageSnapshot is the object a page commit stores: the whole page, plus the
+// format version that says how to read it.
+//
+// The version is what keeps old objects readable. Before this existed the object
+// was the page body itself, so a decoder that finds no format field treats the
+// bytes as content rather than failing - the history is append-only and its older
+// half cannot be rewritten.
+type pageSnapshot struct {
+	Format int            `json:"format"`
+	Page   map[string]any `json:"page"`
+}
+
+// pageSnapshotFormat is the version this build writes.
+const pageSnapshotFormat = 1
 
 // wikiFileID derives the stable file key used to scope page-edit commits to a
 // specific knowledgebase and page, so identical slugs in different
@@ -536,17 +560,28 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 
 	commitID := common.GenerateUUID()
 
+	operation := "modify"
+	switch {
+	case in.OldContent == "" && in.NewContent != "":
+		operation = "add"
+	case in.OldContent != "" && in.NewContent == "":
+		// A page that lost its body was removed. The history has to say so, or a
+		// restore cannot tell a page that was deleted from one that never existed -
+		// and would bring back pages the version never had.
+		operation = "delete"
+	}
 	diffText := unifiedDiff(in.OldContent, in.NewContent)
-	if diffText == "" {
+	if diffText == "" && operation != "delete" {
 		return nil, nil
 	}
-	contentAfterStorage, contentAfterLocation := s.storePageContent(ctx, in.DatasetID, in.NewContent)
+	// A delete stores no body: the page is gone, and the snapshot it would write
+	// is the empty page that follows it, not the one it replaced.
+	var contentAfterStorage, contentAfterLocation string
+	if operation != "delete" {
+		contentAfterStorage, contentAfterLocation = s.storePageSnapshot(ctx, in.DatasetID, pageSnapshotOf(in))
+	}
 	slugKwd := in.Slug
 	pageTypeKwd := in.PageType
-	operation := "modify"
-	if in.OldContent == "" {
-		operation = "add"
-	}
 
 	item := &entity.FileCommitItem{
 		ID:          common.GenerateUUID(),
@@ -595,6 +630,16 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	if parentID != "" {
 		commit.ParentID = &parentID
 	}
+	// Stamp the row with the metadata database's clock, the timeline every other
+	// history row is on (see entity.DBTimeMillis). A restore anchors on
+	// dataset_version.create_time, so a commit stamped a few milliseconds ahead of
+	// it by a fast local clock would fall outside the very version it was written
+	// for - and the page would read as missing at that version. The local clock
+	// stays as the fallback for a dialect the database clock cannot answer.
+	if stamp, err := entity.DBTimeMillis(dao.DB); err == nil {
+		commit.CreateTime = &stamp
+		item.CreateTime = &stamp
+	}
 
 	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if cerr := tx.Create(commit).Error; cerr != nil {
@@ -611,21 +656,69 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	return commit, nil
 }
 
-// storePageContent saves a page version in the same dataset-scoped object
-// layout used by Python's MinIO-backed artifact history. Missing storage is
-// tolerated because page updates and audit rows are intentionally best-effort.
-func (s *FileCommitService) storePageContent(ctx context.Context, datasetID, content string) (string, string) {
+// pageSnapshotOf is the page a commit stores: the caller's whole page when it has
+// one, otherwise the smallest page that still describes the edit - the body it
+// wrote plus the identity the item already carries.
+func pageSnapshotOf(in PageEditCommitInput) map[string]any {
+	if len(in.Page) > 0 {
+		page := make(map[string]any, len(in.Page)+3)
+		for key, value := range in.Page {
+			page[key] = value
+		}
+		applyPageSnapshotDefaults(page, in)
+		return page
+	}
+	page := map[string]any{"content_with_weight": in.NewContent}
+	applyPageSnapshotDefaults(page, in)
+	return page
+}
+
+// applyPageSnapshotDefaults fills the fields the caller's page may leave out, so
+// a snapshot always knows which page it belongs to and what it says.
+func applyPageSnapshotDefaults(page map[string]any, in PageEditCommitInput) {
+	if value, ok := page["slug_kwd"]; !ok || value == "" {
+		page["slug_kwd"] = in.PageType + "/" + in.Slug
+	}
+	if value, ok := page["page_type_kwd"]; !ok || value == "" {
+		page["page_type_kwd"] = in.PageType
+	}
+	if value, ok := page["title_kwd"]; !ok || value == "" {
+		page["title_kwd"] = in.Title
+	}
+}
+
+// storePageSnapshot saves a page version in the same dataset-scoped object layout
+// used by Python's MinIO-backed artifact history. Missing storage is tolerated
+// because page updates and audit rows are intentionally best-effort.
+func (s *FileCommitService) storePageSnapshot(ctx context.Context, datasetID string, page map[string]any) (string, string) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return "", ""
 	}
-	hash := sha256.Sum256([]byte(content))
+	encoded, err := json.Marshal(pageSnapshot{Format: pageSnapshotFormat, Page: page})
+	if err != nil {
+		common.Warn("Failed to encode wiki page snapshot", zap.Error(err))
+		return "", ""
+	}
+	hash := sha256.Sum256(encoded)
 	location := wikiCommitBucketPrefix + "/" + hex.EncodeToString(hash[:])
-	if err := storageImpl.Put(ctx, datasetID, location, []byte(content)); err != nil {
-		common.Warn("failed to store wiki commit content", zap.Error(err))
+	if err := storageImpl.Put(ctx, datasetID, location, encoded); err != nil {
+		common.Warn("Failed to store wiki page snapshot", zap.Error(err))
 		return "", ""
 	}
 	return wikiContentStorage, location
+}
+
+// decodePageSnapshot reads the object a commit points at. An object that carries
+// no format version is a body written before snapshots existed, so it is read as
+// content rather than refused: the history is append-only and its older half
+// cannot be rewritten into the new shape.
+func decodePageSnapshot(raw []byte) map[string]any {
+	var snapshot pageSnapshot
+	if err := json.Unmarshal(raw, &snapshot); err == nil && snapshot.Format > 0 && snapshot.Page != nil {
+		return snapshot.Page
+	}
+	return map[string]any{"content_with_weight": string(raw)}
 }
 
 // pageCommitLocks is a per-page-file-key mutex registry that serializes
@@ -701,131 +794,11 @@ func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, page
 	return rows, total, nil
 }
 
-type unifiedDiffLine struct {
-	prefix  byte
-	text    string
-	oldLine int
-	newLine int
-}
-
 // unifiedDiff produces a standard unified diff that can be parsed by the
 // frontend's wiki diff renderer and Python's artifact history implementation.
+// The implementation is shared with the chunk version diff endpoint.
 func unifiedDiff(oldText, newText string) string {
-	oldLines := strings.Split(oldText, "\n")
-	newLines := strings.Split(newText, "\n")
-
-	const contextLines = 3
-	// Longest common subsequence over lines, then render the diff.
-	cur := make([][]int, len(oldLines)+1)
-	for i := range cur {
-		cur[i] = make([]int, len(newLines)+1)
-	}
-	for i := len(oldLines) - 1; i >= 0; i-- {
-		for j := len(newLines) - 1; j >= 0; j-- {
-			if oldLines[i] == newLines[j] {
-				cur[i][j] = cur[i+1][j+1] + 1
-			} else if cur[i+1][j] >= cur[i][j+1] {
-				cur[i][j] = cur[i+1][j]
-			} else {
-				cur[i][j] = cur[i][j+1]
-			}
-		}
-	}
-
-	lines := make([]unifiedDiffLine, 0, len(oldLines)+len(newLines))
-	i, j := 0, 0
-	for i < len(oldLines) && j < len(newLines) {
-		if oldLines[i] == newLines[j] {
-			lines = append(lines, unifiedDiffLine{' ', oldLines[i], i + 1, j + 1})
-			i++
-			j++
-		} else if cur[i+1][j] >= cur[i][j+1] {
-			lines = append(lines, unifiedDiffLine{'-', oldLines[i], i + 1, 0})
-			i++
-		} else {
-			lines = append(lines, unifiedDiffLine{'+', newLines[j], 0, j + 1})
-			j++
-		}
-	}
-	for ; i < len(oldLines); i++ {
-		lines = append(lines, unifiedDiffLine{'-', oldLines[i], i + 1, 0})
-	}
-	for ; j < len(newLines); j++ {
-		lines = append(lines, unifiedDiffLine{'+', newLines[j], 0, j + 1})
-	}
-
-	changed := make([]int, 0)
-	for index, line := range lines {
-		if line.prefix != ' ' {
-			changed = append(changed, index)
-		}
-	}
-	if len(changed) == 0 {
-		return ""
-	}
-
-	// Group nearby changes into hunks with up to three context lines, matching
-	// the format produced by Python's difflib.unified_diff.
-	type diffHunk struct {
-		start int
-		end   int
-	}
-	hunks := make([]diffHunk, 0)
-	for _, index := range changed {
-		start := index - contextLines
-		if start < 0 {
-			start = 0
-		}
-		end := index + contextLines
-		if end >= len(lines) {
-			end = len(lines) - 1
-		}
-		if len(hunks) > 0 && start <= hunks[len(hunks)-1].end+1 {
-			if end > hunks[len(hunks)-1].end {
-				hunks[len(hunks)-1].end = end
-			}
-			continue
-		}
-		hunks = append(hunks, diffHunk{start: start, end: end})
-	}
-
-	var b strings.Builder
-	b.WriteString("--- a\n+++ b\n")
-	for _, hunk := range hunks {
-		oldStart, oldCount := diffRange(lines, hunk.start, hunk.end, false, len(oldLines))
-		newStart, newCount := diffRange(lines, hunk.start, hunk.end, true, len(newLines))
-		b.WriteString(fmt.Sprintf("@@ -%d,%d +%d,%d @@\n", oldStart, oldCount, newStart, newCount))
-		for index := hunk.start; index <= hunk.end; index++ {
-			b.WriteByte(lines[index].prefix)
-			b.WriteString(lines[index].text)
-			b.WriteByte('\n')
-		}
-	}
-	return b.String()
-}
-
-// diffRange returns the first line number and line count for one side of a
-// unified diff hunk. A zero count is valid for pure insertions or deletions.
-func diffRange(lines []unifiedDiffLine, start, end int, newSide bool, totalLines int) (int, int) {
-	first := 0
-	count := 0
-	for index := start; index <= end; index++ {
-		lineNumber := lines[index].oldLine
-		if newSide {
-			lineNumber = lines[index].newLine
-		}
-		if lineNumber == 0 {
-			continue
-		}
-		if first == 0 {
-			first = lineNumber
-		}
-		count++
-	}
-	if first == 0 {
-		first = totalLines
-	}
-	return first, count
+	return utility.UnifiedDiff(oldText, newText)
 }
 
 // ListCommits lists commits for a workspace folder with pagination
@@ -924,8 +897,11 @@ func (s *FileCommitService) readPageContent(ctx context.Context, datasetID, tena
 		switch storageKind {
 		case wikiContentStorage, "minio_storage":
 			if storageImpl := storage.GetStorageFactory().GetStorage(); storageImpl != nil {
-				if content, err := storageImpl.Get(ctx, datasetID, location); err == nil {
-					return string(content)
+				if stored, err := storageImpl.Get(ctx, datasetID, location); err == nil {
+					// The object is a whole-page snapshot; the detail view wants the
+					// body, and an object written before snapshots existed is the body
+					// itself (see decodePageSnapshot).
+					return metadataStringOf(decodePageSnapshot(stored), "content_with_weight")
 				}
 			}
 		case "es":
