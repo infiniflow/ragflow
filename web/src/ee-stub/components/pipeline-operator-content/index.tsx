@@ -1,5 +1,5 @@
-import type { RAGFlowNodeType } from "@/interfaces/database/agent";
-import { PropsWithChildren } from "react";
+import type { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { PropsWithChildren } from 'react';
 
 type ParserFormContentProps = PropsWithChildren<{
   node?: RAGFlowNodeType;
