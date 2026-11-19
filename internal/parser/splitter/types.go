@@ -68,7 +68,7 @@ func (opts SplitOptions) Normalize() SplitOptions {
 		opts.MinPages = DefaultMinPages
 	}
 	if opts.MaxPages <= opts.MinPages {
-		opts.MaxPages = DefaultMaxPages
+		opts.MaxPages = opts.MinPages + DefaultMaxPages
 	}
 	if opts.ThresholdPages <= 0 {
 		opts.ThresholdPages = DefaultThresholdPages

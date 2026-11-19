@@ -338,3 +338,32 @@ func TestDispatchAdaptiveChapterPDF_WorkerError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+func TestShouldAdaptiveChapterSplit_ConfiguredPagesBypassed(t *testing.T) {
+	pdfData := makeTestPDF(10)
+	setupWithPages := schema.ParserSetup{
+		"enable_adaptive_chapter_split": true,
+		"chapter_split_threshold":       4,
+		"pages":                         []any{[]any{float64(2), float64(4)}},
+	}
+	if shouldAdaptiveChapterSplit(setupWithPages, pdfData) {
+		t.Error("expected shouldAdaptiveChapterSplit to return false when pages is explicitly configured")
+	}
+
+	normalize := func(r parser.ParseResult) parser.ParseResult { return r }
+	_, handled, err := dispatchAdaptiveChapterPDF(t.Context(), nil, "test.pdf", pdfData, "tenant-1", setupWithPages, normalize)
+	if handled {
+		t.Error("expected dispatchAdaptiveChapterPDF to bypass (handled=false) when pages is configured")
+	}
+	if err != nil {
+		t.Errorf("unexpected error on bypass: %v", err)
+	}
+
+	setupWithoutPages := schema.ParserSetup{
+		"enable_adaptive_chapter_split": true,
+		"chapter_split_threshold":       4,
+	}
+	if !shouldAdaptiveChapterSplit(setupWithoutPages, pdfData) {
+		t.Error("expected shouldAdaptiveChapterSplit to return true when pages is absent and page count exceeds threshold")
+	}
+}

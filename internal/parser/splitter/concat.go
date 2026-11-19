@@ -17,7 +17,6 @@ package splitter
 import (
 	"errors"
 	"maps"
-	"math"
 	"strings"
 
 	"ragflow/internal/entity"
@@ -201,9 +200,10 @@ func addOffsetToAny(val any, offset int) (any, bool) {
 	}
 }
 
-// ConcatenateResults lossless aggregates chapter parse results into a single ParseResult.
-// It applies coordinate offsets, stitches DocItems sequentially, attaches authoritative
-// original document outlines, and updates total page_count metadata.
+// ConcatenateResults losslessly aggregates chapter parse results into a single ParseResult.
+// It applies coordinate offsets, stitches continuous DocItems sequentially across chapter cuts,
+// and updates total page_count metadata (document outlines are stripped here and authoritatively
+// attached by the caller's normalize stage).
 func ConcatenateResults(chapterResults []parser.ParseResult, plans []ChapterPlan) parser.ParseResult {
 	if len(chapterResults) == 0 {
 		return parser.ParseResult{}
@@ -269,28 +269,17 @@ func ConcatenateResults(chapterResults []parser.ParseResult, plans []ChapterPlan
 	}
 }
 
-// tryStitchBoundaryItems stitches cross-chapter tables and figures spanning
-// across consecutive page boundaries (e.g. table continuing from chapter i into chapter i+1).
+// tryStitchBoundaryItems stitches cross-chapter tables spanning across consecutive
+// page boundaries (e.g. table continuing from chapter i into chapter i+1).
+// Images are discrete page-bound media assets and are not merged across boundaries.
 func tryStitchBoundaryItems(prev, next parser.DocItem) (parser.DocItem, bool) {
 	t1, ok1 := prev.(parser.TableItem)
 	t2, ok2 := next.(parser.TableItem)
 	if ok1 && ok2 && t1.Table != nil && t2.Table != nil && len(t1.Table.Grid) > 0 && len(t2.Table.Grid) > 0 {
-		p1 := itemPageNumber(t1)
-		p2 := itemPageNumber(t2)
-		if p1 > 0 && p2 > 0 && p2 == p1+1 {
+		_, lastP1 := tableFirstAndLastPage(t1)
+		firstP2, _ := tableFirstAndLastPage(t2)
+		if lastP1 > 0 && firstP2 > 0 && firstP2 == lastP1+1 {
 			if merged, ok := stitchTables(t1, t2); ok {
-				return merged, true
-			}
-		}
-	}
-
-	img1, okImg1 := prev.(parser.ImageItem)
-	img2, okImg2 := next.(parser.ImageItem)
-	if okImg1 && okImg2 {
-		p1 := itemPageNumber(img1)
-		p2 := itemPageNumber(img2)
-		if p1 > 0 && p2 > 0 && p2 == p1+1 {
-			if merged, ok := stitchImages(img1, img2); ok {
 				return merged, true
 			}
 		}
@@ -298,31 +287,45 @@ func tryStitchBoundaryItems(prev, next parser.DocItem) (parser.DocItem, bool) {
 	return nil, false
 }
 
-func itemPageNumber(it parser.DocItem) int {
-	switch v := it.(type) {
-	case parser.TableItem:
-		for _, p := range v.Positions {
-			if box, ok := p.(parser.AbsoluteBox); ok && box.PageNumber > 0 {
-				return box.PageNumber
+// tableFirstAndLastPage returns the 1-indexed inclusive page range [first, last] for a table item.
+func tableFirstAndLastPage(t parser.TableItem) (int, int) {
+	minP, maxP := 0, 0
+	for _, p := range t.Positions {
+		if box, ok := p.(parser.AbsoluteBox); ok && box.PageNumber > 0 {
+			if minP == 0 || box.PageNumber < minP {
+				minP = box.PageNumber
 			}
-		}
-		if v.Table != nil && v.Table.Page > 0 {
-			return v.Table.Page
-		}
-		if pg, ok := v.Extra["page_number"].(int); ok && pg > 0 {
-			return pg
-		}
-	case parser.ImageItem:
-		for _, p := range v.Positions {
-			if box, ok := p.(parser.AbsoluteBox); ok && box.PageNumber > 0 {
-				return box.PageNumber
+			if box.PageNumber > maxP {
+				maxP = box.PageNumber
 			}
-		}
-		if pg, ok := v.Extra["page_number"].(int); ok && pg > 0 {
-			return pg
 		}
 	}
-	return 0
+	if minP > 0 {
+		return minP, maxP
+	}
+	if t.Table != nil && t.Table.Page > 0 {
+		return t.Table.Page, t.Table.Page
+	}
+	if pg, ok := t.Extra["page_number"].(int); ok && pg > 0 {
+		return pg, pg
+	}
+	return 0, 0
+}
+
+func isContinuationCaption(c1, c2 string) bool {
+	if c1 == "" || c2 == "" {
+		return false
+	}
+	c1Lower := strings.ToLower(strings.TrimSpace(c1))
+	c2Lower := strings.ToLower(strings.TrimSpace(c2))
+	if strings.Contains(c2Lower, "continued") || strings.Contains(c2Lower, "cont.") ||
+		strings.Contains(c2Lower, "(续)") || strings.Contains(c2Lower, "续表") {
+		cleanC1 := strings.TrimSpace(c1Lower)
+		if strings.HasPrefix(c2Lower, cleanC1) {
+			return true
+		}
+	}
+	return false
 }
 
 func stitchTables(t1, t2 parser.TableItem) (parser.TableItem, bool) {
@@ -338,15 +341,15 @@ func stitchTables(t1, t2 parser.TableItem) (parser.TableItem, bool) {
 		return t1, false
 	}
 
-	// Tables must have compatible column models (same number of columns, or within 1 column margin)
-	if math.Abs(float64(w1-w2)) > 1 {
+	// Columns must match exactly for continuation stitching
+	if w1 != w2 {
 		return t1, false
 	}
 
-	targetW := max(w1, w2)
-
-	// Check if t2 repeats header rows from t1
+	// Continuation evidence check: require matching repeated header signature or continuation caption
+	hasContinuationEvidence := false
 	startRow := 0
+
 	if t1.Table.HeaderRows > 0 && len(grid2) > t1.Table.HeaderRows {
 		repeatsHeader := true
 		for r := 0; r < t1.Table.HeaderRows; r++ {
@@ -356,18 +359,28 @@ func stitchTables(t1, t2 parser.TableItem) (parser.TableItem, bool) {
 			}
 		}
 		if repeatsHeader {
+			hasContinuationEvidence = true
 			startRow = t1.Table.HeaderRows
 		}
 	} else if len(grid2) > 1 && cellsEqual(grid1[0], grid2[0]) {
+		hasContinuationEvidence = true
 		startRow = 1
+	}
+
+	if !hasContinuationEvidence && isContinuationCaption(t1.Table.Caption, t2.Table.Caption) {
+		hasContinuationEvidence = true
+	}
+
+	if !hasContinuationEvidence {
+		return t1, false
 	}
 
 	newGrid := make([][]entity.TableCell, 0, len(grid1)+len(grid2)-startRow)
 	for _, row := range grid1 {
-		newGrid = append(newGrid, padRow(row, targetW))
+		newGrid = append(newGrid, padRow(row, w1))
 	}
 	for _, row := range grid2[startRow:] {
-		newGrid = append(newGrid, padRow(row, targetW))
+		newGrid = append(newGrid, padRow(row, w1))
 	}
 
 	mergedTable := *t1.Table
@@ -388,19 +401,6 @@ func stitchTables(t1, t2 parser.TableItem) (parser.TableItem, bool) {
 		Positions: combinedPositions,
 		Extra:     combinedExtra,
 	}, true
-}
-
-func stitchImages(img1, img2 parser.ImageItem) (parser.ImageItem, bool) {
-	if img1.Text == "" || img2.Text == "" {
-		return img1, false
-	}
-	if img1.Text != img2.Text && !strings.Contains(img2.Text, img1.Text) && !strings.Contains(img1.Text, img2.Text) {
-		return img1, false
-	}
-
-	merged := img1
-	merged.Positions = append(append(parser.Positions(nil), img1.Positions...), img2.Positions...)
-	return merged, true
 }
 
 func maxRowWidth(grid [][]entity.TableCell) int {

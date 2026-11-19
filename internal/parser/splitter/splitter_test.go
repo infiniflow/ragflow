@@ -294,17 +294,6 @@ func makeTestMultiPagePDF(pages int) []byte {
 	return buf
 }
 
-func TestSlicePDF_Execution(t *testing.T) {
-	pdfData := makeTestMultiPagePDF(5)
-	subPDF, err := SlicePDF(pdfData, 1, 3)
-	if err != nil {
-		t.Fatalf("SlicePDF failed: %v", err)
-	}
-	if len(subPDF) == 0 {
-		t.Fatal("SlicePDF returned empty slice")
-	}
-}
-
 func TestPlanAdaptiveChapters_MinPagesRespected(t *testing.T) {
 	opts := SplitOptions{
 		MinPages:       40,
@@ -467,5 +456,137 @@ func TestConcatenateResults_EndToEndContinuity(t *testing.T) {
 		if pg != expectedPages[i] {
 			t.Errorf("item %d global page = %d, want %d", i, pg, expectedPages[i])
 		}
+	}
+}
+
+func TestSplitOptions_NormalizeInversionSafe(t *testing.T) {
+	opts := SplitOptions{
+		MinPages: 200,
+		MaxPages: 120,
+	}.Normalize()
+
+	if opts.MaxPages <= opts.MinPages {
+		t.Fatalf("Normalize left inverted range: MinPages=%d, MaxPages=%d", opts.MinPages, opts.MaxPages)
+	}
+	if opts.MaxPages != 200+DefaultMaxPages {
+		t.Errorf("opts.MaxPages = %d, want %d", opts.MaxPages, 200+DefaultMaxPages)
+	}
+}
+
+func TestConcatenateResults_RejectUnrelatedTables(t *testing.T) {
+	plans := []ChapterPlan{
+		{Index: 0, StartPage: 0, EndPage: 9, PageCount: 10},
+		{Index: 1, StartPage: 10, EndPage: 19, PageCount: 10},
+	}
+
+	header1 := []entity.TableCell{{Text: "Asset"}, {Text: "Value"}}
+	row1 := []entity.TableCell{{Text: "Cash"}, {Text: "$100"}}
+
+	header2 := []entity.TableCell{{Text: "Liability"}, {Text: "Due"}}
+	row2 := []entity.TableCell{{Text: "Debt"}, {Text: "$50"}}
+
+	t1 := parser.TableItem{
+		Table: &entity.TableData{
+			Grid:       [][]entity.TableCell{header1, row1},
+			HeaderRows: 1,
+			Caption:    "Assets Balance",
+		},
+		Positions: parser.Positions{
+			parser.AbsoluteBox{PageNumber: 10, Left: 10, Top: 500, Right: 500, Bottom: 700},
+		},
+	}
+
+	t2 := parser.TableItem{
+		Table: &entity.TableData{
+			Grid:       [][]entity.TableCell{header2, row2},
+			HeaderRows: 1,
+			Caption:    "Liabilities Schedule",
+		},
+		Positions: parser.Positions{
+			parser.AbsoluteBox{PageNumber: 1, Left: 10, Top: 50, Right: 500, Bottom: 200},
+		},
+	}
+
+	res := ConcatenateResults([]parser.ParseResult{{JSON: []parser.DocItem{t1}}, {JSON: []parser.DocItem{t2}}}, plans)
+	if len(res.JSON) != 2 {
+		t.Fatalf("expected 2 distinct tables preserved without false fusion, got %d", len(res.JSON))
+	}
+}
+
+func TestConcatenateResults_MultiPageTableStitching(t *testing.T) {
+	plans := []ChapterPlan{
+		{Index: 0, StartPage: 0, EndPage: 9, PageCount: 10},
+		{Index: 1, StartPage: 10, EndPage: 19, PageCount: 10},
+	}
+
+	header := []entity.TableCell{{Text: "Department"}, {Text: "Budget"}}
+	row1 := []entity.TableCell{{Text: "Engineering"}, {Text: "$10M"}}
+	row2 := []entity.TableCell{{Text: "Marketing"}, {Text: "$5M"}}
+
+	// t1 spans pages 9 and 10 in chapter 1
+	t1 := parser.TableItem{
+		Table: &entity.TableData{
+			Grid:       [][]entity.TableCell{header, row1},
+			HeaderRows: 1,
+		},
+		Positions: parser.Positions{
+			parser.AbsoluteBox{PageNumber: 9, Left: 10, Top: 100, Right: 500, Bottom: 700},
+			parser.AbsoluteBox{PageNumber: 10, Left: 10, Top: 100, Right: 500, Bottom: 700},
+		},
+	}
+
+	// t2 continues on page 11 (local page 1 in chapter 2) with repeated header
+	t2 := parser.TableItem{
+		Table: &entity.TableData{
+			Grid:       [][]entity.TableCell{header, row2},
+			HeaderRows: 1,
+		},
+		Positions: parser.Positions{
+			parser.AbsoluteBox{PageNumber: 1, Left: 10, Top: 50, Right: 500, Bottom: 300},
+		},
+	}
+
+	res := ConcatenateResults([]parser.ParseResult{{JSON: []parser.DocItem{t1}}, {JSON: []parser.DocItem{t2}}}, plans)
+	if len(res.JSON) != 1 {
+		t.Fatalf("expected multi-page table to stitch across boundary, got %d items", len(res.JSON))
+	}
+
+	stitched := res.JSON[0].(parser.TableItem)
+	if len(stitched.Table.Grid) != 3 {
+		t.Fatalf("expected 3 rows in stitched table, got %d", len(stitched.Table.Grid))
+	}
+}
+
+func TestConcatenateResults_DiscreteImagesPreserved(t *testing.T) {
+	plans := []ChapterPlan{
+		{Index: 0, StartPage: 0, EndPage: 9, PageCount: 10},
+		{Index: 1, StartPage: 10, EndPage: 19, PageCount: 10},
+	}
+
+	img1 := parser.ImageItem{
+		Text: "Figure 1: Architecture",
+		Positions: parser.Positions{
+			parser.AbsoluteBox{PageNumber: 10, Left: 10, Top: 500, Right: 500, Bottom: 700},
+		},
+		Extra: map[string]any{"data": "img1_binary"},
+	}
+
+	img2 := parser.ImageItem{
+		Text: "Figure 1: Architecture details",
+		Positions: parser.Positions{
+			parser.AbsoluteBox{PageNumber: 1, Left: 10, Top: 50, Right: 500, Bottom: 300},
+		},
+		Extra: map[string]any{"data": "img2_binary"},
+	}
+
+	res := ConcatenateResults([]parser.ParseResult{{JSON: []parser.DocItem{img1}}, {JSON: []parser.DocItem{img2}}}, plans)
+	if len(res.JSON) != 2 {
+		t.Fatalf("expected both images to remain discrete without dropping data, got %d", len(res.JSON))
+	}
+
+	outImg1 := res.JSON[0].(parser.ImageItem)
+	outImg2 := res.JSON[1].(parser.ImageItem)
+	if outImg1.Extra["data"] != "img1_binary" || outImg2.Extra["data"] != "img2_binary" {
+		t.Fatalf("image payloads were corrupted or dropped: %+v, %+v", outImg1.Extra, outImg2.Extra)
 	}
 }

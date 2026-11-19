@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/parser/splitter"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -109,7 +110,23 @@ func resolveSplitOptions(setup schema.ParserSetup) splitter.SplitOptions {
 	return opts.Normalize()
 }
 
+// hasConfiguredPageRanges returns true if the parser setup specifies explicit,
+// non-empty page ranges via setup["pages"]. When explicit page ranges are requested,
+// adaptive chapter splitting is bypassed to preserve document-global page numbering
+// without local slice index distortion.
+func hasConfiguredPageRanges(setup schema.ParserSetup) bool {
+	if raw, ok := setup["pages"]; ok && raw != nil {
+		if ranges, err := utility.NormalizePDFPages(raw); err == nil && len(ranges) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func shouldAdaptiveChapterSplit(setup schema.ParserSetup, binary []byte) bool {
+	if hasConfiguredPageRanges(setup) {
+		return false
+	}
 	enabled := false
 	if v, ok := setup["enable_adaptive_chapter_split"]; ok {
 		if b, ok := v.(bool); ok {
@@ -141,6 +158,9 @@ func dispatchAdaptiveChapterPDF(
 	setup schema.ParserSetup,
 	normalize func(parser.ParseResult) parser.ParseResult,
 ) (parser.ParseResult, bool, error) {
+	if hasConfiguredPageRanges(setup) {
+		return parser.ParseResult{}, false, nil
+	}
 	opts := resolveSplitOptions(setup)
 	totalPages := splitter.GetPDFPageCount(binary)
 	if totalPages < opts.ThresholdPages {
