@@ -96,6 +96,8 @@ func (s *LocalSource) Fetch(identifier string) (*SkillBundle, error) {
 		if err != nil {
 			return err
 		}
+		// The ignore patterns and bundle keys use "/" on every platform.
+		relPath = filepath.ToSlash(relPath)
 
 		// Check ignore patterns
 		for _, pattern := range ignorePatterns {
