@@ -2,6 +2,35 @@ package common
 
 import "testing"
 
+// TestContainsFold pins the case-insensitive substring contract shared by the
+// retry/error scanners that previously each hand-rolled ToLower on both sides.
+func TestContainsFold(t *testing.T) {
+	cases := []struct {
+		name   string
+		s      string
+		substr string
+		want   bool
+	}{
+		{"exact", "Rate Limit Exceeded", "rate", true},
+		{"both mixed case", "Temporary Failure", "TEMPORARY", true},
+		{"substring middle", "too many requests", "MANY", true},
+		{"no match", "permanent error", "temporary", false},
+		{"empty needle", "anything", "", true},
+		{"empty haystack non-empty needle", "", "x", false},
+		{"both empty", "", "", true},
+		{"unicode case fold", "СООБЩЕНИЕ", "сообщение", true},
+		{"unicode greek substring", "Γειά σου", "σου", true},
+		{"whole string case", "429", "429", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ContainsFold(tc.s, tc.substr); got != tc.want {
+				t.Errorf("ContainsFold(%q, %q) = %v, want %v", tc.s, tc.substr, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestRemoveRedundantSpaces mirrors common.string_utils.remove_redundant_spaces.
 func TestRemoveRedundantSpaces(t *testing.T) {
 	cases := []struct {

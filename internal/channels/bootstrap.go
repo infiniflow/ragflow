@@ -34,8 +34,6 @@ import (
 
 const (
 	reconcileInterval       = 10 * time.Second
-	initialStartRetryDelay  = 10 * time.Second
-	maxStartRetryDelay      = 5 * time.Minute
 	channelFinalSendTimeout = 30 * time.Second
 	channelShutdownTimeout  = 30 * time.Second
 )
@@ -61,6 +59,9 @@ type Runtime struct {
 	stopping     bool
 	messages     sync.WaitGroup
 	statusCache  *service.ChatChannelRuntimeCache
+
+	gatewayAttempts    int
+	gatewayNextRetryAt time.Time
 }
 
 // NewRuntime creates an empty chat-channel runtime reconciler.
@@ -100,8 +101,6 @@ func (r *Runtime) Stop() {
 
 // Run reconciles configured chat channels until the context is cancelled.
 func (r *Runtime) Run(ctx context.Context) {
-	ticker := time.NewTicker(reconcileInterval)
-	defer ticker.Stop()
 	defer close(r.done)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), channelShutdownTimeout)
@@ -118,10 +117,19 @@ func (r *Runtime) Run(ctx context.Context) {
 			common.Error("chat channel reconcile failed", err)
 		}
 		r.publishRuntimeSnapshots(ctx)
-		select {
-		case <-ctx.Done():
+		delay := reconcileInterval
+		r.mu.Lock()
+		if remaining := time.Until(r.gatewayNextRetryAt); remaining > 0 && remaining < delay {
+			delay = remaining
+		}
+		for _, failure := range r.failed {
+			if remaining := time.Until(failure.nextRetryAt); remaining > 0 && remaining < delay {
+				delay = remaining
+			}
+		}
+		r.mu.Unlock()
+		if !waitForContext(ctx, delay) {
 			return
-		case <-ticker.C:
 		}
 	}
 }
@@ -168,9 +176,24 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 			break
 		}
 	}
-	if err := syncWhatsAppGateway(ctx, activeWhatsApp); err != nil && activeWhatsApp {
-		common.Error("failed to sync WhatsApp gateway", err)
-		reconcileErr = fmt.Errorf("sync WhatsApp gateway: %w", err)
+	r.mu.Lock()
+	gatewayRetryPending := time.Now().Before(r.gatewayNextRetryAt)
+	r.mu.Unlock()
+	if !activeWhatsApp || !gatewayRetryPending {
+		err := syncWhatsAppGateway(ctx, activeWhatsApp)
+		r.mu.Lock()
+		if err != nil && activeWhatsApp {
+			r.gatewayAttempts++
+			r.gatewayNextRetryAt = time.Now().Add(channelRetryDelay(r.gatewayAttempts))
+		} else {
+			r.gatewayAttempts = 0
+			r.gatewayNextRetryAt = time.Time{}
+		}
+		r.mu.Unlock()
+		if err != nil && activeWhatsApp {
+			common.Error("failed to sync WhatsApp gateway", err)
+			reconcileErr = fmt.Errorf("sync WhatsApp gateway: %w", err)
+		}
 	}
 
 	now := time.Now()
@@ -185,7 +208,7 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		}
 		if err := r.startChannel(ctx, accountID, wanted); err != nil {
 			common.Error("failed to start chat channel", err, zap.String("account_id", accountID), zap.String("channel", wanted.channel))
-			r.recordStartFailure(accountID, wanted.fingerprint, now)
+			r.recordStartFailure(accountID, wanted.fingerprint, time.Now())
 			if reconcileErr == nil {
 				reconcileErr = fmt.Errorf("failed to start chat channel %s: %w", accountID, err)
 			}
@@ -208,7 +231,7 @@ func (r *Runtime) recordStartFailure(accountID string, fingerprint string, now t
 	r.failed[accountID] = failedChannel{
 		fingerprint: fingerprint,
 		attempts:    attempts,
-		nextRetryAt: now.Add(startRetryDelay(attempts)),
+		nextRetryAt: now.Add(channelRetryDelay(attempts)),
 	}
 }
 
@@ -217,21 +240,6 @@ func (r *Runtime) clearStartFailure(accountID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.failed, accountID)
-}
-
-// startRetryDelay returns the bounded exponential backoff for a start attempt.
-func startRetryDelay(attempts int) time.Duration {
-	if attempts < 1 {
-		attempts = 1
-	}
-	delay := initialStartRetryDelay
-	for i := 1; i < attempts; i++ {
-		delay *= 2
-		if delay >= maxStartRetryDelay {
-			return maxStartRetryDelay
-		}
-	}
-	return delay
 }
 
 type desiredChannel struct {

@@ -1625,3 +1625,47 @@ func TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity(t *testing.T) {
 		t.Fatalf("pagerank = %d, want the rejected update rolled back", persisted.Pagerank)
 	}
 }
+
+// TestUpdateDatasetUnchangedParserConfigIsNotRebuilt pins the guard on the
+// parser_config rebuild: a client that echoes the stored config back verbatim
+// (an SDK round trip, or a form that happens to match) must not get it rebuilt.
+// The rebuild re-serialises the config from the pipeline DSL — dropping params
+// the DSL no longer declares and filling in current defaults — so firing it on a
+// copy would be a change the caller never asked for.
+func TestUpdateDatasetUnchangedParserConfigIsNotRebuilt(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	// A param the DSL clean-up would drop: its presence afterwards is the proof
+	// that no rebuild ran.
+	stored := entity.JSONMap{
+		"GeneralChunker:SixApplesFall": map[string]interface{}{
+			"preprocess":       []interface{}{"main_content"},
+			"chunk_token_size": float64(256),
+		},
+	}
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", stored).Error; err != nil {
+		t.Fatalf("seed parser config: %v", err)
+	}
+
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"GeneralChunker:SixApplesFall": map[string]interface{}{
+				"preprocess":       []interface{}{"main_content"},
+				"chunk_token_size": float64(256),
+			},
+		},
+	}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated dataset: %v", err)
+	}
+	if !datasetJSONEqual(persisted.ParserConfig, stored) {
+		t.Fatalf("parser_config = %#v, want the stored config untouched", persisted.ParserConfig)
+	}
+}

@@ -35,6 +35,10 @@ func SetupEERouter(engine *gin.Engine) {}
 // edition.
 func RegisterEERouter(protected *gin.RouterGroup, r *Router) {}
 
+func checkAdminPasswordChangeTarget(_, _ string) error { return nil }
+
+func passwordChangeErrorCode(_ error) common.ErrorCode { return common.CodeServerError }
+
 // AppendServiceList adds no enterprise service entries.
 func AppendServiceList(serviceInfos []*common.BaseMessage) []*common.BaseMessage {
 	return serviceInfos

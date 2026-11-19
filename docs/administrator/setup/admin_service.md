@@ -11,7 +11,7 @@ sidebar_custom_props: {
 
 The Go Admin Service provides the administration API used by the Web UI and the Go CLI. It manages users and configuration, checks infrastructure dependencies, and tracks Go API servers, ingestors, and file syncers that report heartbeats. The target Admin Service port is `9381`; the target Go API server port is `9380`.
 
-Start the Admin Service before the API server, ingestors, and syncers so those processes can report their heartbeats as soon as they start. MySQL, the configured document engine and storage service, the cache, and the message queue must be available to the Admin Service. For the default host-run configuration, see [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services) for the dependency list, port settings, and readiness checks.
+The OSS server starts Admin first, then API, Ingestor, Syncer and Chatter in the same process. MySQL, the configured document engine and storage service, the cache, and the message queue must be available to the Admin Service. For the default host-run configuration, see [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services) for the dependency list, port settings, and readiness checks.
 
 ## Start from source
 
@@ -41,7 +41,7 @@ Changing either variable after a superuser exists does not reset its password.
 
 To change the Admin listening port, set `admin.http_port` in the server configuration.
 
-For processes on another host, set `admin.host` and `admin.http_port` in their server configuration to the reachable Admin address and port. When changing the Admin port, also update the CLI connection address and the health check URLs below.
+The services share the server configuration. When changing the Admin port, also update the CLI connection address and the health check URLs below.
 
 ## Start with Docker Compose
 
@@ -80,7 +80,7 @@ Use `/healthz` to check the Admin Service and its required dependencies. It retu
 curl -f http://127.0.0.1:9381/healthz
 ```
 
-The API server, ingestor, and syncer periodically send heartbeat reports to Admin. Admin keeps their latest reports in its runtime service registry; it does not register itself there. After those processes start, launch the Go CLI and log in as an administrator. If you changed the Admin port or are connecting from another host, add `--host <host:port>` to the CLI command:
+The API server, ingestor, and syncer periodically send heartbeat reports to Admin. Admin keeps their latest reports in its runtime service registry; it does not register itself there. After the server starts, launch the Go CLI and log in as an administrator. If you changed the Admin port or are connecting from another host, add `--host <host:port>` to the CLI command:
 
 ```bash
 ragflow-cli --admin

@@ -42,6 +42,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -414,11 +415,10 @@ func (i *InvokeComponent) mergeInputs(inputs map[string]any) map[string]any {
 }
 
 func cloneInvokeParams(params map[string]any) map[string]any {
-	cloned := make(map[string]any, len(params))
-	for key, value := range params {
-		cloned[key] = value
+	if params == nil {
+		return map[string]any{}
 	}
-	return cloned
+	return maps.Clone(params)
 }
 
 func invokeHeaders(raw any) (map[string]any, error) {

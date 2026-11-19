@@ -11,6 +11,7 @@ package component
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -218,7 +219,7 @@ func buildCategorizeSystemPrompt(p CategorizeParam) string {
 	b.WriteString("- Consider both explicit mentions and implied context\n")
 	b.WriteString("- Prioritize the most specific applicable category\n")
 	b.WriteString("- Return only the category name without explanations\n")
-	if containsCategory(cats, "Other") {
+	if slices.Contains(cats, "Other") {
 		b.WriteString("- Use \"Other\" only when no other category fits\n")
 	}
 
@@ -231,15 +232,6 @@ func buildCategorizeSystemPrompt(p CategorizeParam) string {
 		}
 	}
 	return b.String()
-}
-
-func containsCategory(categories []string, target string) bool {
-	for _, c := range categories {
-		if c == target {
-			return true
-		}
-	}
-	return false
 }
 
 func categorizeExamples(p CategorizeParam, cats []string) []string {
