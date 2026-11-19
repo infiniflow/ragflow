@@ -106,10 +106,13 @@ func canServe(modelDir string) bool {
 }
 
 // Serving reports whether the backend can currently serve from the
-// process-registered model directory. Used for startup logging only; the
-// parser's factory already gates on the same check via canServe.
+// process-registered model directory. It is the startup hard-abort gate, so it
+// also requires the DocAnalyzer factory to have been registered: an execution-
+// provider/plugin registration failure can return from Register before the
+// factory is installed, and that must not be mistaken for a healthy backend.
+// Health keeps the ORT+models-only semantics via canServe.
 func Serving() bool {
-	return canServe(registeredModelDir)
+	return canServe(registeredModelDir) && deepdoctype.NativeDocAnalyzerFactory != nil
 }
 
 // DLA runs layout detection on a page image.
