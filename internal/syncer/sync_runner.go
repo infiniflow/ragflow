@@ -352,6 +352,9 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 		}
 		result, err := r.processDocumentWithRetry(ctx, taskContext, sourceType, session, sourceDocument)
 		if err != nil {
+			err = fmt.Errorf("sync file %q (source_id=%q): %w", sourceDocument.SemanticIdentifier, sourceDocument.SourceID, err)
+			common.Warn("sync file failed", zap.String("task_id", taskContext.Task.ID),
+				zap.String("kb_id", taskContext.Knowledgebase.ID), zap.Error(err))
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -402,6 +405,11 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext d
 
 // processDocument resolves IDs, skips unchanged fingerprints, fetches blobs, and upserts.
 func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
+	if sourceDocument.SkipReason != "" {
+		common.Info("sync document skipped", zap.String("task_id", taskContext.Task.ID),
+			zap.String("source_id", sourceDocument.SourceID), zap.String("reason", sourceDocument.SkipReason))
+		return service.DocumentUpsertResult{Action: service.DocumentActionSkipped}, nil
+	}
 	resolved, err := r.idResolver.Resolve(ctx, taskContext.Knowledgebase.ID, taskContext.Connector.ID, sourceType, sourceDocument.SourceID)
 	if err != nil {
 		return service.DocumentUpsertResult{}, err

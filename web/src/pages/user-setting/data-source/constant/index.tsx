@@ -16,6 +16,7 @@
 
 import sitemapSvg from '@/assets/svg/data-source/sitemap.svg?raw';
 import { FormFieldType } from '@/components/dynamic-form';
+import { getFileFilterFields } from './file-filters';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
@@ -441,6 +442,22 @@ export const useDataSourceInfo = () => {
 
 const isPlainObject = (value: unknown): value is DataSourceFormValues =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const normalizeSharePointRoots = (values: DataSourceFormValues) => {
+  if (
+    values.source !== DataSourceKey.SHAREPOINT ||
+    !isPlainObject(values.config)
+  ) {
+    return values;
+  }
+  const { root_folder_id, ...config } = values.config;
+  if (!Object.hasOwn(config, 'root_folder_ids')) {
+    const root =
+      typeof root_folder_id === 'string' ? root_folder_id.trim() : '';
+    config.root_folder_ids = root ? [root] : [];
+  }
+  return { ...values, config };
+};
 
 export const mergeDataSourceFormValues = (
   ...values: Array<DataSourceFormValues | undefined>
@@ -1200,6 +1217,28 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       name: 'config.credentials.client_secret',
       type: FormFieldType.Password,
       required: true,
+    },
+    {
+      label: t('setting.sharepointDriveId'),
+      name: 'config.drive_id',
+      type: FormFieldType.Text,
+      required: false,
+      tooltip: t('setting.sharepointDriveIdTip'),
+    },
+    {
+      label: t('setting.sharepointRootFolderId'),
+      name: 'config.root_folder_ids',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.sharepointRootFolderIdTip'),
+    },
+    ...getFileFilterFields(t),
+    {
+      label: t('setting.excludeVideos'),
+      name: 'config.exclude_videos',
+      type: FormFieldType.Checkbox,
+      required: false,
+      tooltip: t('setting.excludeVideosTip'),
     },
   ],
   [DataSourceKey.JIRA]: jiraConstant(t),
@@ -2419,6 +2458,12 @@ export const DataSourceFormDefaultValues = {
     name: '',
     source: DataSourceKey.SHAREPOINT,
     config: {
+      drive_id: '',
+      root_folder_ids: [],
+      excluded_extensions: [],
+      excluded_folder_names: [],
+      excluded_folder_paths: [],
+      exclude_videos: true,
       credentials: {
         site_url: '',
         tenant_id: '',

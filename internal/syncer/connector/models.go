@@ -39,6 +39,8 @@ type SourceDocument struct {
 	SizeBytes          int64
 	Metadata           map[string]any
 	Fingerprint        string
+	// SkipReason records an intentional per-file omission without failing the batch.
+	SkipReason string
 }
 
 // FetchReference describes a lazy document fetch.

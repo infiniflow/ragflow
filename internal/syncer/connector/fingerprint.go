@@ -20,14 +20,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/zeebo/xxh3"
 )
-
-var syncFilenameUnsafeRE = regexp.MustCompile(`[\\/:*?"<>|]+`)
 
 func stableFingerprint(value any) string {
 	data, err := json.Marshal(value)
@@ -42,40 +38,8 @@ func contentFingerprint(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func syncSourceDocumentFilenameFromDocument(doc SourceDocument) string {
-	name := strings.TrimSpace(syncFilenameUnsafeRE.ReplaceAllString(doc.SemanticIdentifier, "_"))
-	if name == "" {
-		name = strings.TrimSpace(syncFilenameUnsafeRE.ReplaceAllString(doc.SourceID, "_"))
-	}
-	if name == "" {
-		name = "document"
-	}
-
-	extension := strings.TrimSpace(doc.Extension)
-	if extension == "" {
-		extension = ".txt"
-	}
-	if !strings.HasPrefix(extension, ".") {
-		extension = "." + extension
-	}
-	if !strings.HasSuffix(strings.ToLower(name), strings.ToLower(extension)) {
-		name += extension
-	}
-	if len(name) <= 255 {
-		return name
-	}
-
-	ext := filepath.Ext(name)
-	baseLimit := 255 - len(ext)
-	if baseLimit < 1 {
-		return name[:255]
-	}
-	return name[:baseLimit] + ext
-}
-
 // fileExtensionFromConfig returns the configured document file extension,
-// defaulting to ".txt" when unset or blank. A missing leading dot is
-// normalized downstream by syncSourceDocumentFilenameFromDocument.
+// defaulting to ".txt" when unset or blank.
 func fileExtensionFromConfig(value any) string {
 	ext := strings.TrimSpace(stringConfig(value))
 	if ext == "" {
