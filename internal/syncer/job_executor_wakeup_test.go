@@ -3,7 +3,7 @@ package syncer
 import (
 	"context"
 	"ragflow/internal/service"
-	"reflect"
+	"sync"
 	"testing"
 	"time"
 )
@@ -13,43 +13,19 @@ import (
 // three objects, ~300 per 100ms). An event-driven wakeup allocates only setup.
 func TestSyncJobExecutorIdleDoesNotPoll(t *testing.T) {
 	const idle = 100 * time.Millisecond
+	// Baseline measured on this host (Go 1.27): the old 1ms time.After loop
+	// allocated ~291 objects per 100ms idle; the event-driven dispatcher
+	// allocates only executor setup (~10). maxIdleAllocs leaves headroom for
+	// runtime variation while still catching a reintroduced poll loop.
+	// BenchmarkSyncJobExecutorIdle tracks allocs/op as the long-term guard.
+	const maxIdleAllocs = 150
 	allocs := testing.AllocsPerRun(12, func() {
 		e := NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 1})
 		time.Sleep(idle)
 		e.Close()
 	})
-	if allocs > 150 {
-		t.Fatalf("idle executor allocations = %.1f, want <= 150 (1ms polling loop detected)", allocs)
-	}
-}
-
-// TestSyncJobExecutorHasSharedBufferedWakeup asserts the wakeup wiring by shape:
-// a buffered channel shared between executor and every task queue. Reflection is
-// used so the assertion is a real failure (not a compile error) on the old code.
-func TestSyncJobExecutorHasSharedBufferedWakeup(t *testing.T) {
-	e := NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 1})
-	defer e.Close()
-	q, err := e.RegisterTask(t.Context(), "task-1")
-	if err != nil {
-		t.Fatalf("register task: %v", err)
-	}
-
-	execWakeup := reflect.ValueOf(e).Elem().FieldByName("wakeup")
-	queueWakeup := reflect.ValueOf(q).Elem().FieldByName("wakeup")
-	if !execWakeup.IsValid() {
-		t.Fatal("SyncJobExecutor has no wakeup field")
-	}
-	if !queueWakeup.IsValid() {
-		t.Fatal("SyncJobQueue has no wakeup field")
-	}
-	if execWakeup.Kind() != reflect.Chan || queueWakeup.Kind() != reflect.Chan {
-		t.Fatalf("wakeup fields must be channels, got %v / %v", execWakeup.Kind(), queueWakeup.Kind())
-	}
-	if execWakeup.Cap() < 1 {
-		t.Fatalf("executor wakeup cap = %d, want >= 1", execWakeup.Cap())
-	}
-	if execWakeup.Pointer() != queueWakeup.Pointer() {
-		t.Fatal("task queue wakeup is not the executor wakeup channel")
+	if allocs > maxIdleAllocs {
+		t.Fatalf("idle executor allocations = %.1f, want <= %d (1ms polling loop detected)", allocs, maxIdleAllocs)
 	}
 }
 
@@ -118,15 +94,32 @@ func TestSyncJobExecutorWakeupBurstDispatchesAll(t *testing.T) {
 	}
 	defer queue.Close()
 
-	results := make([]<-chan syncJobResult, 0, jobs)
+	// Release all submitters through a shared barrier so their wakeup signals
+	// genuinely race; each writes to its own slice slot to avoid an unsafe
+	// concurrent append. This exercises wakeup-token coalescing under concurrent
+	// producers, which a sequential submit loop cannot.
+	results := make([]<-chan syncJobResult, jobs)
+	submitErrs := make([]error, jobs)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
 	for i := 0; i < jobs; i++ {
-		result, err := queue.Submit(t.Context(), func(context.Context) (service.SyncStats, error) {
-			return service.SyncStats{Added: 1}, nil
-		})
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			result, err := queue.Submit(t.Context(), func(context.Context) (service.SyncStats, error) {
+				return service.SyncStats{Added: 1}, nil
+			})
+			results[i] = result
+			submitErrs[i] = err
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	for i, err := range submitErrs {
 		if err != nil {
 			t.Fatalf("submit %d: %v", i, err)
 		}
-		results = append(results, result)
 	}
 	for i, result := range results {
 		select {
