@@ -1088,12 +1088,12 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 	}
 	ctx := c.Request.Context()
 	data, errMsgs := h.documentService.UploadLocalDocuments(ctx, kb, files, c.PostForm("parent_path"), override)
-	if len(errMsgs) > 0 {
-		common.RespondError(c, common.CodeServerError, strings.Join(errMsgs, "\n"))
-		return
-	}
 	if len(data) == 0 {
-		common.RespondError(c, common.CodeDataError, "There seems to be an issue with your file format. please verify it is correct and not corrupted.")
+		if len(errMsgs) > 0 {
+			common.RespondError(c, common.CodeServerError, strings.Join(errMsgs, "\n"))
+		} else {
+			common.RespondError(c, common.CodeDataError, "There seems to be an issue with your file format. please verify it is correct and not corrupted.")
+		}
 		return
 	}
 
@@ -1104,15 +1104,18 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		}
 	}
 	common.SetOperationResource(c, "result_ids", ids)
-	if strings.ToLower(c.DefaultQuery("return_raw_files", "false")) == "true" {
-		common.RespondSuccessList(c, data, "success")
+	if !strings.EqualFold(c.Query("return_raw_files"), "true") {
+		mapped := make([]map[string]interface{}, len(data))
+		for i, d := range data {
+			mapped[i] = mapDocKeysWithRunStatus(d)
+		}
+		data = mapped
+	}
+	if len(errMsgs) > 0 {
+		common.Respond(c, http.StatusOK, common.CodeServerError, data, strings.Join(errMsgs, "\n"))
 		return
 	}
-	mapped := make([]map[string]interface{}, len(data))
-	for i, d := range data {
-		mapped[i] = mapDocKeysWithRunStatus(d)
-	}
-	common.RespondSuccessList(c, mapped, "success")
+	common.RespondSuccessList(c, data, "success")
 }
 
 func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase) {
