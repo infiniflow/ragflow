@@ -197,10 +197,10 @@ func resolveEmbedderMaxTokens(embedder Embedder) int {
 // survives the strip. Do not "fix" the bound — it is parity, not a bug.
 var tableStructureTagRe = regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?>`)
 
-// cleanEmbedText applies the table-structure strip and trims, mirroring
+// CleanEmbeddingText applies the table-structure strip and trims, mirroring
 // cleaned_txt. The stripped text is both the emptiness check and
 // what gets embedded — appends cleaned_txt to the embedding batch, not the raw chunk
-func cleanEmbedText(raw string) string {
+func CleanEmbeddingText(raw string) string {
 	return strings.TrimSpace(tableStructureTagRe.ReplaceAllString(raw, " "))
 }
 
@@ -520,7 +520,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		// parity: strip table-structure tags
 		// before the emptiness check and embed the stripped text, so an
 		// empty-table chunk contributes nothing to the batch.
-		txt := cleanEmbedText(raw)
+		txt := CleanEmbeddingText(raw)
 		if txt == "" {
 			// Two different causes reach this branch and only one is a defect:
 			// no configured field produced text at all (misconfiguration),
@@ -1163,10 +1163,10 @@ func requiresFullTextTokens(ck schema.ChunkDoc) bool {
 }
 
 // requiresEmbeddingVector uses the same cleaning as the embed path
-// (cleanEmbedText): a chunk whose cleaned text is empty was skipped from the
+// (CleanEmbeddingText): a chunk whose cleaned text is empty was skipped from the
 // embedding batch and therefore legitimately carries no vector.
 func requiresEmbeddingVector(ck schema.ChunkDoc, fields []string) bool {
-	return cleanEmbedText(concatFields(ck, fields)) != ""
+	return CleanEmbeddingText(concatFields(ck, fields)) != ""
 }
 
 func hasEmbeddingVector(ck schema.ChunkDoc) bool {
