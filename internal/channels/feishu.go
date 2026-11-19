@@ -114,17 +114,6 @@ func newFeishuChannel(account feishuAccount) *feishuChannel {
 		lark.WithLogLevel(larkcore.LogLevelInfo),
 		lark.WithReqTimeout(account.Timeout),
 	)
-	wsDialer := *websocket.DefaultDialer
-	wsDialer.HandshakeTimeout = account.Timeout
-	ch.wsClient = larkws.NewClient(
-		account.AppID,
-		account.AppSecret,
-		larkws.WithDomain(feishuBaseURL(account.Domain)),
-		larkws.WithHttpClient(safeClient),
-		larkws.WithWebSocketDialer(newChannelSDKWebSocketDialer(&wsDialer)),
-		larkws.WithEventHandler(ch.eventDispatcher()),
-		larkws.WithLogLevel(larkcore.LogLevelInfo),
-	)
 	return ch
 }
 
@@ -434,12 +423,40 @@ func (c *feishuChannel) finishStreamCard(ctx context.Context, cardID string, seq
 
 // run keeps the SDK WebSocket client active until the channel stops.
 func (c *feishuChannel) run(ctx context.Context) {
-	if c.wsClient == nil {
-		common.Warn("feishu: WebSocket client is not initialized", zap.String("account_id", c.account.AccountID))
-		return
-	}
-	if err := c.wsClient.Start(ctx); err != nil && ctx.Err() == nil {
-		common.Error("feishu: WebSocket client exited", err, zap.String("account_id", c.account.AccountID))
+	attempts := 0
+	for ctx.Err() == nil {
+		connected := false
+		wsDialer := *websocket.DefaultDialer
+		wsDialer.HandshakeTimeout = c.account.Timeout
+		wsClient := larkws.NewClient(
+			c.account.AppID,
+			c.account.AppSecret,
+			larkws.WithDomain(feishuBaseURL(c.account.Domain)),
+			larkws.WithHttpClient(newSafeChannelHTTPClient(c.account.Timeout, channelURLPolicy{exactHosts: []string{"open.feishu.cn", "open.larksuite.com"}})),
+			larkws.WithWebSocketDialer(newChannelSDKWebSocketDialer(&wsDialer)),
+			larkws.WithEventHandler(c.eventDispatcher()),
+			larkws.WithLogLevel(larkcore.LogLevelInfo),
+			larkws.WithAutoReconnect(false),
+			larkws.WithOnReady(func() { connected = true }),
+		)
+		c.mu.Lock()
+		c.wsClient = wsClient
+		c.mu.Unlock()
+		err := wsClient.Start(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		if connected {
+			attempts = 0
+		}
+		attempts++
+		delay := channelRetryDelay(attempts)
+		if err != nil {
+			common.Error("feishu: WebSocket client exited", err, zap.String("account_id", c.account.AccountID), zap.Duration("retry_delay", delay))
+		}
+		if !waitForContext(ctx, delay) {
+			return
+		}
 	}
 }
 

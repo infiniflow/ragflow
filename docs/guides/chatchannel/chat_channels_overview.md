@@ -58,6 +58,8 @@ After adding a channel, you need to connect it to a Chat. If the channel is enab
 
 After you modify bot credentials or the channel type, RAGFlow automatically restarts the corresponding channel connection. If the credentials are incorrect, the channel may fail to start. Return to the third-party platform to confirm whether the bot status, permissions, and keys are valid.
 
+Connection and startup retries wait 5 seconds, 10 seconds, 20 seconds, 1 minute, 3 minutes, 10 minutes, 30 minutes, 1 hour, 6 hours, and then 24 hours between attempts. Further failures keep the 24-hour interval. A successful connection or a saved credential change resets the retry schedule. Channels that stop on an explicit authentication rejection, logout, or forced disconnect still require you to correct the credentials or reconnect the account.
+
 Configuration result:
 
 After configuration is complete and the channel is connected to a Chat, the bot in the third-party platform becomes available. When a user sends a message in the corresponding chat application, the bot calls the bound Chat to generate an answer and returns the answer to the original chat window.
