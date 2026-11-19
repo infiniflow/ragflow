@@ -4,7 +4,7 @@ title: Configuration
 sidebar_label: Configuration
 slug: /dataset_configuration
 sidebar_custom_props: {
-  categoryIcon: LucideDatabaseZap
+  categoryIcon: LucideCog
 }
 ---
 

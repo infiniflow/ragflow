@@ -303,7 +303,7 @@ export default function DatasetSetting() {
       (parseType === ParseType.BuiltIn && !!builtinPipelineId));
 
   return (
-    <div className="pr-5 pb-5">
+    <div className="h-full pr-5 pb-5">
       <ApplyParserConfigDialog
         datasetId={knowledgeDetails.id}
         open={applyParserConfigOpen}
@@ -336,6 +336,14 @@ export default function DatasetSetting() {
                     {t('knowledgeConfiguration.baseInfo')}
                   </div>
                   <GeneralForm></GeneralForm>
+
+                  <Divider />
+                  <LinkDataSource
+                    data={pipelineDataList}
+                    handleLinkOrEditSubmit={handleLinkOrEditSubmit}
+                    unbindFunc={unbindFunc}
+                    handleAutoParse={handleAutoParse}
+                  />
 
                   <Divider />
                   <div className="text-base font-medium text-text-primary">
@@ -384,14 +392,6 @@ export default function DatasetSetting() {
                       fixedFileFormats
                     />
                   )}
-
-                  <Divider />
-                  <LinkDataSource
-                    data={pipelineDataList}
-                    handleLinkOrEditSubmit={handleLinkOrEditSubmit}
-                    unbindFunc={unbindFunc}
-                    handleAutoParse={handleAutoParse}
-                  />
                 </section>
               </div>
 

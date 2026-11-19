@@ -72,7 +72,7 @@ func TestMemoryMessageServicePublishesViaInjectedEngine(t *testing.T) {
 	if svc.taskPublisher == nil {
 		t.Fatal("MemoryMessageService.taskPublisher is nil")
 	}
-	if err := publishMemoryTaskWakeup(svc.taskPublisher, "task-1"); err != nil {
+	if err := publishMemoryTaskWakeup(t.Context(), svc.taskPublisher, svc.tierResolver, "tenant-1", "task-1"); err != nil {
 		t.Fatalf("publishMemoryTaskWakeup: %v", err)
 	}
 	if len(injectedMQ.messages) != 1 {

@@ -19,6 +19,7 @@ package document
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -29,21 +30,17 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service/datasetversion"
 
 	"ragflow/internal/utility"
 )
 
-// Sentinel errors returned by File2DocumentService. Handlers map these to
-// Python-compatible response codes/messages. Returning sentinels (instead of
-// wrapped DAO/runtime errors) prevents internal DB details from leaking through
-// the API response path.
+// Sentinel errors returned by File2DocumentService for missing resources.
 var (
 	// ErrLinkFileNotFound mirrors Python "File not found!".
 	ErrLinkFileNotFound = errors.New("File not found!")
 	// ErrLinkDatasetNotFound mirrors Python "Can't find this dataset!".
 	ErrLinkDatasetNotFound = errors.New("Can't find this dataset!")
-	// ErrLinkInternal is a generic, safe-to-expose internal failure.
-	ErrLinkInternal = errors.New("Internal server error.")
 )
 
 // File2DocumentService handles linking files to datasets.
@@ -77,14 +74,13 @@ type LinkToDatasetsRequest struct {
 // LinkToDatasets validates inputs, expands folders, checks permissions, and
 // schedules convertFiles in a goroutine — mirroring Python convert().
 //
-// On validation failure it returns a sentinel error (see ErrLink* above) so the
-// handler can map it to a Python-compatible response without leaking internals.
+// Missing resources return sentinel errors; runtime failures retain their cause.
 func (s *File2DocumentService) LinkToDatasets(ctx context.Context, req *LinkToDatasetsRequest, mode string) error {
 	// ── 1. Validate files exist ───────────────────────────────────────────────
 	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, req.FileIDs)
 	if err != nil {
 		common.Warn("LinkToDatasets: GetByIDs failed", zap.Error(err))
-		return ErrLinkInternal
+		return fmt.Errorf("load files: %w", err)
 	}
 	filesSet := make(map[string]*entity.File, len(files))
 	for _, f := range files {
@@ -132,7 +128,7 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, req *LinkToDa
 			inner, err := s.getAllInnermostFileIDs(ctx, id)
 			if err != nil {
 				common.Warn("LinkToDatasets: folder expansion failed", zap.String("fileID", id), zap.Error(err))
-				return ErrLinkInternal
+				return fmt.Errorf("expand folder: %w", err)
 			}
 			expanded = append(expanded, inner...)
 		} else {
@@ -179,6 +175,9 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, req *LinkToDa
 // convertFiles mirrors Python _convert_files: keep existing links, remove links
 // outside the requested KBs in replace mode, then add any missing links.
 func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, mode string) error {
+	// The settings the created documents run under are recorded under the upload
+	// version each dataset allocates at the end: the sink holds them until then.
+	ctx = datasetversion.WithStateSink(ctx)
 	userID := permission.UserIDFromContext(ctx)
 	replaceExisting := mode != "add"
 	kbIDs = dedupeStrings(kbIDs)
@@ -186,6 +185,13 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 	for _, kbID := range kbIDs {
 		requestedKBIDs[kbID] = struct{}{}
 	}
+	// Datasets this request actually added documents to. The version is
+	// recorded per dataset at the end: one request is one change, however many
+	// files it carried.
+	touchedKBIDs := make(map[string]struct{})
+	// One version per dataset per request, so the change set is collected per
+	// dataset while the files are converted and written with that version.
+	changesByKB := make(map[string][]entity.DatasetVersionChange)
 	for _, fileID := range fileIDs {
 		mappings, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 		if err != nil {
@@ -270,6 +276,9 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
 				continue
 			}
+			touchedKBIDs[kbID] = struct{}{}
+			changesByKB[kbID] = append(changesByKB[kbID],
+				documentVersionChange(entity.DatasetVersionChangeActionAdd, doc))
 
 			mapping := &entity.File2Document{
 				ID:         common.GenerateUUID(),
@@ -280,6 +289,17 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 				common.Warn("convertFiles: Create file2document mapping failed",
 					zap.String("fileID", fileID), zap.String("docID", doc.ID), zap.Error(err))
 			}
+		}
+	}
+	for kbID := range touchedKBIDs {
+		// One version per dataset: the states the sink holds for that dataset go
+		// in with it, and the states of the other datasets wait for their own.
+		version, verr := datasetversion.RecordContentVersionChangesOwnTx(ctx, kbID, entity.DatasetVersionKindUpload, changesByKB[kbID])
+		if verr != nil {
+			return verr
+		}
+		if verr := datasetversion.FlushStates(ctx, dao.DB, kbID, version); verr != nil {
+			return verr
 		}
 	}
 	return nil

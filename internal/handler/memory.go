@@ -82,6 +82,9 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 //  3. Call service layer to create memory
 //  4. Return creation result
 func (h *MemoryHandler) CreateMemory(c *gin.Context) {
+	common.StartOperationLog(c, "create_memory")
+	defer common.FinishOperationLog(c)
+
 	user, errorCode, err := billingQuotaUser(c)
 	if err != nil {
 		common.RespondError(c, errorCode, err.Error())
@@ -140,6 +143,8 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "memory_id", result.ID)
+
 	// Return success response
 	common.RespondSuccess(c, result, "success")
 }
@@ -172,6 +177,9 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 //   - Cannot update tenant_embd_id, embd_id, memory_type when memory_size > 0
 //   - When updating memory_type, system_prompt is automatically regenerated if it's the default
 func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
+	common.StartOperationLog(c, "update_memory")
+	defer common.FinishOperationLog(c)
+
 	// Get memory_id from URL path
 	memoryID := c.Param("memory_id")
 	if memoryID == "" {
@@ -228,6 +236,9 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 //  2. Delete memory record
 //  3. Delete associated message index
 func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
+	common.StartOperationLog(c, "delete_memory")
+	defer common.FinishOperationLog(c)
+
 	// Get memory_id from URL path
 	memoryID := c.Param("memory_id")
 	if memoryID == "" {
@@ -284,9 +295,10 @@ func splitQueryValues(c *gin.Context, key string) []string {
 //
 // Query Parameters:
 //   - memory_type (optional): Memory type filter, supports repeated keys and comma-separated multiple types
-//   - tenant_id (optional): Tenant ID filter, supports repeated keys and comma-separated multiple IDs
+//   - owner_ids (optional): Resource owner user IDs, supports repeated keys and comma-separated IDs
 //   - storage_type (optional): Storage type filter
 //   - keywords (optional): Keyword search (fuzzy match on name)
+//   - access_user_id (optional): Also require the specified user's memory permissions
 //   - page (optional): Page number, default 1
 //   - page_size (optional): Items per page, default 30
 //
@@ -319,14 +331,12 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	// Parse memory_type parameter (repeated query keys and comma separation)
 	memoryTypes := splitQueryValues(c, "memory_type")
 
-	// Parse tenant_id parameter (repeated query keys and comma separation)
-	// If not specified, service will get all tenants associated with the user
-	tenantIDs := splitQueryValues(c, "tenant_id")
+	ownerIDs := splitQueryValues(c, "owner_ids")
 
 	ctx := c.Request.Context()
 
 	// Call service layer to get memory list
-	result, err := h.memoryService.ListMemories(ctx, tenantIDs, memoryTypes, storageType, keywords, page, pageSize, c.Query("canvas_id"))
+	result, err := h.memoryService.ListMemories(ctx, ownerIDs, memoryTypes, storageType, keywords, page, pageSize, c.Query("access_user_id"))
 	if err != nil {
 		code := common.CodeServerError
 		if errors.Is(err, permission.ErrUnauthenticated) || errors.Is(err, permission.ErrPermissionDenied) ||
@@ -429,7 +439,7 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 			common.RespondError(c, common.CodeNotFound, err.Error())
 			return
 		}
-		common.RespondError(c, common.CodeServerError, "Internal server error")
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -480,16 +490,32 @@ type AddMessageRequest struct {
 //   - agent_response (required): Agent response
 //   - user_id (optional): User ID
 func (h *MemoryHandler) AddMessage(c *gin.Context) {
+	common.StartOperationLog(c, "request_memory_message_add")
+	defer common.FinishOperationLog(c)
+
 	currentUserID := strings.TrimSpace(permission.UserIDFromContext(c.Request.Context()))
 
 	var reqBody AddMessageRequest
 	if err := c.ShouldBindJSON(&reqBody); err != nil {
-		common.RespondError(c, common.CodeArgumentError, "body arguments is required")
+		common.RespondError(c, common.CodeArgumentError, "body arguments is required: "+err.Error())
 		return
 	}
 	if len(reqBody.MemoryIDs) == 0 {
 		common.RespondError(c, common.CodeArgumentError, "memory_id is required")
 		return
+	}
+
+	var memoryIDs []string
+	for _, value := range reqBody.MemoryIDs {
+		for id := range strings.SplitSeq(value, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				memoryIDs = append(memoryIDs, id)
+			}
+		}
+	}
+	common.SetOperationResource(c, "memory_ids", memoryIDs)
+	if len(memoryIDs) == 1 {
+		common.SetOperationResource(c, "memory_id", memoryIDs[0])
 	}
 
 	effectiveUserID := currentUserID
@@ -531,12 +557,17 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 //   - memory_id: Memory ID
 //   - message_id: Message ID (integer)
 func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
+	common.StartOperationLog(c, "forget_memory_message")
+	defer common.FinishOperationLog(c)
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "memory_id", memoryID)
+	common.SetOperationResource(c, "message_id", messageID)
 
 	if err = h.memoryService.ForgetMessage(c.Request.Context(), memoryID, messageID); err != nil {
 		if respondPermissionErrorIf(c, err, true) {
@@ -598,12 +629,17 @@ func parseMemoryMessagePath(memoryMessage string) (string, int64, error) {
 // Request Parameters (JSON Body):
 //   - status (required): Message status, boolean
 func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
+	common.StartOperationLog(c, "update_memory_message_status")
+	defer common.FinishOperationLog(c)
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "memory_id", memoryID)
+	common.SetOperationResource(c, "message_id", messageID)
 
 	var req map[string]interface{}
 	if err = json.NewDecoder(c.Request.Body).Decode(&req); err != nil {

@@ -2097,13 +2097,9 @@ func TestParserFileFamilyPresentationExtensions(t *testing.T) {
 	}
 }
 
-// TestPythonFamilyName_FileTypeConstants pins the contract that every
-// utility.FileType semantic constant resolves to the setups key used by
-// defaultSetups. Before the fix, FileTypeVISUAL mapped
-// to "picture" (mismatching the "image" setups key) and FileTypeAURAL matched
-// no case at all (returning ""), so output_format validation and
-// configureParserFromSetups were silently skipped for image/audio files.
-func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
+// TestResolveParserFamilyFileTypes checks that parser types select the setup
+// keys declared by defaultSetups.
+func TestResolveParserFamilyFileTypes(t *testing.T) {
 	cases := []struct {
 		ft   utility.FileType
 		want string
@@ -2127,14 +2123,14 @@ func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
 		{utility.FileTypeEMAIL, "email"},
 	}
 	for _, c := range cases {
-		got := pythonFamilyName(string(c.ft))
+		got := resolveParserFamily(c.ft)
 		if got != c.want {
-			t.Errorf("pythonFamilyName(%q) = %q, want %q", c.ft, got, c.want)
+			t.Errorf("resolveParserFamily(%q) = %q, want %q", c.ft, got, c.want)
 		}
 		// Every mapped family must have a matching setup so its parser receives
 		// the canonical output format and family-specific configuration.
 		if _, ok := defaultSetups()[got]; !ok {
-			t.Errorf("pythonFamilyName(%q) → %q has no defaultSetups entry", c.ft, got)
+			t.Errorf("resolveParserFamily(%q) → %q has no defaultSetups entry", c.ft, got)
 		}
 	}
 }

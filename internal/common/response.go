@@ -81,4 +81,5 @@ func Respond(c *gin.Context, httpStatus int, code ErrorCode, data any, message s
 		}
 	}
 	c.JSON(httpStatus, body)
+	auditResponse(c, body.Code)
 }

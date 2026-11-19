@@ -321,7 +321,7 @@ func TestMigratedParentChildEnabledWithoutDelimiterDefaultsToNewline(t *testing.
 }
 
 // TestIngestionMigrationMatchesBuiltinTemplates pins the migration's literal
-// target table against the embedded templates by reading the node IDs and file
+// target table against its embedded templates by reading the node IDs and file
 // families out of the templates themselves: a renamed component, a dropped
 // family, or a new chunker type fails here instead of silently skipping a row or
 // thinning a family.
@@ -332,7 +332,7 @@ func TestIngestionMigrationMatchesBuiltinTemplates(t *testing.T) {
 	}
 	// targetFamilies are the only Parser families the migration can write.
 	const targetFamilies = "pdf,spreadsheet"
-	for _, ref := range append(registry.Refs(), "naive") {
+	for _, ref := range dao.IngestionMigrationParserIDsForTest() {
 		t.Run(ref, func(t *testing.T) {
 			template, ok := registry.Get(ref)
 			if !ok {
@@ -634,7 +634,6 @@ var overriddenFamilyKeys = map[string]bool{
 // questions (this one, "is the template's value safe to lose"; that one, "may
 // the value the migration writes differ from the template's").
 var inertFamilyKeys = map[string]string{
-	"suffix":       "no Go reader; file routing uses the document's own suffix column, not the family list",
 	"pages":        "the only template that bakes it lists every page ([[1,100000]]), which is what an absent pages means",
 	"parse_method": "a written pdf family always restates it; for the spreadsheet family defaultSetups() re-derives the same deepdoc engine",
 	"column_mode":  "the table template bakes auto, which is what an absent column_mode means to indexdoc's resolveTableColumnConfig",
@@ -794,12 +793,14 @@ func TestMigratedExtractorConfigReachesRuntime(t *testing.T) {
 	}
 }
 
+// TestExtractorMigrationMatchesBuiltinTemplates checks historical migration
+// targets; newly registered pipelines have no flat settings to migrate.
 func TestExtractorMigrationMatchesBuiltinTemplates(t *testing.T) {
 	registry, err := pipeline.DefaultRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, ref := range append(registry.Refs(), "naive") {
+	for _, ref := range dao.IngestionMigrationParserIDsForTest() {
 		t.Run(ref, func(t *testing.T) {
 			template, ok := registry.Get(ref)
 			if !ok {

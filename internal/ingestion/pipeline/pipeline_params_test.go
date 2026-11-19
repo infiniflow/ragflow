@@ -159,6 +159,46 @@ func TestBuildParserConfig_DropsUnknownParamKey(t *testing.T) {
 	}
 }
 
+func TestBuildParserConfig_DropsRetiredParserFamilySuffix(t *testing.T) {
+	dslJSON := generalDSL(t)
+	raw := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			"pdf": map[string]any{
+				"parse_method": "deepdoc",
+				"suffix":       []any{"pdf"},
+			},
+			"docx": map[string]any{"suffix": []any{"docx"}},
+		},
+	}
+	result := buildTestParserConfig(t, dslJSON, raw)
+	params := result["Parser:HipSignsRhyme"].(map[string]any)
+
+	pdf, ok := params["pdf"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected pdf family, got %T", params["pdf"])
+	}
+	if _, found := pdf["suffix"]; found {
+		t.Errorf("pdf suffix must not survive: %#v", pdf)
+	}
+	if pdf["parse_method"] != "deepdoc" {
+		t.Errorf("pdf parse_method = %v, want deepdoc", pdf["parse_method"])
+	}
+
+	docx, ok := params["docx"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected docx family, got %T", params["docx"])
+	}
+	if _, found := docx["suffix"]; found {
+		t.Errorf("docx suffix must not survive: %#v", docx)
+	}
+
+	// The cleanup must not mutate the caller's request map.
+	originalPDF := raw["Parser:HipSignsRhyme"].(map[string]any)["pdf"].(map[string]any)
+	if _, found := originalPDF["suffix"]; !found {
+		t.Error("BuildParserConfig mutated the caller's parser config")
+	}
+}
+
 // --- BuildParserConfig ---
 
 func TestBuildParserConfig_ShallowMerge_NestedParam(t *testing.T) {

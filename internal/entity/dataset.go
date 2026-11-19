@@ -102,20 +102,24 @@ const (
 
 // Knowledgebase represents the knowledge base model
 type Knowledgebase struct {
-	ID                     string     `gorm:"column:id;primaryKey;size:32" json:"id"`
-	Avatar                 *string    `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
-	UserID                 string     `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
-	TenantID               string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	Name                   string     `gorm:"column:name;size:128;not null;index" json:"name"`
-	Language               *string    `gorm:"column:language;size:32;index;default:'English'" json:"language,omitempty"`
-	Description            *string    `gorm:"column:description;type:longtext" json:"description,omitempty"`
-	EmbdID                 string     `gorm:"column:embd_id;size:128;not null;index" json:"embd_id"`
-	TenantEmbdID           *string    `gorm:"column:tenant_embd_id;size:32;index" json:"tenant_embd_id,omitempty"`
-	Permission             string     `gorm:"column:permission;size:16;not null;default:me;index" json:"permission"`
-	CreatedBy              string     `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
-	DocNum                 int64      `gorm:"column:doc_num;default:0;index" json:"doc_num"`
-	TokenNum               int64      `gorm:"column:token_num;default:0;index" json:"token_num"`
-	ChunkNum               int64      `gorm:"column:chunk_num;default:0;index" json:"chunk_num"`
+	ID           string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	Avatar       *string `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
+	UserID       string  `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
+	TenantID     string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	Name         string  `gorm:"column:name;size:128;not null;index" json:"name"`
+	Language     *string `gorm:"column:language;size:32;index;default:'English'" json:"language,omitempty"`
+	Description  *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
+	EmbdID       string  `gorm:"column:embd_id;size:128;not null;index" json:"embd_id"`
+	TenantEmbdID *string `gorm:"column:tenant_embd_id;size:35;index" json:"tenant_embd_id,omitempty"`
+	Permission   string  `gorm:"column:permission;size:16;not null;default:me;index" json:"permission"`
+	CreatedBy    string  `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
+	DocNum       int64   `gorm:"column:doc_num;default:0;index" json:"doc_num"`
+	TokenNum     int64   `gorm:"column:token_num;default:0;index" json:"token_num"`
+	ChunkNum     int64   `gorm:"column:chunk_num;default:0;index" json:"chunk_num"`
+	// Version is the number of the latest dataset version. It is redundant with
+	// MAX(dataset_version.version) and kept so lists and CAS checks do not need
+	// an aggregate. It advances only through the version recorder.
+	Version                int64      `gorm:"column:version;not null;default:0" json:"version"`
 	SimilarityThreshold    float64    `gorm:"column:similarity_threshold;default:0.2;index" json:"similarity_threshold"`
 	VectorSimilarityWeight float64    `gorm:"column:vector_similarity_weight;default:0.3;index" json:"vector_similarity_weight"`
 	ParserID               string     `gorm:"column:parser_id;size:32;not null;default:general;index" json:"parser_id"`
@@ -269,6 +273,8 @@ type KnowledgebaseDetail struct {
 type KnowledgebaseListItem struct {
 	ID                     string  `json:"id"`
 	Avatar                 *string `json:"avatar"`
+	UserID                 string  `json:"user_id"`
+	CreatedBy              string  `json:"created_by"`
 	Name                   string  `json:"name"`
 	Language               *string `json:"language"`
 	Description            *string `json:"description"`

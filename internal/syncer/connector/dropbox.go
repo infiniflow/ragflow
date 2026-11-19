@@ -23,13 +23,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
+
+	"ragflow/internal/common"
 )
 
 const (
@@ -564,10 +564,8 @@ func dropboxHTTPError(resp *http.Response) error {
 }
 
 func dropboxSizeThreshold() int64 {
-	if raw := strings.TrimSpace(os.Getenv("BLOB_STORAGE_SIZE_THRESHOLD")); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			return parsed
-		}
+	if n := common.GetEnvInt("BLOB_STORAGE_SIZE_THRESHOLD", 0); n > 0 {
+		return int64(n)
 	}
 	return defaultDropboxSizeThreshold
 }

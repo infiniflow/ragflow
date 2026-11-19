@@ -13,3 +13,8 @@ import (
 func ConstructTableVH(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string) string {
 	return ""
 }
+
+// ConstructTableVHPaged is the OSS stub; no OSS table sets VHPageSpans.
+func ConstructTableVHPaged(cells []pdf.TSRCell, boxes []pdf.TextBox, spans []pdf.VHPageSpan, caption string) string {
+	return ""
+}

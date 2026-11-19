@@ -6,10 +6,10 @@ import (
 )
 
 // This file holds the parser_config accessors shared by the structure and
-// wiki variants. They mirror Python's structure.py helpers (_struct_get,
-// _struct_localize), which wiki.py also imports — one code path in Go as well.
+// wiki variants. They mirror helpers (_struct_get
+// _struct_localize), which also imports — one code path in Go as well
 
-// Get mirrors Python's _struct_get: case-insensitive lookup against the first
+// Get mirrors _struct_get: case-insensitive lookup against the first
 // matching key. Returns nil when no key is present.
 func Get(cfg map[string]any, keys ...string) any {
 	if cfg == nil {
@@ -38,13 +38,13 @@ func GetMap(cfg map[string]any, key string) map[string]any {
 }
 
 // Localize resolves a multilingual config value to the requested language.
-// Mirrors Python's _struct_localize:
+// Mirrors _struct_localize
 //   - string              → returned as-is
 //   - []string / []any    → numbered lines ("1. item\n2. item")
 //   - map[string]string   → value for lang, else "en" (only when lang != "en")
 //   - map[string]any      → lang then "en", each recursively localized
 //
-// There is deliberately no arbitrary-first-value fallback: Python returns ""
+// There is deliberately no arbitrary-first-value fallback: returns ""
 // when neither the requested language nor "en" is present, and silently
 // picking an unrelated language would drift the rendered prompts.
 func Localize(value any, lang string) string {
@@ -84,7 +84,7 @@ func Localize(value any, lang string) string {
 	}
 }
 
-// numberedJoin renders a list config value the way Python's _struct_localize
+// numberedJoin renders a list config value the way _struct_localize
 // does: "1. first\n2. second\n...".
 func numberedJoin(items []string) string {
 	var b strings.Builder

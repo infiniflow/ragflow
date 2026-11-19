@@ -43,17 +43,54 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	if _, ok := models.ValidMinerUBackends[backend]; !ok {
 		return ParseResult{Err: models.ValidateMinerUConfig(backend, serverURL)}
 	}
+	configured := parser.MinerUTimeoutConfigured
+	timeout := parser.MinerUPollTimeout
+	if !configured {
+		envVal := strings.TrimSpace(common.GetEnv(common.EnvMineruTimeout))
+		if envVal == "" {
+			envVal = strings.TrimSpace(common.GetEnv("MINERU_TIMEOUT_SECONDS"))
+		}
+		if d, ok := parseMinerUTimeoutSetupValue(envVal); ok {
+			timeout = d
+			configured = true
+		}
+	}
+	if configured {
+		timeout = ClampMinerUTimeout(timeout)
+	}
+
 	if models.IsMinerUCloudBase(apiServer) {
 		if err := models.ValidateMinerUConfigForAPI(backend, serverURL, true); err != nil {
 			return ParseResult{Err: err}
 		}
-		parsed, err := models.ParseMinerUCloud(ctx, apiServer, apiKey, filename, data, backend, "", "")
+		cloudCtx := ctx
+		cloudTimeout := models.DefaultMinerUV1ParseTimeout
+		if configured {
+			cloudTimeout = timeout
+		}
+		if cloudTimeout > 0 {
+			var cancel context.CancelFunc
+			cloudCtx, cancel = context.WithTimeout(ctx, cloudTimeout)
+			defer cancel()
+		}
+		parsed, err := models.ParseMinerUCloud(cloudCtx, apiServer, apiKey, filename, data, backend, "", "")
 		if err != nil {
 			return ParseResult{Err: fmt.Errorf("parser: MinerU cloud: %w", err)}
 		}
 		return minerUMarkdownResult(ctx, filename, parsed)
 	}
-	v1, err := models.MinerUSupportsV1(ctx, apiServer, apiKey)
+
+	v1Timeout := models.DefaultMinerUV1ParseTimeout
+	if configured {
+		v1Timeout = timeout
+	}
+	probeCtx := ctx
+	if v1Timeout > 0 {
+		var cancelProbe context.CancelFunc
+		probeCtx, cancelProbe = context.WithTimeout(ctx, v1Timeout)
+		defer cancelProbe()
+	}
+	v1, err := models.MinerUSupportsV1(probeCtx, apiServer, apiKey)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU probe: %w", err)}
 	}
@@ -61,15 +98,11 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		return ParseResult{Err: err}
 	}
 	if v1 {
-		parsed, err := models.ParseMinerUV1(ctx, apiServer, apiKey, filename, data, backend, "", 0)
+		parsed, err := models.ParseMinerUV1(ctx, apiServer, apiKey, filename, data, backend, "", v1Timeout)
 		if err != nil {
 			return ParseResult{Err: fmt.Errorf("parser: MinerU V1: %w", err)}
 		}
 		return minerUMarkdownResult(ctx, filename, parsed)
-	}
-	timeout := parser.MinerUPollTimeout
-	if timeout <= 0 {
-		timeout = minerUPollTimeout
 	}
 
 	driver := models.NewMinerLocalUModel(
@@ -88,7 +121,11 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU submit: %w", err)}
 	}
-	content, err := pollMinerUTask(ctx, driver, task.TaskID, apiConfig, timeout)
+	pollTimeout := minerUPollTimeout
+	if configured {
+		pollTimeout = timeout
+	}
+	content, err := pollMinerUTask(ctx, driver, task.TaskID, apiConfig, pollTimeout)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU result: %w", err)}
 	}

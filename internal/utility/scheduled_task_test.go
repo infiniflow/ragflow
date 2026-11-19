@@ -131,6 +131,27 @@ func TestScheduledTaskCanRestart(t *testing.T) {
 	waitForScheduledTaskRuns(t, &runs, previousRuns+1)
 }
 
+func TestScheduledTaskWaitJoinsRunningJob(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	task := NewScheduledTask("joined shutdown", time.Hour, func() {
+		close(started)
+		<-release
+		close(finished)
+	})
+	go task.Start()
+	<-started
+	task.Stop()
+	close(release)
+	task.Wait()
+	select {
+	case <-finished:
+	default:
+		t.Fatal("Wait returned before the running job finished")
+	}
+}
+
 func scheduledTaskStopChannel(task *ScheduledTask) chan struct{} {
 	task.mu.Lock()
 	defer task.mu.Unlock()

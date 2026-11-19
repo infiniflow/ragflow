@@ -166,9 +166,6 @@ func positionNumber(raw any) (float64, bool) {
 // (normalizePDFPageNumber for the DeepDoc PDF path; TCADP writes 1-indexed
 // directly) — so this is a passthrough and must NOT add +1, or the PDF path
 // would double-increment.
-//
-// Mirrors Python: rag.nlp.add_positions() (Python adds +1 because its callers
-// feed 0-indexed values; the Go pipeline normalizes earlier).
 func addPDFPositions(chunk map[string]any, positions []float64) {
 	matrix := positionsToIntMatrix(positions)
 	if matrix == nil {
@@ -194,7 +191,7 @@ func addPDFPositions(chunk map[string]any, positions []float64) {
 // page_num_int and top_int are PDF layout fields: deriving them from these
 // tuples would store a sheet number as a page and a column as a top, and would
 // clobber the row index the QA chunker wrote to top_int (the same field
-// Python's beAdoc/beAdocDocx set from row_num for its spreadsheet chunks,
+// beAdoc/beAdocDocx set from row_num for its spreadsheet chunks
 // which never carry positions at all).
 func addSpreadsheetPositions(chunk map[string]any, positions []float64) {
 	if matrix := positionsToIntMatrix(positions); matrix != nil {

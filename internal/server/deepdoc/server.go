@@ -20,8 +20,7 @@
 package deepdoc
 
 import (
-	"os"
-	"path/filepath"
+	"fmt"
 	goruntime "runtime"
 	"strconv"
 	"strings"
@@ -77,10 +76,7 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	// backend cannot serve (ORT + models must be present when built with -tags
 	// cgo).
 	if !infnative.Serving() {
-		common.Fatal("no in-process DeepDoc backend serving: provide the local ORT "+
-			"runtime + models and build with -tags cgo",
-			zap.String("model_dir", modelDir),
-			zap.String("ort_lib", "static (libonnxruntime.a via dlopen(NULL))"))
+		return fmt.Errorf("no in-process DeepDoc backend serving: provide the local ORT runtime and models in %s, and build with -tags cgo", modelDir)
 	}
 	common.Info("in-process DeepDoc backend registered (production backend)",
 		zap.String("model_dir", modelDir))
@@ -97,11 +93,11 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	cfg := server.GetConfig()
 	K, _, errK := cfg.GetDeepDocInferenceConcurrency(arguments.DeepdocInferenceConcurrency)
 	if errK != nil {
-		common.Fatal("invalid deepdoc inference concurrency", zap.Error(errK))
+		return fmt.Errorf("invalid deepdoc inference concurrency: %w", errK)
 	}
 	rawN, explicitN, errN := cfg.GetDeepDocInferenceCPUCores(arguments.DeepdocInferenceCPUCores)
 	if errN != nil {
-		common.Fatal("invalid deepdoc inference cpu cores", zap.Error(errN))
+		return fmt.Errorf("invalid deepdoc inference cpu cores: %w", errN)
 	}
 	// When N is unset, derive it from K so each Run opens with a single intra-op
 	// thread (coresPerInference = max(1, K/K) = 1), preserving the prior
@@ -117,7 +113,7 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	// all cores here.
 	coresPerInference, totalCPUCores, errV := native.ValidateInferenceConfig(totalCores, resolvedN, K)
 	if errV != nil {
-		common.Fatal("invalid deepdoc inference configuration", zap.Error(errV))
+		return fmt.Errorf("invalid deepdoc inference configuration: %w", errV)
 	}
 	// Register the per-session intra-op thread count before any model session is
 	// created (the native package reads it on every SessionOptions build).
@@ -133,7 +129,7 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	// Resolve the per-document page concurrency (N) from CLI > env > config >
 	// default(2) and register it with the shared page worker pool. Fail fast on
 	// an out-of-range value.
-	pageConcurrency, err := server.GetConfig().GetIngestorPageConcurrency(arguments.IngestorPageConcurrency)
+	pageConcurrency, err := server.GetConfig().GetIngestorPageConcurrency()
 	if err != nil {
 		return err
 	}
@@ -143,30 +139,10 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	return nil
 }
 
-// resolveDeepDocModelDir picks the model directory: the explicit DEEPDOC_MODEL_DIR
-// env, else the RAGFlow default model dir (internal/rag/res/deepdoc),
-// else the assets fetched by deps/download_deps.py. The first
-// candidate that actually contains the required weights wins.
+// resolveDeepDocModelDir delegates to common.DeepDocModelDir, the single
+// source of truth shared with runtime probes (e.g. /system/doc-analyzers).
 func resolveDeepDocModelDir() string {
-	if v := strings.TrimSpace(common.GetEnv(common.EnvDeepDocModelDir)); v != "" {
-		return v
-	}
-	wd, _ := os.Getwd()
-	// MODEL_ASSETS_DIR first: the shared model-asset root keeps this layout too, so one
-	// variable can point at the DeepDoc weights as well as the embedding tokenizers.
-	candidates := append([]string(nil), common.ModelAssetCandidates("huggingface.co/InfiniFlow/deepdoc")...)
-	candidates = append(candidates,
-		filepath.Join(wd, "internal", "rag", "res", "deepdoc"),
-		filepath.Join(wd, "huggingface.co", "InfiniFlow", "deepdoc"),
-	)
-	for _, c := range candidates {
-		if dirHasModels(c) {
-			return c
-		}
-	}
-	// None verified; return the canonical default so any error message points
-	// at the conventional location.
-	return filepath.Join(wd, "internal", "rag", "res", "deepdoc")
+	return common.DeepDocModelDir()
 }
 
 // resolveDeepDocDropScore returns the explicit DEEPDOC_DROP_SCORE env, else the
@@ -181,9 +157,4 @@ func resolveDeepDocDropScore() float64 {
 			zap.String("value", v), zap.Float64("default", infnative.DefaultDropScore))
 	}
 	return infnative.DefaultDropScore
-}
-
-// dirHasModels reports whether dir contains every required model files.
-func dirHasModels(dir string) bool {
-	return common.HasModelFiles(dir)
 }

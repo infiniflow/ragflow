@@ -58,17 +58,11 @@
           "setups": {
             "doc": {
               "order_index": 7,
-              "remove_header_footer": false,
-              "suffix": [
-                "doc"
-              ]
+              "remove_header_footer": false
             },
             "docx": {
               "order_index": 8,
-              "remove_header_footer": false,
-              "suffix": [
-                "docx"
-              ]
+              "remove_header_footer": false
             },
             "email": {
               "fields": [
@@ -81,81 +75,34 @@
                 "body",
                 "attachments"
               ],
-              "order_index": 3,
-              "suffix": [
-                "eml",
-                "msg"
-              ]
+              "order_index": 3
             },
             "html": {
               "order_index": 6,
-              "remove_header_footer": false,
-              "suffix": [
-                "htm",
-                "html"
-              ]
+              "remove_header_footer": false
             },
             "image": {
               "order_index": 2,
-              "parse_method": "ocr",
-              "suffix": [
-                "jpg",
-                "jpeg",
-                "png",
-                "gif"
-              ]
+              "parse_method": "ocr"
             },
             "markdown": {
-              "order_index": 4,
-              "suffix": [
-                "md",
-                "markdown",
-                "mdx"
-              ]
+              "order_index": 4
             },
             "pdf": {
               "order_index": 0,
               "parse_method": "DeepDOC",
-              "remove_header_footer": false,
-              "suffix": [
-                "pdf"
-              ]
+              "remove_header_footer": false
             },
             "slides": {
               "order_index": 9,
-              "parse_method": "DeepDOC",
-              "suffix": [
-                "pptx",
-                "ppt"
-              ]
+              "parse_method": "DeepDOC"
             },
             "spreadsheet": {
               "order_index": 1,
-              "parse_method": "DeepDOC",
-              "suffix": [
-                "xls",
-                "xlsx",
-                "csv"
-              ]
+              "parse_method": "DeepDOC"
             },
             "text&code": {
-              "order_index": 5,
-              "suffix": [
-                "txt",
-                "py",
-                "js",
-                "java",
-                "c",
-                "cpp",
-                "h",
-                "php",
-                "go",
-                "ts",
-                "sh",
-                "cs",
-                "kt",
-                "sql"
-              ]
+              "order_index": 5
             }
           }
         }

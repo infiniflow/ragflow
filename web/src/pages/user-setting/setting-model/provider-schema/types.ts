@@ -117,6 +117,8 @@ export interface ProviderConfig {
   llmFactory: string;
   /** Modal title */
   title: string;
+  /** Default name for a newly added provider instance */
+  defaultInstanceName?: string;
   /** Field list (in render order) */
   fields: FieldConfig[];
   /**

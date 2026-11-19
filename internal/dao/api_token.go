@@ -18,10 +18,33 @@ package dao
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+var ErrAPITokenLimitReached = errors.New("API key limit reached")
+
+const DefaultAPITokenLimit = 16
+
+// GetAPITokenLimit reads the global per-tenant limit without caching admin changes.
+func GetAPITokenLimit(ctx context.Context, db *gorm.DB) (int, error) {
+	if db == nil {
+		return 0, errors.New("database is unavailable")
+	}
+	var setting entity.SystemSettings
+	err := db.WithContext(ctx).Where("name = ?", "api_key.max_count").Take(&setting).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return DefaultAPITokenLimit, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return entity.ParseAPITokenLimit(setting.Value)
+}
 
 // APITokenDAO API token data access object
 type APITokenDAO struct{}
@@ -33,7 +56,26 @@ func NewAPITokenDAO() *APITokenDAO {
 
 // Create creates a new API token
 func (dao *APITokenDAO) Create(ctx context.Context, db *gorm.DB, apiToken *entity.APIToken) error {
-	return db.WithContext(ctx).Create(apiToken).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Serialize creation for this tenant before reading its current key count.
+		var tenant entity.Tenant
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id").Where("id = ?", apiToken.TenantID).Take(&tenant).Error; err != nil {
+			return err
+		}
+		limit, err := GetAPITokenLimit(ctx, tx)
+		if err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&entity.APIToken{}).Where("tenant_id = ?", apiToken.TenantID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count >= int64(limit) {
+			return fmt.Errorf("%w: maximum %d keys per tenant", ErrAPITokenLimitReached, limit)
+		}
+		return tx.Create(apiToken).Error
+	})
 }
 
 // GetByTenantID gets API tokens by tenant ID

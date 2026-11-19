@@ -83,16 +83,8 @@
                                 "value": ""
                             }
                         },
-                        "doc": {
-                            "suffix": [
-                                "doc"
-                            ]
-                        },
-                        "docx": {
-                            "suffix": [
-                                "docx"
-                            ]
-                        },
+                        "doc": {},
+                        "docx": {},
                         "email": {
                             "fields": [
                                 "from",
@@ -103,74 +95,24 @@
                                 "subject",
                                 "body",
                                 "attachments"
-                            ],
-                            "suffix": [
-                                "eml",
-                                "msg"
                             ]
                         },
-                        "html": {
-                            "suffix": [
-                                "htm",
-                                "html"
-                            ]
-                        },
+                        "html": {},
                         "image": {
                             "parse_method": "ocr",
-                            "suffix": [
-                                "jpg",
-                                "jpeg",
-                                "png",
-                                "gif"
-                            ],
                             "system_prompt": ""
                         },
-                        "markdown": {
-                            "suffix": [
-                                "md",
-                                "markdown",
-                                "mdx"
-                            ]
-                        },
+                        "markdown": {},
                         "pdf": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "pdf"
-                            ]
+                            "parse_method": "DeepDOC"
                         },
                         "slides": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "pptx",
-                                "ppt"
-                            ]
+                            "parse_method": "DeepDOC"
                         },
                         "spreadsheet": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "xls",
-                                "xlsx",
-                                "csv"
-                            ]
+                            "parse_method": "DeepDOC"
                         },
-                        "text&code": {
-                            "suffix": [
-                                "txt",
-                                "py",
-                                "js",
-                                "java",
-                                "c",
-                                "cpp",
-                                "h",
-                                "php",
-                                "go",
-                                "ts",
-                                "sh",
-                                "cs",
-                                "kt",
-                                "sql"
-                            ]
-                        }
+                        "text&code": {}
                     }
                 },
                 "upstream": [

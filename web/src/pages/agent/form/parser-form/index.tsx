@@ -70,7 +70,7 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
   const Widget =
     typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
       ? FileFormatWidgetMap[fileFormat as keyof typeof FileFormatWidgetMap]
-      : () => <></>;
+      : null;
 
   const handleRemove = useCallback(() => {
     onRemove(index);
@@ -97,9 +97,11 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
           ) : undefined
         }
       >
-        <div className="space-y-5">
-          <Widget prefix={prefix}></Widget>
-        </div>
+        {Widget && (
+          <div className="space-y-5">
+            <Widget prefix={prefix} />
+          </div>
+        )}
       </Collapse>
     </Card>
   );

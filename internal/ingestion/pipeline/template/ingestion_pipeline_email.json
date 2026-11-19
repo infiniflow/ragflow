@@ -63,9 +63,6 @@
                                 "subject",
                                 "body",
                                 "attachments"
-                            ],
-                            "suffix": [
-                                "eml"
                             ]
                         }
                     }

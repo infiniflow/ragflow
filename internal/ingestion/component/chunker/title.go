@@ -17,8 +17,9 @@
 // SCOPE (honest) for title.go:
 //
 //   - TitleChunker is the dispatcher for the three Go chunks: this
-//     file holds the TitleChunker variant itself, which mirrors
-//     python `rag/flow/chunker/title_chunker/title_chunker.py` — it
+//     file holds the TitleChunker variant itself, which mirrors the upstream
+//     TitleChunker — it
+//
 //     holds no business logic of its own; the actual chunking
 //     happens in group.go / hierarchy.go depending on the
 //     `method` param.
@@ -27,42 +28,45 @@
 //     hierarchy.go.
 //
 //   - HEADING DETECTION PARITY:
-//     The Python side uses two heading-detection strategies in
-//     `common.py:resolve_title_levels`:
-//     (1) PDF outlines   (extract_pdf_outlines, requires deepdoc/parser)
-//     (2) Regex families (the user's `levels` param) with a layout-hint
-//     fallback (layout field matches section/title/head).
-//     The Go port ships strategy (2) IN FULL, including the
-//     match_layout_level fallback ported from common.py (Gap C closed):
-//     a non-regex text record whose layout flags it as a
-//     section/title/head and whose text passes not_title is promoted to
-//     fallback_level = len(selected_group) + 1. Strategy (1) —
-//     PDF-outline detection — is also ported: newLevelContext
-//     (title.go) reads the Parser-supplied file.outline via
-//     outlineFromUpstream / resolveOutlineLevels / outlineSimilarity
-//     (port of common.py:_outline_similarity) before falling back to
-//     the regex/layout branch, wired into group.go / hierarchy.go
-//     (Chunker omission 1.5, Gap C closed).
+//
+// The Go side uses two heading-detection strategies:
+//
+//	(1) PDF outlines   (extract_pdf_outlines, requires deepdoc/parser)
+//	(2) Regex families (the user's `levels` param) with a layout-hint
+//	fallback (layout field matches section/title/head).
+//	The Go port ships strategy (2) IN FULL, including the
+//	match_layout_level fallback (Gap C closed).
+//
+//	A non-regex text record whose layout flags it as a
+//	section/title/head and whose text passes not_title is promoted to
+//	fallback_level = len(selected_group) + 1. Strategy (1) —
+//	PDF-outline detection — is also ported: newLevelContext
+//	(title.go) reads the Parser-supplied file.outline via
+//	outlineFromUpstream / resolveOutlineLevels / outlineSimilarity
+//
+// before falling back to the regex/layout branch, wired into group.go /
+// hierarchy.go (Chunker omission 1.5, Gap C closed).
 //
 //   - The Go port SHIPS a hardcoded BULLET_PATTERN fallback
 //     (Chunker omission 1.7, Gap C closed): when the regex/layout
 //     branch yields BODY_LEVEL-only records, resolveTitleLevels
 //     (title.go) calls bulletsCategory over bulletPatterns (title.go,
-//     mirroring Python BULLET_PATTERN at rag/nlp/__init__.py:258) to
-//     recover structure from numbered/bulleted list entries, before
-//     the layout-title fallback. It never overrides an existing level
-//     assignment.
+//     matching the shipped BULLET_PATTERN) to recover structure from
+//     numbered/bulleted list entries, before the layout-title fallback.
+//     It never overrides an existing level assignment.
 //
 //   - Two Go-side guards narrow the regex branch: level patterns are
-//     compiled with Python's `{,n}` repetition rewritten to RE2's
-//     `{0,n}` (the shipped templates use it, and RE2 reads the braces
-//     literally), and a matched line that is too long to be a heading
-//     stays body text so include_heading_content cannot copy a body
-//     paragraph into every chunk below it (#21585).
 //
-//   - GROUP-TITLE and HIERARCHY-TITLE are separate Go files
-//     (`group.go`, `hierarchy.go`); they share the resolve_levels
-//     path with TitleChunker but their build_chunks logic differs.
+// compiled with `{,n}` repetition rewritten to RE2's
+//
+//	  `{0,n}` (the shipped templates use it, and RE2 reads the braces
+//	  literally), and a matched line that is too long to be a heading
+//	  stays body text so include_heading_content cannot copy a body
+//	  paragraph into every chunk below it (#21585).
+//
+//	- GROUP-TITLE and HIERARCHY-TITLE are separate Go files
+//	  (`group.go`, `hierarchy.go`); they share the resolve_levels
+//	  path with TitleChunker but their build_chunks logic differs.
 package chunker
 
 import (
@@ -160,9 +164,8 @@ func defaultsTitle() titleChunkerParam {
 	return titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{}.Defaults()}
 }
 
-// selectLevelGroup mirrors common.py:select_level_group. Returns the
-// regex-list family with the highest hit count across the input
-// lines.
+// selectLevelGroup returns the regex-list family (rawLevels) with the
+// highest heading hit count across the input lines.
 func selectLevelGroup(lines []string, rawLevels [][]string) []string {
 	if len(rawLevels) == 0 {
 		return nil
@@ -174,9 +177,8 @@ func selectLevelGroup(lines []string, rawLevels [][]string) []string {
 			if text == "" {
 				continue
 			}
-			// Mirror common.py:select_level_group — a bullet-looking
-			// line cannot count as a heading hit for any family.
-			// A long body paragraph does not count either.
+			// A bullet-looking line cannot count as a heading hit for any
+			// family, and a long body paragraph does not count either.
 			if notHeadingCandidate(text) {
 				continue
 			}
@@ -210,15 +212,15 @@ func selectLevelGroup(lines []string, rawLevels [][]string) []string {
 	return group
 }
 
-// matchRegexLevel mirrors common.py:match_regex_level. Levels are
-// 1-indexed; "" or no-match returns 0 (BODY).
+// matchRegexLevel returns the 1-indexed heading level matched by the regex
+// family; "" or no-match returns 0 (BODY).
 func matchRegexLevel(text string, group []string) int {
 	stripped := trim(text)
 	if stripped == "" {
 		return 0
 	}
-	// Mirror common.py:match_regex_level — a bullet-looking line is not
-	// a heading regardless of the regex family.
+	// A bullet-looking line is not a heading regardless of the regex
+	// family.
 	if notHeadingCandidate(stripped) {
 		return 0
 	}
@@ -231,10 +233,9 @@ func matchRegexLevel(text string, group []string) int {
 	return 0
 }
 
-// notBulletPatterns mirrors rag/nlp.not_bullet. A line matching any of
-// these looks like a numbered/bulleted list item rather than a section
-// heading, so it must not be promoted to a title level by the regex
-// families.
+// notBulletPatterns flags a line that looks like a numbered/bulleted list
+// item rather than a section heading, so it must not be promoted to a title
+// level by the regex families.
 var notBulletPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`^0`),
 	regexp.MustCompile(`^[0-9]+ +[0-9~个只-]`),
@@ -242,8 +243,8 @@ var notBulletPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`^[0-9]+(\.[0-9]+){2,}[的中]`),
 }
 
-// notBullet mirrors rag/nlp.not_bullet: true when the line looks like a
-// numbered/bulleted list entry rather than a genuine section heading.
+// notBullet reports whether a line looks like a numbered/bulleted list entry
+// rather than a genuine section heading.
 func notBullet(s string) bool {
 	for _, re := range notBulletPatterns {
 		if re.MatchString(s) {
@@ -289,7 +290,8 @@ func headingTooLong(s string) bool {
 	return !strings.Contains(rest, " ") && !strings.Contains(rest, "\u3000") && utf8.RuneCountInString(rest) >= 32
 }
 
-// notTitlePatterns mirrors rag/nlp.not_title:
+// notTitlePatterns holds the matchers that decide whether a line is body
+// text rather than a heading:
 //   - notTitleException: `第...条` is always a title (never "not a title").
 //   - notTitlePunct: a body line typically carries one of these punctuation
 //     marks, so their presence flags the line as body text.
@@ -301,9 +303,8 @@ var (
 	numericOnly       = regexp.MustCompile(`^[0-9]+$`)
 )
 
-// notTitle mirrors rag/nlp.not_title. Returns true when the line looks
-// like body text rather than a section heading, so layout-based heading
-// detection must skip it.
+// notTitle reports whether a line looks like body text rather than a section
+// heading, so layout-based heading detection must skip it.
 func notTitle(s string) bool {
 	if notTitleException.MatchString(s) {
 		return false
@@ -314,7 +315,7 @@ func notTitle(s string) bool {
 	return notTitlePunct.MatchString(s)
 }
 
-// beforeAt mirrors python's `text.split("@")[0]` (used by
+// beforeAt mirrors `text.split("@")[0]` (used by
 // match_layout_level / not_title): the part of the line before the first
 // "@" separator, whitespace-trimmed.
 func beforeAt(s string) string {
@@ -324,11 +325,9 @@ func beforeAt(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// matchLayoutLevel mirrors common.py:match_layout_level. When the
-// record's layout field flags it as a section/title/head and the text is
-// title-like (not not_title), the record is promoted to `fallback_level`
-// (common.py:resolve_frequency_levels sets this to len(level_group) + 1).
-// Otherwise it stays BODY_LEVEL.
+// matchLayoutLevel promotes a record to fallback_level when its layout field
+// flags it as a section/title/head and the text is title-like (not not_title);
+// otherwise it stays BODY_LEVEL. fallback_level is len(level_group) + 1.
 func matchLayoutLevel(text, layout string, fallbackLevel int) int {
 	if layoutHeadingRe.MatchString(layout) && !notTitle(beforeAt(text)) {
 		return fallbackLevel
@@ -336,21 +335,18 @@ func matchLayoutLevel(text, layout string, fallbackLevel int) int {
 	return bodyLevel
 }
 
-// resolveTitleLevels mirrors common.py:resolve_frequency_levels over the
-// full record stream. It is the "frequency" branch of
-// common.py:resolve_title_levels. The outline branch
-// (common.py:resolve_outline_levels) is handled by resolveOutlineLevels and
-// tried first in newLevelContext.
+// resolveTitleLevels is the "frequency" branch of level detection over the
+// full record stream. The outline branch is handled by resolveOutlineLevels
+// and tried first in newLevelContext.
 //
 // For each record:
-//   - a non-text record is pinned to BODY_LEVEL directly (python skips
+//   - a non-text record is pinned to BODY_LEVEL directly ( skips
 //     regex/layout detection for doc_type_kwd != "text");
 //   - a text record first tries the selected regex group (match_regex_level);
 //     on no match it falls back to match_layout_level (layout hint), else
 //     BODY_LEVEL.
 //
-// fallback_level is len(selected_group) + 1, exactly as in python.
-// isColonTitle mirrors Python make_colon_as_title intent: returns true
+// isColonTitle reports whether a line is a colon-title: it returns true
 // when a line ends with colon, has sentence-ending punctuation before
 // the colon, and the text between them is at least 32 runes long.
 func isColonTitle(s string) bool {
@@ -390,7 +386,7 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 			out[i] = bodyLevel
 			continue
 		}
-		// Python tree_merge short/numeric line filter:
+		// tree_merge short/numeric line filter
 		// sections = [s for s in sections if len(s.split("@")[0].strip()) > 1
 		//             and not re.match(r"[0-9]+$", s.split("@")[0].strip())]
 		if text := beforeAt(rec.text); utf8.RuneCountInString(text) <= 1 || numericOnly.MatchString(text) {
@@ -407,7 +403,7 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 			out[i] = fallbackLevel
 			continue
 		}
-		// Python make_colon_as_title: promote lines ending with colon
+		// make_colon_as_title: promote lines ending with colon
 		// that have sentence-ending punctuation before it and at least
 		// 32 chars between the punctuation and the colon.
 		if text := beforeAt(rec.text); isColonTitle(text) {
@@ -419,8 +415,8 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 
 	// Fallback 4: bullet-pattern detection (Chunker-1.7).
 	// When frequency-based detection assigns bodyLevel to every record
-	// (no regex matched a single line), use Python's BULLET_PATTERN
-	// heuristic (rag/nlp/__init__.py:303-320 bullets_category +
+	// (no regex matched a single line), use BULLET_PATTERN
+	// heuristic ( bullets_category +
 	// title_frequency) to recover structure from numbered/bulleted
 	// list entries. This only fires when user levels are empty or
 	// matched nothing — never overrides an existing level assignment.
@@ -444,7 +440,7 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 					continue
 				}
 				// layout-title fallback: bulletsSize + 1 (mirrors
-				// Python len(BULLET_PATTERN[bull]) + 1).
+				// len(BULLET_PATTERN[bull]) + 1)
 				if bulletLayoutRe.MatchString(rec.layout) && !notTitle(beforeAt(rec.text)) {
 					out[i] = bulletsSize + 1
 				}
@@ -466,7 +462,7 @@ func allBodyLevel(levels []int) bool {
 	return true
 }
 
-// bulletPatterns mirrors Python BULLET_PATTERN (rag/nlp/__init__.py:258).
+// bulletPatterns mirrors BULLET_PATTERN.
 // Group 4 (markdown headings) is omitted — DSL levels cover that case.
 // Each group is depth-ordered: index 0 is the topmost level.
 var bulletPatterns = [][]*regexp.Regexp{
@@ -504,7 +500,7 @@ var bulletPatterns = [][]*regexp.Regexp{
 	},
 }
 
-// bulletsCategory mirrors Python bullets_category (rag/nlp/__init__.py:303).
+// bulletsCategory mirrors the upstream bullets_category over bulletPatterns.
 // Counts hits per bullet-pattern group across all text records,
 // excluding not-bullet lines. Returns the group index with the highest
 // hit count, or -1 if no group matched any line.
@@ -535,18 +531,17 @@ func bulletsCategory(records []lineRecord) int {
 }
 
 // outlineEntry is one PDF bookmark/heading from the parser-supplied
-// outline, mirroring Python extract_pdf_outlines' (text, level, page)
+// outline, mirroring extract_pdf_outlines' (text, level, page)
 // tuple. The page is unused by title detection.
 type outlineEntry struct {
 	title string
 	level int
 }
 
-// outlineSimilarity mirrors common.py:_outline_similarity: the Jaccard
-// overlap of character bigrams between two strings. It is rune-based so it
-// matches Python's code-point indexing (str[i] is a Unicode character, not
-// a byte). The right-hand bigram set is capped at min(len(left), len(right)-1)
-// characters, exactly as the Python range() does.
+// outlineSimilarity returns the Jaccard overlap of character bigrams between
+// two strings. It is rune-based so it matches code-point indexing (str[i] is a
+// Unicode character, not a byte). The right-hand bigram set is capped at
+// min(len(left), len(right)-1) runes.
 func outlineSimilarity(left, right string) float64 {
 	lr := []rune(left)
 	rr := []rune(right)
@@ -581,13 +576,12 @@ func outlineSimilarity(left, right string) float64 {
 	return float64(inter) / float64(denom)
 }
 
-// resolveOutlineLevels mirrors common.py:resolve_outline_levels. Each text
-// record is matched against the outline by character-bigram similarity (>0.8
-// assigns level+1); unmatched records stay BODY_LEVEL. It returns ok=false
-// when there is no outline, or when the outline is too sparse relative to the
-// record count (len(outlines)/len(records) <= 0.03), in which case the
-// caller falls back to frequency-based detection. mostLevel mirrors Python's
-// max(1, max_outline_level).
+// resolveOutlineLevels matches each text record against the outline by
+// character-bigram similarity (>0.8 assigns level+1); unmatched records stay
+// BODY_LEVEL. It returns ok=false when there is no outline, or when the
+// outline is too sparse relative to the record count
+// (len(outlines)/len(records) <= 0.03), in which case the caller falls back
+// to frequency-based detection. mostLevel is max(1, max_outline_level).
 func resolveOutlineLevels(records []lineRecord, outline []outlineEntry) (levels []int, mostLevel int, ok bool) {
 	if len(outline) == 0 || len(records) == 0 {
 		return nil, 0, false
@@ -668,13 +662,13 @@ func anyToInt(v any) int {
 	}
 }
 
-// bodyLevel is the sentinel python uses for non-heading lines. We use
+// bodyLevel is the sentinel uses for non-heading lines. We use
 // the same large int (sys.maxsize - 1) for parity. Practically this
 // just needs to be "larger than any realistic heading level"; tests
 // only check relative ordering.
 const bodyLevel = 1<<31 - 1
 
-// lineRecords mirrors common.py:extract_line_records' markdown/text/html
+// lineRecords mirrors extract_line_records' markdown/text/html
 // branch. Returns one record per non-empty input line.
 func lineRecordsFromText(text string) []lineRecord {
 	if text == "" {
@@ -698,7 +692,7 @@ func lineRecordsFromText(text string) []lineRecord {
 }
 
 // lineRecord is the internal common shape — same fields as
-// common.py:extract_line_records yields. Used by Group/Hierarchy
+// extract_line_records yields. Used by Group/Hierarchy
 // chunk-builders.
 type lineRecord struct {
 	text          string
@@ -720,25 +714,25 @@ type lineRecord struct {
 func (r lineRecord) textOrEmpty() string { return r.text }
 func (r lineRecord) isText() bool        { return r.docType == "text" }
 
-// trim mirrors python's str.strip(): remove leading/trailing Unicode
+// trim mirrors str.strip(): remove leading/trailing Unicode
 // whitespace. Used for emptiness checks and regex matching so the Go
-// port matches python's `text.strip()` exactly.
+// port matches `text.strip()` exactly
 func trim(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// pythonRepetitionRe rewrites Python's `{,n}` repetition to RE2's `{0,n}`.
-// Python's re reads `{,2}` as "zero to two"; RE2 reads the braces literally,
-// so a pattern copied from a Python config compiled but never matched. The
+// pythonRepetitionRe rewrites `{,n}` repetition to RE2's `{0,n}`
+// re reads `{,2}` as "zero to two"; RE2 reads the braces literally
+// so a pattern copied from a config compiled but never matched. The
 // Book, Paper, Laws and Manual templates all ship `[\(（][0-9]{,2}[\)）]`,
 // whose `(1)` level was silently dead.
 var pythonRepetitionRe = regexp.MustCompile(`\{,(\d+)\}`)
 
 // compileLevelPattern returns a compiled regex for `pattern`. Returns
 // nil on empty/error to skip the entry — same effect as a regex
-// mismatch in python (the row falls through to body).
+// mismatch in (the row falls through to body)
 //
-// Python's match_regex_level / select_level_group use `re.match`, which
+// match_regex_level / select_level_group use `re.match`, which
 // anchors at the START of the string (not the end). We mirror that by
 // prepending `^` (unless the caller already anchored) so Go's
 // MatchString behaves exactly like re.match.
@@ -766,7 +760,7 @@ type LevelContext struct {
 	mostLevel int
 }
 
-// newLevelContext resolves per-line heading levels, mirroring Python's
+// newLevelContext resolves per-line heading levels, mirroring
 // resolve_title_levels: try the PDF outline branch first (when an outline is
 // supplied and dense enough), otherwise fall back to frequency detection.
 func newLevelContext(records []lineRecord, outline []outlineEntry, p *titleChunkerParam) LevelContext {
@@ -774,11 +768,9 @@ func newLevelContext(records []lineRecord, outline []outlineEntry, p *titleChunk
 		return LevelContext{levels: levels, mostLevel: mostLevel}
 	}
 	levels := resolveTitleLevels(records, p)
-	// most_level is the most-frequent non-body heading level
-	// (common.py:resolve_frequency_levels). Python computes this via
-	// Counter(levels).most_common() over the heading levels only. Walk
-	// levels in input order so ties resolve to the first-encountered
-	// level, matching python's insertion-order tie-break.
+	// most_level is the most-frequent non-body heading level. It is
+	// computed by counting heading levels in input order so ties resolve
+	// to the first-encountered level.
 	counts := make(map[int]int)
 	for _, lvl := range levels {
 		if lvl < bodyLevel {

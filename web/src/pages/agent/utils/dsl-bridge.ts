@@ -31,6 +31,7 @@
 import { Edge } from '@xyflow/react';
 
 import { EmptyDsl, Operator } from '@/constants/agent';
+import { FileType } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -39,11 +40,30 @@ import {
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
 import { DataflowEmptyDsl } from '@/pages/agent/empty-dsl';
+import omit from 'lodash/omit';
 
 import { buildDslComponentsByGraph, buildDslGlobalVariables } from '../utils';
 
 const LEGACY_ITERATION_NODE_TYPE = 'group';
 const ITERATION_NODE_TYPE = 'iterationNode';
+
+function stripMarkdownTocOption(node: RAGFlowNodeType): RAGFlowNodeType {
+  const form = node.data?.form;
+  const setups = form?.setups;
+  if (node.data?.label !== Operator.Parser || !Array.isArray(setups)) {
+    return node;
+  }
+
+  const cleanedSetups = setups.map((setup) =>
+    setup?.fileFormat === FileType.TextMarkdown
+      ? omit(setup, 'remove_toc')
+      : setup,
+  );
+  return {
+    ...node,
+    data: { ...node.data, form: { ...form, setups: cleanedSetups } },
+  };
+}
 
 const normalizeGraphNodes = (nodes: RAGFlowNodeType[]): RAGFlowNodeType[] =>
   nodes.map((node) => {
@@ -57,7 +77,7 @@ const normalizeGraphNodes = (nodes: RAGFlowNodeType[]): RAGFlowNodeType[] =>
       };
     }
 
-    return node;
+    return stripMarkdownTocOption(node);
   });
 
 // ─── Public API ─────────────────────────────────────────────────────────
@@ -166,9 +186,9 @@ export const graphToDsl = (
   oldDsl: DSL,
   globalVariables?: Record<string, GlobalVariableType>,
 ): DSL => {
-  const filteredNodes = currentNodes.filter(
-    (n) => n.data?.label !== Operator.Placeholder,
-  );
+  const filteredNodes = currentNodes
+    .filter((n) => n.data?.label !== Operator.Placeholder)
+    .map(stripMarkdownTocOption);
   const filteredEdges = currentEdges.filter((edge) => {
     const s = currentNodes.find((n) => n.id === edge.source);
     const t = currentNodes.find((n) => n.id === edge.target);

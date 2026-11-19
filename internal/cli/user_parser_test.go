@@ -508,12 +508,12 @@ func TestParseAPIShowGroup(t *testing.T) {
 		{
 			name:           "show a specific group",
 			input:          "SHOW GROUP 'rag-default';",
-			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+			expectedParams: map[string]interface{}{"group_id": "rag-default"},
 		},
 		{
 			name:           "show a specific group without trailing semicolon",
 			input:          "SHOW GROUP 'rag-default'",
-			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+			expectedParams: map[string]interface{}{"group_id": "rag-default"},
 		},
 	}
 
@@ -545,12 +545,12 @@ func TestParseAPIDeleteGroup(t *testing.T) {
 		{
 			name:           "delete a specific group",
 			input:          "DELETE GROUP 'rag-default';",
-			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+			expectedParams: map[string]interface{}{"group_id": "rag-default"},
 		},
 		{
 			name:           "delete a specific group without trailing semicolon",
 			input:          "DELETE GROUP 'rag-default'",
-			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+			expectedParams: map[string]interface{}{"group_id": "rag-default"},
 		},
 	}
 

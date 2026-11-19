@@ -54,17 +54,10 @@
                             }
                         },
                         "pdf": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "pdf"
-                            ]
+                            "parse_method": "DeepDOC"
                         },
                         "slides": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "pptx",
-                                "ppt"
-                            ]
+                            "parse_method": "DeepDOC"
                         }
                     }
                 },

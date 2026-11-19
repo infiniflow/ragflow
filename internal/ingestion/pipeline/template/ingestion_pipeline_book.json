@@ -53,34 +53,14 @@
                                 "value": ""
                             }
                         },
-                        "doc": {
-                            "suffix": [
-                                "doc"
-                            ]
-                        },
-                        "docx": {
-                            "suffix": [
-                                "docx"
-                            ]
-                        },
-                        "html": {
-                            "suffix": [
-                                "htm",
-                                "html"
-                            ]
-                        },
+                        "doc": {},
+                        "docx": {},
+                        "html": {},
                         "pdf": {
                             "parse_method": "DeepDOC",
-                            "remove_toc": true,
-                            "suffix": [
-                                "pdf"
-                            ]
+                            "remove_toc": true
                         },
-                        "text&code": {
-                            "suffix": [
-                                "txt"
-                            ]
-                        }
+                        "text&code": {}
                     }
                 },
                 "upstream": [

@@ -20,11 +20,7 @@ services:
         hard: 65535
     # Go API also serves POST /api/v1/mcp on 9380; the optional listener is separate.
 
-    # Example configuration to start Admin server:
-    command:
-      - --enable-adminserver
-      - --init-superuser
-      #- --init-model-provider-tables
+    command: []
     ports:
       - ${SVR_WEB_HTTP_PORT}:80
       - ${SVR_WEB_HTTPS_PORT}:443

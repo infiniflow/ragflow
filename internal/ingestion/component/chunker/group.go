@@ -24,7 +24,7 @@
 //     Heading detection stays sequential; grouping work is local to
 //     one invocation.
 //
-//   - MIRRORS python `_build_section_ids` + `GroupTitleChunker.build_chunks`:
+//   - MIRRORS `_build_section_ids` + `GroupTitleChunker.build_chunks`
 //     consecutive records with the same (target_level-derived) sec_id
 //     are merged up to MIN_GROUP_TOKENS / MAX_GROUP_TOKENS, then
 //     emitted as one chunk per group.
@@ -51,16 +51,16 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-// MIN_GROUP_TOKENS / MAX_GROUP_TOKENS mirror the python constants in
-// group_chunker.py:22-23. They drive the merge heuristic for adjacent
+// MIN_GROUP_TOKENS / MAX_GROUP_TOKENS mirror the constants in
+// . They drive the merge heuristic for adjacent
 // text records.
 const (
 	minGroupTokens = 32
 	maxGroupTokens = 1024
 )
 
-// resolveTargetLevel mirrors common.py:resolve_target_level: pick the
-// n-th smallest heading level from the per-line `levels` vector.
+// resolveTargetLevel picks the n-th smallest heading level from the
+// per-line `levels` vector (n = hierarchy).
 func resolveTargetLevel(levels []int, hierarchy int) int {
 	tiers := make([]int, 0, len(levels))
 	seen := make(map[int]bool)
@@ -137,7 +137,7 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 // tokenCap is the title-family token ceiling (chunk_token_cap). ManualChunker
 // must stay exempt from #18455's cap, so it passes 0; GroupTitleChunker passes
 // p.ChunkTokenCap. The cap is applied right after build_chunks and BEFORE the
-// on-demand crop, mirroring Python's invoke() order (build -> cap -> set_chunks).
+// on-demand crop, mirroring invoke() order (build -> cap -> set_chunks)
 func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.ChunkerFromUpstream, p *titleChunkerParam, records []lineRecord, tokenCap int) (map[string]any, error) {
 	attachTitleMediaContext(records, p.TableContextSize, p.ImageContextSize)
 	ctx := newLevelContext(records, outlineFromUpstream(upstream), p)
@@ -161,7 +161,7 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.Ch
 		zap.Any("heading_levels", headingCounts),
 	)
 
-	// Mirror python group_chunker._resolve_group_target_level: when
+	// Mirror group_chunker._resolve_group_target_level: when
 	// `hierarchy` is unset the target level is `most_level` directly
 	// (NOT resolve_target_level — that would re-rank the distinct
 	// heading levels and pick the wrong depth when the heading levels
@@ -179,7 +179,7 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.Ch
 	docID := globals.GlobalOrInput(parentCtx, nil, "doc_id", upstream.DocID)
 	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(upstream), docID)
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
-	// build_chunks and BEFORE the on-demand crop, mirroring Python's
+	// build_chunks and BEFORE the on-demand crop, mirroring
 	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
 	// tokenCap=0, so this is a no-op there.
 	if tokenCap > 0 {
@@ -264,9 +264,9 @@ func groupRecords(records []lineRecord, secIDs []int, p *titleChunkerParam) [][]
 	return recordGroups
 }
 
-// joinGroupText mirrors python's `"".join(record["text"] + "\n" for
+// joinGroupText mirrors `"".join(record["text"] + "\n" for
 // record in records)` — every record's text followed by a newline
-// (including the last), matching the python text join exactly.
+// (including the last), matching the text join exactly
 func joinGroupText(g []lineRecord) string {
 	var sb strings.Builder
 	for _, r := range g {
@@ -276,10 +276,10 @@ func joinGroupText(g []lineRecord) string {
 	return sb.String()
 }
 
-// isPlainTextFormat mirrors the `output_format in ["markdown", "text",
-// "html"]` branch of common.py:build_chunks_from_record_groups. Plain
-// payloads emit only "text"; structured payloads (chunks/json) also
-// carry doc_type_kwd and img_id.
+// isPlainTextFormat reports whether the output_format selects the plain
+// "text"-only payload branch (markdown, text, or html). Plain payloads
+// emit only "text"; structured payloads (chunks/json) also carry
+// doc_type_kwd and img_id.
 func isPlainTextFormat(upstream schema.ChunkerFromUpstream) bool {
 	switch upstream.OutputFormat {
 	case schema.PayloadFormatMarkdown, schema.PayloadFormatText, schema.PayloadFormatHTML:
@@ -288,13 +288,13 @@ func isPlainTextFormat(upstream schema.ChunkerFromUpstream) bool {
 	return false
 }
 
-// buildChunksFromRecordGroups mirrors common.py:build_chunks_from_record_groups
-// (minus the deepdoc-only remove_tag / merge_pdf_positions steps):
+// buildChunksFromRecordGroups assembles the final chunks from each record
+// group (minus the deepdoc-only remove_tag / merge_pdf_positions steps):
 //   - plain payloads: {"text": joined}
 //   - structured payloads: text plus doc_type_kwd / img_id from the
 //     group's leading record.
 //
-// root_chunk_as_heading is applied here, exactly as python does (post
+// root_chunk_as_heading is applied here, exactly as does (post
 // materialisation): the root chunk's text is prepended to every
 // following chunk and the root chunk is dropped.
 //
@@ -320,11 +320,10 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			continue
 		}
 		// Strip parser-emitted position tags (`@@...##`) from the joined text
-		// (diff 1.6 / 2.8). Mirrors common.py:255
-		// `RAGFlowPdfParser.remove_tag("".join(...))`. A non-text group is a
-		// single atomic record (table/image): its text is taken verbatim —
-		// Python emits records[0]["text"] unchanged (common.py:419) — instead
-		// of the group join, which would append a trailing newline.
+		// (diff 1.6 / 2.8), mirroring `RAGFlowPdfParser.remove_tag("".join(...))`.
+		// A non-text group is a single atomic record (table/image): its text is
+		// taken verbatim — it emits records[0]["text"] unchanged instead of the
+		// group join, which would append a trailing newline.
 		chunkText := removeTag(joinGroupText(g))
 		if !g[0].isText() {
 			chunkText = removeTag(g[0].text)
@@ -374,7 +373,7 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 		}
 		// Merge PDF coordinate matrices across the merged records
 		// instead of keeping only the leading record's (diff 1.6).
-		// Mirrors pdf_chunk_metadata.py:127 merge_pdf_positions.
+		// Mirrors merge_pdf_positions
 		var pdfSrc, posSrc []json.RawMessage
 		for _, r := range g {
 			if len(r.pdfPositions) > 0 {
@@ -444,8 +443,8 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 }
 
 // posTagRemove matches parser-emitted position tags of the form
-// `@@<page>\t<left>\t<right>\t<top>\t<bottom>##`. Mirrors Python
-// pdf_parser.py:1934 `re.sub(r"@@[\t0-9.-]+?##", "", txt)`.
+// `@@<page>\t<left>\t<right>\t<top>\t<bottom>##`, mirroring
+// `re.sub(r"@@[\t0-9.-]+?##", "", txt)`.
 var posTagRemove = regexp.MustCompile(`@@[\t0-9.-]+?##`)
 
 // removeTag strips parser-emitted position tags from a chunk's text.
@@ -470,8 +469,7 @@ func pdfPosRowLess(a, b []float64) bool {
 }
 
 // mergePositionMatrix aggregates multiple PDF coordinate matrices into a
-// single de-duplicated, sorted matrix. Mirrors Python
-// pdf_chunk_metadata.py:127 merge_pdf_positions: rows are 5-tuples
+// single de-duplicated, sorted matrix. Rows are 5-tuples
 // [page,left,right,top,bottom]; duplicates (by the first five columns)
 // are dropped and rows are sorted by (page, top, left). Returns nil when
 // no source carries any usable coordinates.
@@ -604,9 +602,9 @@ func positionRowNumber(raw any) (float64, bool) {
 }
 
 // extractLineRecords converts the decoded upstream payload into records in the
-// same order the python BaseTitleChunker.extract_line_records uses: the field
+// same order the BaseTitleChunker.extract_line_records uses: the field
 // named by output_format selects the payload (chunks / json / markdown / text
-// / html), mirroring python's branch on output_format rather than key
+// / html), mirroring branch on output_format rather than key
 // presence alone — a declared "markdown" payload is read even when a stray
 // empty "text" key is also present. When output_format is unset the first
 // present payload wins (chunks, json, then text/markdown/html), preserving

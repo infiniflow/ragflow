@@ -2,6 +2,10 @@ import { LargeModelFormFieldWithoutFilter } from '@/components/large-model-form-
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { Form } from '@/components/ui/form';
 import { useFetchChat } from '@/hooks/use-chat-request';
+import {
+  ModelResourceAccessUserIdContext,
+  ModelResourceTenantIdContext,
+} from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty } from 'lodash';
 import { useEffect } from 'react';
@@ -29,9 +33,13 @@ export function LLMSelectForm() {
 
   return (
     <Form {...form}>
-      <LargeModelFormFieldWithoutFilter
-        ownerTenantId={data?.tenant_id}
-      ></LargeModelFormFieldWithoutFilter>
+      <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
+        <ModelResourceAccessUserIdContext.Provider value={data?.user_id}>
+          <LargeModelFormFieldWithoutFilter
+            resourceTenantId={data?.tenant_id}
+          ></LargeModelFormFieldWithoutFilter>
+        </ModelResourceAccessUserIdContext.Provider>
+      </ModelResourceTenantIdContext.Provider>
     </Form>
   );
 }

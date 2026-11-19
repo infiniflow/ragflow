@@ -2,7 +2,7 @@
 // document artifact pipeline MAP -> REDUCE -> PLAN -> REFINE that produces a
 // wiki-style page (and supporting section products). MAP results may be reused
 // from the immutable per-chunk version store; later stages remain in memory.
-// The stage semantics are aligned with the Python wiki.py design, but the Go
+// The stage semantics are aligned with the design, but the Go
 // port keeps all intermediate artifacts in memory instead of persisting them to
 // ES between stages.
 package wiki
@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
 	"ragflow/internal/ingestion/component/progress"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
@@ -186,9 +187,9 @@ type wikiPlanPage struct {
 }
 
 // Reconciliation thresholds. These are a deliberate Go-specific refinement of
-// the Python wiki.py contract, NOT a byte-for-byte alignment:
+// the contract, NOT a byte-for-byte alignment
 //
-// Python `_wiki_reconcile_with_kb` (wiki.py:1900-1957) queries KNN with
+// `_wiki_reconcile_with_kb` queries KNN with
 // `extra_options={"similarity": update_threshold}` (update_threshold=0.95), so
 // candidates below that threshold are normally filtered out at retrieval and
 // the item becomes CREATE directly. Its MAYBE band ([maybe=0.60, update=0.95))
@@ -196,7 +197,7 @@ type wikiPlanPage struct {
 // the similarity filter.
 //
 // Go's `FindSimilarPages` returns top-K candidates without a similarity floor,
-// so it genuinely sees low-score candidates Python never does. To exploit that
+// so it genuinely sees low-score candidates never does. To exploit that
 // richer signal we keep a real two-band decision:
 //
 //   - Score >= update_threshold (0.92)           -> direct UPDATE
@@ -205,7 +206,7 @@ type wikiPlanPage struct {
 //     heuristic first (direct UPDATE), else MAYBE resolved by the LLM.
 //
 // The title/topic/entity overlap straight-to-UPDATE shortcut is a Go-only
-// enhancement; it is NOT a Python-aligned behavior. Keep it documented as such.
+// enhancement; it is NOT a -aligned behavior. Keep it documented as such
 const (
 	wikiPlanUpdateThreshold = 0.92
 	wikiPlanMaybeThreshold  = 0.78
@@ -319,7 +320,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	// Buffer every product in one slice; the component merges them into the
-	// upstream chunk stream (matching Python, which appends compiled units onto
+	// upstream chunk stream (matching , which appends compiled units onto
 	// the chunk list).
 	out := common.Outputs{
 		Products:          prod,
@@ -1099,11 +1100,11 @@ func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, q
 		"batch_index":         fmt.Sprintf("%d", batchIndex),
 		"batch_total":         fmt.Sprintf("%d", batchTotal),
 		"max_pages":           fmt.Sprintf("%d", maxPagesForBatch(quota)),
-		"entities":            mustJSON(batch.Entities),
-		"concepts":            mustJSON(batch.Concepts),
-		"claims":              mustJSON(batch.Claims),
-		"relations":           mustJSON(batch.Relations),
-		"topics":              mustJSON(batch.Topics),
+		"entities":            utility.MustJSON(batch.Entities),
+		"concepts":            utility.MustJSON(batch.Concepts),
+		"claims":              utility.MustJSON(batch.Claims),
+		"relations":           utility.MustJSON(batch.Relations),
+		"topics":              utility.MustJSON(batch.Topics),
 		"planning_mode_rules": planningModeRules,
 	})
 	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
@@ -1283,7 +1284,7 @@ func (p *wikiPipeline) reconcilePlan(plan wikiPlan) (wikiPlan, error) {
 
 // reconcilePlanPage decides UPDATE / CREATE for one planned page against the
 // existing wiki-page store. See the threshold block above for how the band and
-// the overlap heuristic relate to Python's wiki.py contract.
+// the overlap heuristic relate to contract
 func (p *wikiPipeline) reconcilePlanPage(page wikiPlanPage, queryVec []float32) (*common.WikiPageCandidate, error) {
 	if p.deps.WikiPages == nil {
 		return nil, nil
@@ -2206,19 +2207,19 @@ func packWikiPlanBatches(reduced wikiExtract, budget int) []wikiExtract {
 		curTokens += itemTokens
 	}
 	for _, e := range reduced.Entities {
-		add(common.EstimateTokens(mustJSON(e)), func() { cur.Entities = append(cur.Entities, e) })
+		add(common.EstimateTokens(utility.MustJSON(e)), func() { cur.Entities = append(cur.Entities, e) })
 	}
 	for _, c := range reduced.Concepts {
-		add(common.EstimateTokens(mustJSON(c)), func() { cur.Concepts = append(cur.Concepts, c) })
+		add(common.EstimateTokens(utility.MustJSON(c)), func() { cur.Concepts = append(cur.Concepts, c) })
 	}
 	for _, c := range reduced.Claims {
-		add(common.EstimateTokens(mustJSON(c)), func() { cur.Claims = append(cur.Claims, c) })
+		add(common.EstimateTokens(utility.MustJSON(c)), func() { cur.Claims = append(cur.Claims, c) })
 	}
 	for _, r := range reduced.Relations {
-		add(common.EstimateTokens(mustJSON(r)), func() { cur.Relations = append(cur.Relations, r) })
+		add(common.EstimateTokens(utility.MustJSON(r)), func() { cur.Relations = append(cur.Relations, r) })
 	}
 	for _, t := range reduced.Topics {
-		add(common.EstimateTokens(mustJSON(t)), func() { cur.Topics = append(cur.Topics, t) })
+		add(common.EstimateTokens(utility.MustJSON(t)), func() { cur.Topics = append(cur.Topics, t) })
 	}
 	flush()
 	return batches
@@ -2754,7 +2755,7 @@ func pageTypeOf(slug string, slugToPageType map[string]string) string {
 
 // wikiSlugResolver resolves a wikitext slug (a bare "name" or a full
 // "<page_type>/<slug>") to the canonical hyphen full-slug used as the page
-// identifier (slug_kwd), mirroring Python's _wiki_resolve_dead_slug: plain
+// identifier (slug_kwd), mirroring _wiki_resolve_dead_slug: plain
 // names / titles are reverse-mapped to the full pid. An empty result means the
 // target is not a known page and must not be emitted as a link or graph edge.
 type wikiSlugResolver struct {
@@ -3025,14 +3026,6 @@ func lastPathSlug(slug string) string {
 		return slug[idx+1:]
 	}
 	return slug
-}
-
-func mustJSON(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "[]"
-	}
-	return string(b)
 }
 
 func mustPrettyJSON(v any) string {

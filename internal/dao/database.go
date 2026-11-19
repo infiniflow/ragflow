@@ -301,6 +301,8 @@ func autoMigrateModels() []interface{} {
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
+	dataModels = append(dataModels, chunkVersionDataModelsEE()...)
+	dataModels = append(dataModels, datasetVersionDataModelsEE()...)
 	return dataModels
 }
 
@@ -439,6 +441,13 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateResourceUserIDs(ctx, DB); err != nil {
 			return fmt.Errorf("failed to backfill resource user IDs: %w", err)
 		}
+		// Normalize the Python / early-Go ingestion shapes that the earlier
+		// parser-config step deliberately left in component nodes and custom
+		// canvas DSLs. It runs last because its target version sorts above every
+		// other version-gated step.
+		if err = migrateIngestionLegacyConfigs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to normalize legacy ingestion configs: %w", err)
+		}
 		common.Info("Database schema migrated successfully")
 	} else {
 		for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
@@ -447,6 +456,14 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			}
 		}
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
+			return err
+		}
+		// The version columns are written by every versioned change - a chunk
+		// edit, an upload, a dataset configuration change, a content restore - and
+		// only the full --migrate path creates them. Fail here, while the operator
+		// is watching the start, instead of at the first write with an
+		// unknown-column error.
+		if err = requireDatasetVersionColumnEE(ctx, DB); err != nil {
 			return err
 		}
 		// Ensure the Go-exclusive runtime tables exist. The manual migrations are
@@ -582,6 +599,14 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.ConversationMessage{},
 		&entity.API4ConversationMessage{},
 	}
+	// Edition-specific runtime tables: the chunk edit history and the dataset
+	// history are written on every chunk and dataset mutation, but the
+	// data-model migrations only run as the standalone --migrate action.
+	// Without them a server started against a database that never ran the new
+	// --migrate would lose that history silently (the writes are best-effort
+	// and only log).
+	goRuntimeModels = append(goRuntimeModels, chunkVersionRuntimeModelsEE()...)
+	goRuntimeModels = append(goRuntimeModels, datasetVersionRuntimeModelsEE()...)
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
 			tableName := fmt.Sprintf("%T", m)

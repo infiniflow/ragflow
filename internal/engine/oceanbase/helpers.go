@@ -19,8 +19,8 @@ package oceanbase
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 )
@@ -128,7 +128,7 @@ func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{},
 	if len(chunks) == 0 || len(queryVector) == 0 {
 		return nil, nil
 	}
-	vectorField := fmt.Sprintf("q_%d_vec", len(queryVector))
+	vectorField := common.VectorColumnName(len(queryVector))
 	hits := make([]interface{}, 0, len(chunks))
 	for _, chunk := range chunks {
 		vector, ok := floatSlice(chunk[vectorField])

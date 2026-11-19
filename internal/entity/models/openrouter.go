@@ -68,13 +68,7 @@ func (o *OpenRouterModel) ChatWithMessages(ctx context.Context, modelName string
 	}
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
-	if chatModelConfig != nil {
-		if chatModelConfig.Effort != nil {
-			reqBody["reasoning"] = map[string]interface{}{
-				"effort": chatModelConfig.Effort,
-			}
-		}
-	}
+	applyOpenRouterReasoningConfig(reqBody, chatModelConfig)
 
 	body, err := o.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
@@ -110,20 +104,29 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
-	if modelConfig != nil {
-		if modelConfig.Thinking != nil {
-			reqBody["reasoning"] = map[string]interface{}{"enabled": *modelConfig.Thinking}
-		}
-		if modelConfig.Effort != nil {
-			reqBody["reasoning"] = map[string]interface{}{"effort": *modelConfig.Effort}
-		}
-	}
+	applyOpenRouterReasoningConfig(reqBody, modelConfig)
 
 	return o.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
 		// OpenRouter emits reasoning under delta.reasoning (not
 		// delta.reasoning_content), so it uses its own ParserConfig.
 		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenRouterParserConfig, sender)
 	})
+}
+
+func applyOpenRouterReasoningConfig(reqBody map[string]any, config *ChatConfig) {
+	if config == nil {
+		return
+	}
+	reasoning := map[string]any{}
+	if config.Thinking != nil {
+		reasoning["enabled"] = *config.Thinking
+	}
+	if config.Effort != nil && (config.Thinking == nil || *config.Thinking) {
+		reasoning["effort"] = *config.Effort
+	}
+	if len(reasoning) > 0 {
+		reqBody["reasoning"] = reasoning
+	}
 }
 
 // OpenRouterEmbeddingResponse mirrors OpenRouter's embeddings response.

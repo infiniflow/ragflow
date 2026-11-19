@@ -22,6 +22,7 @@ import { camelCase } from 'lodash';
 import { ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { MinerUOptionsFormField } from './mineru-options-form-field';
+import { UnlimitedOCROptionsFormField } from './unlimited-ocr-options-form-field';
 import { useModelTree } from './model-tree-select';
 import { PaddleOCROptionsFormField } from './paddleocr-options-form-field';
 import { TreeSelect, TreeSelectNode } from './tree-select';
@@ -65,7 +66,7 @@ export function LayoutRecognizeFormField({
   showMineruOptions = true,
   showPaddleocrOptions = true,
   testId,
-  ownerTenantId,
+  resourceTenantId,
 }: {
   name?: string;
   horizontal?: boolean;
@@ -74,7 +75,7 @@ export function LayoutRecognizeFormField({
   showMineruOptions?: boolean;
   showPaddleocrOptions?: boolean;
   testId?: string;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
 }) {
   const form = useFormContext();
 
@@ -87,7 +88,7 @@ export function LayoutRecognizeFormField({
   } = useModelTree({
     modelTypes: LayoutRecognizeModelTypes,
     renderLeafLabel: renderExperimentalLeaf,
-    ownerTenantId,
+    resourceTenantId,
   });
 
   const treeData = useMemo(() => {
@@ -128,6 +129,9 @@ export function LayoutRecognizeFormField({
           [LLMFactory.MinerU, LLMFactory.MinerUNet].some(
             (factory) => factory.toLowerCase() === provider.toLowerCase(),
           );
+        const isUnlimitedOCR =
+          typeof provider === 'string' &&
+          provider.toLowerCase().replaceAll('_', '-').includes('unlimited-ocr');
         const namePrefix = name.split('.').slice(0, -1).join('.');
         return (
           <>
@@ -175,6 +179,9 @@ export function LayoutRecognizeFormField({
               <MinerUOptionsFormField namePrefix={namePrefix} />
             )}
             {showPaddleocrOptions && <PaddleOCROptionsFormField />}
+            {isUnlimitedOCR && (
+              <UnlimitedOCROptionsFormField namePrefix={namePrefix} />
+            )}
           </>
         );
       }}

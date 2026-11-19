@@ -10,6 +10,9 @@ export const SetupSchema = z
     mineru_lang: z.string().optional(),
     mineru_formula_enable: z.boolean().optional(),
     mineru_table_enable: z.boolean().optional(),
+    unlimited_ocr_crop_mode: z.string().optional(),
+    unlimited_ocr_no_repeat_ngram_size: z.number().int().positive().optional(),
+    unlimited_ocr_page_guard: z.boolean().optional(),
     // Image OCR runs independently of the global vision-enhancement switch.
     // The dropdown used to encode this choice in parse_method; ocr_enabled is
     // the new boolean contract. Legacy setups may still carry a parse_method
@@ -73,6 +76,9 @@ export const FormSchema = z
       .object({
         llm_id: z.string().optional(),
         system_prompt: z.string().optional(),
+        // Optional caption-language override. Empty follows the knowledge base
+        // language, which still drives tokenization.
+        lang: z.string().optional(),
       })
       .optional(),
     enable_vision_enhancement: z.boolean().optional(),

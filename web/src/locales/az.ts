@@ -1368,16 +1368,6 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
       dataSourceFieldClientSecret: 'Müştəri sirri',
       dataSourceFieldFolderPathOptional: 'Qovluq yolu',
       dataSourceFieldBatchSize: 'Dəstə ölçüsü',
-      dataSourceFieldFeishuAppId: 'Feishu tətbiqinin ID-si',
-      dataSourceFieldFeishuAppSecret: 'Feishu tətbiqinin sirri',
-      dataSourceFieldWikiSpaceId: 'Viki sahəsinin ID-si',
-      dataSourceFieldRootNodeToken: 'Vikinin kök düyününün tokeni',
-      dataSourceFieldIncludeExtensions: 'İcazə verilən fayl genişlənmələri',
-      dataSourceFieldIncludeKeywords: 'Fayl adında tələb olunan açar sözlər',
-      dataSourceFieldExcludeKeywords: 'Fayl adında istisna edilən açar sözlər',
-      dataSourceFieldMaxFileSizeBytes: 'Maksimum fayl ölçüsü (bayt)',
-      dataSourceValidationFeishuBatchSize:
-        'Dəstə ölçüsü 1 ilə 10 arasında olmalıdır',
       dataSourceFieldMailFolder: 'Poçt qovluğu',
       dataSourceFieldMailboxUserIds: 'Poçt qutusu istifadəçilərinin ID-ləri',
       dataSourceFieldInstanceUrl: 'Nüsxənin URL-i',
@@ -1654,8 +1644,6 @@ Nümunə: Virtual host üslubu`,
         'Bilik axtarışı üçün Notion-dan səhifələri və verilənlər bazalarını sinxronlaşdırın.',
       google_driveDescription:
         'Google Drive hesabınızı OAuth vasitəsilə qoşun və müəyyən qovluqları və ya diskləri sinxronlaşdırın.',
-      feishu_wikiDescription:
-        'Feishu Wiki alt ağacından endirilə bilən fayl qovşaqlarını sinxronlaşdırın.',
       gmailDescription:
         'E-poçtları sinxronlaşdırmaq üçün Gmail hesabınızı OAuth vasitəsilə qoşun.',
       webdavDescription:
@@ -2113,12 +2101,6 @@ Nümunə: Virtual host üslubu`,
       apiKeyTip:
         'Müvafiq LLM provayderində qeydiyyatdan keçməklə API açarını əldə edə bilərsiniz.',
       aimlapiGetKey: 'API açarı al',
-      aimlapiCheckStatus: 'Vəziyyəti yoxla',
-      aimlapiAwaitingConsent: 'AI/ML API pəncərəsində təsdiq gözlənilir…',
-      aimlapiKeyAdded: 'AI/ML API açarınız yaradıldı və yuxarıya əlavə edildi.',
-      aimlapiAuthDenied: 'İcazə verilmədi. Yenidən cəhd edin.',
-      aimlapiAuthExpired: 'Sorğunun vaxtı bitdi. Yenidən cəhd edin.',
-      aimlapiAuthFailed: 'Giriş alınmadı. Yenidən cəhd edin.',
       showMoreModels: 'Modellərə bax',
       hideModels: 'Modelləri gizlət',
       baseUrl: 'Baza URL-i',
@@ -2867,6 +2849,16 @@ Nümunə: Virtual host üslubu`,
         'LLM-i cavab yaratmağa yönəldən komponent. Təlimatın düzgün təyin edildiyinə əmin olun.',
       categorizeDescription:
         'İstifadəçi girişlərini əvvəlcədən müəyyən edilmiş kateqoriyalara ayırmaq üçün LLM-dən istifadə edən komponent. Hər kateqoriya üçün ad, təsvir və nümunələri, həmçinin müvafiq növbəti komponenti göstərdiyinizə əmin olun.',
+      scoredSwitchQuestionRequired: 'Hər əlavə sual üçün təlimat lazımdır',
+      scoredSwitchLevelMinimum: 'Ən azı iki səviyyə əlavə edin',
+      scoredSwitchFieldMinimum: 'Ən azı bir sahə əlavə edin',
+      scoredSwitchFieldNameInvalid:
+        'Sahə adı hərf və ya alt xətt ilə başlamalıdır',
+      scoredSwitchListItemsRequired: 'Siyahı üçün element növü lazımdır',
+      scoredSwitchEstimateBoundsRequired:
+        'Qiymətləndirmə üçün minimum və maksimum lazımdır',
+      scoredSwitchForecastRequired: 'Proqnoz üçün üfüq və interval lazımdır',
+      scoredSwitchDecimalsRange: 'Onluqlar 0 ilə 6 arasında olmalıdır',
       relevantDescription:
         'Əvvəlki çıxışın istifadəçinin son sorğusuna uyğun olub-olmadığını qiymətləndirmək üçün LLM-dən istifadə edən komponent. Hər qiymətləndirmə nəticəsi üçün növbəti komponenti göstərdiyinizə əmin olun.',
       rewriteQuestionDescription:

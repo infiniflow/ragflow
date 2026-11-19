@@ -62,7 +62,7 @@ func FetchChunkVectors(ctx context.Context, engine vectorFetcher, chunkIDs, tena
 		return out
 	}
 
-	vecField := fmt.Sprintf("q_%d_vec", dim)
+	vecField := common.VectorColumnName(dim)
 
 	// Convert chunkIDs to []interface{} because the ES filter builder
 	// (buildBoolQueryFromCondition) only handles []interface{} for the
