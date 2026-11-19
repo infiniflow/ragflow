@@ -729,23 +729,7 @@ func (m *sentencePieceModel) viterbi(s string, wantIDs bool) (int, []int32) {
 
 // trimToLimit returns the longest rune prefix of text with at most limit tokens.
 func (m *sentencePieceModel) trimToLimit(text string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	if m.countTokens(text) <= limit {
-		return text
-	}
-	runes := []rune(text)
-	lo, hi := 0, len(runes)
-	for lo < hi {
-		mid := (lo + hi + 1) / 2
-		if m.countTokens(string(runes[:mid])) <= limit {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
-	}
-	return string(runes[:lo])
+	return trimToRuneLimitByCount(text, limit, m.countTokens)
 }
 
 // sentencePieceCounter adapts a parsed model to the Counter interface.

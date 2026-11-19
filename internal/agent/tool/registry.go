@@ -18,6 +18,7 @@ package tool
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -169,7 +170,7 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 	// "search_my_dataset" resolves to that registry key, not "retrieval".
 	cleanParams := params
 	if cleanParams != nil {
-		cleanParams = cloneToolParams(cleanParams)
+		cleanParams = maps.Clone(cleanParams)
 		delete(cleanParams, "component_name")
 		if _, isRetrieval := retrievalRegistryKeys[key]; !isRetrieval {
 			delete(cleanParams, "function_name")
@@ -177,14 +178,6 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return factory(cleanParams)
-}
-
-func cloneToolParams(in map[string]any) map[string]any {
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
 
 // BuildAll resolves a list of tool names into Eino BaseTool instances.
@@ -565,7 +558,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		if !ok {
 			return nil, fmt.Errorf("agent tool: retrieval tool requires object node-level param meta_data_filter")
 		}
-		defaults.MetaDataFilter = cloneStringAnyMap(filter)
+		defaults.MetaDataFilter = maps.Clone(filter)
 	}
 	if value, ok := params["retrieval_from"]; ok {
 		retrievalFrom, ok := value.(string)

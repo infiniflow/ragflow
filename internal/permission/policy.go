@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ragflow/internal/entity"
@@ -641,7 +642,7 @@ func (e *evaluation) resolveResourceForUser(ctx context.Context, userID string, 
 		}
 		return resourceAccessWithOperations(resource, AccessSourceTenant, operations), nil
 	case VisibilityShared:
-		if contains(resource.SharedWithUserIDs, userID) {
+		if slices.Contains(resource.SharedWithUserIDs, userID) {
 			return resourceAccess(resource, AccessSourceShared), nil
 		}
 		for _, tenantID := range resource.SharedWithTenantIDs {
@@ -819,15 +820,6 @@ func resourceAccessWithOperations(resource Resource, source AccessSource, operat
 
 func accessAllows(access Access, operation Operation) bool {
 	return access.Allows(operation)
-}
-
-func contains(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func uniqueRefs(refs []ResourceRef) []ResourceRef {

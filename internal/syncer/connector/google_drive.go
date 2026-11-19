@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -210,7 +211,7 @@ func (c *GoogleDriveConnector) buildScopes(ctx context.Context) ([]googleDriveSc
 	scopes := make([]googleDriveScope, 0)
 	includeSharedWithMe := c.effectiveIncludeSharedWithMe()
 	for _, email := range users {
-		if c.includeMyDrives || containsString(c.myDriveEmails, email) {
+		if c.includeMyDrives || slices.Contains(c.myDriveEmails, email) {
 			scopes = append(scopes, googleDriveScope{userEmail: email, corpora: "user", includeSharedWithMe: includeSharedWithMe})
 		}
 	}
@@ -275,7 +276,7 @@ func (c *GoogleDriveConnector) userEmails(ctx context.Context) ([]string, error)
 				return nil, err
 			}
 			for _, user := range page.Users {
-				if user.PrimaryEmail != "" && !containsString(users, user.PrimaryEmail) {
+				if user.PrimaryEmail != "" && !slices.Contains(users, user.PrimaryEmail) {
 					users = append(users, user.PrimaryEmail)
 				}
 			}
@@ -1290,13 +1291,4 @@ func uniqueSorted(values []string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func containsString(values []string, value string) bool {
-	for _, item := range values {
-		if item == value {
-			return true
-		}
-	}
-	return false
 }

@@ -4,9 +4,9 @@ package pregel
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/types"
 )
@@ -146,7 +146,7 @@ var RetryPredicates = struct {
 			"504", // Gateway Timeout
 		}
 		for _, kw := range networkKeywords {
-			if contains(errMsg, kw) {
+			if common.ContainsFold(errMsg, kw) {
 				return true
 			}
 		}
@@ -167,17 +167,12 @@ var RetryPredicates = struct {
 			"429", // Too Many Requests
 		}
 		for _, kw := range tempKeywords {
-			if contains(errMsg, kw) {
+			if common.ContainsFold(errMsg, kw) {
 				return true
 			}
 		}
 		return false
 	},
-}
-
-// contains checks for a case-insensitive substring anywhere in an error message.
-func contains(s, substr string) bool {
-	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
 // RetryConfig provides configuration for retry behavior.

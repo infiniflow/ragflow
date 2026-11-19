@@ -39,6 +39,7 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/harness/core"
 	"ragflow/internal/harness/core/schema"
 )
@@ -297,7 +298,7 @@ func FinalTextContains(substr string) Scorer {
 		if text == "" {
 			return fmt.Errorf("final text is empty, expected to contain %q", substr)
 		}
-		if !containsFold(text, substr) {
+		if !common.ContainsFold(text, substr) {
 			return fmt.Errorf("final text does not contain %q:\n%s", substr, truncate(text, 500))
 		}
 		return nil
@@ -309,7 +310,7 @@ func FinalTextContains(substr string) Scorer {
 func FinalTextExcludes(substr string) Scorer {
 	return func(ctx context.Context, r *EvalResult) error {
 		text := lastAssistantText(r)
-		if containsFold(text, substr) {
+		if common.ContainsFold(text, substr) {
 			return fmt.Errorf("final text contains forbidden %q:\n%s", substr, truncate(text, 500))
 		}
 		return nil
@@ -333,7 +334,7 @@ func AgentErrorContains(substr string) Scorer {
 		if r.Err == nil {
 			return fmt.Errorf("expected agent error containing %q, got none", substr)
 		}
-		if !containsFold(r.Err.Error(), substr) {
+		if !common.ContainsFold(r.Err.Error(), substr) {
 			return fmt.Errorf("agent error %q does not contain %q", r.Err.Error(), substr)
 		}
 		return nil
@@ -362,7 +363,7 @@ func FileContains(path, substr string) Scorer {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
-		if !containsFold(string(data), substr) {
+		if !common.ContainsFold(string(data), substr) {
 			return fmt.Errorf("file %s does not contain %q", path, substr)
 		}
 		return nil
@@ -475,11 +476,6 @@ func countAssistantMessages(msgs []*schema.Message) int {
 		}
 	}
 	return count
-}
-
-func containsFold(s, substr string) bool {
-	s, substr = strings.ToLower(s), strings.ToLower(substr)
-	return strings.Contains(s, substr)
 }
 
 func truncate(s string, max int) string {

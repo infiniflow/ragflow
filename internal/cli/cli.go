@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"ragflow/internal/common"
 
@@ -423,16 +424,13 @@ func parseHostPort(hostPort string) (string, int, error) {
 		return "", -1, nil
 	}
 
-	// Split host and port
-	parts := strings.Split(hostPort, ":")
-	if len(parts) != 2 {
+	host, portText, err := net.SplitHostPort(hostPort)
+	if err != nil {
 		return "", -1, fmt.Errorf("invalid host format, expected host:port, got: %s", hostPort)
 	}
-
-	host := parts[0]
-	port, err := strconv.Atoi(parts[1])
+	port, err := strconv.Atoi(portText)
 	if err != nil {
-		return "", -1, fmt.Errorf("invalid port number: %s", parts[1])
+		return "", -1, fmt.Errorf("invalid port number: %s", portText)
 	}
 
 	return host, port, nil

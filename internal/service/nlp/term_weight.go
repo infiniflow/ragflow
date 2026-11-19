@@ -23,7 +23,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"unicode"
 
 	"ragflow/internal/tokenizer"
@@ -45,32 +44,11 @@ var (
 	reTagNumeric     = regexp.MustCompile(`^[0-9-]+`)
 )
 
-// Does not parse: the trailing \] escapes the closing bracket. MatchString used
-// to swallow that error and report "no match", so Pretoken's "#" substitution
-// has never fired. Compiling once keeps that behaviour.
-const pretokenPunctPattern = `[~—\t @#%!<>,\.\?":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；'：""【¥ 】…￥！、·（）×\` + "`" + `&/「」\]`
+// Punctuation that marks a token as noise. "^" anchors the match to the first
+// character; the trailing `\\]` is a literal backslash plus the class terminator.
+const pretokenPunctPattern = `^[~—\t @#%!<>,\.\?":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；‘’：“”【¥ 】…￥！、·（）×` + "`" + `&/「」\\]`
 
-// Compiling here keeps the pattern off the per-token path, but the error cannot
-// be reported here: package-level variables are initialised before
-// common.InitLogger installs the global logger, so common.Warn would silently
-// drop it. The error is carried to warnPunctPatternOnce, which runs once the
-// logger is live. rePretokenPunct is nil while the pattern stays unparseable.
-var (
-	rePretokenPunct, pretokenPunctErr = regexp.Compile(pretokenPunctPattern)
-	pretokenPunctWarnOnce             sync.Once
-)
-
-// warnPunctPatternOnce reports the unparseable punct pattern on the first call
-// to Pretoken. That runs on the request path, after InitLogger has installed the
-// global logger, which is where the warning is actually visible.
-func warnPunctPatternOnce() {
-	pretokenPunctWarnOnce.Do(func() {
-		if pretokenPunctErr != nil {
-			common.Warn("invalid regular expression; matching is skipped",
-				zap.String("pattern", pretokenPunctPattern), zap.Error(pretokenPunctErr))
-		}
-	})
-}
+var rePretokenPunct = regexp.MustCompile(pretokenPunctPattern)
 
 // TermWeightDealer calculates term weights for text processing
 // Reference: rag/nlp/term_weight.py
@@ -194,7 +172,6 @@ func loadDict(fnm string) map[string]int {
 // Pretoken preprocesses and tokenizes text with the dataset language.
 // Reference: term_weight.py L92-114
 func (d *TermWeightDealer) Pretoken(txt string, num bool, stpwd bool, lang string) []string {
-	warnPunctPatternOnce()
 	res := []string{}
 	tokenized, err := tokenizer.New(lang).Tokenize(txt)
 	if err != nil {
@@ -214,8 +191,9 @@ func (d *TermWeightDealer) Pretoken(txt string, num bool, stpwd bool, lang strin
 		if rePretokenDigit.MatchString(tk) && !num {
 			continue
 		}
-		// rePretokenPunct is nil while pretokenPunctPattern stays unparseable.
-		if rePretokenPunct != nil && rePretokenPunct.MatchString(t) {
+		// Only the first character is checked: a token starting with punctuation
+		// becomes "#" and is dropped below, while "a,b" is kept.
+		if rePretokenPunct.MatchString(t) {
 			tk = "#"
 		}
 		if tk != "#" && tk != "" {
