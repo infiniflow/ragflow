@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -57,8 +58,8 @@ func TestCheckDatasetsReadableBatchesPermissionQueries(t *testing.T) {
 		return *counter
 	}
 	q1, q3, q6 := measure(1), measure(3), measure(6)
-	if q3 > q1+2 || q6 > q1+2 {
-		t.Fatalf("permission queries grew with dataset count: 1=%d, 3=%d, 6=%d (want sublinear batch load)", q1, q3, q6)
+	if q1 == 0 || q3 != q1 || q6 != q1 {
+		t.Fatalf("permission queries must be constant (one batched dataset lookup + tenant-owner lookup): 1=%d, 3=%d, 6=%d", q1, q3, q6)
 	}
 }
 
@@ -68,16 +69,18 @@ func TestCheckDatasetsReadableRejectsInaccessibleDataset(t *testing.T) {
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
 
-	// ds-foreign belongs to a tenant the caller is not a member of.
+	// ds-foreign belongs to tenant-2, which has an active owner but does not
+	// include the caller. The batch loads it successfully then denies access.
 	db.Create(&entity.Tenant{ID: "tenant-2"})
+	db.Create(&entity.UserTenant{ID: "ut-owner-2", UserID: "owner-2", TenantID: "tenant-2", Role: "owner", Status: sptr(string(entity.StatusValid))})
 	db.Create(&entity.Knowledgebase{
 		ID: "ds-foreign", TenantID: "tenant-2", Name: "foreign", EmbdID: "embd-1",
 		CreatedBy: "owner-2", Permission: string(entity.TenantPermissionTeam),
 		Status: sptr(string(entity.StatusValid)),
 	})
 	ctx := permission.WithIdentity(context.Background(), "user-1", "tenant-1")
-	if err := checkDatasetsReadable(ctx, db, []string{"ds-1", "ds-foreign"}); err == nil {
-		t.Fatal("expected permission error for inaccessible dataset, got nil")
+	if err := checkDatasetsReadable(ctx, db, []string{"ds-1", "ds-foreign"}); !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("err = %v, want ErrPermissionDenied from the access-denial path", err)
 	}
 }
 

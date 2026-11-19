@@ -141,6 +141,9 @@ func TestListDocumentsHandlerBatchMetadataErrorStillEmitsEmptyFields(t *testing.
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	docs := listDocsResponse(t, w)
+	if len(docs) != 2 {
+		t.Fatalf("docs = %d, want 2 (otherwise the metadata fallback is not exercised)", len(docs))
+	}
 	for i, doc := range docs {
 		fields, ok := doc["meta_fields"].(map[string]interface{})
 		if !ok {

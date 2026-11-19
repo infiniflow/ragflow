@@ -141,7 +141,16 @@ func mcpRetrievalWithDocs(ctx context.Context, ds mcpDatasetService, docs mcpDoc
 	// references a document wins, matching the previous per-chunk dedup order.
 	docIDsByDataset := make(map[string][]string, len(datasetIDs))
 	seenDocIDs := make(map[string]bool)
+	seenDatasetIDs := make(map[string]bool, len(datasetIDs))
+	uniqueDatasetIDs := make([]string, 0, len(datasetIDs))
 	for _, id := range datasetIDs {
+		if seenDatasetIDs[id] {
+			continue
+		}
+		seenDatasetIDs[id] = true
+		uniqueDatasetIDs = append(uniqueDatasetIDs, id)
+	}
+	for _, id := range uniqueDatasetIDs {
 		info, code, err := ds.GetDataset(ctx, id)
 		if err != nil || code != common.CodeSuccess {
 			continue
@@ -159,14 +168,18 @@ func mcpRetrievalWithDocs(ctx context.Context, ds mcpDatasetService, docs mcpDoc
 		}
 	}
 
-	for _, id := range datasetIDs {
+	for _, id := range uniqueDatasetIDs {
 		docIDs := docIDsByDataset[id]
 		if len(docIDs) == 0 {
 			continue
 		}
-		listedDocs, _, err := docs.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{
-			KbID: id, DocIDs: docIDs, DocIDFilterApplied: true,
-		}, 1, len(docIDs))
+		listOpts := dao.DocumentListOptions{KbID: id, DocIDs: docIDs, DocIDFilterApplied: true}
+		listedDocs, _, err := docs.ListDocumentsByDatasetIDWithOptions(ctx, listOpts, 1, len(docIDs))
+		if err != nil {
+			// One bounded retry keeps a transient list failure from dropping
+			// enrichment for every document in the dataset.
+			listedDocs, _, err = docs.ListDocumentsByDatasetIDWithOptions(ctx, listOpts, 1, len(docIDs))
+		}
 		if err != nil || len(listedDocs) == 0 {
 			continue
 		}

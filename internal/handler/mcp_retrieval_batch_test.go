@@ -32,21 +32,31 @@ type countingMCPDocuments struct {
 	metaErr  error
 }
 
-func (f *countingMCPDocuments) ListDocumentsByDatasetIDWithOptions(_ context.Context, opts dao.DocumentListOptions, _, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+func (f *countingMCPDocuments) ListDocumentsByDatasetIDWithOptions(_ context.Context, opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	f.listCalls++
 	f.listKbIDs = append(f.listKbIDs, opts.KbID)
 	f.listDocIDs = append(f.listDocIDs, append([]string(nil), opts.DocIDs...))
 	if f.listErr != nil {
 		return nil, 0, f.listErr
 	}
-	_ = pageSize
 	out := make([]*entity.DocumentListItem, 0, len(opts.DocIDs))
 	for _, id := range opts.DocIDs {
 		if doc := f.docs[id]; doc != nil {
 			out = append(out, doc)
 		}
 	}
-	return out, int64(len(out)), nil
+	total := int64(len(out))
+	if page > 1 && pageSize > 0 {
+		start := (page - 1) * pageSize
+		if start >= len(out) {
+			return []*entity.DocumentListItem{}, total, nil
+		}
+		out = out[start:]
+	}
+	if pageSize > 0 && len(out) > pageSize {
+		out = out[:pageSize]
+	}
+	return out, total, nil
 }
 
 func (f *countingMCPDocuments) GetDocumentMetadataByID(_ context.Context, docID string) (map[string]interface{}, error) {
@@ -324,6 +334,14 @@ func BenchmarkMCPRetrievalBatchLookups(b *testing.B) {
 		if docs.listCalls != i+1 || docs.metaCalls != i+1 {
 			b.Fatalf("query explosion: list=%d metadata=%d after %d iterations", docs.listCalls, docs.metaCalls, i+1)
 		}
+		// Keep the recorded argument history bounded: the benchmark only
+		// reads the call counters, so retain the cumulative counts and drop
+		// the per-iteration ID slices.
+		docs.listDocIDs = docs.listDocIDs[:0]
+		docs.metaDocIDs = docs.metaDocIDs[:0]
+		docs.listKbIDs = docs.listKbIDs[:0]
+		docs.metaKbIDs = docs.metaKbIDs[:0]
+		probe.getIDs = probe.getIDs[:0]
 	}
 }
 

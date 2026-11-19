@@ -148,13 +148,22 @@ func (s *DocumentService) GetDocumentMetadataByIDs(ctx context.Context, kbID str
 	if len(docIDs) == 0 {
 		return out, nil
 	}
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, kbID)
-	if err != nil {
-		return out, err
+	// Retry the whole tenant-lookup + index-search unit once: a transient
+	// failure in either step would otherwise clear metadata for every doc in
+	// the batch.
+	search := func() (*service.SearchMetadataResponse, error) {
+		tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, kbID)
+		if err != nil {
+			return nil, err
+		}
+		return s.metadataSvc.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
 	}
-	result, err := s.metadataSvc.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
+	result, err := search()
 	if err != nil {
-		return out, err
+		result, err = search()
+		if err != nil {
+			return out, err
+		}
 	}
 	seen := make(map[string]bool, len(result.MetadataRecords))
 	for _, record := range result.MetadataRecords {
