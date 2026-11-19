@@ -112,6 +112,12 @@ var (
 	weightCache = map[string]*weightSet{}
 )
 
+// sharedWeightsSeam lets the enterprise GPU build extract device-resident
+// initializers so ORT can share one GPU weight buffer across sessions. The
+// OSS build leaves it nil and always uses the CPU extraction path below.
+// Returning (nil, nil) also falls through to the CPU path.
+var sharedWeightsSeam func(modelPath, inName string, inShape []int64, outName string) (*weightSet, error)
+
 // sharedWeights extracts the constant initializers from modelPath once and
 // caches them keyed by model path. Each subsequent call for the same model
 // returns the cached buffers, so every pooled session of that model shares a
@@ -125,6 +131,19 @@ func sharedWeights(modelPath, inName string, inShape []int64, outName string) (*
 	defer weightMu.Unlock()
 	if ws, ok := weightCache[modelPath]; ok {
 		return ws, nil
+	}
+	// Enterprise GPU seam: extract CUDA-memory shared initializers so ORT
+	// shares one GPU weight buffer across all CUDA sessions (zero-copy).
+	// No-op in OSS and in EE CPU mode (hook returns nil, nil).
+	if sharedWeightsSeam != nil {
+		ws, err := sharedWeightsSeam(modelPath, inName, inShape, outName)
+		if err != nil {
+			return nil, err
+		}
+		if ws != nil {
+			weightCache[modelPath] = ws
+			return ws, nil
+		}
 	}
 	// Throwaway extraction session: the weights live in the graph, not in any
 	// input/output tensor, so we only need valid in/out tensors to load the
