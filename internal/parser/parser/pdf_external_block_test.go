@@ -38,6 +38,10 @@ func TestExternalBlockPosition(t *testing.T) {
 		{"box outside the page has no area left", raster, ExternalRegion{Page: 3, Box: [4]float64{1000, 900, 1100, 1000}}, nil},
 		{"unknown scale drops the box", raster, ExternalRegion{Page: 4, Box: [4]float64{30, 40, 300, 160}}, nil},
 		{"unknown scale keeps the box on request", lenientRaster, ExternalRegion{Page: 4, Box: [4]float64{30, 40, 300, 160}}, []any{4, 30.0, 300.0, 40.0, 160.0}},
+		// A kept box stays in the service's units, so its origin is turned
+		// against the source height, never against the page height in points.
+		{"kept bottom-left box is flipped in its own space", ExternalBlockOptions{SourceSizes: map[int][2]float64{4: {600, 800}}, KeepUnscaled: true}, ExternalRegion{Page: 4, Box: [4]float64{30, 40, 300, 160}, BottomLeft: true}, []any{4, 30.0, 300.0, 640.0, 760.0}},
+		{"kept bottom-left box needs the source height", ExternalBlockOptions{PageSizes: map[int][2]float64{4: {300, 400}}, SourceSizes: map[int][2]float64{}, KeepUnscaled: true}, ExternalRegion{Page: 4, Box: [4]float64{30, 40, 300, 160}, BottomLeft: true}, nil},
 		{"zero area", raster, ExternalRegion{Page: 3, Box: [4]float64{1, 1, 1, 2}}, nil},
 		{"non-finite", raster, ExternalRegion{Page: 3, Box: [4]float64{0, 0, math.Inf(1), 100}}, nil},
 		{"not a number", ExternalBlockOptions{}, ExternalRegion{Page: 1, Box: [4]float64{0, math.NaN(), 10, 100}}, nil},
@@ -164,6 +168,15 @@ func TestExternalBlocksToItemsTable(t *testing.T) {
 		td, _ := items[0]["table"].(*entity.TableData)
 		if td == nil || td.Caption != "Table 1" || items[0]["text"] != "a first\nb second" {
 			t.Fatalf("items = %v caption = %q, want the caption in TableData and the footnotes as note text", items, td.Caption)
+		}
+	})
+	t.Run("a table with no readable cells keeps its caption and footnotes", func(t *testing.T) {
+		items := externalBlockItems(t, ExternalBlockOptions{}, ExternalBlock{
+			Type: ExternalBlockTable, TableCells: [][]string{{"", " "}}, Captions: []string{"Table 1"}, Footnotes: []string{"a note"}, Page: 2,
+		})
+		want := map[string]any{"doc_type_kwd": "text", "layout": "table", "text": "Table 1\na note", "page_number": 2}
+		if len(items) != 1 || !reflect.DeepEqual(items[0], want) {
+			t.Fatalf("items = %v, want %v", items, want)
 		}
 	})
 	t.Run("free text keeps its caption and footnotes", func(t *testing.T) {

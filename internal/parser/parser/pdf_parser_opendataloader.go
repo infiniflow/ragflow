@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"ragflow/internal/common"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -188,7 +190,10 @@ func openDataLoaderBlock(el map[string]any) (ExternalBlock, bool) {
 		if strings.TrimSpace(block.HTML) == "" {
 			block.HTML = stringValue(el["html_content"])
 		}
-		block.TableCells = openDataLoaderCellRows(el["cells"])
+		// Markup wins over cells, so the cells are read only without it.
+		if strings.TrimSpace(block.HTML) == "" {
+			block.TableCells = openDataLoaderCellRows(el["cells"])
+		}
 	case "image", "picture", "figure":
 		block.Type = ExternalBlockFigure
 	case "formula", "equation":
@@ -296,10 +301,12 @@ func openDataLoaderCellRows(raw any) [][]string {
 	if len(rows) == 0 || maxRow < 0 {
 		return nil
 	}
+	// Walk the rows that exist, not every index up to the highest: one far-off
+	// row index must not become a scan of that length.
 	ordered := make([][]string, 0, len(rows))
-	for i := 0; i <= maxRow; i++ {
-		if cols, ok := rows[i]; ok {
-			ordered = append(ordered, cols)
+	for _, row := range slices.Sorted(maps.Keys(rows)) {
+		if row >= 0 {
+			ordered = append(ordered, rows[row])
 		}
 	}
 	return ordered

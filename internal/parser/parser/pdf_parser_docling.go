@@ -307,11 +307,13 @@ func doclingHasPositions(items []DocItem) bool {
 	return false
 }
 
-// doclingBlocks reads json_content into blocks in reading order. The body
-// tree gives that order and nests each caption under its table or picture; a
-// document without one is read as its flat element lists.
+// doclingBlocks reads json_content into blocks. The body tree gives the
+// reading order, which the blocks then declare authoritative so the chunker
+// does not sort a second column back between the lines of the first. A
+// document without a body tree is read as its flat element lists, whose order
+// says nothing about the page, so there the chunker's geometry order stands.
 func doclingBlocks(content map[string]any) []ExternalBlock {
-	nodes := map[string]map[string]any{}
+	walker := doclingWalker{nodes: map[string]map[string]any{}, seen: map[string]bool{}, owned: map[string]bool{}}
 	var listed []string
 	for _, key := range []string{"texts", "tables", "pictures", "groups"} {
 		entries, _ := content[key].([]any)
@@ -321,15 +323,22 @@ func doclingBlocks(content map[string]any) []ExternalBlock {
 				continue
 			}
 			ref := fmt.Sprintf("#/%s/%d", key, index)
-			nodes[ref] = node
+			walker.nodes[ref] = node
+			if key == "tables" || key == "pictures" {
+				for _, owned := range append(doclingRefs(node["captions"]), doclingRefs(node["footnotes"])...) {
+					walker.owned[owned] = true
+				}
+			}
 			if key != "groups" {
 				listed = append(listed, ref)
 			}
 		}
 	}
-	walker := doclingWalker{nodes: nodes, seen: map[string]bool{}}
 	if body, _ := content["body"].(map[string]any); len(doclingRefs(body["children"])) > 0 {
 		walker.children(body)
+		for i := range walker.blocks {
+			walker.blocks[i].PreserveOrder = true
+		}
 	} else {
 		for _, ref := range listed {
 			walker.visit(ref)
@@ -338,11 +347,14 @@ func doclingBlocks(content map[string]any) []ExternalBlock {
 	return walker.blocks
 }
 
-// doclingWalker visits each element once, so a caption attached to a table or
-// picture is not emitted again as body text.
+// doclingWalker visits each element once.
 type doclingWalker struct {
-	nodes  map[string]map[string]any
-	seen   map[string]bool
+	nodes map[string]map[string]any
+	seen  map[string]bool
+	// owned holds the captions and footnotes of tables and pictures. They are
+	// part of their owner wherever they sit in the document, and never body
+	// text of their own.
+	owned  map[string]bool
 	blocks []ExternalBlock
 }
 
@@ -354,13 +366,11 @@ func (w *doclingWalker) children(node map[string]any) {
 
 func (w *doclingWalker) visit(ref string) {
 	node := w.nodes[ref]
-	if node == nil || w.seen[ref] {
+	if node == nil || w.seen[ref] || w.owned[ref] {
 		return
 	}
 	w.seen[ref] = true
-	// Page furniture and background layers are not document content; the
-	// Markdown export leaves them out as well.
-	if layer := stringValue(node["content_layer"]); layer != "" && layer != "body" {
+	if !doclingIsContent(node) {
 		return
 	}
 	switch {
@@ -371,19 +381,12 @@ func (w *doclingWalker) visit(ref string) {
 		}
 		// An inline group is one paragraph that Docling split by formatting.
 		block := ExternalBlock{Type: ExternalBlockText}
-		for _, child := range doclingRefs(node["children"]) {
-			part := w.nodes[child]
-			if part == nil || w.seen[child] {
-				continue
-			}
-			w.seen[child] = true
-			block.Text = strings.TrimSpace(block.Text + " " + doclingText(part))
-			block.Regions = append(block.Regions, doclingRegions(part)...)
-			if block.Page == 0 {
-				block.Page = doclingPage(part)
-			}
-		}
+		var floats []string
+		w.inline(node, &block, &floats)
 		w.blocks = append(w.blocks, block)
+		for _, floatRef := range floats {
+			w.visit(floatRef)
+		}
 	case strings.HasPrefix(ref, "#/tables/"):
 		data, _ := node["data"].(map[string]any)
 		w.blocks = append(w.blocks, ExternalBlock{
@@ -410,23 +413,63 @@ func (w *doclingWalker) visit(ref string) {
 		// Text recognized inside the picture follows it as body text.
 		w.children(node)
 	default:
-		if block, ok := doclingTextBlock(node); ok {
-			w.blocks = append(w.blocks, block)
-		}
+		w.blocks = append(w.blocks, doclingTextBlock(node))
 		w.children(node)
 	}
 }
 
-// attached resolves caption or footnote references to their text and claims
-// the referenced elements for the table or picture.
+// inline gathers the text under an inline group into one paragraph, through
+// any groups nested in it. A table or picture cannot be part of a paragraph:
+// it is handed back in floats, to follow the paragraph as its own block.
+func (w *doclingWalker) inline(node map[string]any, block *ExternalBlock, floats *[]string) {
+	for _, ref := range doclingRefs(node["children"]) {
+		child := w.nodes[ref]
+		if child == nil || w.seen[ref] || w.owned[ref] {
+			continue
+		}
+		if strings.HasPrefix(ref, "#/tables/") || strings.HasPrefix(ref, "#/pictures/") {
+			*floats = append(*floats, ref)
+			continue
+		}
+		w.seen[ref] = true
+		if !doclingIsContent(child) {
+			continue
+		}
+		if strings.HasPrefix(ref, "#/texts/") {
+			block.Text = strings.TrimSpace(block.Text + " " + doclingText(child))
+			block.Regions = append(block.Regions, doclingRegions(child)...)
+			if block.Page == 0 {
+				block.Page = doclingPage(child)
+			}
+		}
+		w.inline(child, block, floats)
+	}
+}
+
+// doclingIsContent reports whether an element belongs to the document body.
+// Page furniture, background layers and running headers and footers do not;
+// the Markdown export leaves them out as well.
+func doclingIsContent(node map[string]any) bool {
+	if layer := stringValue(node["content_layer"]); layer != "" && layer != "body" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(stringValue(node["label"]))) {
+	case "page_header", "page_footer":
+		return false
+	}
+	return true
+}
+
+// attached resolves the caption or footnote references of a table or picture
+// to their text. It does not depend on what has been visited, so the owner
+// gets its caption whichever of the two comes first in the document.
 func (w *doclingWalker) attached(raw any) []string {
 	var texts []string
 	for _, ref := range doclingRefs(raw) {
 		node := w.nodes[ref]
-		if node == nil || w.seen[ref] {
+		if node == nil || !doclingIsContent(node) {
 			continue
 		}
-		w.seen[ref] = true
 		if text := doclingText(node); text != "" {
 			texts = append(texts, text)
 		}
@@ -437,11 +480,9 @@ func (w *doclingWalker) attached(raw any) []string {
 // doclingTextBlock maps a text element's label onto a block type. Labels that
 // carry no structure of their own (text, paragraph, caption, footnote,
 // reference, ...) are body text.
-func doclingTextBlock(node map[string]any) (ExternalBlock, bool) {
+func doclingTextBlock(node map[string]any) ExternalBlock {
 	block := ExternalBlock{Type: ExternalBlockText, Text: doclingText(node), Page: doclingPage(node), Regions: doclingRegions(node)}
 	switch strings.ToLower(strings.TrimSpace(stringValue(node["label"]))) {
-	case "page_header", "page_footer":
-		return ExternalBlock{}, false
 	case "title":
 		block.Type, block.HeadingLevel = ExternalBlockHeading, 1
 	case "section_header":
@@ -468,7 +509,7 @@ func doclingTextBlock(node map[string]any) (ExternalBlock, bool) {
 	case "formula":
 		block.Type = ExternalBlockEquation
 	}
-	return block, true
+	return block
 }
 
 // doclingText returns an element's text, falling back to the text as it was

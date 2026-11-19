@@ -551,6 +551,9 @@ func TestDoclingStructuredFollowsBodyTree(t *testing.T) {
 		if items[i]["page_number"] != 1 {
 			t.Errorf("item %d page_number = %v, want 1", i, items[i]["page_number"])
 		}
+		if items[i]["_preserve_order"] != true {
+			t.Errorf("item %d = %v, want the body order declared authoritative", i, items[i])
+		}
 	}
 	td, ok := items[1]["table"].(*entity.TableData)
 	if !ok || td == nil {
@@ -568,6 +571,121 @@ func TestDoclingStructuredFollowsBodyTree(t *testing.T) {
 	// The inline paragraph spans both of its fragments.
 	if rows, _ := ExtractPDFPositions(items[7]); len(rows) != 2 {
 		t.Errorf("inline paragraph positions = %v, want one row per fragment", rows)
+	}
+}
+
+// The body tree is Docling's reading order. On a two-column page it differs
+// from top-to-bottom order, which is how the chunker sorts positioned items
+// unless their order is declared authoritative. The flat element lists carry
+// no reading order, so there the chunker's own order stands.
+func TestDoclingStructuredDeclaresBodyOrderAuthoritative(t *testing.T) {
+	const texts = `"texts":[
+	  {"label":"text","text":"left column, top","prov":[{"page_no":1,"bbox":{"l":72,"t":100,"r":290,"b":120,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"text","text":"left column, bottom","prov":[{"page_no":1,"bbox":{"l":72,"t":600,"r":290,"b":620,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"text","text":"right column, top","prov":[{"page_no":1,"bbox":{"l":320,"t":90,"r":540,"b":110,"coord_origin":"TOPLEFT"}}]}
+	 ]`
+	items, _ := doclingStandardItems(t, "", `{"body":{"children":[{"$ref":"#/texts/0"},{"$ref":"#/texts/1"},{"$ref":"#/texts/2"}]},`+texts+`}`)
+	if len(items) != 3 || items[1]["text"] != "left column, bottom" || items[2]["text"] != "right column, top" {
+		t.Fatalf("items = %v, want the body order", items)
+	}
+	for i, item := range items {
+		if item["_preserve_order"] != true {
+			t.Errorf("item %d = %v, want _preserve_order so the right column is not sorted above the left", i, item)
+		}
+	}
+	items, _ = doclingStandardItems(t, "", `{`+texts+`}`)
+	for i, item := range items {
+		if _, ok := item["_preserve_order"]; ok {
+			t.Errorf("flat item %d = %v, want no order claim for element lists", i, item)
+		}
+	}
+}
+
+// An inline group is one paragraph. Its text may sit under a nested group, a
+// fragment that is page furniture or a running footer is not part of it, and
+// a picture among the fragments follows the paragraph as its own item.
+func TestDoclingStructuredInlineGroup(t *testing.T) {
+	prov := func(left int) string {
+		return fmt.Sprintf(`"prov":[{"page_no":1,"bbox":{"l":%d,"t":100,"r":%d,"b":115,"coord_origin":"TOPLEFT"}}]`, left, left+40)
+	}
+	items, _ := doclingStandardItems(t, "", `{
+	 "body":{"children":[{"$ref":"#/groups/0"},{"$ref":"#/texts/6"}]},
+	 "groups":[
+	  {"label":"inline","children":[{"$ref":"#/texts/0"},{"$ref":"#/groups/1"},{"$ref":"#/pictures/0"},{"$ref":"#/texts/3"},{"$ref":"#/texts/4"},{"$ref":"#/texts/5"}]},
+	  {"label":"unspecified","children":[{"$ref":"#/texts/1"},{"$ref":"#/texts/2"}]}
+	 ],
+	 "texts":[
+	  {"label":"text","text":"Energy is",`+prov(72)+`},
+	  {"label":"formula","text":"E = mc^2",`+prov(120)+`},
+	  {"label":"text","text":"exactly",`+prov(170)+`},
+	  {"label":"text","content_layer":"furniture","text":"DRAFT",`+prov(220)+`},
+	  {"label":"page_footer","text":"7",`+prov(270)+`},
+	  {"label":"text","text":"as shown.",`+prov(320)+`},
+	  {"label":"text","text":"Next paragraph.","prov":[{"page_no":1,"bbox":{"l":72,"t":300,"r":540,"b":320,"coord_origin":"TOPLEFT"}}]}
+	 ],
+	 "pictures":[{"label":"picture","prov":[{"page_no":1,"bbox":{"l":72,"t":130,"r":200,"b":200,"coord_origin":"TOPLEFT"}}]}]
+	}`)
+	if len(items) != 3 {
+		t.Fatalf("items = %v, want the paragraph, the picture and the next paragraph", items)
+	}
+	if items[0]["text"] != "Energy is E = mc^2 exactly as shown." || items[0]["layout"] != "text" {
+		t.Fatalf("paragraph = %v, want the nested fragments joined and the furniture left out", items[0])
+	}
+	rows, _ := ExtractPDFPositions(items[0])
+	if len(rows) != 4 {
+		t.Fatalf("paragraph positions = %v, want one row per body fragment", rows)
+	}
+	for _, row := range rows {
+		if left, _ := numericAny(row[1]); left == 220 || left == 270 {
+			t.Fatalf("paragraph positions = %v, want no region from the furniture or the footer", rows)
+		}
+	}
+	if items[1]["doc_type_kwd"] != "image" || !HasPDFCropRegion(items[1]) {
+		t.Fatalf("item 1 = %v, want the picture after the paragraph", items[1])
+	}
+	if items[2]["text"] != "Next paragraph." {
+		t.Fatalf("item 2 = %v, want the next paragraph", items[2])
+	}
+}
+
+// A caption or footnote belongs to its table or picture wherever it sits in
+// the document: listed before its owner in the flat element lists, or placed
+// ahead of it in the body tree. It is never emitted as a paragraph as well.
+func TestDoclingStructuredCaptionsStayWithTheirOwner(t *testing.T) {
+	const elements = `
+	 "texts":[
+	  {"label":"caption","text":"Table 1: totals","prov":[{"page_no":1,"bbox":{"l":72,"t":100,"r":540,"b":115,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"text","text":"Body.","prov":[{"page_no":1,"bbox":{"l":72,"t":60,"r":540,"b":80,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"footnote","text":"a Preliminary.","prov":[{"page_no":1,"bbox":{"l":72,"t":260,"r":540,"b":275,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"caption","text":"Figure 1: pipeline","prov":[{"page_no":1,"bbox":{"l":72,"t":480,"r":540,"b":495,"coord_origin":"TOPLEFT"}}]}
+	 ],
+	 "tables":[{"label":"table","captions":[{"$ref":"#/texts/0"}],"footnotes":[{"$ref":"#/texts/2"}],
+	  "prov":[{"page_no":1,"bbox":{"l":72,"t":120,"r":540,"b":250,"coord_origin":"TOPLEFT"}}],
+	  "data":{"grid":[[{"text":"Region"},{"text":"Total"}],[{"text":"North"},{"text":"42"}]]}}],
+	 "pictures":[{"label":"picture","captions":[{"$ref":"#/texts/3"}],
+	  "prov":[{"page_no":1,"bbox":{"l":72,"t":300,"r":540,"b":470,"coord_origin":"TOPLEFT"}}]}]`
+	for name, body := range map[string]string{
+		"flat element lists":             ``,
+		"caption ahead of its owner":     `"body":{"children":[{"$ref":"#/texts/1"},{"$ref":"#/texts/0"},{"$ref":"#/tables/0"},{"$ref":"#/texts/2"},{"$ref":"#/texts/3"},{"$ref":"#/pictures/0"}]},`,
+		"caption nested under its owner": `"body":{"children":[{"$ref":"#/texts/1"},{"$ref":"#/tables/0"},{"$ref":"#/pictures/0"}]},`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			items, _ := doclingStandardItems(t, "", `{`+body+elements+`}`)
+			type shape struct{ docType, text string }
+			want := []shape{{"text", "Body."}, {"table", ""}, {"text", "a Preliminary."}, {"image", "Figure 1: pipeline"}}
+			if len(items) != len(want) {
+				t.Fatalf("items = %v, want %d (no caption as a paragraph of its own)", items, len(want))
+			}
+			for i, w := range want {
+				text, _ := items[i]["text"].(string)
+				if items[i]["doc_type_kwd"] != w.docType || text != w.text {
+					t.Errorf("item %d = %v, want %+v", i, items[i], w)
+				}
+			}
+			if td, _ := items[1]["table"].(*entity.TableData); td == nil || td.Caption != "Table 1: totals" {
+				t.Errorf("table = %v, want its caption attached", items[1])
+			}
+		})
 	}
 }
 

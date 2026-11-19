@@ -107,8 +107,10 @@ type ExternalBlockOptions struct {
 	// ReorderEdges swaps inverted edges of a box instead of rejecting the
 	// box, for services that do not fix the order of the corners.
 	ReorderEdges bool
-	// KeepUnscaled keeps the reported box when the scale of its page is
-	// unknown, instead of dropping it.
+	// KeepUnscaled keeps the reported box, in the service's own units, when
+	// the scale of its page is unknown, instead of dropping it. A BottomLeft
+	// box is kept only when the source height is known, because that height
+	// is what turns its origin.
 	KeepUnscaled bool
 	// FigurePlaceholder is the text given to a figure that has none. When it
 	// is empty, a figure without text is kept only if it has a region to
@@ -226,7 +228,11 @@ func externalTableItem(block ExternalBlock, text string) map[string]any {
 		text = markup
 	}
 	if text == "" {
-		return nil
+		// No cells were read: the caption and footnotes are all the region has.
+		if text = joinExternalText("", block.Captions, block.Footnotes); text == "" {
+			return nil
+		}
+		return map[string]any{"text": text, "doc_type_kwd": "text", "layout": "table"}
 	}
 	item := map[string]any{"text": text, "doc_type_kwd": pdfTableDocType(text), "layout": "table"}
 	projectPDFTable(item)
@@ -359,6 +365,14 @@ func (s *externalBlockSpace) position(region ExternalRegion) []any {
 			x0, x1 = x0*size[0]/source[0], x1*size[0]/source[0]
 			y0, y1 = y0*size[1]/source[1], y1*size[1]/source[1]
 		case s.opts.KeepUnscaled:
+			if region.BottomLeft {
+				// The box stays in the service's space, so only that space's
+				// height can turn its origin.
+				if !sourced {
+					return nil
+				}
+				y0, y1 = source[1]-y1, source[1]-y0
+			}
 			return []any{page, x0, x1, y0, y1}
 		default:
 			return nil

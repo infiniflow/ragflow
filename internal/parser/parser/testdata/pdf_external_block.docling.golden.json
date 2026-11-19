@@ -11,6 +11,7 @@
           82
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "text",
       "heading_level": 1,
       "layout": "heading",
@@ -36,6 +37,7 @@
           122
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "text",
       "heading_level": 2,
       "layout": "heading",
@@ -61,6 +63,7 @@
           192
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 1,
@@ -85,6 +88,7 @@
           217
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "text",
       "layout": "list",
       "page_number": 1,
@@ -109,6 +113,7 @@
           237
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "text",
       "layout": "list",
       "page_number": 1,
@@ -133,6 +138,7 @@
           392
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "table",
       "layout": "table",
       "page_number": 1,
@@ -189,6 +195,7 @@
       }
     },
     {
+      "_preserve_order": true,
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 1,
@@ -204,6 +211,7 @@
           572
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "image",
       "layout": "figure",
       "page_number": 1,
@@ -228,6 +236,7 @@
           507
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 1,
@@ -259,6 +268,7 @@
           120
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 1,
@@ -290,6 +300,7 @@
           170
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "text",
       "layout": "equation",
       "page_number": 2,
@@ -314,6 +325,7 @@
           220
         ]
       ],
+      "_preserve_order": true,
       "doc_type_kwd": "text",
       "layout": "code",
       "page_number": 2,

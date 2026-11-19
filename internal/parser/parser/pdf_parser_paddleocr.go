@@ -57,17 +57,19 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 	opts := ExternalBlockOptions{
 		Provider:        provider,
 		PageSizes:       externalPageSizes(sizes),
-		SourceSizes:     make(map[int][2]float64, len(response.Pages)),
 		AspectTolerance: ocrAspectTolerance,
 	}
-	var blocks []ExternalBlock
-	var markdownWarnings []string
 	for _, page := range response.Pages {
 		pageNumber := page.Index + 1
 		if !hasPageCount && pageNumber > pageCount {
 			pageCount = pageNumber
 		}
-		opts.SourceSizes[pageNumber] = [2]float64{page.Width, page.Height}
+		// Each page entry is its own raster and is converted on its own, so a
+		// response that repeats a page index cannot scale one entry's blocks
+		// by another entry's raster.
+		opts.SourceSizes = map[int][2]float64{pageNumber: {page.Width, page.Height}}
+		var blocks []ExternalBlock
+		var markdownWarnings []string
 		for _, ocrBlock := range page.Blocks {
 			if err := ctx.Err(); err != nil {
 				return ParseResult{Err: err}
@@ -99,16 +101,16 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 				blocks = append(blocks, block)
 			}
 		}
+		items, placementWarnings := ExternalBlocksToItems(blocks, opts)
+		result.JSON = append(result.JSON, items...)
+		result.Warnings = append(append(result.Warnings, placementWarnings...), markdownWarnings...)
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
-	items, placementWarnings := ExternalBlocksToItems(blocks, opts)
-	if len(items) == 0 {
+	if len(result.JSON) == 0 {
 		return ParseResult{Err: fmt.Errorf("parser: %s returned empty text", provider)}
 	}
-	result.JSON = items
-	result.Warnings = append(append(result.Warnings, placementWarnings...), markdownWarnings...)
 	result.File = pdfFileMeta(filename, pageCount)
 	return result
 }
