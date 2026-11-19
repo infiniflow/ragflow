@@ -416,15 +416,42 @@ func takesValue(wrapper, name string) bool {
 
 // isCommandSeparator reports whether the byte at pos ends a shell command
 // outside quotes; the same bytes inside quotes are ordinary data. `)` ends a
-// function-body header (`f() { rm ...; }`), where the command that follows
-// starts a new command.
+// function-body header (`f() { rm ...; }`) or a case pattern
+// (`case x) rm ...;;`), but a `)` closing a `$(` command substitution keeps
+// the words that follow in the outer command's argument position
+// (`echo $(printf ok) rm ...`).
 func isCommandSeparator(line string, pos int, code []bool) bool {
 	if !code[pos] {
 		return false
 	}
 	switch line[pos] {
-	case ';', '|', '&', '(', ')':
+	case ';', '|', '&', '(':
 		return true
+	case ')':
+		return !closesCommandSubstitution(line, pos, code)
+	}
+	return false
+}
+
+// closesCommandSubstitution reports whether the `)` at pos closes a `$(` span.
+// The matching `(` is found by walking back over nested parentheses; when the
+// byte before it is `$` the `)` belongs to a command substitution (or an
+// arithmetic expansion) and does not start a new command position.
+func closesCommandSubstitution(line string, pos int, code []bool) bool {
+	depth := 0
+	for i := pos - 1; i >= 0; i-- {
+		if !code[i] {
+			continue
+		}
+		switch line[i] {
+		case ')':
+			depth++
+		case '(':
+			if depth == 0 {
+				return i > 0 && line[i-1] == '$'
+			}
+			depth--
+		}
 	}
 	return false
 }
