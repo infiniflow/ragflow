@@ -243,7 +243,7 @@ const Login = () => {
 
   const FormSchema = z
     .object({
-      nickname: z.string().optional(),
+      nickname: z.string().default(''),
       email: z
         .string()
         .email()

@@ -5,6 +5,7 @@ import classNames from 'classnames';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import FormatPreserEditor from './components/parse-editer';
+import type { ParserEditorValue } from './components/parse-editer/interface';
 import { TimelineNodeType } from './constant';
 import { useChangeChunkTextMode } from './hooks';
 import { IChunk, IDslComponent } from './interface';
@@ -21,24 +22,22 @@ const ParserContainer = (props: IProps) => {
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const [newChunkIndex, setNewChunkIndex] = useState<number | undefined>();
   const { textMode } = useChangeChunkTextMode();
-  const initialValue = useMemo(() => {
-    const outputs = data?.value?.obj?.params?.outputs;
+  const initialValue = useMemo<ParserEditorValue | undefined>(() => {
+    const params = data?.value?.obj?.params;
+    const outputs = params?.outputs;
     const key = outputs?.output_format?.value;
-    if (!outputs || !key)
-      return {
-        key: '' as 'text' | 'html' | 'json' | 'chunks',
-        type: '',
-        value: [],
-      };
-    const value = outputs[key as keyof typeof outputs]?.value;
-    const type = outputs[key as keyof typeof outputs]?.type;
-    console.log('outputs-->', outputs, data, key, value);
-    return {
-      key: key as 'text' | 'html' | 'json' | 'chunks',
-      type,
-      value,
-      params: data?.value?.obj?.params,
-    };
+    if (!params || !outputs || !key) return;
+
+    const { value, type = '' } = outputs[key] ?? {};
+    if ((key === 'json' || key === 'chunks') && Array.isArray(value)) {
+      return { key, type, value, params };
+    }
+    if (
+      (key === 'text' || key === 'html' || key === 'markdown') &&
+      typeof value === 'string'
+    ) {
+      return { key, type, value, params };
+    }
   }, [data]);
 
   const [initialText, setInitialText] = useState(initialValue);
@@ -46,7 +45,7 @@ const ParserContainer = (props: IProps) => {
   useEffect(() => {
     setInitialText(initialValue);
   }, [initialValue]);
-  const handleSave = (newContent: any) => {
+  const handleSave = (newContent: ParserEditorValue) => {
     console.log('newContent-change-->', newContent, initialValue);
     if (JSON.stringify(newContent) !== JSON.stringify(initialValue)) {
       setInitialText(newContent);
@@ -119,10 +118,6 @@ const ParserContainer = (props: IProps) => {
               isReadonly={isReadonly}
               isChunck={isChunck}
               textMode={textMode}
-              isDelete={
-                step?.type === TimelineNodeType.tokenChunker ||
-                step?.type === TimelineNodeType.titleChunker
-              }
               clickChunk={clickChunk}
               handleCheckboxClick={handleCheckboxClick}
               selectedChunkIds={selectedChunkIds}

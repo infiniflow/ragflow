@@ -26,7 +26,7 @@ type StructuredOutputSecondaryMenuProps = {
   className?: string;
   data: DataItem;
   click(option: { label: ReactNode; value: string }): void;
-  types?: JsonSchemaDataType[];
+  types?: string[];
 } & PropsWithChildren;
 
 export const StructuredOutputSecondaryMenu = forwardRef(

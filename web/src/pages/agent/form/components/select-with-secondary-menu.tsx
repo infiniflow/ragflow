@@ -23,7 +23,6 @@ import { ChevronDownIcon, XIcon } from 'lucide-react';
 import * as React from 'react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { JsonSchemaDataType } from '../../constant';
 import {
   useFindAgentStructuredOutputLabel,
   useShowSecondaryMenu,
@@ -38,7 +37,7 @@ type Item = {
 type Option = {
   label: string;
   value: string;
-  parentLabel?: string;
+  parentLabel?: React.ReactNode;
   children?: Item[];
 };
 
@@ -55,7 +54,7 @@ interface GroupedSelectWithSecondaryMenuProps extends Omit<
   value?: string;
   onChange?: (value: string) => void;
   placeholder?: string;
-  types?: JsonSchemaDataType[];
+  types?: string[];
 }
 
 export const GroupedSelectWithSecondaryMenu = React.forwardRef<

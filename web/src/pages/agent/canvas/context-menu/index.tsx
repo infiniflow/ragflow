@@ -76,24 +76,10 @@ export const useHandleNodeContextMenu = (sideWidth: number) => {
       // Prevent native context menu from showing
       event.preventDefault();
 
-      // Calculate position of the context menu. We want to make sure it
-      // doesn't get positioned off-screen.
-      const pane = ref.current?.getBoundingClientRect();
-      // setMenu({
-      //   id: node.id,
-      //   top: event.clientY < pane.height - 200 ? event.clientY : 0,
-      //   left: event.clientX < pane.width - 200 ? event.clientX : 0,
-      //   right: event.clientX >= pane.width - 200 ? pane.width - event.clientX : 0,
-      //   bottom:
-      //     event.clientY >= pane.height - 200 ? pane.height - event.clientY : 0,
-      // });
-
       setMenu({
         id: node.id,
         top: event.clientY - 144,
         left: event.clientX - sideWidth,
-        // top: event.clientY < pane.height - 200 ? event.clientY - 72 : 0,
-        // left: event.clientX < pane.width - 200 ? event.clientX : 0,
       });
     },
     [sideWidth],

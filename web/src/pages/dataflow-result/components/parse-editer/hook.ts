@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { IJsonContainerProps, IObjContainerProps } from './interface';
+import { ParserEditorValue } from './interface';
 
-export const useParserInit = ({
+export const useParserInit = <Value extends ParserEditorValue>({
   initialValue,
 }: {
-  initialValue:
-    | IJsonContainerProps['initialValue']
-    | IObjContainerProps['initialValue'];
+  initialValue: Value;
 }) => {
   const [content, setContent] = useState(initialValue);
 

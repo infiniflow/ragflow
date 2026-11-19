@@ -152,7 +152,6 @@ export interface SavedModeCardProps {
   formFields: FormFieldConfig[];
   formDefaultValues: Record<string, any>;
   formRef: RefObject<DynamicFormRef>;
-  handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
   /** Persist this card's instance (header Save button). */
   handleSave: () => Promise<void>;
@@ -162,14 +161,6 @@ export interface SavedModeCardProps {
   providerName: string;
   /** Persisted instance name (from the backend). */
   instanceName: string;
-  /**
-   * The instance name currently displayed (may differ from `instanceName`
-   * when the user has renamed via double-click). Falls back to
-   * `instanceName` when not set.
-   */
-  editedInstanceName: string;
-  /** Commit a rename: updates the card's edited-name state. */
-  onRename: (name: string) => void;
   instance: IProviderInstance;
   instanceDetailsLoaded: boolean;
   modelInfoRef: React.MutableRefObject<IModelInfo[]>;
@@ -186,7 +177,6 @@ export interface DraftModeCardProps {
   formFields: FormFieldConfig[];
   formDefaultValues: Record<string, any>;
   formRef: RefObject<DynamicFormRef>;
-  handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
   /** Persist this card's instance (header Save button). */
   handleSave: () => Promise<void>;

@@ -12,11 +12,9 @@ export interface ComponentParams {
   max_retries: number;
   message_history_window_size: number;
   outputs: {
-    _created_time: Record<string, any>;
-    _elapsed_time: Record<string, any>;
-    name: Record<string, any>;
-    output_format: { type: string; value: string };
-    json: { type: string; value: string };
+    [key: string]: { type?: string; value?: unknown } | undefined;
+    _elapsed_time?: { type?: string; value?: number | string };
+    output_format?: { type?: string; value?: string };
   };
   persist_logs: boolean;
   timeout: number;

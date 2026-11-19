@@ -1,13 +1,19 @@
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { isArray } from 'lodash';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  type FocusEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import { ChunkTextMode } from '../../constant';
 import styles from '../../index.module.less';
 import { IChunk } from '../../interface';
 import { useParserInit } from './hook';
 import { IJsonContainerProps } from './interface';
-export const parserKeyMap = {
+const parserKeyMap = {
   json: 'text',
   chunks: 'text',
 } as const;
@@ -35,35 +41,26 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
     const key =
       content.key === 'chunks' && content.params.field_name
         ? content.params.field_name
-        : parserKeyMap[content.key as keyof typeof parserKeyMap];
+        : parserKeyMap[content.key];
     return key;
   }, [content]);
 
   const handleEdit = useCallback(
-    (e?: any, index?: number) => {
+    (_event?: unknown, index?: number) => {
       setActiveEditIndex(index);
     },
     [setActiveEditIndex],
   );
 
   const handleSave = useCallback(
-    (e: any) => {
-      if (Array.isArray(content.value)) {
-        const saveData = {
-          ...content,
-          value: content.value?.map((item, index) => {
-            if (index === activeEditIndex) {
-              return {
-                ...item,
-                [parserKey]: e.target.textContent || '',
-              };
-            } else {
-              return item;
-            }
-          }),
-        };
-        onSave(saveData as any);
-      }
+    (event: FocusEvent<HTMLDivElement>) => {
+      const text = event.currentTarget.textContent ?? '';
+      onSave({
+        ...content,
+        value: content.value.map((item, index) =>
+          index === activeEditIndex ? { ...item, [parserKey]: text } : item,
+        ),
+      });
       setActiveEditIndex(undefined);
     },
     [content, onSave, activeEditIndex, parserKey, setActiveEditIndex],
@@ -72,10 +69,8 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
   useEffect(() => {
     if (activeEditIndex !== undefined && editDivRef.current) {
       editDivRef.current.focus();
-      if (typeof content.value !== 'string') {
-        editDivRef.current.textContent =
-          content.value[activeEditIndex][parserKey];
-      }
+      editDivRef.current.textContent =
+        content.value[activeEditIndex]?.[parserKey] ?? '';
     }
   }, [editDivRef, activeEditIndex, content, parserKey]);
 
@@ -109,11 +104,7 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
     <>
       {isArray(content.value) &&
         content.value?.map((item, index) => {
-          if (
-            item[parserKeyMap[content.key as keyof typeof parserKeyMap]] ===
-              '' ||
-            !item[parserKey]
-          ) {
+          if (item[parserKeyMap[content.key]] === '' || !item[parserKey]) {
             return null;
           }
           return (

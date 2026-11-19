@@ -145,9 +145,8 @@ export const AddCustomModelDialog = ({
           name: `__section_${field.name}`,
           label: field.label,
           type: FormFieldType.Custom,
-          hideLabel: true,
           schema: z.any().optional(),
-          render: () => (
+          renderStatic: () => (
             <div className="text-sm font-semibold text-muted-foreground border-b pb-1 mt-4">
               {field.label}
             </div>

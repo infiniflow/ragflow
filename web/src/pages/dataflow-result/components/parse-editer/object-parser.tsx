@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { useCallback, useEffect } from 'react';
+import { type FocusEvent, useCallback, useEffect } from 'react';
 import { ChunkTextMode } from '../../constant';
 import styles from '../../index.module.less';
 import { IChunk } from '../../interface';
@@ -16,27 +16,18 @@ export const ObjectContainer = (props: IObjContainerProps) => {
     isReadonly,
   } = props;
 
-  const {
-    content,
-    // setContent,
-    activeEditIndex,
-    setActiveEditIndex,
-    editDivRef,
-  } = useParserInit({ initialValue });
+  const { content, activeEditIndex, setActiveEditIndex, editDivRef } =
+    useParserInit({ initialValue });
 
   const handleEdit = useCallback(() => {
-    // setContent((pre) => ({
-    //   ...pre,
-    //   value: escapeNewlines(e.target.innerText),
-    // }));
     setActiveEditIndex(1);
   }, [setActiveEditIndex]);
 
   const handleSave = useCallback(
-    (e: any) => {
+    (event: FocusEvent<HTMLDivElement>) => {
       const saveData = {
         ...content,
-        value: e.target.textContent,
+        value: event.currentTarget.textContent ?? '',
       };
       onSave(saveData);
       setActiveEditIndex(undefined);
@@ -47,7 +38,7 @@ export const ObjectContainer = (props: IObjContainerProps) => {
   useEffect(() => {
     if (activeEditIndex !== undefined && editDivRef.current) {
       editDivRef.current.focus();
-      editDivRef.current.textContent = content.value as string;
+      editDivRef.current.textContent = content.value;
       editDivRef.current.style.whiteSpace = 'pre-wrap';
     }
   }, [activeEditIndex, content, editDivRef]);
@@ -87,7 +78,7 @@ export const ObjectContainer = (props: IObjContainerProps) => {
               }
             }}
           >
-            {content.value as string}
+            {content.value}
           </div>
         )}
       </section>

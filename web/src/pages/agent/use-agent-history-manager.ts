@@ -8,7 +8,6 @@ export class HistoryManager {
   private readonly maxSize: number = 50; // Limit maximum number of history records
   private setNodes: (nodes: any[]) => void;
   private setEdges: (edges: any[]) => void;
-  private lastSavedState: string = ''; // Used to compare if state has changed
 
   constructor(
     setNodes: (nodes: any[]) => void,
@@ -55,9 +54,6 @@ export class HistoryManager {
     } else {
       this.currentIndex = this.history.length - 1;
     }
-
-    // Update last saved state
-    this.lastSavedState = JSON.stringify(currentState);
   }
 
   undo() {
@@ -95,7 +91,6 @@ export class HistoryManager {
   reset() {
     this.history = [];
     this.currentIndex = -1;
-    this.lastSavedState = '';
   }
 }
 

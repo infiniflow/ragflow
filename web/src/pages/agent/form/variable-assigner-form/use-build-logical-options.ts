@@ -26,7 +26,7 @@ export function useBuildLogicalOptions() {
   );
 
   const buildLogicalOptions = useCallback(
-    (type: string) => {
+    (type?: string) => {
       if (
         type?.toLowerCase().startsWith(JsonSchemaDataType.Array.toLowerCase())
       ) {

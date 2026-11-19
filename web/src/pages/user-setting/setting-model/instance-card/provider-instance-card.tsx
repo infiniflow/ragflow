@@ -44,7 +44,6 @@ import {
   useLazyInstanceDetails,
   useProviderBaseUrlOptions,
   useProviderInitialValues,
-  useVerifyProvider,
 } from './hooks';
 import {
   ProviderInstanceCardProps,
@@ -100,12 +99,6 @@ const GenericProviderInstanceCard = forwardRef<
     providerConfig.defaultInstanceName ?? '',
   );
   const [draftNameError, setDraftNameError] = useState('');
-  // For saved cards: the instance name as shown in the UI. Initialized
-  // from the persisted name and updated when the user double-clicks the
-  // name to rename it. Persisted via the card's Save button.
-  const [editedInstanceName, setEditedInstanceName] = useState(
-    instance.instance_name,
-  );
   const formRef = useRef<DynamicFormRef>(null);
   // Mirror of the per-instance model list - written by ModelsSection
   // via `setModelInfo`, read by the payload builder.
@@ -124,14 +117,6 @@ const GenericProviderInstanceCard = forwardRef<
     setDraftName(name);
     setDraftNameError('');
   }, []);
-
-  // Reset the edited name when the persisted instance changes (e.g.
-  // after a successful rename + refetch, or when switching providers).
-  useEffect(() => {
-    if (!isDraft) {
-      setEditedInstanceName(instance.instance_name);
-    }
-  }, [instance.instance_name, isDraft]);
 
   // ── Data fetching ────────────────────────────────────────────────
   const { instanceNameSet } = useFetchInstanceNameSet(
@@ -171,14 +156,6 @@ const GenericProviderInstanceCard = forwardRef<
   );
 
   // ── Action handlers ─────────────────────────────────────────────
-  const handleVerify = useVerifyProvider(
-    providerName,
-    formRef,
-    providerConfig.verifyTransform,
-    modelInfoRef,
-    isDraft ? undefined : instance.id,
-    isDraft ? undefined : { ...instance, ...(instanceDetails ?? {}) },
-  );
   const handleDelete = useDeleteInstance(
     providerName,
     instance.instance_name,
@@ -191,7 +168,6 @@ const GenericProviderInstanceCard = forwardRef<
     formRef,
     providerName,
     instanceName: instance.instance_name,
-    editedInstanceName,
     instanceId: instance.id,
     isDraft,
     draftName,
@@ -262,7 +238,6 @@ const GenericProviderInstanceCard = forwardRef<
           formFields={formFields}
           formDefaultValues={formDefaultValues}
           formRef={formRef}
-          handleVerify={handleVerify}
           handleDelete={handleDelete}
           handleSave={handleSave}
           saving={saving}
@@ -281,15 +256,12 @@ const GenericProviderInstanceCard = forwardRef<
           formFields={formFields}
           formDefaultValues={formDefaultValues}
           formRef={formRef}
-          handleVerify={handleVerify}
           handleDelete={handleDelete}
           handleSave={handleSave}
           saving={saving}
           handleInstanceModelsEdited={markModelsEdited}
           providerName={providerName}
           instanceName={instance.instance_name}
-          editedInstanceName={editedInstanceName}
-          onRename={setEditedInstanceName}
           instance={{ ...instance, ...(instanceDetails ?? {}) }}
           instanceDetailsLoaded={Boolean(instanceDetails)}
           modelInfoRef={modelInfoRef}

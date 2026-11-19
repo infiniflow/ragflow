@@ -143,9 +143,7 @@ export function DynamicVariables({
         logicalOperator === VariableAssignerLogicalOperator.Overwrite ||
         VariableAssignerLogicalArrayOperator.Extend === logicalOperator
       ) {
-        return (
-          <QueryVariable types={[type]} hideLabel pureQuery></QueryVariable>
-        );
+        return <QueryVariable types={[type ?? '']} hideLabel pureQuery />;
       } else if (logicalOperator === VariableAssignerLogicalOperator.Set) {
         if (type === JsonSchemaDataType.Boolean) {
           return <RadioButton></RadioButton>;
@@ -177,7 +175,7 @@ export function DynamicVariables({
             // A bare `array` type carries no element type; filtering by the
             // empty string would hide every option. The backend accepts any
             // element for an empty list, so leave the options unfiltered.
-            types={subType ? [subType as JsonSchemaDataType] : []}
+            types={subType ? [subType] : []}
             hideLabel
             pureQuery
           ></QueryVariable>

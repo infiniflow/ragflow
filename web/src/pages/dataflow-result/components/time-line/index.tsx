@@ -19,7 +19,7 @@ const TimelineDataFlow = ({
     const index = timelineNodes.findIndex((node) => node.id === activeId);
     return index > -1 ? index + 1 : 0;
   }, [activeId, timelineNodes]);
-  const handleStepChange = (step: number, id: string | number) => {
+  const handleStepChange = (_step: number, id: string | number) => {
     activeFunc?.(
       id,
       timelineNodes.find((node) => node.id === activeStep) as TimelineNode,

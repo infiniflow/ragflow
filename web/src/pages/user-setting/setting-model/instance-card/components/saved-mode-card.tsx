@@ -22,21 +22,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Input } from '@/components/ui/input';
-import { LLMFactory } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { ListChevronsDownUp, ListChevronsUpDown, Trash2 } from 'lucide-react';
-import {
-  KeyboardEvent,
-  useEffect,
-  useRef,
-  useState,
-  type RefObject,
-} from 'react';
+import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DRAFT_INSTANCE_SENTINEL, SavedModeCardProps } from '../interface';
 import { ModelsSection } from '../models-section';
-import VerifyButton from '../verify-button';
 import { InstanceSaveButton } from './instance-save-button';
 import { cn } from '@/lib/utils';
 
@@ -44,9 +35,8 @@ import { cn } from '@/lib/utils';
  * The saved (non-draft) variant of the provider instance card.
  *
  * Renders a Collapsible whose trigger shows a chevron toggle + the
- * instance name (double-click to rename) + delete and Save buttons, and
- * whose content holds the form fields, the verify button, and (when
- * expanded) the per-instance models section.
+ * instance name + delete and Save buttons, followed by the form fields
+ * and per-instance models section.
  *
  * The header Save button persists only this instance.
  */
@@ -54,15 +44,12 @@ export function SavedModeCard({
   formFields,
   formDefaultValues,
   formRef,
-  handleVerify,
   handleDelete,
   handleSave,
   saving,
   handleInstanceModelsEdited,
   providerName,
   instanceName,
-  editedInstanceName,
-  onRename,
   instance,
   instanceDetailsLoaded,
   modelInfoRef,
@@ -74,62 +61,6 @@ export function SavedModeCard({
 }: SavedModeCardProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
-
-  // Inline rename state: when true, the name turns into an editable
-  // Input. The user double-clicks the name to enter rename mode,
-  // commits on Enter/blur, cancels on Escape.
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(editedInstanceName);
-  const renameInputRef = useRef<HTMLInputElement>(null);
-
-  // Sync the rename buffer when the displayed name changes externally
-  // (e.g. after a successful save + refetch).
-  useEffect(() => {
-    setRenameValue(editedInstanceName);
-  }, [editedInstanceName]);
-
-  // Focus + select-all when entering rename mode.
-  useEffect(() => {
-    if (renaming) {
-      const id = requestAnimationFrame(() => {
-        renameInputRef.current?.focus();
-        renameInputRef.current?.select();
-      });
-      return () => cancelAnimationFrame(id);
-    }
-  }, [renaming]);
-
-  const startRename = () => {
-    setRenameValue(editedInstanceName);
-    setRenaming(true);
-  };
-
-  const commitRename = () => {
-    setRenaming(false);
-    const trimmed = renameValue.trim();
-    if (trimmed && trimmed !== editedInstanceName) {
-      onRename(trimmed);
-    } else {
-      setRenameValue(editedInstanceName);
-    }
-  };
-
-  const cancelRename = () => {
-    setRenaming(false);
-    setRenameValue(editedInstanceName);
-  };
-
-  const handleRenameKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      commitRename();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      cancelRename();
-    }
-  };
-
-  const displayName = editedInstanceName || instanceName;
 
   return (
     <Collapsible
@@ -159,34 +90,19 @@ export function SavedModeCard({
                 <ListChevronsUpDown className="size-4" />
               )}
             </Button>
-            {renaming ? (
-              <Input
-                ref={renameInputRef}
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onBlur={commitRename}
-                onKeyDown={handleRenameKeyDown}
-                onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => e.stopPropagation()}
-                className="text-sm font-medium h-7"
-                data-testid="instance-name-rename-input"
-              />
-            ) : (
-              <div
-                className={cn(
-                  'text-sm font-medium truncate overflow-hidden flex-1 cursor-text hover:text-text-primary',
-                  open ? 'text-text-primary' : 'text-text-secondary',
-                )}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  // startRename();
-                }}
-                title={tSetting('editInstanceName')}
-                data-testid="instance-name-static"
-              >
-                {draftName || displayName}
-              </div>
-            )}
+            <div
+              className={cn(
+                'text-sm font-medium truncate overflow-hidden flex-1 cursor-text hover:text-text-primary',
+                open ? 'text-text-primary' : 'text-text-secondary',
+              )}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+              }}
+              title={tSetting('editInstanceName')}
+              data-testid="instance-name-static"
+            >
+              {draftName || instanceName}
+            </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <ConfirmDeleteDialog onOk={handleDelete}>
@@ -215,16 +131,6 @@ export function SavedModeCard({
             labelClassName="font-normal"
             resetOptions={{ keepDirtyValues: true, keepErrors: true }}
           />
-
-          {/* {providerName !== LLMFactory.OpenAiAPICompatible && (
-            <div className="pt-3">
-              <VerifyButton
-                onVerify={handleVerify}
-                isAbsolute={false}
-                formRef={formRef}
-              />
-            </div>
-          )} */}
 
           {open && (
             <div className="pt-3">

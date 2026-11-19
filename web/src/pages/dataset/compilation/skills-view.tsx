@@ -11,7 +11,6 @@ import {
   useTraceRunData,
 } from '@/hooks/use-dataset-generate';
 import { DatasetSkillKeys } from '@/hooks/use-dataset-skill-request';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { useParams } from 'react-router';
@@ -26,7 +25,6 @@ import { SkillsLeftPanel } from './skills-left-panel';
 export function SkillsView() {
   const { id } = useParams();
   const queryClient = useQueryClient();
-  const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
   const {
     selectedSkill,
     setSelectedSkill,
@@ -45,7 +43,6 @@ export function SkillsView() {
   }, [queryClient, id]);
   useRunEndEffect(skillStatus, handleRunEnd);
 
-  const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
   const isLoading = skillTreeLoading && !skillTree?.skill_with_weight?.length;
   const isEmpty = !skillTree?.skill_with_weight?.length && !skillTreeLoading;
 
@@ -54,13 +51,7 @@ export function SkillsView() {
   }
 
   if (isEmpty) {
-    return (
-      <CompilationEmptyState
-        type={ViewMode.Skills}
-        disabled={!canGenerate}
-        data={skillRunData}
-      />
-    );
+    return <CompilationEmptyState type={ViewMode.Skills} data={skillRunData} />;
   }
 
   return (

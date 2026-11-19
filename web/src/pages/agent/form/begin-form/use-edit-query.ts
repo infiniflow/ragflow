@@ -16,7 +16,7 @@ export const useEditQueryRecord = ({
   });
 
   const otherThanCurrentQuery = useMemo(() => {
-    return inputs.filter((item, idx) => idx !== index);
+    return inputs.filter((_, idx) => idx !== index);
   }, [index, inputs]);
 
   const handleEditRecord = useCallback(
@@ -48,7 +48,7 @@ export const useEditQueryRecord = ({
     (idx: number) => {
       const inputs = form?.getValues('inputs') || [];
       const nextInputs = inputs.filter(
-        (item: BeginQuery, index: number) => index !== idx,
+        (_: BeginQuery, index: number) => index !== idx,
       );
 
       form.setValue('inputs', nextInputs);

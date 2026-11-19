@@ -1,6 +1,5 @@
 import { AgentGlobals, AgentStructuredOutputField } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
-import { DefaultOptionType } from '@/interfaces/antd-compat';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   buildNodeOutputOptions,
@@ -12,14 +11,20 @@ import { t } from 'i18next';
 import { flatten, isEmpty, toLower } from 'lodash';
 import get from 'lodash/get';
 import { MessageSquareCode } from 'lucide-react';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   AgentDialogueMode,
   AgentVariableType,
   BeginId,
   BeginQueryType,
   BeginQueryTypeMap,
-  JsonSchemaDataType,
   Operator,
   VariableType,
 } from '../constant';
@@ -194,10 +199,22 @@ function splitOperatorOutputValue(value?: string) {
   return { nodeId, output };
 }
 
+type VariableOption = {
+  label: string;
+  value: string;
+  parentLabel?: ReactNode;
+  icon?: ReactNode;
+  type?: string;
+};
+
+type VariableOptionGroup = {
+  label: ReactNode;
+  title?: string;
+  options: VariableOption[];
+};
+
 function filterDocGeneratorDownloadOutputOptions(
-  groups: Array<{
-    options: Array<{ value?: string } & Record<string, any>>;
-  }>,
+  groups: VariableOptionGroup[],
   allowDocGeneratorDownloadOutput: boolean,
   getOperatorTypeFromId: (nodeId?: string) => string | undefined,
 ) {
@@ -368,7 +385,7 @@ export function useFilterQueryVariableOptionsByTypes({
   nodeIds = [],
   variablesExceptOperatorOutputs,
 }: {
-  types?: (JsonSchemaDataType | VariableType)[];
+  types?: string[];
 } & BuildQueryVariableOptions) {
   const nextOptions = useBuildQueryVariableOptions({
     nodeIds,
@@ -457,11 +474,7 @@ export function useBuildComponentIdAndBeginOptions(
 export const useGetComponentLabelByValue = (nodeId: string) => {
   const options = useBuildComponentIdAndBeginOptions(nodeId);
 
-  const flattenOptions = useMemo(() => {
-    return options.reduce<DefaultOptionType[]>((pre, cur) => {
-      return [...pre, ...cur.options];
-    }, []);
-  }, [options]);
+  const flattenOptions = useMemo(() => flatOptions(options), [options]);
 
   const getLabel = useCallback(
     (val?: string) => {
@@ -472,10 +485,8 @@ export const useGetComponentLabelByValue = (nodeId: string) => {
   return getLabel;
 };
 
-export function flatOptions(options: DefaultOptionType[]) {
-  return options.reduce<DefaultOptionType[]>((pre, cur) => {
-    return [...pre, ...cur.options];
-  }, []);
+export function flatOptions<Option>(groups: { options: Option[] }[]) {
+  return groups.flatMap((group) => group.options);
 }
 
 export function useFlattenQueryVariableOptions({

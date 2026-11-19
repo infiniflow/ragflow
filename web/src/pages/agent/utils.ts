@@ -858,7 +858,7 @@ export const buildDslComponentsByGraph = (
           if (Array.isArray(params.inputs)) {
             params = {
               ...params,
-              inputs: params.inputs.reduce(
+              inputs: (params.inputs as BeginQuery[]).reduce(
                 (inputs, { key, ...value }) => {
                   inputs[key] = value;
                   return inputs;
@@ -1279,7 +1279,7 @@ export function buildBeginQueryWithObject(
   return nextInputs;
 }
 
-export function getArrayElementType(type: string) {
+export function getArrayElementType(type?: string) {
   return typeof type === 'string' ? (type.match(/<([^>]+)>/)?.at(1) ?? '') : '';
 }
 

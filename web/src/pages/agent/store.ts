@@ -262,14 +262,14 @@ const useGraphStore = create<RFState>()(
           edges: applyEdgeChanges(changes, get().edges),
         });
       },
-      onEdgeMouseEnter: (event, edge) => {
+      onEdgeMouseEnter: (_, edge) => {
         const { edges, setEdges } = get();
         const edgeId = edge.id;
 
         // Updates edge
         setEdges(mapEdgeMouseEvent(edges, edgeId, true));
       },
-      onEdgeMouseLeave: (event, edge) => {
+      onEdgeMouseLeave: (_, edge) => {
         const { edges, setEdges } = get();
         const edgeId = edge.id;
 

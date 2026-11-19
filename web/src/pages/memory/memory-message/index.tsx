@@ -13,7 +13,6 @@ export default function MemoryMessage() {
     setPagination,
     filterValue,
     handleFilterSubmit,
-    loading,
   } = useFetchMemoryMessageList();
   const { filters } = useSelectFilters();
   return (
@@ -46,7 +45,6 @@ export default function MemoryMessage() {
         total={data?.messages?.total_count ?? 0}
         // rowSelection={rowSelection}
         // setRowSelection={setRowSelection}
-        // loading={loading}
       ></MemoryTable>
     </div>
   );

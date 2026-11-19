@@ -1,7 +1,6 @@
 import FileStatusBadge from '@/components/file-status-badge';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { RunningStatusMap } from '@/constants/knowledge';
-import { RunningStatus } from '@/pages/dataset/dataset/constant';
 import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/react-table';
 import { t } from 'i18next';
@@ -39,8 +38,8 @@ export const getDataSourceLogsTableColumns = ({
       meta: { headerClassName: 'w-28' },
       cell: ({ row }) => (
         <FileStatusBadge
-          status={row.original.status as RunningStatus}
-          name={RunningStatusMap[row.original.status as RunningStatus]}
+          status={row.original.status}
+          name={RunningStatusMap[row.original.status]}
           className="!w-20"
         />
       ),

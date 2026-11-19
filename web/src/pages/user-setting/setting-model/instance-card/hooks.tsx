@@ -22,7 +22,6 @@ import {
   useFetchAvailableProviders,
   useFetchProviderInstance,
   useUpdateProviderInstance,
-  useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IProviderInstance } from '@/interfaces/database/llm';
@@ -48,11 +47,6 @@ import {
   SAVED_CREDENTIAL_MASK,
   SavedCredentialInput,
 } from './saved-credential-input';
-import {
-  SavedProviderConfigFieldSet,
-  hasUnsavedProviderCredential,
-  pickSavedProviderConfigOverrides,
-} from './saved-provider-config';
 
 export { SAVED_CREDENTIAL_MASK } from './saved-credential-input';
 
@@ -425,147 +419,6 @@ export function useFormResetOnDetailsLoad(
 }
 
 // ---------------------------------------------------------------------------
-// useVerifyProvider - wraps useVerifyProviderConnection for the card
-// ---------------------------------------------------------------------------
-
-/** Optional transform supplied by the provider config. When present it
- *  maps provider-specific form field names (e.g. OpenDataLoader's
- *  `opendataloader_apiserver`) onto the `{ apiKey, baseUrl, modelInfo }`
- *  shape the verify endpoint expects. When absent the generic mapping
- *  (`values.api_key` / `values.base_url`) is used. */
-type VerifyTransform = (values: Record<string, any>) => {
-  apiKey: string | object | Record<string, any>;
-  baseUrl?: string;
-  region?: string;
-  modelInfo?: IModelInfo[];
-};
-
-/**
- * Adapter that reads the current form values and proxies them into
- * `verifyProviderConnection`, then shapes the response into the
- * `VerifyResult` consumed by {@link VerifyButton}.
- *
- * When `verifyTransform` is supplied (provider-specific field mapping,
- * e.g. OpenDataLoader's nested `opendataloader_apiserver` /
- * `opendataloader_api_key`), it is used to build the verify args;
- * otherwise the generic `values.api_key` / `values.base_url` mapping
- * is used.
- *
- * `modelInfoRef` carries the models selected in the List-models picker
- * (not registered as form fields). Without it, verify payloads for
- * local providers often omit `model_info` and the backend falls back
- * to an empty factory catalog.
- */
-export function useVerifyProvider(
-  providerName: string,
-  formRef: RefObject<DynamicFormRef>,
-  verifyTransform?: VerifyTransform,
-  modelInfoRef?: { current: IModelInfo[] },
-  instanceId?: string,
-  savedInstance?: IProviderInstance,
-) {
-  const { verifyProviderConnection } = useVerifyProviderConnection();
-
-  return useCallback(
-    async (params: any) => {
-      const values = { ...(formRef.current?.getValues?.() ?? {}), ...params };
-      const selectedModels =
-        modelInfoRef?.current?.length && modelInfoRef.current.length > 0
-          ? modelInfoRef.current
-          : undefined;
-      if (selectedModels && !values.model_info) {
-        values.model_info = selectedModels;
-      }
-      let verifyArgs: {
-        api_key: string | object;
-        base_url?: string;
-        model_info?: IModelInfo[];
-        region?: string;
-      };
-      const credentialStatus = savedInstance?.credential_status ?? {};
-      const verifyValues = { ...values };
-      for (const [field, configured] of Object.entries(credentialStatus)) {
-        if (configured && verifyValues[field] === SAVED_CREDENTIAL_MASK) {
-          verifyValues[field] = '';
-        }
-      }
-      if (verifyTransform) {
-        const transformed = verifyTransform(verifyValues);
-        verifyArgs = {
-          api_key: transformed.apiKey,
-          base_url: transformed.baseUrl,
-          model_info: transformed.modelInfo?.length
-            ? transformed.modelInfo
-            : (selectedModels ?? values.model_info),
-          region: transformed.region,
-        };
-      } else {
-        verifyArgs = {
-          api_key: values.api_key ?? '',
-          base_url: values.base_url,
-          model_info: selectedModels ?? values.model_info,
-        };
-      }
-      verifyArgs.api_key = applySavedCredentialEdits(
-        verifyArgs.api_key,
-        values,
-        credentialStatus,
-      ) as string | object;
-      const credentialChanged = Object.keys(credentialStatus).some(
-        (field) =>
-          credentialStatus[field] === true &&
-          !SavedProviderConfigFieldSet.has(field) &&
-          values[field] !== undefined &&
-          values[field] !== SAVED_CREDENTIAL_MASK,
-      );
-      const useSavedCredentials =
-        Boolean(instanceId) &&
-        !credentialChanged &&
-        !hasUnsavedProviderCredential(verifyArgs.api_key);
-      const canOverrideSavedCredentials =
-        useSavedCredentials && savedInstance?.is_owner === true;
-      const savedConfigOverrides = canOverrideSavedCredentials
-        ? pickSavedProviderConfigOverrides(verifyArgs.api_key)
-        : {};
-      const ret = await verifyProviderConnection({
-        provider_name: providerName,
-        ...(instanceId ? { instance_id: instanceId } : {}),
-        ...(useSavedCredentials
-          ? {
-              use_saved_credentials: true,
-              ...(Object.keys(savedConfigOverrides).length > 0
-                ? { api_key_config: savedConfigOverrides }
-                : {}),
-              ...(canOverrideSavedCredentials
-                ? { base_url: verifyArgs.base_url, region: verifyArgs.region }
-                : {}),
-            }
-          : (verifyArgs as any)),
-      });
-      if (ret.code === 0) {
-        return { isValid: true, logs: ret.message } as {
-          isValid: boolean;
-          logs: string;
-        };
-      }
-      return { isValid: false, logs: ret.message } as {
-        isValid: boolean;
-        logs: string;
-      };
-    },
-    [
-      providerName,
-      formRef,
-      verifyProviderConnection,
-      verifyTransform,
-      modelInfoRef,
-      instanceId,
-      savedInstance,
-    ],
-  );
-}
-
-// ---------------------------------------------------------------------------
 // useDeleteInstance - wires the card's delete button
 // ---------------------------------------------------------------------------
 
@@ -680,13 +533,6 @@ interface UseInstanceSaveStateArgs {
   providerName: string;
   /** Persisted instance name - used for the dirty-tracking baseline. */
   instanceName: string;
-  /**
-   * The instance name currently shown in the UI (may differ from
-   * `instanceName` when the user has double-clicked to rename a saved
-   * card). Used in the save payload so a rename is persisted. Falls
-   * back to `instanceName` when not provided (drafts use `draftName`).
-   */
-  editedInstanceName?: string;
   instanceId: string | undefined;
   isDraft: boolean;
   draftName: string;
@@ -728,7 +574,6 @@ export function useInstanceSaveState({
   formRef,
   providerName,
   instanceName,
-  editedInstanceName,
   instanceId,
   isDraft,
   draftName,
@@ -742,12 +587,6 @@ export function useInstanceSaveState({
   const draftNameRef = useRef(draftName);
   useEffect(() => {
     draftNameRef.current = draftName;
-  });
-  // Keep the latest edited name in a ref so `buildPayload` reads the
-  // current value without being recreated on every keystroke.
-  const editedNameRef = useRef(editedInstanceName ?? instanceName);
-  useEffect(() => {
-    editedNameRef.current = editedInstanceName ?? instanceName;
   });
 
   // Build the API payload from the current form values. For drafts the
@@ -820,7 +659,7 @@ export function useInstanceSaveState({
         return {
           ...transformed,
           provider_name: providerName,
-          instance_name: instanceNameOverride ?? editedNameRef.current,
+          instance_name: instanceNameOverride ?? instanceName,
           id: resolvedId,
           base_url: transformed.base_url ?? '',
           region: values.region || 'default',
@@ -853,9 +692,7 @@ export function useInstanceSaveState({
       );
       const payload: Record<string, any> = {
         provider_name: providerName,
-        // Use the edited name (may differ from the persisted `instanceName`
-        // when the user has renamed the instance via double-click).
-        instance_name: instanceNameOverride ?? editedNameRef.current,
+        instance_name: instanceNameOverride ?? instanceName,
         id: resolvedId,
         base_url: values.base_url,
         region: values.region || 'default',
@@ -874,6 +711,7 @@ export function useInstanceSaveState({
       isDraft,
       providerName,
       instanceId,
+      instanceName,
       instanceDetails?.id,
       formRef,
       modelInfoRef,
@@ -954,16 +792,14 @@ export function useInstanceSaveState({
     }
     return {
       payload,
-      instanceName: isDraft
-        ? draftNameRef.current.trim()
-        : editedNameRef.current,
+      instanceName: isDraft ? draftNameRef.current.trim() : instanceName,
       isDraft,
       // Generic drafts go through `addProviderInstance`; generic saved
       // cards go through `updateProviderInstance` (their payload matches
       // `IUpdateProviderInstanceRequestBody`).
       apiKind: isDraft ? 'add' : 'update',
     };
-  }, [buildPayload, isDraft, instanceDetails]);
+  }, [buildPayload, isDraft, instanceDetails, instanceName]);
 
   // After a successful save the parent calls `markSaved()` so the
   // baseline catches up to the just-persisted values. Without this,

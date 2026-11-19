@@ -1,6 +1,5 @@
 import { useUploadAgentFile } from '@/hooks/use-agent-request';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
-import * as React from 'react';
 
 import { FileUploadDirectUpload } from './uploader';
 
