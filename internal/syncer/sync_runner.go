@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
@@ -400,6 +401,34 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext d
 	return service.DocumentUpsertResult{}, lastErr
 }
 
+// isTransientFetchError reports whether a fetch error looks transient: an
+// explicit Temporary() classification (such as a 429 or 5xx response) or a
+// network timeout.
+func isTransientFetchError(err error) bool {
+	var transient interface{ Temporary() bool }
+	if errors.As(err, &transient) {
+		return transient.Temporary()
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout()
+	}
+	return false
+}
+
+// retryableFetchError wraps a transient fetch failure so the per-document
+// retry loop retries it; permanent failures pass through unchanged and stop
+// after the first attempt.
+func retryableFetchError(err error) error {
+	if err == nil || service.IsRetryable(err) {
+		return err
+	}
+	if isTransientFetchError(err) {
+		return &service.RetryableError{Err: err}
+	}
+	return err
+}
+
 // processDocument resolves IDs, skips unchanged fingerprints, fetches blobs, and upserts.
 func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
 	resolved, err := r.idResolver.Resolve(ctx, taskContext.Knowledgebase.ID, taskContext.Connector.ID, sourceType, sourceDocument.SourceID)
@@ -417,7 +446,7 @@ func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTa
 		}
 		blob, err := fetcher.Fetch(ctx, *sourceDocument.FetchRef)
 		if err != nil {
-			return service.DocumentUpsertResult{}, err
+			return service.DocumentUpsertResult{}, retryableFetchError(err)
 		}
 		sourceDocument.Blob = blob
 	}
