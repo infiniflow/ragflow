@@ -132,7 +132,10 @@ func logicalLines(content string) []logicalLine {
 	var lines []logicalLine
 	var buf []byte
 	number, start := 1, 1
-	inSingle, escaped := false, false
+	// Double-quote state matters: an apostrophe is literal text inside a
+	// double-quoted span, so it must not open single-quote mode and swallow the
+	// backslash-newline that follows.
+	inSingle, inDouble, escaped := false, false, false
 
 	for i := 0; i < len(content); i++ {
 		c := content[i]
@@ -147,7 +150,7 @@ func logicalLines(content string) []logicalLine {
 			buf = buf[:0]
 			number++
 			start = number
-			escaped, inSingle = false, false
+			escaped, inSingle, inDouble = false, false, false
 			continue
 		}
 		buf = append(buf, c)
@@ -158,10 +161,21 @@ func logicalLines(content string) []logicalLine {
 			if c == '\'' {
 				inSingle = false
 			}
+		case inDouble:
+			// A backslash still escapes a following newline, so double quotes
+			// keep the continuation; they only end on an unescaped quote.
+			switch c {
+			case '\\':
+				escaped = true
+			case '"':
+				inDouble = false
+			}
 		case c == '\\':
 			escaped = true
 		case c == '\'':
 			inSingle = true
+		case c == '"':
+			inDouble = true
 		}
 	}
 	lines = append(lines, logicalLine{number: start, text: string(buf)})

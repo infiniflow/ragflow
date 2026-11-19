@@ -115,6 +115,16 @@ func TestScanSkillJoinsBackslashContinuations(t *testing.T) {
 	}
 }
 
+func TestScanSkillJoinsContinuationAfterApostropheInDoubleQuotes(t *testing.T) {
+	// An apostrophe is literal inside a double-quoted span: it must not open
+	// single-quote mode and swallow the backslash-newline that follows.
+	content := "#!/bin/sh\nrm -rf \"it's;\\\n$HOME\"\n"
+	findings := scanContent(content)
+	if !hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("missing quoted expansion: %v", findings)
+	}
+}
+
 func TestScanSkillKeepsSingleQuotedBackslashLiteral(t *testing.T) {
 	// Inside single quotes a backslash does not continue the line, so the
 	// operand stays split across two physical lines and hides nothing.
