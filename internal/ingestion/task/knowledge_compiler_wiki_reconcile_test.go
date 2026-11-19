@@ -3,9 +3,13 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -25,11 +29,15 @@ type dirtyWikiReconcileEngine struct {
 	rows             map[string]map[string]any
 	writes, searches int
 	total            int64
+	beforeSearch     func()
 }
 
 func (e *dirtyWikiReconcileEngine) GetType() string { return "elasticsearch" }
 func (e *dirtyWikiReconcileEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.searches++
+	if e.beforeSearch != nil {
+		e.beforeSearch()
+	}
 	if !reflect.DeepEqual(req.IndexNames, []string{"ragflow_tenant"}) || !reflect.DeepEqual(req.KbIDs, []string{"dataset"}) || !reflect.DeepEqual(req.Filter["doc_id"], []string{"document"}) || req.Filter["available_int"] != 0 {
 		e.t.Fatalf("unscoped Wiki reconciliation search: %+v", req)
 	}
@@ -73,20 +81,39 @@ func (e *dirtyWikiReconcileEngine) DeleteChunks(_ context.Context, condition map
 	return int64(len(ids)), nil
 }
 
-type dirtyWikiReconcilePublisher struct{ calls int }
+type dirtyWikiReconcilePublisher struct {
+	calls   int
+	publish func() error
+}
 
 func (*dirtyWikiReconcilePublisher) Provision(context.Context) error { return nil }
 func (p *dirtyWikiReconcilePublisher) Publish(context.Context, string, string, string, string, []string, []string) error {
 	p.calls++
+	if p.publish != nil {
+		return p.publish()
+	}
 	return nil
 }
 
-func dirtyWikiReconcileSetup(t *testing.T) (*dirtyWikiReconcileEngine, *dirtyWikiReconcilePublisher, knowledge_compile.WikiDirtyRequest) {
+func dirtyWikiReconcileSetup(t *testing.T, fileDB ...bool) (*dirtyWikiReconcileEngine, *dirtyWikiReconcilePublisher, knowledge_compile.WikiDirtyRequest) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	dsn := "file:" + t.Name() + "?mode=memory&cache=shared"
+	if len(fileDB) > 0 && fileDB[0] {
+		dsn = filepath.Join(t.TempDir(), "wiki.db") + "?_pragma=busy_timeout(0)"
+	}
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	if err := db.AutoMigrate(&entity.WikiDocumentDirty{}); err != nil {
 		t.Fatal(err)
 	}
@@ -177,19 +204,19 @@ func TestDirtyWikiSharedSlugRemainsInOtherTemplate(t *testing.T) {
 	if eng.rows["shared"] == nil || eng.rows["section"] == nil {
 		t.Fatal("another template's unchanged shared slug was deleted")
 	}
-	if publisher.calls != 0 {
-		t.Fatalf("unchanged products published %d completions", publisher.calls)
+	if publisher.calls != 1 {
+		t.Fatalf("pending dirty completion calls = %d, want 1", publisher.calls)
 	}
 }
 
-func TestDirtyWikiNoChangeDoesNotPublish(t *testing.T) {
+func TestDirtyWikiNoChangePublishesPendingCompletion(t *testing.T) {
 	eng, publisher, request := dirtyWikiReconcileSetup(t)
 	eng.rows["unchanged"] = dirtyWikiReconcilePage("unchanged", "entity/unchanged")
 	if err := replaceDirtyWikiProducts(t.Context(), request, nil, nil, nil, []kc.WikiMapActiveState{dirtyWikiReconcileState(t, "unchanged-state", "entity/unchanged")}, false); err != nil {
 		t.Fatal(err)
 	}
-	if publisher.calls != 0 {
-		t.Fatalf("unchanged products published %d completions", publisher.calls)
+	if publisher.calls != 1 {
+		t.Fatalf("pending dirty completion calls = %d, want 1", publisher.calls)
 	}
 	if eng.rows["unchanged-state"] == nil {
 		t.Fatal("no-change run did not persist its active state")
@@ -267,8 +294,8 @@ func TestDirtyWikiBarePlanSlugUsesStoredPageIdentity(t *testing.T) {
 			if eng.rows["unchanged"] == nil || eng.rows["section"] == nil {
 				t.Fatal("bare plan slug retracted its canonical stored page or section")
 			}
-			if publisher.calls != 0 {
-				t.Fatalf("unchanged products published %d completions", publisher.calls)
+			if publisher.calls != 1 {
+				t.Fatalf("pending dirty completion calls = %d, want 1", publisher.calls)
 			}
 		})
 	}
@@ -289,5 +316,115 @@ func TestDirtyWikiBareRegeneratedPageRetractsOldSections(t *testing.T) {
 	}
 	if eng.rows["page"] == nil || eng.rows["new-section"] == nil {
 		t.Fatal("regenerated page or section was deleted")
+	}
+}
+
+func TestDirtyWikiRetriesCompletionAfterProductDeletion(t *testing.T) {
+	for _, retainPage := range []bool{false, true} {
+		t.Run(fmt.Sprint("retain-", retainPage), func(t *testing.T) {
+			eng, publisher, request := dirtyWikiReconcileSetup(t)
+			eng.rows["old"] = dirtyWikiReconcilePage("old", "concept/old")
+			eng.rows["old-section"] = dirtyWikiReconcileSection("old-section", "old")
+			state := dirtyWikiReconcileState(t, "state")
+			if retainPage {
+				eng.rows["retained"] = dirtyWikiReconcilePage("retained", "concept/retained")
+				state = dirtyWikiReconcileState(t, "state", "concept/retained")
+			}
+			failure := errors.New("completion transport unavailable")
+			publisher.publish = func() error {
+				if publisher.calls == 1 {
+					return failure
+				}
+				return nil
+			}
+			if err := replaceDirtyWikiProducts(t.Context(), request, nil, nil, nil, []kc.WikiMapActiveState{state}, false); !errors.Is(err, failure) {
+				t.Fatalf("first completion error = %v", err)
+			}
+			if eng.rows["old"] != nil || eng.rows["old-section"] != nil {
+				t.Fatal("first replacement did not delete old products")
+			}
+			// The same durable dirty row survives the error; retry in a fresh
+			// invocation after the deletion and active snapshot have persisted.
+			if err := replaceDirtyWikiProducts(t.Context(), request, nil, nil, nil, []kc.WikiMapActiveState{state}, false); err != nil {
+				t.Fatal(err)
+			}
+			if publisher.calls != 2 {
+				t.Fatalf("unchanged retry lost pending completion: calls=%d", publisher.calls)
+			}
+			if retainPage && eng.rows["retained"] == nil {
+				t.Fatal("retry deleted retained page")
+			}
+		})
+	}
+}
+
+func TestDirtyWikiSerializesRevisionDuringProductReconciliation(t *testing.T) {
+	eng, _, request := dirtyWikiReconcileSetup(t, true)
+	db := kcWiringDeps.DB
+	newRequest := request
+	newRequest.Revision++
+	newState := dirtyWikiReconcileState(t, "new-state", "concept/new")
+	blocked := false
+	eng.beforeSearch = func() {
+		eng.beforeSearch = nil
+		attempt := make(chan error, 1)
+		go func() {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			attempt <- db.WithContext(ctx).Model(&entity.WikiDocumentDirty{}).Where("document_id = ?", request.DocumentID).UpdateColumn("revision", newRequest.Revision).Error
+		}()
+		err := <-attempt
+		if err != nil {
+			if !strings.Contains(strings.ToLower(err.Error()), "locked") && !strings.Contains(strings.ToLower(err.Error()), "busy") && !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("concurrent revision failed unexpectedly: %v", err)
+			}
+			blocked = true
+			return
+		}
+		// Without serialization a newer worker can complete before the older
+		// worker's search returns, exposing its products to the older plan.
+		if err := replaceDirtyWikiProducts(t.Context(), newRequest, []map[string]any{dirtyWikiReconcilePage("new", "concept/new"), dirtyWikiReconcileSection("new-section", "new")}, []string{"concept/new"}, nil, []kc.WikiMapActiveState{newState}, false); err != nil {
+			t.Error(err)
+		}
+	}
+	oldState := dirtyWikiReconcileState(t, "old-state", "concept/old")
+	if err := replaceDirtyWikiProducts(t.Context(), request, []map[string]any{dirtyWikiReconcilePage("old", "concept/old")}, []string{"concept/old"}, nil, []kc.WikiMapActiveState{oldState}, false); err != nil {
+		t.Fatal(err)
+	}
+	if !blocked {
+		t.Error("new revision entered while older reconciliation held its write window")
+		if eng.rows["new"] == nil || eng.rows["new-section"] == nil {
+			t.Error("old revision deleted newer page or section")
+		}
+	}
+	// Once the old window has ended, the newer revision can reconcile normally.
+	if err := db.Model(&entity.WikiDocumentDirty{}).Where("document_id = ?", request.DocumentID).UpdateColumn("revision", newRequest.Revision).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceDirtyWikiProducts(t.Context(), newRequest, []map[string]any{dirtyWikiReconcilePage("new", "concept/new"), dirtyWikiReconcileSection("new-section", "new")}, []string{"concept/new"}, nil, []kc.WikiMapActiveState{newState}, false); err != nil {
+		t.Fatal(err)
+	}
+	if eng.rows["new"] == nil || eng.rows["new-section"] == nil || eng.rows["old"] != nil {
+		t.Fatal("serialized newer revision did not retain its final products")
+	}
+}
+
+func TestDirtyWikiPublishesAfterReleasingReconciliationLock(t *testing.T) {
+	_, publisher, request := dirtyWikiReconcileSetup(t, true)
+	db := kcWiringDeps.DB
+	publisher.publish = func() error {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		// The real scheduler starts another DB transaction for its durable
+		// backlog. Updating the same row proves reconciliation has unlocked.
+		return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return tx.Model(&entity.WikiDocumentDirty{}).Where("document_id = ?", request.DocumentID).UpdateColumn("revision", gorm.Expr("revision")).Error
+		})
+	}
+	if err := replaceDirtyWikiProducts(t.Context(), request, nil, nil, nil, []kc.WikiMapActiveState{dirtyWikiReconcileState(t, "empty")}, false); err != nil {
+		t.Fatalf("publisher could not acquire separate transaction: %v", err)
+	}
+	if publisher.calls != 1 {
+		t.Fatalf("completion calls=%d,want 1", publisher.calls)
 	}
 }

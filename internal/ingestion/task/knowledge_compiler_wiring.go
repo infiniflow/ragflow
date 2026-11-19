@@ -295,19 +295,41 @@ func wikiCompiledRows(output map[string]any) []map[string]any {
 }
 
 func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.WikiDirtyRequest, rows []map[string]any, affectedSlugs, removedSlugs []string, activeStates []kc.WikiMapActiveState, fullReplace bool) error {
-	var dirty entity.WikiDocumentDirty
-	if err := kcWiringDeps.DB.WithContext(ctx).Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+	current := false
+	err := kcWiringDeps.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// A no-op row write serializes this window with dirty marking and
+		// other reconcilers, including SQLite where SELECT FOR UPDATE is ignored.
+		if err := tx.Model(&entity.WikiDocumentDirty{}).Where("document_id = ?", request.DocumentID).
+			UpdateColumn("revision", gorm.Expr("revision")).Error; err != nil {
+			return err
+		}
+		var dirty entity.WikiDocumentDirty
+		if err := tx.Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil
+			}
+			return err
+		}
+		if dirty.TenantID != request.TenantID || dirty.DatasetID != request.DatasetID {
+			return fmt.Errorf("Wiki dirty compile: request does not match dirty document scope")
+		}
+		if dirty.Revision != request.Revision {
 			return nil
 		}
+		current = true
+		return replaceLockedDirtyWikiProducts(ctx, request, rows, affectedSlugs, removedSlugs, activeStates, fullReplace)
+	})
+	if err != nil || !current {
 		return err
 	}
-	if dirty.TenantID != request.TenantID || dirty.DatasetID != request.DatasetID {
-		return fmt.Errorf("Wiki dirty compile: request does not match dirty document scope")
-	}
-	if dirty.Revision != request.Revision {
-		return nil
-	}
+	// The durable dirty row remains until the worker observes successful
+	// publication. Publish on unchanged retries too: earlier product writes may
+	// already have persisted before a publication failure. Unlock first because
+	// the scheduler writes its own durable backlog using another DB transaction.
+	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"}, []string{kc.TaskTypeWiki})
+}
+
+func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compile.WikiDirtyRequest, rows []map[string]any, affectedSlugs, removedSlugs []string, activeStates []kc.WikiMapActiveState, fullReplace bool) error {
 	var plannedSlugs map[string]struct{}
 	if !fullReplace {
 		var err error
@@ -420,11 +442,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	if err := putWikiActiveStates(ctx, docEngine, activeStates); err != nil {
 		return err
 	}
-	// Active snapshots can change without changing any persisted page products.
-	if len(rows) == 0 && len(staleIDs) == 0 {
-		return nil
-	}
-	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"}, []string{kc.TaskTypeWiki})
+	return nil
 }
 
 func clearWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, request knowledge_compile.WikiDirtyRequest) error {
