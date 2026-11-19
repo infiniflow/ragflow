@@ -316,3 +316,24 @@ func TestRegistryRejectsDuplicateNormalizedParserIDs(t *testing.T) {
 		})
 	}
 }
+
+// TestNewRegistryFromFSReadsNestedDirectory pins that the registry addresses its
+// fs.FS with slash-separated paths. io/fs never accepts an OS-specific
+// separator, so building the lookup path with filepath.Join made every builtin
+// template unreadable on Windows ("open template\ingestion_pipeline_general.json:
+// file does not exist") and DefaultRegistry/LoadBuiltinDSL failed for the whole
+// set, not just for one file.
+func TestNewRegistryFromFSReadsNestedDirectory(t *testing.T) {
+	files := fstest.MapFS{
+		"template/ingestion_pipeline_general.json": {
+			Data: []byte(`{"title":{"en":"General"},"dsl":{"components":{}}}`),
+		},
+	}
+	r, err := NewRegistryFromFS(files, "template")
+	if err != nil {
+		t.Fatalf("NewRegistryFromFS: %v", err)
+	}
+	if _, ok := r.Get("general"); !ok {
+		t.Fatal("nested builtin template was not loaded")
+	}
+}

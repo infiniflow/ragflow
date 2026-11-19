@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -103,7 +104,10 @@ func NewRegistryFromFS(files fs.FS, dir string) (*Registry, error) {
 		if !strings.HasPrefix(name, builtinTemplatePrefix) || !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		raw, err := fs.ReadFile(files, filepath.Join(dir, name))
+		// io/fs paths are slash-separated on every GOOS. filepath.Join rendered
+		// "template\ingestion_pipeline_audio.json" on Windows, which embed.FS
+		// cannot resolve, so the whole builtin registry failed to load there.
+		raw, err := fs.ReadFile(files, path.Join(dir, name))
 		if err != nil {
 			return nil, err
 		}
