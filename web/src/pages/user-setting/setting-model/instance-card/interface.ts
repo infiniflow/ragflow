@@ -128,6 +128,8 @@ export const API_KEY_NESTED_FIELDS = [
   'group_id',
   'api_version',
   'provider_order',
+  'wire_api',
+  'reasoning_effort',
   'auth_mode',
   'bedrock_ak',
   'bedrock_sk',

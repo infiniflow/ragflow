@@ -55,13 +55,24 @@ describe('Azure OpenAI provider configuration', () => {
 describe('MinerU provider configuration', () => {
   const config = ProviderConfigMap[LLMFactory.MinerU];
 
-  it('stores the mineru.net token inside api_key', () => {
+  it('stores only MinerU configuration in api_key', () => {
     const values = {
       instance_name: 'mineru',
       mineru_apiserver: 'https://mineru.net',
       mineru_api_token: 'sk-ui-token',
-      mineru_backend: 'pipeline',
+      mineru_backend: 'advanced',
+      mineru_output_dir: '/tmp/mineru',
       mineru_delete_output: true,
+      mineru_server_url: 'http://localhost:8000',
+      model_info: [{ model_name: 'MinerU-model', model_type: ['ocr'] }],
+      credential_status: { mineru_api_token: true },
+    };
+    const credentials = {
+      mineru_apiserver: 'https://mineru.net',
+      mineru_api_token: 'sk-ui-token',
+      mineru_backend: 'advanced',
+      mineru_output_dir: '/tmp/mineru',
+      mineru_delete_output: '1',
     };
 
     expect(
@@ -69,12 +80,8 @@ describe('MinerU provider configuration', () => {
     ).toMatchObject({ type: 'password', required: false });
 
     const saved = config.submitTransform?.(values);
-    expect(saved?.api_key).toMatchObject({
-      mineru_apiserver: 'https://mineru.net',
-      mineru_api_token: 'sk-ui-token',
-      mineru_backend: 'pipeline',
-      mineru_delete_output: '1',
-    });
+    expect(saved?.api_key).toEqual(credentials);
+    expect(config.verifyTransform?.(values)?.apiKey).toEqual(credentials);
     expect(saved).not.toHaveProperty('mineru_api_token');
     expect(
       config.echoTransform?.({

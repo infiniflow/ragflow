@@ -170,7 +170,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		// runs another round (chat_model.py:692-704).
 		var hit bool
 		var toolAnswer string
-		history, toolAnswer, hit = appendToolResults(history, resp.ToolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm), false)
+		history, toolAnswer, hit = appendToolResults(history, resp.ToolCalls, resp.ProviderState, cm.ToolConfig.ToolCallSession, terminalSet(cm), false)
 		if hit {
 			// This round's usage was already folded in by addRoundUsage above
 			// (it accumulates into aggUsage and forwards a per-round delta to the
@@ -297,6 +297,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		cfg.Stream = boolPtr(true)
 		var tcs []map[string]interface{}
 		cfg.ToolCallsResult = &tcs
+		cfg.ProviderStateResult = nil
 		var roundUsage TokenUsage
 		cfg.UsageResult = &roundUsage
 
@@ -375,7 +376,11 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		// buy an extra model round whose output the mux drops.
 		var termAnswer string
 		var termHit bool
-		history, termAnswer, termHit = appendToolResults(history, toolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm), true)
+		var providerState []map[string]any
+		if cfg.ProviderStateResult != nil {
+			providerState = *cfg.ProviderStateResult
+		}
+		history, termAnswer, termHit = appendToolResults(history, toolCalls, providerState, cm.ToolConfig.ToolCallSession, terminalSet(cm), true)
 		if termHit {
 			if err := sendTerminal(sender, &termAnswer); err != nil {
 				return totalTokens, err
@@ -426,12 +431,13 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 //
 // When terminal is empty or no terminal tool fired, it returns
 // (history, "", false) either way.
-func appendToolResults(history []Message, toolCalls []map[string]interface{}, session ToolCallSession, terminal map[string]struct{}, emptyTerminalIsHit bool) ([]Message, string, bool) {
+func appendToolResults(history []Message, toolCalls []map[string]interface{}, providerState []map[string]any, session ToolCallSession, terminal map[string]struct{}, emptyTerminalIsHit bool) ([]Message, string, bool) {
 	if session == nil {
 		history = append(history, Message{
-			Role:      "assistant",
-			Content:   nil,
-			ToolCalls: toolCalls,
+			Role:          "assistant",
+			Content:       nil,
+			ToolCalls:     toolCalls,
+			ProviderState: providerState,
 		})
 		for _, tc := range toolCalls {
 			tcID, _ := tc["id"].(string)
@@ -492,9 +498,10 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 	wg.Wait()
 
 	history = append(history, Message{
-		Role:      "assistant",
-		Content:   nil,
-		ToolCalls: toolCalls,
+		Role:          "assistant",
+		Content:       nil,
+		ToolCalls:     toolCalls,
+		ProviderState: providerState,
 	})
 
 	// Every tool_call the assistant declared gets its matching tool message,

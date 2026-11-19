@@ -15,7 +15,8 @@
  */
 
 import { LLMFactory } from '@/constants/llm';
-import { useQueryClient } from '@tanstack/react-query';
+import message from '@/components/ui/message';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   LlmKeys,
   useAddInstanceModel,
@@ -46,6 +47,7 @@ import {
   useState,
 } from 'react';
 import { sortModelTypes } from '../available-models';
+import { useTranslation } from 'react-i18next';
 import { useCustomModelFields } from '../use-custom-model-fields';
 import { ModelsSectionProps, VerifyStatus } from './interface';
 import {
@@ -123,6 +125,173 @@ export const buildModelInfo = (
       ...(m.extra ?? {}),
     },
   }));
+
+export interface ModelTypeChange {
+  name: string;
+  currentTypes: string[];
+  nextTypes: string[];
+}
+
+/** Synchronize only the explicitly confirmed catalog types of saved models. */
+export function useModelTypeSync({
+  providerName,
+  instanceName,
+  isDraftInstance,
+  catalog,
+  instanceItems,
+}: {
+  providerName: string;
+  instanceName: string;
+  isDraftInstance: boolean;
+  catalog: IProviderModelItem[];
+  instanceItems: IProviderModelItem[];
+}) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [plan, setPlan] = useState<{
+    providerName: string;
+    instanceName: string;
+    changes: ModelTypeChange[];
+  } | null>(null);
+  const [partialResult, setPartialResult] = useState<{
+    success: number;
+    failed: number;
+  } | null>(null);
+  const confirming = useRef(false);
+
+  const changes = useMemo<ModelTypeChange[]>(() => {
+    if (isDraftInstance) return [];
+    const catalogByName = new Map(
+      catalog.map((item) => [modelNameKey(item.name), item]),
+    );
+    return instanceItems.flatMap((item) => {
+      const listed = catalogByName.get(modelNameKey(item.name));
+      const nextTypes = sortModelTypes([
+        ...new Set(normalizeModelTypes(listed?.model_types)),
+      ]);
+      const currentTypeSet = new Set(normalizeModelTypes(item.model_types));
+      const currentTypes = sortModelTypes([...currentTypeSet]);
+      if (
+        nextTypes.length === 0 ||
+        (nextTypes.length === currentTypes.length &&
+          nextTypes.every((type) => currentTypeSet.has(type)))
+      ) {
+        return [];
+      }
+      return [{ name: item.name, currentTypes, nextTypes }];
+    });
+  }, [catalog, instanceItems, isDraftInstance]);
+
+  const { mutateAsync: syncTypes, isPending: syncing } = useMutation({
+    mutationFn: async (confirmedPlan: NonNullable<typeof plan>) => {
+      const successful: ModelTypeChange[] = [];
+      const failed: ModelTypeChange[] = [];
+      const results = await Promise.allSettled(
+        confirmedPlan.changes.map((change) =>
+          llmService.patchInstanceModel({
+            provider_name: confirmedPlan.providerName,
+            instance_name: confirmedPlan.instanceName,
+            model_name: change.name,
+            model_type: change.nextTypes,
+          }),
+        ),
+      );
+      results.forEach((result, index) => {
+        const target =
+          result.status === 'fulfilled' && result.value.data.code === 0
+            ? successful
+            : failed;
+        target.push(confirmedPlan.changes[index]);
+      });
+
+      if (successful.length > 0) {
+        const changedTypes = new Map(
+          successful.map((change) => [
+            modelNameKey(change.name),
+            change.nextTypes,
+          ]),
+        );
+        queryClient.setQueryData<IInstanceModel[]>(
+          LlmKeys.instanceModels(
+            confirmedPlan.providerName,
+            confirmedPlan.instanceName,
+          ),
+          (previous) =>
+            previous?.map((item) => {
+              const modelTypes = changedTypes.get(modelNameKey(item.name));
+              if (!modelTypes) return item;
+              return {
+                ...item,
+                model_type: modelTypes,
+                ...('model_types' in item ? { model_types: modelTypes } : {}),
+              };
+            }),
+        );
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: LlmKeys.addedProviders(),
+            exact: true,
+          }),
+          queryClient.invalidateQueries({
+            queryKey: LlmKeys.instanceModels(
+              confirmedPlan.providerName,
+              confirmedPlan.instanceName,
+            ),
+          }),
+          queryClient.invalidateQueries({ queryKey: LlmKeys.allModels() }),
+          queryClient.invalidateQueries({ queryKey: LlmKeys.defaultModels() }),
+        ]);
+      }
+
+      if (failed.length > 0) {
+        setPlan({ ...confirmedPlan, changes: failed });
+        setPartialResult({ success: successful.length, failed: failed.length });
+      } else {
+        setPlan(null);
+        setPartialResult(null);
+        message.success(
+          t('setting.syncModelTypesSuccess', {
+            count: successful.length,
+          }),
+        );
+      }
+    },
+  });
+
+  const openTypeSyncPreview = useCallback(() => {
+    if (confirming.current || changes.length === 0) return;
+    setPartialResult(null);
+    setPlan({ providerName, instanceName, changes });
+  }, [changes, instanceName, providerName]);
+
+  const setTypeSyncOpen = useCallback((open: boolean) => {
+    if (!open && !confirming.current) {
+      setPlan(null);
+      setPartialResult(null);
+    }
+  }, []);
+
+  const confirmTypeSync = useCallback(async () => {
+    if (!plan || confirming.current) return;
+    confirming.current = true;
+    try {
+      await syncTypes(plan);
+    } finally {
+      confirming.current = false;
+    }
+  }, [plan, syncTypes]);
+
+  return {
+    typeSyncAvailable: changes.length > 0,
+    typeSyncOpen: plan !== null,
+    typeSyncChanges: plan?.changes ?? [],
+    typeSyncResult: partialResult,
+    typeSyncing: syncing,
+    openTypeSyncPreview,
+    setTypeSyncOpen,
+    confirmTypeSync,
+  };
+}
 
 /** Resolved credentials for catalog / verify / batch calls.
  *  `baseUrl` is `undefined` when the provider's form has no `base_url`
@@ -760,8 +929,7 @@ function buildVerifyArgs(
   // `api_key` is typed `string` on the service signature, but
   // providers with a `verifyTransform` may legitimately produce an
   // object (e.g. PaddleOCR's nested config). The backend accepts
-  // both shapes, so cast to `any` to match the existing card-level
-  // verify path in `useVerifyProvider`.
+  // both shapes, so pass the provider's credentials through as-is.
   return {
     provider_name: providerName,
     ...(!useSavedCredentials ? { api_key: apiKey as any } : {}),

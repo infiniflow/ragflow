@@ -1,0 +1,26 @@
+{
+  "name": "XunFei Retrieval",
+  "rank": 979,
+  "url": {
+    "default": "https://maas-api.cn-huabei-1.xf-yun.com/v2"
+  },
+  "url_suffix": {
+    "embedding": "embeddings",
+    "rerank": "rerank"
+  },
+  "class": "xunfei_retrieval",
+  "models": [
+    {
+      "name": "xop3qwen8bembedding",
+      "model_types": ["embedding"],
+      "max_tokens": 32000,
+      "max_dimension": 4096,
+      "max_batch_size": 16
+    },
+    {
+      "name": "xop3qwen8breranker",
+      "model_types": ["rerank"],
+      "max_tokens": 32000
+    }
+  ]
+}

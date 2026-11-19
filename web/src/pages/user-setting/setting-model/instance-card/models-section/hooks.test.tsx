@@ -570,6 +570,46 @@ describe('saved instance model baseline', () => {
     );
   });
 
+  it('preserves saved model types when the catalog gains vision support', () => {
+    const savedModel = {
+      name: 'gpt-6.1-sol',
+      model_type: ['chat'],
+      max_tokens: 4096,
+      status: 'active',
+    };
+    const catalogModel = {
+      name: savedModel.name,
+      model_types: ['chat'],
+      max_tokens: 8192,
+      features: [],
+    };
+    const { result, rerender } = renderHook(
+      ({ catalog }) =>
+        useModelsDerived({
+          catalog,
+          instanceModels: [savedModel],
+          instanceModelsLoading: false,
+          instanceModelsSucceeded: true,
+          draftModels: [],
+          isDraftInstance: false,
+          onInstanceModelsChange: jest.fn(),
+        }),
+      { initialProps: { catalog: [catalogModel] } },
+    );
+
+    rerender({
+      catalog: [{ ...catalogModel, model_types: ['chat', 'vision'] }],
+    });
+
+    expect(result.current.models).toEqual([
+      expect.objectContaining({
+        name: savedModel.name,
+        model_types: ['chat'],
+        max_tokens: 4096,
+      }),
+    ]);
+  });
+
   it('updates the saved snapshot only after a model edit succeeds', async () => {
     const providerName = 'Bedrock';
     const instanceName = 'saved-instance';
@@ -618,7 +658,7 @@ describe('saved instance model baseline', () => {
     act(() => {
       submitPromise = result.current.handleEditSubmit({
         name: persistedModel.name,
-        model_types: persistedModel.model_type,
+        model_types: ['chat', 'vision'],
         max_tokens: 8192,
         features: [],
       });
@@ -634,11 +674,15 @@ describe('saved instance model baseline', () => {
     expect(mockPatchInstanceModel).toHaveBeenCalledWith(
       expect.objectContaining({
         model_name: persistedModel.name,
+        model_type: ['chat', 'vision'],
         max_tokens: 8192,
       }),
     );
     expect(queryClient.getQueryData(queryKey)).toEqual([
-      expect.objectContaining({ max_tokens: 8192 }),
+      expect.objectContaining({
+        model_type: ['chat', 'vision'],
+        max_tokens: 8192,
+      }),
     ]);
 
     mockPatchInstanceModel.mockResolvedValueOnce({ code: 1 });
@@ -660,7 +704,10 @@ describe('saved instance model baseline', () => {
     });
 
     expect(queryClient.getQueryData(queryKey)).toEqual([
-      expect.objectContaining({ max_tokens: 8192 }),
+      expect.objectContaining({
+        model_type: ['chat', 'vision'],
+        max_tokens: 8192,
+      }),
     ]);
   });
 });

@@ -1865,6 +1865,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       siliconflowBaseUrlPlaceholder: 'https://api.siliconflow.cn/v1',
       groupId: 'Group ID',
       providerOrder: 'Provider 顺序',
+      novaCodeWireApi: 'API 协议',
+      novaCodeReasoningEffort: '推理强度',
+      novaCodeReasoningEffortTip:
+        '默认使用 medium。可用等级取决于所选模型和 NovaCode 分组；此设置用于模型验证与聊天请求。',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlMessage: '请输入 PaddleOCR API URL！',
       paddleocrApiUrlPlaceholder:
@@ -1953,6 +1957,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       modelNameMessage: '请输入模型名称！',
       modelTypeMessage: '请输入模型类型！',
       baseUrlNameMessage: '请输入基础 URL',
+      xunfeiRetrievalBaseUrlTip:
+        '保留基础地址末尾的 /v2。RAGFlow 会按模型类型追加 /embeddings 或 /rerank。',
       ollamaLink: '如何集成 {{name}}',
       FishAudioLink: '如何使用 Fish Audio',
       TencentCloudLink: '如何使用腾讯云语音识别',
@@ -2125,6 +2131,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       batchAddModels: '添加全部模型',
       batchRemoveModels: '移除全部模型',
       batchVerifyModels: '验证全部模型',
+      syncModelTypes: '同步模型类型',
+      syncModelTypesDescription:
+        '将以下已添加模型的类型更新为当前模型列表中的类型。确认后会覆盖这些模型的当前类型，包括手动设置的类型。',
+      syncModelTypesSuccess: '已更新 {{count}} 个模型的类型。',
+      syncModelTypesPartial:
+        '已更新 {{success}} 个模型，{{failed}} 个失败。再次确认可重试剩余模型。',
       moreActions: '更多操作',
       editCustomModelTitle: '编辑模型',
       modelMaxTokens: '最大上下文长度',

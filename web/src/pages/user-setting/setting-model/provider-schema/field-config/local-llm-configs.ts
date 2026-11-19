@@ -19,6 +19,12 @@ import { LLMFactory } from '@/constants/llm';
 import type { FieldConfig, ProviderConfig } from '../types';
 import { buildModelInfoFromValues } from './utils';
 
+const buildNovaCodeCredentials = (values: Record<string, unknown>) => ({
+  ...(values.api_key ? { api_key: values.api_key } : {}),
+  wire_api: values.wire_api || 'responses',
+  reasoning_effort: values.reasoning_effort || 'medium',
+});
+
 /**
  * Factory configuration for local/compatible factories
  * Used for scenarios after OllamaModal merge
@@ -104,6 +110,91 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
     undefined,
     'https://platform.openai.com/docs/models/gpt-4',
   ),
+  [LLMFactory.NovaCode]: {
+    ...buildLocalConfig(
+      LLMFactory.NovaCode,
+      'NovaCode',
+      false,
+      [
+        {
+          name: 'base_url',
+          label: 'addLlmBaseUrl',
+          type: 'inputSelect',
+          required: true,
+          defaultValue: 'https://ai.novacode.top/v1',
+          placeholder: 'baseUrlNameMessage',
+          shouldRender: 'hideWhenInstanceExists',
+        },
+        {
+          name: 'wire_api',
+          label: 'novaCodeWireApi',
+          type: FormFieldType.Select,
+          required: true,
+          defaultValue: 'responses',
+          options: [
+            { label: 'Responses', value: 'responses' },
+            { label: 'Chat Completions', value: 'chat_completions' },
+          ],
+        },
+        {
+          name: 'reasoning_effort',
+          label: 'novaCodeReasoningEffort',
+          tooltip: 'novaCodeReasoningEffortTip',
+          type: FormFieldType.Select,
+          required: true,
+          defaultValue: 'medium',
+          options: ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({
+            label: value,
+            value,
+          })),
+        },
+      ],
+      'https://docs.novacode.top/reference/api-examples',
+    ),
+    defaultInstanceName: 'NovaCode',
+    verifyTransform: (values) => ({
+      apiKey: buildNovaCodeCredentials(values),
+      baseUrl: values.base_url,
+      modelInfo: buildModelInfoFromValues(values),
+    }),
+    submitTransform: (values) => ({
+      instance_name: values.instance_name,
+      llm_factory: LLMFactory.NovaCode,
+      model_info: buildModelInfoFromValues(values),
+      base_url: values.base_url,
+      api_key: buildNovaCodeCredentials(values),
+    }),
+  },
+  [LLMFactory.XunFeiRetrieval]: {
+    ...buildLocalConfig(
+      LLMFactory.XunFeiRetrieval,
+      LLMFactory.XunFeiRetrieval,
+      false,
+      [
+        {
+          name: 'api_key',
+          label: 'apiKey',
+          type: FormFieldType.Password,
+          required: true,
+          placeholder: 'apiKeyMessage',
+          autoComplete: 'new-password',
+          shouldRender: 'hideWhenInstanceExists',
+        },
+        {
+          name: 'base_url',
+          label: 'addLlmBaseUrl',
+          type: 'inputSelect',
+          required: true,
+          defaultValue: 'https://maas-api.cn-huabei-1.xf-yun.com/v2',
+          placeholder: 'baseUrlNameMessage',
+          tooltip: 'xunfeiRetrievalBaseUrlTip',
+          shouldRender: 'hideWhenInstanceExists',
+        },
+      ],
+      'https://maas.xfyun.cn/doc/',
+    ),
+    defaultInstanceName: LLMFactory.XunFeiRetrieval,
+  },
   [LLMFactory.Shengsuanyun]: {
     ...buildLocalConfig(
       LLMFactory.Shengsuanyun,

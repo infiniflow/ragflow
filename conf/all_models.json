@@ -28157,7 +28157,8 @@
     {
       "name": "qwen/qwen3-embedding-8b",
       "alias": [
-        "qwen3-embedding-8b"
+        "qwen3-embedding-8b",
+        "xop3qwen8bembedding"
       ],
       "model_types": [
         "embedding"
@@ -28439,7 +28440,8 @@
     {
       "name": "qwen/qwen3-reranker-8b",
       "alias": [
-        "qwen3-reranker-8b"
+        "qwen3-reranker-8b",
+        "xop3qwen8breranker"
       ],
       "model_types": [
         "rerank"

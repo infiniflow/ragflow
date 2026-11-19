@@ -219,10 +219,14 @@ export const useCustomModelFields = (
 
   return useMemo<AddCustomModelDialogFields[]>(() => {
     const isSoMark = providerName === LLMFactory.SoMark;
+    const isXunFeiRetrieval = providerName === LLMFactory.XunFeiRetrieval;
     const schema = isSoMark
       ? [...MODEL_FIELD_SCHEMA, ...SOMARK_EXTRA_FIELDS]
       : MODEL_FIELD_SCHEMA;
-    return schema.map((field) => {
+    const fields = isXunFeiRetrieval
+      ? schema.filter((field) => field.name !== 'features')
+      : schema;
+    return fields.map((field) => {
       const mapped = {
         ...field,
         label: t(field.label),
@@ -240,6 +244,12 @@ export const useCustomModelFields = (
           label: t(opt.label),
         }));
         mapped.defaultValue = [...SOMARK_DEFAULT_FEATURES];
+      }
+      if (isXunFeiRetrieval && field.name === 'model_types') {
+        mapped.required = true;
+        mapped.options = mapped.options?.filter(
+          ({ value }) => value === 'embedding' || value === 'rerank',
+        );
       }
       return mapped;
     });

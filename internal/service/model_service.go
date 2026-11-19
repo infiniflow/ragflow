@@ -477,6 +477,8 @@ var providerAPIKeyConfigFields = map[string]struct{}{
 	"opendataloader_apiserver": {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
+	"wire_api":                 {},
+	"reasoning_effort":         {},
 	"unlimited_ocr_apiserver":  {},
 	"unlimited_ocr_server_url": {},
 }
@@ -497,6 +499,8 @@ var safeProviderAPIKeyConfigFields = map[string]struct{}{
 	"opendataloader_apiserver": {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
+	"wire_api":                 {},
+	"reasoning_effort":         {},
 	"unlimited_ocr_apiserver":  {},
 	"unlimited_ocr_server_url": {},
 }
@@ -598,7 +602,7 @@ func hasProviderCredentialValue(value interface{}) bool {
 	return false
 }
 
-func mergeProviderAPIKey(existing string, submitted json.RawMessage, clear bool) (string, error) {
+func mergeProviderAPIKey(providerName, existing string, submitted json.RawMessage, clear bool) (string, error) {
 	if clear {
 		existing = ""
 	}
@@ -647,6 +651,11 @@ func mergeProviderAPIKey(existing string, submitted json.RawMessage, clear bool)
 			continue
 		}
 		merged[key] = value
+	}
+	if strings.EqualFold(providerName, "MinerU") {
+		for _, key := range []string{"model_info", "api_key_configured", "api_key_config", "credential_status", "credential_masks"} {
+			delete(merged, key)
+		}
 	}
 	if len(merged) == 0 {
 		return "", nil
@@ -2431,7 +2440,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, provid
 	// credential objects merge non-empty submitted fields into the saved config.
 	instanceUpdates := make(map[string]interface{})
 	if clearAPIKey || len(bytes.TrimSpace(apiKey)) > 0 {
-		updatedAPIKey, mergeErr := mergeProviderAPIKey(instance.APIKey, apiKey, clearAPIKey)
+		updatedAPIKey, mergeErr := mergeProviderAPIKey(providerName, instance.APIKey, apiKey, clearAPIKey)
 		if mergeErr != nil {
 			return common.CodeBadRequest, mergeErr
 		}

@@ -15,7 +15,7 @@
  */
 
 import message from '@/components/ui/message';
-import { ModelTypeToField } from '@/constants/llm';
+import { LLMFactory, ModelTypeToField } from '@/constants/llm';
 import { useAdditionalModelValidIds } from '@/ee/hooks/use-additional-model-valid-ids';
 import {
   IAddedModel,
@@ -458,20 +458,18 @@ export const useListProviderModels = () => {
   const { isPending: loading, mutateAsync } = useMutation({
     mutationKey: [LLMApiAction.ListProviderModels],
     mutationFn: async (params: IListProviderModelsRequestBody) => {
+      const { provider_name, skipGlobalErrorNotification } = params;
+      // XunFei Retrieval reads its bundled catalog without provider credentials.
       const {
-        provider_name,
         api_key,
         base_url,
         region,
         use_saved_credentials,
         api_key_config,
         instance_name,
-        skipGlobalErrorNotification,
-      } = params;
-      // GET /api/v1/providers/<provider_name>/models
-      // The API accepts api_key and base_url as optional query parameters.
-      // api_key is expected as a string; values in {} object form must be
-      // JSON-stringified before being sent.
+      } = provider_name === LLMFactory.XunFeiRetrieval ? {} : params;
+      // GET /api/v1/providers/<provider_name>/models accepts an API key as a
+      // string. Providers with credential objects must serialize them first.
       const queryParams: Record<string, string> = {};
       if (!use_saved_credentials && api_key !== undefined) {
         queryParams.api_key =

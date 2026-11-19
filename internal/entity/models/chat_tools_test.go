@@ -53,7 +53,7 @@ func TestAppendToolResultsTerminalHit(t *testing.T) {
 
 	hist, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "summarize_document", `{"doc_id":"abc"}`),
-	}, sess, term, false)
+	}, nil, sess, term, false)
 
 	if !hit {
 		t.Fatal("terminal tool success must short-circuit")
@@ -75,7 +75,7 @@ func TestAppendToolResultsTerminalErrorDoesNotShortCircuit(t *testing.T) {
 
 	_, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "nonterminal", `{}`),
-	}, &stubSession{}, term, false)
+	}, nil, &stubSession{}, term, false)
 	if hit || answer != "" {
 		t.Fatal("non-terminal call must not short-circuit")
 	}
@@ -86,7 +86,7 @@ func TestAppendToolResultsNoTerminalConfigured(t *testing.T) {
 	history := []Message{{Role: "user", Content: "q"}}
 	hist, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "rag", `{}`),
-	}, &stubSession{}, nil, false)
+	}, nil, &stubSession{}, nil, false)
 	if hit || answer != "" {
 		t.Fatal("no terminal set must never short-circuit")
 	}
@@ -101,7 +101,7 @@ func TestAppendToolResultsNonTerminalIgnoresSet(t *testing.T) {
 	term := map[string]struct{}{"rag": {}}
 	_, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "retrieve", `{}`),
-	}, &stubSession{}, term, false)
+	}, nil, &stubSession{}, term, false)
 	if hit || answer != "" {
 		t.Fatal("non-terminal tool must not short-circuit even with a terminal set present")
 	}
@@ -147,7 +147,7 @@ func TestAppendToolResultsTerminalHitWithEmptyResult(t *testing.T) {
 
 	hist, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "rag", `{"question":"q"}`),
-	}, sess, term, true)
+	}, nil, sess, term, true)
 
 	if !hit {
 		t.Fatal("a successful terminal tool must short-circuit even with an empty result (streaming contract)")
@@ -193,7 +193,7 @@ func TestAppendToolResultsSkipsEmptyTerminalForNonEmptySibling(t *testing.T) {
 		toolCallMsg("call-1", "rag", `{"question":"first"}`),
 		toolCallMsg("call-2", "rag", `{"question":"second"}`),
 		toolCallMsg("call-3", "rag", `{"question":"third"}`),
-	}, sess, term, false)
+	}, nil, sess, term, false)
 
 	if !hit {
 		t.Fatal("the non-empty terminal sibling must short-circuit")
@@ -215,7 +215,7 @@ func TestAppendToolResultsAllEmptyTerminalFallsThrough(t *testing.T) {
 
 	hist, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "rag", `{"question":"q"}`),
-	}, sess, term, false)
+	}, nil, sess, term, false)
 
 	if hit || answer != "" {
 		t.Fatal("all-empty terminal results must fall through to the next model round")

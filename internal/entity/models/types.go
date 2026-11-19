@@ -32,6 +32,8 @@ type Message struct {
 	FunctionCall interface{}              `json:"function_call,omitempty"`
 	Refusal      interface{}              `json:"refusal,omitempty"`
 	Audio        interface{}              `json:"audio,omitempty"`
+	// ProviderState retains opaque provider output needed by subsequent tool rounds.
+	ProviderState []map[string]any `json:"provider_state,omitempty"`
 }
 
 // ToolCallSession mirrors Python's common.mcp_tool_call_conn.ToolCallSession protocol.
@@ -82,6 +84,7 @@ type ChatResponse struct {
 	ReasonContent *string                  `json:"reason_content"`
 	ToolCalls     []map[string]interface{} `json:"tool_calls,omitempty"`
 	Usage         *TokenUsage              `json:"usage,omitempty"`
+	ProviderState []map[string]any         `json:"-"`
 }
 
 // TokenUsage holds token usage split for one LLM call. Consumed by
@@ -269,6 +272,7 @@ type ModelList struct {
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
 	Chat        string `json:"chat"`
+	Responses   string `json:"responses"`
 	AsyncChat   string `json:"async_chat"`
 	AsyncResult string `json:"async_result"`
 	Embedding   string `json:"embedding"`
@@ -312,6 +316,8 @@ type ChatConfig struct {
 	// non-nil) after the stream completes; callers read it the same
 	// way they read ToolCallsResult.
 	UsageResult *TokenUsage `json:"-"`
+	// ProviderStateResult receives opaque output for replay in subsequent tool rounds.
+	ProviderStateResult *[]map[string]any `json:"-"`
 }
 
 type APIConfig struct {

@@ -24,18 +24,17 @@ const buildAzureApiKey = (values: Record<string, any>) =>
     ? { api_key: values.api_key ?? '', api_version: values.api_version }
     : (values.api_key ?? '');
 
-const buildMineruApiKey = (values: Record<string, any>) => {
-  const cfg: Record<string, any> = { ...values };
-  delete cfg.instance_name;
-  cfg.mineru_delete_output = values.mineru_delete_output ? '1' : '0';
-  if (
-    values.mineru_backend !== 'vlm-http-client' &&
-    values.mineru_backend !== 'hybrid-http-client'
-  ) {
-    delete cfg.mineru_server_url;
-  }
-  return cfg;
-};
+const buildMineruApiKey = (values: Record<string, any>) => ({
+  mineru_apiserver: values.mineru_apiserver,
+  mineru_api_token: values.mineru_api_token,
+  mineru_backend: values.mineru_backend,
+  mineru_output_dir: values.mineru_output_dir,
+  mineru_delete_output: values.mineru_delete_output ? '1' : '0',
+  ...(values.mineru_backend === 'vlm-http-client' ||
+  values.mineru_backend === 'hybrid-http-client'
+    ? { mineru_server_url: values.mineru_server_url }
+    : {}),
+});
 
 /**
  * Factory configuration mapping table

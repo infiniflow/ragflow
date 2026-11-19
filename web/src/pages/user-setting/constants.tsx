@@ -48,6 +48,7 @@ export const LocalLlmFactories = [
   LLMFactory.LocalAI,
   LLMFactory.LMStudio,
   LLMFactory.OpenAiAPICompatible,
+  LLMFactory.NovaCode,
   LLMFactory.TogetherAI,
   LLMFactory.Replicate,
   LLMFactory.OpenRouter,

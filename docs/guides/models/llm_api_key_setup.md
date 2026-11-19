@@ -58,6 +58,32 @@ Bedrock API key authentication does not support rerank models.
 
 Use short-term Bedrock API keys for production whenever possible. Long-term keys remain valid until they expire or are deleted, so store them as secrets, restrict access to the RAGFlow instance, and rotate them regularly.
 
+#### NovaCode
+
+Select **NovaCode** to configure a NovaCode API key. Use `https://ai.novacode.top/v1` as the base URL, without an endpoint suffix. The same instance settings are used for model discovery, verification, and chat requests.
+
+- **API protocol**: Choose **Responses** (the default, as used by Codex) or **Chat Completions**. Select a protocol supported by the model and API key group. Create separate instances if different models need different protocols.
+- **Reasoning effort**: Choose `low`, `medium` (the default), `high`, `xhigh`, or `max`. Supported levels depend on the model. These settings do not send a generic `thinking: disabled` flag. NovaCode GPT models that require reasoning cannot use `none`.
+
+Save the instance, list or add the exact model ID exposed by your key, then verify the model. Responses requests send the level as `reasoning.effort`; Chat Completions requests use `reasoning_effort`. When a chat or agent explicitly supplies an effort setting, it overrides the instance default.
+
+Model types are resolved from NovaCode's [public capability directory](https://ai.novacode.top/api/v1/public/models), then the bundled NovaCode catalog, and finally model-name hints. Only IDs returned by your authenticated model list are enriched when discovery succeeds. Public metadata requests do not send your API key. If the public directory is unavailable, model discovery uses the bundled catalog. Unrecognized models are inferred conservatively; a GPT-like name alone does not establish vision support.
+
+Saved model types remain instance settings: refreshing discovery does not overwrite an explicit choice. To update previously saved models, refresh **List models**, open the adjacent **More actions** menu, and choose **Sync model types**. Review the proposed changes, then confirm to update only the model types; model IDs, token limits, tools, and other instance settings are preserved. Failed updates remain in the dialog for retry. You can also edit an individual model with the pencil beside its type badges. New additions use the discovered types. These labels describe capabilities; a text-only verification does not prove image support.
+
+See the [NovaCode API examples](https://docs.novacode.top/reference/api-examples) for endpoint availability and API key group requirements. Configure an embedding model separately for dataset ingestion and retrieval.
+
+#### XunFei Retrieval
+
+Select **XunFei Retrieval**, enter your XunFei MaaS API key, and use `https://maas-api.cn-huabei-1.xf-yun.com/v2` as the base URL. The model list includes two entries.
+
+| Model | Type | API path |
+| --- | --- | --- |
+| `xop3qwen8bembedding` | Embedding | `POST /v2/embeddings` |
+| `xop3qwen8breranker` | Rerank | `POST /v2/rerank` |
+
+Verify each model you plan to use and save the instance. Select the embedding model in your dataset settings and the reranker in retrieval testing or chat settings. [XunFei MaaS API documentation](https://maas.xfyun.cn/doc/)
+
 ## Add Models to an Instance
 
 In the provider instance card, add and configure the models required by your business, such as large language models (LLMs), embedding models, vision-language models (VLMs), automatic speech recognition models (ASR), rerank models, and text-to-speech models (TTS).

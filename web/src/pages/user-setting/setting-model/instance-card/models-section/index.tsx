@@ -30,12 +30,11 @@ import {
   ListMinus,
   ListPlus,
   Loader2,
-  LogIn,
-  LogOut,
   MoreHorizontal,
   Plus,
   Search,
   ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 import {
   useCallback,
@@ -49,11 +48,13 @@ import { modelNameKey } from '@/utils/llm-util';
 import { AddCustomModelDialog } from '../add-custom-model-dialog';
 import { mapModelKey } from '../available-models';
 import { ModelRow } from './components/model-row';
+import { ModelTypeSyncDialog } from './components/model-type-sync-dialog';
 import { TagFilterButton } from './components/tag-filter-button';
 import {
   DRAFT_INSTANCE_SENTINEL,
   useModelEdit,
   useModelMutations,
+  useModelTypeSync,
   useModelVerify,
   useModelsCatalog,
   useModelsDerived,
@@ -227,6 +228,23 @@ export function ModelsSection(props: ModelsSectionProps) {
     onInstanceModelsEdited,
   });
 
+  const {
+    typeSyncAvailable,
+    typeSyncOpen,
+    typeSyncChanges,
+    typeSyncResult,
+    typeSyncing,
+    openTypeSyncPreview,
+    setTypeSyncOpen,
+    confirmTypeSync,
+  } = useModelTypeSync({
+    providerName,
+    instanceName,
+    isDraftInstance,
+    catalog,
+    instanceItems,
+  });
+
   useEffect(() => {
     if (!isDraftInstance && !instanceModelsLoading && instanceModelsSucceeded) {
       onInstanceModelsStatusChange?.(true);
@@ -312,12 +330,12 @@ export function ModelsSection(props: ModelsSectionProps) {
   // blur-driven auto-save while the dialog is open (focus shifts into a
   // React Portal outside the host's onBlurCapture container).
   useEffect(() => {
-    const open = dialogOpen || editingModel !== null;
+    const open = dialogOpen || editingModel !== null || typeSyncOpen;
     onBlurSuppressChange?.(open);
     return () => {
       if (open) onBlurSuppressChange?.(false);
     };
-  }, [dialogOpen, editingModel, onBlurSuppressChange]);
+  }, [dialogOpen, editingModel, typeSyncOpen, onBlurSuppressChange]);
 
   // hideIfEmpty: render nothing once the first fetch completes with no models.
   if (hideIfEmpty && hasFetched && models.length === 0) {
@@ -336,7 +354,7 @@ export function ModelsSection(props: ModelsSectionProps) {
               variant="outline"
               size="sm"
               onClick={handleListModels}
-              disabled={manualListLoading}
+              disabled={manualListLoading || typeSyncing}
               data-testid="models-list-button"
             >
               {manualListLoading && <Loader2 className="size-3 animate-spin" />}
@@ -348,6 +366,7 @@ export function ModelsSection(props: ModelsSectionProps) {
                   variant="outline"
                   size="icon-sm"
                   aria-label={tSetting('moreActions')}
+                  disabled={typeSyncing}
                   data-testid="models-more-actions"
                 >
                   <MoreHorizontal className="size-4" />
@@ -362,6 +381,22 @@ export function ModelsSection(props: ModelsSectionProps) {
                   <Plus className="size-4" />
                   {tSetting('addCustomModel')}
                 </DropdownMenuItem>
+                {!isDraftInstance && (
+                  <DropdownMenuItem
+                    justifyBetween={false}
+                    onClick={openTypeSyncPreview}
+                    disabled={
+                      !typeSyncAvailable ||
+                      manualListLoading ||
+                      instanceModelsLoading ||
+                      !instanceModelsSucceeded
+                    }
+                    data-testid="models-sync-types"
+                  >
+                    <RefreshCw className="size-4" />
+                    {tSetting('syncModelTypes')}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   justifyBetween={false}
                   onClick={handleBatchVerifyClick}
@@ -408,7 +443,9 @@ export function ModelsSection(props: ModelsSectionProps) {
                   onClick={
                     allFilteredAdded ? undefined : handleBatchToggleModels
                   }
-                  disabled={batchLoading || filteredModels.length === 0}
+                  disabled={
+                    batchLoading || typeSyncing || filteredModels.length === 0
+                  }
                   aria-label={
                     allFilteredAdded
                       ? tSetting('batchRemoveModels')
@@ -467,7 +504,7 @@ export function ModelsSection(props: ModelsSectionProps) {
                   model={model}
                   isAdded={isModelAdded(model.name)}
                   verifyStatus={verify[model.name] ?? 'idle'}
-                  hideActions={hideActions}
+                  hideActions={hideActions || typeSyncing}
                   onVerify={() => handleVerify(model)}
                   onAdd={() => handleAddModel(model)}
                   onRemove={() => handleRemoveModel(model)}
@@ -479,6 +516,15 @@ export function ModelsSection(props: ModelsSectionProps) {
           )}
         </div>
       </div>
+
+      <ModelTypeSyncDialog
+        open={typeSyncOpen}
+        onOpenChange={setTypeSyncOpen}
+        changes={typeSyncChanges}
+        result={typeSyncResult}
+        syncing={typeSyncing}
+        onConfirm={confirmTypeSync}
+      />
 
       <AddCustomModelDialog
         open={dialogOpen}

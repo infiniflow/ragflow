@@ -330,9 +330,12 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL, reg
 			}
 		}
 	}
-	if remoteFetched && bedrockAPIKeyAuth {
+	if remoteFetched && (bedrockAPIKeyAuth || strings.EqualFold(providerName, "NovaCode")) {
 		if len(remoteModels) == 0 {
-			return nil, common.NewCodedError(common.CodeDataError, "No Bedrock models were discovered")
+			if bedrockAPIKeyAuth {
+				return nil, common.NewCodedError(common.CodeDataError, "No Bedrock models were discovered")
+			}
+			return nil, common.NewCodedError(common.CodeDataError, "No supported NovaCode chat or vision models were discovered")
 		}
 		remoteNames := make(map[string]struct{}, len(remoteModels))
 		for _, model := range remoteModels {

@@ -912,6 +912,7 @@ func TestProviderInstanceCredentialMetadataDoesNotExposeSecrets(t *testing.T) {
 func TestMergeProviderAPIKeyPreservesBlankCredentialsAndSupportsClear(t *testing.T) {
 	tests := []struct {
 		name      string
+		provider  string
 		existing  string
 		submitted string
 		clear     bool
@@ -942,10 +943,17 @@ func TestMergeProviderAPIKeyPreservesBlankCredentialsAndSupportsClear(t *testing
 			clear:     true,
 			want:      map[string]string{"auth_mode": "iam_role", "aws_role_arn": "arn:aws:iam::1:role/model"},
 		},
+		{
+			name:      "MinerU removes form metadata while retaining the saved token",
+			provider:  "MinerU",
+			existing:  `{"mineru_api_token":"synthetic-token","model_info":[{"model_name":"MinerU-model"}],"api_key_config":{"mineru_backend":"basic"}}`,
+			submitted: `{"mineru_backend":"advanced","model_info":[],"credential_status":{"mineru_api_token":true}}`,
+			want:      map[string]string{"mineru_api_token": "synthetic-token", "mineru_backend": "advanced"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := mergeProviderAPIKey(tt.existing, json.RawMessage(tt.submitted), tt.clear)
+			got, err := mergeProviderAPIKey(tt.provider, tt.existing, json.RawMessage(tt.submitted), tt.clear)
 			if err != nil {
 				t.Fatalf("mergeProviderAPIKey() error = %v", err)
 			}
@@ -1893,5 +1901,59 @@ func TestCreateProviderInstanceUsesActiveTenantProvider(t *testing.T) {
 	}
 	if created.ProviderID != "provider-2" {
 		t.Fatalf("created instance provider_id = %q, want provider-2", created.ProviderID)
+	}
+}
+
+func TestNovaCodeSavedConfigPreservesCredentials(t *testing.T) {
+	existing := `{"api_key":"sk-test","wire_api":"responses","reasoning_effort":"medium"}`
+	merged, err := mergeSavedProviderAPIKeyConfig(existing, json.RawMessage(`{"wire_api":"chat_completions","reasoning_effort":"high","api_key":"must-not-replace"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal([]byte(merged), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["api_key"] != "sk-test" || got["wire_api"] != "chat_completions" || got["reasoning_effort"] != "high" {
+		t.Fatalf("unexpected config: %v", got)
+	}
+	configured, config, _, _ := providerInstanceCredentialMetadata(merged)
+	if !configured || config["wire_api"] != "chat_completions" || config["reasoning_effort"] != "high" {
+		t.Fatalf("settings did not survive metadata echo: %v", config)
+	}
+	if _, ok := config["api_key"]; ok {
+		t.Fatal("credential must not be included in config echo")
+	}
+}
+
+func TestAlterModelTypeOnlyPreservesInstanceSettings(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	extra := `{"max_tokens":16384,"is_tools":true,"user_setting":"keep"}`
+	if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-1").Updates(map[string]interface{}{"extra": extra, "status": "inactive"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "gpt-test", "", map[string]interface{}{"model_type": []interface{}{"chat", "vision"}})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("AlterModel() = %v, %v", code, err)
+	}
+	var got entity.TenantModel
+	if err := db.Where("id = ?", "model-1").Take(&got).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.ModelType != int(entity.ModelTypeFromStrings([]string{"chat", "vision"})) {
+		t.Fatalf("types = %v", got.ModelType)
+	}
+	if got.Extra != extra || got.Status != "inactive" || got.ProviderID != "provider-1" || got.InstanceID != "instance-1" || got.ModelName != "gpt-test" {
+		t.Fatalf("type-only update altered other model settings: %+v", got)
+	}
+	var instance entity.TenantModelInstance
+	if err := db.Where("id = ?", "instance-1").Take(&instance).Error; err != nil {
+		t.Fatal(err)
+	}
+	if instance.APIKey != "sk-test" {
+		t.Fatal("type-only update altered provider credentials")
 	}
 }

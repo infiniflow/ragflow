@@ -201,6 +201,7 @@ func toInternalMessages(msgs []*schema.Message) []Message {
 			role = "user"
 		}
 		msg := Message{Role: role, Content: mm.Content}
+		msg.ProviderState = providerStateFromExtra(mm.Extra)
 		if len(mm.UserInputMultiContent) > 0 {
 			if blocks := openAIContentBlocksFromEino(mm.UserInputMultiContent); len(blocks) > 0 {
 				msg.Content = blocks
@@ -273,9 +274,30 @@ func einoImagePartURL(img *schema.MessageInputImage) string {
 	return ""
 }
 
-// fromInternalResponse converts a *ChatResponse to *schema.Message. The
-// existing ChatResponse only carries answer text (+ optional reasoning), so
-// the resulting Message has Role=Assistant and Content=answer.
+const providerStateExtraKey = "ragflow_provider_state"
+
+// providerStateFromExtra restores provider state from both in-memory and
+// checkpoint-decoded Eino messages without exposing it as assistant text.
+func providerStateFromExtra(extra map[string]any) []map[string]any {
+	value := extra[providerStateExtraKey]
+	if value == nil {
+		return nil
+	}
+	if state, ok := value.([]map[string]any); ok {
+		return state
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var state []map[string]any
+	if err := json.Unmarshal(encoded, &state); err != nil {
+		return nil
+	}
+	return state
+}
+
+// fromInternalResponse converts provider output and metadata into an Eino message.
 func fromInternalResponse(resp *ChatResponse) *schema.Message {
 	if resp == nil {
 		return &schema.Message{Role: schema.Assistant, Content: ""}
@@ -285,6 +307,9 @@ func fromInternalResponse(resp *ChatResponse) *schema.Message {
 		content = *resp.Answer
 	}
 	msg := &schema.Message{Role: schema.Assistant, Content: content}
+	if len(resp.ProviderState) > 0 {
+		msg.Extra = map[string]any{providerStateExtraKey: resp.ProviderState}
+	}
 	if resp.ReasonContent != nil {
 		msg.ReasoningContent = *resp.ReasonContent
 	}
@@ -922,6 +947,7 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 			}
 			attemptCfg.ToolCallsResult = nil
 			attemptCfg.UsageResult = nil
+			attemptCfg.ProviderStateResult = nil
 			captureModelInput(ctx, *cm.ModelName, internalMessage)
 			err := cm.ChatStreamlyWithSender(ctx, internalMessage, attemptCfg, nil, sender)
 			if err != nil {
@@ -941,15 +967,15 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 				if attemptCfg.UsageResult != nil && attemptCfg.UsageResult.TotalTokens > 0 {
 					recordUsage(ctx, *cm.ModelName, attemptCfg.UsageResult)
 				}
-				if attemptCfg.ToolCallsResult != nil && len(*attemptCfg.ToolCallsResult) > 0 {
-					common.Debug("models: eino stream tool calls",
-						zap.String("model", *cm.ModelName),
-						zap.Int("tool_calls", len(*attemptCfg.ToolCallsResult)))
-					msg := &schema.Message{
-						Role:      schema.Assistant,
-						ToolCalls: toolCallsFromInternal(*attemptCfg.ToolCallsResult),
-					}
-					_ = sw.Send(msg, nil)
+				response := &ChatResponse{}
+				if attemptCfg.ToolCallsResult != nil {
+					response.ToolCalls = *attemptCfg.ToolCallsResult
+				}
+				if attemptCfg.ProviderStateResult != nil {
+					response.ProviderState = *attemptCfg.ProviderStateResult
+				}
+				if len(response.ToolCalls) > 0 || len(response.ProviderState) > 0 {
+					_ = sw.Send(fromInternalResponse(response), nil)
 				}
 				m.mu.Lock()
 				m.cursor = idx

@@ -44,6 +44,7 @@ export enum LLMFactory {
   NVIDIA = 'NVIDIA',
   LMStudio = 'LM-Studio',
   OpenAiAPICompatible = 'OpenAI-API-Compatible',
+  NovaCode = 'NovaCode',
   MWS = 'MWS',
   Cohere = 'Cohere',
   LeptonAI = 'LeptonAI',
@@ -56,6 +57,7 @@ export enum LLMFactory {
   Replicate = 'Replicate',
   TencentHunYuan = 'Tencent Hunyuan',
   XunFeiSpark = 'XunFei Spark',
+  XunFeiRetrieval = 'XunFei Retrieval',
   BaiduYiYan = 'BaiduYiyan',
   FishAudio = 'Fish Audio',
   TencentCloud = 'Tencent Cloud',
@@ -161,6 +163,7 @@ export const IconMap = {
   [LLMFactory.NVIDIA]: 'nvidia',
   [LLMFactory.LMStudio]: 'lm-studio',
   [LLMFactory.OpenAiAPICompatible]: 'openai-api',
+  [LLMFactory.NovaCode]: 'novacode',
   [LLMFactory.Cohere]: 'cohere',
   [LLMFactory.LeptonAI]: 'lepton',
   [LLMFactory.TogetherAI]: 'together',
@@ -172,6 +175,8 @@ export const IconMap = {
   [LLMFactory.Replicate]: 'replicate',
   [LLMFactory.TencentHunYuan]: 'hunyuan',
   [LLMFactory.XunFeiSpark]: 'spark',
+  // XunFei Retrieval uses the same XunFei brand mark as the Spark provider.
+  [LLMFactory.XunFeiRetrieval]: 'spark',
   [LLMFactory.BaiduYiYan]: 'wenxinyiyan',
   [LLMFactory.FishAudio]: 'fish-audio',
   [LLMFactory.TencentCloud]: 'tencent-cloud',
@@ -284,6 +289,7 @@ export const FieldToModelType: Record<string, string> = {
 
 export const APIMapUrl = {
   [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
+  [LLMFactory.NovaCode]: 'https://ai.novacode.top/',
   [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
   [LLMFactory.GreenPT]: 'https://greenpt.ai',
   [LLMFactory.Synthorai]: 'https://synthorai.io',
@@ -332,6 +338,7 @@ export const APIMapUrl = {
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
   [LLMFactory.XunFeiSpark]: 'https://maas.xfyun.cn/apikey',
+  [LLMFactory.XunFeiRetrieval]: 'https://maas.xfyun.cn/apikey',
   [LLMFactory.MiniMax]:
     'https://platform.minimaxi.com/user-center/basic-information',
   [LLMFactory.Groq]: 'https://console.groq.com/keys',

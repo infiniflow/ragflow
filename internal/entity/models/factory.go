@@ -55,6 +55,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVolcEngine(baseURL, urlSuffix), nil
 	case "vllm":
 		return NewVllmModel(baseURL, urlSuffix), nil
+	case "novacode":
+		return NewNovaCodeModel(baseURL, urlSuffix), nil
 	case "openai-api-compatible":
 		return NewOpenAIAPICompatibleModel(baseURL, urlSuffix), nil
 	case "systemone":
@@ -152,6 +154,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewSoMarkModel(baseURL, urlSuffix), nil
 	case "xunfei spark":
 		return NewXunFeiModel(baseURL, urlSuffix), nil
+	case "xunfei retrieval":
+		return newXunFeiRetrievalModel(baseURL, urlSuffix), nil
 	case "deepinfra":
 		return NewDeepInfraModel(baseURL, urlSuffix), nil
 	case "mineru.net":
