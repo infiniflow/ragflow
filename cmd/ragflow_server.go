@@ -162,10 +162,6 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	return args, nil
 }
 
-func parseArgs() (*bootstrap.ServerArgs, error) {
-	return parseArgsFrom(os.Args)
-}
-
 func validateLogLevel(level string) error {
 	switch level {
 	case "debug", "info", "warn", "error":
@@ -187,7 +183,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer cancel()
 
-	arguments, err := parseArgs()
+	arguments, err := parseArgsFrom(os.Args)
 	if err != nil {
 		fmt.Printf("Failed to parse arguments: %v\n", err)
 		os.Exit(1)
@@ -203,7 +199,7 @@ func main() {
 		return
 	}
 
-	if err := runServer(ctx, cancel, arguments); err != nil {
+	if err = runServer(ctx, cancel, arguments); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start RAGFlow: %v\n", err)
 		os.Exit(1)
 	}
@@ -215,10 +211,13 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	combined := arguments.Mode == nil
-	serverType := common.ServerTypeAPI
-	serverName := "ragflow_server"
-	if !combined {
+
+	standalone := arguments.Mode == nil
+	serverType := common.ServerTypeUnknown
+	var serverName string
+	if standalone {
+		serverName = "ragflow_standalone"
+	} else {
 		serverType = bootstrap.GetServerType(arguments)
 		serverName = bootstrap.TempServerName(serverType, arguments.Name)
 	}
@@ -247,21 +246,21 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	}
 	config.SetLogLevel(resolvedLogLevel)
 	var port int
-	if combined || serverType == common.ServerTypeAPI {
+	if standalone || serverType == common.ServerTypeAPI {
 		port, err = config.ResolvePort(config.GetAPIServerConfig().HTTPPort, arguments.Port)
 		if err != nil {
 			return fmt.Errorf("resolve API port: %w", err)
 		}
 		config.SetAPIServerHTTPPort(port)
 	}
-	if combined || serverType == common.ServerTypeAdmin {
+	if standalone || serverType == common.ServerTypeAdmin {
 		port, err = config.ResolvePort(config.GetAdminServerConfig().HTTPPort, arguments.Port)
 		if err != nil {
 			return fmt.Errorf("resolve admin port: %w", err)
 		}
 		config.SetAdminHTTPPort(port)
 	}
-	if !combined {
+	if !standalone {
 		arguments.Name = config.GetServerName(*arguments.Mode)
 		serverName, err = bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, port)
 		if err != nil {
@@ -288,19 +287,19 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	}
 	local.InitAdminStatus()
 	auditConfig := config.GetAuditConfig()
-	if err := common.InitAudit(auditConfig.Type, auditConfig.GetFileOutput(), serverName); err != nil {
+	if err = common.InitAudit(auditConfig.Type, auditConfig.GetFileOutput(), serverName); err != nil {
 		return fmt.Errorf("initialize audit logger: %w", err)
 	}
 	defer common.SyncAudit()
 	if arguments.EnablePProf {
-		if err := startPProf(pprofAddr()); err != nil {
+		if err = startPProf(pprofAddr()); err != nil {
 			common.Error("pprof server failed", err)
 		}
 	}
 	if isStandaloneDeepDocServer(serverType) {
 		return runDeepDoc(ctx, serverName, arguments)
 	}
-	runtimeNeeded := combined || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion || serverType == common.ServerTypeChatter
+	runtimeNeeded := standalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion || serverType == common.ServerTypeChatter
 	common.Info("Starting RAGFlow", zap.String("server", serverName))
 	// Keep the full configuration dump tied to the operator's chosen verbosity.
 	if !common.LogLevelHigherThanInfo(resolvedLogLevel) {
@@ -319,17 +318,18 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 			common.Error("Failed to close database", err)
 		}
 	}()
-	if err := dao.InitDB(ctx, combined || serverType == common.ServerTypeMigrate); err != nil {
+
+	if err = dao.InitDB(ctx, standalone || serverType == common.ServerTypeMigrate); err != nil {
 		return fmt.Errorf("initialize database: %w", err)
 	}
 	if serverType == common.ServerTypeMigrate {
 		common.Info("Database migrations completed")
 		return nil
 	}
-	if err := checkDatabaseVersion(ctx); err != nil {
+	if err = checkDatabaseVersion(ctx); err != nil {
 		return err
 	}
-	if err := engine.InitDocEngine(ctx); err != nil {
+	if err = engine.InitDocEngine(ctx); err != nil {
 		return fmt.Errorf("initialize doc engine: %w", err)
 	}
 	defer func() {
@@ -337,15 +337,15 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 			common.Error("Failed to close doc engine", err)
 		}
 	}()
-	if err := kvrocks.Init(ctx); err != nil {
+	if err = kvrocks.Init(ctx); err != nil {
 		return fmt.Errorf("initialize Kvrocks: %w", err)
 	}
 	defer kvrocks.Close()
-	if err := storage.Init(ctx); err != nil {
+	if err = storage.Init(ctx); err != nil {
 		return fmt.Errorf("initialize storage: %w", err)
 	}
 	defer storage.CloseStorage()
-	if err := engine.InitMessageQueue(); err != nil {
+	if err = engine.InitMessageQueue(); err != nil {
 		return fmt.Errorf("initialize message queue: %w", err)
 	}
 	if closer, ok := engine.GetMessageQueueEngine().(io.Closer); ok {
@@ -355,18 +355,18 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 			}
 		}()
 	}
-	if err := server.InitVariables(kvrocks.Get()); err != nil {
+	if err = server.InitVariables(kvrocks.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.Error(err))
 	}
-	if combined || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
-		if err := billing.Init(ctx, config.GetBillingConfig()); err != nil {
+	if standalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
+		if err = billing.Init(ctx, config.GetBillingConfig()); err != nil {
 			return fmt.Errorf("initialize billing: %w", err)
 		}
-		if err := billing.Start(ctx); err != nil {
+		if err = billing.Start(ctx); err != nil {
 			return fmt.Errorf("start billing: %w", err)
 		}
 	}
-	if err := server.StartServer(ctx, cancel, serverName, serverType); err != nil {
+	if err = server.StartServer(ctx, cancel, serverName, serverType); err != nil {
 		return err
 	}
 	defer func() {
@@ -379,7 +379,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	defer cancel()
 	var services *bootstrap.AgentServices
 	if runtimeNeeded {
-		if err := deepdocpkg.RegisterNativeDeepDoc(arguments); err != nil {
+		if err = deepdocpkg.RegisterNativeDeepDoc(arguments); err != nil {
 			return fmt.Errorf("register in-process DeepDoc backend: %w", err)
 		}
 		closeTokenizer, err := bootstrap.InitializeAgentTokenizer()
@@ -393,8 +393,9 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	}
 	// Stop and join service work before closing any process-wide resource.
 	defer cancel()
-	if common.GetRAGFlowType() == common.EnterpriseEdition {
-		return runEnterpriseServices(ctx, cancel, arguments, services)
+	err = runEEServices(ctx, cancel, arguments, services)
+	if err != nil {
+		return err
 	}
 	return runServices(ctx, cancel, arguments, services)
 }
