@@ -1,0 +1,333 @@
+{
+  "page_count": 2,
+  "items": [
+    {
+      "_pdf_positions": [
+        [
+          1,
+          72,
+          400,
+          52,
+          82
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "heading_level": 1,
+      "layout": "heading",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          72,
+          400,
+          52,
+          82
+        ]
+      ],
+      "text": "# Annual Report"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          72,
+          400,
+          102,
+          122
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "heading_level": 2,
+      "layout": "heading",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          72,
+          400,
+          102,
+          122
+        ]
+      ],
+      "text": "## Scope"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          72,
+          540,
+          142,
+          192
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          72,
+          540,
+          142,
+          192
+        ]
+      ],
+      "text": "Body paragraph."
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          90,
+          540,
+          202,
+          217
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "list",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          90,
+          540,
+          202,
+          217
+        ]
+      ],
+      "text": "- first item"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          90,
+          540,
+          222,
+          237
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "list",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          90,
+          540,
+          222,
+          237
+        ]
+      ],
+      "text": "2. second item"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          72,
+          540,
+          267,
+          392
+        ]
+      ],
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          72,
+          540,
+          267,
+          392
+        ]
+      ],
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "Region totals",
+              "col_span": 2,
+              "row_span": 1
+            },
+            {
+              "text": "",
+              "covered": true
+            }
+          ],
+          [
+            {
+              "text": "North",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "42",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "South",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "17",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "caption": "Table 1: totals",
+        "page": 1
+      }
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "a Preliminary figures."
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          72,
+          540,
+          422,
+          572
+        ]
+      ],
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          72,
+          540,
+          422,
+          572
+        ]
+      ],
+      "text": "Figure 1: pipeline"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          200,
+          260,
+          492,
+          507
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          200,
+          260,
+          492,
+          507
+        ]
+      ],
+      "text": "600 sec"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          72,
+          540,
+          602,
+          720
+        ],
+        [
+          2,
+          72,
+          540,
+          72,
+          120
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          72,
+          540,
+          602,
+          720
+        ],
+        [
+          2,
+          72,
+          540,
+          72,
+          120
+        ]
+      ],
+      "text": "Continues on the next page."
+    },
+    {
+      "_pdf_positions": [
+        [
+          2,
+          72,
+          300,
+          140,
+          170
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "equation",
+      "page_number": 2,
+      "positions": [
+        [
+          2,
+          72,
+          300,
+          140,
+          170
+        ]
+      ],
+      "text": "E = mc^2"
+    },
+    {
+      "_pdf_positions": [
+        [
+          2,
+          72,
+          300,
+          190,
+          220
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "code",
+      "page_number": 2,
+      "positions": [
+        [
+          2,
+          72,
+          300,
+          190,
+          220
+        ]
+      ],
+      "text": "x := 1"
+    }
+  ],
+  "warnings": []
+}

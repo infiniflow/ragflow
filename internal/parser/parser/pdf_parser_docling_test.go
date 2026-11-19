@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestPDFParser_ParseWithResult_DoclingChunkedIntegration(t *testing.T) {
@@ -259,7 +261,9 @@ func TestPDFParser_ParseWithResult_DoclingConvertOptions(t *testing.T) {
 	}
 }
 
-const doclingPositionsResponse = `{"document":{"md_content":"# Docling Title\n\nDocling body.\n\nUnmatched paragraph.\n","json_content":{
+// The Markdown export deliberately disagrees with json_content here: the
+// body must come from the typed elements, not from md_content.
+const doclingPositionsResponse = `{"document":{"md_content":"# Docling Title\n\nDocling body.\n\nOnly in the Markdown export.\n","json_content":{
  "pages":{"1":{"page_no":1,"size":{"width":612,"height":792}},"2":{"page_no":2,"size":{"width":612,"height":792}},"3":{"page_no":3,"size":{"width":612,"height":792}}},
  "texts":[
   {"label":"section_header","text":"Docling Title","prov":[{"page_no":1,"bbox":{"l":10,"t":700,"r":200,"b":680,"coord_origin":"BOTTOMLEFT"}}]},
@@ -295,34 +299,38 @@ func TestPDFParser_ParseWithResult_DoclingEmitsPositionsAndPageCount(t *testing.
 	if got := res.File["page_count"]; got != 3 {
 		t.Fatalf("page_count = %v, want 3 (pages, not documents)", got)
 	}
-	want := map[string][]any{
-		// BOTTOMLEFT y=700/680 on a 792pt page convert to top-origin 92/112.
-		"Docling Title": {1, 10.0, 200.0, 92.0, 112.0},
-		"Docling body.": {2, 15.0, 300.0, 100.0, 140.0},
+	if len(res.Warnings) != 0 {
+		t.Fatalf("warnings = %q, want none for a response with provenance", res.Warnings)
 	}
-	found := map[string]bool{}
-	for _, item := range res.JSON {
-		m := item.ToMap()
-		text := strings.TrimSpace(strings.TrimLeft(stringValue(m["text"]), "# "))
+	want := []struct {
+		text, layout string
+		page         int
+		row          []float64
+	}{
+		// BOTTOMLEFT y=700/680 on a 792pt page convert to top-origin 92/112.
+		{"## Docling Title", "heading", 1, []float64{1, 10, 200, 92, 112}},
+		{"Docling body.", "text", 2, []float64{2, 15, 300, 100, 140}},
+	}
+	if len(res.JSON) != len(want) {
+		t.Fatalf("items = %v, want the two json_content elements", ItemsToMaps(res.JSON))
+	}
+	for i, w := range want {
+		m := res.JSON[i].ToMap()
+		if m["text"] != w.text || m["layout"] != w.layout || m["page_number"] != w.page {
+			t.Fatalf("item %d = %v, want text %q layout %q page %d", i, m, w.text, w.layout, w.page)
+		}
 		rows, ok := ExtractPDFPositions(m)
-		if w, expected := want[text]; expected {
-			if !ok || len(rows) != 1 || len(rows[0]) != 5 {
-				t.Fatalf("%q positions = %#v ok=%v", text, rows, ok)
+		if !ok || len(rows) != 1 || len(rows[0]) != 5 {
+			t.Fatalf("%q positions = %#v ok=%v", w.text, rows, ok)
+		}
+		for j := range w.row {
+			if got, _ := numericAny(rows[0][j]); got != w.row[j] {
+				t.Fatalf("%q positions[%d] = %v, want %v (row %#v)", w.text, j, rows[0][j], w.row[j], rows[0])
 			}
-			for i := range w {
-				got, _ := numericAny(rows[0][i])
-				exp, _ := numericAny(w[i])
-				if got != exp {
-					t.Fatalf("%q positions[%d] = %v, want %v (row %#v)", text, i, rows[0][i], w[i], rows[0])
-				}
-			}
-			found[text] = true
-		} else if ok {
-			t.Fatalf("unmatched item %q must not carry positions: %#v", text, rows)
 		}
 	}
-	if len(found) != 2 {
-		t.Fatalf("matched items = %v, want both", found)
+	if level := res.JSON[0].ToMap()["heading_level"]; level != 2 {
+		t.Fatalf("heading_level = %v, want 2 (a section header sits below the title)", level)
 	}
 }
 
@@ -388,51 +396,246 @@ func buildDoclingPDFWithCount(t *testing.T, count int) []byte {
 	return buf.Bytes()
 }
 
-func TestDoclingAttachPositionsMatchesOccurrencesInOrder(t *testing.T) {
-	content := map[string]any{"texts": []any{
-		map[string]any{"text": "Repeated paragraph.", "prov": []any{
-			map[string]any{"page_no": 2.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
-		}},
-		map[string]any{"text": "Repeated paragraph.", "prov": []any{
-			map[string]any{"page_no": 5.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
-		}},
-	}}
-	res := ParseResult{JSON: MapsToItems([]map[string]any{
-		{"text": "Repeated paragraph."},
-		{"text": "Repeated paragraph."},
-	})}
-	res = doclingAttachPositions(res, content)
-	first, _ := res.JSON[0].ToMap()["_pdf_positions"].([][]any)
-	second, _ := res.JSON[1].ToMap()["_pdf_positions"].([][]any)
-	if len(first) != 1 || first[0][0] != 2 {
-		t.Fatalf("first occurrence must take page 2: %#v", first)
+// doclingStandardItems parses a standard response built around jsonContent
+// and returns the normalized items with the parse warnings.
+func doclingStandardItems(t *testing.T, markdown, jsonContent string) ([]map[string]any, []string) {
+	t.Helper()
+	doc := map[string]any{"md_content": markdown}
+	if jsonContent != "" {
+		var content map[string]any
+		if err := json.Unmarshal([]byte(jsonContent), &content); err != nil {
+			t.Fatalf("fixture: %v", err)
+		}
+		doc["json_content"] = content
 	}
-	if len(second) != 1 || second[0][0] != 5 {
-		t.Fatalf("second occurrence must take page 5: %#v", second)
+	body, err := json.Marshal(map[string]any{"document": doc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, ok := parseDoclingStandardResult(t.Context(), "sample.pdf", body, 0)
+	if !ok || res.Err != nil {
+		t.Fatalf("parseDoclingStandardResult ok=%v err=%v", ok, res.Err)
+	}
+	res = NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", res)
+	if res.Err != nil {
+		t.Fatalf("NormalizeResult: %v", res.Err)
+	}
+	return ItemsToMaps(res.JSON), res.Warnings
+}
+
+func doclingItemPage(t *testing.T, item map[string]any) int {
+	t.Helper()
+	rows, ok := ExtractPDFPositions(item)
+	if !ok || len(rows) != 1 {
+		t.Fatalf("item %v: want one position row, got %#v", item["text"], rows)
+	}
+	page, _ := numericAny(rows[0][0])
+	return int(page)
+}
+
+// Each element carries its own provenance, so identical text on two pages
+// cannot trade positions the way matching Markdown text back to it could.
+func TestDoclingStructuredKeepsRepeatedTextProvenance(t *testing.T) {
+	items, _ := doclingStandardItems(t, "Repeated paragraph.\n\nRepeated paragraph.\n", `{"texts":[
+		{"label":"text","text":"Repeated paragraph.","prov":[{"page_no":5,"bbox":{"l":10,"t":20,"r":100,"b":40}}]},
+		{"label":"text","text":"Repeated paragraph.","prov":[{"page_no":2,"bbox":{"l":10,"t":20,"r":100,"b":40}}]}
+	]}`)
+	if len(items) != 2 {
+		t.Fatalf("items = %v, want 2", items)
+	}
+	if first, second := doclingItemPage(t, items[0]), doclingItemPage(t, items[1]); first != 5 || second != 2 {
+		t.Fatalf("pages = %d, %d; want each occurrence on its own page (5, 2)", first, second)
 	}
 }
 
-func TestDoclingAttachPositionsKeepsLeadingDigits(t *testing.T) {
-	content := map[string]any{"texts": []any{
-		map[string]any{"text": "2026 Outlook", "prov": []any{
-			map[string]any{"page_no": 3.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
-		}},
-		map[string]any{"text": "Introduction", "prov": []any{
-			map[string]any{"page_no": 4.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
-		}},
-	}}
-	res := ParseResult{JSON: MapsToItems([]map[string]any{
-		{"text": "2026 Outlook"},
-		{"text": "1. Introduction"},
-	})}
-	res = doclingAttachPositions(res, content)
-	digits, ok := res.JSON[0].ToMap()["_pdf_positions"].([][]any)
-	if !ok || len(digits) != 1 || digits[0][0] != 3 {
-		t.Fatalf("leading digits are content and must match: %#v", res.JSON[0].ToMap())
+// Headings and list items are typed by their label. Their text is never
+// stripped of a Markdown marker to find a match, so leading digits survive.
+func TestDoclingStructuredLabelsDecideLayout(t *testing.T) {
+	prov := `"prov":[{"page_no":1,"bbox":{"l":10,"t":20,"r":100,"b":40}}]`
+	items, _ := doclingStandardItems(t, "", `{"texts":[
+		{"label":"title","text":"2026 Outlook",`+prov+`},
+		{"label":"section_header","level":2,"text":"1. Introduction",`+prov+`},
+		{"label":"list_item","text":"plain bullet",`+prov+`},
+		{"label":"list_item","enumerated":true,"marker":"3.","text":"numbered",`+prov+`},
+		{"label":"code","text":"x := 1",`+prov+`},
+		{"label":"formula","text":"E = mc^2",`+prov+`},
+		{"label":"footnote","text":"1 A footnote.",`+prov+`},
+		{"label":"text","text":"","orig":"kept from orig",`+prov+`},
+		{"label":"page_header","text":"Running header",`+prov+`},
+		{"label":"page_footer","text":"7",`+prov+`},
+		{"label":"text","content_layer":"furniture","text":"Watermark",`+prov+`}
+	]}`)
+	want := []struct {
+		text, layout string
+		level        any
+	}{
+		{"# 2026 Outlook", "heading", 1},
+		{"### 1. Introduction", "heading", 3},
+		{"- plain bullet", "list", nil},
+		{"3. numbered", "list", nil},
+		{"x := 1", "code", nil},
+		{"E = mc^2", "equation", nil},
+		{"1 A footnote.", "text", nil},
+		{"kept from orig", "text", nil},
 	}
-	numbered, ok := res.JSON[1].ToMap()["_pdf_positions"].([][]any)
-	if !ok || len(numbered) != 1 || numbered[0][0] != 4 {
-		t.Fatalf("numbered list prefix must strip for the match: %#v", res.JSON[1].ToMap())
+	if len(items) != len(want) {
+		t.Fatalf("items = %v, want %d (running header, footer and furniture dropped)", items, len(want))
+	}
+	for i, w := range want {
+		if items[i]["text"] != w.text || items[i]["layout"] != w.layout || items[i]["heading_level"] != w.level {
+			t.Errorf("item %d = %v, want text %q layout %q heading_level %v", i, items[i], w.text, w.layout, w.level)
+		}
+		if items[i]["doc_type_kwd"] != "text" || items[i]["page_number"] != 1 {
+			t.Errorf("item %d = %v, want a text item on page 1", i, items[i])
+		}
+	}
+}
+
+// The body tree is the reading order. Captions and footnotes travel with
+// their table or picture instead of becoming loose paragraphs, a merged cell
+// keeps its span, and text recognized inside a picture follows the picture.
+func TestDoclingStructuredFollowsBodyTree(t *testing.T) {
+	items, warnings := doclingStandardItems(t, "", `{
+	 "pages":{"1":{"size":{"width":612,"height":792}}},
+	 "body":{"children":[{"$ref":"#/texts/0"},{"$ref":"#/tables/0"},{"$ref":"#/groups/0"},{"$ref":"#/pictures/0"},{"$ref":"#/groups/1"},{"$ref":"#/texts/9"}]},
+	 "groups":[
+	  {"label":"list","children":[{"$ref":"#/texts/3"},{"$ref":"#/texts/4"}]},
+	  {"label":"inline","children":[{"$ref":"#/texts/7"},{"$ref":"#/texts/8"}]}
+	 ],
+	 "texts":[
+	  {"label":"text","text":"Before the table.","prov":[{"page_no":1,"bbox":{"l":72,"t":80,"r":540,"b":100,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"caption","text":"Table 1: totals","prov":[{"page_no":1,"bbox":{"l":72,"t":110,"r":540,"b":125,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"footnote","text":"a Preliminary figures.","prov":[{"page_no":1,"bbox":{"l":72,"t":260,"r":540,"b":275,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"list_item","text":"first","prov":[{"page_no":1,"bbox":{"l":90,"t":290,"r":540,"b":305,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"list_item","text":"second","prov":[{"page_no":1,"bbox":{"l":90,"t":310,"r":540,"b":325,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"caption","text":"Figure 1: pipeline","prov":[{"page_no":1,"bbox":{"l":72,"t":520,"r":540,"b":535,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"text","text":"600 sec","prov":[{"page_no":1,"bbox":{"l":200,"t":400,"r":260,"b":415,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"text","text":"Inline","prov":[{"page_no":1,"bbox":{"l":72,"t":560,"r":120,"b":575,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"text","text":"paragraph.","prov":[{"page_no":1,"bbox":{"l":125,"t":560,"r":200,"b":575,"coord_origin":"TOPLEFT"}}]},
+	  {"label":"text","text":"After everything.","prov":[{"page_no":1,"bbox":{"l":72,"t":600,"r":540,"b":620,"coord_origin":"TOPLEFT"}}]}
+	 ],
+	 "tables":[{"label":"table","captions":[{"$ref":"#/texts/1"}],"footnotes":[{"$ref":"#/texts/2"}],
+	  "children":[{"$ref":"#/texts/1"},{"$ref":"#/texts/2"}],
+	  "prov":[{"page_no":1,"bbox":{"l":72,"t":130,"r":540,"b":250,"coord_origin":"TOPLEFT"}}],
+	  "data":{"num_rows":2,"num_cols":2,"grid":[
+	   [{"text":"Region & total","column_header":true,"col_span":2,"row_span":1,"start_row_offset_idx":0,"start_col_offset_idx":0},
+	    {"text":"Region & total","column_header":true,"col_span":2,"row_span":1,"start_row_offset_idx":0,"start_col_offset_idx":0}],
+	   [{"text":"North","start_row_offset_idx":1,"start_col_offset_idx":0},{"text":"42","start_row_offset_idx":1,"start_col_offset_idx":1}]
+	  ]}}],
+	 "pictures":[{"label":"picture","captions":[{"$ref":"#/texts/5"}],"children":[{"$ref":"#/texts/5"},{"$ref":"#/texts/6"}],
+	  "prov":[{"page_no":1,"bbox":{"l":72,"t":340,"r":540,"b":510,"coord_origin":"TOPLEFT"}}]}]
+	}`)
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %q, want none", warnings)
+	}
+	type shape struct{ docType, layout, text string }
+	want := []shape{
+		{"text", "text", "Before the table."},
+		{"table", "table", ""},
+		{"text", "text", "a Preliminary figures."},
+		{"text", "list", "- first"},
+		{"text", "list", "- second"},
+		{"image", "figure", "Figure 1: pipeline"},
+		{"text", "text", "600 sec"},
+		{"text", "text", "Inline paragraph."},
+		{"text", "text", "After everything."},
+	}
+	if len(items) != len(want) {
+		t.Fatalf("items = %v, want %d", items, len(want))
+	}
+	for i, w := range want {
+		text, _ := items[i]["text"].(string)
+		if items[i]["doc_type_kwd"] != w.docType || items[i]["layout"] != w.layout || text != w.text {
+			t.Errorf("item %d = %v, want %+v", i, items[i], w)
+		}
+		if items[i]["page_number"] != 1 {
+			t.Errorf("item %d page_number = %v, want 1", i, items[i]["page_number"])
+		}
+	}
+	td, ok := items[1]["table"].(*entity.TableData)
+	if !ok || td == nil {
+		t.Fatalf("table item carries no TableData: %v", items[1])
+	}
+	if td.Caption != "Table 1: totals" || td.Page != 1 || td.HeaderRows != 1 {
+		t.Errorf("table caption/page/header rows = %q/%d/%d, want the caption on page 1 with one header row", td.Caption, td.Page, td.HeaderRows)
+	}
+	if rows := td.CellTexts(); len(rows) != 2 || len(rows[0]) != 1 || rows[0][0] != "Region & total" || len(rows[1]) != 2 || rows[1][1] != "42" {
+		t.Errorf("table rows = %v, want the merged header written once", rows)
+	}
+	if !HasPDFCropRegion(items[5]) {
+		t.Errorf("picture item lost its crop region: %v", items[5])
+	}
+	// The inline paragraph spans both of its fragments.
+	if rows, _ := ExtractPDFPositions(items[7]); len(rows) != 2 {
+		t.Errorf("inline paragraph positions = %v, want one row per fragment", rows)
+	}
+}
+
+// A table without a grid is read from its cell list, in row and column order.
+func TestDoclingTableHTMLFromCellList(t *testing.T) {
+	data := map[string]any{"table_cells": []any{
+		map[string]any{"text": "42", "start_row_offset_idx": 1.0, "start_col_offset_idx": 1.0},
+		map[string]any{"text": "Total", "column_header": true, "col_span": 2.0, "start_row_offset_idx": 0.0, "start_col_offset_idx": 0.0},
+		map[string]any{"text": "North", "start_row_offset_idx": 1.0, "start_col_offset_idx": 0.0},
+	}}
+	const want = `<table><tr><th colspan="2">Total</th></tr><tr><td>North</td><td>42</td></tr></table>`
+	if got := doclingTableHTML(data); got != want {
+		t.Fatalf("markup = %s, want %s", got, want)
+	}
+	if got := doclingTableHTML(map[string]any{"grid": []any{[]any{map[string]any{"text": " "}}}}); got != "" {
+		t.Fatalf("a table with no cell text rendered %q", got)
+	}
+}
+
+// A picture with no caption is kept for its crop region and carries no
+// placeholder text; one with neither text nor a region is dropped.
+func TestDoclingStructuredPictureWithoutText(t *testing.T) {
+	items, _ := doclingStandardItems(t, "", `{
+	 "texts":[{"label":"text","text":"Body.","prov":[{"page_no":1,"bbox":{"l":10,"t":20,"r":100,"b":40}}]}],
+	 "pictures":[
+	  {"label":"picture","prov":[{"page_no":1,"bbox":{"l":10,"t":50,"r":100,"b":90}}]},
+	  {"label":"picture"}
+	 ]}`)
+	if len(items) != 2 {
+		t.Fatalf("items = %v, want the body text and the located picture", items)
+	}
+	picture := items[1]
+	if picture["doc_type_kwd"] != "image" || picture["layout"] != "figure" || !HasPDFCropRegion(picture) {
+		t.Fatalf("picture = %v, want an image item with a crop region", picture)
+	}
+	if text, _ := picture["text"].(string); text != "" {
+		t.Fatalf("picture text = %q, want none (a placeholder would be indexed as body text)", text)
+	}
+}
+
+// Without provenance the typed elements cannot be placed on a page, so the
+// Markdown export is used and the loss of positions is reported.
+func TestDoclingStandardFallsBackToMarkdownWithoutProvenance(t *testing.T) {
+	for name, jsonContent := range map[string]string{
+		"no json_content":    "",
+		"no texts":           `{"texts":[]}`,
+		"no prov":            `{"texts":[{"label":"text","text":"From json."}]}`,
+		"unconvertible prov": `{"texts":[{"label":"text","text":"From json.","prov":[{"page_no":1,"bbox":{"l":10,"t":700,"r":200,"b":680,"coord_origin":"BOTTOMLEFT"}}]}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			items, warnings := doclingStandardItems(t, "# From Markdown\n\nBody.\n", jsonContent)
+			if len(items) != 2 || items[0]["text"] != "# From Markdown" {
+				t.Fatalf("items = %v, want the Markdown export", items)
+			}
+			for _, item := range items {
+				if _, ok := ExtractPDFPositions(item); ok {
+					t.Fatalf("fallback item carries positions: %v", item)
+				}
+			}
+			if len(warnings) != 1 || !strings.Contains(warnings[0], "positions are unavailable") {
+				t.Fatalf("warnings = %q, want the missing-provenance warning", warnings)
+			}
+		})
+	}
+	// With no Markdown either, the typed elements are still the document.
+	items, warnings := doclingStandardItems(t, "", `{"texts":[{"label":"title","text":"Only json"}]}`)
+	if len(items) != 1 || items[0]["text"] != "# Only json" || len(warnings) != 0 {
+		t.Fatalf("items = %v warnings = %q, want the json element", items, warnings)
 	}
 }
 
@@ -469,45 +672,50 @@ func TestDoclingPageCountSourceLowerBound(t *testing.T) {
 	}
 }
 
-func TestDoclingProvPositionConvertsBottomLeftOrigin(t *testing.T) {
-	heights := map[int]float64{1: 200}
-	prov := map[string]any{"page_no": 1.0, "bbox": map[string]any{
-		"l": 10.0, "t": 180.0, "r": 50.0, "b": 170.0, "coord_origin": "BOTTOMLEFT",
-	}}
-	pos := doclingProvPosition(prov, heights)
-	if pos == nil {
-		t.Fatal("position dropped")
+func TestDoclingRegionsConvertBottomLeftOrigin(t *testing.T) {
+	bottomLeft := `{"label":"text","text":"bottom","prov":[{"page_no":1,"bbox":{"l":10,"t":180,"r":50,"b":170,"coord_origin":"BOTTOMLEFT"}}]}`
+	topLeft := `{"label":"text","text":"top","prov":[{"page_no":1,"bbox":{"l":10,"t":20,"r":50,"b":30,"coord_origin":"TOPLEFT"}}]}`
+	row := func(item map[string]any) []any {
+		rows, _ := ExtractPDFPositions(item)
+		if len(rows) != 1 {
+			return nil
+		}
+		return rows[0]
 	}
+	items, _ := doclingStandardItems(t, "", `{"pages":{"1":{"size":{"width":100,"height":200}}},"texts":[`+bottomLeft+`,`+topLeft+`]}`)
 	// BOTTOMLEFT y=180/170 from the bottom become 20/30 from the top.
-	if pos[3] != 20.0 || pos[4] != 30.0 {
+	if pos := row(items[0]); pos == nil || pos[3] != 20.0 || pos[4] != 30.0 {
 		t.Fatalf("BOTTOMLEFT not converted: %#v", pos)
 	}
+	if pos := row(items[1]); pos == nil || pos[3] != 20.0 || pos[4] != 30.0 {
+		t.Fatalf("TOPLEFT must pass through unchanged: %#v", pos)
+	}
 	// Unknown page height: the bottom-origin Y cannot meet the top-origin
-	// contract, so the position is dropped rather than emitted wrong.
-	if pos = doclingProvPosition(prov, map[int]float64{}); pos != nil {
+	// contract, so the position is dropped rather than emitted wrong. A
+	// TOPLEFT box needs no page size.
+	items, _ = doclingStandardItems(t, "", `{"texts":[`+bottomLeft+`,`+topLeft+`]}`)
+	if pos := row(items[0]); pos != nil {
 		t.Fatalf("missing height must drop the position, got %#v", pos)
 	}
-	// TOPLEFT boxes are untouched even with a known height.
-	provTL := map[string]any{"page_no": 1.0, "bbox": map[string]any{
-		"l": 10.0, "t": 20.0, "r": 50.0, "b": 30.0, "coord_origin": "TOPLEFT",
-	}}
-	pos = doclingProvPosition(provTL, heights)
-	if pos == nil || pos[3] != 20.0 || pos[4] != 30.0 {
-		t.Fatalf("TOPLEFT must pass through unchanged: %#v", pos)
+	if items[0]["page_number"] != 1 {
+		t.Fatalf("page identity lost with the position: %v", items[0])
+	}
+	if pos := row(items[1]); pos == nil || pos[3] != 20.0 || pos[4] != 30.0 {
+		t.Fatalf("TOPLEFT without a page size must be kept: %#v", pos)
 	}
 }
 
-func TestDoclingPageHeightsFromPagesMetadata(t *testing.T) {
+func TestDoclingPageSizesFromPagesMetadata(t *testing.T) {
 	asMap := map[string]any{"pages": map[string]any{
 		"1": map[string]any{"size": map[string]any{"width": 100.0, "height": 200.0}},
 	}}
-	if h := doclingPageHeights(asMap)[1]; h != 200.0 {
-		t.Fatalf("map-form pages height = %v, want 200", h)
+	if size := doclingPageSizes(asMap)[1]; size != [2]float64{100, 200} {
+		t.Fatalf("map-form page size = %v, want [100 200]", size)
 	}
 	asList := map[string]any{"pages": []any{
-		map[string]any{"page_no": 2.0, "size": map[string]any{"height": 300.0}},
+		map[string]any{"page_no": 2.0, "size": map[string]any{"width": 150.0, "height": 300.0}},
 	}}
-	if h := doclingPageHeights(asList)[2]; h != 300.0 {
-		t.Fatalf("list-form pages height = %v, want 300", h)
+	if size := doclingPageSizes(asList)[2]; size != [2]float64{150, 300} {
+		t.Fatalf("list-form page size = %v, want [150 300]", size)
 	}
 }

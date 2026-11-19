@@ -222,3 +222,48 @@ func TestExternalBlockWire_SoMarkKeepsHeaderFooter(t *testing.T) {
 func TestExternalBlockWire_SoMarkWithoutPageSizes(t *testing.T) {
 	assertExternalBlockWire(t, "pdf_external_block.somark_nosizes", soMarkWireResult(t, false, nil))
 }
+
+// doclingWireFixture is a standard Docling response: a body tree in reading
+// order with a title, section headers, a list, a captioned table with a
+// merged header and a footnote, a captioned picture with text recognized
+// inside it, an element that continues on the next page, both coordinate
+// origins, and page furniture.
+const doclingWireFixture = `{"document": {"md_content": "not the source of the items", "json_content": {
+ "pages": {"1": {"page_no": 1, "size": {"width": 612, "height": 792}}, "2": {"page_no": 2, "size": {"width": 612, "height": 792}}},
+ "body": {"children": [{"$ref": "#/texts/0"}, {"$ref": "#/texts/1"}, {"$ref": "#/texts/2"}, {"$ref": "#/groups/0"}, {"$ref": "#/tables/0"}, {"$ref": "#/pictures/0"}, {"$ref": "#/texts/9"}, {"$ref": "#/texts/10"}, {"$ref": "#/texts/11"}]},
+ "furniture": {"children": [{"$ref": "#/texts/12"}]},
+ "groups": [{"label": "list", "children": [{"$ref": "#/texts/3"}, {"$ref": "#/texts/4"}]}],
+ "texts": [
+  {"label": "title", "text": "Annual Report", "prov": [{"page_no": 1, "bbox": {"l": 72, "t": 740, "r": 400, "b": 710, "coord_origin": "BOTTOMLEFT"}}]},
+  {"label": "section_header", "level": 1, "text": "Scope", "prov": [{"page_no": 1, "bbox": {"l": 72, "t": 690, "r": 400, "b": 670, "coord_origin": "BOTTOMLEFT"}}]},
+  {"label": "text", "text": "Body paragraph.", "prov": [{"page_no": 1, "bbox": {"l": 72, "t": 650, "r": 540, "b": 600, "coord_origin": "BOTTOMLEFT"}}]},
+  {"label": "list_item", "text": "first item", "prov": [{"page_no": 1, "bbox": {"l": 90, "t": 590, "r": 540, "b": 575, "coord_origin": "BOTTOMLEFT"}}]},
+  {"label": "list_item", "enumerated": true, "marker": "2.", "text": "second item", "prov": [{"page_no": 1, "bbox": {"l": 90, "t": 570, "r": 540, "b": 555, "coord_origin": "BOTTOMLEFT"}}]},
+  {"label": "caption", "text": "Table 1: totals", "prov": [{"page_no": 1, "bbox": {"l": 72, "t": 545, "r": 540, "b": 530, "coord_origin": "BOTTOMLEFT"}}]},
+  {"label": "footnote", "text": "a Preliminary figures.", "prov": [{"page_no": 1, "bbox": {"l": 72, "t": 395, "r": 540, "b": 380, "coord_origin": "BOTTOMLEFT"}}]},
+  {"label": "caption", "text": "Figure 1: pipeline", "prov": [{"page_no": 1, "bbox": {"l": 72, "t": 215, "r": 540, "b": 200, "coord_origin": "BOTTOMLEFT"}}]},
+  {"label": "text", "text": "600 sec", "prov": [{"page_no": 1, "bbox": {"l": 200, "t": 300, "r": 260, "b": 285, "coord_origin": "BOTTOMLEFT"}}]},
+  {"label": "text", "text": "Continues on the next page.", "prov": [{"page_no": 1, "bbox": {"l": 72, "t": 190, "r": 540, "b": 72, "coord_origin": "BOTTOMLEFT"}}, {"page_no": 2, "bbox": {"l": 72, "t": 72, "r": 540, "b": 120, "coord_origin": "TOPLEFT"}}]},
+  {"label": "formula", "text": "E = mc^2", "prov": [{"page_no": 2, "bbox": {"l": 72, "t": 140, "r": 300, "b": 170, "coord_origin": "TOPLEFT"}}]},
+  {"label": "code", "text": "x := 1", "prov": [{"page_no": 2, "bbox": {"l": 72, "t": 190, "r": 300, "b": 220, "coord_origin": "TOPLEFT"}}]},
+  {"label": "page_footer", "content_layer": "furniture", "text": "Page 1", "prov": [{"page_no": 1, "bbox": {"l": 280, "t": 40, "r": 330, "b": 25, "coord_origin": "BOTTOMLEFT"}}]}
+ ],
+ "tables": [{"label": "table", "captions": [{"$ref": "#/texts/5"}], "footnotes": [{"$ref": "#/texts/6"}], "children": [{"$ref": "#/texts/5"}, {"$ref": "#/texts/6"}],
+  "prov": [{"page_no": 1, "bbox": {"l": 72, "t": 525, "r": 540, "b": 400, "coord_origin": "BOTTOMLEFT"}}],
+  "data": {"num_rows": 3, "num_cols": 2, "grid": [
+   [{"text": "Region totals", "column_header": true, "col_span": 2, "row_span": 1, "start_row_offset_idx": 0, "start_col_offset_idx": 0},
+    {"text": "Region totals", "column_header": true, "col_span": 2, "row_span": 1, "start_row_offset_idx": 0, "start_col_offset_idx": 0}],
+   [{"text": "North", "start_row_offset_idx": 1, "start_col_offset_idx": 0}, {"text": "42", "start_row_offset_idx": 1, "start_col_offset_idx": 1}],
+   [{"text": "South", "start_row_offset_idx": 2, "start_col_offset_idx": 0}, {"text": "17", "start_row_offset_idx": 2, "start_col_offset_idx": 1}]
+  ]}}],
+ "pictures": [{"label": "picture", "captions": [{"$ref": "#/texts/7"}], "children": [{"$ref": "#/texts/7"}, {"$ref": "#/texts/8"}],
+  "prov": [{"page_no": 1, "bbox": {"l": 72, "t": 370, "r": 540, "b": 220, "coord_origin": "BOTTOMLEFT"}}]}]
+}}}`
+
+func TestExternalBlockWire_Docling(t *testing.T) {
+	res, ok := parseDoclingStandardResult(t.Context(), "sample.pdf", []byte(doclingWireFixture), 0)
+	if !ok {
+		t.Fatal("standard response was not parsed")
+	}
+	assertExternalBlockWire(t, "pdf_external_block.docling", res)
+}
