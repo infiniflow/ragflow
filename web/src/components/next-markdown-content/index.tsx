@@ -376,7 +376,7 @@ function MarkdownContent({
               </HoverCardContent>
             </HoverCard>
           )}
-          <div className={'space-y-2 md:max-w-[40vw] w-full'}>
+          <div className={'space-y-2 min-w-0 md:max-w-[40vw] w-full'}>
             <div
               dangerouslySetInnerHTML={{
                 __html: DOMPurify.sanitize(chunkItem?.content ?? ''),

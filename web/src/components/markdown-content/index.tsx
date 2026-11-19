@@ -272,7 +272,7 @@ const MarkdownContent = ({
               </HoverCardContent>
             </HoverCard>
           )}
-          <div className={'space-y-2 md:max-w-[40vw]'}>
+          <div className={'space-y-2 min-w-0 md:max-w-[40vw]'}>
             <div
               dangerouslySetInnerHTML={{
                 __html: sanitizeHtmlWithImagesAsText(chunkItem?.content ?? ''),
