@@ -19,19 +19,21 @@ import {
   ExceptiveType,
   VideoExtensions,
 } from '@/constants/common';
+import { supportsAdditionalSourceLocate } from '@/ee/utils/source-locate-private';
 
 /** True when the citation should open the in-app preview locate drawer. */
 export const supportsSourceLocate = (ext?: string) => {
   const filteredExceptiveType = ExceptiveType.filter((item) => item !== 'html');
 
   return (
-    !!ext &&
-    (
-      [
-        ...filteredExceptiveType,
-        ...AudioExtensions,
-        ...VideoExtensions,
-      ] as readonly string[]
-    ).includes(ext.toLowerCase())
+    supportsAdditionalSourceLocate(ext) ||
+    (!!ext &&
+      (
+        [
+          ...filteredExceptiveType,
+          ...AudioExtensions,
+          ...VideoExtensions,
+        ] as readonly string[]
+      ).includes(ext.toLowerCase()))
   );
 };
