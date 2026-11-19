@@ -1,6 +1,14 @@
 import { IngestionTaskStatus } from '@/constants/knowledge';
+import agentService from '@/services/agent-service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { AxiosHeaders } from 'axios';
 import {
   ChangeParserDialog,
   ReparseConfirmDialog,
@@ -43,46 +51,43 @@ let mockCustomDsl = mockDsl;
 let mockCustomDslByVersion: Record<string, typeof mockDsl> = {};
 // Published versions of the mocked pipeline; a test can empty this to model a
 // pinned version that has been pruned since the document was saved.
-let mockVersions: { id: string; title: string; created_at: string }[] = [
-  { id: 'version-1', title: 'v1', created_at: '' },
-];
+let mockVersions: { id: string; name: string; alias: string }[];
+
+jest.mock('@/services/agent-service', () => ({
+  __esModule: true,
+  default: { listAgentVersions: jest.fn() },
+}));
+
+const mockListAgentVersions = jest.mocked(agentService.listAgentVersions);
+
+function catalogResponse() {
+  return {
+    data: {
+      code: 0,
+      data: [{ id: 'pipeline', name: 'Pipeline', versions: mockVersions }],
+    },
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    config: { headers: new AxiosHeaders() },
+  };
+}
 
 jest.mock('@/hooks/use-agent-request', () => ({
   useFetchPipelineDslByPipelineId: (
-    _id: string,
-    versionId: string | undefined,
-    isBuiltin: boolean,
+    id?: string,
+    versionId?: string,
+    isBuiltin?: boolean,
   ) => ({
     dsl: isBuiltin
       ? mockBuiltinDsl
-      : (mockCustomDslByVersion[versionId ?? ''] ?? mockCustomDsl),
+      : id && versionId && (mockCustomDslByVersion[versionId] ?? mockCustomDsl),
     loading: false,
   }),
-  // The mocked ParserTreeSelect below emits version-1 on every pipeline
-  // pick, so the canvas version list must contain it — otherwise the dialog
-  // treats the selection as missing and form validation rejects the save.
-  // An undefined canvas id models the hook's enabled gate (no fetch outside
-  // pipeline mode).
-  useFetchCanvasVersionList: (canvasId?: string) => ({
-    data: canvasId ? mockVersions : [],
-    loading: false,
-    isError: false,
-  }),
-  // The three hooks below back useParserTreeData, which the form hook now
-  // consults for the missing-option validation.
   useFetchBuiltinPipelines: () => ({
     options: [{ label: 'General', value: 'general' }],
     loading: false,
   }),
-  useFetchAgentList: () => ({
-    data: {
-      canvas: [{ id: 'pipeline', title: 'Pipeline', type: 'pipeline' }],
-      total: 1,
-    },
-    loading: false,
-  }),
-  useFetchCanvasVersions: (canvasIds: string[]) =>
-    canvasIds.map(() => ({ isSuccess: true, data: mockVersions })),
 }));
 jest.mock('@/hooks/use-document-request', () => ({
   DocumentKeys: { all: () => ['documents'] },
@@ -180,9 +185,11 @@ function Harness({
       parser_config: builtin
         ? {}
         : {
-            'Parser:parse': { pdf: { parse_method: 'deepdoc' } },
+            'Parser:parse': {
+              pdf: { parse_method: 'deepdoc', remove_header_footer: true },
+            },
             'Compiler:compile': {
-              compilation_template_group_id: 'pipeline-template-group',
+              compilation_template_group_id: 'document-template-group',
               llm_id: 'document-model',
             },
           },
@@ -215,7 +222,10 @@ beforeEach(() => {
   mockRun.mockReset().mockResolvedValue(0);
   mockCustomDsl = mockDsl;
   mockCustomDslByVersion = {};
-  mockVersions = [{ id: 'version-1', title: 'v1', created_at: '' }];
+  mockVersions = [{ id: 'version-1', name: 'v1', alias: '' }];
+  mockListAgentVersions
+    .mockReset()
+    .mockImplementation(async () => catalogResponse());
 });
 
 // useChangeDocumentParser (and the dialog's data hooks) need a query client;
@@ -282,7 +292,9 @@ it('keeps existing chunks when re-parsing is declined after saving', async () =>
 it('re-parses with the saved document settings only after confirmation', async () => {
   renderHarness({ chunkCount: 5 });
   fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+  const save = screen.getByRole('button', { name: 'common.save' });
+  await waitFor(() => expect(save).toBeEnabled());
+  fireEvent.click(save);
   const confirm = await screen.findByRole('button', { name: 'common.yes' });
   expect(mockSave).toHaveBeenCalledTimes(1);
   expect(mockRun).not.toHaveBeenCalled();
@@ -383,8 +395,8 @@ it('still rejects a pipeline selection without a pipeline ID', async () => {
 
 it('resets parser_config to the new version defaults after a version switch', async () => {
   mockVersions = [
-    { id: 'version-2', title: 'v2', created_at: '' },
-    { id: 'version-1', title: 'v1', created_at: '' },
+    { id: 'version-2', name: 'v2', alias: '' },
+    { id: 'version-1', name: 'v1', alias: '' },
   ];
   mockCustomDslByVersion = {
     'version-1': mockDsl,
@@ -428,22 +440,73 @@ it('resets parser_config to the new version defaults after a version switch', as
 });
 
 it('keeps the saved parser_config across the latest-version prefill', async () => {
-  // Unpinned document: the form opens with an empty version and the prefill
-  // adopts the latest one — the saved config must survive intact.
+  let resolveCatalog!: (value: ReturnType<typeof catalogResponse>) => void;
+  mockListAgentVersions.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveCatalog = resolve;
+      }),
+  );
   renderHarness({});
   fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+
+  const save = screen.getByRole<HTMLButtonElement>('button', {
+    name: 'common.save',
+  });
+  expect(save).toBeDisabled();
+  await act(async () => {
+    fireEvent.submit(save.form!);
+  });
+  expect(mockSave).not.toHaveBeenCalled();
+
+  await act(async () => resolveCatalog(catalogResponse()));
+  const compilerTab = await screen.findByRole('tab', { name: 'Compiler' });
+  fireEvent.mouseDown(compilerTab, { button: 0 });
+  expect(screen.getByLabelText('Compiler:compile')).toHaveValue(
+    'document-model',
+  );
+  expect(save).toBeEnabled();
+  fireEvent.click(save);
   await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
   expect(mockSave.mock.calls[0][0]).toEqual(
     expect.objectContaining({
       pipelineId: 'pipeline',
       pipelineVersionId: 'version-1',
       parserConfig: expect.objectContaining({
+        'Parser:parse': expect.objectContaining({
+          pdf: expect.objectContaining({
+            parse_method: 'deepdoc',
+            remove_header_footer: true,
+          }),
+        }),
         'Compiler:compile': expect.objectContaining({
+          compilation_template_group_id: 'document-template-group',
           llm_id: 'document-model',
         }),
       }),
     }),
+  );
+});
+
+it('shows that an unpinned dataflow with no published versions is unavailable', async () => {
+  mockVersions = [];
+  renderHarness({});
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+  expect(
+    await screen.findByText(
+      'knowledgeConfiguration.parserOptionUnavailableMessage',
+    ),
+  ).toBeInTheDocument();
+  const save = screen.getByRole('button', { name: 'common.save' });
+  expect(save).toBeDisabled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Choose builtin' }));
+  expect(save).toBeEnabled();
+  fireEvent.click(save);
+  await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
+  expect(mockSave).toHaveBeenCalledWith(
+    expect.objectContaining({ parserId: 'general' }),
   );
 });
 

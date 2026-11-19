@@ -739,11 +739,8 @@ export const useSetDocumentPipelineParser = () => {
         updateData.parse_type = parse_type;
       }
 
-      // Pin a specific dataflow canvas version (design section 5 sticky
-      // snapshot). An explicit empty string means the user picked
-      // Latest (track the canvas latest), so it must be sent for the
-      // backend to clear the pin; only an omitted value (undefined) keeps
-      // the current pin.
+      // A dataflow selection supplies a concrete canvas version. Omitting
+      // the field keeps the current pin when the pipeline stays the same.
       if (pipelineVersionId !== undefined) {
         updateData.pipeline_version_id = pipelineVersionId;
       }

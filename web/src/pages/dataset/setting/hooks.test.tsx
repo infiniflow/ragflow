@@ -121,19 +121,6 @@ describe('useSaveDatasetSetting pipeline_version_id passthrough', () => {
     expect(payload.pipeline_version_id).toBe('v-1');
   });
 
-  it('keeps an explicit empty pipeline_version_id (track latest)', async () => {
-    const { handleSave, saveKnowledgeConfiguration } = setup();
-
-    await handleSave({
-      parse_type: 2,
-      pipeline_id: 'canvas-1',
-      pipeline_version_id: '',
-    } as never);
-
-    const payload = saveKnowledgeConfiguration.mock.calls[0][0];
-    expect(payload.pipeline_version_id).toBe('');
-  });
-
   it('drops pipeline_version_id in built-in mode', async () => {
     const { handleSave, saveKnowledgeConfiguration } = setup();
 

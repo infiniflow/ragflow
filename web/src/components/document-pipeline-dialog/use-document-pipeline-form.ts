@@ -78,7 +78,10 @@ export function useDocumentPipelineForm({
               code: 'custom',
             });
           }
-          if (data.parse_type === ParseType.Pipeline && !data.pipeline_id) {
+          if (
+            data.parse_type === ParseType.Pipeline &&
+            (!data.pipeline_id?.trim() || !data.pipeline_version_id?.trim())
+          ) {
             ctx.addIssue({
               path: ['pipeline_id'],
               message: t('common.pleaseSelect'),
@@ -136,8 +139,6 @@ export function useDocumentPipelineForm({
   // valid option (programmatic setValue does not revalidate).
   const { selectedLeafExists, loading: parserOptionsLoading } =
     useParserTreeData({ value: parserSelectValue });
-  const parserOptionMissing =
-    !!parserSelectValue && !parserOptionsLoading && !selectedLeafExists;
 
   const isPipelineMode = parseType === ParseType.Pipeline;
   const selectedPipelineId = isPipelineMode
@@ -152,6 +153,13 @@ export function useDocumentPipelineForm({
     isPipelineMode ? selectedDataFlowId : undefined,
   );
   const latestVersionId = versions[0]?.id;
+  const pipelineVersionMissing =
+    isPipelineMode && !!selectedDataFlowId && !selectedVersionId?.trim();
+  const parserOptionMissing =
+    !parserOptionsLoading &&
+    (parserSelectValue
+      ? !selectedLeafExists
+      : pipelineVersionMissing && !latestVersionId);
   // Outdated = pinned to a non-latest version, shown as a hint bang on the
   // parser select. Gated on Pipeline mode: a BuiltIn selection carries no
   // live version binding, yet a stale pin can sit in the form (the backend
@@ -274,6 +282,7 @@ export function useDocumentPipelineForm({
     showOperatorTabs,
     buildSubmitData,
     versionOutdated,
+    pipelineVersionMissing,
     parserOptionMissing,
   };
 }

@@ -50,7 +50,35 @@ describe('buildFormSchema parser-option-missing rule', () => {
     expect(missingIssuePaths(result)).toContain('parser_id');
   });
 
-  it('passes when the selected option still exists', () => {
+  it.each([undefined, '', '   '])(
+    'rejects a dataflow selection without a concrete version (%p)',
+    (versionId) => {
+      const schema = buildFormSchema(() => false);
+      const result = schema.safeParse({
+        ...BaseValues,
+        parse_type: ParseType.Pipeline,
+        pipeline_id: 'pipeline',
+        pipeline_version_id: versionId,
+      });
+
+      expect(result.success).toBe(false);
+      expect(missingIssuePaths(result)).toEqual(['pipeline_id']);
+    },
+  );
+
+  it('passes when the selected dataflow version still exists', () => {
+    const schema = buildFormSchema(() => false);
+    const result = schema.safeParse({
+      ...BaseValues,
+      parse_type: ParseType.Pipeline,
+      pipeline_id: 'pipeline',
+      pipeline_version_id: 'version-1',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('passes when the selected builtin parser still exists', () => {
     const schema = buildFormSchema(() => false);
     const result = schema.safeParse({
       ...BaseValues,

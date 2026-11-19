@@ -14,8 +14,8 @@ export const buildFormSchema = (isParserOptionMissing: () => boolean) =>
     .object({
       parse_type: z.nativeEnum(ParseType).optional(),
       pipeline_id: z.string().optional(),
-      // Pinned dataflow canvas version (design section 5/C2). Empty means
-      // track the canvas latest version.
+      // Unpinned datasets start with an empty field until the latest version
+      // is prefilled. A dataflow selection needs a concrete version to save.
       pipeline_version_id: z.string().optional(),
       name: z.string().min(1, {
         message: 'Username must be at least 2 characters.',
@@ -48,7 +48,10 @@ export const buildFormSchema = (isParserOptionMissing: () => boolean) =>
         .optional(),
     })
     .superRefine((data, ctx) => {
-      if (data.parse_type === ParseType.Pipeline && !data.pipeline_id) {
+      if (
+        data.parse_type === ParseType.Pipeline &&
+        (!data.pipeline_id?.trim() || !data.pipeline_version_id?.trim())
+      ) {
         ctx.addIssue({
           path: ['pipeline_id'],
           message: t('common.pleaseSelect'),
