@@ -41,6 +41,17 @@ package tokenizer
 // The counter therefore reports Available() as soon as the asset loads, and the
 // ingest path treats it as the model's tokenizer while keeping that verification
 // running.
+//
+// Vocabulary lookup and Viterbi run in the native library
+// (internal/binding/cpp/spm_unigram.cpp) over the Darts-clone double-array this
+// repository already ships. A Go trie with one map per node held ~87 MB for this
+// vocabulary (505k nodes at ~190 B each); the double-array needs ~4 MB. The loop
+// stays on the C++ side because every step is a trie transition, so a cgo round
+// trip per byte would cost more than the counting.
+//
+// A build without cgo cannot provide the vocabulary: the counter reports itself
+// unavailable, and the ingest path refuses to substitute a calibrated estimate
+// for a model that declares it (see internal/ingestion/task/embedder.go).
 
 import (
 	"crypto/sha1"
@@ -53,10 +64,10 @@ import (
 	"strings"
 	"sync"
 	"unicode"
-	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
 
+	rag "ragflow/internal/binding"
 	"ragflow/internal/common"
 )
 
@@ -74,7 +85,7 @@ const (
 // protobuf. Only the fields the counter needs are decoded.
 type sentencePieceModel struct {
 	pieces       []spmPiece
-	trie         *spmTrie
+	vocab        *rag.SPMVocab // Darts-clone double-array over the segmentable pieces
 	unkScore     float32
 	unkID        int32          // index of the <unk> piece, -1 when the model has none
 	byteByValue  map[byte]int32 // "<0xXX>" piece indexes
@@ -92,43 +103,6 @@ type spmPiece struct {
 	text  string
 	score float32
 	typ   int32
-}
-
-// spmTrie is a byte trie over the vocabulary. It returns every piece that starts
-// at a position, which is what Unigram's Viterbi needs (any matching length can
-// be the optimal one).
-type spmTrie struct {
-	nodes []spmTrieNode
-}
-
-type spmTrieNode struct {
-	next  map[byte]int32
-	piece int32
-	score float32
-}
-
-func newSPMTrie() *spmTrie {
-	t := &spmTrie{}
-	t.nodes = append(t.nodes, spmTrieNode{piece: -1})
-	return t
-}
-
-func (t *spmTrie) insert(piece string, idx int32, score float32) {
-	node := int32(0)
-	for i := 0; i < len(piece); i++ {
-		if t.nodes[node].next == nil {
-			t.nodes[node].next = make(map[byte]int32, 2)
-		}
-		next, ok := t.nodes[node].next[piece[i]]
-		if !ok {
-			t.nodes = append(t.nodes, spmTrieNode{piece: -1})
-			next = int32(len(t.nodes) - 1)
-			t.nodes[node].next[piece[i]] = next
-		}
-		node = next
-	}
-	t.nodes[node].piece = idx
-	t.nodes[node].score = score
 }
 
 // parseSentencePieceModel decodes what the counter needs from a .model file.
@@ -230,13 +204,20 @@ func parseSentencePieceModel(raw []byte) (*sentencePieceModel, error) {
 		m.unkScore = minScore - 10
 	}
 
-	m.trie = newSPMTrie()
+	// Only the pieces that can take part in segmentation go into the trie; the
+	// control/unknown/unused entries are reachable through byte fallback and the
+	// unknown-run rules instead.
+	keys := make([][]byte, 0, len(m.pieces))
+	ids := make([]int32, 0, len(m.pieces))
+	scores := make([]float32, len(m.pieces))
 	for i := range m.pieces {
 		p := &m.pieces[i]
+		scores[i] = p.score
 		if p.typ == spmTypeControl || p.typ == spmTypeUnknown || p.typ == spmTypeUnused {
 			continue
 		}
-		m.trie.insert(p.text, int32(i), p.score)
+		keys = append(keys, []byte(p.text))
+		ids = append(ids, int32(i))
 		if p.typ == spmTypeByte && len(p.text) == 6 && strings.HasPrefix(p.text, "<0x") {
 			var v int
 			if _, err := fmt.Sscanf(p.text, "<0x%02X>", &v); err == nil && v >= 0 && v < 256 {
@@ -245,6 +226,19 @@ func parseSentencePieceModel(raw []byte) (*sentencePieceModel, error) {
 		}
 	}
 	m.byteFallback = len(m.byteByValue) == 256
+
+	byteByValue := [256]int32{}
+	for i := range byteByValue {
+		byteByValue[i] = -1
+	}
+	for b, idx := range m.byteByValue {
+		byteByValue[b] = idx
+	}
+	vocab, err := rag.NewSPMVocab(keys, ids, scores, m.unkScore, m.unkID, &byteByValue, m.byteFallback)
+	if err != nil {
+		return nil, fmt.Errorf("sentencepiece: building the piece trie: %w", err)
+	}
+	m.vocab = vocab
 	return m, nil
 }
 
@@ -485,14 +479,16 @@ func collapseSpaces(s string) string {
 // countTokens is the Unigram Viterbi count over the normalized text: the number
 // of pieces in the highest-scoring segmentation.
 func (m *sentencePieceModel) countTokens(text string) int {
+	if m.vocab == nil {
+		return 0
+	}
 	s := m.normalize(text)
 	if s == "" {
 		return 0
 	}
 	total := 0
 	for _, chunk := range splitPreTokens(s) {
-		n, _ := m.viterbi(chunk, false)
-		total += n
+		total += m.vocab.Count(chunk)
 	}
 	return total
 }
@@ -500,23 +496,6 @@ func (m *sentencePieceModel) countTokens(text string) int {
 // preTokenSpace is the escaped-space marker the model's normalizer emits and its
 // Metaspace pre-tokenizer splits on.
 const preTokenSpace = '\u2581' // ▁
-
-// hasPieceAt reports whether any vocabulary piece starts at byte offset i, which is
-// what decides whether the unknown-token run ends there.
-func (m *sentencePieceModel) hasPieceAt(s string, i int) bool {
-	node := int32(0)
-	for j := i; j < len(s); j++ {
-		next, ok := m.trie.nodes[node].next[s[j]]
-		if !ok {
-			return false
-		}
-		node = next
-		if m.trie.nodes[node].piece >= 0 {
-			return true
-		}
-	}
-	return false
-}
 
 // splitPreTokens splits the normalized text into the chunks the served tokenizer
 // actually feeds to its Unigram model.
@@ -564,8 +543,7 @@ func (m *sentencePieceModel) tokenIDs(text string) []int32 {
 	}
 	var ids []int32
 	for _, chunk := range splitPreTokens(s) {
-		_, chunkIDs := m.viterbi(chunk, true)
-		ids = append(ids, chunkIDs...)
+		ids = append(ids, m.vocab.TokenIDs(chunk)...)
 	}
 	return ids
 }
@@ -586,145 +564,6 @@ func (m *sentencePieceModel) tokenNames(text string) []string {
 		names = append(names, "")
 	}
 	return names
-}
-
-// Sentinels for the Viterbi backpointers. A real entry holds a piece index, which
-// is never negative, so negative values can mark the two fallbacks.
-const (
-	spmViterbiUnk     int32 = -1 // the <unk> piece
-	spmViterbiByteRun int32 = -2 // one <0xXX> piece per byte of the rune
-)
-
-// viterbi runs Unigram's Viterbi over s, returning the best token count and, when
-// wantIDs is set, the chosen piece ids.
-//
-// The id bookkeeping is skipped on the count path: Count runs once per chunk on the
-// ingest hot path, so the backpointer arrays are only allocated when a test asks
-// for them. Both paths share this one function so they cannot drift apart.
-func (m *sentencePieceModel) viterbi(s string, wantIDs bool) (int, []int32) {
-	n := len(s)
-	// spmNegInf stands in for -Inf: piece scores are small negative numbers, so
-	// the most negative float64 is unreachable by any real path.
-	//
-	// The accumulator is float64 even though the piece scores are float32: summing
-	// a few hundred float32s loses enough precision to flip ties between
-	// equal-scoring segmentations, and the reference implementation resolves those
-	// ties the other way. The incident-free case that exposed this is a run of 99
-	// "a"s, where "▁a"+"a"+19×"aaaaa"+"aab" and "▁a"+2×"aaaaa"+"a"+... score the
-	// same; counting is unaffected, but a token-level comparison sees it.
-	const spmNegInf float64 = -math.MaxFloat64
-	best := make([]float64, n+1)
-	count := make([]int, n+1)
-	var prev, pieceAt []int32
-	if wantIDs {
-		prev = make([]int32, n+1)
-		pieceAt = make([]int32, n+1)
-	}
-	for i := range best {
-		best[i] = spmNegInf
-	}
-	best[0] = 0
-	for i := 0; i < n; i++ {
-		if best[i] == spmNegInf {
-			continue
-		}
-		matched := false
-		node := int32(0)
-		for j := i; j < n; j++ {
-			next, ok := m.trie.nodes[node].next[s[j]]
-			if !ok {
-				break
-			}
-			node = next
-			if piece := m.trie.nodes[node].piece; piece >= 0 {
-				matched = true
-				cand := best[i] + float64(m.pieces[piece].score)
-				if cand > best[j+1] {
-					best[j+1] = cand
-					count[j+1] = count[i] + 1
-					if wantIDs {
-						prev[j+1], pieceAt[j+1] = int32(i), piece
-					}
-				}
-			}
-		}
-		if matched {
-			continue
-		}
-		// No piece starts here. The served tokenizer consumes the whole RUN of
-		// characters that have no piece and bills it as ONE unknown token - not one
-		// per character: "🧑🧑" is a single token, five NULs are a single token, and
-		// a run only breaks at a character that does have a piece or at a
-		// pre-token boundary. Counting per character over-counts exactly this shape
-		// (it is what the fuzz corpus found).
-		runEnd := i
-		for runEnd < n {
-			_, size := utf8.DecodeRuneInString(s[runEnd:])
-			if size <= 0 || m.hasPieceAt(s, runEnd) {
-				break
-			}
-			runEnd += size
-		}
-		if runEnd == i {
-			// Unreachable: the loop above always advances by at least one rune.
-			return count[i], nil
-		}
-		if m.byteFallback {
-			score := float64(0)
-			for k := i; k < runEnd; k++ {
-				if idx, ok := m.byteByValue[s[k]]; ok {
-					score += float64(m.pieces[idx].score)
-				} else {
-					score += float64(m.unkScore)
-				}
-			}
-			if cand := best[i] + score; cand > best[runEnd] {
-				best[runEnd] = cand
-				count[runEnd] = count[i] + (runEnd - i) // one <0xXX> per byte
-				if wantIDs {
-					prev[runEnd], pieceAt[runEnd] = int32(i), spmViterbiByteRun
-				}
-			}
-			continue
-		}
-		if cand := best[i] + float64(m.unkScore); cand > best[runEnd] {
-			best[runEnd] = cand
-			count[runEnd] = count[i] + 1
-			if wantIDs {
-				prev[runEnd], pieceAt[runEnd] = int32(i), spmViterbiUnk
-			}
-		}
-	}
-	if best[n] == spmNegInf {
-		// Should not happen (the fallback always advances), but never claim 0
-		// tokens for non-empty text: an under-count is the dangerous direction.
-		return n, nil
-	}
-	if !wantIDs {
-		return count[n], nil
-	}
-	ids := make([]int32, 0, count[n])
-	for pos := n; pos > 0; {
-		switch pieceAt[pos] {
-		case spmViterbiUnk:
-			ids = append(ids, m.unkID)
-		case spmViterbiByteRun:
-			for k := int(prev[pos]); k < pos; k++ {
-				if idx, ok := m.byteByValue[s[k]]; ok {
-					ids = append(ids, idx)
-				} else {
-					ids = append(ids, m.unkID)
-				}
-			}
-		default:
-			ids = append(ids, pieceAt[pos])
-		}
-		pos = int(prev[pos])
-	}
-	for i, j := 0, len(ids)-1; i < j; i, j = i+1, j-1 {
-		ids[i], ids[j] = ids[j], ids[i]
-	}
-	return count[n], ids
 }
 
 // trimToLimit returns the longest rune prefix of text with at most limit tokens.
