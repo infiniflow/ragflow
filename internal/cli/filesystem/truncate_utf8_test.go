@@ -31,3 +31,29 @@ func TestTruncateStringKeepsEllipsis(t *testing.T) {
 		t.Fatalf("truncated string %q must end with ellipsis", got)
 	}
 }
+
+// TestTruncateStringRuneGuard pins that the length guard compares rune count,
+// not byte length. 14 CJK runes span 42 bytes: with a 40-rune budget the name
+// fits and must be returned untouched (no ellipsis). The old byte-based guard
+// took the truncate branch and appended "..." to a name that already fit.
+func TestTruncateStringRuneGuard(t *testing.T) {
+	fitting := strings.Repeat("中", 14) // 14 runes, 42 bytes, budget 40
+	if got := truncateString(fitting, 40); got != fitting {
+		t.Errorf("fitting multibyte name was altered: got %q (%d runes), want unchanged", got, len([]rune(got)))
+	}
+	if strings.HasSuffix(truncateString(fitting, 40), "...") {
+		t.Error("fitting multibyte name must not get an ellipsis")
+	}
+
+	tooLong := strings.Repeat("中", 41) // 41 runes > 40
+	got := truncateString(tooLong, 40)
+	if !strings.HasSuffix(got, "...") {
+		t.Fatalf("over-budget name %q must end with ellipsis", got)
+	}
+	if n := len([]rune(got)); n != 40 {
+		t.Errorf("truncated name has %d runes, want 40 (37 + ...)", n)
+	}
+	if !utf8.ValidString(got) {
+		t.Errorf("truncated name %q is not valid UTF-8", got)
+	}
+}

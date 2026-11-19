@@ -280,10 +280,10 @@ func (r TSRResult) ClampBoxes() []TSRBox {
 	w, h := float32(r.W), float32(r.H)
 	out := make([]TSRBox, len(r.Boxes))
 	for i, b := range r.Boxes {
-		b.X0 = min(max(b.X0, 0), w)
-		b.X1 = min(max(b.X1, 0), w)
-		b.Top = min(max(b.Top, 0), h)
-		b.Bottom = min(max(b.Bottom, 0), h)
+		b.X0 = clampCoord(b.X0, w)
+		b.X1 = clampCoord(b.X1, w)
+		b.Top = clampCoord(b.Top, h)
+		b.Bottom = clampCoord(b.Bottom, h)
 		out[i] = b
 	}
 	return out

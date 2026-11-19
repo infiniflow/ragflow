@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/utility"
 	"time"
@@ -200,7 +201,7 @@ func printTable(nodes []*Node) {
 
 // truncateString truncates a string to the specified length
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
 	return utility.TruncateRunes(s, maxLen-3) + "..."
