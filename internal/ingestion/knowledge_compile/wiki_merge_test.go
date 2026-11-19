@@ -193,3 +193,31 @@ func TestDeleteMissingScopedWikiPagesChecksReaderCapabilityByScope(t *testing.T)
 		t.Fatalf("non-Wiki batch must not require cleanup support: %v", err)
 	}
 }
+
+func TestDeleteMissingScopedWikiPagesRequiresDeletionForSupersededRows(t *testing.T) {
+	page := kccommon.Product{Variant: kccommon.VariantWiki, Meta: map[string]any{
+		"kind": "page", "page_type": "entity", "slug": "alpha",
+	}}
+	page.ID = datasetLevelID("tenant-1", "kb-1", page)
+	legacy := page
+	legacy.ID = "legacy-bare-slug-row"
+
+	// The superseded delete runs only after WriteMerged, so a writer without
+	// deletion support must be refused before anything is written, not after
+	// the replacement has already been stored.
+	c := &Consumer{reader: &fakeReader{}, writer: &fakeWriter{}}
+	missing, superseded, err := c.deleteMissingScopedWikiPages(t.Context(), "tenant-1", "kb-1", "token", nil,
+		[]kccommon.Product{page}, []kccommon.Product{legacy})
+	if err == nil {
+		t.Fatalf("superseded-only cleanup with a partial writer reported success")
+	}
+	if len(missing) != 0 || len(superseded) != 0 {
+		t.Fatalf("failed cleanup returned ids: missing=%v superseded=%v", missing, superseded)
+	}
+
+	// Nothing to delete keeps accepting a partial writer.
+	if _, _, err := c.deleteMissingScopedWikiPages(t.Context(), "tenant-1", "kb-1", "token", nil,
+		[]kccommon.Product{page}, []kccommon.Product{page}); err != nil {
+		t.Fatalf("cleanup without deletions must not require deletion support: %v", err)
+	}
+}

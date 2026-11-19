@@ -1420,12 +1420,18 @@ func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb,
 			return nil, nil, fmt.Errorf("knowledge_compile: scoped Wiki cleanup is unsupported")
 		}
 	}
-	if len(missing) == 0 {
-		return nil, superseded, nil
+	if len(missing) == 0 && len(superseded) == 0 {
+		return nil, nil, nil
 	}
+	// Deletion support is required for either list: a superseded row is deleted
+	// only after WriteMerged stores its replacement, so checking here keeps a
+	// partial writer from writing the replacement and then failing the delete.
 	deleter, ok := c.writer.(mergedWikiPageDeleter)
 	if !ok {
 		return nil, nil, fmt.Errorf("knowledge_compile: scoped Wiki cleanup is unsupported")
+	}
+	if len(missing) == 0 {
+		return nil, superseded, nil
 	}
 	if err := c.withWriteLock(ctx, kb, token, func() error {
 		return deleter.DeleteMergedWikiPages(ctx, tenant, kb, missing)
