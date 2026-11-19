@@ -17,7 +17,9 @@
 package component
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
@@ -309,5 +311,134 @@ func TestVariableAssignerGetInputForm(t *testing.T) {
 	items, ok := getter.GetInputForm()["items"].(map[string]any)
 	if !ok || items["type"] != "line" || items["name"] != "Items" {
 		t.Errorf("GetInputForm()[items] = %#v", items)
+	}
+}
+
+// TestVariableAssigner_RestoredNumbers covers operators after checkpoint restore.
+func TestVariableAssigner_RestoredNumbers(t *testing.T) {
+	const id = "11099848653006015581"
+	for _, op := range []string{"+=", "-=", "*=", "/=", "clear", "append", "extend"} {
+		t.Run(op, func(t *testing.T) {
+			var state canvas.CanvasState
+			if err := json.Unmarshal([]byte(`{"outputs":{"source":{"id":`+id+`,"small":2,"ids":[`+id+`,2],"small_list":[3]}}}`), &state); err != nil {
+				t.Fatal(err)
+			}
+			ref, param := "source@id", any("source@small")
+			if op == "append" || op == "extend" {
+				ref = "source@ids"
+				if op == "extend" {
+					param = "source@small_list"
+				}
+			}
+			c, err := NewVariableAssignerComponent(map[string]any{"variables": []map[string]any{{
+				"variable": ref, "operator": op, "parameter": param,
+			}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(canvas.WithState(t.Context(), &state), nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if failures, ok := out["errors"]; ok {
+				t.Fatalf("operator errors: %v", failures)
+			}
+			got, err := state.GetVar(ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch op {
+			case "clear":
+				if got != 0 {
+					t.Fatalf("clear = %v (%T), want numeric zero", got, got)
+				}
+			case "append", "extend":
+				list := got.([]any)
+				wantLast := float64(2)
+				if op == "extend" {
+					wantLast = 3
+				}
+				if len(list) != 3 || list[0] != json.Number(id) || list[2] != wantLast {
+					t.Fatalf("list = %#v, want exact ID and appended number", list)
+				}
+			default:
+				number, _ := json.Number(id).Float64()
+				want := map[string]float64{"+=": number + 2, "-=": number - 2, "*=": number * 2, "/=": number / 2}[op]
+				if got != want {
+					t.Fatalf("arithmetic = %v (%T), want %v (float64)", got, got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestVariableAssigner_InvalidJSONNumberDoesNotWrite rejects failed conversions.
+func TestVariableAssigner_InvalidJSONNumberDoesNotWrite(t *testing.T) {
+	for _, op := range []string{"+=", "-=", "*=", "/="} {
+		for _, invalid := range []json.Number{"invalid", "1e400", "NaN", "+1"} {
+			for _, invalidOld := range []bool{false, true} {
+				state := canvas.NewCanvasState("run", "session")
+				old, param := any(float64(4)), any(invalid)
+				if invalidOld {
+					old, param = invalid, float64(2)
+				}
+				state.SetVar("source", "value", old)
+				c, err := NewVariableAssignerComponent(map[string]any{"variables": []map[string]any{{
+					"variable": "source@value", "operator": op, "parameter": param,
+				}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				out, err := c.Invoke(canvas.WithState(t.Context(), state), nil, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				failures, ok := out["errors"].([]string)
+				if !ok || len(failures) != 1 || !strings.Contains(failures[0], "NOT_NUMBER") {
+					t.Fatalf("%s invalid %q errors = %#v", op, invalid, out)
+				}
+				if got, _ := state.GetVar("source@value"); got != old {
+					t.Fatalf("invalid arithmetic changed value to %v", got)
+				}
+			}
+		}
+	}
+}
+
+// TestVariableAssigner_JSONNumberParameter keeps numeric parameters usable too.
+func TestVariableAssigner_JSONNumberParameter(t *testing.T) {
+	const id = json.Number("11099848653006015581")
+	number, _ := id.Float64()
+	for _, tc := range []struct {
+		op                   string
+		old, parameter, want any
+	}{
+		{"+=", float64(4), id, float64(4) + number},
+		{"-=", float64(4), id, float64(4) - number},
+		{"*=", float64(4), id, float64(4) * number},
+		{"/=", float64(4), id, float64(4) / number},
+		{"append", []any{float64(2)}, id, []any{float64(2), id}},
+		{"extend", []any{float64(2)}, []any{id}, []any{float64(2), id}},
+	} {
+		t.Run(tc.op, func(t *testing.T) {
+			state := canvas.NewCanvasState("run", "session")
+			state.SetVar("source", "value", tc.old)
+			c, err := NewVariableAssignerComponent(map[string]any{"variables": []map[string]any{{
+				"variable": "source@value", "operator": tc.op, "parameter": tc.parameter,
+			}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(canvas.WithState(t.Context(), state), nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if failures, ok := out["errors"]; ok {
+				t.Fatalf("operator errors: %v", failures)
+			}
+			if got, _ := state.GetVar("source@value"); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %#v, want %#v", got, tc.want)
+			}
+		})
 	}
 }
