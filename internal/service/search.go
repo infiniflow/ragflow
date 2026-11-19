@@ -474,33 +474,11 @@ func stringFromSearchConfig(value interface{}) (string, bool) {
 }
 
 func intFromSearchConfig(value interface{}) (int, bool) {
-	switch typed := value.(type) {
-	case int:
-		return typed, true
-	case int64:
-		return int(typed), true
-	case float64:
-		return int(typed), true
-	case float32:
-		return int(typed), true
-	default:
-		return 0, false
-	}
+	return common.ToIntNum(value)
 }
 
 func floatFromSearchConfig(value interface{}) (float64, bool) {
-	switch typed := value.(type) {
-	case float64:
-		return typed, true
-	case float32:
-		return float64(typed), true
-	case int:
-		return float64(typed), true
-	case int64:
-		return float64(typed), true
-	default:
-		return 0, false
-	}
+	return common.ToFloat(value)
 }
 
 // BuildSearchConfigResponse returns the public search configuration without

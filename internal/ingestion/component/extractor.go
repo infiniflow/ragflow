@@ -2004,15 +2004,8 @@ func parseMetadataFieldDefs(v any) []common.MetadataFieldDef {
 
 // mapInt converts a JSON-compatible value to int.
 func mapInt(v interface{}) int {
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	case int64:
-		return int(n)
-	}
-	return 0
+	n, _ := common.ToIntNum(v)
+	return n
 }
 
 // init registers Extractor under CategoryIngestion (per plan §4

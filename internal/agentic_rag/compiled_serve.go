@@ -263,31 +263,23 @@ func compileProductText(p compiledRow) string {
 
 // distinctChunkIDs / distinctDatasetIDs gather the recall scope from locate hits.
 func distinctChunkIDs(hits []snippetHit) []string {
-	seen := make(map[string]bool, len(hits))
-	out := make([]string, 0, len(hits))
+	ids := make([]string, 0, len(hits))
 	for _, h := range hits {
-		id := h.chunk.ID
-		if id == "" || seen[id] {
-			continue
+		if h.chunk.ID != "" {
+			ids = append(ids, h.chunk.ID)
 		}
-		seen[id] = true
-		out = append(out, id)
 	}
-	return out
+	return common.Deduplicate(ids)
 }
 
 func distinctDatasetIDs(hits []snippetHit) []string {
-	seen := make(map[string]bool, len(hits))
-	out := make([]string, 0, len(hits))
+	ids := make([]string, 0, len(hits))
 	for _, h := range hits {
-		id := h.chunk.DatasetID
-		if id == "" || seen[id] {
-			continue
+		if h.chunk.DatasetID != "" {
+			ids = append(ids, h.chunk.DatasetID)
 		}
-		seen[id] = true
-		out = append(out, id)
 	}
-	return out
+	return common.Deduplicate(ids)
 }
 
 // tryFormatLocateCompiled serves the compiled products for a locate result set.

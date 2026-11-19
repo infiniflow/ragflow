@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
@@ -165,37 +166,15 @@ func relatedQuestionsConfig(searchConfig map[string]interface{}) *modelModule.Ch
 }
 
 func intFromRelatedQuestionConfig(value interface{}) (int, bool) {
-	switch v := value.(type) {
-	case int:
-		return v, true
-	case int64:
-		return int(v), true
-	case float64:
-		return int(v), true
-	case json.Number:
-		if n, err := v.Int64(); err == nil {
-			return int(n), true
-		}
+	if n, ok := value.(json.Number); ok {
+		v, err := n.Int64()
+		return int(v), err == nil
 	}
-	return 0, false
+	return common.ToIntNum(value)
 }
 
 func floatFromRelatedQuestionConfig(value interface{}) (float64, bool) {
-	switch v := value.(type) {
-	case float64:
-		return v, true
-	case float32:
-		return float64(v), true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case json.Number:
-		if n, err := v.Float64(); err == nil {
-			return n, true
-		}
-	}
-	return 0, false
+	return common.ToFloat(value)
 }
 
 func stringSliceFromRelatedQuestionConfig(value interface{}) []string {

@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1041,12 +1043,10 @@ func mergeTaskTypes(groups ...[]string) []string {
 }
 
 func sortedTaskTypes(seen map[string]struct{}) []string {
-	out := make([]string, 0, len(seen))
-	for taskType := range seen {
-		out = append(out, taskType)
+	if len(seen) == 0 {
+		return []string{}
 	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // mergeCompiledVariants returns the union of the previous and current

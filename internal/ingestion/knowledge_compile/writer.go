@@ -2026,19 +2026,8 @@ func capSourceDocs(ids []string) []string {
 
 // unionCap returns the union of two doc-id lists, capped at wikiGraphSourceDocCap.
 func unionCap(a, b []string) []string {
-	seen := make(map[string]bool, len(a)+len(b))
-	out := make([]string, 0, len(a)+len(b))
-	for _, id := range a {
-		if !seen[id] {
-			seen[id] = true
-			out = append(out, id)
-		}
+	if len(a) == 0 && len(b) == 0 {
+		return capSourceDocs([]string{})
 	}
-	for _, id := range b {
-		if !seen[id] {
-			seen[id] = true
-			out = append(out, id)
-		}
-	}
-	return capSourceDocs(out)
+	return capSourceDocs(common.Deduplicate(append(append([]string(nil), a...), b...)))
 }

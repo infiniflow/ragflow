@@ -665,18 +665,9 @@ func exactSortNumber(value any) *big.Rat {
 
 // toFloat64OK is a number-without-bool helper.
 func toFloat64OK(v any) (float64, bool) {
-	if _, isBool := v.(bool); isBool {
-		return 0, false
-	}
-	switch x := v.(type) {
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case float64:
-		return x, true
-	}
-	return 0, false
+	// common.ToFloat does not accept bool, so the explicit bool guard is no
+	// longer needed: a bool input naturally yields (0, false).
+	return common.ToFloat(v)
 }
 
 func init() {

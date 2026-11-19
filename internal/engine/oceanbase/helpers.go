@@ -18,7 +18,6 @@ package oceanbase
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 	"ragflow/internal/common"
 	"sort"
@@ -180,21 +179,5 @@ func cosineSimilarity(left, right []float64) float64 {
 }
 
 func numberToFloat(value interface{}) (float64, bool) {
-	switch number := value.(type) {
-	case float64:
-		return number, true
-	case float32:
-		return float64(number), true
-	case int:
-		return float64(number), true
-	case int32:
-		return float64(number), true
-	case int64:
-		return float64(number), true
-	case json.Number:
-		parsed, err := number.Float64()
-		return parsed, err == nil
-	default:
-		return 0, false
-	}
+	return common.ToFloat(value)
 }

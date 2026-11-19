@@ -567,7 +567,6 @@ func discordRetryAfter(resp *http.Response) time.Duration {
 	return 0
 }
 
-// discordContainsString reports whether a slice contains a value.
 // discordMessageIterator walks messages of the enumerated targets in
 // newest-to-oldest order, honoring a [lowerBound, upperBound) window.
 type discordMessageIterator struct {

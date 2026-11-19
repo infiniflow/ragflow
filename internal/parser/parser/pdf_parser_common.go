@@ -814,16 +814,7 @@ func normalizeDeepDocPageNumber(raw any) (int, bool) {
 }
 
 func numericAny(raw any) (float64, bool) {
-	switch v := raw.(type) {
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case float64:
-		return v, true
-	default:
-		return 0, false
-	}
+	return common.ToFloat(raw)
 }
 
 // ExtractPDFPositions is the single source of truth for "does this parsed item
