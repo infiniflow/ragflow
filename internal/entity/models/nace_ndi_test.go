@@ -34,6 +34,7 @@ import (
 	"sync"
 	"testing"
 	"testing/iotest"
+	"testing/synctest"
 	"time"
 
 	"ragflow/internal/common"
@@ -1680,32 +1681,93 @@ func TestNaceNDIRetryWait(t *testing.T) {
 	}
 }
 
+// naceNDIDeleteTarget is the workspace file the deletion tests remove.
+const naceNDIDeleteTarget = "https://ndi.example.com/v1/documents/workspaces/ws_1/files/file_1"
+
+// naceNDIDeleteAnswer builds one DELETE answer: the status, the JSON body NDI
+// serves with it, and the Retry-After a 202 or 503 carries when retryAfter is
+// set.
+func naceNDIDeleteAnswer(status int, retryAfter string) *http.Response {
+	body := `{"status":"deleted"}`
+	switch status {
+	case http.StatusAccepted:
+		body = `{"status":"deleting"}`
+	case http.StatusNotFound:
+		body = `{"error":{"code":"file_not_found","message":"no such file"}}`
+	case http.StatusServiceUnavailable, http.StatusForbidden:
+		body = `{"error":{"code":"refused","message":"refused"}}`
+	case http.StatusNoContent:
+		body = ""
+	}
+	header := http.Header{}
+	if retryAfter != "" && (status == http.StatusAccepted || status == http.StatusServiceUnavailable) {
+		header.Set("Retry-After", retryAfter)
+	}
+	return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader(body))}
+}
+
+// withNaceNDIFileDeleteTransport answers the file deletion through an
+// in-memory transport, so it uses no network: the nth
+// DELETE of target is counted in deletes and answered by answer, and it
+// carries the API key and the client header. Any other request fails the
+// call; wrong DELETE headers are reported when the test ends.
+func withNaceNDIFileDeleteTransport(t *testing.T, target, key string, deletes *int, answer func(n int, req *http.Request) (*http.Response, error)) {
+	t.Helper()
+	var badHeaders []string
+	withNaceNDIAPITransport(t, naceNDIRoundTripper(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodDelete || req.URL.String() != target {
+			return nil, fmt.Errorf("unexpected %s %s", req.Method, req.URL)
+		}
+		*deletes++
+		if got := req.Header.Get("Authorization"); got != "Bearer "+key {
+			badHeaders = append(badHeaders, "Authorization="+got)
+		}
+		if got := req.Header.Get(naceClientHeader); !strings.HasPrefix(got, "ragflow/") {
+			badHeaders = append(badHeaders, naceClientHeader+"="+got)
+		}
+		return answer(*deletes, req)
+	}))
+	t.Cleanup(func() {
+		for _, h := range badHeaders {
+			t.Errorf("DELETE %s", h)
+		}
+	})
+}
+
 // A file deletion answered 202 (still deleting) is sent again until NDI
 // confirms it with 200, 204 or a 404. A check that fails transiently does
 // not end the checks; one that fails otherwise does. Each check is sent once,
 // and the checks end naceNDIDeleteConfirmTimeout after the first DELETE: a
 // Retry-After past that point gives one last check halfway to it, and a
-// deletion still in progress then is reported.
+// deletion still in progress then, or a first answer that arrives past it,
+// is reported. Every case runs in a synctest bubble against the in-memory
+// transport, so the DELETE count and the elapsed time it asserts are exact.
 func TestNaceNDIDeleteFileWaitsForDeletion(t *testing.T) {
 	withFastNaceNDI(t)
 	key := "test-key"
+	driver := NewNaceModel(map[string]string{"default": "https://ndi.example.com/v1"}, URLSuffix{})
 	for name, tc := range map[string]struct {
 		answers []int
 		// retryAfter is sent with each 202 and 503.
 		retryAfter string
 		// window replaces naceNDIDeleteConfirmTimeout when set.
-		window  time.Duration
-		want    int
-		wantErr string
+		window time.Duration
+		// firstDelay holds the first DELETE's answer past the window.
+		firstDelay time.Duration
+		want       int
+		wantErr    string
+		// wantElapsed is the exact time one run takes on the fake clock.
+		wantElapsed time.Duration
 	}{
-		"deleted after two checks":             {answers: []int{202, 202, 200}, want: 3},
-		"gone after a check":                   {answers: []int{202, 404}, want: 2},
+		"deleted after two checks":             {answers: []int{202, 202, 200}, want: 3, wantElapsed: 2 * naceNDIDeletePollDelay},
+		"gone after a check":                   {answers: []int{202, 404}, want: 2, wantElapsed: naceNDIDeletePollDelay},
 		"no content":                           {answers: []int{204}, want: 1},
-		"503 twice while deleting":             {answers: []int{202, 503, 503, 200}, want: 4},
-		"refused while deleting":               {answers: []int{202, 403}, want: 2, wantErr: "status 403"},
-		"Retry-After past the window":          {answers: []int{202, 200}, retryAfter: "3600", window: 200 * time.Millisecond, want: 2},
-		"503 with Retry-After past the window": {answers: []int{202, 503, 200}, retryAfter: "20", window: 200 * time.Millisecond, want: 2, wantErr: "status 503"},
-		"still deleting when the window ends":  {answers: []int{202}, window: time.Nanosecond, want: 1, wantErr: "deletion not confirmed: still in progress"},
+		"503 twice while deleting":             {answers: []int{202, 503, 503, 200}, want: 4, wantElapsed: 3 * naceNDIDeletePollDelay},
+		"refused while deleting":               {answers: []int{202, 403}, want: 2, wantErr: "status 403", wantElapsed: naceNDIDeletePollDelay},
+		"Retry-After past the window":          {answers: []int{202, 200}, retryAfter: "3600", window: 200 * time.Millisecond, want: 2, wantElapsed: 100 * time.Millisecond},
+		"503 with Retry-After past the window": {answers: []int{202, 503, 200}, retryAfter: "20", window: 200 * time.Millisecond, want: 2, wantErr: "status 503", wantElapsed: 100 * time.Millisecond},
+		"still deleting at the last check":     {answers: []int{202, 202}, retryAfter: "3600", window: 200 * time.Millisecond, want: 2, wantErr: "deletion not confirmed: still in progress", wantElapsed: 100 * time.Millisecond},
+		"first answer past the window":         {answers: []int{202}, window: 200 * time.Millisecond, firstDelay: 300 * time.Millisecond, want: 1, wantErr: "deletion not confirmed: still in progress", wantElapsed: 300 * time.Millisecond},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if tc.window > 0 {
@@ -1713,71 +1775,64 @@ func TestNaceNDIDeleteFileWaitsForDeletion(t *testing.T) {
 				naceNDIDeleteConfirmTimeout = tc.window
 				t.Cleanup(func() { naceNDIDeleteConfirmTimeout = previous })
 			}
-			fake := newNaceNDIFake(t)
-			fake.deleteFile = func(w http.ResponseWriter, n int) {
-				status := tc.answers[min(n, len(tc.answers))-1]
-				if tc.retryAfter != "" && (status == http.StatusAccepted || status == http.StatusServiceUnavailable) {
-					w.Header().Set("Retry-After", tc.retryAfter)
+			deletes := 0
+			withNaceNDIFileDeleteTransport(t, naceNDIDeleteTarget, key, &deletes, func(n int, _ *http.Request) (*http.Response, error) {
+				if n == 1 {
+					time.Sleep(tc.firstDelay)
 				}
-				switch status {
-				case http.StatusAccepted:
-					writeNaceNDIJob(w, status, `{"status":"deleting"}`)
-				case http.StatusNotFound:
-					writeNaceNDIJob(w, status, `{"error":{"code":"file_not_found","message":"no such file"}}`)
-				case http.StatusServiceUnavailable, http.StatusForbidden:
-					writeNaceNDIJob(w, status, `{"error":{"code":"refused","message":"refused"}}`)
-				case http.StatusNoContent:
-					w.WriteHeader(status)
-				default:
-					writeNaceNDIJob(w, status, `{"status":"deleted"}`)
+				return naceNDIDeleteAnswer(tc.answers[min(n, len(tc.answers))-1], tc.retryAfter), nil
+			})
+			synctest.Test(t, func(t *testing.T) {
+				start := time.Now()
+				err := driver.ndiDelete(t.Context(), &APIConfig{ApiKey: &key}, naceNDIDeleteTarget, true)
+				elapsed := time.Since(start)
+				if (tc.wantErr == "" && err != nil) || (tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr))) {
+					t.Fatalf("ndiDelete: err=%v, want %q", err, tc.wantErr)
 				}
-			}
-			start := time.Now()
-			err := fake.driver().ndiDelete(t.Context(), &APIConfig{ApiKey: &key}, fake.server.URL+"/v1/documents/workspaces/ws_1/files/file_1", true)
-			elapsed := time.Since(start)
-			if (tc.wantErr == "" && err != nil) || (tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr))) {
-				t.Fatalf("ndiDelete: err=%v, want %q", err, tc.wantErr)
-			}
-			if got := fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1"); got != tc.want {
-				t.Fatalf("file deletes=%d, want %d; calls=%v", got, tc.want, fake.calls)
-			}
-			// No check or wait passes the window, so a Retry-After far past
-			// it (20 s, 3600 s) does not hold the cleanup.
-			if tc.window > 0 && elapsed >= 2*tc.window+time.Second {
-				t.Fatalf("ndiDelete took %v, window %v", elapsed, tc.window)
-			}
+				if deletes != tc.want {
+					t.Fatalf("file deletes=%d, want %d", deletes, tc.want)
+				}
+				if elapsed != tc.wantElapsed {
+					t.Fatalf("ndiDelete took %v, want %v", elapsed, tc.wantElapsed)
+				}
+			})
 		})
 	}
 }
 
 // The checks of a file deletion also end with the cleanup context: a check
-// that does not answer before naceNDICleanupTimeout ends gives "not
-// confirmed" with the cause, and the delete returns soon after the timeout.
+// that never answers gives "not confirmed" with the deadline cause, and the
+// delete returns exactly at naceNDICleanupTimeout. The in-memory transport
+// holds the check until its context ends, in a synctest bubble, so the clock
+// and the DELETE count are exact.
 func TestNaceNDIDeleteFileStopsAtCleanupTimeout(t *testing.T) {
 	withFastNaceNDI(t)
+	key := "test-key"
 	previous := naceNDICleanupTimeout
 	naceNDICleanupTimeout = 200 * time.Millisecond
 	t.Cleanup(func() { naceNDICleanupTimeout = previous })
-	release := make(chan struct{})
-	fake := newNaceNDIFake(t)
-	t.Cleanup(func() { close(release) })
-	fake.deleteFile = func(w http.ResponseWriter, n int) {
+	deletes := 0
+	withNaceNDIFileDeleteTransport(t, naceNDIDeleteTarget, key, &deletes, func(n int, req *http.Request) (*http.Response, error) {
 		if n > 1 {
-			<-release
+			// A later DELETE never answers: it ends with its context.
+			<-req.Context().Done()
+			return nil, req.Context().Err()
 		}
-		writeNaceNDIJob(w, http.StatusAccepted, `{"status":"deleting"}`)
-	}
-	key := "test-key"
-	start := time.Now()
-	err := fake.driver().ndiDelete(t.Context(), &APIConfig{ApiKey: &key}, fake.server.URL+"/v1/documents/workspaces/ws_1/files/file_1", true)
-	elapsed := time.Since(start)
-	if err == nil || !strings.Contains(err.Error(), "deletion not confirmed") || !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("ndiDelete: err=%v, want not confirmed with a deadline error", err)
-	}
-	if got := fake.called("DELETE /v1/documents/workspaces/ws_1/files/file_1"); got != 2 {
-		t.Fatalf("file deletes=%d, want 2; calls=%v", got, fake.calls)
-	}
-	if elapsed >= naceNDICleanupTimeout+time.Second {
-		t.Fatalf("ndiDelete took %v, cleanup timeout %v", elapsed, naceNDICleanupTimeout)
-	}
+		return naceNDIDeleteAnswer(http.StatusAccepted, ""), nil
+	})
+	driver := NewNaceModel(map[string]string{"default": "https://ndi.example.com/v1"}, URLSuffix{})
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		err := driver.ndiDelete(t.Context(), &APIConfig{ApiKey: &key}, naceNDIDeleteTarget, true)
+		elapsed := time.Since(start)
+		if err == nil || !strings.Contains(err.Error(), "deletion not confirmed") || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("ndiDelete: err=%v, want not confirmed with a deadline error", err)
+		}
+		if deletes != 2 {
+			t.Fatalf("file deletes=%d, want 2", deletes)
+		}
+		if elapsed != naceNDICleanupTimeout {
+			t.Fatalf("ndiDelete took %v, want %v", elapsed, naceNDICleanupTimeout)
+		}
+	})
 }
