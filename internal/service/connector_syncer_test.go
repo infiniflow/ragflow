@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -110,6 +111,115 @@ func TestUpdateConnectorSchedulePublishesSyncerTask(t *testing.T) {
 	}
 	if task.Status != string(entity.TaskStatusSchedule) || task.TaskType != dao.TaskTypeSync {
 		t.Fatalf("task status/type = %s/%s, want schedule/sync", task.Status, task.TaskType)
+	}
+}
+
+func TestUpdateConfluenceScopeBackfillsWithoutRebuilding(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.SyncLogs{}); err != nil {
+		t.Fatalf("migrate connector tables: %v", err)
+	}
+	const connectorID, kbID, userID = "conn-1", "kb-1", "user-1"
+	connector := entity.Connector{
+		ID: connectorID, TenantID: userID, Name: "Wiki", Source: "confluence", InputType: "poll",
+		Config: entity.ConnectorConfig{"index_mode": "page", "page_id": "123"},
+		Status: string(entity.TaskStatusSchedule),
+	}
+	if err := db.Create(&connector).Error; err != nil {
+		t.Fatalf("insert connector: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: "link-1", ConnectorID: connectorID, KbID: kbID, AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("insert connector link: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: userID, Name: "Wiki", CreatedBy: userID, EmbdID: "embd"}).Error; err != nil {
+		t.Fatalf("insert knowledge base: %v", err)
+	}
+	if err := db.Create(&entity.Document{ID: "existing-page", KbID: kbID, ParserConfig: entity.JSONMap{}, SourceType: SourceType("confluence", connectorID)}).Error; err != nil {
+		t.Fatalf("insert existing page: %v", err)
+	}
+
+	waterline := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	createdAt := waterline.UnixMilli()
+	for id, status := range map[string]entity.TaskStatus{
+		"old-success": entity.TaskStatusDone,
+		"old-active":  entity.TaskStatusRunning,
+		"old-failed":  entity.TaskStatusFail,
+	} {
+		if err := db.Create(&entity.SyncLogs{
+			ID: id, ConnectorID: connectorID, KbID: kbID, TaskType: dao.TaskTypeSync, Status: string(status),
+			PollRangeStart: entity.NewFlexibleTime(&waterline), PollRangeEnd: entity.NewFlexibleTime(&waterline),
+			BaseModel: entity.BaseModel{CreateTime: &createdAt},
+		}).Error; err != nil {
+			t.Fatalf("insert prior task: %v", err)
+		}
+	}
+
+	publisher := &fakeSyncerTaskPublisher{}
+	previousPublisher := getSyncerTaskPublisher
+	getSyncerTaskPublisher = func() (syncTaskPublisher, bool) { return publisher, true }
+	t.Cleanup(func() { getSyncerTaskPublisher = previousPublisher })
+	svc := NewConnectorService()
+	ctx := serviceTestContext(t, userID, userID)
+
+	update := func(req *UpdateConnectorRequest) entity.SyncLogs {
+		t.Helper()
+		before := len(publisher.taskIDs)
+		if _, code, err := svc.UpdateConnector(ctx, connectorID, req); err != nil || code != common.CodeSuccess {
+			t.Fatalf("UpdateConnector: code=%v, err=%v", code, err)
+		}
+		if len(publisher.taskIDs) != before+1 {
+			t.Fatalf("update published %d tasks, want one", len(publisher.taskIDs)-before)
+		}
+		var task entity.SyncLogs
+		if err := db.Take(&task, "id = ?", publisher.taskIDs[before]).Error; err != nil {
+			t.Fatalf("load task: %v", err)
+		}
+		return task
+	}
+
+	newScope := entity.JSONMap{"index_mode": "page", "page_id": "456"}
+	backfill := update(&UpdateConnectorRequest{Config: newScope})
+	if !IsFromBeginning(backfill.FromBeginning) || backfill.PollRangeStart != nil {
+		t.Fatalf("new scope must start from the beginning: %+v", backfill)
+	}
+	var oldTask entity.SyncLogs
+	if err := db.Take(&oldTask, "id = ?", "old-active").Error; err != nil || oldTask.Status != string(entity.TaskStatusCancel) {
+		t.Fatalf("old task status = %q, err = %v", oldTask.Status, err)
+	}
+	if err := db.Take(&entity.Document{}, "id = ?", "existing-page").Error; err != nil {
+		t.Fatalf("scope save removed an existing page: %v", err)
+	}
+	if err := svc.connectorDAO.ResumeFailedSyncTask(ctx, db, connectorID, kbID, "old-failed"); !errors.Is(err, dao.ErrConnectorSyncScopeChanged) {
+		t.Fatalf("resume from old scope: got %v, want scope-change error", err)
+	}
+
+	if err := db.Model(&backfill).Update("status", string(entity.TaskStatusFail)).Error; err != nil {
+		t.Fatalf("mark full scan failed: %v", err)
+	}
+	if err := svc.connectorDAO.ResumeFailedSyncTask(ctx, db, connectorID, kbID, backfill.ID); err != nil {
+		t.Fatalf("resume current scope: %v", err)
+	}
+	// A fresh schedule also keeps the full scan after a failure.
+	if err := db.Model(&backfill).Update("status", string(entity.TaskStatusFail)).Error; err != nil {
+		t.Fatalf("mark resumed scan failed: %v", err)
+	}
+	retry := update(&UpdateConnectorRequest{Status: string(entity.TaskStatusSchedule)})
+	if !IsFromBeginning(retry.FromBeginning) || retry.PollRangeStart != nil {
+		t.Fatalf("rescheduled backfill used an older scope's waterline: %+v", retry)
+	}
+
+	newWaterline := waterline.Add(30 * time.Minute)
+	if err := db.Model(&retry).Updates(map[string]any{
+		"status": string(entity.TaskStatusDone), "poll_range_end": entity.NewFlexibleTime(&newWaterline),
+	}).Error; err != nil {
+		t.Fatalf("mark full scan successful: %v", err)
+	}
+	refreshFreq := int64(600)
+	incremental := update(&UpdateConnectorRequest{Config: newScope, RefreshFreq: &refreshFreq, Reschedule: true})
+	if IsFromBeginning(incremental.FromBeginning) || incremental.PollRangeStart == nil ||
+		!incremental.PollRangeStart.Time().Equal(newWaterline) {
+		t.Fatalf("interval-only change did not reuse the new waterline: %+v", incremental)
 	}
 }
 
