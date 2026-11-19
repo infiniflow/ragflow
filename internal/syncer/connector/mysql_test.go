@@ -188,7 +188,7 @@ func TestMySQLConnectorOpenSyncAllTables(t *testing.T) {
 			sqlmock.NewRows([]string{"Tables_in_mydb"}).AddRow("products").AddRow("orders"),
 		)
 		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM orders) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
-			sqlmock.NewRows([]string{"id", "name"}).AddRow(2, "Order"),
+			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "Order"),
 		)
 		mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM (SELECT * FROM products) AS ragflow_src ORDER BY ragflow_src.id ASC")).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "Product"),
@@ -212,7 +212,7 @@ func TestMySQLConnectorOpenSyncAllTables(t *testing.T) {
 			ids = append(ids, doc.SourceID)
 		}
 	}
-	if len(ids) != 2 || ids[0] != "mysql:mydb:2" || ids[1] != "mysql:mydb:1" {
+	if len(ids) != 2 || ids[0] != "mysql-table:mydb:orders:1" || ids[1] != "mysql-table:mydb:products:1" {
 		t.Fatalf("source ids = %v", ids)
 	}
 }
@@ -542,7 +542,7 @@ func TestMySQLConnectorOpenSyncResumeMultiTable(t *testing.T) {
 		)
 	})
 
-	anchor := "mysql:mydb:1"
+	anchor := "mysql-table:mydb:products:1"
 	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		FromBeginning: true,
 		Resume:        &SyncCheckpoint{Cursor: encodeRDBMSCursor("products", "id", anchor), SourceID: anchor},
@@ -554,7 +554,7 @@ func TestMySQLConnectorOpenSyncResumeMultiTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "mysql:mydb:3" {
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "mysql-table:mydb:products:3" {
 		t.Fatalf("documents = %+v", batch.Documents)
 	}
 	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
@@ -754,7 +754,7 @@ func TestMySQLConnectorOpenSyncCheckpointQueryName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "mysql:mydb:1" {
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "mysql-table:mydb:orders:1" {
 		t.Fatalf("documents = %+v", batch.Documents)
 	}
 	if batch.Checkpoint == nil {
