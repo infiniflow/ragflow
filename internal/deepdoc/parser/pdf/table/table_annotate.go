@@ -114,13 +114,6 @@ func annNotOverlapped(a, b annRegion) bool {
 	return a.x1 < b.x0 || a.x0 > b.x1 || a.y1 < b.y0 || a.y0 > b.y1
 }
 
-func imin(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // sortYFirstly orders regions top-to-bottom (and left-to-right within a
 // vertical threshold), matching Recognizer.sort_Y_firstly (recognizer.py:54)
 // which LayoutRecognizer.__call__ applies before annotation
@@ -158,10 +151,10 @@ func cleanupLayouts(regs []annRegion, boxes []pdf.TextBox) []annRegion {
 	i := 0
 	for i+1 < len(regs) {
 		j := i + 1
-		for j < imin(i+far, len(regs)) && (regs[j].label != regs[i].label || annNotOverlapped(regs[i], regs[j])) {
+		for j < min(i+far, len(regs)) && (regs[j].label != regs[i].label || annNotOverlapped(regs[i], regs[j])) {
 			j++
 		}
-		if j >= imin(i+far, len(regs)) {
+		if j >= min(i+far, len(regs)) {
 			i++
 			continue
 		}
