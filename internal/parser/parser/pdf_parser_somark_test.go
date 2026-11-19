@@ -726,30 +726,33 @@ func TestSoMarkPollRejectsPermanentHTTPErrorBeforeReadingBody(t *testing.T) {
 
 func TestSoMarkPollCancelledErrorIncludesLastStatus(t *testing.T) {
 	withSSRFBypass(t)
-	// A long interval keeps the loop in the wait path so the cancellation is
-	// observed there, after a status has been recorded.
-	withSoMarkPollInterval(t, 500*time.Millisecond)
+	withSoMarkPollInterval(t, time.Millisecond)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	polled := make(chan struct{}, 1)
 	var polls atomic.Int64
+	secondPoll := make(chan struct{})
+	releaseSecond := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if polls.Add(1) == 1 {
-			select {
-			case polled <- struct{}{}:
-			default:
-			}
+			_, _ = w.Write([]byte(`{"code":0,"data":{"status":"RUNNING"}}`))
+			return
 		}
-		_, _ = w.Write([]byte(`{"code":0,"data":{"status":"RUNNING"}}`))
+		// Block the second poll until the test has cancelled the request. The
+		// first poll has then already recorded RUNNING, so the cancellation is
+		// observed with that status no matter how long response processing
+		// takes — no sleep, no flaky window.
+		select {
+		case secondPoll <- struct{}{}:
+		default:
+		}
+		<-releaseSecond
 	}))
 	t.Cleanup(server.Close)
 
 	go func() {
-		<-polled
-		// Let the client finish reading the response before cancelling, so the
-		// cancellation is observed in the wait path rather than mid-read.
-		time.Sleep(100 * time.Millisecond)
+		<-secondPoll
 		cancel()
+		close(releaseSecond)
 	}()
 	_, err := soMarkPoll(ctx, server.URL, "task-1", "")
 	if err == nil || !errors.Is(err, context.Canceled) {
