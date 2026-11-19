@@ -199,6 +199,48 @@ func TestResolveModelConfigForStoredUnlimitedOCRProvider(t *testing.T) {
 	})
 }
 
+// TestUnlimitedOCRLayoutModelPredicate pins the layout_recognizer probe used to
+// route PDFs to Unlimited-OCR-2: a bare tenant-model ID keeps resolving through
+// its enrolled provider, while a model that resolves to another OCR driver is
+// rejected. Group (gp-) references need the enterprise group picker, which the
+// community build stubs out, so they have no constructible fixture here.
+func TestUnlimitedOCRLayoutModelPredicate(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	for _, row := range []interface{}{
+		&entity.TenantModelProvider{ID: "provider-unlimited-ocr", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "Unlimited-OCR-2"},
+		&entity.TenantModelInstance{ID: "instance-unlimited-ocr", ProviderID: "provider-unlimited-ocr", InstanceName: "default", APIKey: `{"unlimited_ocr_api_key":"sk-unlimited"}`, Status: "active", Extra: `{"base_url":"http://127.0.0.1:18000"}`},
+		&entity.TenantModel{ID: "model-unlimited-ocr", ProviderID: "provider-unlimited-ocr", InstanceID: "instance-unlimited-ocr", ModelName: "Unlimited-OCR-2", ModelType: int(entity.ModelTypeOCR), Status: "active"},
+		&entity.TenantModelProvider{ID: "provider-paddleocr", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "PaddleOCR"},
+		&entity.TenantModelInstance{ID: "instance-paddleocr", ProviderID: "provider-paddleocr", InstanceName: "default", APIKey: "fixture-key", Status: "active", Extra: `{"base_url":"http://127.0.0.1:18001"}`},
+		&entity.TenantModel{ID: "model-paddleocr", ProviderID: "provider-paddleocr", InstanceID: "instance-paddleocr", ModelName: "PaddleOCR-VL-1.5", ModelType: int(entity.ModelTypeOCR), Status: "active"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		ref  string
+		want bool
+	}{
+		{name: "tenant model id with unlimited ocr driver", ref: "model-unlimited-ocr", want: true},
+		{name: "tenant model id with another ocr driver", ref: "model-paddleocr", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := defaultIsUnlimitedOCRLayoutModelID(t.Context(), db, "tenant-1", tc.ref); got != tc.want {
+				t.Fatalf("defaultIsUnlimitedOCRLayoutModelID(%q) = %v, want %v", tc.ref, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestResolveModelConfigInaccessibleIDs checks that missing and foreign model
 // IDs have the same public error and trigger no instance reads before access
 // is established, regardless of the foreign model's state.
