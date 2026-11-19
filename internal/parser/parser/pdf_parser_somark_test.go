@@ -103,9 +103,9 @@ func TestPDFParser_ParseWithResult_SoMarkRequiresBaseURL(t *testing.T) {
 	}
 }
 
-func TestSoMarkBlockToItem_DropsHeaderByDefault(t *testing.T) {
-	if item, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "header", "content": "x"}, false, &htmlWalkState{budget: newMediaBudgetForTest()}); item != nil {
-		t.Fatalf("item = %#v, want nil", item)
+func TestSoMarkBlock_DropsHeaderByDefault(t *testing.T) {
+	if block, ok, _ := soMarkBlock(t.Context(), map[string]any{"type": "header", "content": "x"}, false, &htmlWalkState{budget: newMediaBudgetForTest()}); ok {
+		t.Fatalf("block = %#v, want the header dropped", block)
 	}
 }
 
@@ -145,8 +145,8 @@ func TestSoMarkItemsEmitPagePositions(t *testing.T) {
 		t.Fatalf("pageCount=%d items=%d, want 2/3", pageCount, len(items))
 	}
 	want := [][]any{
-		{float64(1), 10.0, 110.0, 20.0, 40.0},
-		{float64(3), 100.0, 200.0, 50.0, 90.0},
+		{1, 10.0, 110.0, 20.0, 40.0},
+		{3, 100.0, 200.0, 50.0, 90.0},
 	}
 	for i, w := range want {
 		for _, key := range []string{"positions", "_pdf_positions"} {
@@ -174,11 +174,11 @@ func TestSoMarkItemsPreferBlockPageIdx(t *testing.T) {
 		t.Fatalf("items=%d, want 2", len(items))
 	}
 	rows, _ := items[0]["_pdf_positions"].([][]any)
-	if len(rows) != 1 || rows[0][0] != float64(2) {
+	if len(rows) != 1 || rows[0][0] != 2 {
 		t.Fatalf("block page_idx must win: %#v", items[0]["_pdf_positions"])
 	}
 	rows, _ = items[1]["_pdf_positions"].([][]any)
-	if len(rows) != 1 || rows[0][0] != float64(1) {
+	if len(rows) != 1 || rows[0][0] != 1 {
 		t.Fatalf("missing page_idx must fall back to page_num: %#v", items[1]["_pdf_positions"])
 	}
 }
@@ -198,7 +198,7 @@ func TestSoMarkItemsRejectInvalidPageIdx(t *testing.T) {
 	// Fractional, overflowing AND merely out-of-range page_idx values all
 	// fall back to the enclosing page: emitting page 8 of a 1-page result
 	// would point at a page that does not exist and inflate page_count.
-	for i, want := range []float64{3, 3, 3} {
+	for i, want := range []int{3, 3, 3} {
 		rows, _ := items[i]["_pdf_positions"].([][]any)
 		if len(rows) != 1 || rows[0][0] != want {
 			t.Fatalf("item %d page = %#v, want %v (invalid or out-of-range page_idx must fall back to page_num)", i, rows, want)
@@ -298,7 +298,7 @@ func TestSoMarkPositionsRescaledFromPixelsToPoints(t *testing.T) {
 	wantX1 := 827.0 / 1654 * 595.28
 	wantTop := 233.9 / 2339 * 841.89
 	wantBott := 467.8 / 2339 * 841.89
-	if pos[0] != float64(1) {
+	if pos[0] != 1 {
 		t.Fatalf("page = %v, want 1", pos[0])
 	}
 	for i, want := range []float64{wantX0, wantX1, wantTop, wantBott} {
@@ -385,7 +385,7 @@ func TestSoMarkPositionsCrossPageScaling(t *testing.T) {
 	}}}
 	items, _, _ := soMarkItems(context.Background(), result, false, sizes)
 	pos := items[0]["_pdf_positions"].([][]any)[0]
-	if pos[0] != float64(2) {
+	if pos[0] != 2 {
 		t.Fatalf("page = %v, want 2", pos[0])
 	}
 	// Hand-computed against page 2 (300x400 pt at 827x1169 px):
@@ -421,13 +421,22 @@ func TestSoMarkPagePointSizesHonorRotate(t *testing.T) {
 	}
 }
 
-func TestSoMarkBlockPositionRejectsNonFinite(t *testing.T) {
+func TestSoMarkItemsRejectNonFiniteBox(t *testing.T) {
 	for _, bbox := range [][]any{
 		{1.0, math.NaN(), 110.0, 40.0},
 		{1.0, 20.0, math.Inf(1), 40.0},
 		{1.0, 20.0, 110.0, math.Inf(-1)},
 	} {
-		if pos := soMarkBlockPosition(map[string]any{"bbox": bbox}, 0, 100, 100, nil); pos != nil {
+		result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+			map[string]any{"page_num": float64(0), "blocks": []any{
+				map[string]any{"type": "text", "content": "body", "bbox": bbox},
+			}},
+		}}}}
+		items, _, _ := soMarkItems(context.Background(), result, false, nil)
+		if len(items) != 1 {
+			t.Fatalf("items = %d, want the text kept", len(items))
+		}
+		if pos, ok := items[0]["_pdf_positions"]; ok {
 			t.Fatalf("non-finite bbox %v must drop the position, got %#v", bbox, pos)
 		}
 	}

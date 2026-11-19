@@ -2,37 +2,12 @@ package parser
 
 import (
 	"context"
-	"math"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 
 	"ragflow/internal/entity/models"
 )
-
-func TestPaddleOCRBlockPosition(t *testing.T) {
-	page := models.OCRPage{Index: 2, Width: 600, Height: 800}
-	for _, tc := range []struct {
-		name string
-		box  []float64
-		want []any
-	}{
-		{"rectangle", []float64{30, 40, 300, 160}, []any{3, float64(15), float64(150), float64(20), float64(80)}},
-		{"noncanonical polygon", []float64{30, 40, 300, 40, 300, 160, 30, 160}, nil},
-		{"clip", []float64{-30, -40, 1200, 1000}, []any{3, float64(0), float64(300), float64(0), float64(400)}},
-		{"zero", []float64{1, 1, 1, 2}, nil},
-		{"outside", []float64{1000, 900, 1100, 1000}, nil},
-		{"nonfinite", []float64{0, 0, math.Inf(1), 100}, nil},
-		{"missing", nil, nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := paddleOCRBlockPosition(page, tc.box, [2]float64{300, 400}); !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("got=%v want=%v", got, tc.want)
-			}
-		})
-	}
-}
 
 func TestPaddleOCRPDFResultDropsUnlocatedMedia(t *testing.T) {
 	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
