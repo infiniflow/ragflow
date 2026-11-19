@@ -452,13 +452,15 @@ export const MultiSelect = React.forwardRef<
                           >
                             {label ?? value}
                           </div>
-                          <XCircle
-                            className="h-4 w-4 cursor-pointer"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              removeValue(value);
-                            }}
-                          />
+                          {!lockedValueSet.has(value) && (
+                            <XCircle
+                              className="h-4 w-4 cursor-pointer"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                removeValue(value);
+                              }}
+                            />
+                          )}
                         </div>
                       </Badge>
                     );
