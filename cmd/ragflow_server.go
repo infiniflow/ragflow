@@ -299,7 +299,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	if isStandaloneDeepDocServer(serverType) {
 		return runDeepDoc(ctx, serverName, arguments)
 	}
-	runtimeNeeded := standalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion || serverType == common.ServerTypeChatter
+	runtimeNeeded := standalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion
 	common.Info("Starting RAGFlow", zap.String("server", serverName))
 	// Keep the full configuration dump tied to the operator's chosen verbosity.
 	if !common.LogLevelHigherThanInfo(resolvedLogLevel) {
@@ -393,11 +393,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	}
 	// Stop and join service work before closing any process-wide resource.
 	defer cancel()
-	err = runEEServices(ctx, cancel, arguments, services)
-	if err != nil {
-		return err
-	}
-	return runServices(ctx, cancel, arguments, services)
+	return runEEServices(ctx, cancel, arguments, services)
 }
 
 func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
