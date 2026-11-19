@@ -1,5 +1,19 @@
 import type { Config } from 'jest';
 
+// The Markdown renderer uses ESM-only Unified packages. Transform those
+// packages in Jest's CommonJS runtime so the real rendering pipeline is testable.
+const markdownDependencies = [
+  '@ungap/structured-clone',
+  'bail|ccount|devlop|trough|zwitch',
+  'character-(?:entities[^/]*|reference-invalid)',
+  'decode-named-character-reference|entities|parse-entities|stringify-entities',
+  '(?:comma|space)-separated-tokens|trim-lines|longest-streak',
+  'escape-string-regexp|estree-util-is-identifier-name|is-(?:alphanumerical?|decimal|hexadecimal|plain-obj)',
+  'hast-util-[^/]+|hastscript|html-(?:url-attributes|void-elements)|property-information|web-namespaces',
+  'markdown-table|mdast-util-[^/]+|micromark(?:-[^/]+)?',
+  'parse5|react-markdown|rehype-[^/]+|remark-[^/]+|unified|unist-util-[^/]+|vfile(?:-[^/]+)?',
+].join('|');
+
 const config: Config = {
   testEnvironment: 'jsdom',
   transform: {
@@ -7,6 +21,10 @@ const config: Config = {
     // see jest-esbuild-transformer.cjs
     '^.+\\.(ts|tsx|js|jsx)$': '<rootDir>/jest-esbuild-transformer.cjs',
   },
+  transformIgnorePatterns: [
+    `/node_modules/(?!(?:${markdownDependencies})/)`,
+    '\\.pnp\\.[^\\/]+$',
+  ],
   moduleNameMapper: {
     // Asset/style stubs must precede the `@/` alias — the alias rewrites
     // `@/assets/x.png` to a real path and only the first matching mapper runs.

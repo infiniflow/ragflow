@@ -61,11 +61,44 @@ describe('mergeAnswerChunk', () => {
 
 describe('preprocessLaTeX', () => {
   it('converts block \\[ \\] to $$ $$', () => {
-    expect(preprocessLaTeX('\\[ x + y \\]')).toBe('$$x + y$$');
+    expect(preprocessLaTeX('\\[ x + y \\]')).toBe('$$ x + y $$');
   });
 
   it('converts inline \\( \\) to $ $', () => {
-    expect(preprocessLaTeX('\\( a \\)')).toBe('$a$');
+    expect(preprocessLaTeX('\\( a \\)')).toBe('$ a $');
+  });
+
+  it('closes equations immediately after letters, including before the answer', () => {
+    const content = String.raw`<details>Student \(t\) and \[a+b\]</details>
+
+The distribution is \(p_\theta(y_t\mid x_t)\).`;
+    expect(preprocessLaTeX(content)).toBe(
+      String.raw`<details>Student $t$ and $$a+b$$</details>
+
+The distribution is $p_\theta(y_t\mid x_t)$.`,
+    );
+  });
+
+  it('keeps a valid formula after an unclosed opener', () => {
+    expect(preprocessLaTeX(String.raw`\(x then \(y\)`)).toBe(
+      String.raw`\(x then $y$`,
+    );
+    expect(preprocessLaTeX(String.raw`<details>\(t</details> y\)`)).toBe(
+      String.raw`<details>\(t</details> y\)`,
+    );
+  });
+
+  it('keeps LaTeX examples in code spans and fences literal', () => {
+    const code = [
+      '`\\(t\\)`',
+      '```tex',
+      '\\[a+b\\]',
+      '````',
+      '~~~tex',
+      '\\(y\\)',
+      '~~~',
+    ].join('\n');
+    expect(preprocessLaTeX(`${code}\n\\(x\\)`)).toBe(`${code}\n$x$`);
   });
 
   it('does not cut block math at \\right] (Closes #13134)', () => {
@@ -89,12 +122,15 @@ describe('preprocessLaTeX', () => {
   it('handles multiple block equations', () => {
     const content = 'First \\[ a \\] then \\[ b \\right] c \\]';
     const result = preprocessLaTeX(content);
-    expect(result).toBe('First $$a$$ then $$ b \\right] c $$');
+    expect(result).toBe('First $$ a $$ then $$ b \\right] c $$');
   });
 
-  it('handles double-escaped inline LaTeX', () => {
-    expect(preprocessLaTeX('\\\\(\\\\Delta = b^2\\\\)')).toBe(
-      '$\\Delta = b^2$',
+  it('handles double-escaped delimiters without changing the formula contents', () => {
+    expect(preprocessLaTeX(String.raw`\\(\Delta = b^2\\)`)).toBe(
+      String.raw`$\Delta = b^2$`,
+    );
+    expect(preprocessLaTeX(String.raw`\[a \\ b\]`)).toBe(
+      String.raw`$$a \\ b$$`,
     );
   });
 
@@ -110,7 +146,7 @@ describe('preprocessLaTeX', () => {
     expect(preprocessLaTeX('\\\\(x &lt; y\\\\)')).toBe('$x < y$');
   });
 
-  it('passes through already correct single-escaped delimiters unchanged', () => {
+  it('converts single-escaped delimiters around a compact equation', () => {
     expect(preprocessLaTeX('\\(x = 1\\)')).toBe('$x = 1$');
   });
 });

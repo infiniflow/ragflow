@@ -119,40 +119,41 @@ export function mergeAnswerChunk(
   return nextAnswer;
 }
 
-// Preprocess LaTeX equations to be rendered by KaTeX
-// ref: https://github.com/remarkjs/react-markdown/issues/785
-//
-// Delimiter matching: we only treat \] and \) as block/inline endings when they
-// are not part of a LaTeX command (e.g. \right], \big), \left)). Use a negative
-// lookbehind (?<![a-zA-Z]) so that \] or \) preceded by a letter (command name)
-// is not considered the closing delimiter. Use greedy matching so we match up to
-// the last valid delimiter and avoid cutting at the first \] or \) inside the
-// equation (e.g. \frac{1}{|y|} or \right]).
+// A math delimiter can immediately follow a letter, as in \(t\). Only
+// TeX delimiter-sizing commands consume an escaped bracket or parenthesis.
+// Stop at a new opener or a message-section boundary if the closer is missing.
+const BLOCK_MATH_RE =
+  /\\\[((?:(?!\\\[|<\/?(?:details|think|retrieving)\b)[\s\S])*?)(?<!\\(?:left|middle|right|[bB]igg?[lmr]?))\\\]/g;
+const INLINE_MATH_RE =
+  /\\\(((?:(?!\\\(|<\/?(?:details|think|retrieving)\b)[\s\S])*?)(?<!\\(?:left|middle|right|[bB]igg?[lmr]?))\\\)/g;
+// Fenced code and inline code can show LaTeX delimiters as literal examples.
+const MARKDOWN_CODE_RE =
+  /^[ \t]*(?<fence>(?<mark>`|~)\k<mark>{2,})(?!\k<mark>)[^\r\n]*\r?\n[\s\S]*?(?:^[ \t]*\k<fence>\k<mark>*[ \t]*(?=\r?$)|(?![\s\S]))|(?<![\\`])(?<ticks>`+)(?!`)(?:[^\r\n]|\r?\n(?![ \t]*\r?\n))*?(?<!`)\k<ticks>(?!`)/gm;
 
-const BLOCK_MATH_RE = /\\\[([\s\S]*?)(?<![a-zA-Z])\\\]/g;
-const INLINE_MATH_RE = /\\\(([\s\S]*?)(?<![a-zA-Z])\\\)/g;
+function normalizeLatexDelimiters(text: string) {
+  return text
+    .replace(/\\\\([()[\]])/g, '\\$1')
+    .replace(BLOCK_MATH_RE, (_, equation) => `$$${equation}$$`)
+    .replace(INLINE_MATH_RE, (_, equation) => `$${equation}$`);
+}
 
 export const preprocessLaTeX = (content: string) => {
   const normalizedContent = content
-    .replace(/\\\\\[/g, '\\[')
-    .replace(/\\\\\(/g, '\\(')
-    .replace(/\\\\\]/g, '\\]')
-    .replace(/\\\\\)/g, '\\)')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&');
 
-  const blockProcessedContent = normalizedContent.replace(
-    BLOCK_MATH_RE,
-    (_, equation) => `$$${equation}$$`,
-  );
-
-  const inlineProcessedContent = blockProcessedContent.replace(
-    INLINE_MATH_RE,
-    (_, equation) => `$${equation}$`,
-  );
-
-  return inlineProcessedContent;
+  const parts: string[] = [];
+  let start = 0;
+  for (const match of normalizedContent.matchAll(MARKDOWN_CODE_RE)) {
+    parts.push(
+      normalizeLatexDelimiters(normalizedContent.slice(start, match.index)),
+    );
+    parts.push(match[0]);
+    start = match.index + match[0].length;
+  }
+  parts.push(normalizeLatexDelimiters(normalizedContent.slice(start)));
+  return parts.join('');
 };
 
 export function replaceThinkToSection(

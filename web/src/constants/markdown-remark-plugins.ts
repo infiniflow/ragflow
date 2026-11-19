@@ -14,9 +14,34 @@
  *  limitations under the License.
  */
 
+import { decodeAngleBracketEntities } from '@/utils/chat';
+import type { ElementContent } from 'hast';
+import type { Root } from 'mdast';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
+import { visitParents } from 'unist-util-visit-parents';
+
+function decodeMathText(children: ElementContent[]) {
+  for (const child of children) {
+    if (child.type === 'text') {
+      child.value = decodeAngleBracketEntities(child.value);
+    } else if (child.type === 'element') {
+      decodeMathText(child.children);
+    }
+  }
+}
+
+function remarkDecodeMathEntities() {
+  return (tree: Root) => {
+    visitParents(tree, ['math', 'inlineMath'] as const, (node) => {
+      // Keep angle brackets escaped in prose and HTML. The math parser
+      // preserves entities literally, so restore them in its text nodes.
+      node.value = decodeAngleBracketEntities(node.value);
+      decodeMathText(node.data?.hChildren ?? []);
+    });
+  };
+}
 
 /**
  * GFM + line breaks only (no TeX). For surfaces that do not wire rehype-katex
@@ -30,4 +55,9 @@ export const MarkdownRemarkPluginsLite = [remarkGfm, remarkBreaks];
  * - remark-math: TeX ($...$ / $$...$$); pair with rehype-katex on render.
  * - remark-breaks: treat single newlines as hard breaks (common in LLM chat).
  */
-export const MarkdownRemarkPlugins = [remarkGfm, remarkMath, remarkBreaks];
+export const MarkdownRemarkPlugins = [
+  remarkGfm,
+  remarkMath,
+  remarkDecodeMathEntities,
+  remarkBreaks,
+];
