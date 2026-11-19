@@ -504,6 +504,22 @@ func RegisterAnalyzerFactory(method string, factory func(baseURL string) (deepdo
 	analyzerFactories[m] = factory
 }
 
+// ReportsPageProgress reports whether a PDF parse method drives the per-page
+// completion callback (ParserConfig.OnPageDone). The in-process "deepdoc" path
+// and the default method do; so does every method backed by a registered
+// external analyzer -- those backends run the same runPageWorkers loop and fire
+// the callback per page. Whole-document engines and unknown methods do not.
+// This is the single source of truth for the ingest progress bridge, so callers
+// never hard-code method names.
+func ReportsPageProgress(method string) bool {
+	m := normalizePDFParseMethod(method)
+	if m == "" || m == "deepdoc" {
+		return true
+	}
+	_, registered := analyzerFactories[m]
+	return registered
+}
+
 // externalAnalyzerURL derives the endpoint for a registered external method
 // from the generic <METHOD>_URL environment convention (upper-cased canonical
 // token). The value is trimmed and otherwise handed to the factory verbatim —
