@@ -31,6 +31,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     // chunk of a chat answer.
     const hasAutoSize = !!autoSize;
     const maxRows = autoSize?.maxRows;
+    const rows = autoSize?.minRows ?? props.rows;
     const getLineHeight = (element: HTMLElement): number => {
       const style = window.getComputedStyle(element);
       return parseInt(style.lineHeight, 10) || 20;
@@ -62,7 +63,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       if (hasAutoSize) {
         adjustHeight();
       }
-    }, [hasAutoSize, adjustHeight, props.value]);
+    }, [hasAutoSize, adjustHeight, props.value, rows]);
 
     useEffect(() => {
       if (typeof ref === 'function') {
@@ -101,7 +102,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           resizable ? 'overflow-auto' : 'overflow-hidden',
           className,
         )}
-        rows={autoSize?.minRows ?? props.rows ?? undefined}
+        rows={rows ?? undefined}
         style={{
           maxHeight:
             autoSize?.maxRows && !resizable

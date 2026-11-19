@@ -3,14 +3,14 @@ import { Textarea } from '../textarea';
 
 // adjustHeight collapses the textarea to `auto` synchronously and sets the
 // measured height in the next frame, so `auto` marks a re-measure.
-const renderTextarea = (value: string) => (
+const renderTextarea = (value: string, minRows = 1) => (
   <Textarea
     data-testid="box"
     value={value}
     onChange={jest.fn()}
     // As in the chat input; jsdom has no ResizeObserver for the manual resize.
     resize="none"
-    autoSize={{ minRows: 1, maxRows: 8 }}
+    autoSize={{ minRows, maxRows: 8 }}
   />
 );
 
@@ -40,6 +40,18 @@ describe('Textarea autoSize', () => {
 
     rerender(renderTextarea('hello world'));
 
+    expect(box.style.height).toBe('auto');
+  });
+
+  it('re-measures when minRows changes', () => {
+    const { rerender } = render(renderTextarea('hello', 1));
+    const box = screen.getByTestId('box');
+    box.style.height = '48px';
+
+    rerender(renderTextarea('hello', 1));
+    expect(box.style.height).toBe('48px');
+
+    rerender(renderTextarea('hello', 4));
     expect(box.style.height).toBe('auto');
   });
 });
