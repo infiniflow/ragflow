@@ -32,6 +32,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"ragflow/internal/common"
@@ -1259,6 +1260,46 @@ func TestMonkeyOCRv2TextWithMultipleImageReferences(t *testing.T) {
 		}
 		if budget.Count() != limit || len(budget.Warnings()) != 2-limit {
 			t.Fatalf("limit %d: charged %d, warnings %v", limit, budget.Count(), budget.Warnings())
+		}
+	}
+}
+
+func TestMonkeyOCRv2UnpositionedPictureKeepsTextForMissingImage(t *testing.T) {
+	var buf bytes.Buffer
+	archive := zip.NewWriter(&buf)
+	err := archive.AddFS(fstest.MapFS{
+		"sample/sample.json": {Data: []byte(`{"layouts":[
+			{"label":"Picture","content":"before ![one](a.png) between ![two](missing.png) after"},
+			{"label":"Picture","content":"before ![one](a.png) between ![two](b.png) after"}
+		]}`)},
+		"sample/images/a.png": {Data: []byte("a")},
+		"sample/images/b.png": {Data: []byte("b")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := monkeyOCRv2ParseArchive(t.Context(), "sample.pdf", buf.Bytes(), media.NewBudget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ layout, text, image string }{
+		{"figure", "before one", "YQ=="},
+		{"text", " between two after", ""},
+		{"figure", "before one", "YQ=="},
+		{"figure", " between two after", "Yg=="},
+	}
+	if len(result.JSON) != len(want) {
+		t.Fatalf("got %d items, want %d: %#v", len(result.JSON), len(want), result.JSON)
+	}
+	for i, expected := range want {
+		item := result.JSON[i].ToMap()
+		image, _ := item["image"].(string)
+		if item["layout"] != expected.layout || item["text"] != expected.text || image != expected.image {
+			t.Errorf("item %d = %#v, want %+v", i, item, expected)
 		}
 	}
 }

@@ -1150,7 +1150,7 @@ func (s monkeyOCRv2Section) hasCropRegion() bool {
 }
 
 // Each image inherits its source layout's region. Partition the surrounding
-// prose across the items so concatenating their captions preserves the text
+// prose across the items so concatenating their text preserves the content
 // in reading order without repeating it for each image.
 func monkeyOCRv2ImageSections(section monkeyOCRv2Section, matches [][]int, images map[string]*zip.File, budget *media.Budget) []monkeyOCRv2Section {
 	var result []monkeyOCRv2Section
@@ -1167,7 +1167,9 @@ func monkeyOCRv2ImageSections(section monkeyOCRv2Section, matches [][]int, image
 		}
 		if image != "" || item.hasCropRegion() {
 			item.layout, item.image = "figure", image
-		} else if item.layout == "figure" || strings.TrimSpace(item.text) == "" {
+		} else if strings.TrimSpace(item.text) != "" {
+			item.layout = "text"
+		} else {
 			continue
 		}
 		result = append(result, item)
