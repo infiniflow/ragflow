@@ -95,23 +95,30 @@ func TestStartReturnsDatabaseFailure(t *testing.T) {
 	}
 }
 
-func TestStartRetryDelay(t *testing.T) {
+func TestChannelRetryDelay(t *testing.T) {
 	tests := []struct {
 		name     string
 		attempts int
 		want     time.Duration
 	}{
-		{name: "zero attempt uses first delay", attempts: 0, want: initialStartRetryDelay},
-		{name: "first attempt", attempts: 1, want: initialStartRetryDelay},
-		{name: "second attempt doubles", attempts: 2, want: 2 * initialStartRetryDelay},
-		{name: "fifth attempt", attempts: 5, want: 16 * initialStartRetryDelay},
-		{name: "bounded", attempts: 20, want: maxStartRetryDelay},
+		{name: "zero attempt uses first delay", attempts: 0, want: 5 * time.Second},
+		{name: "first attempt", attempts: 1, want: 5 * time.Second},
+		{name: "second attempt doubles", attempts: 2, want: 10 * time.Second},
+		{name: "third attempt", attempts: 3, want: 20 * time.Second},
+		{name: "fourth attempt", attempts: 4, want: time.Minute},
+		{name: "fifth attempt", attempts: 5, want: 3 * time.Minute},
+		{name: "sixth attempt", attempts: 6, want: 10 * time.Minute},
+		{name: "seventh attempt", attempts: 7, want: 30 * time.Minute},
+		{name: "eighth attempt", attempts: 8, want: time.Hour},
+		{name: "ninth attempt", attempts: 9, want: 6 * time.Hour},
+		{name: "reaches cap", attempts: 10, want: 24 * time.Hour},
+		{name: "bounded", attempts: 20, want: 24 * time.Hour},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := startRetryDelay(tt.attempts); got != tt.want {
-				t.Fatalf("startRetryDelay(%d) = %s, want %s", tt.attempts, got, tt.want)
+			if got := channelRetryDelay(tt.attempts); got != tt.want {
+				t.Fatalf("channelRetryDelay(%d) = %s, want %s", tt.attempts, got, tt.want)
 			}
 		})
 	}
@@ -126,8 +133,8 @@ func TestRecordStartFailure(t *testing.T) {
 	if first.attempts != 1 {
 		t.Fatalf("attempts after first failure = %d, want 1", first.attempts)
 	}
-	if !first.nextRetryAt.Equal(now.Add(initialStartRetryDelay)) {
-		t.Fatalf("nextRetryAt after first failure = %s, want %s", first.nextRetryAt, now.Add(initialStartRetryDelay))
+	if !first.nextRetryAt.Equal(now.Add(initialChannelRetryDelay)) {
+		t.Fatalf("nextRetryAt after first failure = %s, want %s", first.nextRetryAt, now.Add(initialChannelRetryDelay))
 	}
 
 	rt.recordStartFailure("account-1", "fp-1", now)
@@ -135,8 +142,8 @@ func TestRecordStartFailure(t *testing.T) {
 	if second.attempts != 2 {
 		t.Fatalf("attempts after second failure = %d, want 2", second.attempts)
 	}
-	if !second.nextRetryAt.Equal(now.Add(2 * initialStartRetryDelay)) {
-		t.Fatalf("nextRetryAt after second failure = %s, want %s", second.nextRetryAt, now.Add(2*initialStartRetryDelay))
+	if !second.nextRetryAt.Equal(now.Add(2 * initialChannelRetryDelay)) {
+		t.Fatalf("nextRetryAt after second failure = %s, want %s", second.nextRetryAt, now.Add(2*initialChannelRetryDelay))
 	}
 
 	rt.recordStartFailure("account-1", "fp-2", now)
