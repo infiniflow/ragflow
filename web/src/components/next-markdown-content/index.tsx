@@ -406,7 +406,7 @@ function MarkdownContent({
                     fileExtension,
                     documentUrl,
                   )}
-                  className="text-ellipsis text-wrap"
+                  className="text-ellipsis text-wrap shrink min-w-0 [overflow-wrap:anywhere]"
                 >
                   {document?.doc_name}
                 </Button>

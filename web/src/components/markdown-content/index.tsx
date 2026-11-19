@@ -296,10 +296,13 @@ const MarkdownContent = ({
                 )}
                 <Button
                   variant="link"
-                  className={classNames('text-wrap p-0 flex-1 h-auto', {
-                    'hover:no-underline cursor-default':
-                      !documentUrl && !supportsSourceLocate(fileExtension),
-                  })}
+                  className={classNames(
+                    'text-wrap p-0 flex-1 shrink min-w-0 h-auto [overflow-wrap:anywhere]',
+                    {
+                      'hover:no-underline cursor-default':
+                        !documentUrl && !supportsSourceLocate(fileExtension),
+                    },
+                  )}
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
