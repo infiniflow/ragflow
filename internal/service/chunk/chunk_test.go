@@ -475,6 +475,67 @@ func TestListScopesSearchToDocumentDataset(t *testing.T) {
 	}
 }
 
+// TestGetDropsLegacyContentAlias pins the two spellings of the body in a chunk
+// response. A row can carry both with different values, and the client submits
+// every field it read back, preferring `content`: answering with a second copy
+// makes an edit revert itself and, because the stored text then already matches,
+// records no version either. Naming only the live field leaves the client with
+// nothing stale to send.
+func TestGetDropsLegacyContentAlias(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID, tenantID := "user-1", "tenant-1"
+	datasetID, documentID := "kb-1", "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &getChunkTestEngine{chunk: map[string]interface{}{
+		"id":                  "chunk-1",
+		"doc_id":              documentID,
+		"kb_id":               datasetID,
+		"content":             "edited text",
+		"content_with_weight": "live text",
+	}}
+	svc := &ChunkService{docEngine: engine, kbDAO: dao.NewKnowledgebaseDAO()}
+
+	resp, err := svc.Get(chunkTestContext(t, userID, tenantID), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		ChunkID:    "chunk-1",
+	})
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got, ok := resp.Chunk["content"]; ok {
+		t.Fatalf("content = %#v, want no legacy alias beside the live field", got)
+	}
+	if got := resp.Chunk["content_with_weight"]; got != "live text" {
+		t.Fatalf("content_with_weight = %#v, want the live text %q", got, "live text")
+	}
+
+	// A legacy row that has nothing but `content` keeps it: that is the only
+	// text it has.
+	engine.chunk = map[string]interface{}{
+		"id":      "chunk-2",
+		"doc_id":  documentID,
+		"kb_id":   datasetID,
+		"content": "only text",
+	}
+	resp, err = svc.Get(chunkTestContext(t, userID, tenantID), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		ChunkID:    "chunk-2",
+	})
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got := resp.Chunk["content"]; got != "only text" {
+		t.Fatalf("content = %#v, want the legacy-only text to survive", got)
+	}
+}
+
 // TestGetScopesChunkLookupToDocumentDataset pins the detail endpoint's scope:
 // the chunk is read from the dataset named in the route only, never from every
 // KB of the tenant.
@@ -904,14 +965,14 @@ func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
 					"content_with_weight": "existing content",
 				},
 			}
-			var storedBucket, storedChunkID, storedMode string
+			var storedBucket, storedChunkID, storedCurrentImage, storedMode string
 			var storedBinary []byte
 			svc := &ChunkService{
 				docEngine: engine,
 				kbDAO:     dao.NewKnowledgebaseDAO(),
-				storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte, mode string) error {
-					storedBucket, storedChunkID, storedMode, storedBinary = bucket, chunkID, mode, imageBinary
-					return nil
+				storeChunkImageFunc: func(bucket, chunkID, currentImageID string, imageBinary []byte, mode string) (string, error) {
+					storedBucket, storedChunkID, storedCurrentImage, storedMode, storedBinary = bucket, chunkID, currentImageID, mode, imageBinary
+					return "chunk-1-abc123", nil
 				},
 			}
 
@@ -930,6 +991,9 @@ func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
 			if storedBucket != "kb-1" || storedChunkID != "chunk-1" || storedMode != tc.wantMode {
 				t.Fatalf("store args = %q/%q/%q, want kb-1/chunk-1/%s", storedBucket, storedChunkID, storedMode, tc.wantMode)
 			}
+			if storedCurrentImage != "" {
+				t.Fatalf("current image = %q, want empty for a chunk without one", storedCurrentImage)
+			}
 			if string(storedBinary) != "image-bytes" {
 				t.Fatalf("stored binary = %q, want image-bytes", storedBinary)
 			}
@@ -938,8 +1002,8 @@ func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
 				t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
 			}
 			updated := engine.updateCalls[0].newValue
-			if updated["img_id"] != "kb-1-chunk-1" {
-				t.Fatalf("img_id = %#v, want kb-1-chunk-1", updated["img_id"])
+			if updated["img_id"] != "kb-1-chunk-1-abc123" {
+				t.Fatalf("img_id = %#v, want kb-1-chunk-1-abc123", updated["img_id"])
 			}
 			if updated["doc_type_kwd"] != "image" {
 				t.Fatalf("doc_type_kwd = %#v, want image", updated["doc_type_kwd"])
@@ -948,7 +1012,10 @@ func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
 	}
 }
 
-func TestUpdateChunkRemoveModeClearsImageAfterIndexUpdate(t *testing.T) {
+// Removing an image clears the reference but keeps the stored object: the
+// version this edit records holds the image ID, and restoring that version has
+// to find the bytes again. The drop is the history cleanup's job.
+func TestUpdateChunkRemoveModeClearsImageAndKeepsHistoryObject(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	insertChunkTestUserTenant(t, "user-1", "tenant-1")
@@ -968,15 +1035,12 @@ func TestUpdateChunkRemoveModeClearsImageAfterIndexUpdate(t *testing.T) {
 	svc := &ChunkService{
 		docEngine: engine,
 		kbDAO:     dao.NewKnowledgebaseDAO(),
-		storeChunkImageFunc: func(string, string, []byte, string) error {
+		storeChunkImageFunc: func(string, string, string, []byte, string) (string, error) {
 			t.Fatal("remove mode must not store an image")
-			return nil
+			return "", nil
 		},
-		removeChunkImageFunc: func(bucket, chunkID string) error {
-			*order = append(*order, "storage")
-			if bucket != "kb-1" || chunkID != "chunk-1" {
-				t.Fatalf("remove args = %q/%q, want kb-1/chunk-1", bucket, chunkID)
-			}
+		removeChunkImageFunc: func(string, string) error {
+			t.Fatal("remove mode must keep the object: the version history still refers to it")
 			return nil
 		},
 	}
@@ -1002,15 +1066,14 @@ func TestUpdateChunkRemoveModeClearsImageAfterIndexUpdate(t *testing.T) {
 	if updated["doc_type_kwd"] != "text" {
 		t.Fatalf("doc_type_kwd = %#v, want text", updated["doc_type_kwd"])
 	}
-	if !reflect.DeepEqual(*order, []string{"index", "storage"}) {
-		t.Fatalf("call order = %#v, want index before storage removal", *order)
+	if !reflect.DeepEqual(*order, []string{"index"}) {
+		t.Fatalf("call order = %#v, want only the index write", *order)
 	}
 }
 
-// A request that changes content and drops the image must still schedule the
-// Wiki refresh when the stored object cannot be deleted: the index update has
-// already committed by then.
-func TestUpdateChunkMarksWikiDirtyWhenImageRemovalFails(t *testing.T) {
+// Removing an image in the same request as a content change still schedules the
+// Wiki refresh: a compiled product may quote the text that was rewritten.
+func TestUpdateChunkRemoveModeStillMarksWikiDirty(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	insertChunkTestUserTenant(t, "user-1", "tenant-1")
@@ -1027,9 +1090,10 @@ func TestUpdateChunkMarksWikiDirtyWhenImageRemovalFails(t *testing.T) {
 	svc := &ChunkService{
 		docEngine: engine,
 		kbDAO:     dao.NewKnowledgebaseDAO(),
-		removeChunkImageFunc: func(string, string) error {
-			return errors.New("storage unavailable")
-		},
+		// The analyzer pool is not started in unit tests, and the edit path now
+		// refuses to store text without its tokens, so the seams answer instead.
+		tokenizeFunc:            func(text, _ string) (string, error) { return text, nil },
+		fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text, nil },
 		markWikiDirtyFunc: func(tenantID, datasetID, documentID string, chunkIDs []string) {
 			wikiCalls++
 		},
@@ -1044,14 +1108,14 @@ func TestUpdateChunkMarksWikiDirtyWhenImageRemovalFails(t *testing.T) {
 		Content:         &content,
 		ImageUpdateMode: &removeMode,
 	})
-	if err == nil || !strings.Contains(err.Error(), "Failed to remove chunk image") {
-		t.Fatalf("UpdateChunk() error = %v, want the removal failure", err)
+	if err != nil {
+		t.Fatalf("UpdateChunk() error = %v", err)
 	}
 	if len(engine.updateCalls) != 1 {
 		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
 	}
 	if wikiCalls != 1 {
-		t.Fatalf("markWikiDirty calls = %d, want 1 (the index update already committed)", wikiCalls)
+		t.Fatalf("markWikiDirty calls = %d, want 1", wikiCalls)
 	}
 }
 
@@ -1086,9 +1150,9 @@ func TestUpdateChunkRejectsInvalidImageInput(t *testing.T) {
 			svc := &ChunkService{
 				docEngine: engine,
 				kbDAO:     dao.NewKnowledgebaseDAO(),
-				storeChunkImageFunc: func(string, string, []byte, string) error {
+				storeChunkImageFunc: func(string, string, string, []byte, string) (string, error) {
 					t.Fatal("invalid input must not reach storage")
-					return nil
+					return "", nil
 				},
 			}
 
@@ -1441,6 +1505,28 @@ func TestAddChunkValidationErrors(t *testing.T) {
 			},
 			wantMsg: "`content` is required",
 		},
+		{
+			name: "external image url",
+			req:  &service.AddChunkRequest{DatasetID: "kb-1", DocumentID: "doc-1", Content: "see ![x](https://cdn.example.com/a.png)"},
+			setup: func(svc *ChunkService) {
+				svc.checkDatasetAccessFunc = func(string) error { return nil }
+				svc.getKnowledgebaseByIDFunc = func(string) (*entity.Knowledgebase, error) {
+					return &entity.Knowledgebase{ID: "kb-1", TenantID: "user-1", EmbdID: "embed-1"}, nil
+				}
+			},
+			wantMsg: "may not introduce an external image",
+		},
+		{
+			name: "oversized content",
+			req:  &service.AddChunkRequest{DatasetID: "kb-1", DocumentID: "doc-1", Content: strings.Repeat("a", maxEditedChunkLength+1)},
+			setup: func(svc *ChunkService) {
+				svc.checkDatasetAccessFunc = func(string) error { return nil }
+				svc.getKnowledgebaseByIDFunc = func(string) (*entity.Knowledgebase, error) {
+					return &entity.Knowledgebase{ID: "kb-1", TenantID: "user-1", EmbdID: "embed-1"}, nil
+				}
+			},
+			wantMsg: "exceeds 200000 bytes",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1487,15 +1573,18 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 		},
 		incrementChunkStatsFunc: func(string, string, int64, int64, float64) error { return nil },
-		storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte, mode string) error {
+		storeChunkImageFunc: func(bucket, chunkID, currentImageID string, imageBinary []byte, mode string) (string, error) {
 			storeCalls++
 			if bucket != datasetID || chunkID == "" || len(imageBinary) == 0 {
 				t.Fatalf("unexpected store args bucket=%s chunkID=%s len=%d", bucket, chunkID, len(imageBinary))
 			}
+			if currentImageID != "" {
+				t.Fatalf("current image = %q, want empty for a new chunk", currentImageID)
+			}
 			if mode != imageUpdateModeAppend {
 				t.Fatalf("store mode = %q, want %q", mode, imageUpdateModeAppend)
 			}
-			return nil
+			return chunkID + "-stored", nil
 		},
 	}
 
@@ -1613,11 +1702,18 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	})
 
 	svc := &ChunkService{}
-	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, imageUpdateModeAppend); err != nil {
+	objectKey, err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", "kb-1-chunk-1", newImage, imageUpdateModeAppend)
+	if err != nil {
 		t.Fatalf("storeChunkImage() error = %v", err)
 	}
 	if mockStorage.putCalls != 1 {
 		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
+	}
+	if mockStorage.lastPutName != objectKey {
+		t.Fatalf("stored under %q, returned %q", mockStorage.lastPutName, objectKey)
+	}
+	if objectKey == "chunk-1" {
+		t.Fatal("append must not write the legacy shared key: an older version points at it")
 	}
 	merged, format, err := image.Decode(bytes.NewReader(mockStorage.lastPut))
 	if err != nil {
@@ -1649,7 +1745,8 @@ func TestStoreChunkImageReplaceOverwritesExistingImage(t *testing.T) {
 	})
 
 	svc := &ChunkService{}
-	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, imageUpdateModeReplace); err != nil {
+	objectKey, err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", "kb-1-chunk-1", newImage, imageUpdateModeReplace)
+	if err != nil {
 		t.Fatalf("storeChunkImage() error = %v", err)
 	}
 	if mockStorage.putCalls != 1 {
@@ -1657,6 +1754,9 @@ func TestStoreChunkImageReplaceOverwritesExistingImage(t *testing.T) {
 	}
 	if !bytes.Equal(mockStorage.lastPut, newImage) {
 		t.Fatalf("replace stored %d bytes, want the new image verbatim (%d bytes)", len(mockStorage.lastPut), len(newImage))
+	}
+	if want := chunkImageObjectKey("chunk-1", newImage); objectKey != want {
+		t.Fatalf("object key = %q, want %q", objectKey, want)
 	}
 }
 
@@ -1721,10 +1821,12 @@ func TestChunkImageOperationsShareThePerChunkLock(t *testing.T) {
 		go func() { done <- result{op: op, err: fn()} }()
 	}
 	run("append", func() error {
-		return svc.storeChunkImage(ctx, "kb-1", chunkID, appendedImage, imageUpdateModeAppend)
+		_, err := svc.storeChunkImage(ctx, "kb-1", chunkID, "kb-1-"+chunkID, appendedImage, imageUpdateModeAppend)
+		return err
 	})
 	run("replace", func() error {
-		return svc.storeChunkImage(ctx, "kb-1", chunkID, replacedImage, imageUpdateModeReplace)
+		_, err := svc.storeChunkImage(ctx, "kb-1", chunkID, "kb-1-"+chunkID, replacedImage, imageUpdateModeReplace)
+		return err
 	})
 	run("remove", func() error {
 		return svc.removeChunkImage(ctx, "kb-1", chunkID)
@@ -1986,6 +2088,7 @@ func setupChunkTestDB(t *testing.T) *gorm.DB {
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
+	migrateChunkVersionTableEE(t, db)
 	return db
 }
 
@@ -2358,6 +2461,8 @@ type chunkImageStorage struct {
 	putCalls    int
 	removeCalls int
 	lastPut     []byte
+	lastPutName string
+	removeNames []string
 }
 
 func (s *chunkImageStorage) Type() string                  { return "chunk_image_storage" }
@@ -2365,6 +2470,7 @@ func (s *chunkImageStorage) Health(_ context.Context) bool { return true }
 func (s *chunkImageStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	s.putCalls++
 	s.lastPut = binary
+	s.lastPutName = fnm
 	return nil
 }
 func (s *chunkImageStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
@@ -2372,6 +2478,7 @@ func (s *chunkImageStorage) Get(ctx context.Context, bucket, fnm string, tenantI
 }
 func (s *chunkImageStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	s.removeCalls++
+	s.removeNames = append(s.removeNames, fnm)
 	return nil
 }
 func (s *chunkImageStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
@@ -2510,6 +2617,7 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.Knowledgebase{}, &entity.Document{}); err != nil {
 		t.Fatalf("failed to migrate sqlite: %v", err)
 	}
+	migrateChunkVersionTableEE(t, db)
 	previousDB := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = previousDB })
@@ -2593,6 +2701,9 @@ type updateChunksCall struct {
 
 type switchChunksEngineMock struct {
 	updateCalls []updateChunksCall
+	// rows is what GetChunk answers with, keyed by chunk id: SwitchChunks reads
+	// each row before toggling it so the recorded snapshot keeps the content.
+	rows map[string]map[string]interface{}
 }
 
 func (m *switchChunksEngineMock) CreateChunkStore(context.Context, string, string, int, string, string) error {
@@ -2616,8 +2727,15 @@ func (m *switchChunksEngineMock) DeleteChunks(context.Context, map[string]interf
 func (m *switchChunksEngineMock) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
 	return nil, nil
 }
-func (m *switchChunksEngineMock) GetChunk(context.Context, string, string, []string) (interface{}, error) {
-	return nil, nil
+func (m *switchChunksEngineMock) GetChunk(_ context.Context, _, chunkID string, _ []string) (interface{}, error) {
+	if m.rows == nil {
+		return nil, nil
+	}
+	row, ok := m.rows[chunkID]
+	if !ok {
+		return nil, nil
+	}
+	return copyMap(row), nil
 }
 func (m *switchChunksEngineMock) DropChunkStore(context.Context, string, string) error { return nil }
 func (m *switchChunksEngineMock) ChunkStoreExists(context.Context, string, string) (bool, error) {
@@ -2855,5 +2973,57 @@ func TestStopParsing_DoesNotDeleteChunksOrResetCountersAfterCancel(t *testing.T)
 	// Chunks must NOT be deleted during cancel.
 	if engine.deleteChunksCalls != 0 {
 		t.Fatalf("DeleteChunks called %d times, want 0", engine.deleteChunksCalls)
+	}
+}
+
+// TestUpdateChunkRefreshesKeywordTokens pins that an edited keyword or question
+// list refreshes the token columns the engine indexes alongside it.
+func TestUpdateChunkRefreshesKeywordTokens(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-a",
+			"content_with_weight": "body",
+			"important_tks":       "stale",
+			"question_tks":        "stale",
+		},
+	}
+	svc := &ChunkService{
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
+		// The analyzer pool is not started in unit tests, and the edit path now
+		// refuses to store text without its tokens, so the seams answer instead.
+		tokenizeFunc:            func(text, _ string) (string, error) { return "tk(" + text + ")", nil },
+		fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return "fg(" + text + ")", nil },
+	}
+
+	if err := svc.UpdateChunk(chunkTestContext(t, "user-1", "tenant-1"), &service.UpdateChunkRequest{
+		DatasetID:    "kb-1",
+		DocumentID:   "doc-a",
+		ChunkID:      "chunk-1",
+		ImportantKwd: []string{"fresh keyword"},
+		Questions:    []string{"fresh question?"},
+	}); err != nil {
+		t.Fatalf("UpdateChunk() error = %v", err)
+	}
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	update := engine.updateCalls[0].newValue
+	for _, field := range []string{"important_tks", "question_tks"} {
+		value, ok := update[field].(string)
+		if !ok {
+			t.Fatalf("%s = %#v, want the tokenized string", field, update[field])
+		}
+		if value == "stale" {
+			t.Fatalf("%s was not refreshed", field)
+		}
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -380,7 +381,7 @@ func (e *Engine) applyKeywordRemovals(ctx context.Context, tableName, whereSQL s
 		for _, column := range removeColumns {
 			current, _ := decodeColumnValue("chunk", column, row[column]).([]string)
 			removeValue := stringValue(removeFields[column])
-			if !containsString(current, removeValue) {
+			if !slices.Contains(current, removeValue) {
 				continue
 			}
 			updated := make([]string, 0, len(current))

@@ -387,10 +387,10 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 		return !equalFoldValues(lv, right), nil
 	case "contains":
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
-		return containsString(strings.ToLower(ls), strings.ToLower(rs)), nil
+		return strings.Contains(strings.ToLower(ls), strings.ToLower(rs)), nil
 	case "not contains":
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
-		return !containsString(strings.ToLower(ls), strings.ToLower(rs)), nil
+		return !strings.Contains(strings.ToLower(ls), strings.ToLower(rs)), nil
 	case "start with":
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
 		return strings.HasPrefix(strings.ToLower(ls), strings.ToLower(rs)), nil
@@ -492,26 +492,6 @@ func equalFoldValues(a, b any) bool {
 		}
 	}
 	return strings.EqualFold(as, bs)
-}
-
-func containsString(haystack, needle string) bool {
-	if needle == "" {
-		return true
-	}
-	return indexOf(haystack, needle) >= 0
-}
-
-// indexOf is a tiny wrapper around strings.Index to keep the operator
-// table readable. strings import is hidden behind this helper to
-// minimize the import list surface.
-func indexOf(s, sub string) int {
-	// use stdlib to avoid hand-rolling
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
 
 // numericize attempts to convert v to float64. Returns ok=false if v

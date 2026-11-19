@@ -571,6 +571,18 @@ func (e *Engine) columnExists(table *infinity.Table, columnName string) (bool, e
 	return false, nil
 }
 
+// chunkTablePrefix is the part of a chunk table name that does not depend on the
+// tenant or the dataset.
+const chunkTablePrefix = "ragflow_"
+
+// chunkTableBaseName is the part of a chunk table name a tenant owns, before the
+// dataset id: ragflow_<tenant>. A name derived from a chunk table (the chunk
+// history table) is built through the same base, so it stays that table's name
+// with something appended.
+func chunkTableBaseName(tenantID string) string {
+	return chunkTablePrefix + tenantID
+}
+
 // buildChunkTableName returns the chunk table name for a dataset
 // Skill Table: table name is just baseName (e.g., "skill_abc123_def456")
 // Regular chunk Table: table name is {baseName}_{datasetID}

@@ -5,6 +5,16 @@ import (
 	"strings"
 )
 
+// ContainsFold reports whether substr is contained in s after folding both to
+// lower case. It is the single shared form of the previous inline
+// strings.Contains(strings.ToLower(s), strings.ToLower(substr)) copies; callers
+// that only lower-case one side are deliberately left alone because their
+// needle is already normalized. An empty substr reports true, matching
+// strings.Contains.
+func ContainsFold(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
+}
+
 // Redundant-space cleanup regexes. Mirrors
 // common.string_utils.remove_redundant_spaces (string_utils.py:20-46).
 // Pass 1: drop spaces after a "left boundary" character (parens, <, >).

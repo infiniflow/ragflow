@@ -374,8 +374,8 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err = h.service.ChangePassword(ctx, username, req.NewPassword); err != nil {
-		common.RespondError(c, common.CodeServerError, err.Error())
+	if err = h.service.ChangePassword(ctx, c.GetString("user_id"), username, req.NewPassword); err != nil {
+		common.RespondError(c, passwordChangeErrorCode(err), err.Error())
 		return
 	}
 

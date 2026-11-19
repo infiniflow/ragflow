@@ -11,13 +11,13 @@ sidebar_custom_props: {
 
 ## Check Whether Services Are Running Normally
 
-The Admin UI sidebar contains **Services**, **Users**, and **Sandbox**. Open **Services** to view the status reported by the Go services and their configured dependencies. Each row displays the service `Name`, `Service type`, `Host`, `Port`, and `Status`. The table does not display an ID column. Hover over a row to show its **Actions**: use the sliders icon for **Extra information**, or the clipboard icon to open service details.
+The Admin UI sidebar contains **Services**, **Users**, and **Sandbox**. Open **Services** to view the health status of the configured dependencies. Each row displays the service `Name`, `Service type`, `Host`, `Port`, and `Status`. The table does not display an ID column. Hover over a row to show its **Actions**: use the sliders icon for **Extra information**, or the clipboard icon to open service details.
 
 ![Check Whether Services Are Normal](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/check_whether_services_are_normal.jpg)
 
-For dependencies, `alive` means that the corresponding health check succeeded. `timeout`, `not available`, or another status indicates that the check failed or that the configured implementation is unavailable. For Go server processes, `alive` means that Admin received a heartbeat during the preceding 45 seconds; otherwise the status is `timeout`.
+For dependencies, `alive` means that the corresponding health check succeeded. `timeout`, `not available`, or another status indicates that the check failed or that the configured implementation is unavailable.
 
-The open-source Go deployment reports the following entries:
+The open-source version of RAGFlow runs all application services in one process and does not list them separately. The **Services** page displays the following dependencies:
 
 | Service type     | Entry                                                             | How the status is determined                                            |
 |------------------|-------------------------------------------------------------------|-------------------------------------------------------------------------|
@@ -26,11 +26,8 @@ The open-source Go deployment reports the following entries:
 | `storage_engine` | The configured object storage, such as MinIO                      | The server calls the active storage implementation's health check.      |
 | `cache`          | Kvrocks                                                           | The server checks the configured Kvrocks connection.                    |
 | `message_queue`  | NATS                                                              | The server reads the status of the active message queue implementation. |
-| `api`           | Each reporting API process                                        | Admin evaluates the process heartbeat.                                  |
-| `ingestor`       | Each reporting Ingestor process                                   | Admin evaluates the process heartbeat.                                  |
-| `syncer`        | Each reporting Syncer process                                     | Admin evaluates the process heartbeat.                                  |
 
-Only processes that have reported a heartbeat to Admin appear in the process portion of the list. For dependency rows, `elapsed` records timing information from the corresponding status check; for API, Ingestor, and Syncer rows, it records the time since the latest heartbeat. The host is shown as `-` and the port as `0` when the configured document engine or storage implementation does not provide an endpoint for the status row.
+For each dependency, `elapsed` records timing information from the corresponding health check. The host is shown as `-` and the port as `0` when the configured document engine or storage implementation does not provide an endpoint for the status row.
 
 ## View Service Details
 
@@ -49,6 +46,6 @@ To view **Extra information**, hover over the service row and click the sliders 
 
 ![Service extra information](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_4.jpg)
 
-If a service's status is not `alive`, record its name, service type, host, port, and message before troubleshooting the corresponding dependency or process.
+If a service's status is not `alive`, record its name, service type, host, port, and message before troubleshooting the corresponding dependency.
 
 The Admin UI is mainly used to view service status. It does not provide direct troubleshooting entry points for containers, processes, networks, or logs. For further handling, check the corresponding deployment environment, including service runtime status, port connectivity, service logs, and related configurations. After identifying the cause, restart services, adjust configurations, or perform other recovery operations according to your operations process.
