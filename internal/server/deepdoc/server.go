@@ -21,6 +21,8 @@ package deepdoc
 
 import (
 	"fmt"
+	"os"
+	native "ragflow/internal/deepdoc/native"
 	goruntime "runtime"
 	"strconv"
 	"strings"
@@ -28,7 +30,6 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	"ragflow/internal/deepdoc/native"
 	pdf "ragflow/internal/deepdoc/parser/pdf"
 	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/server"
@@ -65,6 +66,22 @@ func inferenceTotalCores() int {
 func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	modelDir := resolveDeepDocModelDir()
 	dropScore := resolveDeepDocDropScore()
+
+	// Resolve the device policy. The OSS build accepts only cpu; a gpu request
+	// fails fast here via native.ParseDevice ("GPU requires the enterprise
+	// edition"). CLI overrides env. No silent fallback to CPU.
+	deviceSpec := strings.TrimSpace(os.Getenv(common.EnvDeepDocDevice))
+	if arguments.DeepdocDevice != nil && strings.TrimSpace(*arguments.DeepdocDevice) != "" {
+		deviceSpec = strings.TrimSpace(*arguments.DeepdocDevice)
+	}
+	if deviceSpec == "" {
+		deviceSpec = "cpu"
+	}
+	dev, err := native.ParseDevice(deviceSpec)
+	if err != nil {
+		return fmt.Errorf("invalid DeepDoc device: %w", err)
+	}
+	native.SetDevice(dev)
 
 	if err := infnative.Register(modelDir, dropScore); err != nil {
 		common.Warn("in-process DeepDoc backend unavailable",

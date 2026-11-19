@@ -129,6 +129,14 @@ func sharedWeights(modelPath, inName string, inShape []int64, outName string) (*
 	// Throwaway extraction session: the weights live in the graph, not in any
 	// input/output tensor, so we only need valid in/out tensors to load the
 	// model. We never Run it, so the output tensor's shape is irrelevant.
+	//
+	// This session intentionally uses the DEFAULT (CPU) provider even when the
+	// running sessions use CUDA. The shared-initializer patch reads initializers
+	// via CreateCpuMemoryInfo + memcpy; a CUDA extraction session would have the
+	// weights resident on the device and that memcpy would be invalid. The
+	// running (possibly CUDA) sessions receive the extracted CPU buffers via
+	// AddInitializer — ORT's CUDA EP copies external initializers to the device
+	// itself. So extraction stays on CPU while inference may run on GPU.
 	inT, err := ort.NewTensor(ort.NewShape(inShape...), make([]float32, prod(inShape)))
 	if err != nil {
 		return nil, fmt.Errorf("allocate extraction input for %s: %w", modelPath, err)
@@ -260,6 +268,13 @@ func newSessionOptions(weights *weightSet) (*ort.SessionOptions, error) {
 	if err := opts.SetCpuMemArena(false); err != nil {
 		opts.Destroy()
 		return nil, err
+	}
+	// Device selection hook: the enterprise build appends the CUDA EP here
+	// when DEEPDOC_DEVICE=gpu; the OSS build is a no-op (ParseDevice rejects
+	// gpu at startup). Fail-fast semantics live in the EE implementation.
+	if err := ApplyDeviceOptions(opts); err != nil {
+		opts.Destroy()
+		return nil, fmt.Errorf("apply device execution provider: %w", err)
 	}
 	if weights != nil {
 		for i, v := range weights.vals {

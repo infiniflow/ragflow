@@ -78,6 +78,12 @@ func Register(modelDir string, dropScore float64) error {
 	if err := native.InitORT(); err != nil {
 		return fmt.Errorf("deepdoc native: init onnxruntime: %w", err)
 	}
+	// Load the CUDA EP plugin (no-op on CPU). Must happen after InitORT and
+	// before any model session is created; fail fast if a GPU was requested but
+	// the plugin .so is missing.
+	if err := native.RegisterExecutionProvider(); err != nil {
+		return fmt.Errorf("deepdoc native: register execution provider: %w", err)
+	}
 	deepdoctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
 		a, err := NewAnalyzer(modelDir, dropScore)
 		if err != nil {

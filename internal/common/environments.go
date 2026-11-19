@@ -385,6 +385,10 @@ const (
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
 	// --deepdoc-inference-cpu-cores CLI flag.
 	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
+	// EnvDeepDocDevice selects the DeepDoc inference device (cpu | gpu[:id]).
+	// The OSS build accepts only cpu; gpu fails fast at startup with a
+	// "not supported" error (GPU requires the enterprise edition).
+	EnvDeepDocDevice = "DEEPDOC_DEVICE"
 
 	// Media extraction limits. The parser media budget and the run media cache
 	// read these per call: the per-image payload limit, the number of distinct
