@@ -50,6 +50,8 @@ func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 		`if true; then rm -rf "a; $T"; fi`,
 		`for f in a b; do rm -rf "a; $T"; done`,
 		`while true; do rm -rf "a; $T"; done`,
+		`{ rm -rf "a; $T"; }`,
+		`f() { rm -rf "a; $T"; }`,
 	}
 
 	for _, line := range lines {
@@ -89,6 +91,7 @@ func TestScanSkillIgnoresRmQuotedExpansion(t *testing.T) {
 		`sudo -u root transform -rf "a; $T"`,
 		`rmdir "a; $T"`,
 		`rm -fd "a; $T"`,
+		`echo { rm -rf "a; $T"`,
 	}
 
 	for _, line := range lines {
@@ -120,6 +123,22 @@ func TestScanSkillJoinsBackslashContinuations(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestScanSkillKeepsCommentAfterContinuation(t *testing.T) {
+	// The shell removes both `\<newline>` pairs, so the `#` follows a blank
+	// and starts a comment that ends at its own physical newline; rm still runs
+	// on line 3 and must be found there.
+	content := "echo \\\n# c \\\nrm -rf \"p;/../victim$SUFFIX\"\n"
+	findings := scanContent(content)
+	if !hasPattern(findings, "rm_quoted_expansion") {
+		t.Fatalf("missing quoted expansion on the continued command: %v", findings)
+	}
+	for _, finding := range findings {
+		if finding.PatternID == "rm_quoted_expansion" && finding.Line != 3 {
+			t.Fatalf("reported line %d, want physical line 3", finding.Line)
+		}
 	}
 }
 

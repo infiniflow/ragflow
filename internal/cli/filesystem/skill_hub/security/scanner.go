@@ -137,6 +137,10 @@ func logicalLines(content string) []logicalLine {
 	// double-quoted span, so it must not open single-quote mode and swallow the
 	// backslash-newline that follows.
 	inSingle, inDouble, escaped, comment, wordStart := false, false, false, false, true
+	// A folded `\<newline>` is removed by the shell, so the word-boundary
+	// state from before the backslash still applies: `echo \<newline># c`
+	// leaves `#` after a blank, where it opens a comment.
+	wordStartBeforeEscape := true
 
 	for i := 0; i < len(content); i++ {
 		c := content[i]
@@ -144,6 +148,9 @@ func logicalLines(content string) []logicalLine {
 			if escaped && !inSingle && !comment {
 				buf = buf[:len(buf)-1]
 				escaped = false
+				if !inDouble {
+					wordStart = wordStartBeforeEscape
+				}
 				number++
 				continue
 			}
@@ -176,6 +183,7 @@ func logicalLines(content string) []logicalLine {
 			// Comment text runs to the physical newline; nothing in it is code.
 		case c == '\\':
 			escaped = true
+			wordStartBeforeEscape = wordStart
 			wordStart = false
 		case c == '\'':
 			inSingle = true
@@ -317,11 +325,12 @@ func prefixChainLeadsToCommand(words []string) bool {
 
 // isCommandKeyword reports whether word is a shell keyword that ends a
 // compound-command header and is directly followed by a command of its own
-// (`if ...; then rm`). Keywords are only accepted ahead of a wrapper chain, so
+// (`if ...; then rm`), or the brace that opens a brace group
+// (`{ rm ...; }`). Keywords are only accepted ahead of a wrapper chain, so
 // `echo then rm` still fails on its first word.
 func isCommandKeyword(word string) bool {
 	switch word {
-	case "if", "then", "elif", "else", "while", "until", "do", "time", "!":
+	case "if", "then", "elif", "else", "while", "until", "do", "time", "!", "{":
 		return true
 	}
 	return false
@@ -406,13 +415,15 @@ func takesValue(wrapper, name string) bool {
 }
 
 // isCommandSeparator reports whether the byte at pos ends a shell command
-// outside quotes; the same bytes inside quotes are ordinary data.
+// outside quotes; the same bytes inside quotes are ordinary data. `)` ends a
+// function-body header (`f() { rm ...; }`), where the command that follows
+// starts a new command.
 func isCommandSeparator(line string, pos int, code []bool) bool {
 	if !code[pos] {
 		return false
 	}
 	switch line[pos] {
-	case ';', '|', '&', '(':
+	case ';', '|', '&', '(', ')':
 		return true
 	}
 	return false
