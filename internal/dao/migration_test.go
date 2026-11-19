@@ -30,10 +30,15 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
-const tenantModelIDWidth = 32
+// tenantModelIDWidth is the width every tenant model-id column converges on.
+// It is the same constant migrateColumnWidths widens to on purpose: a spec that
+// declared a different width would narrow the column on every startup and let
+// the widening migration restore it right after.
+const tenantModelIDWidth = int(common.GroupModelRefWidth)
 
 func TestKnowledgeCompileQueuesHaveNoPrimaryKey(t *testing.T) {
 	for _, model := range []interface{}{&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}} {
@@ -97,9 +102,10 @@ func TestTenantModelIDColumnSpecsMirrorsBackfillFields(t *testing.T) {
 			if !ok {
 				t.Fatalf("missing spec for %s.%s", table, field.tenantIDColumn)
 			}
-			if spec.columnType != "varchar(32)" || spec.definition != "varchar(32)" {
-				t.Errorf("%s.%s types = %q/%q, want varchar(32)/varchar(32)",
-					table, field.tenantIDColumn, spec.columnType, spec.definition)
+			wantType := fmt.Sprintf("varchar(%d)", tenantModelIDWidth)
+			if spec.columnType != wantType || spec.definition != wantType {
+				t.Errorf("%s.%s types = %q/%q, want %q/%q",
+					table, field.tenantIDColumn, spec.columnType, spec.definition, wantType, wantType)
 			}
 			if !spec.nullable {
 				t.Errorf("%s.%s nullable = false, want true", table, field.tenantIDColumn)

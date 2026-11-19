@@ -844,12 +844,12 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 	}
 
 	specs := []columnSpec{
-		// dialog.top_k mirrors Python's IntegerField(default=1024).
-		{
-			table: "dialog", column: "top_k",
-			columnType: "int", nullable: false,
-			definition: "int NOT NULL DEFAULT 1024",
-		},
+		// dialog.top_k is deliberately absent. The entity field is int64, and the
+		// MySQL driver maps an int64 to bigint by width (getSchemaIntAndUnitType
+		// switches on field.Size, so a `type:int` tag cannot override it).
+		// AutoMigrate therefore rewrote the column back to bigint immediately
+		// after this pass ran, and the two owners traded the column on every
+		// startup. AutoMigrate is the single owner now.
 		// tenant_llm.api_key mirrors Python's TextField(null=True).
 		{
 			table: "tenant_llm", column: "api_key",
@@ -905,8 +905,14 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 // tenantModelIDColumnSpecs projects tenantModelIDFields into column specs for
 // the tenant model id columns. These columns were once declared *int64, so a
 // database built by one of those releases holds them as bigint and the daily
-// cast back to varchar(32) is what lets AutoMigrate succeed at all. Sharing
+// cast back to varchar is what lets AutoMigrate succeed at all. Sharing
 // tenantModelIDFields keeps this list and the backfill reading one inventory.
+//
+// The width is GroupModelRefWidth, the same one migrateColumnWidths enforces:
+// the columns hold a tenant_model id (32 chars) or a gp-<group_id> reference
+// (35). Declaring the legacy 32 here would narrow every group reference on boot
+// and let the widening migration restore it, so the two would fight over the
+// same columns on every startup.
 func tenantModelIDColumnSpecs() []columnSpec {
 	tables := tenantModelIDFieldTables()
 
@@ -915,15 +921,16 @@ func tenantModelIDColumnSpecs() []columnSpec {
 		total += len(tenantModelIDFields[table])
 	}
 
+	definition := fmt.Sprintf("varchar(%d)", common.GroupModelRefWidth)
 	specs := make([]columnSpec, 0, total)
 	for _, table := range tables {
 		for _, field := range tenantModelIDFields[table] {
 			specs = append(specs, columnSpec{
 				table:      table,
 				column:     field.tenantIDColumn,
-				columnType: "varchar(32)", nullable: true,
-				definition: "varchar(32)",
-				keepLength: 32,
+				columnType: definition, nullable: true,
+				definition: definition,
+				keepLength: int(common.GroupModelRefWidth),
 			})
 		}
 	}

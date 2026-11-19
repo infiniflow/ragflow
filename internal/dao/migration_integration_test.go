@@ -114,6 +114,7 @@ func TestModifyColumnTypesHealsLegacyTenantModelIDColumns_Integration(t *testing
 		t.Fatalf("modifyColumnTypes failed: %v", err)
 	}
 
+	wantType := fmt.Sprintf("varchar(%d)", common.GroupModelRefWidth)
 	for _, column := range []string{"tenant_llm_id", "tenant_rerank_id"} {
 		columnType, _, ok, err := columnDefinition(ctx, db, "dialog", column)
 		if err != nil {
@@ -122,8 +123,28 @@ func TestModifyColumnTypesHealsLegacyTenantModelIDColumns_Integration(t *testing
 		if !ok {
 			t.Fatalf("%s vanished from dialog", column)
 		}
-		if columnType != "varchar(32)" {
-			t.Errorf("%s type = %q, want varchar(32)", column, columnType)
+		if columnType != wantType {
+			t.Errorf("%s type = %q, want %q", column, columnType, wantType)
+		}
+	}
+
+	// The type repair and the width migration own the same columns. A repair
+	// that converged on a narrower type would be undone here and then redone on
+	// the next startup, which is what made every boot issue DDL on the same
+	// columns. Both must be no-ops from this point on.
+	if err = migrateColumnWidths(ctx, db); err != nil {
+		t.Fatalf("migrateColumnWidths failed: %v", err)
+	}
+	if err = modifyColumnTypes(ctx, db); err != nil {
+		t.Fatalf("second modifyColumnTypes failed: %v", err)
+	}
+	for _, column := range []string{"tenant_llm_id", "tenant_rerank_id"} {
+		columnType, _, _, err := columnDefinition(ctx, db, "dialog", column)
+		if err != nil {
+			t.Fatalf("failed to re-read %s definition: %v", column, err)
+		}
+		if columnType != wantType {
+			t.Errorf("%s type after a full pass = %q, want %q", column, columnType, wantType)
 		}
 	}
 
@@ -452,7 +473,7 @@ func TestMigrateColumnWidths_Integration(t *testing.T) {
 	if got := columnLength(t, db, &entity.Tenant{}, "name"); got != common.TenantNameLimit {
 		t.Fatalf("tenant.name width = %d, want %d", got, common.TenantNameLimit)
 	}
-	if got := columnLength(t, db, &entity.UserTenant{}, "TenantLLMID"); got != common.GroupModelRefWidth {
+	if got := columnLength(t, db, &entity.UserTenant{}, "tenant_llm_id"); got != common.GroupModelRefWidth {
 		t.Fatalf("user_tenant.tenant_llm_id width = %d, want %d", got, common.GroupModelRefWidth)
 	}
 
