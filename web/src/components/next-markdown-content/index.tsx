@@ -57,7 +57,6 @@ import {
   type CitationKey,
 } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
-import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
@@ -74,6 +73,7 @@ import {
   HoverCardTrigger,
 } from '../ui/hover-card';
 import message from '../ui/message';
+import { CitationHoverCard } from '../citation-hover-card';
 import styles from './index.module.less';
 
 const getChunkKey = (match: string) => parseCitationIndex(match);
@@ -376,7 +376,7 @@ function MarkdownContent({
               </HoverCardContent>
             </HoverCard>
           )}
-          <div className={'space-y-2 max-w-[40vw] w-full'}>
+          <div className={'space-y-2 md:max-w-[40vw] w-full'}>
             <div
               dangerouslySetInnerHTML={{
                 __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
@@ -445,20 +445,15 @@ function MarkdownContent({
           }
 
           return (
-            <HoverCard key={`${String(chunkKey)}-${displayIndex}`}>
-              <HoverCardTrigger>
+            <CitationHoverCard
+              key={`${String(chunkKey)}-${displayIndex}`}
+              chip={
                 <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
                   [{displayIndex + 1}]
                 </bdi>
-              </HoverCardTrigger>
-              {chunkItem && (
-                <HoverCardPrimitive.Portal>
-                  <HoverCardContent className="max-w-3xl">
-                    {renderPopoverContent(chunkKey)}
-                  </HoverCardContent>
-                </HoverCardPrimitive.Portal>
-              )}
-            </HoverCard>
+              }
+              content={chunkItem && renderPopoverContent(chunkKey)}
+            />
           );
         },
       );

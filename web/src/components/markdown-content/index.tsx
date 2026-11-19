@@ -25,7 +25,6 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
-import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 import DOMPurify from 'dompurify';
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
@@ -62,6 +61,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '../ui/hover-card';
+import { CitationHoverCard } from '../citation-hover-card';
 import styles from './index.module.less';
 import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { SafeImg } from '@/components/safe-img';
@@ -272,7 +272,7 @@ const MarkdownContent = ({
               </HoverCardContent>
             </HoverCard>
           )}
-          <div className={'space-y-2 max-w-[40vw]'}>
+          <div className={'space-y-2 md:max-w-[40vw]'}>
             <div
               dangerouslySetInnerHTML={{
                 __html: sanitizeHtmlWithImagesAsText(chunkItem?.content ?? ''),
@@ -335,20 +335,15 @@ const MarkdownContent = ({
           }
 
           return (
-            <HoverCard key={i}>
-              <HoverCardTrigger>
+            <CitationHoverCard
+              key={i}
+              chip={
                 <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
                   [{chunkIndex + 1}]
                 </bdi>
-              </HoverCardTrigger>
-              {hasReference && (
-                <HoverCardPrimitive.Portal>
-                  <HoverCardContent className="max-w-3xl">
-                    {getPopoverContent(chunkIndex)}
-                  </HoverCardContent>
-                </HoverCardPrimitive.Portal>
-              )}
-            </HoverCard>
+              }
+              content={hasReference && getPopoverContent(chunkIndex)}
+            />
           );
         },
       );
