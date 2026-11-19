@@ -154,6 +154,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
               key={index}
               className="
               basis-auto
+              max-w-full
               @sm:basis-1/2
               @md:basis-1/3
               @lg:basis-1/4
