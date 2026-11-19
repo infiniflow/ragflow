@@ -566,6 +566,14 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 	if err = db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
+	// The dataset service records a version when a dataset is created or its
+	// configuration changes, and the document paths append content versions.
+	// Both need the table, so the shared test database carries it.
+	migrateDatasetVersionTableEE(t, db)
+	// A metadata state row names the state holding its values, so the paths that
+	// move metadata need a store; the enterprise edition stands an in-memory one
+	// in for the document engine.
+	installMetadataHistoryStoreEE(t)
 
 	return db
 }
@@ -1142,7 +1150,19 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	if len(files) != 0 {
 		t.Fatalf("expected 0 files, got %d", len(files))
 	}
-	if store.ObjExist(ctx, "kb-1", loc) {
+	// An edition that keeps content history keeps the blob and rows the row:
+	// the removal row records where the object lives so a restore can point the
+	// rebuilt file row at it. The owner removes it when they clean the removed
+	// document up. The community edition has no history to serve, so it removes
+	// the blob with the row.
+	if expectsBlobRetained() {
+		if !store.ObjExist(ctx, "kb-1", loc) {
+			t.Fatal("document blob should be kept for a content restore")
+		}
+		if removed := countRemovedDocuments(t, db, "kb-1"); removed != 1 {
+			t.Fatalf("removed documents = %d, want 1", removed)
+		}
+	} else if store.ObjExist(ctx, "kb-1", loc) {
 		t.Fatal("document blob should be deleted")
 	}
 }
@@ -2802,7 +2822,7 @@ func TestDeleteDocRecordWithCounters_Success(t *testing.T) {
 	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	svc := testDocumentService(t)
 
-	err := svc.deleteDocRecordWithCounters(ctx, doc, "kb-1")
+	_, err := svc.deleteDocRecordWithCounters(ctx, doc, "kb-1", false)
 	if err != nil {
 		t.Fatalf("deleteDocRecordWithCounters: %v", err)
 	}
@@ -2838,12 +2858,12 @@ func TestDeleteDocRecordWithCounters_DocAlreadyDeleted(t *testing.T) {
 	svc := testDocumentService(t)
 
 	// First delete: row removed, counters decremented
-	if err := svc.deleteDocRecordWithCounters(ctx, doc, "kb-1"); err != nil {
+	if _, err := svc.deleteDocRecordWithCounters(ctx, doc, "kb-1", false); err != nil {
 		t.Fatalf("first delete: %v", err)
 	}
 
 	// Second delete: RowsAffected==0 → counters NOT decremented again
-	if err := svc.deleteDocRecordWithCounters(ctx, doc, "kb-1"); err != nil {
+	if _, err := svc.deleteDocRecordWithCounters(ctx, doc, "kb-1", false); err != nil {
 		t.Fatalf("second delete should not error: %v", err)
 	}
 
@@ -2865,55 +2885,78 @@ func TestDeleteDocRecordWithCounters_KBUpdateFailureRollsBackDocumentDelete(t *t
 	pushServiceDB(t, db)
 
 	insertTestDoc(t, "doc-1", "missing-kb", 10, 5)
+	insertTestFile(t, "file-1", "missing-kb", "manual.pdf", nil)
+	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
 
 	ctx := t.Context()
 	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	svc := testDocumentService(t)
 
-	if err := svc.deleteDocRecordWithCounters(ctx, doc, "missing-kb"); err == nil {
+	if _, err := svc.deleteDocRecordWithCounters(ctx, doc, "missing-kb", true); err == nil {
 		t.Fatal("expected missing KB counter update to return an error")
 	}
 
 	if _, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1"); err != nil {
 		t.Fatalf("expected document delete to roll back, got: %v", err)
 	}
+	// The mappings share the transaction: if the delete rolls back, they are
+	// still there for the retry to find and collect.
+	if mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1"); len(mappings) != 1 {
+		t.Fatalf("expected the mapping to roll back with the document, got %d", len(mappings))
+	}
 }
 
-func TestCleanupFileReferences_NoMappings(t *testing.T) {
+func TestCleanupDocumentFiles_NoFileIDs(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
 	svc := testDocumentService(t)
-	// Should not panic with no f2d mappings
-	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "no-mappings", "kb-1")
+	// Should not panic with nothing to collect
+	svc.cleanupDocumentFiles(t.Context(), "kb-1", nil)
 }
 
-func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
+// TestDeleteDropsMappingsAndFilesTogether pins where the two steps run now: the
+// mappings are deleted inside the delete transaction (the file ids come back
+// with it), and only the file rows and blobs no mapping references any more are
+// collected afterwards. Deleting the mappings after the document row committed
+// made a mapping failure surface as "delete failed" while the document was
+// already gone, with no retry able to reach it.
+func TestDeleteDropsMappingsAndFilesTogether(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	loc := "blob/path"
 	insertTestFile(t, "file-1", "kb-1", "test.pdf", &loc)
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
 
-	svc := testDocumentService(t)
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "doc-1", "kb-1")
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	svc := testDocumentService(t)
 
-	// f2d gone
-	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
-	if len(mappings) != 0 {
-		t.Fatalf("expected 0 f2d after cleanup, got %d", len(mappings))
+	fileIDs, err := svc.deleteDocRecordWithCounters(ctx, doc, "kb-1", true)
+	if err != nil {
+		t.Fatalf("deleteDocRecordWithCounters: %v", err)
 	}
-	// file record gone
+	if len(fileIDs) != 1 || fileIDs[0] != "file-1" {
+		t.Fatalf("file ids = %v, want [file-1]", fileIDs)
+	}
+
+	// The mappings went with the row, in the same transaction.
+	if mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1"); len(mappings) != 0 {
+		t.Fatalf("expected 0 f2d after the delete, got %d", len(mappings))
+	}
+
+	svc.cleanupDocumentFiles(ctx, "kb-1", fileIDs)
+
 	files, _ := dao.NewFileDAO().GetByIDs(ctx, db, []string{"file-1"})
 	if len(files) != 0 {
 		t.Fatalf("expected 0 files after cleanup, got %d", len(files))
 	}
 }
 
-func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
+func TestCleanupDocumentFiles_SharedFileSurvives(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -2922,22 +2965,21 @@ func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
 	insertTestFile2Document(t, "f2d-1", "file-shared", "doc-1")
 	insertTestFile2Document(t, "f2d-2", "file-shared", "doc-2")
 
-	svc := testDocumentService(t)
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "doc-1", "kb-1")
-
-	// f2d for doc-1 gone
-	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
-	if len(mappings) != 0 {
-		t.Fatalf("expected 0 f2d for doc-1, got %d", len(mappings))
+	// doc-1's mapping is already gone by the time the file cleanup runs.
+	if err := dao.NewFile2DocumentDAO().DeleteByDocumentID(ctx, db, "doc-1"); err != nil {
+		t.Fatalf("delete f2d: %v", err)
 	}
-	// file record survives
+
+	svc := testDocumentService(t)
+	svc.cleanupDocumentFiles(ctx, "kb-1", []string{"file-shared"})
+
+	// file record survives: doc-2 still references it
 	files, _ := dao.NewFileDAO().GetByIDs(ctx, db, []string{"file-shared"})
 	if len(files) != 1 {
 		t.Fatalf("expected 1 file record, got %d", len(files))
 	}
-	// f2d for doc-2 survives
-	mappings, _ = dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-2")
+	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-2")
 	if len(mappings) != 1 {
 		t.Fatalf("expected 1 f2d for doc-2, got %d", len(mappings))
 	}
