@@ -1752,7 +1752,7 @@ func dispatchMonkeyOCRPDF(
 
 	// ZIP 내부 JSON을 ParseResult로 변환
 	res, err := monkeyOCRZIPToParseResult(
-		filename, zipBytes, sizes,
+		ctx, filename, zipBytes, sizes,
 	)
 	if err != nil {
 		return parser.ParseResult{}, err
@@ -1768,15 +1768,33 @@ func dispatchMonkeyOCRPDF(
 // monkeyOCRZIPToParseResult converts the structured JSON
 // returned by MonkeyOCR v1 into a ParseResult while
 // preserving page numbers, layout types, and PDF positions.
+
 func monkeyOCRZIPToParseResult(
+	ctx context.Context,
 	filename string,
 	zipBytes []byte,
 	sizes map[int][2]float64,
 ) (parser.ParseResult, error) {
-	items, warnings, err := mineruExtractJSONItems(
-		zipBytes, sizes,
-	)
+	items, warnings, err := mineruExtractJSONItems(zipBytes, sizes)
 	if err != nil {
+		// Fall back only when neither structured JSON member exists.
+		md, found, fallbackErr := monkeyOCRMarkdownFromZIP(zipBytes)
+		if fallbackErr != nil {
+			return parser.ParseResult{}, fmt.Errorf(
+				"parser: MonkeyOCR Markdown fallback: %w", fallbackErr,
+			)
+		}
+		if found {
+			res := normalizePDFMarkdown(ctx, filename, md)
+			if res.Err != nil {
+				return parser.ParseResult{}, res.Err
+			}
+			res.File["parse_method"] = "monkeyocr"
+			res.Warnings = append(res.Warnings,
+				"MonkeyOCR Markdown fallback: PDF page positions are unavailable",
+			)
+			return res, nil
+		}
 		return parser.ParseResult{}, fmt.Errorf(
 			"parser: MonkeyOCR extract: %w", err,
 		)
@@ -1785,8 +1803,58 @@ func monkeyOCRZIPToParseResult(
 	res := mineruJSONParseResult(filename, items)
 	res.File["parse_method"] = "monkeyocr"
 	res.Warnings = append(res.Warnings, warnings...)
-
 	return res, nil
+}
+
+func monkeyOCRMarkdownFromZIP(zipBytes []byte) (string, bool, error) {
+	zr, err := zip.NewReader(
+		bytes.NewReader(zipBytes), int64(len(zipBytes)),
+	)
+	if err != nil {
+		return "", false, err
+	}
+
+	var markdownFile *zip.File
+	for _, f := range zr.File {
+		name := strings.ToLower(
+			strings.ReplaceAll(f.Name, "\\", "/"),
+		)
+
+		// Never hide a structured JSON parsing error.
+		if strings.HasSuffix(name, "content_list.json") ||
+			strings.HasSuffix(name, "structured_content.json") {
+			return "", false, nil
+		}
+
+		if strings.HasSuffix(name, ".md") {
+			if markdownFile == nil ||
+				path.Base(name) == "full.md" {
+				markdownFile = f
+			}
+		}
+	}
+
+	if markdownFile == nil {
+		return "", false, nil
+	}
+
+	// Bound decompressed Markdown to 16 MiB.
+	data, ok := mineruReadBounded(markdownFile, 16<<20)
+	if !ok {
+		return "", false, fmt.Errorf(
+			"cannot read Markdown ZIP member %q within size limit",
+			markdownFile.Name,
+		)
+	}
+
+	md := strings.TrimSpace(string(data))
+	if md == "" {
+		return "", false, fmt.Errorf(
+			"Markdown ZIP member %q is empty",
+			markdownFile.Name,
+		)
+	}
+	return md, true, nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
