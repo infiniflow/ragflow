@@ -27,14 +27,21 @@ type ParserConfig struct {
 	StreamParser func(map[string]any) (*TokenUsage, bool)
 	// ExtractStreamReasoning extracts the reasoning text from a parsed
 	// delta map (the delta field of one streaming event), if any.
-	// Defaults to reading delta.reasoning_content.
+	// Defaults to reading delta.reasoning_content, falling back to
+	// delta.reasoning.
 	ExtractStreamReasoning func(delta map[string]any) string
 }
 
 // extractDefaultStreamReasoning reads the reasoning text from a parsed
-// delta (delta.reasoning_content).
+// delta. It prefers delta.reasoning_content and falls back to
+// delta.reasoning, which some OpenAI-compatible servers use instead. The
+// fallback only applies when reasoning_content is empty, so providers that
+// send both fields do not emit the reasoning twice.
 func extractDefaultStreamReasoning(delta map[string]any) string {
-	if r, ok := delta["reasoning_content"].(string); ok {
+	if r, ok := delta["reasoning_content"].(string); ok && r != "" {
+		return r
+	}
+	if r, ok := delta["reasoning"].(string); ok {
 		return r
 	}
 	return ""

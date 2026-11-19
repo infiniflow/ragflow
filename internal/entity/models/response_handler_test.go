@@ -79,3 +79,60 @@ func TestHandleStreamingResponseTruncatedStream(t *testing.T) {
 		t.Fatalf("expected truncation error, got %v", err)
 	}
 }
+
+// TestExtractDefaultStreamReasoning covers the reasoning field names accepted
+// by the default OpenAI-compatible stream extractor.
+func TestExtractDefaultStreamReasoning(t *testing.T) {
+	cases := []struct {
+		name  string
+		delta map[string]any
+		want  string
+	}{
+		{"reasoning_content only", map[string]any{"reasoning_content": "a"}, "a"},
+		{"reasoning only", map[string]any{"reasoning": "b"}, "b"},
+		{"both prefers reasoning_content", map[string]any{"reasoning_content": "a", "reasoning": "b"}, "a"},
+		{"empty reasoning_content falls back", map[string]any{"reasoning_content": "", "reasoning": "b"}, "b"},
+		{"non-string reasoning ignored", map[string]any{"reasoning": map[string]any{"effort": "high"}}, ""},
+		{"neither", map[string]any{"content": "c"}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractDefaultStreamReasoning(tc.delta); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHandleStreamingResponseReasoningField verifies reasoning streamed under
+// delta.reasoning (instead of delta.reasoning_content) reaches the sender.
+func TestHandleStreamingResponseReasoningField(t *testing.T) {
+	sse := "data: {\"choices\":[{\"delta\":{\"reasoning\":\"think\"}}]}\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n"
+
+	var contentChunks, reasonChunks []string
+	err := HandleStreamingResponse(
+		io.NopCloser(bytes.NewBufferString(sse)),
+		nil,
+		nil,
+		OpenAIParserConfig,
+		func(content *string, reason *string) error {
+			if content != nil {
+				contentChunks = append(contentChunks, *content)
+			}
+			if reason != nil {
+				reasonChunks = append(reasonChunks, *reason)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := strings.Join(reasonChunks, ""); got != "think" {
+		t.Errorf("reasoning = %q, want %q", got, "think")
+	}
+	if got := strings.Join(contentChunks, ""); !strings.Contains(got, "answer") {
+		t.Errorf("content = %q, want it to contain %q", got, "answer")
+	}
+}
