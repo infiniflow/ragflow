@@ -909,6 +909,33 @@ func TestGeneralChunkerDOCXCustomDelimiterGroupsMultiParagraphRecords(t *testing
 	}
 }
 
+func TestGeneralChunkerDOCXGroupsParagraphsBeforeFirstCustomDelimiter(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512,
+		"delimiters":       []string{"`问：`"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "前言一", "doc_type_kwd": "text"},
+			{"text": "前言二", "doc_type_kwd": "text"},
+			{"text": "问：Q1", "doc_type_kwd": "text"},
+			{"text": "答：A1", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := outputTexts(t, out), []string{"前言一\n前言二", "Q1\n答：A1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("chunks = %q, want %q", got, want)
+	}
+}
+
 func TestGeneralChunkerDOCXDropsCustomDelimiterRecordPrefix(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
 		"chunk_token_size": 512,
