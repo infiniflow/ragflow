@@ -1,0 +1,478 @@
+{
+  "page_count": 3,
+  "items": [
+    {
+      "_pdf_positions": [
+        [
+          1,
+          35.990326481257554,
+          539.8548972188634,
+          7.198717400598547,
+          21.596152201795636
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          35.990326481257554,
+          539.8548972188634,
+          7.198717400598547,
+          21.596152201795636
+        ]
+      ],
+      "text": "Running header"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          84.18900000000001,
+          107.98076100897819
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "title",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          84.18900000000001,
+          107.98076100897819
+        ]
+      ],
+      "text": "# Annual Report"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          115.17947840957675,
+          129.57691321077385
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "title",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          115.17947840957675,
+          129.57691321077385
+        ]
+      ],
+      "text": "### Scope"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          136.77563061137238,
+          151.17306541256946
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "title",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          136.77563061137238,
+          151.17306541256946
+        ]
+      ],
+      "text": "# Level out of range"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          59.528,
+          503.8645707376058,
+          158.371782813168,
+          187.1666524155622
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          59.528,
+          503.8645707376058,
+          158.371782813168,
+          187.1666524155622
+        ]
+      ],
+      "text": "Body paragraph."
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          194.36536981616075,
+          215.96152201795638
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "equation",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          194.36536981616075,
+          215.96152201795638
+        ]
+      ],
+      "text": "a^2 + b^2 = c^2"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          223.16023941855494,
+          323.94228302693455
+        ]
+      ],
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          223.16023941855494,
+          323.94228302693455
+        ]
+      ],
+      "text": "[Image]"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          359.90326481257557,
+          467.8742442563482,
+          223.16023941855494,
+          323.94228302693455
+        ]
+      ],
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          359.90326481257557,
+          467.8742442563482,
+          223.16023941855494,
+          323.94228302693455
+        ]
+      ],
+      "text": "Approved"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          59.528,
+          503.8645707376058,
+          331.14100042753313,
+          431.92304403591277
+        ]
+      ],
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          59.528,
+          503.8645707376058,
+          331.14100042753313,
+          431.92304403591277
+        ]
+      ],
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "Item",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "Value",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "A",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "42",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "page": 1
+      }
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          59.528,
+          503.8645707376058,
+          439.1217614365113,
+          503.9102180418982
+        ]
+      ],
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          59.528,
+          503.8645707376058,
+          439.1217614365113,
+          503.9102180418982
+        ]
+      ],
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "K",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "V",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "a",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "1",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "page": 1
+      }
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          0,
+          595.28,
+          0,
+          841.89
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          0,
+          595.28,
+          0,
+          841.89
+        ]
+      ],
+      "text": "overflows the page"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          521.9070115433947,
+          539.903805044891
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          521.9070115433947,
+          539.903805044891
+        ]
+      ],
+      "text": "swapped edges"
+    },
+    {
+      "_pdf_positions": [
+        [
+          2,
+          150,
+          225,
+          100,
+          150
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          2,
+          150,
+          225,
+          100,
+          150
+        ]
+      ],
+      "text": "belongs to page two"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          575.8973920478837,
+          593.89418554938
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          59.528,
+          297.64,
+          575.8973920478837,
+          593.89418554938
+        ]
+      ],
+      "text": "page index outside the document"
+    },
+    {
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "no bbox"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          35.990326481257554,
+          539.8548972188634,
+          820.6537836682343,
+          835.0512184694313
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          35.990326481257554,
+          539.8548972188634,
+          820.6537836682343,
+          835.0512184694313
+        ]
+      ],
+      "text": "Page 1"
+    },
+    {
+      "_pdf_positions": [
+        [
+          2,
+          30,
+          150,
+          40,
+          80
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 2,
+      "positions": [
+        [
+          2,
+          30,
+          150,
+          40,
+          80
+        ]
+      ],
+      "text": "Second page body."
+    },
+    {
+      "_pdf_positions": [
+        [
+          3,
+          10,
+          110,
+          20,
+          40
+        ]
+      ],
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "positions": [
+        [
+          3,
+          10,
+          110,
+          20,
+          40
+        ]
+      ],
+      "text": "Pixel size unknown."
+    }
+  ],
+  "warnings": []
+}
