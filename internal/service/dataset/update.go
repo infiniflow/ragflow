@@ -689,12 +689,15 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			return nil, common.CodeServerError, fmt.Errorf(
 				"dataset settings were saved, but the embedding model could not be switched: %w", bindErr)
 		}
-	} else if embdIDProvided {
+	} else if embdIDProvided || connectorsProvided {
 		// The binding is settled here: this transaction moved it because the
 		// dataset held chunks by then, or the row already named the requested
 		// model. Either way an earlier attempt can have committed the same links
 		// and tasks without publishing them, and a retry that repeats the model
-		// has no other path into this recovery.
+		// has no other path into this recovery. A connector-only retry reaches
+		// the same state: the links it resubmits already exist, so it gets no
+		// task IDs of its own and the rows an attempt that failed after the
+		// commit (pagerank propagation) still need their publish.
 		recoveredTaskIDs, err = pendingDatasetSyncTaskIDs(ctx, updatedKB)
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf(
