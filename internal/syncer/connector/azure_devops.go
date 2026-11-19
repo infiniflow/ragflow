@@ -793,7 +793,11 @@ func azureDevOpsItemFingerprint(item azureDevOpsItem) string {
 	if item.LatestProcessedChange == nil {
 		return ""
 	}
-	return item.LatestProcessedChange.CommitID
+	commitID := item.LatestProcessedChange.CommitID
+	if len(commitID) > 32 {
+		return contentFingerprint([]byte(commitID))
+	}
+	return commitID
 }
 
 func azureDevOpsItemUpdatedAt(item azureDevOpsItem) time.Time {
@@ -862,7 +866,10 @@ func (c *AzureDevOpsConnector) buildAzureDevOpsCodeDocument(repo azureDevOpsRepo
 	webURL := fmt.Sprintf("%s/%s/_git/%s?path=/%s&version=GB%s",
 		c.baseURL, url.PathEscape(repo.Project), url.PathEscape(repo.Name), relativePath, repo.Branch)
 
-	commitID := azureDevOpsItemFingerprint(item)
+	commitID := ""
+	if item.LatestProcessedChange != nil {
+		commitID = item.LatestProcessedChange.CommitID
+	}
 	committer := ""
 	if item.LatestProcessedChange != nil {
 		committer = firstNonEmpty(item.LatestProcessedChange.Committer.Name, item.LatestProcessedChange.Author.Name)
@@ -875,7 +882,7 @@ func (c *AzureDevOpsConnector) buildAzureDevOpsCodeDocument(repo azureDevOpsRepo
 		Blob:               content,
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(content)),
-		Fingerprint:        commitID,
+		Fingerprint:        azureDevOpsItemFingerprint(item),
 		Metadata: map[string]any{
 			"type":       "CodeFile",
 			"path":       relativePath,
