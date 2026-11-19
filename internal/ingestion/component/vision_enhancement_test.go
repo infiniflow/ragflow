@@ -1317,14 +1317,36 @@ func TestDefaultVisionChatInvoker_AppliesDeadline(t *testing.T) {
 	if !drv.hasDeadline {
 		t.Fatal("vision chat context must have a deadline")
 	}
-	if drv.remaining <= 0 || drv.remaining > visionChatTimeout+time.Second {
-		t.Fatalf("deadline remaining = %v, want ~%v", drv.remaining, visionChatTimeout)
+	if drv.remaining <= 0 || drv.remaining > visionChatTimeout()+time.Second {
+		t.Fatalf("deadline remaining = %v, want ~%v", drv.remaining, visionChatTimeout())
 	}
 	if drv.config == nil || drv.config.Vision == nil || !*drv.config.Vision {
 		t.Fatal("vision chat must enable vision")
 	}
 	if drv.config.Thinking == nil || *drv.config.Thinking {
 		t.Fatal("vision chat must disable thinking by default")
+	}
+}
+
+func TestVisionChatTimeoutOverride(t *testing.T) {
+	cases := []struct {
+		name string
+		env  string
+		want time.Duration
+	}{
+		{"unset uses the default", "", defaultVisionChatTimeout},
+		{"seconds override", "120", 120 * time.Second},
+		{"malformed falls back", "abc", defaultVisionChatTimeout},
+		{"zero falls back", "0", defaultVisionChatTimeout},
+		{"negative falls back", "-5", defaultVisionChatTimeout},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(common.EnvVisionChatTimeout, tt.env)
+			if got := visionChatTimeout(); got != tt.want {
+				t.Fatalf("visionChatTimeout() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
