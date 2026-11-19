@@ -652,11 +652,7 @@ func lessScalar(a, b any) bool {
 func exactSortNumber(value any) *big.Rat {
 	switch number := value.(type) {
 	case json.Number:
-		if !json.Valid([]byte(number)) {
-			return nil
-		}
-		result, _ := new(big.Rat).SetString(number.String())
-		return result
+		return runtime.ExactNumberRatio(number)
 	}
 	// Match the existing ordinary-number comparator, including native ints,
 	// so mixing a precise number with ordinary pairs keeps a consistent order.
@@ -664,7 +660,7 @@ func exactSortNumber(value any) *big.Rat {
 	if !ok {
 		return nil
 	}
-	return new(big.Rat).SetFloat64(number)
+	return runtime.ExactNumberRatio(number)
 }
 
 // toFloat64OK is a number-without-bool helper.
