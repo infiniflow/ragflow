@@ -3,6 +3,7 @@ package component
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -83,7 +84,7 @@ func buildCategorizeDecisionInstructions(p CategorizeParam) string {
 		}
 		b.WriteByte('\n')
 	}
-	if containsCategory(p.Categories, "Other") {
+	if slices.Contains(p.Categories, "Other") {
 		b.WriteString("Use Other only when no other category fits.\n")
 	}
 	for _, example := range categorizeExamples(p, p.Categories) {

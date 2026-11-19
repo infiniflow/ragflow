@@ -270,10 +270,10 @@ func (r DLAResult) ClampBoxes() []DLABox {
 	w, h := float32(r.W), float32(r.H)
 	out := make([]DLABox, len(r.Boxes))
 	for i, b := range r.Boxes {
-		b.X0 = minf(maxf(b.X0, 0), w)
-		b.Y0 = minf(maxf(b.Y0, 0), h)
-		b.X1 = minf(maxf(b.X1, 0), w)
-		b.Y1 = minf(maxf(b.Y1, 0), h)
+		b.X0 = min(max(b.X0, 0), w)
+		b.Y0 = min(max(b.Y0, 0), h)
+		b.X1 = min(max(b.X1, 0), w)
+		b.Y1 = min(max(b.Y1, 0), h)
 		out[i] = b
 	}
 	return out

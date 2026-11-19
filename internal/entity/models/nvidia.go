@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"ragflow/internal/common"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -637,7 +638,7 @@ func filterNvidiaHostedModels(models []ListModelResponse, catalog *nvidiaCatalog
 }
 
 func nvidiaCatalogResourceIsActive(resource nvidiaCatalogResource, now time.Time) bool {
-	if !containsNvidiaCatalogValue(nvidiaCatalogLabelValues(resource, "nimType", false), "Free Endpoint") {
+	if !slices.Contains(nvidiaCatalogLabelValues(resource, "nimType", false), "Free Endpoint") {
 		return false
 	}
 	deprecation := ""
@@ -674,15 +675,6 @@ func nvidiaCatalogLabelValues(resource nvidiaCatalogResource, key string, unreso
 func nvidiaCatalogKey(publisher, modelName string) string {
 	publisher = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(publisher)), "_", "-")
 	return publisher + "\x00" + modelName
-}
-
-func containsNvidiaCatalogValue(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func parseNvidiaModelList(modelList ModelList, provider *Provider) []ListModelResponse {
