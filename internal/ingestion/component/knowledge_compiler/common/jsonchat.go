@@ -242,10 +242,14 @@ func tryUnmarshalJSONErr(s string) (map[string]any, error) {
 		return nil, fmt.Errorf("empty candidate")
 	}
 	var m map[string]any
-	if err := json.Unmarshal([]byte(s), &m); err != nil {
-		return nil, err
+	if err := json.Unmarshal([]byte(s), &m); err == nil {
+		return m, nil
 	}
-	return m, nil
+	var arr []any
+	if err := json.Unmarshal([]byte(s), &arr); err == nil {
+		return map[string]any{"items": arr}, nil
+	}
+	return nil, fmt.Errorf("candidate is neither JSON object nor array")
 }
 
 func truncate(s string, n int) string {

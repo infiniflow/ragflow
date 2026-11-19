@@ -47,3 +47,17 @@ func TestGenJSON_NoRetryOnPermanentError(t *testing.T) {
 		t.Errorf("calls = %d, want 1 (no retry on permanent error)", inv.calls)
 	}
 }
+
+// TestTryUnmarshalJSONErr_Array verifies that top-level JSON arrays are safely
+// unmarshaled and wrapped in {"items": [...]}.
+func TestTryUnmarshalJSONErr_Array(t *testing.T) {
+	s := `[{"from_entity": "WO-001", "to_entity": "Pump-001", "relation": "repairs"}]`
+	m, err := tryUnmarshalJSONErr(s)
+	if err != nil {
+		t.Fatalf("tryUnmarshalJSONErr array: %v", err)
+	}
+	items, ok := m["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected items array, got %#v", m)
+	}
+}
