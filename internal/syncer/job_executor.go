@@ -23,7 +23,6 @@ import (
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
 	"sync"
-	"time"
 )
 
 var errSyncJobExecutorClosed = errors.New("sync job executor is closed")
@@ -71,6 +70,7 @@ type SyncJobQueue struct {
 	taskID string
 	jobs   chan *syncJob
 	close  func(string)
+	wakeup chan struct{} // buffered 1; signals the dispatcher that a job was enqueued
 	once   sync.Once
 }
 
@@ -90,6 +90,13 @@ func (q *SyncJobQueue) submit(ctx context.Context, fn syncJobFunc, checkpoint *s
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case q.jobs <- job:
+		// Wake a parked dispatcher. The channel is buffered and the send is
+		// non-blocking: concurrent submits collapse into one token, and the
+		// dispatcher re-scans every task queue when it wakes.
+		select {
+		case q.wakeup <- struct{}{}:
+		default:
+		}
 		return done, nil
 	}
 }
@@ -130,6 +137,7 @@ type SyncJobExecutor struct {
 	perTaskQueueSize int
 	jobs             chan *syncJob
 	commands         chan executorCommand
+	wakeup           chan struct{} // buffered 1; submit -> dispatcher
 	stop             chan struct{}
 	done             chan struct{}
 	stopOnce         sync.Once
@@ -143,6 +151,7 @@ func NewSyncJobExecutor(config SyncJobExecutorConfig) *SyncJobExecutor {
 		perTaskQueueSize: config.PerTaskQueueSize,
 		jobs:             make(chan *syncJob, config.JobQueueSize),
 		commands:         make(chan executorCommand),
+		wakeup:           make(chan struct{}, 1),
 		stop:             make(chan struct{}),
 		done:             make(chan struct{}),
 	}
@@ -160,7 +169,7 @@ func (e *SyncJobExecutor) RegisterTask(ctx context.Context, taskID string) (*Syn
 	if e == nil {
 		return nil, fmt.Errorf("sync job executor is nil")
 	}
-	queue := &SyncJobQueue{taskID: taskID, jobs: make(chan *syncJob, e.perTaskQueueSize), close: e.unregisterTask}
+	queue := &SyncJobQueue{taskID: taskID, jobs: make(chan *syncJob, e.perTaskQueueSize), close: e.unregisterTask, wakeup: e.wakeup}
 	reply := make(chan error, 1)
 	command := executorCommand{kind: executorRegister, queue: queue, err: reply}
 
@@ -225,7 +234,7 @@ func (e *SyncJobExecutor) dispatch() {
 				return
 			case command := <-e.commands:
 				order = applyExecutorCommand(command, tasks, order, &cursor)
-			case <-time.After(time.Millisecond):
+			case <-e.wakeup:
 			}
 			continue
 		}
