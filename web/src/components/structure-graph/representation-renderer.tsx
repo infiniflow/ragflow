@@ -17,6 +17,7 @@
 import ArtifactForceGraph from '@/components/artifact-force-graph';
 import { TreeView, type TreeDataItem } from '@/components/ui/tree-view';
 import { CompilationTemplateKind } from '@/constants/compilation';
+import { renderRepresentation } from '@/ee/components/structure-graph/representation-renderer';
 import {
   type IArtifactGraph,
   type IArtifactGraphEntity,
@@ -34,7 +35,6 @@ import {
   adaptTreeToTreeData,
 } from './adapters';
 import MindMapG6Graph from './mindmap-g6-graph';
-import { renderRepresentation } from '@/ee/components/structure-graph/representation-renderer';
 import {
   getKnowledgeGraphNodeLabel,
   useKnowledgeGraphNodeColor,

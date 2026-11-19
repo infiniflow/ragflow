@@ -1,4 +1,3 @@
-import { TraceTypeMap as PrivateTraceTypeMap } from '@/ee/constants/knowledge';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -14,6 +13,8 @@ import { TraceTypeMap as PrivateTraceTypeMap } from '@/ee/constants/knowledge';
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
+import { TraceTypeMap as PrivateTraceTypeMap } from '@/ee/constants/knowledge';
 
 import message from '@/components/ui/message';
 import {

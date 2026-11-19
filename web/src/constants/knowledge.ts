@@ -1,11 +1,3 @@
-import {
-  ProcessingType as PrivateProcessingType,
-  GenerateType as PrivateGenerateType,
-  TraceType as PrivateTraceType,
-  ProcessingTypeMap as PrivateProcessingTypeMap,
-  GenerateTypeMap as PrivateGenerateTypeMap,
-} from '@/ee/constants/knowledge';
-
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -21,6 +13,14 @@ import {
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
+import {
+  ProcessingType as PrivateProcessingType,
+  GenerateType as PrivateGenerateType,
+  TraceType as PrivateTraceType,
+  ProcessingTypeMap as PrivateProcessingTypeMap,
+  GenerateTypeMap as PrivateGenerateTypeMap,
+} from '@/ee/constants/knowledge';
 
 export enum KnowledgeRouteKey {
   Dataset = 'dataset',

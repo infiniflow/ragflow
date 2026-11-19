@@ -261,7 +261,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 
 	// ---- KIND POST-PROCESSING ----
 	// Chain relations must form a strict linear chain.
-	if ChainKinds[compileType] {
+	if isChainKind(compileType) {
 		chunksByID := make(map[string]string, len(inputs.Chunks))
 		for _, ch := range inputs.Chunks {
 			if id := ch.ID; id != "" {

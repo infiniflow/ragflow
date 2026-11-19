@@ -8,17 +8,8 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// Chain-shape validation for list kinds, mirroring the
-// block (CHAIN_KINDS, _chain_detect_violations
-// validate_and_correct_chain). Chain kinds model a strict linear chain of
-// entities (one predecessor, one successor, no cycles). The per-chunk
-// extractor is happy to emit branches / cycles when the source text supports
-// multiple readings, so the relation set is validated post-extraction and the
-// LLM is asked to pick the correct chain out of the offenders. Correction is
-// best-effort: any failure returns the input untouched (fail-open).
-
-// ChainKinds mirrors CHAIN_KINDS.
-var ChainKinds = map[Type]bool{TypeList: true}
+// Chain validation keeps at most one predecessor and successor per entity,
+// without cycles. LLM correction is best-effort: failures preserve the input.
 
 const (
 	chainCorrectionMaxChunkChars = 8196
@@ -313,7 +304,7 @@ func chainCorrectBatch(ctx context.Context, deps common.Deps, llmID string, kind
 // the input verbatim (fail-open), so a misbehaving model can never block the
 // pipeline.
 func validateAndCorrectChain(ctx context.Context, deps common.Deps, llmID string, rows []common.Product, chunksByID map[string]string, kind Type) []common.Product {
-	if len(rows) == 0 || !ChainKinds[kind] {
+	if len(rows) == 0 || !isChainKind(kind) {
 		return rows
 	}
 
