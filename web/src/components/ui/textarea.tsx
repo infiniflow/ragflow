@@ -25,14 +25,20 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const manualHeightRef = useRef<number | null>(null);
     const isAdjustingRef = useRef(false);
+    // Depend on these values, not on the autoSize object: callers pass a new
+    // object literal on every render, which re-measured (and briefly
+    // collapsed) the textarea on every parent render, e.g. on each streamed
+    // chunk of a chat answer.
+    const hasAutoSize = !!autoSize;
+    const maxRows = autoSize?.maxRows;
     const getLineHeight = (element: HTMLElement): number => {
       const style = window.getComputedStyle(element);
       return parseInt(style.lineHeight, 10) || 20;
     };
     const adjustHeight = useCallback(() => {
-      if (!textareaRef.current || !autoSize) return;
+      if (!textareaRef.current || !hasAutoSize) return;
       const lineHeight = getLineHeight(textareaRef.current);
-      const maxHeight = (autoSize?.maxRows || 3) * lineHeight;
+      const maxHeight = (maxRows || 3) * lineHeight;
 
       isAdjustingRef.current = true;
       textareaRef.current.style.height = 'auto';
@@ -50,13 +56,13 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         textareaRef.current.style.height = `${nextHeight}px`;
         isAdjustingRef.current = false;
       });
-    }, [autoSize]);
+    }, [hasAutoSize, maxRows]);
 
     useEffect(() => {
-      if (autoSize) {
+      if (hasAutoSize) {
         adjustHeight();
       }
-    }, [textareaRef, autoSize, adjustHeight]);
+    }, [hasAutoSize, adjustHeight, props.value]);
 
     useEffect(() => {
       if (typeof ref === 'function') {
@@ -66,7 +72,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       }
     }, [ref]);
     useEffect(() => {
-      if (!textareaRef.current || !autoSize || resize === 'none') {
+      if (!textareaRef.current || !hasAutoSize || resize === 'none') {
         manualHeightRef.current = null;
         return;
       }
@@ -84,7 +90,7 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       });
       observer.observe(element);
       return () => observer.disconnect();
-    }, [autoSize, resize]);
+    }, [hasAutoSize, resize]);
 
     const resizable = resize !== 'none';
 
