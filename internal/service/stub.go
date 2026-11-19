@@ -79,6 +79,14 @@ func (m *ModelProviderService) listReadableModelProvidersForUserEE(ctx context.C
 	return m.modelProviderDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, userID)
 }
 
+func (m *ModelProviderService) providersForInstanceList(ctx context.Context, providerIDOrName string) ([]*entity.TenantModelProvider, error) {
+	provider, err := m.resolveProviderInTenant(ctx, providerIDOrName, permission.OperationRead)
+	if err != nil {
+		return nil, err
+	}
+	return []*entity.TenantModelProvider{provider}, nil
+}
+
 func queryScopeForAccessUser(ctx context.Context, checker *permission.Checker, query permission.ScopeQuery, _ string) (permission.QueryScope, error) {
 	return checker.QueryScope(ctx, query)
 }

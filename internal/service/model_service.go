@@ -1007,7 +1007,7 @@ func (m *ModelProviderService) createModelRecord(ctx context.Context, db *gorm.D
 func (m *ModelProviderService) ListProviderInstances(ctx context.Context, providerIDOrName string) ([]map[string]interface{}, common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
-	provider, err := m.resolveProviderInTenant(ctx, providerIDOrName, permission.OperationRead)
+	providers, err := m.providersForInstanceList(ctx, providerIDOrName)
 	if err != nil {
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return []map[string]interface{}{}, common.CodeSuccess, nil
@@ -1021,9 +1021,23 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		}
 		return nil, common.CodeServerError, err
 	}
-	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(ctx, dao.DB, provider.ID)
-	if err != nil {
-		return nil, common.CodeServerError, err
+	providerByID := make(map[string]*entity.TenantModelProvider, len(providers))
+	ownerIDs := make([]string, 0, len(providers))
+	seenOwnerIDs := make(map[string]struct{}, len(providers))
+	instances := make([]*entity.TenantModelInstance, 0)
+	for _, provider := range providers {
+		providerByID[provider.ID] = provider
+		if provider.UserID != "" {
+			if _, exists := seenOwnerIDs[provider.UserID]; !exists {
+				seenOwnerIDs[provider.UserID] = struct{}{}
+				ownerIDs = append(ownerIDs, provider.UserID)
+			}
+		}
+		providerInstances, listErr := m.modelInstanceDAO.GetAllInstancesByProviderID(ctx, dao.DB, provider.ID)
+		if listErr != nil {
+			return nil, common.CodeServerError, listErr
+		}
+		instances = append(instances, providerInstances...)
 	}
 	instanceRefs := make([]permission.ResourceRef, 0, len(instances))
 	for _, instance := range instances {
@@ -1035,6 +1049,10 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
+	ownerNicknames, err := dao.NewUserDAO().GetNicknamesByIDs(ctx, dao.DB, ownerIDs)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("resolve model instance owner nickname: %w", err)
+	}
 
 	// Always emit a non-nil slice so the JSON encoder serializes [] rather
 	// than null when the tenant has no instances on this provider. The
@@ -1043,6 +1061,10 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 	// crash on a freshly created tenant.
 	result := make([]map[string]interface{}, 0, len(instances))
 	for _, instance := range instances {
+		provider := providerByID[instance.ProviderID]
+		if provider == nil {
+			continue
+		}
 		access, ok := instanceAccesses[permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID}]
 		if !ok || !access.Allows(permission.OperationRead) {
 			continue
@@ -1063,6 +1085,8 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		// (provider_api_service.py:563).
 		result = append(result, map[string]interface{}{
 			"id":                  instance.ID,
+			"user_id":             provider.UserID,
+			"nickname":            ownerNicknames[provider.UserID],
 			"instance_name":       instance.InstanceName,
 			"provider_id":         instance.ProviderID,
 			"region":              extraFields["region"],
