@@ -19,7 +19,10 @@ export function useUpdateAgentNodeMCP() {
   const node = useContext(AgentFormContext);
   const mcpList = useGetNodeMCP();
   const resourceTenantId = useResourceTenantId();
-  const { data } = useListMcpServer(resourceTenantId, Boolean(resourceTenantId));
+  const { data } = useListMcpServer(
+    resourceTenantId,
+    Boolean(resourceTenantId),
+  );
   const mcpServers = data.mcp_servers;
 
   const findMcpTools = useCallback(

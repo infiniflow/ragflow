@@ -3,7 +3,10 @@ import { useResourceTenantId } from '../context';
 
 export function useFindMcpById() {
   const resourceTenantId = useResourceTenantId();
-  const { data } = useListMcpServer(resourceTenantId, Boolean(resourceTenantId));
+  const { data } = useListMcpServer(
+    resourceTenantId,
+    Boolean(resourceTenantId),
+  );
 
   const findMcpById = (id: string) =>
     data.mcp_servers.find((item) => item.id === id);

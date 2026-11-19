@@ -142,7 +142,10 @@ export function ToolCommand() {
 
 export function MCPCommand({ onChange, value }: ToolCommandProps) {
   const resourceTenantId = useResourceTenantId();
-  const { data } = useListMcpServer(resourceTenantId, Boolean(resourceTenantId));
+  const { data } = useListMcpServer(
+    resourceTenantId,
+    Boolean(resourceTenantId),
+  );
   const { toggleOption, currentValue } = useHandleSelectChange({
     onChange,
     value,

@@ -108,7 +108,9 @@ export default function TestingForm({
             <SimilaritySliderFormField
               isTooltipShown={true}
             ></SimilaritySliderFormField>
-            <RerankFormFields resourceTenantId={resourceTenantId}></RerankFormFields>
+            <RerankFormFields
+              resourceTenantId={resourceTenantId}
+            ></RerankFormFields>
             <CrossLanguageFormField
               name={'cross_languages'}
             ></CrossLanguageFormField>
