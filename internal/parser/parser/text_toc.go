@@ -16,26 +16,6 @@ var tocHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableof
 // for normalization before heading match.
 var whitespacePattern = regexp.MustCompile("[ \t\u3000]+")
 
-// tocRules carries the format-specific matching knobs for TOC removal. The
-// zero value matches plain-text items as emitted by HTML, DOC and DOCX parsers.
-type tocRules struct {
-	// clean strips format-specific markup before heading, prefix and entry
-	// matching. nil matches the item text as-is.
-	clean func(string) string
-	// heading overrides tocHeadingPattern when non-nil.
-	heading *regexp.Regexp
-	// asciiExtra lists characters the format adds to English body text
-	// (Markdown markup) so isEnglishItems classifies it as English.
-	asciiExtra string
-	// entry reports whether a raw item is a TOC entry. When set, the items
-	// directly after the heading are dropped instead of relying on a shared
-	// prefix, so body text is never part of the removal range.
-	entry func(string) bool
-}
-
-// plainTOCRules keeps the plain-text contract that HTML, DOC and DOCX share.
-var plainTOCRules = tocRules{heading: tocHeadingPattern}
-
 // itemText extracts the text field from a parser item map. Falls
 // back to empty string when the field is missing or not a string.
 func itemText(item map[string]any) string {
@@ -56,23 +36,12 @@ func itemText(item map[string]any) string {
 //  4. Drop that entry, then drop up to 128 following entries that
 //     start with the prefix.
 //  5. Non-matching entries are kept.
-func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map[string]any {
-	heading := rules.heading
-	if heading == nil {
-		heading = tocHeadingPattern
-	}
-	clean := rules.clean
-	if clean == nil {
-		clean = func(s string) string { return s }
-	}
-	if rules.entry != nil {
-		return removeTOCEntryList(items, heading, clean, rules.entry)
-	}
+func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 	// Fast path: if no item is a TOC heading, return unchanged without paying
 	// for the deletion bitmap or a full-slice self-copy (most documents).
 	isHeading := func(text string) bool {
-		normalized := whitespacePattern.ReplaceAllString(clean(strings.SplitN(text, "@@", 2)[0]), "")
-		return heading.MatchString(normalized)
+		normalized := whitespacePattern.ReplaceAllString(strings.SplitN(text, "@@", 2)[0], "")
+		return tocHeadingPattern.MatchString(normalized)
 	}
 	hasHeading := false
 	for _, item := range items {
@@ -116,13 +85,13 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 			break
 		}
 		// Determine the prefix from the entry right after the heading.
-		prefix := tocPrefix(clean(itemText(items[i])), eng)
+		prefix := tocPrefix(itemText(items[i]), eng)
 		for prefix == "" {
 			alive[i] = false
 			if i = next(i); i >= len(items) {
 				break
 			}
-			prefix = tocPrefix(clean(itemText(items[i])), eng)
+			prefix = tocPrefix(itemText(items[i]), eng)
 		}
 		if i >= len(items) || prefix == "" {
 			break
@@ -141,7 +110,7 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 			if !alive[j] {
 				continue
 			}
-			if !strings.HasPrefix(clean(itemText(items[j])), prefix) {
+			if !strings.HasPrefix(itemText(items[j]), prefix) {
 				continue
 			}
 			// Drop entries [i, j).
@@ -163,37 +132,6 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 	// backing array beyond the returned slice length.
 	clear(items[w:])
 	return items[:w]
-}
-
-// removeTOCEntryList drops a matched TOC heading and the entry items that
-// directly follow it. A format that marks entries structurally does not need
-// the shared prefix-gap heuristic, which leaves entries behind when the body
-// heading does not share the first entry's prefix and deletes body text that
-// does.
-func removeTOCEntryList(items []map[string]any, heading *regexp.Regexp, clean func(string) string, entry func(string) bool) []map[string]any {
-	result := make([]map[string]any, 0, len(items))
-	for i := 0; i < len(items); i++ {
-		normalized := whitespacePattern.ReplaceAllString(clean(strings.SplitN(itemText(items[i]), "@@", 2)[0]), "")
-		if !heading.MatchString(normalized) {
-			result = append(result, items[i])
-			continue
-		}
-		// Drop the heading, any blank separators and at most 128 entries.
-		dropped := 0
-		for i+1 < len(items) && dropped < 128 {
-			next := itemText(items[i+1])
-			if next == "" {
-				i++
-				continue
-			}
-			if !entry(next) {
-				break
-			}
-			i++
-			dropped++
-		}
-	}
-	return result
 }
 
 // tocPrefix returns the TOC-entry prefix: first 3 chars for CJK,
@@ -218,12 +156,10 @@ func tocPrefix(text string, eng bool) string {
 
 // isEnglishTexts reports whether the given texts read as English. It returns
 // true when more than 80% of the (up to 200) sampled non-empty segments consist
-// solely of ASCII letters/digits/punctuation. asciiExtra lists characters a
-// format adds to its body text (Markdown markup) so they do not flip the
-// classification; the shared callers pass an empty string.
+// solely of ASCII letters, digits, and punctuation.
 // The result selects the TOC-entry prefix strategy: a 2-word prefix for English
 // content, otherwise a 3-character prefix (used by removeContentsTable / tocPrefix).
-func isEnglishTexts(texts []string, asciiExtra string) bool {
+func isEnglishTexts(texts []string) bool {
 	var sampled []string
 	for _, t := range texts {
 		if s := strings.TrimSpace(t); s != "" {
@@ -236,7 +172,7 @@ func isEnglishTexts(texts []string, asciiExtra string) bool {
 	if len(sampled) == 0 {
 		return false
 	}
-	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()" + asciiExtra + "\\-]+$")
+	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()\\-]+$")
 	eng := 0
 	for _, t := range sampled {
 		if pat.MatchString(t) {
@@ -249,12 +185,12 @@ func isEnglishTexts(texts []string, asciiExtra string) bool {
 // isEnglishItems reports whether the parser items read as English, classifying
 // each item's text with isEnglishTexts. It is passed to removeTOCWord /
 // removeContentsTable so English documents use the 2-word TOC prefix.
-func isEnglishItems(items []map[string]any, asciiExtra string) bool {
+func isEnglishItems(items []map[string]any) bool {
 	texts := make([]string, 0, len(items))
 	for _, it := range items {
 		if t := itemText(it); t != "" {
 			texts = append(texts, t)
 		}
 	}
-	return isEnglishTexts(texts, asciiExtra)
+	return isEnglishTexts(texts)
 }
