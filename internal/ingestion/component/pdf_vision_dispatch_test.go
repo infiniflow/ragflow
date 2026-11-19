@@ -1025,14 +1025,14 @@ func TestMonkeyOCRv2EmbeddedImageDataURI(t *testing.T) {
 	// A service that already inlines the payload: no ZIP entry can ever
 	// match, so the payload must be budget-checked and kept, not lost.
 	png := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-	alt, encoded := monkeyOCRv2EmbeddedImage("fig", "data:image/png;base64,"+png, map[string]*zip.File{}, media.NewBudget())
-	if alt != "fig" || encoded != png {
-		t.Fatalf("inline data URI must be kept: alt=%q encoded=%q", alt, encoded)
+	encoded := monkeyOCRv2EmbeddedImage("data:image/png;base64,"+png, map[string]*zip.File{}, media.NewBudget())
+	if encoded != png {
+		t.Fatalf("inline data URI must be kept: encoded=%q", encoded)
 	}
 	// Undecodable payload: position-only carrier with the alt text.
-	alt, encoded = monkeyOCRv2EmbeddedImage("fig", "data:image/png;base64,%%%", map[string]*zip.File{}, media.NewBudget())
-	if encoded != "" || alt != "" {
-		t.Fatalf("undecodable data URI must fall back to position-only: alt=%q encoded=%q", alt, encoded)
+	encoded = monkeyOCRv2EmbeddedImage("data:image/png;base64,%%%", map[string]*zip.File{}, media.NewBudget())
+	if encoded != "" {
+		t.Fatalf("undecodable data URI must fall back to position-only: encoded=%q", encoded)
 	}
 }
 
@@ -1072,15 +1072,15 @@ func TestMonkeyOCRv2ImageOnlyLastPageCountsAndFileContract(t *testing.T) {
 	}
 }
 
-func TestMonkeyOCRv2EmbeddedImageOversizedDataURIWarnsAndKeepsAltText(t *testing.T) {
+func TestMonkeyOCRv2EmbeddedImageOversizedDataURIWarns(t *testing.T) {
 	// An oversized inline data: payload must be charged to the shared
 	// budget like the ZIP path: omitted with a per-image warning, keeping
 	// the alt text as the position carrier instead of dropping both.
 	oversized := base64.StdEncoding.EncodeToString(make([]byte, media.ImageMaxBytes()+1))
 	budget := media.NewBudget()
-	alt, encoded := monkeyOCRv2EmbeddedImage("big fig", "data:image/png;base64,"+oversized, map[string]*zip.File{}, budget)
-	if encoded != "" || alt != "big fig" {
-		t.Fatalf("oversized inline data URI: alt=%q encoded=%q", alt, encoded)
+	encoded := monkeyOCRv2EmbeddedImage("data:image/png;base64,"+oversized, map[string]*zip.File{}, budget)
+	if encoded != "" {
+		t.Fatalf("oversized inline data URI: encoded=%q", encoded)
 	}
 	warnings := budget.Warnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "per-image limit") {
@@ -1200,5 +1200,103 @@ func TestMonkeyOCRv2ArchiveMarkdownFallback(t *testing.T) {
 	item := res.JSON[0].ToMap()
 	if item["text"] != "# Fallback heading" || item["_pdf_positions"] != nil {
 		t.Fatalf("unexpected Markdown item: %#v", item)
+	}
+}
+
+func TestMonkeyOCRv2PositionedPicturesWithoutReferences(t *testing.T) {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	f, err := w.Create("sample/sample.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.WriteString(f, `{"layouts":[
+		{"label":"Text","content":"  ","page_num":1,"bbox":[1,2,10,20]},
+		{"label":"Picture","content":"plain caption","page_num":2,"bbox":[2,3,12,18]},
+		{"label":"Picture","page_num":3,"bbox":[4,5,14,15]},
+		{"label":"Picture","page_num":4},
+		{"label":"Picture","page_num":5,"bbox":[1,2,1,2]}
+	]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := monkeyOCRv2ParseArchive(t.Context(), "sample.pdf", buf.Bytes(), media.NewBudget())
+	if err != nil || len(res.JSON) != 2 || res.File["page_count"] != 3 {
+		t.Fatalf("crop-only figures: %+v, %v", res, err)
+	}
+	for i, wantText := range []string{"plain caption", ""} {
+		item := res.JSON[i].ToMap()
+		if item["text"] != wantText || item["page_number"] != i+2 || item["doc_type_kwd"] != "image" || item["media_omitted"] != true || !parser.HasPDFCropRegion(item) {
+			t.Fatalf("item %d lost its caption or crop: %#v", i, item)
+		}
+	}
+}
+
+func TestMonkeyOCRv2TextWithMultipleImageReferences(t *testing.T) {
+	block := map[string]any{"label": "Text", "content": "before ![one](data:image/png;base64,YQ==) between ![two](data:image/png;base64,Yg==) after", "page_num": 2, "bbox": []any{1, 2, 10, 20}}
+	for _, limit := range []int{2, 1} {
+		budget := media.NewBudgetWithLimits(media.Limits{MaxImagesPerRun: limit, MaxBytesPerRun: 10, ImageMaxBytes: 10})
+		sections := monkeyOCRv2Sections(block, nil, budget)
+		if len(sections) != 2 {
+			t.Fatalf("limit %d: want two figures, got %+v", limit, sections)
+		}
+		if got := sections[0].text + sections[1].text; got != "before one between two after" {
+			t.Fatalf("surrounding text or alt text changed: %q", got)
+		}
+		wantSecond := "Yg=="
+		if limit == 1 {
+			wantSecond = ""
+		}
+		for i, want := range []string{"YQ==", wantSecond} {
+			s := sections[i]
+			if s.layout != "figure" || s.image != want || s.page != 2 || !reflect.DeepEqual(s.position, []any{2, 1.0, 10.0, 2.0, 20.0}) {
+				t.Fatalf("limit %d: figure %d = %+v", limit, i, s)
+			}
+		}
+		if budget.Count() != limit || len(budget.Warnings()) != 2-limit {
+			t.Fatalf("limit %d: charged %d, warnings %v", limit, budget.Count(), budget.Warnings())
+		}
+	}
+}
+
+func TestMonkeyOCRv2ReservesZIPImageBeforeOpening(t *testing.T) {
+	var buf bytes.Buffer
+	archive := zip.NewWriter(&buf)
+	member, err := archive.CreateHeader(&zip.FileHeader{Name: "figure.png", Method: zip.Store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(member, "ab"); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opens := 0
+	reader.RegisterDecompressor(zip.Store, func(r io.Reader) io.ReadCloser { opens++; return io.NopCloser(r) })
+	images := map[string]*zip.File{"figure.png": reader.File[0]}
+	for _, limits := range []media.Limits{
+		{MaxImagesPerRun: 1, MaxBytesPerRun: 10, ImageMaxBytes: 10},
+		{MaxImagesPerRun: 3, MaxBytesPerRun: 3, ImageMaxBytes: 10},
+	} {
+		opens = 0
+		budget := media.NewBudgetWithLimits(limits)
+		for _, want := range []string{"YWI=", ""} {
+			image := monkeyOCRv2EmbeddedImage("figure.png", images, budget)
+			if image != want {
+				t.Fatalf("image = %q, want %q", image, want)
+			}
+		}
+		if opens != 1 || len(budget.Warnings()) != 1 {
+			t.Fatalf("opened %d times, warnings %v", opens, budget.Warnings())
+		}
 	}
 }

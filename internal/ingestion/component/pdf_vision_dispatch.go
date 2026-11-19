@@ -1119,24 +1119,18 @@ func monkeyOCRv2Sections(raw any, images map[string]*zip.File, budget *media.Bud
 				break
 			}
 		}
-		if section.text == "" {
-			return nil
-		}
-		// Some responses label an inline picture as Text. Keep the image
-		// payload available to vision enhancement in that case as well.
 		if section.layout == "figure" || (section.layout == "text" && strings.Contains(section.text, "![")) {
-			match := monkeyOCRv2ImagePattern.FindStringSubmatch(section.text)
-			if len(match) != 0 {
-				alt, image := monkeyOCRv2EmbeddedImage(match[1], match[2], images, budget)
-				section.text = strings.Replace(section.text, match[0], alt, 1)
-				if image != "" || len(section.position) > 0 {
-					section.layout, section.image = "figure", image
-				} else if section.layout == "figure" || strings.TrimSpace(section.text) == "" {
-					return nil
-				}
-			} else if section.layout == "figure" {
+			matches := monkeyOCRv2ImagePattern.FindAllStringSubmatchIndex(section.text, -1)
+			if len(matches) > 0 {
+				return monkeyOCRv2ImageSections(section, matches, images, budget)
+			}
+		}
+		if section.layout == "figure" {
+			if !section.hasCropRegion() {
 				return nil
 			}
+		} else if section.text == "" {
+			return nil
 		}
 		return []monkeyOCRv2Section{section}
 	}
@@ -1147,6 +1141,36 @@ func monkeyOCRv2Sections(raw any, images map[string]*zip.File, budget *media.Bud
 	var result []monkeyOCRv2Section
 	for _, item := range items {
 		result = append(result, monkeyOCRv2Sections(item, images, budget)...)
+	}
+	return result
+}
+
+func (s monkeyOCRv2Section) hasCropRegion() bool {
+	return len(s.position) > 0 && parser.HasPDFCropRegion(map[string]any{"positions": [][]any{s.position}})
+}
+
+// Each image inherits its source layout's region. Partition the surrounding
+// prose across the items so concatenating their captions preserves the text
+// in reading order without repeating it for each image.
+func monkeyOCRv2ImageSections(section monkeyOCRv2Section, matches [][]int, images map[string]*zip.File, budget *media.Budget) []monkeyOCRv2Section {
+	var result []monkeyOCRv2Section
+	start := 0
+	for i, match := range matches {
+		alt := section.text[match[2]:match[3]]
+		target := section.text[match[4]:match[5]]
+		image := monkeyOCRv2EmbeddedImage(target, images, budget)
+		item := section
+		item.text = section.text[start:match[0]] + alt
+		start = match[1]
+		if i == len(matches)-1 {
+			item.text += section.text[start:]
+		}
+		if image != "" || item.hasCropRegion() {
+			item.layout, item.image = "figure", image
+		} else if item.layout == "figure" || strings.TrimSpace(item.text) == "" {
+			continue
+		}
+		result = append(result, item)
 	}
 	return result
 }
@@ -1176,7 +1200,7 @@ func monkeyOCRv2LayoutPosition(object map[string]any) (int, []any) {
 // shared embedded-media budget. When the budget omits the payload the alt
 // text is kept without the image link: the chunker crops the region on
 // demand from the source PDF (issue #21214).
-func monkeyOCRv2EmbeddedImage(alt, target string, images map[string]*zip.File, budget *media.Budget) (string, string) {
+func monkeyOCRv2EmbeddedImage(target string, images map[string]*zip.File, budget *media.Budget) string {
 	target = strings.Trim(strings.TrimSpace(target), `"'`)
 	if len(target) >= len("data:") && strings.EqualFold(target[:len("data:")], "data:") {
 		// The service already inlined the payload: the ZIP lookup can never
@@ -1185,15 +1209,15 @@ func monkeyOCRv2EmbeddedImage(alt, target string, images map[string]*zip.File, b
 		// carrier) instead of being silently lost.
 		comma := strings.Index(target, ",")
 		if comma < 0 {
-			return "", ""
+			return ""
 		}
 		header := strings.ToLower(target[:comma])
 		if !strings.HasPrefix(header, "data:image/") || !strings.HasSuffix(header, ";base64") {
-			return "", ""
+			return ""
 		}
 		decoded, err := base64.StdEncoding.DecodeString(target[comma+1:])
 		if err != nil || len(decoded) == 0 {
-			return "", ""
+			return ""
 		}
 		if budget != nil {
 			// The budget enforces the per-image and run limits, so an
@@ -1203,48 +1227,32 @@ func monkeyOCRv2EmbeddedImage(alt, target string, images map[string]*zip.File, b
 			// collects warnings.
 			reservation, admission := budget.ReserveOccurrence(media.Size(len(decoded)))
 			if admission != media.Admitted || !reservation.Commit(media.Size(len(decoded))) {
-				return alt, ""
+				return ""
 			}
-			return alt, base64.StdEncoding.EncodeToString(decoded)
+			return base64.StdEncoding.EncodeToString(decoded)
 		}
 		if len(decoded) > media.ImageMaxBytes() {
-			return "", ""
+			return ""
 		}
-		return alt, base64.StdEncoding.EncodeToString(decoded)
+		return base64.StdEncoding.EncodeToString(decoded)
 	}
 	file := images[path.Base(target)]
 	if file == nil {
-		return "", ""
+		return ""
 	}
-	limit := int64(media.ImageMaxBytes())
-	if file.UncompressedSize64 > uint64(limit) {
-		// The declared size already exceeds the per-image limit: record the
-		// omission without reading the payload and keep the alt text as the
-		// position carrier.
-		if budget != nil {
-			_, _ = budget.ReserveOccurrence(media.Size(file.UncompressedSize64))
-			return alt, ""
-		}
-		return "", ""
-	}
-	rc, err := file.Open()
-	if err != nil {
-		return "", ""
-	}
-	data, err := io.ReadAll(io.LimitReader(rc, limit+1))
-	rc.Close()
-	if err != nil || len(data) == 0 {
-		return "", ""
-	}
+	var reservation *media.Reservation
 	if budget != nil {
-		reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
-		if admission != media.Admitted || !reservation.Commit(media.Size(len(data))) {
-			return alt, ""
+		var admission media.Admission
+		reservation, admission = budget.ReserveOccurrence(media.Size(file.UncompressedSize64))
+		if admission != media.Admitted {
+			return ""
 		}
-	} else if len(data) > int(limit) {
-		return "", ""
 	}
-	return alt, base64.StdEncoding.EncodeToString(data)
+	data, ok := mineruReadBounded(file, int64(media.ImageMaxBytes()))
+	if !ok || (reservation != nil && !reservation.Commit(media.Size(len(data)))) {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(data)
 }
 
 // monkeyOCRv2LayoutKind maps a MonkeyOCRv2 layout label to the layout kind
