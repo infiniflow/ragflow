@@ -8,9 +8,9 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// Chain-shape validation for ``list`` / ``timeline`` kinds, mirroring the
+// Chain-shape validation for list kinds, mirroring the
 // block (CHAIN_KINDS, _chain_detect_violations
-// validate_and_correct_chain). Both kinds model a strict linear chain of
+// validate_and_correct_chain). Chain kinds model a strict linear chain of
 // entities (one predecessor, one successor, no cycles). The per-chunk
 // extractor is happy to emit branches / cycles when the source text supports
 // multiple readings, so the relation set is validated post-extraction and the
@@ -18,7 +18,7 @@ import (
 // best-effort: any failure returns the input untouched (fail-open).
 
 // ChainKinds mirrors CHAIN_KINDS.
-var ChainKinds = map[Type]bool{TypeList: true, Type("timeline"): true}
+var ChainKinds = map[Type]bool{TypeList: true}
 
 const (
 	chainCorrectionMaxChunkChars = 8196
@@ -407,31 +407,6 @@ func validateAndCorrectChain(ctx context.Context, deps common.Deps, llmID string
 		}
 	}
 	return corrected
-}
-
-// dropIsolatedTimelineEntities mirrors cleanup_timeline_isolated_entities:
-// for the timeline kind, entity rows not referenced by any relation endpoint
-// are dropped. The in-memory port runs it after all merges/rewrites (the
-// ES version schedules it after every flush for the same reason: a
-// later relation can still reference the entity).
-func dropIsolatedTimelineEntities(rows []common.Product) []common.Product {
-	connected := map[string]bool{}
-	for _, row := range rows {
-		if e, ok := chainExtractEdge(row); ok {
-			connected[strings.ToLower(e.From)] = true
-			connected[strings.ToLower(e.To)] = true
-		}
-	}
-	out := make([]common.Product, 0, len(rows))
-	for _, row := range rows {
-		if kind, _ := row.Meta["kind"].(string); kind == "entity" {
-			if !connected[strings.ToLower(entityNameValue(row))] {
-				continue
-			}
-		}
-		out = append(out, row)
-	}
-	return out
 }
 
 func sortedStrings(in []string) []string {

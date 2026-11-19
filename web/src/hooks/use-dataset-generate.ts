@@ -1,3 +1,4 @@
+import { TraceTypeMap as PrivateTraceTypeMap } from '@/ee/constants/knowledge';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -135,7 +136,7 @@ const TraceTypeMap: Record<GenerateType, TraceType> = {
   [GenerateType.Artifact]: TraceType.Artifact,
   [GenerateType.ToSkills]: TraceType.Skill,
   [GenerateType.MindMap]: TraceType.MindMap,
-  [GenerateType.Timeline]: TraceType.Timeline,
+  ...PrivateTraceTypeMap,
   [GenerateType.SessionEssence]: TraceType.SessionEssence,
   [GenerateType.SessionGraph]: TraceType.SessionGraph,
 };

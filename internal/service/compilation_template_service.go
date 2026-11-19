@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -296,9 +297,18 @@ func (s *CompilationTemplateService) sortBuiltins(templates []*BuiltinTemplate) 
 
 func loadBuiltinTemplates() ([]*BuiltinTemplate, error) {
 	dir := filepath.Join(utility.GetProjectBaseDirectory(), "internal", "ingestion", "knowledge_compile", "templates")
-	entries, err := os.ReadDir(dir)
+	templates, err := loadBuiltinTemplatesFromFS(os.DirFS(dir))
 	if err != nil {
-		if os.IsNotExist(err) {
+		return nil, err
+	}
+	extra, err := additionalBuiltinTemplates()
+	return append(templates, extra...), err
+}
+
+func loadBuiltinTemplatesFromFS(files fs.FS) ([]*BuiltinTemplate, error) {
+	entries, err := fs.ReadDir(files, ".")
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			return []*BuiltinTemplate{}, nil
 		}
 		return nil, err
@@ -308,7 +318,7 @@ func loadBuiltinTemplates() ([]*BuiltinTemplate, error) {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") && !strings.HasSuffix(entry.Name(), ".yml") {
 			continue
 		}
-		data, rerr := os.ReadFile(filepath.Join(dir, entry.Name()))
+		data, rerr := fs.ReadFile(files, entry.Name())
 		if rerr != nil {
 			continue
 		}

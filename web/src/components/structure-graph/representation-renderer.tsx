@@ -31,11 +31,10 @@ import { useTranslation } from 'react-i18next';
 import {
   adaptKnowledgeGraphToForceGraph,
   adaptPageIndexToTreeData,
-  adaptTimelineToX6Data,
   adaptTreeToTreeData,
 } from './adapters';
 import MindMapG6Graph from './mindmap-g6-graph';
-import TimelineX6Graph from './timeline-x6-graph';
+import { renderRepresentation } from '@/ee/components/structure-graph/representation-renderer';
 import {
   getKnowledgeGraphNodeLabel,
   useKnowledgeGraphNodeColor,
@@ -56,7 +55,7 @@ export interface ClickableNode {
 
 const EmptyForceGraphData: IArtifactGraph = { entities: [], relations: [] };
 
-interface RepresentationRendererProps {
+export interface RepresentationRendererProps {
   template?: IStructureGraphTemplate;
   onNodeClick?: (node: ClickableNode) => void;
   highlightNodeId?: string | null;
@@ -117,15 +116,6 @@ export function RepresentationRenderer({
           name: node.name,
           source_chunk_ids: node.source_chunk_ids,
         });
-      }
-    },
-    [onNodeClick],
-  );
-
-  const handleTimelineNodeClick = useCallback(
-    (node: { id: string; name: string; source_chunk_ids?: string[] }) => {
-      if (node.source_chunk_ids?.length) {
-        onNodeClick?.(node);
       }
     },
     [onNodeClick],
@@ -207,16 +197,6 @@ export function RepresentationRenderer({
           />
         </div>
       );
-    case CompilationTemplateKind.Timeline:
-      return (
-        <div className="mt-6 flex-1 min-h-0">
-          <TimelineX6Graph
-            data={adaptTimelineToX6Data(template)}
-            show
-            onNodeClick={handleTimelineNodeClick}
-          />
-        </div>
-      );
     case CompilationTemplateKind.MindMap:
       return (
         <div className="mt-6 flex-1 min-h-0">
@@ -264,6 +244,10 @@ export function RepresentationRenderer({
         </div>
       );
     default:
-      return <UnsupportedPlaceholder kind={template.kind} />;
+      return (
+        renderRepresentation({ template, onNodeClick }) ?? (
+          <UnsupportedPlaceholder kind={template.kind} />
+        )
+      );
   }
 }

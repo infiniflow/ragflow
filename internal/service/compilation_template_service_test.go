@@ -178,7 +178,7 @@ func TestLoadBuiltinTemplates_AllYAMLDefinitions(t *testing.T) {
 		wantIDs[strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))] = struct{}{}
 	}
 
-	templates, err := loadBuiltinTemplates()
+	templates, err := loadBuiltinTemplatesFromFS(os.DirFS(dir))
 	if err != nil {
 		t.Fatalf("loadBuiltinTemplates: %v", err)
 	}
