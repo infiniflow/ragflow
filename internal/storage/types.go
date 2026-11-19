@@ -18,8 +18,15 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrSharedBucketRemoval reports a RemoveBucket or RemoveEmptyBucket call that
+// refused because the deployment keeps several logical buckets in one physical
+// bucket. That physical bucket belongs to the deployment, not to a dataset, so
+// it outlives the dataset the caller is removing.
+var ErrSharedBucketRemoval = errors.New("shared bucket mode does not isolate objects by logical bucket")
 
 // StorageType represents the type of storage backend
 type StorageType int
