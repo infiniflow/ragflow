@@ -1004,18 +1004,72 @@ func TestUpdateDatasetPropagatesPagerankWhenPendingTaskReadFails(t *testing.T) {
 	}
 }
 
+// A connector-only request can fail after its transaction committed the links
+// and the task rows. The retry resubmits links that already exist, so no task
+// IDs come out of it: the pending rows of the failed attempt still have to be
+// published once the propagation that failed first is persisted.
+func TestUpdateDatasetPublishesConnectorOnlyTasksAfterPagerankFailure(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateConnector(t, "connector-1", "tenant-1")
+
+	eng := &pagerankRecordingEngine{
+		recordingChunkStoreEngine: recordingChunkStoreEngine{storeMissing: true},
+		updateChunksErr:           errors.New("pagerank write failed"),
+	}
+	publisher := &recordingSyncTaskPublisher{}
+	previous := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(publisher)
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previous) })
+
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	pagerank := int64(30)
+	req := service.UpdateDatasetRequest{
+		Connectors: &[]service.DatasetConnectorRequest{{ID: "connector-1"}},
+		Pagerank:   &pagerank,
+	}
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", req); err == nil || code != common.CodeServerError {
+		t.Fatalf("first UpdateDataset = (%d, %v), want a server error", code, err)
+	}
+	if len(publisher.published) != 0 {
+		t.Fatalf("published tasks = %v before the propagation failed, want none", publisher.published)
+	}
+
+	var taskIDs []string
+	if err := dao.DB.Model(&entity.SyncLogs{}).Where("kb_id = ?", "kb-1").Pluck("id", &taskIDs).Error; err != nil {
+		t.Fatalf("read committed tasks: %v", err)
+	}
+	if len(taskIDs) != 1 {
+		t.Fatalf("committed tasks = %v, want the single task the failed attempt scheduled", taskIDs)
+	}
+
+	eng.updateChunksErr = nil
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", req); err != nil || code != common.CodeSuccess {
+		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if len(publisher.published) != 1 || publisher.published[0] != taskIDs[0] {
+		t.Fatalf("published tasks = %v, want the retry to publish %v", publisher.published, taskIDs)
+	}
+}
+
 // pagerankRecordingEngine reports PageRank support and counts the propagation
 // writes the update schedules.
 type pagerankRecordingEngine struct {
 	recordingChunkStoreEngine
 	updateChunksCalls int
+	updateChunksErr   error
 }
 
 func (e *pagerankRecordingEngine) SupportsPageRank() bool { return true }
 
 func (e *pagerankRecordingEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
 	e.updateChunksCalls++
-	return nil
+	return e.updateChunksErr
 }
 
 // The transaction accepts the switch only when the plan prepared that model. A
