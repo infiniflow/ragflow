@@ -94,7 +94,7 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	}
 	native.SetDevice(dev)
 
-	if err := infnative.Register(modelDir, dropScore); err != nil {
+	if err = infnative.Register(modelDir, dropScore); err != nil {
 		common.Warn("in-process DeepDoc backend unavailable",
 			zap.String("reason", err.Error()))
 	}
