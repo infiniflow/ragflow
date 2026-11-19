@@ -107,8 +107,14 @@ func parseJSONContent(text string) []map[string]any {
 			}
 			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
 		}
+		// Scan raw tokens for out-of-range numbers BEFORE decoding into a map:
+		// decoding would overwrite an earlier overflowing number with a later
+		// duplicate key, hiding it from a post-decode check.
+		if !jsonNumbersInFloat64Range([]byte(trimmed)) {
+			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
+		}
 		obj, ok := parseSingleJSONObjectValue(trimmed)
-		if !ok || !numbersInFloat64Range(obj) {
+		if !ok {
 			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
 		}
 		return singleObjectItems(obj)
@@ -240,28 +246,50 @@ func parseJSONLines(text string) []map[string]any {
 	return items
 }
 
-// numbersInFloat64Range reports whether every json.Number in v is within the
-// float64 range. The removed float64 probe rejected documents containing a
-// number like 1e400 (which overflows float64); the number-preserving decoder
-// accepts them. Rechecking here keeps the single-object path byte-identical
-// with the old probe: such documents still fall back to raw text.
-func numbersInFloat64Range(v any) bool {
-	switch x := v.(type) {
-	case json.Number:
-		_, err := strconv.ParseFloat(string(x), 64)
-		return err == nil
-	case map[string]any:
-		for _, child := range x {
-			if !numbersInFloat64Range(child) {
+// jsonNumbersInFloat64Range scans every numeric literal in raw JSON, checking
+// it against the float64 range BEFORE map construction. The old float64 probe
+// rejected documents containing a number like 1e400; decoding first would let
+// a duplicate key overwrite that number, so the check must see the raw bytes.
+// A byte scan with a string-state machine avoids the per-token interface
+// allocations of json.Decoder.Token(); json.Valid already guarantees syntax.
+func jsonNumbersInFloat64Range(data []byte) bool {
+	inString, escaped := false, false
+	for i := 0; i < len(data); {
+		c := data[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			i++
+			continue
+		}
+		if c == '"' {
+			inString = true
+			i++
+			continue
+		}
+		if c == '-' || (c >= '0' && c <= '9') {
+			start := i
+			i++ // sign or first digit
+			for i < len(data) {
+				ch := data[i]
+				if (ch >= '0' && ch <= '9') || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-' {
+					i++
+				} else {
+					break
+				}
+			}
+			if _, err := strconv.ParseFloat(string(data[start:i]), 64); err != nil {
 				return false
 			}
+			continue
 		}
-	case []any:
-		for _, child := range x {
-			if !numbersInFloat64Range(child) {
-				return false
-			}
-		}
+		i++
 	}
 	return true
 }

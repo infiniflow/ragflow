@@ -167,11 +167,14 @@ func trimSystems(sys []Message, budget int, counts []int) {
 	for i := range sys {
 		limit := remaining
 		if i < len(sys)-1 {
-			// Only tokenize the original content in the fallback path. When
-			// counts are provided they already hold the pre-trim count, so
-			// re-encoding here would discard the result and waste work.
-			tokens := counts[i]
-			if !useCounts {
+			// Only read the cached count when it is actually valid; otherwise
+			// recompute from the original content. Indexing counts[i] before
+			// this guard would panic on a nil/short counts slice even though
+			// the fallback exists.
+			var tokens int
+			if useCounts {
+				tokens = counts[i]
+			} else {
 				tokens = NumTokensFromString(sys[i].Content)
 			}
 			limit = int(float64(budget) * float64(tokens) / float64(total))
