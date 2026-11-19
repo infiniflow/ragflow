@@ -55,6 +55,7 @@ var registry = map[string]Factory{
 	"google_scholar_search":      buildGoogleScholarTool,
 	"jin10":                      noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
 	"keenable":                   buildKeenableTool,
+	"perplexity":                 buildPerplexityTool,
 	"pubmed":                     buildPubMedTool,
 	"qweather":                   buildQWeatherTool,
 	"querit":                     buildQueritTool,
@@ -86,6 +87,7 @@ var canvasToolNames = map[string]string{
 	"codeexec":         "code_exec",
 	"googlescholar":    "google_scholar",
 	"keenablesearch":   "keenable",
+	"perplexitysearch": "perplexity",
 	"queritcontents":   "querit_contents",
 	"queritsearch":     "querit_search",
 	"search1apicrawl":  "search1api_crawl",
@@ -905,6 +907,56 @@ func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.TopN = topN
 	}
 	return newSofyaTool(nil, apiKey, defaults), nil
+}
+
+func buildPerplexityTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := perplexityDefaults{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "perplexity")
+		}
+	}
+	if value, ok := params["search_type"]; ok {
+		searchType, valid := value.(string)
+		normalized := strings.ToLower(strings.TrimSpace(searchType))
+		if !valid || (normalized != "" && !slices.Contains(perplexitySearchTypes, normalized)) {
+			return nil, fmt.Errorf("agent tool: tool %q requires search_type to be web, fast, or blank for the default", "perplexity")
+		}
+		defaults.SearchType = normalized
+	}
+	if value, ok := params["search_recency_filter"]; ok {
+		recency, valid := value.(string)
+		normalized := strings.ToLower(strings.TrimSpace(recency))
+		if !valid || (normalized != "" && !slices.Contains(perplexityRecencyValues, normalized)) {
+			return nil, fmt.Errorf("agent tool: tool %q requires search_recency_filter to be any, hour, day, week, month, year, or blank for the default", "perplexity")
+		}
+		defaults.SearchRecencyFilter = normalized
+	}
+	if value, ok := params["search_domain_filter"]; ok {
+		domains, err := perplexityDomainFilterArg(value)
+		if err != nil {
+			return nil, fmt.Errorf("agent tool: tool %q %w", "perplexity", err)
+		}
+		defaults.SearchDomainFilter = domains
+	}
+	if value, ok := params["country"]; ok {
+		country, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param country", "perplexity")
+		}
+		defaults.Country = strings.ToUpper(strings.TrimSpace(country))
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 || topN > perplexityMaxResults {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param top_n within [1, %d]", "perplexity", perplexityMaxResults)
+		}
+		defaults.TopN = topN
+	}
+	return newPerplexityTool(nil, apiKey, defaults), nil
 }
 
 func buildSearch1APITool(params map[string]any) (einotool.BaseTool, error) {

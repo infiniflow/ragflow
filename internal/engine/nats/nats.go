@@ -149,6 +149,14 @@ func (n *NatsEngine) Init() error {
 	return nil
 }
 
+// Close releases the process-owned connection after its consumers stop.
+func (n *NatsEngine) Close() error {
+	if n.nc != nil {
+		n.nc.Close()
+	}
+	return nil
+}
+
 func (n *NatsEngine) Type() string {
 	return "nats"
 }

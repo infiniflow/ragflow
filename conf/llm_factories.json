@@ -3544,6 +3544,14 @@
             "url": "https://api.hop-base.com/v1"
         },
         {
+            "name": "GreenNode",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT,TEXT EMBEDDING,TEXT RE-RANK",
+            "status": "1",
+            "llm": [],
+            "url": "https://maas-llm-aiplatform-hcm.api.vngcloud.vn/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",

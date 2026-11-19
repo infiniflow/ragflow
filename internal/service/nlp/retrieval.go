@@ -33,6 +33,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/observability"
+	"ragflow/internal/permission"
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
@@ -51,24 +52,26 @@ func NewRetrievalService(docEngine engine.DocEngine, documentDAO *dao.DocumentDA
 
 // RetrievalRequest request for retrieval search
 type RetrievalRequest struct {
-	Question               string
-	TenantIDs              []string
-	KbIDs                  []string
-	DocIDs                 []string
-	Page                   int
-	PageSize               int
-	RerankCandidatesCount  *int
-	KNNTopK                *int
-	KNNNumCandidates       *int
-	SimilarityThreshold    *float64
-	VectorSimilarityWeight *float64
-	RankFeature            *map[string]float64
-	RerankModel            *models.RerankModel
-	EmbeddingModel         *models.EmbeddingModel
-	Aggs                   *bool
-	Highlight              *bool
-	AllowDenseFallback     *bool
-	Filter                 map[string]interface{}
+	Question  string
+	TenantIDs []string
+	KbIDs     []string
+	DocIDs    []string
+	// DocumentPermissionsChecked indicates the caller already scoped DocIDs.
+	DocumentPermissionsChecked bool
+	Page                       int
+	PageSize                   int
+	RerankCandidatesCount      *int
+	KNNTopK                    *int
+	KNNNumCandidates           *int
+	SimilarityThreshold        *float64
+	VectorSimilarityWeight     *float64
+	RankFeature                *map[string]float64
+	RerankModel                *models.RerankModel
+	EmbeddingModel             *models.EmbeddingModel
+	Aggs                       *bool
+	Highlight                  *bool
+	AllowDenseFallback         *bool
+	Filter                     map[string]interface{}
 	// VectorOnly, when true, runs the dense leg alone: no text match expression
 	// and no fusion expression reach the engine, so the search is a pure kNN
 	// whose filter is the scope conditions only. Set by callers that need to
@@ -78,6 +81,53 @@ type RetrievalRequest struct {
 	// Language is the dataset language ("" = English); diacritic-folding
 	// languages (Slovak, Czech) fold the query so its tokens match index tokens.
 	Language string
+}
+
+// SplitRetrievalDocIDs separates explicitly selected dataset products from
+// ordinary document IDs. An empty document selection includes each selected
+// dataset's products alongside its readable documents.
+func SplitRetrievalDocIDs(datasetIDs, requestedIDs []string) (documentIDs, datasetProductIDs []string) {
+	datasetSet := make(map[string]struct{}, len(datasetIDs))
+	for _, datasetID := range datasetIDs {
+		if datasetID != "" {
+			datasetSet[datasetID] = struct{}{}
+		}
+	}
+
+	if len(requestedIDs) == 0 {
+		seenProducts := make(map[string]struct{}, len(datasetIDs))
+		for _, datasetID := range datasetIDs {
+			if datasetID == "" {
+				continue
+			}
+			if _, seen := seenProducts[datasetID]; !seen {
+				datasetProductIDs = append(datasetProductIDs, datasetID)
+				seenProducts[datasetID] = struct{}{}
+			}
+		}
+		return nil, datasetProductIDs
+	}
+
+	documentIDs = make([]string, 0, len(requestedIDs))
+	seenDocuments := make(map[string]struct{}, len(requestedIDs))
+	seenProducts := make(map[string]struct{}, len(requestedIDs))
+	for _, requestedID := range requestedIDs {
+		if requestedID == "" {
+			continue
+		}
+		if _, isDatasetProduct := datasetSet[requestedID]; isDatasetProduct {
+			if _, seen := seenProducts[requestedID]; !seen {
+				datasetProductIDs = append(datasetProductIDs, requestedID)
+				seenProducts[requestedID] = struct{}{}
+			}
+			continue
+		}
+		if _, seen := seenDocuments[requestedID]; !seen {
+			documentIDs = append(documentIDs, requestedID)
+			seenDocuments[requestedID] = struct{}{}
+		}
+	}
+	return documentIDs, datasetProductIDs
 }
 
 // RetrievalResult result from retrieval search
@@ -114,6 +164,17 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	common.InfoCtx(ctx, "Retrieval START", zap.String("question", req.Question), zap.Int("page", req.Page), zap.Int("pageSize", req.PageSize))
 	if req.Question == "" {
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
+	}
+	if !req.DocumentPermissionsChecked && permission.UserIDFromContext(ctx) != "" && len(req.KbIDs) > 0 {
+		candidateDocIDs, datasetProductIDs := SplitRetrievalDocIDs(req.KbIDs, req.DocIDs)
+		readableDocIDs, err := permission.ListReadableDocumentIDs(ctx, dao.DB, req.KbIDs, candidateDocIDs)
+		if err != nil {
+			return nil, fmt.Errorf("resolve readable documents: %w", err)
+		}
+		req.DocIDs = append(readableDocIDs, datasetProductIDs...)
+		if len(req.DocIDs) == 0 {
+			return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
+		}
 	}
 
 	// Apply default values

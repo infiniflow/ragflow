@@ -78,6 +78,12 @@ export enum AgentCategory {
   DataflowCanvas = 'dataflow_canvas',
 }
 
+export enum AgentSessionSource {
+  Agent = 'agent',
+  Workflow = 'workflow',
+  ChatChannel = 'chat_channel',
+}
+
 export enum AgentQuery {
   Category = 'category',
   CanvasCategory = 'canvas_category',
@@ -87,6 +93,7 @@ export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
   Categorize = 'Categorize',
+  ScoredSwitch = 'ScoredSwitch',
   Message = 'Message',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
@@ -120,6 +127,7 @@ export enum Operator {
   BGPT = 'BGPT',
   KeenableSearch = 'KeenableSearch',
   YouComSearch = 'YouComSearch',
+  PerplexitySearch = 'PerplexitySearch',
   SofyaSearch = 'SofyaSearch',
   Search1APISearch = 'Search1APISearch',
   Search1APICrawl = 'Search1APICrawl',

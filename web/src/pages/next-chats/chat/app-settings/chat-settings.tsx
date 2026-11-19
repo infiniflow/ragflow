@@ -1,4 +1,8 @@
 import { Form } from '@/components/ui/form';
+import {
+  ModelResourceAccessUserIdContext,
+  ModelResourceTenantIdContext,
+} from '@/hooks/use-llm-request';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatasetMetadata } from '@/constants/chat';
 import {
@@ -39,9 +43,10 @@ export function ChatSettings() {
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     chatSettingSchema,
     data?.dataset_ids,
+    { accessUserId: data?.user_id },
   );
   const { updateChat, loading } = useUpdateChat();
-  const findLlmByUuid = useFindLlmByUuid();
+  const findLlmByUuid = useFindLlmByUuid(data?.tenant_id, data?.user_id);
   const queryClient = useQueryClient();
   const { id } = useParams();
 
@@ -136,6 +141,7 @@ export function ChatSettings() {
         ...omit(data, [
           'operator_permission',
           'tenant_id',
+          'user_id',
           'tenant_llm_id',
           'tenant_rerank_id',
           'tenant_decision_id',
@@ -183,38 +189,43 @@ export function ChatSettings() {
   useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
-    <section
-      data-testid="chat-detail-settings"
-      className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
-    >
-      <Form {...form}>
-        <form
-          ref={formContainerRef}
-          onSubmit={form.handleSubmit(onSubmit, handleInvalidSubmit)}
-          className="flex-1 flex flex-col min-h-0"
+    <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
+      <ModelResourceAccessUserIdContext.Provider value={data?.user_id}>
+        <section
+          data-testid="chat-detail-settings"
+          className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
         >
-          <ScrollArea viewportClassName="[&>div]:!block">
-            <section className="p-5 space-y-6 overflow-auto flex-1 min-h-0">
-              <ChatBasicSetting
-                collapseOpen={modelSettingOpen}
-                onCollapseOpenChange={onModelSettingOpenChange}
-              ></ChatBasicSetting>
-              <ChatPromptEngine
-                advancedSettingOpen={advancedSettingOpen}
-                onAdvancedSettingOpenChange={onAdvancedSettingOpenChange}
-                naiveSettingOpen={naiveSettingOpen}
-                onNaiveSettingOpenChange={onNaiveSettingOpenChange}
-                agenticSettingOpen={agenticSettingOpen}
-                onAgenticSettingOpenChange={onAgenticSettingOpenChange}
-              ></ChatPromptEngine>
-            </section>
-          </ScrollArea>
+          <Form {...form}>
+            <form
+              ref={formContainerRef}
+              onSubmit={form.handleSubmit(onSubmit, handleInvalidSubmit)}
+              className="flex-1 flex flex-col min-h-0"
+            >
+              <ScrollArea viewportClassName="[&>div]:!block">
+                <section className="p-5 space-y-6 overflow-auto flex-1 min-h-0">
+                  <ChatBasicSetting
+                    collapseOpen={modelSettingOpen}
+                    onCollapseOpenChange={onModelSettingOpenChange}
+                    accessUserId={data?.user_id}
+                  ></ChatBasicSetting>
+                  <ChatPromptEngine
+                    advancedSettingOpen={advancedSettingOpen}
+                    onAdvancedSettingOpenChange={onAdvancedSettingOpenChange}
+                    naiveSettingOpen={naiveSettingOpen}
+                    onNaiveSettingOpenChange={onNaiveSettingOpenChange}
+                    agenticSettingOpen={agenticSettingOpen}
+                    onAgenticSettingOpenChange={onAgenticSettingOpenChange}
+                  ></ChatPromptEngine>
+                </section>
+              </ScrollArea>
 
-          <div className="p-5 pt-4 text-right">
-            <SavingButton loading={loading}></SavingButton>
-          </div>
-        </form>
-      </Form>
-    </section>
+              <div className="p-5 pt-4 text-right">
+                <SavingButton loading={loading}></SavingButton>
+              </div>
+            </form>
+          </Form>
+        </section>
+      </ModelResourceAccessUserIdContext.Provider>
+    </ModelResourceTenantIdContext.Provider>
   );
 }

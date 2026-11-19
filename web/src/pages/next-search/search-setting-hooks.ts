@@ -92,25 +92,27 @@ export type SearchSettingFormData = z.infer<
  * been deleted.
  * Only validate selected models when their corresponding feature is enabled.
  */
-export const useSearchSettingFormSchema = () => {
+export const useSearchSettingFormSchema = (
+  resourceTenantId?: string,
+  accessUserId?: string,
+) => {
   const { t } = useTranslation();
   const {
     validIds: validRerankIds,
     isFetched: rerankModelsFetched,
     isSettled: rerankModelsSettled,
     getPendingMessage: getRerankPendingMessage,
-  } = useModelValidIds(ModelTypeMap.rerank_id);
+  } = useModelValidIds(ModelTypeMap.rerank_id, resourceTenantId, accessUserId);
   const {
     validIds: validLlmIds,
     isFetched: llmModelsFetched,
     isSettled: llmModelsSettled,
     getPendingMessage: getLlmPendingMessage,
-  } = useModelValidIds(ModelTypeMap.llm_id);
+  } = useModelValidIds(ModelTypeMap.llm_id, resourceTenantId, accessUserId);
 
   const formSchema = useMemo(
     () =>
       buildSearchSettingFormSchema(t).superRefine((formData, ctx) => {
-        if (!modelsFetched) return;
         const {
           use_rerank,
           rerank_id,

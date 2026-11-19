@@ -132,6 +132,7 @@ export enum LLMFactory {
   Wiro = 'Wiro AI',
   Crusoe = 'Crusoe',
   HopBase = 'HopBase',
+  GreenNode = 'GreenNode',
 }
 
 // Please lowercase the file name
@@ -245,6 +246,7 @@ export const IconMap = {
   [LLMFactory.Wiro]: 'wiro',
   [LLMFactory.Crusoe]: 'crusoe',
   [LLMFactory.HopBase]: 'hopbase',
+  [LLMFactory.GreenNode]: 'greennode',
 };
 
 /**
@@ -262,6 +264,7 @@ export const ModelTypeToField: Record<string, string> = {
   chat: 'llm_id',
   decision: 'decision_id',
   embedding: 'embd_id',
+  scoring: 'scoring_id',
   vision: 'img2txt_id',
   asr: 'asr_id',
   rerank: 'rerank_id',
@@ -272,6 +275,7 @@ export const FieldToModelType: Record<string, string> = {
   llm_id: 'chat',
   decision_id: 'decision',
   embd_id: 'embedding',
+  scoring_id: 'scoring',
   img2txt_id: 'vision',
   asr_id: 'asr',
   rerank_id: 'rerank',

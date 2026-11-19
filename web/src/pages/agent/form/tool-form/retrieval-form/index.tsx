@@ -20,7 +20,7 @@ import { omit } from 'lodash';
 import { useForm } from 'react-hook-form';
 import { useParams } from 'react-router';
 import { z } from 'zod';
-import { useOwnerTenantId } from '../../../context';
+import { useResourceTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
@@ -42,7 +42,7 @@ export const FormSchema = z
 const RetrievalForm = () => {
   const defaultValues = omit(useValues(), 'top_k');
 
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   const { id: canvasID } = useParams();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
@@ -78,7 +78,7 @@ const RetrievalForm = () => {
             {hideKnowledgeGraphField || (
               <>
                 <RerankFormFields
-                  ownerTenantId={ownerTenantId}
+                  resourceTenantId={resourceTenantId}
                 ></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>

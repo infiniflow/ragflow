@@ -16,6 +16,7 @@
 
 import LLMLabel, { MissingModelLabel } from '@/components/llm-select/llm-label';
 import { LlmIcon } from '@/components/svg-icon';
+import { ModelSharingBadge } from '@/ee/components/model-sharing-badge';
 import {
   FormControl,
   FormField,
@@ -29,7 +30,10 @@ import {
   useFetchAllAddedModels,
   useModelValidIds,
 } from '@/hooks/use-llm-request';
-import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
+import {
+  useFetchTenantInfo,
+  useFetchUserInfo,
+} from '@/hooks/use-user-setting-request';
 import { IAddedModel } from '@/interfaces/database/llm';
 import { buildModelValue, getRealModelName } from '@/utils/llm-util';
 import { forwardRef, useCallback, useEffect, useMemo } from 'react';
@@ -42,6 +46,7 @@ export const ModelTypeMap: Record<string, string[]> = {
   llm_id: ['chat', 'vision'],
   decision_id: ['decision'],
   embd_id: ['embedding'],
+  scoring_id: ['scoring'],
   img2txt_id: ['vision'],
   asr_id: ['asr'],
   rerank_id: ['rerank'],
@@ -73,6 +78,7 @@ export function buildModelTree(
   ) => React.ReactNode,
   providers?: string[],
   requireModelId = false,
+  currentUserId?: string,
 ): TreeSelectNode[] {
   const filtered = filterAddedModels(
     allModels,
@@ -128,11 +134,14 @@ export function buildModelTree(
                 imgClass="size-[22px] flex-shrink-0"
               />
               <span className="truncate">{modelName}</span>
-              {m.tenant_name && mTenantId !== tenantId && (
-                <span className="text-text-secondary bg-bg-card rounded-sm px-1 truncate flex-shrink-0">
-                  {m.tenant_name}
-                </span>
-              )}
+              <ModelSharingBadge
+                tenantName={m.tenant_name}
+                tenantId={mTenantId}
+                currentTenantId={tenantId}
+                userId={m.user_id}
+                nickname={m.nickname}
+                currentUserId={currentUserId}
+              />
             </span>
           ),
           data: {
@@ -165,6 +174,8 @@ export interface UseModelTreeOptions {
     node: TreeSelectNode,
     model: IAddedModel,
   ) => React.ReactNode;
+  resourceTenantId?: string;
+  accessUserId?: string;
   ownerTenantId?: string;
   /**
    * Set where the tenant endpoint is not part of the page's contract (e.g.
@@ -188,6 +199,8 @@ export function useModelTree({
   providers,
   requireModelId = false,
   renderLeafLabel,
+  resourceTenantId,
+  accessUserId,
   ownerTenantId,
   skipTenantInfo = false,
 }: UseModelTreeOptions = {}) {
@@ -195,8 +208,14 @@ export function useModelTree({
     data: allAddedModels,
     isFetched,
     isError,
-  } = useFetchAllAddedModels(undefined, ownerTenantId);
+  } = useFetchAllAddedModels(
+    undefined,
+    resourceTenantId ?? ownerTenantId,
+    accessUserId,
+  );
   const { data: tenantInfo } = useFetchTenantInfo(!skipTenantInfo);
+  const { data: userInfo } = useFetchUserInfo(!skipTenantInfo);
+  const currentUserId = skipTenantInfo ? undefined : userInfo?.id;
 
   const models = useMemo(
     () =>
@@ -213,6 +232,7 @@ export function useModelTree({
         renderLeafLabel,
         providers,
         requireModelId,
+        currentUserId,
       ),
     [
       allAddedModels,
@@ -221,6 +241,7 @@ export function useModelTree({
       renderLeafLabel,
       providers,
       requireModelId,
+      currentUserId,
     ],
   );
 
@@ -247,6 +268,8 @@ export interface ModelTreeSelectProps {
   className?: string;
   renderSelected?: (node: TreeSelectNode | undefined) => React.ReactNode;
   testId?: string;
+  resourceTenantId?: string;
+  accessUserId?: string;
   ownerTenantId?: string;
   skipTenantInfo?: boolean;
 }
@@ -275,6 +298,8 @@ export const DirectModelTreeSelect = forwardRef<
     className,
     renderSelected,
     testId,
+    resourceTenantId,
+    accessUserId,
     ownerTenantId,
     skipTenantInfo = false,
   },
@@ -299,8 +324,10 @@ export const DirectModelTreeSelect = forwardRef<
   } = useModelTree({
     modelTypes,
     providers: allowedProviders,
-    requireModelId,
+    resourceTenantId,
+    accessUserId,
     ownerTenantId,
+    requireModelId,
     skipTenantInfo,
   });
 
@@ -342,10 +369,11 @@ export const DirectModelTreeSelect = forwardRef<
             model_instance: node.data.instance_name,
             model_provider: node.data.provider_name,
           })}
+          resourceTenantId={resourceTenantId ?? ownerTenantId}
         />
       );
     },
-    [value],
+    [value, resourceTenantId, ownerTenantId],
   );
 
   // The persisted model no longer matches any added model (e.g. it was
@@ -354,9 +382,12 @@ export const DirectModelTreeSelect = forwardRef<
   // the raw composite id.
   const renderMissingModel = useCallback(
     (missingValue: string) => (
-      <MissingModelLabel value={missingValue} ownerTenantId={ownerTenantId} />
+      <MissingModelLabel
+        value={missingValue}
+        resourceTenantId={resourceTenantId ?? ownerTenantId}
+      />
     ),
-    [ownerTenantId],
+    [resourceTenantId, ownerTenantId],
   );
 
   return (
@@ -391,6 +422,7 @@ export const ModelTreeSelect = forwardRef<
     <ModelReferenceSelect
       {...props}
       modelTypes={modelTypes}
+      ownerTenantId={props.ownerTenantId ?? props.resourceTenantId}
       directModelSelect={DirectModelTreeSelect}
       ref={ref}
     />
@@ -416,7 +448,8 @@ export function ModelTreeSelectFormField({
   const modelTypes = rest.modelTypes ?? ModelTypeMap.llm_id;
   const { isSettled: modelsSettled } = useModelValidIds(
     modelTypes,
-    rest.ownerTenantId,
+    rest.resourceTenantId ?? rest.ownerTenantId,
+    rest.accessUserId,
     !rest.skipTenantInfo,
   );
   const value = useWatch({ control: form.control, name });

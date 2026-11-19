@@ -34,7 +34,7 @@ import (
 )
 
 type connectorServiceIface interface {
-	ListConnectors(ctx context.Context, tenantID string) (*service.ListConnectorsResponse, error)
+	ListConnectors(ctx context.Context, accessUserID string) (*service.ListConnectorsResponse, error)
 	CreateConnector(ctx context.Context, req *service.CreateConnectorRequest) (*entity.Connector, error)
 	GetConnector(ctx context.Context, connectorID string) (*entity.Connector, error)
 	ListLog(ctx context.Context, connectorID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
@@ -66,20 +66,20 @@ func NewConnectorHandler(connectorService *service.ConnectorService, userService
 	}
 }
 
-// ListConnectors lists connectors for an owned tenant or a requested tenant the caller belongs to.
+// ListConnectors lists connectors owned by a user in the current tenant.
 // @Summary List Connectors
-// @Description Get list of connectors for the current user (equivalent to Python's list_connector)
+// @Description List connectors owned by the current or selected user in the current tenant.
 // @Tags connector
 // @Accept json
 // @Produce json
-// @Param tenant_id query string false "tenant whose connectors are listed"
+// @Param access_user_id query string false "user whose connectors are listed"
 // @Success 200 {object} service.ListConnectorsResponse
 // @Router /connector/list [get]
 func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// List connectors
-	result, err := h.connectorService.ListConnectors(ctx, c.Query("tenant_id"))
+	result, err := h.connectorService.ListConnectors(ctx, c.Query("access_user_id"))
 	if err != nil {
 		if connectorErrorResponse(c, err) {
 			return

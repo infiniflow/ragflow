@@ -269,6 +269,8 @@ type KnowledgebaseDetail struct {
 type KnowledgebaseListItem struct {
 	ID                     string  `json:"id"`
 	Avatar                 *string `json:"avatar"`
+	UserID                 string  `json:"user_id"`
+	CreatedBy              string  `json:"created_by"`
 	Name                   string  `json:"name"`
 	Language               *string `json:"language"`
 	Description            *string `json:"description"`

@@ -35,7 +35,7 @@ export interface NextInnerLLMSelectProps {
   filter?: string;
   triggerTestId?: string;
   optionTestIdPrefix?: string;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
 }
 
 const NextInnerLLMSelect = forwardRef<
@@ -49,7 +49,7 @@ const NextInnerLLMSelect = forwardRef<
       filter,
       triggerTestId,
       optionTestIdPrefix,
-      ownerTenantId,
+      resourceTenantId,
     },
     ref,
   ) => {
@@ -75,7 +75,7 @@ const NextInnerLLMSelect = forwardRef<
       validIds,
       isFetched: ownModelsFetched,
       getPendingMessage,
-    } = useModelValidIds(ModelTypeMap.llm_id, ownerTenantId);
+    } = useModelValidIds(ModelTypeMap.llm_id, resourceTenantId);
     const pendingMessage = value ? getPendingMessage?.(value) : undefined;
     const isModelMissing =
       !!value && !pendingMessage && ownModelsFetched && !validIds.has(value);
@@ -97,12 +97,12 @@ const NextInnerLLMSelect = forwardRef<
                 {isModelMissing ? (
                   <MissingModelLabel
                     value={value}
-                    ownerTenantId={ownerTenantId}
+                    resourceTenantId={resourceTenantId}
                   />
                 ) : (
                   <ModelReferenceLabel
                     value={value}
-                    ownerTenantId={ownerTenantId}
+                    ownerTenantId={resourceTenantId}
                   />
                 )}
               </SelectValue>
@@ -112,7 +112,7 @@ const NextInnerLLMSelect = forwardRef<
             <LlmSettingFieldItems
               modelTypes={modelTypes}
               llmOptionTestIdPrefix={optionTestIdPrefix}
-              ownerTenantId={ownerTenantId}
+              resourceTenantId={resourceTenantId}
             ></LlmSettingFieldItems>
           </PopoverContent>
         </Popover>

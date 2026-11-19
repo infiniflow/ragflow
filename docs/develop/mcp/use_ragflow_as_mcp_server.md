@@ -22,7 +22,7 @@ External MCP client → Go MCP endpoint → RAGFlow services
 | `POST /api/v1/mcp` on the Go API port | Available while the Go API runs | Streamable HTTP with JSON responses | Each client sends its RAGFlow credential in `Authorization`. |
 | `/mcp` on the optional MCP listener | Enable `mcp.enabled` or `RAGFLOW_MCP_ENABLED` | Streamable HTTP; legacy SSE at `/sse` and `/messages/` when enabled | `host` mode authenticates each request; `self-host` mode uses one configured key for all clients. |
 
-For a local binary, start the API with `bin/ragflow_server --api --config conf/service_conf.yaml`. The target Go API port is `9380`, so its direct endpoint is `http://127.0.0.1:9380/api/v1/mcp`. Use the configured address if your port or reverse proxy differs. This API route accepts POST requests; it does not provide the legacy SSE paths.
+For a local binary, start the API with `bin/ragflow_server --config conf/service_conf.yaml`. The target Go API port is `9380`, so its direct endpoint is `http://127.0.0.1:9380/api/v1/mcp`. Use the configured address if your port or reverse proxy differs. This API route accepts POST requests; it does not provide the legacy SSE paths.
 
 ## Enable the optional MCP listener
 
@@ -39,7 +39,7 @@ mcp:
   json_response: true
 ```
 
-Start the Go API with `bin/ragflow_server --api --config conf/service_conf.yaml`. The listener's Streamable HTTP URL is `http://127.0.0.1:9382/mcp`. If SSE is enabled, legacy clients use `http://127.0.0.1:9382/sse` and send messages to `/messages/`.
+Start the Go API with `bin/ragflow_server --config conf/service_conf.yaml`. The listener's Streamable HTTP URL is `http://127.0.0.1:9382/mcp`. If SSE is enabled, legacy clients use `http://127.0.0.1:9382/sse` and send messages to `/messages/`.
 
 Environment variables override YAML settings:
 

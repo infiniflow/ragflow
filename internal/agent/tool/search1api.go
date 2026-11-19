@@ -28,8 +28,6 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-
-	"ragflow/internal/tokenizer"
 )
 
 const search1APIToolName = "search1api_search"
@@ -319,7 +317,7 @@ func (s *Search1APITool) BuildComponentOutputs(envelope map[string]any) map[stri
 	results := envelopeSlice(envelope, "results")
 	chunks, _ := buildSearch1APIReferences(envelope)
 	return map[string]any{
-		"formalized_content": renderSearch1APIReferences(chunks, search1APIPromptMaxTokens),
+		"formalized_content": renderSearchReferences(chunks, search1APIPromptMaxTokens),
 		"json":               results,
 	}
 }
@@ -336,16 +334,16 @@ func buildSearch1APIReferences(envelope map[string]any) ([]map[string]any, []map
 		if !ok {
 			continue
 		}
-		content := search1APIText(result["content"])
+		content := searchReferenceText(result["content"])
 		if content == "" {
-			content = search1APIText(result["snippet"])
+			content = searchReferenceText(result["snippet"])
 		}
 		content = truncateSearch1APIRunes(strings.Join(strings.Fields(content), " "), 10000)
 		if content == "" {
 			continue
 		}
-		title := search1APIText(result["title"])
-		resultURL := search1APIText(result["link"])
+		title := searchReferenceText(result["title"])
+		resultURL := searchReferenceText(result["link"])
 		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
@@ -367,35 +365,6 @@ func buildSearch1APIReferences(envelope map[string]any) ([]map[string]any, []map
 		})
 	}
 	return chunks, docAggs
-}
-
-func renderSearch1APIReferences(chunks []map[string]any, maxTokens int) string {
-	usedTokens := 0
-	blocks := make([]string, 0, len(chunks))
-	for _, chunk := range chunks {
-		content := search1APIText(chunk["content"])
-		usedTokens += tokenizer.NumTokensFromString(content)
-		blocks = append(blocks, strings.Join([]string{
-			"\nID: " + search1APIText(chunk["id"]),
-			"├── Title: " + strings.Join(strings.Fields(search1APIText(chunk["document_name"])), " "),
-			"├── URL: " + search1APIText(chunk["url"]),
-			"└── Content:\n" + content,
-		}, "\n"))
-		if maxTokens > 0 && float64(maxTokens)*0.97 < float64(usedTokens) {
-			break
-		}
-	}
-	return strings.Join(blocks, "\n")
-}
-
-func search1APIText(value any) string {
-	if value == nil {
-		return ""
-	}
-	if text, ok := value.(string); ok {
-		return strings.TrimSpace(text)
-	}
-	return strings.TrimSpace(fmt.Sprint(value))
 }
 
 func truncateSearch1APIRunes(value string, limit int) string {

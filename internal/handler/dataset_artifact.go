@@ -449,6 +449,10 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	}
 	datasetID := c.Param("dataset_id")
 	documentID := c.Param("document_id")
+	if err := service.CheckDocumentAccess(c.Request.Context(), documentID, datasetID, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, true)
+		return
+	}
 	resp, err := h.svc.GetDocumentGraph(c.Request.Context(), service.DocumentStructureGraphInput{
 		TenantID:   tenantID,
 		DatasetID:  datasetID,
@@ -477,6 +481,10 @@ func (h *DatasetArtifactHandler) GetDocumentClaims(c *gin.Context) {
 	}
 	datasetID := c.Param("dataset_id")
 	documentID := c.Param("document_id")
+	if err := service.CheckDocumentAccess(c.Request.Context(), documentID, datasetID, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, true)
+		return
+	}
 
 	templateID := strings.TrimSpace(c.Query("template_id"))
 	var chunkIDs []string

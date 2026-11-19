@@ -145,7 +145,12 @@ describe('useModelValidIds', () => {
       const { wrapper, queryClient } = createWrapper();
       const { result } = renderHook(
         () =>
-          useModelValidIds(['chat'], ownerTenantId, includeAdditionalValidIds),
+          useModelValidIds(
+            ['chat'],
+            ownerTenantId,
+            undefined,
+            includeAdditionalValidIds,
+          ),
         { wrapper },
       );
 

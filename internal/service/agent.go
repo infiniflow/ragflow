@@ -522,7 +522,8 @@ type AgentFiltersResponse struct {
 // agents page filter bar. Mirrors the ?type=filter branch of Python
 // agent_api.list_agents. A non-empty canvasCategory scopes the owner counts
 // to one tab: canvas categories aggregate only that category's canvases,
-// while CompilationTemplateGroupCategory reports the tenant's groups.
+// while CompilationTemplateGroupCategory reports the caller's groups in the
+// active tenant.
 func (s *AgentService) ListAgentFilters(ctx context.Context, canvasCategory string) (*AgentFiltersResponse, common.ErrorCode, error) {
 	userID := permission.UserIDFromContext(ctx)
 	if canvasCategory == CompilationTemplateGroupCategory {
@@ -552,7 +553,11 @@ func (s *AgentService) ListAgentFilters(ctx context.Context, canvasCategory stri
 	// canvas-category request never includes them.
 	groupCount := int64(0)
 	if canvasCategory == "" {
-		groupCount, err = s.compilationTemplateGroupDAO.CountSavedByTenant(ctx, dao.DB, userID)
+		tenantID, tenantErr := requireCurrentTenantID(ctx)
+		if tenantErr != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to resolve current tenant: %w", tenantErr)
+		}
+		groupCount, err = s.compilationTemplateGroupDAO.CountSavedByTenantAndUser(ctx, dao.DB, tenantID, userID)
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to count compilation template groups: %w", err)
 		}
@@ -604,12 +609,15 @@ func (s *AgentService) ListAgentFilters(ctx context.Context, canvasCategory stri
 	return resp, common.CodeSuccess, nil
 }
 
-// listCompilationGroupFilters reports the tenant's compilation template groups
-// as the only owner/category option: groups are tenant-owned and carry neither
-// canvas categories nor per-canvas owners.
+// listCompilationGroupFilters reports the caller's compilation template groups
+// in the active tenant as the only owner/category option.
 func (s *AgentService) listCompilationGroupFilters(ctx context.Context) (*AgentFiltersResponse, common.ErrorCode, error) {
 	userID := permission.UserIDFromContext(ctx)
-	groupCount, err := s.compilationTemplateGroupDAO.CountSavedByTenant(ctx, dao.DB, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to resolve current tenant: %w", err)
+	}
+	groupCount, err := s.compilationTemplateGroupDAO.CountSavedByTenantAndUser(ctx, dao.DB, tenantID, userID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to count compilation template groups: %w", err)
 	}
@@ -638,9 +646,6 @@ func toAgentItem(c *dao.UserCanvasListItem) *AgentItem {
 	if c.Nickname != nil {
 		nickname = *c.Nickname
 	}
-	if nickname == "" {
-		nickname = c.TenantID
-	}
 	return &AgentItem{
 		ID:                 c.ID,
 		Avatar:             c.Avatar,
@@ -661,8 +666,7 @@ func toAgentItem(c *dao.UserCanvasListItem) *AgentItem {
 }
 
 // ListAgents returns agent canvases visible to the authenticated caller.
-// Mirrors Python agent_api.list_agents — validates owner_ids against joined tenants,
-// then delegates to the DAO.
+// Mirrors Python agent_api.list_agents, then delegates to the DAO.
 func (s *AgentService) ListAgents(ctx context.Context, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string, canvasCategory, canvasType string, tags []string) (*ListAgentsResponse, common.ErrorCode, error) {
 	userID := permission.UserIDFromContext(ctx)
 	checker := permission.NewDatabaseChecker(dao.DB)
@@ -676,19 +680,6 @@ func (s *AgentService) ListAgents(ctx context.Context, keywords string, page, pa
 	canvasIDs := canvasScope.ResourceIDs
 	if canvasScope.Mode == permission.ScopeNone {
 		canvasIDs = []string{}
-	}
-	if len(ownerIDs) > 0 {
-		for _, id := range ownerIDs {
-			if id == userID {
-				continue
-			}
-			if err := checker.CheckTenant(ctx, id, permission.TenantMember); err != nil {
-				if errors.Is(err, permission.ErrMembershipNotFound) {
-					return nil, common.CodeOperatingError, fmt.Errorf("only authorized owner_ids can be queried")
-				}
-				return nil, common.CodeServerError, fmt.Errorf("validate agent owner_id: %w", err)
-			}
-		}
 	}
 	effectiveOwnerIDs := ownerIDs
 
@@ -770,7 +761,11 @@ func (s *AgentService) ListAgents(ctx context.Context, keywords string, page, pa
 // (Python canvas_category == ["compilation_template_group"] branch).
 func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
 	userID := permission.UserIDFromContext(ctx)
-	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, userID, keywords, "", terms)
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to resolve current tenant: %w", err)
+	}
+	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, tenantID, userID, keywords, "", terms)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
 	}
@@ -793,7 +788,11 @@ func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, keywords string
 // agent-before-group order when timestamps are equal.
 func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, agentItems []*AgentItem, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
 	userID := permission.UserIDFromContext(ctx)
-	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, userID, keywords, "", terms)
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to resolve current tenant: %w", err)
+	}
+	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, tenantID, userID, keywords, "", terms)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
 	}
@@ -2680,7 +2679,10 @@ func (s *AgentService) createAgentRunSession(
 	if userID == "" {
 		return permission.ErrUnauthenticated
 	}
-	source := "agent"
+	source := string(entity.AgentSessionSourceAgent)
+	if channelRun, _ := ctx.Value(channelAgentRunContextKey{}).(bool); channelRun {
+		source = string(entity.AgentSessionSourceChatChannel)
+	}
 	name := deriveAgentSessionName(userInput)
 	if channelName := agentChannelNameFromContext(ctx); channelName != "" {
 		name = channelSessionName(name, channelName)
