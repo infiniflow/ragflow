@@ -14,14 +14,6 @@
  *  limitations under the License.
  */
 
-import {
-  ProcessingType as PrivateProcessingType,
-  GenerateType as PrivateGenerateType,
-  TraceType as PrivateTraceType,
-  ProcessingTypeMap as PrivateProcessingTypeMap,
-  GenerateTypeMap as PrivateGenerateTypeMap,
-} from '@/ee/constants/knowledge';
-
 export enum KnowledgeRouteKey {
   Dataset = 'dataset',
   Testing = 'testing',
@@ -158,12 +150,13 @@ export enum ParseType {
   Pipeline = 2,
 }
 
-enum BaseProcessingType {
+export enum ProcessingType {
   knowledgeGraph = 'Graph',
   raptor = 'RAPTOR',
   artifact = 'wiki',
   skill = 'Skill',
   mindmap = 'Mindmap',
+  timeline = 'Timeline',
   sessionEssence = 'Session_Essence',
   sessionGraph = 'Session_Graph',
   // Task types written by the Go knowledge-compile pipeline
@@ -173,20 +166,13 @@ enum BaseProcessingType {
   pageIndex = 'PageIndex',
 }
 
-export const ProcessingType = {
-  ...BaseProcessingType,
-  ...PrivateProcessingType,
-};
-export type ProcessingType =
-  (typeof ProcessingType)[keyof typeof ProcessingType];
-
 export const ProcessingTypeMap = {
   [ProcessingType.knowledgeGraph]: 'Knowledge Graph',
   [ProcessingType.raptor]: 'RAPTOR',
   [ProcessingType.artifact]: 'Artifact',
   [ProcessingType.skill]: 'Skill',
   [ProcessingType.mindmap]: 'Mind Map',
-  ...PrivateProcessingTypeMap,
+  [ProcessingType.timeline]: 'Timeline',
   [ProcessingType.sessionEssence]: 'Session Essence',
   [ProcessingType.sessionGraph]: 'Session Graph',
   GraphRAG: 'Knowledge Graph',
@@ -199,31 +185,27 @@ export enum GenerateStatus {
   Failed = 'failed',
 }
 
-enum BaseGenerateType {
+export enum GenerateType {
   KnowledgeGraph = 'KnowledgeGraph',
   Raptor = 'Raptor',
   Artifact = 'Artifact',
   ToSkills = 'ToSkills',
   MindMap = 'MindMap',
+  Timeline = 'Timeline',
   SessionEssence = 'SessionEssence',
   SessionGraph = 'SessionGraph',
 }
 
-export const GenerateType = { ...BaseGenerateType, ...PrivateGenerateType };
-export type GenerateType = (typeof GenerateType)[keyof typeof GenerateType];
-
-enum BaseTraceType {
+export enum TraceType {
   Graph = 'graph',
   Raptor = 'raptor',
   Artifact = 'wiki',
   Skill = 'skill',
   MindMap = 'mindmap',
+  Timeline = 'timeline',
   SessionEssence = 'session_essence',
   SessionGraph = 'session_graph',
 }
-
-export const TraceType = { ...BaseTraceType, ...PrivateTraceType };
-export type TraceType = (typeof TraceType)[keyof typeof TraceType];
 
 export const GenerateTypeMap = {
   [GenerateType.KnowledgeGraph]: ProcessingType.knowledgeGraph,
@@ -231,7 +213,7 @@ export const GenerateTypeMap = {
   [GenerateType.Artifact]: ProcessingType.artifact,
   [GenerateType.ToSkills]: ProcessingType.skill,
   [GenerateType.MindMap]: ProcessingType.mindmap,
-  ...PrivateGenerateTypeMap,
+  [GenerateType.Timeline]: ProcessingType.timeline,
   [GenerateType.SessionEssence]: ProcessingType.sessionEssence,
   [GenerateType.SessionGraph]: ProcessingType.sessionGraph,
 };

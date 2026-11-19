@@ -16,9 +16,9 @@ jest.mock('../mindmap-g6-graph', () => ({
   __esModule: true,
   default: () => null,
 }));
-jest.mock('@/ee/components/structure-graph/representation-renderer', () => ({
+jest.mock('../timeline-x6-graph', () => ({
   __esModule: true,
-  renderRepresentation: () => null,
+  default: () => null,
 }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),

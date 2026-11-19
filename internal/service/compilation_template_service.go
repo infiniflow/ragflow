@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -31,6 +32,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 
@@ -302,7 +304,13 @@ func loadBuiltinTemplates() ([]*BuiltinTemplate, error) {
 		return nil, err
 	}
 	extra, err := additionalBuiltinTemplates()
-	return append(templates, extra...), err
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(append(templates, extra...), func(template *BuiltinTemplate) bool {
+		_, err := kccommon.KindToVariant(template.Kind)
+		return err != nil
+	}), nil
 }
 
 func loadBuiltinTemplatesFromFS(files fs.FS) ([]*BuiltinTemplate, error) {

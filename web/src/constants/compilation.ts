@@ -17,6 +17,7 @@
 export const enum CompilationTemplateKind {
   Artifacts = 'wiki',
   KnowledgeGraph = 'knowledge_graph',
+  Timeline = 'timeline',
   PageIndex = 'page_index',
   Tree = 'tree',
   Empty = 'empty',

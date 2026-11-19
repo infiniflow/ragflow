@@ -1,10 +1,6 @@
-import { CompilationTemplateKind as PrivateCompilationTemplateKind } from '@/ee/constants/compilation';
 import { CompilationTemplateKind } from '@/constants/compilation';
 
-export type StructureTemplateKind =
-  | CompilationTemplateKind
-  | (typeof PrivateCompilationTemplateKind)[keyof typeof PrivateCompilationTemplateKind]
-  | 'raptor';
+export type StructureTemplateKind = CompilationTemplateKind | 'raptor';
 
 export interface IStructureGraphEntity {
   id?: string;
