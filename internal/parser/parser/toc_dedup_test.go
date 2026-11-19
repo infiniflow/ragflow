@@ -46,7 +46,7 @@ func BenchmarkRemoveContentsTableDegenerate(b *testing.B) {
 		b.StopTimer()
 		copy(work, base)
 		b.StartTimer()
-		removeContentsTable(work, true, plainTOCRules)
+		removeContentsTable(work, true)
 	}
 }
 
@@ -58,7 +58,7 @@ func BenchmarkRemoveContentsTableLarge(b *testing.B) {
 		b.StopTimer()
 		copy(work, base)
 		b.StartTimer()
-		removeContentsTable(work, false, plainTOCRules)
+		removeContentsTable(work, false)
 	}
 }
 
@@ -72,7 +72,7 @@ func TestRemoveContentsTableClearsTail(t *testing.T) {
 		{"text": "第一章 方法"},
 		{"text": "正文"},
 	}
-	out := removeContentsTable(items, false, plainTOCRules)
+	out := removeContentsTable(items, false)
 	w := len(out)
 	// `items` shares the backing array; positions [w:] were removed and must
 	// be cleared so the dropped maps are not retained by the backing array.
@@ -101,6 +101,6 @@ func BenchmarkRemoveContentsTableNoHeading(b *testing.B) {
 		b.StopTimer()
 		copy(work, base)
 		b.StartTimer()
-		removeContentsTable(work, false, plainTOCRules)
+		removeContentsTable(work, false)
 	}
 }
