@@ -110,7 +110,10 @@ export function ScoredSwitchTasks({
               write(
                 tasks.map((item) =>
                   item.id === task.id
-                    ? { ...item, instructions: value ?? '' }
+                    ? {
+                        ...item,
+                        instructions: typeof value === 'string' ? value : '',
+                      }
                     : item,
                 ),
               )

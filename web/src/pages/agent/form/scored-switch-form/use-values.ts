@@ -19,6 +19,7 @@ export function useValues(node?: RAGFlowNodeType) {
     return {
       ...initialScoredSwitchValues,
       ...formData,
+      llm_id: typeof formData.llm_id === 'string' ? formData.llm_id : undefined,
       items,
       field_mode: formData.field_mode === true,
       reference_date: formData.reference_date ?? '',

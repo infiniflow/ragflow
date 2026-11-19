@@ -169,7 +169,9 @@ export function ScoredSwitchFields({
             value={task.instructions}
             placeholder={t('scoredSwitchQuestionInstructions')}
             onChange={(value) =>
-              patch(task._key ?? task.id, { instructions: value ?? '' })
+              patch(task._key ?? task.id, {
+                instructions: typeof value === 'string' ? value : '',
+              })
             }
           />
           {(task.type === 'number' || task.type === 'duration') && (

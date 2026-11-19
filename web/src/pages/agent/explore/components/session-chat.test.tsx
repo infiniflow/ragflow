@@ -85,16 +85,16 @@ function renderSessionChat(options: {
   isNew?: boolean;
   session?: { id: string; source: string | null; message: unknown[] };
 }) {
-  const {
-    sessionId = 'session-1',
-    isNew = false,
-    session = {
-      id: sessionId,
-      source: AgentSessionSource.Agent,
-      message: [],
-    },
-  } = options;
-  mockUseExploreUrlParams.mockReturnValue({ sessionId, isNew });
+  const { sessionId, isNew } = { sessionId: 'session-1', ...options };
+  const session = options.session ?? {
+    id: sessionId,
+    source: AgentSessionSource.Agent,
+    message: [],
+  };
+  mockUseExploreUrlParams.mockReturnValue({
+    sessionId,
+    isNew: isNew ? 'true' : undefined,
+  });
 
   render(<SessionChat session={session as never} />);
 
