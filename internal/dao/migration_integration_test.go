@@ -159,6 +159,100 @@ func TestModifyColumnTypesHealsLegacyTenantModelIDColumns_Integration(t *testing
 	}
 }
 
+// TestRunMigrationsKeepsModelReferencesWhenWidening_Integration runs the whole
+// startup migration pass over the schema that predates gp- group references: the
+// model-reference column is still varchar(32) and already holds a 32-character
+// model id. Widening it to varchar(35) changes the column type, and a type change
+// is what triggers the orphan sweep, so a sweep keyed on the new width alone
+// would erase every valid legacy id. The pass must keep that id, and it must keep
+// the gp- reference the wider column exists for.
+func TestRunMigrationsKeepsModelReferencesWhenWidening_Integration(t *testing.T) {
+	dsn := os.Getenv("RAGFLOW_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("RAGFLOW_TEST_MYSQL_DSN unset: this test needs a throwaway MySQL database")
+	}
+
+	db, err := gorm.Open(newMigrationAwareDialector(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get database connection pool: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("failed to close database connection pool: %v", err)
+		}
+	})
+
+	ctx := context.Background()
+	if db.WithContext(ctx).Migrator().HasTable("dialog") {
+		t.Skip("test database already contains dialog; use a throwaway database")
+	}
+
+	// tenant_rerank_id starts wider than tenant_llm_id because a varchar(32)
+	// column cannot store the 35-character reference this test protects.
+	create := `CREATE TABLE dialog (
+		id varchar(32) NOT NULL,
+		tenant_llm_id varchar(32) DEFAULT NULL,
+		tenant_rerank_id varchar(35) DEFAULT NULL,
+		PRIMARY KEY (id)
+	)`
+	if err = db.WithContext(ctx).Exec(create).Error; err != nil {
+		t.Fatalf("failed to create legacy dialog: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.WithContext(context.Background()).Exec("DROP TABLE IF EXISTS dialog").Error; err != nil {
+			t.Errorf("failed to drop dialog test table: %v", err)
+		}
+	})
+	// RunMigrations covers far more than these columns, so it also creates
+	// tables this test never touches. Every other test in this file asserts that
+	// its tables are absent before it starts, so the pass has to leave the
+	// schema as empty as it found it.
+	tablesBefore := tableNames(t, db)
+	t.Cleanup(func() { dropTablesAddedSince(t, db, tablesBefore) })
+
+	legacyID := strings.Repeat("a", tenantModelIDLength)
+	groupRef := "gp-" + strings.Repeat("b", tenantModelIDLength)
+	if len(groupRef) != int(common.GroupModelRefWidth) {
+		t.Fatalf("group ref length = %d, want %d", len(groupRef), common.GroupModelRefWidth)
+	}
+	if err = db.WithContext(ctx).Exec(
+		"INSERT INTO dialog (id, tenant_llm_id, tenant_rerank_id) VALUES ('d1', ?, ?)",
+		legacyID, groupRef,
+	).Error; err != nil {
+		t.Fatalf("failed to seed dialog: %v", err)
+	}
+
+	// Run twice: the first pass widens the legacy column, the second proves a
+	// steady-state startup neither re-types nor re-sweeps it.
+	for pass := 1; pass <= 2; pass++ {
+		if err = RunMigrations(ctx, db); err != nil {
+			t.Fatalf("RunMigrations pass %d failed: %v", pass, err)
+		}
+		for _, column := range []string{"tenant_llm_id", "tenant_rerank_id"} {
+			if got := columnLength(t, db, &entity.Chat{}, column); got != common.GroupModelRefWidth {
+				t.Errorf("pass %d: %s width = %d, want %d", pass, column, got, common.GroupModelRefWidth)
+			}
+		}
+
+		var storedLLM, storedRerank string
+		if err = db.WithContext(ctx).Raw(
+			"SELECT tenant_llm_id, tenant_rerank_id FROM dialog WHERE id = 'd1'",
+		).Row().Scan(&storedLLM, &storedRerank); err != nil {
+			t.Fatalf("pass %d: read dialog: %v", pass, err)
+		}
+		if storedLLM != legacyID {
+			t.Errorf("pass %d: 32-character model id became %q", pass, storedLLM)
+		}
+		if storedRerank != groupRef {
+			t.Errorf("pass %d: gp- reference became %q", pass, storedRerank)
+		}
+	}
+}
+
 func TestMigrateKnowledgeCompileQueues_Integration(t *testing.T) {
 	dsn := os.Getenv("RAGFLOW_TEST_MYSQL_DSN")
 	if dsn == "" {
@@ -517,4 +611,36 @@ func columnLength(t *testing.T, db *gorm.DB, model any, column string) int64 {
 	}
 	t.Fatalf("column %s not found", column)
 	return 0
+}
+
+// tableNames lists the tables of the connected database.
+func tableNames(t *testing.T, db *gorm.DB) []string {
+	t.Helper()
+	var names []string
+	if err := db.Raw(
+		"SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()",
+	).Scan(&names).Error; err != nil {
+		t.Fatalf("list tables: %v", err)
+	}
+	return names
+}
+
+// dropTablesAddedSince removes the tables a migration pass created, so a test
+// that runs the whole pass leaves the shared throwaway database as empty as it
+// found it. Table names come from the catalog, so they are quoted as identifiers
+// rather than interpolated as values.
+func dropTablesAddedSince(t *testing.T, db *gorm.DB, before []string) {
+	t.Helper()
+	existed := make(map[string]struct{}, len(before))
+	for _, name := range before {
+		existed[name] = struct{}{}
+	}
+	for _, name := range tableNames(t, db) {
+		if _, ok := existed[name]; ok {
+			continue
+		}
+		if err := db.Exec("DROP TABLE IF EXISTS `" + name + "`").Error; err != nil {
+			t.Errorf("drop table %s: %v", name, err)
+		}
+	}
 }

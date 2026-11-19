@@ -902,6 +902,11 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// tenantModelIDLength is the width of a tenant_model row id. The model-reference
+// columns hold either one of these or a GroupModelRefWidth-long gp-<group_id>
+// reference, so both shapes are valid values in the same column.
+const tenantModelIDLength = 32
+
 // tenantModelIDColumnSpecs projects tenantModelIDFields into column specs for
 // the tenant model id columns. These columns were once declared *int64, so a
 // database built by one of those releases holds them as bigint and the daily
@@ -913,6 +918,11 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 // (35). Declaring the legacy 32 here would narrow every group reference on boot
 // and let the widening migration restore it, so the two would fight over the
 // same columns on every startup.
+//
+// Widening a legacy varchar(32) column to varchar(35) changes its type and so
+// runs the orphan sweep. Both reference shapes must survive that sweep: the
+// 32-character ids already stored and the gp- references the wider column
+// exists for.
 func tenantModelIDColumnSpecs() []columnSpec {
 	tables := tenantModelIDFieldTables()
 
@@ -921,6 +931,7 @@ func tenantModelIDColumnSpecs() []columnSpec {
 		total += len(tenantModelIDFields[table])
 	}
 
+	keepLengths := []int{tenantModelIDLength, int(common.GroupModelRefWidth)}
 	definition := fmt.Sprintf("varchar(%d)", common.GroupModelRefWidth)
 	specs := make([]columnSpec, 0, total)
 	for _, table := range tables {
@@ -929,8 +940,8 @@ func tenantModelIDColumnSpecs() []columnSpec {
 				table:      table,
 				column:     field.tenantIDColumn,
 				columnType: definition, nullable: true,
-				definition: definition,
-				keepLength: int(common.GroupModelRefWidth),
+				definition:  definition,
+				keepLengths: keepLengths,
 			})
 		}
 	}
@@ -1245,7 +1256,13 @@ type columnSpec struct {
 	columnType string // compared against INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE
 	nullable   bool
 	definition string // used verbatim when an ALTER is required
-	keepLength int    // when non-zero, values wider or narrower than this are orphaned by the type change and reset to NULL
+	// keepLengths lists the value lengths that survive the type change this
+	// spec performs. A conversion from a numeric column leaves its old values
+	// behind (an int column keeps "3"), which every reader then treats as an
+	// unresolved model reference rather than as the unset value it has become,
+	// so a value whose length is missing from this list is reset to NULL. An
+	// empty list means the change cannot invalidate values and skips the sweep.
+	keepLengths []int
 }
 
 // applyColumnSpec aligns a column with its expected definition, issuing DDL only
@@ -1291,14 +1308,25 @@ func applyColumnSpec(ctx context.Context, db *gorm.DB, spec columnSpec) error {
 // hex-id column keeps "3", which every reader treats as an unresolved model
 // reference rather than as the unset value it has become.
 //
-// LENGTH() is NULL on NULL rows and NULL <> any number is not true, so rows
+// Only lengths that cannot be a live reference are discarded, which is why the
+// spec carries a set: widening varchar(32) to varchar(35) must keep the
+// 32-character ids already stored while still clearing an int column's
+// leftovers.
+//
+// LENGTH() is NULL on NULL rows and NULL NOT IN (...) is not true, so rows
 // already unset are never counted or rewritten.
 func discardOrphanedColumnValues(ctx context.Context, db *gorm.DB, spec columnSpec) {
-	if spec.keepLength <= 0 {
+	if len(spec.keepLengths) == 0 {
 		return
 	}
 
-	stale := fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE LENGTH(%s) <> %d", spec.table, spec.column, spec.keepLength)
+	accepted := make([]string, 0, len(spec.keepLengths))
+	for _, length := range spec.keepLengths {
+		accepted = append(accepted, fmt.Sprint(length))
+	}
+	keepList := strings.Join(accepted, ", ")
+
+	stale := fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE LENGTH(%s) NOT IN (%s)", spec.table, spec.column, keepList)
 	var count int64
 	if err := db.WithContext(ctx).Raw(stale).Scan(&count).Error; err != nil {
 		common.Warn("Failed to count orphaned values",
@@ -1316,7 +1344,7 @@ func discardOrphanedColumnValues(ctx context.Context, db *gorm.DB, spec columnSp
 		zap.String("column", spec.column),
 		zap.Int64("count", count))
 	result := db.WithContext(ctx).Exec(
-		fmt.Sprintf("UPDATE %s SET %s = NULL WHERE LENGTH(%s) <> %d", spec.table, spec.column, spec.column, spec.keepLength),
+		fmt.Sprintf("UPDATE %s SET %s = NULL WHERE LENGTH(%s) NOT IN (%s)", spec.table, spec.column, spec.column, keepList),
 	)
 	if result.Error != nil {
 		common.Warn("Failed to discard orphaned values",
