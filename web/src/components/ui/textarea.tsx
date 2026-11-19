@@ -31,7 +31,8 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     // chunk of a chat answer.
     const hasAutoSize = !!autoSize;
     const maxRows = autoSize?.maxRows;
-    const rows = autoSize?.minRows ?? props.rows;
+    // `rows` from props wins over minRows: {...props} is spread after it below.
+    const rows = props.rows ?? autoSize?.minRows;
     const getLineHeight = (element: HTMLElement): number => {
       const style = window.getComputedStyle(element);
       return parseInt(style.lineHeight, 10) || 20;

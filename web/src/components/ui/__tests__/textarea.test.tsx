@@ -54,4 +54,26 @@ describe('Textarea autoSize', () => {
     rerender(renderTextarea('hello', 4));
     expect(box.style.height).toBe('auto');
   });
+
+  it('re-measures when rows changes alongside an unchanged minRows', () => {
+    const renderWithRows = (rows: number) => (
+      <Textarea
+        data-testid="box"
+        value="hello"
+        onChange={jest.fn()}
+        resize="none"
+        rows={rows}
+        autoSize={{ minRows: 1, maxRows: 8 }}
+      />
+    );
+    const { rerender } = render(renderWithRows(2));
+    const box = screen.getByTestId('box');
+    expect(box.getAttribute('rows')).toBe('2');
+    box.style.height = '48px';
+
+    rerender(renderWithRows(4));
+
+    expect(box.getAttribute('rows')).toBe('4');
+    expect(box.style.height).toBe('auto');
+  });
 });
