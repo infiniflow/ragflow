@@ -185,3 +185,15 @@ func mustRerankByModel(
 	}
 	return sim, tsim, vsim
 }
+
+func TestRerankByModel_OmittedCandidateDoesNotOutrankReturnedLogits(t *testing.T) {
+	driver := &scoringDriver{results: []models.RerankResult{
+		{Index: 2, RelevanceScore: -2}, {Index: 0, RelevanceScore: -4},
+	}}
+	ids := []string{"other", "omitted", "match"}
+	model := models.NewRerankModel(driver, nil, nil, 0)
+	_, _, scores := mustRerankByModel(t, model, chunksFor(ids), ids, nil, "match", 0, 1, nil, nil)
+	if !floatsClose(scores, []float64{0, 0, 1}, 1e-9) {
+		t.Fatalf("model scores = %v, want [0 0 1]", scores)
+	}
+}
