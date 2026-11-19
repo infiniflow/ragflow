@@ -141,6 +141,46 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 	return make(map[string]interface{}), nil
 }
 
+// GetDocumentMetadataByIDs returns metadata for a batch of documents in one
+// dataset, sharing the tenant and index lookups across all of them.
+func (s *DocumentService) GetDocumentMetadataByIDs(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error) {
+	out := make(map[string]map[string]interface{}, len(docIDs))
+	if len(docIDs) == 0 {
+		return out, nil
+	}
+	// Retry the whole tenant-lookup + index-search unit once: a transient
+	// failure in either step would otherwise clear metadata for every doc in
+	// the batch.
+	search := func() (*service.SearchMetadataResponse, error) {
+		tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, kbID)
+		if err != nil {
+			return nil, err
+		}
+		return s.metadataSvc.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
+	}
+	result, err := search()
+	if err != nil {
+		result, err = search()
+		if err != nil {
+			return out, err
+		}
+	}
+	seen := make(map[string]bool, len(result.MetadataRecords))
+	for _, record := range result.MetadataRecords {
+		docID, ok := service.ExtractDocumentID(record)
+		if !ok || docID == "" || seen[docID] {
+			continue
+		}
+		seen[docID] = true
+		fields, err := service.ExtractMetaFields(record)
+		if err != nil {
+			fields = map[string]interface{}{}
+		}
+		out[docID] = fields
+	}
+	return out, nil
+}
+
 // GetMetadataByKBs get metadata for knowledge bases
 func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) (map[string]interface{}, error) {
 	if len(kbIDs) == 0 {
