@@ -11,7 +11,7 @@ jest.mock('@/hooks/common-hooks', () => ({
 
 import ProcessLogModal from './process-log-modal';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { formatTime } from '@/utils/date';
+import dayjs from 'dayjs';
 
 const eventTs = '2026-09-18T10:20:30+08:00';
 const MissingFileMessage =
@@ -77,7 +77,7 @@ describe('ProcessLogModal ingestion events', () => {
 
     const times = screen.getAllByTestId('ingestion-event-time');
     expect(times).toHaveLength(3);
-    expect(times[0].textContent).toBe(formatTime(eventTs));
+    expect(times[0].textContent).toBe(dayjs(eventTs).format('HH:mm:ss'));
     expect(
       screen.getByText('[WARN] LLM call failed; retrying in 2s'),
     ).toHaveClass('text-state-warning');
