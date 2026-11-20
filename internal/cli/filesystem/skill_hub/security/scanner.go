@@ -203,6 +203,10 @@ func logicalLines(content string) []logicalLine {
 	return lines
 }
 
+// maxSplitDepth bounds env -S recursion: every level strips at least its own
+// `-S`, so a hostile line would otherwise grow the stack with its length.
+const maxSplitDepth = 8
+
 // scanQuotedRmExpansion is a quote-aware pass that stays out of
 // ThreatPatterns: a regular expression over the raw line cannot track quote
 // and escape state across an operand. It flags a recursive rm operand that
@@ -220,6 +224,10 @@ func logicalLines(content string) []logicalLine {
 // (`case x) rm ...;;`), and a case arm starts a command of its own even inside
 // a substitution.
 func scanQuotedRmExpansion(line string) (string, bool) {
+	return scanQuotedRmExpansionDepth(line, 0)
+}
+
+func scanQuotedRmExpansionDepth(line string, depth int) (string, bool) {
 	code := shellCodeMask(line)
 	var frames []parenFrame
 	var chain prefixChain
@@ -248,7 +256,7 @@ func scanQuotedRmExpansion(line string) (string, bool) {
 			}
 		}
 		wasSkipping := skipWord
-		operand, found, lastWordEnd, nextChain, nextInCase := scanCommandSegment(line, start, i, chain, inCase, skipWord)
+		operand, found, lastWordEnd, nextChain, nextInCase := scanCommandSegment(line, start, i, chain, inCase, skipWord, depth)
 		chain, inCase, skipWord = nextChain, nextInCase, false
 		if found {
 			return operand, true
@@ -340,7 +348,8 @@ func isWordBreak(c byte) bool {
 // once a word is not a prefix, no later rm of the same command is reachable
 // and `echo rm -rf ...` stays inert, while `sudo -u root rm ...` is inspected.
 // skipWord drops the leading fragment of a word a substitution continued.
-func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, skipWord bool) (string, bool, int, prefixChain, bool) {
+// depth bounds the env -S rescan of the command string it splices in.
+func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, skipWord bool, depth int) (string, bool, int, prefixChain, bool) {
 	first := true
 	sawCase := false
 	lastWordEnd := 0
@@ -348,6 +357,22 @@ func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, 
 		lastWordEnd = word.end
 		if skipWord {
 			skipWord = false
+			continue
+		}
+		if value, ok := chain.takeSplitString(word.text); ok {
+			// env -S splices its value into the command and keeps the rest of
+			// the line as further arguments, so both halves run as one command.
+			rest := value
+			if tail := strings.TrimSpace(line[word.end:end]); tail != "" {
+				rest += " " + tail
+			}
+			chain.broken = true
+			chain.wrapper = ""
+			if depth < maxSplitDepth {
+				if operand, found := scanQuotedRmExpansionDepth(rest, depth+1); found {
+					return operand, true, lastWordEnd, chain, inCase
+				}
+			}
 			continue
 		}
 		if !chain.broken && !chain.wrapperConsumes(word.text) {
@@ -454,6 +479,7 @@ func quotedRmOperand(line string, after, end int) (string, bool) {
 type prefixChain struct {
 	wrapper string // wrapper whose option list is still being read
 	pending bool   // the last option of wrapper waits for its value
+	split   bool   // the pending value is env's split command string
 	broken  bool
 }
 
@@ -463,6 +489,7 @@ func (c *prefixChain) feed(word string) {
 	}
 	if c.wrapper != "" && !c.takeWrapperWord(word) {
 		c.wrapper = ""
+		c.split = false
 	}
 	if c.wrapper != "" {
 		return
@@ -483,7 +510,9 @@ func (c *prefixChain) wrapperConsumes(word string) bool {
 	if c.wrapper == "" {
 		return false
 	}
-	if c.pending && !strings.HasPrefix(word, "-") {
+	if c.pending {
+		// A required value is taken as written even when it looks like an
+		// option: `xargs -I -n rm` uses -n as the replacement string.
 		return true
 	}
 	if strings.HasPrefix(word, "-") {
@@ -498,15 +527,82 @@ func (c *prefixChain) takeWrapperWord(word string) bool {
 	if !c.wrapperConsumes(word) {
 		return false
 	}
-	if c.pending && !strings.HasPrefix(word, "-") {
+	if c.pending {
 		c.pending = false
 		return true
 	}
 	if strings.HasPrefix(word, "-") {
 		c.pending = wrapperOptionTakesValue(c.wrapper, word)
+		c.split = c.pending && isSplitStringOption(c.wrapper, word)
 		return true
 	}
 	return true
+}
+
+// takeSplitString reports the command line env would run for word. env -S and
+// --split-string splice their value into the command, so the value starts the
+// command instead of hiding behind a metadata option.
+func (c *prefixChain) takeSplitString(word string) (string, bool) {
+	if c.broken {
+		return "", false
+	}
+	if c.split {
+		c.pending, c.split = false, false
+		return unquoteShellWord(word), true
+	}
+	if c.wrapper != "env" || c.pending {
+		return "", false
+	}
+	if strings.HasPrefix(word, "--split-string=") {
+		return unquoteShellWord(word[len("--split-string="):]), true
+	}
+	if strings.HasPrefix(word, "-S") && len(word) > 2 {
+		return unquoteShellWord(word[2:]), true
+	}
+	return "", false
+}
+
+// isSplitStringOption reports whether option makes env splice its value into
+// the command it runs.
+func isSplitStringOption(wrapper, option string) bool {
+	return wrapper == "env" && (option == "-S" || option == "--split-string")
+}
+
+// unquoteShellWord removes the quoting the shell applies to one word, leaving
+// the text the wrapped program receives.
+func unquoteShellWord(word string) string {
+	var b strings.Builder
+	for i := 0; i < len(word); i++ {
+		switch word[i] {
+		case '\'':
+			for i++; i < len(word) && word[i] != '\''; i++ {
+				b.WriteByte(word[i])
+			}
+		case '"':
+			for i++; i < len(word); i++ {
+				if word[i] == '\\' && i+1 < len(word) {
+					switch word[i+1] {
+					case '"', '\\', '$', '`':
+						i++
+						b.WriteByte(word[i])
+						continue
+					}
+				}
+				if word[i] == '"' {
+					break
+				}
+				b.WriteByte(word[i])
+			}
+		case '\\':
+			if i+1 < len(word) {
+				i++
+				b.WriteByte(word[i])
+			}
+		default:
+			b.WriteByte(word[i])
+		}
+	}
+	return b.String()
 }
 
 // shellWordSpan is one word of a command segment with its byte offsets.
