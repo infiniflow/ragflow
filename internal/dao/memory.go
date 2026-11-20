@@ -269,7 +269,7 @@ func (dao *MemoryDAO) GetWithOwnerNameByID(ctx context.Context, db *gorm.DB, id 
 			m.update_time, m.update_date,
 			u.nickname as owner_name
 		FROM memory m
-		LEFT JOIN user u ON m.user_id = u.id
+		LEFT JOIN user u ON COALESCE(NULLIF(m.user_id, ''), m.tenant_id) = u.id
 		WHERE m.id = ?
 	`
 
@@ -361,7 +361,7 @@ func (dao *MemoryDAO) GetByFilter(ctx context.Context, db *gorm.DB, memoryIDs, o
 			m.update_time, m.update_date,
 			u.nickname as owner_name
 		FROM memory m
-		LEFT JOIN user u ON m.user_id = u.id
+		LEFT JOIN user u ON COALESCE(NULLIF(m.user_id, ''), m.tenant_id) = u.id
 		%s
 		ORDER BY m.create_time DESC
 	`, whereClause)
