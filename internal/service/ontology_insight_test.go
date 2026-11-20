@@ -120,7 +120,9 @@ func TestBuildCompetencyCoverageSeparatesMissingFromUndeclared(t *testing.T) {
 		},
 	}
 
-	coverage, required, satisfied := buildCompetencyCoverage(questions, graph)
+	coverage, required, satisfied := buildCompetencyCoverage(questions, graph, declaredOntology{
+		classes: map[string]declaredClass{"contract": {}, "vendor": {}},
+	})
 	if required != 5 || satisfied != 2 {
 		t.Fatalf("expected 2/5 required elements, got %d/%d", satisfied, required)
 	}
@@ -142,6 +144,88 @@ func TestBuildCompetencyCoverageSeparatesMissingFromUndeclared(t *testing.T) {
 	}
 	if _, ok := reasons["person"]; !ok {
 		t.Error("an optional element must still be reported")
+	}
+}
+
+func TestBuildCompetencyCoverageWithoutElementsIsNotAnswerable(t *testing.T) {
+	// A question whose elements were never derived has nothing to satisfy. 0 == 0
+	// must not read as "answerable": that reports a promise the model never made
+	// and lets a missed derivation pass as a measured one.
+	questions := []CompetencyQuestion{{ID: "CQ-1", Question: "哪些合同金额超过审批阈值？"}}
+	coverage, required, satisfied := buildCompetencyCoverage(
+		questions, &OntologyGraph{}, declaredOntology{classes: map[string]declaredClass{}},
+	)
+	if required != 0 || satisfied != 0 {
+		t.Fatalf("expected nothing to count, got %d/%d", satisfied, required)
+	}
+	if coverage[0].Answerable {
+		t.Error("a question with no required element must not be answerable")
+	}
+}
+
+func TestCoverageWithoutRequiredElementsIsNotAPass(t *testing.T) {
+	// No questions at all is a pass — the model promised nothing. A question with
+	// no elements is not: the denominator is empty because the tracing never ran,
+	// and 100% would hide exactly that.
+	if got := (OntologyInsightPayload{}).Coverage(); got != 1 {
+		t.Errorf("an empty question set must be a pass, got %v", got)
+	}
+	payload := OntologyInsightPayload{Questions: []CompetencyQuestionCoverage{{ID: "CQ-1"}}}
+	if got := payload.Coverage(); got != 0 {
+		t.Errorf("an untraced question must not read as full coverage, got %v", got)
+	}
+}
+
+func TestQuestionsWithoutRequiredElements(t *testing.T) {
+	questions := []CompetencyQuestion{
+		{ID: "CQ-1", Elements: []CompetencyElement{{Kind: competencyClass, Name: "contract", Required: true}}},
+		{ID: "CQ-2", Elements: []CompetencyElement{{Kind: competencyClass, Name: "person", Required: false}}},
+		{ID: "CQ-3"},
+	}
+	got := questionsWithoutRequiredElements(questions)
+	if len(got) != 2 || got[0] != "CQ-2" || got[1] != "CQ-3" {
+		t.Fatalf("expected [CQ-2 CQ-3], got %v", got)
+	}
+}
+
+func TestBuildCompetencyCoverageReadsDraftDeclarations(t *testing.T) {
+	// The graph is built from the published snapshot, which predates a draft
+	// edit. An element the draft declares must read "declared, no rows" — the
+	// author needs to recompile — not "not declared", which would send them back
+	// to the canvas to add what is already there.
+	graph := &OntologyGraph{Classes: []OntologyClassNode{{Type: "person", Entities: 3, Declared: true}}}
+	declared := declaredOntology{
+		classes: map[string]declaredClass{"invoice": {}},
+		props: map[string]declaredProperty{
+			"amount":  {kind: "datatype", domains: []string{"invoice"}},
+			"paid_by": {kind: "object", domains: []string{"invoice"}, ranges: []string{"person"}},
+		},
+	}
+	questions := []CompetencyQuestion{{
+		ID: "CQ-1",
+		Elements: []CompetencyElement{
+			{Kind: competencyClass, Name: "invoice", Required: true},
+			{Kind: competencyProperty, Name: "invoice.amount", Required: true},
+			{Kind: competencyRelation, Name: "invoice->person", Required: true},
+			{Kind: competencyClass, Name: "ghost", Required: true},
+		},
+	}}
+
+	coverage, required, satisfied := buildCompetencyCoverage(questions, graph, declared)
+	if required != 4 || satisfied != 0 {
+		t.Fatalf("expected 0/4 required elements, got %d/%d", satisfied, required)
+	}
+	reasons := map[string]string{}
+	for _, element := range coverage[0].Elements {
+		reasons[element.Name] = element.Reason
+	}
+	for _, name := range []string{"invoice", "invoice.amount", "invoice->person"} {
+		if reasons[name] != "not_extracted" {
+			t.Errorf("%s: draft-declared but unmeasured must be not_extracted, got %q", name, reasons[name])
+		}
+	}
+	if reasons["ghost"] != "undeclared" {
+		t.Errorf("a class neither side declares must stay undeclared, got %q", reasons["ghost"])
 	}
 }
 

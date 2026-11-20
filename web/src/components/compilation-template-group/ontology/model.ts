@@ -534,3 +534,73 @@ export const validateDraft = (draft: OntologyDraft): OntologyIssue[] => {
 
   return issues;
 };
+
+/** A canvas selection, as the `?focus=` parameter names one. */
+export type CanvasSelection =
+  | { kind: 'entity'; index: number }
+  | { kind: 'property'; index: number }
+  // Object properties between the same two entities are drawn as one edge, so a
+  // relation resolves to the bundle key rather than to a property index.
+  | { kind: 'bundle'; key: string };
+
+/**
+ * Resolves a `?focus=` value into a canvas selection.
+ *
+ * The questions page links here with the clause it already holds
+ * (`class:contract`, `property:contract.amount`, `relation:contract->vendor`),
+ * so the two screens spell an element the same way. An unmatched value returns
+ * null: opening the canvas with nothing selected is honest, and guessing an
+ * index would select an unrelated element.
+ */
+export const selectionForFocus = (
+  focus: string,
+  entities: OntologyField[],
+  properties: OntologyField[],
+): CanvasSelection | null => {
+  const colon = focus.indexOf(':');
+  if (colon <= 0) {
+    return null;
+  }
+  const kind = focus.slice(0, colon).trim();
+  const name = focus.slice(colon + 1).trim();
+  if (!name) {
+    return null;
+  }
+  const typeOf = (field: OntologyField) => String(field.type ?? '').trim();
+  const entityTypes = new Set(entities.map(typeOf));
+
+  if (kind === 'class') {
+    const index = entities.findIndex((entity) => typeOf(entity) === name);
+    return index >= 0 ? { kind: 'entity', index } : null;
+  }
+  if (kind === 'property') {
+    const dot = name.lastIndexOf('.');
+    if (dot <= 0) {
+      return null;
+    }
+    const owner = name.slice(0, dot);
+    const attribute = name.slice(dot + 1);
+    const index = properties.findIndex(
+      (property) =>
+        typeOf(property) === attribute &&
+        splitTypeList(property.domain).includes(owner),
+    );
+    return index >= 0 ? { kind: 'property', index } : null;
+  }
+  if (kind === 'relation') {
+    const [source, target] = name.split('->').map((item) => item.trim());
+    if (!source || !target) {
+      return null;
+    }
+    const index = properties.findIndex(
+      (property) =>
+        effectiveKind(property, entityTypes) === 'object' &&
+        splitTypeList(property.domain).includes(source) &&
+        splitTypeList(property.range).includes(target),
+    );
+    return index >= 0
+      ? { kind: 'bundle', key: [source, target].sort().join('|') }
+      : null;
+  }
+  return null;
+};

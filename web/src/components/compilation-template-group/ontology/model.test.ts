@@ -25,9 +25,11 @@ import {
   removeProperty,
   renameEntity,
   sectionsFromDraft,
+  selectionForFocus,
   splitTypeList,
   validateDraft,
   type OntologyDraft,
+  type OntologyField,
 } from './model';
 
 const draft = (): OntologyDraft =>
@@ -249,5 +251,37 @@ describe('ontology editor model', () => {
     expect(splitTypeList(' person | place ')).toEqual(['person', 'place']);
     expect(splitTypeList('')).toEqual([]);
     expect(splitTypeList(undefined)).toEqual([]);
+  });
+});
+
+describe('selectionForFocus', () => {
+  const entities: OntologyField[] = [{ type: 'contract' }, { type: 'vendor' }];
+  const properties: OntologyField[] = [
+    { type: 'amount', domain: 'contract', kind: 'datatype' },
+    { type: 'signed_by', domain: 'contract', range: 'vendor', kind: 'object' },
+  ];
+
+  it('resolves a class clause to its node', () => {
+    expect(selectionForFocus('class:vendor', entities, properties)).toEqual({
+      kind: 'entity',
+      index: 1,
+    });
+  });
+
+  it('resolves a property clause to the owning row', () => {
+    expect(
+      selectionForFocus('property:contract.amount', entities, properties),
+    ).toEqual({ kind: 'property', index: 0 });
+  });
+
+  it('resolves a relation clause to the drawn bundle', () => {
+    expect(
+      selectionForFocus('relation:contract->vendor', entities, properties),
+    ).toEqual({ kind: 'bundle', key: 'contract|vendor' });
+  });
+
+  it('returns null instead of guessing an index', () => {
+    expect(selectionForFocus('class:invoice', entities, properties)).toBeNull();
+    expect(selectionForFocus('nonsense', entities, properties)).toBeNull();
   });
 });

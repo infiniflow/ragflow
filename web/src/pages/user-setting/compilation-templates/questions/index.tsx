@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 
 import BackButton from '@/components/back-button';
 import {
@@ -25,6 +25,8 @@ import {
 } from '@/components/compilation-template-group/ontology/competency-questions';
 import {
   parseCompetencyQuestions,
+  traceCompetencyElements,
+  vocabularyOf,
   withCompetencyQuestions,
 } from '@/components/compilation-template-group/ontology/competency';
 import { buildGroupUpdatePayload } from '@/components/compilation-template-group/utils';
@@ -70,6 +72,13 @@ const CompetencyQuestionsPage = () => {
       parseCompetencyQuestions(
         template?.config as ICompilationTemplateConfig | undefined,
       ),
+    [template?.config],
+  );
+  // The names a question can be traced against: the draft's declarations, which
+  // are the ones the author is editing and the ones the publish gate reads.
+  const vocabulary = useMemo(
+    () =>
+      vocabularyOf(template?.config as ICompilationTemplateConfig | undefined),
     [template?.config],
   );
 
@@ -142,6 +151,38 @@ const CompetencyQuestionsPage = () => {
     [persist, questions],
   );
 
+  // The repair for a question saved before its elements were derived: the text
+  // already names them, so the fix is one trace rather than a clause list typed
+  // by hand.
+  const handleDerive = useCallback(
+    async (question: IOntologyCompetencyQuestionDraft) => {
+      const derived = traceCompetencyElements(
+        question.question,
+        vocabulary,
+      ).elements;
+      if (!derived) {
+        message.warning(
+          t('knowledgeCompilation.ontologyCqTraceEmpty', {
+            defaultValue:
+              'No element matched. Name a class the model declares (its name, label or an alias) in the question.',
+          }),
+        );
+        return;
+      }
+      await persist(
+        questions.map((item) =>
+          item.type === question.type ? { ...item, elements: derived } : item,
+        ),
+      );
+      message.success(
+        t('knowledgeCompilation.ontologyCqDerived', {
+          defaultValue: 'Required elements derived and saved.',
+        }),
+      );
+    },
+    [persist, questions, t, vocabulary],
+  );
+
   // Same contract as the drift panel: report the outcome, because a dataset with
   // no compiled rows re-renders an identical payload and a silent run is
   // indistinguishable from a dead button.
@@ -172,6 +213,25 @@ const CompetencyQuestionsPage = () => {
     );
     await refetch();
   }, [datasetId, refetch, refreshInsight, t, templateId]);
+
+  const navigate = useNavigate();
+  // The canvas spells an element the same way this page does, so the link is the
+  // clause itself and the canvas reads it back as `?focus=`.
+  const handleLocate = useCallback(
+    (focus: string) => {
+      navigate(
+        `${Routes.CompilationTemplatesEditNext}/${id}?focus=${encodeURIComponent(focus)}`,
+      );
+    },
+    [id, navigate],
+  );
+  const measuredLabel = insight
+    ? t('knowledgeCompilation.ontologyCqSnapshot', {
+        defaultValue: 'v{{version}} · {{asOf}}',
+        version: insight.version,
+        asOf: formatAsOf(insight.as_of),
+      })
+    : undefined;
 
   const backTo = `${Routes.CompilationTemplatesEditNext}/${id}`;
   const answered = insight?.payload?.questions?.filter(
@@ -285,6 +345,11 @@ const CompetencyQuestionsPage = () => {
               setDialogOpen(true);
             }}
             onDelete={handleDelete}
+            onDerive={handleDerive}
+            onLocate={handleLocate}
+            onRunCheck={handleRefresh}
+            checking={refreshing}
+            measuredLabel={measuredLabel}
             disabled={saving}
           />
         )}
@@ -300,6 +365,7 @@ const CompetencyQuestionsPage = () => {
         }}
         initial={editing}
         existing={questions}
+        vocabulary={vocabulary}
         saving={saving}
         onSubmit={handleSubmit}
       />

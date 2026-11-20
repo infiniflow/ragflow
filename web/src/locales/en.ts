@@ -3066,8 +3066,33 @@ Example: Virtual Hosted Style`,
       ontologyCqReason_not_extracted: 'Declared, no rows',
       ontologyCqNotMeasuredHint:
         'Run a check to see which of these elements the corpus actually fills.',
+      // The element clause does not have to be typed: the question already
+      // names what it is about, and the model already knows every name.
+      ontologyCqTrace: 'Re-trace from question',
+      ontologyCqTraceFound:
+        'Matched {{classes}} class(es), {{properties}} attribute(s), {{relations}} relation(s).',
+      ontologyCqTraceEmpty:
+        'Nothing in this question matches a declared name, so nothing was derived. Pick the elements below instead — the list is the model itself.',
+      ontologyCqTraceUnmatched: 'Not matched: {{words}}',
+      ontologyCqDeriveHint:
+        'Required elements are derived from the question text: the classes, attributes and relations it names are the elements an answer needs. Edit a clause only to correct the guess.',
+      ontologyCqSuggestHint:
+        'Elements this model declares. Click to add or remove — nothing has to be typed as a clause.',
+      ontologyCqElementsRequired:
+        'No required element: without one this question cannot be checked, and its coverage would be an empty set rather than a pass.',
+      ontologyCqNoElements:
+        'This question declares no required element, so nothing measures whether the model can answer it.',
+      ontologyCqDerive: 'Derive elements',
+      ontologyCqDerived: 'Required elements derived and saved.',
+      ontologyCqStaleElements:
+        'This list was typed before elements were derived and no longer matches the question. Edit the question or press Re-trace to replace it.',
+      ontologyCqLocate: 'Locate {{name}} in canvas',
+      ontologyCqRunEvidence: 'Run and show evidence',
+      ontologyCqEvidence:
+        'Measured on {{label}} · {{satisfied}}/{{required}} elements satisfied',
+      ontologyCqSnapshot: 'v{{version}} · {{asOf}}',
       ontologyCqGrammarHint:
-        'Elements are written as {{grammar}}, one per line or separated by |. A leading ? marks an optional element and does not lower coverage.',
+        'Elements are derived from the question text as {{grammar}}. A leading ? marks an optional element and does not lower coverage.',
       ontologyDrift: 'Drift',
       ontologyChangeUnpublished: 'unpublished',
       ontologyChangeCount: '{{count}} change(s) in the draft',

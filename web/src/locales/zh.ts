@@ -2615,8 +2615,32 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       ontologyCqReason_undeclared: '未声明',
       ontologyCqReason_not_extracted: '已声明，语料无行',
       ontologyCqNotMeasuredHint: '运行检测，看这些元素在语料里到底填上了没有。',
+      // 元素不必手写：问题里已经点名了它关于什么，模型里也已经有了全部名字。
+      ontologyCqTrace: '重新识别',
+      ontologyCqTraceFound:
+        '识别到 {{classes}} 个类、{{properties}} 个属性、{{relations}} 个关系。',
+      ontologyCqTraceEmpty:
+        '问题里没有出现已声明的名字，所以没自动识别。下面列出了模型声明的元素，点选即可。',
+      ontologyCqTraceUnmatched: '未识别：{{words}}',
+      ontologyCqDeriveHint:
+        '必需元素由问题文本自动识别：问题里点到的类、属性、关系就是答出它需要的元素。只有识别错了才需要改这一行。',
+      ontologyCqSuggestHint:
+        '这是模型声明的元素。点一下加入或移除，不用手写语法。',
+      ontologyCqElementsRequired:
+        '没有必需元素：这条问题无法检测，覆盖度会是空集而不是达标。',
+      ontologyCqNoElements:
+        '这条问题没有必需元素，因此检测不出模型能不能回答它。',
+      ontologyCqDerive: '识别元素',
+      ontologyCqDerived: '已识别必需元素并保存。',
+      ontologyCqStaleElements:
+        '这行元素是手工写的旧值，已经和问题不一致。改一下问题，或点「重新识别」就会按问题重算。',
+      ontologyCqLocate: '在画布中定位 {{name}}',
+      ontologyCqRunEvidence: '跑一次并看证据',
+      ontologyCqEvidence:
+        '{{label}} 测量 · 命中 {{satisfied}}/{{required}} 个元素',
+      ontologyCqSnapshot: 'v{{version}} · {{asOf}}',
       ontologyCqGrammarHint:
-        '元素写法：{{grammar}}。每行一个或用 | 分隔；前缀 ? 表示可选，不计入覆盖度。',
+        '元素由问题文本识别为 {{grammar}}。前缀 ? 表示可选，不计入覆盖度。',
       // 漂移：语料与声明的两个方向。只有"声明为类"能在这里一键解决，其余
       // 都是建模决定，留在画布里。
       ontologyDrift: '漂移',

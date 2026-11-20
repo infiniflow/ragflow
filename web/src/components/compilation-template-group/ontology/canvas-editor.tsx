@@ -29,6 +29,7 @@ import { declaredContractFields } from '@/utils/action-contract';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router';
 
 import { FormSchemaType } from '../schema';
 import {
@@ -45,9 +46,11 @@ import {
   sectionsFromDraft,
   valueListText,
   valueListTruthy,
+  selectionForFocus,
   splitTypeList,
   updateField,
   validateDraft,
+  type CanvasSelection,
   type OntologyDraft,
   type OntologyField,
   type OntologySection,
@@ -375,17 +378,13 @@ interface OntologyCanvasEditorProps {
   templateIndex: number;
 }
 
-type Selection =
-  | { kind: 'entity'; index: number }
-  | { kind: 'property'; index: number }
-  // A pair of entities can carry several properties. They are drawn as ONE edge:
-  // N curves with N labels between two boxes is a thicket, and on a short edge the
-  // labels cannot be kept apart — the midpoint of a Bézier only moves half as far
-  // as its control point, so a 40px fan leaves 20px between two 11px labels.
-  // Clicking the edge therefore selects the bundle, and the panel lists what is
-  // inside it. The read-only model graph bundles the same way.
-  | { kind: 'bundle'; key: string }
-  | null;
+// A pair of entities can carry several properties. They are drawn as ONE edge:
+// N curves with N labels between two boxes is a thicket, and on a short edge the
+// labels cannot be kept apart — the midpoint of a Bézier only moves half as far
+// as its control point, so a 40px fan leaves 20px between two 11px labels.
+// Clicking the edge therefore selects the bundle, and the panel lists what is
+// inside it. The read-only model graph bundles the same way.
+type Selection = CanvasSelection | null;
 
 /**
  * OntologyCanvasEditor edits an ontology template as a graph.
@@ -428,6 +427,46 @@ export function OntologyCanvasEditor({
     [entity, relation],
   );
   const [selection, setSelection] = useState<Selection>(null);
+  // `?focus=` is how the competency-questions screen points at one element. It is
+  // applied once per value, so a later drag or edit is not undone by a re-render,
+  // and an unknown value leaves the canvas unselected instead of guessing.
+  const [searchParams] = useSearchParams();
+  const focusParam = searchParams.get('focus');
+  const focusedRef = useRef('');
+  useEffect(() => {
+    if (!focusParam || focusedRef.current === focusParam) {
+      return;
+    }
+    const next = selectionForFocus(
+      focusParam,
+      draft.entities,
+      draft.properties,
+    );
+    if (!next) {
+      return;
+    }
+    focusedRef.current = focusParam;
+    setSelection(next);
+  }, [focusParam, draft.entities, draft.properties]);
+
+  // Selecting a node that is off-screen would look like the link did nothing, so
+  // the canvas brings it into view. jsdom has no scrollIntoView; the guard keeps
+  // the tests on the selection state alone.
+  useEffect(() => {
+    if (selection?.kind !== 'entity') {
+      return;
+    }
+    const id = String(draft.entities[selection.index]?.type ?? '').trim();
+    if (!id) {
+      return;
+    }
+    const node = document.querySelector(
+      `[data-testid="ontology-node-${CSS.escape(id)}"]`,
+    );
+    if (node && typeof (node as HTMLElement).scrollIntoView === 'function') {
+      (node as HTMLElement).scrollIntoView({ block: 'nearest' });
+    }
+  }, [selection, draft.entities]);
   const [positions, setPositions] = useState<
     Record<string, { x: number; y: number }>
   >({});

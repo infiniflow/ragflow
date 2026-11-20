@@ -16,6 +16,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
+import { MemoryRouter } from 'react-router';
 
 import { OntologyCanvasEditor } from './canvas-editor';
 import { OntologyEntityKeys, OntologyPropertyKeys } from './model';
@@ -117,7 +118,13 @@ const renderEditor = () => {
   const Harness = () => {
     const methods = useForm<any>({ defaultValues });
     form.current = methods;
-    return <OntologyCanvasEditor form={methods} templateIndex={0} />;
+    // The editor reads `?focus=` from the router, so it needs a router even when
+    // the case does not use one.
+    return (
+      <MemoryRouter>
+        <OntologyCanvasEditor form={methods} templateIndex={0} />
+      </MemoryRouter>
+    );
   };
   render(<Harness />);
   return form;
@@ -132,7 +139,13 @@ const renderEditorWith = (mutate: (values: any) => void) => {
   const Harness = () => {
     const methods = useForm<any>({ defaultValues: values });
     form.current = methods;
-    return <OntologyCanvasEditor form={methods} templateIndex={0} />;
+    // The editor reads `?focus=` from the router, so it needs a router even when
+    // the case does not use one.
+    return (
+      <MemoryRouter>
+        <OntologyCanvasEditor form={methods} templateIndex={0} />
+      </MemoryRouter>
+    );
   };
   render(<Harness />);
   return form;

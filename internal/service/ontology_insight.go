@@ -175,9 +175,17 @@ type OntologyInsightPayload struct {
 }
 
 // Coverage is the ratio the publish gate thresholds against.
+//
+// No questions at all is a pass: a model that has not promised anything cannot
+// fail to deliver. Questions that declare no required elements is NOT a pass —
+// the denominator is empty because the question was never traced, and reporting
+// 100% would let an untraced promise count as a measured one.
 func (p OntologyInsightPayload) Coverage() float64 {
 	if p.Required == 0 {
-		return 1
+		if len(p.Questions) == 0 {
+			return 1
+		}
+		return 0
 	}
 	return float64(p.Satisfied) / float64(p.Required)
 }
@@ -381,7 +389,7 @@ func buildDriftFields(class OntologyClassNode) []OntologyDriftField {
 // declaration: a class that is declared and has zero instances answers nothing,
 // and reporting it as satisfied would make the coverage number a restatement of
 // the template instead of a measurement of it.
-func buildCompetencyCoverage(questions []CompetencyQuestion, graph *OntologyGraph) ([]CompetencyQuestionCoverage, int, int) {
+func buildCompetencyCoverage(questions []CompetencyQuestion, graph *OntologyGraph, declared declaredOntology) ([]CompetencyQuestionCoverage, int, int) {
 	classes := make(map[string]OntologyClassNode, len(graph.Classes))
 	for _, class := range graph.Classes {
 		classes[class.Type] = class
@@ -405,7 +413,7 @@ func buildCompetencyCoverage(questions []CompetencyQuestion, graph *OntologyGrap
 			Elements: make([]CompetencyElementResult, 0, len(question.Elements)),
 		}
 		for _, element := range question.Elements {
-			result := checkCompetencyElement(element, classes, edges)
+			result := checkCompetencyElement(element, classes, edges, declared)
 			coverage.Elements = append(coverage.Elements, result)
 			if !element.Required {
 				continue
@@ -417,17 +425,30 @@ func buildCompetencyCoverage(questions []CompetencyQuestion, graph *OntologyGrap
 				totalSatisfied++
 			}
 		}
-		coverage.Answerable = coverage.Required == coverage.Satisfied
+		// A question that declares no required element is not answerable: there is
+		// nothing to satisfy, so 0 == 0 would report a promise the model has not
+		// made. The elements are derived from the question text by the editor
+		// (competency.ts: traceCompetencyElements), so an empty list means the
+		// derivation never ran — a finding, not a pass.
+		coverage.Answerable = coverage.Required > 0 && coverage.Required == coverage.Satisfied
 		out = append(out, coverage)
 	}
 	return out, totalRequired, totalSatisfied
 }
 
 // checkCompetencyElement resolves one `kind:name` clause against the graph.
+//
+// `declared` is the model as authored (the working config), while the graph is
+// the model the stored rows were compiled under. They differ while a draft edit
+// is unpublished, and the difference is the advice the reader needs: an element
+// the draft declares but the rows never produced is "declared, no rows" — go
+// recompile — not "not declared", which would send the author back to the canvas
+// to add what is already there.
 func checkCompetencyElement(
 	element CompetencyElement,
 	classes map[string]OntologyClassNode,
 	edges map[string]OntologyPropertyEdge,
+	declared declaredOntology,
 ) CompetencyElementResult {
 	result := CompetencyElementResult{
 		Kind:     element.Kind,
@@ -438,6 +459,11 @@ func checkCompetencyElement(
 	case competencyClass:
 		class, ok := classes[element.Name]
 		if !ok {
+			if _, isDeclared := declared.classes[element.Name]; isDeclared {
+				result.Declared = true
+				result.Reason = "not_extracted"
+				return result
+			}
 			result.Reason = "undeclared"
 			return result
 		}
@@ -454,21 +480,25 @@ func checkCompetencyElement(
 			result.Reason = "undeclared"
 			return result
 		}
-		class, found := classes[strings.TrimSpace(owner)]
-		if !found {
-			result.Reason = "undeclared"
-			return result
+		owner = strings.TrimSpace(owner)
+		name = strings.TrimSpace(name)
+		if class, found := classes[owner]; found {
+			for _, attribute := range class.Attributes {
+				if attribute.Type != name {
+					continue
+				}
+				result.Declared = true
+				result.Observed = attribute.Assertions
+				result.Satisfied = attribute.Assertions > 0
+				if !result.Satisfied {
+					result.Reason = "not_extracted"
+				}
+				return result
+			}
 		}
-		for _, attribute := range class.Attributes {
-			if attribute.Type != strings.TrimSpace(name) {
-				continue
-			}
+		if property, isDeclared := declared.props[name]; isDeclared && containsStr(property.domains, owner) {
 			result.Declared = true
-			result.Observed = attribute.Assertions
-			result.Satisfied = attribute.Assertions > 0
-			if !result.Satisfied {
-				result.Reason = "not_extracted"
-			}
+			result.Reason = "not_extracted"
 			return result
 		}
 		result.Reason = "undeclared"
@@ -488,6 +518,11 @@ func checkCompetencyElement(
 			if !result.Satisfied {
 				result.Reason = "not_extracted"
 			}
+			return result
+		}
+		if competencyElementDeclared(element, declared) {
+			result.Declared = true
+			result.Reason = "not_extracted"
 			return result
 		}
 		result.Reason = "undeclared"
@@ -570,7 +605,16 @@ func (s *DatasetArtifactService) RefreshInsight(ctx context.Context, tenantID, d
 	}
 
 	payload := OntologyInsightPayload{Drift: buildOntologyDrift(graph)}
-	payload.Questions, payload.Required, payload.Satisfied = buildCompetencyCoverage(parseCompetencyQuestions(cfg), graph)
+	// Questions come from the working config while the graph stays on the
+	// published snapshot: a requirement is a statement about the model as
+	// authored, and the publish gate judges exactly that (it reads
+	// template.Config). Measuring the snapshot instead would make every new
+	// question unmeasurable until the version that contains it is published —
+	// and publishing is what the coverage number is needed for.
+	working := map[string]interface{}(template.Config)
+	payload.Questions, payload.Required, payload.Satisfied = buildCompetencyCoverage(
+		parseCompetencyQuestions(working), graph, parseDeclaredOntology(working),
+	)
 
 	stored, err := jsonMapOf(payload)
 	if err != nil {
@@ -677,6 +721,21 @@ func appendMeasuredCoverageIssues(ctx context.Context, db *gorm.DB, tenantID str
 	if len(questions) == 0 {
 		return nil
 	}
+	// A question with no required element changes nothing about the gate: the
+	// denominator is empty, so no coverage number can move. That is the one
+	// thing a declared question must not be able to do, and it is always a
+	// tracing failure rather than a modelling decision (the editor derives the
+	// elements from the question text). Reported before the measurement loop so
+	// an unmeasured model also says it.
+	if untraced := questionsWithoutRequiredElements(questions); len(untraced) > 0 {
+		check.Warnings = append(check.Warnings, ModelPublishIssue{
+			Code:     "cq_without_elements",
+			Category: ModelIssueCategoryRequirement,
+			Severity: ModelIssueWarning,
+			Message:  "competency questions declare no required element, so nothing measures whether the model can answer them",
+			Subjects: untraced,
+		})
+	}
 	insights, err := dao.NewOntologyInsightDAO().ListByTemplate(ctx, db, tenantID, check.TemplateID)
 	if err != nil {
 		return err
@@ -726,6 +785,26 @@ func appendIssue(check *ModelPublishCheck, issue ModelPublishIssue) ([]ModelPubl
 		return append(check.Blockers, issue), check.Warnings
 	}
 	return check.Blockers, append(check.Warnings, issue)
+}
+
+// questionsWithoutRequiredElements lists the questions whose element list
+// carries no required clause. They are the ones a coverage number cannot
+// measure, so the finding names them instead of a ratio.
+func questionsWithoutRequiredElements(questions []CompetencyQuestion) []string {
+	out := make([]string, 0, len(questions))
+	for _, question := range questions {
+		hasRequired := false
+		for _, element := range question.Elements {
+			if element.Required {
+				hasRequired = true
+				break
+			}
+		}
+		if !hasRequired {
+			out = append(out, question.ID)
+		}
+	}
+	return out
 }
 
 // unansweredQuestionIDs lists the questions a measurement could not answer, so
