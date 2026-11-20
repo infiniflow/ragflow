@@ -2,6 +2,7 @@
 package canvas
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -311,6 +312,45 @@ func TestBuildWorkflow_ErrorsOnSelfEdge(t *testing.T) {
 	if !strings.Contains(err.Error(), "self-edge") {
 		t.Fatalf("expected 'self-edge' in error, got: %v", err)
 	}
+}
+
+func TestNodeLifecycleSkipsSerializationWithoutEventChannel(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		meta *RunMeta
+	}{
+		{name: "no run metadata"},
+		{name: "no event channel", meta: &RunMeta{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var ctx context.Context = t.Context()
+			if tt.meta != nil {
+				ctx = WithRunMeta(ctx, tt.meta)
+			}
+			state := NewCanvasState("run", "session")
+			input := &marshalCounter{}
+			output := &marshalCounter{}
+			nodeStartedAt(ctx, state, "tokenizer", "Tokenizer", "Tokenizer", map[string]any{"chunks": input})
+			state.SetVar("tokenizer", "chunks", output)
+			nodeFinishedNow(ctx, state, "tokenizer", "Tokenizer", "Tokenizer", nil)
+
+			if input.calls != 0 || output.calls != 0 {
+				t.Fatalf("event serialization without a channel: input=%d output=%d", input.calls, output.calls)
+			}
+			if got, err := state.GetVar("tokenizer@chunks"); err != nil || got != output {
+				t.Fatalf("tokenizer output: got %v, %v, want %v", got, err, output)
+			}
+		})
+	}
+}
+
+type marshalCounter struct {
+	calls int
+}
+
+func (c *marshalCounter) MarshalJSON() ([]byte, error) {
+	c.calls++
+	return []byte("null"), nil
 }
 
 func TestNodeLifecycleEventsSafeMarshalNonSerializableInputs(t *testing.T) {
