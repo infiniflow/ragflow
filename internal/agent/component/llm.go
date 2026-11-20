@@ -1552,38 +1552,31 @@ func gateSampler[T any](inputs map[string]any, flag string, value **T, disabled 
 	}
 }
 
-// floatFrom extracts a float64 from inputs[name], also accepting int.
+// floatFrom extracts a float64 from inputs[name]. Only the native numeric
+// kinds count; common.ToFloat would also parse strings, so delegate only for
+// the types this helper accepted before the convergence.
 func floatFrom(inputs map[string]any, name string) (float64, bool) {
 	v, ok := inputs[name]
 	if !ok {
 		return 0, false
 	}
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case float32:
-		return float64(x), true
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
+	switch v.(type) {
+	case float64, float32, int, int64:
+		return common.ToFloat(v)
 	}
 	return 0, false
 }
 
-// intFrom extracts an int from inputs[name], also accepting float64.
+// intFrom extracts an int from inputs[name]. Only int, int64 and float64
+// count; common.ToIntNum also accepts int32/float32, which this helper did not.
 func intFrom(inputs map[string]any, name string) (int, bool) {
 	v, ok := inputs[name]
 	if !ok {
 		return 0, false
 	}
-	switch x := v.(type) {
-	case int:
-		return x, true
-	case int64:
-		return int(x), true
-	case float64:
-		return int(x), true
+	switch v.(type) {
+	case int, int64, float64:
+		return common.ToIntNum(v)
 	}
 	return 0, false
 }
