@@ -226,6 +226,10 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	var linkedConnectors []*dao.ConnectorDatasetListItem
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
+	// pagerankRetry is the same target for a request that repeats the stored
+	// PageRank, kept so a retry of an earlier failed save can repeat the
+	// propagation the value change no longer schedules.
+	var pagerankRetry *datasetPagerankUpdate
 	var chunkStoreEmbdID string
 	// pendingEmbdID is the model of an empty dataset's switch, committed only
 	// after its store is ready. pendingTenantEmbdID is its tenant binding.
@@ -469,17 +473,22 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 				}
 			}
 		}
-		if pagerankRequested && requestedPagerank != lockedKB.Pagerank {
-			if !d.docEngine.SupportsPageRank() {
-				txCode = common.CodeDataError
-				return errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
-			}
-			pagerankUpdate = &datasetPagerankUpdate{
+		if pagerankRequested {
+			target := &datasetPagerankUpdate{
 				value:     requestedPagerank,
 				index:     fmt.Sprintf("ragflow_%s", lockedKB.TenantID),
 				datasetID: lockedKB.ID,
 			}
-			updates["pagerank"] = requestedPagerank
+			if requestedPagerank != lockedKB.Pagerank {
+				if !d.docEngine.SupportsPageRank() {
+					txCode = common.CodeDataError
+					return errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
+				}
+				pagerankUpdate = target
+				updates["pagerank"] = requestedPagerank
+			} else if d.docEngine.SupportsPageRank() {
+				pagerankRetry = target
+			}
 		}
 		if parserIDProvided && parserID != lockedKB.ParserID {
 			if _, ok := updates["parser_config"]; !ok {
@@ -657,9 +666,10 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		}
 		return nil, txCode, err
 	}
-	// The saved PageRank has to reach the chunk store even when a later step
-	// fails: a retry sees the value already persisted, so its requested value
-	// equals the locked one and it schedules no propagation of its own.
+	// The saved PageRank has to reach the chunk store before any step that can
+	// fail after the commit: a retry sees the value already persisted, so its
+	// requested value equals the locked one and only the recovery below has to
+	// repeat the write.
 	if pagerankUpdate != nil {
 		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
 			return nil, common.CodeServerError, err
@@ -702,6 +712,18 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf(
 				"dataset settings were saved, but the connector tasks of an earlier attempt could not be read; retry the request: %w", err)
+		}
+	}
+	// A retry of a save that failed after its commit schedules no task of its
+	// own but still finds the rows that attempt committed. It repeats the same
+	// PageRank the failed attempt had already saved, so no value change remains
+	// to schedule a propagation; repeat the idempotent write here so a
+	// chunk-store write that failed before the first publication is repaired
+	// before the recovered task runs.
+	if pagerankRetry != nil && len(scheduledTaskIDs) == 0 && len(recoveredTaskIDs) > 0 {
+		if err = d.updateDatasetPagerankChunks(ctx, *pagerankRetry); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf(
+				"dataset settings were saved, but the PageRank of an earlier attempt could not be re-applied to the chunk store; retry the request: %w", err)
 		}
 	}
 	// Publish connector tasks only after the chunk store is ready: a task the
