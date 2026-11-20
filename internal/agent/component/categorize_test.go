@@ -536,7 +536,7 @@ func TestCategorize_ResolvesTenantModelID(t *testing.T) {
 	}
 }
 
-func TestCategorize_ResolvesSoleActiveInstanceWhenDefaultMissing(t *testing.T) {
+func TestCategorize_ResolvesExplicitInstanceWhenDefaultMissing(t *testing.T) {
 	db := setupComponentTestDB(t)
 	pushComponentDB(t, db)
 	if err := db.Create(&entity.TenantModelProvider{
@@ -562,7 +562,7 @@ func TestCategorize_ResolvesSoleActiveInstanceWhenDefaultMissing(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewCategorizeComponent(CategorizeParam{
-		ModelID:         "Qwen/Qwen3-8B@default@SILICONFLOW",
+		ModelID:         "Qwen/Qwen3-8B@prod-east@SILICONFLOW",
 		Categories:      []string{"sales", "support"},
 		DefaultCategory: "support",
 	})
