@@ -210,40 +210,160 @@ func logicalLines(content string) []logicalLine {
 // the same operand. The operand can continue after the closing quote with
 // more quoted or unquoted fragments, and `\"` does not end the quoted span.
 // Return the operand that carries the hidden expansion.
+//
+// The line is walked once. `;`, `|`, `&` and `(` delimit simple commands, and a
+// substitution (`$(`, `<(` or `>(`) is a nested command context whose `)`
+// restores the outer command, where the substitution counts as one word: that
+// keeps `echo $(printf ok) rm ...` inert while `env IGNORE=<(printf ok) rm ...`
+// still reaches the rm. A `)` that matches no substitution closes a subshell,
+// a function-body header (`f() { rm ...; }`) or a case pattern
+// (`case x) rm ...;;`), and a case arm starts a command of its own even inside
+// a substitution.
 func scanQuotedRmExpansion(line string) (string, bool) {
 	code := shellCodeMask(line)
-	separator := commandSeparatorMask(line, code)
+	var frames []parenFrame
+	var chain prefixChain
+	inCase := false
+	skipWord := false
+	escaped := false
 	start := 0
 	for i := 0; i <= len(line); i++ {
-		if i < len(line) && !separator[i] {
-			continue
+		if i < len(line) {
+			if !code[i] {
+				escaped = false
+				continue
+			}
+			if escaped {
+				escaped = false
+				continue
+			}
+			if line[i] == '\\' {
+				escaped = true
+				continue
+			}
+			switch line[i] {
+			case ';', '|', '&', '(', ')':
+			default:
+				continue
+			}
 		}
-		if operand, ok := scanCommandSegment(line, start, i); ok {
+		wasSkipping := skipWord
+		operand, found, lastWordEnd, nextChain, nextInCase := scanCommandSegment(line, start, i, chain, inCase, skipWord)
+		chain, inCase, skipWord = nextChain, nextInCase, false
+		if found {
 			return operand, true
+		}
+		if i == len(line) {
+			break
+		}
+		switch line[i] {
+		case ';', '|', '&':
+			// A case statement keeps its arms across `;;`, so the case state
+			// survives a command boundary.
+			chain = prefixChain{}
+		case '(':
+			frames = append(frames, parenFrame{
+				substitution: isSubstitutionOpener(line, i),
+				chain:        chain,
+				inCase:       inCase,
+				attached:     (lastWordEnd == i && i > start) || wasSkipping,
+			})
+			chain = prefixChain{}
+			inCase = false
+		case ')':
+			if inCase {
+				// A case arm starts a command of its own and does not close
+				// the surrounding substitution.
+				chain = prefixChain{}
+				break
+			}
+			if len(frames) == 0 {
+				// A function-body header or a case pattern at this level.
+				chain = prefixChain{}
+				break
+			}
+			frame := frames[len(frames)-1]
+			frames = frames[:len(frames)-1]
+			chain = prefixChain{}
+			if frame.substitution {
+				// The substitution is one word of the outer command: an
+				// assignment keeps its name (`IGNORE=<(...)`), and elsewhere
+				// it ends the prefix chain (`sudo $(...) rm`).
+				chain = frame.chain
+				inCase = frame.inCase
+				if !frame.attached {
+					chain.feed(substitutionWord)
+				} else if i+1 < len(line) && !isWordBreak(line[i+1]) {
+					skipWord = true
+				}
+			} else {
+				inCase = false
+			}
 		}
 		start = i + 1
 	}
 	return "", false
 }
 
-// scanCommandSegment runs the quoted-operand pass on every rm that can be the
-// executable of the simple command between two separators. The words before it
-// are fed to a prefixChain one at a time, so a long line stays linear: once a
-// word is not a prefix, no later rm of the same command is reachable and
-// `echo rm -rf ...` stays inert, while `sudo -u root rm ...` is inspected.
-func scanCommandSegment(line string, start, end int) (string, bool) {
-	var chain prefixChain
+// substitutionWord stands for a command or process substitution when the outer
+// command is evaluated: it is a plain word, never a variable assignment.
+const substitutionWord = "x"
+
+// parenFrame is one open parenthesis. A substitution frame restores the outer
+// command at its `)`, and every frame keeps the case state of its enclosing
+// context.
+type parenFrame struct {
+	substitution bool
+	chain        prefixChain
+	inCase       bool
+	attached     bool
+}
+
+// isWordBreak reports whether c ends the word it follows inside a command.
+func isWordBreak(c byte) bool {
+	switch c {
+	case ' ', '\t', '\r', ';', '|', '&', '(', ')':
+		return true
+	}
+	return false
+}
+
+// scanCommandSegment runs the quoted-operand pass over the words of the simple
+// command between two boundaries and reports where its last word ended. The
+// words are fed to the prefix chain one at a time, so a long line stays linear:
+// once a word is not a prefix, no later rm of the same command is reachable
+// and `echo rm -rf ...` stays inert, while `sudo -u root rm ...` is inspected.
+// skipWord drops the leading fragment of a word a substitution continued.
+func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, skipWord bool) (string, bool, int, prefixChain, bool) {
+	first := true
+	sawCase := false
+	lastWordEnd := 0
 	for _, word := range shellWordSpans(line, start, end) {
+		lastWordEnd = word.end
+		if skipWord {
+			skipWord = false
+			continue
+		}
 		if !chain.broken {
 			if after, ok := rmExecutable(line, word); ok {
 				if operand, found := quotedRmOperand(line, after, end); found {
-					return operand, true
+					return operand, true, lastWordEnd, chain, inCase
 				}
 			}
 		}
+		switch {
+		case first && word.text == "case":
+			sawCase = true
+		case sawCase && word.text == "in":
+			inCase = true
+			sawCase = false
+		case word.text == "esac":
+			inCase = false
+		}
+		first = false
 		chain.feed(word.text)
 	}
-	return "", false
+	return "", false, lastWordEnd, chain, inCase
 }
 
 // rmExecutable reports the offset just past the executable rm when word is
@@ -488,50 +608,6 @@ func takesValue(wrapper, name string) bool {
 		return name == "a"
 	}
 	return false
-}
-
-// commandSeparatorMask marks the unquoted, unescaped bytes that end a shell
-// command and start a command position. `;`, `|`, `&` and `(` always do. `)`
-// ends a function-body header (`f() { rm ...; }`) or a case pattern
-// (`case x) rm ...;;`), but the `)` closing a command or process substitution
-// (`$(`, `<(` or `>(`) keeps the words that follow in the outer command's
-// argument position (`echo $(printf ok) rm ...`). Quotes and a backslash make
-// a delimiter ordinary data: `echo \) rm ...` passes `)` to echo. The mask is
-// built in one pass, so the scan stays linear in the line length.
-func commandSeparatorMask(line string, code []bool) []bool {
-	separator := make([]bool, len(line))
-	var open []int
-	escaped := false
-	for i := 0; i < len(line); i++ {
-		if !code[i] {
-			escaped = false
-			continue
-		}
-		if line[i] == '\\' && !escaped {
-			escaped = true
-			continue
-		}
-		escapedHere := escaped
-		escaped = false
-		if escapedHere {
-			continue
-		}
-		switch line[i] {
-		case ';', '|', '&', '(':
-			separator[i] = true
-			if line[i] == '(' {
-				open = append(open, i)
-			}
-		case ')':
-			separator[i] = true
-			if n := len(open); n > 0 {
-				opener := open[n-1]
-				open = open[:n-1]
-				separator[i] = !isSubstitutionOpener(line, opener)
-			}
-		}
-	}
-	return separator
 }
 
 // isSubstitutionOpener reports whether the `(` at pos opens a command

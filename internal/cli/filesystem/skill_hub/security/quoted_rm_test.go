@@ -59,6 +59,9 @@ func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 		`case x) rm -rf "a; $T";;`,
 		`echo <(rm -rf "a; $T")`,
 		`echo >(rm -rf "a; $T")`,
+		`env IGNORE=<(printf ok) rm -rf "p;/../victim$SUFFIX"`,
+		`$(case x in x) rm -rf "p;/../victim$SUFFIX";; esac)`,
+		`case $x in a) rm -rf "a; $T";; b) rm -rf "b; $T";; esac`,
 	}
 
 	for _, line := range lines {
@@ -103,6 +106,8 @@ func TestScanSkillIgnoresRmQuotedExpansion(t *testing.T) {
 		`echo \) rm -rf "a; $T"`,
 		`echo <(printf ok) rm -rf "a; $T"`,
 		`echo >(printf ok) rm -rf "a; $T"`,
+		`env IGNORE=<(printf ok) echo rm -rf "a; $T"`,
+		`sudo $(printf ok) rm -rf "a; $T"`,
 	}
 
 	for _, line := range lines {
