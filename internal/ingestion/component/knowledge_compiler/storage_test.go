@@ -18,7 +18,6 @@ func TestProductsToChunkDocsCanonicalKinds(t *testing.T) {
 		{"mindmap", common.VariantMindmap, "mind_map"},
 		{"page_index", common.VariantStructure, "page_index"},
 		{"tree", common.VariantTree, "tree"},
-		{"timeline", common.VariantStructure, "timeline"},
 		{"wiki", common.VariantWiki, "wiki"},
 	} {
 		t.Run(test.kind, func(t *testing.T) {

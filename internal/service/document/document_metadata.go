@@ -693,10 +693,11 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 			return "", fmt.Errorf("failed to ensure metadata store: %w", err)
 		}
 	}
-	// Send the complete 'after' map: the values a stale read did not see must not
-	// be wiped by a write that only carries the delta. A write that follows the
-	// delete above (rather than a clear) is also what keeps a key the read missed
-	// intact, which is why the two steps stay separate.
+	// Send the complete 'after' map — UpdateMetadata replaces the stored
+	// meta_fields wholesale on every engine, so a write carrying only the
+	// delta would drop untouched keys. The delete above stays a separate step
+	// for the empty-'after' case: writeDocumentMetadataStore skips empty maps,
+	// so removing the last keys is the delete's job.
 	if err := s.writeDocumentMetadataStore(ctx, doc, tenantID, after); err != nil {
 		return "", err
 	}
@@ -1005,6 +1006,14 @@ func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []Metadat
 		}
 
 		if curList, ok := toMetadataInterfaceSlice(current); ok {
+			if !matchProvided {
+				switch strings.ToLower(strings.TrimSpace(upd.ValueType)) {
+				case "string", "number", "time":
+					meta[key] = normalizedValue
+					changed = true
+					continue
+				}
+			}
 			if !matchProvided {
 				newList := append([]interface{}{}, curList...)
 				if appendList, ok := toMetadataInterfaceSlice(normalizedValue); ok {

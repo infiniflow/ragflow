@@ -752,7 +752,6 @@ export default {
         knowledge_graph: 'ナレッジグラフ',
         mind_map: 'マインドマップ',
         page_index: 'ページインデックス',
-        timeline: 'タイムライン',
         tree: 'ツリー',
         raptor: 'RAPTOR',
       },
@@ -1219,9 +1218,6 @@ export default {
 
       modelsToBeAddedTooltip:
         'モデルプロバイダーがリストにないが「OpenAI互換」を謳っている場合は、OpenAI-API-compatible カードを選択して関連モデルを追加してください。',
-
-      dingtalkAITableDescription:
-        'Dingtalk AI Table に接続し、指定されたテーブルからレコードを同期します。',
 
       Verify: '検証',
       keyValid: 'APIキーは有効です。',

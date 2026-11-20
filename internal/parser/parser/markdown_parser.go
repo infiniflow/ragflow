@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	markdownlib "github.com/gomarkdown/markdown"
@@ -203,6 +204,24 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 
 func (p *MarkdownParser) String() string {
 	return "MarkdownParser"
+}
+
+// markdownRendererPool reuses HTML renderer instances across table renders.
+// Each call takes and returns its own instance, so concurrent parses never
+// share one renderer (RenderNode mutates per-instance counters). A recycled
+// renderer carries heading-ID, front-matter and last-output-length counters,
+// but table node trees contain no headings, front matter, or leading soft
+// breaks, so those counters cannot change the produced markup.
+var markdownRendererPool = sync.Pool{
+	New: func() any {
+		return mdhtml.NewRenderer(mdhtml.RendererOptions{})
+	},
+}
+
+func renderMarkdownNode(n ast.Node) []byte {
+	r := markdownRendererPool.Get().(*mdhtml.Renderer)
+	defer markdownRendererPool.Put(r)
+	return markdownlib.Render(n, r)
 }
 
 // markdownNew is a thin constructor so the extension set is owned
@@ -526,7 +545,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 
 		switch n := child.(type) {
 		case *ast.Table:
-			markup := markdownlib.Render(n, mdhtml.NewRenderer(mdhtml.RendererOptions{}))
+			markup := renderMarkdownNode(n)
 			tableDoc, _ := html.Parse(bytes.NewReader(markup))
 			walkHTMLBlocksWithState(tableDoc, out, htmlState)
 			continue
@@ -536,7 +555,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			docTypeKwd = "text"
 		case *ast.Paragraph:
 			if containsMarkdownTable(n) {
-				markup := markdownlib.Render(n, mdhtml.NewRenderer(mdhtml.RendererOptions{}))
+				markup := renderMarkdownNode(n)
 				doc, _ := html.Parse(bytes.NewReader(markup))
 				walkHTMLBlocksWithState(doc, out, htmlState)
 				continue

@@ -22,6 +22,7 @@ import {
 } from '@/components/dynamic-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { shouldDisableEeDataSourceField } from '@/ee/pages/user-setting/data-source/ee-extensions';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { RunningStatus, RunningStatusOld } from '@/constants/knowledge';
@@ -144,6 +145,7 @@ const SourceDetailPage = () => {
       ...field,
       horizontal: true,
       onChange: undefined,
+      ...(shouldDisableEeDataSourceField(field.name) ? { disabled: true } : {}),
     }));
   }, [detail, customFields, t]);
 

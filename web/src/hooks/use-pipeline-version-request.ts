@@ -5,21 +5,25 @@ import { useQuery } from '@tanstack/react-query';
 import { useContext } from 'react';
 
 export const PipelineVersionKeys = {
-  catalog: (accessUserId?: string) =>
+  catalog: (accessUserId?: string | null) =>
     accessUserId
       ? (['pipelineVersionCatalog', 'dataflow', accessUserId] as const)
       : (['pipelineVersionCatalog', 'dataflow'] as const),
 };
 
-export function useFetchPipelineVersionCatalog(enabled = true) {
-  const accessUserId = useContext(ModelResourceAccessUserIdContext);
+export function useFetchPipelineVersionCatalog(
+  enabled = true,
+  requestedAccessUserId?: string,
+) {
+  const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
+  const accessUserId = requestedAccessUserId ?? contextAccessUserId;
   const {
     data,
     isFetching: loading,
     isError,
   } = useQuery({
     queryKey: PipelineVersionKeys.catalog(accessUserId),
-    enabled,
+    enabled: enabled && accessUserId !== null,
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     queryFn: async (): Promise<IAgentVersionCatalogItem[]> => {
@@ -37,12 +41,17 @@ export function useFetchPipelineVersionCatalog(enabled = true) {
     },
   });
 
-  return { data, loading, isError };
+  return { data, loading: loading || accessUserId === null, isError };
 }
 
-export function useFetchPipelineVersionList(pipelineId?: string) {
-  const { data, loading, isError } =
-    useFetchPipelineVersionCatalog(!!pipelineId);
+export function useFetchPipelineVersionList(
+  pipelineId?: string,
+  accessUserId?: string,
+) {
+  const { data, loading, isError } = useFetchPipelineVersionCatalog(
+    !!pipelineId,
+    accessUserId,
+  );
   return {
     data:
       pipelineId && data

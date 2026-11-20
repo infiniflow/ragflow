@@ -5,20 +5,18 @@ import { AppSidebar } from './index';
 const mockToggleDatasetSidebar = jest.fn();
 const mockToggleAgentSidebar = jest.fn();
 const mockToggleChatSidebar = jest.fn();
+const mockToggleSearchSidebar = jest.fn();
 const mockToggleCompilationTemplateSidebar = jest.fn();
 const mockTogglePrimarySidebar = jest.fn();
 let mockPrimarySidebarCollapsed = false;
 let mockDatasetSidebarCollapsed = false;
 let mockAgentSidebarCollapsed = false;
 let mockChatSidebarCollapsed = false;
+let mockSearchSidebarCollapsed = false;
 let mockCompilationTemplateSidebarCollapsed = false;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
-}));
-
-jest.mock('@/ee/layouts/components/header-enterprise', () => ({
-  EnterpriseHeaderUpgradeBadge: () => null,
 }));
 
 jest.mock('@/hooks/use-dataset-sidebar-collapse', () => ({
@@ -39,6 +37,13 @@ jest.mock('@/hooks/use-chat-sidebar-collapse', () => ({
   useChatSidebarCollapse: () => ({
     collapsed: mockChatSidebarCollapsed,
     toggleCollapsed: mockToggleChatSidebar,
+  }),
+}));
+
+jest.mock('@/hooks/use-search-sidebar-collapse', () => ({
+  useSearchSidebarCollapse: () => ({
+    collapsed: mockSearchSidebarCollapsed,
+    toggleCollapsed: mockToggleSearchSidebar,
   }),
 }));
 
@@ -80,6 +85,7 @@ describe('AppSidebar secondary sidebar expansion', () => {
     mockDatasetSidebarCollapsed = false;
     mockAgentSidebarCollapsed = false;
     mockChatSidebarCollapsed = false;
+    mockSearchSidebarCollapsed = false;
     mockCompilationTemplateSidebarCollapsed = false;
   });
 
@@ -129,6 +135,18 @@ describe('AppSidebar secondary sidebar expansion', () => {
 
     expect(mockToggleChatSidebar).toHaveBeenCalledTimes(1);
     expect(mockToggleDatasetSidebar).not.toHaveBeenCalled();
+  });
+
+  it('expands the search secondary sidebar on search detail routes', () => {
+    mockSearchSidebarCollapsed = true;
+    renderAppSidebar('/search/search-1');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'sidebar.expandSidebar' }),
+    );
+
+    expect(mockToggleSearchSidebar).toHaveBeenCalledTimes(1);
+    expect(mockToggleChatSidebar).not.toHaveBeenCalled();
   });
 
   it('does not show a secondary sidebar expander on built-in pipeline routes', () => {
@@ -186,6 +204,7 @@ describe('AppSidebar primary sidebar border', () => {
     mockDatasetSidebarCollapsed = false;
     mockAgentSidebarCollapsed = false;
     mockChatSidebarCollapsed = false;
+    mockSearchSidebarCollapsed = false;
     mockCompilationTemplateSidebarCollapsed = false;
   });
 

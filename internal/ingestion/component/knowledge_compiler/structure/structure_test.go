@@ -366,14 +366,14 @@ func TestHypergraphPromptsSetUniquenessAndNoRelations(t *testing.T) {
 			t.Errorf("InferType(kind=%q) = %q, want hypergraph", alias, got)
 		}
 	}
-	// Arbitrary kinds (timeline, page_index) are returned verbatim — Python
+	// Template kinds (page_index, session_graph) are returned verbatim — Python
 	// stamps them as the autotype/compile_kwd.
-	if got := InferType(map[string]any{"kind": "timeline"}); got != Type("timeline") {
-		t.Errorf("InferType(kind=timeline) = %q, want verbatim timeline", got)
+	if got := InferType(map[string]any{"kind": "page_index"}); got != Type("page_index") {
+		t.Errorf("InferType(kind=page_index) = %q, want verbatim page_index", got)
 	}
 	// An unknown compile_type is NOT a compile kind and falls through to kind.
-	if got := InferType(map[string]any{"compile_type": "timeline"}); got != TypeList {
-		t.Errorf("InferType(compile_type=timeline) = %q, want list (falls through)", got)
+	if got := InferType(map[string]any{"compile_type": "page_index"}); got != TypeList {
+		t.Errorf("InferType(compile_type=page_index) = %q, want list (falls through)", got)
 	}
 	if got := InferType(map[string]any{}); got != TypeList {
 		t.Errorf("InferType(empty) = %q, want list", got)

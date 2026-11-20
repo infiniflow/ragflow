@@ -193,48 +193,29 @@ func splitKeywords(keywords string) []string {
 
 var sentEnd = regexp.MustCompile(`[。！？；!?;]+|\.`)
 
-// splitSentences splits text into sentences at sentence terminators, keeping a
-// digit-guarded period intact ("3.14" / "v1.2" are not split). Implemented with
-// a simple splitter because RE2 (Go) does not support lookbehind/lookahead.
+// splitSentences splits text into sentences, keeping each terminator attached
+// like Python _split_plain. A period next to a digit is not a terminator
+// ("3.14" / "v1.2"); RE2 has no lookaround, so that guard is applied here.
 func splitSentences(content string) []string {
-	raw := sentEnd.Split(content, -1)
-	sents := make([]string, 0, len(raw))
-	for _, s := range raw {
-		if strings.TrimSpace(s) == "" {
+	var sents []string
+	start := 0
+	for _, m := range sentEnd.FindAllStringIndex(content, -1) {
+		if content[m[0]] == '.' && (m[0] > 0 && isASCIIDigit(content[m[0]-1]) || m[1] < len(content) && isASCIIDigit(content[m[1]])) {
 			continue
 		}
-		// Re-join a trailing digit-period-digit that the splitter cut apart:
-		// if s ends with a digit and content had ".<digit>" following, reattach.
-		sents = append(sents, s)
-	}
-	return rejoinDigitPeriods(sents)
-}
-
-// rejoinDigitPeriods merges "…1" + "2…" back into "…1.2…" when a decimal point
-// separated two digit groups.
-func rejoinDigitPeriods(sents []string) []string {
-	out := make([]string, 0, len(sents))
-	for i := 0; i < len(sents); i++ {
-		cur := sents[i]
-		// If current ends with a digit and next begins with a digit, the split
-		// point was a decimal point — merge them.
-		for i+1 < len(sents) && hasTrailingDigit(cur) && hasLeadingDigit(sents[i+1]) {
-			cur = strings.TrimRight(cur, " \t") + "." + sents[i+1]
-			i++
+		if seg := content[start:m[1]]; strings.TrimSpace(seg) != "" {
+			sents = append(sents, seg)
 		}
-		out = append(out, cur)
+		start = m[1]
 	}
-	return out
+	if tail := content[start:]; strings.TrimSpace(tail) != "" {
+		sents = append(sents, tail)
+	}
+	return sents
 }
 
-func hasTrailingDigit(s string) bool {
-	s = strings.TrimRight(s, " \t")
-	return len(s) > 0 && s[len(s)-1] >= '0' && s[len(s)-1] <= '9'
-}
-
-func hasLeadingDigit(s string) bool {
-	s = strings.TrimLeft(s, " \t")
-	return len(s) > 0 && s[0] >= '0' && s[0] <= '9'
+func isASCIIDigit(b byte) bool {
+	return b >= '0' && b <= '9'
 }
 
 // narrowContent returns the keyword-bearing sentences (+/-1 neighbour) with the

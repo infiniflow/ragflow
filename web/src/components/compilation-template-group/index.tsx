@@ -1,3 +1,20 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { PageFrame } from '@/components/page-frame';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CompilationTemplateKind } from '@/constants/compilation';
@@ -240,60 +257,64 @@ export function CompilationTemplateGroupEditor({
               />
             )}
 
-            <div className="flex min-w-0 flex-1 flex-col">
-              {activeView === CompilationTemplateEditorView.Json ? (
-                <JsonPreview value={allFormValues} />
-              ) : (
-                <TemplateConfiguration
-                  form={form}
-                  builtins={builtins}
-                  kindOptions={kindOptions}
-                  selectedTemplateIndex={SelectedTemplateIndex}
-                >
-                  {isArtifacts && (
-                    <BlueprintSection
+            <section className="min-h-0 min-w-0 flex-1 pt-3">
+              <PageFrame>
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  {activeView === CompilationTemplateEditorView.Json ? (
+                    <JsonPreview value={allFormValues} />
+                  ) : (
+                    <TemplateConfiguration
                       form={form}
-                      selectedTemplateIndex={SelectedTemplateIndex}
                       builtins={builtins}
-                    />
+                      kindOptions={kindOptions}
+                      selectedTemplateIndex={SelectedTemplateIndex}
+                    >
+                      {isArtifacts && (
+                        <BlueprintSection
+                          form={form}
+                          selectedTemplateIndex={SelectedTemplateIndex}
+                          builtins={builtins}
+                        />
+                      )}
+                    </TemplateConfiguration>
                   )}
-                </TemplateConfiguration>
-              )}
-            </div>
-          </div>
+                </div>
 
-          <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end gap-5">
-            {ontologyIssues.length > 0 && (
-              <span className="mr-auto text-xs text-[#F0A020]">
-                {t('knowledgeCompilation.ontologySaveBlocked', {
-                  count: ontologyIssues.length,
-                  defaultValue:
-                    '{{count}} ontology problem(s) must be fixed first — the canvas lists them.',
-                })}
-              </span>
-            )}
-            <Button type="button" variant="outline" onClick={onCancel}>
-              {cancelText}
-            </Button>
-            <Button
-              type="submit"
-              loading={isLoading}
-              disabled={ontologyIssues.length > 0}
-              className="relative"
-            >
-              {t('common.save')}
-              {/* A save button with no state is indistinguishable from one that is
-                  already done — the badge is the difference. */}
-              {isDirty && (
-                <span
-                  className="absolute -top-1 -right-1 size-2 rounded-full bg-state-warning"
-                  title={t('knowledgeCompilation.unsavedChanges', {
-                    defaultValue: 'Unsaved changes',
-                  })}
-                />
-              )}
-            </Button>
-          </footer>
+                <footer className="shrink-0 px-5 py-4 flex items-center justify-end gap-5">
+                  {ontologyIssues.length > 0 && (
+                    <span className="mr-auto text-xs text-[#F0A020]">
+                      {t('knowledgeCompilation.ontologySaveBlocked', {
+                        count: ontologyIssues.length,
+                        defaultValue:
+                          '{{count}} ontology problem(s) must be fixed first — the canvas lists them.',
+                      })}
+                    </span>
+                  )}
+                  <Button type="button" variant="outline" onClick={onCancel}>
+                    {cancelText}
+                  </Button>
+                  <Button
+                    type="submit"
+                    loading={isLoading}
+                    disabled={ontologyIssues.length > 0}
+                    className="relative"
+                  >
+                    {t('common.save')}
+                    {/* A save button with no state is indistinguishable from one
+                        that is already done — the badge is the difference. */}
+                    {isDirty && (
+                      <span
+                        className="absolute -top-1 -right-1 size-2 rounded-full bg-state-warning"
+                        title={t('knowledgeCompilation.unsavedChanges', {
+                          defaultValue: 'Unsaved changes',
+                        })}
+                      />
+                    )}
+                  </Button>
+                </footer>
+              </PageFrame>
+            </section>
+          </div>
         </form>
       </Form>
     </>

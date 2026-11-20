@@ -238,6 +238,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewHopBaseModel(baseURL, urlSuffix), nil
 	case "greennode":
 		return NewGreenNodeModel(baseURL, urlSuffix), nil
+	case "morse":
+		return NewMorseModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

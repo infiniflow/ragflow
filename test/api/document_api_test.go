@@ -323,7 +323,7 @@ func TestRESTDocumentUpdatesPersistAndRejectAtomically(t *testing.T) {
 	for _, method := range methods {
 		// This document is text: registry membership alone does not mean a
 		// template supports its file family.
-		if !slices.Contains([]string{"naive", "general", "book", "laws", "one", "qa", "table"}, method) {
+		if !slices.Contains([]string{"naive", "general", "book", "laws", "one", "qa", "table", "resume"}, method) {
 			before := getRESTDocument(t, id, docID)
 			restCode(t, restCall(t, TestConfig, http.MethodPatch, path, apiObject{"chunk_method": method, "name": "must_not_persist.txt"}, nil), 200, 102)
 			after := getRESTDocument(t, id, docID)

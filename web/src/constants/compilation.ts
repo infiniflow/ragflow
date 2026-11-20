@@ -19,7 +19,6 @@ export const enum CompilationTemplateKind {
   KnowledgeGraph = 'knowledge_graph',
   /** Class-level ontology: classes are nodes, properties are domain→range edges. */
   Ontology = 'ontology',
-  Timeline = 'timeline',
   PageIndex = 'page_index',
   Tree = 'tree',
   Empty = 'empty',

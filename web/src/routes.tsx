@@ -175,6 +175,11 @@ const routeConfigOptions = [
     Component: () => import('@/pages/next-chats/chat'),
   },
   {
+    path: `${Routes.UserSetting}${Routes.Api}`,
+    Component: () => import('@/pages/user-setting/setting-api'),
+    layout: false,
+  },
+  {
     path: Routes.UserSetting,
     Component: () => import('@/pages/user-setting'),
     layout: false,
@@ -186,10 +191,6 @@ const routeConfigOptions = [
       {
         path: `${Routes.UserSetting}/profile`,
         Component: () => import('@/pages/user-setting/profile'),
-      },
-      {
-        path: `${Routes.UserSetting}${Routes.Api}`,
-        Component: () => import('@/pages/user-setting/setting-api'),
       },
       {
         path: `${Routes.UserSetting}${Routes.Model}`,

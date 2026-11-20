@@ -424,7 +424,7 @@ The GitHub component searches repositories through the GitHub Repository Search 
 
 The output contains matching repository names, links, descriptions, and star counts.
 
-![GitHub repository search component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/github.jpg)
+![GitHub repository search component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/GitHub.jpg)
 
 ## Academic Literature Retrieval
 

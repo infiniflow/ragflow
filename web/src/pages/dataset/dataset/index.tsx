@@ -26,8 +26,8 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { LucidePlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PageFrame } from '@/components/page-frame';
 import { MetadataType } from '../components/metedata/constant';
-import { DatasetPageFrame } from '../components/dataset-page-frame';
 import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
@@ -157,7 +157,7 @@ export default function Dataset() {
   const datasetDescription = t('knowledgeDetails.datasetDescription');
 
   return (
-    <DatasetPageFrame>
+    <PageFrame>
       <CardHeader as="header" className="p-5 space-y-0 shrink-0">
         <ListFilterBar
           onSearchChange={handleInputChange}
@@ -284,6 +284,6 @@ export default function Dataset() {
         ></PrivilegeManagementDialog>
       )}
       {/* </> */}
-    </DatasetPageFrame>
+    </PageFrame>
   );
 }

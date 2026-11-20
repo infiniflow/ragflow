@@ -32,6 +32,7 @@ export function JsonPreview({ value }: JsonPreviewProps) {
       <JsonEditor
         value={value}
         height="100%"
+        className="border-none [&_.jsoneditor]:border-none"
         options={{ mode: 'tree', modes: ['tree', 'code'] }}
         defaultExpanded
       />

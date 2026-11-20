@@ -82,32 +82,36 @@ func TestTenantModelDAODeleteByModelIDAndScopeDeletesOnlyMatchingModel(t *testin
 	}
 }
 
-func TestTenantModelDAOUpdateStatusByIDAndScope(t *testing.T) {
+func TestTenantModelDAOUpdateStatusByIDsAndScope(t *testing.T) {
 	db := setupTenantModelDAOTestDB(t)
 	useTenantModelDAOTestDB(t, db)
 
-	seedTenantModel(t, db, &entity.TenantModel{ID: "model-status", ModelName: "m", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
+	seedTenantModel(t, db, &entity.TenantModel{ID: "model-status-1", ModelName: "m1", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
+	seedTenantModel(t, db, &entity.TenantModel{ID: "model-status-2", ModelName: "m2", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
 
 	ctx := t.Context()
-	rows, err := NewTenantModelDAO().UpdateStatusByIDAndScope(ctx, db, "model-status", "provider-1", "instance-1", "inactive")
+	ids := []string{"model-status-1", "model-status-2"}
+	rows, err := NewTenantModelDAO().UpdateStatusByIDsAndScope(ctx, db, ids, "provider-1", "instance-1", "inactive")
 	if err != nil {
-		t.Fatalf("UpdateStatusByIDAndScope() error = %v", err)
+		t.Fatalf("UpdateStatusByIDsAndScope() error = %v", err)
 	}
-	if rows != 1 {
-		t.Fatalf("rows = %d, want 1", rows)
+	if rows != 2 {
+		t.Fatalf("rows = %d, want 2", rows)
 	}
 
-	var got entity.TenantModel
-	if err = db.Where("id = ?", "model-status").First(&got).Error; err != nil {
-		t.Fatalf("failed to reload model: %v", err)
-	}
-	if got.Status != "inactive" {
-		t.Fatalf("status = %q, want inactive", got.Status)
+	for _, id := range ids {
+		var got entity.TenantModel
+		if err = db.Where("id = ?", id).First(&got).Error; err != nil {
+			t.Fatalf("failed to reload model %q: %v", id, err)
+		}
+		if got.Status != "inactive" {
+			t.Fatalf("status of %q = %q, want inactive", id, got.Status)
+		}
 	}
 
-	rows, err = NewTenantModelDAO().UpdateStatusByIDAndScope(ctx, db, "model-status", "provider-1", "wrong-instance", "active")
+	rows, err = NewTenantModelDAO().UpdateStatusByIDsAndScope(ctx, db, ids, "provider-1", "wrong-instance", "active")
 	if err != nil {
-		t.Fatalf("UpdateStatusByIDAndScope() wrong scope error = %v", err)
+		t.Fatalf("UpdateStatusByIDsAndScope() wrong scope error = %v", err)
 	}
 	if rows != 0 {
 		t.Fatalf("wrong-scope rows = %d, want 0", rows)

@@ -2,16 +2,13 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { PropsWithChildren } from 'react';
 
-type DatasetPageFrameProps = PropsWithChildren<{
+type PageFrameProps = PropsWithChildren<{
   className?: string;
 }>;
 
-export function DatasetPageFrame({
-  children,
-  className,
-}: DatasetPageFrameProps) {
+export function PageFrame({ children, className }: PageFrameProps) {
   return (
-    <div className="h-full pr-5 pb-2.5">
+    <div className="h-full pr-2.5 pb-2.5">
       <Card
         as="article"
         className={cn(

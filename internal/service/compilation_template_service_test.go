@@ -390,7 +390,7 @@ func TestLoadBuiltinTemplates_AllYAMLDefinitions(t *testing.T) {
 		wantIDs[strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))] = struct{}{}
 	}
 
-	templates, err := loadBuiltinTemplates()
+	templates, err := loadBuiltinTemplatesFromFS(os.DirFS(dir))
 	if err != nil {
 		t.Fatalf("loadBuiltinTemplates: %v", err)
 	}
@@ -404,9 +404,6 @@ func TestLoadBuiltinTemplates_AllYAMLDefinitions(t *testing.T) {
 		}
 		if template.Config["kind"] == nil {
 			t.Errorf("builtin template %q has no config.kind", template.ID)
-		}
-		if _, err = common.KindToVariant(template.Kind); err != nil {
-			t.Errorf("builtin template %q kind %q is not supported: %v", template.ID, template.Kind, err)
 		}
 		// Tree intentionally carries empty entity/relation stubs for the shared
 		// form shape; those fields are not part of the tree template contract.

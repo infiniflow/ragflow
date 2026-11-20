@@ -64,6 +64,24 @@ func TestSplitSentences_DigitPeriod(t *testing.T) {
 	}
 }
 
+// TestNarrowContent_KeepsTerminators pins Python _split_plain: each sentence
+// keeps its terminator, and only a period next to a digit is not one.
+func TestNarrowContent_KeepsTerminators(t *testing.T) {
+	cases := []struct{ content, kw, want string }{
+		{"RAGFlow是开源的。它支持Go。别的内容。", "go", "...RAGFlow是开源的。它支持*Go*。别的内容。..."},
+		{"截至2023年底员工总数为500。2024年公司扩张。", "公司", "...截至2023年底员工总数为500。2024年*公司*扩张。..."},
+		{"价格是3；5号到货。", "到货", "...价格是3；5号*到货*。..."},
+		{"Alpha is fast. Beta is slow.", "beta", "...Alpha is fast. *Beta* is slow...."},
+		{"pi is 3.14 here.", "pi", "...*pi* is 3.14 here...."},
+	}
+	for _, c := range cases {
+		got, ok := narrowContent(c.content, []string{c.kw})
+		if !ok || got != c.want {
+			t.Errorf("narrowContent(%q, %q)\n got %q\nwant %q", c.content, c.kw, got, c.want)
+		}
+	}
+}
+
 // TestAgenticSearchKeywordWeights pins the fusion weight each mode asks for.
 // KeywordsSimilarityWeight is the keyword share: the nlp layer derives the
 // vector share as 1-weight, treats a zero keyword share as dense-only and a

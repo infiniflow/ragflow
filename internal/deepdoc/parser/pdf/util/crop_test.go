@@ -354,6 +354,18 @@ func TestCropSectionPositionsRasterLimitedRejectsOversizedStitchBeforeCopy(t *te
 	}
 }
 
+func TestCropMediaSectionPositionsLimitedRejectsOversizedStitchBeforeCopy(t *testing.T) {
+	page := &accessCountingImage{bounds: image.Rect(0, 0, 400, 400)}
+	positions := []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 200, Top: 0, Bottom: 100}}
+	got := cropMediaSectionPositionsLimited(positions, map[int]image.Image{0: page}, 1, 5_000)
+	if got != "" {
+		t.Fatalf("limited media crop = %q, want empty string when stitched pixels exceed limit", got)
+	}
+	if page.reads != 0 {
+		t.Fatalf("source pixel reads = %d, want 0 before rejecting oversized media stitch", page.reads)
+	}
+}
+
 func TestRotateImageCW(t *testing.T) {
 	// Create a 3x2 image with known colors: (0,0)=red, (1,0)=green, (2,0)=blue,
 	//                                    (0,1)=white, (1,1)=black, (2,1)=gray

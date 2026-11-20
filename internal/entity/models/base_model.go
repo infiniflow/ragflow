@@ -118,7 +118,10 @@ func recordResponseUsage(modelUsage *common.ModelUsage, requestID string, usage 
 		return
 	}
 	if modelUsage == nil {
-		modelUsage = &common.ModelUsage{}
+		// The synthetic record is built at response time, so StartAt carries
+		// the completion time; callers that know the call start should pass
+		// a usage with StartAt set before the call instead.
+		modelUsage = &common.ModelUsage{StartAt: time.Now()}
 	}
 	if modelUsage.Type == "" {
 		modelUsage.Type = modelType
@@ -141,10 +144,11 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 		modelUsage.OutputTokens = usage.CompletionTokens
 		modelUsage.TotalTokens = usage.TotalTokens
 	}
-	// StartAt may be zero when the synthetic ModelUsage came from
-	// recordResponseUsage's nil-caller path. In that case we cannot
-	// compute a meaningful response time; leave it at zero instead
-	// of reporting a 50-year epoch delta.
+	// StartAt may still be zero when the caller built an explicit ModelUsage
+	// without one in a build without the usage template resolver (which would
+	// have stamped it in usageFor). In that case we cannot compute a
+	// meaningful response time; leave it at zero instead of reporting a huge
+	// epoch delta.
 	if !modelUsage.StartAt.IsZero() {
 		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 	}
@@ -172,7 +176,7 @@ func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usa
 		chatConfig.UsageResult = usage
 	}
 	if modelUsage == nil {
-		modelUsage = &common.ModelUsage{}
+		modelUsage = &common.ModelUsage{StartAt: time.Now()}
 	}
 	if modelUsage.Type == "" {
 		modelUsage.Type = "chat"

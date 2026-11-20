@@ -502,6 +502,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
 	}
+	if err = ensureLastLoginTenantColumn(ctx, DB); err != nil {
+		return fmt.Errorf("failed to ensure user.last_login_tenant: %w", err)
+	}
 	if err = SeedSystemSettings(ctx, DB); err != nil {
 		return fmt.Errorf("failed to seed system settings: %w", err)
 	}
@@ -537,6 +540,14 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	common.Info("Model providers loaded successfully")
 
 	return nil
+}
+
+func ensureLastLoginTenantColumn(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	if !migrator.HasTable(&entity.User{}) || migrator.HasColumn(&entity.User{}, "LastLoginTenant") {
+		return nil
+	}
+	return migrator.AddColumn(&entity.User{}, "LastLoginTenant")
 }
 
 // GetDB get database instance
