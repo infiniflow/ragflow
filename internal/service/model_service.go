@@ -2694,7 +2694,7 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 	for _, name := range modelNames {
 		requestedNames[name] = struct{}{}
 	}
-	idsToDelete := make([]string, 0, len(modelNames))
+	objToDelete := make([]*entity.TenantModel, 0, len(modelNames))
 	for _, obj := range modelObjs {
 		if _, ok := requestedNames[obj.ModelName]; ok {
 			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
@@ -2705,12 +2705,13 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 				code, normalizedErr := permissionresponse.NormalizeHidden(err)
 				return code, normalizedErr
 			}
-			idsToDelete = append(idsToDelete, obj.ID)
+			objToDelete = append(objToDelete, obj)
 		}
 	}
-
-	if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToDelete); err != nil {
-		return common.CodeServerError, err
+	for _, obj := range objToDelete {
+		if _, err := m.modelDAO.UpdateStatusByIDAndScope(ctx, dao.DB, obj.ID, obj.ProviderID, obj.InstanceID, "inactive"); err != nil {
+			return common.CodeServerError, err
+		}
 	}
 
 	return common.CodeSuccess, nil
