@@ -16,7 +16,11 @@
 
 package security
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 	lines := []string{
@@ -202,4 +206,20 @@ func scanContent(content string) []Finding {
 	return NewScanner().ScanSkill("skill", "github", "community", map[string][]byte{
 		"install.sh": []byte(content),
 	}).Findings
+}
+
+func TestScanSkillScalesWithManyCandidateCommands(t *testing.T) {
+	// Every rm here is an argument of echo, so the pass must reject each one
+	// from the words of its own command instead of rescanning the growing line
+	// for every candidate.
+	line := strings.Repeat(`echo rm -rf "a; $T"; `, 120000)
+	start := time.Now()
+	for _, finding := range scanLine(line) {
+		if finding.PatternID == "rm_quoted_expansion" {
+			t.Fatalf("argument rm raised rm_quoted_expansion: %v", finding)
+		}
+	}
+	if elapsed := time.Since(start); elapsed > 15*time.Second {
+		t.Fatalf("scanning %d candidate commands took %v", 120000, elapsed)
+	}
 }

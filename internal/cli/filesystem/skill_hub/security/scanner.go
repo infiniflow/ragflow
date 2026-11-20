@@ -213,115 +213,192 @@ func logicalLines(content string) []logicalLine {
 func scanQuotedRmExpansion(line string) (string, bool) {
 	code := shellCodeMask(line)
 	separator := commandSeparatorMask(line, code)
-	for i := 0; i+2 <= len(line); i++ {
-		if !code[i] || !code[i+1] {
+	start := 0
+	for i := 0; i <= len(line); i++ {
+		if i < len(line) && !separator[i] {
 			continue
 		}
-		if line[i:i+2] != "rm" || (i > 0 && isShellWordByte(line[i-1])) {
-			continue
+		if operand, ok := scanCommandSegment(line, start, i); ok {
+			return operand, true
 		}
-		if i+2 < len(line) && line[i+2] != ' ' && line[i+2] != '\t' {
-			continue
-		}
-		// "rm" is only destructive at a shell command position; as an
-		// argument of another command (`echo rm -rf ...`) it is inert text.
-		if !isCommandPosition(line, i, separator) {
-			continue
-		}
+		start = i + 1
+	}
+	return "", false
+}
 
-		recursive, endOfOptions := false, false
-		var operands []string
-		for _, word := range shellWords(line[i+2:]) {
-			if !endOfOptions && word == "--" {
-				endOfOptions = true
-				continue
-			}
-			if !endOfOptions && len(word) > 1 && word[0] == '-' {
-				if isRecursiveFlag(word) {
-					recursive = true
+// scanCommandSegment runs the quoted-operand pass on every rm that can be the
+// executable of the simple command between two separators. The words before it
+// are fed to a prefixChain one at a time, so a long line stays linear: once a
+// word is not a prefix, no later rm of the same command is reachable and
+// `echo rm -rf ...` stays inert, while `sudo -u root rm ...` is inspected.
+func scanCommandSegment(line string, start, end int) (string, bool) {
+	var chain prefixChain
+	for _, word := range shellWordSpans(line, start, end) {
+		if !chain.broken {
+			if after, ok := rmExecutable(line, word); ok {
+				if operand, found := quotedRmOperand(line, after, end); found {
+					return operand, true
 				}
-				continue
 			}
-			operands = append(operands, word)
 		}
-		if !recursive {
+		chain.feed(word.text)
+	}
+	return "", false
+}
+
+// rmExecutable reports the offset just past the executable rm when word is
+// exactly "rm" or a path whose basename is "rm" (`/bin/rm`, `bin/rm`, `./rm`)
+// and the command word ends at a blank. A longer basename (`transform`,
+// `/usr/bin/tr.rm`) names a different program.
+func rmExecutable(line string, word shellWordSpan) (int, bool) {
+	switch {
+	case word.text == "rm":
+	case strings.HasSuffix(word.text, "/rm"):
+	default:
+		return 0, false
+	}
+	if word.end < len(line) && line[word.end] != ' ' && line[word.end] != '\t' {
+		return 0, false
+	}
+	return word.end, true
+}
+
+// quotedRmOperand returns the first recursive operand after the executable rm
+// whose operand hides an expansion behind a separator inside a quoted span.
+func quotedRmOperand(line string, after, end int) (string, bool) {
+	recursive, endOfOptions := false, false
+	var operands []string
+	for _, word := range shellWords(line[after:end]) {
+		if !endOfOptions && word == "--" {
+			endOfOptions = true
 			continue
 		}
-		for _, operand := range operands {
-			if operandHidesExpansion(operand) {
-				return operand, true
+		if !endOfOptions && len(word) > 1 && word[0] == '-' {
+			if isRecursiveFlag(word) {
+				recursive = true
 			}
+			continue
+		}
+		operands = append(operands, word)
+	}
+	if !recursive {
+		return "", false
+	}
+	for _, operand := range operands {
+		if operandHidesExpansion(operand) {
+			return operand, true
 		}
 	}
 	return "", false
 }
 
-// isCommandPosition reports whether the "rm" starting at offset i sits at a
-// shell command position: preceded by nothing, by a command separator, by a
-// keyword that starts a command (`then`, `do`), or by a chain of command
-// prefixes — variable assignments, sudo/env and friends, or the path head of
-// the executable itself (`/bin/rm`, `bin/rm`, `./rm`). An rm that is a word of
-// another command (`echo rm -rf ...`) is inert and must not reach the
-// quoted-operand pass. A quoted word is never a prefix, so `"echo" rm` stays a
-// command of echo.
-func isCommandPosition(line string, i int, separator []bool) bool {
-	// The executable word must be exactly "rm" or a path whose basename is
-	// "rm" (`/bin/rm`, `bin/rm`, `./rm`). A longer basename (`transform`,
-	// `/usr/bin/tr.rm`) names a different program and must not match.
-	wordStart := i
-	for wordStart > 0 && line[wordStart-1] != ' ' && line[wordStart-1] != '\t' && !separator[wordStart-1] {
-		wordStart--
-	}
-	if head := line[wordStart:i]; head != "" && !strings.HasSuffix(head, "/") {
-		return false
-	}
-	// Words before the executable are split with quote awareness, so an
-	// assignment or wrapper option value that holds spaces (`LABEL="a b" rm`)
-	// stays one word instead of splitting into fragments.
-	prefix := line[:wordStart]
-	lastSeparator := -1
-	for pos := 0; pos < len(prefix); pos++ {
-		if separator[pos] {
-			lastSeparator = pos
-		}
-	}
-	return prefixChainLeadsToCommand(shellWords(prefix[lastSeparator+1:]))
+// prefixChain tracks, word by word, whether the words read so far could stand
+// ahead of an executable: only variable assignments, shell keywords that start
+// a command (`then`, `do`), and command wrappers with the options and values
+// they take may (`sudo -u root rm`, `if true; then rm`). The first other word
+// makes every later word of the same command an argument, and a quoted word is
+// never a prefix, so `"echo" rm` stays a command of echo.
+type prefixChain struct {
+	wrapper string // wrapper whose option list is still being read
+	pending bool   // the last option of wrapper waits for its value
+	broken  bool
 }
 
-// prefixChainLeadsToCommand reports whether the tokens before the executable
-// word are only variable assignments, shell keywords that start a command
-// (`then`, `do`), and command wrappers, each with the options and arguments it
-// takes: `sudo -u root rm` and `if true; then rm` reach an rm, while
-// `echo rm` does not.
-func prefixChainLeadsToCommand(words []string) bool {
-	for k := 0; k < len(words); {
-		word := words[k]
-		if isAssignment(word) {
-			k++
-			continue
-		}
-		if isCommandKeyword(word) {
-			k++
-			continue
-		}
-		if !isCommandWrapper(word) {
-			return false
-		}
-		k++
-		for k < len(words) && strings.HasPrefix(words[k], "-") {
-			option := words[k]
-			k++
-			if wrapperOptionTakesValue(word, option) && k < len(words) && !strings.HasPrefix(words[k], "-") {
-				k++
-			}
-		}
-		if word == "env" {
-			for k < len(words) && isAssignment(words[k]) {
-				k++
-			}
-		}
+func (c *prefixChain) feed(word string) {
+	if c.broken {
+		return
 	}
-	return true
+	if c.wrapper != "" && !c.takeWrapperWord(word) {
+		c.wrapper = ""
+	}
+	if c.wrapper != "" {
+		return
+	}
+	switch {
+	case isAssignment(word), isCommandKeyword(word):
+	case isCommandWrapper(word):
+		c.wrapper = word
+		c.pending = false
+	default:
+		c.broken = true
+	}
+}
+
+// takeWrapperWord reports whether the wrapper's option list consumes word.
+func (c *prefixChain) takeWrapperWord(word string) bool {
+	if c.pending && !strings.HasPrefix(word, "-") {
+		c.pending = false
+		return true
+	}
+	if strings.HasPrefix(word, "-") {
+		c.pending = wrapperOptionTakesValue(c.wrapper, word)
+		return true
+	}
+	// env takes assignments after its options (`env FOO=1 rm`).
+	return c.wrapper == "env" && isAssignment(word)
+}
+
+// shellWordSpan is one word of a command segment with its byte offsets.
+type shellWordSpan struct {
+	text       string
+	start, end int
+}
+
+// shellWordSpans splits line[start:end] into words the way shellWords does:
+// quoted and escaped bytes stay part of the word, and a `#` at a word start
+// opens a comment.
+func shellWordSpans(line string, start, end int) []shellWordSpan {
+	var spans []shellWordSpan
+	for i := start; i < end; {
+		switch line[i] {
+		case ' ', '\t', '\r':
+			i++
+			continue
+		case '#':
+			return spans
+		}
+		wordStart := i
+		for i < end {
+			switch c := line[i]; c {
+			case ' ', '\t', '\r':
+			case '\'':
+				i++
+				for i < end && line[i] != '\'' {
+					i++
+				}
+				if i < end {
+					i++
+				}
+				continue
+			case '"':
+				i++
+				for i < end {
+					if line[i] == '\\' && i+1 < end {
+						i += 2
+						continue
+					}
+					if line[i] == '"' {
+						i++
+						break
+					}
+					i++
+				}
+				continue
+			case '\\':
+				i++
+				if i < end {
+					i++
+				}
+				continue
+			default:
+				i++
+				continue
+			}
+			break
+		}
+		spans = append(spans, shellWordSpan{text: line[wordStart:i], start: wordStart, end: i})
+	}
+	return spans
 }
 
 // isCommandKeyword reports whether word is a shell keyword that ends a
