@@ -403,3 +403,59 @@ func TestChatChannelAgentErrorAndThinking(t *testing.T) {
 		})
 	}
 }
+
+func TestChatChannelThinkingNotifierRunsAfterBindingValidation(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	ctx := serviceTestContext(t, "owner", "owner")
+	if err := db.Create(&entity.UserCanvas{ID: "agent", UserID: "owner", Title: new("Workflow")}).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewChatChannelService()
+	svc.agentRunner = channelAgentRunnerFunc(func(context.Context, string, string, string, any, []map[string]any) (<-chan canvas.RunEvent, error) {
+		events := make(chan canvas.RunEvent, 1)
+		events <- canvas.RunEvent{Type: "message", Data: `{"content":"answer"}`}
+		close(events)
+		return events, nil
+	})
+	channel, err := svc.CreateChatChannel(ctx, "bound", "wecom", entity.JSONMap{}, nil, new("agent"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	notifications := 0
+	answer, err := svc.HandleIncomingMessage(
+		t.Context(),
+		ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external", Text: "hello"},
+		nil,
+		func() error {
+			notifications++
+			return errors.New("placeholder delivery failed")
+		},
+	)
+	if err != nil || answer != "answer" {
+		t.Fatalf("bound channel answer=%q err=%v", answer, err)
+	}
+	if notifications != 1 {
+		t.Fatalf("thinking notifications = %d, want 1", notifications)
+	}
+
+	unbound, err := svc.CreateChatChannel(ctx, "unbound", "wecom", entity.JSONMap{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err = svc.HandleIncomingMessage(
+		t.Context(),
+		ChatChannelIncomingMessage{AccountID: unbound.ID, ChatID: "external", Text: "hello"},
+		nil,
+		func() error {
+			notifications++
+			return nil
+		},
+	)
+	if err != nil || answer != "" {
+		t.Fatalf("unbound channel answer=%q err=%v", answer, err)
+	}
+	if notifications != 1 {
+		t.Fatalf("unbound channel triggered the thinking notifier: %d", notifications)
+	}
+}
