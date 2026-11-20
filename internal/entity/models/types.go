@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
@@ -383,13 +384,24 @@ type ParseFileConfig struct {
 // install the resolver at startup; the community build leaves it nil.
 var usageTemplateResolver func(info *ModelInfo, usage *common.ModelUsage) *common.ModelUsage
 
-// usageFor resolves the usage record for one call. The community build
-// forwards usage untouched.
+// usageFor resolves the usage record for one call and stamps the call start
+// time on it. The community build forwards usage untouched.
+//
+// Every typed model entry point (chat, stream, embed, rerank) funnels through
+// here exactly once, at the start of the call, so this is the one place that
+// can guarantee a usage row carries the time the call was made even when the
+// call site forgot to set StartAt (nil usage falling back to a template clone,
+// or an explicit record built without a timestamp). A non-zero StartAt set by
+// the caller is kept untouched.
 func usageFor(info *ModelInfo, usage *common.ModelUsage) *common.ModelUsage {
 	if usageTemplateResolver == nil {
 		return usage
 	}
-	return usageTemplateResolver(info, usage)
+	resolved := usageTemplateResolver(info, usage)
+	if resolved != nil && resolved.StartAt.IsZero() {
+		resolved.StartAt = time.Now()
+	}
+	return resolved
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration
