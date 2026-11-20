@@ -2204,6 +2204,10 @@ func TestInterruptedAnswerText(t *testing.T) {
 		"<think>why</think>":               "",
 		"<think>why</think>text":           "<think>why</think>text",
 		"<think>a</think>text<think>again": "<think>a</think>text",
+		"text<think>why</think>":           "text<think>why</think>",
+		"text<think>why</think>  ":         "text<think>why</think>  ",
+		"why</think>":                      "",
+		"why</think>text":                  "why</think>text",
 	} {
 		if got := interruptedAnswerText(streamed); got != want {
 			t.Errorf("interruptedAnswerText(%q)=%q, want %q", streamed, got, want)

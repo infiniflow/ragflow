@@ -1809,14 +1809,18 @@ func dropUnansweredQuestions(messages []map[string]interface{}) []map[string]int
 	return kept
 }
 
+// closedReasoningBlock matches one complete <think>...</think> block.
+var closedReasoningBlock = regexp.MustCompile(`(?s)<think>.*?</think>`)
+
 // interruptedAnswerText returns the part of a cut-off stream worth keeping as
-// the turn's answer, or "" when the client received no visible text. A reasoning
-// block still open at the cut is removed so it cannot swallow later rendering.
+// the turn's answer, or "" when the client received no visible text. Text on
+// either side of a closed reasoning block counts as visible. A reasoning block
+// still open at the cut is removed so it cannot swallow later rendering.
 func interruptedAnswerText(streamed string) string {
 	if open := strings.LastIndex(streamed, "<think>"); open >= 0 && !strings.Contains(streamed[open:], "</think>") {
 		streamed = streamed[:open]
 	}
-	if strings.TrimSpace(ExtractVisibleAnswer(streamed)) == "" {
+	if strings.TrimSpace(ExtractVisibleAnswer(closedReasoningBlock.ReplaceAllString(streamed, ""))) == "" {
 		return ""
 	}
 	return streamed
