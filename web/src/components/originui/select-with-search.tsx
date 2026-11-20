@@ -278,7 +278,7 @@ export const SelectWithSearch = forwardRef<
             disabled={disabled}
             data-testid={testId}
             className={cn(
-              '!bg-bg-input hover:bg-background border-border-button w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto group',
+              'rounded-2xl !bg-bg-input hover:bg-background border-border-button w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto group',
               triggerClassName,
             )}
           >
@@ -317,7 +317,7 @@ export const SelectWithSearch = forwardRef<
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="border-border-button w-full min-w-[var(--radix-popper-anchor-width)] p-0"
+          className="rounded-2xl border-border-button w-full min-w-[var(--radix-popper-anchor-width)] p-0"
           align="start"
         >
           <Command className="p-5" filter={filterFn}>
