@@ -714,13 +714,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 				"dataset settings were saved, but the connector tasks of an earlier attempt could not be read; retry the request: %w", err)
 		}
 	}
-	// A retry of a save that failed after its commit schedules no task of its
-	// own but still finds the rows that attempt committed. It repeats the same
-	// PageRank the failed attempt had already saved, so no value change remains
-	// to schedule a propagation; repeat the idempotent write here so a
-	// chunk-store write that failed before the first publication is repaired
-	// before the recovered task runs.
-	if pagerankRetry != nil && len(scheduledTaskIDs) == 0 && len(recoveredTaskIDs) > 0 {
+	// A retry of a save that failed after its commit still finds the rows that
+	// attempt committed, and it repeats the same PageRank the failed attempt had
+	// already saved, so no value change remains to schedule a propagation;
+	// repeat the idempotent write here so a chunk-store write that failed before
+	// the first publication is repaired before the recovered task runs. Adding
+	// another connector in the same request schedules a task of its own, so the
+	// trigger is a recovered row this request did not schedule.
+	if pagerankRetry != nil && recoveredOutsideScheduled(scheduledTaskIDs, recoveredTaskIDs) {
 		if err = d.updateDatasetPagerankChunks(ctx, *pagerankRetry); err != nil {
 			return nil, common.CodeServerError, fmt.Errorf(
 				"dataset settings were saved, but the PageRank of an earlier attempt could not be re-applied to the chunk store; retry the request: %w", err)
@@ -845,6 +846,25 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 			common.Warn("syncer task publish failed", zap.String("task_id", taskID), zap.Error(err))
 		}
 	}
+}
+
+// recoveredOutsideScheduled reports whether recovered holds a task ID the
+// transaction did not schedule itself: that row comes from an attempt that
+// committed it and failed before publication.
+func recoveredOutsideScheduled(scheduled, recovered []string) bool {
+	if len(recovered) == 0 {
+		return false
+	}
+	scheduledIDs := make(map[string]struct{}, len(scheduled))
+	for _, id := range scheduled {
+		scheduledIDs[id] = struct{}{}
+	}
+	for _, id := range recovered {
+		if _, ok := scheduledIDs[id]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // pendingDatasetSyncTaskIDs returns the dataset's still-scheduled connector
