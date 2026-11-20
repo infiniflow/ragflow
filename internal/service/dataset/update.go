@@ -151,6 +151,12 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	// must neither trigger engine and provider work nor learn the dataset's
 	// vector dimension from the rejection. The update is authorized again under
 	// the row lock, which stays the authority.
+	// switchValidated is only evidence for the binding the probe ran against:
+	// the stored vectors it compared belong to that model, and a row that names
+	// another one by the time the lock is taken — its chunks were rebuilt or
+	// replaced in between — was never validated.
+	switchValidated := false
+	switchValidatedEmbdID := ""
 	if embdIDProvided && embeddingSwitchNeedsCheck(kb, embdID) {
 		if accessErr := permission.NewDatabaseChecker(dao.DB).CheckResource(
 			ctx,
@@ -163,6 +169,8 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		if code, switchErr := d.validateEmbeddingSwitch(ctx, kb, embdID); switchErr != nil {
 			return nil, code, switchErr
 		}
+		switchValidated = true
+		switchValidatedEmbdID = kb.EmbdID
 	}
 
 	if req.ParserConfig != nil {
@@ -203,17 +211,37 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		return nil, common.CodeDataError, errors.New("no properties were modified")
 	}
 
+	preparedLanguage := ""
+	if language, ok := simpleUpdates["language"].(string); ok {
+		preparedLanguage = language
+	}
+	storePlan, preflightCode, preflightErr := d.planChunkStoreForEmbeddingChange(ctx, kb, embdID, embdIDProvided, parserID, parserIDProvided, preparedLanguage)
+	if preflightErr != nil {
+		return nil, preflightCode, preflightErr
+	}
+
 	txCode := common.CodeSuccess
+	var previousKB *entity.Knowledgebase
 	var updatedKB *entity.Knowledgebase
 	var linkedConnectors []*dao.ConnectorDatasetListItem
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
+	// pagerankRetry is the same target for a request that repeats the stored
+	// PageRank, kept so a retry of an earlier failed save can repeat the
+	// propagation the value change no longer schedules.
+	var pagerankRetry *datasetPagerankUpdate
+	var chunkStoreEmbdID string
+	// pendingEmbdID is the model of an empty dataset's switch, committed only
+	// after its store is ready. pendingTenantEmbdID is its tenant binding.
+	var pendingEmbdID string
+	var pendingTenantEmbdID *string
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
 		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID)
 		if authErr != nil {
 			txCode = code
 			return authErr
 		}
+		previousKB = lockedKB
 		if sel != nil || pipelineID != nil || req.ParserConfig != nil || req.ParserConfigProvided {
 			current := service.CurrentSelection(lockedKB.ParserID, lockedKB.PipelineID)
 			effective, resolveErr := service.Resolve(current, sel)
@@ -319,8 +347,46 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 					tenantEmbdID = target.ID
 				}
 			}
-			updates["embd_id"] = effectiveEmbdID
-			updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
+			switch {
+			case effectiveEmbdID == lockedKB.EmbdID:
+				// Nothing can fail after this transaction that would need the binding
+				// to move, so it is updated like every other field.
+				updates["embd_id"] = effectiveEmbdID
+				updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
+			case lockedKB.ChunkNum != 0:
+				// The probe ran against the row preflight read. Chunks committed
+				// since then need that check, and so does a dataset whose binding
+				// moved in between: its vectors were rebuilt or replaced, and the
+				// recorded validation no longer describes what is stored. The probe
+				// cannot run under this row lock, so both cases ask for a retry
+				// that reruns the preflight against the current row.
+				if !switchValidated || lockedKB.EmbdID != switchValidatedEmbdID {
+					txCode = common.CodeServerError
+					return errors.New("dataset changed while the embedding model was being prepared; retry the request")
+				}
+				updates["embd_id"] = effectiveEmbdID
+				updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
+			default:
+				// An empty dataset keeps the previous binding here. An existing store
+				// was extended before this transaction; a missing one is created
+				// afterwards, and only a successful creation commits the switch. A
+				// failed one therefore leaves a row whose retry still prepares the
+				// store instead of skipping it as an unchanged model.
+				pendingEmbdID = effectiveEmbdID
+				pendingTenantEmbdID = stringPtrIfNotEmpty(tenantEmbdID)
+				chunkStoreEmbdID = effectiveEmbdID
+			}
+		}
+		// The plan is decided before this transaction from a row that can still
+		// change: a last chunk deleted in between brings the update here on the
+		// empty-dataset path although no store was prepared for the new model.
+		// Committing that switch would outlive the request, because a retry
+		// resubmits the same model and an unchanged model is never prepared.
+		// Without a document engine there is no store to prepare, and the plan
+		// stays empty for that reason alone.
+		if chunkStoreEmbdID != "" && d.docEngine != nil && !storePlan.covers(chunkStoreEmbdID) {
+			txCode = common.CodeServerError
+			return errors.New("dataset changed while the embedding model was being prepared; retry the request")
 		}
 
 		// Design §5 fallback chains (v5.1/v5.2): when the request omits a field,
@@ -407,17 +473,22 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 				}
 			}
 		}
-		if pagerankRequested && requestedPagerank != lockedKB.Pagerank {
-			if !d.docEngine.SupportsPageRank() {
-				txCode = common.CodeDataError
-				return errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
-			}
-			pagerankUpdate = &datasetPagerankUpdate{
+		if pagerankRequested {
+			target := &datasetPagerankUpdate{
 				value:     requestedPagerank,
 				index:     fmt.Sprintf("ragflow_%s", lockedKB.TenantID),
 				datasetID: lockedKB.ID,
 			}
-			updates["pagerank"] = requestedPagerank
+			if requestedPagerank != lockedKB.Pagerank {
+				if !d.docEngine.SupportsPageRank() {
+					txCode = common.CodeDataError
+					return errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
+				}
+				pagerankUpdate = target
+				updates["pagerank"] = requestedPagerank
+			} else if d.docEngine.SupportsPageRank() {
+				pagerankRetry = target
+			}
 		}
 		if parserIDProvided && parserID != lockedKB.ParserID {
 			if _, ok := updates["parser_config"]; !ok {
@@ -595,13 +666,76 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		}
 		return nil, txCode, err
 	}
-	publishDatasetSyncerTasks(scheduledTaskIDs)
-
+	// The saved PageRank has to reach the chunk store before any step that can
+	// fail after the commit: a retry sees the value already persisted, so its
+	// requested value equals the locked one and only the recovery below has to
+	// repeat the write.
 	if pagerankUpdate != nil {
 		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
 			return nil, common.CodeServerError, err
 		}
 	}
+	var recoveredTaskIDs []string
+	if pendingEmbdID != "" {
+		if storePlan.createEmbdID != "" && updatedKB != nil && updatedKB.ChunkNum == 0 {
+			if createErr := d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID); createErr != nil {
+				// This request never wrote the binding, so a retry prepares the
+				// store again. Which model the row names by now is not stated: a
+				// concurrent update may have moved it since the transaction.
+				return nil, common.CodeServerError, fmt.Errorf(
+					"dataset settings were saved, but the chunk store for embedding model %s could not be created and the embedding model was not switched; retry the request to switch: %w",
+					storePlan.createEmbdID, createErr)
+			}
+		}
+		// Recovered tasks are read before the binding moves: a failed read after
+		// the switch would leave them pending with nothing to re-enter this path,
+		// because an unchanged model never repeats the recovery.
+		recoveredTaskIDs, err = pendingDatasetSyncTaskIDs(ctx, updatedKB)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf(
+				"dataset settings were saved, but the connector tasks of an earlier attempt could not be read, so the embedding model was not switched; retry the request: %w", err)
+		}
+		if bindErr := d.commitEmbeddingBinding(ctx, previousKB, updatedKB, pendingEmbdID, pendingTenantEmbdID); bindErr != nil {
+			return nil, common.CodeServerError, fmt.Errorf(
+				"dataset settings were saved, but the embedding model could not be switched: %w", bindErr)
+		}
+	} else if embdIDProvided || connectorsProvided {
+		// The binding is settled here: this transaction moved it because the
+		// dataset held chunks by then, or the row already named the requested
+		// model. Either way an earlier attempt can have committed the same links
+		// and tasks without publishing them, and a retry that repeats the model
+		// has no other path into this recovery. A connector-only retry reaches
+		// the same state: the links it resubmits already exist, so it gets no
+		// task IDs of its own and the rows an attempt that failed after the
+		// commit (pagerank propagation) still need their publish.
+		recoveredTaskIDs, err = pendingDatasetSyncTaskIDs(ctx, updatedKB)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf(
+				"dataset settings were saved, but the connector tasks of an earlier attempt could not be read; retry the request: %w", err)
+		}
+	}
+	// A retry of a save that failed after its commit still finds the rows that
+	// attempt committed, and it repeats the same PageRank the failed attempt had
+	// already saved, so no value change remains to schedule a propagation;
+	// repeat the idempotent write here so a chunk-store write that failed before
+	// the first publication is repaired before the recovered task runs. Adding
+	// another connector in the same request schedules a task of its own, so the
+	// trigger is a recovered row this request did not schedule.
+	if pagerankRetry != nil && recoveredOutsideScheduled(scheduledTaskIDs, recoveredTaskIDs) {
+		if err = d.updateDatasetPagerankChunks(ctx, *pagerankRetry); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf(
+				"dataset settings were saved, but the PageRank of an earlier attempt could not be re-applied to the chunk store; retry the request: %w", err)
+		}
+	}
+	// Publish connector tasks only after the chunk store is ready: a task the
+	// syncer picks up earlier would run against a store whose vector column for
+	// the new model does not exist yet. A request that repairs the store of an
+	// earlier failed attempt has no task IDs of its own, because the links it
+	// re-submits already existed, so the rows that attempt committed still need
+	// their publish.
+	publishIDs := scheduledTaskIDs
+	publishIDs = append(publishIDs, recoveredTaskIDs...)
+	publishDatasetSyncerTasks(publishIDs)
 
 	data := datasetToMap(ctx, updatedKB)
 	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
@@ -699,14 +833,54 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 		common.Warn("syncer task publisher is not configured")
 		return
 	}
+	published := make(map[string]struct{}, len(taskIDs))
 	for _, taskID := range taskIDs {
 		if taskID == "" {
 			continue
 		}
+		if _, dup := published[taskID]; dup {
+			continue
+		}
+		published[taskID] = struct{}{}
 		if err := publisher.PublishSyncerTask(taskID); err != nil {
 			common.Warn("syncer task publish failed", zap.String("task_id", taskID), zap.Error(err))
 		}
 	}
+}
+
+// recoveredOutsideScheduled reports whether recovered holds a task ID the
+// transaction did not schedule itself: that row comes from an attempt that
+// committed it and failed before publication.
+func recoveredOutsideScheduled(scheduled, recovered []string) bool {
+	if len(recovered) == 0 {
+		return false
+	}
+	scheduledIDs := make(map[string]struct{}, len(scheduled))
+	for _, id := range scheduled {
+		scheduledIDs[id] = struct{}{}
+	}
+	for _, id := range recovered {
+		if _, ok := scheduledIDs[id]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
+// pendingDatasetSyncTaskIDs returns the dataset's still-scheduled connector
+// tasks, which are the ones a failed attempt committed without publishing.
+func pendingDatasetSyncTaskIDs(ctx context.Context, kb *entity.Knowledgebase) ([]string, error) {
+	if ctx == nil || kb == nil {
+		return nil, nil
+	}
+	var ids []string
+	err := dao.DB.WithContext(ctx).Model(&entity.SyncLogs{}).
+		Where("kb_id = ? AND status = ?", kb.ID, dao.SyncStatusSchedule).
+		Pluck("id", &ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("read the dataset's scheduled syncer tasks: %w", err)
+	}
+	return ids, nil
 }
 
 func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID string) (*entity.Knowledgebase, common.ErrorCode, error) {
@@ -733,4 +907,162 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 	}
 
 	return &kb, common.CodeSuccess, nil
+}
+
+// chunkStorePlan is what the pre-transaction store check decided.
+type chunkStorePlan struct {
+	// storeExists reports whether the dataset's chunk store existed before the
+	// transaction.
+	storeExists bool
+	// preparedEmbdID is the model whose vector column was added to the existing
+	// store before the transaction. Additive writes are safe there: a rejected
+	// update leaves every column the row still needs.
+	preparedEmbdID string
+	// createEmbdID is the model whose store must be created after the commit.
+	// Creating a store fixes its analyzer and dimensions, so doing it before a
+	// transaction that can still roll back would leave a store the row never
+	// asked for. The binding moves only after creation succeeds, so a failed
+	// creation leaves the retry on the preparation path.
+	createEmbdID string
+}
+
+// covers reports whether this plan prepared the store for model. The transaction
+// uses it to reject a switch whose preparation the plan decided not to run.
+func (p chunkStorePlan) covers(model string) bool {
+	return model != "" && (p.preparedEmbdID == model || p.createEmbdID == model)
+}
+
+// planChunkStoreForEmbeddingChange decides how an empty dataset's chunk store
+// is prepared for an embedding-model change. The caller passes the parser and
+// language the same update is about to persist, because engines fix both when
+// they create the store.
+func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, kb *entity.Knowledgebase, embdID string, embdIDProvided bool, parserID string, parserIDProvided bool, language string) (chunkStorePlan, common.ErrorCode, error) {
+	var plan chunkStorePlan
+	if d.docEngine == nil || kb == nil || !embdIDProvided || embdID == "" || kb.ChunkNum != 0 {
+		return plan, common.CodeSuccess, nil
+	}
+	// Re-submitting the current model is not a model change. Probing the
+	// provider here would make a rename fail while the provider is down, and a
+	// store missing in that state is not something this update can have left
+	// behind: a failed creation never moves the binding, so the retry of that
+	// request still sees a model change.
+	if embdID == kb.EmbdID {
+		return plan, common.CodeSuccess, nil
+	}
+	// Gate the store probes behind the update permission: reaching this point
+	// only required reading the row, and a caller without update access must
+	// not be able to tell whether a dataset has a chunk store from the error
+	// or timing of the probes below. The transaction re-checks under the row
+	// lock, which stays authoritative against a permission change in between.
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return plan, code, permissionErr
+	}
+	exists, err := d.docEngine.ChunkStoreExists(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID)
+	if err != nil {
+		return plan, common.CodeServerError, fmt.Errorf("check the chunk store for dataset %s: %w", kb.ID, err)
+	}
+	plan.storeExists = exists
+	if !exists {
+		plan.createEmbdID = embdID
+		return plan, common.CodeSuccess, nil
+	}
+	// Keep the unavailable-model contract of the transaction below: the probe
+	// fails first for an unknown model, and that is a client error.
+	if ok, message := d.verifyEmbeddingAvailability(ctx, embdID, kb.TenantID); !ok {
+		return plan, common.CodeDataError, errors.New(message)
+	}
+	preparedKB := *kb
+	if parserIDProvided {
+		preparedKB.ParserID = parserID
+	}
+	if language != "" {
+		preparedKB.Language = &language
+	}
+	if err := d.ensureChunkStoreForEmbedding(ctx, &preparedKB, embdID); err != nil {
+		return plan, common.CodeServerError, fmt.Errorf("prepare the chunk store for embedding model %s: %w", embdID, err)
+	}
+	plan.preparedEmbdID = embdID
+	return plan, common.CodeSuccess, nil
+}
+
+// commitEmbeddingBinding switches an empty dataset to the model whose store was
+// prepared. The previous binding is the guard: a chunk that landed first, or a
+// concurrent settings write, leaves the row on the model its chunks actually
+// used, and the caller reports the failure instead of claiming a switch that
+// did not happen.
+func (d *DatasetService) commitEmbeddingBinding(ctx context.Context, previous, kb *entity.Knowledgebase, embdID string, tenantEmbdID *string) error {
+	if previous == nil || kb == nil {
+		return errors.New("the dataset row locked by the update is not available")
+	}
+	updates := map[string]interface{}{"embd_id": embdID}
+	if tenantEmbdID == nil {
+		updates["tenant_embd_id"] = nil
+	} else {
+		updates["tenant_embd_id"] = *tenantEmbdID
+	}
+	result := dao.DB.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Where("id = ? AND embd_id = ? AND chunk_num = 0", kb.ID, previous.EmbdID).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		// A concurrent request may have made the same switch already; a new chunk
+		// or a different model must be reported instead of overwritten.
+		fresh, err := d.kbDAO.GetByID(ctx, dao.DB, kb.ID)
+		if err != nil {
+			return err
+		}
+		if fresh.EmbdID != embdID || fresh.ChunkNum != 0 {
+			return fmt.Errorf("the dataset changed while its embedding model was being switched (model %s, %d chunks); retry the request",
+				fresh.EmbdID, fresh.ChunkNum)
+		}
+		kb.TenantEmbdID = fresh.TenantEmbdID
+	}
+	kb.EmbdID = embdID
+	if tenantEmbdID != nil {
+		kb.TenantEmbdID = tenantEmbdID
+	}
+	return nil
+}
+
+// ensureChunkStoreForEmbedding prepares the chunk store for a new embedding
+// model on an empty dataset. Every engine's CreateChunkStore is additive on an
+// existing store: Infinity adds the missing q_<n>_vec column, the SQL engines
+// add missing columns, and Elasticsearch leaves an existing chunk index
+// untouched.
+func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *entity.Knowledgebase, embdID string) error {
+	if d.docEngine == nil || kb == nil {
+		return nil
+	}
+	probe := d.embeddingDimension
+	if probe == nil {
+		factory := service.NewModelFactory()
+		probe = func(ctx context.Context, tenantID, embdID string) (int, error) {
+			return service.ProbeEmbeddingDimension(ctx, factory, tenantID, embdID)
+		}
+	}
+	dimension, err := probe(ctx, kb.TenantID, embdID)
+	if err != nil {
+		return fmt.Errorf("resolve embedding dimension for %s: %w", embdID, err)
+	}
+	if err := d.createChunkStore(ctx, kb, dimension); err != nil {
+		// Creation is additive on every engine, and the engines that write a
+		// table before its indexes can complete a half-built store by running
+		// the same request again. Retrying here keeps a transient failure from
+		// leaving a store a later request would accept as ready.
+		if retryErr := d.createChunkStore(ctx, kb, dimension); retryErr != nil {
+			return fmt.Errorf("prepare chunk store for embedding model %s: %w", embdID, retryErr)
+		}
+	}
+	return nil
+}
+
+func (d *DatasetService) createChunkStore(ctx context.Context, kb *entity.Knowledgebase, dimension int) error {
+	language := ""
+	if kb.Language != nil {
+		language = *kb.Language
+	}
+	return d.docEngine.CreateChunkStore(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID, dimension, kb.ParserID, language)
 }

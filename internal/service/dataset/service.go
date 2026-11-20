@@ -30,6 +30,10 @@ type DatasetService struct {
 	// it receives is the dataset's tenant: the loader must prove the file belongs
 	// to it, since tag_file_id is user-writable (IDOR, CWE-639).
 	tagVocabularyLoader func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error)
+	// embeddingDimension resolves an embedding model's vector size. It is a
+	// field so tests can inject a fake; production probes the model through the
+	// model factory (service.ProbeEmbeddingDimension).
+	embeddingDimension func(ctx context.Context, tenantID, embdID string) (int, error)
 }
 
 // NewDatasetService creates a new datasets service.

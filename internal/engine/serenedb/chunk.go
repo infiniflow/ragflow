@@ -67,7 +67,30 @@ func chunkTableDDL(tableName string, vectorSize int) []string {
 // no-op for later datasets.
 func (e *serenedbEngine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	tableName := chunkTableName(baseName)
-	for _, stmt := range chunkTableDDL(tableName, vectorSize) {
+	size := vectorSize
+	if size <= 0 {
+		size = defaultVectorSize
+	}
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return fmt.Errorf("serenedb: check chunk store %s: %w", tableName, err)
+	}
+	if exists {
+		// The tenant shares one table and CREATE TABLE IF NOT EXISTS cannot add
+		// a dimension to it, so report the missing vector column now instead of
+		// returning success for a store that will reject the new model's
+		// inserts. The inverted index also names the normalized column, so
+		// extending the table is an engine-level change, not a DDL patch here.
+		column := rawVectorColumn(size)
+		present, err := e.columnExists(ctx, tableName, column)
+		if err != nil {
+			return fmt.Errorf("serenedb: check vector column %s: %w", column, err)
+		}
+		if !present {
+			return fmt.Errorf("serenedb: chunk store %s has no %s column for %d-dimension vectors", tableName, column, size)
+		}
+	}
+	for _, stmt := range chunkTableDDL(tableName, size) {
 		if err := e.exec(ctx, stmt); err != nil {
 			return fmt.Errorf("serenedb: create chunk store %s: %w", tableName, err)
 		}
