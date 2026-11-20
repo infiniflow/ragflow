@@ -47,7 +47,7 @@ export function CompilationTemplateEditorSidebar({
   }, [onViewChange]);
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-border-button">
+    <aside className="flex w-64 shrink-0 flex-col">
       {onCollapse && (
         <SecondarySidebarHeader
           title={templateName || t('common.name')}
