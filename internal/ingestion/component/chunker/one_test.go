@@ -18,8 +18,9 @@ package chunker
 
 import (
 	"context"
-	"ragflow/internal/ingestion/component/schema"
 	"testing"
+
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // oneChunksOf drives OneChunker.Invoke and returns the emitted chunk maps.
@@ -167,5 +168,60 @@ func TestOneChunkerKeepsImgIDForTextlessItem(t *testing.T) {
 	}
 	if chunks[0]["img_id"] != "kb-1-chunk-1" {
 		t.Fatalf("img_id = %v, want kb-1-chunk-1", chunks[0]["img_id"])
+	}
+}
+
+func TestOneChunker_MultiItemMergesPDFPositions(t *testing.T) {
+	chunks := oneChunksOf(t, map[string]any{
+		"name":          "resume.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{
+				"text":           "Page 2 experience",
+				"_pdf_positions": [][]float64{{2, 20, 200, 40, 80}},
+				"positions":      [][]float64{{2, 20, 200, 40, 80}},
+			},
+			{
+				"text":           "Page 1 header",
+				"_pdf_positions": [][]float64{{1, 10, 200, 10, 30}, {2, 20, 200, 40, 80}},
+				"positions":      [][]float64{{1, 10, 200, 10, 30}, {3, 0, 0, 0, 0}},
+			},
+		},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+	pdfRows, ok := chunks[0]["_pdf_positions"].([][]float64)
+	if !ok {
+		t.Fatalf("_pdf_positions type = %T, want [][]float64", chunks[0]["_pdf_positions"])
+	}
+	if len(pdfRows) != 2 || pdfRows[0][0] != 1 || pdfRows[1][0] != 2 {
+		t.Fatalf("_pdf_positions = %v, want sorted deduplicated page 1 then page 2", pdfRows)
+	}
+	posRows, ok := chunks[0]["positions"].([][]float64)
+	if !ok {
+		t.Fatalf("positions type = %T, want [][]float64", chunks[0]["positions"])
+	}
+	if len(posRows) != 3 {
+		t.Fatalf("positions rows = %v, want 3 rows", posRows)
+	}
+}
+
+func TestOneChunker_MultiItemSpreadsheetSkipsPDFPositions(t *testing.T) {
+	chunks := oneChunksOf(t, map[string]any{
+		"name":          "sheet.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "row 1", "sheet": "Sheet1", "positions": [][]float64{{1, 0, 1, 0, 2}}},
+			{"text": "row 2", "sheet": "Sheet1", "positions": [][]float64{{1, 1, 2, 0, 2}}},
+		},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+	if _, exists := chunks[0]["positions"]; exists {
+		t.Fatalf("spreadsheet positions should not be merged as PDF positions: %v", chunks[0]["positions"])
 	}
 }
