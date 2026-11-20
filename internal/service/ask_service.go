@@ -290,7 +290,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, question string,
 		"chunks":   chunkRefs,
 		"doc_aggs": result.DocAggs,
 	}
-	s.sendOrCancel(out, AskDelta{Kind: AskDeltaFinal, Value: visible, Refs: refs}, ctx)
+	s.sendOrCancel(out, AskDelta{Kind: AskDeltaFinal, Value: visible, Message: "success", Refs: refs}, ctx)
 }
 
 func (s *AskService) sendOrCancel(out chan<- AskDelta, d AskDelta, ctx context.Context) {

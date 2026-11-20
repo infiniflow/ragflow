@@ -412,7 +412,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			ok = writer.Write(c, sseAnswer(delta.Value, nil, false, ""))
+			ok = writer.Write(c, sseAnswer(delta.Value, nil, false, "success"))
 		case service.AskDeltaMarker:
 			ok = writer.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:

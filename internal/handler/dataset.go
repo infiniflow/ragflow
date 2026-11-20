@@ -1215,8 +1215,7 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
-		emptyLabels := map[string]float64{}
-		common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels}, err.Error())
+		common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, err.Error())
 		return
 	}
 
@@ -1286,8 +1285,7 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		return
 	}
 	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
-		emptyLabels := map[string]float64{}
-		common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels}, err.Error())
+		common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, err.Error())
 		return
 	}
 

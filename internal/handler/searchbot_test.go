@@ -636,7 +636,7 @@ func TestParseMindMapMarkdown_ThinkTagUnclosed(t *testing.T) {
 // ---- SSE helper direct tests ----
 
 func TestSseAnswer_Final(t *testing.T) {
-	for _, message := range []string{"", "Restricted question"} {
+	for _, message := range []string{"", "success", "Restricted question"} {
 		s := sseAnswer("hello", map[string]interface{}{"chunks": []int{}}, true, message)
 		if !strings.Contains(s, `"answer":"hello"`) {
 			t.Errorf("missing answer: %s", s)
@@ -646,9 +646,6 @@ func TestSseAnswer_Final(t *testing.T) {
 		}
 		if !strings.Contains(s, "data: ") {
 			t.Errorf("missing SSE prefix: %s", s)
-		}
-		if message == "" {
-			message = "success"
 		}
 		if !strings.Contains(s, `"message":"`+message+`"`) || !strings.Contains(s, `"code":0`) {
 			t.Errorf("expected success code and message %q: %s", message, s)

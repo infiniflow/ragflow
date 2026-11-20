@@ -213,8 +213,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 
 	svcReq := toRetrievalServiceRequest(&req)
 	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
-		emptyLabels := map[string]float64{}
-		common.RespondSuccess(c, service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels}, err.Error())
+		common.RespondSuccess(c, service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, err.Error())
 		return
 	}
 	ctx := c.Request.Context()
@@ -341,7 +340,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false, ""))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false, "success"))
 		case service.AskDeltaMarker:
 			ok = h.sseWriter.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
@@ -506,9 +505,6 @@ type askSSEData struct {
 func sseAnswer(answer string, refs interface{}, final bool, message string) string {
 	if refs == nil {
 		refs = map[string]interface{}{}
-	}
-	if message == "" {
-		message = "success"
 	}
 	payload := ssePayload{
 		Code:    0,
