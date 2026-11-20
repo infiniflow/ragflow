@@ -125,7 +125,7 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, fmt.Errorf("anthropic messages API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, parseAnthropicChatResponse)
+	return parseChatCompletionResponseWithContext(ctx, body, chatModelConfig, modelUsage, parseAnthropicChatResponse)
 }
 
 func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *ChatConfig) error {
@@ -800,7 +800,7 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 
 	if sawUsage {
 		streamUsage.TotalTokens = streamUsage.PromptTokens + streamUsage.CompletionTokens
-		applyStreamUsage(modelConfig, modelUsage, &streamUsage)
+		applyStreamUsageWithContext(ctx, modelConfig, modelUsage, &streamUsage)
 	}
 
 	endOfStream := "[DONE]"

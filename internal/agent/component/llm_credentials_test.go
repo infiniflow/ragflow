@@ -48,9 +48,9 @@ func TestCompositeModelMissingRecordsRemainUnresolved(t *testing.T) {
 	for _, ref := range []string{"decision-model-preview@missing-provider"} {
 		t.Run(ref, func(t *testing.T) {
 			db := setupCategorizeDecisionModel(t, "https://example.invalid/v1")
-			_, _, key, baseURL, _, ok, err := resolveTenantCompositeModel(stateWithTenant("tenant-1"), db, ref, "override-key", "https://example.invalid/override", entity.ModelTypeDecision)
-			if err != nil || ok || key != "override-key" || baseURL != "https://example.invalid/override" {
-				t.Fatalf("missing record resolution = %t, %v; overrides preserved = %t", ok, err, key == "override-key" && baseURL == "https://example.invalid/override")
+			resolved, ok, err := resolveTenantCompositeModel(stateWithTenant("tenant-1"), db, ref, "override-key", "https://example.invalid/override", entity.ModelTypeDecision)
+			if err != nil || ok || resolved.APIKey != "override-key" || resolved.BaseURL != "https://example.invalid/override" {
+				t.Fatalf("missing record resolution = %t, %v; overrides preserved = %t", ok, err, resolved.APIKey == "override-key" && resolved.BaseURL == "https://example.invalid/override")
 			}
 		})
 	}
@@ -76,9 +76,9 @@ func TestCompositeModelMissingDefaultUsesSoleActiveInstance(t *testing.T) {
 	if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", "decision-instance").Update("instance_name", "custom").Error; err != nil {
 		t.Fatal(err)
 	}
-	model, driver, _, baseURL, modelType, ok, err := resolveTenantCompositeModel(stateWithTenant("tenant-1"), db, "decision-model-preview@default@SystemOne", "", "", entity.ModelTypeDecision)
-	if err != nil || !ok || model != "decision-model-preview" || driver != "SystemOne" || baseURL != "https://example.invalid/v1" || modelType != entity.ModelTypeDecision {
-		t.Fatalf("default fallback = %q, %q, %q, %v, %t, %v", model, driver, baseURL, modelType, ok, err)
+	resolved, ok, err := resolveTenantCompositeModel(stateWithTenant("tenant-1"), db, "decision-model-preview@default@SystemOne", "", "", entity.ModelTypeDecision)
+	if err != nil || !ok || resolved.ModelName != "decision-model-preview" || resolved.Driver != "SystemOne" || resolved.BaseURL != "https://example.invalid/v1" || resolved.ModelType != entity.ModelTypeDecision {
+		t.Fatalf("default fallback = %q, %q, %q, %v, %t, %v", resolved.ModelName, resolved.Driver, resolved.BaseURL, resolved.ModelType, ok, err)
 	}
 }
 
@@ -130,10 +130,10 @@ func TestNaceLegacyFallbackDoesNotSendSavedKeyToAnotherOrigin(t *testing.T) {
 	if err := db.Model(&entity.TenantModelProvider{}).Where("id = ?", "decision-provider").Update("provider_name", "Nace").Error; err != nil {
 		t.Fatal(err)
 	}
-	if key, _, ok := resolveTenantModelInstanceCredentials(stateWithTenant("tenant-1"), db, "tenant-1", "decision-model-preview@default@Nace", "https://attacker.example/v1"); ok || key != "" {
+	if key, _, _, _, ok := resolveTenantModelInstanceCredentials(stateWithTenant("tenant-1"), db, "tenant-1", "decision-model-preview@default@Nace", "https://attacker.example/v1"); ok || key != "" {
 		t.Fatalf("saved key released to another origin: %q, %t", key, ok)
 	}
-	if key, _, ok := resolveTenantModelInstanceCredentials(stateWithTenant("tenant-1"), db, "tenant-1", "decision-model-preview@default@Nace", "https://console.nace.ai/v1"); !ok || key != "test-key" {
+	if key, _, _, _, ok := resolveTenantModelInstanceCredentials(stateWithTenant("tenant-1"), db, "tenant-1", "decision-model-preview@default@Nace", "https://console.nace.ai/v1"); !ok || key != "test-key" {
 		t.Fatalf("same-origin override lost the saved key: %q, %t", key, ok)
 	}
 }
@@ -189,5 +189,32 @@ func TestCompositeModelLeavesNonDecisionReferencesUntouched(t *testing.T) {
 				t.Fatalf("got %q %q key=%q base=%q; want glm-4v %s key=%q base=%q", model, driver, key, baseURL, wantDriver, tc.wantKey, tc.wantBase)
 			}
 		})
+	}
+}
+
+func TestResolveModelRef_OverriddenKeyOmitsSavedAttribution(t *testing.T) {
+	db := setupCategorizeDecisionModel(t, "https://example.invalid/v1")
+	ref := "decision-model-preview@default@SystemOne"
+
+	resSaved, err := resolveModelRef(stateWithTenant("tenant-1"), db, ref, "", "", "", entity.ModelTypeDecision)
+	if err != nil {
+		t.Fatalf("resolveModelRef without override: %v", err)
+	}
+	if resSaved.ModelInfo == nil || !resSaved.ModelInfo.IsSavedConfig || resSaved.InstanceID == "" {
+		t.Fatalf("expected saved ModelInfo and InstanceID, got info=%+v, inst=%q", resSaved.ModelInfo, resSaved.InstanceID)
+	}
+
+	resOverridden, err := resolveModelRef(stateWithTenant("tenant-1"), db, ref, "", "user-custom-key", "", entity.ModelTypeDecision)
+	if err != nil {
+		t.Fatalf("resolveModelRef with override: %v", err)
+	}
+	if resOverridden.APIKey != "user-custom-key" {
+		t.Errorf("expected APIKey = user-custom-key, got %q", resOverridden.APIKey)
+	}
+	if resOverridden.ModelInfo != nil {
+		t.Errorf("expected nil ModelInfo for overridden key, got %+v", resOverridden.ModelInfo)
+	}
+	if resOverridden.InstanceID != "" {
+		t.Errorf("expected empty InstanceID for overridden key, got %q", resOverridden.InstanceID)
 	}
 }

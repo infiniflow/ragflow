@@ -211,13 +211,14 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 	knnNumCandidates = max(knnNumCandidates, knnTopK)
 
+	modelCtx := permission.WithTenantID(ctx, tenantIDs[0])
+
 	// If meta_data_filter method is auto/semi_auto, get chat model
 	var chatModelForFilter *modelModule.ChatModel
 	var err error
 	if metadataFilter != nil {
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
-			modelCtx := permission.WithTenantID(ctx, tenantIDs[0])
 			if chatID != "" {
 				chatModelForFilter, err = modelFactory.NewChatModel(modelCtx, chatID)
 				if err != nil {
@@ -277,7 +278,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 	}
 	if keyword {
-		chatModel, err := modelFactory.NewDefaultChatModel(permission.WithTenantID(ctx, tenantIDs[0]))
+		chatModel, err := modelFactory.NewDefaultChatModel(modelCtx)
 		if err != nil {
 			common.Warn("Failed to get default chat model for LLM transformations", zap.Error(err))
 		} else {
@@ -297,7 +298,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Determine embedding model
 	var embeddingModel *modelModule.EmbeddingModel
 	if kbRecords[0].EmbdID != "" {
-		embeddingModel, err = modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantIDs[0]), kbRecords[0].EmbdID)
+		embeddingModel, err = modelFactory.NewEmbeddingModel(modelCtx, kbRecords[0].EmbdID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
 		}
@@ -306,7 +307,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Get rerank model if rerankID is specified
 	var rerankModel *modelModule.RerankModel
 	if rerankID != "" {
-		rerankModel, err = modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantIDs[0]), rerankID)
+		rerankModel, err = modelFactory.NewRerankModel(modelCtx, rerankID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
 		}

@@ -46,17 +46,15 @@ func (s *ModelCallService) ChatToModelWithMessages(ctx context.Context, modelRef
 	if err != nil {
 		return nil, code, err
 	}
-	chatModel, err := s.modelFactory.NewChatModel(permission.WithTenantID(ctx, tenantID), modelRef)
+	reqCtx := permission.WithTenantID(ctx, tenantID)
+	chatModel, err := s.modelFactory.NewChatModel(reqCtx, modelRef)
 	if err != nil {
 		return nil, common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.ChatConfig{}
 	}
-	info := chatModel.Info()
-	populateModelUsage(ctx, usage, info, chatModel.APIConfig, tenantID)
-
-	response, err := chatModel.ChatWithMessages(ctx, messages, config, usage)
+	response, err := chatModel.ChatWithMessages(reqCtx, messages, config, usage)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -70,16 +68,15 @@ func (s *ModelCallService) ChatToModelStreamWithSender(ctx context.Context, mode
 	if err != nil {
 		return code, err
 	}
-	chatModel, err := s.modelFactory.NewChatModel(permission.WithTenantID(ctx, tenantID), modelRef)
+	reqCtx := permission.WithTenantID(ctx, tenantID)
+	chatModel, err := s.modelFactory.NewChatModel(reqCtx, modelRef)
 	if err != nil {
 		return common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.ChatConfig{}
 	}
-	populateModelUsage(ctx, usage, chatModel.Info(), chatModel.APIConfig, tenantID)
-
-	if err := chatModel.ChatStreamlyWithSender(ctx, messages, config, usage, sender); err != nil {
+	if err := chatModel.ChatStreamlyWithSender(reqCtx, messages, config, usage, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
@@ -89,7 +86,8 @@ func (s *ModelCallService) EmbedText(ctx context.Context, modelRef string, texts
 	if err != nil {
 		return nil, code, err
 	}
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), modelRef)
+	reqCtx := permission.WithTenantID(ctx, tenantID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(reqCtx, modelRef)
 	if err != nil {
 		return nil, common.CodeNotFound, err
 	}
@@ -104,7 +102,7 @@ func (s *ModelCallService) EmbedText(ctx context.Context, modelRef string, texts
 		return nil, common.CodeBadRequest, err
 	}
 
-	embeddings, err := embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
+	embeddings, err := embeddingModel.Embed(reqCtx, modelModule.EmbedRequest{Texts: texts}, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -118,7 +116,8 @@ func (s *ModelCallService) RerankDocument(ctx context.Context, modelRef, query s
 	if err != nil {
 		return nil, code, err
 	}
-	rerankModel, err := s.modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantID), modelRef)
+	reqCtx := permission.WithTenantID(ctx, tenantID)
+	rerankModel, err := s.modelFactory.NewRerankModel(reqCtx, modelRef)
 	if err != nil {
 		return nil, common.CodeNotFound, err
 	}
@@ -126,7 +125,7 @@ func (s *ModelCallService) RerankDocument(ctx context.Context, modelRef, query s
 		config = &modelModule.RerankConfig{}
 	}
 
-	response, err := rerankModel.Rerank(ctx, modelModule.RerankRequest{Query: query, Documents: documents}, config, nil)
+	response, err := rerankModel.Rerank(reqCtx, modelModule.RerankRequest{Query: query, Documents: documents}, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -310,18 +309,4 @@ func (s *ModelCallService) tenantIDForRequest(ctx context.Context) (string, comm
 		return "", common.CodeNotFound, err
 	}
 	return tenantID, common.CodeSuccess, nil
-}
-
-func populateModelUsage(ctx context.Context, usage *common.ModelUsage, info *modelModule.ModelInfo, apiConfig *modelModule.APIConfig, tenantID string) {
-	if usage == nil || info == nil {
-		return
-	}
-	usage.UserID = permission.UserIDFromContext(ctx)
-	usage.TenantID = tenantID
-	usage.ProviderName = info.ProviderName
-	usage.InstanceID = info.InstanceID
-	usage.ModelName = info.Name
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		usage.APIKey = *apiConfig.ApiKey
-	}
 }
