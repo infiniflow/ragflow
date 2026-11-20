@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf"
 	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
 )
@@ -147,7 +148,7 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	// created (the native package reads it on every SessionOptions build).
 	native.SetIntraOpThreads(coresPerInference)
 	pdf.SetDeepDocConcurrency(K)
-	native.SetInferenceLimit(K)
+	doctype.SetInferenceLimit(K)
 	common.Info("in-process DeepDoc inference limit registered",
 		zap.Int("max_concurrent_inference", K),
 		zap.Int("cpu_cores_per_inference", coresPerInference),

@@ -9,6 +9,7 @@ import (
 
 	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/utility"
 )
 
@@ -21,9 +22,11 @@ import (
 // Runs in flight at once — one number to bound.
 //
 // That number is the process inference budget. It is (a) registered with the
-// native gate every inference call passes through (native.SetInferenceLimit,
-// called by the server's backend wiring) and (b) used to size the page worker
-// pool. It is configurable: the server resolves it once at start from
+// shared doctype gate that every inference wrapper passes through
+// (doctype.SetInferenceLimit, called by the server's backend wiring) and (b)
+// used to size the page worker pool. Sitting in doctype rather than the cgo-only
+// native package lets the same budget cover both in-process sessions and remote
+// inference clients. It is configurable: the server resolves it once at start from
 // CLI > env (RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY) > config
 // (ingestor.inference_concurrency) > default 1, then injects it with
 // SetDeepDocConcurrency. Callers read it via DeepDocConcurrency(); they never
@@ -195,10 +198,12 @@ func SetPageWorkerPoolSize(workers int) {
 
 // ── Wrapped calls used by the parser pipeline ─────────────────────────────
 //
-// These wrappers guard health and shape, not the process inference budget: that
-// budget is enforced inside the native backend, at the one boundary every ONNX
-// Run passes through (see native.inference_limit.go), so a call site cannot
-// escape it by not going through a wrapper.
+// These wrappers guard health, shape AND the process inference budget: every
+// inference call acquires a slot from the shared doctype gate before reaching
+// its backend, whether that backend is an in-process ONNX session or a remote
+// inference client. Sitting at the call layer (see doctype/inference_gate.go)
+// is what makes one budget cover both backends without double-counting; a call
+// site cannot escape it by bypassing a backend-specific boundary.
 
 // renderPageToImage renders a page at the default DLA DPI. Native PDFium
 // access inside the engine is serialized by the process-wide pdfsync.Mu
@@ -220,6 +225,10 @@ func (p *Parser) inferDLA(ctx context.Context, doc pdf.DocAnalyzer, pageImg imag
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
+	if err := doctype.AcquireInference(ctx); err != nil {
+		return nil, err
+	}
+	defer doctype.ReleaseInference()
 	finish := p.trackModelCall(ctx, "DLA")
 	defer finish()
 	return doc.DLA(ctx, pageImg)
@@ -251,6 +260,10 @@ func (p *Parser) inferTSR(ctx context.Context, tb pdf.TableBuilder, cropped imag
 	if tb == nil {
 		return nil, nil
 	}
+	if err := doctype.AcquireInference(ctx); err != nil {
+		return nil, err
+	}
+	defer doctype.ReleaseInference()
 	finish := p.trackModelCall(ctx, "TSR")
 	defer finish()
 	return tb.DetectCells(ctx, cropped)
@@ -262,6 +275,10 @@ func (p *Parser) inferOCRDetect(ctx context.Context, doc pdf.DocAnalyzer, pageIm
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
+	if err := doctype.AcquireInference(ctx); err != nil {
+		return nil, err
+	}
+	defer doctype.ReleaseInference()
 	finish := p.trackModelCall(ctx, "OCRDetect")
 	defer finish()
 	return doc.OCRDetect(ctx, pageImg)
@@ -273,6 +290,10 @@ func (p *Parser) inferOCRRecognize(ctx context.Context, doc pdf.DocAnalyzer, cro
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
+	if err := doctype.AcquireInference(ctx); err != nil {
+		return nil, err
+	}
+	defer doctype.ReleaseInference()
 	finish := p.trackModelCall(ctx, "OCRRecognize")
 	defer finish()
 	return doc.OCRRecognize(ctx, cropped)
@@ -304,6 +325,10 @@ func (p *Parser) inferOCRRecognizeBatch(ctx context.Context, doc pdf.DocAnalyzer
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
+	if err := doctype.AcquireInference(ctx); err != nil {
+		return nil, err
+	}
+	defer doctype.ReleaseInference()
 	finish := p.trackModelCall(ctx, "OCRRecognize")
 	defer finish()
 	return br.OCRRecognizeBatch(ctx, crops)

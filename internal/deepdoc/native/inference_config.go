@@ -14,7 +14,7 @@ import (
 // ONNX Runtime gives each session its own intra-op thread pool (the C API never
 // switches a session onto a shared/global pool), so the threads a single DeepDoc
 // inference Run occupies equal intraOpThreads. The process-wide inference budget
-// (see inference_limit.go) bounds how many Runs may be in flight at once, so the
+// (see doctype/inference_gate.go) bounds how many Runs may be in flight at once, so the
 // total cores inference may occupy is intraOpThreads × concurrency.
 //
 // Historically this was pinned to 1 (each Run cost exactly one core, making the

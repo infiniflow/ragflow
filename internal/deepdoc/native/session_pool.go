@@ -80,24 +80,13 @@ func newSessionPool[K comparable, V pooledSession](maxKeys, maxFree int) *sessio
 // poisoned session is Destroyed on release rather than pooled (ORT does not
 // guarantee reuse safety after a forced termination).
 //
-// Get takes a process-wide inference slot before it hands out a session and
-// returns that slot from release, so the slot is held for the whole hold window
-// (session construction on a miss, then the caller's Run). This is what makes
-// the process inference budget real; see inference_limit.go.
+// Get hands out a session from the pool. The process inference budget is
+// acquired by the parser's inference wrappers (see doctype.AcquireInference),
+// NOT here: keeping the gate at the single call layer means in-process sessions
+// and remote inference clients share one budget without double-counting a
+// single logical inference call.
 func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, error)) (V, func(), error) {
-	if err := acquireInference(ctx); err != nil {
-		var zero V
-		return zero, nil, err
-	}
-	slotReturned := false
-	returnSlot := func() {
-		if slotReturned {
-			return
-		}
-		slotReturned = true
-		releaseInference()
-	}
-
+	_ = ctx // retained in signature; the budget is acquired by the caller
 	p.mu.Lock()
 	kp := p.pools[key]
 	if kp == nil {
@@ -124,14 +113,12 @@ func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, err
 		var err error
 		s, err = newFn()
 		if err != nil {
-			returnSlot()
 			var zero V
 			return zero, nil, err
 		}
 	}
 
 	release := func() {
-		defer returnSlot()
 		if s.isPoisoned() {
 			s.Destroy()
 			return
