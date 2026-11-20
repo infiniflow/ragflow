@@ -234,3 +234,81 @@ func TestMinerULocalOCRFileDelegatesToCheckConnection(t *testing.T) {
 		t.Fatal("OCRFile returned nil response")
 	}
 }
+
+// A reverse proxy that fronts MinerU under a path prefix (for example an API
+// gateway that only serves /model/proxy/55/*) answers nothing at the host
+// root, so the probes must append /health and /v1/health to the configured
+// endpoint path instead of replacing it.
+func TestMinerULocalCheckConnectionAppendsLegacyHealthToEndpointPath(t *testing.T) {
+	const prefix = "/model/proxy/55"
+	var probed []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probed = append(probed, r.URL.Path)
+		if r.URL.Path == prefix+"/health" {
+			writeMinerUHealth(w)
+			return
+		}
+		http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	baseURL := server.URL + prefix + "/"
+	driver := NewMinerLocalUModel(map[string]string{"default": baseURL}, URLSuffix{DocumentParse: "file_parse", Task: "tasks"})
+	if err := driver.CheckConnection(context.Background(), &APIConfig{BaseURL: &baseURL}); err != nil {
+		t.Fatalf("CheckConnection with path-prefixed endpoint: %v", err)
+	}
+	if len(probed) == 0 || probed[len(probed)-1] != prefix+"/health" {
+		t.Fatalf("probed paths = %v, want the final probe at %s/health", probed, prefix)
+	}
+}
+
+func TestMinerULocalCheckConnectionAppendsV1HealthToEndpointPath(t *testing.T) {
+	const prefix = "/model/proxy/77"
+	var probed []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probed = append(probed, r.URL.Path)
+		if r.URL.Path == prefix+"/v1/health" {
+			writeMinerUHealth(w)
+			return
+		}
+		http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	// No trailing slash on the endpoint: the join must normalize either way.
+	baseURL := server.URL + prefix
+	driver := NewMinerLocalUModel(map[string]string{"default": baseURL}, URLSuffix{DocumentParse: "file_parse", Task: "tasks"})
+	if err := driver.CheckConnection(context.Background(), &APIConfig{BaseURL: &baseURL}); err != nil {
+		t.Fatalf("CheckConnection with path-prefixed endpoint: %v", err)
+	}
+	if len(probed) != 1 || probed[0] != prefix+"/v1/health" {
+		t.Fatalf("probed paths = %v, want a single probe at %s/v1/health", probed, prefix)
+	}
+}
+
+// A base path that genuinely ends in a version segment must not have it
+// deduplicated: the probes stay faithful to the configured endpoint, like
+// the parse paths in mineru_v1.go (joinURL's version dedup targets chat
+// suffixes, not MinerU probe paths).
+func TestMinerULocalCheckConnectionDoesNotDedupBaseV1Segment(t *testing.T) {
+	const prefix = "/gateway/v1"
+	var probed []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probed = append(probed, r.URL.Path)
+		if r.URL.Path == prefix+"/v1/health" {
+			writeMinerUHealth(w)
+			return
+		}
+		http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	baseURL := server.URL + prefix
+	driver := NewMinerLocalUModel(map[string]string{"default": baseURL}, URLSuffix{DocumentParse: "file_parse", Task: "tasks"})
+	if err := driver.CheckConnection(context.Background(), &APIConfig{BaseURL: &baseURL}); err != nil {
+		t.Fatalf("CheckConnection with /v1-suffixed endpoint: %v", err)
+	}
+	if len(probed) != 1 || probed[0] != prefix+"/v1/health" {
+		t.Fatalf("probed paths = %v, want a single probe at %s/v1/health", probed, prefix)
+	}
+}
