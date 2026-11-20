@@ -18,6 +18,7 @@ package dataset
 
 import (
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -140,21 +141,27 @@ func TestDeleteDatasetRemovesIngestionTasks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testDatasetUpdateService(t).deleteDataset(t.Context(), kb); err != nil {
+	svc := testDatasetUpdateService(t)
+	svc.taskStopWait = 600 * time.Millisecond
+	start := time.Now()
+	if err := svc.deleteDataset(t.Context(), kb); err != nil {
 		t.Fatalf("delete dataset: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < svc.taskStopWait {
+		t.Fatalf("deleteDataset returned after %v, want it to wait %v for the active task", elapsed, svc.taskStopWait)
 	}
 	var remaining []string
 	if err := db.Model(&entity.IngestionTask{}).Order("id").Pluck("id", &remaining).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(remaining) != 2 || remaining[0] != "task-2" || remaining[1] != "task-3" {
-		t.Fatalf("ingestion tasks after deleting kb-1 = %v, want [task-2 task-3] (RUNNING kept)", remaining)
+	if len(remaining) != 1 || remaining[0] != "task-2" {
+		t.Fatalf("ingestion tasks after deleting kb-1 = %v, want [task-2] (RUNNING task cancelled after the bounded wait)", remaining)
 	}
 	var logTasks []string
 	if err := db.Model(&entity.IngestionTaskLog{}).Pluck("task_id", &logTasks).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(logTasks) != 2 {
-		t.Fatalf("ingestion task logs after deleting kb-1 = %v, want logs of task-2 and task-3 only", logTasks)
+	if len(logTasks) != 1 || logTasks[0] != "task-2" {
+		t.Fatalf("ingestion task logs after deleting kb-1 = %v, want the log of task-2 only", logTasks)
 	}
 }
