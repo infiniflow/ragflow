@@ -145,17 +145,16 @@ const mapDocumentToLegacy = (doc: Record<string, any>) => ({
 });
 
 const mapChunkPayloadToRest = (payload: Record<string, any>) => ({
-  content: payload.content ?? payload.content_with_weight,
-  important_keywords: payload.important_keywords ?? payload.important_kwd,
-  questions: payload.questions ?? payload.question_kwd,
+  content: payload.content_with_weight ?? payload.content,
+  important_keywords: payload.important_kwd ?? payload.important_keywords,
+  questions: payload.question_kwd ?? payload.questions,
   tag_kwd: payload.tag_kwd,
   tag_feas: payload.tag_feas,
   positions: payload.positions,
   available:
-    payload.available ??
-    (payload.available_int === undefined
-      ? undefined
-      : payload.available_int === 1),
+    payload.available_int === undefined
+      ? payload.available
+      : payload.available_int === 1,
   image_base64: payload.image_base64,
   image_update_mode: payload.image_update_mode,
 });
