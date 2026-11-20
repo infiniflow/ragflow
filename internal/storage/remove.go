@@ -49,3 +49,20 @@ func RemoveBlob(ctx context.Context, impl Storage, bucket, object string) error 
 	}
 	return lastErr
 }
+
+// RemoveLogicalBucket removes the bucket that holds one dataset's objects.
+//
+// A deployment can keep several logical buckets in a single physical bucket
+// (OSS with OSS_BUCKET set). The backend refuses to remove one logical bucket
+// there, because that would take the objects of every dataset sharing it. The
+// refusal is an outcome rather than a failure to clean up: kept reports that
+// the bucket stays, and err is nil. Any other error is returned unchanged.
+func RemoveLogicalBucket(ctx context.Context, impl Storage, bucket string) (kept bool, err error) {
+	if removeErr := impl.RemoveBucket(ctx, bucket); removeErr != nil {
+		if errors.Is(removeErr, ErrSharedBucketRemoval) {
+			return true, nil
+		}
+		return false, removeErr
+	}
+	return false, nil
+}

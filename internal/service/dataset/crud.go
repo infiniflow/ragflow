@@ -10,6 +10,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
@@ -503,6 +504,14 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 	}
 	cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
+	docIDs := extractDocIDs(documents)
+	// Identify the chunk images before anything is deleted. The chunk index is the
+	// only place an img_id can be read from, and a shared bucket is never removed on
+	// their behalf, so a failure here must leave the dataset whole.
+	imageKeys, err := d.imageObjectKeys(cleanupCtx, kb, docIDs)
+	if err != nil {
+		return err
+	}
 	for _, document := range documents {
 		if document.Location == nil || *document.Location == "" {
 			continue
@@ -528,12 +537,24 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 	if !exists {
 		common.Warn("Dataset bucket already missing", zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
 	} else {
-		if err := storageImpl.RemoveBucket(cleanupCtx, kb.ID); err != nil {
+		// A shared physical bucket is refused, not missing. Its objects above are
+		// this dataset's own and are already gone; the bucket holds other
+		// datasets' objects, so keeping it is the outcome, not a failure to clean
+		// up. Returning here is what left the dataset listed with documents whose
+		// sources no longer download (#22513).
+		kept, err := storage.RemoveLogicalBucket(cleanupCtx, storageImpl, kb.ID)
+		if err != nil {
 			return fmt.Errorf("remove dataset bucket for dataset %s: %w", datasetNameID, err)
 		}
-		common.Info("Removed dataset bucket", zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
+		if kept {
+			common.Info("Kept shared dataset bucket", zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
+			if err := removeChunkImageObjects(cleanupCtx, storageImpl, kb.ID, datasetNameID, imageKeys); err != nil {
+				return err
+			}
+		} else {
+			common.Info("Removed dataset bucket", zap.String("dataset", datasetNameID), zap.String("bucket", kb.ID))
+		}
 	}
-	docIDs := extractDocIDs(documents)
 	if len(docIDs) > 0 {
 		d.deleteDatasetEngineData(ctx, kb, docIDs)
 	}
@@ -917,4 +938,96 @@ func extractUniqueFileIDs(mappings []entity.File2Document) []string {
 		ids = append(ids, *m.FileID)
 	}
 	return common.Deduplicate(ids)
+}
+
+// Chunk images are searched in bounded batches, the way the document service
+// finds them when one document is deleted.
+const (
+	imageLookupPageSize = 1000
+	imageLookupTimeout  = 30 * time.Second
+)
+
+// imageObjectKeys names the image objects the dataset's documents own.
+//
+// Chunk images are stored in the dataset's bucket under the chunk id
+// (DefaultImageUploader) and nothing else records them, so the chunk index is the
+// only source of an img_id. Reading it before the documents' objects are removed
+// keeps that possible, and the caller needs the result only when the bucket stays.
+func (d *DatasetService) imageObjectKeys(ctx context.Context, kb *entity.Knowledgebase, docIDs []string) ([]string, error) {
+	if d.docEngine == nil || len(docIDs) == 0 {
+		return nil, nil
+	}
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+	seen := make(map[string]struct{}, len(docIDs))
+	keys := make([]string, 0, len(docIDs))
+	for _, docID := range docIDs {
+		for offset := 0; ; offset += imageLookupPageSize {
+			// Elasticsearch and OpenSearch reject a from + size above the result
+			// window, and this request carries no sort to route it to search_after.
+			// Stopping there keeps the deletion going; the images past the window
+			// are reported instead of failing the whole dataset.
+			if offset+imageLookupPageSize > common.MAX_RESULT_WINDOW {
+				common.Warn("Chunk image lookup stopped at the result window", zap.String("document", docID), zap.String("dataset", kb.ID), zap.Int("offset", offset))
+				break
+			}
+			batchCtx, cancel := context.WithTimeout(ctx, imageLookupTimeout)
+			result, err := d.docEngine.Search(batchCtx, &enginetypes.SearchRequest{
+				IndexNames:   []string{indexName},
+				KbIDs:        []string{kb.ID},
+				Offset:       offset,
+				Limit:        imageLookupPageSize,
+				SelectFields: []string{"id", "img_id", "compile_kwd"},
+				Filter:       map[string]interface{}{"doc_id": docID},
+				// A disabled chunk owns its image as much as an available one: the
+				// engine's retrieval-only available_int=1 filter would hide it here
+				// and leave the object behind.
+				IncludeUnavailable: true,
+			})
+			cancel()
+
+			if err != nil {
+				return nil, fmt.Errorf("find chunk images of document %s in dataset %s: %w", docID, kb.ID, err)
+			}
+			if result == nil || len(result.Chunks) == 0 {
+				break
+			}
+			for _, chunk := range result.Chunks {
+				// A compiled product keeps its picture with the product.
+				if datasetChunkField(chunk, "compile_kwd") != "" {
+					continue
+				}
+				key, ok := datasetChunkImageKey(kb.ID, chunk)
+				if !ok {
+					continue
+				}
+				if _, dup := seen[key]; dup {
+					continue
+				}
+				seen[key] = struct{}{}
+				keys = append(keys, key)
+			}
+			if int64(offset+len(result.Chunks)) >= result.Total {
+				break
+			}
+		}
+	}
+	return keys, nil
+}
+
+// removeChunkImageObjects deletes the images a kept bucket would otherwise hold
+// for a dataset that no longer exists.
+func removeChunkImageObjects(ctx context.Context, storageImpl storage.Storage, bucket, datasetNameID string, keys []string) error {
+	for _, key := range keys {
+		exists, err := storageImpl.ObjectExists(ctx, bucket, key)
+		if err != nil {
+			return fmt.Errorf("check chunk image %s in dataset %s: %w", key, datasetNameID, err)
+		}
+		if !exists {
+			continue
+		}
+		if err := storageImpl.Remove(ctx, bucket, key); err != nil {
+			return fmt.Errorf("remove chunk image %s from dataset %s: %w", key, datasetNameID, err)
+		}
+	}
+	return nil
 }
