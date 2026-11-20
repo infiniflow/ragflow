@@ -730,7 +730,10 @@ func TestSoMarkPollCancelledErrorIncludesLastStatus(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	var polls atomic.Int64
-	secondPoll := make(chan struct{})
+	// Buffered so the handler's non-blocking send cannot be dropped when the
+	// goroutine is not yet receiving; a dropped notification would leave both
+	// the handler and the goroutine blocked.
+	secondPoll := make(chan struct{}, 1)
 	releaseSecond := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if polls.Add(1) == 1 {
