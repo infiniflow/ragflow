@@ -96,10 +96,11 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	// Passthrough: a shallow copy keeps the caller's map un-aliased.
 	out := make(map[string]any, len(inputs))
 	mapsCopy(out, inputs)
+	singleField := len(b.inputFields) == 1
 	for _, field := range b.inputFields {
 		definition, _ := b.inputDefinitions[field].(map[string]any)
 		optional, _ := definition["optional"].(bool)
-		value, supplied := beginInputValue(inputs, field)
+		value, supplied := beginInputValue(inputs, field, singleField)
 		if _, direct := inputs[field]; !direct {
 			if _, scalar := inputs["query"].(string); scalar {
 				if optional && len(b.inputFields) > 1 {
@@ -158,7 +159,7 @@ func beginInputFields(params map[string]any) []string {
 // field. A scalar query is valid when the Begin node has one declared field;
 // a map query can populate several named fields. Directly supplied named
 // inputs are also accepted for webhook and programmatic callers.
-func beginInputValue(inputs map[string]any, field string) (any, bool) {
+func beginInputValue(inputs map[string]any, field string, singleField bool) (any, bool) {
 	if value, ok := inputs[field]; ok {
 		return unwrapBeginInputValue(value), true
 	}
@@ -173,9 +174,13 @@ func beginInputValue(inputs map[string]any, field string) (any, bool) {
 		}
 		return unwrapBeginInputValue(value), true
 	}
-	// A scalar query is the legacy way to submit a single Starter field.
-	// Once that field has been initialized, later conversational queries must
-	// not overwrite it.
+	// A scalar query is ambiguous when the Begin node declares several
+	// inputs: the Python component maps it only to a single-field node and
+	// leaves every field unset otherwise. Mirror that instead of copying
+	// the whole query into every declared field.
+	if !singleField {
+		return nil, false
+	}
 	return query, true
 }
 
