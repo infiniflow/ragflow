@@ -288,3 +288,24 @@ func TestInfinityPushdownCapSemantics(t *testing.T) {
 		t.Fatalf("expected total > cap, got total=%d cap=%d", total, metaPushdownMaxSize)
 	}
 }
+
+// TestIsPushdownSupportedRejectsMultiValueUnsafeNegativeOps keeps Infinity in
+// line with the ES/OpenSearch and OceanBase push-down gates. meta_fields.<key>
+// can be a JSON array, and the in-memory filter matches a document when any
+// of its values satisfies the predicate, so a document tagged [a, b] matches
+// "tag ≠ a". NOT JSON_CONTAINS(...) drops it, so these operators must fall
+// back to the in-memory path.
+func TestIsPushdownSupportedRejectsMultiValueUnsafeNegativeOps(t *testing.T) {
+	for _, op := range []string{"≠", "not in"} {
+		filters := []map[string]interface{}{{"op": op, "key": "tag", "value": "a"}}
+		if IsPushdownSupported(filters) {
+			t.Errorf("IsPushdownSupported(%q) = true, want false", op)
+		}
+	}
+	for _, op := range []string{"=", "in", "not contains"} {
+		filters := []map[string]interface{}{{"op": op, "key": "tag", "value": "a"}}
+		if !IsPushdownSupported(filters) {
+			t.Errorf("IsPushdownSupported(%q) = false, want true", op)
+		}
+	}
+}

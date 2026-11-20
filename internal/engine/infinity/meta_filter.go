@@ -46,6 +46,14 @@ var supportedOperators = map[string]bool{
 	"not empty":    true,
 }
 
+// Negative operators unsafe for multi-valued fields: NOT JSON_CONTAINS drops a
+// document whose array holds the excluded value next to others, while the
+// in-memory filter keeps it.
+var multivalueUnsafeNegativeOps = map[string]bool{
+	"≠":      true,
+	"not in": true,
+}
+
 // Range operators mapping
 var rangeOps = map[string]string{
 	">": ">",
@@ -277,6 +285,9 @@ func IsPushdownSupported(filters []map[string]interface{}) bool {
 	for _, flt := range filters {
 		op, _ := flt["op"].(string)
 		if !supportedOperators[op] {
+			return false
+		}
+		if multivalueUnsafeNegativeOps[op] {
 			return false
 		}
 		key, _ := flt["key"].(string)
