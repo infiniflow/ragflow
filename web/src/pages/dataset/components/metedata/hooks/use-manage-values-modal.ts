@@ -119,13 +119,21 @@ export const useManageValues = (props: IManageValuesProps) => {
       message.error(valueError.field);
       return;
     }
-    if (isAddValueMode) {
+    if (isAddValueMode || metaData.valueType !== data.valueType) {
       // tempValues, not metaData.values: the latter only syncs on input blur,
       // so a Confirm click that races the blur would queue the pre-blur [''].
       addUpdateValue(metaData.field, '', tempValues, metaData.valueType);
     }
     setShouldSave(true);
-  }, [metaData, tempValues, type, valueError, isAddValueMode, addUpdateValue]);
+  }, [
+    metaData,
+    data.valueType,
+    tempValues,
+    type,
+    valueError,
+    isAddValueMode,
+    addUpdateValue,
+  ]);
 
   useEffect(() => {
     if (shouldSave) {

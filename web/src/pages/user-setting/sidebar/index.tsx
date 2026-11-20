@@ -19,7 +19,7 @@ import { useSettingMenuItems } from '@/ee/pages/user-setting/sidebar/use-setting
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
-import { LucideUnplug, LucideUser } from 'lucide-react';
+import { LucideUser } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
 
@@ -29,11 +29,6 @@ const menuItems = (t: TFunction) => [
     label: t('setting.profile'),
     key: Routes.Profile,
   },
-  {
-    icon: <LucideUnplug className="size-4" />,
-    label: t('setting.api'),
-    key: Routes.Api,
-  },
 ];
 
 export function SideBar() {
@@ -42,9 +37,12 @@ export function SideBar() {
   const items = useSettingMenuItems(menuItems(t));
 
   return (
-    <aside className="shrink-0 w-16 md:w-[303px] bg-bg-base flex flex-col overflow-hidden">
-      <nav className="flex-1 overflow-auto mt-4 py-1">
-        <ul className="px-2 md:px-6 flex flex-col gap-2 md:gap-5 items-center md:items-stretch">
+    <aside className="flex min-w-0 flex-col overflow-hidden bg-bg-base">
+      <h2 className="hidden text-base font-medium text-text-primary md:block">
+        {t('setting.settings')}
+      </h2>
+      <nav className="mt-4 flex-1 overflow-auto py-1">
+        <ul className="flex flex-col items-center gap-2 md:items-stretch md:gap-5">
           {items.map((item) => {
             const { key, icon, label, ...rest } = item;
 

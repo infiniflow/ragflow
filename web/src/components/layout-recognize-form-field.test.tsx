@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
 import { LayoutRecognizeFormField } from './layout-recognize-form-field';
+import { useExtraParserOptions } from '@/ee/hooks/use-extra-parser-options';
 import { useModelTree } from './model-tree-select';
 import { Form } from './ui/form';
 import { TooltipProvider } from './ui/tooltip';
@@ -39,20 +40,32 @@ jest.mock('./model-tree-select', () => ({
     isError: false,
   })),
 }));
+const mockTreeData: { current: unknown[] } = { current: [] };
+
 jest.mock('./tree-select', () => {
   const React = jest.requireActual('react');
   return {
     TreeSelect: React.forwardRef(
-      (_: unknown, ref: import('react').ForwardedRef<HTMLButtonElement>) => (
-        <button type="button" ref={ref}>
-          Parser selector
-        </button>
-      ),
+      (
+        props: { data?: unknown[] },
+        ref: import('react').ForwardedRef<HTMLButtonElement>,
+      ) => {
+        mockTreeData.current = props.data ?? [];
+        return (
+          <button type="button" ref={ref}>
+            Parser selector
+          </button>
+        );
+      },
     ),
   };
 });
 jest.mock('./paddleocr-options-form-field', () => ({
   PaddleOCROptionsFormField: () => null,
+}));
+
+jest.mock('@/ee/hooks/use-extra-parser-options', () => ({
+  useExtraParserOptions: jest.fn(() => []),
 }));
 
 /** Hosts real options in either the PDF setup or default parser form path. */
@@ -61,11 +74,13 @@ function Fixture({
   showOptions = true,
   defaultSelector = false,
   explicit = false,
+  optionsWithoutLLM,
 }: {
   method: string;
   showOptions?: boolean;
   defaultSelector?: boolean;
   explicit?: boolean;
+  optionsWithoutLLM?: { value: string; label: string }[];
 }) {
   const options = explicit
     ? { mineru_formula_enable: false, mineru_table_enable: true }
@@ -89,6 +104,7 @@ function Fixture({
           resourceTenantId="owner-tenant"
           showMineruOptions={showOptions}
           showPaddleocrOptions={false}
+          optionsWithoutLLM={optionsWithoutLLM}
         />
         <output data-testid="form-values">{JSON.stringify(values)}</output>
       </Form>
@@ -154,5 +170,60 @@ describe('MinerU PDF options', () => {
   it('can suppress MinerU options on non-PDF forms', () => {
     render(<Fixture method="mineru-uuid" showOptions={false} />);
     expect(screen.queryByText('MinerU Options')).not.toBeInTheDocument();
+  });
+});
+
+describe('backend-contributed parser options', () => {
+  beforeEach(() => {
+    (useExtraParserOptions as jest.Mock).mockReturnValue([]);
+  });
+
+  const staticParserIds = [
+    'DeepDOC',
+    'Plain Text',
+    'Docling',
+    'OpenDataLoader',
+    'TCADP Parser',
+    'MonkeyOCRv2',
+    'Unlimited-OCR-2',
+  ];
+
+  it('keeps the static parser list when the extension is empty', () => {
+    render(<Fixture method="DeepDOC" defaultSelector />);
+    const ids = (mockTreeData.current as Array<{ id: string }>).map(
+      (node) => node.id,
+    );
+    expect(ids).toEqual(staticParserIds);
+  });
+
+  it('appends the extra options after the static parser list', () => {
+    (useExtraParserOptions as jest.Mock).mockReturnValue([
+      { value: 'deepdoc_cpu_ee', label: 'DeepDoc EE (CPU)' },
+      { value: 'deepdoc_gpu_ee', label: 'DeepDoc EE (GPU)' },
+    ]);
+    render(<Fixture method="DeepDOC" defaultSelector />);
+    const nodes = mockTreeData.current as Array<{ id: string; title: string }>;
+    expect(nodes.map((node) => node.id)).toEqual([
+      ...staticParserIds,
+      'deepdoc_cpu_ee',
+      'deepdoc_gpu_ee',
+    ]);
+    expect(nodes.at(-2)?.title).toBe('DeepDoc EE (CPU)');
+  });
+
+  it('appends the extra options to an explicit option list too', () => {
+    (useExtraParserOptions as jest.Mock).mockReturnValue([
+      { value: 'deepdoc_cpu_ee', label: 'DeepDoc EE (CPU)' },
+    ]);
+    render(
+      <Fixture
+        method="DeepDOC"
+        optionsWithoutLLM={[{ value: 'DeepDOC', label: 'DeepDOC' }]}
+      />,
+    );
+    const ids = (mockTreeData.current as Array<{ id: string }>).map(
+      (node) => node.id,
+    );
+    expect(ids).toEqual(['DeepDOC', 'deepdoc_cpu_ee']);
   });
 });

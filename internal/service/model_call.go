@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
 )
@@ -324,4 +325,22 @@ func populateModelUsage(ctx context.Context, usage *common.ModelUsage, info *mod
 	if apiConfig != nil && apiConfig.ApiKey != nil {
 		usage.APIKey = *apiConfig.ApiKey
 	}
+	if usage.UserEmail == "" {
+		usage.UserEmail = userEmailForUsage(ctx, usage.UserID)
+	}
+}
+
+// userEmailForUsage best-effort resolves the acting user's email so every
+// usage row carries a human-readable identity alongside UserID. Callers that
+// already know the email (e.g. the model_chat handler) keep theirs; lookup
+// failures leave the field empty and never interrupt the model call.
+func userEmailForUsage(ctx context.Context, userID string) string {
+	if userID == "" {
+		return ""
+	}
+	user, err := dao.NewUserDAO().GetByID(ctx, dao.DB, userID)
+	if err != nil {
+		return ""
+	}
+	return user.Email
 }

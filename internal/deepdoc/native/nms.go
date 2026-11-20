@@ -44,10 +44,10 @@ func nms(boxes []nmsBox, iouThr float32, plusOne bool) []int {
 		xx2 := make([]float32, len(order)-1)
 		yy2 := make([]float32, len(order)-1)
 		for k, j := range order[1:] {
-			xx1[k] = maxf(boxes[i].X0, boxes[j].X0)
-			yy1[k] = maxf(boxes[i].Y0, boxes[j].Y0)
-			xx2[k] = minf(boxes[i].X1, boxes[j].X1)
-			yy2[k] = minf(boxes[i].Y1, boxes[j].Y1)
+			xx1[k] = max(boxes[i].X0, boxes[j].X0)
+			yy1[k] = max(boxes[i].Y0, boxes[j].Y0)
+			xx2[k] = min(boxes[i].X1, boxes[j].X1)
+			yy2[k] = min(boxes[i].Y1, boxes[j].Y1)
 		}
 		w := subMax0(xx2, xx1)
 		h := subMax0(yy2, yy1)
@@ -76,20 +76,6 @@ func nms(boxes []nmsBox, iouThr float32, plusOne bool) []int {
 		order = next
 	}
 	return keep
-}
-
-func maxf(a, b float32) float32 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func minf(a, b float32) float32 {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func subMax0(a, b []float32) []float32 {

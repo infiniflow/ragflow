@@ -36,7 +36,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"strconv"
 	"strings"
 
 	"ragflow/internal/parser/charset"
@@ -96,19 +96,28 @@ func parseJSONContent(text string) []map[string]any {
 		return parseJSONArray(trimmed)
 	}
 
-	// 2. Try single JSON object: {...}
+	// 2. Try single JSON object: {...}. Use a syntax-only framing check before
+	// building the map: a multi-object JSONL payload or trailing data is
+	// rejected here without allocating/decoding the trailing value (the old
+	// standard-library probe did this too, but by decoding twice).
 	if strings.HasPrefix(trimmed, "{") {
-		// Prefer parsing as a single JSON object first (matches
-		// Python's json.loads(txt) whole-document test). Only fall
-		// back to JSONL when that fails and the content still looks
-		// line-delimited.
-		if err := json.Unmarshal([]byte(trimmed), &map[string]any{}); err == nil {
-			return parseSingleJSONObject(trimmed)
+		if !json.Valid([]byte(trimmed)) {
+			if isJSONL(trimmed) {
+				return parseJSONLines(trimmed)
+			}
+			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
 		}
-		if isJSONL(trimmed) {
-			return parseJSONLines(trimmed)
+		// Scan raw tokens for out-of-range numbers BEFORE decoding into a map:
+		// decoding would overwrite an earlier overflowing number with a later
+		// duplicate key, hiding it from a post-decode check.
+		if !jsonNumbersInFloat64Range([]byte(trimmed)) {
+			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
 		}
-		return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
+		obj, ok := parseSingleJSONObjectValue(trimmed)
+		if !ok {
+			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
+		}
+		return singleObjectItems(obj)
 	}
 
 	// 3. Fallback: treat as text.
@@ -171,12 +180,18 @@ func parseJSONArray(text string) []map[string]any {
 	return items
 }
 
-// parseSingleJSONObject unmarshals a single JSON object and emits one item.
-func parseSingleJSONObject(text string) []map[string]any {
+// parseSingleJSONObjectValue unmarshals one JSON object with the
+// number-preserving decoder, returning (value, true) on success.
+func parseSingleJSONObjectValue(text string) (map[string]any, bool) {
 	var obj map[string]any
 	if err := unmarshalJSON([]byte(text), &obj); err != nil {
-		return []map[string]any{{"text": text, "doc_type_kwd": "text"}}
+		return nil, false
 	}
+	return obj, true
+}
+
+// singleObjectItems renders a decoded object into the single text item.
+func singleObjectItems(obj map[string]any) []map[string]any {
 	b, err := marshalJSON(obj)
 	if err != nil {
 		return []map[string]any{{"text": fmt.Sprintf("%v", obj), "doc_type_kwd": "text"}}
@@ -231,6 +246,54 @@ func parseJSONLines(text string) []map[string]any {
 	return items
 }
 
+// jsonNumbersInFloat64Range scans every numeric literal in raw JSON, checking
+// it against the float64 range BEFORE map construction. The old float64 probe
+// rejected documents containing a number like 1e400; decoding first would let
+// a duplicate key overwrite that number, so the check must see the raw bytes.
+// A byte scan with a string-state machine avoids the per-token interface
+// allocations of json.Decoder.Token(); json.Valid already guarantees syntax.
+func jsonNumbersInFloat64Range(data []byte) bool {
+	inString, escaped := false, false
+	for i := 0; i < len(data); {
+		c := data[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			i++
+			continue
+		}
+		if c == '"' {
+			inString = true
+			i++
+			continue
+		}
+		if c == '-' || (c >= '0' && c <= '9') {
+			start := i
+			i++ // sign or first digit
+			for i < len(data) {
+				ch := data[i]
+				if (ch >= '0' && ch <= '9') || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-' {
+					i++
+				} else {
+					break
+				}
+			}
+			if _, err := strconv.ParseFloat(string(data[start:i]), 64); err != nil {
+				return false
+			}
+			continue
+		}
+		i++
+	}
+	return true
+}
+
 // unmarshalJSON is json.Unmarshal with each number kept as written, as a
 // json.Number. Decoded into a float64, an id above 2^53 changed digits
 // (12345678901234567890 became 12345678901234567000) and 1.50 became 1.5.
@@ -241,7 +304,10 @@ func unmarshalJSON(data []byte, v any) error {
 	if err := decoder.Decode(v); err != nil {
 		return err
 	}
-	if _, err := decoder.Token(); err != io.EOF {
+	// Reject trailing data at its opening byte without decoding/allocating the
+	// trailing value (Token() would decode it). InputOffset is the byte count
+	// consumed by Decode; anything but JSON whitespace after it is trailing data.
+	if len(bytes.TrimSpace(data[decoder.InputOffset():])) > 0 {
 		return errors.New("json: data after the top-level value")
 	}
 	return nil

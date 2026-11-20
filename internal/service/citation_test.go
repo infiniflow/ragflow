@@ -366,6 +366,10 @@ func TestRepairBadCitationFormats(t *testing.T) {
 		{"(*ID: 5*)", "[ID:5]"},  // single star, spaced
 		{"(ID:12)", "[ID:12]"},   // plain parenthetical (existing pattern)
 		{"[ID: 12]", "[ID:12]"},  // already canonical-ish but spaced
+		{"[ref=14] [ref: 15] [ref 16] [ref17]", "[ID:14] [ID:15] [ID:16] [ID:17]"},
+		{"ref=18 ref:19 ref20", "[ID:18] [ID:19] [ID:20]"},
+		{"[reference 31] prefer=32", "[reference 31] prefer=32"},
+		{"https://example.com/?ref=12", "https://example.com/?ref=12"},
 		{"Built in 1865 (**ID:1**).", "Built in 1865 [ID:1]."},
 		{"plain text no cites", "plain text no cites"},
 	}
@@ -373,6 +377,14 @@ func TestRepairBadCitationFormats(t *testing.T) {
 		if got := RepairBadCitationFormats(c.in); got != c.want {
 			t.Errorf("RepairBadCitationFormats(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestCitationStreamFilterPreservesURLRefQuery(t *testing.T) {
+	var filter citationStreamFilter
+	got := filter.write("See https://example.com/?ref=") + filter.write("12 now.") + filter.flush()
+	if got != "See https://example.com/?ref=12 now." {
+		t.Fatalf("URL query parameter changed by citation filtering: %q", got)
 	}
 }
 
@@ -507,5 +519,15 @@ func TestConvertMessagesToEinoStripsCitationMarkers(t *testing.T) {
 	}
 	if !strings.Contains(out[0].Content, "Which acts were approved?") {
 		t.Errorf("user message lost its text: %q", out[0].Content)
+	}
+}
+
+func TestCitationStreamFilterHoldsRefMarkersAcrossDeltas(t *testing.T) {
+	var filter citationStreamFilter
+	if got := filter.write("Answer [ref="); got != "Answer " {
+		t.Fatalf("partial ref marker leaked into stream: %q", got)
+	}
+	if got := filter.write("14] continues."); got != " continues." {
+		t.Fatalf("completed ref marker leaked into stream: %q", got)
 	}
 }

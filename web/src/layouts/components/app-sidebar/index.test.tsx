@@ -17,10 +17,6 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-jest.mock('@/ee/layouts/components/header-enterprise', () => ({
-  EnterpriseHeaderUpgradeBadge: () => null,
-}));
-
 jest.mock('@/hooks/use-dataset-sidebar-collapse', () => ({
   useDatasetSidebarCollapse: () => ({
     collapsed: mockDatasetSidebarCollapsed,

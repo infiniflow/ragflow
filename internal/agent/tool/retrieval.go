@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"ragflow/internal/dao"
 	"strings"
 
@@ -218,7 +219,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		RerankID:                 args.RerankID,
 		CrossLanguages:           append([]string(nil), args.CrossLanguages...),
 		Highlight:                highlightEnabled(args.Highlight),
-		MetaDataFilter:           cloneStringAnyMap(args.MetaDataFilter),
+		MetaDataFilter:           maps.Clone(args.MetaDataFilter),
 		RetrievalFrom:            args.RetrievalFrom,
 		UserID:                   args.UserID,
 		TenantID:                 retrievalTenantID(ctx),
@@ -312,7 +313,7 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 		args.CrossLanguages = append([]string(nil), r.defaults.CrossLanguages...)
 	}
 	if args.MetaDataFilter == nil && r.defaults.MetaDataFilter != nil {
-		args.MetaDataFilter = cloneStringAnyMap(r.defaults.MetaDataFilter)
+		args.MetaDataFilter = maps.Clone(r.defaults.MetaDataFilter)
 	}
 	if args.RetrievalFrom == "" {
 		args.RetrievalFrom = r.defaults.RetrievalFrom
@@ -332,17 +333,6 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 
 func highlightEnabled(value *bool) bool {
 	return value != nil && *value
-}
-
-func cloneStringAnyMap(src map[string]any) map[string]any {
-	if src == nil {
-		return nil
-	}
-	dst := make(map[string]any, len(src))
-	for key, value := range src {
-		dst[key] = value
-	}
-	return dst
 }
 
 func resolveRetrievalQuery(ctx context.Context, query string) (string, error) {
@@ -449,7 +439,7 @@ func resolveRetrievalFilter(ctx context.Context, filter map[string]any) (map[str
 	}
 	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
-		return cloneStringAnyMap(filter), nil
+		return maps.Clone(filter), nil
 	}
 	resolved, err := resolveRetrievalValue(filter, state)
 	if err != nil {

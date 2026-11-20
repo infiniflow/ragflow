@@ -31,6 +31,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { RefObject, useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
+import { resolveEeDataSourceSource } from '@/ee/pages/user-setting/data-source/ee-extensions';
 import { DataSourceKey, useDataSourceInfo } from './constant';
 import {
   IDataSorceInfo,
@@ -128,13 +129,15 @@ export const useAddDataSource = ({ isEdit = false }: { isEdit?: boolean }) => {
   const handleAddOk = useCallback(
     async (data: any) => {
       setAddLoading(true);
+      // The enterprise overlay may map the filled form to another backend source.
+      const payload = { ...data, source: resolveEeDataSourceSource(data) };
       try {
         const { data: res } = isEdit
-          ? await dataSourceUpdate(data.id, {
-              ...data,
+          ? await dataSourceUpdate(payload.id, {
+              ...payload,
               reschedule: true,
             })
-          : await dataSourceService.dataSourceSet(data);
+          : await dataSourceService.dataSourceSet(payload);
         if (res.code === 0) {
           if (isEdit && res.data?.id) {
             queryClient.setQueryData(
@@ -306,7 +309,8 @@ export const useTestDataSource = (
 
   const handleTest = useCallback(async () => {
     const values = formRef.current?.getFilteredValues();
-    const source = values?.source;
+    // The enterprise overlay may map the filled form to another backend source.
+    const source = resolveEeDataSourceSource(values);
     const connectorID = id || values?.id || connectorId || source;
     if (!connectorID || !source) return;
 

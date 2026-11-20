@@ -49,7 +49,7 @@ func TestSingleProcessStartupAndShutdown(t *testing.T) {
 	}
 	go func() {
 		defer close(done)
-		runErr = runService(ctx, cancel, args)
+		runErr = runServer(ctx, cancel, args)
 	}()
 	defer func() {
 		cancel()

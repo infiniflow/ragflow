@@ -145,6 +145,10 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"progress": 0,
+				// The content this document holds is about to be replaced by the run,
+				// so the marker saying it was replayed from a dataset version no
+				// longer describes it.
+				"restored_version": nil,
 			}); err != nil {
 				common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
 				return common.CodeExceptionError, err
@@ -160,6 +164,10 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 			unlock := lockDocumentParse(doc.ID)
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"progress": 0,
+				// The content this document holds is about to be replaced by the run,
+				// so the marker saying it was replayed from a dataset version no
+				// longer describes it.
+				"restored_version": nil,
 			}); err != nil {
 				unlock()
 				common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
@@ -175,6 +183,10 @@ func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest
 
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 			"progress": 0,
+			// The content this document holds is about to be replaced by the run,
+			// so the marker saying it was replayed from a dataset version no longer
+			// describes it.
+			"restored_version": nil,
 		}); err != nil {
 			common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
 			return common.CodeExceptionError, err

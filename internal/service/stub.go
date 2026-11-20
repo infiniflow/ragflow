@@ -58,8 +58,6 @@ func authorizeModelMetadataReadEE(_ context.Context, identity *modelIdentity) er
 	if identity == nil || identity.providerEntity == nil {
 		return errModelConfigUnavailable
 	}
-	// resolveModelIdentity has already checked provider-read, instance-use,
-	// and model-use access before returning this metadata-only view.
 	return nil
 }
 
@@ -77,6 +75,14 @@ func (*ModelProviderService) setModelOwnerInfoEE(context.Context, []map[string]i
 
 func (m *ModelProviderService) listReadableModelProvidersForUserEE(ctx context.Context, tenantID, userID string) ([]*entity.TenantModelProvider, error) {
 	return m.modelProviderDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, userID)
+}
+
+func (m *ModelProviderService) providersForInstanceList(ctx context.Context, providerIDOrName string) ([]*entity.TenantModelProvider, error) {
+	provider, err := m.resolveProviderInTenant(ctx, providerIDOrName, permission.OperationRead)
+	if err != nil {
+		return nil, err
+	}
+	return []*entity.TenantModelProvider{provider}, nil
 }
 
 func queryScopeForAccessUser(ctx context.Context, checker *permission.Checker, query permission.ScopeQuery, _ string) (permission.QueryScope, error) {

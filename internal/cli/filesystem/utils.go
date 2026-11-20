@@ -19,6 +19,10 @@ package filesystem
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"unicode/utf8"
+
+	"ragflow/internal/utility"
 	"time"
 )
 
@@ -197,10 +201,10 @@ func printTable(nodes []*Node) {
 
 // truncateString truncates a string to the specified length
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen-3] + "..."
+	return utility.TruncateRunes(s, maxLen-3) + "..."
 }
 
 // IsValidPath checks if a path is valid
@@ -212,22 +216,12 @@ func IsValidPath(path string) bool {
 	// Check for invalid characters
 	invalidChars := []string{"..", "//", "\\", "*", "?", "<", ">", "|", "\x00"}
 	for _, char := range invalidChars {
-		if containsString(path, char) {
+		if strings.Contains(path, char) {
 			return false
 		}
 	}
 
 	return true
-}
-
-// containsString checks if a string contains a substring
-func containsString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 // JoinPath joins path components

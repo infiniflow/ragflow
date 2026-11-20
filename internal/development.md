@@ -364,7 +364,7 @@ missing from the model directory.
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 
 - **Run the binary directly (local dev)** — `./bin/ragflow_server`
-  (start `--admin` first, see §2) launches the Go server and registers the
+  (see §2) launches all services in one Go process and registers the
   backend. Run it from the repo root so the weights above are auto-discovered
   (see the CWD caveat); no environment variable is required there.
 

@@ -566,3 +566,16 @@ func normalizeMetadataConfigFields(fields []service.MetadataConfigField, fieldNa
 	}
 	return normalizedFields, nil
 }
+
+// datasetJSONEqual reports whether two configuration values encode to the same
+// JSON. It lives here, untagged, because both the shared update path (deciding
+// whether a submitted parser_config is a no-op) and the edition-gated history
+// compare snapshots with it.
+func datasetJSONEqual(left, right interface{}) bool {
+	leftEncoded, leftErr := json.Marshal(left)
+	rightEncoded, rightErr := json.Marshal(right)
+	if leftErr != nil || rightErr != nil {
+		return fmt.Sprintf("%v", left) == fmt.Sprintf("%v", right)
+	}
+	return string(leftEncoded) == string(rightEncoded)
+}

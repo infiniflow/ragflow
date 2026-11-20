@@ -54,6 +54,7 @@ export type SelectWithSearchFlagProps = {
   value?: string;
   onChange?(value: string): void;
   triggerClassName?: string;
+  triggerId?: string;
   allowClear?: boolean;
   disabled?: boolean;
   placeholder?: string;
@@ -139,6 +140,7 @@ export const SelectWithSearch = forwardRef<
       onChange,
       options = [],
       triggerClassName,
+      triggerId,
       allowClear = false,
       disabled = false,
       placeholder,
@@ -268,7 +270,7 @@ export const SelectWithSearch = forwardRef<
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
-            id={id}
+            id={triggerId ?? id}
             variant="outline"
             role="combobox"
             aria-expanded={open}

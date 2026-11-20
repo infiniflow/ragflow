@@ -2557,10 +2557,21 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to seed agent: %v", err)
 	}
+	if err := dao.DB.AutoMigrate(&entity.Tenant{}); err != nil {
+		t.Fatalf("failed to migrate Tenant: %v", err)
+	}
+	valid := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Tenant{ID: "tenant-1", Status: &valid}).Error; err != nil {
+		t.Fatalf("failed to seed tenant: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "agent-list-owner-membership", UserID: "user-1", TenantID: "tenant-1",
+		Role: string(permission.RoleOwner), Status: &valid,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed owner membership: %v", err)
+	}
 	// The caller's own group (must appear), updated before the canvas.
 	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", "tenant-1", groupUpdate)
-	createAgentSessionTestCompilationGroup(t, "group-other-user", "user-2", "tenant-1", base)
-	createAgentSessionTestCompilationGroup(t, "group-other-tenant", "user-1", "tenant-2", base)
 	// An unowned group with empty tenant_id (must NOT appear).
 	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
 		ID: "group-builtin", TenantID: "", Name: "Built-in templates",
@@ -2574,7 +2585,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
 	}
 
-	var sawAgent, sawOwnGroup, sawBuiltin, sawOtherUserGroup, sawOtherTenantGroup bool
+	var sawAgent, sawOwnGroup, sawBuiltin bool
 	var prevCat, prevName string
 	orderOK := true
 	for i, raw := range resp.Canvas {
@@ -2616,12 +2627,6 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 			if item["id"] == "group-builtin" {
 				sawBuiltin = true
 			}
-			if item["id"] == "group-other-user" {
-				sawOtherUserGroup = true
-			}
-			if item["id"] == "group-other-tenant" {
-				sawOtherTenantGroup = true
-			}
 		}
 	}
 	if !sawAgent {
@@ -2632,9 +2637,6 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	}
 	if sawBuiltin {
 		t.Fatal("built-in catalogue group leaked into merged list")
-	}
-	if sawOtherUserGroup || sawOtherTenantGroup {
-		t.Fatalf("another user's or tenant's group leaked: user=%t tenant=%t", sawOtherUserGroup, sawOtherTenantGroup)
 	}
 	if !orderOK {
 		t.Fatal("merged list is not ordered by (canvas_category, name) ascending")

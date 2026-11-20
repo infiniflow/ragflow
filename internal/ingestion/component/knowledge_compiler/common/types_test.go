@@ -27,7 +27,7 @@ func TestParseParamThinkingSettings(t *testing.T) {
 func TestKindToVariant_WhitelistCoversAllValidKinds(t *testing.T) {
 	validKinds := []string{
 		"tree", "mind_map", "mindmap", "wiki", "page_index",
-		"session_essence", "session_graph", "timeline",
+		"session_essence", "session_graph",
 		"knowledge_graph", "structure", "knowledgegraph", "graph",
 	}
 	for _, kind := range validKinds {
@@ -78,7 +78,6 @@ func TestKindToTaskTypePreservesFrontendCategories(t *testing.T) {
 		"tree":            TaskTypeTree,
 		"knowledge_graph": TaskTypeGraph,
 		"mind_map":        TaskTypeMindmap,
-		"timeline":        TaskTypeTimeline,
 		"page_index":      TaskTypePageIndex,
 	}
 	for kind, want := range tests {

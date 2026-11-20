@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/compliance"
@@ -997,6 +998,76 @@ func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	common.RespondSuccess(c, st, "success")
 }
 
+// datasetResourceChecker is the single-resource surface used by the
+// omitted-dataset fallback. It is injectable so every omitted dataset can be
+// verified in tests.
+type datasetResourceChecker interface {
+	FilterResources(ctx context.Context, refs []permission.ResourceRef, op permission.Operation) ([]permission.ResourceRef, error)
+	CheckResource(ctx context.Context, ref permission.ResourceRef, op permission.Operation) error
+}
+
+// checkOmittedDatasets checks every dataset the batch load did not answer for,
+// in request order, returning the first error. A single omitted dataset that
+// becomes readable must not mask the denial of a later one.
+func checkOmittedDatasets(ctx context.Context, checker datasetResourceChecker, refs []permission.ResourceRef, allowed map[string]bool) error {
+	for _, ref := range refs {
+		if allowed[ref.ID] {
+			continue
+		}
+		if err := checker.CheckResource(ctx, ref, permission.OperationRead); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkDatasetRefsReadable authorizes all refs using one shared batch load,
+// falling back to ordered single-resource checks on batch failure or for any
+// dataset the batch did not answer for.
+func checkDatasetRefsReadable(ctx context.Context, checker datasetResourceChecker, refs []permission.ResourceRef) error {
+	accessible, err := checker.FilterResources(ctx, refs, permission.OperationRead)
+	if err != nil {
+		// The batch loader resolves resources together, so one dataset's
+		// invalid state can mask the first request-order error. Fall back to
+		// ordered single-resource checks to preserve the previous error.
+		for _, ref := range refs {
+			if checkErr := checker.CheckResource(ctx, ref, permission.OperationRead); checkErr != nil {
+				return checkErr
+			}
+		}
+		return nil
+	}
+	if len(accessible) == len(refs) {
+		return nil
+	}
+	allowed := make(map[string]bool, len(accessible))
+	for _, ref := range accessible {
+		allowed[ref.ID] = true
+	}
+	return checkOmittedDatasets(ctx, checker, refs, allowed)
+}
+
+// checkDatasetsReadable verifies read access to every requested dataset with
+// one shared resource load instead of one authorization round-trip per dataset.
+func checkDatasetsReadable(ctx context.Context, db *gorm.DB, datasetIDs []string) error {
+	if len(datasetIDs) == 0 {
+		return nil
+	}
+	refs := make([]permission.ResourceRef, 0, len(datasetIDs))
+	seen := make(map[string]bool, len(datasetIDs))
+	for _, id := range datasetIDs {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id})
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return checkDatasetRefsReadable(ctx, permission.NewDatabaseChecker(db), refs)
+}
+
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
 // @Summary List flattened metadata for datasets
 // @Description Get flattened metadata for multiple datasets
@@ -1028,12 +1099,9 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	// Check access for each dataset
-	for _, datasetID := range datasetIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
-			respondPermissionError(c, err, false)
-			return
-		}
+	if err := checkDatasetsReadable(ctx, dao.DB, datasetIDs); err != nil {
+		respondPermissionError(c, err, false)
+		return
 	}
 
 	flattenedMeta, err := h.metadataService.GetFlattedMetaByKBs(ctx, datasetIDs)

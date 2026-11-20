@@ -113,9 +113,12 @@ func (s *SearchService) ListSearches(ctx context.Context, keywords string, page,
 
 // toSearchAppResponse converts search model to response format
 func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[string]interface{} {
-	nickname := search.UserID
-	if search.Nickname != nil && strings.TrimSpace(*search.Nickname) != "" {
+	nickname := ""
+	if search.Nickname != nil {
 		nickname = *search.Nickname
+	}
+	if nickname == "" {
+		nickname = search.UserID
 	}
 	result := map[string]interface{}{
 		"id":            search.ID,

@@ -29,10 +29,11 @@ import { MemorySettingProvider } from './memory-setting-context';
 
 export default function MemoryMessage() {
   const { t } = useTranslation();
-  const { data } = useFetchMemoryBaseConfiguration();
+  const { data, loading: memoryConfigLoading } =
+    useFetchMemoryBaseConfiguration();
   const { formSchema, modelsFetched, modelsEditable } = useMemoryFormSchema(
     data?.tenant_id,
-    data?.user_id,
+    memoryConfigLoading ? null : data?.user_id,
   );
   const form = useForm<IMemory>({
     resolver: zodResolver(formSchema),
@@ -86,7 +87,9 @@ export default function MemoryMessage() {
       <div className="flex gap-14 flex-1 min-h-0">
         <MemorySettingProvider data={data}>
           <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
-            <ModelResourceAccessUserIdContext.Provider value={data?.user_id}>
+            <ModelResourceAccessUserIdContext.Provider
+              value={memoryConfigLoading ? null : (data?.user_id ?? null)}
+            >
               <Form {...form}>
                 <form
                   onSubmit={form.handleSubmit(() => {})}

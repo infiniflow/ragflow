@@ -78,7 +78,7 @@ export default function SearchPage() {
             </div>
           )}
         </div>
-        {openSetting && (
+        {openSetting && SearchData && (
           <SearchSetting
             open={openSetting}
             setOpen={setOpenSetting}
