@@ -464,7 +464,7 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 		return syncerpkg.Run(ctx, cancel, args)
 	})
 	startService("chatter", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return chatterpkg.Run(ctx, args, services)
+		return chatterpkg.Run(ctx, args)
 	})
 	if startupErr == nil {
 		for _, ready := range workerReady {

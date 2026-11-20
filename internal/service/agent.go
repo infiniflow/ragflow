@@ -2155,6 +2155,15 @@ func validateAgentChatModelReferences(ctx context.Context, tenantID string, dsl 
 }
 
 func checkAgentSessionRunPermission(ctx context.Context, sessionID string) error {
+	if grant, ok := ctx.Value(channelAgentSessionContextKey{}).(channelAgentSession); ok && grant.sessionID == sessionID {
+		session, err := dao.NewAPI4ConversationDAO().GetMetadataBySessionID(ctx, dao.DB, sessionID, grant.targetID)
+		if err != nil {
+			return fmt.Errorf("check channel agent session: %w: %w", err, ErrAgentStorageError)
+		}
+		if session != nil && session.Source != nil && *session.Source == string(entity.AgentSessionSourceChatChannel) {
+			return nil
+		}
+	}
 	err := permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
 		permission.ResourceRef{Kind: permission.ResourceKindAgentSession, ID: sessionID},
@@ -2798,7 +2807,7 @@ func (s *AgentService) persistAgentRunQuestion(ctx context.Context, agentID, ses
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
-	userID := permission.UserIDFromContext(ctx)
+	userID := agentSessionHistoryUserID(ctx, agentID, sessionID)
 	text := stringifyAgentUserInput(agentRunQuery(userInput))
 	if text == "" {
 		return nil
@@ -2822,7 +2831,7 @@ func (s *AgentService) persistAgentRunSession(
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
-	userID := permission.UserIDFromContext(ctx)
+	userID := agentSessionHistoryUserID(ctx, agentID, sessionID)
 	history := dao.ConversationHistoryUpdate{}
 	if stringifyAgentUserInput(agentRunQuery(userInput)) != "" {
 		history.QuestionID = messageID
@@ -3275,7 +3284,7 @@ func (s *AgentService) markAgentSessionFailed(ctx context.Context, canvasID, ses
 	if s == nil || s.api4ConversationDAO == nil || dao.DB == nil || sessionID == "" {
 		return
 	}
-	userID := permission.UserIDFromContext(ctx)
+	userID := agentSessionHistoryUserID(ctx, canvasID, sessionID)
 	if err := s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, sessionID, canvasID, userID,
 		map[string]interface{}{"errors": reason}, dao.ConversationHistoryUpdate{}); err != nil {
 		common.Warn("agent run: persist failed session status failed",
