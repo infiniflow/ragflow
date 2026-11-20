@@ -982,10 +982,20 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, memoryID string) error
 		return err
 	}
 
-	// TODO: Delete associated message index - Implementation pending MessageService
-	if s.docEngine != nil && (engine.IsOceanBaseFamily(s.docEngine.GetType()) || engine.IsVastbase(s.docEngine.GetType())) {
-		if err := s.docEngine.DropChunkStore(ctx, MemoryIndexName(memory.TenantID), memoryID); err != nil {
-			return fmt.Errorf("delete memory messages: %w", err)
+	if s.docEngine != nil {
+		indexName := MemoryIndexName(memory.TenantID)
+		switch engineType := s.docEngine.GetType(); {
+		case engine.IsOceanBaseFamily(engineType), engine.IsVastbase(engineType), engineType == string(engine.EngineInfinity):
+			// One table per memory: drop it.
+			if err := s.docEngine.DropChunkStore(ctx, indexName, memoryID); err != nil {
+				return fmt.Errorf("delete memory messages: %w", err)
+			}
+		default:
+			// Elasticsearch/OpenSearch share one index per tenant: delete only
+			// this memory's messages.
+			if _, err := s.docEngine.DeleteChunks(ctx, map[string]interface{}{}, indexName, memoryID); err != nil {
+				return fmt.Errorf("delete memory messages: %w", err)
+			}
 		}
 	}
 
