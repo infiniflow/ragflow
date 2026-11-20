@@ -224,6 +224,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 	if err := compliance.ValidateQuestion(c.Request.Context(), req.Query); err != nil {
+		if compliance.IsRejected(err) {
+			c.JSON(http.StatusOK, gin.H{"records": []difyRecord{}, "message": err.Error()})
+			return
+		}
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
