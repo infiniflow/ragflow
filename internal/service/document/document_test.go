@@ -435,10 +435,7 @@ func (m *metadataDocEngine) SearchMetadata(_ context.Context, req *types.SearchM
 }
 
 func (m *metadataDocEngine) UpdateMetadata(_ context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
-	dup := make(map[string]interface{}, len(m.records[docID])+len(metaFields))
-	for k, v := range m.records[docID] {
-		dup[k] = v
-	}
+	dup := make(map[string]interface{}, len(metaFields))
 	for k, v := range metaFields {
 		dup[k] = v
 	}
@@ -496,14 +493,6 @@ func (m *metadataDocEngine) DeleteMetadataKeys(_ context.Context, docID string, 
 		m.docKBs[docID] = datasetID
 	}
 	return nil
-}
-
-type staleSearchMetadataDocEngine struct {
-	*metadataDocEngine
-}
-
-func (m *staleSearchMetadataDocEngine) SearchMetadata(context.Context, *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
-	return &types.SearchMetadataResult{MetadataRecords: []map[string]interface{}{}}, nil
 }
 
 func (f *failingDeleteMetadataEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
@@ -4197,7 +4186,7 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	}
 }
 
-func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
+func TestSetDocumentMetadataReplacesMetadataRow(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -4221,8 +4210,8 @@ func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetDocumentMetadata failed: %v", err)
 	}
-	if got := engine.records["doc-1"]["author"]; got != "alice" {
-		t.Fatalf("author = %#v, want alice", got)
+	if _, ok := engine.records["doc-1"]["author"]; ok {
+		t.Fatalf("replacement kept a field it did not contain: %#v", engine.records["doc-1"])
 	}
 	if got := engine.records["doc-1"]["category"]; got != "tech" {
 		t.Fatalf("category = %#v, want tech", got)
@@ -4366,42 +4355,6 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	}
 	if _, ok := got3["tags"]; ok {
 		t.Fatalf("doc-3 tags should not be created by match-only update: %#v", got3)
-	}
-}
-
-func TestBatchUpdateDocumentMetadatasDoesNotReplaceWhenCurrentSearchIsStale(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertNamedTestDoc(t, "doc-1", "kb-1", "doc1.txt", 0, 0)
-
-	baseEngine := newMetadataDocEngine(map[string]map[string]interface{}{
-		"doc-1": {"author": "alice"},
-	}, map[string]string{"doc-1": "kb-1"})
-	engine := &staleSearchMetadataDocEngine{metadataDocEngine: baseEngine}
-
-	svc := testDocumentService(t)
-	svc.docEngine = engine
-	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
-		DocumentIDs: []string{"doc-1"},
-	}, []MetadataUpdate{
-		{Key: "category", Value: "paper"},
-	}, nil)
-	if err != nil || code != common.CodeSuccess {
-		t.Fatalf("batch update failed: code=%v err=%v", code, err)
-	}
-	if resp.Updated != 1 || resp.MatchedDocs != 1 {
-		t.Fatalf("resp = %#v, want updated=1 matched=1", resp)
-	}
-
-	got := baseEngine.records["doc-1"]
-	if got["author"] != "alice" {
-		t.Fatalf("author should be preserved, got metadata %#v", got)
-	}
-	if got["category"] != "paper" {
-		t.Fatalf("category = %#v, want paper", got["category"])
 	}
 }
 
