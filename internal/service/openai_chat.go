@@ -570,10 +570,12 @@ func (s *OpenAIChatService) filterMessages(messages []map[string]interface{}) []
 	return out
 }
 
-// cleanCitationMarkers strips "##N$$" markers from the answer.
+// cleanCitationMarkers removes turn-local citation positions before reusing
+// message content with a new retrieval context. Ordinary brackets are preserved.
 func cleanCitationMarkers(s string) string {
 	citationMarkerRegex := regexp.MustCompile(`##\d+\$\$`)
-	return citationMarkerRegex.ReplaceAllString(s, "")
+	s = citationMarkerRegex.ReplaceAllString(s, "")
+	return canonicalIDMarkerPattern.ReplaceAllString(s, "")
 }
 
 // isContentDelta filters out "[DONE]" leaked by some drivers.

@@ -250,8 +250,7 @@ func TestOpenAI_BindToolsCondition_NilValuesDoNotFire(t *testing.T) {
 	}
 }
 
-// TestOpenAI_CleanCitationMarkers pins down the citation-marker stripping
-// that matches Python's re.sub(r"##\d+\$\$", "", content).
+// TestOpenAI_CleanCitationMarkers covers numeric ##N$$ marker stripping.
 func TestOpenAI_CleanCitationMarkers(t *testing.T) {
 	cases := []struct {
 		name string

@@ -435,7 +435,6 @@ var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(„Äê][\s*idslotref:=Ô
 
 func stripCitations(text string) string {
 	text = cleanCitationMarkers(text)
-	text = canonicalIDMarkerPattern.ReplaceAllString(text, "")
 	text = slotCitationPattern.ReplaceAllString(text, "")
 	text = rangeCitationPattern.ReplaceAllString(text, "")
 	for _, pattern := range badCitationPatterns {
