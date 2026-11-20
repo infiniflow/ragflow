@@ -27,7 +27,8 @@ import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import {
   eeDataSourceDefaultValues,
-  eeDataSourceFormFields,
+  EeDataSourceFeatureVisibility,
+  generateEeDataSourceFormFields,
   generateEeDataSourceInfo,
 } from '@/ee/pages/user-setting/data-source/ee-extensions';
 import { IDataSourceInfoMap } from '../interface';
@@ -64,7 +65,6 @@ export enum DataSourceKey {
   AIRTABLE = 'airtable',
   ASANA = 'asana',
   IMAP = 'imap',
-  DINGTALK_AI_TABLE = 'dingtalk_ai_table',
   SEAFILE = 'seafile',
   MYSQL = 'mysql',
   POSTGRESQL = 'postgresql',
@@ -144,9 +144,6 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.AIRTABLE]: {
     syncDeletedFiles: true,
   },
-  [DataSourceKey.DINGTALK_AI_TABLE]: {
-    syncDeletedFiles: true,
-  },
   [DataSourceKey.WEBDAV]: {
     syncDeletedFiles: true,
   },
@@ -201,6 +198,7 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.BIGQUERY]: {
     syncDeletedFiles: true,
   },
+  ...EeDataSourceFeatureVisibility,
 };
 
 const isDataSourceFeatureVisible = (
@@ -332,11 +330,6 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Airtable',
       description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
       icon: <SvgIcon name={'data-source/airtable'} width={38} />,
-    },
-    [DataSourceKey.DINGTALK_AI_TABLE]: {
-      name: 'Dingtalk AI Table',
-      description: t(`setting.dingtalkAITableDescription`),
-      icon: <SvgIcon name={'data-source/dingtalk-ai-table'} width={38} />,
     },
     [DataSourceKey.GITLAB]: {
       name: 'GitLab',
@@ -1298,26 +1291,6 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: true,
     },
   ],
-  [DataSourceKey.DINGTALK_AI_TABLE]: [
-    {
-      label: t('setting.dataSourceFieldAccessToken'),
-      name: 'config.credentials.access_token',
-      type: FormFieldType.Password,
-      required: true,
-    },
-    {
-      label: t('setting.dataSourceFieldBaseId'),
-      name: 'config.table_id',
-      type: FormFieldType.Text,
-      required: true,
-    },
-    {
-      label: t('setting.dataSourceFieldOperatorId'),
-      name: 'config.operator_id',
-      type: FormFieldType.Text,
-      required: true,
-    },
-  ],
   [DataSourceKey.GITLAB]: [
     {
       label: t('setting.dataSourceFieldProjectOwner'),
@@ -2225,7 +2198,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
-  ...eeDataSourceFormFields,
+  ...generateEeDataSourceFormFields(t),
 });
 
 export const DataSourceFormDefaultValues = {
@@ -2492,17 +2465,6 @@ export const DataSourceFormDefaultValues = {
       table_name_or_id: '',
       credentials: {
         airtable_access_token: '',
-      },
-    },
-  },
-  [DataSourceKey.DINGTALK_AI_TABLE]: {
-    name: '',
-    source: DataSourceKey.DINGTALK_AI_TABLE,
-    config: {
-      table_id: '',
-      operator_id: '',
-      credentials: {
-        access_token: '',
       },
     },
   },

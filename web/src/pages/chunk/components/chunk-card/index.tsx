@@ -9,6 +9,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
+import { ChunkVersionBadge } from '@/ee/pages/chunk/components/chunk-card/chunk-version-badge';
+import { ChunkVersionEntry } from '@/ee/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-creating-modal/chunk-version-entry';
 import type { ChunkDocType, IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
@@ -94,15 +96,22 @@ const ChunkCard = ({
         selected && 'bg-text-primary/15',
       )}
     >
-      <span
+      {/* Corner row: the chunk type and, where the edition keeps a chunk history,
+          the version the text shown is at. The history entry is an action on the
+          chunk rather than a label of it, so it sits in the action column below
+          instead of in this strip. */}
+      <div
         className="
-        absolute top-0 right-0 px-4 py-1
+        absolute top-0 right-0 flex items-center gap-0.5 pr-2
         leading-none text-xs text-text-disabled
         bg-bg-card rounded-bl-2xl rounded-tr-lg
         border-l-0.5 border-b-0.5 border-border-button"
       >
-        {t(`chunk.docType.${chunkType}`)}
-      </span>
+        <span className="pl-4 py-1 mr-2">
+          {t(`chunk.docType.${chunkType}`)}
+        </span>
+        <ChunkVersionBadge chunk={item} />
+      </div>
 
       <div className="flex items-start justify-between gap-2.5">
         <Checkbox
@@ -181,6 +190,10 @@ const ChunkCard = ({
             >
               <PenLine className="size-4" />
             </Button>
+            {/* The history sits above delete: it opens from the card so a reader
+                can inspect what changed without opening an edit, and delete stays
+                the last action in the column where a destructive control belongs. */}
+            <ChunkVersionEntry chunkId={item.chunk_id} docId={item.doc_id} />
             <Button
               variant="ghost"
               size="icon-xs"

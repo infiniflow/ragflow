@@ -34,8 +34,6 @@ import (
 
 const (
 	reconcileInterval       = 10 * time.Second
-	initialStartRetryDelay  = 10 * time.Second
-	maxStartRetryDelay      = 5 * time.Minute
 	channelFinalSendTimeout = 30 * time.Second
 	channelShutdownTimeout  = 30 * time.Second
 )
@@ -52,15 +50,18 @@ type failedChannel struct {
 }
 
 type Runtime struct {
-	agentService *service.AgentService
-	mu           sync.Mutex
-	running      map[string]runningChannel
-	failed       map[string]failedChannel
-	cancel       context.CancelFunc
-	done         chan struct{}
-	stopping     bool
-	messages     sync.WaitGroup
-	statusCache  *service.ChatChannelRuntimeCache
+	getAgentService func() (*service.AgentService, error)
+	mu              sync.Mutex
+	running         map[string]runningChannel
+	failed          map[string]failedChannel
+	cancel          context.CancelFunc
+	done            chan struct{}
+	stopping        bool
+	messages        sync.WaitGroup
+	statusCache     *service.ChatChannelRuntimeCache
+
+	gatewayAttempts    int
+	gatewayNextRetryAt time.Time
 }
 
 // NewRuntime creates an empty chat-channel runtime reconciler.
@@ -72,10 +73,11 @@ func NewRuntime() *Runtime {
 	}
 }
 
-// Start launches the chat-channel runtime reconciler in the background.
-func Start(ctx context.Context, agentService *service.AgentService) (*Runtime, error) {
+// Start launches reconciliation. getAgentService is called on the first message
+// so an idle standalone chatter does not load the agent dictionaries.
+func Start(ctx context.Context, getAgentService func() (*service.AgentService, error)) (*Runtime, error) {
 	channelRuntime := NewRuntime()
-	channelRuntime.agentService = agentService
+	channelRuntime.getAgentService = getAgentService
 	if kvrocks.IsEnabled() {
 		channelRuntime.statusCache = service.NewChatChannelRuntimeCache(kvrocks.Get().GetClient())
 	}
@@ -100,8 +102,6 @@ func (r *Runtime) Stop() {
 
 // Run reconciles configured chat channels until the context is cancelled.
 func (r *Runtime) Run(ctx context.Context) {
-	ticker := time.NewTicker(reconcileInterval)
-	defer ticker.Stop()
 	defer close(r.done)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), channelShutdownTimeout)
@@ -118,10 +118,19 @@ func (r *Runtime) Run(ctx context.Context) {
 			common.Error("chat channel reconcile failed", err)
 		}
 		r.publishRuntimeSnapshots(ctx)
-		select {
-		case <-ctx.Done():
+		delay := reconcileInterval
+		r.mu.Lock()
+		if remaining := time.Until(r.gatewayNextRetryAt); remaining > 0 && remaining < delay {
+			delay = remaining
+		}
+		for _, failure := range r.failed {
+			if remaining := time.Until(failure.nextRetryAt); remaining > 0 && remaining < delay {
+				delay = remaining
+			}
+		}
+		r.mu.Unlock()
+		if !waitForContext(ctx, delay) {
 			return
-		case <-ticker.C:
 		}
 	}
 }
@@ -168,9 +177,24 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 			break
 		}
 	}
-	if err := syncWhatsAppGateway(ctx, activeWhatsApp); err != nil && activeWhatsApp {
-		common.Error("failed to sync WhatsApp gateway", err)
-		reconcileErr = fmt.Errorf("sync WhatsApp gateway: %w", err)
+	r.mu.Lock()
+	gatewayRetryPending := time.Now().Before(r.gatewayNextRetryAt)
+	r.mu.Unlock()
+	if !activeWhatsApp || !gatewayRetryPending {
+		err := syncWhatsAppGateway(ctx, activeWhatsApp)
+		r.mu.Lock()
+		if err != nil && activeWhatsApp {
+			r.gatewayAttempts++
+			r.gatewayNextRetryAt = time.Now().Add(channelRetryDelay(r.gatewayAttempts))
+		} else {
+			r.gatewayAttempts = 0
+			r.gatewayNextRetryAt = time.Time{}
+		}
+		r.mu.Unlock()
+		if err != nil && activeWhatsApp {
+			common.Error("failed to sync WhatsApp gateway", err)
+			reconcileErr = fmt.Errorf("sync WhatsApp gateway: %w", err)
+		}
 	}
 
 	now := time.Now()
@@ -185,7 +209,7 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		}
 		if err := r.startChannel(ctx, accountID, wanted); err != nil {
 			common.Error("failed to start chat channel", err, zap.String("account_id", accountID), zap.String("channel", wanted.channel))
-			r.recordStartFailure(accountID, wanted.fingerprint, now)
+			r.recordStartFailure(accountID, wanted.fingerprint, time.Now())
 			if reconcileErr == nil {
 				reconcileErr = fmt.Errorf("failed to start chat channel %s: %w", accountID, err)
 			}
@@ -208,7 +232,7 @@ func (r *Runtime) recordStartFailure(accountID string, fingerprint string, now t
 	r.failed[accountID] = failedChannel{
 		fingerprint: fingerprint,
 		attempts:    attempts,
-		nextRetryAt: now.Add(startRetryDelay(attempts)),
+		nextRetryAt: now.Add(channelRetryDelay(attempts)),
 	}
 }
 
@@ -217,21 +241,6 @@ func (r *Runtime) clearStartFailure(accountID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.failed, accountID)
-}
-
-// startRetryDelay returns the bounded exponential backoff for a start attempt.
-func startRetryDelay(attempts int) time.Duration {
-	if attempts < 1 {
-		attempts = 1
-	}
-	delay := initialStartRetryDelay
-	for i := 1; i < attempts; i++ {
-		delay *= 2
-		if delay >= maxStartRetryDelay {
-			return maxStartRetryDelay
-		}
-	}
-	return delay
 }
 
 type desiredChannel struct {
@@ -282,10 +291,16 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 		return nil
 	}
 
-	channelService := service.NewChatChannelService()
-	if r.agentService != nil {
-		channelService = service.NewChatChannelServiceWithAgentService(r.agentService)
-	}
+	getChannelService := sync.OnceValues(func() (*service.ChatChannelService, error) {
+		if r.getAgentService == nil {
+			return service.NewChatChannelService(), nil
+		}
+		agentService, err := r.getAgentService()
+		if err != nil {
+			return nil, fmt.Errorf("initialize chat-channel agent runtime: %w", err)
+		}
+		return service.NewChatChannelServiceWithAgentService(agentService), nil
+	})
 	ch.SetMessageHandler(func(ctx context.Context, msg core.IncomingMessage) error {
 		r.mu.Lock()
 		if r.stopping {
@@ -295,6 +310,16 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 		r.messages.Add(1)
 		r.mu.Unlock()
 		defer r.messages.Done()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		channelService, err := getChannelService()
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		outgoing := core.OutgoingMessage{ChatID: msg.ChatID, ReplyToMessageID: msg.MessageID}
 
 		// A streaming channel owns its own message lifecycle: cumulative text goes

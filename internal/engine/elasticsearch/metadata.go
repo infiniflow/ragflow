@@ -30,6 +30,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/metafilter"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"

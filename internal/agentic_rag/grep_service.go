@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -158,7 +159,7 @@ func (g *GrepAdapter) ResolveDocDatasetID(ctx context.Context, req runtime.GrepR
 	}
 	// Enforce the bound scope: a doc whose owning dataset is not in the bound set
 	// must not be deep-read, even if the model guessed a valid-looking doc_id.
-	if !containsString(req.DatasetIDs, kbID) {
+	if !slices.Contains(req.DatasetIDs, kbID) {
 		return "", fmt.Errorf("list_chunks: document %q belongs to dataset %q outside the bound dataset scope", docIDs[0], kbID)
 	}
 	return kbID, nil
@@ -384,13 +385,6 @@ const (
 	grepDegradeTopNFactor = 4
 )
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // degradeGrep recovers from a pushdown the engine refused, in three steps,
 // cheapest and most faithful first.
 //
@@ -443,7 +437,7 @@ func degradeGrep(
 				Queries:    queries,
 				DatasetIDs: req.DatasetIDs,
 				DocScope:   req.DocScope,
-				TopN:       maxInt(req.Limit, grepChunksMaxResults) * grepDegradeTopNFactor,
+				TopN:       max(req.Limit, grepChunksMaxResults) * grepDegradeTopNFactor,
 				TenantID:   req.TenantID,
 			})
 			if bmErr == nil && len(chunks) > 0 {
@@ -798,15 +792,6 @@ func nonEmptyStrings(in []string) []string {
 }
 
 // containsString reports whether s is present in in.
-func containsString(in []string, s string) bool {
-	for _, v := range in {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
 // isGraphChunkContent reports whether a chunk's content looks like a knowledge
 // graph relation/entity/location JSON payload (e.g.
 // {"head":"何进","relation_type":"鸩杀","tail":"董太后","type":"relation"}) rather

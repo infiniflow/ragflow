@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"ragflow/internal/dao"
 	"regexp"
 	"sort"
@@ -2194,11 +2195,7 @@ func cloneMap(in map[string]any) map[string]any {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
+	return maps.Clone(in)
 }
 
 func mergeToolParams(base, overrides map[string]map[string]any) map[string]map[string]any {

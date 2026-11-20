@@ -48,6 +48,7 @@ func TestBuildByName_CanvasComponentNames(t *testing.T) {
 		{name: "CodeExec", wantToolName: "execute_code"},
 		{name: "GoogleScholar", wantToolName: "google_scholar_search"},
 		{name: "KeenableSearch", wantToolName: "keenable_search"},
+		{name: "PerplexitySearch", wantToolName: "perplexity_search"},
 		{name: "QueritContents", wantToolName: "querit_contents"},
 		{name: "QueritSearch", wantToolName: "querit_search"},
 		{name: "Search1APICrawl", wantToolName: "search1api_crawl"},
@@ -234,7 +235,7 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
-		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
+		"google_scholar", "google_scholar_search", "jin10", "keenable", "perplexity", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
@@ -327,7 +328,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	names := []string{
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
-		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
+		"google_scholar", "google_scholar_search", "jin10", "keenable", "perplexity", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",

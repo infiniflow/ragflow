@@ -150,6 +150,10 @@ export default {
       team: 'Team',
       mcp: 'MCP',
       theme: 'Theme',
+      darkTheme: 'Dark theme',
+      lightTheme: 'Light theme',
+      systemTheme: 'System theme',
+      docs: 'Docs',
       language: 'Language',
       version: 'Version',
       collapseSidebar: 'Collapse sidebar',
@@ -1104,7 +1108,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         knowledge_graph: 'Knowledge graph',
         mind_map: 'Mind map',
         page_index: 'Page index',
-        timeline: 'Timeline',
         tree: 'Tree',
         raptor: 'RAPTOR',
       },
@@ -1352,6 +1355,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       parallelApiKeyTip:
         'When Parallel is selected, its search excerpts supplement dataset retrieval.',
       parallelApiKeyMessage: 'Please enter your Parallel API Key',
+      perplexityApiKeyTip:
+        'When Perplexity is selected, results from the Perplexity Search API supplement dataset retrieval.',
+      perplexityApiKeyMessage: 'Please enter your Perplexity API Key',
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',
@@ -1863,8 +1869,6 @@ Example: Virtual Hosted Style`,
         'Connect GitHub to sync pull requests and issues for retrieval.',
       airtableDescription:
         'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
-      dingtalkAITableDescription:
-        'Connect to Dingtalk AI Table and synchronize records from a specified table.',
       gitlabDescription:
         'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
       asanaDescription:
@@ -2165,7 +2169,9 @@ Example: Virtual Hosted Style`,
       search: 'Search',
       availableModels: 'Available models',
       recommended: 'Recommended',
-      profile: 'Profile',
+      settings: 'Settings',
+      profile: 'Account',
+      displayLanguage: 'Display language',
       avatar: 'Avatar',
       avatarTip: 'This will be displayed on your profile.',
       profileDescription: 'Update your photo and personal details here.',
@@ -2667,12 +2673,10 @@ Example: Virtual Hosted Style`,
       navTree: 'Tree/PageIndex',
       graph: 'Graph',
       structureMindmap: 'Mind map',
-      structureTimeline: 'Timeline',
       noWikiPages: 'No wiki yet',
       noSkills: 'No skills yet',
       noStructureGraph: 'No graph yet',
       noStructureMindmap: 'No mind map yet',
-      noStructureTimeline: 'No timeline yet',
       contents: 'Navigation',
       topics: 'Topics',
       searchEntity: 'Search entity',
@@ -3221,6 +3225,31 @@ Best for: Documents with flowing, contextually connected content — such as boo
       youComFreshnessMonth: 'Past month',
       youComFreshnessYear: 'Past year',
       youComApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
+      perplexitySearch: 'Perplexity',
+      perplexitySearchDescription:
+        'A web search component powered by the Perplexity Search API. Each result carries a title, URL, snippet and, when known, a publication date. Requires an API Key.',
+      perplexitySearchType: 'Search type',
+      perplexitySearchTypeTip:
+        'Web is the default search type. Fast prioritizes lower latency.',
+      perplexitySearchTypeWeb: 'Web',
+      perplexitySearchTypeFast: 'Fast',
+      perplexityRecency: 'Recency',
+      perplexityRecencyTip:
+        'Restrict results by how recently they were published.',
+      perplexityRecencyAny: 'Any time',
+      perplexityRecencyHour: 'Past hour',
+      perplexityRecencyDay: 'Past day',
+      perplexityRecencyWeek: 'Past week',
+      perplexityRecencyMonth: 'Past month',
+      perplexityRecencyYear: 'Past year',
+      perplexityDomainFilter: 'Domain filter',
+      perplexityDomainFilterTip:
+        'Comma-separated list of up to 20 domains. Use one mode per request: either list only the domains to search (for example "ragflow.io, docs.example.com"), or list only the domains to exclude with a "-" prefix (for example "-pinterest.com, -reddit.com"). Mixing the two is rejected. Leave blank to search the whole web.',
+      perplexityCountry: 'Country',
+      perplexityCountryTip:
+        'Optional ISO 3166-1 alpha-2 country code (for example US) used to prefer results from that country.',
+      perplexityApiKeyTip:
+        'Required. Create an API Key at perplexity.ai/account/api/keys.',
       sofyaSearch: 'Sofya',
       sofyaSearchDescription:
         'A web search component powered by Sofya. Results carry the content of each result page, or only its search snippet, depending on the search depth. An API Key is required.',

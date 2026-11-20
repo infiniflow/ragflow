@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -32,20 +33,16 @@ import (
 	"gorm.io/gorm"
 )
 
-var allDatasetTaskTypes = []string{
+var allDatasetTaskTypes = slices.Concat([]string{
 	kccommon.TaskTypeWiki,
 	kccommon.TaskTypeTree,
 	kccommon.TaskTypeGraph,
 	kccommon.TaskTypeMindmap,
-	kccommon.TaskTypeTimeline,
-	kccommon.TaskTypePageIndex,
-}
+}, additionalStructureTaskTypes, []string{kccommon.TaskTypePageIndex})
 
-var structureTaskTypes = []string{
+var structureTaskTypes = slices.Concat([]string{
 	kccommon.TaskTypeGraph,
-	kccommon.TaskTypeTimeline,
-	kccommon.TaskTypePageIndex,
-}
+}, additionalStructureTaskTypes, []string{kccommon.TaskTypePageIndex})
 
 // Dataset ingestion logs use the status values exposed by the API and
 // consumed by the shared frontend. The Go scheduler uses a different set of
@@ -81,7 +78,7 @@ func taskTypesForVariants(variants []string) []string {
 			taskType = kccommon.TaskTypeMindmap
 		case "structure":
 			// Legacy structure events predate the task-type field and cannot
-			// distinguish graph, timeline, and page-index products.
+			// distinguish individual structure products.
 			for _, structureTaskType := range structureTaskTypes {
 				seen[structureTaskType] = struct{}{}
 			}
@@ -127,11 +124,14 @@ func normalizeTaskType(taskType string) string {
 		return kccommon.TaskTypeGraph
 	case "mindmap", "mind_map":
 		return kccommon.TaskTypeMindmap
-	case "timeline":
-		return kccommon.TaskTypeTimeline
 	case "pageindex", "page_index":
 		return kccommon.TaskTypePageIndex
 	default:
+		for _, additional := range additionalStructureTaskTypes {
+			if strings.EqualFold(strings.TrimSpace(taskType), additional) {
+				return additional
+			}
+		}
 		return ""
 	}
 }

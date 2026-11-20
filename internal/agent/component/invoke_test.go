@@ -864,3 +864,29 @@ func TestInvoke_ResponseJustUnderCapSucceeds(t *testing.T) {
 		t.Errorf("result length = %d, want %d", len(res), bodyBytes)
 	}
 }
+
+// TestCloneInvokeParamsNilIsWritable pins the contract that a nil input clone
+// is a fresh, writable map. mergeInputs writes into this result, so replacing
+// the helper with a bare maps.Clone (nil -> nil) would panic on a nil input.
+func TestCloneInvokeParamsNilIsWritable(t *testing.T) {
+	got := cloneInvokeParams(nil)
+	if got == nil {
+		t.Fatal("cloneInvokeParams(nil) = nil, want a non-nil writable map")
+	}
+	got["k"] = "v"
+	if got["k"] != "v" {
+		t.Fatalf("write to cloned map lost value: %v", got)
+	}
+}
+
+func TestCloneInvokeParamsDetaches(t *testing.T) {
+	in := map[string]any{"a": 1}
+	out := cloneInvokeParams(in)
+	out["b"] = 2
+	if _, ok := in["b"]; ok {
+		t.Fatal("clone shares storage with input")
+	}
+	if in["a"] != 1 || out["a"] != 1 {
+		t.Fatalf("unexpected values in=%v out=%v", in, out)
+	}
+}

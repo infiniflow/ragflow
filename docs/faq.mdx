@@ -154,7 +154,7 @@ Ingestor ... initialized
 RAGFlow ingestion service version: ...
 ```
 
-These messages come from separate processes and may appear in a different order. Check the logs for startup errors, use the [system health API](./references/http_api_reference.md#check-system-health) to inspect dependencies, and verify that the ingestor has registered with admin before treating document parsing as ready.
+These messages come from services in one Go process. Admin starts before API, followed by the workers; worker logs can interleave. Check the logs for startup errors, use the [system health API](./references/http_api_reference.md#check-system-health) to inspect dependencies, and verify that the ingestor has registered with admin before treating document parsing as ready.
 
 ---
 
@@ -356,7 +356,7 @@ For a Go Compose deployment:
    ```
 6. Check the service state and logs, then call `/api/v1/system/healthz` through the configured web endpoint to verify the dependencies.
 
-The OSS server runs migrations automatically before starting services. The enterprise Compose deployment uses a separate `ragflow_server --migrate` action; individual enterprise service modes do not run the complete migration sequence. Keep the backup until the upgrade has been verified, and do not enable `RAGFLOW_DEV_MODE` in production to bypass downgrade protection. Never add `-v` to `docker compose down` unless you intend to delete the deployment's volumes.
+The OSS server runs migrations automatically before starting services. Keep the backup until the upgrade has been verified, and do not enable `RAGFLOW_DEV_MODE` in production to bypass downgrade protection. Never add `-v` to `docker compose down` unless you intend to delete the deployment's volumes.
 
 ---
 

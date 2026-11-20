@@ -29,6 +29,7 @@ import { FormSchema as ExeSQLFormSchema } from '../form/exesql-form/use-submit-f
 import { FormSchema as ParserFormSchema } from '../form/parser-form/schema';
 import { FormSchema as VariableAssignerFormSchema } from '../form/variable-assigner-form/schema';
 import { isEmptyMessageContent } from '../utils';
+import { embeddedToolName, isPerplexityOperator } from './perplexity-tool-name';
 
 /**
  * Canvas checklist issue collection. Pure functions fed by `useCanvasChecklist`:
@@ -102,9 +103,17 @@ const OrphanExemptOperators: string[] = [
 // Tools whose API key is required by the service, on the canvas and inside an
 // agent's tool list alike — an empty key always fails at run time.
 const ApiKeyRequiredOperators: string[] = [
+  Operator.PerplexitySearch,
   Operator.SofyaSearch,
   Operator.Search1APISearch,
 ];
+
+function isApiKeyRequiredOperator(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return ApiKeyRequiredOperators.includes(value) || isPerplexityOperator(value);
+}
 
 function collectStrings(value: unknown): string[] {
   if (typeof value === 'string') {
@@ -722,7 +731,7 @@ export function collectCanvasIssues({
       });
     }
 
-    if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
+    if (isApiKeyRequiredOperator(label) && !form?.api_key) {
       issues.push({
         ...target,
         type: CanvasIssueType.MissingRequired,
@@ -763,9 +772,7 @@ export function collectCanvasIssues({
         const toolNode = findToolCanvasNode(edges, nodeMap, node.id);
         for (const tool of form.tools) {
           const isRetrieval = tool?.component_name === Operator.Retrieval;
-          const needsApiKey = ApiKeyRequiredOperators.includes(
-            tool?.component_name,
-          );
+          const needsApiKey = isApiKeyRequiredOperator(embeddedToolName(tool));
           // Point at the concrete tool under the concrete agent — the Tool
           // canvas node's own name is just the operator label (legacy canvases
           // even carry the raw i18n key), which says nothing about which tool

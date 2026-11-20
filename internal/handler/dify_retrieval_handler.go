@@ -223,12 +223,12 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "knowledge_id and query are required")
 		return
 	}
-
-	ctx := c.Request.Context()
-	if err := compliance.ValidateQuestion(ctx, req.Query); err != nil {
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Query); err != nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
+
+	ctx := c.Request.Context()
 	kb, err := h.kbSvc.GetKnowledgebaseByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -338,9 +338,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// Enrich with child chunks
 	chunks := nlp.RetrievalByChildren(result.Chunks, []string{kb.TenantID}, h.docEngine, c.Request.Context())
 
-	// Graph rows aggregate content across source documents and cannot currently
-	// be filtered by the caller's readable document IDs. Include them only when
-	// the request is unfiltered and every document in the dataset is readable.
+	// KG retrieval (optional)
 	hasMetadataFilter := req.MetadataCondition != nil && len(req.MetadataCondition.Conditions) > 0
 	canReadWholeDataset := false
 	if req.UseKG && !hasMetadataFilter && len(readableDocumentIDs) > 0 {

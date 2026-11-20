@@ -18,14 +18,15 @@ import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { showPermissionField } from '@/ee/constants/feature-flags';
-import { useResourceTenantId } from '../contexts/knowledge-base-context';
+import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { EmbeddingModelItem } from './embedding-model-form-field';
 import { PermissionFormField } from './permission-form-field';
 
 export function GeneralForm() {
   const form = useFormContext();
   const { t } = useTranslation();
-  const resourceTenantId = useResourceTenantId();
+  const { knowledgeBase } = useKnowledgeBaseContext();
+  const resourceTenantId = knowledgeBase?.tenant_id;
 
   const languageOptions = useMemo(() => {
     return Object.keys(LanguageTranslationMap).map((x) => ({
@@ -133,6 +134,7 @@ export function GeneralForm() {
       <EmbeddingModelItem
         isEdit={true}
         resourceTenantId={resourceTenantId}
+        accessUserId={knowledgeBase?.user_id}
       ></EmbeddingModelItem>
       <PageRankFormField></PageRankFormField>
     </>

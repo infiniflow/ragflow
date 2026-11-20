@@ -2,6 +2,7 @@
 
 #include "rag_analyzer_c_api.h"
 #include "rag_analyzer.h"
+#include "spm_unigram.h"
 #include "term.h"
 #include <cstring>
 #include <string>
@@ -265,6 +266,77 @@ RAGAnalyzerHandle RAGAnalyzer_Copy(RAGAnalyzerHandle handle) {
     } catch (...) {
         return nullptr;
     }
+}
+
+SPMVocabHandle SPM_Vocab_Create(const char* const* keys,
+                                const uint32_t* key_lens,
+                                const int32_t* ids,
+                                uint32_t num_keys,
+                                const float* scores,
+                                uint32_t num_scores,
+                                float unk_score,
+                                int32_t unk_id,
+                                const int32_t* byte_by_value,
+                                bool byte_fallback) {
+    if (!keys || !key_lens || !ids || !scores || num_keys == 0 || num_scores == 0) {
+        return nullptr;
+    }
+    try {
+        std::vector<std::string> key_vec;
+        key_vec.reserve(num_keys);
+        std::vector<int32_t> id_vec;
+        id_vec.reserve(num_keys);
+        for (uint32_t i = 0; i < num_keys; ++i) {
+            key_vec.emplace_back(keys[i], key_lens[i]);
+            id_vec.push_back(ids[i]);
+        }
+        std::vector<float> score_vec(scores, scores + num_scores);
+
+        auto* vocab = new ragflow::SPMVocab();
+        if (vocab->Build(std::move(key_vec), std::move(id_vec), score_vec, unk_score, unk_id,
+                         byte_by_value, byte_fallback) != 0) {
+            delete vocab;
+            return nullptr;
+        }
+        return static_cast<SPMVocabHandle>(vocab);
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+void SPM_Vocab_Destroy(SPMVocabHandle handle) {
+    if (handle) {
+        delete static_cast<ragflow::SPMVocab*>(handle);
+    }
+}
+
+int SPM_Vocab_Viterbi(SPMVocabHandle handle,
+                      const char* text,
+                      uint32_t len,
+                      int32_t* out_ids,
+                      uint32_t out_ids_capacity,
+                      int32_t* out_count) {
+    if (!handle || !out_count) return -1;
+    try {
+        auto* vocab = static_cast<ragflow::SPMVocab*>(handle);
+        if (out_ids == nullptr) {
+            *out_count = static_cast<int32_t>(vocab->Count(text, len));
+            return 0;
+        }
+        return vocab->TokenIDs(text, len, out_ids, out_ids_capacity, out_count);
+    } catch (...) {
+        return -1;
+    }
+}
+
+uint64_t SPM_Vocab_ArrayBytes(SPMVocabHandle handle) {
+    if (!handle) return 0;
+    return static_cast<ragflow::SPMVocab*>(handle)->ArrayBytes();
+}
+
+uint64_t SPM_Vocab_ScoresBytes(SPMVocabHandle handle) {
+    if (!handle) return 0;
+    return static_cast<ragflow::SPMVocab*>(handle)->ScoresBytes();
 }
 
 } // extern "C"

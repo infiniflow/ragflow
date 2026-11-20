@@ -1334,15 +1334,18 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 						threshold = s
 					}
 				}
+				denseEF := resolveDenseEF(matchDense, vectorTopN)
 				extraOptions := map[string]string{
 					"threshold": threshold,
 					"filter":    denseFilterStr,
+					"ef":        strconv.Itoa(denseEF),
 				}
 
 				common.Debug("MatchDense for hybrid search",
 					zap.String("fieldName", vecFieldName),
 					zap.String("distanceType", distanceType),
 					zap.Int("topN", vectorTopN),
+					zap.Int("ef", denseEF),
 					zap.Bool("hasFusion", fusionExpr != nil))
 
 				table = table.MatchDense(vecFieldName, vectorData, dataType, distanceType, vectorTopN, extraOptions)
@@ -1528,6 +1531,32 @@ func shouldDefaultAvailableFilter(req *types.SearchRequest, isSkillIndex bool) b
 	return !isSkillIndex && !req.IncludeUnavailable
 }
 
+// defaultDenseEF floors the HNSW candidate pool ("ef") for Infinity dense
+// search. Chunk tables are HNSW-indexed (see createChunkStoreWithDB), and
+// Infinity defaults ef to topN when the caller passes none, which degrades
+// to near-greedy descent on large graphs and silently loses recall: on a
+// 60k-row HNSW graph top-10 self-hit was 54% with the default and 94.5%
+// at ef=200 (#22161).
+const defaultDenseEF = 200
+
+// resolveDenseEF picks the ef for a MatchDense call. An explicit
+// ExtraOptions["ef"] wins when it parses to a positive integer; otherwise
+// the default floor applies, and ef never drops below the requested topN
+// (an ef smaller than topN cannot return topN rows).
+func resolveDenseEF(matchDense *types.MatchDenseExpr, topN int) int {
+	ef := defaultDenseEF
+	if matchDense != nil && matchDense.ExtraOptions != nil {
+		if n, ok := common.GetInt(matchDense.ExtraOptions["ef"]); ok && n > 0 {
+			ef = n
+		} else if s, ok := matchDense.ExtraOptions["ef"].(string); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n > 0 {
+				ef = n
+			}
+		}
+	}
+	return max(ef, topN)
+}
+
 const (
 	// regexpSearchDefaultLimit caps a regexp search, matching the Elasticsearch
 	// engine so grep_chunks returns the same page on either backend.
@@ -1581,7 +1610,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	defer release()
 
 	// Chunk tables are per dataset: ragflow_<tenant>_<datasetID>.
-	baseName := fmt.Sprintf("ragflow_%s", tenantID)
+	baseName := chunkTableBaseName(tenantID)
 	tableNames := make([]string, 0, len(req.KbIDs))
 	for _, kbID := range req.KbIDs {
 		if kbID == "" {
@@ -1988,6 +2017,12 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 
 	if val, ok := chunk["tag_kwd"].(string); ok {
 		chunk["tag_kwd"], _ = splitKeywordList("tag_kwd", val)
+	}
+
+	// Drop the storage-column aliases the mappings derived from, as GetFields
+	// does: an editor echoing "a,b" back as a keyword list gets a 400.
+	for _, col := range []string{"docnm", "important_keywords", "questions", "content", "authors"} {
+		delete(chunk, col)
 	}
 
 	return chunk, nil

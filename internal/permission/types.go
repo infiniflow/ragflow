@@ -101,6 +101,8 @@ type ResourceRef struct {
 // Feature identifies a feature whose availability is edition-dependent.
 type Feature string
 
+const FeatureDataset Feature = "dataset"
+
 // Action identifies a feature-level action.
 type Action string
 
@@ -269,6 +271,7 @@ type policy interface {
 	CheckFeature(context.Context, Feature, Action) error
 	CheckTenant(context.Context, string, TenantRequirement) error
 	CheckResource(context.Context, ResourceRef, Operation) error
+	CheckResourcePermission(context.Context, ResourceRef, int32) error
 	CheckDependency(context.Context, ResourceRef, ResourceRef, Operation, Operation) error
 	ResolveAccess(context.Context, ResourceRef) (Access, error)
 	Scope(context.Context, ScopeQuery) (Scope, error)
@@ -336,6 +339,16 @@ func (c *Checker) CheckResource(ctx context.Context, resource ResourceRef, opera
 		return ErrSourceUnavailable
 	}
 	return c.policy.CheckResource(ctx, resource, operation)
+}
+
+// CheckResourcePermission checks the resource grant independently of feature-role actions.
+// A resource owner grant satisfies every requested level; otherwise the levels are
+// hierarchical, so write implies read and manage implies write and read.
+func (c *Checker) CheckResourcePermission(ctx context.Context, resource ResourceRef, required int32) error {
+	if c == nil || c.policy == nil {
+		return ErrSourceUnavailable
+	}
+	return c.policy.CheckResourcePermission(ctx, resource, required)
 }
 
 // CheckDependency checks entry access and the caller's and entry owner's access to a dependency.

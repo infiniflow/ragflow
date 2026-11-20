@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/harness/graph/types"
 )
 
@@ -172,7 +173,7 @@ var RetryPolicyPresets = struct {
 			}
 			errMsg := err.Error()
 			for _, kw := range []string{"resource exhausted", "too many requests", "rate limit", "quota exceeded", "429", "503"} {
-				if contains(errMsg, kw) {
+				if common.ContainsFold(errMsg, kw) {
 					return true
 				}
 			}
@@ -191,7 +192,7 @@ var RetryPolicyPresets = struct {
 			}
 			errMsg := err.Error()
 			for _, kw := range []string{"timeout", "deadline exceeded", "context deadline", "408", "504"} {
-				if contains(errMsg, kw) {
+				if common.ContainsFold(errMsg, kw) {
 					return true
 				}
 			}

@@ -322,19 +322,22 @@ func compressColIndices(boxes []pdf.TextBox, rowOf []int, compressed int) (map[i
 
 	cCompressed := make(map[int]map[int]int) // row → (original C → compressed col)
 	for ri := 0; ri <= compressed; ri++ {
-		cMap := make(map[int]int)
-		for i, b := range boxes {
-			if rowOf[i] != ri {
-				continue
-			}
-			if strings.TrimSpace(b.Text) == "" && b.H <= 0 && b.SP <= 0 {
-				continue
-			}
-			if cr, ok := rank[b.C]; ok {
-				cMap[b.C] = cr
-			}
+		cCompressed[ri] = make(map[int]int) // pre-create so empty rows read identically
+	}
+	// Collect in a single pass over boxes instead of rescanning every row.
+	// rowOf[i] > compressed boxes are intentionally skipped (matching the
+	// original bounded row loop).
+	for i, b := range boxes {
+		ri := rowOf[i]
+		if ri > compressed {
+			continue
 		}
-		cCompressed[ri] = cMap
+		if strings.TrimSpace(b.Text) == "" && b.H <= 0 && b.SP <= 0 {
+			continue
+		}
+		if cr, ok := rank[b.C]; ok {
+			cCompressed[ri][b.C] = cr
+		}
 	}
 	return cCompressed, maxCol
 }

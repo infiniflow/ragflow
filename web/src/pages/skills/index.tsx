@@ -716,7 +716,7 @@ const SkillsPage: React.FC = () => {
               ) : (
                 <div className="flex-1 overflow-auto border border-border rounded-lg">
                   <Table>
-                    <TableHeader className="bg-bg-title sticky top-0">
+                    <TableHeader>
                       <TableRow>
                         <TableHead className="w-[50px] text-center">
                           <Checkbox

@@ -144,6 +144,7 @@ var toolComponentRegistrations = []struct {
 	{componentName: "Google", toolName: "google"},
 	{componentName: "GoogleScholar", toolName: "google_scholar"},
 	{componentName: "KeenableSearch", toolName: "keenable"},
+	{componentName: "PerplexitySearch", toolName: "perplexity"},
 	{componentName: "PubMed", toolName: "pubmed"},
 	{componentName: "QueritContents", toolName: "querit_contents"},
 	{componentName: "QueritSearch", toolName: "querit_search"},

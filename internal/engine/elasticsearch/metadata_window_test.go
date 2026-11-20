@@ -22,11 +22,19 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
 )
+
+// metadataWindowTenant is the tenant whose metadata index the tests below
+// read, and metadataWindowIndex the index it resolves to.
+const metadataWindowTenant = "tenant-1"
+
+var metadataWindowIndex = esoscommon.BuildMetadataIndexName(metadataWindowTenant)
 
 // newMetadataIndexServer serves a metadata index of n rows sorted on id. Like
 // Elasticsearch, it rejects from+size past the result window and pages with
@@ -44,10 +52,19 @@ func newCountingMetadataIndexServer(t *testing.T, n int, searches *int) *httptes
 	for i := range ids {
 		ids[i] = fmt.Sprintf("doc-%05d", i)
 	}
+	// The `id` sort SearchMetadata emits is resolved against the index
+	// mapping, so the stub answers that lookup as well. The resolution is
+	// memoized per index, hence the cleanup.
+	t.Cleanup(func() { idSortFieldCache.Delete(metadataWindowIndex) })
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Elastic-Product", "Elasticsearch")
 		if r.Method == http.MethodHead {
 			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/_mapping") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"` + metadataWindowIndex + `":{"mappings":{"properties":{"id":{"type":"keyword"}}}}}`))
 			return
 		}
 		if searches != nil {
@@ -109,7 +126,7 @@ func TestSearchMetadataPastTheResultWindow(t *testing.T) {
 	e := newTestEngine(t, newMetadataIndexServer(t, n).URL)
 	read := func(offset, limit int, sorted bool) *types.SearchMetadataResult {
 		t.Helper()
-		req := &types.SearchMetadataRequest{TenantID: "tenant-1", Offset: offset, Limit: limit, Filter: map[string]interface{}{"kb_id": []string{"kb-1"}}}
+		req := &types.SearchMetadataRequest{TenantID: metadataWindowTenant, Offset: offset, Limit: limit, Filter: map[string]interface{}{"kb_id": []string{"kb-1"}}}
 		if sorted {
 			req.OrderBy = (&types.OrderByExpr{}).Asc("id")
 		}
@@ -150,7 +167,7 @@ func TestSearchMetadataScanWalksTheWindowOnce(t *testing.T) {
 	read := func(offset, limit int) int {
 		t.Helper()
 		res, err := e.SearchMetadata(t.Context(), &types.SearchMetadataRequest{
-			TenantID: "tenant-1", Offset: offset, Limit: limit,
+			TenantID: metadataWindowTenant, Offset: offset, Limit: limit,
 			Filter:  map[string]interface{}{"kb_id": []string{"kb-1"}},
 			OrderBy: (&types.OrderByExpr{}).Asc("id"),
 		})

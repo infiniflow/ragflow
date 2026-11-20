@@ -42,10 +42,10 @@ const (
 	dockerGatewayBaseURL  = "http://host.docker.internal:3005"
 	defaultTimeout        = 30 * time.Second
 	startTimeout          = 2 * time.Minute
+	statusPollInterval    = 3 * time.Second
 	wsHandshakeTimeout    = 2 * time.Minute
 	wsReadTimeout         = 2 * time.Minute
 	wsPingInterval        = 30 * time.Second
-	defaultReconnect      = 3 * time.Second
 	messageTTL            = time.Hour
 	messageQueueSize      = 64
 	chatWorkerIdle        = 5 * time.Minute
@@ -80,6 +80,7 @@ type whatsappChannel struct {
 	mu                  sync.Mutex
 	cancel              context.CancelFunc
 	runDone             chan struct{}
+	retryAttempts       int
 	handler             core.MessageHandler
 	client              *http.Client
 	allowDefaultGateway bool
@@ -298,21 +299,34 @@ func (c *whatsappChannel) Snapshot() *whatsappRuntimeSnapshot {
 
 // run starts the gateway session and reconnects the websocket event stream when needed.
 func (c *whatsappChannel) run(ctx context.Context) {
-	if err := c.startSession(ctx); err != nil {
-		if ctx.Err() == nil {
-			c.setError(err)
+	c.mu.Lock()
+	c.retryAttempts = 0
+	c.mu.Unlock()
+	for attempt := 1; ctx.Err() == nil; attempt++ {
+		err := c.startSession(ctx)
+		if err == nil {
+			break
 		}
-		return
+		if ctx.Err() != nil {
+			return
+		}
+		c.setError(err)
+		common.Error("whatsapp: failed to start session", err, zap.String("account_id", c.account.AccountID))
+		if !waitForContext(ctx, channelRetryDelay(attempt)) {
+			return
+		}
 	}
 
 	for ctx.Err() == nil {
 		if err := c.runEvents(ctx); err != nil && ctx.Err() == nil {
 			c.setError(err)
 			common.Error("whatsapp: event loop error", err, zap.String("account_id", c.account.AccountID))
-			select {
-			case <-ctx.Done():
+			c.mu.Lock()
+			c.retryAttempts++
+			delay := channelRetryDelay(c.retryAttempts)
+			c.mu.Unlock()
+			if !waitForContext(ctx, delay) {
 				return
-			case <-time.After(defaultReconnect):
 			}
 		}
 	}
@@ -355,6 +369,9 @@ func (c *whatsappChannel) runEvents(ctx context.Context) error {
 		return err
 	}
 	defer conn.Close()
+	c.mu.Lock()
+	c.retryAttempts = 0
+	c.mu.Unlock()
 
 	pingDone := make(chan struct{})
 	defer close(pingDone)
@@ -400,25 +417,24 @@ func (c *whatsappChannel) runEvents(ctx context.Context) error {
 
 // waitForStatus waits briefly until the gateway exposes the started session status.
 func (c *whatsappChannel) waitForStatus(ctx context.Context) error {
-	deadline := time.Now().Add(startTimeout)
-	for ctx.Err() == nil {
+	waitCtx, cancel := context.WithTimeout(ctx, startTimeout)
+	defer cancel()
+	for waitCtx.Err() == nil {
 		var response map[string]any
-		if err := c.requestJSON(ctx, http.MethodGet, fmt.Sprintf("whatsapp/%s/status", url.PathEscape(c.sessionKey())), nil, &response); err == nil {
+		if err := c.requestJSON(waitCtx, http.MethodGet, fmt.Sprintf("whatsapp/%s/status", url.PathEscape(c.sessionKey())), nil, &response); err == nil {
 			if data, ok := response["data"].(map[string]any); ok {
 				c.applySnapshot(data)
 			}
 			return nil
 		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("WhatsApp session status did not become available within %s", startTimeout)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(defaultReconnect):
+		if !waitForContext(waitCtx, statusPollInterval) {
+			break
 		}
 	}
-	return ctx.Err()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return fmt.Errorf("WhatsApp session status did not become available within %s: %w", startTimeout, waitCtx.Err())
 }
 
 // handleWSPayload dispatches a gateway websocket payload to snapshot or event handling.
