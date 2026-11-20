@@ -1338,8 +1338,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       seconds: '秒',
       minutes: '分',
       edit: '编辑',
-      cropTip: '拖动选区可以选择要图片的裁剪位置，滚动可以放大/缩小选区',
-      cropImage: '剪裁图片',
+      cropTip: '拖动选区可以选择图片的裁剪位置，滚动可以放大/缩小选区',
+      cropImage:'剪裁图片',
       selectModelPlaceholder: '请选择模型',
       configureModelTitle: '配置模型',
       confluenceIsCloudTip:
