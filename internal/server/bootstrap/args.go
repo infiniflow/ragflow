@@ -21,7 +21,8 @@ package bootstrap
 // runners and the API server wiring can be moved into their own packages and
 // still receive the parsed arguments.
 type ServerArgs struct {
-	Mode          *string // admin | api | ingestor | syncer | chatter | deepdoc | migrate
+	Mode          *string  // admin | api | ingestor | syncer | chatter | deepdoc | migrate
+	Modes         []string // selected services when more than one mode is enabled
 	HelpFlag      bool
 	VersionFlag   bool
 	LogLevel      *string
