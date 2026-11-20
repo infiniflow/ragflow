@@ -4286,6 +4286,26 @@ func TestChunkImageStorageKeyFallsBackToChunkID(t *testing.T) {
 	}
 }
 
+func TestApplyDocumentMetadataUpdatesReplacesListWithScalar(t *testing.T) {
+	for _, tc := range []struct {
+		valueType string
+		value     string
+		want      any
+	}{
+		{valueType: "string", value: "new", want: "new"},
+		{valueType: "time", value: "2026-11-20T12:00:00", want: "2026-11-20T12:00:00"},
+		{valueType: "number", value: "42", want: int64(42)},
+	} {
+		t.Run(tc.valueType, func(t *testing.T) {
+			meta := map[string]any{"field": []any{"old", "other"}}
+			changed := applyDocumentMetadataUpdates(meta, []MetadataUpdate{{Key: "field", Value: tc.value, ValueType: tc.valueType}})
+			if !changed || meta["field"] != tc.want {
+				t.Fatalf("changed = %t, field = %#v, want %#v", changed, meta["field"], tc.want)
+			}
+		})
+	}
+}
+
 func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -4306,7 +4326,7 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2", "doc-3"},
 	}, []MetadataUpdate{
-		{Key: "tags", Value: "new", Match: "old"},
+		{Key: "tags", Value: "new", Match: "old", ValueType: "list"},
 		{Key: "category", Value: "paper"},
 	}, []MetadataDelete{
 		{Key: "author", Value: "alice"},

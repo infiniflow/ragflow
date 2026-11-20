@@ -1147,7 +1147,7 @@ func normalizeDocumentMetadataUpdateValue(value interface{}, valueType string) i
 		if list, ok := normalizeMetadataListValue(value); ok {
 			return list
 		}
-		return []interface{}{}
+		return []interface{}{value}
 	case "number":
 		scalar, ok := firstScalarMetadataValue(value)
 		if !ok {
