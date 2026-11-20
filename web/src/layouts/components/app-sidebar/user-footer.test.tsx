@@ -9,11 +9,6 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-jest.mock('@/components/theme-provider', () => ({
-  useIsDarkTheme: () => false,
-  useTheme: () => ({ theme: 'light', setTheme: jest.fn() }),
-}));
-
 jest.mock('@/components/ragflow-avatar', () => ({
   RAGFlowAvatar: () => <div data-testid="user-avatar" />,
 }));
@@ -21,6 +16,9 @@ jest.mock('@/components/ragflow-avatar', () => ({
 jest.mock('@/ee/layouts/components/header-enterprise', () => ({
   EnterpriseHeaderPlanBadge: () => null,
   EnterpriseHeaderTicketsLink: () => null,
+  EnterpriseHeaderUpgradeBadge: () => (
+    <span data-testid="upgrade-badge">Upgrade</span>
+  ),
   EnterpriseSidebarTenantSwitcher: () => null,
 }));
 
@@ -29,10 +27,6 @@ jest.mock('@/hooks/use-login-request', () => ({
 }));
 
 jest.mock('@/hooks/use-user-setting-request', () => ({
-  useFetchSystemVersion: () => ({
-    version: '',
-    fetchSystemVersion: jest.fn(),
-  }),
   useFetchUserInfo: () => ({
     data: {
       avatar: '',
@@ -50,6 +44,14 @@ jest.mock('./use-sidebar-collapse', () => ({
   }),
 }));
 
+jest.mock('./help-menu', () => ({
+  HelpMenu: () => <button aria-label="header.help" data-testid="help-menu" />,
+}));
+
+jest.mock('./theme-options', () => ({
+  ThemeOptions: () => <div data-testid="theme-options" />,
+}));
+
 jest.mock('../bell-button', () => ({
   BellButton: () => null,
 }));
@@ -62,13 +64,13 @@ function renderUserFooter() {
   );
 }
 
-describe('UserFooter primary sidebar control', () => {
+describe('UserFooter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPrimarySidebarCollapsed = false;
   });
 
-  it('collapses the primary sidebar from the button beside the avatar', () => {
+  it('collapses the primary sidebar from the bottom bar', () => {
     renderUserFooter();
 
     fireEvent.click(
@@ -76,9 +78,11 @@ describe('UserFooter primary sidebar control', () => {
     );
 
     expect(mockTogglePrimarySidebar).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('help-menu')).toBeInTheDocument();
+    expect(screen.getByTestId('upgrade-badge')).toBeInTheDocument();
   });
 
-  it('omits language settings from the account menu', () => {
+  it('keeps account actions and theme separate from the help menu', () => {
     renderUserFooter();
 
     fireEvent.keyDown(screen.getByTestId('settings-entrypoint'), {
@@ -88,16 +92,34 @@ describe('UserFooter primary sidebar control', () => {
     expect(
       screen.getByRole('menuitem', { name: 'setting.profile' }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'setting.api' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'setting.logout' }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('theme-options')).toBeInTheDocument();
     expect(screen.queryByText('sidebar.language')).not.toBeInTheDocument();
+    expect(screen.queryByText('header.github')).not.toBeInTheDocument();
+    expect(screen.queryByText('header.discord')).not.toBeInTheDocument();
+    expect(screen.queryByText('sidebar.version')).not.toBeInTheDocument();
   });
 
-  it('does not render the collapse button when the primary sidebar is collapsed', () => {
+  it('expands from the bottom bar and hides Upgrade when collapsed', () => {
     mockPrimarySidebarCollapsed = true;
     renderUserFooter();
 
+    fireEvent.click(
+      screen.getByRole('button', { name: 'sidebar.expandSidebar' }),
+    );
+
+    expect(mockTogglePrimarySidebar).toHaveBeenCalledTimes(1);
     expect(
       screen.queryByRole('button', { name: 'sidebar.collapseSidebar' }),
     ).not.toBeInTheDocument();
     expect(screen.getByTestId('settings-entrypoint')).toBeInTheDocument();
+    expect(screen.getByTestId('upgrade-badge').parentElement).toHaveClass(
+      'hidden',
+    );
   });
 });
