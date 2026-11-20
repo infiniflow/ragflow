@@ -273,7 +273,11 @@ func scanQuotedRmExpansion(line string) (string, bool) {
 		case ')':
 			if inCase {
 				// A case arm starts a command of its own and does not close
-				// the surrounding substitution.
+				// the surrounding substitution. A `(` of the optional
+				// `(pattern)` form is dropped with its delimiter.
+				if n := len(frames); n > 0 && !frames[n-1].substitution {
+					frames = frames[:n-1]
+				}
 				chain = prefixChain{}
 				break
 			}
