@@ -172,6 +172,12 @@ func GenerateWerkzeugPasswordHash(password string) (string, error) {
 // DecryptPassword decrypts the password using RSA private key
 // The password is expected to be base64 encoded RSA encrypted data
 // If decryption fails, the original password is returned (assumed to be plain text)
+//
+// Both the web client (rsaPsw in web/src/utils) and the CLI (EncryptPassword)
+// base64 the password before handing it to RSA, so the decrypted plaintext is
+// base64 as well. The original Python decrypt2() decoded it again; this port
+// only kept the outer decode, which made every hash taken from the raw
+// password (bootstrap admin, API-created users) fail to match.
 func DecryptPassword(encryptedPassword string) (string, error) {
 	// Try to decode base64
 	ciphertext, err := base64.StdEncoding.DecodeString(encryptedPassword)
@@ -191,6 +197,12 @@ func DecryptPassword(encryptedPassword string) (string, error) {
 	if err != nil {
 		// If decryption fails, assume it's already a plain password
 		return encryptedPassword, nil
+	}
+
+	// Unwrap the inner base64 layer. Payloads that are not base64 (plaintext
+	// posted straight to the API) fall through unchanged.
+	if decoded, err := base64.StdEncoding.DecodeString(string(plaintext)); err == nil {
+		return string(decoded), nil
 	}
 
 	return string(plaintext), nil
