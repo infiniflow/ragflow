@@ -777,17 +777,16 @@ func (s *InMemoryStore) cleanupExpired() {
 								delete(s.data, nsKey)
 							}
 						}
-					}
-					delete(s.ttl, fullKey)
-					// Also clean up indexes
-					for nsKey := range s.indexes {
+						// Embedding indexes are keyed by the bare key, not by
+						// fullKey; delete the same entry PutItem wrote.
 						if idxMap, ok := s.indexes[nsKey]; ok {
-							delete(idxMap, fullKey)
+							delete(idxMap, key)
 							if len(idxMap) == 0 {
 								delete(s.indexes, nsKey)
 							}
 						}
 					}
+					delete(s.ttl, fullKey)
 				}
 			}
 			s.mu.Unlock()
