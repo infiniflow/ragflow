@@ -213,12 +213,8 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 
 	svcReq := toRetrievalServiceRequest(&req)
 	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
-		if compliance.IsRejected(err) {
-			emptyLabels := map[string]float64{}
-			common.RespondSuccess(c, service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels}, err.Error())
-			return
-		}
-		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		emptyLabels := map[string]float64{}
+		common.RespondSuccess(c, service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels}, err.Error())
 		return
 	}
 	ctx := c.Request.Context()

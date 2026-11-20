@@ -1215,12 +1215,8 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
-		if compliance.IsRejected(err) {
-			emptyLabels := map[string]float64{}
-			common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels}, err.Error())
-			return
-		}
-		common.RespondError(c, common.CodeArgumentError, err.Error())
+		emptyLabels := map[string]float64{}
+		common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels}, err.Error())
 		return
 	}
 
@@ -1290,12 +1286,8 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		return
 	}
 	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
-		if compliance.IsRejected(err) {
-			emptyLabels := map[string]float64{}
-			common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels}, err.Error())
-			return
-		}
-		common.RespondError(c, common.CodeArgumentError, err.Error())
+		emptyLabels := map[string]float64{}
+		common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels}, err.Error())
 		return
 	}
 

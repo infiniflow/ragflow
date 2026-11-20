@@ -152,11 +152,7 @@ func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, qu
 
 func (s *AskService) run(ctx context.Context, llm StreamingLLM, question string, datasetIDs []string, opts AskStreamOptions, out chan<- AskDelta) {
 	if err := compliance.ValidateQuestion(ctx, question); err != nil {
-		if compliance.IsRejected(err) {
-			s.sendOrCancel(out, AskDelta{Kind: AskDeltaFinal, Message: err.Error(), Refs: map[string]interface{}{"chunks": []map[string]interface{}{}, "doc_aggs": []map[string]interface{}{}}}, ctx)
-			return
-		}
-		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: err.Error()}, ctx)
+		s.sendOrCancel(out, AskDelta{Kind: AskDeltaFinal, Message: err.Error(), Refs: map[string]interface{}{"chunks": []map[string]interface{}{}, "doc_aggs": []map[string]interface{}{}}}, ctx)
 		return
 	}
 	// Phase 1: Retrieval.

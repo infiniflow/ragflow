@@ -259,16 +259,13 @@ func (s *ChatPipelineService) AsyncChat(
 			close(out)
 			return out, nil
 		}
-		if compliance.IsRejected(err) {
-			out := make(chan AsyncChatResult, 2)
-			if stream {
-				out <- AsyncChatResult{Answer: err.Error()}
-			}
-			out <- AsyncChatResult{Answer: err.Error(), Final: true}
-			close(out)
-			return out, nil
+		out := make(chan AsyncChatResult, 2)
+		if stream {
+			out <- AsyncChatResult{Answer: err.Error()}
 		}
-		return nil, err
+		out <- AsyncChatResult{Answer: err.Error(), Final: true}
+		close(out)
+		return out, nil
 	}
 
 	// Resolve what this conversation can reach BEFORE dispatching: whether it

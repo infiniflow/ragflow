@@ -2285,9 +2285,6 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		userInput := root["user_input"]
 		filteredResponse := ""
 		if err := compliance.ValidateQuestion(ctx, stringifyAgentUserInput(agentRunQuery(userInput))); err != nil {
-			if !compliance.IsRejected(err) {
-				return nil, err
-			}
 			filteredResponse = err.Error()
 		}
 
