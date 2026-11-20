@@ -1,14 +1,13 @@
 import { SidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { EnterpriseHeaderUpgradeBadge } from '@/ee/layouts/components/header-enterprise';
 import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
 import { useChatSidebarCollapse } from '@/hooks/use-chat-sidebar-collapse';
 import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
 import { useDatasetSidebarCollapse } from '@/hooks/use-dataset-sidebar-collapse';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import { LucideChevronRight, LucidePanelLeftOpen } from 'lucide-react';
+import { LucidePanelLeftOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 import { IntegrationsNavGroup, NavItemLink } from './nav-item';
@@ -18,7 +17,7 @@ import { UserFooter } from './user-footer';
 
 function AppSidebarContent() {
   const { t } = useTranslation();
-  const { collapsed, toggleCollapsed } = useSidebarCollapse();
+  const { collapsed } = useSidebarCollapse();
   const {
     collapsed: datasetSidebarCollapsed,
     toggleCollapsed: toggleDatasetSidebar,
@@ -97,7 +96,6 @@ function AppSidebarContent() {
             />
           </Link>
         )}
-        {!collapsed && <EnterpriseHeaderUpgradeBadge />}
         {collapsedSecondarySidebar && (
           <div
             className={cn(
@@ -135,20 +133,6 @@ function AppSidebarContent() {
       </nav>
 
       <UserFooter />
-
-      {collapsed && (
-        <div className="flex shrink-0 justify-center pb-3 max-md:hidden">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t('sidebar.expandSidebar')}
-            title={t('sidebar.expandSidebar')}
-            onClick={toggleCollapsed}
-          >
-            <LucideChevronRight className="size-4" />
-          </Button>
-        </div>
-      )}
     </aside>
   );
 }

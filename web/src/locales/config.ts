@@ -1,3 +1,4 @@
+import { CompilationTranslations } from '@/ee/locales/compilation';
 import { LanguageAbbreviation } from '@/constants/common';
 import storage from '@/utils/authorization-util';
 import dayjs from 'dayjs';
@@ -62,8 +63,12 @@ import translation_zh_private from '@/ee/locales/zh-private';
 import translation_zh_traditional_private from '@/ee/locales/zh-traditional-private';
 
 const resources = {
-  [LanguageAbbreviation.En]: merge(translation_en, translation_en_private),
-  [LanguageAbbreviation.Zh]: merge(translation_zh, translation_zh_private),
+  [LanguageAbbreviation.En]: merge(translation_en, translation_en_private, {
+    translation: CompilationTranslations[LanguageAbbreviation.En],
+  }),
+  [LanguageAbbreviation.Zh]: merge(translation_zh, translation_zh_private, {
+    translation: CompilationTranslations[LanguageAbbreviation.Zh],
+  }),
   [LanguageAbbreviation.ZhTraditional]: merge(
     translation_zh_traditional,
     translation_zh_traditional_private,
@@ -109,7 +114,11 @@ export const loadLanguageAsync = async (lng: string): Promise<void> => {
   try {
     const module = await importFn();
     const translationData = module.default?.translation || module.default;
-    i18n.addResourceBundle(normalizedLng, 'translation', translationData);
+    i18n.addResourceBundle(
+      normalizedLng,
+      'translation',
+      merge(translationData, CompilationTranslations[normalizedLng]),
+    );
   } catch (error) {
     console.error(`Failed to load language ${lng}:`, error);
   }

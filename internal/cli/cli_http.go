@@ -540,6 +540,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":
 		return c.APIListEnvironmentsCommand(commandCount, cmd)
+	case "api_check_license":
+		return c.APICheckLicenseCommand(commandCount, cmd)
 	case "api_add_api_server":
 		return c.AddAPIServerCommand(commandCount, cmd)
 	case "api_delete_api_server":
