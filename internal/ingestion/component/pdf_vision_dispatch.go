@@ -87,8 +87,8 @@ func maybeDispatchPDFVision(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	// The tenant-selected parser and the built-in backends share one
 	// normalization boundary so a future normalization fix cannot miss one
-	// of the two paths. PDF markdown engines (MonkeyOCRv2, MinerU V1
-	// fallback) are converted to JSON by NormalizeMarkdown before dispatch
+	// of the two paths. Markdown-only responses
+	// are converted to JSON by NormalizeMarkdown before dispatch
 	// returns, so the NormalizeResult closure below only ever applies item
 	// policies to already-normalized JSON and stays idempotent.
 	normalize := func(result parser.ParseResult) parser.ParseResult {
@@ -388,50 +388,12 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 		return parser.ParseResult{}, err
 	}
 	budget := media.NewBudget()
-	sections, err := monkeyOCRv2ExtractSections(zipBytes, budget)
+	res, err := monkeyOCRv2ParseArchive(ctx, filename, zipBytes, budget)
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
-	texts := make([]string, 0, len(sections))
-	maxPage := 0
-	for _, section := range sections {
-		// Page identity is independent of text: an image-only section still
-		// inserts an item for its page in Attach, so it must count toward
-		// page_count here or File.page_count undercounts the last pages.
-		if len(section.position) == 5 {
-			if page, ok := section.position[0].(int); ok && page > maxPage {
-				maxPage = page
-			}
-		}
-		if section.imageOnly {
-			continue
-		}
-		texts = append(texts, section.text)
-	}
-	md := strings.Join(texts, "\n\n")
-	res := normalizePDFMarkdown(ctx, filename, md)
-	res = monkeyOCRv2AttachPositions(res, sections)
 	res.Warnings = append(res.Warnings, budget.Warnings()...)
-	if maxPage > 0 {
-		if res.File == nil {
-			res.File = map[string]any{}
-		}
-		if _, ok := res.File["page_count"]; !ok {
-			res.File["page_count"] = maxPage
-		}
-	}
-	if res.File == nil {
-		res.File = map[string]any{}
-	}
-	// Match the sibling MinerU contract: consumers read parse_method and
-	// outline from File regardless of the vision backend.
-	if _, ok := res.File["outline"]; !ok {
-		res.File["outline"] = []map[string]any{}
-	}
-	if _, ok := res.File["parse_method"]; !ok {
-		res.File["parse_method"] = "monkeyocrv2"
-	}
-	return res, nil
+	return res, res.Err
 }
 
 // normalizePDFMarkdown converts a PDF backend Markdown response (MonkeyOCRv2,
@@ -992,22 +954,23 @@ func monkeyOCRv2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.
 	return time.Duration(seconds) * time.Second
 }
 
-func monkeyOCRv2ExtractSections(zipBytes []byte, budget *media.Budget) ([]monkeyOCRv2Section, error) {
+func monkeyOCRv2ParseArchive(ctx context.Context, filename string, zipBytes []byte, budget *media.Budget) (parser.ParseResult, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
-		return nil, fmt.Errorf("MonkeyOCRv2 returned invalid ZIP: %w", err)
+		return parser.ParseResult{}, fmt.Errorf("MonkeyOCRv2 returned invalid ZIP: %w", err)
 	}
 	if len(reader.File) > monkeyOCRv2MaxZIPMembers {
-		return nil, fmt.Errorf("MonkeyOCRv2 ZIP contains too many files")
+		return parser.ParseResult{}, fmt.Errorf("MonkeyOCRv2 ZIP contains too many files")
 	}
 	var uncompressed uint64
 	for _, file := range reader.File {
 		uncompressed += file.UncompressedSize64
 		if uncompressed > monkeyOCRv2MaxUncompressedBytes {
-			return nil, fmt.Errorf("MonkeyOCRv2 ZIP is too large after extraction")
+			return parser.ParseResult{}, fmt.Errorf("MonkeyOCRv2 ZIP is too large after extraction")
 		}
 	}
-	var canonicalJSON, legacyJSON []*zip.File
+	var canonicalJSON, legacyJSON, markdownFiles []*zip.File
+	var documentMarkdown *zip.File
 	images := make(map[string]*zip.File)
 	for _, file := range reader.File {
 		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(file.Name))), "image/") {
@@ -1015,6 +978,12 @@ func monkeyOCRv2ExtractSections(zipBytes []byte, budget *media.Budget) ([]monkey
 		}
 		cleanName := strings.TrimPrefix(path.Clean(file.Name), "./")
 		parts := strings.Split(cleanName, "/")
+		if strings.EqualFold(path.Ext(cleanName), ".md") {
+			markdownFiles = append(markdownFiles, file)
+			if len(parts) == 2 && parts[1] == parts[0]+".md" && parts[0] == strings.TrimSuffix(path.Base(filename), path.Ext(filename)) {
+				documentMarkdown = file
+			}
+		}
 		if len(parts) == 2 && parts[1] == parts[0]+".json" {
 			canonicalJSON = append(canonicalJSON, file)
 		}
@@ -1035,45 +1004,111 @@ func monkeyOCRv2ExtractSections(zipBytes []byte, budget *media.Budget) ([]monkey
 	}
 	var sections []monkeyOCRv2Section
 	for _, file := range candidates {
-		rc, openErr := file.Open()
-		if openErr != nil {
-			return nil, openErr
-		}
-		data, readErr := io.ReadAll(rc)
-		rc.Close()
-		if readErr != nil {
-			return nil, readErr
+		data, err := readPDFZipFile(file)
+		if err != nil {
+			return parser.ParseResult{}, err
 		}
 		var raw any
-		if err = json.Unmarshal(data, &raw); err != nil {
-			return nil, fmt.Errorf("parse %s: %w", file.Name, err)
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return parser.ParseResult{}, fmt.Errorf("parse %s: %w", file.Name, err)
 		}
-		sections = append(sections, monkeyOCRv2Texts(raw, images, budget)...)
+		sections = append(sections, monkeyOCRv2Sections(raw, images, budget)...)
 	}
+	fileMeta := map[string]any{"name": filename, "parse_method": "monkeyocrv2", "outline": []map[string]any{}}
 	if len(sections) == 0 {
-		return nil, fmt.Errorf("MonkeyOCRv2 ZIP contains no textual layouts")
+		if len(markdownFiles) == 1 {
+			documentMarkdown = markdownFiles[0]
+		}
+		if documentMarkdown != nil {
+			data, err := readPDFZipFile(documentMarkdown)
+			if err != nil {
+				return parser.ParseResult{}, err
+			}
+			if md := strings.TrimSpace(string(data)); md != "" {
+				res := normalizePDFMarkdown(ctx, filename, md)
+				maps.Copy(res.File, fileMeta)
+				res.Warnings = append(res.Warnings, "MonkeyOCRv2 returned Markdown without layout positions")
+				return res, res.Err
+			}
+		}
+		return parser.ParseResult{}, fmt.Errorf("MonkeyOCRv2 ZIP contains no textual layouts")
 	}
-	return sections, nil
+	return monkeyOCRv2LayoutResult(ctx, filename, fileMeta, sections)
 }
 
-// monkeyOCRv2Section is one textual section of the MonkeyOCRv2 response
-// together with the source-PDF region it came from when the layout entry
-// carried usable geometry. imageOnly marks a picture layout whose payload
-// was omitted by the budget or is missing from the ZIP: it is kept out of
-// the markdown stream and re-attached afterwards as a position-carrying
-// image item so the chunker crops the region on demand (issue #21214).
+func monkeyOCRv2LayoutResult(ctx context.Context, filename string, fileMeta map[string]any, sections []monkeyOCRv2Section) (parser.ParseResult, error) {
+	res := parser.ParseResult{File: fileMeta}
+	var maxPage int
+	for _, section := range sections {
+		if err := ctx.Err(); err != nil {
+			return parser.ParseResult{}, err
+		}
+		maxPage = max(maxPage, section.page)
+		fields := map[string]any{"text": section.text, "doc_type_kwd": "text", "layout": section.layout}
+		switch section.layout {
+		case "figure":
+			fields["doc_type_kwd"] = "image"
+			if section.image != "" {
+				fields["image"] = section.image
+			} else {
+				fields["media_omitted"] = true
+			}
+		case "table":
+			// A table body can itself be Markdown or HTML. Decode that body
+			// in isolation so every cell and note keeps its source region.
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(section.text)), "<table") {
+				fields["doc_type_kwd"] = "table"
+				break
+			}
+			table := normalizePDFMarkdown(ctx, filename, section.text)
+			if table.Err != nil {
+				return parser.ParseResult{}, table.Err
+			}
+			res.Warnings = append(res.Warnings, table.Warnings...)
+			for _, item := range table.JSON {
+				fields := item.ToMap()
+				if data, ok := fields["table"].(*entity.TableData); ok {
+					data.Page = section.page
+					fields["layout"] = "table"
+				}
+				res.JSON = append(res.JSON, section.item(fields))
+			}
+			continue
+		}
+		res.JSON = append(res.JSON, section.item(fields))
+	}
+	if maxPage > 0 {
+		fileMeta["page_count"] = maxPage
+	}
+	res = (&parser.PDFParser{}).NormalizeResult(ctx, filename, res)
+	return res, res.Err
+}
+
 type monkeyOCRv2Section struct {
-	text      string
-	position  []any
-	label     string
-	imageOnly bool
+	text     string
+	image    string
+	layout   string
+	page     int
+	position []any
 }
 
-func monkeyOCRv2Texts(raw any, images map[string]*zip.File, budget *media.Budget) []monkeyOCRv2Section {
+func (s monkeyOCRv2Section) item(fields map[string]any) parser.DocItem {
+	fields["_preserve_order"] = true
+	if s.page > 0 {
+		fields["page_number"] = s.page
+	}
+	if len(s.position) > 0 {
+		rows := [][]any{s.position}
+		fields["positions"], fields["_pdf_positions"] = rows, rows
+	}
+	return parser.DocItemFromMap(fields)
+}
+
+func monkeyOCRv2Sections(raw any, images map[string]*zip.File, budget *media.Budget) []monkeyOCRv2Section {
 	if object, ok := raw.(map[string]any); ok {
 		for _, key := range []string{"layouts", "content_list", "results", "items"} {
 			if value, exists := object[key]; exists {
-				return monkeyOCRv2Texts(value, images, budget)
+				return monkeyOCRv2Sections(value, images, budget)
 			}
 		}
 		label := strings.ToLower(strings.ReplaceAll(getAnyString(object, "type", "label"), "_", "-"))
@@ -1081,26 +1116,28 @@ func monkeyOCRv2Texts(raw any, images map[string]*zip.File, budget *media.Budget
 		case "page-header", "page-footer", "page-number", "discarded":
 			return nil
 		}
-		position := monkeyOCRv2LayoutPosition(object)
-		if label == "picture" || label == "figure" || label == "image" {
-			text, inlined, referenced := monkeyOCRv2EmbeddedImage(getAnyString(object, "text", "content", "markdown"), images, budget)
-			switch {
-			case inlined:
-				return []monkeyOCRv2Section{{text: text, position: position, label: label}}
-			case referenced && len(position) == 5:
-				// Payload omitted by the budget or missing from the ZIP:
-				// keep the position carrier without inventing visible text.
-				return []monkeyOCRv2Section{{text: text, position: position, label: label, imageOnly: true}}
-			default:
-				return nil
-			}
-		}
+		page, position := monkeyOCRv2LayoutPosition(object)
+		section := monkeyOCRv2Section{layout: monkeyOCRv2LayoutKind(label), page: page, position: position}
 		for _, key := range []string{"text", "content", "markdown", "table_body"} {
 			if text, ok := object[key].(string); ok && strings.TrimSpace(text) != "" {
-				return []monkeyOCRv2Section{{text: text, position: position, label: label}}
+				section.text = text
+				break
 			}
 		}
-		return nil
+		if section.layout == "figure" || (section.layout == "text" && strings.Contains(section.text, "![")) {
+			matches := monkeyOCRv2ImagePattern.FindAllStringSubmatchIndex(section.text, -1)
+			if len(matches) > 0 {
+				return monkeyOCRv2ImageSections(section, matches, images, budget)
+			}
+		}
+		if section.layout == "figure" {
+			if !section.hasCropRegion() {
+				return nil
+			}
+		} else if section.text == "" {
+			return nil
+		}
+		return []monkeyOCRv2Section{section}
 	}
 	items, ok := raw.([]any)
 	if !ok {
@@ -1108,7 +1145,39 @@ func monkeyOCRv2Texts(raw any, images map[string]*zip.File, budget *media.Budget
 	}
 	var result []monkeyOCRv2Section
 	for _, item := range items {
-		result = append(result, monkeyOCRv2Texts(item, images, budget)...)
+		result = append(result, monkeyOCRv2Sections(item, images, budget)...)
+	}
+	return result
+}
+
+func (s monkeyOCRv2Section) hasCropRegion() bool {
+	return len(s.position) > 0 && parser.HasPDFCropRegion(map[string]any{"positions": [][]any{s.position}})
+}
+
+// Each image inherits its source layout's region. Partition the surrounding
+// prose across the items so concatenating their text preserves the content
+// in reading order without repeating it for each image.
+func monkeyOCRv2ImageSections(section monkeyOCRv2Section, matches [][]int, images map[string]*zip.File, budget *media.Budget) []monkeyOCRv2Section {
+	var result []monkeyOCRv2Section
+	start := 0
+	for i, match := range matches {
+		alt := section.text[match[2]:match[3]]
+		target := section.text[match[4]:match[5]]
+		image := monkeyOCRv2EmbeddedImage(target, images, budget)
+		item := section
+		item.text = section.text[start:match[0]] + alt
+		start = match[1]
+		if i == len(matches)-1 {
+			item.text += section.text[start:]
+		}
+		if image != "" || item.hasCropRegion() {
+			item.layout, item.image = "figure", image
+		} else if strings.TrimSpace(item.text) != "" {
+			item.layout = "text"
+		} else {
+			continue
+		}
+		result = append(result, item)
 	}
 	return result
 }
@@ -1116,15 +1185,13 @@ func monkeyOCRv2Texts(raw any, images map[string]*zip.File, budget *media.Budget
 // monkeyOCRv2LayoutPosition turns a layout's page_num (1-based, default 1) and
 // bbox [x0, y0, x1, y1] into a [page, left, right, top, bottom] row. It
 // returns nil when the layout has no usable bbox.
-func monkeyOCRv2LayoutPosition(object map[string]any) []any {
+func monkeyOCRv2LayoutPosition(object map[string]any) (int, []any) {
+	page, _ := mineruJSONInt(object["page_num"])
 	bbox := mineruJSONFloatSlice(object["bbox"])
 	if len(bbox) != 4 {
-		return nil
+		return max(0, page), nil
 	}
-	page := 1
-	if n, ok := mineruJSONInt(object["page_num"]); ok && n >= 1 {
-		page = n
-	}
+	page = max(1, page)
 	x0, y0, x1, y1 := bbox[0], bbox[1], bbox[2], bbox[3]
 	if x0 > x1 {
 		x0, x1 = x1, x0
@@ -1132,35 +1199,32 @@ func monkeyOCRv2LayoutPosition(object map[string]any) []any {
 	if y0 > y1 {
 		y0, y1 = y1, y0
 	}
-	return []any{page, x0, x1, y0, y1}
+	return page, []any{page, x0, x1, y0, y1}
 }
 
 // monkeyOCRv2EmbeddedImage resolves a markdown image reference against the
-// ZIP's images and materializes the payload as a data URI, charged to the
+// ZIP's images and returns the base64 payload for an ImageItem, charged to the
 // shared embedded-media budget. When the budget omits the payload the alt
 // text is kept without the image link: the chunker crops the region on
 // demand from the source PDF (issue #21214).
-// The bool results report whether the payload was inlined and whether the
-// content referenced an image at all, so the caller can keep a position
-// carrier for referenced-but-uninlined pictures.
-func monkeyOCRv2EmbeddedImage(markdown string, images map[string]*zip.File, budget *media.Budget) (string, bool, bool) {
-	match := monkeyOCRv2ImagePattern.FindStringSubmatch(markdown)
-	if len(match) != 3 {
-		return "", false, false
-	}
-	target := strings.Trim(strings.TrimSpace(match[2]), `"'`)
-	if strings.HasPrefix(strings.ToLower(target), "data:") {
+func monkeyOCRv2EmbeddedImage(target string, images map[string]*zip.File, budget *media.Budget) string {
+	target = strings.Trim(strings.TrimSpace(target), `"'`)
+	if len(target) >= len("data:") && strings.EqualFold(target[:len("data:")], "data:") {
 		// The service already inlined the payload: the ZIP lookup can never
 		// find it. Apply the shared budget to the decoded bytes instead, so
 		// a present payload is kept (or falls back to a position-only
 		// carrier) instead of being silently lost.
 		comma := strings.Index(target, ",")
 		if comma < 0 {
-			return "", false, true
+			return ""
+		}
+		header := strings.ToLower(target[:comma])
+		if !strings.HasPrefix(header, "data:image/") || !strings.HasSuffix(header, ";base64") {
+			return ""
 		}
 		decoded, err := base64.StdEncoding.DecodeString(target[comma+1:])
 		if err != nil || len(decoded) == 0 {
-			return "", false, true
+			return ""
 		}
 		if budget != nil {
 			// The budget enforces the per-image and run limits, so an
@@ -1170,64 +1234,44 @@ func monkeyOCRv2EmbeddedImage(markdown string, images map[string]*zip.File, budg
 			// collects warnings.
 			reservation, admission := budget.ReserveOccurrence(media.Size(len(decoded)))
 			if admission != media.Admitted || !reservation.Commit(media.Size(len(decoded))) {
-				return match[1], false, true
+				return ""
 			}
-			return match[0], true, true
+			return base64.StdEncoding.EncodeToString(decoded)
 		}
 		if len(decoded) > media.ImageMaxBytes() {
-			return "", false, true
+			return ""
 		}
-		return match[0], true, true
+		return base64.StdEncoding.EncodeToString(decoded)
 	}
 	file := images[path.Base(target)]
 	if file == nil {
-		return "", false, true
+		return ""
 	}
-	limit := int64(media.ImageMaxBytes())
-	if file.UncompressedSize64 > uint64(limit) {
-		// The declared size already exceeds the per-image limit: record the
-		// omission without reading the payload and keep the alt text as the
-		// position carrier.
-		if budget != nil {
-			_, _ = budget.ReserveOccurrence(media.Size(file.UncompressedSize64))
-			return match[1], false, true
-		}
-		return "", false, true
-	}
-	rc, err := file.Open()
-	if err != nil {
-		return "", false, true
-	}
-	data, err := io.ReadAll(io.LimitReader(rc, limit+1))
-	rc.Close()
-	if err != nil || len(data) == 0 {
-		return "", false, true
-	}
+	var reservation *media.Reservation
 	if budget != nil {
-		reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
-		if admission != media.Admitted || !reservation.Commit(media.Size(len(data))) {
-			return match[1], false, true
+		var admission media.Admission
+		reservation, admission = budget.ReserveOccurrence(media.Size(file.UncompressedSize64))
+		if admission != media.Admitted {
+			return ""
 		}
-	} else if len(data) > int(limit) {
-		return "", false, true
 	}
-	mediaType := mime.TypeByExtension(path.Ext(file.Name))
-	if mediaType == "" {
-		mediaType = http.DetectContentType(data)
+	data, ok := mineruReadBounded(file, int64(media.ImageMaxBytes()))
+	if !ok || (reservation != nil && !reservation.Commit(media.Size(len(data)))) {
+		return ""
 	}
-	return fmt.Sprintf("![%s](data:%s;base64,%s)", match[1], mediaType, base64.StdEncoding.EncodeToString(data)), true, true
+	return base64.StdEncoding.EncodeToString(data)
 }
 
 // monkeyOCRv2LayoutKind maps a MonkeyOCRv2 layout label to the layout kind
-// used downstream; unmapped labels keep the markdown-derived kind.
+// used downstream; unrecognized labels are ordinary text.
 func monkeyOCRv2LayoutKind(label string) string {
 	switch label {
-	case "title":
+	case "title", "heading", "section-header":
 		return "title"
-	case "list":
+	case "list", "list-item":
 		return "list"
-	case "code":
-		return "code"
+	case "code", "caption", "footnote":
+		return label
 	case "formula", "equation":
 		return "equation"
 	case "table":
@@ -1235,192 +1279,7 @@ func monkeyOCRv2LayoutKind(label string) string {
 	case "picture", "figure", "image":
 		return "figure"
 	default:
-		return ""
-	}
-}
-
-func monkeyOCRv2NormalizeText(text string) string {
-	return strings.Join(strings.Fields(text), " ")
-}
-
-// monkeyOCRv2AttachPositions copies the source-PDF positions the MonkeyOCRv2
-// layouts carry onto the markdown-derived items whose text matches, so
-// citations can highlight and crop the region in the source PDF
-// (issue #21214). Matching mirrors the parser package's Docling attach:
-// repeated text keeps its own provenance. Picture layouts whose payload the
-// budget omitted (or that are missing from the ZIP) never entered the
-// markdown stream; they are re-inserted as position-carrying image items at
-// their section's place in document order so no layout geometry is lost.
-func monkeyOCRv2AttachPositions(res parser.ParseResult, sections []monkeyOCRv2Section) parser.ParseResult {
-	if res.Err != nil || (len(res.JSON) == 0 && !monkeyOCRv2HasImageOnly(sections)) {
-		return res
-	}
-	byText := map[string][]int{}
-	var imageSections []int
-	var tableSections []int
-	for i, section := range sections {
-		if section.imageOnly {
-			continue
-		}
-		if strings.HasPrefix(section.text, "![") {
-			// Collect every inlined image, positioned or not: the item-side
-			// counter advances per image item, so skipping an unpositioned
-			// section here would shift every later image's position one
-			// section early.
-			imageSections = append(imageSections, i)
-			continue
-		}
-		// Collect every table section before the position check: the
-		// item-side table counter advances per table item, so skipping an
-		// unpositioned table here would shift every later table's position
-		// one section early. SetPosition ignores rows without geometry.
-		if monkeyOCRv2LayoutKind(section.label) == "table" {
-			tableSections = append(tableSections, i)
-		}
-		if len(section.position) != 5 {
-			continue
-		}
-		text := monkeyOCRv2NormalizeText(section.text)
-		if text == "" {
-			continue
-		}
-		byText[text] = append(byText[text], i)
-	}
-
-	itemMaps := make([]map[string]any, len(res.JSON))
-	matched := false
-	used := map[string]int{}
-	imageIdx := 0
-	tableIdx := 0
-	itemForSection := map[int]int{}
-	for i, item := range res.JSON {
-		m := item.ToMap()
-		if _, isTable := m["table"]; isTable {
-			// Structured table items carry no text, so they can never meet a
-			// byText entry: attach the next table section's position in
-			// document order, mirroring the image channel.
-			if tableIdx < len(tableSections) {
-				sectionIdx := tableSections[tableIdx]
-				monkeyOCRv2SetPosition(m, sections[sectionIdx].position)
-				itemForSection[sectionIdx] = i
-				matched = true
-			}
-			tableIdx++
-			itemMaps[i] = m
-			continue
-		}
-		if img, _ := m["image"].(string); img != "" {
-			// Sections whose payloads were inlined keep their order through
-			// markdown normalization, so their positions attach ordinally.
-			if imageIdx < len(imageSections) {
-				sectionIdx := imageSections[imageIdx]
-				if len(sections[sectionIdx].position) == 5 {
-					monkeyOCRv2SetPosition(m, sections[sectionIdx].position)
-				}
-				itemForSection[sectionIdx] = i
-				matched = true
-			}
-			imageIdx++
-			itemMaps[i] = m
-			continue
-		}
-		text, _ := m["text"].(string)
-		text = monkeyOCRv2NormalizeText(text)
-		sectionIdxs, ok := byText[text]
-		if ok && text != "" {
-			if idx := used[text]; idx < len(sectionIdxs) {
-				sectionIdx := sectionIdxs[idx]
-				monkeyOCRv2SetPosition(m, sections[sectionIdx].position)
-				if layout := monkeyOCRv2LayoutKind(sections[sectionIdx].label); layout != "" {
-					m["layout"] = layout
-				}
-				itemForSection[sectionIdx] = i
-				used[text]++
-				matched = true
-			}
-		}
-		itemMaps[i] = m
-	}
-
-	// Position-carrying image items for picture layouts that never entered
-	// the markdown stream, inserted at their section's place in document
-	// order: after the nearest preceding matched section's item, or before
-	// the nearest following one, else at the end.
-	type insertion struct {
-		pos  int
-		item map[string]any
-	}
-	var insertions []insertion
-	for i, section := range sections {
-		if !section.imageOnly || len(section.position) != 5 {
-			continue
-		}
-		pos := len(itemMaps)
-		placed := false
-		for j := i - 1; j >= 0; j-- {
-			if idx, ok := itemForSection[j]; ok {
-				pos = idx + 1
-				placed = true
-				break
-			}
-		}
-		if !placed {
-			for j := i + 1; j < len(sections); j++ {
-				if idx, ok := itemForSection[j]; ok {
-					pos = idx
-					break
-				}
-			}
-		}
-		item := map[string]any{
-			"text":          section.text,
-			"doc_type_kwd":  "image",
-			"layout":        "figure",
-			"media_omitted": true,
-		}
-		monkeyOCRv2SetPosition(item, section.position)
-		insertions = append(insertions, insertion{pos: pos, item: item})
-		matched = true
-	}
-	if !matched {
-		return res
-	}
-	merged := make([]map[string]any, 0, len(itemMaps)+len(insertions))
-	next := 0
-	for i, m := range itemMaps {
-		for next < len(insertions) && insertions[next].pos == i {
-			merged = append(merged, insertions[next].item)
-			next++
-		}
-		merged = append(merged, m)
-	}
-	for ; next < len(insertions); next++ {
-		merged = append(merged, insertions[next].item)
-	}
-	res.JSON = parser.MapsToItems(merged)
-	return res
-}
-
-func monkeyOCRv2HasImageOnly(sections []monkeyOCRv2Section) bool {
-	for _, section := range sections {
-		if section.imageOnly {
-			return true
-		}
-	}
-	return false
-}
-
-// monkeyOCRv2SetPosition attaches a [page, left, right, top, bottom] row to
-// an item in both position spellings plus the page number.
-func monkeyOCRv2SetPosition(item map[string]any, position []any) {
-	if len(position) != 5 {
-		return
-	}
-	rows := [][]any{position}
-	item["positions"] = rows
-	item["_pdf_positions"] = rows
-	if page, ok := position[0].(int); ok {
-		item["page_number"] = page
+		return "text"
 	}
 }
 
@@ -2106,9 +1965,9 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 		name := strings.ReplaceAll(f.Name, "\\", "/")
 		switch {
 		case strings.HasSuffix(name, "content_list.json") && len(contentList) == 0:
-			contentList, err = mineruReadZipFile(f)
+			contentList, err = readPDFZipFile(f)
 		case strings.HasSuffix(name, "structured_content.json") && len(structured) == 0:
-			structured, err = mineruReadZipFile(f)
+			structured, err = readPDFZipFile(f)
 		}
 		if err != nil {
 			return nil, nil, err
@@ -2243,8 +2102,8 @@ func mineruExtractSections(zipBytes []byte) ([]string, error) {
 	return sections, nil
 }
 
-// mineruReadZipFile reads one MinerU zip member in full for JSON extraction.
-func mineruReadZipFile(f *zip.File) ([]byte, error) {
+// readPDFZipFile reads one member of a PDF parser response archive.
+func readPDFZipFile(f *zip.File) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", f.Name, err)
