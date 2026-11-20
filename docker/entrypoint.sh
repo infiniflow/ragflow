@@ -6,6 +6,14 @@ cd /ragflow
 
 echo "Start RAGFlow $@, version: $(cat /ragflow/VERSION)"
 
+if [[ "${1:-}" == --web ]]; then
+    if (( $# > 1 )); then
+        echo "--web does not accept server arguments" >&2
+        exit 1
+    fi
+    exec /usr/sbin/nginx -c /etc/nginx/web.conf -g 'daemon off;'
+fi
+
 # Replace env variables in the service_conf.yaml file.
 CONF_DIR="/ragflow/conf"
 TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"

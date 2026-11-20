@@ -8,6 +8,11 @@ Ingestor, Syncer and Chatter in parallel. The entrypoint renders configuration,
 starts nginx, and forwards server options unchanged. No service selection flags
 are needed. Stop the container to stop all services.
 
+For a separate frontend deployment, pass `--web` to the image entrypoint to
+serve the frontend files with Nginx without starting the Go server. Route API
+and Admin requests separately at the ingress. The image entrypoint accepts
+`--web` only on its own; it is not an option of the `ragflow_server` binary.
+
 DeepDoc inference runs in-process; the OSS server does not launch a standalone
 DeepDoc service. For inbound channel webhooks, publish the configured listener
 ports on the RAGFlow container.
