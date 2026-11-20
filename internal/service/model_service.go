@@ -1343,6 +1343,21 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		region = "default"
 	}
 
+	// A decision model requires a provider with a decision endpoint. Reject
+	// incorrect model types before probing or persisting verification results.
+	if providerInfo.URLSuffix.Decision == "" {
+		for _, model := range modelInfo {
+			if strings.TrimSpace(model.ModelName) == "" {
+				continue
+			}
+			for _, modelType := range model.ModelTypes {
+				if strings.EqualFold(modelType, entity.ModelTypeDecision.String()) {
+					return common.CodeBadRequest, fmt.Errorf("%s does not support decision models: select the correct model type for %q (for example, chat or embedding)", providerName, model.ModelName)
+				}
+			}
+		}
+	}
+
 	driver := providerInfo.ModelDriver
 	if strings.EqualFold(providerInfo.Class, "local") {
 		if baseURL == "" {
