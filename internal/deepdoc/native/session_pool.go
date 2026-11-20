@@ -38,6 +38,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	doctype "ragflow/internal/deepdoc/parser/type"
 )
 
 // pooledSession is the minimal contract the pool needs from any cached ONNX
@@ -80,13 +82,24 @@ func newSessionPool[K comparable, V pooledSession](maxKeys, maxFree int) *sessio
 // poisoned session is Destroyed on release rather than pooled (ORT does not
 // guarantee reuse safety after a forced termination).
 //
-// Get hands out a session from the pool. The process inference budget is
-// acquired by the parser's inference wrappers (see doctype.AcquireInference),
-// NOT here: keeping the gate at the single call layer means in-process sessions
-// and remote inference clients share one budget without double-counting a
-// single logical inference call.
+// Get hands out a session from the pool. The INNER in-process inference budget
+// (doctype.AcquireLocal) is acquired here, so it bounds only local ONNX Runs;
+// the OUTER budget (doctype.AcquireInference) is acquired by the parser's
+// inference wrappers and bounds every backend including remote HTTP clients.
+// This two-layer design lets remote inference use the full K while local
+// inference stays clamped to the core budget (no oversubscription).
 func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, error)) (V, func(), error) {
-	_ = ctx // retained in signature; the budget is acquired by the caller
+	if err := doctype.AcquireLocal(ctx); err != nil {
+		var zero V
+		return zero, nil, err
+	}
+	localReturned := false
+	returnLocal := func() {
+		if !localReturned {
+			localReturned = true
+			doctype.ReleaseLocal()
+		}
+	}
 	p.mu.Lock()
 	kp := p.pools[key]
 	if kp == nil {
@@ -113,12 +126,14 @@ func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, err
 		var err error
 		s, err = newFn()
 		if err != nil {
+			returnLocal()
 			var zero V
 			return zero, nil, err
 		}
 	}
 
 	release := func() {
+		defer returnLocal()
 		if s.isPoisoned() {
 			s.Destroy()
 			return

@@ -199,11 +199,14 @@ func SetPageWorkerPoolSize(workers int) {
 // ── Wrapped calls used by the parser pipeline ─────────────────────────────
 //
 // These wrappers guard health, shape AND the process inference budget: every
-// inference call acquires a slot from the shared doctype gate before reaching
-// its backend, whether that backend is an in-process ONNX session or a remote
-// inference client. Sitting at the call layer (see doctype/inference_gate.go)
-// is what makes one budget cover both backends without double-counting; a call
-// site cannot escape it by bypassing a backend-specific boundary.
+// inference call acquires a slot from the OUTER doctype gate (AcquireInference)
+// before reaching its backend, whether that backend is an in-process ONNX
+// session or a remote inference client. The outer budget equals K, so remote
+// clients can use the full budget. In-process Runs additionally acquire the
+// INNER local gate (doctype.AcquireLocal) inside the native session pool,
+// which clamps them to the core budget so local inference cannot oversubscribe
+// the machine. A call site cannot escape the outer budget by bypassing a
+// backend-specific boundary.
 
 // renderPageToImage renders a page at the default DLA DPI. Native PDFium
 // access inside the engine is serialized by the process-wide pdfsync.Mu

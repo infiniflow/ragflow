@@ -128,29 +128,37 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	if errN != nil {
 		return fmt.Errorf("invalid deepdoc inference cpu cores: %w", errN)
 	}
-	// When N is unset, derive it from K so each Run opens with a single intra-op
-	// thread (coresPerInference = max(1, K/K) = 1), preserving the prior
-	// single-core-per-run semantics. An explicit N (including 0 = all cores) is
-	// honoured as-is below.
-	resolvedN := rawN
-	if !explicitN {
-		resolvedN = K
-	}
 	totalCores := inferenceTotalCores()
-	// Validate K and N against the process's CPU budget (cgroup-aware) and
-	// derive the per-Run intra-op thread count (max(1, N/K)). N == 0 resolves to
-	// all cores here.
-	coresPerInference, totalCPUCores, errV := native.ValidateInferenceConfig(totalCores, resolvedN, K)
+
+	// The single user-facing concurrency K drives TWO gates:
+	//   - outer gate (doctype.SetInferenceLimit): bounds ALL inference calls at
+	//     K, so remote inference clients can use the full budget regardless of
+	//     this machine's core count;
+	//   - inner local gate (doctype.SetLocalInferenceLimit): bounds only
+	//     in-process ONNX Runs at min(K, cores), so local inference never
+	//     oversubscribes the machine. This is derived automatically from K and
+	//     the CPU budget — no second user setting.
+	localCap := deriveLocalBudget(K, totalCores, rawN, explicitN)
+
+	// Validate only the LOCAL budget against the process CPU cores. K itself is
+	// a request-concurrency budget and is intentionally NOT bounded by cores.
+	resolvedN := rawN
+	if !explicitN || resolvedN == 0 {
+		resolvedN = localCap
+	}
+	coresPerInference, totalCPUCores, errV := native.ValidateInferenceConfig(totalCores, resolvedN, localCap)
 	if errV != nil {
 		return fmt.Errorf("invalid deepdoc inference configuration: %w", errV)
 	}
-	// Register the per-session intra-op thread count before any model session is
-	// created (the native package reads it on every SessionOptions build).
+
+	// Register thread policy before any model session is created.
 	native.SetIntraOpThreads(coresPerInference)
 	pdf.SetDeepDocConcurrency(K)
 	doctype.SetInferenceLimit(K)
-	common.Info("in-process DeepDoc inference limit registered",
+	doctype.SetLocalInferenceLimit(localCap)
+	common.Info("DeepDoc inference limits registered",
 		zap.Int("max_concurrent_inference", K),
+		zap.Int("local_concurrent_inference", localCap),
 		zap.Int("cpu_cores_per_inference", coresPerInference),
 		zap.Int("total_cpu_cores_budget", totalCPUCores),
 		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
@@ -186,4 +194,17 @@ func resolveDeepDocDropScore() float64 {
 			zap.String("value", v), zap.Float64("default", infnative.DefaultDropScore))
 	}
 	return infnative.DefaultDropScore
+}
+
+// deriveLocalBudget derives the in-process Run budget from the single
+// user-facing K and the machine's core budget. It is min(K, totalCores) so
+// local inference never oversubscribes, further capped by an explicit
+// inference_cpu_cores when set. K itself (the remote/outer gate) is never
+// reduced by this — only the local gate uses the result.
+func deriveLocalBudget(k, totalCores, rawN int, explicitN bool) int {
+	cap := doctype.LocalInferenceCapacity(k, totalCores)
+	if explicitN && rawN > 0 && rawN < cap {
+		cap = rawN
+	}
+	return cap
 }

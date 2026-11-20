@@ -96,3 +96,57 @@ func swapProcessInferenceLimiter(l *inferenceLimiter) func() {
 	processLimiter = l
 	return func() { processLimiter = old }
 }
+
+// ── Local (in-process) session gate ──────────────────────────────────────
+//
+// This is the INNER budget. While the outer gate above bounds every inference
+// call at K (so remote HTTP clients can use the full budget), this gate bounds
+// only in-process ONNX Runs at min(K, available cores), so local inference can
+// never oversubscribe the machine. Every in-process Run passes through the
+// native session pool, which acquires this gate; remote clients do not.
+//
+// localLimiterInst is written once at startup by SetLocalInferenceLimit and
+// read afterwards. Tests swap it via swapLocalLimiter and restore it.
+var (
+	localLimiterInst   *inferenceLimiter
+	localInferenceOnce sync.Once
+)
+
+// LocalInferenceCapacity derives the in-process Run budget from the single
+// user-facing concurrency K and the machine's CPU cores: min(K, cores), with
+// K<=0 meaning "all cores" and cores<=0 flooring to 1. The result is the
+// capacity of the local gate and never exceeds the core count, which is what
+// keeps in-memory inference from oversubscribing even when K is large (e.g.
+// K=32 on a 16-core box yields a local capacity of 16).
+func LocalInferenceCapacity(k, cores int) int {
+	if cores < 1 {
+		return 1
+	}
+	if k <= 0 || k > cores {
+		return cores
+	}
+	return k
+}
+
+// SetLocalInferenceLimit registers the inner in-process gate capacity. It is
+// called once at startup with LocalInferenceCapacity(K, cores).
+func SetLocalInferenceLimit(n int) {
+	localInferenceOnce.Do(func() { localLimiterInst = newInferenceLimiter(n) })
+}
+
+// AcquireLocal takes one in-process inference slot, blocking until one is free
+// or ctx is done. No-op when no local budget was registered.
+func AcquireLocal(ctx context.Context) error {
+	return localLimiterInst.acquire(ctx)
+}
+
+// ReleaseLocal returns an in-process inference slot taken by AcquireLocal.
+func ReleaseLocal() {
+	localLimiterInst.release()
+}
+
+func swapLocalLimiter(l *inferenceLimiter) func() {
+	old := localLimiterInst
+	localLimiterInst = l
+	return func() { localLimiterInst = old }
+}
