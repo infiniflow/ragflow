@@ -212,6 +212,7 @@ func logicalLines(content string) []logicalLine {
 // Return the operand that carries the hidden expansion.
 func scanQuotedRmExpansion(line string) (string, bool) {
 	code := shellCodeMask(line)
+	separator := commandSeparatorMask(line, code)
 	for i := 0; i+2 <= len(line); i++ {
 		if !code[i] || !code[i+1] {
 			continue
@@ -224,7 +225,7 @@ func scanQuotedRmExpansion(line string) (string, bool) {
 		}
 		// "rm" is only destructive at a shell command position; as an
 		// argument of another command (`echo rm -rf ...`) it is inert text.
-		if !isCommandPosition(line, i, code) {
+		if !isCommandPosition(line, i, separator) {
 			continue
 		}
 
@@ -263,12 +264,12 @@ func scanQuotedRmExpansion(line string) (string, bool) {
 // another command (`echo rm -rf ...`) is inert and must not reach the
 // quoted-operand pass. A quoted word is never a prefix, so `"echo" rm` stays a
 // command of echo.
-func isCommandPosition(line string, i int, code []bool) bool {
+func isCommandPosition(line string, i int, separator []bool) bool {
 	// The executable word must be exactly "rm" or a path whose basename is
 	// "rm" (`/bin/rm`, `bin/rm`, `./rm`). A longer basename (`transform`,
 	// `/usr/bin/tr.rm`) names a different program and must not match.
 	wordStart := i
-	for wordStart > 0 && line[wordStart-1] != ' ' && line[wordStart-1] != '\t' && !isCommandSeparator(line, wordStart-1, code) {
+	for wordStart > 0 && line[wordStart-1] != ' ' && line[wordStart-1] != '\t' && !separator[wordStart-1] {
 		wordStart--
 	}
 	if head := line[wordStart:i]; head != "" && !strings.HasSuffix(head, "/") {
@@ -280,7 +281,7 @@ func isCommandPosition(line string, i int, code []bool) bool {
 	prefix := line[:wordStart]
 	lastSeparator := -1
 	for pos := 0; pos < len(prefix); pos++ {
-		if isCommandSeparator(prefix, pos, code) {
+		if separator[pos] {
 			lastSeparator = pos
 		}
 	}
@@ -414,44 +415,59 @@ func takesValue(wrapper, name string) bool {
 	return false
 }
 
-// isCommandSeparator reports whether the byte at pos ends a shell command
-// outside quotes; the same bytes inside quotes are ordinary data. `)` ends a
-// function-body header (`f() { rm ...; }`) or a case pattern
-// (`case x) rm ...;;`), but a `)` closing a `$(` command substitution keeps
-// the words that follow in the outer command's argument position
-// (`echo $(printf ok) rm ...`).
-func isCommandSeparator(line string, pos int, code []bool) bool {
-	if !code[pos] {
-		return false
-	}
-	switch line[pos] {
-	case ';', '|', '&', '(':
-		return true
-	case ')':
-		return !closesCommandSubstitution(line, pos, code)
-	}
-	return false
-}
-
-// closesCommandSubstitution reports whether the `)` at pos closes a `$(` span.
-// The matching `(` is found by walking back over nested parentheses; when the
-// byte before it is `$` the `)` belongs to a command substitution (or an
-// arithmetic expansion) and does not start a new command position.
-func closesCommandSubstitution(line string, pos int, code []bool) bool {
-	depth := 0
-	for i := pos - 1; i >= 0; i-- {
+// commandSeparatorMask marks the unquoted, unescaped bytes that end a shell
+// command and start a command position. `;`, `|`, `&` and `(` always do. `)`
+// ends a function-body header (`f() { rm ...; }`) or a case pattern
+// (`case x) rm ...;;`), but the `)` closing a command or process substitution
+// (`$(`, `<(` or `>(`) keeps the words that follow in the outer command's
+// argument position (`echo $(printf ok) rm ...`). Quotes and a backslash make
+// a delimiter ordinary data: `echo \) rm ...` passes `)` to echo. The mask is
+// built in one pass, so the scan stays linear in the line length.
+func commandSeparatorMask(line string, code []bool) []bool {
+	separator := make([]bool, len(line))
+	var open []int
+	escaped := false
+	for i := 0; i < len(line); i++ {
 		if !code[i] {
+			escaped = false
+			continue
+		}
+		if line[i] == '\\' && !escaped {
+			escaped = true
+			continue
+		}
+		escapedHere := escaped
+		escaped = false
+		if escapedHere {
 			continue
 		}
 		switch line[i] {
-		case ')':
-			depth++
-		case '(':
-			if depth == 0 {
-				return i > 0 && line[i-1] == '$'
+		case ';', '|', '&', '(':
+			separator[i] = true
+			if line[i] == '(' {
+				open = append(open, i)
 			}
-			depth--
+		case ')':
+			separator[i] = true
+			if n := len(open); n > 0 {
+				opener := open[n-1]
+				open = open[:n-1]
+				separator[i] = !isSubstitutionOpener(line, opener)
+			}
 		}
+	}
+	return separator
+}
+
+// isSubstitutionOpener reports whether the `(` at pos opens a command
+// substitution (`$(`) or a process substitution (`<(` or `>(`).
+func isSubstitutionOpener(line string, pos int) bool {
+	if pos == 0 {
+		return false
+	}
+	switch line[pos-1] {
+	case '$', '<', '>':
+		return true
 	}
 	return false
 }
