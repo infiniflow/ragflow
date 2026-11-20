@@ -30,7 +30,7 @@ type wikiPageResult struct {
 
 // Section is one heading block parsed out of a wiki page's Markdown body. The
 // page itself is a separate product; sections live as children linked via
-// parent_id so the retrieval-side can scope queries to a section (e.g. user
+// parent_kwd so the retrieval-side can scope queries to a section (e.g. user
 // asks "what does the page say about X?" and the SIDE picks the page + the X
 // section).
 type Section struct {
@@ -100,7 +100,7 @@ func stripMarkdownEmphasis(s string) string {
 // buildPageProducts turns the final wiki page into one "page" product plus one
 // "section" product per heading in the page body. Sections carry their title,
 // level, and content; vector embedding is applied by the caller in a single
-// batched Encode. Sections are linked to the page via parent_id.
+// batched Encode. Sections are linked to the page via parent_kwd.
 func buildPageProducts(tenantID, docID, page string, sourceChunkIDs []string) []common.Product {
 	return buildWikiPageProducts(tenantID, docID, []wikiPageResult{{
 		Slug:           slugify(firstHeading(page)),

@@ -313,7 +313,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		IndexNames:   []string{indexName},
 		KbIDs:        []string{request.DatasetID},
 		Limit:        10000,
-		SelectFields: []string{"id", "compile_kwd", "slug_kwd", "parent_id"},
+		SelectFields: []string{"id", "compile_kwd", "slug_kwd", "parent_kwd"},
 		Filter: map[string]any{
 			"doc_id":        []string{request.DocumentID},
 			"type_kwd":      []string{"wiki_page", "wiki_section"},
@@ -362,7 +362,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		for _, row := range existing.Chunks {
 			id := anyString(row["id"])
 			_, pageAffected := affectedPageIDs[id]
-			_, sectionAffected := affectedPageIDs[anyString(row["parent_id"])]
+			_, sectionAffected := affectedPageIDs[anyString(row["parent_kwd"])]
 			inScope := fullReplace || pageAffected || sectionAffected
 			if _, keep := newIDs[id]; id != "" && inScope && !keep {
 				staleIDs = append(staleIDs, id)
