@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -2032,6 +2033,184 @@ func TestChatCompletions_CancelledNonStreamDoesNotPersistBlankTurn(t *testing.T)
 			if hu.Message["role"] == "assistant" {
 				t.Fatalf("assistant message should not be persisted on cancelled context: %v", hu.Message)
 			}
+		}
+	}
+}
+
+func newInterruptedTurnService(store *fakeSessionStore, pipeline *fakePipeline, history string) *ChatSessionService {
+	store.sessions["session-1"] = &entity.ChatSession{ID: "session-1", DialogID: "chat-1", Message: json.RawMessage(history)}
+	store.dialogs["chat-1"] = &entity.Chat{ID: "chat-1", TenantID: "user-1", LLMID: "chat@factory", LLMSetting: entity.JSONMap{}}
+	store.dialogExists["user-1|chat-1"] = true
+	return &ChatSessionService{chatSessionDAO: store, permissionChecker: store, pipeline: pipeline}
+}
+
+func TestChatCompletionsInterruptedStreamKeepsStreamedAnswer(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		legacy bool
+		deltas []AsyncChatResult
+		want   string
+	}{
+		{name: "visible text", deltas: []AsyncChatResult{{Answer: "partial "}, {Answer: "answer"}}, want: "partial answer"},
+		{name: "legacy visible text", legacy: true, deltas: []AsyncChatResult{{Answer: "partial "}, {Answer: "answer"}}, want: "partial answer"},
+		{
+			name:   "closed reasoning stays with the text",
+			deltas: []AsyncChatResult{{StartToThink: true}, {Reasoning: "why"}, {EndToThink: true, Answer: "text"}},
+			want:   "<think>why</think>text",
+		},
+		{name: "reasoning only leaves the question unanswered", deltas: []AsyncChatResult{{StartToThink: true}, {Reasoning: "why"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			results := make(chan AsyncChatResult)
+			store := newFakeSessionStore()
+			svc := newInterruptedTurnService(store, &fakePipeline{resultChan: results}, `[{"role":"assistant","content":"Welcome!"}]`)
+
+			ctx, cancel := context.WithCancel(permission.WithIdentity(t.Context(), "user-1", "user-1"))
+			defer cancel()
+			frames := make(chan string, len(tc.deltas)+1)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_, _ = svc.ChatCompletions(ctx, "chat-1", "session-1", nil, "question", nil, "", nil, nil, tc.legacy, true, frames)
+			}()
+			for _, delta := range tc.deltas {
+				results <- delta
+				<-frames
+			}
+			cancel()
+			close(results)
+			<-done
+
+			got := parseMessages(store.sessions["session-1"].Message)
+			if tc.want == "" {
+				if len(got) != 2 || got[1]["role"] != "user" {
+					t.Fatalf("stored messages=%#v, want only the prologue and question", got)
+				}
+				return
+			}
+			if len(got) != 3 || got[2]["role"] != "assistant" || got[2]["content"] != tc.want {
+				t.Fatalf("stored messages=%#v, want assistant content %q", got, tc.want)
+			}
+			if got[2]["id"] != got[1]["id"] {
+				t.Fatalf("answer id %v must pair with question id %v", got[2]["id"], got[1]["id"])
+			}
+		})
+	}
+}
+
+func TestChatCompletionsInterruptedStreamDropsRejectedDelta(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		legacy   bool
+		accepted []AsyncChatResult
+		want     string
+	}{
+		{name: "first send rejected"},
+		{name: "legacy first send rejected", legacy: true},
+		{name: "later send rejected", accepted: []AsyncChatResult{{Answer: "partial "}}, want: "partial "},
+		{name: "legacy later send rejected", legacy: true, accepted: []AsyncChatResult{{Answer: "partial "}}, want: "partial "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			results := make(chan AsyncChatResult)
+			store := newFakeSessionStore()
+			svc := newInterruptedTurnService(store, &fakePipeline{resultChan: results}, `[{"role":"assistant","content":"Welcome!"}]`)
+
+			ctx, cancel := context.WithCancel(permission.WithIdentity(t.Context(), "user-1", "user-1"))
+			defer cancel()
+			// Unbuffered and no longer read after the accepted deltas, so the
+			// next send can only end through cancellation.
+			frames := make(chan string)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_, _ = svc.ChatCompletions(ctx, "chat-1", "session-1", nil, "question", nil, "", nil, nil, tc.legacy, true, frames)
+			}()
+			for _, delta := range tc.accepted {
+				results <- delta
+				<-frames
+			}
+			results <- AsyncChatResult{Answer: "never sent"}
+			// Let the turn block on that send, so cancellation rejects it
+			// rather than stopping the loop before the delta is handled.
+			time.Sleep(20 * time.Millisecond)
+			cancel()
+			close(results)
+			<-done
+
+			got := parseMessages(store.sessions["session-1"].Message)
+			if tc.want == "" {
+				if len(got) != 2 || got[1]["role"] != "user" {
+					t.Fatalf("stored messages=%#v, want only the prologue and question", got)
+				}
+				return
+			}
+			if len(got) != 3 || got[2]["role"] != "assistant" || got[2]["content"] != tc.want {
+				t.Fatalf("stored messages=%#v, want assistant content %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestChatCompletionsStreamErrorDoesNotPersistPartialAnswer(t *testing.T) {
+	store := newFakeSessionStore()
+	svc := newInterruptedTurnService(store, &fakePipeline{resultChan: makeResultChan(
+		AsyncChatResult{Answer: "partial"},
+		AsyncChatResult{Answer: "**ERROR**: provider failed", Final: true},
+	)}, `[{"role":"assistant","content":"Welcome!"}]`)
+
+	frames := make(chan string, 8)
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
+	if _, err := svc.ChatCompletions(ctx, "chat-1", "session-1", nil, "question", nil, "", nil, nil, false, true, frames); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := parseMessages(store.sessions["session-1"].Message); len(got) != 2 || got[1]["role"] != "user" {
+		t.Fatalf("stored messages=%#v, want only the prologue and question", got)
+	}
+}
+
+func TestChatCompletionsExcludesUnansweredQuestionFromModelContext(t *testing.T) {
+	store := newFakeSessionStore()
+	pipeline := &fakePipeline{resultChan: makeResultChan(AsyncChatResult{Answer: "answer", Final: true})}
+	svc := newInterruptedTurnService(store, pipeline, `[
+		{"role":"assistant","content":"Welcome!"},
+		{"id":"q1","role":"user","content":"first"},
+		{"id":"q1","role":"assistant","content":"first answer"},
+		{"id":"q2","role":"user","content":"write a long essay"}
+	]`)
+
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
+	if _, err := svc.ChatCompletions(ctx, "chat-1", "session-1", nil, "short question", nil, "", nil, nil, false, false, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var modelContext []string
+	for _, message := range pipeline.messages {
+		modelContext = append(modelContext, stringValue(message["content"]))
+	}
+	if want := []string{"first", "first answer", "short question"}; !reflect.DeepEqual(modelContext, want) {
+		t.Fatalf("model context=%q, want %q", modelContext, want)
+	}
+	if !strings.Contains(string(store.sessions["session-1"].Message), "write a long essay") {
+		t.Fatal("the unanswered question must stay in the transcript")
+	}
+}
+
+func TestInterruptedAnswerText(t *testing.T) {
+	for streamed, want := range map[string]string{
+		"":                                 "",
+		"  \n":                             "",
+		"text":                             "text",
+		"<think>why":                       "",
+		"<think>why</think>":               "",
+		"<think>why</think>text":           "<think>why</think>text",
+		"<think>a</think>text<think>again": "<think>a</think>text",
+		"text<think>why</think>":           "text<think>why</think>",
+		"text<think>why</think>  ":         "text<think>why</think>  ",
+		"why</think>":                      "",
+		"why</think>text":                  "why</think>text",
+	} {
+		if got := interruptedAnswerText(streamed); got != want {
+			t.Errorf("interruptedAnswerText(%q)=%q, want %q", streamed, got, want)
 		}
 	}
 }

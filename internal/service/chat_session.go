@@ -1293,6 +1293,11 @@ func (s *ChatSessionService) ChatCompletions(
 	if stream && streamChan != nil {
 		var fullAnswer strings.Builder
 		var finalLegacyAnswer map[string]interface{}
+		finished := false
+		// sentAnswer is fullAnswer as of the last delta the output channel
+		// accepted. An interrupted turn keeps only this text, not the delta
+		// whose send was rejected.
+		sentAnswer := ""
 
 		for result := range resultChan {
 			if ctx.Err() != nil {
@@ -1302,6 +1307,7 @@ func (s *ChatSessionService) ChatCompletions(
 				reference[len(reference)-1] = result.Reference
 			}
 			if result.Final {
+				finished = true
 				failed := strings.Contains(result.Answer, "**ERROR**")
 				if session != nil && !failed {
 					// Store with <think>thinking content</think>
@@ -1380,6 +1386,7 @@ func (s *ChatSessionService) ChatCompletions(
 				if !sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))) {
 					break
 				}
+				sentAnswer = fullAnswer.String()
 			} else {
 				if result.Final {
 					// Synchronize the in-memory session snapshot with the final
@@ -1467,7 +1474,11 @@ func (s *ChatSessionService) ChatCompletions(
 				if !sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))) {
 					break
 				}
+				sentAnswer = fullAnswer.String()
 			}
+		}
+		if session != nil && !finished {
+			s.persistInterruptedAnswer(session, sentAnswer, messageID)
 		}
 		if legacy && finalLegacyAnswer != nil && ctx.Err() == nil {
 			finalLegacyAnswer["answer"] = fullAnswer.String()
@@ -1758,7 +1769,8 @@ func (s *ChatSessionService) appendSessionMessage(session *entity.ChatSession, r
 	return session
 }
 
-// filterSystemAndLeadingAssistant filters system messages and leading assistant messages from session history.
+// filterSystemAndLeadingAssistant builds the model context from session history:
+// it filters system messages, leading assistant messages, and unanswered questions.
 func (s *ChatSessionService) filterSystemAndLeadingAssistant(session *entity.ChatSession) []map[string]interface{} {
 	messages := parseMessages(session.Message)
 	var result []map[string]interface{}
@@ -1779,7 +1791,53 @@ func (s *ChatSessionService) filterSystemAndLeadingAssistant(session *entity.Cha
 		}
 		result = append(result, message)
 	}
-	return result
+	return dropUnansweredQuestions(result)
+}
+
+// dropUnansweredQuestions removes every user turn directly followed by another
+// user turn. Such a question stays in the transcript when its turn was
+// interrupted or failed before producing an answer, and the model would
+// otherwise answer it again alongside the current question.
+func dropUnansweredQuestions(messages []map[string]interface{}) []map[string]interface{} {
+	kept := make([]map[string]interface{}, 0, len(messages))
+	for i, message := range messages {
+		if message["role"] == "user" && i+1 < len(messages) && messages[i+1]["role"] == "user" {
+			continue
+		}
+		kept = append(kept, message)
+	}
+	return kept
+}
+
+// closedReasoningBlock matches one complete <think>...</think> block.
+var closedReasoningBlock = regexp.MustCompile(`(?s)<think>.*?</think>`)
+
+// interruptedAnswerText returns the part of a cut-off stream worth keeping as
+// the turn's answer, or "" when the client received no visible text. Text on
+// either side of a closed reasoning block counts as visible. A reasoning block
+// still open at the cut is removed so it cannot swallow later rendering.
+func interruptedAnswerText(streamed string) string {
+	if open := strings.LastIndex(streamed, "<think>"); open >= 0 && !strings.Contains(streamed[open:], "</think>") {
+		streamed = streamed[:open]
+	}
+	if strings.TrimSpace(ExtractVisibleAnswer(closedReasoningBlock.ReplaceAllString(streamed, ""))) == "" {
+		return ""
+	}
+	return streamed
+}
+
+// persistInterruptedAnswer stores the text already streamed for a turn that
+// ended before its final event, so the next turn can refer to it. The request
+// context is usually cancelled by now, so the write uses its own.
+func (s *ChatSessionService) persistInterruptedAnswer(session *entity.ChatSession, streamed, messageID string) {
+	content := interruptedAnswerText(streamed)
+	if content == "" {
+		return
+	}
+	s.appendAssistantToSession(session, content, messageID)
+	saveCtx, saveCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer saveCancel()
+	s.updateSessionMessages(saveCtx, session, s.getSessionMessagesAsSlice(session), s.initializeReference())
 }
 
 // appendAssistantToSession appends or updates the assistant message in session.Message.

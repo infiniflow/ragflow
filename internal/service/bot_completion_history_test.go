@@ -94,6 +94,18 @@ func TestBuildChatbotPipelineMessages_DropsLeadingAssistantAndSystem(t *testing.
 	}
 }
 
+func TestBuildChatbotPipelineMessages_DropsUnansweredQuestion(t *testing.T) {
+	raw := json.RawMessage(`[
+		{"role":"user","content":"first"},
+		{"role":"assistant","content":"first answer"},
+		{"role":"user","content":"interrupted"}
+	]`)
+	msgs := buildChatbotPipelineMessages(raw, "next", "msg-4")
+	if len(msgs) != 3 || msgs[1]["content"] != "first answer" || msgs[2]["content"] != "next" {
+		t.Fatalf("model context must skip the unanswered question: %+v", msgs)
+	}
+}
+
 func TestBuildChatbotPipelineMessages_Malformed(t *testing.T) {
 	// Malformed JSON must not panic; falls back to just the new
 	// question rather than failing the request.
@@ -1056,5 +1068,34 @@ verified:
 		if len(turns) != 1 || turns[0]["id"] != "msg-leak" {
 			t.Fatalf("expected user turn to be preserved in history, got: %+v", turns)
 		}
+	}
+}
+
+func TestStreamChatbotTurn_InterruptedKeepsDeliveredText(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-interrupted", "q-interrupted", "msg-interrupted")
+	svc := NewBotService(nil)
+	sess := &entity.API4Conversation{ID: "sess-interrupted", DialogID: "dlg-s1", UserID: "tenant-1"}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	results := make(chan AsyncChatResult)
+	frames := svc.streamChatbotTurn(ctx, sess, "q-interrupted", "msg-interrupted", results)
+	results <- AsyncChatResult{Answer: "部分回答"}
+	<-frames
+	cancel()
+	close(results)
+	for range frames {
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(context.Background(), dao.DB, "sess-interrupted", "dlg-s1", true)
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	turns := parseChatbotTurns(row.Message)
+	if len(turns) != 2 || turns[1]["role"] != "assistant" || turns[1]["content"] != "部分回答" || turns[1]["id"] != "msg-interrupted" {
+		t.Fatalf("want the delivered text stored as the answer, got: %+v", turns)
 	}
 }
