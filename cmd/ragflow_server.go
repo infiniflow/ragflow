@@ -123,7 +123,11 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	fs.BoolVar(&args.HelpFlag, "h", false, "")
 	fs.BoolVar(&args.VersionFlag, "version", false, "")
 	fs.BoolVar(&args.VersionFlag, "v", false, "")
-	finish := registerFlags(fs, args)
+	modes := []string{"admin", "api", "ingestor", "syncer", "chatter", "migrate"}
+	modeFlags := make([]*bool, len(modes))
+	for i, mode := range modes {
+		modeFlags[i] = fs.Bool(mode, false, "")
+	}
 
 	if len(argv) > 0 {
 		if err := fs.Parse(argv[1:]); err != nil {
@@ -149,9 +153,16 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 			args.DeepdocDevice = &deepdocDevice
 		}
 	})
-	if err := finish(); err != nil {
-		return nil, err
+	for i, enabled := range modeFlags {
+		if !*enabled {
+			continue
+		}
+		if args.Mode != nil {
+			return nil, fmt.Errorf("only one mode flag may be specified: --%s and --%s", *args.Mode, modes[i])
+		}
+		args.Mode = &modes[i]
 	}
+	args.InitSuperUser = args.Mode != nil && *args.Mode == "admin"
 
 	if args.LogLevel != nil {
 		if err := validateLogLevel(*args.LogLevel); err != nil {
@@ -171,7 +182,21 @@ func validateLogLevel(level string) error {
 	}
 }
 
-func printCommonHelp() {
+func printHelp(_ *bootstrap.ServerArgs) {
+	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
+	fmt.Fprintln(os.Stderr, "RAGFlow Server - runs admin, API, ingestor, syncer and chatter in one process by default.")
+	fmt.Fprintln(os.Stderr, "Default startup runs database migrations and initializes the superuser automatically.")
+	fmt.Fprintln(os.Stderr, "Default ports: admin 9381, API 9380.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Select at most one mode:")
+	fmt.Fprintln(os.Stderr, "  --admin            \tRun only the admin server and initialize the superuser")
+	fmt.Fprintln(os.Stderr, "  --api              \tRun only the API server")
+	fmt.Fprintln(os.Stderr, "  --ingestor         \tRun only the ingestion worker")
+	fmt.Fprintln(os.Stderr, "  --syncer           \tRun only the file syncer")
+	fmt.Fprintln(os.Stderr, "  --chatter          \tRun only the chat-channel service")
+	fmt.Fprintln(os.Stderr, "  --migrate          \tRun database migrations and exit")
+	fmt.Fprintln(os.Stderr, "Run --migrate before starting individual services.")
+	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  -f, --config string\tPath to configuration file")
 	fmt.Fprintln(os.Stderr, "  -v, --version      \tPrint version information and exit")
 	fmt.Fprintln(os.Stderr, "  --log-level string \tLog level: debug, info, warn, error (default: warn)")
@@ -206,16 +231,13 @@ func main() {
 }
 
 func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.ServerArgs) error {
-	if err := validateServerMode(arguments); err != nil {
-		return err
-	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	standalone := arguments.Mode == nil
 	serverType := common.ServerTypeUnknown
 	var serverName string
-	if standalone {
+	if arguments.Mode == nil {
+		serverType = common.ServerTypeStandalone
 		serverName = "ragflow_standalone"
 	} else {
 		serverType = bootstrap.GetServerType(arguments)
@@ -246,21 +268,21 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	}
 	config.SetLogLevel(resolvedLogLevel)
 	var port int
-	if standalone || serverType == common.ServerTypeAPI {
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI {
 		port, err = config.ResolvePort(config.GetAPIServerConfig().HTTPPort, arguments.Port)
 		if err != nil {
 			return fmt.Errorf("resolve API port: %w", err)
 		}
 		config.SetAPIServerHTTPPort(port)
 	}
-	if standalone || serverType == common.ServerTypeAdmin {
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAdmin {
 		port, err = config.ResolvePort(config.GetAdminServerConfig().HTTPPort, arguments.Port)
 		if err != nil {
 			return fmt.Errorf("resolve admin port: %w", err)
 		}
 		config.SetAdminHTTPPort(port)
 	}
-	if !standalone {
+	if serverType != common.ServerTypeStandalone {
 		arguments.Name = config.GetServerName(*arguments.Mode)
 		serverName, err = bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, port)
 		if err != nil {
@@ -299,7 +321,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	if isStandaloneDeepDocServer(serverType) {
 		return runDeepDoc(ctx, serverName, arguments)
 	}
-	runtimeNeeded := standalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion
+	runtimeNeeded := serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion
 	common.Info("Starting RAGFlow", zap.String("server", serverName))
 	// Keep the full configuration dump tied to the operator's chosen verbosity.
 	if !common.LogLevelHigherThanInfo(resolvedLogLevel) {
@@ -319,9 +341,10 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 		}
 	}()
 
-	if err = dao.InitDB(ctx, standalone || serverType == common.ServerTypeMigrate); err != nil {
+	if err = dao.InitDB(ctx, serverType == common.ServerTypeStandalone || serverType == common.ServerTypeMigrate); err != nil {
 		return fmt.Errorf("initialize database: %w", err)
 	}
+	// Migration mode exits before initializing dependencies used only by services.
 	if serverType == common.ServerTypeMigrate {
 		common.Info("Database migrations completed")
 		return nil
@@ -358,7 +381,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	if err = server.InitVariables(kvrocks.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.Error(err))
 	}
-	if standalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
 		if err = billing.Init(ctx, config.GetBillingConfig()); err != nil {
 			return fmt.Errorf("initialize billing: %w", err)
 		}
@@ -393,7 +416,22 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	}
 	// Stop and join service work before closing any process-wide resource.
 	defer cancel()
-	return runEEServices(ctx, cancel, arguments, services)
+	switch serverType {
+	case common.ServerTypeStandalone:
+		return runServices(ctx, cancel, arguments, services)
+	case common.ServerTypeAdmin:
+		return admin.Run(ctx, arguments)
+	case common.ServerTypeAPI:
+		return apipkg.Run(ctx, *arguments.Name, arguments, services)
+	case common.ServerTypeIngestion:
+		return ingestorpkg.Run(ctx, cancel, arguments, services)
+	case common.ServerTypeFileSyncer:
+		return syncerpkg.Run(ctx, cancel, arguments)
+	case common.ServerTypeChatter:
+		return chatterpkg.Run(ctx, arguments, services)
+	default:
+		return fmt.Errorf("unsupported server mode %q", *arguments.Mode)
+	}
 }
 
 func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
