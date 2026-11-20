@@ -74,7 +74,17 @@ func (e *dirtyWikiReconcileEngine) DeleteChunks(_ context.Context, condition map
 		e.t.Fatalf("unscoped delete: %s %s %v", index, dataset, condition)
 	}
 	e.writes++
-	ids := condition["id"].([]string)
+	ids, byID := condition["id"].([]string)
+	if !byID {
+		if condition["type_kwd"] != "wiki_map_active" || condition["available_int"] != 0 || !reflect.DeepEqual(condition["source_doc_ids"], []string{"document"}) {
+			e.t.Fatalf("unexpected active-state delete: %v", condition)
+		}
+		for id, row := range e.rows {
+			if row["kb_id"] == "dataset" && row["type_kwd"] == "wiki_map_active" && row["available_int"] == 0 && reflect.DeepEqual(row["source_doc_ids"], []string{"document"}) {
+				ids = append(ids, id)
+			}
+		}
+	}
 	for _, id := range ids {
 		delete(e.rows, id)
 	}
@@ -147,6 +157,67 @@ func dirtyWikiReconcileState(t *testing.T, key string, slugs ...string) kc.WikiM
 		t.Fatal(err)
 	}
 	return kc.WikiMapActiveState{Key: key, TenantID: "tenant", DatasetID: "dataset", DocumentID: "document", Payload: payload}
+}
+
+func TestDirtyWikiIncompleteProductSearchFailsClosed(t *testing.T) {
+	for _, fullReplace := range []bool{false, true} {
+		for _, limitHit := range []bool{false, true} {
+			t.Run(fmt.Sprintf("full-replace=%t/limit-hit=%t", fullReplace, limitHit), func(t *testing.T) {
+				eng, publisher, request := dirtyWikiReconcileSetup(t)
+				count := 1
+				if limitHit {
+					count = 10000
+				} else {
+					eng.total = 2
+				}
+				for i := 0; i < count; i++ {
+					id := fmt.Sprintf("old-%d", i)
+					eng.rows[id] = dirtyWikiReconcilePage(id, "entity/old")
+				}
+				eng.rows["active"] = map[string]any{"id": "active", "kb_id": "dataset", "type_kwd": "wiki_map_active", "available_int": 0, "source_doc_ids": []string{"document"}}
+				states := []kc.WikiMapActiveState{dirtyWikiReconcileState(t, "new-state", "entity/new")}
+				rows := []map[string]any{dirtyWikiReconcilePage("new", "entity/new")}
+				if fullReplace {
+					rows, states = nil, nil
+				}
+				err := replaceDirtyWikiProducts(t.Context(), request, rows, nil, nil, states, fullReplace)
+				if err == nil || !strings.Contains(err.Error(), "persisted product search is incomplete") {
+					t.Errorf("incomplete product search error = %v", err)
+				}
+				if eng.writes != 0 || publisher.calls != 0 {
+					t.Errorf("incomplete product search wrote=%d published=%d", eng.writes, publisher.calls)
+				}
+				if len(eng.rows) != count+1 || eng.rows["active"] == nil || eng.rows["old-0"] == nil {
+					t.Error("incomplete product search changed persisted products or active state")
+				}
+			})
+		}
+	}
+}
+
+func TestDirtyWikiFullReplaceClearsCompleteProductsAndActiveState(t *testing.T) {
+	for _, withProducts := range []bool{false, true} {
+		t.Run(fmt.Sprintf("with-products=%t", withProducts), func(t *testing.T) {
+			eng, publisher, request := dirtyWikiReconcileSetup(t)
+			if withProducts {
+				eng.rows["old"] = dirtyWikiReconcilePage("old", "entity/old")
+				eng.rows["section"] = dirtyWikiReconcileSection("section", "old")
+			}
+			eng.rows["active"] = map[string]any{"id": "active", "kb_id": "dataset", "type_kwd": "wiki_map_active", "available_int": 0, "source_doc_ids": []string{"document"}}
+			foreign := dirtyWikiReconcilePage("foreign", "entity/foreign")
+			foreign["doc_id"] = "another-document"
+			eng.rows["foreign"] = foreign
+			if err := replaceDirtyWikiProducts(t.Context(), request, nil, nil, nil, nil, true); err != nil {
+				t.Fatal(err)
+			}
+			if len(eng.rows) != 1 || eng.rows["foreign"] == nil {
+				t.Fatalf("full replacement left products or active state, or removed foreign row: %v", eng.rows)
+			}
+			if publisher.calls != 1 {
+				t.Fatalf("completion calls = %d, want 1", publisher.calls)
+			}
+		})
+	}
 }
 
 func TestDirtyWikiReconcilesCompleteTemplatePlans(t *testing.T) {

@@ -357,8 +357,9 @@ func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compi
 	if err != nil {
 		return err
 	}
-	// A partial result cannot establish which persisted pages are obsolete.
-	if !fullReplace && existing != nil && (existing.Total > int64(len(existing.Chunks)) || len(existing.Chunks) >= 10000) {
+	// Both incremental and full replacement need a complete persisted product
+	// search before deleting rows, clearing active state, or publishing success.
+	if existing != nil && (existing.Total > int64(len(existing.Chunks)) || len(existing.Chunks) >= 10000) {
 		return fmt.Errorf("Wiki dirty compile: persisted product search is incomplete")
 	}
 	newIDs := make(map[string]struct{}, len(rows))
