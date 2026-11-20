@@ -72,6 +72,23 @@ func (p *communityPolicy) CheckResource(ctx context.Context, ref ResourceRef, op
 	return newEvaluation(p.source).checkResource(ctx, ref, operation)
 }
 
+func (p *communityPolicy) CheckResourcePermission(ctx context.Context, ref ResourceRef, required int32) error {
+	if strings.TrimSpace(UserIDFromContext(ctx)) == "" {
+		return ErrUnauthenticated
+	}
+	if !validResourcePermission(required) {
+		return ErrInvalidPermission
+	}
+	access, err := newEvaluation(p.source).resolveAccess(ctx, ref)
+	if err != nil {
+		return err
+	}
+	if !resourcePermissionAllows(access.PermissionMask, required) {
+		return ErrPermissionDenied
+	}
+	return nil
+}
+
 func (p *communityPolicy) CheckDependency(ctx context.Context, entryRef, dependencyRef ResourceRef, entryOperation, dependencyOperation Operation) error {
 	if strings.TrimSpace(UserIDFromContext(ctx)) == "" {
 		return ErrUnauthenticated
@@ -641,6 +658,28 @@ func validOperation(operation Operation) bool {
 	default:
 		return false
 	}
+}
+
+func validResourcePermission(required int32) bool {
+	return required == ResourcePermissionRead || required == ResourcePermissionWrite || required == ResourcePermissionManage
+}
+
+func resourcePermissionAllows(granted, required int32) bool {
+	if granted&ResourcePermissionOwner != 0 {
+		return true
+	}
+	var sufficient int32
+	switch required {
+	case ResourcePermissionRead:
+		sufficient = ResourcePermissionRead | ResourcePermissionWrite | ResourcePermissionManage
+	case ResourcePermissionWrite:
+		sufficient = ResourcePermissionWrite | ResourcePermissionManage
+	case ResourcePermissionManage:
+		sufficient = ResourcePermissionManage
+	default:
+		return false
+	}
+	return granted&sufficient != 0
 }
 
 func validTenantRequirement(requirement TenantRequirement) bool {
