@@ -824,6 +824,11 @@ func (s *UserService) resolveAPITokenIdentity(ctx context.Context, apiToken *ent
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for API token")
 	}
+	// Deactivation only rotates the login token, so API and beta keys must
+	// check the account status themselves.
+	if user.IsActive != "1" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("this account has been disabled")
+	}
 	if user.AccessToken == nil || *user.AccessToken == "" {
 		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
 	}
