@@ -578,3 +578,12 @@ Tests that need real MySQL, MinIO, Elasticsearch, Infinity, LLMs, or external Sa
 > + [feat[Go]: complete the base for data Syncer - #17890](https://github.com/infiniflow/ragflow/pull/17890)
 > + [feat[Go]: monitoring NATs and refactoring concurrency logic - #18049](https://github.com/infiniflow/ragflow/pull/18049)
 > + [feat[Go]: resuming transmission from the point of interruption during data source synchronisation - #18176](https://github.com/infiniflow/ragflow/pull/18176)
+
+### Approved private data source destinations
+
+Set `RAGFLOW_DATA_SOURCE_ALLOWED_PRIVATE_NETWORKS` to a JSON array of private
+IP addresses or CIDRs on both the API and Syncer processes. This setting applies
+to connector requests and downloads that use the shared destination policy.
+With the setting omitted, existing address policy applies. With a list
+configured, every resolved address must be public or match an approved range.
+Connections use the validated address, and redirects are checked again.

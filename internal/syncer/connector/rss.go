@@ -32,8 +32,6 @@ import (
 	"strings"
 	"time"
 
-	"ragflow/internal/utility"
-
 	"github.com/zeebo/xxh3"
 )
 
@@ -171,7 +169,7 @@ func (c *RSSConnector) loadEntries(ctx context.Context) ([]rssEntry, error) {
 func fetchRSSFeedWithRetry(ctx context.Context, feedURL string) ([]byte, http.Header, string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= rssFetchRetryCount; attempt++ {
-		data, headers, finalURL, err := utility.FetchRemoteFileSafelyWithTimeout(ctx, feedURL, maxRSSFeedSize, rssFetchTimeout)
+		data, headers, finalURL, err := fetchConnectorRemoteFile(ctx, feedURL, maxRSSFeedSize, rssFetchTimeout)
 		if err == nil {
 			return data, headers, finalURL, nil
 		}
