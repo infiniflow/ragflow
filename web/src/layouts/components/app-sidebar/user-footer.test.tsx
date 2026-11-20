@@ -24,10 +24,6 @@ jest.mock('@/ee/layouts/components/header-enterprise', () => ({
   EnterpriseSidebarTenantSwitcher: () => null,
 }));
 
-jest.mock('@/hooks/logic-hooks', () => ({
-  useChangeLanguage: () => jest.fn(),
-}));
-
 jest.mock('@/hooks/use-login-request', () => ({
   useLogout: () => ({ logout: jest.fn() }),
 }));
@@ -39,17 +35,12 @@ jest.mock('@/hooks/use-user-setting-request', () => ({
   }),
   useFetchUserInfo: () => ({
     data: {
-      language: 'en',
       avatar: '',
       nickname: 'Test user',
       email: 'user@example.com',
     },
   }),
   useListTenant: () => ({ data: [] }),
-}));
-
-jest.mock('@/locales/config', () => ({
-  supportedLanguages: [],
 }));
 
 jest.mock('./use-sidebar-collapse', () => ({
@@ -85,6 +76,19 @@ describe('UserFooter primary sidebar control', () => {
     );
 
     expect(mockTogglePrimarySidebar).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits language settings from the account menu', () => {
+    renderUserFooter();
+
+    fireEvent.keyDown(screen.getByTestId('settings-entrypoint'), {
+      key: 'ArrowDown',
+    });
+
+    expect(
+      screen.getByRole('menuitem', { name: 'setting.profile' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('sidebar.language')).not.toBeInTheDocument();
   });
 
   it('does not render the collapse button when the primary sidebar is collapsed', () => {
