@@ -261,13 +261,139 @@ func TestDispatchMonkeyOCRv2PDFUsesSelectedCompositeModel(t *testing.T) {
 // the OCRFile method needed by dispatchPaddleOCRPdf.
 type paddleOCRFakeDriver struct {
 	modelModule.ModelDriver
-	pages []modelModule.OCRPage
+	pages     []modelModule.OCRPage
+	ocrConfig *modelModule.OCRConfig
 }
 
 func (d *paddleOCRFakeDriver) Name() string { return "PaddleOCR" }
 
-func (d *paddleOCRFakeDriver) OCRFile(_ context.Context, _ *string, _ []byte, _ *string, _ *modelModule.APIConfig, _ *modelModule.OCRConfig, _ *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
+func (d *paddleOCRFakeDriver) OCRFile(_ context.Context, _ *string, _ []byte, _ *string, _ *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig, _ *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
+	d.ocrConfig = ocrConfig
 	return &modelModule.OCRFileResponse{Pages: d.pages}, nil
+}
+
+func TestPaddleOCRRequestTimeout(t *testing.T) {
+	t.Setenv(common.EnvPaddleOCRTimeout, "")
+
+	// 1. Unset: zero keeps the driver default
+	if got := paddleOCRRequestTimeout(nil, nil); got != 0 {
+		t.Fatalf("default timeout=%v, want 0", got)
+	}
+
+	// 2. Setup paddleocr_timeout / paddleocr_timeout_seconds (int and float seconds)
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": 3600}, nil); got != time.Hour {
+		t.Fatalf("setup paddleocr_timeout=%v, want 1h", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout_seconds": 2400}, nil); got != 2400*time.Second {
+		t.Fatalf("setup paddleocr_timeout_seconds=%v, want 2400s", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout_seconds": 1800.0}, nil); got != 1800*time.Second {
+		t.Fatalf("setup paddleocr_timeout_seconds float=%v, want 1800s", got)
+	}
+
+	// 3. Setup duration strings
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": "45m"}, nil); got != 45*time.Minute {
+		t.Fatalf("setup paddleocr_timeout 45m=%v, want 45m", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": " 2h "}, nil); got != 2*time.Hour {
+		t.Fatalf("setup paddleocr_timeout 2h=%v, want 2h", got)
+	}
+
+	// 4. APIConfig JSON
+	apiKey := `{"paddleocr_timeout":"2400"}`
+	if got := paddleOCRRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKey}); got != 2400*time.Second {
+		t.Fatalf("API config timeout=%v, want 2400s", got)
+	}
+	apiKeyEnv := `{"api_key":{"PADDLEOCR_TIMEOUT":"90m"}}`
+	if got := paddleOCRRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKeyEnv}); got != 90*time.Minute {
+		t.Fatalf("API config env key timeout=%v, want 90m", got)
+	}
+	plainToken := "plain-token"
+	if got := paddleOCRRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &plainToken}); got != 0 {
+		t.Fatalf("plain api_key timeout=%v, want 0", got)
+	}
+
+	// 5. Environment variable
+	t.Setenv(common.EnvPaddleOCRTimeout, "7200")
+	if got := paddleOCRRequestTimeout(nil, nil); got != 7200*time.Second {
+		t.Fatalf("env PADDLEOCR_TIMEOUT=%v, want 7200s", got)
+	}
+	t.Setenv(common.EnvPaddleOCRTimeout, "1h30m")
+	if got := paddleOCRRequestTimeout(nil, nil); got != 90*time.Minute {
+		t.Fatalf("env PADDLEOCR_TIMEOUT duration=%v, want 1h30m", got)
+	}
+
+	// 6. Precedence: Setup > APIConfig > Env
+	t.Setenv(common.EnvPaddleOCRTimeout, "9999")
+	apiKeyPrecedence := `{"paddleocr_timeout":"600"}`
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": 300}, &modelModule.APIConfig{ApiKey: &apiKeyPrecedence}); got != 300*time.Second {
+		t.Fatalf("precedence setup over apiConfig=%v, want 300s", got)
+	}
+	if got := paddleOCRRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKeyPrecedence}); got != 600*time.Second {
+		t.Fatalf("precedence apiConfig over env=%v, want 600s", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": 1800, "paddleocr_timeout_seconds": 60}, nil); got != 1800*time.Second {
+		t.Fatalf("paddleocr_timeout precedence=%v, want 1800s", got)
+	}
+
+	// 7. Invalid values keep the driver default. A present setup key is authoritative:
+	// it does not fall through to apiConfig or the PADDLEOCR_TIMEOUT env.
+	for _, invalid := range []any{-10, 0, "invalid"} {
+		if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": invalid}, &modelModule.APIConfig{ApiKey: &apiKeyPrecedence}); got != 0 {
+			t.Fatalf("invalid setup %v timeout=%v, want 0", invalid, got)
+		}
+	}
+	t.Setenv(common.EnvPaddleOCRTimeout, "invalid")
+	if got := paddleOCRRequestTimeout(nil, nil); got != 0 {
+		t.Fatalf("invalid env timeout=%v, want 0", got)
+	}
+
+	// 8. Duration clamping [1s, 24h]
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": "500ms"}, nil); got != time.Second {
+		t.Fatalf("sub-second timeout clamped=%v, want 1s", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": "48h"}, nil); got != 24*time.Hour {
+		t.Fatalf("oversized timeout clamped=%v, want 24h", got)
+	}
+	if got := paddleOCRRequestTimeout(schema.ParserSetup{"paddleocr_timeout": 10000000000}, nil); got != 24*time.Hour {
+		t.Fatalf("huge int seconds clamped=%v, want 24h", got)
+	}
+	t.Setenv(common.EnvPaddleOCRTimeout, "10000000000")
+	if got := paddleOCRRequestTimeout(nil, nil); got != 24*time.Hour {
+		t.Fatalf("huge env seconds clamped=%v, want 24h", got)
+	}
+}
+
+func TestDispatchPaddleOCRPDFPassesResolvedTimeout(t *testing.T) {
+	t.Setenv(common.EnvPaddleOCRTimeout, "")
+	driver := &paddleOCRFakeDriver{pages: []modelModule.OCRPage{{Index: 0, Blocks: []modelModule.OCRBlock{{Text: "Body"}}}}}
+	original := resolvePaddleOCRModelForDispatch
+	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = original })
+	resolvePaddleOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return driver, "ocr-model", &modelModule.APIConfig{}, nil
+	}
+
+	if _, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", nil, "model"); err != nil {
+		t.Fatal(err)
+	}
+	if driver.ocrConfig == nil || driver.ocrConfig.Timeout != 0 {
+		t.Fatalf("unconfigured OCR config=%+v, want zero timeout", driver.ocrConfig)
+	}
+
+	t.Setenv(common.EnvPaddleOCRTimeout, "1h")
+	if _, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", nil, "model"); err != nil {
+		t.Fatal(err)
+	}
+	if driver.ocrConfig == nil || driver.ocrConfig.Timeout != time.Hour {
+		t.Fatalf("env OCR config=%+v, want 1h timeout", driver.ocrConfig)
+	}
+
+	if _, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", schema.ParserSetup{"paddleocr_timeout": "45m"}, "model"); err != nil {
+		t.Fatal(err)
+	}
+	if driver.ocrConfig == nil || driver.ocrConfig.Timeout != 45*time.Minute {
+		t.Fatalf("setup OCR config=%+v, want 45m timeout", driver.ocrConfig)
+	}
 }
 
 func TestDispatchPaddleOCRPDFUsesStructuredOutput(t *testing.T) {

@@ -89,8 +89,9 @@ func getMaxConfiguredBytes(envName, fallbackEnvName string, defaultBytes int64) 
 }
 
 var (
-	ssrfHTTPClient       = sync.OnceValue(newSSRFHTTPClient)
-	schemeSafeHTTPClient = sync.OnceValue(newSchemeSafeHTTPClient)
+	ssrfHTTPClient               = sync.OnceValue(newSSRFHTTPClient)
+	schemeSafeHTTPClient         = sync.OnceValue(newSchemeSafeHTTPClient)
+	schemeSafeLongCallHTTPClient = sync.OnceValue(newSchemeSafeLongCallHTTPClient)
 )
 
 // llmHTTPResponseHeaderTimeout lets a deployment shorten the wait for response
@@ -129,6 +130,22 @@ func GetSchemeSafeHTTPClient() *http.Client {
 }
 
 func newSchemeSafeHTTPClient() *http.Client {
+	return buildSchemeSafeHTTPClient(llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault))
+}
+
+// GetSchemeSafeLongCallHTTPClient returns the scheme-safe client for endpoints
+// that answer only when the work is done, such as a synchronous OCR parse. It
+// sets no response-header timeout and ignores LLM_HTTP_RESPONSE_HEADER_TIMEOUT,
+// so every request must carry a context deadline.
+func GetSchemeSafeLongCallHTTPClient() *http.Client {
+	return schemeSafeLongCallHTTPClient()
+}
+
+func newSchemeSafeLongCallHTTPClient() *http.Client {
+	return buildSchemeSafeHTTPClient(0)
+}
+
+func buildSchemeSafeHTTPClient(responseHeaderTimeout time.Duration) *http.Client {
 	var t *http.Transport
 	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
 		t = dt.Clone()
@@ -139,7 +156,7 @@ func newSchemeSafeHTTPClient() *http.Client {
 	t.MaxIdleConnsPerHost = 500
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
+	t.ResponseHeaderTimeout = responseHeaderTimeout
 	t.TLSHandshakeTimeout = 30 * time.Second
 
 	var rt http.RoundTripper = t

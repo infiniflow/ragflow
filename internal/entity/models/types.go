@@ -366,6 +366,9 @@ type OCRConfig struct {
 	// parser setup's "pages" shape. Empty means the whole document. Drivers
 	// whose backend cannot select pages ignore it.
 	Pages [][]int
+	// Timeout bounds the whole OCR call. Zero keeps the driver default.
+	// Drivers without a configurable deadline ignore it.
+	Timeout time.Duration
 }
 
 type ParseFileConfig struct {
