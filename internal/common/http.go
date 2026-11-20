@@ -735,3 +735,20 @@ func ParseRequestIntPositive(c *gin.Context, parameter, parameterName string, de
 	}
 	return parameterInt, nil
 }
+
+type ginContextKey struct{}
+
+// WithGinContext stores the gin.Context into ctx.
+func WithGinContext(ctx context.Context, c *gin.Context) context.Context {
+	return context.WithValue(ctx, ginContextKey{}, c)
+}
+
+// GinContext extracts *gin.Context from ctx if present.
+func GinContext(ctx context.Context) *gin.Context {
+	if ctx == nil {
+		return nil
+	}
+	c, _ := ctx.Value(ginContextKey{}).(*gin.Context)
+	return c
+}
+

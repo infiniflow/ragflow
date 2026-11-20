@@ -47,6 +47,14 @@ import (
 
 var IMG_BASE64_PREFIX = "data:image/png;base64,"
 
+// DocumentServiceIface defines the DocumentService methods used by DocumentHandler.
+type DocumentServiceIface = documentServiceIface
+
+// NewDocumentHandlerForTest creates a DocumentHandler for testing with a mock service.
+func NewDocumentHandlerForTest(svc DocumentServiceIface) *DocumentHandler {
+	return &DocumentHandler{documentService: svc}
+}
+
 // documentServiceIface defines the DocumentService methods used by DocumentHandler.
 type documentServiceIface interface {
 	GetDocumentByID(ctx context.Context, id string) (*document.DocumentResponse, error)
@@ -114,38 +122,38 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *da
 	}
 }
 
-// GetDocumentByID get document by ID
-// @Summary Get Document Info
-// @Description Get document details by ID
-// @Tags documents
-// @Param id path int true "document ID"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/documents/{id} [get]
-func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
+// GetDocumentReq defines path parameters for getting a document by ID.
+type GetDocumentReq struct {
+	ID string `uri:"id" doc:"Document ID"`
+}
 
-	id := c.Param("id")
-	if id == "" {
-		common.RespondError(c, common.CodeBadRequest, "invalid document id")
-		return
+// GetDocumentByID handles GET /api/v1/documents/:id as a typed route.
+func (h *DocumentHandler) GetDocumentByID(ctx context.Context, req *GetDocumentReq) (*document.DocumentResponse, error) {
+	if req.ID == "" {
+		return nil, common.NewCodedError(common.CodeBadRequest, "invalid document id")
 	}
 
-	ctx := c.Request.Context()
-	doc, err := h.documentService.GetDocumentByID(ctx, id)
+	doc, err := h.documentService.GetDocumentByID(ctx, req.ID)
 	if err != nil {
-		if dao.IsNotFoundErr(err) {
-			common.RespondError(c, common.CodeNotFound, "document not found")
-		} else {
-			jsonInternalError(c, err)
+		if dao.IsNotFoundErr(err) || (err != nil && err.Error() == "record not found") {
+			return nil, common.NewCodedError(common.CodeNotFound, "document not found")
 		}
-		return
+		if c := common.GinContext(ctx); c != nil {
+			common.Warn("handler internal error",
+				zap.Error(err),
+				zap.String("method", c.Request.Method),
+				zap.String("path", c.Request.URL.Path),
+			)
+		}
+		return nil, common.NewCodedError(common.CodeServerError, common.CodeServerError.Message())
 	}
 
 	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead); err != nil {
-		respondPermissionError(c, err, false)
-		return
+		code, msg := permissionErrorResult(err, false)
+		return nil, common.NewCodedError(code, msg)
 	}
 
-	common.RespondSuccess(c, doc, "")
+	return doc, nil
 }
 
 // GetThumbnail Get thumbnails for documents.
