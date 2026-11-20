@@ -355,7 +355,9 @@ func defaultSetups() map[string]schema.ParserSetup {
 		"video": {
 			"prompt": "",
 		},
-		"epub": {},
+		"epub": {
+			"remove_toc": false,
+		},
 		"json": {},
 	}
 	return s
