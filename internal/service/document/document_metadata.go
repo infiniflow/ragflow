@@ -726,8 +726,9 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 	// Resolve which document IDs to target.
 	targetDocIDs := make(map[string]struct{})
 
-	if len(selector.DocumentIDs) > 0 {
-		// Validate that supplied IDs actually belong to this dataset.
+	selectAll := selector.DocumentIDs == nil && selector.MetadataCondition == nil
+	if selectAll || len(selector.DocumentIDs) > 0 {
+		// List dataset documents and validate that supplied IDs belong to it.
 		allRows, err := s.documentDAO.GetAllDocIDsByKBIDs(ctx, dao.DB, []string{datasetID})
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to list dataset documents: %w", err)
@@ -735,6 +736,9 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 		kbDocIDSet := make(map[string]struct{}, len(allRows))
 		for _, row := range allRows {
 			kbDocIDSet[row["id"]] = struct{}{}
+			if selectAll {
+				targetDocIDs[row["id"]] = struct{}{}
+			}
 		}
 		var invalidIDs []string
 		for _, id := range selector.DocumentIDs {
@@ -770,7 +774,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 			filteredSet[id] = struct{}{}
 		}
 
-		if len(targetDocIDs) > 0 {
+		if selector.DocumentIDs != nil {
 			// Intersect with the document_ids restriction.
 			for id := range targetDocIDs {
 				if _, ok := filteredSet[id]; !ok {
