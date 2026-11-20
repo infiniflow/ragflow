@@ -1104,6 +1104,60 @@ func TestUpdateDatasetKeepsRepeatedPagerankWithoutARetry(t *testing.T) {
 	}
 }
 
+// A retry of a failed connector-only save can also add another connector: the
+// new link schedules a task of its own while the row the failed attempt
+// committed is still pending. Both publish, so the propagation is repeated too.
+func TestUpdateDatasetRepairsPagerankWhenTheRetryAddsAConnector(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateConnector(t, "connector-1", "tenant-1")
+	insertDatasetUpdateConnector(t, "connector-2", "tenant-1")
+
+	eng := &pagerankRecordingEngine{
+		recordingChunkStoreEngine: recordingChunkStoreEngine{storeMissing: true},
+		updateChunksErr:           errors.New("pagerank write failed"),
+	}
+	publisher := &recordingSyncTaskPublisher{}
+	previous := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(publisher)
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previous) })
+	var publishedAtWrite []int
+	eng.onUpdate = func() { publishedAtWrite = append(publishedAtWrite, len(publisher.published)) }
+
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	pagerank := int64(30)
+	first := service.UpdateDatasetRequest{
+		Connectors: &[]service.DatasetConnectorRequest{{ID: "connector-1"}},
+		Pagerank:   &pagerank,
+	}
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", first); err == nil || code != common.CodeServerError {
+		t.Fatalf("first UpdateDataset = (%d, %v), want a server error", code, err)
+	}
+
+	eng.updateChunksErr = nil
+	retry := service.UpdateDatasetRequest{
+		Connectors: &[]service.DatasetConnectorRequest{{ID: "connector-1"}, {ID: "connector-2"}},
+		Pagerank:   &pagerank,
+	}
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", retry); err != nil || code != common.CodeSuccess {
+		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.updateChunksCalls != 2 {
+		t.Fatalf("propagation writes = %d, want the retry to repeat the failed write", eng.updateChunksCalls)
+	}
+	if len(publishedAtWrite) != 2 || publishedAtWrite[1] != 0 {
+		t.Fatalf("tasks published at each write = %v, want the retry's propagation to run before any publish", publishedAtWrite)
+	}
+	if len(publisher.published) != 2 {
+		t.Fatalf("published tasks = %v, want the scheduled and the recovered task", publisher.published)
+	}
+}
+
 // pagerankRecordingEngine reports PageRank support and counts the propagation
 // writes the update schedules.
 type pagerankRecordingEngine struct {
