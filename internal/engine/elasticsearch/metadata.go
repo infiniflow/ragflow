@@ -30,7 +30,6 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/metafilter"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
@@ -621,14 +620,24 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 		queryBody["query"] = map[string]interface{}{"match_all": map[string]interface{}{}}
 	}
 
-	// Add sorting if order_by specified. parseOrderByExpr keeps an `id`
-	// entry (the metadata mapping declares `id` as keyword), which is the
-	// cursor the search_after walk below needs; esoscommon.ParseOrderByExpr
-	// drops it.
+	// Add sorting if order_by specified
 	hasExplicitSort := false
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
+		// The shared esoscommon parser drops `id` by design, which silently
+		// removed the only deterministic sort key metadata pagination had —
+		// this path pages with from/size, so an unsorted request can repeat
+		// rows across pages. Use the package parser, which emits `id` like
+		// any other keyword field (#19649). The `id` entry is also the cursor
+		// the search_after walk below needs.
 		sort := parseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
+			// SearchMetadata always targets one index, so — like Search — it
+			// can resolve the sortable form of `id` for its target: indices
+			// created before the keyword dynamic template covered `id` map it
+			// as `text` with an `id.keyword` sub-field, where a direct `id`
+			// sort fails with a fielddata error. Rewrite those entries to
+			// `id.keyword`.
+			sort = rewriteIDSortEntries(sort, e.idSortFieldFor(ctx, indexName))
 			queryBody["sort"] = sort
 			hasExplicitSort = true
 		}
