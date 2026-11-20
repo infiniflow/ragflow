@@ -1,0 +1,114 @@
+{
+  "name": "LLMTR",
+  "url": {
+    "default": "https://llmtr.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "llmtr",
+  "models": [
+    {
+      "name": "llmtr/qwen3-8-27b",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "llmtr/qwen3-6-35b",
+      "context_length": 262144,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "llmtr/gemma-4",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "llmtr/muse-glimmer-30b-tr",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "llmtr/qwen3-5-4b",
+      "context_length": 131072,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "llmtr/trendyol-asure-12b",
+      "context_length": 40960,
+      "max_output": 40960,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "anthropic/claude-sonnet-5",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "context_length": 1000000,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.8-max",
+      "context_length": 1000000,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

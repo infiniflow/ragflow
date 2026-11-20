@@ -192,6 +192,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **Hostinger Router** | OpenAI-compatible router with EU/US regional model variants |
 | **Huawei Cloud** | Hosts GLM, Kimi, etc. |
 | **JieKouAI** | Multi-provider aggregator |
+| **LLMTR** | OpenAI-compatible gateway with Turkey-hosted models (`llmtr/...`) plus models from Anthropic, Google, OpenAI, DeepSeek, Qwen and others |
 | **LongCat** | Meituan's model platform |
 | **Morse** | Private, OpenAI-compatible inference: 80+ open-weight models at a privacy tier chosen per request (Private, TEE or E2EE), from an open-source, attestable enclave |
 | **N1N** | Multi-provider aggregator |
