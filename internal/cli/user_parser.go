@@ -3838,9 +3838,11 @@ func (p *Parser) parseAPICheck() (*Command, error) {
 
 	switch p.curToken.Type {
 	case TokenInstance:
-		return p.parseCheckInstanceCommand()
+		return p.parseAPICheckInstance()
 	case TokenProvider:
-		return p.parseCheckProviderByKeyCommand()
+		return p.parseAPICheckProviderByKey()
+	case TokenLicense:
+		return p.parseAPICheckLicense()
 	default:
 		return nil, fmt.Errorf("expected INSTANCE or PROVIDER after CHECK")
 	}
@@ -3913,7 +3915,7 @@ func (p *Parser) parseUserStopIngestion() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseCheckInstanceCommand() (*Command, error) {
+func (p *Parser) parseAPICheckInstance() (*Command, error) {
 	if p.curToken.Type != TokenInstance {
 		return nil, fmt.Errorf("expected INSTANCE after CHECK")
 	}
@@ -3947,7 +3949,7 @@ func (p *Parser) parseCheckInstanceCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseCheckProviderByKeyCommand() (*Command, error) {
+func (p *Parser) parseAPICheckProviderByKey() (*Command, error) {
 	if p.curToken.Type != TokenProvider {
 		return nil, fmt.Errorf("expected PROVIDER after CHECK")
 	}
@@ -4007,6 +4009,17 @@ func (p *Parser) parseCheckProviderByKeyCommand() (*Command, error) {
 	}
 
 	return cmd, nil
+}
+
+func (p *Parser) parseAPICheckLicense() (*Command, error) {
+	p.nextToken() // consume LICENSE
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return NewCommand("api_check_license"), nil
 }
 
 func (p *Parser) parseAPISave() (*Command, error) {
