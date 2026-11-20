@@ -79,13 +79,13 @@ function SearchSetting({
   const { llm_setting } = search_config || {};
   const { t } = useTranslation();
   const { formSchema: searchSettingSchema, modelsFetched } =
-    useSearchSettingFormSchema(data?.tenant_id, data?.user_id);
+    useSearchSettingFormSchema(data?.tenant_id, data?.user_id ?? null);
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     searchSettingSchema,
     search_config?.kb_ids,
     {
       fieldName: 'search_config.kb_ids',
-      accessUserId: data?.user_id,
+      accessUserId: data?.user_id ?? null,
     },
   );
   const formMethods = useForm<SearchSettingFormData>({
@@ -243,7 +243,9 @@ function SearchSetting({
         className="overflow-y-auto scrollbar-auto p-1 text-text-secondary"
       >
         <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
-          <ModelResourceAccessUserIdContext.Provider value={data?.user_id}>
+          <ModelResourceAccessUserIdContext.Provider
+            value={data?.user_id ?? null}
+          >
             <Form {...formMethods}>
               <form
                 onSubmit={formMethods.handleSubmit(

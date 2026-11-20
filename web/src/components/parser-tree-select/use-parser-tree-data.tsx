@@ -21,12 +21,18 @@ const buildPipelineNodeId = (pipelineId: string) =>
   buildParserOptionValue(ParserOptionKind.Pipeline, pipelineId);
 
 // Combines the cached pipeline/version catalog with builtin parser leaves.
-export function useParserTreeData({ value }: { value?: string }) {
+export function useParserTreeData({
+  value,
+  accessUserId,
+}: {
+  value?: string;
+  accessUserId?: string;
+}) {
   const { t } = useTranslation();
   const { options: builtinOptions, loading: builtinLoading } =
     useFetchBuiltinPipelines();
   const { data: pipelines = [], loading: pipelineLoading } =
-    useFetchPipelineVersionCatalog();
+    useFetchPipelineVersionCatalog(true, accessUserId);
 
   const selectedPipelineId = useMemo(() => {
     const parsed = parseParserOptionValue(value);

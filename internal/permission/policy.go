@@ -173,34 +173,14 @@ func (p *communityPolicy) QueryScope(ctx context.Context, query ScopeQuery) (Que
 	if query.Kind == ResourceKindModelProvider || query.Kind == ResourceKindModelInstance || query.Kind == ResourceKindModel {
 		return p.modelQueryScope(ctx, query)
 	}
-	if query.Kind == ResourceKindDocument && query.Operation == OperationRead &&
-		query.Parent.Kind == ResourceKindDataset && strings.TrimSpace(query.Parent.ID) != "" && query.Entry == nil {
-		source, ok := p.source.(*databaseSource)
-		if !ok || source.db == nil {
-			return QueryScope{}, false, nil
-		}
-		if err := p.CheckResource(ctx, query.Parent, OperationRead); err != nil {
-			return QueryScope{}, true, err
-		}
-		parentID := query.Parent.ID
-		userID := strings.TrimSpace(UserIDFromContext(ctx))
-		return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
-			db := source.db.WithContext(ctx)
-			teamMember := db.Model(&entity.Knowledgebase{}).
-				Select("1").
-				Joins("JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id").
-				Where("knowledgebase.id = document.kb_id AND knowledgebase.permission = ?", string(entity.TenantPermissionTeam)).
-				Where("user_tenant.user_id = ? AND user_tenant.role = ? AND user_tenant.status = ?", userID, string(RoleNormal), string(entity.StatusValid))
-			return query.
-				Where("document.kb_id = ?", parentID).
-				Where("(COALESCE(NULLIF(TRIM(document.user_id), ''), NULLIF(TRIM(document.created_by), '')) = ? OR EXISTS (?))", userID, teamMember)
-		}}, true, nil
-	}
 	if query.Kind == ResourceKindMCPServer && query.Operation == OperationRead && query.Parent.ID == "" && query.Parent.Kind == "" && query.Entry == nil {
 		return p.mcpServerReadQueryScope(ctx, query.TenantID)
 	}
-	if query.Kind == ResourceKindFile || query.Kind == ResourceKindFolder {
-		return p.fileReadQueryScope(ctx, query)
+	if query.Kind == ResourceKindDocument && query.Parent.Kind == ResourceKindDataset && strings.TrimSpace(query.Parent.ID) != "" && query.Entry == nil {
+		if err := p.CheckResource(ctx, query.Parent, OperationRead); err != nil {
+			return QueryScope{}, true, err
+		}
+		return QueryScope{}, false, nil
 	}
 	if query.Kind != ResourceKindDataset || query.Operation != OperationRead || query.Parent.ID != "" || query.Parent.Kind != "" || query.Entry != nil {
 		return QueryScope{}, false, nil
@@ -210,33 +190,19 @@ func (p *communityPolicy) QueryScope(ctx context.Context, query ScopeQuery) (Que
 		return QueryScope{}, true, ErrUnauthenticated
 	}
 	source, ok := p.source.(*databaseSource)
-	if !ok || source.db == nil {
+	if !ok || source.db == nil || tenantRoleMembershipEnabled(source.db) {
 		return QueryScope{}, false, nil
 	}
-	if err := source.validateDatasetTenants(ctx, userID); err != nil {
-		return QueryScope{}, true, err
-	}
-	// Enterprise tenant roles are stored as numeric IDs. The generic SQL fast
-	// path cannot resolve those IDs safely, so let the normal resource checks
-	// evaluate candidate IDs through databaseSource.GetMembership instead.
-	if tenantRoleMembershipEnabled(source.db) {
-		return QueryScope{}, false, nil
-	}
-
 	return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
-		db := source.db.WithContext(ctx)
-		activeOwner := db.Model(&entity.UserTenant{}).
+		member := source.db.WithContext(ctx).Model(&entity.UserTenant{}).
 			Select("1").
-			Where("user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.role = ? AND user_tenant.status = ?", string(RoleOwner), string(entity.StatusValid))
-		callerIsMember := db.Model(&entity.UserTenant{}).
-			Select("1").
-			Where("user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.user_id = ? AND user_tenant.role = ? AND user_tenant.status = ?", userID, string(RoleNormal), string(entity.StatusValid))
-		accessibleDatasets := db.Model(&entity.Knowledgebase{}).
-			Select("knowledgebase.id").
+			Where("user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.user_id = ? AND user_tenant.role = ? AND user_tenant.status = ?",
+				userID, string(RoleNormal), string(entity.StatusValid))
+		owner := "(TRIM(knowledgebase.user_id) = ? OR (NULLIF(TRIM(knowledgebase.user_id), '') IS NULL AND TRIM(knowledgebase.created_by) = ?))"
+		return query.
 			Where("knowledgebase.status = ?", string(entity.StatusValid)).
-			Where("EXISTS (?)", activeOwner).
-			Where("(COALESCE(NULLIF(TRIM(knowledgebase.user_id), ''), NULLIF(TRIM(knowledgebase.created_by), '')) = ? OR (knowledgebase.permission = ? AND EXISTS (?)))", userID, string(entity.TenantPermissionTeam), callerIsMember)
-		return query.Where("knowledgebase.id IN (?)", accessibleDatasets)
+			Where("("+owner+" OR (knowledgebase.permission = ? AND EXISTS (?)))",
+				userID, userID, string(entity.TenantPermissionTeam), member)
 	}}, true, nil
 }
 
@@ -351,83 +317,6 @@ func (p *communityPolicy) mcpServerReadQueryScope(ctx context.Context, targetTen
 				userID, string(RoleOwner), string(entity.StatusValid))
 		return query.Where("mcp_server.tenant_id = ?", tenantID).Where("EXISTS (?)", activeOwner)
 	}}, true, nil
-}
-
-func (p *communityPolicy) fileReadQueryScope(ctx context.Context, query ScopeQuery) (QueryScope, bool, error) {
-	if query.Operation != OperationRead || query.Parent.Kind != ResourceKindFolder || strings.TrimSpace(query.Parent.ID) == "" || query.Entry != nil {
-		return QueryScope{}, false, nil
-	}
-	userID := strings.TrimSpace(UserIDFromContext(ctx))
-	if userID == "" {
-		return QueryScope{}, true, ErrUnauthenticated
-	}
-	source, ok := p.source.(*databaseSource)
-	if !ok || source.db == nil {
-		return QueryScope{}, false, nil
-	}
-	// Tenant role IDs are resolved by the enterprise policy. Keep its existing
-	// policy-driven scope until that policy supplies its own SQL predicate.
-	if tenantRoleMembershipEnabled(source.db) {
-		return QueryScope{}, false, nil
-	}
-
-	parentID := query.Parent.ID
-	return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
-		db := source.db.WithContext(ctx)
-		parent := db.Model(&entity.File{}).
-			Select("tenant_id").
-			Where("id = ? AND type = ?", parentID, "folder")
-
-		fileOwner := db.Model(&entity.UserTenant{}).
-			Select("1").
-			Where("user_tenant.tenant_id = file.tenant_id AND user_tenant.user_id = ? AND user_tenant.role = ? AND user_tenant.status = ?", userID, string(RoleOwner), string(entity.StatusValid))
-		anyFileOwner := db.Model(&entity.UserTenant{}).
-			Select("1").
-			Where("user_tenant.tenant_id = file.tenant_id AND user_tenant.role = ? AND user_tenant.status = ?", string(RoleOwner), string(entity.StatusValid))
-
-		rootMember := db.Model(&entity.UserTenant{}).
-			Select("1").
-			Where("user_tenant.tenant_id = file.tenant_id AND user_tenant.user_id = ? AND user_tenant.role IN ? AND user_tenant.status = ?", userID, []string{string(RoleOwner), string(RoleAdmin), string(RoleNormal)}, string(entity.StatusValid))
-		datasetOwner := db.Model(&entity.Knowledgebase{}).
-			Select("1").
-			Where("knowledgebase.id = document.kb_id").
-			Where("COALESCE(NULLIF(TRIM(knowledgebase.user_id), ''), NULLIF(TRIM(knowledgebase.created_by), '')) = ?", userID)
-		datasetMember := db.Model(&entity.UserTenant{}).
-			Select("1").
-			Joins("JOIN knowledgebase ON knowledgebase.tenant_id = user_tenant.tenant_id").
-			Where("knowledgebase.id = document.kb_id AND knowledgebase.permission = ?", string(entity.TenantPermissionTeam)).
-			Where("user_tenant.user_id = ? AND user_tenant.role = ? AND user_tenant.status = ?", userID, string(RoleNormal), string(entity.StatusValid))
-		activeDatasetOwner := db.Model(&entity.UserTenant{}).
-			Select("1").
-			Where("user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.role = ? AND user_tenant.status = ?", string(RoleOwner), string(entity.StatusValid))
-		sharedDataset := db.Table("file2document AS f2d").
-			Select("1").
-			Joins("JOIN document ON document.id = f2d.document_id").
-			Joins("JOIN knowledgebase ON knowledgebase.id = document.kb_id").
-			Where("f2d.file_id = file.id AND knowledgebase.status = ?", string(entity.StatusValid)).
-			Where("EXISTS (?)", activeDatasetOwner).
-			Where("(EXISTS (?) OR (knowledgebase.permission = ? AND EXISTS (?)))", datasetOwner, string(entity.TenantPermissionTeam), datasetMember)
-
-		return query.
-			Where("file.tenant_id = (?)", parent).
-			Where("(file.parent_id = file.id AND ((TRIM(file.created_by) = ?) OR (NULLIF(TRIM(file.created_by), '') IS NULL AND (EXISTS (?) OR (file.tenant_id = ? AND NOT EXISTS (?)))) OR EXISTS (?))) OR (file.parent_id <> file.id AND ((TRIM(file.created_by) = ?) OR (NULLIF(TRIM(file.created_by), '') IS NULL AND (EXISTS (?) OR (file.tenant_id = ? AND NOT EXISTS (?)))) OR EXISTS (?)))",
-				userID, fileOwner, userID, anyFileOwner, rootMember,
-				userID, fileOwner, userID, anyFileOwner, sharedDataset)
-	}}, true, nil
-}
-
-func (s *databaseSource) validateDatasetTenants(ctx context.Context, userID string) error {
-	var tenantIDs []string
-	err := s.db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-		Joins("JOIN user_tenant member ON member.tenant_id = knowledgebase.tenant_id").
-		Where("knowledgebase.status = ? AND member.user_id = ? AND member.status = ?", string(entity.StatusValid), userID, string(entity.StatusValid)).
-		Distinct("knowledgebase.tenant_id").
-		Pluck("knowledgebase.tenant_id", &tenantIDs).Error
-	if err != nil {
-		return err
-	}
-	_, err = s.loadTenantOwnerIDs(ctx, tenantIDs)
-	return err
 }
 
 func (p *communityPolicy) FilterResources(ctx context.Context, refs []ResourceRef, operation Operation) ([]ResourceRef, error) {
