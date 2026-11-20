@@ -1006,6 +1006,14 @@ func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []Metadat
 
 		if curList, ok := toMetadataInterfaceSlice(current); ok {
 			if !matchProvided {
+				switch strings.ToLower(strings.TrimSpace(upd.ValueType)) {
+				case "string", "number", "time":
+					meta[key] = normalizedValue
+					changed = true
+					continue
+				}
+			}
+			if !matchProvided {
 				newList := append([]interface{}{}, curList...)
 				if appendList, ok := toMetadataInterfaceSlice(normalizedValue); ok {
 					newList = append(newList, appendList...)
