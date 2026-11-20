@@ -5,6 +5,7 @@ import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
 import { useChatSidebarCollapse } from '@/hooks/use-chat-sidebar-collapse';
 import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
 import { useDatasetSidebarCollapse } from '@/hooks/use-dataset-sidebar-collapse';
+import { useSearchSidebarCollapse } from '@/hooks/use-search-sidebar-collapse';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { LucidePanelLeftOpen } from 'lucide-react';
@@ -31,6 +32,10 @@ function AppSidebarContent() {
     toggleCollapsed: toggleChatSidebar,
   } = useChatSidebarCollapse();
   const {
+    collapsed: searchSidebarCollapsed,
+    toggleCollapsed: toggleSearchSidebar,
+  } = useSearchSidebarCollapse();
+  const {
     collapsed: compilationTemplateSidebarCollapsed,
     toggleCollapsed: toggleCompilationTemplateSidebar,
   } = useCompilationTemplateSidebarCollapse();
@@ -51,6 +56,11 @@ function AppSidebarContent() {
       route: Routes.Chat,
       collapsed: chatSidebarCollapsed,
       onExpand: toggleChatSidebar,
+    },
+    {
+      route: Routes.Search,
+      collapsed: searchSidebarCollapsed,
+      onExpand: toggleSearchSidebar,
     },
     {
       route: Routes.CompilationTemplatesEditNext,
