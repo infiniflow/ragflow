@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -2092,6 +2093,59 @@ func TestChatCompletionsInterruptedStreamKeepsStreamedAnswer(t *testing.T) {
 			}
 			if got[2]["id"] != got[1]["id"] {
 				t.Fatalf("answer id %v must pair with question id %v", got[2]["id"], got[1]["id"])
+			}
+		})
+	}
+}
+
+func TestChatCompletionsInterruptedStreamDropsRejectedDelta(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		legacy   bool
+		accepted []AsyncChatResult
+		want     string
+	}{
+		{name: "first send rejected"},
+		{name: "legacy first send rejected", legacy: true},
+		{name: "later send rejected", accepted: []AsyncChatResult{{Answer: "partial "}}, want: "partial "},
+		{name: "legacy later send rejected", legacy: true, accepted: []AsyncChatResult{{Answer: "partial "}}, want: "partial "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			results := make(chan AsyncChatResult)
+			store := newFakeSessionStore()
+			svc := newInterruptedTurnService(store, &fakePipeline{resultChan: results}, `[{"role":"assistant","content":"Welcome!"}]`)
+
+			ctx, cancel := context.WithCancel(permission.WithIdentity(t.Context(), "user-1", "user-1"))
+			defer cancel()
+			// Unbuffered and no longer read after the accepted deltas, so the
+			// next send can only end through cancellation.
+			frames := make(chan string)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_, _ = svc.ChatCompletions(ctx, "chat-1", "session-1", nil, "question", nil, "", nil, nil, tc.legacy, true, frames)
+			}()
+			for _, delta := range tc.accepted {
+				results <- delta
+				<-frames
+			}
+			results <- AsyncChatResult{Answer: "never sent"}
+			// Let the turn block on that send, so cancellation rejects it
+			// rather than stopping the loop before the delta is handled.
+			time.Sleep(20 * time.Millisecond)
+			cancel()
+			close(results)
+			<-done
+
+			got := parseMessages(store.sessions["session-1"].Message)
+			if tc.want == "" {
+				if len(got) != 2 || got[1]["role"] != "user" {
+					t.Fatalf("stored messages=%#v, want only the prologue and question", got)
+				}
+				return
+			}
+			if len(got) != 3 || got[2]["role"] != "assistant" || got[2]["content"] != tc.want {
+				t.Fatalf("stored messages=%#v, want assistant content %q", got, tc.want)
 			}
 		})
 	}

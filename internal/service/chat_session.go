@@ -1294,6 +1294,10 @@ func (s *ChatSessionService) ChatCompletions(
 		var fullAnswer strings.Builder
 		var finalLegacyAnswer map[string]interface{}
 		finished := false
+		// sentAnswer is fullAnswer as of the last delta the output channel
+		// accepted. An interrupted turn keeps only this text, not the delta
+		// whose send was rejected.
+		sentAnswer := ""
 
 		for result := range resultChan {
 			if ctx.Err() != nil {
@@ -1382,6 +1386,7 @@ func (s *ChatSessionService) ChatCompletions(
 				if !sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))) {
 					break
 				}
+				sentAnswer = fullAnswer.String()
 			} else {
 				if result.Final {
 					// Synchronize the in-memory session snapshot with the final
@@ -1469,10 +1474,11 @@ func (s *ChatSessionService) ChatCompletions(
 				if !sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))) {
 					break
 				}
+				sentAnswer = fullAnswer.String()
 			}
 		}
 		if session != nil && !finished {
-			s.persistInterruptedAnswer(session, fullAnswer.String(), messageID)
+			s.persistInterruptedAnswer(session, sentAnswer, messageID)
 		}
 		if legacy && finalLegacyAnswer != nil && ctx.Err() == nil {
 			finalLegacyAnswer["answer"] = fullAnswer.String()
