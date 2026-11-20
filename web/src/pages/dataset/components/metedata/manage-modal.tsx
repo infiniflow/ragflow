@@ -18,6 +18,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { MetadataManagedFieldsHint } from '@/ee/components/metadata-managed-fields-hint';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import {
@@ -359,6 +360,10 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                 unit={t('knowledgeDetails.metadata.fields')}
               ></BulkOperateBar>
             )}
+            <MetadataManagedFieldsHint
+              metadataType={metadataType}
+              doc={otherData}
+            />
             {metadataType === MetadataType.Setting ||
             metadataType === MetadataType.SingleFileSetting ? (
               <Tabs
