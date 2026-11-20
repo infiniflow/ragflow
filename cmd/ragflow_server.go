@@ -27,6 +27,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
@@ -157,10 +158,14 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 		if !*enabled {
 			continue
 		}
-		if args.Mode != nil {
-			return nil, fmt.Errorf("only one mode flag may be specified: --%s and --%s", *args.Mode, modes[i])
-		}
-		args.Mode = &modes[i]
+		args.Modes = append(args.Modes, modes[i])
+	}
+	if len(args.Modes) > 1 && slices.Contains(args.Modes, "migrate") {
+		return nil, errors.New("--migrate cannot be combined with service modes")
+	}
+	if len(args.Modes) == 1 {
+		args.Mode = &args.Modes[0]
+		args.Modes = nil
 	}
 	args.InitSuperUser = args.Mode != nil && *args.Mode == "admin"
 
@@ -188,14 +193,14 @@ func printHelp(_ *bootstrap.ServerArgs) {
 	fmt.Fprintln(os.Stderr, "Default startup runs database migrations and initializes the superuser automatically.")
 	fmt.Fprintln(os.Stderr, "Default ports: admin 9381, API 9380.")
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Select at most one mode:")
-	fmt.Fprintln(os.Stderr, "  --admin            \tRun only the admin server and initialize the superuser")
-	fmt.Fprintln(os.Stderr, "  --api              \tRun only the API server")
-	fmt.Fprintln(os.Stderr, "  --ingestor         \tRun only the ingestion worker")
-	fmt.Fprintln(os.Stderr, "  --syncer           \tRun only the file syncer")
-	fmt.Fprintln(os.Stderr, "  --chatter          \tRun only the chat-channel service")
+	fmt.Fprintln(os.Stderr, "Select one or more services; --migrate must be used alone:")
+	fmt.Fprintln(os.Stderr, "  --admin            \tRun the admin server and initialize the superuser")
+	fmt.Fprintln(os.Stderr, "  --api              \tRun the API server")
+	fmt.Fprintln(os.Stderr, "  --ingestor         \tRun the ingestion worker")
+	fmt.Fprintln(os.Stderr, "  --syncer           \tRun the file syncer")
+	fmt.Fprintln(os.Stderr, "  --chatter          \tRun the chat-channel service")
 	fmt.Fprintln(os.Stderr, "  --migrate          \tRun database migrations and exit")
-	fmt.Fprintln(os.Stderr, "Run --migrate before starting individual services.")
+	fmt.Fprintln(os.Stderr, "Run --migrate before starting selected services.")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  -f, --config string\tPath to configuration file")
 	fmt.Fprintln(os.Stderr, "  -v, --version      \tPrint version information and exit")
@@ -321,7 +326,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	if isStandaloneDeepDocServer(serverType) {
 		return runDeepDoc(ctx, serverName, arguments)
 	}
-	runtimeNeeded := serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion
+	runtimeNeeded := serviceSelected(arguments, "api") || serviceSelected(arguments, "ingestor")
 	common.Info("Starting RAGFlow", zap.String("server", serverName))
 	// Keep the full configuration dump tied to the operator's chosen verbosity.
 	if !common.LogLevelHigherThanInfo(resolvedLogLevel) {
@@ -341,7 +346,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 		}
 	}()
 
-	if err = dao.InitDB(ctx, serverType == common.ServerTypeStandalone || serverType == common.ServerTypeMigrate); err != nil {
+	if err = dao.InitDB(ctx, (serverType == common.ServerTypeStandalone && len(arguments.Modes) == 0) || serverType == common.ServerTypeMigrate); err != nil {
 		return fmt.Errorf("initialize database: %w", err)
 	}
 	// Migration mode exits before initializing dependencies used only by services.
@@ -381,7 +386,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	if err = server.InitVariables(kvrocks.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.Error(err))
 	}
-	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
+	if serviceSelected(arguments, "api") || serviceSelected(arguments, "chatter") {
 		if err = billing.Init(ctx, config.GetBillingConfig()); err != nil {
 			return fmt.Errorf("initialize billing: %w", err)
 		}
@@ -432,6 +437,13 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	default:
 		return fmt.Errorf("unsupported server mode %q", *arguments.Mode)
 	}
+}
+
+func serviceSelected(args *bootstrap.ServerArgs, mode string) bool {
+	if args.Mode != nil {
+		return *args.Mode == mode
+	}
+	return len(args.Modes) == 0 || slices.Contains(args.Modes, mode)
 }
 
 func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
@@ -491,19 +503,29 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 			workerReady = append(workerReady, ready)
 		}
 	}
-	startService("admin", admin.Run)
-	startService("api", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return apipkg.Run(ctx, *args.Name, args, services)
-	})
-	startService("ingestor", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return ingestorpkg.Run(ctx, cancel, args, services)
-	})
-	startService("syncer", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return syncerpkg.Run(ctx, cancel, args)
-	})
-	startService("chatter", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return chatterpkg.Run(ctx, args, services)
-	})
+	if serviceSelected(args, "admin") {
+		startService("admin", admin.Run)
+	}
+	if serviceSelected(args, "api") {
+		startService("api", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+			return apipkg.Run(ctx, *args.Name, args, services)
+		})
+	}
+	if serviceSelected(args, "ingestor") {
+		startService("ingestor", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+			return ingestorpkg.Run(ctx, cancel, args, services)
+		})
+	}
+	if serviceSelected(args, "syncer") {
+		startService("syncer", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+			return syncerpkg.Run(ctx, cancel, args)
+		})
+	}
+	if serviceSelected(args, "chatter") {
+		startService("chatter", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+			return chatterpkg.Run(ctx, args, services)
+		})
+	}
 	if startupErr == nil {
 		for _, ready := range workerReady {
 			if startupErr = waitReady("worker", ready); startupErr != nil {

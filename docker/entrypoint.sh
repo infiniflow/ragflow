@@ -4,7 +4,7 @@ set -e
 
 cd /ragflow
 
-echo "Start RAGFlow $mode, version: $(cat /ragflow/VERSION)"
+echo "Start RAGFlow, version: $(cat /ragflow/VERSION)"
 
 # Replace env variables in the service_conf.yaml file.
 CONF_DIR="/ragflow/conf"
@@ -28,8 +28,24 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     fi
 done < "${TEMPLATE_FILE}"
 
-echo "Starting nginx..."
-/usr/sbin/nginx -c /etc/nginx/nginx.conf
+case "${RAGFLOW_WEB:-on}" in
+    on)
+        echo "Starting nginx..."
+        /usr/sbin/nginx -c /etc/nginx/nginx.conf
+        ;;
+    off) ;;
+    only)
+        if (( $# > 0 )); then
+            echo "RAGFLOW_WEB=only does not accept server arguments" >&2
+            exit 1
+        fi
+        exec /usr/sbin/nginx -c /etc/nginx/web.conf -g 'daemon off;'
+        ;;
+    *)
+        echo "RAGFLOW_WEB must be on, off, or only" >&2
+        exit 1
+        ;;
+esac
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
-exec bin/ragflow_server
+exec bin/ragflow_server "$@"

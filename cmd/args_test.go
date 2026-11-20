@@ -107,12 +107,29 @@ func TestDisabledServerModeArguments(t *testing.T) {
 }
 
 func TestConflictingServerModeArguments(t *testing.T) {
-	modes := []string{"admin", "api", "ingestor", "syncer", "chatter", "migrate"}
-	for i, first := range modes {
-		for _, second := range modes[i+1:] {
-			if _, err := parseArgsFrom([]string{"server", "--" + first, "--" + second}); err == nil {
-				t.Errorf("accepted conflicting modes --%s and --%s", first, second)
-			}
+	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "chatter"} {
+		if _, err := parseArgsFrom([]string{"server", "--migrate", "--" + mode}); err == nil {
+			t.Errorf("accepted --migrate with --%s", mode)
+		}
+	}
+}
+
+func TestMultipleServiceModes(t *testing.T) {
+	args, err := parseArgsFrom([]string{"server", "--api", "--admin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if args.Mode != nil || !reflect.DeepEqual(args.Modes, []string{"admin", "api"}) {
+		t.Fatalf("unexpected selection: mode=%v modes=%v", args.Mode, args.Modes)
+	}
+	for _, mode := range []string{"admin", "api"} {
+		if !serviceSelected(args, mode) {
+			t.Errorf("%s not selected", mode)
+		}
+	}
+	for _, mode := range []string{"ingestor", "syncer", "chatter"} {
+		if serviceSelected(args, mode) {
+			t.Errorf("%s unexpectedly selected", mode)
 		}
 	}
 }

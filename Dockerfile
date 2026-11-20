@@ -305,7 +305,7 @@ COPY --chmod=755 docker/entrypoint*.sh ./
 # Copy nginx configuration for frontend serving
 RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
 
-COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
+COPY docker/nginx/nginx.conf docker/nginx/proxy.conf docker/nginx/web.conf docker/nginx/web-static.conf /etc/nginx/
 COPY docker/nginx/ragflow.conf /etc/nginx/conf.d/
 
 RUN rm -f /etc/nginx/sites-enabled/default

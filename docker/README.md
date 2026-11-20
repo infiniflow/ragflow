@@ -8,6 +8,19 @@ Ingestor, Syncer and Chatter in parallel. The entrypoint renders configuration,
 starts nginx, and forwards server options unchanged. No service selection flags
 are needed. Stop the container to stop all services.
 
+For separate deployments, run the image with `RAGFLOW_WEB=off` and `--migrate`
+before starting services. Select one or more service flags, for example
+`--admin --api` or `--ingestor`. Selected services share a Go process; they do
+not run the full migration. Existing runtime database initialization still runs.
+The Admin service initializes the superuser when selected.
+
+`RAGFLOW_WEB=on` (the default) starts Nginx with the selected services;
+`RAGFLOW_WEB=off` starts only the selected Go services. `RAGFLOW_WEB=only`
+starts only Nginx and serves the frontend files. In web-only mode, route API and
+Admin requests separately at the ingress. The default Nginx configuration uses
+loopback for the API and Admin and therefore requires both in the same container.
+Choose Nginx based on which selected services and ingress routes are present.
+
 DeepDoc inference runs in-process; the OSS server does not launch a standalone
 DeepDoc service. For inbound channel webhooks, publish the configured listener
 ports on the RAGFlow container.
