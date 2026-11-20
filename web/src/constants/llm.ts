@@ -134,6 +134,7 @@ export enum LLMFactory {
   HopBase = 'HopBase',
   GreenNode = 'GreenNode',
   Morse = 'Morse',
+  LLMTR = 'LLMTR',
 }
 
 // Please lowercase the file name
@@ -334,6 +335,7 @@ export const APIMapUrl = {
   [LLMFactory.AzureOpenAI]:
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
+  [LLMFactory.LLMTR]: 'https://llmtr.com/dashboard/keys',
   [LLMFactory.XunFeiSpark]: 'https://maas.xfyun.cn/apikey',
   [LLMFactory.MiniMax]:
     'https://platform.minimaxi.com/user-center/basic-information',
