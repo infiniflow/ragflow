@@ -301,7 +301,9 @@ func scanQuotedRmExpansion(line string) (string, bool) {
 					skipWord = true
 				}
 			} else {
-				inCase = false
+				// A subshell or a `(pattern)` closes back into the case state
+				// of the enclosing context.
+				inCase = frame.inCase
 			}
 		}
 		start = i + 1
@@ -348,7 +350,7 @@ func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, 
 			skipWord = false
 			continue
 		}
-		if !chain.broken {
+		if !chain.broken && !chain.wrapperConsumes(word.text) {
 			if after, ok := rmExecutable(line, word); ok {
 				if operand, found := quotedRmOperand(line, after, end); found {
 					return operand, true, lastWordEnd, chain, inCase
@@ -361,7 +363,7 @@ func scanCommandSegment(line string, start, end int, chain prefixChain, inCase, 
 		case sawCase && word.text == "in":
 			inCase = true
 			sawCase = false
-		case word.text == "esac":
+		case first && word.text == "esac":
 			inCase = false
 		}
 		first = false
@@ -387,12 +389,39 @@ func rmExecutable(line string, word shellWordSpan) (int, bool) {
 	return word.end, true
 }
 
+// isRedirection reports whether word is a redirection operator (`>`, `>>`,
+// `2>`, `<&`, `&>`): an optional file descriptor followed by `<` and `>` only.
+// The word after the operator is its target, not an operand of the command.
+func isRedirection(word string) bool {
+	i := 0
+	for i < len(word) && word[i] >= '0' && word[i] <= '9' {
+		i++
+	}
+	if i == len(word) {
+		return false
+	}
+	for ; i < len(word); i++ {
+		if word[i] != '<' && word[i] != '>' && word[i] != '&' {
+			return false
+		}
+	}
+	return true
+}
+
 // quotedRmOperand returns the first recursive operand after the executable rm
 // whose operand hides an expansion behind a separator inside a quoted span.
 func quotedRmOperand(line string, after, end int) (string, bool) {
-	recursive, endOfOptions := false, false
+	recursive, endOfOptions, target := false, false, false
 	var operands []string
 	for _, word := range shellWords(line[after:end]) {
+		if target {
+			target = false
+			continue
+		}
+		if isRedirection(word) {
+			target = true
+			continue
+		}
 		if !endOfOptions && word == "--" {
 			endOfOptions = true
 			continue
@@ -448,8 +477,27 @@ func (c *prefixChain) feed(word string) {
 	}
 }
 
+// wrapperConsumes reports whether the wrapper's option list would consume
+// word instead of letting it stand as the executable (`env -u rm`).
+func (c *prefixChain) wrapperConsumes(word string) bool {
+	if c.wrapper == "" {
+		return false
+	}
+	if c.pending && !strings.HasPrefix(word, "-") {
+		return true
+	}
+	if strings.HasPrefix(word, "-") {
+		return true
+	}
+	// env takes assignments after its options (`env FOO=1 rm`).
+	return c.wrapper == "env" && isAssignment(word)
+}
+
 // takeWrapperWord reports whether the wrapper's option list consumes word.
 func (c *prefixChain) takeWrapperWord(word string) bool {
+	if !c.wrapperConsumes(word) {
+		return false
+	}
 	if c.pending && !strings.HasPrefix(word, "-") {
 		c.pending = false
 		return true
@@ -458,8 +506,7 @@ func (c *prefixChain) takeWrapperWord(word string) bool {
 		c.pending = wrapperOptionTakesValue(c.wrapper, word)
 		return true
 	}
-	// env takes assignments after its options (`env FOO=1 rm`).
-	return c.wrapper == "env" && isAssignment(word)
+	return true
 }
 
 // shellWordSpan is one word of a command segment with its byte offsets.
