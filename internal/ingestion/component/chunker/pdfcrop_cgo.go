@@ -388,13 +388,10 @@ func limitCropPositions(positions []deepdoctype.Position, maxPages int) []deepdo
 			kept = append(kept, pn)
 		}
 		if len(kept) == 0 {
-			break
+			continue
 		}
 		pos.PageNumbers = kept
 		out = append(out, pos)
-		if len(kept) < len(validPages) {
-			break
-		}
 	}
 	return out
 }

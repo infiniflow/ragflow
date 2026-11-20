@@ -235,17 +235,13 @@ func buildOneChunkFromItems(items, chunks []schema.ChunkDoc, pdfCandidate bool) 
 }
 
 func mergeRawPositionMatrix(sources ...json.RawMessage) json.RawMessage {
-	rows := mergePositionMatrix(sources...)
-	kept := rows[:0]
-	for _, row := range rows {
-		if len(row) == 5 {
-			kept = append(kept, row)
-		}
-	}
-	if len(kept) == 0 {
+	rows := mergePositionRows(sources, func(row []any) bool {
+		return len(row) == 5
+	})
+	if len(rows) == 0 {
 		return nil
 	}
-	encoded, err := json.Marshal(kept)
+	encoded, err := json.Marshal(rows)
 	if err != nil {
 		return nil
 	}

@@ -253,4 +253,11 @@ func TestOneChunker_NonPDFSkipsPDFPositionsAndRejectsMalformedFlatPositions(t *t
 	if string(gotValid) != `[[1,10,100,20,80]]` {
 		t.Fatalf("mergeRawPositionMatrix mixed valid/malformed = %s, want [[1,10,100,20,80]]", gotValid)
 	}
+	gotMalformedFirst := mergeRawPositionMatrix(
+		json.RawMessage(`[1, 10, 100, 20, 80, 999]`),
+		json.RawMessage(`[1, 10, 100, 20, 80]`),
+	)
+	if string(gotMalformedFirst) != `[[1,10,100,20,80]]` {
+		t.Fatalf("malformed row before valid row = %s, want [[1,10,100,20,80]]", gotMalformedFirst)
+	}
 }
