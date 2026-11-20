@@ -433,6 +433,9 @@ func (s *MemoryService) ListMemoryFilters(ctx context.Context) (*MemoryFiltersRe
 	storageCounts := map[string]int64{}
 	for _, memory := range memories {
 		owner := memory.UserID
+		if owner == "" {
+			owner = memory.TenantID
+		}
 		label := owner
 		if memory.OwnerName != nil && *memory.OwnerName != "" {
 			label = *memory.OwnerName

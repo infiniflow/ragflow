@@ -19,6 +19,8 @@ import (
 	"context"
 	"strings"
 
+	"ragflow/internal/entity"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -56,10 +58,24 @@ func (s QueryScope) Intersect(other QueryScope) QueryScope {
 // current user in the given datasets. A nil candidate list means all readable
 // documents; a non-nil empty list matches no documents.
 func ListReadableDocumentIDs(ctx context.Context, db *gorm.DB, datasetIDs, candidateIDs []string) ([]string, error) {
+	checker := NewDatabaseChecker(db)
 	if candidateIDs != nil && len(candidateIDs) == 0 {
+		seen := make(map[string]struct{}, len(datasetIDs))
+		for _, datasetID := range datasetIDs {
+			datasetID = strings.TrimSpace(datasetID)
+			if datasetID == "" {
+				continue
+			}
+			if _, ok := seen[datasetID]; ok {
+				continue
+			}
+			seen[datasetID] = struct{}{}
+			if err := checker.CheckResource(ctx, ResourceRef{Kind: ResourceKindDataset, ID: datasetID}, OperationRead); err != nil {
+				return nil, err
+			}
+		}
 		return []string{}, nil
 	}
-	checker := NewDatabaseChecker(db)
 	seenDatasets := make(map[string]struct{}, len(datasetIDs))
 	seenDocuments := make(map[string]struct{})
 	var documentIDs []string
@@ -81,7 +97,8 @@ func ListReadableDocumentIDs(ctx context.Context, db *gorm.DB, datasetIDs, candi
 		if err != nil {
 			return nil, err
 		}
-		query := db.WithContext(ctx).Table("document").Select("document.id").Where("document.kb_id = ?", datasetID)
+		query := db.WithContext(ctx).Table("document").Select("document.id").
+			Where("document.kb_id = ? AND document.status = ?", datasetID, string(entity.StatusValid))
 		if candidateIDs != nil {
 			query = query.Where("document.id IN ?", candidateIDs)
 		}

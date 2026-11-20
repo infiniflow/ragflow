@@ -100,6 +100,18 @@ type difyMetadataCondition struct {
 	Logic      string          `json:"logic"`
 }
 
+func canIncludeDifyKnowledgeGraph(readableDocumentIDs []string, totalDocuments int64, hasMetadataFilter bool) bool {
+	if hasMetadataFilter || totalDocuments <= 0 || int64(len(readableDocumentIDs)) != totalDocuments {
+		return false
+	}
+	for _, documentID := range readableDocumentIDs {
+		if documentID == service.NoMatchDocIDSentinel {
+			return false
+		}
+	}
+	return true
+}
+
 // toMetaFilterConditions converts Dify-format conditions to internal MetaFilterConditions.
 func (c difyMetadataCondition) toMetaFilterConditions() []service.MetaFilterCondition {
 	if len(c.Conditions) == 0 {
@@ -275,6 +287,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to resolve readable documents: %v", err))
 		return
 	}
+	readableDocumentIDs := append([]string(nil), docIDs...)
 	if len(docIDs) == 0 {
 		docIDs = []string{service.NoMatchDocIDSentinel}
 	}
@@ -319,7 +332,18 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	chunks := nlp.RetrievalByChildren(result.Chunks, []string{kb.TenantID}, h.docEngine, c.Request.Context())
 
 	// KG retrieval (optional)
-	if req.UseKG {
+	hasMetadataFilter := req.MetadataCondition != nil && len(req.MetadataCondition.Conditions) > 0
+	canReadWholeDataset := false
+	if req.UseKG && !hasMetadataFilter && len(readableDocumentIDs) > 0 {
+		var totalDocuments int64
+		if err := dao.DB.WithContext(ctx).Model(&entity.Document{}).
+			Where("kb_id = ?", req.KnowledgeID).Count(&totalDocuments).Error; err != nil {
+			common.Warn("KG retrieval: failed to check readable document coverage", zap.String("kbID", req.KnowledgeID), zap.Error(err))
+		} else {
+			canReadWholeDataset = canIncludeDifyKnowledgeGraph(readableDocumentIDs, totalDocuments, hasMetadataFilter)
+		}
+	}
+	if req.UseKG && canReadWholeDataset {
 		chatModel, kgErr := h.modelFactory.NewDefaultChatModel(ctx)
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))

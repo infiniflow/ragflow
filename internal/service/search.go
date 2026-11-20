@@ -117,6 +117,9 @@ func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[s
 	if search.Nickname != nil {
 		nickname = *search.Nickname
 	}
+	if nickname == "" {
+		nickname = search.UserID
+	}
 	result := map[string]interface{}{
 		"id":            search.ID,
 		"user_id":       search.UserID,

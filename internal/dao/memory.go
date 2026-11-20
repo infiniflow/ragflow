@@ -321,7 +321,8 @@ func (dao *MemoryDAO) GetByFilter(ctx context.Context, db *gorm.DB, memoryIDs, o
 	args := []interface{}{memoryIDs}
 
 	if len(ownerIDs) > 0 {
-		conditions = append(conditions, "m.user_id IN ?")
+		conditions = append(conditions, "(m.user_id IN ? OR (m.user_id = '' AND m.tenant_id IN ?))")
+		args = append(args, ownerIDs)
 		args = append(args, ownerIDs)
 	}
 
