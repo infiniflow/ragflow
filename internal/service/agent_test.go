@@ -2551,7 +2551,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	}
 	// Agent updated most recently (canvasUpdate > groupUpdate).
 	if err := dao.DB.Create(&entity.UserCanvas{
-		ID: "canvas-1", UserID: "user-1", Title: sptr("Agent canvas"),
+		ID: "canvas-1", UserID: "user-1", TenantID: sptr("tenant-1"), Title: sptr("Agent canvas"),
 		CanvasCategory: "agent_canvas",
 		BaseModel:      entity.BaseModel{CreateTime: &canvasUpdate, UpdateTime: &canvasUpdate},
 	}).Error; err != nil {
