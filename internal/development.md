@@ -439,6 +439,15 @@ tokenizers. They stop together on failure or shutdown.
 Admin defaults to port 9381 and API to 9380; change their configuration keys
 rather than passing a port flag. `bash build.sh --run` builds and starts this executable.
 
+Chatter executes Chat and Agent turns through the REST API at `api.host` /
+`api.http_port`, using the first tenant API key listed in Settings, like webpage
+embeds. A wildcard API host resolves to loopback for these requests. Create an API
+key before adding a channel; if all keys are deleted, channel execution is rejected.
+Channel configuration reconciliation and runtime status still use the existing
+database and Kvrocks paths. Completion requests carry validated channel context so
+conversation history, channel labels, and Agent workflow refresh/resume survive
+the HTTP boundary.
+
 Service identities come from `<service>.name` or `RAGFLOW_<SERVICE>_NAME`.
 Admin discovery uses `admin.host` / `admin.http_port` or
 `RAGFLOW_ADMIN_HOST` / `RAGFLOW_ADMIN_HTTP_PORT`. Ingestor concurrency uses
