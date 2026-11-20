@@ -340,8 +340,8 @@ func (c *prefixChain) takeWrapperWord(word string) bool {
 
 // shellWordSpan is one word of a command segment with its byte offsets.
 type shellWordSpan struct {
-	text       string
-	start, end int
+	text string
+	end  int
 }
 
 // shellWordSpans splits line[start:end] into words the way shellWords does:
@@ -359,8 +359,11 @@ func shellWordSpans(line string, start, end int) []shellWordSpan {
 		}
 		wordStart := i
 		for i < end {
-			switch c := line[i]; c {
-			case ' ', '\t', '\r':
+			c := line[i]
+			if c == ' ' || c == '\t' || c == '\r' {
+				break
+			}
+			switch c {
 			case '\'':
 				i++
 				for i < end && line[i] != '\'' {
@@ -369,7 +372,6 @@ func shellWordSpans(line string, start, end int) []shellWordSpan {
 				if i < end {
 					i++
 				}
-				continue
 			case '"':
 				i++
 				for i < end {
@@ -383,20 +385,16 @@ func shellWordSpans(line string, start, end int) []shellWordSpan {
 					}
 					i++
 				}
-				continue
 			case '\\':
 				i++
 				if i < end {
 					i++
 				}
-				continue
 			default:
 				i++
-				continue
 			}
-			break
 		}
-		spans = append(spans, shellWordSpan{text: line[wordStart:i], start: wordStart, end: i})
+		spans = append(spans, shellWordSpan{text: line[wordStart:i], end: i})
 	}
 	return spans
 }
