@@ -424,6 +424,7 @@ func (s *BotService) ChatbotCompletion(
 	if err := s.persistChatbotQuestion(ctx, session, req.Question, messageID, receivedAt); err != nil {
 		return nil, common.CodeServerError, err
 	}
+	ctx = common.WithSessionID(ctx, session.ID)
 	results, err := s.pipeline.AsyncChat(ctx, dialog, messages, true, kwargs)
 	if err != nil {
 		return nil, common.CodeServerError, err

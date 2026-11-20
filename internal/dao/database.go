@@ -303,6 +303,7 @@ func autoMigrateModels() []interface{} {
 	dataModels = append(dataModels, billingDataModelsEE()...)
 	dataModels = append(dataModels, chunkVersionDataModelsEE()...)
 	dataModels = append(dataModels, datasetVersionDataModelsEE()...)
+	dataModels = append(dataModels, completionLogModelsEE()...)
 	return dataModels
 }
 
@@ -607,6 +608,7 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	// and only log).
 	goRuntimeModels = append(goRuntimeModels, chunkVersionRuntimeModelsEE()...)
 	goRuntimeModels = append(goRuntimeModels, datasetVersionRuntimeModelsEE()...)
+	goRuntimeModels = append(goRuntimeModels, completionLogModelsEE()...)
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
 			tableName := fmt.Sprintf("%T", m)
