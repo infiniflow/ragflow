@@ -146,7 +146,25 @@ func (n *NatsEngine) initSyncCheckpointsLocked() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	kv, err := n.jetStream.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
+	kv, err := n.openSyncCheckpointBucket(ctx)
+	if err != nil {
+		return fmt.Errorf("syncer checkpoint: open kv: %w", err)
+	}
+	n.syncCheckpointKV = kv
+	return nil
+}
+
+// openSyncCheckpointBucket reuses an existing checkpoint bucket and creates it
+// only when it is absent. CreateOrUpdateKeyValue rewrites the backing stream on
+// every start, and nats.go turns a zero Replicas into one, so a bucket an
+// operator provisioned on a replicated JetStream cluster would be asked to
+// shrink to a single replica each time a Syncer initialises its checkpoints.
+func (n *NatsEngine) openSyncCheckpointBucket(ctx context.Context) (jetstream.KeyValue, error) {
+	kv, err := n.jetStream.KeyValue(ctx, syncCheckpointBucket)
+	if !errors.Is(err, jetstream.ErrBucketNotFound) {
+		return kv, err
+	}
+	kv, err = n.jetStream.CreateKeyValue(ctx, jetstream.KeyValueConfig{
 		Bucket:       syncCheckpointBucket,
 		Description:  "running datasource sync checkpoints",
 		History:      1,
@@ -154,11 +172,12 @@ func (n *NatsEngine) initSyncCheckpointsLocked() error {
 		MaxValueSize: 1024 * 1024,
 		Storage:      jetstream.FileStorage,
 	})
-	if err != nil {
-		return fmt.Errorf("syncer checkpoint: create kv: %w", err)
+	if errors.Is(err, jetstream.ErrBucketExists) {
+		// Another instance created the bucket between the lookup and the
+		// create; reuse the one it provisioned.
+		return n.jetStream.KeyValue(ctx, syncCheckpointBucket)
 	}
-	n.syncCheckpointKV = kv
-	return nil
+	return kv, err
 }
 
 func syncerPushConsumerConfig() jetstream.ConsumerConfig {
