@@ -348,6 +348,11 @@ const (
 	// including retries and backoff. It does not apply to tag extraction.
 	EnvExtractorChatTimeout = "EXTRACTOR_CHAT_TIMEOUT"
 
+	// EnvVisionChatTimeout sets the per-image vision-model call timeout in
+	// seconds for parser media enhancement. Local inference endpoints can need
+	// far longer than the 30s default for one image.
+	EnvVisionChatTimeout = "VISION_CHAT_TIMEOUT"
+
 	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
 	// model snapshot (see common.DeepDocModelFiles); mirrors
 	// the RAGFlow default model dir (internal/rag/res/deepdoc).
