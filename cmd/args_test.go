@@ -19,6 +19,9 @@ package main
 import (
 	"reflect"
 	"testing"
+
+	"ragflow/internal/common"
+	"ragflow/internal/server/bootstrap"
 )
 
 func TestCommonArguments(t *testing.T) {
@@ -44,6 +47,72 @@ func TestCommonArguments(t *testing.T) {
 	for _, argv := range [][]string{{"--config"}, {"--log-level=trace"}, {"--profile=maybe"}, {"unexpected"}} {
 		if _, err := parseArgsFrom(append([]string{"server"}, argv...)); err == nil {
 			t.Fatalf("accepted invalid arguments %v", argv)
+		}
+	}
+}
+
+func TestServerModeArguments(t *testing.T) {
+	for _, tt := range []struct {
+		mode       string
+		serverType common.ServerType
+	}{
+		{"admin", common.ServerTypeAdmin},
+		{"api", common.ServerTypeAPI},
+		{"ingestor", common.ServerTypeIngestion},
+		{"syncer", common.ServerTypeFileSyncer},
+		{"chatter", common.ServerTypeChatter},
+		{"migrate", common.ServerTypeMigrate},
+	} {
+		t.Run(tt.mode, func(t *testing.T) {
+			for _, flag := range []string{"--" + tt.mode, "-" + tt.mode, "--" + tt.mode + "=true"} {
+				args, err := parseArgsFrom([]string{"server", flag, "--config", "local.yaml"})
+				if err != nil {
+					t.Fatalf("%s: %v", flag, err)
+				}
+				if args.Mode == nil || *args.Mode != tt.mode {
+					t.Fatalf("%s: mode = %v, want %s", flag, args.Mode, tt.mode)
+				}
+				if got := bootstrap.GetServerType(args); got != tt.serverType {
+					t.Errorf("%s: server type = %q, want %q", flag, got, tt.serverType)
+				}
+				if args.ConfigPath == nil || *args.ConfigPath != "local.yaml" {
+					t.Errorf("%s: configuration path was not preserved", flag)
+				}
+				if args.InitSuperUser != (tt.mode == "admin") {
+					t.Errorf("%s: InitSuperUser = %v, want %v", flag, args.InitSuperUser, tt.mode == "admin")
+				}
+			}
+		})
+	}
+}
+
+func TestDisabledServerModeArguments(t *testing.T) {
+	for _, flags := range [][]string{
+		nil,
+		{"--migrate=false"},
+		{"--admin=false", "--api=false", "--ingestor=false", "--syncer=false", "--chatter=false", "--migrate=false"},
+	} {
+		args, err := parseArgsFrom(append([]string{"server"}, flags...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if args.Mode != nil || args.InitSuperUser {
+			t.Errorf("%v: expected default startup arguments, got %+v", flags, args)
+		}
+	}
+	args, err := parseArgsFrom([]string{"server", "--api=false", "--migrate"})
+	if err != nil || args.Mode == nil || *args.Mode != "migrate" {
+		t.Fatalf("disabled API flag affected migration selection: args=%+v, err=%v", args, err)
+	}
+}
+
+func TestConflictingServerModeArguments(t *testing.T) {
+	modes := []string{"admin", "api", "ingestor", "syncer", "chatter", "migrate"}
+	for i, first := range modes {
+		for _, second := range modes[i+1:] {
+			if _, err := parseArgsFrom([]string{"server", "--" + first, "--" + second}); err == nil {
+				t.Errorf("accepted conflicting modes --%s and --%s", first, second)
+			}
 		}
 	}
 }
