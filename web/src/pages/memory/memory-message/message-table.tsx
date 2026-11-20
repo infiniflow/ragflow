@@ -1,3 +1,4 @@
+import { DataTable } from '@/components/data-table';
 import {
   ConfirmDeleteDialog,
   ConfirmDeleteDialogNode,
@@ -8,14 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Switch } from '@/components/ui/switch';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { RunningStatus } from '@/constants/knowledge';
 import { Pagination } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
@@ -33,7 +26,6 @@ import {
   SortingState,
   VisibilityState,
   createColumnHelper,
-  flexRender,
   getCoreRowModel,
   getExpandedRowModel,
   getFilteredRowModel,
@@ -383,49 +375,14 @@ export function MemoryTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-292px)]">
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <TableHead key={header.id}>
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
-                </TableHead>
-              ))}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody className="relative">
-          {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                data-state={row.getIsSelected() && 'selected'}
-                className={cn('group', {
-                  'bg-bg-list/5': !row.getCanExpand(),
-                })}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                <Empty type={EmptyType.Data} />
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+      <DataTable
+        table={table}
+        columnsLength={columns.length}
+        rootClassName="max-h-[calc(100vh-292px)]"
+        bodyClassName="relative"
+        rowClassName="group"
+        emptyContent={<Empty type={EmptyType.Data} />}
+      />
       {showDeleteDialog && (
         <ConfirmDeleteDialog
           onOk={handleDeleteMessage}
