@@ -275,7 +275,7 @@ func TestMarkdownTableInNestedListPreservesReferences(t *testing.T) {
 	if result.JSON[0].ToMap()["text"] != "- Outer" || result.JSON[1].ToMap()["text"] != "- Inner" {
 		t.Fatalf("list text lost: %#v", ItemsToMaps(result.JSON))
 	}
-	requireTableRows(t, result.JSON[2].ToMap(), [][]string{{"A", "B", ""}, {"team", "y", "TAIL"}})
+	requireTableRows(t, result.JSON[2].ToMap(), [][]string{{"A", "B", ""}, {"team (https://example.org)", "y", "TAIL"}})
 }
 
 func TestMarkdownTableHookBalancesMarkdownInsideHTMLContainer(t *testing.T) {

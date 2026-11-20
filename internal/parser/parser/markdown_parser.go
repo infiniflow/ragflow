@@ -206,6 +206,33 @@ func (p *MarkdownParser) String() string {
 	return "MarkdownParser"
 }
 
+// preserveMarkdownTableLink keeps the destination through the HTML-to-TableData
+// conversion, which extracts only the visible text of each cell.
+func preserveMarkdownTableLink(node ast.Node, entering bool) ast.WalkStatus {
+	link, ok := node.(*ast.Link)
+	if !entering || !ok {
+		return ast.GoToNext
+	}
+	destination := strings.TrimSpace(string(link.Destination))
+	scheme, address, hasScheme := strings.Cut(destination, ":")
+	if destination == "" || (hasScheme && strings.EqualFold(scheme, "data")) {
+		return ast.SkipChildren
+	}
+	var text bytes.Buffer
+	for _, child := range link.GetChildren() {
+		walkLeaf(child, &text)
+	}
+	label := strings.TrimSpace(text.String())
+	if label == destination || (hasScheme && strings.EqualFold(scheme, "mailto") && label == address) {
+		return ast.SkipChildren
+	}
+	if label != "" {
+		destination = " (" + destination + ")"
+	}
+	ast.AppendChild(link, &ast.Text{Leaf: ast.Leaf{Literal: []byte(destination)}})
+	return ast.SkipChildren
+}
+
 // markdownRendererPool reuses HTML renderer instances across table renders.
 // Each call takes and returns its own instance, so concurrent parses never
 // share one renderer (RenderNode mutates per-instance counters). A recycled
@@ -545,6 +572,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 
 		switch n := child.(type) {
 		case *ast.Table:
+			ast.WalkFunc(n, preserveMarkdownTableLink)
 			markup := renderMarkdownNode(n)
 			tableDoc, _ := html.Parse(bytes.NewReader(markup))
 			walkHTMLBlocksWithState(tableDoc, out, htmlState)

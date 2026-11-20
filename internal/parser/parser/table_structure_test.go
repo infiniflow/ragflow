@@ -69,7 +69,26 @@ func TestMarkdownParserPreservesWideTableWithInlineHeaderAndReference(t *testing
 	if res.Err != nil || len(res.JSON) != 1 {
 		t.Fatalf("result=%+v", res)
 	}
-	requireTableRows(t, res.JSON[0].ToMap(), [][]string{{"Field", "Value", ""}, {"Owner", "team", "TAIL"}})
+	requireTableRows(t, res.JSON[0].ToMap(), [][]string{{"Field", "Value", ""}, {"Owner", "team (https://example.org)", "TAIL"}})
+}
+
+func TestMarkdownParserPreservesLinkDestinationsInTableCells(t *testing.T) {
+	p, _ := NewMarkdownParser(GoMarkdown)
+	md := "| [**Product** catalog](https://example.org/products?lang=en&sort=id) | Contact |\n" +
+		"| --- | --- |\n" +
+		"| [](/guide#setup) | [Email support](mailto:support@example.org) |\n" +
+		"| <https://example.org> | <support@example.org> |\n" +
+		"| [inline file](data:text/plain;base64,SGVsbG8=) | end |"
+	res := p.ParseWithResult(t.Context(), "table.md", []byte(md))
+	if res.Err != nil || len(res.JSON) != 1 {
+		t.Fatalf("result=%+v", res)
+	}
+	requireTableRows(t, res.JSON[0].ToMap(), [][]string{
+		{"Product catalog (https://example.org/products?lang=en&sort=id)", "Contact"},
+		{"/guide#setup", "Email support (mailto:support@example.org)"},
+		{"https://example.org", "support@example.org"},
+		{"inline file", "end"},
+	})
 }
 
 func TestMarkdownParserPreservesEscapedPipesInHTMLAttributes(t *testing.T) {
