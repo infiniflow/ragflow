@@ -2928,6 +2928,18 @@ Example: Virtual Hosted Style`,
         modelLibraryLink: 'Models & versions',
         reviewNote: 'Review note',
         editModel: 'Edit this model',
+        publishChanges: 'This publish changes {{count}} declaration(s)',
+        changePath: 'Path',
+        changeKind: 'Change',
+        changeSource: 'Authorised by',
+        publishDrift:
+          'What the corpus would still disagree with ({{datasets}} dataset(s))',
+        driftUndeclared:
+          'Undeclared classes {{before}} → {{after}} after the next compile',
+        driftUnusedClasses: 'Declared classes with no instance: {{count}}',
+        driftUnusedRelations: 'Declared relations with no assertion: {{count}}',
+        publishDriftNote:
+          'Publishing does not rewrite existing rows; the datasets have to be recompiled before these numbers move.',
         publishTitle: 'Publish {{name}}',
         publishDescription:
           'Publishing records v{{next}} and moves compilation onto it. The version in force now is v{{current}}.',
@@ -3032,7 +3044,148 @@ Example: Virtual Hosted Style`,
       // binding shows up as a per-action state instead.
       ontologyOpenActions: 'Actions',
       ontologyOpenAudit: 'Audit',
+      ontologyOpenQuestions: 'Questions',
       ontologyActionsPage: 'Actions — {{name}}',
+      // The two numbers are kept apart on purpose: a score does not tell an
+      // author whether to widen the declaration or compile more documents.
+      ontologyQuestionsPage: 'Competency questions — {{name}}',
+      ontologyQuestionsSummary:
+        '{{answered}} of {{total}} answerable · as of {{asOf}}',
+      ontologyQuestionsUnmeasured:
+        'This dataset has not been measured against the model yet.',
+      ontologyQuestionsChecked:
+        'Measured: {{answered}} of {{total}} answerable.',
+      ontologyInsightStale:
+        'The model has been published since this measurement; the numbers describe v{{version}}.',
+      ontologyOpenCanvas: 'Open in canvas',
+      ontologyCqRunCheck: 'Run check',
+      ontologyCqCreate: 'Add question',
+      ontologyCqCreateTitle: 'Add competency question',
+      ontologyCqEditTitle: 'Edit competency question',
+      ontologyCqEdit: 'Edit',
+      ontologyCqDelete: 'Delete',
+      ontologyCqId: 'ID',
+      ontologyCqIdDuplicate: 'This id is already used by another question.',
+      ontologyCqQuestion: 'Question',
+      ontologyCqElements: 'Required elements',
+      ontologyCqEmpty:
+        'This model has no competency questions yet. A question is what makes the model testable: it names the elements an answer needs.',
+      ontologyCqBlocked: 'Cannot answer',
+      ontologyCqPartial: 'Partial',
+      ontologyCqAnswerable: 'Answerable',
+      ontologyCqUnmeasured: 'Not measured',
+      ontologyCqProgress: '{{satisfied}}/{{required}} elements',
+      ontologyCqDeclaredElements: '{{count}} required elements',
+      ontologyCqObserved: '{{count}} rows',
+      ontologyCqReason_undeclared: 'Not declared',
+      ontologyCqReason_not_extracted: 'Declared, no rows',
+      ontologyCqNotMeasuredHint:
+        'Run a check to see which of these elements the corpus actually fills.',
+      ontologyCqGrammarHint:
+        'Elements are written as {{grammar}}. A leading ? marks an optional element and does not lower coverage.',
+      ontologyDrift: 'Drift',
+      ontologyChangeUnpublished: 'unpublished',
+      ontologyChangeCount: '{{count}} change(s) in the draft',
+      ontologyChangeView: 'View changes',
+      ontologyChangeSubmit: 'Submit for review',
+      ontologyChangeRecompileNote:
+        'Publishing is not enough: this dataset has to be recompiled before these rows change.',
+      ontologyChangeTitle: 'Changes in the draft',
+      ontologyChangeDescription:
+        'The draft against the published version. Publishing makes it the version the next compile reads; this dataset still holds the rows the previous one produced.',
+      ontologyChangeEmpty: 'The draft has no unpublished changes.',
+      ontologyChangePath: 'Path',
+      ontologyChangeKind: 'Change',
+      ontologyChangeSource: 'Authorised by',
+      ontologyChangeSubmitted: 'Submitted for review',
+      ontologyChangeSubmitFailed: 'Could not submit for review',
+      ontologyDriftTruncated: 'partial scan',
+      ontologyDriftUnmeasured:
+        'This dataset has not been measured against the model yet. A check compares the compiled rows with the declaration.',
+      ontologyDriftRunning: 'Measuring...',
+      ontologyDriftDraftPending:
+        'The draft has unpublished edits. Only a published version is compiled, so recompiling changes nothing until you publish.',
+      ontologyDriftDone:
+        'Measured {{entities}} entities and {{relations}} relations.',
+      ontologyDriftFailed: 'Measurement failed.',
+      ontologyDriftDeclare: 'Declare {{name}}',
+      ontologyDriftRemoveClass: 'Delete class',
+      ontologyDriftRemoveProperty: 'Delete relation',
+      ontologyDriftDescribe: 'Describe',
+      ontologyDriftDescribeClassTitle: 'Describe “{{name}}”',
+      ontologyDriftDescribeClassDescription:
+        'A class with no instances is usually under-described: the description reaches the extraction prompt, so extraction starts looking for it. Delete the class instead if the corpus really has none.',
+      ontologyDriftDescribeTitle: 'Describe {{name}}',
+      ontologyDriftDescribeDescription:
+        'Fill rate rises when extraction knows what the value looks like. Both fields below reach the prompt; required does not.',
+      ontologyDriftDescribeText: 'Description',
+      ontologyDriftDescribePlaceholder:
+        'e.g. the date payment is due, as written in the contract',
+      ontologyDriftEnumLabel: 'Allowed values (comma separated, optional)',
+      ontologyDriftDescribeRequired:
+        'Write a description or a value set: nothing else on an attribute reaches the prompt.',
+      ontologyDriftDescribeConfirm: 'Write to draft',
+      ontologyDriftRemoveClassTitle: 'Delete class “{{name}}”?',
+      ontologyDriftRemoveClassBody:
+        'Properties that pointed at it keep their other end; they will show up as having a missing endpoint instead.',
+      ontologyDriftRemovePropertyTitle: 'Delete relation “{{name}}”?',
+      ontologyDriftRemovePropertyBody:
+        'Only the declaration goes; assertions already in the corpus stay as they are.',
+      ontologyDriftFixHint:
+        'Each action writes to the draft. These rows keep describing the published version until it is published and recompiled.',
+      ontologyDriftFixApplied:
+        'Written to the draft. Publish it and recompile this dataset — these rows describe the published version.',
+      ontologyDriftFixNoChange:
+        'The draft already says this; nothing was written.',
+      ontologyDriftRemoveConfirm: 'Delete from draft',
+      ontologyDriftTitle: 'Schema drift',
+      ontologyDriftFindingsCount: '{{count}} findings',
+      ontologyDriftGroupUndeclared: 'Not declared',
+      ontologyDriftGroupUnused: 'Declared, zero instances',
+      ontologyDriftGroupFields: 'Attribute fill problems',
+      ontologyDriftRowEntities: '{{count}} rows',
+      ontologyDriftUndeclaredField:
+        'Field {{field}} filled in {{percent}} · the class is not declared',
+      ontologyDriftUndeclaredNoField:
+        'These rows carry a type the model does not declare',
+      ontologyDriftUnusedWhy: 'Declared, but none of the {{count}} rows is one',
+      ontologyDriftRelationUnusedWhy: 'Declared, but produced no assertion',
+      ontologyDriftSeeSamples: 'See these {{count}}',
+      ontologyDriftSampleEmpty: 'No rows loaded for this class.',
+      ontologyDriftSnapshot: 'Snapshot v{{version}}',
+      ontologyDriftDismiss: 'Ignore with a reason',
+      ontologyDriftDismissTitle: 'Set aside “{{name}}”',
+      ontologyDriftDismissDescription:
+        'It stays in the measurement and is only hidden in this dataset. Recompiling does not clear the decision; lift it below to see the row again.',
+      ontologyDriftDismissPlaceholder:
+        'Why is this not a gap? e.g. the rows are invoices inside contracts, not a separate type',
+      ontologyDriftDismissConfirm: 'Record decision',
+      ontologyDriftDismissReasonRequired:
+        'A reason is required: without one nobody can tell whether the decision still holds.',
+      ontologyDriftDismissFailed: 'Could not record the dismissal',
+      ontologyDriftDismissed: 'Set aside',
+      ontologyDriftDismissedHint:
+        'Still in the measurement, hidden in this dataset only; recompiling does not clear them. Lift one to see its row again.',
+      ontologyDriftRestore: 'Lift',
+      ontologyDriftReview: 'Open review queue',
+      ontologyDriftRestoreFailed: 'Could not lift the decision',
+      ontologyDriftTotals: '{{entities}} entities · {{relations}} relations',
+      ontologyDriftDropped: '{{count}} dropped',
+      ontologyDriftUntyped: '{{count}} untyped',
+      fieldVia: 'Reified by class',
+      ontologyExport: 'Export',
+      ontologyExportTitle: 'Export contract — {{name}}',
+      ontologyExportVersion: 'Version',
+      ontologyExportCurrent: 'Published (current)',
+      ontologyExportProse: 'Human-readable',
+      ontologyExportMachine: 'Machine',
+      ontologyExportInstances: 'Instances',
+      ontologyExportYaml: 'Download .yaml',
+      ontologyExportSchema: 'Download schema.json',
+      ontologyExportJsonl: 'Download instances.jsonl',
+      ontologyExportInstancesHint:
+        'The compiled rows of one dataset, as JSON Lines. The file is written by the server as it streams, so it is bounded by the corpus rather than by memory.',
+      aboxRelationVia: 'Reified by',
       ontologyInstancesNoDataset:
         'No dataset compiles with this model yet, so there are no rows to read.',
       aboxAllClasses: 'All classes',

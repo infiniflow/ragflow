@@ -2077,6 +2077,26 @@ export function OntologyCanvasEditor({
                   </label>
                 </>
               )}
+              {/* A relation with its own attributes (who, in what role, over what
+                  interval) is carried by an instance of a declared class rather
+                  than by the edge. The value must name a declared class, so it is
+                  picked instead of typed: a typo would otherwise only surface as
+                  a publish-time error. */}
+              {selectedKind === OntologyKind.Object && (
+                <label className="flex flex-col gap-1">
+                  {t('knowledgeCompilation.fieldVia', {
+                    defaultValue: 'Reified by class',
+                  })}
+                  <SelectWithSearch
+                    value={String(selectedProperty.via ?? '')}
+                    data-testid="ontology-property-via"
+                    options={[{ label: '—', value: '' }, ...entityOptions]}
+                    onChange={(value) =>
+                      editProperty(propertyIndex, { via: value })
+                    }
+                  />
+                </label>
+              )}
               <label className="flex flex-col gap-1">
                 {t('knowledgeCompilation.description')}
                 <Textarea

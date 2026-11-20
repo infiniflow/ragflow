@@ -422,6 +422,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// instead of a page, because a graph cannot "load more" the way
 				// a list can.
 				datasets.GET("/:dataset_id/ontology/graph", r.datasetArtifactHandler.GetOntologyGraph)
+				// The rows themselves, streamed as JSON Lines. Export is not the
+				// same read as the browser: it carries no page window, because a
+				// file that silently stopped at row 30 would be wrong rather
+				// than short.
+				datasets.GET("/:dataset_id/ontology/instances.jsonl", r.datasetArtifactHandler.ExportOntologyInstances)
 				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
 				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)
 			}
@@ -655,8 +660,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v1.POST("/ontology-models/:template_id/retire", r.ontologyModelHandler.Retire)
 			v1.GET("/ontology-models/:template_id/versions", r.ontologyModelHandler.ListVersions)
 			v1.GET("/ontology-models/:template_id/versions/diff", r.ontologyModelHandler.VersionDiff)
+			v1.GET("/ontology-models/:template_id/changes", r.ontologyModelHandler.Changes)
+			v1.GET("/ontology-models/:template_id/datasets/:dataset_id/dismissals", r.ontologyModelHandler.ListDriftDismissals)
+			v1.POST("/ontology-models/:template_id/datasets/:dataset_id/dismissals", r.ontologyModelHandler.DismissDriftFinding)
+			v1.DELETE("/ontology-models/:template_id/datasets/:dataset_id/dismissals/:class_name", r.ontologyModelHandler.RestoreDriftFinding)
 			v1.GET("/ontology-models/:template_id/datasets", r.ontologyModelHandler.Impact)
 			v1.POST("/ontology-models/:template_id/trial", r.ontologyModelHandler.Trial)
+			// The measured half: what the corpus produced against this model.
+			// GET reads the stored measurement (open a tab without scanning a
+			// dataset); POST is the explicit refresh.
+			v1.GET("/ontology-models/:template_id/insight", r.ontologyModelHandler.GetInsight)
+			v1.POST("/ontology-models/:template_id/insight", r.ontologyModelHandler.RefreshInsight)
+			// The read-only product of one version: prose, YAML and JSON schema
+			// from the same snapshot, so a reviewer and a consumer cannot end up
+			// holding different versions of the same contract.
+			v1.GET("/ontology-models/:template_id/contract", r.ontologyModelHandler.ExportContract)
 			// Assertion review: the only cross-dataset read of a model's rows.
 			// The rows themselves are browsed per dataset (the ABox panel), but
 			// "what has this model produced that nobody checked" is a model-level

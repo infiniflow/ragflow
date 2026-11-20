@@ -2483,6 +2483,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         modelLibraryLink: '模型与版本',
         reviewNote: '评审意见',
         editModel: '编辑该模型',
+        publishChanges: '本次发布改动 {{count}} 处声明',
+        changePath: '路径',
+        changeKind: '类型',
+        changeSource: '来源',
+        publishDrift: '发布后语料仍存在的偏差（{{datasets}} 个数据集）',
+        driftUndeclared: '未声明类型 {{before}} → 下次编译后 {{after}}',
+        driftUnusedClasses: '声明了但零实例的类：{{count}}',
+        driftUnusedRelations: '声明了但零断言的关系：{{count}}',
+        publishDriftNote:
+          '发布不会重写已有的行；数据集的偏差要等重新编译后才会变化。',
         publishTitle: '发布 {{name}}',
         publishDescription:
           '发布会把当前草稿记录为 v{{next}}，并让编译改用该版本。当前生效版本为 v{{current}}。',
@@ -2581,7 +2591,144 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       // 绑定目前没有可编辑的界面，入口叫"动作"，绑定只作为每个动作的状态出现。
       ontologyOpenActions: '动作',
       ontologyOpenAudit: '审计',
+      ontologyOpenQuestions: '能力问题',
       ontologyActionsPage: '动作 — {{name}}',
+      // 能力问题：模型承诺答什么，语料让它答得出来什么。两个数分开写，因为
+      // 分数不告诉作者该补声明还是该多编译文档。
+      ontologyQuestionsPage: '能力问题 — {{name}}',
+      ontologyQuestionsSummary:
+        '{{total}} 条中 {{answered}} 条可回答 · 检测于 {{asOf}}',
+      ontologyQuestionsUnmeasured: '这个数据集还没有对这个模型跑过检测。',
+      ontologyQuestionsChecked:
+        '已检测：{{total}} 条中 {{answered}} 条可回答。',
+      ontologyInsightStale:
+        '模型在检测之后又发布过，这些数字描述的是 v{{version}}。',
+      ontologyOpenCanvas: '在画布中打开',
+      ontologyCqRunCheck: '运行检测',
+      ontologyCqCreate: '新增问题',
+      ontologyCqCreateTitle: '新增能力问题',
+      ontologyCqEditTitle: '编辑能力问题',
+      ontologyCqEdit: '编辑',
+      ontologyCqDelete: '删除',
+      ontologyCqId: '编号',
+      ontologyCqIdDuplicate: '这个编号已被其它问题占用。',
+      ontologyCqQuestion: '问题',
+      ontologyCqElements: '必需元素',
+      ontologyCqEmpty:
+        '这个模型还没有能力问题。问题才是模型可验证的入口：它点名一个答案需要哪些元素。',
+      ontologyCqBlocked: '答不出',
+      ontologyCqPartial: '部分可答',
+      ontologyCqAnswerable: '可回答',
+      ontologyCqUnmeasured: '未检测',
+      ontologyCqProgress: '{{satisfied}}/{{required}} 个元素',
+      ontologyCqDeclaredElements: '{{count}} 个必需元素',
+      ontologyCqObserved: '{{count}} 行',
+      ontologyCqReason_undeclared: '未声明',
+      ontologyCqReason_not_extracted: '已声明，语料无行',
+      ontologyCqNotMeasuredHint: '运行检测，看这些元素在语料里到底填上了没有。',
+      ontologyCqGrammarHint:
+        '元素写法：{{grammar}}。前缀 ? 表示可选，不计入覆盖度。',
+      // 漂移：语料与声明的两个方向。只有"声明为类"能在这里一键解决，其余
+      // 都是建模决定，留在画布里。
+      ontologyDrift: '漂移',
+      ontologyChangeUnpublished: '未发布',
+      ontologyChangeCount: '草稿里有 {{count}} 项变更',
+      ontologyChangeView: '查看变更',
+      ontologyChangeSubmit: '提交评审',
+      ontologyChangeRecompileNote:
+        '只发布还不够：这个数据集要重新编译，行才会更新。',
+      ontologyChangeTitle: '草稿中的变更',
+      ontologyChangeDescription:
+        '与已发布版本的差异。发布后它才会成为下次编译读取的版本；这个数据集里仍然是上一版编出来的行。',
+      ontologyChangeEmpty: '草稿没有未发布的变更。',
+      ontologyChangePath: '路径',
+      ontologyChangeKind: '类型',
+      ontologyChangeSource: '来源',
+      ontologyChangeSubmitted: '已提交评审',
+      ontologyChangeSubmitFailed: '提交评审失败',
+      ontologyDriftTruncated: '部分扫描',
+      ontologyDriftUnmeasured:
+        '这个数据集还没有对这个模型跑过检测。检测会把已编译的行与声明逐项比对。',
+      ontologyDriftRunning: '检测中…',
+      ontologyDriftDraftPending:
+        '草稿有未发布的改动。编译只读已发布版本，所以重新编译也不会变，必须先发布。',
+      ontologyDriftDone: '已检测：{{entities}} 个实体、{{relations}} 条关系。',
+      ontologyDriftFailed: '检测失败。',
+      ontologyDriftDeclare: '声明 {{name}}',
+      ontologyDriftRemoveClass: '删除这个类',
+      ontologyDriftRemoveProperty: '删除这条关系',
+      ontologyDriftDescribe: '补描述',
+      ontologyDriftDescribeClassTitle: '补充「{{name}}」的说明',
+      ontologyDriftDescribeClassDescription:
+        '零实例的类通常是声明太薄：说明会进抽取提示词，抽取才知道要找它。语料里确实没有，才应该删类。',
+      ontologyDriftDescribeTitle: '补充「{{name}}」的抽取提示',
+      ontologyDriftDescribeDescription:
+        '命中率低是因为抽取不知道这个值长什么样。下面两项会进提示词，required 不会。',
+      ontologyDriftDescribeText: '说明',
+      ontologyDriftDescribePlaceholder: '例如：合同里约定的付款截止日期',
+      ontologyDriftEnumLabel: '允许的取值（逗号分隔，可留空）',
+      ontologyDriftDescribeRequired:
+        '至少写一项：属性上只有说明和取值集合会进提示词。',
+      ontologyDriftDescribeConfirm: '写入草稿',
+      ontologyDriftRemoveClassTitle: '删除类「{{name}}」？',
+      ontologyDriftRemoveClassBody:
+        '指向它的属性会保留另一端，之后会提示缺端点。',
+      ontologyDriftRemovePropertyTitle: '删除关系「{{name}}」？',
+      ontologyDriftRemovePropertyBody: '只删声明，语料里已有的断言不受影响。',
+      ontologyDriftFixHint:
+        '这里的每个动作都写进草稿。上面的行描述的是已发布版本，发布并重新编译后才会变。',
+      ontologyDriftFixApplied:
+        '已写入草稿。发布后重新编译这个数据集——上面的行描述的是已发布版本。',
+      ontologyDriftFixNoChange: '草稿里已经是这样，没有写入。',
+      ontologyDriftRemoveConfirm: '从草稿删除',
+      ontologyDriftTitle: 'Schema 漂移',
+      ontologyDriftFindingsCount: '{{count}} 项',
+      ontologyDriftGroupUndeclared: '未声明',
+      ontologyDriftGroupUnused: '声明但零实例',
+      ontologyDriftGroupFields: '字段填充异常',
+      ontologyDriftRowEntities: '{{count}} 行',
+      ontologyDriftUndeclaredField:
+        '字段 {{field}} {{percent}} 命中，声明里没有这个类',
+      ontologyDriftUndeclaredNoField: '这些行带了一个模型没有声明的类型',
+      ontologyDriftUnusedWhy: '声明了但 {{count}} 行里没有一条',
+      ontologyDriftRelationUnusedWhy: '声明了但没有任何断言',
+      ontologyDriftSeeSamples: '看这 {{count}} 条',
+      ontologyDriftSampleEmpty: '这个类还没有加载到样例行。',
+      ontologyDriftSnapshot: '快照 v{{version}}',
+      ontologyDriftDismiss: '忽略并记原因',
+      ontologyDriftDismissTitle: '搁置「{{name}}」',
+      ontologyDriftDismissDescription:
+        '它仍留在检测结果里，只在当前数据集隐藏。重新编译不会清除该决定；在下方可撤销以重新看到这一行。',
+      ontologyDriftDismissPlaceholder:
+        '为什么这不算缺口？例如：这些行是合同里的发票，不是独立的类型',
+      ontologyDriftDismissConfirm: '记录决定',
+      ontologyDriftDismissReasonRequired:
+        '必须填写理由：没有理由，后来的人无法判断这个决定是否仍然成立。',
+      ontologyDriftDismissFailed: '记录搁置失败',
+      ontologyDriftDismissed: '已搁置',
+      ontologyDriftDismissedHint:
+        '仍在检测结果里，只在当前数据集隐藏；重新编译不会清除。撤销后这一行会重新出现。',
+      ontologyDriftRestore: '撤销',
+      ontologyDriftReview: '跳到审核队列',
+      ontologyDriftRestoreFailed: '撤销决定失败',
+      ontologyDriftTotals: '{{entities}} 个实体 · {{relations}} 条关系',
+      ontologyDriftDropped: '丢弃 {{count}}',
+      ontologyDriftUntyped: '无类型 {{count}}',
+      fieldVia: '经哪个类具化',
+      // 导出：一个版本的三种呈现，必须来自同一份快照。
+      ontologyExport: '导出',
+      ontologyExportTitle: '导出契约 — {{name}}',
+      ontologyExportVersion: '版本',
+      ontologyExportCurrent: '已发布（当前）',
+      ontologyExportProse: '人读',
+      ontologyExportMachine: '机器',
+      ontologyExportInstances: '实例',
+      ontologyExportYaml: '下载 .yaml',
+      ontologyExportSchema: '下载 schema.json',
+      ontologyExportJsonl: '下载 instances.jsonl',
+      ontologyExportInstancesHint:
+        '某个数据集的已编译行，JSON Lines 格式。文件由服务端边读边写，大小取决于语料而不是内存。',
+      aboxRelationVia: '具化类',
       ontologyInstancesNoDataset:
         '还没有数据集用这个模型编译过，暂时没有可读取的行。',
       aboxAllClasses: '全部类',

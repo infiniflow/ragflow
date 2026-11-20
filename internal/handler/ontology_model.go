@@ -45,11 +45,25 @@ type OntologyModelHandler struct {
 	// answers is scoped to one model's :template_id, and splitting it would mean
 	// two handlers resolving the same tenant for the same resource.
 	actions *service.ActionBindingService
+	// insights serves the measured half of the model: what the corpus produced
+	// against this model's declaration, and what that lets it answer. It is the
+	// same service the ABox browser reads through, because a measurement is a
+	// fold of exactly the rows that browser pages.
+	insights *service.DatasetArtifactService
+	// dismissals records the findings an operator decided not to act on. It is
+	// scoped like the measurement (model × dataset × class) because the same
+	// class can be a real gap in one corpus and an artefact of another.
+	dismissals *service.OntologyDriftDismissalService
 }
 
 // NewOntologyModelHandler creates a OntologyModelHandler.
 func NewOntologyModelHandler(svc *service.CompilationTemplateGovernanceService) *OntologyModelHandler {
-	return &OntologyModelHandler{governance: svc, actions: service.NewActionBindingService()}
+	return &OntologyModelHandler{
+		governance: svc,
+		actions:    service.NewActionBindingService(),
+		insights:   service.NewDatasetArtifactService(),
+		dismissals: service.NewOntologyDriftDismissalService(),
+	}
 }
 
 // List returns the tenant's ontology models with their published version,
@@ -302,6 +316,110 @@ func (h *OntologyModelHandler) Trial(c *gin.Context) {
 	common.RespondSuccess(c, trial, "success")
 }
 
+// Changes reports what the draft changes against the version compilation reads.
+//
+//	@Summary Draft changes against the published version
+//	@Tags ontology model
+//	@Security ApiKeyAuth
+//	@Param template_id path string true "template id"
+//	@Success 200 {object} map[string]interface{}
+//	@Router /v1/ontology-models/{template_id}/changes [get]
+func (h *OntologyModelHandler) Changes(c *gin.Context) {
+	// Membership: the drift panel reads this while deciding what to declare,
+	// and that is a reader's question. Gating it on reviewer rights would hide
+	// "what is in my draft" from the people writing it.
+	_, tenantID, ok := h.resolveReader(c)
+	if !ok {
+		return
+	}
+	changes, err := h.governance.PendingChangeSet(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"))
+	if err != nil {
+		common.RespondError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, changes, "success")
+}
+
+// ListDriftDismissals reports the findings an operator has set aside.
+//
+//	@Summary Dismissed drift findings of one dataset
+//	@Tags ontology model
+//	@Security ApiKeyAuth
+//	@Param template_id path string true "template id"
+//	@Param dataset_id path string true "dataset id"
+//	@Success 200 {object} map[string]interface{}
+//	@Router /v1/ontology-models/{template_id}/datasets/{dataset_id}/dismissals [get]
+func (h *OntologyModelHandler) ListDriftDismissals(c *gin.Context) {
+	_, tenantID, ok := h.resolveReader(c)
+	if !ok {
+		return
+	}
+	rows, err := h.dismissals.List(c.Request.Context(), dao.DB, tenantID,
+		c.Param("template_id"), c.Param("dataset_id"))
+	if err != nil {
+		common.RespondError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, gin.H{"dismissals": rows}, "success")
+}
+
+type dismissDriftRequest struct {
+	ClassName string `json:"class_name"`
+	Reason    string `json:"reason"`
+}
+
+// DismissDriftFinding records "seen, deliberately not changing the model".
+//
+//	@Summary Set a drift finding aside with a reason
+//	@Tags ontology model
+//	@Security ApiKeyAuth
+//	@Param template_id path string true "template id"
+//	@Param dataset_id path string true "dataset id"
+//	@Success 200 {object} map[string]interface{}
+//	@Router /v1/ontology-models/{template_id}/datasets/{dataset_id}/dismissals [post]
+func (h *OntologyModelHandler) DismissDriftFinding(c *gin.Context) {
+	user, tenantID, ok := h.resolveWriter(c)
+	if !ok {
+		return
+	}
+	var req dismissDriftRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.RespondError(c, common.CodeArgumentError, "invalid dismissal payload")
+		return
+	}
+	rows, err := h.dismissals.Dismiss(c.Request.Context(), dao.DB, tenantID,
+		c.Param("template_id"), c.Param("dataset_id"), req.ClassName, req.Reason, user.ID)
+	if err != nil {
+		common.RespondError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, gin.H{"dismissals": rows}, "success")
+}
+
+// RestoreDriftFinding lifts a dismissal so the finding is listed again.
+//
+//	@Summary Put a dismissed drift finding back
+//	@Tags ontology model
+//	@Security ApiKeyAuth
+//	@Param template_id path string true "template id"
+//	@Param dataset_id path string true "dataset id"
+//	@Param class_name path string true "class name"
+//	@Success 200 {object} map[string]interface{}
+//	@Router /v1/ontology-models/{template_id}/datasets/{dataset_id}/dismissals/{class_name} [delete]
+func (h *OntologyModelHandler) RestoreDriftFinding(c *gin.Context) {
+	_, tenantID, ok := h.resolveWriter(c)
+	if !ok {
+		return
+	}
+	rows, err := h.dismissals.Restore(c.Request.Context(), dao.DB, tenantID,
+		c.Param("template_id"), c.Param("dataset_id"), c.Param("class_name"))
+	if err != nil {
+		common.RespondError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, gin.H{"dismissals": rows}, "success")
+}
+
 // Impact lists the datasets a model reaching a change will affect.
 //
 // The library shows the count; this is the drill-down behind it, because "3
@@ -455,6 +573,111 @@ func (h *OntologyModelHandler) parseAssertionReviewPaging(c *gin.Context) (int, 
 // the response itself when the caller may not read there.
 func (h *OntologyModelHandler) resolveReader(c *gin.Context) (*entity.User, string, bool) {
 	return h.resolve(c, permission.TenantMember)
+}
+
+// GetInsight returns the stored measurement of one dataset against this model.
+//
+// It never scans. A dataset can hold millions of rows and the numbers only change
+// when a compile finishes, so the read is a row lookup and the workspace offers a
+// refresh instead. A model that has never been measured answers with a null
+// insight rather than an error: "not measured yet" is a state the UI shows, not a
+// failure it has to translate.
+//
+//	@Summary Read the measured drift and capability coverage
+//	@Tags ontology model
+//	@Security ApiKeyAuth
+//	@Param template_id path string true "template id"
+//	@Param dataset_id query string true "dataset the measurement is about"
+//	@Success 200 {object} map[string]interface{}
+//	@Router /v1/ontology-models/{template_id}/insight [get]
+func (h *OntologyModelHandler) GetInsight(c *gin.Context) {
+	_, tenantID, ok := h.resolveReader(c)
+	if !ok {
+		return
+	}
+	datasetID := c.Query("dataset_id")
+	if datasetID == "" {
+		common.RespondError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+	view, err := h.insights.GetInsight(c.Request.Context(), tenantID, datasetID, c.Param("template_id"))
+	if err != nil {
+		common.RespondError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, gin.H{"insight": view}, "success")
+}
+
+// RefreshInsight measures one dataset now and stores the result.
+//
+// It is a write endpoint on a reader's screen because it is the only path that
+// scans, and the scan is bounded by ontologyCountScanCap rather than by a page.
+// Members may run it: measuring harms nothing and the person looking at the drift
+// list is the one who needs it current.
+//
+//	@Summary Measure one dataset against the model
+//	@Tags ontology model
+//	@Security ApiKeyAuth
+//	@Param template_id path string true "template id"
+//	@Success 200 {object} map[string]interface{}
+//	@Router /v1/ontology-models/{template_id}/insight [post]
+func (h *OntologyModelHandler) RefreshInsight(c *gin.Context) {
+	_, tenantID, ok := h.resolveReader(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		DatasetID string `json:"dataset_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if req.DatasetID == "" {
+		common.RespondError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+	view, err := h.insights.RefreshInsight(c.Request.Context(), tenantID, req.DatasetID, c.Param("template_id"))
+	if err != nil {
+		common.RespondError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, view, "success")
+}
+
+// ExportContract renders one model version as prose, YAML and a JSON schema.
+//
+// The three travel together because they are three renderings of one version: an
+// export that could return the prose from v7 and the schema from the draft would
+// be worse than useless — it would be signed off against the wrong contract.
+//
+//	@Summary Export a model version
+//	@Tags ontology model
+//	@Security ApiKeyAuth
+//	@Param template_id path string true "template id"
+//	@Param version query int false "published version, defaults to the current one"
+//	@Success 200 {object} map[string]interface{}
+//	@Router /v1/ontology-models/{template_id}/contract [get]
+func (h *OntologyModelHandler) ExportContract(c *gin.Context) {
+	_, tenantID, ok := h.resolveReader(c)
+	if !ok {
+		return
+	}
+	version := 0
+	if raw := c.Query("version"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			common.RespondError(c, common.CodeArgumentError, "version must be an integer")
+			return
+		}
+		version = parsed
+	}
+	export, err := h.insights.ExportModelContract(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"), version)
+	if err != nil {
+		common.RespondError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, export, "success")
 }
 
 // resolveWriter resolves the caller for a lifecycle transition, which changes

@@ -137,7 +137,17 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   return (
     <div
       ref={containerRef}
-      className={cn('relative flex-1 min-h-0 h-full', !show && 'hidden')}
+      // `min-w-0` + `overflow-hidden` are load-bearing. ForceGraph writes an
+      // explicit pixel width on its canvas, and a flex item's default
+      // `min-width: auto` takes its min-content width from that canvas — so
+      // without `min-w-0` the column cannot shrink and the canvas overflows
+      // over whatever sits beside it (the drift panel), swallowing its clicks.
+      // `overflow-hidden` keeps a canvas that has not been re-measured yet
+      // inside this box instead of over the neighbour.
+      className={cn(
+        'relative flex-1 min-h-0 h-full min-w-0 overflow-hidden',
+        !show && 'hidden',
+      )}
     >
       {hasDimensions && (
         <ForceGraph2D
@@ -150,7 +160,10 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
           nodeVal={nodeVal}
           cooldownTicks={100}
           nodeLabel={getEscapedNodeLabel}
-          autoPauseRedraw={false}
+          // Redraws are request-driven (engine ticks, pan/zoom, prop changes)
+          // rather than a permanent 60fps loop. With the loop left on, every page
+          // re-render plus a hot simulation kept the main thread painting and the
+          // page stopped answering clicks.
           onEngineStop={handleEngineStop}
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}

@@ -71,6 +71,14 @@ export interface IStructureGraphRelation {
   /** `entity_type_kwd` of each endpoint: the edge's declared domain → range. */
   source_type?: string;
   target_type?: string;
+  /**
+   * The class this relation is reified through, when the model declares one.
+   *
+   * A reified relation is a fact with its own attributes — who approved what, in
+   * which role, over which interval — so the edge is shorthand for an instance
+   * of that class. Empty for a plain binary relation.
+   */
+  via?: string;
   source_chunk_ids?: string[];
   document_ids?: string[];
   doc_id?: string;

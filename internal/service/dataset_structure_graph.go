@@ -423,6 +423,14 @@ func relationNode(src, tgt, typ string, payload, row map[string]interface{}) Str
 		"source_chunk_ids": graphSourceChunkIDs(payload, row),
 		"document_ids":     graphSourceDocIDs(payload, row),
 	}
+	// A reified relation names the class that carries its own attributes. It is
+	// read from the payload first because that is where a compiler that emitted
+	// one would put it; the declaration fills it in for the ordinary case.
+	if payload != nil {
+		if via, ok := payload["via"].(string); ok && strings.TrimSpace(via) != "" {
+			node["via"] = strings.TrimSpace(via)
+		}
+	}
 	if version := graphTemplateVersion(row); version > 0 {
 		node["version"] = version
 	}

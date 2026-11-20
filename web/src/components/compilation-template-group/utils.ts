@@ -19,11 +19,15 @@ import { isEqual } from 'lodash';
 import {
   ICompilationTemplate,
   ICompilationTemplateBuiltin,
+  ICompilationTemplateConfig,
   ICompilationTemplateGroup,
   ICompilationTemplateRaptorConfig,
   ICompilationTemplateSection,
 } from '@/interfaces/database/compilation-template';
-import { ICompilationTemplateConfigRequest } from '@/interfaces/request/compilation-template';
+import {
+  ICompilationTemplateConfigRequest,
+  IUpdateCompilationTemplateGroupRequestBody,
+} from '@/interfaces/request/compilation-template';
 
 import { CompilationTemplateKind } from '@/constants/compilation';
 
@@ -325,6 +329,31 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
     config,
   };
 };
+
+/**
+ * The body of a group update where exactly one template's config changes.
+ *
+ * Every child carries its own `name`: the group endpoint validates each entry as
+ * a complete template (name, kind, config), so a payload of `{id, kind, config}`
+ * is refused with "invalid template name" (102) before anything is written —
+ * which is what a page that only patches the config runs into.
+ */
+export const buildGroupUpdatePayload = (
+  templates: ICompilationTemplate[],
+  templateId: string,
+  fix: (config: ICompilationTemplateConfig) => ICompilationTemplateConfig,
+): IUpdateCompilationTemplateGroupRequestBody => ({
+  templates: templates.map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    kind: item.kind,
+    config:
+      item.id === templateId
+        ? (fix(item.config) as unknown as ICompilationTemplateConfigRequest)
+        : (item.config as unknown as ICompilationTemplateConfigRequest),
+  })),
+});
 
 export const transformFormToPayload = (values: FormSchemaType) => {
   const template = values.templates[0];

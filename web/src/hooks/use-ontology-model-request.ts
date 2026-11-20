@@ -19,6 +19,7 @@ import {
   IAssertionReviewResult,
   IOntologyModel,
   IOntologyModelImpact,
+  IOntologyModelPendingChanges,
   IOntologyModelPublishCheck,
   IOntologyModelTrial,
   IOntologyModelVersion,
@@ -28,16 +29,27 @@ import {
   IAssertionReviewRequestBody,
   IAssertionReviewRequestParams,
 } from '@/interfaces/request/ontology-model';
+import {
+  IOntologyContractExport,
+  IOntologyInsight,
+} from '@/interfaces/database/ontology-insight';
 import i18n from '@/locales/config';
 import {
   checkOntologyModel,
   diffOntologyModelVersions,
+  dismissDriftFinding,
+  getOntologyModelChanges,
+  getOntologyModelContract,
+  getOntologyModelInsight,
   listAssertionReview,
+  listDriftDismissals,
   listOntologyModelDatasets,
   listOntologyModelVersions,
   listOntologyModels,
   publishOntologyModel,
+  refreshOntologyModelInsight,
   rejectOntologyModel,
+  restoreDriftFinding,
   retireOntologyModel,
   reviewAssertions,
   submitOntologyModelForReview,
@@ -50,6 +62,10 @@ export const enum OntologyModelApiAction {
   FetchModels = 'fetchOntologyModels',
   FetchVersions = 'fetchOntologyModelVersions',
   FetchVersionDiff = 'fetchOntologyModelVersionDiff',
+  FetchChanges = 'fetchOntologyModelChanges',
+  FetchDismissals = 'fetchDriftDismissals',
+  DismissFinding = 'dismissDriftFinding',
+  RestoreFinding = 'restoreDriftFinding',
   CheckModel = 'checkOntologyModel',
   SubmitForReview = 'submitOntologyModelForReview',
   Publish = 'publishOntologyModel',
@@ -58,6 +74,9 @@ export const enum OntologyModelApiAction {
   FetchImpact = 'fetchOntologyModelImpact',
   Trial = 'trialOntologyModel',
   ReviewAssertions = 'reviewAssertions',
+  FetchInsight = 'fetchOntologyModelInsight',
+  RefreshInsight = 'refreshOntologyModelInsight',
+  FetchContract = 'fetchOntologyModelContract',
 }
 
 export const OntologyModelKeys = {
@@ -76,6 +95,22 @@ export const OntologyModelKeys = {
    */
   allAssertionReviews: (id?: string) =>
     [OntologyModelApiAction.ReviewAssertions, id] as const,
+  /**
+   * Keyed by dataset as well as model: one model is measured once per dataset it
+   * compiles, and the numbers are not interchangeable between them.
+   */
+  insight: (id?: string, datasetId?: string) =>
+    [OntologyModelApiAction.FetchInsight, id, datasetId] as const,
+  contract: (id?: string, version?: number) =>
+    [OntologyModelApiAction.FetchContract, id, version] as const,
+  /**
+   * Model-level, not dataset-level: the draft is one document, and the drift it
+   * would leave is a fold over every dataset measured against it.
+   */
+  changes: (id?: string) => [OntologyModelApiAction.FetchChanges, id] as const,
+  /** Dismissals are per dataset: one model judged against two corpora is two scopes. */
+  dismissals: (id?: string, datasetId?: string) =>
+    [OntologyModelApiAction.FetchDismissals, id, datasetId] as const,
 };
 
 /**
@@ -421,4 +456,209 @@ export const ontologyModelStatusLabel = (status: string) => {
     default:
       return i18n.t('knowledgeCompilation.ontologyModel.status.draft');
   }
+};
+
+/**
+ * Reads the stored measurement of one dataset against a model.
+ *
+ * The fetch is gated on both ids because a measurement is scoped to a pair: the
+ * same model has different numbers in every dataset it compiles, so a request
+ * without one is not a "default" — it is a different question.
+ */
+export const useFetchOntologyInsight = (
+  id?: string,
+  datasetId?: string,
+  enabled = true,
+) => {
+  const { data, isFetching: loading, refetch } = useQuery<IOntologyInsight | null>({
+    queryKey: OntologyModelKeys.insight(id, datasetId),
+    enabled: !!id && !!datasetId && enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getOntologyModelInsight(id!, datasetId!);
+      return (data?.data?.insight ?? null) as IOntologyInsight | null;
+    },
+  });
+
+  return { insight: data ?? null, loading, refetch };
+};
+
+/**
+ * Reads the draft against the published version.
+ *
+ * Same two facts the publish dialog gets from its check, but available to anyone
+ * who can open the model: the drift panel uses it to show what stage the
+ * declaration is in, and that is a reader's question.
+ */
+export const useFetchOntologyModelChanges = (id?: string, enabled = true) => {
+  const { data, isFetching: loading, refetch } = useQuery<IOntologyModelPendingChanges | null>({
+    queryKey: OntologyModelKeys.changes(id),
+    enabled: !!id && enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getOntologyModelChanges(id!);
+      return (data?.data ?? null) as IOntologyModelPendingChanges | null;
+    },
+  });
+
+  return { pending: data ?? null, loading, refetch };
+};
+
+export interface IDriftDismissal {
+  class_name: string;
+  reason: string;
+  dismissed_by?: string;
+}
+
+/**
+ * Findings the operator set aside for one model × dataset.
+ *
+ * Kept apart from the measurement: a recompile rewrites the insight row and must
+ * not resurrect what was already judged.
+ */
+export const useFetchDriftDismissals = (id?: string, datasetId?: string) => {
+  const { data, isFetching: loading, refetch } = useQuery<IDriftDismissal[]>({
+    queryKey: OntologyModelKeys.dismissals(id, datasetId),
+    enabled: !!id && !!datasetId,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await listDriftDismissals(id!, datasetId!);
+      return (data?.data?.dismissals ?? []) as IDriftDismissal[];
+    },
+  });
+
+  const rows = data ?? [];
+  return {
+    dismissals: rows,
+    dismissed: new Set(rows.map((row) => row.class_name)),
+    loading,
+    refetch,
+  };
+};
+
+/** Records a dismissal; the reason is mandatory, so the caller collects it. */
+export const useDismissDriftFinding = () => {
+  const client = useQueryClient();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [OntologyModelApiAction.DismissFinding],
+    mutationFn: async (input: {
+      id: string;
+      datasetId: string;
+      className: string;
+      reason: string;
+    }) => {
+      const { data } = await dismissDriftFinding(input.id, input.datasetId, {
+        class_name: input.className,
+        reason: input.reason,
+      });
+      if (data?.code === 0) {
+        await client.invalidateQueries({
+          queryKey: OntologyModelKeys.dismissals(input.id, input.datasetId),
+        });
+        return { ok: true };
+      }
+      return { ok: false, message: data?.message };
+    },
+  });
+
+  return { loading, dismiss: mutateAsync };
+};
+
+/** Lifts a dismissal so the finding comes back into the list. */
+export const useRestoreDriftFinding = () => {
+  const client = useQueryClient();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [OntologyModelApiAction.RestoreFinding],
+    mutationFn: async (input: {
+      id: string;
+      datasetId: string;
+      className: string;
+    }) => {
+      const { data } = await restoreDriftFinding(
+        input.id,
+        input.datasetId,
+        input.className,
+      );
+      if (data?.code === 0) {
+        await client.invalidateQueries({
+          queryKey: OntologyModelKeys.dismissals(input.id, input.datasetId),
+        });
+        return { ok: true };
+      }
+      return { ok: false, message: data?.message };
+    },
+  });
+
+  return { loading, restore: mutateAsync };
+};
+
+/**
+ * Measures a dataset now and stores the result.
+ *
+ * The caller invalidates its own queries: the refresh changes the measurement
+ * for this pair and the publish gate for the whole model, and neither key is
+ * reachable from here without knowing which screen asked.
+ *
+ * It never throws. A measurement that fails — no data source, an unbound
+ * dataset, a model that does not exist — has to come back as a message the
+ * button can show, because a rejected promise from an onClick handler is
+ * swallowed and the run looks like it did nothing.
+ */
+export const useRefreshOntologyInsight = () => {
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [OntologyModelApiAction.RefreshInsight],
+    mutationFn: async ({
+      id,
+      datasetId,
+    }: {
+      id: string;
+      datasetId: string;
+    }): Promise<{
+      ok: boolean;
+      message?: string;
+      insight?: IOntologyInsight;
+    }> => {
+      try {
+        const { data } = await refreshOntologyModelInsight(id, datasetId);
+        if (data?.code !== 0) {
+          return { ok: false, message: data?.message };
+        }
+        return { ok: true, insight: data?.data as IOntologyInsight };
+      } catch (error) {
+        return {
+          ok: false,
+          message:
+            (error as { message?: string })?.message ??
+            'measurement failed',
+        };
+      }
+    },
+  });
+
+  return { refreshInsight: mutateAsync, loading };
+};
+
+/**
+ * Renders one model version for export.
+ *
+ * Fetch-on-open: reading a version is a decision about which version to hand to
+ * someone else, and caching it would let a re-publish leave the dialog showing
+ * yesterday's prose.
+ */
+export const useFetchOntologyModelContract = (
+  id?: string,
+  version?: number,
+  enabled = true,
+) => {
+  const { data, isFetching: loading } = useQuery<IOntologyContractExport>({
+    queryKey: OntologyModelKeys.contract(id, version),
+    enabled: !!id && enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getOntologyModelContract(id!, version);
+      return data?.data as IOntologyContractExport;
+    },
+  });
+
+  return { contract: data, loading };
 };

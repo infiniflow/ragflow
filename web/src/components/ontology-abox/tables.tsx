@@ -289,6 +289,18 @@ export function RelationTable({
                   </td>
                   <td className="px-3 py-2 font-mono text-[11px] text-text-secondary">
                     {row.type || '—'}
+                    {/* A reified relation is shorthand for an instance of this
+                        class; without the hint the extra attributes on that
+                        instance look unrelated to the edge. */}
+                    {row.via && (
+                      <div className="mt-0.5 text-[10px] text-text-disabled">
+                        {t('knowledgeCompilation.aboxRelationVia', {
+                          defaultValue: 'Reified by',
+                        })}
+                        {': '}
+                        {row.via}
+                      </div>
+                    )}
                   </td>
                   <td className="max-w-[200px] truncate px-3 py-2 font-medium">
                     {row.to || '—'}

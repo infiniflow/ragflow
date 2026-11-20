@@ -49,7 +49,41 @@ export interface IOntologyModelPublishCheck {
   next_version: number;
   blockers: IOntologyModelIssue[];
   warnings: IOntologyModelIssue[];
+  /** The draft against the version compilation reads. */
+  changes: IOntologyModelVersionChange[];
+  /**
+   * What the corpus would still disagree with after this publish. Absent when
+   * no bound dataset has been measured — an empty projection would read as
+   * "no drift", which is a different fact.
+   */
+  drift?: IOntologyModelPublishDrift;
   publishable: boolean;
+}
+
+/**
+ * The stored measurements folded into one projection, with the classes this
+ * draft adds subtracted.
+ *
+ * It describes the next compile, not the current corpus: publishing does not
+ * rewrite the rows the previous version produced.
+ */
+export interface IOntologyModelPublishDrift {
+  datasets: number;
+  undeclared: number;
+  undeclared_after: number;
+  unused_classes: number;
+  unused_relations: number;
+  /** What stays undeclared after this publish; a count alone cannot be acted on. */
+  remaining: string[];
+}
+
+/** The draft against the published version, readable without reviewer rights. */
+export interface IOntologyModelPendingChanges {
+  template_id: string;
+  current_version: number;
+  draft_pending: boolean;
+  changes: IOntologyModelVersionChange[];
+  drift?: IOntologyModelPublishDrift;
 }
 
 export interface IOntologyModel {
@@ -530,6 +564,14 @@ export interface IOntologyModelVersionChange {
   change: 'added' | 'removed' | 'modified';
   before?: string;
   after?: string;
+  /**
+   * What authorised the change — `data` (the corpus observed it), `requirement`
+   * (a competency question needed it), or `expressiveness`. Derived by the
+   * server from the path and the stored measurements, not stored on the change.
+   */
+  source?: string;
+  /** The name behind the source, e.g. the class a question asked for. */
+  source_ref?: string;
 }
 
 export interface IOntologyModelVersionDiff {

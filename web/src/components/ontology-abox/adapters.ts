@@ -99,6 +99,18 @@ export function classGraphFrom(
 }
 
 /**
+ * The classes a caller counted and found empty.
+ *
+ * "No count" is not "no instances": the instances page passes the declaration,
+ * which carries names only, so treating a missing count as zero paints the whole
+ * vocabulary grey and says the corpus is empty when nothing was measured at all.
+ */
+export const emptyClassTypes = (classes: AboxClassOption[] = []): Set<string> =>
+  new Set(
+    classes.filter((item) => item.entities === 0).map((item) => item.type),
+  );
+
+/**
  * L1/L2: the bounded subgraph the backend drew, as a force graph.
  *
  * The radius carries 来源文档数 rather than the mention count: a row that keeps

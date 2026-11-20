@@ -68,9 +68,48 @@ type ModelPublishCheck struct {
 	NextVersion int                 `json:"next_version"`
 	Blockers    []ModelPublishIssue `json:"blockers"`
 	Warnings    []ModelPublishIssue `json:"warnings"`
+	// Changes is the draft against the version compilation reads. The reviewer's
+	// first question is "what am I approving", and carrying the list here keeps
+	// the dialog from making a second request whose answer could disagree with
+	// the checks rendered beside it.
+	Changes []ModelVersionChange `json:"changes"`
+	// Drift projects what the corpus still disagrees with once this publish
+	// lands. Nil when no dataset has been measured: an empty projection would
+	// read as "no drift", which is a different fact.
+	Drift *ModelPublishDrift `json:"drift,omitempty"`
 	// Publishable is false when at least one blocker stands, which no force flag
 	// can override.
 	Publishable bool `json:"publishable"`
+}
+
+// ModelPublishDrift projects the corpus disagreement that survives this publish.
+//
+// It is a projection, not a measurement: the numbers come from the stored
+// snapshots with the classes this draft adds subtracted. Recomputing would mean
+// scanning every bound dataset each time a reviewer opens the dialog, and the
+// answer would not change until the corpus is compiled again.
+type ModelPublishDrift struct {
+	// Datasets is how many bound datasets have a stored measurement.
+	Datasets int `json:"datasets"`
+	// Undeclared counts observed-but-undeclared classes across those datasets.
+	Undeclared int `json:"undeclared"`
+	// UndeclaredAfter subtracts the classes this draft adds. Publishing does not
+	// rewrite the rows the old version produced, so the number describes the
+	// next compile, not the current corpus.
+	UndeclaredAfter int `json:"undeclared_after"`
+	UnusedClasses   int `json:"unused_classes"`
+	UnusedRelations int `json:"unused_relations"`
+	// Remaining names what stays undeclared: a count alone cannot be acted on.
+	Remaining []string `json:"remaining"`
+}
+
+// ModelPendingChanges is the draft against the version compilation reads.
+type ModelPendingChanges struct {
+	TemplateID     string               `json:"template_id"`
+	CurrentVersion int                  `json:"current_version"`
+	DraftPending   bool                 `json:"draft_pending"`
+	Changes        []ModelVersionChange `json:"changes"`
+	Drift          *ModelPublishDrift   `json:"drift,omitempty"`
 }
 
 // ModelSummary is one row of the model library.
@@ -135,7 +174,26 @@ type ModelVersionChange struct {
 	Change string `json:"change"`
 	Before string `json:"before,omitempty"`
 	After  string `json:"after,omitempty"`
+	// Source names the authorisation that asked for this change, and SourceRef
+	// points at the thing that asked (a competency question id, or the dataset
+	// whose compile observed the class).
+	//
+	// A diff without it forces the reviewer to guess, and a wrong guess is
+	// expensive at publish time: "data observed this" can be overruled with one
+	// sentence, "the requirements ask for this" cannot.
+	Source    string `json:"source,omitempty"`
+	SourceRef string `json:"source_ref,omitempty"`
 }
+
+// The four authorisations a change can come from, plus the plain edit. They are
+// the words the design uses, so a reader does not have to translate.
+const (
+	ModelChangeSourceData        = "data"
+	ModelChangeSourceRequirement = "requirement"
+	ModelChangeSourceExpression  = "expression"
+	ModelChangeSourceStandard    = "standard"
+	ModelChangeSourceManual      = "manual"
+)
 
 // ModelVersionDiff is the difference between two published versions.
 type ModelVersionDiff struct {
@@ -156,6 +214,8 @@ type CompilationTemplateGovernanceService struct {
 	templateDAO     *dao.CompilationTemplateDAO
 	versionDAO      *dao.CompilationTemplateVersionDAO
 	contractEditDAO *dao.OntologyActionContractEditDAO
+	// insightDAO holds the per-dataset measurements the drift projection reads.
+	insightDAO *dao.OntologyInsightDAO
 }
 
 // NewCompilationTemplateGovernanceService creates the governance service.
@@ -164,6 +224,7 @@ func NewCompilationTemplateGovernanceService() *CompilationTemplateGovernanceSer
 		templateDAO:     dao.NewCompilationTemplateDAO(),
 		versionDAO:      dao.NewCompilationTemplateVersionDAO(),
 		contractEditDAO: dao.NewOntologyActionContractEditDAO(),
+		insightDAO:      dao.NewOntologyInsightDAO(),
 	}
 }
 
@@ -260,7 +321,132 @@ func (s *CompilationTemplateGovernanceService) PublishCheck(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	return modelPublishCheck(template), nil
+	return s.measuredPublishCheck(ctx, db, tenantID, template)
+}
+
+// measuredPublishCheck is the gate the callers decide on: the declaration
+// findings the template alone can produce, plus the coverage findings the stored
+// measurements carry.
+//
+// The two are joined here rather than inside modelPublishCheck because only this
+// half touches the corpus. Keeping the split means the declaration checks stay
+// runnable for a model that has never been compiled, which is the state the
+// editor is in most of the time.
+func (s *CompilationTemplateGovernanceService) measuredPublishCheck(ctx context.Context, db *gorm.DB, tenantID string, template *entity.CompilationTemplate) (*ModelPublishCheck, error) {
+	check := modelPublishCheck(template)
+	if err := appendMeasuredCoverageIssues(ctx, db, tenantID, check, map[string]interface{}(template.Config)); err != nil {
+		return nil, err
+	}
+	check.Changes = s.pendingChanges(ctx, db, tenantID, template)
+	check.Drift = s.publishDriftPreview(ctx, db, tenantID, template)
+	check.Publishable = len(check.Blockers) == 0
+	return check, nil
+}
+
+// PendingChangeSet is the draft read on its own, for readers who may look at a
+// model but not gate it.
+//
+// The drift panel needs the same two facts the publish dialog does — what the
+// draft changes, and what the corpus would still disagree with — but it is not a
+// review surface and must not require reviewer rights to open.
+func (s *CompilationTemplateGovernanceService) PendingChangeSet(ctx context.Context, db *gorm.DB, tenantID, templateID string) (*ModelPendingChanges, error) {
+	template, err := s.templateDAO.GetTemplate(ctx, db, tenantID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	if template == nil {
+		return nil, fmt.Errorf("model %s not found", templateID)
+	}
+	changes := s.pendingChanges(ctx, db, tenantID, template)
+	return &ModelPendingChanges{
+		TemplateID:     templateID,
+		CurrentVersion: template.Version,
+		DraftPending:   len(changes) > 0,
+		Changes:        changes,
+		Drift:          s.publishDriftPreview(ctx, db, tenantID, template),
+	}, nil
+}
+
+// pendingChanges diffs the draft against the version compilation reads.
+//
+// Before the first publish there is no baseline. The whole config is a proposal
+// at that point, but presenting every declaration as "changed" would tell a
+// reviewer nothing, so the list stays empty.
+func (s *CompilationTemplateGovernanceService) pendingChanges(
+	ctx context.Context, db *gorm.DB, tenantID string, template *entity.CompilationTemplate,
+) []ModelVersionChange {
+	if template.Version <= 0 {
+		return []ModelVersionChange{}
+	}
+	diff, err := s.VersionDiff(ctx, db, tenantID, template.ID, 0, template.Version)
+	if err != nil {
+		// Best-effort, same as attribution: a reviewer who sees the checks but
+		// not the change list is better served than one who cannot publish.
+		return []ModelVersionChange{}
+	}
+	return diff.Changes
+}
+
+// publishDriftPreview folds the stored measurements into one projection.
+func (s *CompilationTemplateGovernanceService) publishDriftPreview(
+	ctx context.Context, db *gorm.DB, tenantID string, template *entity.CompilationTemplate,
+) *ModelPublishDrift {
+	insights, err := s.insightDAO.ListByTemplate(ctx, db, tenantID, template.ID)
+	if err != nil || len(insights) == 0 {
+		return nil
+	}
+	added := s.classesAddedByDraft(ctx, db, tenantID, template)
+	preview := &ModelPublishDrift{Datasets: len(insights), Remaining: []string{}}
+	remaining := map[string]struct{}{}
+	for _, row := range insights {
+		payload, decodeErr := decodeInsightPayload(row.Payload)
+		if decodeErr != nil {
+			// One unreadable row does not invalidate the others; the count of
+			// datasets it came from is visible so the reader can tell the
+			// projection is not the whole picture.
+			continue
+		}
+		preview.Undeclared += len(payload.Drift.UndeclaredClasses)
+		preview.UnusedClasses += len(payload.Drift.UnusedClasses)
+		preview.UnusedRelations += len(payload.Drift.UnusedProperties)
+		for _, class := range payload.Drift.UndeclaredClasses {
+			if _, covered := added[class.Type]; covered {
+				continue
+			}
+			preview.UndeclaredAfter++
+			remaining[class.Type] = struct{}{}
+		}
+	}
+	for name := range remaining {
+		preview.Remaining = append(preview.Remaining, name)
+	}
+	sort.Strings(preview.Remaining)
+	return preview
+}
+
+// classesAddedByDraft names the classes this draft declares and the published
+// version does not.
+//
+// It compares declarations rather than reading the change paths: a path says
+// where the edit landed, not whether that edit is the reason a corpus class
+// becomes declared.
+func (s *CompilationTemplateGovernanceService) classesAddedByDraft(
+	ctx context.Context, db *gorm.DB, tenantID string, template *entity.CompilationTemplate,
+) map[string]struct{} {
+	after := parseDeclaredOntology(map[string]interface{}(template.Config))
+	before := map[string]declaredClass{}
+	if template.Version > 0 {
+		if cfg, err := s.configAtVersion(ctx, db, tenantID, template.ID, template.Version); err == nil {
+			before = parseDeclaredOntology(cfg).classes
+		}
+	}
+	added := map[string]struct{}{}
+	for name := range after.classes {
+		if _, existed := before[name]; !existed {
+			added[name] = struct{}{}
+		}
+	}
+	return added
 }
 
 // SubmitForReview moves a draft to review, refusing while a blocker stands.
@@ -273,7 +459,10 @@ func (s *CompilationTemplateGovernanceService) SubmitForReview(ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
-	check := modelPublishCheck(template)
+	check, err := s.measuredPublishCheck(ctx, db, tenantID, template)
+	if err != nil {
+		return nil, err
+	}
 	switch normalizePublishStatus(template) {
 	case entity.PublishStatusDraft:
 	case entity.PublishStatusReview:
@@ -309,7 +498,10 @@ func (s *CompilationTemplateGovernanceService) PublishVersion(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
-	check := modelPublishCheck(template)
+	check, err := s.measuredPublishCheck(ctx, db, tenantID, template)
+	if err != nil {
+		return nil, err
+	}
 	if !check.Publishable {
 		return check, fmt.Errorf("model %s cannot be published: %s", templateID, blockerSummary(check))
 	}
@@ -425,12 +617,102 @@ func (s *CompilationTemplateGovernanceService) VersionDiff(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
+	changes := diffConfigs(fromConfig, toConfig)
+	// Sourcing can fail without making the diff wrong, so it is best-effort: a
+	// reviewer who has the list of changes but no attribution is better served
+	// than one who gets an error instead of the diff.
+	s.annotateChangeSources(ctx, db, tenantID, templateID, changes)
 	return &ModelVersionDiff{
 		TemplateID: templateID,
 		From:       from,
 		To:         to,
-		Changes:    diffConfigs(fromConfig, toConfig),
+		Changes:    changes,
 	}, nil
+}
+
+// annotateChangeSources labels each change with the authorisation behind it.
+//
+// The label is derived, not stored: the path already says which section changed,
+// and the only external fact needed — "did the corpus observe this class" — is in
+// the stored measurements. Adding a column to the version snapshot for it would
+// mean every write path has to remember to fill it; deriving it means the answer
+// is always consistent with what the reader can see.
+func (s *CompilationTemplateGovernanceService) annotateChangeSources(
+	ctx context.Context, db *gorm.DB, tenantID, templateID string, changes []ModelVersionChange,
+) {
+	observed := observedClassNames(ctx, db, tenantID, templateID)
+	for i := range changes {
+		change := &changes[i]
+		switch {
+		case strings.HasPrefix(change.Path, "competency.fields["):
+			change.Source = ModelChangeSourceRequirement
+			change.SourceRef = bracketedPathName(change.Path, "competency.fields[")
+		case strings.HasPrefix(change.Path, "relation.fields["):
+			// A relation change is attributed to expressiveness only when it
+			// touches the parts a plain binary relation cannot carry; renaming a
+			// relation is still an edit.
+			if isExpressionLevelPath(change.Path) {
+				change.Source = ModelChangeSourceExpression
+				change.SourceRef = bracketedPathName(change.Path, "relation.fields[")
+				continue
+			}
+			change.Source = ModelChangeSourceManual
+		case strings.HasPrefix(change.Path, "entity.fields["):
+			name := bracketedPathName(change.Path, "entity.fields[")
+			if observed[name] {
+				change.Source = ModelChangeSourceData
+				change.SourceRef = name
+				continue
+			}
+			change.Source = ModelChangeSourceManual
+		default:
+			change.Source = ModelChangeSourceManual
+		}
+	}
+}
+
+// observedClassNames collects the classes the stored measurements saw in the
+// corpus but the declaration did not name. Those are the only changes the data
+// authorisation can have asked for.
+func observedClassNames(ctx context.Context, db *gorm.DB, tenantID, templateID string) map[string]bool {
+	out := map[string]bool{}
+	insights, err := dao.NewOntologyInsightDAO().ListByTemplate(ctx, db, tenantID, templateID)
+	if err != nil {
+		return out
+	}
+	for _, insight := range insights {
+		payload, err := decodeInsightPayload(insight.Payload)
+		if err != nil {
+			continue
+		}
+		for _, class := range payload.Drift.UndeclaredClasses {
+			out[class.Type] = true
+			if class.Label != "" {
+				out[class.Label] = true
+			}
+		}
+	}
+	return out
+}
+
+// bracketedPathName reads the `[...]` segment of a config path.
+func bracketedPathName(path, prefix string) string {
+	rest := strings.TrimPrefix(path, prefix)
+	if end := strings.Index(rest, "]"); end >= 0 {
+		return rest[:end]
+	}
+	return rest
+}
+
+// expressionLevelPath reports whether a relation change touches what only a
+// reified relation can carry.
+func isExpressionLevelPath(path string) bool {
+	for _, key := range []string{".via", ".arity", ".role", ".valid_from", ".valid_to", ".interval"} {
+		if strings.Contains(path, key) {
+			return true
+		}
+	}
+	return false
 }
 
 // configAtVersion returns the config a version number refers to; version 0 is
@@ -500,6 +782,11 @@ func modelPublishCheck(template *entity.CompilationTemplate) *ModelPublishCheck 
 				Subjects: pitfall.Subjects,
 			})
 		}
+		// A competency question that requires something the model never declares
+		// cannot be answered by any compile, so it blocks like any other
+		// unsatisfiable declaration. The measured half (does the corpus actually
+		// fill it) is added from the stored snapshots, not here.
+		issues = append(issues, buildCompetencyDeclarationIssues(config)...)
 	}
 	for _, issue := range issues {
 		if issue.Severity == ModelIssueBlocker {

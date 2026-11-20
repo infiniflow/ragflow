@@ -15,6 +15,7 @@
  */
 
 import {
+  buildGroupUpdatePayload,
   sortSectionNames,
   transformDetailToForm,
   transformTemplateToPayload,
@@ -108,5 +109,54 @@ describe('compilation template round trip', () => {
     );
     expect((payload.config as any).entity.fields).toHaveLength(1);
     expect((payload.config as any).relation.fields[0].datatype).toBe('date');
+  });
+});
+
+describe('buildGroupUpdatePayload', () => {
+  const templates = [
+    {
+      id: 'tpl-1',
+      name: 'model',
+      description: 'the ontology',
+      kind: 'ontology',
+      config: { kind: 'ontology', entity: { fields: [] } },
+    },
+    {
+      id: 'tpl-2',
+      name: 'chunks',
+      description: '',
+      kind: 'text',
+      config: { kind: 'text' },
+    },
+  ] as never;
+
+  // The group endpoint validates every child as a complete template, so dropping
+  // the name here is what produced "102 invalid template name" on the drift fixes.
+  it('keeps every child name and description', () => {
+    const payload = buildGroupUpdatePayload(
+      templates,
+      'tpl-1',
+      (config) => config,
+    );
+    expect(payload.templates?.map((item) => item.name)).toEqual([
+      'model',
+      'chunks',
+    ]);
+    expect(payload.templates?.[0].description).toBe('the ontology');
+    expect(payload.templates?.map((item) => item.id)).toEqual([
+      'tpl-1',
+      'tpl-2',
+    ]);
+  });
+
+  it('patches only the target template and leaves the others untouched', () => {
+    const payload = buildGroupUpdatePayload(templates, 'tpl-1', (config) => ({
+      ...config,
+      entity: { fields: [{ type: 'invoice' }] },
+    }));
+    expect(payload.templates?.[0].config.entity).toEqual({
+      fields: [{ type: 'invoice' }],
+    });
+    expect(payload.templates?.[1].config).toEqual({ kind: 'text' });
   });
 });

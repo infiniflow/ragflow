@@ -412,6 +412,15 @@ const routeConfigOptions = [
     Component: () =>
       import('@/pages/user-setting/compilation-templates/actions'),
   },
+  // Competency questions get their own route because the coverage they show is
+  // exactly what the publish gate blocks on: a blocking finding must not be one
+  // tab deep inside the editor that produced it.
+  {
+    path: `${Routes.CompilationTemplatesEditNext}/:id/questions`,
+    layout: false,
+    Component: () =>
+      import('@/pages/user-setting/compilation-templates/questions'),
+  },
   {
     path: `${Routes.CompilationTemplatesEditNext}/:id/action-audit`,
     layout: false,

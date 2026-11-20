@@ -453,10 +453,35 @@ const apiEndpoints = {
     `${restAPIv1}/ontology-models/${id}/versions`,
   ontologyModelVersionDiff: (id: string) =>
     `${restAPIv1}/ontology-models/${id}/versions/diff`,
+  // The draft against the published version, readable without reviewer rights —
+  // the drift panel asks it while deciding what to declare.
+  ontologyModelChanges: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/changes`,
+  // Findings the operator set aside, scoped to one model × dataset: the next
+  // compile must not bring them back, and another corpus must not inherit them.
+  ontologyDriftDismissals: (id: string, datasetId: string) =>
+    `${restAPIv1}/ontology-models/${id}/datasets/${datasetId}/dismissals`,
+  ontologyDriftDismissal: (id: string, datasetId: string, className: string) =>
+    `${restAPIv1}/ontology-models/${id}/datasets/${datasetId}/dismissals/${encodeURIComponent(
+      className,
+    )}`,
   ontologyModelDatasets: (id: string) =>
     `${restAPIv1}/ontology-models/${id}/datasets`,
   ontologyModelTrial: (id: string) =>
     `${restAPIv1}/ontology-models/${id}/trial`,
+  // The measured half of a model: what the corpus produced against the
+  // declaration, stored when a compile finishes. The read never scans, so a
+  // workspace tab costs one row lookup; the POST is the explicit refresh.
+  ontologyModelInsight: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/insight`,
+  // The read-only product of one version: prose, YAML and JSON schema from the
+  // same snapshot.
+  ontologyModelContract: (id: string) =>
+    `${restAPIv1}/ontology-models/${id}/contract`,
+  // The rows themselves, streamed as JSON Lines. Separate from the ABox page
+  // read because an export has no page window.
+  ontologyInstancesExport: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ontology/instances.jsonl`,
   // The assertion queue and the verdicts on it share a path: a review is a
   // write to the rows the read just listed, not a separate resource.
   assertionReview: (id: string) =>

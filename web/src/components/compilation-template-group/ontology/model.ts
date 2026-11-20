@@ -65,6 +65,10 @@ export const OntologyPropertyKeys = [
   'label',
   'description',
   'rule',
+  // The class a relation is reified through. Declared here so the inspector can
+  // edit it and a round-trip keeps it in the declared order; the service reads
+  // the same key and refuses a value that names no class.
+  'via',
 ] as const;
 
 /** Mirrors the service's `ontologyDatatypeKinds`. */

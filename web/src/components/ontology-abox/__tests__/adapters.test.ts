@@ -20,6 +20,7 @@ import {
   classColor,
   classGraphFrom,
   egoSubgraph,
+  emptyClassTypes,
   instanceGraphFrom,
   propertyOptionsFrom,
 } from '../adapters';
@@ -231,5 +232,26 @@ describe('egoSubgraph', () => {
 
   it('passes the graph through when nothing is selected', () => {
     expect(egoSubgraph(graph, undefined)).toBe(graph);
+  });
+});
+
+describe('emptyClassTypes', () => {
+  it('does not treat a missing count as an empty class', () => {
+    // The instances page passes the declaration: names only, no counts.
+    expect(
+      emptyClassTypes([
+        { type: 'contract', label: '合同' },
+        { type: 'invoice' },
+      ]).size,
+    ).toBe(0);
+  });
+
+  it('reports only the classes that were counted at zero', () => {
+    const empty = emptyClassTypes([
+      { type: 'contract', entities: 812 },
+      { type: 'warranty', entities: 0 },
+      { type: 'invoice' },
+    ]);
+    expect([...empty]).toEqual(['warranty']);
   });
 });

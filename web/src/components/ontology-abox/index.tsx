@@ -24,13 +24,14 @@ import type {
   IStructureGraphRelation,
 } from '@/interfaces/database/document-structure';
 import { cn } from '@/lib/utils';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
   classColor,
   classGraphFrom,
   egoSubgraph,
+  emptyClassTypes,
   entitySlug,
   instanceGraphFrom,
   propertyOptionsFrom,
@@ -64,6 +65,13 @@ interface OntologyAboxPanelProps {
   properties?: AboxPropertyOption[];
   /** Opening selection — the class the reader clicked on the way in. */
   initialClass?: string;
+  /**
+   * The class to highlight in the class view, without narrowing what else is
+   * drawn. `initialClass` is a filter and remounts the panel; this is the
+   * "locate" half of a drift row — the reader keeps the surrounding picture and
+   * still sees which bubble the finding is about.
+   */
+  highlightClass?: string;
   initialProperty?: string;
   initialSource?: string;
   initialTarget?: string;
@@ -105,6 +113,7 @@ export function OntologyAboxPanel({
   classes = [],
   properties = [],
   initialClass,
+  highlightClass,
   initialProperty,
   initialSource,
   initialTarget,
@@ -119,6 +128,14 @@ export function OntologyAboxPanel({
   const [hop, setHop] = useState(1);
   const [offset, setOffset] = useState(0);
   const [activeKey, setActiveKey] = useState('');
+
+  // A locate arrives from the drift panel, which only draws class bubbles. The
+  // highlight alone would be invisible while the panel sits on another tab.
+  useEffect(() => {
+    if (highlightClass) {
+      setTab('classes');
+    }
+  }, [highlightClass]);
   const [search, setSearch] = useState('');
   const [highlightSlug, setHighlightSlug] = useState<string>();
   const [egoOnly, setEgoOnly] = useState(false);
@@ -176,6 +193,55 @@ export function OntologyAboxPanel({
         total?: number;
       }
     | undefined;
+
+  // Known-empty, not "weight 0": the instances page passes the declaration, which
+  // has no counts at all, and that must not read as an empty corpus.
+  const emptyClasses = useMemo(() => emptyClassTypes(classes), [classes]);
+
+  // The canvas turns these into force-simulation objects; an inline arrow gives
+  // it a new identity on every render and restarts the simulation, so they are
+  // declared once and kept as stable as their inputs.
+  const nodeIdOf = useCallback((node: IArtifactGraphEntity) => node.slug, []);
+  const classNodeColor = useCallback(
+    (node: IArtifactGraphEntity) =>
+      emptyClasses.has(node.type)
+        ? 'rgba(148,163,184,0.45)'
+        : classColor(node.type),
+    [emptyClasses],
+  );
+  const classNodeLabel = useCallback(
+    (node: IArtifactGraphEntity) =>
+      emptyClasses.has(node.type) ? `${node.name} · 0` : node.name,
+    [emptyClasses],
+  );
+  const classNodeRadius = useCallback(
+    (node: IArtifactGraphEntity, minWeight: number, maxWeight: number) => {
+      if (maxWeight <= minWeight) {
+        return 10;
+      }
+      const ratio = (node.weight - minWeight) / (maxWeight - minWeight);
+      return 7 + ratio * 18;
+    },
+    [],
+  );
+  const instanceNodeColor = useCallback(
+    (node: IArtifactGraphEntity) => classColor(node.type),
+    [],
+  );
+  const instanceNodeLabel = useCallback(
+    (node: IArtifactGraphEntity) => node.name,
+    [],
+  );
+  const instanceNodeRadius = useCallback(
+    (node: IArtifactGraphEntity, minWeight: number, maxWeight: number) => {
+      if (maxWeight <= minWeight) {
+        return 6;
+      }
+      const ratio = (node.weight - minWeight) / (maxWeight - minWeight);
+      return 5 + ratio * 11;
+    },
+    [],
+  );
 
   const classGraph = useMemo(
     () => classGraphFrom(classes, properties),
@@ -445,21 +511,24 @@ export function OntologyAboxPanel({
         )}
       >
         {tab === 'classes' && (
-          <div className="relative min-h-0 flex-1">
+          // `min-w-0` lets this column shrink when a side panel opens: the
+          // canvas inside carries an explicit pixel width, and a flex item's
+          // default `min-width: auto` would otherwise hold the column at the
+          // width measured before the panel existed.
+          <div className="relative min-h-0 flex-1 min-w-0">
             <ArtifactForceGraph
               show
               data={classGraph}
-              getNodeId={(node) => node.slug}
-              getNodeColor={(node) => classColor(node.type)}
-              getNodeLabel={(node) => node.name}
-              getNodeRadius={(node, minWeight, maxWeight) => {
-                if (maxWeight <= minWeight) {
-                  return 10;
-                }
-                const ratio =
-                  (node.weight - minWeight) / (maxWeight - minWeight);
-                return 7 + ratio * 18;
-              }}
+              getNodeId={nodeIdOf}
+              // A class counted at zero is drawn, but dimmed: the declaration
+              // promises it and the corpus has nothing for it, and that gap is
+              // the finding, not a reason to hide the bubble. A class with no
+              // count at all keeps its colour — absence of a measurement is not
+              // evidence of an empty class.
+              getNodeColor={classNodeColor}
+              getNodeLabel={classNodeLabel}
+              highlightNodeId={highlightClass}
+              getNodeRadius={classNodeRadius}
               onNodeClick={handleGraphNodeClick}
             />
             <AboxSearchBox
@@ -473,22 +542,15 @@ export function OntologyAboxPanel({
 
         {tab === 'instances' && (
           <>
-            <div className="relative min-h-0 flex-1">
+            <div className="relative min-h-0 flex-1 min-w-0">
               {activeGraph && activeGraph.entities.length > 0 ? (
                 <ArtifactForceGraph
                   show
                   data={activeGraph}
-                  getNodeId={(node) => node.slug}
-                  getNodeColor={(node) => classColor(node.type)}
-                  getNodeLabel={(node) => node.name}
-                  getNodeRadius={(node, minWeight, maxWeight) => {
-                    if (maxWeight <= minWeight) {
-                      return 6;
-                    }
-                    const ratio =
-                      (node.weight - minWeight) / (maxWeight - minWeight);
-                    return 5 + ratio * 11;
-                  }}
+                  getNodeId={nodeIdOf}
+                  getNodeColor={instanceNodeColor}
+                  getNodeLabel={instanceNodeLabel}
+                  getNodeRadius={instanceNodeRadius}
                   onNodeClick={handleGraphNodeClick}
                   highlightNodeId={highlightSlug}
                   totalEntities={graphPage?.total}

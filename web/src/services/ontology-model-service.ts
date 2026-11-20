@@ -55,6 +55,28 @@ export const diffOntologyModelVersions = (
 export const listOntologyModelDatasets = (id: string) =>
   request.get(api.ontologyModelDatasets(id));
 
+/** The draft against the published version, with the drift it would leave. */
+export const getOntologyModelChanges = (id: string) =>
+  request.get(api.ontologyModelChanges(id));
+
+/** Findings of one dataset the operator set aside. */
+export const listDriftDismissals = (id: string, datasetId: string) =>
+  request.get(api.ontologyDriftDismissals(id, datasetId));
+
+/** Sets a finding aside; the reason is required by the server. */
+export const dismissDriftFinding = (
+  id: string,
+  datasetId: string,
+  body: { class_name: string; reason: string },
+) => request.post(api.ontologyDriftDismissals(id, datasetId), body);
+
+/** Lifts a dismissal so the finding is listed again. */
+export const restoreDriftFinding = (
+  id: string,
+  datasetId: string,
+  className: string,
+) => request.delete(api.ontologyDriftDismissal(id, datasetId, className));
+
 /**
  * Rehearses a model change over real documents.
  *
@@ -220,3 +242,41 @@ export const listActionContractEdits = (
  */
 export const backfillActionContracts = (id: string) =>
   request.post(api.ontologyModelActionBackfill(id), {});
+
+/**
+ * Reads the stored measurement of one dataset against a model.
+ *
+ * It resolves with a null insight when nothing has been measured yet: "not
+ * measured" is a state the workspace shows, and turning it into an error would
+ * make an ordinary first-visit look like a failure.
+ */
+export const getOntologyModelInsight = (id: string, datasetId: string) =>
+  request.get(api.ontologyModelInsight(id), { params: { dataset_id: datasetId } });
+
+/**
+ * Measures one dataset now. The only path that scans, which is why it is a
+ * separate call a reader triggers rather than part of opening a tab.
+ */
+export const refreshOntologyModelInsight = (id: string, datasetId: string) =>
+  request.post(api.ontologyModelInsight(id), { dataset_id: datasetId });
+
+/**
+ * Renders one model version as prose, YAML and JSON schema.
+ *
+ * The version travels as a query parameter because the same call answers both
+ * "export what the corpus runs on" (no version) and "export this old one".
+ */
+export const getOntologyModelContract = (id: string, version?: number) =>
+  request.get(api.ontologyModelContract(id), {
+    params: version ? { version } : undefined,
+  });
+
+/**
+ * URL of the streaming row export for one dataset.
+ *
+ * Returned as a URL rather than fetched because the response is a file: the
+ * browser has to write it to disk, and buffering a corpus-sized JSONL in memory
+ * to turn it into a Blob is the one thing this endpoint exists to avoid.
+ */
+export const ontologyInstancesExportUrl = (datasetId: string, templateId: string) =>
+  `${api.ontologyInstancesExport(datasetId)}?template_id=${encodeURIComponent(templateId)}`;

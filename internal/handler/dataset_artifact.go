@@ -598,6 +598,44 @@ func (h *DatasetArtifactHandler) GetOntologyArtifacts(c *gin.Context) {
 	common.RespondSuccess(c, resp, "success")
 }
 
+// ExportOntologyInstances handles GET /datasets/<dataset_id>/ontology/instances.jsonl
+// — one model's compiled rows as JSON Lines.
+//
+// It streams instead of assembling the file: the output is bounded by the corpus,
+// not by anything a process should hold, and the reader is a download that can be
+// aborted mid-file. The Content-Disposition names the model and dataset so a
+// saved file says what it came from.
+func (h *DatasetArtifactHandler) ExportOntologyInstances(c *gin.Context) {
+	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
+	if tenantID == "" {
+		return
+	}
+	datasetID := c.Param("dataset_id")
+	templateID := c.Query("template_id")
+	if templateID == "" {
+		common.RespondError(c, common.CodeArgumentError, "template_id is required")
+		return
+	}
+	c.Header("Content-Type", "application/x-ndjson; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s-instances.jsonl"`, templateID, datasetID))
+	c.Status(http.StatusOK)
+
+	_, err := h.svc.StreamModelInstances(c.Request.Context(), tenantID, datasetID, templateID, func(line []byte) error {
+		if _, writeErr := c.Writer.Write(line); writeErr != nil {
+			return writeErr
+		}
+		c.Writer.Flush()
+		return nil
+	})
+	if err != nil {
+		// The status line is already out, so the error has to travel as a line
+		// the reader can see. A truncated file with no explanation is the worst
+		// outcome of a streaming download.
+		_, _ = c.Writer.WriteString(`{"error":` + strconv.Quote(err.Error()) + "}\n")
+		c.Writer.Flush()
+	}
+}
+
 // GetOntologyGraph handles GET /datasets/<dataset_id>/ontology/graph — the
 // ABox canvas read.
 //

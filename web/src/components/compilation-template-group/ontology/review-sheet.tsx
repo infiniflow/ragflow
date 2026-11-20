@@ -217,6 +217,16 @@ export function OntologyReviewSheet({
    * every filter, because page 3 of a different question is meaningless.
    */
   const [offset, setOffset] = useState(0);
+  /**
+   * The sheet stays mounted, so `initialClass` has to be followed rather than
+   * only read once: opening the queue from a drift finding must arrive filtered
+   * to that class even when the reader opened the queue before.
+   */
+  useEffect(() => {
+    if (initialClass === undefined) return;
+    setClassType(initialClass);
+    setOffset(0);
+  }, [initialClass]);
   /** Where `R` sends the reader when a rejection has no reason yet. */
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);

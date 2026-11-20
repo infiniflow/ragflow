@@ -186,6 +186,13 @@ type OntologyPropertyEdge struct {
 	// declared again (the writer refuses it), so this pair's edit is widening the
 	// side the template left out.
 	DeclaredName bool `json:"declared_name,omitempty"`
+	// Via names the class that reifies this relation, empty for a plain edge.
+	//
+	// A reified relation is a fact that carries its own attributes (who, in what
+	// role, over what interval). The class is declared like any other, and its
+	// instances are ordinary entity rows, so "via" is a statement about the shape
+	// of the model rather than a new kind of storage.
+	Via string `json:"via,omitempty"`
 }
 
 // OntologyGraph is the ontology view of one template bucket.
@@ -318,6 +325,13 @@ type declaredProperty struct {
 	// prompt — a mandatory attribute is how invented values get produced — so it
 	// is judged on the stored rows instead (see OntologyAttribute.Missing).
 	required bool
+	// via names the class that reifies this relation, when the model declares
+	// one. A fact like "who approved what, in which role, over which interval"
+	// does not fit an edge, so the declaration says "this relation is carried by
+	// an instance of class C". The value is still an ordinary class name: the
+	// reified row is a normal entity of that class, which is why this needs no
+	// new storage and no new compilation path.
+	via string
 }
 
 // isObject reports whether the property joins two individuals, which is what
@@ -399,6 +413,7 @@ func parseDeclaredOntology(cfg map[string]interface{}) declaredOntology {
 			domains:     splitTypeList(jsonStringAt(field, "domain")),
 			ranges:      splitTypeList(jsonStringAt(field, "range")),
 			required:    jsonBoolAt(field, "required"),
+			via:         strings.TrimSpace(jsonStringAt(field, "via")),
 		}
 	}
 	return out
@@ -554,6 +569,30 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 				strings.Join(danglingProps, ", "),
 				strings.Join(common.DeduplicateSorted(danglingClasses), ", ")),
 			Subjects: danglingProps,
+		})
+	}
+
+	// A relation reified through a class the template does not declare. The class
+	// is where the fact's own attributes (role, interval) live, so without it the
+	// relation reads as reified while nothing can ever carry the extra fields —
+	// an error, not a gap.
+	var danglingVia []string
+	for _, name := range d.propOrder {
+		via := d.props[name].via
+		if via == "" {
+			continue
+		}
+		if _, ok := d.classes[via]; !ok {
+			danglingVia = append(danglingVia, name+" -> "+via)
+		}
+	}
+	if len(danglingVia) > 0 {
+		out = append(out, OntologyPitfall{
+			Code:     "via_undeclared_class",
+			Category: pitfallLogical,
+			Severity: "error",
+			Message:  fmt.Sprintf("a relation is reified through a class the template does not declare: %s", strings.Join(danglingVia, ", ")),
+			Subjects: danglingVia,
 		})
 	}
 
@@ -1329,6 +1368,7 @@ func mergeOntologyProperties(declared declaredOntology, counts map[string]int) [
 					Target:      target,
 					Relations:   counts[key],
 					Declared:    true,
+					Via:         prop.via,
 				})
 			}
 		}
@@ -1726,6 +1766,36 @@ func (s *DatasetArtifactService) GetOntologyPropertyRelations(ctx context.Contex
 		}
 	}
 	page.Relations = mergeRelations(page.Relations)
+	stampDeclaredRelationVia(ctx, in.TenantID, in.TemplateID, page.Relations)
 	markRelationConflicts(page.Relations)
 	return page, nil
+}
+
+// stampDeclaredRelationVia fills each assertion with the class its relation is
+// reified through, when the model says so and the row does not already carry it.
+//
+// The declaration is the authority here: whether a relation is reified is a
+// property of the model, not of one extracted row, and a row-level value would
+// otherwise let two assertions of the same relation disagree about their own
+// shape.
+func stampDeclaredRelationVia(ctx context.Context, tenantID, templateID string, relations []StructureGraphRelation) {
+	if templateID == "" || len(relations) == 0 {
+		return
+	}
+	declared := parseDeclaredOntology(loadTemplateConfig(ctx, dao.NewCompilationTemplateDAO(), tenantID, templateID))
+	if len(declared.props) == 0 {
+		return
+	}
+	for _, relation := range relations {
+		if existing, _ := relation["via"].(string); strings.TrimSpace(existing) != "" {
+			continue
+		}
+		name, _ := relation["property"].(string)
+		if strings.TrimSpace(name) == "" {
+			name, _ = relation["type"].(string)
+		}
+		if via := declared.props[strings.TrimSpace(name)].via; via != "" {
+			relation["via"] = via
+		}
+	}
 }

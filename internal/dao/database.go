@@ -313,6 +313,15 @@ func autoMigrateModels() []interface{} {
 		&entity.OntologyActionBinding{},
 		&entity.OntologyActionExecution{},
 		&entity.OntologyActionContractEdit{},
+		// The measured half of a model, written when a compile finishes. Kept out
+		// of the engine for the same reason as the action tables: the numbers
+		// describe a scope that may be recompiled, and a recompile must replace
+		// them rather than accumulate a second copy.
+		&entity.OntologyInsight{},
+		// A decision, unlike a measurement: dismissing a finding has to outlive
+		// the compile that produced it, or the list trains its reader to ignore
+		// it.
+		&entity.OntologyDriftDismissal{},
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
@@ -637,6 +646,12 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.OntologyActionBinding{},
 		&entity.OntologyActionExecution{},
 		&entity.OntologyActionContractEdit{},
+		// A measurement is written by the compile that just finished and read by
+		// the model workspace, so a server started without --migrate needs it.
+		&entity.OntologyInsight{},
+		// Dismissals are written by the workspace and read on every panel open,
+		// on the same server.
+		&entity.OntologyDriftDismissal{},
 	}
 	// Edition-specific runtime tables: the chunk edit history and the dataset
 	// history are written on every chunk and dataset mutation, but the

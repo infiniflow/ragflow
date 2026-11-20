@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { ExportContractSheet } from '@/components/compilation-template-group/ontology/export-contract-sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -64,9 +65,11 @@ import {
   IOntologyModel,
   IOntologyModelIssue,
   IOntologyModelPublishCheck,
+  IOntologyModelPublishDrift,
   IOntologyModelTrial,
   IOntologyModelTrialAssertion,
   IOntologyModelVersion,
+  IOntologyModelVersionChange,
 } from '@/interfaces/database/ontology-model';
 import { Routes } from '@/routes';
 import { Layers } from 'lucide-react';
@@ -291,6 +294,10 @@ export function OntologyModelsSheet({ templateId }: OntologyModelsSheetProps) {
 
   return (
     <>
+      {/* Exporting is the other half of publishing: a version nobody outside this
+          system can read has not left the building. The trigger sits beside the
+          model library because both answer "what did I publish". */}
+      {templateId && <ExportContractSheet templateId={templateId} />}
       <Sheet open={open} onOpenChange={setOpen} modal={false}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -887,33 +894,154 @@ function PublishCheckBody({
       </div>
     );
   }
-  if (check.blockers.length === 0 && check.warnings.length === 0) {
-    return (
-      <div className="text-sm text-text-secondary">
-        {t('knowledgeCompilation.ontologyModel.noFindings')}
-      </div>
-    );
+  const hasFindings = check.blockers.length > 0 || check.warnings.length > 0;
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Findings answer "can this publish". The two blocks above them answer
+          "should it" — what the reviewer is approving, and what the corpus will
+          still disagree with afterwards. */}
+      <PublishChanges changes={check.changes} />
+      <PublishDriftPreview drift={check.drift} />
+      {hasFindings ? (
+        <div className="flex flex-col gap-3">
+          {check.blockers.length > 0 && (
+            <IssueGroup
+              heading={t('knowledgeCompilation.ontologyModel.blockers', {
+                count: check.blockers.length,
+              })}
+              issues={check.blockers}
+              tone="destructive"
+            />
+          )}
+          {check.warnings.length > 0 && (
+            <IssueGroup
+              heading={t('knowledgeCompilation.ontologyModel.warnings', {
+                count: check.warnings.length,
+              })}
+              issues={check.warnings}
+              tone="warning"
+            />
+          )}
+        </div>
+      ) : (
+        <div className="text-sm text-text-secondary">
+          {t('knowledgeCompilation.ontologyModel.noFindings')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** What this publish changes, one row per path. */
+function PublishChanges({
+  changes,
+}: {
+  changes?: IOntologyModelVersionChange[];
+}) {
+  const { t } = useTranslation();
+  const list = changes ?? [];
+  if (list.length === 0) {
+    return null;
   }
   return (
-    <div className="flex flex-col gap-3">
-      {check.blockers.length > 0 && (
-        <IssueGroup
-          heading={t('knowledgeCompilation.ontologyModel.blockers', {
-            count: check.blockers.length,
+    <div className="flex flex-col gap-1">
+      <div className="text-sm font-medium">
+        {t('knowledgeCompilation.ontologyModel.publishChanges', {
+          defaultValue: 'This publish changes {{count}} declaration(s)',
+          count: list.length,
+        })}
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-text-disabled">
+            <th className="pb-1 pr-3 font-normal">
+              {t('knowledgeCompilation.ontologyModel.changePath', {
+                defaultValue: 'Path',
+              })}
+            </th>
+            <th className="pb-1 pr-3 font-normal">
+              {t('knowledgeCompilation.ontologyModel.changeKind', {
+                defaultValue: 'Change',
+              })}
+            </th>
+            <th className="pb-1 font-normal">
+              {t('knowledgeCompilation.ontologyModel.changeSource', {
+                defaultValue: 'Authorised by',
+              })}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((change) => (
+            <tr
+              key={`${change.path}-${change.change}`}
+              className="border-t border-border-button"
+            >
+              <td className="py-1 pr-3 font-mono text-xs">{change.path}</td>
+              <td className="py-1 pr-3">{change.change}</td>
+              <td className="py-1 text-xs text-text-secondary">
+                {change.source
+                  ? `${change.source}${
+                      change.source_ref ? ` · ${change.source_ref}` : ''
+                    }`
+                  : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** What the corpus still disagrees with once this publish lands. */
+function PublishDriftPreview({
+  drift,
+}: {
+  drift?: IOntologyModelPublishDrift;
+}) {
+  const { t } = useTranslation();
+  if (!drift) {
+    return null;
+  }
+  const remaining = drift.remaining ?? [];
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="text-sm font-medium">
+        {t('knowledgeCompilation.ontologyModel.publishDrift', {
+          defaultValue: 'What the corpus would still disagree with ({{datasets}} dataset(s))',
+          datasets: drift.datasets,
+        })}
+      </div>
+      <ul className="flex flex-col gap-1 text-xs text-text-secondary">
+        <li>
+          {t('knowledgeCompilation.ontologyModel.driftUndeclared', {
+            defaultValue:
+              'Undeclared classes {{before}} → {{after}} after the next compile',
+            before: drift.undeclared,
+            after: drift.undeclared_after,
           })}
-          issues={check.blockers}
-          tone="destructive"
-        />
-      )}
-      {check.warnings.length > 0 && (
-        <IssueGroup
-          heading={t('knowledgeCompilation.ontologyModel.warnings', {
-            count: check.warnings.length,
+          {remaining.length > 0 && ` · ${remaining.join(', ')}`}
+        </li>
+        <li>
+          {t('knowledgeCompilation.ontologyModel.driftUnusedClasses', {
+            defaultValue: 'Declared classes with no instance: {{count}}',
+            count: drift.unused_classes,
           })}
-          issues={check.warnings}
-          tone="warning"
-        />
-      )}
+        </li>
+        <li>
+          {t('knowledgeCompilation.ontologyModel.driftUnusedRelations', {
+            defaultValue: 'Declared relations with no assertion: {{count}}',
+            count: drift.unused_relations,
+          })}
+        </li>
+      </ul>
+      <p className="text-[11px] leading-4 text-text-disabled">
+        {t('knowledgeCompilation.ontologyModel.publishDriftNote', {
+          defaultValue:
+            'Publishing does not rewrite existing rows; the datasets have to be recompiled before these numbers move.',
+        })}
+      </p>
     </div>
   );
 }

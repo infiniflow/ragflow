@@ -135,6 +135,15 @@ export default function EditNextCompilationTemplate() {
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => navigate(`${basePath}/${id}/questions`)}
+              >
+                {t('knowledgeCompilation.ontologyOpenQuestions', {
+                  defaultValue: 'Questions',
+                })}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => navigate(`${basePath}/${id}/actions`)}
               >
                 {t('knowledgeCompilation.ontologyOpenActions', {
