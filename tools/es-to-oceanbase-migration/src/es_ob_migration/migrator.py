@@ -247,6 +247,12 @@ class ESToOceanBaseMigrator:
         total = progress.total_documents
         migrated = progress.migrated_documents
 
+        if migrated > 0 and not progress.last_sort_values:
+            logger.warning(
+                "Progress file has no search_after cursor (written by an older "
+                "version); this resume will re-scan the whole index"
+            )
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -262,7 +268,9 @@ class ESToOceanBaseMigrator:
             )
 
             batch_count = 0
-            for batch in self.es_client.scroll_documents(es_index, batch_size):
+            for batch in self.es_client.scroll_documents(
+                es_index, batch_size, search_after=progress.last_sort_values or None
+            ):
                 batch_count += 1
 
                 # Convert batch to OceanBase format
@@ -278,6 +286,7 @@ class ESToOceanBaseMigrator:
                     self.progress_manager.update_progress(
                         progress,
                         migrated_count=inserted,
+                        last_sort_values=batch[-1].get("_sort"),
                         last_batch_ids=last_ids,
                     )
 
