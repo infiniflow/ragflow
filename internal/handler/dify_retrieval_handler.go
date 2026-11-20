@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -220,6 +221,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	if req.KnowledgeID == "" || req.Query == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "knowledge_id and query are required")
+		return
+	}
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Query); err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 

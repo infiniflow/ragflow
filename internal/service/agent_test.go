@@ -2557,6 +2557,19 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to seed agent: %v", err)
 	}
+	if err := dao.DB.AutoMigrate(&entity.Tenant{}); err != nil {
+		t.Fatalf("failed to migrate Tenant: %v", err)
+	}
+	valid := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Tenant{ID: "tenant-1", Status: &valid}).Error; err != nil {
+		t.Fatalf("failed to seed tenant: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "agent-list-owner-membership", UserID: "user-1", TenantID: "tenant-1",
+		Role: string(permission.RoleOwner), Status: &valid,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed owner membership: %v", err)
+	}
 	// The caller's own group (must appear), updated before the canvas.
 	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", "tenant-1", groupUpdate)
 	// An unowned group with empty tenant_id (must NOT appear).
