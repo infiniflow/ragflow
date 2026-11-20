@@ -21,21 +21,18 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 
 	"ragflow/internal/server/bootstrap"
 )
 
-func registerFlags(_ *flag.FlagSet, _ *bootstrap.ServerArgs) func() error {
-	return func() error { return nil }
-}
-
 func printHelp(_ *bootstrap.ServerArgs) {
 	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "RAGFlow Server - runs admin, API, ingestor, syncer and chatter in one process.")
 	fmt.Fprintln(os.Stderr, "Database migration and superuser initialization run automatically.")
+	fmt.Fprintln(os.Stderr, "Use --migrate, --admin, --api, --ingestor, --syncer or --chatter to run a single mode.")
+	fmt.Fprintln(os.Stderr, "Run --migrate once before starting individual services.")
 	fmt.Fprintln(os.Stderr, "Default ports: admin 9381, API 9380.")
 	fmt.Fprintln(os.Stderr)
 	printCommonHelp()

@@ -5,16 +5,40 @@ set -e
 cd /ragflow
 
 mode=standalone
+mode_api=0 mode_admin=0 mode_ingestor=0 mode_syncer=0 mode_chatter=0 mode_deepdoc=0 mode_migrate=0
 for arg in "$@"; do
     case "$arg" in
-        --api|--admin|--ingestor|--syncer|--chatter|--deepdoc|--migrate)
-            mode="${arg#--}"
+        --api|--admin|--ingestor|--syncer|--chatter|--deepdoc|--migrate|-api|-admin|-ingestor|-syncer|-chatter|-deepdoc|-migrate)
+            flag_name="${arg#-}"
+            flag_name="${flag_name#-}"
+            printf -v "mode_${flag_name}" '%s' 1
+            ;;
+        --api=*|--admin=*|--ingestor=*|--syncer=*|--chatter=*|--migrate=*|-api=*|-admin=*|-ingestor=*|-syncer=*|-chatter=*|-migrate=*)
+            flag_name="${arg%%=*}"
+            flag_name="${flag_name#-}"
+            flag_name="${flag_name#-}"
+            case "${arg#*=}" in
+                1|t|T|true|TRUE|True) printf -v "mode_${flag_name}" '%s' 1 ;;
+                0|f|F|false|FALSE|False) printf -v "mode_${flag_name}" '%s' 0 ;;
+            esac
             ;;
         --help|-h|--version|-v)
             exec bin/ragflow_server "$@"
             ;;
     esac
 done
+mode_count=0
+for flag_name in api admin ingestor syncer chatter deepdoc migrate; do
+    flag_var="mode_${flag_name}"
+    if [[ "${!flag_var}" == 1 ]]; then
+        mode="$flag_name"
+        mode_count=$((mode_count + 1))
+    fi
+done
+if (( mode_count > 1 )); then
+    echo "Server modes are mutually exclusive" >&2
+    exit 1
+fi
 
 echo "Start RAGFlow $mode, version: $(cat /ragflow/VERSION)"
 

@@ -397,6 +397,10 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 }
 
 func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+	if args.Mode != nil {
+		args.InitSuperUser = *args.Mode == "admin"
+		return runMode(ctx, cancel, args, services)
+	}
 	group, serviceCtx := errgroup.WithContext(ctx)
 	var workerReady []<-chan struct{}
 	waitReady := func(mode string, ready <-chan struct{}) error {
@@ -412,7 +416,7 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 		}
 	}
 	var startupErr error
-	startService := func(mode string, run func(context.Context, *bootstrap.ServerArgs) error) {
+	startService := func(mode string) {
 		if startupErr != nil || serviceCtx.Err() != nil {
 			return
 		}
@@ -435,7 +439,7 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 		ready := make(chan struct{})
 		serviceArgs.Ready = func() error { close(ready); return nil }
 		group.Go(func() error {
-			err := run(serviceCtx, &serviceArgs)
+			err := runMode(serviceCtx, cancel, &serviceArgs, services)
 			if err != nil {
 				if errors.Is(err, context.Canceled) && serviceCtx.Err() != nil {
 					return nil
@@ -453,19 +457,11 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 			workerReady = append(workerReady, ready)
 		}
 	}
-	startService("admin", admin.Run)
-	startService("api", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return apipkg.Run(ctx, *args.Name, args, services)
-	})
-	startService("ingestor", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return ingestorpkg.Run(ctx, cancel, args, services)
-	})
-	startService("syncer", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return syncerpkg.Run(ctx, cancel, args)
-	})
-	startService("chatter", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return chatterpkg.Run(ctx, args, services)
-	})
+	startService("admin")
+	startService("api")
+	startService("ingestor")
+	startService("syncer")
+	startService("chatter")
 	if startupErr == nil {
 		for _, ready := range workerReady {
 			if startupErr = waitReady("worker", ready); startupErr != nil {
@@ -486,6 +482,23 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 		return nil
 	}
 	return startupErr
+}
+
+func runMode(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+	switch *args.Mode {
+	case "admin":
+		return admin.Run(ctx, args)
+	case "api":
+		return apipkg.Run(ctx, *args.Name, args, services)
+	case "ingestor":
+		return ingestorpkg.Run(ctx, cancel, args, services)
+	case "syncer":
+		return syncerpkg.Run(ctx, cancel, args)
+	case "chatter":
+		return chatterpkg.Run(ctx, args, services)
+	default:
+		return fmt.Errorf("unsupported server mode %q", *args.Mode)
+	}
 }
 
 func checkDatabaseVersion(ctx context.Context) error {

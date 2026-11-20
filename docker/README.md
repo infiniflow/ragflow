@@ -8,6 +8,17 @@ Ingestor, Syncer and Chatter in parallel. The entrypoint renders configuration,
 starts nginx, and forwards server options unchanged. No service selection flags
 are needed. Stop the container to stop all services.
 
+For separate deployments, run `bin/ragflow_server --migrate` once before
+starting `--admin`, `--api`, `--ingestor`, `--syncer`, or `--chatter`. Each
+mode starts only its named service; Admin initializes the superuser. The
+individual service modes do not run the full database migration; their database
+initialization still reconciles runtime tables, some indexes and seed data.
+Coordinate migration with running instances and take a backup before upgrades. The image entrypoint
+starts nginx only in the default combined mode; separate API deployments need
+a separately configured web server for static files and API routing. Do not
+run multiple active Chatter instances for the same external channel without
+first verifying channel ownership and failover.
+
 DeepDoc inference runs in-process; the OSS server does not launch a standalone
 DeepDoc service. For inbound channel webhooks, publish the configured listener
 ports on the RAGFlow container.
