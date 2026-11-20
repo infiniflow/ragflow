@@ -250,7 +250,7 @@ func (e *embedder) embedWithRetry(ctx context.Context, texts []string) ([]models
 		if cerr := waitOutCooldown(ctx, quota); cerr != nil {
 			return nil, 0, cerr
 		}
-		usage := &common.ModelUsage{}
+		usage := &common.ModelUsage{StartAt: time.Now()}
 		embeds, err = e.model.Embed(ctx, req, config, usage)
 		if err == nil {
 			return embeds, usage.InputTokens, nil
