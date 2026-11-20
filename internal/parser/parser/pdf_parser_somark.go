@@ -187,11 +187,14 @@ func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string
 	}
 }
 
+// soMarkItems converts the task result into parse items. SoMark reports boxes
+// as [x0, top, x1, bottom] in the pixel space of its own page render
+// (page["page_size"]), with the corners in no fixed order; pageSizes holds the
+// source PDF's page sizes in points, indexed by zero-based page.
 func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bool, pageSizes [][2]float64) ([]map[string]any, int, []string) {
 	outputs, _ := result["outputs"].(map[string]any)
 	jsonPayload, _ := outputs["json"].(map[string]any)
 	pages, _ := jsonPayload["pages"].([]any)
-	items := make([]map[string]any, 0)
 	state := &htmlWalkState{budget: media.NewBudget()}
 	var warnings []string
 
@@ -212,73 +215,79 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 		if !ok {
 			continue
 		}
-		// SoMark pages carry a 0-based page_num; positions and page_number
-		// are 1-based.
-		pageNumber := pageIndex + 1
-		if n, ok := soMarkPageIndex(page["page_num"]); ok {
-			pageNumber = n + 1
-		}
 		if w, h := soMarkPagePixelSize(page["page_size"]); w > 0 && h > 0 {
-			pixByPage[pageNumber] = [2]float64{w, h}
+			pixByPage[soMarkPageNumber(page, pageIndex)] = [2]float64{w, h}
 		}
 	}
+	pointsByPage := make(map[int][2]float64, len(pageSizes))
+	for index, size := range pageSizes {
+		pointsByPage[index+1] = size
+	}
 
+	var blocks []ExternalBlock
 	for pageIndex, pageRaw := range pages {
 		page, ok := pageRaw.(map[string]any)
 		if !ok {
 			continue
 		}
-		// SoMark pages carry a 0-based page_num; positions and page_number
-		// are 1-based.
-		pageNumber := pageIndex + 1
-		if n, ok := soMarkPageIndex(page["page_num"]); ok {
-			pageNumber = n + 1
-		}
-		blocks, _ := page["blocks"].([]any)
-		for _, blockRaw := range blocks {
-			block, ok := blockRaw.(map[string]any)
+		pageNumber := soMarkPageNumber(page, pageIndex)
+		rawBlocks, _ := page["blocks"].([]any)
+		for _, blockRaw := range rawBlocks {
+			raw, ok := blockRaw.(map[string]any)
 			if !ok {
 				continue
 			}
-			blockItems, blockWarnings := soMarkBlockToItems(ctx, block, keepHeaderFooter, state)
+			block, ok, blockWarnings := soMarkBlock(ctx, raw, keepHeaderFooter, state)
 			warnings = append(warnings, blockWarnings...)
-			for _, item := range blockItems {
-				item["page_number"] = pageNumber
-				// A block may carry its own 0-based page_idx; it wins over the
-				// enclosing page value, which stays as the fallback. An index
-				// beyond the known page range (the source PDF's pages when
-				// readable, else the returned pages) falls back too: emitting
-				// it would point at a page that does not exist and inflate
-				// page_count downstream.
-				blockPage := pageNumber
-				pageBound := len(pages)
-				if len(pageSizes) > 0 {
-					pageBound = len(pageSizes)
-				}
-				if n, ok := soMarkPageIndex(block["page_idx"]); ok && n < pageBound {
-					blockPage = n + 1
-				}
-				if len(pageSizes) > 0 && blockPage > len(pageSizes) {
-					// The page is not in the source document; a position for
-					// it cannot be correct, so the item goes out without one.
-					items = append(items, item)
-					continue
-				}
-				src := pixByPage[blockPage]
-				if pos := soMarkBlockPosition(block, blockPage, src[0], src[1], pageSizes); pos != nil {
-					item["positions"] = [][]any{pos}
-					item["_pdf_positions"] = [][]any{pos}
-				}
-				items = append(items, item)
+			if !ok {
+				continue
 			}
+			block.Page = pageNumber
+			// A block may carry its own 0-based page_idx; it wins over the
+			// enclosing page value, which stays as the fallback. An index
+			// beyond the known page range (the source PDF's pages when
+			// readable, else the returned pages) falls back too: emitting
+			// it would point at a page that does not exist and inflate
+			// page_count downstream.
+			blockPage := pageNumber
+			pageBound := len(pages)
+			if len(pageSizes) > 0 {
+				pageBound = len(pageSizes)
+			}
+			if n, ok := soMarkPageIndex(raw["page_idx"]); ok && n < pageBound {
+				blockPage = n + 1
+			}
+			// A page that is not in the source document cannot have a correct
+			// position, so the block goes out without one.
+			if box, ok := soMarkBox(raw); ok && (len(pageSizes) == 0 || blockPage <= len(pageSizes)) {
+				block.Regions = []ExternalRegion{{Page: blockPage, Box: box}}
+			}
+			blocks = append(blocks, block)
 		}
 	}
+	items, placementWarnings := externalBlockMaps(blocks, ExternalBlockOptions{
+		Provider:    "SoMark",
+		PageSizes:   pointsByPage,
+		SourceSizes: pixByPage,
+		// The corners arrive in no fixed order, and a page that could not be
+		// measured keeps its pixel box, as SoMark's original converter left it.
+		ReorderEdges:      true,
+		KeepUnscaled:      true,
+		FigurePlaceholder: "[Image]",
+	})
+	warnings = append(warnings, placementWarnings...)
 	return items, pageCount, append(state.warnings(), warnings...)
 }
 
-// soMarkBlockPosition converts a SoMark block bbox ([x0, top, x1, bottom]) and
-// its 1-based page number into the [page, left, right, top, bottom] position
-// row used by _pdf_positions.
+// soMarkPageNumber returns the 1-based number of a page entry. SoMark pages
+// carry a 0-based page_num; the entry's position is the fallback.
+func soMarkPageNumber(page map[string]any, pageIndex int) int {
+	if n, ok := soMarkPageIndex(page["page_num"]); ok {
+		return n + 1
+	}
+	return pageIndex + 1
+}
+
 // soMarkPageIndex validates a SoMark page index before use: JSON numbers
 // arrive as float64, so reject fractional, negative, non-finite, and
 // out-of-int-range values instead of truncating them into a wrong page.
@@ -290,42 +299,21 @@ func soMarkPageIndex(raw any) (int, bool) {
 	return int(f), true
 }
 
-func soMarkBlockPosition(block map[string]any, pageNumber int, srcW, srcH float64, pageSizes [][2]float64) []any {
+// soMarkBox reads a block's bbox ([x0, top, x1, bottom]).
+func soMarkBox(block map[string]any) ([4]float64, bool) {
+	var box [4]float64
 	bbox, _ := block["bbox"].([]any)
 	if len(bbox) != 4 {
-		return nil
+		return box, false
 	}
-	var v [4]float64
 	for i, raw := range bbox {
 		n, ok := numericAny(raw)
-		if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
-			return nil
+		if !ok {
+			return box, false
 		}
-		v[i] = n
+		box[i] = n
 	}
-	x0, top, x1, bott := v[0], v[1], v[2], v[3]
-	if x0 > x1 {
-		x0, x1 = x1, x0
-	}
-	if top > bott {
-		top, bott = bott, top
-	}
-	// SoMark reports bboxes in its own pixel space (page["page_size"]), while
-	// RAGFlow positions are PDF points. Rescale into the page's point size and
-	// clamp to the page, mirroring the Python converter's pdfplumber-at-72dpi
-	// mapping. When either side is unknown the raw box is kept, matching the
-	// Python fallback for pages it could not render.
-	idx := pageNumber - 1
-	if srcW > 0 && srcH > 0 && idx >= 0 && idx < len(pageSizes) {
-		dst := pageSizes[idx]
-		if dst[0] > 0 && dst[1] > 0 {
-			x0 = min(max(x0/srcW*dst[0], 0), dst[0])
-			x1 = min(max(x1/srcW*dst[0], 0), dst[0])
-			top = min(max(top/srcH*dst[1], 0), dst[1])
-			bott = min(max(bott/srcH*dst[1], 0), dst[1])
-		}
-	}
-	return []any{float64(pageNumber), x0, x1, top, bott}
+	return box, true
 }
 
 // soMarkPagePixelSize reads a page's SoMark pixel dimensions ({w, h}); a zero
@@ -405,56 +393,51 @@ func soMarkInheritedPageValue(page pdfreader.Page, key string) pdfreader.Value {
 	return pdfreader.Value{}
 }
 
-func soMarkBlockToItems(ctx context.Context, block map[string]any, keepHeaderFooter bool, state *htmlWalkState) ([]map[string]any, []string) {
-	blockType := strings.ToLower(strings.TrimSpace(stringValue(block["type"])))
+// soMarkBlock reads one block. Catalog and blank blocks are dropped, as are
+// running headers and footers unless keepHeaderFooter is set. A table's
+// content is an HTML or Markdown fragment, so the Markdown parser splits it
+// into items here.
+func soMarkBlock(ctx context.Context, raw map[string]any, keepHeaderFooter bool, state *htmlWalkState) (ExternalBlock, bool, []string) {
+	blockType := strings.ToLower(strings.TrimSpace(stringValue(raw["type"])))
 	switch blockType {
 	case "cate", "cate_item", "blank":
-		return nil, nil
+		return ExternalBlock{}, false, nil
 	case "header", "footer":
 		if !keepHeaderFooter {
-			return nil, nil
+			return ExternalBlock{}, false, nil
 		}
 	}
-	content := strings.TrimSpace(stringValue(block["content"]))
+	block := ExternalBlock{Type: ExternalBlockText, Text: stringValue(raw["content"])}
 	switch blockType {
 	case "figure", "cs", "qrcode", "stamp":
-		if content == "" {
-			content = "[Image]"
-		}
-		return []map[string]any{{"text": content, "doc_type_kwd": "image", "layout": "figure"}}, nil
+		block.Type = ExternalBlockFigure
 	case "table":
-		if content == "" {
-			return nil, nil
+		if strings.TrimSpace(block.Text) == "" {
+			return ExternalBlock{}, false, nil
 		}
 		markdown := &MarkdownParser{libType: GoMarkdown}
-		parsed := markdown.parseWithState(ctx, "", []byte(content), state)
+		parsed := markdown.parseWithState(ctx, "", []byte(strings.TrimSpace(block.Text)), state)
 		items := ItemsToMaps(parsed.JSON)
 		for _, item := range items {
 			if item["doc_type_kwd"] == "table" {
 				item["layout"] = "table"
 			}
 		}
-		return items, parsed.Warnings
+		if len(items) == 0 {
+			return ExternalBlock{}, false, parsed.Warnings
+		}
+		block.Items = items
+		return block, true, parsed.Warnings
 	case "equation":
-		if content == "" {
-			return nil, nil
-		}
-		return []map[string]any{{"text": content, "doc_type_kwd": "text", "layout": "equation"}}, nil
+		block.Type = ExternalBlockEquation
 	case "title":
-		level := int(numberValue(block["title_level"]))
-		if level < 1 || level > 6 {
-			level = 1
+		block.Type = ExternalBlockTitle
+		block.HeadingLevel = int(numberValue(raw["title_level"]))
+		if block.HeadingLevel < 1 || block.HeadingLevel > 6 {
+			block.HeadingLevel = 1
 		}
-		if content == "" {
-			return nil, nil
-		}
-		return []map[string]any{{"text": strings.Repeat("#", level) + " " + content, "doc_type_kwd": "text", "layout": "title"}}, nil
-	default:
-		if content == "" {
-			return nil, nil
-		}
-		return []map[string]any{{"text": content, "doc_type_kwd": "text", "layout": "text"}}, nil
 	}
+	return block, true, nil
 }
 
 // envOrDefault prefers configured values, then the environment for named

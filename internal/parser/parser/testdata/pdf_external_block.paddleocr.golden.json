@@ -1,0 +1,476 @@
+{
+  "page_count": 3,
+  "items": [
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          73,
+          120
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "heading",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          73,
+          120
+        ]
+      ],
+      "text": "# Annual Report"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          130,
+          150
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "heading",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          130,
+          150
+        ]
+      ],
+      "text": "## Scope"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          160,
+          180
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "heading_level": 3,
+      "layout": "heading",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          160,
+          180
+        ]
+      ],
+      "text": "### Already a heading"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          190,
+          230
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          190,
+          230
+        ]
+      ],
+      "text": "Body paragraph."
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          240,
+          280
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "list",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          240,
+          280
+        ]
+      ],
+      "text": "- first item"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          240,
+          280
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "list",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          240,
+          280
+        ]
+      ],
+      "text": "- second item"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          290,
+          310
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "caption",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          290,
+          310
+        ]
+      ],
+      "text": "Figure 1: pipeline"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          320,
+          450
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          320,
+          450
+        ]
+      ]
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          460,
+          500
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          460,
+          500
+        ]
+      ],
+      "text": "Captioned region"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          510,
+          550
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "image",
+      "layout": "figure",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          510,
+          550
+        ]
+      ]
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          560,
+          650
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          560,
+          650
+        ]
+      ],
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "Item",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "Value",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "A",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "42",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "page": 1
+      }
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          660,
+          700
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "table",
+      "layout": "table",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          660,
+          700
+        ]
+      ],
+      "table": {
+        "grid": [
+          [
+            {
+              "text": "K",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "V",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ],
+          [
+            {
+              "text": "a",
+              "col_span": 1,
+              "row_span": 1
+            },
+            {
+              "text": "1",
+              "col_span": 1,
+              "row_span": 1
+            }
+          ]
+        ],
+        "header_rows": 1,
+        "page": 1
+      }
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          710,
+          730
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "table",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          710,
+          730
+        ]
+      ],
+      "text": "Item: 42"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          87,
+          507.5,
+          740,
+          760
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "formula",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          87,
+          507.5,
+          740,
+          760
+        ]
+      ],
+      "text": "$$E = mc^2$$"
+    },
+    {
+      "_pdf_positions": [
+        [
+          1,
+          0,
+          595.5,
+          770,
+          800
+        ]
+      ],
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "positions": [
+        [
+          1,
+          0,
+          595.5,
+          770,
+          800
+        ]
+      ],
+      "text": "clipped to the page"
+    },
+    {
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "zero area"
+    },
+    {
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "polygon box"
+    },
+    {
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 1,
+      "text": "no box"
+    },
+    {
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 2,
+      "text": "raster does not match the page"
+    },
+    {
+      "_preserve_order": true,
+      "doc_type_kwd": "text",
+      "layout": "text",
+      "page_number": 3,
+      "text": "page without OCR dimensions"
+    }
+  ],
+  "warnings": [
+    "provider warning",
+    "PaddleOCR page 2: OCR dimensions 600x600 do not match PDF aspect ratio 300x400; coordinates omitted"
+  ]
+}
