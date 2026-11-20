@@ -55,6 +55,7 @@
                         "image": {
                             "ocr_enabled": true
                         },
+                        "video": {},
                         "email": {
                             "fields": [
                                 "from",

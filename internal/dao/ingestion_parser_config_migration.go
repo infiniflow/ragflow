@@ -71,7 +71,7 @@ func (t builtinIngestionTarget) acceptsChunkParams() bool {
 	return t.chunker == "GeneralChunker" || t.chunker == "TokenChunker"
 }
 
-// Only PDF and spreadsheet settings are migrated from the Parser's flat keys.
+// Parser, PDF, spreadsheet, and video settings are migrated from the flat keys.
 var ingestionTargets = func() map[string]builtinIngestionTarget {
 	// "naive" is the historical name of the general pipeline: the embedded
 	// general template declares parser_ids ["naive"] and the registry aliases
@@ -205,6 +205,7 @@ var (
 		"children_delimiter",
 	}
 	ingestionTokenizerFlatKeys = []string{"filename_embd_weight"}
+	ingestionVideoFlatKeys     = []string{"video_prompt"}
 )
 
 // ingestionRetiredFlatKeys are Python settings that have no Go consumer at all.
@@ -215,9 +216,6 @@ var ingestionRetiredFlatKeys = []string{
 	// Splits one parse into several ingestion jobs; it is not a page range and
 	// not a chunk size.
 	"task_page_size",
-	// Video parsing is rejected at dispatch
-	// (internal/ingestion/component/media_dispatch.go:maybeDispatchVideo).
-	"video_prompt",
 }
 
 // ingestionOwnedFlatKeys is every flat key this step consumes or retires. A row
@@ -225,10 +223,11 @@ var ingestionRetiredFlatKeys = []string{
 // second run a no-op.
 func ingestionOwnedFlatKeys() []string {
 	owned := make([]string, 0, len(ingestionParserFlatKeys)+len(ingestionChunkerFlatKeys)+
-		len(ingestionTokenizerFlatKeys)+len(ingestionRetiredFlatKeys))
+		len(ingestionTokenizerFlatKeys)+len(ingestionVideoFlatKeys)+len(ingestionRetiredFlatKeys))
 	owned = append(owned, ingestionParserFlatKeys...)
 	owned = append(owned, ingestionChunkerFlatKeys...)
 	owned = append(owned, ingestionTokenizerFlatKeys...)
+	owned = append(owned, ingestionVideoFlatKeys...)
 	owned = append(owned, ingestionRetiredFlatKeys...)
 	return owned
 }
@@ -373,6 +372,9 @@ func migrateParserChunkerTokenizerConfig(config map[string]any, parserID string,
 	if err := convertIngestionTokenizer(config, target, writes, row); err != nil {
 		return false, err
 	}
+	if err := convertIngestionVideoPrompt(config, target, writes); err != nil {
+		return false, err
+	}
 	changed, err := applyNodeWrites(config, writes)
 	if err != nil {
 		return false, err
@@ -389,6 +391,22 @@ func migrateParserChunkerTokenizerConfig(config map[string]any, parserID string,
 		}
 	}
 	return changed, nil
+}
+
+// convertIngestionVideoPrompt moves Python's flat video prompt into the Parser
+// video family. Existing component-scoped values win when applyNodeWrites
+// merges the result, matching the precedence of the other migrations.
+func convertIngestionVideoPrompt(config map[string]any, target builtinIngestionTarget, writes nodeWrites) error {
+	raw, ok := config["video_prompt"]
+	if !ok || raw == nil {
+		return nil
+	}
+	prompt, ok := raw.(string)
+	if !ok {
+		return fmt.Errorf("video_prompt must be a string, got %T", raw)
+	}
+	writes.setSetup(target.parserNode, "video", "prompt", prompt)
+	return nil
 }
 
 // ingestionConfigRow carries the log context of the row being converted.

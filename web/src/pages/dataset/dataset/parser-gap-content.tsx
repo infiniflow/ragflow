@@ -1,6 +1,5 @@
 import type { TFunction } from 'i18next';
 import type { ReactNode } from 'react';
-import { FileType } from '@/constants/file';
 import { ParserGapReason, ParserModelKind } from './constant';
 import {
   BuiltinSwitchTargetLabels,
@@ -31,21 +30,7 @@ type UploadGapHintKeys = {
   mixedSwitch: string;
 };
 
-// Video uploads are accepted but parsing is unsupported (no parser implements
-// video analysis). The generic "reselect the parser" guidance is wrong for
-// them: no selectable parser can process the file, so they get their own copy.
-const isVideoGap = (gap: FileParserGap) => gap.fileType === FileType.Video;
-
-const onlyVideoGaps = (gaps: FileParserGap[]) =>
-  gaps.length > 0 && gaps.every(isVideoGap);
-
 function renderGapLine(t: TFunction, gap: FileParserGap): ReactNode {
-  if (gap.fileType === FileType.Video) {
-    return t('knowledgeDetails.fileTypeVideoUnsupported', {
-      name: gap.name,
-      fileType: t(`flow.fileFormatOptions.${gap.fileType}`),
-    });
-  }
   if (gap.reason === ParserGapReason.MissingModel) {
     return t('knowledgeDetails.fileModelMissing', {
       name: gap.name,
@@ -67,9 +52,6 @@ function renderUploadGapLine(
   t: TFunction,
   gap: UploadFileParserGap,
 ): ReactNode {
-  if (gap.fileType === FileType.Video) {
-    return renderGapLine(t, gap);
-  }
   if (gap.reason === ParserGapReason.MissingModel) {
     return renderGapLine(t, gap);
   }
@@ -109,14 +91,7 @@ export function buildParserGapModalContent(
   gaps: FileParserGap[],
   hintKeys: GapHintKeys,
 ): ReactNode {
-  return buildContent(
-    t,
-    gaps,
-    onlyVideoGaps(gaps)
-      ? 'knowledgeDetails.videoUnsupportedParseHint'
-      : pickByGapKind(gaps, hintKeys),
-    renderGapLine,
-  );
+  return buildContent(t, gaps, pickByGapKind(gaps, hintKeys), renderGapLine);
 }
 
 export function buildUploadGapModalContent(
@@ -127,9 +102,7 @@ export function buildUploadGapModalContent(
   return buildContent(
     t,
     gaps,
-    onlyVideoGaps(gaps)
-      ? 'knowledgeDetails.videoUnsupportedAfterUploadHint'
-      : pickBySwitchFate(gaps, hintKeys),
+    pickBySwitchFate(gaps, hintKeys),
     renderUploadGapLine,
   );
 }

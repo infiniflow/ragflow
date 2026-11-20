@@ -1,5 +1,4 @@
 import { Modal } from '@/components/ui/modal/modal';
-import { FileType } from '@/constants/file';
 import { useExtraBulkActions } from '@/ee/pages/dataset/dataset/use-extra-bulk-actions';
 import {
   UseRowSelectionType,
@@ -25,7 +24,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import { ShowPrivilegeModalReturnType } from '@/ee/pages/dataset/dataset/use-show-privilege-dialog';
-import { DocumentType, ParserGapReason } from './constant';
+import { DocumentType } from './constant';
 import { buildParserGapModalContent } from './parser-gap-content';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { isDocumentProcessing } from './utils';
@@ -81,26 +80,14 @@ export function useBulkOperateDataset({
             .map((x) => x.id);
 
           if (validIds.length === 0) {
-            // Pure-video selections have no parser that can process them, so
-            // offering anything that implies a fix would mislead. Acknowledge
-            // instead, mirroring the single-document run path. The reason
-            // check keeps this narrow: a future gap kind on a parseable file
-            // must keep the actionable dialog.
-            const videoOnly =
-              gaps.length > 0 &&
-              gaps.every(
-                (gap) =>
-                  gap.fileType === FileType.Video &&
-                  gap.reason === ParserGapReason.UnsupportedType,
-              );
             Modal.error({
               title: t('knowledgeDetails.parseBlockedTitle'),
               content: buildParserGapModalContent(t, gaps, {
                 missingModel: 'knowledgeDetails.addModelToParseHint',
                 unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
               }),
-              showCancel: !videoOnly,
-              okText: t(videoOnly ? 'common.ok' : 'common.cancel'),
+              showCancel: true,
+              okText: t('common.cancel'),
               closable: false,
             });
             return;
