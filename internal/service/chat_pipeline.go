@@ -1017,7 +1017,7 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
-				content = cleanCitationMarkers(contentStr)
+				content = historyMessageContent(role, contentStr)
 			}
 			llmMessage["content"] = content
 			llmMessages = append(llmMessages, llmMessage)
@@ -1575,7 +1575,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			llmMessage := normalizeLLMMessage(m)
 			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
-				content = cleanCitationMarkers(contentStr)
+				content = historyMessageContent(role, contentStr)
 			}
 			llmMessage["content"] = content
 			msg = append(msg, llmMessage)
@@ -2499,6 +2499,22 @@ func truncateForLog(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// historyMessageContent strips citation markers from a history message before
+// it reaches the model. A previous answer's markers number that turn's
+// reference, so they are removed in every spelling the answer path reads as a
+// citation: left in, the model reuses them in the new answer, where the same
+// numbers open the new turn's passages. That covers the delimited [ID:n]
+// shapes and the bare "[n]" one, which ExtractCitationMarkers accepts through
+// CitationMarkerPattern. A bare "ref12" stays, since it may be ordinary text,
+// and so do the subscripts and code of an answer about code. Other messages
+// only lose the ##n$$ markers.
+func historyMessageContent(role, content string) string {
+	if role == "assistant" {
+		return stripBareCitations(stripDelimitedCitations(content))
+	}
+	return cleanCitationMarkers(content)
 }
 
 // resolveReferenceMetadata mirrors Python's
