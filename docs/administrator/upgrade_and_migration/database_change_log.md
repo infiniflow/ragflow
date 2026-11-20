@@ -44,6 +44,8 @@ Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://
 14. `migrateResourceUserIDs` — backfills resource `user_id` values from their owner columns and records `v1.0.0.1`. `AutoMigrate` creates the columns before this step runs.
 15. `migrateIngestionLegacyConfigs` — normalizes top-level flat and component-node legacy ingestion params in datasets, documents, and custom canvas DSLs, then records `v1.0.0.2`. It runs last because its target version sorts above every earlier gated step.
 
+After the migration or runtime schema path, `InitDB` ensures `user.last_login_tenant` exists. This unversioned column is shared by both editions and is added during normal server startup as well; it has no data backfill.
+
 ## Version overview
 
 | Database version  | Scope                                                                                                        | Gate                               |
