@@ -92,7 +92,9 @@ export const ExportContractSheet = ({
       <DialogTrigger asChild>
         {trigger ?? (
           <Button variant="ghost" size="sm" className="whitespace-nowrap">
-            {t('knowledgeCompilation.ontologyExport', { defaultValue: 'Export' })}
+            {t('knowledgeCompilation.ontologyExport', {
+              defaultValue: 'Export',
+            })}
           </Button>
         )}
       </DialogTrigger>

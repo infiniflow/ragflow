@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
 )
 

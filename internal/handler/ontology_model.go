@@ -273,49 +273,6 @@ func (h *OntologyModelHandler) VersionDiff(c *gin.Context) {
 	common.RespondSuccess(c, diff, "success")
 }
 
-type trialModelRequest struct {
-	// Datasets and Documents bound the sample. Zero takes the server default.
-	Datasets  int `json:"datasets"`
-	Documents int `json:"documents"`
-}
-
-// Trial compiles the draft model over sample documents of the datasets that use
-// it and reports what publishing would change in the knowledge they hold.
-//
-// It is a POST because it is not a read: a trial runs the model, which costs an
-// LLM pass per document. The free check stays on /check; this is the action an
-// operator chooses when a count alone does not tell them enough.
-//
-//	@Summary Rehearse a model change over real documents
-//	@Tags compilation model
-//	@Security ApiKeyAuth
-//	@Param template_id path string true "template id"
-//	@Param request body trialModelRequest false "sample bounds"
-//	@Success 200 {object} map[string]interface{}
-//	@Router /v1/ontology-models/{template_id}/trial [post]
-func (h *OntologyModelHandler) Trial(c *gin.Context) {
-	_, tenantID, ok := h.resolveWriter(c)
-	if !ok {
-		return
-	}
-	var req trialModelRequest
-	if c.Request.ContentLength > 0 {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			common.RespondError(c, common.CodeArgumentError, "invalid trial payload")
-			return
-		}
-	}
-	trial, err := h.governance.Trial(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"), service.ModelTrialOptions{
-		Datasets:  req.Datasets,
-		Documents: req.Documents,
-	})
-	if err != nil {
-		common.RespondError(c, common.CodeExceptionError, err.Error())
-		return
-	}
-	common.RespondSuccess(c, trial, "success")
-}
-
 // Changes reports what the draft changes against the version compilation reads.
 //
 //	@Summary Draft changes against the published version

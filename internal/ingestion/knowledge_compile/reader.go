@@ -114,10 +114,10 @@ type engineReader struct {
 // NewEngineReader returns a Reader backed by the document engine, where the
 // compiled rows live.
 //
-// Offline callers — the publish trial that compares a draft model against what
-// the corpus already holds — need the same reconstruction the ingestion
-// consumer uses. Reading the engine themselves would mean a second copy of the
-// column-to-Meta mapping, and the two would drift.
+// Callers that inspect what a dataset already holds need the same
+// reconstruction the ingestion consumer uses. Reading the engine themselves
+// would mean a second copy of the column-to-Meta mapping, and the two would
+// drift.
 func NewEngineReader(eng engine.DocEngine) Reader {
 	return engineReader{eng: eng}
 }

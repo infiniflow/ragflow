@@ -58,7 +58,6 @@ import {
   useRejectOntologyModel,
   useRetireOntologyModel,
   useSubmitOntologyModelForReview,
-  useTrialOntologyModel,
 } from '@/hooks/use-ontology-model-request';
 import {
   OntologyModelPublishStatus,
@@ -66,8 +65,6 @@ import {
   IOntologyModelIssue,
   IOntologyModelPublishCheck,
   IOntologyModelPublishDrift,
-  IOntologyModelTrial,
-  IOntologyModelTrialAssertion,
   IOntologyModelVersion,
   IOntologyModelVersionChange,
 } from '@/interfaces/database/ontology-model';
@@ -123,10 +120,6 @@ export function OntologyModelsSheet({ templateId }: OntologyModelsSheetProps) {
     to: number;
   } | null>(null);
   const [impactTarget, setImpactTarget] = useState<IOntologyModel | null>(null);
-  // A rehearsal is an action, not a report: the dialog opens on a warning that
-  // says what it will cost, and only then runs.
-  const [trialTarget, setTrialTarget] = useState<IOntologyModel | null>(null);
-  const [trial, setTrial] = useState<IOntologyModelTrial | null>(null);
 
   const { checkModel, loading: checking } = useCheckOntologyModel();
   const { publishModel, loading: publishing } = usePublishOntologyModel();
@@ -146,7 +139,6 @@ export function OntologyModelsSheet({ templateId }: OntologyModelsSheetProps) {
   const { impact, loading: impactLoading } = useFetchOntologyModelImpact(
     impactTarget?.id,
   );
-  const { runTrial, loading: trialing } = useTrialOntologyModel();
 
   // Opening from the editor lands on the edited model once the list has
   // arrived. The ref keeps that to one automatic open per sheet opening: after
@@ -170,31 +162,12 @@ export function OntologyModelsSheet({ templateId }: OntologyModelsSheetProps) {
     setDiffVersions(null);
   }, [open, templateId, models]);
 
-  // The rehearsal is opened rather than run: the dialog states what it will
-  // cost, and the operator decides. Nothing expensive happens on a hover.
-  const openTrial = useCallback((model: IOntologyModel) => {
-    setTrialTarget(model);
-    setTrial(null);
-  }, []);
-
   // Closing drops the deep link: otherwise the dialog would reopen on every
   // refresh, and the reader could never get back to the list.
   const closeHistory = useCallback(() => {
     setHistoryTarget(null);
     setDiffVersions(null);
   }, []);
-
-  const confirmTrial = useCallback(async () => {
-    if (!trialTarget) return;
-    const result = await runTrial(trialTarget.id);
-    if (!result.ok) {
-      message.error(
-        result.message ?? t('knowledgeCompilation.ontologyModel.trialFailed'),
-      );
-      return;
-    }
-    setTrial(result.trial ?? null);
-  }, [runTrial, t, trialTarget]);
 
   // Opening the publish dialog reads the findings first: the dialog has to show
   // what stands in the way before the button is pressed, not after.
@@ -354,65 +327,11 @@ export function OntologyModelsSheet({ templateId }: OntologyModelsSheetProps) {
                   setDiffVersions(null);
                 }}
                 onImpact={setImpactTarget}
-                onTrial={openTrial}
               />
             ))}
           </div>
         </SheetContent>
       </Sheet>
-
-      <Dialog
-        open={!!trialTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            setTrialTarget(null);
-            setTrial(null);
-          }
-        }}
-      >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>
-              {t('knowledgeCompilation.ontologyModel.trialTitle', {
-                name: trialTarget?.name ?? '',
-              })}
-            </DialogTitle>
-            <DialogDescription>
-              {t('knowledgeCompilation.ontologyModel.trialDescription', {
-                current: trialTarget?.version ?? 0,
-                next: (trialTarget?.version ?? 0) + 1,
-              })}
-            </DialogDescription>
-          </DialogHeader>
-
-          {!trial && (
-            <div className="text-sm text-text-secondary">
-              {t('knowledgeCompilation.ontologyModel.trialWarning')}
-            </div>
-          )}
-
-          {trial && <ModelTrialBody trial={trial} />}
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setTrialTarget(null);
-                setTrial(null);
-              }}
-            >
-              {t('knowledgeCompilation.ontologyModel.cancel')}
-            </Button>
-            <Button disabled={trialing} onClick={confirmTrial}>
-              {trialing
-                ? t('knowledgeCompilation.ontologyModel.trialRunning')
-                : trial
-                  ? t('knowledgeCompilation.ontologyModel.trialRerun')
-                  : t('knowledgeCompilation.ontologyModel.trialRun')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={!!impactTarget}
@@ -623,7 +542,6 @@ function ModelRow({
   onRetire,
   onHistory,
   onImpact,
-  onTrial,
 }: {
   model: IOntologyModel;
   busy: boolean;
@@ -633,7 +551,6 @@ function ModelRow({
   onRetire: (model: IOntologyModel) => void;
   onHistory: (model: IOntologyModel) => void;
   onImpact: (model: IOntologyModel) => void;
-  onTrial: (model: IOntologyModel) => void;
 }) {
   const { t } = useTranslation();
   const isReview = model.publish_status === OntologyModelPublishStatus.Review;
@@ -663,18 +580,6 @@ function ModelRow({
             <Button variant="ghost" size="sm" onClick={() => onHistory(model)}>
               {t('knowledgeCompilation.ontologyModel.history')}
             </Button>
-            {/* Only a model with a published version has a baseline to
-                rehearse against; before that the rehearsal has nothing to say. */}
-            {model.version > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onTrial(model)}
-                disabled={busy}
-              >
-                {t('knowledgeCompilation.ontologyModel.trial')}
-              </Button>
-            )}
             <Button
               variant="ghost"
               size="sm"
@@ -765,117 +670,6 @@ function ModelRow({
         )}
       </CardContent>
     </Card>
-  );
-}
-
-/**
- * What the rehearsal found.
- *
- * The totals come first because they are the decision; the documents below
- * them are the evidence. A publisher who reads "2 added, 0 dropped" needs to
- * see which document and which assertions, or the number is not actionable.
- */
-function ModelTrialBody({ trial }: { trial: IOntologyModelTrial }) {
-  const { t } = useTranslation();
-  const unchangedModel = trial.added === 0 && trial.removed === 0;
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="text-sm font-medium">
-        {unchangedModel
-          ? t('knowledgeCompilation.ontologyModel.trialNoChange', {
-              runs: trial.runs,
-            })
-          : t('knowledgeCompilation.ontologyModel.trialSummary', {
-              added: trial.added,
-              removed: trial.removed,
-              runs: trial.runs,
-            })}
-      </div>
-
-      {trial.notes?.length > 0 && (
-        <ul className="list-disc pl-5 text-xs text-text-secondary">
-          {trial.notes.map((note) => (
-            <li key={note}>{note}</li>
-          ))}
-        </ul>
-      )}
-
-      <ScrollArea className="max-h-[45vh]">
-        <div className="flex flex-col gap-3 pr-3">
-          {trial.documents.map((doc) => (
-            <div
-              key={`${doc.dataset_id}:${doc.document_id}`}
-              className="rounded-md border border-border-default p-3"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="truncate text-sm font-medium">
-                  {doc.document_name}
-                </div>
-                <div className="shrink-0 text-xs text-text-secondary">
-                  {doc.dataset_name}
-                </div>
-              </div>
-              {doc.error ? (
-                // A document the trial could not run is reported, not hidden:
-                // it is part of what the publisher would be deciding on.
-                <p className="mt-1 text-xs text-state-error">{doc.error}</p>
-              ) : (
-                <>
-                  <div className="mt-1 text-xs text-text-secondary">
-                    {t('knowledgeCompilation.ontologyModel.trialUnchanged', {
-                      count: doc.unchanged,
-                    })}
-                    {' · '}
-                    {t('knowledgeCompilation.ontologyModel.trialChunks', {
-                      count: doc.chunks,
-                    })}
-                  </div>
-                  <TrialAssertionList
-                    label={t('knowledgeCompilation.ontologyModel.trialAdded')}
-                    assertions={doc.added}
-                    added
-                  />
-                  <TrialAssertionList
-                    label={t('knowledgeCompilation.ontologyModel.trialRemoved')}
-                    assertions={doc.removed}
-                  />
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      </ScrollArea>
-    </div>
-  );
-}
-
-function TrialAssertionList({
-  label,
-  assertions,
-  added,
-}: {
-  label: string;
-  assertions: IOntologyModelTrialAssertion[];
-  added?: boolean;
-}) {
-  if (assertions.length === 0) return null;
-  return (
-    <div className="mt-2">
-      <div className="text-xs font-medium">{label}</div>
-      <ul className="mt-1 flex flex-col gap-0.5">
-        {assertions.map((assertion) => (
-          <li key={assertion.key} className="text-xs">
-            <span className="text-text-secondary">
-              {assertion.type || assertion.kind}
-            </span>{' '}
-            <span className={added ? 'text-state-success' : 'text-state-error'}>
-              {assertion.name}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 
@@ -1009,7 +803,8 @@ function PublishDriftPreview({
     <div className="flex flex-col gap-1">
       <div className="text-sm font-medium">
         {t('knowledgeCompilation.ontologyModel.publishDrift', {
-          defaultValue: 'What the corpus would still disagree with ({{datasets}} dataset(s))',
+          defaultValue:
+            'What the corpus would still disagree with ({{datasets}} dataset(s))',
           datasets: drift.datasets,
         })}
       </div>

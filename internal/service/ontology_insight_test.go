@@ -70,6 +70,22 @@ func TestParseCompetencyQuestions(t *testing.T) {
 	}
 }
 
+func TestParseCompetencyElementsAcceptsOnePerLine(t *testing.T) {
+	// The editor's element field is a textarea, so authors write one element per
+	// line. A newline that stayed inside the name would drop every element after
+	// the first, and the question would look measured but empty.
+	elements := parseCompetencyElements("class:contract\nproperty:contract.amount\r\n?class:person")
+	if len(elements) != 3 {
+		t.Fatalf("expected 3 elements, got %+v", elements)
+	}
+	if elements[1].Kind != competencyProperty || elements[1].Name != "contract.amount" {
+		t.Errorf("unexpected second element: %+v", elements[1])
+	}
+	if elements[2].Required {
+		t.Error("a ?-prefixed element must be optional")
+	}
+}
+
 func TestBuildCompetencyCoverageSeparatesMissingFromUndeclared(t *testing.T) {
 	graph := &OntologyGraph{
 		Classes: []OntologyClassNode{

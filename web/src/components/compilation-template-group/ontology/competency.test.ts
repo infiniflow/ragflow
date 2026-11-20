@@ -90,6 +90,10 @@ describe('requiredElementCount', () => {
     expect(requiredElementCount('class:a | ?class:b | relation:a->b')).toBe(2);
     expect(requiredElementCount('')).toBe(0);
   });
+
+  it('accepts one element per line as well as a pipe-separated clause', () => {
+    expect(requiredElementCount('class:a\n?class:b\nproperty:a.x')).toBe(2);
+  });
 });
 
 describe('nextCompetencyId', () => {

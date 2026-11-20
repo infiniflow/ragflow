@@ -59,9 +59,7 @@ type Props = {
  */
 type QuestionState = 'blocked' | 'partial' | 'answerable' | 'unmeasured';
 
-const stateOf = (
-  coverage?: IOntologyCompetencyCoverage,
-): QuestionState => {
+const stateOf = (coverage?: IOntologyCompetencyCoverage): QuestionState => {
   if (!coverage) {
     return 'unmeasured';
   }
@@ -151,7 +149,9 @@ export const CompetencyQuestionsPanel = ({
         }))
         .sort((a, b) => {
           const rank = stateRank[a.state] - stateRank[b.state];
-          return rank !== 0 ? rank : a.question.type.localeCompare(b.question.type);
+          return rank !== 0
+            ? rank
+            : a.question.type.localeCompare(b.question.type);
         }),
     [questions, coverageById],
   );

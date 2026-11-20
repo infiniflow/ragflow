@@ -665,7 +665,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v1.POST("/ontology-models/:template_id/datasets/:dataset_id/dismissals", r.ontologyModelHandler.DismissDriftFinding)
 			v1.DELETE("/ontology-models/:template_id/datasets/:dataset_id/dismissals/:class_name", r.ontologyModelHandler.RestoreDriftFinding)
 			v1.GET("/ontology-models/:template_id/datasets", r.ontologyModelHandler.Impact)
-			v1.POST("/ontology-models/:template_id/trial", r.ontologyModelHandler.Trial)
 			// The measured half: what the corpus produced against this model.
 			// GET reads the stored measurement (open a tab without scanning a
 			// dataset); POST is the explicit refresh.

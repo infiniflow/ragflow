@@ -89,7 +89,7 @@ export const withCompetencyQuestions = (
  */
 export const requiredElementCount = (elements: string): number =>
   elements
-    .split('|')
+    .split(/[|\n]/)
     .map((part) => part.trim())
     .filter((part) => part !== '' && !part.startsWith('?')).length;
 
@@ -115,7 +115,7 @@ export const nextCompetencyId = (
 
 /**
  * The element clause grammar, in the one place both the editor and the page read
- * it: `kind:name`, `|` separated, `?` prefix for optional.
+ * it: `kind:name`, separated by `|` or a newline, `?` prefix for optional.
  */
 export const CompetencyElementGrammar =
   'class:Contract | relation:Contract->Vendor | property:Contract.amount | ?class:Person';

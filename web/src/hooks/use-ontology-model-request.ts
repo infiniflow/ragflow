@@ -21,7 +21,6 @@ import {
   IOntologyModelImpact,
   IOntologyModelPendingChanges,
   IOntologyModelPublishCheck,
-  IOntologyModelTrial,
   IOntologyModelVersion,
   IOntologyModelVersionDiff,
 } from '@/interfaces/database/ontology-model';
@@ -53,7 +52,6 @@ import {
   retireOntologyModel,
   reviewAssertions,
   submitOntologyModelForReview,
-  trialOntologyModel,
 } from '@/services/ontology-model-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
@@ -72,7 +70,6 @@ export const enum OntologyModelApiAction {
   Reject = 'rejectOntologyModel',
   Retire = 'retireOntologyModel',
   FetchImpact = 'fetchOntologyModelImpact',
-  Trial = 'trialOntologyModel',
   ReviewAssertions = 'reviewAssertions',
   FetchInsight = 'fetchOntologyModelInsight',
   RefreshInsight = 'refreshOntologyModelInsight',
@@ -331,27 +328,6 @@ export const useSubmitOntologyModelForReview = () => {
   return { loading, submitForReview: mutateAsync };
 };
 
-/**
- * Rehearses a model change over real documents.
- *
- * Nothing is invalidated on success: a rehearsal reads and compiles, it does
- * not move the lifecycle, so the library on screen is still current.
- */
-export const useTrialOntologyModel = () => {
-  const { mutateAsync, isPending: loading } = useMutation({
-    mutationKey: [OntologyModelApiAction.Trial],
-    mutationFn: async (id: string) => {
-      const { data } = await trialOntologyModel(id);
-      if (data?.code === 0) {
-        return { ok: true, trial: data.data as IOntologyModelTrial };
-      }
-      return { ok: false, message: data?.message };
-    },
-  });
-
-  return { loading, runTrial: mutateAsync };
-};
-
 export const usePublishOntologyModel = () => {
   const invalidate = useLifecycleInvalidate();
   const { mutateAsync, isPending: loading } = useMutation({
@@ -470,7 +446,11 @@ export const useFetchOntologyInsight = (
   datasetId?: string,
   enabled = true,
 ) => {
-  const { data, isFetching: loading, refetch } = useQuery<IOntologyInsight | null>({
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IOntologyInsight | null>({
     queryKey: OntologyModelKeys.insight(id, datasetId),
     enabled: !!id && !!datasetId && enabled,
     gcTime: 0,
@@ -491,7 +471,11 @@ export const useFetchOntologyInsight = (
  * declaration is in, and that is a reader's question.
  */
 export const useFetchOntologyModelChanges = (id?: string, enabled = true) => {
-  const { data, isFetching: loading, refetch } = useQuery<IOntologyModelPendingChanges | null>({
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IOntologyModelPendingChanges | null>({
     queryKey: OntologyModelKeys.changes(id),
     enabled: !!id && enabled,
     gcTime: 0,
@@ -517,7 +501,11 @@ export interface IDriftDismissal {
  * not resurrect what was already judged.
  */
 export const useFetchDriftDismissals = (id?: string, datasetId?: string) => {
-  const { data, isFetching: loading, refetch } = useQuery<IDriftDismissal[]>({
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IDriftDismissal[]>({
     queryKey: OntologyModelKeys.dismissals(id, datasetId),
     enabled: !!id && !!datasetId,
     gcTime: 0,
@@ -628,8 +616,7 @@ export const useRefreshOntologyInsight = () => {
         return {
           ok: false,
           message:
-            (error as { message?: string })?.message ??
-            'measurement failed',
+            (error as { message?: string })?.message ?? 'measurement failed',
         };
       }
     },

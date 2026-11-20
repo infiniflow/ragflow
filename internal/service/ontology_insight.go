@@ -259,12 +259,19 @@ func parseCompetencyQuestions(cfg map[string]interface{}) []CompetencyQuestion {
 // parseCompetencyElements splits the element clause. Unknown kinds are dropped
 // rather than reported: a typo in the model should not make every question look
 // unanswerable, and the element list is visible on screen for the author to fix.
+//
+// Both `|` and a newline separate elements: the editor's field is a textarea, so
+// one element per line is the natural way to write a long question, and treating
+// that newline as part of the element name would silently drop every element
+// after the first.
 func parseCompetencyElements(raw string) []CompetencyElement {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
 	}
-	parts := strings.Split(raw, "|")
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '|' || r == '\n' || r == '\r'
+	})
 	out := make([]CompetencyElement, 0, len(parts))
 	for _, part := range parts {
 		part = strings.TrimSpace(part)

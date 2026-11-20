@@ -130,49 +130,6 @@ export interface IOntologyModelImpact {
   datasets: IOntologyModelImpactDataset[];
 }
 
-/** One piece of knowledge a compile run produced. */
-export interface IOntologyModelTrialAssertion {
-  kind: string;
-  type?: string;
-  name: string;
-  key: string;
-}
-
-/** One document's rehearsal result. */
-export interface IOntologyModelTrialDocument {
-  dataset_id: string;
-  dataset_name: string;
-  document_id: string;
-  document_name: string;
-  chunks: number;
-  added: IOntologyModelTrialAssertion[];
-  removed: IOntologyModelTrialAssertion[];
-  unchanged: number;
-  /** Why this document produced no comparison. */
-  error?: string;
-}
-
-/**
- * The pre-publish rehearsal: the draft model run over real documents, compared
- * with what the corpus holds under the published version.
- *
- * Separate from the publish check because it is not free — it calls the model —
- * and because it answers a different question: the check asks whether the model
- * is self-consistent, the rehearsal asks what it would change.
- */
-export interface IOntologyModelTrial {
-  template_id: string;
-  kind: string;
-  current_version: number;
-  draft_version: number;
-  documents: IOntologyModelTrialDocument[];
-  added: number;
-  removed: number;
-  runs: number;
-  truncated: boolean;
-  notes: string[];
-}
-
 /**
  * One compiled instance or assertion, as it sits in the corpus.
  *

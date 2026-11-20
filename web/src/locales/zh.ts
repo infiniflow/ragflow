@@ -2469,23 +2469,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         impactEmpty: '当前没有数据集使用该模型。',
         impactDocs: '{{count}} 个文档',
         openDataset: '打开数据集',
-        trial: '试运行',
-        trialTitle: '试运行 {{name}}',
-        trialDescription:
-          '用真实文档运行草稿版本（v{{next}}），并与 v{{current}} 在当前语料中已提取的知识对比。',
-        trialWarning:
-          '试运行会用模型真实编译文档：每个文档都会调用一次对话模型，可能耗时较久。它不写入任何内容——不会重新编译数据集，也不会发布版本。',
-        trialRun: '开始试运行',
-        trialRerun: '再次运行',
-        trialRunning: '编译中…',
-        trialFailed: '试运行无法运行',
-        trialSummary:
-          '新增 {{added}} 条断言 · 丢失 {{removed}} 条，共 {{runs}} 次编译',
-        trialNoChange: '草稿版本产出的知识与当前语料一致，共 {{runs}} 次编译。',
-        trialAdded: '新增',
-        trialRemoved: '丢失',
-        trialUnchanged: '{{count}} 条未变',
-        trialChunks: '{{count}} 个源文本分块',
         modelLibraryLink: '模型与版本',
         reviewNote: '评审意见',
         editModel: '编辑该模型',
@@ -2633,7 +2616,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       ontologyCqReason_not_extracted: '已声明，语料无行',
       ontologyCqNotMeasuredHint: '运行检测，看这些元素在语料里到底填上了没有。',
       ontologyCqGrammarHint:
-        '元素写法：{{grammar}}。前缀 ? 表示可选，不计入覆盖度。',
+        '元素写法：{{grammar}}。每行一个或用 | 分隔；前缀 ? 表示可选，不计入覆盖度。',
       // 漂移：语料与声明的两个方向。只有"声明为类"能在这里一键解决，其余
       // 都是建模决定，留在画布里。
       ontologyDrift: '漂移',

@@ -83,8 +83,6 @@ export const restoreDriftFinding = (
  * It is a POST because it is not a read: the server compiles sampled documents
  * with the draft model, which costs an LLM pass per document.
  */
-export const trialOntologyModel = (id: string) =>
-  request.post(api.ontologyModelTrial(id), {});
 
 /**
  * Reads the assertions of a model that still need a verdict.
@@ -251,7 +249,9 @@ export const backfillActionContracts = (id: string) =>
  * make an ordinary first-visit look like a failure.
  */
 export const getOntologyModelInsight = (id: string, datasetId: string) =>
-  request.get(api.ontologyModelInsight(id), { params: { dataset_id: datasetId } });
+  request.get(api.ontologyModelInsight(id), {
+    params: { dataset_id: datasetId },
+  });
 
 /**
  * Measures one dataset now. The only path that scans, which is why it is a
@@ -278,5 +278,8 @@ export const getOntologyModelContract = (id: string, version?: number) =>
  * browser has to write it to disk, and buffering a corpus-sized JSONL in memory
  * to turn it into a Blob is the one thing this endpoint exists to avoid.
  */
-export const ontologyInstancesExportUrl = (datasetId: string, templateId: string) =>
+export const ontologyInstancesExportUrl = (
+  datasetId: string,
+  templateId: string,
+) =>
   `${api.ontologyInstancesExport(datasetId)}?template_id=${encodeURIComponent(templateId)}`;

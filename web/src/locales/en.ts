@@ -2910,24 +2910,6 @@ Example: Virtual Hosted Style`,
         impactEmpty: 'No dataset compiles against this model right now.',
         impactDocs: '{{count}} document(s)',
         openDataset: 'Open dataset',
-        trial: 'Rehearse',
-        trialTitle: 'Rehearse {{name}}',
-        trialDescription:
-          'The draft (v{{next}}) is compiled over real documents and compared with what the corpus holds under v{{current}}.',
-        trialWarning:
-          'A rehearsal compiles real documents with the model: it calls the chat model once per document and can take a while. It writes nothing — no dataset is recompiled and no version is published.',
-        trialRun: 'Run the rehearsal',
-        trialRerun: 'Run again',
-        trialRunning: 'Compiling…',
-        trialFailed: 'The rehearsal could not run',
-        trialSummary:
-          '{{added}} assertion(s) added · {{removed}} dropped, over {{runs}} compile(s)',
-        trialNoChange:
-          'The draft produces the same knowledge the corpus holds now, over {{runs}} compile(s).',
-        trialAdded: 'Added',
-        trialRemoved: 'Dropped',
-        trialUnchanged: '{{count}} unchanged',
-        trialChunks: '{{count}} chunk(s) of source text',
         modelLibraryLink: 'Models & versions',
         reviewNote: 'Review note',
         editModel: 'Edit this model',
@@ -3085,7 +3067,7 @@ Example: Virtual Hosted Style`,
       ontologyCqNotMeasuredHint:
         'Run a check to see which of these elements the corpus actually fills.',
       ontologyCqGrammarHint:
-        'Elements are written as {{grammar}}. A leading ? marks an optional element and does not lower coverage.',
+        'Elements are written as {{grammar}}, one per line or separated by |. A leading ? marks an optional element and does not lower coverage.',
       ontologyDrift: 'Drift',
       ontologyChangeUnpublished: 'unpublished',
       ontologyChangeCount: '{{count}} change(s) in the draft',

@@ -467,8 +467,6 @@ const apiEndpoints = {
     )}`,
   ontologyModelDatasets: (id: string) =>
     `${restAPIv1}/ontology-models/${id}/datasets`,
-  ontologyModelTrial: (id: string) =>
-    `${restAPIv1}/ontology-models/${id}/trial`,
   // The measured half of a model: what the corpus produced against the
   // declaration, stored when a compile finishes. The read never scans, so a
   // workspace tab costs one row lookup; the POST is the explicit refresh.
