@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"ragflow/internal/common"
 )
 
 func newMoonshotServer(t *testing.T, handler func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
@@ -544,5 +546,42 @@ func TestMoonshotValidatesInputs(t *testing.T) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestMoonshotStreamRequestsUsage(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		options, ok := body["stream_options"].(map[string]interface{})
+		if !ok || options["include_usage"] != true {
+			t.Errorf("stream_options=%v, want include_usage=true", body["stream_options"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"hello"}}]}`,
+			`data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}`,
+			`data: [DONE]`,
+			``,
+		}, "\n"))
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	usage := &common.ModelUsage{}
+	err := newMoonshotForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"kimi-k2.6",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		usage,
+		func(answer, reason *string) error { return nil },
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if usage.TotalTokens != 10 || usage.InputTokens != 7 || usage.OutputTokens != 3 {
+		t.Errorf("usage=%+v, want total 10", usage)
 	}
 }
