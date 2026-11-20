@@ -318,7 +318,7 @@ func TestSettleMessage_AckOnTerminal(t *testing.T) {
 	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
 	hb.Start()
 
-	ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool { return true })
+	ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) taskOutcome { return taskOutcome{terminal: true} })
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("body=true: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -334,7 +334,7 @@ func TestSettleMessage_NackOnNonTerminal(t *testing.T) {
 	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
 	hb.Start()
 
-	ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool { return false })
+	ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) taskOutcome { return taskOutcome{} })
 
 	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
 		t.Fatalf("body=false: expected 1 Nack/0 Ack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -369,7 +369,7 @@ func TestSettleMessage_RecoversPanicAndAcksWhenTaskTerminal(t *testing.T) {
 				panicked = true
 			}
 		}()
-		ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool {
+		ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) taskOutcome {
 			panic("boom")
 		})
 	}()
@@ -451,9 +451,9 @@ func TestSettleMessage_DBTruthOverridesBodyReturn(t *testing.T) {
 	// body returns false AND marks the task FAILED — simulating a panic
 	// recovery where markFailed succeeded: the task is terminal (FAILED)
 	// but the body signals non-terminal.
-	body := func(ctx context.Context) bool {
+	body := func(ctx context.Context) taskOutcome {
 		ingestor.markFailed(ctx, taskID, "")
-		return false
+		return taskOutcome{}
 	}
 
 	ctx := t.Context()

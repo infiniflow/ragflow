@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
+
+	infinitysdk "github.com/infiniflow/infinity-go-sdk"
 )
 
 // TestRunTask_ContextCancelledBeforePipeline makes a cancelled context settle
@@ -30,9 +33,10 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	terminal := ingestor.runTask(ctx, &entity.IngestionTask{
+	outcome := ingestor.runTask(ctx, &entity.IngestionTask{
 		ID: taskID, DocumentID: "doc-1", DatasetID: "kb-1", PipelineLogID: &runID,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably recorded cancel) on cancelled ctx")
@@ -74,10 +78,11 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 	}
 
 	runID := "run-" + taskID
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 		PipelineLogID: &runID,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably marked FAILED)")
@@ -120,9 +125,10 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 		return context.Canceled
 	}
 
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.STOPPING,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably marked STOPPED)")
@@ -153,9 +159,10 @@ func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
 		return context.DeadlineExceeded
 	}
 
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably marked FAILED)")
@@ -194,9 +201,10 @@ func TestRunTask_AlreadyCompletedAcksNotRedelivers(t *testing.T) {
 		return nil
 	}
 
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: task already COMPLETED, Ack instead of redeliver)")
@@ -234,9 +242,10 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 		return nil // pipeline still finishes successfully
 	}
 
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: settled to STOPPED, Ack)")
@@ -265,9 +274,10 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 		return nil
 	}
 
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably completed)")
@@ -280,5 +290,51 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 	}
 	if task.Status != common.COMPLETED {
 		t.Fatalf("task status = %s, want COMPLETED", task.Status)
+	}
+}
+
+// TestRunTask_EngineStartingLeavesTaskForRedelivery: Infinity answers 2007/2008
+// while it replays its log. The failure is transient, so the task must stay
+// RUNNING (settleMessage then nacks it) instead of being Acked as FAILED.
+func TestRunTask_EngineStartingLeavesTaskForRedelivery(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		var engineErr error = infinitysdk.NewInfinityException(2008, "Infinity is initing")
+		return fmt.Errorf("execute pipeline: %w", engineErr)
+	}
+
+	runID := "run-" + taskID
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		PipelineLogID: &runID,
+	})
+	terminal := outcome.terminal
+
+	if terminal {
+		t.Fatal("expected false (non-terminal: engine starting, leave for redelivery)")
+	}
+	if outcome.transientErr == nil {
+		t.Fatal("expected the transient cause to be reported to settleMessage")
+	}
+
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("task status = %s, want RUNNING", task.Status)
+	}
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, runID)
+	if err != nil {
+		t.Fatalf("list terminal events: %v", err)
+	}
+	if len(logs) != 0 {
+		t.Fatalf("terminal events = %+v, want none for a redelivered task", logs)
 	}
 }
