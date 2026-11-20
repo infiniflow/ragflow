@@ -22,7 +22,7 @@ func TestFilterOrphanRelations(t *testing.T) {
 func TestFilterOrphanRelationsScopesTemplates(t *testing.T) {
 	products := []Product{
 		{Variant: VariantStructure, TemplateID: "graph", Meta: map[string]any{"kind": "entity", "name": "A"}},
-		{Variant: VariantStructure, TemplateID: "timeline", Meta: map[string]any{"kind": "relation", "from": "A", "to": "B"}},
+		{Variant: VariantStructure, TemplateID: "other_graph", Meta: map[string]any{"kind": "relation", "from": "A", "to": "B"}},
 	}
 	if got := FilterOrphanRelations(products); len(got) != 1 {
 		t.Fatalf("relation satisfied by another template: got %d products, want 1", len(got))

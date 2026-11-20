@@ -133,7 +133,7 @@ func compilationStatusEntryMatches(entry entity.KnowledgeCompileEntry, kind stri
 			return true
 		}
 		if strings.EqualFold(strings.TrimSpace(variant), "structure") &&
-			(kind == "Graph" || kind == "Timeline" || kind == "PageIndex") {
+			(kind == "Graph" || kind == "PageIndex" || (kind != "" && additionalStructureCompilationKinds[strings.ToLower(kind)] == kind)) {
 			return true
 		}
 	}
@@ -150,11 +150,9 @@ func normalizeCompilationKind(kind string) string {
 		return "Graph"
 	case "mindmap", "mind_map":
 		return "Mindmap"
-	case "timeline":
-		return "Timeline"
 	case "pageindex", "page_index", "skill":
 		return "PageIndex"
 	default:
-		return ""
+		return additionalStructureCompilationKinds[strings.ToLower(strings.TrimSpace(kind))]
 	}
 }

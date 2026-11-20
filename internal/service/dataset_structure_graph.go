@@ -669,14 +669,7 @@ func errDatasetStructureUnsupported() error {
 	return fmt.Errorf("dataset structure graph unsupported on doc engine %q", engine.GetEngineType())
 }
 
-// resolveDatasetStructureKind maps a user-facing dataset-structure kind to the
-// stored top-level kind (mirror Python _DATASET_STRUCTURE_KIND_ALIASES). It is
-// DELIBERATELY separate from compilationTemplateKind: that helper folds
-// knowledge_graph→timeline, which would merge distinct dataset kinds, and it
-// lacks the graph→knowledge_graph / mindmap→mind_map aliases (Python's
-// dataset_api_service.py L1803-1805 documents exactly why it does not reuse the
-// general normalizer). Returns "" for an invalid kind (caller maps that to
-// 400 ARGUMENT_ERROR, never "return all").
+// resolveDatasetStructureKind maps a dataset-structure kind to its stored kind.
 func resolveDatasetStructureKind(kind string) string {
 	k := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(kind, "-", "_")))
 	switch k {
@@ -687,14 +680,12 @@ func resolveDatasetStructureKind(kind string) string {
 		// user-facing "mindmap" to the canonical compilation kind
 		// "mind_map" (the template kind, which is what read/delete paths match on).
 		return "mind_map"
-	case "timeline":
-		return "timeline"
 	case "session_essence":
 		return "session_essence"
 	case "session_graph":
 		return "session_graph"
 	}
-	return ""
+	return additionalDatasetStructureKinds[k]
 }
 
 // structureKindForBucket returns the normalized kind used for tree/page_index
