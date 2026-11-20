@@ -19,7 +19,7 @@ func TestChatConfigFloatKeepsNarrowContract(t *testing.T) {
 		{"float64", 0.7, 0.7},
 		{"float32", float32(0.5), 0.5},
 		{"int", 1, 1},
-		{"int64", 1, 1},
+		{"int64", int64(1), 1},
 	} {
 		t.Run("accept_"+tc.name, func(t *testing.T) {
 			got, ok := chatConfigFloat(tc.v)
