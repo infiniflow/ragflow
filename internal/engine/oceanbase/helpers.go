@@ -18,6 +18,7 @@ package oceanbase
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"ragflow/internal/common"
 	"sort"
@@ -179,5 +180,12 @@ func cosineSimilarity(left, right []float64) float64 {
 }
 
 func numberToFloat(value interface{}) (float64, bool) {
-	return common.ToFloat(value)
+	// Delegate only for the numeric kinds and json.Number this helper accepted
+	// before the convergence; common.ToFloat would also parse strings, which
+	// would change search sort ordering for string-valued fields.
+	switch value.(type) {
+	case float64, float32, int, int32, int64, json.Number:
+		return common.ToFloat(value)
+	}
+	return 0, false
 }

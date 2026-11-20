@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 
@@ -174,7 +175,17 @@ func intFromRelatedQuestionConfig(value interface{}) (int, bool) {
 }
 
 func floatFromRelatedQuestionConfig(value interface{}) (float64, bool) {
-	return common.ToFloat(value)
+	// Keep the pre-convergence contract: native numeric kinds and json.Number
+	// only. common.ToFloat also parses strings, and non-finite values must not
+	// reach the LLM request body (json.Marshal rejects them).
+	switch value.(type) {
+	case float64, float32, int, int64, json.Number:
+		f, ok := common.ToFloat(value)
+		if ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
+			return f, true
+		}
+	}
+	return 0, false
 }
 
 func stringSliceFromRelatedQuestionConfig(value interface{}) []string {

@@ -665,9 +665,15 @@ func exactSortNumber(value any) *big.Rat {
 
 // toFloat64OK is a number-without-bool helper.
 func toFloat64OK(v any) (float64, bool) {
-	// common.ToFloat does not accept bool, so the explicit bool guard is no
-	// longer needed: a bool input naturally yields (0, false).
-	return common.ToFloat(v)
+	// Keep the original narrow contract: only native numeric kinds are values;
+	// strings (and every other type) must fall back to lessScalar's lexical
+	// comparison. common.ToFloat parses numeric strings, so delegate only for
+	// the types this helper accepted before the convergence.
+	switch v.(type) {
+	case int, int64, float64:
+		return common.ToFloat(v)
+	}
+	return 0, false
 }
 
 func init() {

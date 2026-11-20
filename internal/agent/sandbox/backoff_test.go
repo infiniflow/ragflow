@@ -17,15 +17,29 @@ func TestBackoffCharacterization(t *testing.T) {
 	checkRange := func(name string, attempt int, ceiling time.Duration) {
 		t.Helper()
 		seen := make(map[time.Duration]bool)
-		for i := 0; i < 300; i++ {
+		lowQuarter, highQuarter := ceiling/4, ceiling*3/4
+		var reachedLow, reachedHigh bool
+		for i := 0; i < 500; i++ {
 			got := backoff(base, max, attempt)
 			if got < 0 || got > ceiling {
 				t.Fatalf("%s: backoff(_, _, %d) = %v out of [0,%v]", name, attempt, got, ceiling)
+			}
+			if got <= lowQuarter {
+				reachedLow = true
+			}
+			if got >= highQuarter {
+				reachedHigh = true
 			}
 			seen[got] = true
 		}
 		if len(seen) < 2 {
 			t.Fatalf("%s: backoff must apply full jitter, got values %v", name, seen)
+		}
+		// Statistical envelope: a loss of full jitter (e.g. upper-half-only)
+		// or a wrong exponential ceiling would leave one quarter unreachable.
+		if !reachedLow || !reachedHigh {
+			t.Fatalf("%s: jitter must span both quarters of [0,%v]; reachedLow=%v reachedHigh=%v",
+				name, ceiling, reachedLow, reachedHigh)
 		}
 	}
 
