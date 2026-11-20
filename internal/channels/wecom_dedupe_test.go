@@ -22,16 +22,7 @@ import (
 )
 
 func TestWeComMessageSeenDeduplicatesRetries(t *testing.T) {
-	weComSeenMessagesMu.Lock()
-	weComSeenMessages = map[string]time.Time{}
-	weComInFlightMessages = map[string]struct{}{}
-	weComSeenMessagesMu.Unlock()
-	t.Cleanup(func() {
-		weComSeenMessagesMu.Lock()
-		weComSeenMessages = map[string]time.Time{}
-		weComInFlightMessages = map[string]struct{}{}
-		weComSeenMessagesMu.Unlock()
-	})
+	resetWeComDedupeForTest(t)
 
 	if weComMessageSeen("account-1", "msg-1") {
 		t.Fatal("first delivery must not be treated as a duplicate")
@@ -51,16 +42,11 @@ func TestWeComMessageSeenDeduplicatesRetries(t *testing.T) {
 }
 
 func TestWeComMessageSeenExpiresAfterWindow(t *testing.T) {
+	resetWeComDedupeForTest(t)
 	weComSeenMessagesMu.Lock()
 	weComSeenMessages = map[string]time.Time{"account-1:msg-1": time.Now().Add(-weComDedupeWindow - time.Second)}
 	weComInFlightMessages = map[string]struct{}{}
 	weComSeenMessagesMu.Unlock()
-	t.Cleanup(func() {
-		weComSeenMessagesMu.Lock()
-		weComSeenMessages = map[string]time.Time{}
-		weComInFlightMessages = map[string]struct{}{}
-		weComSeenMessagesMu.Unlock()
-	})
 
 	if weComMessageSeen("account-1", "msg-1") {
 		t.Fatal("a message id older than the dedupe window must be handled again")
@@ -68,16 +54,7 @@ func TestWeComMessageSeenExpiresAfterWindow(t *testing.T) {
 }
 
 func TestWeComForgetMessageAllowsRetryAfterFailure(t *testing.T) {
-	weComSeenMessagesMu.Lock()
-	weComSeenMessages = map[string]time.Time{}
-	weComInFlightMessages = map[string]struct{}{}
-	weComSeenMessagesMu.Unlock()
-	t.Cleanup(func() {
-		weComSeenMessagesMu.Lock()
-		weComSeenMessages = map[string]time.Time{}
-		weComInFlightMessages = map[string]struct{}{}
-		weComSeenMessagesMu.Unlock()
-	})
+	resetWeComDedupeForTest(t)
 
 	if weComMessageSeen("account-1", "msg-1") {
 		t.Fatal("first delivery must not be treated as a duplicate")
@@ -89,16 +66,7 @@ func TestWeComForgetMessageAllowsRetryAfterFailure(t *testing.T) {
 }
 
 func TestWeComMessageStaysDeduplicatedUntilProcessed(t *testing.T) {
-	weComSeenMessagesMu.Lock()
-	weComSeenMessages = map[string]time.Time{}
-	weComInFlightMessages = map[string]struct{}{}
-	weComSeenMessagesMu.Unlock()
-	t.Cleanup(func() {
-		weComSeenMessagesMu.Lock()
-		weComSeenMessages = map[string]time.Time{}
-		weComInFlightMessages = map[string]struct{}{}
-		weComSeenMessagesMu.Unlock()
-	})
+	resetWeComDedupeForTest(t)
 
 	if weComMessageSeen("account-1", "msg-1") {
 		t.Fatal("first delivery must not be treated as a duplicate")
@@ -129,4 +97,18 @@ func TestWeComWorkSlotsAreBounded(t *testing.T) {
 		t.Fatal("releasing the work slots must allow a new handler")
 	}
 	releaseSlot(slots)
+}
+
+func resetWeComDedupeForTest(t *testing.T) {
+	t.Helper()
+	weComSeenMessagesMu.Lock()
+	weComSeenMessages = map[string]time.Time{}
+	weComInFlightMessages = map[string]struct{}{}
+	weComSeenMessagesMu.Unlock()
+	t.Cleanup(func() {
+		weComSeenMessagesMu.Lock()
+		weComSeenMessages = map[string]time.Time{}
+		weComInFlightMessages = map[string]struct{}{}
+		weComSeenMessagesMu.Unlock()
+	})
 }
