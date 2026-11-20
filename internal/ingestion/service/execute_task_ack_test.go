@@ -26,6 +26,7 @@ import (
 // that the heartbeat must be stopped and waited on before settling.
 type fakeTaskHandle struct {
 	msg        common.TaskMessage
+	delivered  uint64
 	acks       atomic.Int64
 	nacks      atomic.Int64
 	inProgress atomic.Int64
@@ -36,6 +37,8 @@ type fakeTaskHandle struct {
 }
 
 func (f *fakeTaskHandle) GetMessage() common.TaskMessage { return f.msg }
+
+func (f *fakeTaskHandle) NumDelivered() uint64 { return f.delivered }
 
 func (f *fakeTaskHandle) Ack() error {
 	f.mu.Lock()

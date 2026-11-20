@@ -15,6 +15,7 @@ type controllableHandle struct {
 }
 
 func (h *controllableHandle) GetMessage() common.TaskMessage { return common.TaskMessage{} }
+func (h *controllableHandle) NumDelivered() uint64           { return 1 }
 func (h *controllableHandle) Ack() error                     { return nil }
 func (h *controllableHandle) Nack() error                    { return nil }
 func (h *controllableHandle) InProgress() error              { return h.inProgressFn() }
