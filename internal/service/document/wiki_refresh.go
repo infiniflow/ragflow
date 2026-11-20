@@ -31,6 +31,31 @@ import (
 
 const sourceChunkAvailabilityBatchSize = 1000
 
+func (s *DocumentService) walkChunkPages(ctx context.Context, req enginetypes.SearchRequest, visit func([]map[string]any) error) error {
+	if scanner, ok := s.docEngine.(interface {
+		WalkChunkPages(context.Context, *enginetypes.SearchRequest, func([]map[string]any) error) error
+	}); ok {
+		return scanner.WalkChunkPages(ctx, &req, visit)
+	}
+	for req.Offset = 0; ; req.Offset += req.Limit {
+		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		result, err := s.docEngine.Search(searchCtx, &req)
+		cancel()
+		if err != nil {
+			return err
+		}
+		if result == nil || len(result.Chunks) == 0 {
+			return nil
+		}
+		if err := visit(result.Chunks); err != nil {
+			return err
+		}
+		if int64(req.Offset+len(result.Chunks)) >= result.Total {
+			return nil
+		}
+	}
+}
+
 // updateDocumentChunkAvailability changes retrieval visibility for every row a
 // disabled/enabled document is allowed to expose: its ordinary source chunks and
 // its per-document final compiled products (tree / structure / mindmap — the wiki
@@ -67,24 +92,14 @@ func (s *DocumentService) updateDocumentChunkAvailability(ctx context.Context, t
 // wiki_map_active state row or the legacy, KB-scoped wiki_page_graph blob.
 func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, indexName, datasetID, documentID string) ([]string, error) {
 	ids := make([]string, 0)
-	for offset := 0; ; offset += sourceChunkAvailabilityBatchSize {
-		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
-		result, err := s.docEngine.Search(searchCtx, &enginetypes.SearchRequest{
-			IndexNames:   []string{indexName},
-			KbIDs:        []string{datasetID},
-			Offset:       offset,
-			Limit:        sourceChunkAvailabilityBatchSize,
-			SelectFields: []string{"id", "compile_kwd", "type_kwd"},
-			Filter:       map[string]any{"doc_id": []string{documentID}},
-		})
-		cancel()
-		if err != nil {
-			return nil, err
-		}
-		if result == nil || len(result.Chunks) == 0 {
-			break
-		}
-		for _, row := range result.Chunks {
+	err := s.walkChunkPages(ctx, enginetypes.SearchRequest{
+		IndexNames:   []string{indexName},
+		KbIDs:        []string{datasetID},
+		Limit:        sourceChunkAvailabilityBatchSize,
+		SelectFields: []string{"id", "compile_kwd", "type_kwd"},
+		Filter:       map[string]any{"doc_id": []string{documentID}},
+	}, func(chunks []map[string]any) error {
+		for _, row := range chunks {
 			if enginetypes.IsNavigationRow(row) {
 				continue
 			}
@@ -98,34 +113,25 @@ func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, in
 				ids = append(ids, id)
 			}
 		}
-		if int64(offset+len(result.Chunks)) >= result.Total {
-			break
-		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return ids, nil
 }
 
 func (s *DocumentService) loadSourceChunkIDs(ctx context.Context, indexName, datasetID, documentID string, includeUnavailable bool) ([]string, error) {
 	ids := make([]string, 0)
-	for offset := 0; ; offset += sourceChunkAvailabilityBatchSize {
-		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
-		result, err := s.docEngine.Search(searchCtx, &enginetypes.SearchRequest{
-			IndexNames:         []string{indexName},
-			KbIDs:              []string{datasetID},
-			Offset:             offset,
-			Limit:              sourceChunkAvailabilityBatchSize,
-			SelectFields:       []string{"id", "compile_kwd", "type_kwd"},
-			Filter:             map[string]any{"doc_id": []string{documentID}},
-			IncludeUnavailable: includeUnavailable,
-		})
-		cancel()
-		if err != nil {
-			return nil, err
-		}
-		if result == nil || len(result.Chunks) == 0 {
-			break
-		}
-		for _, row := range result.Chunks {
+	err := s.walkChunkPages(ctx, enginetypes.SearchRequest{
+		IndexNames:         []string{indexName},
+		KbIDs:              []string{datasetID},
+		Limit:              sourceChunkAvailabilityBatchSize,
+		SelectFields:       []string{"id", "compile_kwd", "type_kwd"},
+		Filter:             map[string]any{"doc_id": []string{documentID}},
+		IncludeUnavailable: includeUnavailable,
+	}, func(chunks []map[string]any) error {
+		for _, row := range chunks {
 			if enginetypes.IsNavigationRow(row) {
 				continue
 			}
@@ -136,9 +142,10 @@ func (s *DocumentService) loadSourceChunkIDs(ctx context.Context, indexName, dat
 				ids = append(ids, id)
 			}
 		}
-		if int64(offset+len(result.Chunks)) >= result.Total {
-			break
-		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return ids, nil
 }

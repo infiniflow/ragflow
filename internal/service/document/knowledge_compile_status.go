@@ -62,25 +62,15 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	seenVariants := make(map[string]struct{})
 	seenTaskTypes := make(map[string]struct{})
-	for offset := 0; ; offset += 1000 {
-		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
-		result, err := s.docEngine.Search(searchCtx, &types.SearchRequest{
-			IndexNames:         []string{indexName},
-			KbIDs:              []string{datasetID},
-			Offset:             offset,
-			Limit:              1000,
-			SelectFields:       []string{"compile_kwd", "compilation_template_kind_kwd", "type_kwd"},
-			Filter:             map[string]any{"doc_id": []string{documentID}},
-			IncludeUnavailable: true,
-		})
-		cancel()
-		if err != nil {
-			return nil, nil, err
-		}
-		if result == nil || len(result.Chunks) == 0 {
-			break
-		}
-		for _, row := range result.Chunks {
+	err := s.walkChunkPages(ctx, types.SearchRequest{
+		IndexNames:         []string{indexName},
+		KbIDs:              []string{datasetID},
+		Limit:              1000,
+		SelectFields:       []string{"compile_kwd", "compilation_template_kind_kwd", "type_kwd"},
+		Filter:             map[string]any{"doc_id": []string{documentID}},
+		IncludeUnavailable: true,
+	}, func(chunks []map[string]any) error {
+		for _, row := range chunks {
 			if types.IsNavigationRow(row) {
 				continue
 			}
@@ -100,9 +90,10 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 				}
 			}
 		}
-		if int64(offset+len(result.Chunks)) >= result.Total {
-			break
-		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 	variants := make([]string, 0, len(seenVariants))
 	for variant := range seenVariants {

@@ -1051,6 +1051,11 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 
 // SearchResponse Elasticsearch search response
 type SearchResponse struct {
+	PITID    string `json:"pit_id"`
+	TimedOut bool   `json:"timed_out"`
+	Shards   struct {
+		Failed int `json:"failed"`
+	} `json:"_shards"`
 	Hits struct {
 		Total struct {
 			Value int64 `json:"value"`
@@ -1814,7 +1819,11 @@ func (e *Engine) executeSearchRequest(
 	}
 
 	var esResp SearchResponse
-	if err := json.NewDecoder(res.Body).Decode(&esResp); err != nil {
+	decoder := json.NewDecoder(res.Body)
+	if _, usesPIT := baseQuery["pit"]; usesPIT {
+		decoder.UseNumber()
+	}
+	if err := decoder.Decode(&esResp); err != nil {
 		return SearchResponse{}, fmt.Errorf("elasticsearch failed to parse response: %w", err)
 	}
 	return esResp, nil

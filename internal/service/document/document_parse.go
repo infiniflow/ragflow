@@ -734,26 +734,16 @@ func (s *DocumentService) deleteDocumentChunkImages(ctx context.Context, indexNa
 		return nil
 	}
 
-	const pageSize = 1000
-	for offset := 0; ; offset += pageSize {
+	return s.walkChunkPages(ctx, enginetypes.SearchRequest{
+		IndexNames:   []string{indexName},
+		KbIDs:        []string{datasetID},
+		Limit:        1000,
+		SelectFields: []string{"id", "img_id", "compile_kwd"},
+		Filter:       map[string]interface{}{"doc_id": documentID},
+	}, func(chunks []map[string]any) error {
 		batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
-		result, err := s.docEngine.Search(batchCtx, &enginetypes.SearchRequest{
-			IndexNames:   []string{indexName},
-			KbIDs:        []string{datasetID},
-			Offset:       offset,
-			Limit:        pageSize,
-			SelectFields: []string{"id", "img_id", "compile_kwd"},
-			Filter:       map[string]interface{}{"doc_id": documentID},
-		})
-		if err != nil {
-			cancel()
-			return err
-		}
-		if result == nil || len(result.Chunks) == 0 {
-			cancel()
-			return nil
-		}
-		for _, chunk := range result.Chunks {
+		defer cancel()
+		for _, chunk := range chunks {
 			if strings.TrimSpace(documentStoreString(chunk["compile_kwd"])) != "" {
 				continue
 			}
@@ -762,15 +752,11 @@ func (s *DocumentService) deleteDocumentChunkImages(ctx context.Context, indexNa
 				continue
 			}
 			if err := storageImpl.Remove(batchCtx, datasetID, imageKey); err != nil {
-				cancel()
 				return err
 			}
 		}
-		cancel()
-		if int64(offset+len(result.Chunks)) >= result.Total {
-			return nil
-		}
-	}
+		return nil
+	})
 }
 
 func chunkImageStorageKey(defaultBucket string, chunk map[string]interface{}) (string, bool) {
