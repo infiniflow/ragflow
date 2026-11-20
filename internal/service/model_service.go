@@ -2492,8 +2492,9 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, provid
 		return common.CodeServerError, fmt.Errorf("fail to update instance: %w", err)
 	}
 
-	// Upsert models: add new ones, update existing ones, remove ones no longer selected.
-	// Delete models that are no longer in the submitted model_info.
+	// Upsert models: add new ones, update existing ones, inactivate ones no longer selected.
+	// Models no longer in the submitted model_info are soft deleted, like the
+	// dedicated drop-models endpoint, so their rows and references survive.
 	var idsToRemove []string
 	for name, mdl := range existingModelMap {
 		if !submittedModelNames[name] {
@@ -2501,7 +2502,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, provid
 		}
 	}
 	if len(idsToRemove) > 0 {
-		if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToRemove); err != nil {
+		if _, err = m.modelDAO.UpdateStatusByIDsAndScope(ctx, dao.DB, idsToRemove, provider.ID, instance.ID, "inactive"); err != nil {
 			return common.CodeServerError, err
 		}
 	}
@@ -2539,6 +2540,9 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, provid
 				}
 				extraBytes, _ = json.Marshal(mergedExtra)
 				updates["extra"] = string(extraBytes)
+				if !strings.EqualFold(existingMdl.Status, "active") {
+					updates["status"] = "active"
+				}
 				if len(updates) > 0 {
 					if err = m.modelDAO.UpdateByID(ctx, dao.DB, existingMdl.ID, updates); err != nil {
 						return common.CodeServerError, err
@@ -2694,7 +2698,7 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 	for _, name := range modelNames {
 		requestedNames[name] = struct{}{}
 	}
-	objToDelete := make([]*entity.TenantModel, 0, len(modelNames))
+	idsToDelete := make([]string, 0, len(modelNames))
 	for _, obj := range modelObjs {
 		if _, ok := requestedNames[obj.ModelName]; ok {
 			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
@@ -2705,13 +2709,12 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 				code, normalizedErr := permissionresponse.NormalizeHidden(err)
 				return code, normalizedErr
 			}
-			objToDelete = append(objToDelete, obj)
+			idsToDelete = append(idsToDelete, obj.ID)
 		}
 	}
-	for _, obj := range objToDelete {
-		if _, err := m.modelDAO.UpdateStatusByIDAndScope(ctx, dao.DB, obj.ID, obj.ProviderID, obj.InstanceID, "inactive"); err != nil {
-			return common.CodeServerError, err
-		}
+
+	if _, err = m.modelDAO.UpdateStatusByIDsAndScope(ctx, dao.DB, idsToDelete, provider.ID, instance.ID, "inactive"); err != nil {
+		return common.CodeServerError, err
 	}
 
 	return common.CodeSuccess, nil
@@ -2762,6 +2765,9 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	for _, model := range modelObjs {
 		access, ok := resourceAccesses[permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID}]
 		if !ok || !access.Allows(permission.OperationRead) {
+			continue
+		}
+		if model.Status == "inactive" {
 			continue
 		}
 		modelExtra := make(map[string]interface{})
@@ -3122,13 +3128,18 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		return code, normalizedErr
 	}
 
-	// Check for duplicate model.
-	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, modelName)
-	if err == nil {
-		return common.CodeConflict, fmt.Errorf("model '%s' already exists for provider '%s' and instance '%s'", modelName, request.ProviderName, request.InstanceName)
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	// Check for duplicate model. An inactive row is reactivated below with the
+	// fields this request computes, instead of rejecting it as a duplicate.
+	var existing *entity.TenantModel
+	obj, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, modelName)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+	case err != nil:
 		return common.CodeServerError, err
+	case obj.Status == "active":
+		return common.CodeConflict, fmt.Errorf("model '%s' already exists for provider '%s' and instance '%s'", modelName, request.ProviderName, request.InstanceName)
+	default:
+		existing = obj
 	}
 
 	// Compute model type bitmask. Matches Python's calculate_model_type:
@@ -3175,6 +3186,17 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to marshal extra: %w", err)
+	}
+
+	if existing != nil {
+		if err = m.modelDAO.UpdateByID(ctx, dao.DB, existing.ID, map[string]interface{}{
+			"model_type": int(combinedType),
+			"extra":      string(extraBytes),
+			"status":     "active",
+		}); err != nil {
+			return common.CodeServerError, fmt.Errorf("fail to reactivate model '%s': %w", modelName, err)
+		}
+		return common.CodeSuccess, nil
 	}
 
 	modelID := common.GenerateToken()
