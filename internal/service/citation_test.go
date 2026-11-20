@@ -447,6 +447,40 @@ func TestHistoryMessageContent(t *testing.T) {
 	}
 }
 
+// TestHistoryMessageContentStripsBareMarkers pins that a previous answer also
+// loses the bare "[n]" markers, which ExtractCitationMarkers reads as
+// citations, while the brackets of code and of a subscript survive and a user
+// message is left alone.
+func TestHistoryMessageContentStripsBareMarkers(t *testing.T) {
+	cases := []struct {
+		name, role, in, want string
+	}{
+		{"bare marker", "assistant", "La giunta ha approvato la delibera [3].", "La giunta ha approvato la delibera ."},
+		{"bare and canonical", "assistant", "testo [3] e [ID:3] fine", "testo  e  fine"},
+		{"arabic digits", "assistant", "testo [\u0663] fine", "testo  fine"},
+		{"subscript", "assistant", "Leggi arr[0] e poi x[12] [4].", "Leggi arr[0] e poi x[12] ."},
+		{"code span", "assistant", "Usa `a[1]` cosi\u0300 [2].", "Usa `a[1]` cosi\u0300 ."},
+		{"code block", "assistant", "prima [1]\n```go\nv := arr[2]\nw := m[3]\n```\ndopo [4]", "prima \n```go\nv := arr[2]\nw := m[3]\n```\ndopo "},
+		{"unterminated code block", "assistant", "prima [1]\n```go\nv := m[2]\n", "prima \n```go\nv := m[2]\n"},
+		{"user keeps bare marker", "user", "cosa dice [3]?", "cosa dice [3]?"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := historyMessageContent(c.role, c.in); got != c.want {
+				t.Fatalf("historyMessageContent(%q, %q) = %q, want %q", c.role, c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// The answer path must keep reading a bare "[n]" as a citation: the history
+// strip exists because it does.
+func TestExtractCitationMarkersReadsBareMarker(t *testing.T) {
+	if got := ExtractCitationMarkers("approvata [3].", 8); len(got) != 1 || got[0] != 3 {
+		t.Fatalf("ExtractCitationMarkers(\"approvata [3].\") = %v, want [3]", got)
+	}
+}
+
 // promptRecordingDriver records the system prompt FullQuestion sends.
 type promptRecordingDriver struct {
 	*modelModule.DummyModel

@@ -22,6 +22,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // sentenceSplitRE splits text on Chinese / English / Arabic sentence-ending
@@ -440,6 +442,60 @@ var rangeCitationPattern = regexp.MustCompile(`(?i)\[\s*ID\s*[:： ]*\s*([0-9]+)
 // Keep an unfinished citation until its closing delimiter arrives. Retaining
 // the trailing word also preserves the word boundaries used by refN markers.
 var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslotref:=：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[:=]?\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$|\w+$`)
+
+// bareCitationPattern matches the bare "[n]" citation shape, with the same
+// digits CitationMarkerPattern accepts.
+var bareCitationPattern = regexp.MustCompile(`\[([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\]`)
+
+// codeRegionPattern matches the Markdown code regions a bare "[n]" belongs to
+// as source text: fenced blocks and inline spans. An unterminated fence runs
+// to the end of the message, as it renders.
+var codeRegionPattern = regexp.MustCompile("(?s)```.*?(?:```|$)|`[^`\n]*`")
+
+// stripBareCitations removes the bare "[n]" citation markers of text, which
+// ExtractCitationMarkers reads as citations through CitationMarkerPattern.
+// Subscripts keep theirs ("arr[0]", "x[12]"): an identifier character
+// precedes them, which a citation never follows. Code blocks and spans are
+// copied verbatim.
+func stripBareCitations(text string) string {
+	var b strings.Builder
+	b.Grow(len(text))
+	last := 0
+	for _, span := range codeRegionPattern.FindAllStringIndex(text, -1) {
+		b.WriteString(stripBareCitationsInProse(text[last:span[0]]))
+		b.WriteString(text[span[0]:span[1]])
+		last = span[1]
+	}
+	b.WriteString(stripBareCitationsInProse(text[last:]))
+	return b.String()
+}
+
+// stripBareCitationsInProse removes the bare "[n]" markers of a run of text
+// that holds no code region.
+func stripBareCitationsInProse(text string) string {
+	matches := bareCitationPattern.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
+	var b strings.Builder
+	b.Grow(len(text))
+	last := 0
+	for _, m := range matches {
+		b.WriteString(text[last:m[0]])
+		if r, _ := utf8.DecodeLastRuneInString(text[:m[0]]); isIdentifierRune(r) {
+			b.WriteString(text[m[0]:m[1]])
+		}
+		last = m[1]
+	}
+	b.WriteString(text[last:])
+	return b.String()
+}
+
+// isIdentifierRune reports whether r can carry an identifier a subscript
+// follows, so "arr[0]" is read as indexing rather than as a citation.
+func isIdentifierRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
 
 // stripCitations removes every citation shape the answer path accepts,
 // including the bare "ref12" shape.
