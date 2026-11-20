@@ -44,7 +44,7 @@ func printHelp(_ *bootstrap.ServerArgs) {
 func validateServerMode(_ *bootstrap.ServerArgs) error { return nil }
 
 func runEEServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
-	return nil
+	return runServices(ctx, cancel, args, services)
 }
 
 // runDeepDoc reports that the EE DeepDoc inference server is an enterprise
