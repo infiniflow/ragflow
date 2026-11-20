@@ -547,9 +547,17 @@ func (s *TenantService) AcceptInvite(ctx context.Context, tenantID string) (comm
 	return common.CodeSuccess, nil
 }
 
+// legacyTenantMembershipStatusLeft is the value earlier releases wrote for a
+// member who left. TenantMembershipStatusLeft was later merged into Removed
+// ("0") without migrating existing rows, so reads must normalize it.
+const legacyTenantMembershipStatusLeft = "5"
+
 func tenantMembershipStatus(status *string) string {
 	if status == nil {
 		return ""
+	}
+	if *status == legacyTenantMembershipStatusLeft {
+		return entity.TenantMembershipStatusRemoved
 	}
 	return *status
 }

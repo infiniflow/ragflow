@@ -299,3 +299,66 @@ func TestSetModelSettings_WithModelID(t *testing.T) {
 		t.Errorf("expected owner tenant_llm_id to be %q, got %v", modelID, membership.TenantLLMID)
 	}
 }
+
+// seedLegacyLeftMembership seeds a membership row carrying status "5", the
+// legacy TenantMembershipStatusLeft value written by releases before Left was
+// merged into Removed ("0") with no data migration for existing rows.
+func seedLegacyLeftMembership(t *testing.T, db *gorm.DB, id, userID, tenantID string) {
+	t.Helper()
+	legacyLeft := "5"
+	if err := db.Create(&entity.UserTenant{ID: id, UserID: userID, TenantID: tenantID, Status: &legacyLeft}).Error; err != nil {
+		t.Fatalf("seed legacy left membership: %v", err)
+	}
+}
+
+// TestAddMemberReinviteLegacyLeftStatus verifies re-inviting a member whose
+// row carries the legacy left status succeeds instead of hitting the
+// unsupported-status conflict.
+func TestAddMemberReinviteLegacyLeftStatus(t *testing.T) {
+	db := setupTenantPermissionTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("migrate user table: %v", err)
+	}
+	if err := db.Create(&entity.User{ID: "invitee-user", Nickname: "invitee", Email: "invitee@example.com"}).Error; err != nil {
+		t.Fatalf("seed invitee: %v", err)
+	}
+	seedLegacyLeftMembership(t, db, "member", "invitee-user", "tenant-xyz")
+	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
+	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
+	ctx := permission.WithIdentity(t.Context(), "owner-user", "tenant-xyz")
+	_, code, err := s.AddMember(ctx, "tenant-xyz", &AddMemberRequest{Email: "invitee@example.com"})
+	if code != common.CodeSuccess || err != nil {
+		t.Fatalf("re-invite legacy left member: code=%v err=%v", code, err)
+	}
+	var membership entity.UserTenant
+	if err := db.Where("id = ?", "member").Take(&membership).Error; err != nil {
+		t.Fatalf("read membership: %v", err)
+	}
+	if membership.Status == nil || *membership.Status != entity.TenantMembershipStatusInvited {
+		t.Fatalf("membership status = %v, want invited", membership.Status)
+	}
+	if membership.Role != "" {
+		t.Errorf("membership role = %q, want empty on re-invite", membership.Role)
+	}
+}
+
+// TestRemoveMemberSelfLegacyLeftIdempotent verifies self-removal on a row
+// carrying the legacy left status stays a no-op success instead of failing
+// with "no active Tenant membership or invitation".
+func TestRemoveMemberSelfLegacyLeftIdempotent(t *testing.T) {
+	db := setupTenantPermissionTestDB(t)
+	seedLegacyLeftMembership(t, db, "member", "user-abc", "tenant-xyz")
+	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
+	ctx := permission.WithIdentity(t.Context(), "user-abc", "tenant-xyz")
+	code, err := s.RemoveMember(ctx, "tenant-xyz", "user-abc")
+	if code != common.CodeSuccess || err != nil {
+		t.Fatalf("self-removal on legacy left row: code=%v err=%v", code, err)
+	}
+	var membership entity.UserTenant
+	if err := db.Where("id = ?", "member").Take(&membership).Error; err != nil {
+		t.Fatalf("read membership: %v", err)
+	}
+	if membership.Status == nil || *membership.Status != "5" {
+		t.Fatalf("membership status = %v, want unchanged legacy left", membership.Status)
+	}
+}
