@@ -1151,13 +1151,7 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 	// (page_type + "/" + slug) matches directly.
 	pageType := kccommon.MetaString(p.Meta, "page_type")
 	if slug := kccommon.MetaString(p.Meta, "slug"); slug != "" {
-		// Normalize to the full "<page_type>/<slug>" form ( writer
-		// contract). Idempotent: slugs that already carry the prefix are kept.
-		fullSlug := slug
-		if pageType != "" && !strings.Contains(slug, "/") {
-			fullSlug = pageType + "/" + slug
-		}
-		m["slug_kwd"] = fullSlug
+		m["slug_kwd"] = wikiPageStorageSlug(pageType, slug)
 	}
 	if v := kccommon.MetaString(p.Meta, "title"); v != "" {
 		m["title_kwd"] = v
@@ -1313,9 +1307,29 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 	return nil
 }
 
+// wikiPageStorageSlug returns the "<page_type>/<slug>" identity that
+// mergedChunkMap stores in slug_kwd. Callers may hand in a bare slug (the
+// planner falls back to one when the LLM omits the field), but every identity
+// key must use the same form as storage: otherwise one page yields two
+// dataset-level ids that share a slug_kwd, and slug-filtered reads pick an
+// arbitrary row. Slugs that already carry any prefix are left untouched, so
+// typed entity slugs such as "entity/person/foo" stay distinct from
+// "entity/foo".
+func wikiPageStorageSlug(pageType, slug string) string {
+	slug = strings.TrimSpace(slug)
+	pageType = strings.TrimSpace(pageType)
+	if slug == "" || pageType == "" || strings.Contains(slug, "/") {
+		return slug
+	}
+	return pageType + "/" + slug
+}
+
 // canonicalKey derives a stable cluster key for a merged product.
 func canonicalKey(p kccommon.Product) string {
 	if slug, ok := p.Meta["slug"].(string); ok && slug != "" {
+		if p.Variant == kccommon.VariantWiki && kccommon.MetaString(p.Meta, "kind") == "page" {
+			return wikiPageStorageSlug(kccommon.MetaString(p.Meta, "page_type"), slug)
+		}
 		return slug
 	}
 	if p.Meta["name"] != nil {
