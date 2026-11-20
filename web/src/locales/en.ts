@@ -4232,6 +4232,7 @@ Important structured information may include: names, dates, locations, events, k
       copySuccess: 'Copy Success',
       welcomeBack: 'Welcome back',
       searchSettings: 'Search settings',
+      settings: 'Settings',
       name: 'Name',
       nameRequired: 'Name is required',
       avatar: 'Avatar',

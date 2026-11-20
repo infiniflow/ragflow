@@ -33,7 +33,7 @@ export default function SearchHome({
   setSearchText,
   userInfo,
   canSearch,
-  showEmbedLogo,
+  showLogo = true,
 }: {
   isSearching: boolean;
   setIsSearching: Dispatch<SetStateAction<boolean>>;
@@ -41,9 +41,8 @@ export default function SearchHome({
   setSearchText: Dispatch<SetStateAction<string>>;
   userInfo?: IUserInfo;
   canSearch?: boolean;
-  showEmbedLogo?: boolean;
+  showLogo?: boolean;
 }) {
-  // const { data: userInfo } = useFetchUserInfo();
   const { t } = useTranslation();
   const searchInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -64,8 +63,8 @@ export default function SearchHome({
 
   return (
     <section className="relative w-full flex transition-all justify-center items-center mt-[15vh]">
-      <div className="relative z-10 px-8 pt-8 flex  text-transparent flex-col justify-center items-center w-full max-w-[780px]">
-        <RAGFlowLogo showEmbedIcon={showEmbedLogo}></RAGFlowLogo>
+      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center justify-center px-8 pt-8 text-transparent">
+        {showLogo && <RAGFlowLogo />}
         <div className="rounded-lg  text-primary text-xl sticky flex justify-center w-full transform scale-100 mt-8 p-6 min-h-[240px] border">
           {!isSearching && <Spotlight className="z-0" />}
           <div className="flex flex-col justify-center items-center  w-2/3">
