@@ -752,7 +752,6 @@ export default {
         knowledge_graph: 'ナレッジグラフ',
         mind_map: 'マインドマップ',
         page_index: 'ページインデックス',
-        timeline: 'タイムライン',
         tree: 'ツリー',
         raptor: 'RAPTOR',
       },
