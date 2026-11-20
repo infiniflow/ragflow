@@ -53,17 +53,38 @@ func TestAnalyzerForLanguage(t *testing.T) {
 	}
 }
 
-// Queries and filters reference a fulltext index by name (convertMatchingField),
-// so the language must change only the analyzer, never the index name.
-func TestFulltextIndexNameIsLanguageIndependent(t *testing.T) {
+// Queries select the index whose analyzer matches the dataset language.
+func TestMatchingFieldSelectsLanguageIndex(t *testing.T) {
 	for _, tt := range []struct{ field, analyzer, ref string }{
 		{"content", "rag-coarse", "content_ltks"},
 		{"content", "rag-fine", "content_sm_ltks"},
 		{"docnm", "rag-coarse", "docnm_kwd"},
 	} {
-		name := fulltextIndexName(tt.field, tt.analyzer)
-		if want := tt.field + "@" + name; convertMatchingField(tt.ref) != want {
-			t.Errorf("convertMatchingField(%q) = %q, want %q", tt.ref, convertMatchingField(tt.ref), want)
+		for _, lang := range []struct{ language, suffix string }{{"", ""}, {"English", ""}, {"Czech", "-czech"}, {"Slovak", "-slovak"}} {
+			analyzer := tt.analyzer + lang.suffix
+			want := tt.field + "@" + fulltextIndexName(tt.field, analyzer)
+			if got := convertMatchingFieldForLanguage(tt.ref, lang.language); got != want {
+				t.Errorf("convertMatchingFieldForLanguage(%q, %q) = %q, want %q", tt.ref, lang.language, got, want)
+			}
 		}
+	}
+}
+
+func TestFullTextIndexSpecsKeepDefaultNameForLocalizedSearch(t *testing.T) {
+	schema := orderedFields{
+		Keys: []string{"content"},
+		Fields: map[string]fieldInfo{
+			"content": {Type: "varchar", Analyzer: []interface{}{"rag-coarse"}},
+		},
+	}
+	specs := fullTextIndexSpecs(schema, "Czech")
+	if len(specs) != 2 {
+		t.Fatalf("got %d full-text indexes, want localized and default-name indexes", len(specs))
+	}
+	if specs[0].name != fulltextIndexName("content", "rag-coarse-czech") || specs[1].name != fulltextIndexName("content", "rag-coarse") {
+		t.Fatalf("unexpected index names: %q, %q", specs[0].name, specs[1].name)
+	}
+	if specs[0].analyzer != "rag-coarse-czech" || specs[1].analyzer != "rag-coarse" {
+		t.Fatalf("localized index should use Czech while fallback remains default: %#v", specs)
 	}
 }
