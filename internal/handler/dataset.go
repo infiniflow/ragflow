@@ -1215,7 +1215,7 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
-		common.RespondError(c, common.CodeArgumentError, err.Error())
+		common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, err.Error())
 		return
 	}
 
@@ -1285,7 +1285,7 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		return
 	}
 	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
-		common.RespondError(c, common.CodeArgumentError, err.Error())
+		common.RespondSuccess(c, service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, err.Error())
 		return
 	}
 
