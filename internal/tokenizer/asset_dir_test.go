@@ -69,7 +69,7 @@ func TestModelAssetsDirIsHonoured(t *testing.T) {
 	}
 }
 
-// TestModelAssetsDirIsHonoured is the child half: with MODEL_ASSETS_DIR pointing at the
+// TestModelAssetsDirIsHonouredChild is the child half: with MODEL_ASSETS_DIR pointing at the
 // temporary tree and an unrelated working directory, the counter must still load, and
 // report where it loaded from.
 func TestModelAssetsDirIsHonouredChild(t *testing.T) {

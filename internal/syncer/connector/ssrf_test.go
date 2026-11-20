@@ -570,11 +570,10 @@ func TestAssertConnectorHostSafeHonorsAllowAnyHost(t *testing.T) {
 	}
 }
 
-// TestConnectorHostSSRFDNSRebinding closes the host-type TOCTOU window: after
-// the guard validates a public host, the dial must be pinned to the validated
-// IP and never re-resolve the hostname. The guard seam is stubbed to simulate
-// "validates to a public IP" while the dial helper is pointed at a loopback
-// listener.
+// TestMySQLPinnedDialConnectsToPinnedIP verifies that mysqlPinnedDial ignores
+// the attacker-controlled DSN host and dials only the validated IP and port.
+// A loopback listener stands in for the pinned target, so a successful dial
+// proves the connection used the pin rather than re-resolving the host.
 func TestMySQLPinnedDialConnectsToPinnedIP(t *testing.T) {
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
