@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	dslpkg "ragflow/internal/agent/dsl"
 )
 
 func TestExtractAllComponentParams(t *testing.T) {
@@ -389,5 +391,49 @@ func TestComponentParamsDefaults_EmptyComponents(t *testing.T) {
 	}
 	if got == nil {
 		t.Error("empty components: got nil, want non-nil empty map")
+	}
+}
+
+// A pipeline created through the API without a graph is normalized into the
+// flat {name, params} component shape before it is stored. Extraction must read
+// that shape too, or the Parser entry comes back empty, declares no file family,
+// and every upload falls back to the General pipeline.
+func TestExtractAllComponentParams_NormalizedFlatShape(t *testing.T) {
+	raw, err := fs.ReadFile(builtinTemplateFS, filepath.Join("template", "ingestion_pipeline_manual.json"))
+	if err != nil {
+		t.Fatalf("read manual template: %v", err)
+	}
+	var wrapper struct {
+		DSL map[string]any `json:"dsl"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		t.Fatalf("unmarshal template: %v", err)
+	}
+	delete(wrapper.DSL, "graph")
+
+	normalized := dslpkg.NormalizeForCanvas(wrapper.DSL)
+	encoded, err := json.Marshal(normalized)
+	if err != nil {
+		t.Fatalf("marshal normalized DSL: %v", err)
+	}
+
+	schemas, err := ExtractAllComponentParams(encoded)
+	if err != nil {
+		t.Fatalf("ExtractAllComponentParams: %v", err)
+	}
+	var parser *ComponentParamsSchema
+	for i := range schemas {
+		if schemas[i].ComponentName == "Parser" {
+			parser = &schemas[i]
+			break
+		}
+	}
+	if parser == nil {
+		t.Fatal("normalized DSL lost its Parser component")
+	}
+	for _, key := range []string{"pdf", "doc"} {
+		if _, ok := parser.ParamsDefaults[key]; !ok {
+			t.Errorf("Parser params lost %q after normalization: got %v", key, parser.ParamsDefaults)
+		}
 	}
 }
