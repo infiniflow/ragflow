@@ -101,8 +101,9 @@ func (e *serenedbEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 	return []string{}, nil
 }
 
-// UpdateMetadata merges metaFields into the stored record, preserving keys the
-// caller did not send. Missing rows are inserted.
+// UpdateMetadata replaces the stored meta_fields with metaFields: callers send
+// the complete desired map, so keys they omit must not survive. Missing rows are
+// inserted.
 func (e *serenedbEngine) UpdateMetadata(ctx context.Context, docID, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 	exists, err := e.tableExists(ctx, tableName)
@@ -123,12 +124,9 @@ func (e *serenedbEngine) UpdateMetadata(ctx context.Context, docID, datasetID st
 			fmt.Sprintf("INSERT INTO %s (id, kb_id, meta_fields) VALUES ($1, $2, $3)", tableName),
 			docID, datasetID, metaFieldsJSON(metaFields))
 	}
-	for k, v := range metaFields {
-		existing[k] = v
-	}
 	return e.exec(ctx,
 		fmt.Sprintf("UPDATE %s SET meta_fields = $1 WHERE id = $2 AND kb_id = $3", tableName),
-		metaFieldsJSON(existing), docID, datasetID)
+		metaFieldsJSON(metaFields), docID, datasetID)
 }
 
 // DeleteMetadataKeys removes specific keys from a record's meta_fields, dropping

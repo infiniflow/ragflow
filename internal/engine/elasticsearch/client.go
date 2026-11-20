@@ -89,6 +89,7 @@ func NewEngine(ctx context.Context, esConfig config.ElasticsearchConfig) (*Engin
 	if err = engine.CreateIndexTemplate(newCtx, "ragflow_doc_meta_mapping", "ragflow_doc_meta_*", "doc_meta_es_mapping.json", 2); err != nil {
 		return nil, fmt.Errorf("failed to create doc_meta index template: %w", err)
 	}
+	engine.EnsureMetadataFieldMappings(newCtx)
 
 	return engine, nil
 }
