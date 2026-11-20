@@ -247,11 +247,3 @@ func tryUnmarshalJSONErr(s string) (map[string]any, error) {
 	}
 	return m, nil
 }
-
-func truncate(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n]) + "..."
-}
