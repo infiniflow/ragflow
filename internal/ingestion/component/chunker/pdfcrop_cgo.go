@@ -66,7 +66,10 @@ func newPDFEngineFromUpstream(ctx context.Context, db *gorm.DB, up schema.Chunke
 // cropJob is one chunk's crop + PNG-encode work.
 type cropJob func(context.Context)
 
-const cropPoolQueueFactor = 4
+const (
+	cropPoolQueueFactor  = 4
+	maxChunkPreviewPages = 5
+)
 
 var (
 	cropPoolOnce sync.Once
@@ -192,17 +195,23 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			}()
 
 			ck := out[chunkIdx]
-			raw := cropPositionMatrix(ck)
-			matrix, ok := decodePositionRows(raw)
-			if !ok || len(matrix) == 0 {
+			chunkType := cropChunkType(ck)
+			var matrix [][]any
+			if chunkType == "text" {
+				matrix = mergePositionMatrix(ck.PDFPositions, ck.Positions)
+			} else {
+				raw := cropPositionMatrix(ck)
+				matrix, _ = decodePositionRows(raw)
+			}
+			if len(matrix) == 0 {
 				return
 			}
-			positions := util.PositionsFromMatrix(matrix)
+			positions := limitCropPositions(util.PositionsFromMatrix(matrix), maxChunkPreviewPages)
 			if len(positions) == 0 {
 				return
 			}
 
-			img := cropChunkPreview(cache, render, cropChunkType(ck), positions)
+			img := cropChunkPreview(cache, render, chunkType, positions)
 			if img == "" {
 				return
 			}
@@ -339,4 +348,53 @@ func hasCropRegion(ck schema.ChunkDoc) bool {
 // distinction here.
 func cropChunkType(ck schema.ChunkDoc) string {
 	return itemDocType(ck)
+}
+
+// limitCropPositions keeps only valid positive-area crop boxes and caps the
+// preview to at most maxPages distinct pages so multi-page chunks never pin an
+// entire long document in lruPageCache or stitch an unbounded image.
+func limitCropPositions(positions []deepdoctype.Position, maxPages int) []deepdoctype.Position {
+	if len(positions) == 0 {
+		return nil
+	}
+	seen := make(map[int]struct{}, max(0, maxPages))
+	out := make([]deepdoctype.Position, 0, len(positions))
+	for _, pos := range positions {
+		if !(pos.Right > pos.Left && pos.Bottom > pos.Top) {
+			continue
+		}
+		validPages := make([]int, 0, len(pos.PageNumbers))
+		for _, pn := range pos.PageNumbers {
+			if pn >= 0 {
+				validPages = append(validPages, pn)
+			}
+		}
+		if len(validPages) == 0 {
+			continue
+		}
+		if maxPages <= 0 {
+			pos.PageNumbers = validPages
+			out = append(out, pos)
+			continue
+		}
+		kept := make([]int, 0, len(validPages))
+		for _, pn := range validPages {
+			if _, exists := seen[pn]; !exists {
+				if len(seen) >= maxPages {
+					continue
+				}
+				seen[pn] = struct{}{}
+			}
+			kept = append(kept, pn)
+		}
+		if len(kept) == 0 {
+			break
+		}
+		pos.PageNumbers = kept
+		out = append(out, pos)
+		if len(kept) < len(validPages) {
+			break
+		}
+	}
+	return out
 }

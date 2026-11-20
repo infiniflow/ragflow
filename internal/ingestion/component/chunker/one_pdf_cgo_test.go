@@ -304,4 +304,81 @@ func TestOneChunker_PDFPreviewCropping(t *testing.T) {
 			t.Fatalf("expected inline image fallback when PDF crop unavailable")
 		}
 	})
+
+	t.Run("caps_preview_at_max_pages_and_keeps_full_positions", func(t *testing.T) {
+		sevenPagePDF := newMultiPagePDFFixture(t, 7)
+
+		storeFive, cleanupFive := setupEnv(t, sevenPagePDF)
+		t.Cleanup(cleanupFive)
+		comp, err := NewOneChunker(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctxFive := withIngestionGlobals(t, "one-kb", "doc-five")
+		outFive, err := (&imageUploadDecorator{inner: comp}).Invoke(ctxFive, nil, map[string]any{
+			"name": "five.pdf", "file_type": "pdf", "bucket": "one-kb", "path": "doc.pdf",
+			"output_format": "json",
+			"json": []map[string]any{
+				{"text": "Page 1", "_pdf_positions": [][]float64{{1, 50, 300, 100, 160}}},
+				{"text": "Page 2", "_pdf_positions": [][]float64{{2, 50, 300, 100, 160}}},
+				{"text": "Page 3", "_pdf_positions": [][]float64{{3, 50, 300, 100, 160}}},
+				{"text": "Page 4", "positions": [][]float64{{4, 50, 300, 100, 160}}},
+				{"text": "Page 5", "positions": [][]float64{{5, 50, 300, 100, 160}}},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fiveID, _ := outputChunks(t, outFive)[0]["id"].(string)
+		fivePNG, err := storeFive.Get(ctxFive, "one-kb", fiveID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fiveImg, err := png.Decode(bytes.NewReader(fivePNG))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cleanupFive()
+
+		storeSeven, cleanupSeven := setupEnv(t, sevenPagePDF)
+		t.Cleanup(cleanupSeven)
+		ctxSeven := withIngestionGlobals(t, "one-kb", "doc-seven")
+		outSeven, err := (&imageUploadDecorator{inner: comp}).Invoke(ctxSeven, nil, map[string]any{
+			"name": "seven.pdf", "file_type": "pdf", "bucket": "one-kb", "path": "doc.pdf",
+			"output_format": "json",
+			"json": []map[string]any{
+				{"text": "Page 1", "_pdf_positions": [][]float64{{1, 50, 300, 100, 160}}},
+				{"text": "Page 2", "_pdf_positions": [][]float64{{2, 50, 300, 100, 160}}},
+				{"text": "Page 3", "_pdf_positions": [][]float64{{3, 50, 300, 100, 160}}},
+				{"text": "Page 4", "positions": [][]float64{{4, 50, 300, 100, 160}}},
+				{"text": "Page 5", "positions": [][]float64{{5, 50, 300, 100, 160}}},
+				{"text": "Page 6", "positions": [][]float64{{6, 50, 300, 100, 160}}},
+				{"text": "Page 7", "_pdf_positions": [][]float64{{7, 50, 300, 100, 160}}},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sevenChunks := outputChunks(t, outSeven)
+		sevenID, _ := sevenChunks[0]["id"].(string)
+		sevenPNG, err := storeSeven.Get(ctxSeven, "one-kb", sevenID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sevenImg, err := png.Decode(bytes.NewReader(sevenPNG))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sevenImg.Bounds().Dy() != fiveImg.Bounds().Dy() {
+			t.Fatalf("7-page preview height = %d, want 5-page capped height %d", sevenImg.Bounds().Dy(), fiveImg.Bounds().Dy())
+		}
+		pdfRows, _ := sevenChunks[0]["_pdf_positions"].([][]float64)
+		posRows, _ := sevenChunks[0]["positions"].([][]float64)
+		if len(pdfRows) != 4 || pdfRows[3][0] != 7 {
+			t.Fatalf("_pdf_positions = %v, want all 4 _pdf_positions rows including page 7", pdfRows)
+		}
+		if len(posRows) != 3 || posRows[2][0] != 6 {
+			t.Fatalf("positions = %v, want all 3 positions rows through page 6", posRows)
+		}
+	})
 }

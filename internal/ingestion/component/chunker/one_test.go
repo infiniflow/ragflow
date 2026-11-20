@@ -18,6 +18,7 @@ package chunker
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"ragflow/internal/ingestion/component/schema"
@@ -223,5 +224,33 @@ func TestOneChunker_MultiItemSpreadsheetSkipsPDFPositions(t *testing.T) {
 	}
 	if _, exists := chunks[0]["positions"]; exists {
 		t.Fatalf("spreadsheet positions should not be merged as PDF positions: %v", chunks[0]["positions"])
+	}
+}
+
+func TestOneChunker_NonPDFSkipsPDFPositionsAndRejectsMalformedFlatPositions(t *testing.T) {
+	nonPDF := oneChunksOf(t, map[string]any{
+		"name":          "notes.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "para 1", "_pdf_positions": [][]float64{{1, 10, 100, 10, 30}}},
+			{"text": "para 2", "_pdf_positions": [][]float64{{2, 10, 100, 40, 60}}},
+		},
+	})
+	if len(nonPDF) != 1 {
+		t.Fatalf("want 1 non-PDF chunk, got %d", len(nonPDF))
+	}
+	if _, exists := nonPDF[0]["_pdf_positions"]; exists {
+		t.Fatalf("non-PDF chunk should not merge _pdf_positions: %v", nonPDF[0]["_pdf_positions"])
+	}
+
+	if got := mergeRawPositionMatrix(json.RawMessage(`[1, 10, 100, 20, 80, 999]`)); got != nil {
+		t.Fatalf("6-element flat position array should be rejected, got %s", got)
+	}
+	gotValid := mergeRawPositionMatrix(
+		json.RawMessage(`[[1, 10, 100, 20, 80], [2, 1, 2, 3, 4, 5]]`),
+	)
+	if string(gotValid) != `[[1,10,100,20,80]]` {
+		t.Fatalf("mergeRawPositionMatrix mixed valid/malformed = %s, want [[1,10,100,20,80]]", gotValid)
 	}
 }

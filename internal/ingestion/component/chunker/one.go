@@ -201,11 +201,13 @@ func buildOneChunkFromItems(items, chunks []schema.ChunkDoc, pdfCandidate bool) 
 		if mediaRef == nil && it.MediaRef != nil {
 			mediaRef = it.MediaRef
 		}
-		if len(it.PDFPositions) > 0 {
-			pdfSources = append(pdfSources, it.PDFPositions)
-		}
-		if mergePositions && len(it.Positions) > 0 {
-			posSources = append(posSources, it.Positions)
+		if mergePositions {
+			if len(it.PDFPositions) > 0 {
+				pdfSources = append(pdfSources, it.PDFPositions)
+			}
+			if len(it.Positions) > 0 {
+				posSources = append(posSources, it.Positions)
+			}
 		}
 	}
 	merged := strings.Join(parts, "\n")
@@ -213,12 +215,12 @@ func buildOneChunkFromItems(items, chunks []schema.ChunkDoc, pdfCandidate bool) 
 		return schema.ChunkDoc{}, "", false
 	}
 	out := schema.ChunkDoc{
-		Text:         merged,
-		DocType:      "text",
-		MediaRef:     mediaRef,
-		PDFPositions: mergeRawPositionMatrix(pdfSources...),
+		Text:     merged,
+		DocType:  "text",
+		MediaRef: mediaRef,
 	}
 	if mergePositions {
+		out.PDFPositions = mergeRawPositionMatrix(pdfSources...)
 		out.Positions = mergeRawPositionMatrix(posSources...)
 	}
 	if !pdfCandidate || !hasCropRegion(out) {
@@ -234,10 +236,16 @@ func buildOneChunkFromItems(items, chunks []schema.ChunkDoc, pdfCandidate bool) 
 
 func mergeRawPositionMatrix(sources ...json.RawMessage) json.RawMessage {
 	rows := mergePositionMatrix(sources...)
-	if len(rows) == 0 {
+	kept := rows[:0]
+	for _, row := range rows {
+		if len(row) == 5 {
+			kept = append(kept, row)
+		}
+	}
+	if len(kept) == 0 {
 		return nil
 	}
-	encoded, err := json.Marshal(rows)
+	encoded, err := json.Marshal(kept)
 	if err != nil {
 		return nil
 	}
