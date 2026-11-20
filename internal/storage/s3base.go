@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -211,10 +212,13 @@ func (b *s3Base) ObjectExists(ctx context.Context, bucket, fnm string) (bool, er
 	return true, nil
 }
 
-// ListObjects lists the keys in a bucket.
+// ListObjects lists keys relative to the logical bucket, using the same
+// bucket and prefix mapping as object reads and writes.
 func (b *s3Base) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
+	bucket, prefix := b.resolve(bucket, "")
 	result, err := b.client().ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
+		Prefix: aws.String(prefix),
 	})
 	if err != nil {
 		return nil, err
@@ -222,7 +226,7 @@ func (b *s3Base) ListObjects(ctx context.Context, bucket string, tenantID ...str
 
 	var objects []string
 	for _, obj := range result.Contents {
-		objects = append(objects, *obj.Key)
+		objects = append(objects, strings.TrimPrefix(*obj.Key, prefix))
 	}
 
 	return objects, nil
