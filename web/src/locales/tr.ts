@@ -1836,8 +1836,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Pull isteklerini ve sorunları alım için senkronize etmek üzere GitHub'ı bağlayın.",
       airtableDescription:
         "Airtable'a bağlanın ve belirli bir çalışma alanındaki tablodan dosyaları senkronize edin.",
-      dingtalkAITableDescription:
-        'Dingtalk AI Tablosuna bağlanın ve belirli bir tablodan kayıtları senkronize edin.',
       gitlabDescription:
         "GitLab'ı bağlayarak depoları, sorunları, birleştirme isteklerini senkronize edin.",
       asanaDescription:
