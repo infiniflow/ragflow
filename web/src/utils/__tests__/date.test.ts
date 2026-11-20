@@ -66,6 +66,7 @@ describe('date display formatting', () => {
     ['an epoch-millisecond timestamp', timestamp],
   ])('formats %s in the client timezone', (_, value) => {
     expect(formatDate(value)).toBe('2026-11-13 13:25:07');
+    expect(formatTime(value)).toBe('13:25:07');
   });
 
   test('uses the client date when timezone conversion crosses midnight', () => {
