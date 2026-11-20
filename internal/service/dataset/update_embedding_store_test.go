@@ -1022,6 +1022,8 @@ func TestUpdateDatasetPublishesConnectorOnlyTasksAfterPagerankFailure(t *testing
 	previous := engine.GetMessageQueueEngine()
 	engine.SetMessageQueueEngine(publisher)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previous) })
+	var publishedAtWrite []int
+	eng.onUpdate = func() { publishedAtWrite = append(publishedAtWrite, len(publisher.published)) }
 
 	svc := testDatasetUpdateService(t)
 	svc.docEngine = eng
@@ -1052,8 +1054,53 @@ func TestUpdateDatasetPublishesConnectorOnlyTasksAfterPagerankFailure(t *testing
 	if _, code, err := svc.UpdateDataset(ctx, "kb-1", req); err != nil || code != common.CodeSuccess {
 		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
 	}
+	if eng.updateChunksCalls != 2 {
+		t.Fatalf("propagation writes = %d, want one per attempt so the retry repairs the failed write", eng.updateChunksCalls)
+	}
+	if len(publishedAtWrite) != 2 || publishedAtWrite[1] != 0 {
+		t.Fatalf("tasks published at each write = %v, want the retry's propagation to run before any publish", publishedAtWrite)
+	}
 	if len(publisher.published) != 1 || publisher.published[0] != taskIDs[0] {
 		t.Fatalf("published tasks = %v, want the retry to publish %v", publisher.published, taskIDs)
+	}
+}
+
+// A save that repeats the stored PageRank and schedules a task of its own is
+// not a retry of a failed attempt: the propagation must stay tied to the value
+// change instead of rewriting every chunk on each connector attach.
+func TestUpdateDatasetKeepsRepeatedPagerankWithoutARetry(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("pagerank", 30).Error; err != nil {
+		t.Fatalf("seed pagerank: %v", err)
+	}
+	insertDatasetUpdateConnector(t, "connector-1", "tenant-1")
+
+	eng := &pagerankRecordingEngine{}
+	publisher := &recordingSyncTaskPublisher{}
+	previous := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(publisher)
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previous) })
+
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	pagerank := int64(30)
+	req := service.UpdateDatasetRequest{
+		Connectors: &[]service.DatasetConnectorRequest{{ID: "connector-1"}},
+		Pagerank:   &pagerank,
+	}
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", req); err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.updateChunksCalls != 0 {
+		t.Fatalf("propagation writes = %d, want none for an unchanged PageRank", eng.updateChunksCalls)
+	}
+	if len(publisher.published) != 1 {
+		t.Fatalf("published tasks = %v, want the task of this request", publisher.published)
 	}
 }
 
@@ -1063,12 +1110,18 @@ type pagerankRecordingEngine struct {
 	recordingChunkStoreEngine
 	updateChunksCalls int
 	updateChunksErr   error
+	// onUpdate observes each write, e.g. how many tasks had been published
+	// when the propagation ran.
+	onUpdate func()
 }
 
 func (e *pagerankRecordingEngine) SupportsPageRank() bool { return true }
 
 func (e *pagerankRecordingEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
 	e.updateChunksCalls++
+	if e.onUpdate != nil {
+		e.onUpdate()
+	}
 	return e.updateChunksErr
 }
 
