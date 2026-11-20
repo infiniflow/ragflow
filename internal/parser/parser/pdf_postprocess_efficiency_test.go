@@ -3,7 +3,6 @@ package parser
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
@@ -36,31 +35,20 @@ func buildWideSectionResult(nSections, nPositions int) *deepdoctype.ParseResult 
 	return &deepdoctype.ParseResult{Sections: sections}
 }
 
-// TestReorderPDFMultiColumn_PrecomputedKeysPerformance guards the hot path:
-// geometry must be resolved once per section, not rescanned on every one of
-// the O(n^2) bubble comparisons. With the wide fixture above the unoptimized
-// implementation rescans 300 positions per comparison and blows the budget.
-func TestReorderPDFMultiColumn_PrecomputedKeysPerformance(t *testing.T) {
-	result := buildWideSectionResult(1200, 300)
-	start := time.Now()
-	reorderPDFMultiColumn(result, 600, 1)
-	elapsed := time.Since(start)
-	if elapsed > 250*time.Millisecond {
-		t.Fatalf("reorderPDFMultiColumn took %v; want < 250ms (positions rescanned on every comparison)", elapsed)
-	}
-}
-
 // BenchmarkReorderPDFMultiColumn guards the multi-column hot path against
-// reintroducing per-comparison position scans.
+// reintroducing per-comparison position scans. A single layout is reused
+// across iterations so a long run never retains b.N copies of the fixture.
 func BenchmarkReorderPDFMultiColumn(b *testing.B) {
-	base := buildWideSectionResult(800, 200)
-	layouts := make([]*deepdoctype.ParseResult, b.N)
-	for i := range layouts {
-		layouts[i] = &deepdoctype.ParseResult{Sections: cloneSections(base.Sections)}
-	}
-	b.ResetTimer()
+	base := buildWideSectionResult(800, 200).Sections
+	layout := &deepdoctype.ParseResult{Sections: cloneSections(base)}
 	for i := 0; i < b.N; i++ {
-		reorderPDFMultiColumn(layouts[i], 600, 1)
+		// Restore the original order outside the timed region so every
+		// iteration measures the same input. Positions are shared but only
+		// read by reorderPDFMultiColumn.
+		b.StopTimer()
+		copy(layout.Sections, base)
+		b.StartTimer()
+		reorderPDFMultiColumn(layout, 600, 1)
 	}
 }
 

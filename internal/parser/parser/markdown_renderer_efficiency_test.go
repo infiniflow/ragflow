@@ -21,24 +21,57 @@ func buildTablesMarkdown(n int) []byte {
 	return []byte(b.String())
 }
 
+// buildTaggedTablesMarkdown gives each table a distinct first-cell value so
+// concurrent workers can verify they received their own result set, not a
+// cross-call mix caused by a shared renderer.
+func buildTaggedTablesMarkdown(n int, tag string) []byte {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "| %s%d | v%d |\n| --- | --- |\n| %s%d | b%d |\n\n", tag, i, i, tag, i, i)
+	}
+	return []byte(b.String())
+}
+
 // TestMarkdownRendererReuse_Concurrent verifies the renderer pool never shares
-// one instance across concurrent parses. Run under -race to catch data races.
+// one instance across concurrent parses. Each worker uses distinct input and
+// checks its own table content, so a cross-call content error is caught; the
+// -race run separately guards against memory races.
 func TestMarkdownRendererReuse_Concurrent(t *testing.T) {
-	data := buildTablesMarkdown(8)
+	const tablesPerWorker = 8
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
+		tag := fmt.Sprintf("w%d", i)
+		data := buildTaggedTablesMarkdown(tablesPerWorker, tag)
 		wg.Add(1)
-		go func() {
+		go func(tag string, data []byte) {
 			defer wg.Done()
 			p, _ := NewMarkdownParser(GoMarkdown)
 			for j := 0; j < 20; j++ {
 				res := p.ParseWithResult(context.Background(), "tables.md", data)
 				if res.Err != nil {
-					t.Errorf("concurrent parse error: %v", res.Err)
+					t.Errorf("worker %s: parse error: %v", tag, res.Err)
 					return
 				}
+				maps := ItemsToMaps(res.JSON)
+				if len(maps) != tablesPerWorker {
+					t.Errorf("worker %s: len(JSON) = %d, want %d", tag, len(maps), tablesPerWorker)
+					return
+				}
+				for k, item := range maps {
+					td, ok := item["table"].(*entity.TableData)
+					if !ok || td == nil {
+						t.Errorf("worker %s: item %d missing table", tag, k)
+						return
+					}
+					cells := td.CellTexts()
+					want := fmt.Sprintf("%s%d", tag, k)
+					if len(cells) == 0 || len(cells[0]) == 0 || cells[0][0] != want {
+						t.Errorf("worker %s: item %d header = %v, want %q", tag, k, cells, want)
+						return
+					}
+				}
 			}
-		}()
+		}(tag, data)
 	}
 	wg.Wait()
 }
