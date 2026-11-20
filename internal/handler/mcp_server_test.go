@@ -80,3 +80,18 @@ func TestStandaloneMCPRejectsInvalidConfiguredKey(t *testing.T) {
 		t.Fatalf("invalid preflight result: handler=%v error=%v", h, err)
 	}
 }
+
+func TestResolveMCPUserRejectsBetaToken(t *testing.T) {
+	betaCalled := false
+	auth := &AuthHandler{userService: &stubUserTokenResolver{resolveBetaAPITokenFn: func(context.Context, string) (*service.AuthIdentity, common.ErrorCode, error) {
+		betaCalled = true
+		return &service.AuthIdentity{User: &entity.User{ID: "owner"}, TenantID: "tenant"}, common.CodeSuccess, nil
+	}}}
+	user, err := auth.ResolveMCPUser(t.Context(), "Bearer share-link-beta")
+	if user != nil || err == nil {
+		t.Fatalf("beta token resolved to user=%v err=%v; want rejection", user, err)
+	}
+	if betaCalled {
+		t.Fatal("ResolveMCPUser consulted the beta token resolver")
+	}
+}
