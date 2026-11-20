@@ -28,6 +28,13 @@ import (
 // restarts the current task window instead of silently guessing a new offset.
 var ErrSyncResumeInvalid = errors.New("sync resume checkpoint is no longer valid")
 
+// ErrDocumentSkipped marks a per-document fetch failure the runner must not
+// treat as a task failure, so one unreadable file cannot block the whole task.
+// The document is counted as skipped and the run's completion watermark is
+// held behind it, so the next sync's listing window selects it again until a
+// fetch succeeds.
+var ErrDocumentSkipped = errors.New("document fetch skipped")
+
 // SourceDocument is the normalized document emitted by datasource connectors.
 type SourceDocument struct {
 	SourceID           string
