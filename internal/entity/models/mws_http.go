@@ -28,7 +28,16 @@ import (
 	"ragflow/internal/common"
 )
 
-const mwsAPIHost = "gpt.mwsapis.ru"
+const (
+	mwsAPIHost = "gpt.mwsapis.ru"
+
+	// mwsResponseHeaderTimeoutDefault caps the wait for a response header, which
+	// is what a hung provider endpoint spends on every retry. The shared provider
+	// clients use the same default and honour LLM_HTTP_RESPONSE_HEADER_TIMEOUT;
+	// this client keeps its own transport for the fixed-host dial guard, so it
+	// reads the override through the same helper.
+	mwsResponseHeaderTimeoutDefault = 20 * time.Minute
+)
 
 type mwsDialTargetKey struct{}
 
@@ -78,6 +87,13 @@ func validateMWSRequestURL(requestURL *url.URL) error {
 }
 
 func newMWSHTTPClient() *http.Client {
+	return &http.Client{
+		Transport:     common.NewProviderLoggingTransport(&mwsSSRFTransport{base: newMWSTransport()}),
+		CheckRedirect: rejectMWSRedirect,
+	}
+}
+
+func newMWSTransport() *http.Transport {
 	var transport *http.Transport
 	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
 		transport = defaultTransport.Clone()
@@ -88,16 +104,12 @@ func newMWSHTTPClient() *http.Client {
 	transport.MaxIdleConns = 100
 	transport.MaxIdleConnsPerHost = 10
 	transport.IdleConnTimeout = 90 * time.Second
-	transport.ResponseHeaderTimeout = 20 * time.Minute
+	transport.ResponseHeaderTimeout = common.ProviderResponseHeaderTimeout(mwsResponseHeaderTimeoutDefault)
 	transport.TLSHandshakeTimeout = 30 * time.Second
 
 	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	transport.DialContext = newMWSDialContext(dialer)
-
-	return &http.Client{
-		Transport:     common.NewProviderLoggingTransport(&mwsSSRFTransport{base: transport}),
-		CheckRedirect: rejectMWSRedirect,
-	}
+	return transport
 }
 
 func newMWSDialContext(dialer mwsDialer) func(context.Context, string, string) (net.Conn, error) {
