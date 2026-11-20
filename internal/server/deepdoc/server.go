@@ -128,39 +128,20 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	if errN != nil {
 		return fmt.Errorf("invalid deepdoc inference cpu cores: %w", errN)
 	}
-	totalCores := inferenceTotalCores()
-
-	// The single user-facing concurrency K drives TWO gates:
-	//   - outer gate (doctype.SetInferenceLimit): bounds ALL inference calls at
-	//     K, so remote inference clients can use the full budget regardless of
-	//     this machine's core count;
-	//   - inner local gate (doctype.SetLocalInferenceLimit): bounds only
-	//     in-process ONNX Runs at min(K, cores), so local inference never
-	//     oversubscribes the machine. This is derived automatically from K and
-	//     the CPU budget — no second user setting.
-	localCap := deriveLocalBudget(K, totalCores, rawN, explicitN)
-
-	// Validate only the LOCAL budget against the process CPU cores. K itself is
-	// a request-concurrency budget and is intentionally NOT bounded by cores.
-	resolvedN := rawN
-	if !explicitN || resolvedN == 0 {
-		resolvedN = localCap
-	}
-	coresPerInference, totalCPUCores, errV := native.ValidateInferenceConfig(totalCores, resolvedN, localCap)
+	// Register both inference gates through the shared, backend-independent
+	// seam. The single user-facing concurrency K drives an outer gate bounding
+	// every inference call at K and an inner/local gate bounding in-process
+	// ONNX Runs at min(K, cores). An explicit CPU-core budget N is honoured
+	// verbatim (including N=0 = all cores); only an unset N is derived from K.
+	budget, errV := RegisterInferenceBudget(K, rawN, explicitN, inferenceTotalCores())
 	if errV != nil {
 		return fmt.Errorf("invalid deepdoc inference configuration: %w", errV)
 	}
-
-	// Register thread policy before any model session is created.
-	native.SetIntraOpThreads(coresPerInference)
-	pdf.SetDeepDocConcurrency(K)
-	doctype.SetInferenceLimit(K)
-	doctype.SetLocalInferenceLimit(localCap)
 	common.Info("DeepDoc inference limits registered",
-		zap.Int("max_concurrent_inference", K),
-		zap.Int("local_concurrent_inference", localCap),
-		zap.Int("cpu_cores_per_inference", coresPerInference),
-		zap.Int("total_cpu_cores_budget", totalCPUCores),
+		zap.Int("max_concurrent_inference", budget.K),
+		zap.Int("local_concurrent_inference", budget.localCap),
+		zap.Int("cpu_cores_per_inference", budget.coresPerInference),
+		zap.Int("total_cpu_cores_budget", budget.totalCPUCores),
 		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
 
 	// Resolve the per-document page concurrency (N) from CLI > env > config >
