@@ -39,13 +39,13 @@ func ConfigSchema(provider string) (map[string]any, error) {
 	if s == nil {
 		return nil, &ValidationError{Message: fmt.Sprintf("unknown provider: %s", provider)}
 	}
-	return cloneMap(s), nil
+	return deepCloneMap(s), nil
 }
 
 func ListProviders() []map[string]any {
 	result := make([]map[string]any, 0, len(providerOrder))
 	for _, id := range providerOrder {
-		item := cloneMap(providerMetadata[id])
+		item := deepCloneMap(providerMetadata[id])
 		item["id"] = id
 		result = append(result, item)
 	}
@@ -231,12 +231,12 @@ func stringValue(value any) string {
 	return v
 }
 
-func cloneMap(in map[string]any) map[string]any {
+func deepCloneMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for key, value := range in {
 		switch v := value.(type) {
 		case map[string]any:
-			out[key] = cloneMap(v)
+			out[key] = deepCloneMap(v)
 		case []any:
 			out[key] = append([]any(nil), v...)
 		default:
@@ -258,7 +258,7 @@ func selfManagedSchema() map[string]any {
 	s := staticSchema("self_managed")
 	s["base_python_image"].(map[string]any)["default"] = env("SANDBOX_BASE_PYTHON_IMAGE", "infiniflow/sandbox-base-python:latest")
 	s["base_nodejs_image"].(map[string]any)["default"] = env("SANDBOX_BASE_NODEJS_IMAGE", "infiniflow/sandbox-base-nodejs:latest")
-	return cloneMap(s)
+	return deepCloneMap(s)
 }
 
 func staticSchema(provider string) map[string]any {

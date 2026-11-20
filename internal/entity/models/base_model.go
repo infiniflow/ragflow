@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
@@ -757,9 +758,8 @@ func mergeToolCallFunction(existing, delta map[string]interface{}) {
 
 // CloneMap returns a shallow copy of m.
 func cloneMap(m map[string]interface{}) map[string]interface{} {
-	cp := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		cp[k] = v
+	if m == nil {
+		return map[string]interface{}{}
 	}
-	return cp
+	return maps.Clone(m)
 }

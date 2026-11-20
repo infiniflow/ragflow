@@ -292,17 +292,5 @@ func computeNonTerminalCpnIDs(c *Canvas) []string {
 // caller-supplied InterruptAfter list without registering a node twice in
 // the same WithInterruptAfterNodes call.
 func dedupeStrings(in []string) []string {
-	if len(in) == 0 {
-		return in
-	}
-	seen := make(map[string]bool, len(in))
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if seen[s] {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
+	return common.Deduplicate(in)
 }

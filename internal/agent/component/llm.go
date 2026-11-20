@@ -1304,16 +1304,10 @@ func collectSysFiles(state *runtime.CanvasState) (textParts, imageURIs []string)
 
 // dedupStrings returns the deduplicated slice in first-seen order.
 func dedupStrings(vals []string) []string {
-	seen := make(map[string]struct{}, len(vals))
-	out := make([]string, 0, len(vals))
-	for _, v := range vals {
-		if _, dup := seen[v]; dup {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
+	if vals == nil {
+		return []string{}
 	}
-	return out
+	return common.Deduplicate(vals)
 }
 
 // prependHistory inserts up to `window` prior turns from the canvas

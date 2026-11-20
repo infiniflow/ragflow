@@ -20,8 +20,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -157,12 +157,10 @@ func taskTypesForEntries(entries []BacklogEntry) []string {
 }
 
 func sortedTaskTypes(seen map[string]struct{}) []string {
-	taskTypes := make([]string, 0, len(seen))
-	for taskType := range seen {
-		taskTypes = append(taskTypes, taskType)
+	if len(seen) == 0 {
+		return []string{}
 	}
-	sort.Strings(taskTypes)
-	return taskTypes
+	return slices.Sorted(maps.Keys(seen))
 }
 
 func (c *Consumer) startDatasetCompileLog(ctx context.Context, tenantID, datasetID, claimToken string, entries []BacklogEntry) error {

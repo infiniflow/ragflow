@@ -330,14 +330,8 @@ func (s *File2DocumentService) getAllInnermostFileIDs(ctx context.Context, folde
 // dedupeStrings returns the input slice with duplicates removed, preserving the
 // first-seen order.
 func dedupeStrings(in []string) []string {
-	seen := make(map[string]struct{}, len(in))
-	out := make([]string, 0, len(in))
-	for _, v := range in {
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
+	if in == nil {
+		return []string{}
 	}
-	return out
+	return common.Deduplicate(in)
 }
