@@ -744,19 +744,21 @@ func TestHandleAndExecute_LastDeliveryRetriesMarkFailed(t *testing.T) {
 		msg:       common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask},
 		delivered: common.TaskMaxDeliver,
 	}
-	// The successful write waits until the heartbeat has renewed the lease
-	// at least once after the first failed write, so a heartbeat stopped
-	// during the retries makes the test fail instead of hang or pass.
-	var renewalsAtFirstFailure int64
+	// A heartbeat that stopped during the retries must fail the test, so the
+	// renewal counted has to fall strictly between a failed write and the
+	// successful one. The baseline is read at the start of the second
+	// attempt, which the first failed write has already returned from, and
+	// the successful attempt then waits for a renewal past it.
+	var renewalsAfterFirstFailure int64
 	renewedDuringRetry := false
 	attempts := failTaskStatusWrites(t, db, 2, func(attempt int32) {
 		switch attempt {
-		case 1:
-			renewalsAtFirstFailure = handle.inProgress.Load()
+		case 2:
+			renewalsAfterFirstFailure = handle.inProgress.Load()
 		case 3:
 			deadline := time.Now().Add(2 * time.Second)
 			for time.Now().Before(deadline) {
-				if handle.inProgress.Load() > renewalsAtFirstFailure {
+				if handle.inProgress.Load() > renewalsAfterFirstFailure {
 					renewedDuringRetry = true
 					return
 				}
@@ -777,7 +779,7 @@ func TestHandleAndExecute_LastDeliveryRetriesMarkFailed(t *testing.T) {
 		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 	if !renewedDuringRetry {
-		t.Fatal("no heartbeat between the first failed FAILED write and the successful one")
+		t.Fatal("no heartbeat between a failed FAILED write and the successful one")
 	}
 	var task entity.IngestionTask
 	if err := db.First(&task, "id = ?", taskID).Error; err != nil {
