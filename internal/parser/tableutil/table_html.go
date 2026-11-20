@@ -51,6 +51,7 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	}
 	var rows [][]CellInput
 	var headerFlags []bool
+	var hasRowHeader bool
 	var caption string
 	// A <tfoot> shows below the body wherever the markup puts it, and HTML 4
 	// required it before <tbody>, so its rows are collected apart and placed
@@ -88,11 +89,15 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 		}
 		if isHTMLElement(n, "tr") {
 			var cells []CellInput
-			anyTh := false
+			hasColumnHeader := false
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				if isHTMLElement(c, "td") || isHTMLElement(c, "th") {
 					if isHTMLElement(c, "th") {
-						anyTh = true
+						if isScopedRowHeader(c) {
+							hasRowHeader = true
+						} else {
+							hasColumnHeader = true
+						}
 					}
 					cells = append(cells, CellInput{
 						Text:    cellText(c),
@@ -103,11 +108,11 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 			}
 			if inFoot {
 				footRows = append(footRows, cells)
-				footFlags = append(footFlags, anyTh)
+				footFlags = append(footFlags, hasColumnHeader)
 				return
 			}
 			rows = append(rows, cells)
-			headerFlags = append(headerFlags, anyTh)
+			headerFlags = append(headerFlags, hasColumnHeader)
 			// Do not recurse into the row's cells: a nested <table> inside a
 			// cell is folded into that cell's text by cellText, not parsed as
 			// a separate row.
@@ -120,25 +125,29 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	walk(doc)
 	rows = append(rows, footRows...)
 	headerFlags = append(headerFlags, footFlags...)
-	return BuildTableData(rows, headerFlags, caption), nil
+	// Explicit row headers provide labels without establishing a column header.
+	return buildTableData(rows, headerFlags, caption, !hasRowHeader), nil
 }
 
 // BuildTableData assembles the canonical TableData from collected cell rows,
 // per-row header flags and a caption. It owns the header-row count (leading
 // consecutive run, defaulting to 1 when the table has any rows) and the shared
-// grid normalization (buildGrid). Both ParseTableHTML and the deepdoc direct
-// converter (ToTableData) route through it, so the two produce identical grids
-// by construction rather than by a runtime comparison.
+// grid normalization (buildGrid). The deepdoc direct converter (ToTableData) uses this default.
 //
 // ColSpan/RowSpan inputs are clamped to [1, max] to match ParseTableHTML's
 // attribute parser and to keep a hostile or malformed span from driving a
 // multi-gigabyte allocation inside buildGrid's width pre-pass.
 func BuildTableData(rows [][]CellInput, headerFlags []bool, caption string) *entity.TableData {
+	return buildTableData(rows, headerFlags, caption, true)
+}
+
+// buildTableData optionally uses the first row when no column header was found.
+func buildTableData(rows [][]CellInput, headerFlags []bool, caption string, fallbackToFirstRow bool) *entity.TableData {
 	headerCount := 0
 	for headerCount < len(headerFlags) && headerFlags[headerCount] {
 		headerCount++
 	}
-	if len(rows) > 0 && headerCount == 0 {
+	if fallbackToFirstRow && len(rows) > 0 && headerCount == 0 {
 		headerCount = 1
 	}
 	for r := range rows {
@@ -370,6 +379,19 @@ const (
 	maxColSpan = 1000
 	maxRowSpan = 65534
 )
+
+// isScopedRowHeader reports whether a th labels a row or row group.
+func isScopedRowHeader(n *html.Node) bool {
+	for _, attr := range n.Attr {
+		if attr.Key == "scope" {
+			switch strings.ToLower(strings.TrimSpace(attr.Val)) {
+			case "row", "rowgroup":
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // attrInt reads a non-negative integer HTML attribute, clamping 0, negative,
 // non-numeric, and above-max values (to 1 and max respectively) so a
