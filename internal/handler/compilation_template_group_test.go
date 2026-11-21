@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
@@ -164,5 +165,77 @@ func TestCompilationTemplateGroupHandlerUpdateAllowsTemplateName(t *testing.T) {
 	conflict := putCompilationTemplateGroup(t, r, id, `{"name":"Group A","templates":[{"name":"Group A","kind":"text","config":{}}]}`)
 	if conflict.Code != int(common.CodeDataError) {
 		t.Fatalf("conflicting update code = %d, want %d", conflict.Code, int(common.CodeDataError))
+	}
+}
+
+// Malformed sections must fail before an unusable graph template replaces the
+// saved configuration. A relation string used to be accepted and then silently
+// omitted from the compiler's edge-extraction prompt.
+func TestCompilationTemplateGroupHandlerRejectsMalformedSections(t *testing.T) {
+	validConfig := `{"kind":"knowledge_graph","entity":{"fields":[{"type":"person","description":"A person"}]},"relation":{"fields":[{"type":"knows","description":"A relationship"}]}}`
+	payload := func(config string) string {
+		return `{"name":"Graph","templates":[{"name":"Graph","kind":"knowledge_graph","config":` + config + `}]}`
+	}
+	for _, tc := range []struct {
+		name, config, message string
+	}{
+		{"relation_object", `{"kind":"knowledge_graph","relation":"not-an-object"}`, "Relation must be an object"},
+		{"relation_fields", `{"kind":"knowledge_graph","relation":{"fields":{"type":"knows","description":"A relationship"}}}`, "Relation fields must be a list"},
+		{"entity_fields", `{"kind":"knowledge_graph","entity":{"fields":"person"}}`, "Entity fields must be a list"},
+	} {
+		for _, operation := range []string{"create", "update"} {
+			t.Run(tc.name+"/"+operation, func(t *testing.T) {
+				db := setupGroupHandlerDB(t)
+				router := newCompilationTemplateGroupHandlerRouter()
+				var before entity.CompilationTemplate
+				var response groupSaveResponse
+				if operation == "create" {
+					response = postCompilationTemplateGroup(t, router, payload(tc.config))
+				} else {
+					created := postCompilationTemplateGroup(t, router, payload(validConfig))
+					if created.Code != int(common.CodeSuccess) {
+						t.Fatalf("create valid graph: %+v", created)
+					}
+					id, _ := created.Data["id"].(string)
+					if err := db.Where("group_id = ?", id).Take(&before).Error; err != nil {
+						t.Fatal(err)
+					}
+					response = putCompilationTemplateGroup(t, router, id, payload(tc.config))
+				}
+				if response.Code != int(common.CodeDataError) || response.Message != tc.message {
+					// Include the actual saved compiler input when the regression
+					// accepts bad configuration, so the failure shows its effect.
+					var saved entity.CompilationTemplate
+					if err := db.Take(&saved).Error; err == nil {
+						_, edgePrompt := structure.HypergraphPrompts(map[string]any(saved.Config), "en")
+						t.Logf("persisted config=%v; edge extraction enabled=%v", saved.Config, edgePrompt != "")
+					}
+					t.Fatalf("response = code:%d message:%q, want data error %q", response.Code, response.Message, tc.message)
+				}
+				var count int64
+				if err := db.Model(&entity.CompilationTemplate{}).Count(&count).Error; err != nil {
+					t.Fatal(err)
+				}
+				if operation == "create" {
+					var groupCount int64
+					if err := db.Model(&entity.CompilationTemplateGroup{}).Count(&groupCount).Error; err != nil {
+						t.Fatal(err)
+					}
+					if count != 0 || groupCount != 0 {
+						t.Fatalf("rejected create persisted %d templates and %d groups", count, groupCount)
+					}
+				} else {
+					var after entity.CompilationTemplate
+					if err := db.Take(&after, "id = ?", before.ID).Error; err != nil {
+						t.Fatal(err)
+					}
+					oldConfig, _ := json.Marshal(before.Config)
+					newConfig, _ := json.Marshal(after.Config)
+					if count != 1 || string(oldConfig) != string(newConfig) {
+						t.Fatalf("rejected update changed saved configuration: before=%s after=%s count=%d", oldConfig, newConfig, count)
+					}
+				}
+			})
+		}
 	}
 }
