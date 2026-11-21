@@ -332,3 +332,13 @@ func TestCreateGroupMultiTemplateKeepsChildNames(t *testing.T) {
 		t.Fatalf("second template name = %q, want %q", group.Templates[1].Name, "B")
 	}
 }
+
+func TestValidateGroupRequestCountsDescriptionCharacters(t *testing.T) {
+	// 400 characters, 1200 UTF-8 bytes: within the 1024-character limit.
+	if err := ValidateGroupRequest(&GroupRequest{Description: strings.Repeat("知识", 200)}); err != nil {
+		t.Fatalf("rejected a 400-character description: %v", err)
+	}
+	if err := ValidateGroupRequest(&GroupRequest{Description: strings.Repeat("知", 1025)}); err == nil {
+		t.Fatal("accepted a 1025-character description")
+	}
+}
