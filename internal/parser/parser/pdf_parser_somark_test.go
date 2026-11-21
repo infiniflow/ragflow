@@ -367,16 +367,16 @@ func TestSoMarkBlockPositionRejectsNonFinite(t *testing.T) {
 // /Pages /Count is set to the supplied (possibly malformed) value, like
 // deepdoc/pdf's buildPDFWithCount. Offsets are computed so the xref table is
 // self-consistent and ledongthuc/pdf can open it.
-func buildSoMarkPDF(t *testing.T, count int, pageAttrs string) []byte {
+func buildSoMarkPDF(t *testing.T, count int, parentAttrs, pageAttrs string) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	buf.WriteString("%PDF-1.4\n")
 	off1 := buf.Len()
 	fmt.Fprintf(&buf, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
 	off2 := buf.Len()
-	fmt.Fprintf(&buf, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count %d >>\nendobj\n", count)
+	fmt.Fprintf(&buf, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count %d %s >>\nendobj\n", count, parentAttrs)
 	off3 := buf.Len()
-	fmt.Fprintf(&buf, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] %s /Resources << >> >>\nendobj\n", pageAttrs)
+	fmt.Fprintf(&buf, "3 0 obj\n<< /Type /Page /Parent 2 0 R %s /Resources << >> >>\nendobj\n", pageAttrs)
 	xrefStart := buf.Len()
 	buf.WriteString("xref\n0 4\n")
 	buf.WriteString("0000000000 65535 f \n")
@@ -388,21 +388,42 @@ func buildSoMarkPDF(t *testing.T, count int, pageAttrs string) []byte {
 }
 
 func TestSoMarkPagePointSizesHonorUserUnit(t *testing.T) {
-	sizes := soMarkPagePointSizes(buildSoMarkPDF(t, 1, "/UserUnit 2.5"))
+	sizes := soMarkPagePointSizes(buildSoMarkPDF(t, 1, "", "/MediaBox [0 0 612 792] /UserUnit 2.5"))
 	if !reflect.DeepEqual(sizes, [][2]float64{{1530, 1980}}) {
 		t.Fatalf("sizes = %v, want 612 x 792 user units at 2.5 points per unit", sizes)
+	}
+}
+
+func TestSoMarkPagePointSizesIntersectPageBoxes(t *testing.T) {
+	for _, tc := range []struct {
+		name, parentAttrs, pageAttrs string
+		want                         [2]float64
+	}{
+		{"inherited crop exceeds page", "/CropBox [0 0 612 792]", "/MediaBox [0 0 300 400]", [2]float64{300, 400}},
+		{"contained crop", "/MediaBox [0 0 300 400]", "/CropBox [20 30 220 330]", [2]float64{200, 300}},
+		{"partial overlap with rotation and units", "/CropBox [250 350 -10 50] /Rotate 90", "/MediaBox [20 10 300 220] /UserUnit 2", [2]float64{340, 460}},
+		{"disjoint boxes", "/CropBox [320 30 400 50]", "/MediaBox [0 0 300 400]", [2]float64{}},
+		{"only crop available", "/CropBox [20 30 220 330]", "", [2]float64{200, 300}},
+		{"malformed media with valid crop", "/MediaBox [0 0 /bad 400]", "/CropBox [20 30 220 330]", [2]float64{200, 300}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sizes := soMarkPagePointSizes(buildSoMarkPDF(t, 1, tc.parentAttrs, tc.pageAttrs))
+			if len(sizes) != 1 || sizes[0] != tc.want {
+				t.Fatalf("sizes = %v, want one page of size %v", sizes, tc.want)
+			}
+		})
 	}
 }
 
 func TestSoMarkPagePointSizesRejectsMalformedCount(t *testing.T) {
 	// An invalid catalog /Count makes the PDF page sizes unavailable.
 	for _, count := range []int{-1, 1 << 30} {
-		if got := soMarkPagePointSizes(buildSoMarkPDF(t, count, "")); got != nil {
+		if got := soMarkPagePointSizes(buildSoMarkPDF(t, count, "", "/MediaBox [0 0 612 792]")); got != nil {
 			t.Fatalf("/Count %d: got %v, want nil fallback", count, got)
 		}
 	}
 	// A sane count still reads page boxes.
-	if got := soMarkPagePointSizes(buildSoMarkPDF(t, 1, "")); len(got) != 1 {
+	if got := soMarkPagePointSizes(buildSoMarkPDF(t, 1, "", "/MediaBox [0 0 612 792]")); len(got) != 1 {
 		t.Fatalf("/Count 1: got %v, want one page", got)
 	}
 }

@@ -309,10 +309,8 @@ func soMarkPagePixelSize(raw any) (float64, float64) {
 	return w, h
 }
 
-// soMarkPagePointSizes reads each page's [width, height] in PDF points from
-// the source document (CropBox, falling back to MediaBox), the space RAGFlow
-// positions and crops use. A nil result or a zero entry means the page size
-// is unknown and positions for that page are omitted.
+// soMarkPagePointSizes reads the visible [width, height] of each page in PDF points.
+// A nil result or a zero entry means positions for that page are omitted.
 func soMarkPagePointSizes(data []byte) [][2]float64 {
 	r, err := pdfreader.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -324,20 +322,24 @@ func soMarkPagePointSizes(data []byte) [][2]float64 {
 	if numPage < 0 || numPage > maxSoMarkPageCount {
 		return nil
 	}
-	sizes := make([][2]float64, 0, numPage)
+	sizes := make([][2]float64, numPage)
 	for p := 1; p <= numPage; p++ {
 		page := r.Page(p)
-		box := soMarkInheritedPageValue(page, "CropBox")
-		if box.IsNull() || box.Len() != 4 {
-			box = soMarkInheritedPageValue(page, "MediaBox")
+		media, hasMedia := soMarkPageBox(page, "MediaBox")
+		crop, hasCrop := soMarkPageBox(page, "CropBox")
+		switch {
+		case !hasCrop:
+			crop = media
+		case hasMedia:
+			crop.Min.X = max(crop.Min.X, media.Min.X)
+			crop.Min.Y = max(crop.Min.Y, media.Min.Y)
+			crop.Max.X = min(crop.Max.X, media.Max.X)
+			crop.Max.Y = min(crop.Max.Y, media.Max.Y)
 		}
-		if box.IsNull() || box.Len() != 4 {
-			sizes = append(sizes, [2]float64{})
+		w, h := crop.Max.X-crop.Min.X, crop.Max.Y-crop.Min.Y
+		if w <= 0 || h <= 0 {
 			continue
 		}
-		x0, y0 := box.Index(0).Float64(), box.Index(1).Float64()
-		x1, y1 := box.Index(2).Float64(), box.Index(3).Float64()
-		w, h := math.Abs(x1-x0), math.Abs(y1-y0)
 		// Page boxes are in default user-space units (one point unless UserUnit is set).
 		if unit := page.V.Key("UserUnit"); !unit.IsNull() {
 			w, h = w*unit.Float64(), h*unit.Float64()
@@ -351,9 +353,30 @@ func soMarkPagePointSizes(data []byte) [][2]float64 {
 				w, h = h, w
 			}
 		}
-		sizes = append(sizes, [2]float64{w, h})
+		sizes[p-1] = [2]float64{w, h}
 	}
 	return sizes
+}
+
+// PDF rectangles may specify either pair of opposite corners in any order.
+func soMarkPageBox(page pdfreader.Page, key string) (pdfreader.Rect, bool) {
+	box := soMarkInheritedPageValue(page, key)
+	if box.Len() != 4 {
+		return pdfreader.Rect{}, false
+	}
+	var coords [4]float64
+	for i := range coords {
+		v := box.Index(i)
+		if v.Kind() != pdfreader.Integer && v.Kind() != pdfreader.Real {
+			return pdfreader.Rect{}, false
+		}
+		coords[i] = v.Float64()
+	}
+	x0, y0, x1, y1 := coords[0], coords[1], coords[2], coords[3]
+	return pdfreader.Rect{
+		Min: pdfreader.Point{X: min(x0, x1), Y: min(y0, y1)},
+		Max: pdfreader.Point{X: max(x0, x1), Y: max(y0, y1)},
+	}, true
 }
 
 // maxSoMarkPageCount mirrors deepdoc/pdf/plaintext_nocgo.go: one million
