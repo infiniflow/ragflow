@@ -267,6 +267,8 @@ func loadActiveSourceChunks(ctx context.Context, request knowledge_compile.WikiD
 			if strings.TrimSpace(anyString(row["compile_kwd"])) != "" {
 				continue
 			}
+			// Stored chunks use content_with_weight; the component accepts text.
+			row["text"] = row["content_with_weight"]
 			chunks = append(chunks, row)
 		}
 		if len(result.Chunks) == 0 || int64(offset+len(result.Chunks)) >= result.Total {
@@ -347,7 +349,7 @@ func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compi
 		IndexNames:   []string{indexName},
 		KbIDs:        []string{request.DatasetID},
 		Limit:        10000,
-		SelectFields: []string{"id", "compile_kwd", "type_kwd", "slug_kwd", "parent_id"},
+		SelectFields: []string{"id", "compile_kwd", "type_kwd", "slug_kwd", "parent_kwd"},
 		Filter: map[string]any{
 			"doc_id":        []string{request.DocumentID},
 			"type_kwd":      []string{"wiki_page", "wiki_section"},
@@ -364,12 +366,16 @@ func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compi
 	}
 	newIDs := make(map[string]struct{}, len(rows))
 	newPageSlugs := make(map[string]struct{})
+	newPageIDs := make(map[string]struct{})
 	for _, row := range rows {
 		if id := anyString(row["id"]); id != "" {
 			newIDs[id] = struct{}{}
 		}
 		if enginetypes.CompilationRowType(row) == "wiki_page" {
 			newPageSlugs[anyString(row["slug_kwd"])] = struct{}{}
+			if id := anyString(row["id"]); id != "" {
+				newPageIDs[id] = struct{}{}
+			}
 		}
 	}
 	if len(rows) > 0 {
@@ -398,11 +404,18 @@ func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compi
 		affected[slug] = struct{}{}
 	}
 	affectedPageIDs := make(map[string]struct{})
+	currentPageIDs := make(map[string]struct{})
+	for id := range newPageIDs {
+		// A previous partial delete may have removed this regenerated parent.
+		affectedPageIDs[id] = struct{}{}
+		currentPageIDs[id] = struct{}{}
+	}
 	if existing != nil && !fullReplace {
 		for _, row := range existing.Chunks {
 			if enginetypes.CompilationRowType(row) != "wiki_page" {
 				continue
 			}
+			currentPageIDs[anyString(row["id"])] = struct{}{}
 			slug := anyString(row["slug_kwd"])
 			_, stillPlanned := plannedSlugs[slug]
 			if _, ok := affected[slug]; ok || !stillPlanned {
@@ -423,8 +436,13 @@ func replaceLockedDirtyWikiProducts(ctx context.Context, request knowledge_compi
 		for _, row := range existing.Chunks {
 			id := anyString(row["id"])
 			_, pageAffected := affectedPageIDs[id]
-			_, sectionAffected := affectedPageIDs[anyString(row["parent_id"])]
-			inScope := fullReplace || pageAffected || sectionAffected
+			parentID := anyString(row["parent_kwd"])
+			_, sectionAffected := affectedPageIDs[parentID]
+			_, parentExists := currentPageIDs[parentID]
+			// A complete snapshot can also identify sections left behind when
+			// an earlier external delete removed their page before failing.
+			orphanSection := enginetypes.CompilationRowType(row) == "wiki_section" && parentID != "" && !parentExists
+			inScope := fullReplace || pageAffected || sectionAffected || orphanSection
 			if _, keep := newIDs[id]; id != "" && inScope && !keep {
 				staleIDs = append(staleIDs, id)
 			}

@@ -30,6 +30,7 @@ type dirtyWikiReconcileEngine struct {
 	writes, searches int
 	total            int64
 	beforeSearch     func()
+	partialDeleteID  string
 }
 
 func (e *dirtyWikiReconcileEngine) GetType() string { return "elasticsearch" }
@@ -38,12 +39,12 @@ func (e *dirtyWikiReconcileEngine) Search(_ context.Context, req *types.SearchRe
 	if e.beforeSearch != nil {
 		e.beforeSearch()
 	}
-	if !reflect.DeepEqual(req.IndexNames, []string{"ragflow_tenant"}) || !reflect.DeepEqual(req.KbIDs, []string{"dataset"}) || !reflect.DeepEqual(req.Filter["doc_id"], []string{"document"}) || req.Filter["available_int"] != 0 {
+	if !reflect.DeepEqual(req.IndexNames, []string{"ragflow_tenant"}) || !reflect.DeepEqual(req.KbIDs, []string{"dataset"}) || !reflect.DeepEqual(req.Filter["doc_id"], []string{"document"}) || (req.Filter["available_int"] != 0 && req.Filter["available_int"] != 1) {
 		e.t.Fatalf("unscoped Wiki reconciliation search: %+v", req)
 	}
 	var rows []map[string]any
 	for _, row := range e.rows {
-		if row["doc_id"] == "document" && row["kb_id"] == "dataset" && row["available_int"] == 0 && (row["type_kwd"] == "wiki_page" || row["type_kwd"] == "wiki_section") {
+		if row["doc_id"] == "document" && row["kb_id"] == "dataset" && row["available_int"] == req.Filter["available_int"] && (req.Filter["available_int"] == 1 || row["type_kwd"] == "wiki_page" || row["type_kwd"] == "wiki_section") {
 			selected := make(map[string]any, len(req.SelectFields))
 			for _, field := range req.SelectFields {
 				if value, ok := row[field]; ok {
@@ -84,6 +85,16 @@ func (e *dirtyWikiReconcileEngine) DeleteChunks(_ context.Context, condition map
 				ids = append(ids, id)
 			}
 		}
+	}
+	if e.partialDeleteID != "" {
+		for _, id := range ids {
+			if id == e.partialDeleteID {
+				delete(e.rows, id)
+				e.partialDeleteID = ""
+				return 1, errors.New("partial delete after deleting page")
+			}
+		}
+		e.t.Fatal("partial-delete fixture did not select its obsolete page")
 	}
 	for _, id := range ids {
 		delete(e.rows, id)
@@ -144,7 +155,7 @@ func dirtyWikiReconcilePage(id, slug string) map[string]any {
 	return map[string]any{"id": id, "slug_kwd": slug, "type_kwd": "wiki_page", "compile_kwd": "wiki", "doc_id": "document", "kb_id": "dataset", "available_int": 0}
 }
 func dirtyWikiReconcileSection(id, parent string) map[string]any {
-	return map[string]any{"id": id, "parent_id": parent, "type_kwd": "wiki_section", "compile_kwd": "wiki", "doc_id": "document", "kb_id": "dataset", "available_int": 0}
+	return map[string]any{"id": id, "parent_kwd": parent, "type_kwd": "wiki_section", "compile_kwd": "wiki", "doc_id": "document", "kb_id": "dataset", "available_int": 0}
 }
 func dirtyWikiReconcileState(t *testing.T, key string, slugs ...string) kc.WikiMapActiveState {
 	t.Helper()
@@ -157,6 +168,119 @@ func dirtyWikiReconcileState(t *testing.T, key string, slugs ...string) kc.WikiM
 		t.Fatal(err)
 	}
 	return kc.WikiMapActiveState{Key: key, TenantID: "tenant", DatasetID: "dataset", DocumentID: "document", Payload: payload}
+}
+
+type dirtyWikiMAPCapture struct {
+	requests []kc.ChatRequest
+}
+
+func (c *dirtyWikiMAPCapture) Chat(_ context.Context, request kc.ChatRequest) (*kc.ChatResponse, error) {
+	c.requests = append(c.requests, request)
+	return nil, context.Canceled
+}
+
+func TestDirtyWikiStoredSourceTextReachesMAPRequest(t *testing.T) {
+	eng, publisher, request := dirtyWikiReconcileSetup(t)
+	if err := kcWiringDeps.DB.AutoMigrate(&entity.Document{}, &entity.CompilationTemplate{}); err != nil {
+		t.Fatal(err)
+	}
+	doc := entity.Document{ID: "document", KbID: "dataset", ParserConfig: entity.JSONMap{"compilation_template_id": "template"}}
+	if err := kcWiringDeps.DB.Create(&doc).Error; err != nil {
+		t.Fatal(err)
+	}
+	template := entity.CompilationTemplate{ID: "template", TenantID: &request.TenantID, Name: "Wiki", Kind: "wiki", Config: entity.JSONMap{}}
+	if err := kcWiringDeps.DB.Create(&template).Error; err != nil {
+		t.Fatal(err)
+	}
+	body := "温度传感器 T-17 由 Chen 校准，阈值为 26°C。"
+	eng.rows["source"] = map[string]any{"id": "source", "doc_id": "document", "kb_id": "dataset", "available_int": 1, "docnm_kwd": "manual", "content_with_weight": body}
+	eng.rows["compiled"] = map[string]any{"id": "compiled", "doc_id": "document", "kb_id": "dataset", "available_int": 1, "compile_kwd": "wiki", "content_with_weight": "exclude compiled rows"}
+	foreign := copyStringAnyMap(eng.rows["source"])
+	foreign["id"], foreign["doc_id"], foreign["content_with_weight"] = "foreign-source", "another-document", "exclude foreign rows"
+	eng.rows["foreign-source"] = foreign
+	chat := &dirtyWikiMAPCapture{}
+	kc.SetDepsResolver(func(context.Context, string, string, string) (kc.Deps, error) {
+		return kc.Deps{Chat: chat}, nil
+	})
+	t.Cleanup(func() { kc.SetDepsResolver(newKnowledgeCompilerDepsResolver()) })
+	// This follows the dirty-document loader, production component conversion,
+	// batching and prompt rendering, stopping only at the model transport seam.
+	if err := compileDirtyWikiDocument(t.Context(), request); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected to stop after capturing MAP request, got %v", err)
+	}
+	if len(chat.requests) != 1 {
+		t.Fatalf("MAP request count = %d, want 1", len(chat.requests))
+	}
+	prompt := chat.requests[0].UserPrompt
+	if !strings.Contains(prompt, body) || !strings.Contains(prompt, "source") {
+		t.Errorf("stored source body or id missing from MAP request: %q", prompt)
+	}
+	for _, excluded := range []string{"exclude compiled rows", "exclude foreign rows"} {
+		if strings.Contains(prompt, excluded) {
+			t.Errorf("MAP request included %q", excluded)
+		}
+	}
+	if eng.writes != 0 || publisher.calls != 0 {
+		t.Fatalf("captured MAP failure wrote=%d published=%d", eng.writes, publisher.calls)
+	}
+}
+
+func TestDirtyWikiRetryRemovesOrphanSectionsAfterPartialDelete(t *testing.T) {
+	eng, publisher, request := dirtyWikiReconcileSetup(t)
+	eng.rows["old"] = dirtyWikiReconcilePage("old", "entity/old")
+	eng.rows["old-section"] = dirtyWikiReconcileSection("old-section", "old")
+	eng.rows["other"] = dirtyWikiReconcilePage("other", "entity/other-template")
+	eng.rows["other-section"] = dirtyWikiReconcileSection("other-section", "other")
+	foreign := dirtyWikiReconcileSection("foreign-section", "foreign-page")
+	foreign["doc_id"] = "another-document"
+	eng.rows["foreign-section"] = foreign
+	states := []kc.WikiMapActiveState{dirtyWikiReconcileState(t, "changed-template"), dirtyWikiReconcileState(t, "other-template", "entity/other-template")}
+	eng.partialDeleteID = "old"
+	if err := replaceDirtyWikiProducts(t.Context(), request, nil, nil, nil, states, false); err == nil || !strings.Contains(err.Error(), "partial delete") {
+		t.Fatalf("first attempt error = %v, want partial deletion", err)
+	}
+	if eng.rows["old"] != nil || eng.rows["old-section"] == nil || publisher.calls != 0 {
+		t.Fatal("partial delete did not persist page-only deletion without publication")
+	}
+	for retry := 0; retry < 2; retry++ {
+		if err := replaceDirtyWikiProducts(t.Context(), request, nil, nil, nil, states, false); err != nil {
+			t.Fatal(err)
+		}
+		if eng.rows["old-section"] != nil {
+			t.Error("retry left the deleted page's orphan section")
+		}
+		for _, id := range []string{"other", "other-section", "foreign-section"} {
+			if eng.rows[id] == nil {
+				t.Errorf("retry removed retained or foreign product %s", id)
+			}
+		}
+	}
+	if publisher.calls != 2 {
+		t.Fatalf("completion calls = %d, want two successful retry completions", publisher.calls)
+	}
+}
+
+func TestDirtyWikiRecreatedParentReplacesOnlyOldSections(t *testing.T) {
+	eng, publisher, request := dirtyWikiReconcileSetup(t)
+	eng.rows["old-section"] = dirtyWikiReconcileSection("old-section", "recreated")
+	eng.rows["other"] = dirtyWikiReconcilePage("other", "entity/other-template")
+	eng.rows["other-section"] = dirtyWikiReconcileSection("other-section", "other")
+	rows := []map[string]any{dirtyWikiReconcilePage("recreated", "entity/recreated"), dirtyWikiReconcileSection("new-section", "recreated")}
+	states := []kc.WikiMapActiveState{dirtyWikiReconcileState(t, "new-state", "entity/recreated", "entity/other-template")}
+	if err := replaceDirtyWikiProducts(t.Context(), request, rows, nil, nil, states, false); err != nil {
+		t.Fatal(err)
+	}
+	if eng.rows["old-section"] != nil {
+		t.Error("recreated parent retained its obsolete section")
+	}
+	for _, id := range []string{"recreated", "new-section", "other", "other-section"} {
+		if eng.rows[id] == nil {
+			t.Errorf("replacement removed current product %s", id)
+		}
+	}
+	if publisher.calls != 1 {
+		t.Fatalf("completion calls = %d, want 1", publisher.calls)
+	}
 }
 
 func TestDirtyWikiIncompleteProductSearchFailsClosed(t *testing.T) {
