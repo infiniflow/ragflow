@@ -67,10 +67,11 @@ type Input struct {
 	MaxIterations int
 	// Stream controls whether model output is streamed into the event iterator.
 	Stream bool
-	// TenantID is the conversation's tenant (the chat's bound tenant, decided by
-	// the session created in the UI). It is injected into the retrieval tools so
-	// they search the right index without a canvas runtime.
+	// TenantID is the conversation's tenant for session and model settings.
 	TenantID string
+	// CorpusTenantID is the storage tenant when all bound datasets share one.
+	// Retrieval across several tenants uses the dataset scope in the context.
+	CorpusTenantID string
 	// UserID identifies whose per-Tenant default models apply to this run.
 	UserID string
 	// DatasetIDs is the conversation's bound dataset scope, decided by the
@@ -347,7 +348,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// The turn's compiled-evidence state: the scope claims are looked up in,
 	// the corpus-level existence probe, and the claims already shown. Installed
 	// here so the pre-loop probe and every locate tool share one scope.
-	ctx = withCompiledRun(ctx, in.TenantID, in.DatasetIDs)
+	ctx = withCompiledRun(ctx, in.corpusTenantID(), in.DatasetIDs)
 
 	// Identity the judge is chosen for: the decision model is configured per chat
 	// and per tenant in the UI, so the filter has to know which run it is
@@ -407,7 +408,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// dropped here rather than pinned into the system instruction, where it
 	// would be re-billed on every call of the turn.
 	if len(in.Tools) == 0 && !tmpl.strictTools {
-		pf := prefetchCompiledEvidence(ctx, in.TenantID, in.DatasetIDs, in.Messages)
+		pf := prefetchCompiledEvidence(ctx, in.corpusTenantID(), in.DatasetIDs, in.Messages)
 		if len(pf.claims) > 0 {
 			answer, aerr := answerFromClaims(ctx, synthModelFor(in), tmpl.Content, in.Messages, pf)
 			switch {

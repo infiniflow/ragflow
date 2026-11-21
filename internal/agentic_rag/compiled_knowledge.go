@@ -91,14 +91,22 @@ func datasetsHaveCompiledKnowledge(ctx context.Context, de engine.DocEngine, ten
 	return len(res.Chunks) > 0
 }
 
+func (in Input) corpusTenantID() string {
+	if in.CorpusTenantID != "" {
+		return in.CorpusTenantID
+	}
+	return in.TenantID
+}
+
 func toolsForRun(ctx context.Context, tmpl Template, in Input, de engine.DocEngine) []tool.BaseTool {
-	tools := toolsFor(ctx, tmpl, in.TenantID, in.DatasetIDs, in.Tools)
+	tenantID := in.corpusTenantID()
+	tools := toolsFor(ctx, tmpl, tenantID, in.DatasetIDs, in.Tools)
 	if len(in.Tools) != 0 || tmpl.strictTools {
 		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools skipped",
 			zap.Strings("datasets", in.DatasetIDs),
 			zap.String("reason", "explicit tool selection"))
-	} else if datasetsHaveCompiledKnowledge(ctx, de, in.TenantID, in.DatasetIDs) {
-		compiled := compiledKnowledgeTools(in.TenantID, in.DatasetIDs)
+	} else if datasetsHaveCompiledKnowledge(ctx, de, tenantID, in.DatasetIDs) {
+		compiled := compiledKnowledgeTools(tenantID, in.DatasetIDs)
 		tools = append(tools, compiled...)
 		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools injected",
 			zap.Strings("datasets", in.DatasetIDs),

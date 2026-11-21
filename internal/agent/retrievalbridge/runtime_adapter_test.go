@@ -14,13 +14,43 @@ import (
 
 type captureRetrievalService struct {
 	req    agenttool.RetrievalRequest
+	calls  []agenttool.RetrievalRequest
 	chunks []agenttool.RetrievalChunk
 	err    error
 }
 
 func (s *captureRetrievalService) Search(_ context.Context, _ *gorm.DB, req agenttool.RetrievalRequest) ([]agenttool.RetrievalChunk, error) {
 	s.req = req
+	s.calls = append(s.calls, req)
 	return s.chunks, s.err
+}
+
+func TestRuntimeAdapterSearchesEachDatasetTenantSeparately(t *testing.T) {
+	ctx := agentrunt.WithDatasetTenants(t.Context(), map[string]string{
+		"first": "owner-a", "second": "owner-b", "third": "owner-a",
+	})
+	service := &captureRetrievalService{}
+	bridge := NewRuntimeAdapter(service)
+	req := agentrunt.RetrievalRequest{
+		Query: "test", TenantID: "chat-owner", DatasetIDs: []string{"first", "second", "third"},
+	}
+	if _, err := bridge.Search(ctx, nil, req); err != nil {
+		t.Fatal(err)
+	}
+	if len(service.calls) != 2 ||
+		!reflect.DeepEqual(service.calls[0].DatasetIDs, []string{"first", "third"}) ||
+		!reflect.DeepEqual(service.calls[1].DatasetIDs, []string{"second"}) {
+		t.Fatalf("unexpected retrieval scopes: %#v", service.calls)
+	}
+	for _, call := range service.calls {
+		if call.TenantID != "chat-owner" {
+			t.Fatalf("execution tenant changed to %q", call.TenantID)
+		}
+	}
+	req.DatasetIDs = []string{"outside"}
+	if _, err := bridge.Search(ctx, nil, req); err == nil || len(service.calls) != 2 {
+		t.Fatal("a dataset outside the bound scope reached retrieval")
+	}
 }
 
 func TestRuntimeAdapterDisablesDenseFallback(t *testing.T) {
