@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -211,21 +212,32 @@ func (b *s3Base) ObjectExists(ctx context.Context, bucket, fnm string) (bool, er
 	return true, nil
 }
 
-// ListObjects lists the keys in a bucket.
+// ListObjects lists keys relative to the logical bucket, using the same
+// bucket and prefix mapping as object reads and writes.
 func (b *s3Base) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
-	result, err := b.client().ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+	bucket, prefix := b.resolve(bucket, "")
+	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
-	})
-	if err != nil {
-		return nil, err
+		Prefix: aws.String(prefix),
 	}
-
 	var objects []string
-	for _, obj := range result.Contents {
-		objects = append(objects, *obj.Key)
+	for {
+		result, err := b.client().ListObjectsV2(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		for _, obj := range result.Contents {
+			objects = append(objects, strings.TrimPrefix(*obj.Key, prefix))
+		}
+		if !aws.ToBool(result.IsTruncated) {
+			return objects, nil
+		}
+		next := aws.ToString(result.NextContinuationToken)
+		if next == "" || next == aws.ToString(input.ContinuationToken) {
+			return nil, fmt.Errorf("list objects in bucket %q: truncated response has missing or repeated continuation token", bucket)
+		}
+		input.ContinuationToken = result.NextContinuationToken
 	}
-
-	return objects, nil
 }
 
 // GetPresignedURL generates a presigned URL for accessing an object.
