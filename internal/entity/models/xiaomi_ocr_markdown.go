@@ -22,7 +22,7 @@ func xiaomiOCRMarkdown(text string) string {
 	var fence string
 	for i := 0; i < len(lines); {
 		line := strings.TrimSpace(lines[i])
-		if fence == "" && (strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~")) {
+		if fence == "" && xiaomiCodeFence(line) {
 			fence = line[:len(line)-len(strings.TrimLeft(line, line[:1]))]
 			out = append(out, lines[i])
 			i++
@@ -36,15 +36,10 @@ func xiaomiOCRMarkdown(text string) string {
 			i++
 			continue
 		}
-		if strings.HasPrefix(line, "<fcel>") || strings.HasPrefix(line, "<ecel>") {
-			start := i
-			for i++; i < len(lines); i++ {
-				s := strings.TrimSpace(lines[i])
-				if loc := xiaomiCellTag.FindStringIndex(s); loc == nil || loc[0] != 0 {
-					break
-				}
-			}
-			raw := strings.Join(lines[start:i], "\n")
+		if xiaomiTableStart(line) {
+			end := xiaomiTableEnd(lines, i)
+			raw := strings.Join(lines[i:end], "\n")
+			i = end
 			if table := xiaomiOCRTable(raw); table != "" {
 				out = append(out, "", table, "")
 			} else {
@@ -55,15 +50,49 @@ func xiaomiOCRMarkdown(text string) string {
 		start := i
 		for i++; i < len(lines); i++ {
 			s := strings.TrimSpace(lines[i])
-			if strings.HasPrefix(s, "```") || strings.HasPrefix(s, "~~~") || strings.HasPrefix(s, "<fcel>") || strings.HasPrefix(s, "<ecel>") {
+			if xiaomiCodeFence(s) || xiaomiTableStart(s) {
 				break
 			}
 		}
 		prose := strings.Join(lines[start:i], "\n")
-		prose = xiaomiDisplayMath.ReplaceAllString(prose, "$$$$$1$$$$")
-		out = append(out, xiaomiInlineMath.ReplaceAllString(prose, "$$${1}$$"))
+		out = append(out, xiaomiMathDelimiters(prose))
 	}
 	return strings.Join(out, "\n")
+}
+
+func xiaomiCodeFence(line string) bool {
+	return strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~")
+}
+
+func xiaomiMathDelimiters(text string) string {
+	text = xiaomiDisplayMath.ReplaceAllString(text, "$$$$$1$$$$")
+	return xiaomiInlineMath.ReplaceAllString(text, "$$${1}$$")
+}
+
+func xiaomiTableStart(line string) bool {
+	return strings.HasPrefix(line, "<fcel>") || strings.HasPrefix(line, "<ecel>")
+}
+
+func xiaomiTableEnd(lines []string, start int) int {
+	end := start + 1
+	rowClosed := strings.HasSuffix(strings.TrimSpace(lines[start]), "<nl>")
+	for i := end; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if xiaomiCodeFence(line) || (xiaomiTableStart(line) && strings.TrimSpace(lines[i-1]) == "") {
+			break
+		}
+		tag := xiaomiCellTag.FindStringIndex(line)
+		if rowClosed && (tag == nil || tag[0] != 0) {
+			break
+		}
+		// Inside an open row, the next tag confirms that intervening lines
+		// belong to the cell. Leave unconfirmed trailing prose outside.
+		if tag != nil {
+			end = i + 1
+			rowClosed = strings.HasSuffix(line, "<nl>")
+		}
+	}
+	return end
 }
 
 type xiaomiTableCell struct {
@@ -135,7 +164,8 @@ func xiaomiOCRTable(raw string) string {
 			if cell.colSpan > 1 {
 				fmt.Fprintf(&table, ` colspan="%d"`, cell.colSpan)
 			}
-			table.WriteString(">" + html.EscapeString(cell.text) + "</td>")
+			value := html.EscapeString(xiaomiMathDelimiters(cell.text))
+			table.WriteString(">" + strings.ReplaceAll(value, "\n", "<br>") + "</td>")
 		}
 		table.WriteString("</tr>")
 	}

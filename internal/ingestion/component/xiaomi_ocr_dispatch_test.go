@@ -60,7 +60,7 @@ func TestXiaomiOCRPDFSelectedPage(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"content":"# Analysis\n\nMass is \\(mc^2\\).\n\n<fcel>A<fcel>B<nl><fcel>10<fcel>20<nl>"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"content":"# Analysis\n\nMass is \\(mc^2\\).\n\n<fcel>A<fcel>B<nl><fcel>first\nsecond<fcel>\\(x+y\\)<nl>"}}]}`))
 	}))
 	defer server.Close()
 	extra, _ := json.Marshal(map[string]string{"base_url": server.URL + "/v1"})
@@ -84,8 +84,8 @@ func TestXiaomiOCRPDFSelectedPage(t *testing.T) {
 				heading = heading || strings.Contains(text, "Analysis")
 				formula = formula || strings.Contains(text, "mc^2")
 				if td, ok := fields["table"].(*entity.TableData); ok && td != nil {
-					data, _ := json.Marshal(td)
-					table = td.Page == 2 && strings.Contains(string(data), "20")
+					table = td.Page == 2 && len(td.Grid) == 2 && len(td.Grid[1]) == 2 &&
+						td.Grid[1][0].Text == "first\nsecond" && td.Grid[1][1].Text == "$x+y$"
 				}
 			}
 			if !heading || !formula || !table || res.File["page_count"] != 3 {

@@ -24,6 +24,38 @@ func TestXiaomiOCRMarkdown(t *testing.T) {
 	}
 }
 
+func TestXiaomiOCRTableBoundaries(t *testing.T) {
+	fence := "~~~text\n" + `<fcel>\(literal\)<nl>` + "\n~~~"
+	for _, tc := range []struct{ name, input, want string }{
+		{
+			"multiline cells",
+			"Before\n<fcel>A\nB<fcel>C<nl>\n<fcel>D\n\nE\n<nl>\nAfter",
+			"Before\n\n<table><tr><td>A<br>B</td><td>C</td></tr><tr><td>D<br><br>E</td></tr></table>\n\nAfter",
+		},
+		{
+			"cell math",
+			`<fcel>\(x<y\)<fcel>\[a=b\]<nl>` + "\n" + fence,
+			"\n" + `<table><tr><td>$x&lt;y$</td><td>$$a=b$$</td></tr></table>` + "\n\n" + fence,
+		},
+		{
+			"unterminated row next to prose and a fence",
+			"<fcel>A\nAfter\n" + fence,
+			"\n<table><tr><td>A</td></tr></table>\n\nAfter\n" + fence,
+		},
+		{
+			"separate tables around a paragraph",
+			"<fcel>A\n\nBetween tables.\n\n<fcel>B<nl>",
+			"\n<table><tr><td>A</td></tr></table>\n\n\nBetween tables.\n\n\n<table><tr><td>B</td></tr></table>\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := xiaomiOCRMarkdown(tc.input); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestXiaomiOCRRejectsIncompletePage(t *testing.T) {
 	for _, body := range []string{`{"choices":[]}`, `{"choices":[{"finish_reason":"length","message":{"content":"partial"}}]}`, `{"choices":[{"message":{}}]}`} {
 		t.Run(body, func(t *testing.T) {
