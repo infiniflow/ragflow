@@ -1887,6 +1887,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 		_ = m.ensureUnlimitedOCRFromEnv(ctx, tenantID)
 		_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 		_ = m.ensureMonkeyOCRFromEnv(ctx, tenantID)
+		_ = m.ensureXiaomiOCRFromEnv(ctx, tenantID)
 		_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 		_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
 	}
@@ -2194,6 +2195,17 @@ func (m *ModelProviderService) ensureMonkeyOCRFromEnv(ctx context.Context, tenan
 		return nil
 	}
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCR", "monkeyocr-from-env", config)
+}
+
+func (m *ModelProviderService) ensureXiaomiOCRFromEnv(ctx context.Context, tenantID string) error {
+	url := strings.TrimSpace(os.Getenv(common.EnvXiaomiOCRServerURL))
+	if url == "" {
+		url = strings.TrimSpace(os.Getenv(common.EnvXiaomiOCRAPIServer))
+	}
+	if url == "" {
+		return nil
+	}
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "XiaomiOCR", "SeerRay-Lab/Xiaomi-OCR-0", map[string]any{common.EnvXiaomiOCRServerURL: url})
 }
 
 // Environment-key/default tables mirror the Python OCR provider settings.

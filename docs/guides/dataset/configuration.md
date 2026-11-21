@@ -85,6 +85,10 @@ Configure how PDF documents are parsed. You can select a parsing method based on
   External models are often better suited to complex layouts, scanned documents, images, borderless tables, and mixed text and images. However, they incur additional model calls and token usage. The available models depend on the configured model providers and their capabilities.
 - **Page range:** Specifies which PDF pages to parse. You can set a start and end page and add multiple page ranges to avoid processing unnecessary content.
 
+**Xiaomi-OCR-0 (whole-page OCR).** Serve the checkpoint with [Xiaomi's vLLM or SGLang instructions](https://github.com/xiaomi-research/Xiaomi-OCR-0#readme). Under **Model providers**, add a **XiaomiOCR** instance using the inference server's OpenAI-compatible base URL (for example, `http://ocr:8000/v1`, reachable from RAGFlow). Select the served model as the PDF parsing method in the dataset or pipeline Parser. RAGFlow renders the selected pages and indexes Markdown text, LaTeX formulas, and tables with their source page numbers.
+
+For automatic tenant setup, set `XIAOMI_OCR_SERVER_URL` (or `XIAOMI_OCR_APISERVER`) on the RAGFlow server. This registers `SeerRay-Lab/Xiaomi-OCR-0` when the tenant owner lists providers. For a custom served model name or an endpoint that requires an API key, configure the instance through **Model providers**.
+
 ##### Table Parsing
 
 Select **DeepDOC** or **TCADP Parser** from the **Parser** list to extract table content and structure. Vision models are configured through the shared **Enable vision enhancement** setting above.
