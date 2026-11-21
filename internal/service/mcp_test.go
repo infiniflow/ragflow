@@ -28,12 +28,14 @@ import (
 	"testing"
 	"time"
 
-	"gorm.io/gorm"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 func TestIsValidMCPServerType(t *testing.T) {
@@ -591,4 +593,405 @@ func makeMCPServers(count int) []*entity.MCPServer {
 		servers = append(servers, &entity.MCPServer{ID: fmt.Sprintf("server-%d", i)})
 	}
 	return servers
+}
+
+// sharedMCPTestSetup creates the MCP server, tenant membership, and shared
+// agent canvas used by the shared-metadata tests.
+func sharedMCPTestSetup(t *testing.T, serverTenant, userID, role string, dsl entity.JSONMap) {
+	t.Helper()
+
+	server := &entity.MCPServer{
+		ID:         "server",
+		Name:       "Project tools",
+		UserID:     "owner",
+		TenantID:   serverTenant,
+		ServerType: mcpServerTypeStreamableHTTP,
+		URL:        "https://user:credential@example.test/mcp",
+		Variables: entity.JSONMap{
+			"authorization_token": "credential",
+			"tools": map[string]interface{}{
+				"allowed":    map[string]interface{}{"name": "allowed", "inputSchema": map[string]interface{}{"type": "object"}, "secret_extension": "credential"},
+				"unselected": map[string]interface{}{"name": "unselected"},
+			},
+		},
+		Headers: entity.JSONMap{"Authorization": "credential"},
+	}
+	if err := dao.DB.Create(server).Error; err != nil {
+		t.Fatalf("create mcp server: %v", err)
+	}
+
+	if role != "" {
+		for _, rel := range []*entity.UserTenant{
+			{ID: "rel-owner", UserID: "owner", TenantID: serverTenant, Role: string(permission.RoleOwner), InvitedBy: serverTenant, Status: sptr("1")},
+			{ID: "rel-1", UserID: userID, TenantID: serverTenant, Role: role, InvitedBy: serverTenant, Status: sptr("1")},
+		} {
+			if rel.UserID == userID && rel.ID == "rel-owner" {
+				continue
+			}
+			if err := dao.DB.Create(rel).Error; err != nil {
+				t.Fatalf("create tenant membership: %v", err)
+			}
+		}
+	}
+
+	if dsl != nil {
+		canvas := &entity.UserCanvas{
+			ID:             "agent-canvas",
+			UserID:         serverTenant,
+			TenantID:       sptr(serverTenant),
+			Permission:     "team",
+			CanvasCategory: "agent_canvas",
+			Title:          sptr("agent"),
+			DSL:            dsl,
+		}
+		if err := dao.DB.Create(canvas).Error; err != nil {
+			t.Fatalf("create agent canvas: %v", err)
+		}
+	}
+}
+
+func sharedMCPAgentDSL(selected []string) entity.JSONMap {
+	tools := make(map[string]interface{}, len(selected))
+	for _, name := range selected {
+		tools[name] = map[string]interface{}{}
+	}
+	return entity.JSONMap{
+		"components": map[string]interface{}{
+			"agent": map[string]interface{}{
+				"obj": map[string]interface{}{
+					"component_name": "Agent",
+					"params": map[string]interface{}{
+						"mcp": []interface{}{
+							map[string]interface{}{
+								"mcp_id": "server",
+								"tools":  tools,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestGetSharedMCPServer_ReturnsSelectedToolMetadata(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate mcp server: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
+
+	s := NewMCPService()
+	server, code, err := s.GetSharedMCPServer(permission.WithIdentity(t.Context(), "member", "team"), "server")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("expected success, got code=%v err=%v", code, err)
+	}
+	if server.URL != "" {
+		t.Errorf("expected empty shared URL, got %q", server.URL)
+	}
+	if server.Headers != nil && len(server.Headers) > 0 {
+		t.Errorf("expected no headers in shared metadata, got %#v", server.Headers)
+	}
+	tools, ok := server.Variables["tools"].(map[string]interface{})
+	if !ok || len(tools) != 1 {
+		t.Fatalf("expected one shared tool, got %#v", server.Variables["tools"])
+	}
+	if _, ok := tools["allowed"]; !ok {
+		t.Errorf("expected selected tool 'allowed', got %#v", tools)
+	}
+	if _, ok := tools["unselected"]; ok {
+		t.Errorf("unselected tool should not be exposed")
+	}
+	meta, ok := tools["allowed"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected tool metadata map, got %#v", tools["allowed"])
+	}
+	if _, ok := meta["secret_extension"]; ok {
+		t.Errorf("secret_extension must not be exposed in shared metadata")
+	}
+}
+
+func TestGetSharedMCPServer_DeniesNonMember(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate mcp server: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	sharedMCPTestSetup(t, "team", "outsider", "", sharedMCPAgentDSL([]string{"allowed"}))
+
+	s := NewMCPService()
+	_, code, err := s.GetSharedMCPServer(permission.WithIdentity(t.Context(), "outsider", "team"), "server")
+	if code != common.CodeDataError || err == nil {
+		t.Fatalf("expected data error for non-member, got code=%v err=%v", code, err)
+	}
+}
+
+func TestGetSharedMCPServer_DeniesWhenNotReferenced(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate mcp server: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	sharedMCPTestSetup(t, "team", "member", "normal", nil)
+
+	s := NewMCPService()
+	_, code, err := s.GetSharedMCPServer(permission.WithIdentity(t.Context(), "member", "team"), "server")
+	if code != common.CodeDataError || err == nil {
+		t.Fatalf("expected data error when not referenced, got code=%v err=%v", code, err)
+	}
+}
+
+func malformedAgentDSL(obj interface{}) entity.JSONMap {
+	return entity.JSONMap{
+		"components": map[string]interface{}{
+			"agent": map[string]interface{}{
+				"obj": obj,
+			},
+		},
+	}
+}
+
+func TestGetSharedMCPServer_MalformedDSLIgnored(t *testing.T) {
+	malformed := []entity.JSONMap{
+		{"components": "not-a-dict"},
+		{"components": map[string]interface{}{"agent": "not-a-dict"}},
+		malformedAgentDSL("not-a-dict"),
+		malformedAgentDSL(map[string]interface{}{
+			"component_name": "Agent",
+			"params":         "not-a-dict",
+		}),
+		malformedAgentDSL(map[string]interface{}{
+			"component_name": "Agent",
+			"params": map[string]interface{}{
+				"mcp": "not-a-list",
+			},
+		}),
+		malformedAgentDSL(map[string]interface{}{
+			"component_name": "Agent",
+			"params": map[string]interface{}{
+				"mcp": []interface{}{"not-a-dict"},
+			},
+		}),
+		malformedAgentDSL(map[string]interface{}{
+			"component_name": "Agent",
+			"params": map[string]interface{}{
+				"mcp": []interface{}{
+					map[string]interface{}{
+						"mcp_id": "server",
+						"tools":  "not-a-dict",
+					},
+				},
+			},
+		}),
+	}
+	for _, dsl := range malformed {
+		t.Run("", func(t *testing.T) {
+			testDB := setupServiceTestDB(t)
+			if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+				t.Fatalf("migrate mcp server: %v", err)
+			}
+			pushServiceDB(t, testDB)
+
+			sharedMCPTestSetup(t, "team", "member", "normal", dsl)
+
+			s := NewMCPService()
+			_, code, err := s.GetSharedMCPServer(permission.WithIdentity(t.Context(), "member", "team"), "server")
+			if code != common.CodeDataError || err == nil {
+				t.Fatalf("expected data error for malformed DSL, got code=%v err=%v", code, err)
+			}
+		})
+	}
+}
+
+func TestGetSharedMCPServer_DataflowDoesNotGrantAccess(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate mcp server: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
+	if err := dao.DB.Model(&entity.UserCanvas{}).Where("id = ?", "agent-canvas").Update("canvas_category", "dataflow_canvas").Error; err != nil {
+		t.Fatalf("update canvas category: %v", err)
+	}
+
+	s := NewMCPService()
+	_, code, err := s.GetSharedMCPServer(permission.WithIdentity(t.Context(), "member", "team"), "server")
+	if code != common.CodeDataError || err == nil {
+		t.Fatalf("expected data error for dataflow canvas, got code=%v err=%v", code, err)
+	}
+}
+
+func TestGetSharedMCPServer_OtherServerReferenceDoesNotGrantAccess(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate mcp server: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	dsl := entity.JSONMap{
+		"components": map[string]interface{}{
+			"agent": map[string]interface{}{
+				"obj": map[string]interface{}{
+					"component_name": "Agent",
+					"params": map[string]interface{}{
+						"mcp": []interface{}{
+							map[string]interface{}{
+								"mcp_id": "other-server",
+								"tools":  map[string]interface{}{"allowed": map[string]interface{}{}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	sharedMCPTestSetup(t, "team", "member", "normal", dsl)
+
+	s := NewMCPService()
+	_, code, err := s.GetSharedMCPServer(permission.WithIdentity(t.Context(), "member", "team"), "server")
+	if code != common.CodeDataError || err == nil {
+		t.Fatalf("expected data error for other server reference, got code=%v err=%v", code, err)
+	}
+}
+
+func TestGetSharedMCPServer_DoesNotMutateStoredVariables(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate mcp server: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
+
+	var before entity.MCPServer
+	if err := dao.DB.First(&before, "id = ?", "server").Error; err != nil {
+		t.Fatalf("load server before: %v", err)
+	}
+
+	s := NewMCPService()
+	if _, _, err := s.GetSharedMCPServer(permission.WithIdentity(t.Context(), "member", "team"), "server"); err != nil {
+		t.Fatalf("GetSharedMCPServer: %v", err)
+	}
+
+	var after entity.MCPServer
+	if err := dao.DB.First(&after, "id = ?", "server").Error; err != nil {
+		t.Fatalf("load server after: %v", err)
+	}
+	beforeJSON, _ := json.Marshal(before.Variables)
+	afterJSON, _ := json.Marshal(after.Variables)
+	if string(beforeJSON) != string(afterJSON) {
+		t.Errorf("stored variables mutated: before=%s after=%s", beforeJSON, afterJSON)
+	}
+}
+
+func TestListMCPServers_IncludesSharedWhenIDsRequested(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate mcp server: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
+
+	s := NewMCPService()
+	resp, code, err := s.ListMCPServers(permission.WithIdentity(t.Context(), "member", "team"), "team", "", []string{"server", "server"}, "", 0, 0, "create_time", true)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("expected success, got code=%v err=%v", code, err)
+	}
+	if resp.Total != 1 || len(resp.MCPServers) != 1 {
+		t.Fatalf("expected one server, got total=%d len=%d", resp.Total, len(resp.MCPServers))
+	}
+	// The duplicate requested ID must not produce a second row, and the list
+	// item must not leak stored credentials.
+	if fmt.Sprint(resp.MCPServers[0].Variables) == fmt.Sprint(entity.JSONMap{"authorization_token": "credential"}) {
+		t.Error("list item leaked stored MCP credentials")
+	}
+}
+
+func TestListMCPServers_SharedHonorsPagination(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatal(err)
+	}
+	pushServiceDB(t, db)
+	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
+	ctx := permission.WithIdentity(t.Context(), "member", "team")
+	resp, code, err := NewMCPService().ListMCPServers(ctx, "team", "", []string{"server"}, "", 2, 1, "name", false)
+	if err != nil || code != common.CodeSuccess || resp.Total != 1 || len(resp.MCPServers) != 0 {
+		t.Fatalf("page two: response=%+v code=%d err=%v", resp, code, err)
+	}
+}
+
+func TestSharedMCPServerManagementRemainsOwnerOnly(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatal(err)
+	}
+	pushServiceDB(t, db)
+	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
+	ctx := permission.WithIdentity(t.Context(), "member", "team")
+	s := NewMCPService()
+	shared, code, err := s.GetMCPServer(ctx, "server")
+	if err != nil || code != common.CodeSuccess || shared.URL != "" || len(shared.Headers) != 0 {
+		t.Fatalf("shared detail: server=%+v code=%d err=%v", shared, code, err)
+	}
+	if _, _, err := s.ExportMCPServer(ctx, "server"); err == nil {
+		t.Fatal("shared member could export MCP credentials")
+	}
+	if _, _, err := s.UpdateMCPServer(ctx, "server", UpdateMCPServerRequest{"name": json.RawMessage(`"changed"`)}); err == nil {
+		t.Fatal("shared member could update the MCP registration")
+	}
+	if _, _, err := s.DeleteMCPServer(ctx, "server"); err == nil {
+		t.Fatal("shared member could delete the MCP registration")
+	}
+	ownerCtx := permission.WithIdentity(t.Context(), "owner", "team")
+	owned, _, err := s.GetMCPServer(ownerCtx, "server")
+	if err != nil || owned.URL == "" || len(owned.Headers) == 0 {
+		t.Fatalf("owner detail: server=%+v err=%v", owned, err)
+	}
+}
+
+func TestListMCPServers_NoIDDoesNotEnumerateShared(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate mcp server: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
+
+	s := NewMCPService()
+	resp, code, err := s.ListMCPServers(permission.WithIdentity(t.Context(), "member", "team"), "team", "", nil, "", 0, 0, "create_time", true)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("expected success, got code=%v err=%v", code, err)
+	}
+	// The shared-ID expansion only runs for explicitly requested IDs; without
+	// them the member sees the tenant-visible server exactly once.
+	if resp.Total != 1 || len(resp.MCPServers) != 1 {
+		t.Fatalf("expected one tenant-visible server, got total=%d len=%d", resp.Total, len(resp.MCPServers))
+	}
+}
+
+func TestListMCPServers_SharedHonorsKeyword(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate mcp server: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	sharedMCPTestSetup(t, "team", "member", "normal", sharedMCPAgentDSL([]string{"allowed"}))
+
+	s := NewMCPService()
+	resp, code, err := s.ListMCPServers(permission.WithIdentity(t.Context(), "member", "team"), "team", "", []string{"server"}, "unmatched", 0, 0, "create_time", true)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("expected success, got code=%v err=%v", code, err)
+	}
+	if resp.Total != 0 || len(resp.MCPServers) != 0 {
+		t.Fatalf("expected keyword filter to exclude shared server, got total=%d len=%d", resp.Total, len(resp.MCPServers))
+	}
 }

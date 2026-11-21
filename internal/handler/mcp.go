@@ -54,6 +54,7 @@ type mcpServerResponse struct {
 	CreateDate  string                 `json:"create_date"`
 	UpdateTime  *int64                 `json:"update_time"`
 	UpdateDate  string                 `json:"update_date"`
+	ReadOnly    bool                   `json:"read_only,omitempty"`
 }
 
 // NewMCPHandler creates an MCP handler.
@@ -133,7 +134,9 @@ func (h *MCPHandler) GetMCPServer(c *gin.Context) {
 		mcpDetailError(c, code, err)
 		return
 	}
-	common.RespondSuccess(c, newMCPServerResponse(result), "success")
+	resp := newMCPServerResponse(result)
+	resp.ReadOnly = result.URL == ""
+	common.RespondSuccess(c, resp, "success")
 }
 
 func mcpDetailError(c *gin.Context, code common.ErrorCode, err error) {
