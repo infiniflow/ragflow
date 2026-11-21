@@ -216,20 +216,28 @@ func (b *s3Base) ObjectExists(ctx context.Context, bucket, fnm string) (bool, er
 // bucket and prefix mapping as object reads and writes.
 func (b *s3Base) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 	bucket, prefix := b.resolve(bucket, "")
-	result, err := b.client().ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
 		Prefix: aws.String(prefix),
-	})
-	if err != nil {
-		return nil, err
 	}
-
 	var objects []string
-	for _, obj := range result.Contents {
-		objects = append(objects, strings.TrimPrefix(*obj.Key, prefix))
+	for {
+		result, err := b.client().ListObjectsV2(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		for _, obj := range result.Contents {
+			objects = append(objects, strings.TrimPrefix(*obj.Key, prefix))
+		}
+		if !aws.ToBool(result.IsTruncated) {
+			return objects, nil
+		}
+		next := aws.ToString(result.NextContinuationToken)
+		if next == "" || next == aws.ToString(input.ContinuationToken) {
+			return nil, fmt.Errorf("list objects in bucket %q: truncated response has missing or repeated continuation token", bucket)
+		}
+		input.ContinuationToken = result.NextContinuationToken
 	}
-
-	return objects, nil
 }
 
 // GetPresignedURL generates a presigned URL for accessing an object.

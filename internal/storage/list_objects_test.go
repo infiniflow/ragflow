@@ -163,3 +163,94 @@ func TestListObjectsEmptyAndFailedResponses(t *testing.T) {
 		}
 	}
 }
+
+// A successful first page must not hide a failure or cancellation on a later
+// page. Keys on every page use the same logical bucket and prefix mapping.
+func TestListObjectsReadsAllPages(t *testing.T) {
+	for _, tc := range []struct{ name, backend, bucket, prefix, wantBucket, wantPrefix string }{
+		{"s3 shared", "s3", "physical", "root", "physical", "root/dataset/"},
+		{"s3 dedicated", "s3", "", "root", "dataset", "root/dataset/"},
+		{"oss dedicated", "oss", "", "root", "dataset", "root/"},
+	} {
+		for _, outcome := range []string{"success", "second page failure", "cancel second page"} {
+			t.Run(tc.name+"/"+outcome, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				var requests atomic.Int32
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					page := requests.Add(1)
+					if r.URL.Path != "/"+tc.wantBucket || r.URL.Query().Get("prefix") != tc.wantPrefix || r.URL.Query().Get("list-type") != "2" {
+						t.Errorf("unexpected list scope: %s", r.URL)
+					}
+					w.Header().Set("Content-Type", "application/xml")
+					switch page {
+					case 1:
+						if r.URL.Query().Get("continuation-token") != "" {
+							t.Errorf("unexpected first-page token: %s", r.URL)
+						}
+						fmt.Fprintf(w, `<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>next/+ &amp; token</NextContinuationToken><Contents><Key>%sfirst.txt</Key></Contents></ListBucketResult>`, tc.wantPrefix)
+					case 2:
+						if r.URL.Query().Get("continuation-token") != "next/+ & token" {
+							t.Errorf("unexpected continuation token: %s", r.URL)
+						}
+						if outcome == "second page failure" {
+							w.WriteHeader(http.StatusForbidden)
+							fmt.Fprint(w, `<Error><Code>AccessDenied</Code></Error>`)
+							return
+						}
+						if outcome == "cancel second page" {
+							cancel()
+							<-r.Context().Done()
+							return
+						}
+						fmt.Fprintf(w, `<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>%ssecond.txt</Key></Contents></ListBucketResult>`, tc.wantPrefix)
+					default:
+						t.Errorf("unexpected extra request: %s", r.URL)
+						w.WriteHeader(http.StatusBadRequest)
+					}
+				}))
+				defer server.Close()
+				store := newListObjectsTestStorage(t, tc.backend, server.URL, tc.bucket, tc.prefix)
+				keys, err := store.ListObjects(ctx, "dataset")
+				if outcome == "success" {
+					if err != nil || !reflect.DeepEqual(keys, []string{"first.txt", "second.txt"}) {
+						t.Fatalf("ListObjects = %q, %v; want both relative keys", keys, err)
+					}
+				} else if err == nil || keys != nil {
+					t.Fatalf("ListObjects = %q, %v; must not return partial success", keys, err)
+				}
+				if requests.Load() != 2 {
+					t.Fatalf("requests = %d, want 2", requests.Load())
+				}
+			})
+		}
+	}
+}
+
+func TestListObjectsRejectsInvalidContinuation(t *testing.T) {
+	for _, repeated := range []bool{false, true} {
+		t.Run(fmt.Sprintf("repeated=%v", repeated), func(t *testing.T) {
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				page := requests.Add(1)
+				if page > 2 {
+					t.Errorf("repeated continuation made an extra request")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				w.Header().Set("Content-Type", "application/xml")
+				if repeated {
+					fmt.Fprint(w, `<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>same</NextContinuationToken></ListBucketResult>`)
+				} else {
+					fmt.Fprint(w, `<ListBucketResult><IsTruncated>true</IsTruncated></ListBucketResult>`)
+				}
+			}))
+			defer server.Close()
+			store := newListObjectsTestStorage(t, "s3", server.URL, "physical", "root")
+			keys, err := store.ListObjects(t.Context(), "dataset")
+			if err == nil || keys != nil {
+				t.Fatalf("invalid continuation = %q, %v; want error", keys, err)
+			}
+		})
+	}
+}
