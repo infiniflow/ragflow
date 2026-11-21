@@ -508,6 +508,22 @@ var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error)
 	return assertURLSafe(rawURL, LookupHost)
 }
 
+// NonPublicAddressError is the guard's refusal of a URL that resolves to an
+// address which is not publicly routable.
+//
+// It is a type rather than only a message because the caller's advice differs
+// by cause: a rejected private address means the deployment forbids dialling it
+// (nothing is wrong with the endpoint), while any other failure means the
+// endpoint itself did not answer. Matching on message text made that
+// distinction depend on wording.
+type NonPublicAddressError struct {
+	Address string
+}
+
+func (e *NonPublicAddressError) Error() string {
+	return fmt.Sprintf("URL resolves to a non-public address (%s), which is not allowed", e.Address)
+}
+
 // AssertURLSafeWithContext validates every resolved address while allowing
 // cancellation and deadlines to interrupt DNS resolution.
 var AssertURLSafeWithContext = func(ctx context.Context, rawURL string) (hostname, resolvedIP string, err error) {
@@ -549,7 +565,7 @@ func assertURLSafe(rawURL string, lookup func(string) ([]string, error)) (hostna
 			return "", "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, hostname)
 		}
 		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
-			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed", ip.String())
+			return "", "", &NonPublicAddressError{Address: ip.String()}
 		}
 		if resolvedIP == "" {
 			resolvedIP = ip.String()

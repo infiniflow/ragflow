@@ -19,9 +19,11 @@ package dao
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/entity"
+	"strings"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/entity"
 )
 
 // CompilationTemplateDAO is the data-access object for compilation templates and
@@ -193,4 +195,54 @@ func (dao *CompilationTemplateDAO) HardDeleteOrphansByName(ctx context.Context, 
 		"tenant_id = ? AND group_id = ? AND name = ? AND is_builtin = ? AND status = ?",
 		tenantID, groupID, name, false, string(entity.StatusInvalid),
 	).Delete(&entity.CompilationTemplate{}).Error
+}
+
+// ListByTenant returns every valid template of the tenant, optionally narrowed
+// to a single kind, oldest first.
+//
+// It deliberately does not join the group table: the model library has to show a
+// published model the tenant owns even when it currently sits in no group the
+// caller happens to be looking at, and a join would quietly turn "my models"
+// into "the models in the groups I listed".
+func (dao *CompilationTemplateDAO) ListByTenant(ctx context.Context, db *gorm.DB, tenantID, kind string) ([]*entity.CompilationTemplate, error) {
+	query := db.WithContext(ctx).
+		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid))
+	if trimmed := strings.TrimSpace(kind); trimmed != "" {
+		query = query.Where("kind = ?", trimmed)
+	}
+	var templates []*entity.CompilationTemplate
+	if err := query.Order("create_time ASC, id ASC").Find(&templates).Error; err != nil {
+		return nil, err
+	}
+	return templates, nil
+}
+
+// PublishSnapshot records one immutable snapshot and moves the template onto it
+// in a single transaction, so a snapshot can never exist without the template
+// pointing at it.
+//
+// expectedVersion is the version the caller read before publishing. The update
+// is guarded on it, which makes two simultaneous publishes collide loudly
+// instead of both writing version N+1 and leaving one of them unattributable.
+func (dao *CompilationTemplateDAO) PublishSnapshot(ctx context.Context, db *gorm.DB, templateID, tenantID string, expectedVersion int, snapshot *entity.CompilationTemplateVersion) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(snapshot).Error; err != nil {
+			return fmt.Errorf("record model version %d: %w", snapshot.Version, err)
+		}
+		result := tx.Model(&entity.CompilationTemplate{}).
+			Where("id = ? AND tenant_id = ? AND version = ?", templateID, tenantID, expectedVersion).
+			Updates(map[string]interface{}{
+				"version":        snapshot.Version,
+				"publish_status": entity.PublishStatusPublished,
+				"published_at":   snapshot.PublishedAt,
+				"published_by":   snapshot.PublishedBy,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("compilation template %s: version is no longer %d, another publish won the race", templateID, expectedVersion)
+		}
+		return nil
+	})
 }

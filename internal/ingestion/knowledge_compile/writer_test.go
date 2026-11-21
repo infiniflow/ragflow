@@ -237,6 +237,140 @@ func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
 	}
 }
 
+// TestWriteMergedStructureKeepsClassesApart covers the class-agnostic fallback's
+// limit: when a name carries two classes, a stored classless row cannot be
+// resolved onto either of them, so its sources must stay out of both rows rather
+// than being filed under a class the extractor never stated.
+func TestWriteMergedStructureKeepsClassesApart(t *testing.T) {
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+		{
+			"id":                            "dataset_structure_classless",
+			"compile_kwd":                   "hypergraph",
+			"compilation_template_ids":      []string{"tpl1"},
+			"compilation_template_kind_kwd": "knowledge_graph",
+			"knowledge_graph_kwd":           "entity",
+			"name_kwd":                      "Engine",
+			"entity_type_kwd":               "other",
+			"content_with_weight":           `{"name":"Engine","type":"other","description":"existing"}`,
+			"source_doc_ids":                []string{"d1"},
+		},
+	}}
+	w := engineWriter{eng: eng}
+	err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{
+		{Name: "Engine", Type: "component", Description: "as a component", CompileKwd: "hypergraph", TemplateID: "tpl1", TemplateKind: "knowledge_graph", SourceDocIDs: []string{"d2"}},
+		{Name: "Engine", Type: "pump", Description: "as a pump", CompileKwd: "hypergraph", TemplateID: "tpl1", TemplateKind: "knowledge_graph", SourceDocIDs: []string{"d3"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen int
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] != "entity" {
+			continue
+		}
+		seen++
+		docs := firstStringSlice(row["source_doc_ids"])
+		if len(docs) != 1 || docs[0] == "d1" {
+			t.Fatalf("classless row's sources leaked into %v: %v", row["entity_type_kwd"], docs)
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("want one row per class, got %d entity rows", seen)
+	}
+}
+
+// TestWriteMergedStructureStampsTheModelVersion covers the dataset row's model
+// version: a bucket extracted by a published version carries it, and a bucket
+// with no published version (0) writes no column at all, so "unversioned" stays
+// one state rather than "absent" plus "zero".
+func TestWriteMergedStructureStampsTheModelVersion(t *testing.T) {
+	eng := &fakeEngine{}
+	w := engineWriter{eng: eng}
+	if err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{
+		{Name: "Acme Corp", Type: "organization", Description: "company", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph", TemplateID: "tpl1", TemplateVersion: 3},
+		{Name: "Beta Ltd", Type: "organization", Description: "company", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph", TemplateID: "tpl1"},
+	}); err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] != "entity" {
+			continue
+		}
+		name, _ := row["name_kwd"].(string)
+		seen[name] = true
+		switch name {
+		case "acme corp":
+			if row["compilation_template_version_int"] != 3 {
+				t.Errorf("versioned row = %v, want 3", row["compilation_template_version_int"])
+			}
+		case "beta ltd":
+			if v, ok := row["compilation_template_version_int"]; ok {
+				t.Errorf("unversioned row = %v, want no column", v)
+			}
+		}
+	}
+	if !seen["acme corp"] || !seen["beta ltd"] {
+		t.Fatalf("inserted rows = %+v, want both entities", eng.insertedChunks)
+	}
+}
+
+// TestWriteMergedStructureKeepsStoredAttributes covers the attribute fold against
+// the stored row: a batch that recompiles one document still has to carry the
+// values the documents compiled earlier contributed to the same instance, so the
+// stored `attr` is folded into the written row instead of being replaced by this
+// batch's own. A scalar only the stored row states survives, and a list both sides
+// state accumulates rather than dropping either side's items.
+func TestWriteMergedStructureKeepsStoredAttributes(t *testing.T) {
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+		{
+			"id":                            "dataset_structure_stored_attr",
+			"compile_kwd":                   "hypergraph",
+			"compilation_template_ids":      []string{"tpl1"},
+			"compilation_template_kind_kwd": "knowledge_graph",
+			"knowledge_graph_kwd":           "entity",
+			"name_kwd":                      "virginia woolf",
+			"entity_type_kwd":               "person",
+			"content_with_weight":           `{"name":"Virginia Woolf","type":"person"}`,
+			"source_doc_ids":                []string{"d1"},
+			"attr": map[string]interface{}{
+				"birth_date": "1882-01-25",
+				"occupation": []interface{}{"writer"},
+			},
+		},
+	}}
+	w := engineWriter{eng: eng}
+	if err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name: "Virginia Woolf", Type: "person", Description: "English writer",
+		CompileKwd: "hypergraph", TemplateID: "tpl1", TemplateKind: "knowledge_graph",
+		SourceDocIDs: []string{"d2"},
+		Attr:         map[string]any{"occupation": []any{"writer", "publisher"}},
+	}}); err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	var entity map[string]interface{}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] == "entity" {
+			entity = row
+			break
+		}
+	}
+	if entity == nil {
+		t.Fatalf("inserted rows contain no entity: %+v", eng.insertedChunks)
+	}
+	if got := firstStringSlice(entity["source_doc_ids"]); len(got) != 2 {
+		t.Fatalf("the stored row was not folded at all: %v", got)
+	}
+	attrs, _ := entity["attr"].(map[string]any)
+	if attrs["birth_date"] != "1882-01-25" {
+		t.Errorf("stored-only attribute was dropped: %#v", entity["attr"])
+	}
+	occupations, ok := bucketAttrList(attrs["occupation"])
+	if !ok || len(occupations) != 2 || occupations[0] != "writer" || occupations[1] != "publisher" {
+		t.Errorf("occupation = %#v, want [writer publisher]", attrs["occupation"])
+	}
+}
+
 func TestWriteMergedStructureKeepsEntityKeywordLowercase(t *testing.T) {
 	eng := &fakeEngine{engineType: "infinity"}
 	w := engineWriter{eng: eng}
@@ -326,6 +460,67 @@ func TestWriteMergedStructureDoesNotDeleteForInvalidBucket(t *testing.T) {
 	}
 	if eng.lastDeleteCond != nil {
 		t.Fatalf("invalid bucket must not delete the existing row: %v", eng.lastDeleteCond)
+	}
+}
+
+// A stored row that states its endpoint classes must still be found by a batch
+// that could not resolve them (its endpoint entity was compiled in an earlier
+// pass). The class copy then fills the bucket from the row, the recomputed id
+// supersedes the old one, and the single row that remains carries the classes
+// the stored row already had — without them the relation drops off the ontology
+// graph on every partial rewrite.
+func TestWriteMergedStructureKeepsStoredClassesForClasslessBucket(t *testing.T) {
+	oldID := "dataset_structure_old_relation"
+	eng := &fakeEngine{engineType: "infinity", searchChunks: []map[string]interface{}{{
+		"id":                            oldID,
+		"compile_kwd":                   "hypergraph",
+		"compilation_template_ids":      []string{"tpl1"},
+		"compilation_template_kind_kwd": "knowledge_graph",
+		"knowledge_graph_kwd":           "relation",
+		"from_entity_kwd":               "acme corp",
+		"to_entity_kwd":                 "beta ltd",
+		"from_type_kwd":                 "organization",
+		"to_type_kwd":                   "organization",
+		"content_with_weight":           `{"type":"supplies","from":"Acme Corp","to":"Beta Ltd","description":"existing"}`,
+		"source_doc_ids":                []string{"d1"},
+	}}}
+	w := engineWriter{eng: eng}
+	err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name:         "Acme Corp -> Beta Ltd",
+		Type:         "relation",
+		FromEntity:   "Acme Corp",
+		ToEntity:     "Beta Ltd",
+		RelationType: "supplies",
+		Description:  "recompiled",
+		CompileKwd:   "hypergraph",
+		TemplateID:   "tpl1",
+		TemplateKind: "knowledge_graph",
+	}})
+	if err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	var relations []map[string]interface{}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] == "relation" {
+			relations = append(relations, row)
+		}
+	}
+	if len(relations) != 1 {
+		t.Fatalf("inserted %d relation rows, want exactly 1: %+v", len(relations), eng.insertedChunks)
+	}
+	row := relations[0]
+	if row["from_type_kwd"] != "organization" || row["to_type_kwd"] != "organization" {
+		t.Fatalf("endpoint classes = %v/%v, want the stored organization/organization",
+			row["from_type_kwd"], row["to_type_kwd"])
+	}
+	// The superseded row is deleted, not left beside the new one: the two ids
+	// describe the same assertion.
+	if eng.lastDeleteCond == nil {
+		t.Fatal("the superseded relation row was not deleted")
+	}
+	deleted := firstStringSlice(eng.lastDeleteCond["id"])
+	if len(deleted) != 1 || deleted[0] != oldID {
+		t.Fatalf("deleted ids = %v, want the stored row only", deleted)
 	}
 }
 
@@ -513,6 +708,45 @@ func TestDeleteStructureForDocs_NoGhostsNoDelete(t *testing.T) {
 // compile_kwd via KwdToVariant and reject any row whose kwd does not map to the
 // expected variant, including unknown / malformed kinds (e.g. "artifact_page",
 // "garbage", empty). It must not silently fall back to a raw-string comparison.
+// TestProductFromChunkMapRestoresAttributes covers the reader side of the dataset
+// fold: the folded row's `attr` has to come back as Meta["attr"] so the bucket
+// fold can carry the values onto the next dataset row. Both shapes an engine may
+// hand a json column back in — the decoded object and its JSON text — must decode,
+// because the fold cannot depend on which one a deployment produces.
+func TestProductFromChunkMapRestoresAttributes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		attr interface{}
+	}{
+		{"decoded object", map[string]interface{}{"occupation": []interface{}{"writer"}}},
+		{"json text", `{"occupation":["writer"]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, ok := productFromChunkMap(map[string]interface{}{
+				"id":                  "dataset_structure_1",
+				"doc_id":              "kb1",
+				"compile_kwd":         "hypergraph",
+				"scope_kwd":           "dataset",
+				"knowledge_graph_kwd": "entity",
+				"name_kwd":            "virginia woolf",
+				"entity_type_kwd":     "person",
+				"content_with_weight": `{"name":"Virginia Woolf","type":"person"}`,
+				"attr":                tc.attr,
+			}, "t1", kccommon.VariantStructure)
+			if !ok {
+				t.Fatalf("productFromChunkMap returned not-ok")
+			}
+			attrs, _ := p.Meta["attr"].(map[string]any)
+			if len(attrs) != 1 {
+				t.Fatalf("meta[attr] = %#v, want the decoded object", p.Meta["attr"])
+			}
+			if list, ok := bucketAttrList(attrs["occupation"]); !ok || len(list) != 1 || list[0] != "writer" {
+				t.Errorf("occupation = %#v, want [writer]", attrs["occupation"])
+			}
+		})
+	}
+}
+
 func TestProductFromChunkMapRejectsDirtyKwd(t *testing.T) {
 	base := map[string]interface{}{
 		"id":                  "wiki/1",

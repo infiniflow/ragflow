@@ -29,6 +29,7 @@ import { memo, useCallback, useMemo } from 'react';
 import { DocumentDownloadButton } from '../document-download-button';
 import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../markdown-content';
+import { KnowledgeLayerReceipt } from '../next-message-item/knowledge-layer-receipt';
 import { ReferenceImageList } from '../next-message-item/reference-image-list';
 import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
 import { RAGFlowAvatar } from '../ragflow-avatar';
@@ -191,6 +192,12 @@ const MessageItem = ({
                 referenceChunks={reference.chunks}
                 messageContent={messageContent}
               ></ReferenceImageList>
+            )}
+            {/* The knowledge layer's receipt travels with the answer it
+                explains, so it is rendered only when this turn read one —
+                absent means the layer was not used, never "nothing found". */}
+            {isAssistant && reference.ontology && (
+              <KnowledgeLayerReceipt receipt={reference.ontology} />
             )}
             {isUser &&
               Array.isArray(uploadedFiles) &&

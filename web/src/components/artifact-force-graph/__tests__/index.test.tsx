@@ -104,6 +104,43 @@ describe('ArtifactForceGraph node tooltip', () => {
     expect(screen.getByTestId('node-tooltip')).toHaveTextContent('entity');
   });
 
+  // The instances page rebuilds `classes` and the colour callback on every
+  // render. Handing the canvas a new graph object each time restarts the force
+  // simulation, which is what made the drift drawer look dead on first open.
+  it('reuses the graph when rebuilt inputs draw the same picture', () => {
+    const build =
+      (): import('@/interfaces/database/dataset').IArtifactGraph => ({
+        entities: ['a', 'b'].map((slug) => ({
+          slug,
+          name: slug,
+          aliases: [],
+          description: slug,
+          type: 'entity',
+          weight: 0,
+        })),
+        relations: [{ from: 'a', to: 'b' }],
+      });
+
+    const { rerender } = render(
+      <ArtifactForceGraph data={build()} getNodeColor={() => '#4e79a7'} />,
+    );
+    const first = mockGraphRender.mock.calls.at(-1)![0];
+
+    rerender(
+      <ArtifactForceGraph data={build()} getNodeColor={() => '#4e79a7'} />,
+    );
+    const second = mockGraphRender.mock.calls.at(-1)![0];
+    expect(second.graphData).toBe(first.graphData);
+
+    // A real change still gets a new object, so the canvas repaints.
+    rerender(
+      <ArtifactForceGraph data={build()} getNodeColor={() => '#111111'} />,
+    );
+    const third = mockGraphRender.mock.calls.at(-1)![0];
+    expect(third.graphData).not.toBe(first.graphData);
+    expect(third.graphData.nodes[0].__color).toBe('#111111');
+  });
+
   it('keeps graph objects and fitting stable across label, pinned and hover changes', () => {
     mockZoomToFit.mockClear();
     const data: import('@/interfaces/database/dataset').IArtifactGraph = {

@@ -57,7 +57,9 @@ type Router struct {
 
 	compilationTemplateHandler      *handler.CompilationTemplateHandler
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler
+	ontologyModelHandler            *handler.OntologyModelHandler
 	datasetArtifactHandler          *handler.DatasetArtifactHandler
+	ontologyABoxRetrievalHandler    *handler.OntologyABoxRetrievalHandler
 }
 
 // NewRouter create router
@@ -94,7 +96,9 @@ func NewRouter(
 	pipelineHandler *handler.PipelineHandler,
 	compilationTemplateHandler *handler.CompilationTemplateHandler,
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler,
+	ontologyModelHandler *handler.OntologyModelHandler,
 	datasetArtifactHandler *handler.DatasetArtifactHandler,
+	ontologyABoxRetrievalHandler *handler.OntologyABoxRetrievalHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -130,7 +134,9 @@ func NewRouter(
 
 		compilationTemplateHandler:      compilationTemplateHandler,
 		compilationTemplateGroupHandler: compilationTemplateGroupHandler,
+		ontologyModelHandler:            ontologyModelHandler,
 		datasetArtifactHandler:          datasetArtifactHandler,
+		ontologyABoxRetrievalHandler:    ontologyABoxRetrievalHandler,
 	}
 }
 
@@ -324,6 +330,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 			v1.POST("/openai/:chat_id/chat/completions", ToggleChat(), r.openaiChatHandler.OpenAIChatCompletions)
 			v1.POST("/retrieval", r.datasetsHandler.SearchDatasets)
+			// Compiled-rows (ABox) retrieval with an explicitly stated structure, kept
+			// out of the main pipeline on purpose (ontology.md §6.6 B).
+			v1.POST("/retrieval/ontology", r.ontologyABoxRetrievalHandler.Retrieve)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets", ToggleDataset())
@@ -404,6 +413,20 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.GetDocumentGraph)
 				datasets.GET("/:dataset_id/documents/:document_id/structure/claims", r.datasetArtifactHandler.GetDocumentClaims)
 				datasets.DELETE("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.DeleteDocumentGraph)
+				// Ontology ABox browser: one page of compiled instances
+				// (kind=entity) or assertions (kind=relation). The class /
+				// property narrowing travels as a query parameter so the
+				// unnamed case ("everything") needs no path sentinel.
+				datasets.GET("/:dataset_id/ontology/artifacts", r.datasetArtifactHandler.GetOntologyArtifacts)
+				// The ABox canvas: a bounded subgraph (node budget + hop walk)
+				// instead of a page, because a graph cannot "load more" the way
+				// a list can.
+				datasets.GET("/:dataset_id/ontology/graph", r.datasetArtifactHandler.GetOntologyGraph)
+				// The rows themselves, streamed as JSON Lines. Export is not the
+				// same read as the browser: it carries no page window, because a
+				// file that silently stopped at row 30 would be wrong rather
+				// than short.
+				datasets.GET("/:dataset_id/ontology/instances.jsonl", r.datasetArtifactHandler.ExportOntologyInstances)
 				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
 				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)
 			}
@@ -613,6 +636,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Compilation template routes
 			v1.GET("/compilation-templates/builtins", r.compilationTemplateHandler.ListBuiltins)
 			v1.GET("/compilation-templates/wiki-presets", r.compilationTemplateHandler.ListWikiPresets)
+			// One confirmed edit from the compile-quality ledger. Served by the
+			// group handler because the write path (and its validation) is the
+			// group's.
+			v1.POST("/compilation-templates/:template_id/ontology-fix", r.compilationTemplateGroupHandler.ApplyOntologyFix)
 
 			// Compilation template group routes
 			v1.GET("/compilation-template-groups", r.compilationTemplateGroupHandler.List)
@@ -620,6 +647,64 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v1.GET("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Get)
 			v1.PUT("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Update)
 			v1.DELETE("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Delete)
+
+			// Model lifecycle routes. These answer "which version of this model
+			// is in force and who put it there", which is a different question
+			// from the template palette above — and the one that has to survive
+			// an edit.
+			v1.GET("/ontology-models", r.ontologyModelHandler.List)
+			v1.GET("/ontology-models/:template_id/check", r.ontologyModelHandler.Check)
+			v1.POST("/ontology-models/:template_id/review", r.ontologyModelHandler.SubmitForReview)
+			v1.POST("/ontology-models/:template_id/publish", r.ontologyModelHandler.Publish)
+			v1.POST("/ontology-models/:template_id/reject", r.ontologyModelHandler.Reject)
+			v1.POST("/ontology-models/:template_id/retire", r.ontologyModelHandler.Retire)
+			v1.GET("/ontology-models/:template_id/versions", r.ontologyModelHandler.ListVersions)
+			v1.GET("/ontology-models/:template_id/versions/diff", r.ontologyModelHandler.VersionDiff)
+			v1.GET("/ontology-models/:template_id/changes", r.ontologyModelHandler.Changes)
+			v1.GET("/ontology-models/:template_id/datasets/:dataset_id/dismissals", r.ontologyModelHandler.ListDriftDismissals)
+			v1.POST("/ontology-models/:template_id/datasets/:dataset_id/dismissals", r.ontologyModelHandler.DismissDriftFinding)
+			v1.DELETE("/ontology-models/:template_id/datasets/:dataset_id/dismissals/:class_name", r.ontologyModelHandler.RestoreDriftFinding)
+			v1.GET("/ontology-models/:template_id/datasets", r.ontologyModelHandler.Impact)
+			// The measured half: what the corpus produced against this model.
+			// GET reads the stored measurement (open a tab without scanning a
+			// dataset); POST is the explicit refresh.
+			v1.GET("/ontology-models/:template_id/insight", r.ontologyModelHandler.GetInsight)
+			v1.POST("/ontology-models/:template_id/insight", r.ontologyModelHandler.RefreshInsight)
+			// The read-only product of one version: prose, YAML and JSON schema
+			// from the same snapshot, so a reviewer and a consumer cannot end up
+			// holding different versions of the same contract.
+			v1.GET("/ontology-models/:template_id/contract", r.ontologyModelHandler.ExportContract)
+			// Assertion review: the only cross-dataset read of a model's rows.
+			// The rows themselves are browsed per dataset (the ABox panel), but
+			// "what has this model produced that nobody checked" is a model-level
+			// question, so the queue still fans out.
+			v1.GET("/ontology-models/:template_id/assertions/review", r.ontologyModelHandler.AssertionReviewQueue)
+			v1.POST("/ontology-models/:template_id/assertions/review", r.ontologyModelHandler.DecideAssertions)
+
+			// Actions: the contract an action must state, the tool that executes
+			// it, and the audit of every attempt. Reads are member-level because
+			// an analyst has to be able to see why an action is not runnable;
+			// every write is admin-level, since a contract decides what the
+			// system may do and a binding decides which system does it.
+			v1.GET("/ontology-models/:template_id/actions", r.ontologyModelHandler.ListActions)
+			v1.PATCH("/ontology-models/:template_id/actions/:action_id", r.ontologyModelHandler.UpdateAction)
+			v1.POST("/ontology-models/:template_id/actions/:action_name/execute", r.ontologyModelHandler.ExecuteAction)
+			v1.GET("/ontology-models/:template_id/action-bindings", r.ontologyModelHandler.ListBindings)
+			// One address per model: the actions of a model usually drive the same
+			// upstream system and differ only in which tool they call.
+			v1.GET("/ontology-models/:template_id/mcp-endpoint", r.ontologyModelHandler.GetMCPEndpoints)
+			v1.PUT("/ontology-models/:template_id/mcp-endpoint", r.ontologyModelHandler.UpdateMCPEndpoints)
+			// The tool names that address advertises, so a binding picks one
+			// instead of typing it from memory.
+			v1.GET("/ontology-models/:template_id/mcp-endpoint/tools", r.ontologyModelHandler.ListMCPEndpointTools)
+			v1.PUT("/ontology-models/:template_id/action-bindings/:action_name", r.ontologyModelHandler.SaveBinding)
+			v1.DELETE("/ontology-models/:template_id/action-bindings/:action_name", r.ontologyModelHandler.DeleteBinding)
+			v1.GET("/ontology-models/:template_id/action-executions", r.ontologyModelHandler.ListExecutions)
+			// The contract's own history: the row keeps only its newest signature.
+			v1.GET("/ontology-models/:template_id/actions/:action_name/contract-edits", r.ontologyModelHandler.ListContractEdits)
+			// Stamps the contract columns on rows compiled before they existed.
+			// Idempotent, so it is a button rather than a script.
+			v1.POST("/ontology-models/:template_id/actions/backfill", r.ontologyModelHandler.BackfillActions)
 
 			connectors := v1.Group("/connectors")
 			{

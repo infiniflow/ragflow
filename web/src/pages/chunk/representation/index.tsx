@@ -14,6 +14,9 @@ import type {
   EvidencePanelState,
 } from './components/claim-list';
 import { useGraphEntitySearch } from './hooks/use-graph-entity-search';
+import { OntologyStats } from '@/components/structure-graph/ontology-model-graph/ontology-stats';
+import { OntologyQualityPanel } from '@/components/structure-graph/ontology-model-graph/quality-panel';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 
 export type {
   ClaimsPanelState,
@@ -38,6 +41,10 @@ function Representation({
   onEvidencePanelChange,
 }: RepresentationProps) {
   const { t } = useTranslation();
+  // Both halves of the scope: the panel shows ONE document, so the ontology ABox
+  // has to be narrowed the same way. Without the document id the panel would
+  // list rows from other documents under this document's heading.
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
 
   const [claimsLeaf, setClaimsLeaf] = useState<ClickableNode | null>(null);
   const [evidenceDetail, setEvidenceDetail] = useState<ClickableNode | null>(
@@ -196,6 +203,10 @@ function Representation({
 
   return (
     <section className="p-5 rounded-2xl h-full flex flex-col">
+      {/* Ontology has no page-level search: the ABox reads the index directly and
+          never consumes the keyword-narrowed structure response, so a box here
+          searched nothing the panel draws. The panel's own canvas search is the
+          one that can address what it shows. */}
       <div className="flex items-center gap-2">
         <div className="min-w-0">
           {isGraphKind ? (
@@ -208,7 +219,8 @@ function Representation({
               onNoMatchEnter={handleNoMatchEnter}
               disableAutoSelectOnEnter
             />
-          ) : (
+          ) : selectedTemplate?.kind ===
+            CompilationTemplateKind.Ontology ? null : (
             <ExpandableSearchInput
               value={searchKeyword}
               onChange={handleSearchKeywordChange}
@@ -223,6 +235,15 @@ function Representation({
           {t('knowledgeCompilation.representationEmpty')}
         </div>
       )}
+      {!(loading && !data) &&
+        selectedTemplate?.kind === CompilationTemplateKind.Ontology && (
+          // The ontology's numbers and its ledger are page-level information, so
+          // they sit above the canvas rather than floating over it.
+          <div className="mt-4 flex shrink-0 flex-col gap-2">
+            <OntologyStats graph={selectedTemplate.ontology} />
+            <OntologyQualityPanel graph={selectedTemplate.ontology} />
+          </div>
+        )}
       {!(loading && !data) && templates.length > 0 && (
         <RepresentationRenderer
           template={selectedTemplate}
@@ -230,6 +251,11 @@ function Representation({
           highlightNodeId={highlightNodeId}
           totalEntities={data?.total_entities}
           returnedEntities={data?.returned_entities}
+          // The ABox reads the index directly, so it needs the scope this page
+          // is showing.
+          datasetId={datasetId}
+          documentId={documentId}
+          templateId={selectedTemplateId}
         />
       )}
     </section>

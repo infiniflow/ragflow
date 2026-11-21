@@ -16,15 +16,20 @@
 
 import { isEqual } from 'lodash';
 
-import { CompilationTemplateKind } from '@/constants/compilation';
 import {
   ICompilationTemplate,
   ICompilationTemplateBuiltin,
+  ICompilationTemplateConfig,
   ICompilationTemplateGroup,
   ICompilationTemplateRaptorConfig,
   ICompilationTemplateSection,
 } from '@/interfaces/database/compilation-template';
-import { ICompilationTemplateConfigRequest } from '@/interfaces/request/compilation-template';
+import {
+  ICompilationTemplateConfigRequest,
+  IUpdateCompilationTemplateGroupRequestBody,
+} from '@/interfaces/request/compilation-template';
+
+import { CompilationTemplateKind } from '@/constants/compilation';
 
 import { FormSchemaType, TemplateSchemaType } from './schema';
 import {
@@ -55,21 +60,41 @@ export const isConfigMetaKey = (key: string) =>
     'rechunk_rules',
   ].includes(key);
 
+/**
+ * Config keys the section editor does not model: `guideline` carries the
+ * extraction instructions (target / rules_for_entities / rules_for_relations)
+ * for the structure variants, and `base_uri` is the ontology's IRI prefix.
+ *
+ * They are carried through the form verbatim. Anything not listed here is read
+ * as a section and rewritten as `{description: '', fields: []}` — which silently
+ * drops the value from the stored template on the next save.
+ */
+export const ConfigPassthroughKeys: string[] = ['guideline', 'base_uri'];
+
+export const isConfigPassthroughKey = (key: string) =>
+  ConfigPassthroughKeys.includes(key);
+
 export const createEmptyField = (keys: string[]) =>
   Object.fromEntries(keys.map((key) => [key, '']));
 
 export const normalizeSection = (
   section?: ICompilationTemplateSection,
 ): ICompilationTemplateSection => {
-  const fields = section?.fields ?? [];
+  // Unknown keys of the SECTION itself travel through. A section is not only
+  // `{description, fields}`: the builtin ontology template also declares
+  // `entity.output_fields`, and rebuilding the section from the two modelled
+  // keys would drop it — the editor would then save a template without it.
+  const { description, fields, ...rest } = (section ??
+    {}) as ICompilationTemplateSection & Record<string, unknown>;
   return {
-    description: section?.description ?? '',
-    fields: fields.map((field) =>
+    ...rest,
+    description: description ?? '',
+    fields: (fields ?? []).map((field) =>
       Object.fromEntries(
         Object.entries(field).map(([key, value]) => [key, value ?? '']),
       ),
     ),
-  };
+  } as ICompilationTemplateSection;
 };
 
 export const buildConfigFromBuiltin = (
@@ -145,6 +170,10 @@ export const buildConfigFromBuiltin = (
 
   Object.entries(builtinTemplate.config ?? {}).forEach(([key, value]) => {
     if (isConfigMetaKey(key)) return;
+    if (isConfigPassthroughKey(key)) {
+      sections[key] = value as TemplateSchemaType['config'][string];
+      return;
+    }
     sections[key] = normalizeSection(
       value as ICompilationTemplateSection,
     ) as TemplateSchemaType['config'][string];
@@ -219,6 +248,10 @@ export const transformDetailToForm = (
 
   Object.entries(config).forEach(([key, value]) => {
     if (isConfigMetaKey(key)) return;
+    if (isConfigPassthroughKey(key)) {
+      base[key] = value as TemplateSchemaType['config'][string];
+      return;
+    }
     base[key] = normalizeSection(
       value as ICompilationTemplateSection,
     ) as TemplateSchemaType['config'][string];
@@ -260,6 +293,10 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }
+    if (isConfigPassthroughKey(key)) {
+      config[key] = value as ICompilationTemplateConfigRequest[string];
+      return;
+    }
     if (key === 'mode') {
       config.mode = value as ICompilationTemplateConfigRequest['mode'];
       return;
@@ -292,6 +329,31 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
     config,
   };
 };
+
+/**
+ * The body of a group update where exactly one template's config changes.
+ *
+ * Every child carries its own `name`: the group endpoint validates each entry as
+ * a complete template (name, kind, config), so a payload of `{id, kind, config}`
+ * is refused with "invalid template name" (102) before anything is written —
+ * which is what a page that only patches the config runs into.
+ */
+export const buildGroupUpdatePayload = (
+  templates: ICompilationTemplate[],
+  templateId: string,
+  fix: (config: ICompilationTemplateConfig) => ICompilationTemplateConfig,
+): IUpdateCompilationTemplateGroupRequestBody => ({
+  templates: templates.map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    kind: item.kind,
+    config:
+      item.id === templateId
+        ? (fix(item.config) as unknown as ICompilationTemplateConfigRequest)
+        : (item.config as unknown as ICompilationTemplateConfigRequest),
+  })),
+});
 
 export const transformFormToPayload = (values: FormSchemaType) => {
   const template = values.templates[0];

@@ -332,3 +332,45 @@ func TestCreateGroupMultiTemplateKeepsChildNames(t *testing.T) {
 		t.Fatalf("second template name = %q, want %q", group.Templates[1].Name, "B")
 	}
 }
+
+// A group update validates every child as a complete template, so a payload that
+// rewrites one template's config but drops its name is refused with
+// "invalid template name" (102). That is the shape any page sends when it builds
+// the child entries itself, which is why the fix lives in one shared builder.
+func TestUpdateGroupRejectsChildWithoutName(t *testing.T) {
+	setupCompilationGroupTestDB(t)
+	svc := NewCompilationTemplateGroupService()
+
+	group := seedCompilationGroup(t, svc, "tenant-1", "Group A", "A")
+	ctx := permission.WithIdentity(t.Context(), "tenant-1", "tenant-1")
+	child := group.Templates[0]
+
+	_, err := svc.UpdateGroup(ctx, group.ID, &GroupRequest{
+		Templates: []*GroupTemplate{
+			{ID: child.ID, Kind: child.Kind, Config: entity.JSONMap{"kind": child.Kind}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid template name") {
+		t.Fatalf("expected invalid template name, got %v", err)
+	}
+
+	// The same edit with the entry's own name goes through, and the config is the
+	// part that changed.
+	updated, err := svc.UpdateGroup(ctx, group.ID, &GroupRequest{
+		Templates: []*GroupTemplate{
+			{
+				ID:          child.ID,
+				Name:        child.Name,
+				Description: child.Description,
+				Kind:        child.Kind,
+				Config:      entity.JSONMap{"kind": child.Kind, "entity": map[string]interface{}{"fields": []interface{}{}}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("update with name: %v", err)
+	}
+	if len(updated.Templates) != 1 || updated.Templates[0].Name != child.Name {
+		t.Fatalf("unexpected templates after update: %#v", updated.Templates)
+	}
+}

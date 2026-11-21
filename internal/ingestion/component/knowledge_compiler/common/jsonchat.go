@@ -121,6 +121,13 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 					zap.Int("attempt", attempt), zap.Int("candidate", i),
 					zap.Int("len", len(candidate)), zap.Error(perr))
 			}
+			// Structural summary only. The body is customer-derived (PII), but
+			// the failure class is what decides the fix: a prose preamble or a
+			// fence is recovered above, whereas a bare array or an elided member
+			// copied from the prompt's skeleton is a parser gap.
+			appcommon.Info("knowledge_compiler: GenJSON unparseable response",
+				zap.Int("attempt", attempt), zap.Int("bytes", len(resp.Content)),
+				zap.String("shape", responseShape(resp.Content)))
 			lastErr = fmt.Errorf("knowledge_compiler: LLM response is not parseable JSON (%d bytes)", len(resp.Content))
 		}
 		if attempt == maxRetries {
@@ -231,6 +238,24 @@ func jsonCandidates(s string) []string {
 	return cands
 }
 
+// responseShape classifies an unparseable reply without recording its text, so
+// the log says which failure class the model produced (see the caller).
+func responseShape(s string) string {
+	trimmed := strings.TrimSpace(appcommon.StripThinkTrailing(s))
+	switch {
+	case trimmed == "":
+		return "empty"
+	case strings.HasPrefix(trimmed, "```"):
+		return "fenced"
+	case strings.HasPrefix(trimmed, "{"):
+		return "object"
+	case strings.HasPrefix(trimmed, "["):
+		return "array"
+	default:
+		return "prose"
+	}
+}
+
 func tryUnmarshalJSON(s string) (map[string]any, bool) {
 	m, err := tryUnmarshalJSONErr(s)
 	return m, err == nil
@@ -243,6 +268,16 @@ func tryUnmarshalJSONErr(s string) (map[string]any, error) {
 	}
 	var m map[string]any
 	if err := json.Unmarshal([]byte(s), &m); err != nil {
+		// A reply that is a bare JSON array is the extraction contract with the
+		// wrapper left off. Unmarshalling it into a map always fails, so without
+		// this branch a perfectly valid extraction of two or more items is
+		// discarded; wrap it under the "items" key every extraction prompt uses.
+		if strings.HasPrefix(s, "[") {
+			var arr []any
+			if arrErr := json.Unmarshal([]byte(s), &arr); arrErr == nil {
+				return map[string]any{"items": arr}, nil
+			}
+		}
 		return nil, err
 	}
 	return m, nil

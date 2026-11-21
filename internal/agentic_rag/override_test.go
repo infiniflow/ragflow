@@ -201,7 +201,7 @@ func TestRunUsesOverridePromptAndExactTools(t *testing.T) {
 				}}
 				modelName := driver.Name()
 				counts := map[string]int{}
-				answer, err := Run(ctx, Input{
+				out, err := Run(ctx, Input{
 					Model:    models.NewEinoChatModel(models.NewChatModel(driver, &modelName, &models.APIConfig{}), nil),
 					Template: &template, DatasetIDs: []string{"kb1"}, TenantID: "tenant",
 					// A direct caller's tools must not bypass a saved restriction.
@@ -209,8 +209,8 @@ func TestRunUsesOverridePromptAndExactTools(t *testing.T) {
 					Messages: []*schema.Message{schema.UserMessage("question")},
 					Stream:   stream, MaxIterations: 4, OnDelta: func(string, string) {}, ToolCallCounts: counts,
 				})
-				if err != nil || answer != "custom answer [ID:0]" || len(corpus.reqs) != 1 || counts["search_chunks"] != 1 {
-					t.Fatalf("Run: answer=%q error=%v requests=%d counts=%v", answer, err, len(corpus.reqs), counts)
+				if err != nil || out.Answer != "custom answer [ID:0]" || len(corpus.reqs) != 1 || counts["search_chunks"] != 1 {
+					t.Fatalf("Run: answer=%q error=%v requests=%d counts=%v", out.Answer, err, len(corpus.reqs), counts)
 				}
 			})
 		}
@@ -244,15 +244,15 @@ func TestRunSynthesisUsesOverrideAndCannotExecuteDisabledTool(t *testing.T) {
 		return &models.ChatResponse{Answer: &answer}
 	}}
 	modelName := driver.Name()
-	answer, err := Run(t.Context(), Input{
+	out, err := Run(t.Context(), Input{
 		Model:      models.NewEinoChatModel(models.NewChatModel(driver, &modelName, &models.APIConfig{}), nil),
 		SynthModel: models.NewEinoChatModel(models.NewChatModel(synthDriver, &modelName, &models.APIConfig{}), nil),
 		Template:   &template, DatasetIDs: []string{"kb1"}, TenantID: "tenant",
 		Messages:      []*schema.Message{schema.UserMessage("question")},
 		MaxIterations: 2, OnDelta: func(string, string) {},
 	})
-	if err != nil || answer != "custom fallback" || synthCalls != 1 || len(corpus.reqs) != 0 {
-		t.Fatalf("Run: answer=%q err=%v synth=%d forbidden executions=%d", answer, err, synthCalls, len(corpus.reqs))
+	if err != nil || out.Answer != "custom fallback" || synthCalls != 1 || len(corpus.reqs) != 0 {
+		t.Fatalf("Run: answer=%q err=%v synth=%d forbidden executions=%d", out.Answer, err, synthCalls, len(corpus.reqs))
 	}
 }
 
