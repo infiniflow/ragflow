@@ -89,6 +89,7 @@ export default {
       emailPlaceholder: '请输入邮箱地址',
       passwordLabel: '密码',
       passwordPlaceholder: '请输入密码',
+      passwordEncryptionError: '密码加密失败，可能是密码过长。',
       rememberMe: '记住我',
       signInTip: '没有帐户？',
       signUpTip: '已经有帐户？',
