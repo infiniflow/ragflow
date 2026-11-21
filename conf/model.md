@@ -172,6 +172,7 @@ The following providers are **aggregators** — they host models from multiple u
 | Aggregator | Notes |
 |---|---|
 | **302ai** | Hosts OpenAI, Anthropic, Google, etc. |
+| **AIGROW** | Prepaid API credit for Claude, GPT, Gemini, Grok, Qwen and Kimi models on one OpenAI-compatible key; models and per-token prices at `GET /v1/models`, no key needed |
 | **Alibaba Cloud (Bailian)** | Hosts Qwen and third-party models |
 | **Aliyun** | Chinese cloud platform |
 | **AstraFlow** | Multi-provider aggregator |
