@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -37,6 +38,28 @@ func TestJSONParser_SplitsArrayAndLines(t *testing.T) {
 
 	res = p.ParseWithResult(context.Background(), "a.jsonl", []byte("{\"q\":\"a\"}\n{\"q\":\"b\"}\n"))
 	assertJSONTexts(t, res, `{"q":"a"}`, `{"q":"b"}`)
+}
+
+func TestJSONParser_LongJSONLRecord(t *testing.T) {
+	want := []string{
+		`{"id":1}`,
+		`{"text":"` + strings.Repeat("a", 10<<20) + `"}`,
+		`{"id":3}`,
+	}
+	data := []byte(strings.Join(want, "\r\n"))
+	res := NewJSONParser().ParseWithResult(t.Context(), "records.jsonl", data)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	got := jsonTexts(res)
+	if len(got) != len(want) {
+		t.Fatalf("got %d records, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("record %d differs from input", i+1)
+		}
+	}
 }
 
 // Each number keeps the digits it was written with, and <, > and & stay
