@@ -30,7 +30,6 @@
 package parser
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -127,9 +126,8 @@ func parseJSONContent(text string) []map[string]any {
 // isJSONL returns true when the content looks like newline-delimited
 // JSON (multiple lines each starting with '{').
 func isJSONL(text string) bool {
-	lines := strings.Split(text, "\n")
 	objCount := 0
-	for _, line := range lines {
+	for line := range strings.Lines(text) {
 		t := strings.TrimSpace(line)
 		if t == "" {
 			continue
@@ -203,10 +201,8 @@ func singleObjectItems(obj map[string]any) []map[string]any {
 // independently unmarshalled; lines that fail to parse are skipped.
 func parseJSONLines(text string) []map[string]any {
 	var items []map[string]any
-	scanner := bufio.NewScanner(strings.NewReader(text))
-	scanner.Buffer(nil, 10*1024*1024) // 10 MB max line
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	for line := range strings.Lines(text) {
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
