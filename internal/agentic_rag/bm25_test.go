@@ -164,13 +164,8 @@ func TestUnifiedSnippetHelpers(t *testing.T) {
 		strings.Repeat("tail ", 200)
 
 	first, last, ok := termMatchSpan([]string{"bronner"}, content)
-	if !ok || !strings.Contains(strings.ToLower(content[first:last]), "bronner") {
-		t.Fatalf("term span wrong: ok=%v [%d,%d)", ok, first, last)
-	}
-	// Span must extend to the LAST occurrence's end, not the first.
-	lastFirst := strings.Index(strings.ToLower(content), "bronner")
-	if last <= lastFirst+len("bronner") {
-		t.Fatalf("span end %d did not cover the latest occurrence (first end at %d)", last, lastFirst+len("bronner"))
+	if !ok || strings.Count(string([]rune(content)[first:last]), "Bronner") != 2 {
+		t.Fatalf("term span did not cover both matches: ok=%v [%d,%d)", ok, first, last)
 	}
 	snip, truncated := snippetForMatches(content, first, last)
 	lower := strings.ToLower(snip)
@@ -206,6 +201,32 @@ func TestUnifiedSnippetHelpers(t *testing.T) {
 	}
 	if got, _ := snippetForMatches(content, 10, 5); got == "" {
 		t.Error("inverted bounds must still yield a fragment")
+	}
+}
+
+func TestSnippetKeepsKeywordParagraphAcrossUnicodeCaseChanges(t *testing.T) {
+	const paragraph = "Quartz is the reference mineral."
+	const want = "..." + paragraph + "..."
+	keyword := regexp.MustCompile("Quartz")
+	for _, tc := range []struct{ before, after string }{
+		{"İzmir", "Ⱥ"},
+		{"Ⱥ", "İzmir"},
+	} {
+		// İ lowercases to a shorter UTF-8 encoding and Ⱥ to a longer one.
+		// The changes cancel across the chunk but shift the keyword's byte offset.
+		content := strings.Repeat(tc.before+" station. ", 40) + "\n\n" + paragraph + "\n\n" +
+			strings.Repeat(tc.after+" station. ", 40)
+		hits := snippetHitsFor([]runtime.RetrievalChunk{{Content: content}}, []string{"QUARTZ"})
+		if got := hits[0].snippet; got != want {
+			t.Errorf("BM25 snippet after %s = %.80q, want %q", tc.before, got, want)
+		}
+		first, last, ok := regexMatchSpan(keyword, content)
+		if !ok {
+			t.Fatal("missing regex match for Quartz")
+		}
+		if got, _ := snippetForMatches(content, first, last); got != want {
+			t.Errorf("grep snippet after %s = %.80q, want %q", tc.before, got, want)
+		}
 	}
 }
 
