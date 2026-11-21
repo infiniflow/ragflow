@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -393,7 +394,7 @@ func validateGroupPayload(req *GroupRequest, requireAll bool) error {
 			return groupValidationErrorf("template group name is too long.")
 		}
 	}
-	if len(req.Description) > 1024 {
+	if utf8.RuneCountInString(req.Description) > 1024 {
 		return groupValidationErrorf("invalid template group description.")
 	}
 	if req.Templates != nil {
