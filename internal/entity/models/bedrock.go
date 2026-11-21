@@ -56,13 +56,24 @@ const (
 // Bedrock signing services and endpoint hostnames.
 //
 // The control plane (foundation-model catalog) and the runtime plane
-// (Converse / Converse-Stream) sit on different subdomains and sign
-// against different SigV4 service names.
+// (Converse / Converse-Stream) sit on different subdomains, so the
+// host is chosen per plane. Both planes, however, sign their SigV4
+// requests with the same service name: AWS scopes Bedrock credentials
+// to "bedrock", and "bedrock-runtime" is only the endpoint host
+// prefix (see the AWS SigV4 signing-name convention for Bedrock).
+// Signing the runtime plane as "bedrock-runtime" makes Bedrock reject
+// the request with "Credential should be scoped to correct service".
 const (
-	bedrockRuntimeService  = "bedrock-runtime"
-	bedrockControlService  = "bedrock"
+	bedrockSigV4Service    = "bedrock"
 	bedrockRuntimeHostTmpl = "bedrock-runtime.%s.amazonaws.com"
 	bedrockControlHostTmpl = "bedrock.%s.amazonaws.com"
+)
+
+// Bedrock planes, used to pick the endpoint host and (for API-key
+// auth) to enforce that the key is only sent to the regional endpoint.
+const (
+	bedrockPlaneRuntime = "runtime"
+	bedrockPlaneControl = "control"
 )
 
 // Bedrock authentication modes mirror the Python LiteLLMBase
@@ -583,10 +594,10 @@ func signBedrockRequest(ctx context.Context, req *http.Request, body []byte, cre
 	return nil
 }
 
-func authorizeBedrockRequest(ctx context.Context, req *http.Request, body []byte, key *bedrockKey, service, region string) error {
+func authorizeBedrockRequest(ctx context.Context, req *http.Request, body []byte, key *bedrockKey, plane, region string) error {
 	if key.AuthMode == bedrockAuthAPIKey {
 		expectedHost := fmt.Sprintf(bedrockRuntimeHostTmpl, region)
-		if service == bedrockControlService {
+		if plane == bedrockPlaneControl {
 			expectedHost = fmt.Sprintf(bedrockControlHostTmpl, region)
 		}
 		if req.URL.Scheme != "https" || !strings.EqualFold(req.URL.Host, expectedHost) || req.URL.User != nil {
@@ -599,7 +610,9 @@ func authorizeBedrockRequest(ctx context.Context, req *http.Request, body []byte
 	if err != nil {
 		return err
 	}
-	return signBedrockRequest(ctx, req, body, creds, service, region)
+	// Both Bedrock planes sign SigV4 with the "bedrock" service name;
+	// "bedrock-runtime" is only the runtime endpoint's host prefix.
+	return signBedrockRequest(ctx, req, body, creds, bedrockSigV4Service, region)
 }
 
 // ChatWithMessages sends a non-streaming Converse request and returns
@@ -642,7 +655,7 @@ func (b *BedrockModel) ChatWithMessages(ctx context.Context, modelName string, m
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if err := authorizeBedrockRequest(ctx, req, raw, key, bedrockRuntimeService, region); err != nil {
+	if err := authorizeBedrockRequest(ctx, req, raw, key, bedrockPlaneRuntime, region); err != nil {
 		return nil, err
 	}
 
@@ -730,7 +743,7 @@ func (b *BedrockModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/vnd.amazon.eventstream")
-	if err := authorizeBedrockRequest(ctx, req, raw, key, bedrockRuntimeService, region); err != nil {
+	if err := authorizeBedrockRequest(ctx, req, raw, key, bedrockPlaneRuntime, region); err != nil {
 		return err
 	}
 
@@ -921,7 +934,7 @@ func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, fmt.Errorf("bedrock: build request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	if err = authorizeBedrockRequest(ctx, req, nil, key, bedrockControlService, region); err != nil {
+	if err = authorizeBedrockRequest(ctx, req, nil, key, bedrockPlaneControl, region); err != nil {
 		return nil, err
 	}
 
@@ -1050,7 +1063,7 @@ func (b *BedrockModel) invokeEmbeddingModel(ctx context.Context, modelID string,
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if err := authorizeBedrockRequest(ctx, req, raw, key, bedrockRuntimeService, region); err != nil {
+	if err := authorizeBedrockRequest(ctx, req, raw, key, bedrockPlaneRuntime, region); err != nil {
 		return nil, err
 	}
 
