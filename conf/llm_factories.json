@@ -3560,6 +3560,14 @@
             "url": "https://inference.trymorse.ai/v1"
         },
         {
+            "name": "AIGROW",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://aigrow.gg/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",
