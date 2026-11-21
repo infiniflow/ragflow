@@ -107,6 +107,23 @@ func (s *DocumentService) deletePreparedDocumentTask(ctx context.Context, docID 
 	return nil
 }
 
+// ValidateDocumentParseSelection verifies that a document without a custom
+// pipeline has a parser the built-in registry can run.
+func ValidateDocumentParseSelection(doc *entity.Document) error {
+	if doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != "" {
+		return nil
+	}
+	parserID := strings.TrimSpace(doc.ParserID)
+	registry, err := ingestionpipeline.DefaultRegistry()
+	if err != nil {
+		return fmt.Errorf("builtin pipeline registry: %w", err)
+	}
+	if !registry.IsValid(parserID) {
+		return fmt.Errorf("document %s: unknown builtin parser_id %q", doc.ID, parserID)
+	}
+	return nil
+}
+
 // StartParseDocuments starts parsing a document via the DSL ingestion
 // pipeline. It optionally clears prior results (RerunWithDelete), applies
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
@@ -124,6 +141,10 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	}
 	unlock := lockDocumentParse(doc.ID)
 	defer unlock()
+
+	if err := ValidateDocumentParseSelection(doc); err != nil {
+		return err
+	}
 
 	if opts.ApplyKB {
 		if err := s.applyKnowledgebaseParserConfig(ctx, doc, kb); err != nil {
