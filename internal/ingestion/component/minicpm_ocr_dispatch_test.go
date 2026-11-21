@@ -54,11 +54,14 @@ func TestDispatch_PDFMiniCPMOCR_ModelUUID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origSelector, origResolve := isMiniCPMOCRModelSelector, resolveModelConfig
-	t.Cleanup(func() { isMiniCPMOCRModelSelector, resolveModelConfig = origSelector, origResolve })
+	origSelector, origResolve := selectedPDFOCRProvider, resolveModelConfig
+	t.Cleanup(func() { selectedPDFOCRProvider, resolveModelConfig = origSelector, origResolve })
 	modelID := "5b6f1d0c8a2e4f3b9c7d1e2f3a4b5c6d"
-	isMiniCPMOCRModelSelector = func(_ context.Context, _ *gorm.DB, tenantID, selector string) bool {
-		return tenantID == "test-tenant" && selector == modelID
+	selectedPDFOCRProvider = func(_ context.Context, _ *gorm.DB, tenantID, selector string) string {
+		if tenantID == "test-tenant" && selector == modelID {
+			return "MiniCPM-OCR"
+		}
+		return ""
 	}
 	baseURL, apiKey := server.URL+"/v1", "minicpm-secret"
 	resolveModelConfig = func(_ context.Context, _ *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
@@ -96,18 +99,20 @@ func TestDispatch_PDFMiniCPMOCR_ModelUUID(t *testing.T) {
 	}
 }
 
-func TestIsMiniCPMOCRModelSelector(t *testing.T) {
+func TestSelectedPDFOCRProvider(t *testing.T) {
 	for _, tc := range []struct {
 		selector string
-		want     bool
+		want     string
 	}{
-		{"MiniCPM-OCR-1.0@default@MiniCPM-OCR", true},
-		{"MiniCPM-OCR-1.0@MiniCPM-OCR", true},
-		{"PaddleOCR-VL-1.6@default@PaddleOCR", false},
+		{"MiniCPM-OCR-1.0@default@MiniCPM-OCR", "MiniCPM-OCR"},
+		{"MiniCPM-OCR-1.0@MiniCPM-OCR", "MiniCPM-OCR"},
+		{"PaddleOCR-VL-1.6@default@PaddleOCR", ""},
+		{"SeerRay-Lab/Xiaomi-OCR-0@local@XiaomiOCR", "XiaomiOCR"},
+		{"SeerRay-Lab/Xiaomi-OCR-0@XiaomiOCR", "XiaomiOCR"},
 		// A bare model UUID is resolved within the tenant, which needs a database.
-		{"5b6f1d0c8a2e4f3b9c7d1e2f3a4b5c6d", false},
+		{"5b6f1d0c8a2e4f3b9c7d1e2f3a4b5c6d", ""},
 	} {
-		if got := defaultIsMiniCPMOCRModelSelector(t.Context(), nil, "tenant", tc.selector); got != tc.want {
+		if got := defaultSelectedPDFOCRProvider(t.Context(), nil, "tenant", tc.selector); got != tc.want {
 			t.Errorf("selector %q: got %v, want %v", tc.selector, got, tc.want)
 		}
 	}
@@ -119,11 +124,11 @@ func TestDispatchMiniCPMOCRPDFRejectsOtherDrivers(t *testing.T) {
 	resolveModelConfig = func(context.Context, *gorm.DB, string, entity.ModelType, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return &paddleOCRFakeDriver{}, "PaddleOCR-VL-1.6", &modelModule.APIConfig{}, 0, nil
 	}
-	_, err := dispatchMiniCPMOCRPDF(t.Context(), nil, "sample.pdf", []byte("%PDF-1.4"), "tenant", "PaddleOCR-VL-1.6@default@PaddleOCR")
+	_, err := dispatchSelectedOCRPDF(t.Context(), nil, "sample.pdf", []byte("%PDF-1.4"), "tenant", "PaddleOCR-VL-1.6@default@PaddleOCR", "MiniCPM-OCR", nil)
 	if err == nil || !strings.Contains(err.Error(), "requires a MiniCPM-OCR OCR model") {
 		t.Fatalf("err=%v", err)
 	}
-	if _, err = dispatchMiniCPMOCRPDF(t.Context(), nil, "sample.pdf", []byte("%PDF-1.4"), "", "model"); err == nil || !strings.Contains(err.Error(), "requires tenant_id") {
+	if _, err = dispatchSelectedOCRPDF(t.Context(), nil, "sample.pdf", []byte("%PDF-1.4"), "", "model", "MiniCPM-OCR", nil); err == nil || !strings.Contains(err.Error(), "requires tenant_id") {
 		t.Fatalf("missing tenant err=%v", err)
 	}
 }

@@ -1,0 +1,15 @@
+{
+  "name": "XiaomiOCR",
+  "class": "local",
+  "url_hint": "http://host.docker.internal:8000/v1",
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "models": [
+    {
+      "name": "SeerRay-Lab/Xiaomi-OCR-0",
+      "model_types": ["ocr"]
+    }
+  ]
+}

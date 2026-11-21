@@ -1896,3 +1896,28 @@ func TestCreateProviderInstanceUsesActiveTenantProvider(t *testing.T) {
 		t.Fatalf("created instance provider_id = %q, want provider-2", created.ProviderID)
 	}
 }
+
+func TestXiaomiOCRProvisioningUsesSelectedEndpointOnce(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	service := NewModelProviderService()
+	ctx := serviceTestContext(t, "user-1", "tenant-1")
+	t.Setenv(common.EnvXiaomiOCRAPIServer, "http://alias:8000/v1")
+	t.Setenv(common.EnvXiaomiOCRServerURL, "http://primary:8000/v1")
+	for range 2 {
+		if err := service.ensureXiaomiOCRFromEnv(ctx, "tenant-1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var instances []entity.TenantModelInstance
+	if err := db.Find(&instances).Error; err != nil || len(instances) != 1 {
+		t.Fatalf("instances=%v err=%v", len(instances), err)
+	}
+	if val := modelModule.ProviderJSONConfigValue(instances[0].APIKey, common.EnvXiaomiOCRServerURL); val != "http://primary:8000/v1" {
+		t.Fatalf("provisioned endpoint=%q", val)
+	}
+	var models []entity.TenantModel
+	if err := db.Find(&models).Error; err != nil || len(models) != 1 || models[0].ModelType != int(entity.ModelTypeOCR) || models[0].ModelName != "SeerRay-Lab/Xiaomi-OCR-0" {
+		t.Fatalf("models=%v err=%v", models, err)
+	}
+}

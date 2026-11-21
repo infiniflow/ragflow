@@ -280,6 +280,8 @@ const (
 	EnvMineruTimeout                     = "MINERU_TIMEOUT"
 	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
 	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
+	EnvXiaomiOCRAPIServer                = "XIAOMI_OCR_APISERVER"
+	EnvXiaomiOCRServerURL                = "XIAOMI_OCR_SERVER_URL"
 	EnvMonkeyOCRAPIServer                = "MONKEYOCR_APISERVER"
 	EnvMonkeyOCROutputDir                = "MONKEYOCR_OUTPUT_DIR"
 	EnvMonkeyOCRServerURL                = "MONKEYOCR_SERVER_URL"

@@ -330,14 +330,10 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	if !useVision {
 		return parser.ParseResult{}, false, nil
 	}
-	// A MiniCPM-OCR model is OCR-only and cannot serve the image2text VLM path
-	// below, so its selector goes to its own parser instead.
-	if isMiniCPMOCRModelSelector(ctx, db, tenantID, modelID) {
-		res, err := dispatchMiniCPMOCRPDF(ctx, db, filename, binary, tenantID, modelID)
-		if err != nil {
-			return parser.ParseResult{}, true, err
-		}
-		return res, true, nil
+	// Selected OCR models supply structured pages to the shared PDF parser.
+	if provider := selectedPDFOCRProvider(ctx, db, tenantID, modelID); provider != "" {
+		res, err := dispatchSelectedOCRPDF(ctx, db, filename, binary, tenantID, modelID, provider, setup)
+		return res, true, err
 	}
 	if tenantID == "" {
 		return parser.ParseResult{}, true, fmt.Errorf(
@@ -1837,42 +1833,62 @@ func dispatchPaddleOCRPdf(
 	return result, result.Err
 }
 
-// isMiniCPMOCRModelSelector reports whether selector — a tenant model UUID or
-// a model@instance@provider composite — names a MiniCPM-OCR model. A UUID
-// carries no provider spelling, so it is resolved within the tenant.
-var isMiniCPMOCRModelSelector = defaultIsMiniCPMOCRModelSelector
+// A composite selector carries the provider. A UUID must be resolved in its tenant.
+var selectedPDFOCRProvider = defaultSelectedPDFOCRProvider
 
-func defaultIsMiniCPMOCRModelSelector(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+func defaultSelectedPDFOCRProvider(ctx context.Context, db *gorm.DB, tenantID, selector string) string {
 	selector = strings.TrimSpace(selector)
+	var name string
 	if strings.Contains(selector, "@") {
-		_, _, providerName, err := common.ParseCompositeModelName(selector)
-		return err == nil && strings.EqualFold(providerName, "MiniCPM-OCR")
+		_, _, provider, err := common.ParseCompositeModelName(selector)
+		if err != nil {
+			return ""
+		}
+		name = provider
+	} else {
+		if db == nil || tenantID == "" || selector == "" {
+			return ""
+		}
+		resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, selector)
+		if err != nil {
+			return ""
+		}
+		name = resolved.driver.Name()
 	}
-	if db == nil || tenantID == "" || selector == "" {
-		return false
+	switch strings.ToLower(name) {
+	case "minicpm-ocr":
+		return "MiniCPM-OCR"
+	case "xiaomiocr":
+		return "XiaomiOCR"
+	default:
+		return ""
 	}
-	resolved, err := resolveModelConfigByRef(ctx, db, tenantID, entity.ModelTypeOCR, selector)
-	return err == nil && resolved.driver.Name() == "minicpm-ocr"
 }
 
-// dispatchMiniCPMOCRPDF parses the PDF with the selected MiniCPM-OCR model and
-// projects its page blocks onto the PDF pages.
-func dispatchMiniCPMOCRPDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID, selector string) (parser.ParseResult, error) {
+func dispatchSelectedOCRPDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID, selector, provider string, setup schema.ParserSetup) (parser.ParseResult, error) {
 	if tenantID == "" {
-		return parser.ParseResult{}, fmt.Errorf("parser: MiniCPM-OCR requires tenant_id")
+		return parser.ParseResult{}, fmt.Errorf("parser: %s requires tenant_id", provider)
 	}
 	driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, selector)
 	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MiniCPM-OCR model: %w", err)
+		return parser.ParseResult{}, fmt.Errorf("parser: %s model: %w", provider, err)
 	}
-	if driver.Name() != "minicpm-ocr" {
-		return parser.ParseResult{}, fmt.Errorf("parser: MiniCPM-OCR requires a MiniCPM-OCR OCR model; found %q", driver.Name())
+	if !strings.EqualFold(driver.Name(), provider) {
+		return parser.ParseResult{}, fmt.Errorf("parser: %s requires a %s OCR model; found %q", provider, provider, driver.Name())
 	}
-	resp, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig, nil, nil)
+	var options *modelModule.OCRConfig
+	if provider == "XiaomiOCR" {
+		pages, err := utility.NormalizePDFPages(setup["pages"])
+		if err != nil {
+			return parser.ParseResult{}, fmt.Errorf("parser: %s pages: %w", provider, err)
+		}
+		options = &modelModule.OCRConfig{Pages: pages}
+	}
+	resp, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig, options, nil)
 	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MiniCPM-OCR OCRFile: %w", err)
+		return parser.ParseResult{}, fmt.Errorf("parser: %s OCRFile: %w", provider, err)
 	}
-	result := parser.OCRPDFResult(ctx, "MiniCPM-OCR", filename, binary, resp)
+	result := parser.OCRPDFResult(ctx, provider, filename, binary, resp)
 	return result, result.Err
 }
 
