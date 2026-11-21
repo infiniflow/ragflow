@@ -241,12 +241,6 @@ func openDataLoaderWithPositions(item map[string]any, el map[string]any, pageSiz
 	return item, page, warning
 }
 
-// openDataLoaderBleedTolerance is how far past the page edge a box may reach,
-// as a fraction of that page dimension. Printed content bleeds slightly; a box
-// further out than this is not a bleed but a disagreement about the coordinate
-// space, so its positions are dropped and reported rather than clamped.
-const openDataLoaderBleedTolerance = 0.1
-
 // openDataLoaderPositions converts one element's geometry into RAGFlow's
 // canonical [page, left, right, top, bottom] row. OpenDataLoader reports
 // [left, bottom, right, top] in PDF points with the origin at the bottom-left,
@@ -271,8 +265,7 @@ func openDataLoaderPositions(page int, el map[string]any, pageSizes map[int][2]f
 	if right <= left || top <= bottom {
 		return nil, ""
 	}
-	overflowRight, overflowBottom := math.Max(0, math.Max(-left, right-size[0])), math.Max(0, math.Max(-bottom, top-size[1]))
-	if overflowRight > size[0]*openDataLoaderBleedTolerance || overflowBottom > size[1]*openDataLoaderBleedTolerance {
+	if pdfBoxExceedsBleed(left, bottom, right, top, size[0], size[1]) {
 		return nil, fmt.Sprintf("OpenDataLoader page %d: element box [%g %g %g %g] does not fit page size %gx%g; positions omitted because the service coordinates do not match the PDF point space", page, left, bottom, right, top, size[0], size[1])
 	}
 	left = math.Max(0, math.Min(size[0], left))
