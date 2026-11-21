@@ -270,7 +270,9 @@ func TestRunAgent_ToolHistoryPersists(t *testing.T) {
 					switch event.Type {
 					case "error":
 						runErrors++
-						if !tc.fail && !tc.canceled {
+						// A run whose final stream is empty is reported as a
+						// visible empty-response failure, not a silent close.
+						if !tc.fail && !tc.canceled && !tc.empty {
 							t.Errorf("Agent error event: %s", event.Data)
 						}
 					case "message":

@@ -99,10 +99,28 @@ func TestAgentMessageRunStateSurvivesInvocationReset(t *testing.T) {
 		t.Fatal("run emitted state was cleared by invocation reset")
 	}
 
+	if !AgentMessageContentEmittedRun(ctx) {
+		t.Fatal("run content emitted state should be true after content delta")
+	}
+
 	suppressedCtx := WithComponentExecutionOptions(ctx, ComponentExecutionOptions{SuppressAgentMessageEvents: true})
 	EmitAgentMessage(suppressedCtx, "hidden", "")
 	ResetAgentMessageEmission(ctx)
 	if !AgentMessageEventsSuppressedRun(ctx) {
 		t.Fatal("run suppressed state was cleared by invocation reset")
+	}
+}
+
+func TestAgentMessageContentEmittedRunIgnoresThinkingOnly(t *testing.T) {
+	ctx := WithAgentMessageEmitter(t.Context(), func(string, string) {})
+	EmitAgentMessage(ctx, "", "thinking only")
+	if AgentMessageContentEmitted(ctx) {
+		t.Fatal("invocation content emitted state should be false for thinking-only delta")
+	}
+	if AgentMessageContentEmittedRun(ctx) {
+		t.Fatal("run content emitted state should be false for thinking-only delta")
+	}
+	if !AgentMessageEventsEmittedRun(ctx) {
+		t.Fatal("run emitted state should still be true for thinking-only delta")
 	}
 }
