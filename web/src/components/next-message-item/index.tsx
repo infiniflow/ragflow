@@ -50,6 +50,8 @@ import { useTheme } from '../theme-provider';
 import { Button } from '../ui/button';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.module.less';
+import { MetadataFilterDiagnostics } from './metadata-filter-diagnostics';
+import { ReferenceDocumentList } from './reference-document-list';
 import { ReferenceImageList } from './reference-image-list';
 import { UploadedMessageFiles } from './uploaded-message-files';
 
@@ -113,6 +115,20 @@ function MessageItem({
     }
   }, [loading, setLastSendLoadingFunc, item.id]);
 
+  const referenceDocuments = useMemo(() => {
+    const docs = reference?.doc_aggs ?? {};
+
+    return Object.values(docs);
+  }, [reference?.doc_aggs]);
+  const hasRetrievalReference = useMemo(
+    () =>
+      Boolean(
+        reference?.metadata_filters ||
+        Object.keys(reference?.chunks ?? {}).length ||
+        Object.keys(reference?.doc_aggs ?? {}).length,
+      ),
+    [reference],
+  );
   const documentDownloadInfos = useMemo(
     () => item.downloads ?? [],
     [item.downloads],
@@ -310,6 +326,18 @@ function MessageItem({
                 referenceChunks={reference?.chunks}
                 messageContent={messageContent}
               ></ReferenceImageList>
+            )}
+
+            {isAssistant && referenceDocuments.length > 0 && (
+              <ReferenceDocumentList
+                list={referenceDocuments}
+              ></ReferenceDocumentList>
+            )}
+
+            {isAssistant && hasRetrievalReference && (
+              <MetadataFilterDiagnostics
+                diagnostics={reference?.metadata_filters}
+              />
             )}
 
             {isUser && (
