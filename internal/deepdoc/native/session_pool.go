@@ -38,6 +38,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	doctype "ragflow/internal/deepdoc/parser/type"
 )
 
 // pooledSession is the minimal contract the pool needs from any cached ONNX
@@ -80,24 +82,24 @@ func newSessionPool[K comparable, V pooledSession](maxKeys, maxFree int) *sessio
 // poisoned session is Destroyed on release rather than pooled (ORT does not
 // guarantee reuse safety after a forced termination).
 //
-// Get takes a process-wide inference slot before it hands out a session and
-// returns that slot from release, so the slot is held for the whole hold window
-// (session construction on a miss, then the caller's Run). This is what makes
-// the process inference budget real; see inference_limit.go.
+// Get hands out a session from the pool. The INNER in-process inference budget
+// (doctype.AcquireLocal) is acquired here, so it bounds only local ONNX Runs;
+// the OUTER budget (doctype.AcquireInference) is acquired by the parser's
+// inference wrappers and bounds every backend including remote HTTP clients.
+// This two-layer design lets remote inference use the full K while local
+// inference stays clamped to the core budget (no oversubscription).
 func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, error)) (V, func(), error) {
-	if err := acquireInference(ctx); err != nil {
+	if err := doctype.AcquireLocal(ctx); err != nil {
 		var zero V
 		return zero, nil, err
 	}
-	slotReturned := false
-	returnSlot := func() {
-		if slotReturned {
-			return
+	localReturned := false
+	returnLocal := func() {
+		if !localReturned {
+			localReturned = true
+			doctype.ReleaseLocal()
 		}
-		slotReturned = true
-		releaseInference()
 	}
-
 	p.mu.Lock()
 	kp := p.pools[key]
 	if kp == nil {
@@ -124,14 +126,14 @@ func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, err
 		var err error
 		s, err = newFn()
 		if err != nil {
-			returnSlot()
+			returnLocal()
 			var zero V
 			return zero, nil, err
 		}
 	}
 
 	release := func() {
-		defer returnSlot()
+		defer returnLocal()
 		if s.isPoisoned() {
 			s.Destroy()
 			return
