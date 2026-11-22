@@ -153,6 +153,27 @@ func TestWebSearchTool_PartialFailureKeepsHits(t *testing.T) {
 	}
 }
 
+func TestWebSearchTool_PartialFailureWithNoHits(t *testing.T) {
+	search := func(_ context.Context, query string) ([]WebResult, error) {
+		if query == "broken" {
+			return nil, errors.New("provider: status 429")
+		}
+		return nil, nil
+	}
+	out, err := NewWebSearchTool(search).InvokableRun(t.Context(), `{"queries":["no matches","broken"]}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	for _, want := range []string{
+		`<search_results count="0"`,
+		`<tool_error tool="web_search" severity="warn" query="broken">provider: status 429</tool_error>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("partial result missing %q: %s", want, out)
+		}
+	}
+}
+
 func TestWebSearchTool_ReferencesRetainServedSnippet(t *testing.T) {
 	registry := NewEvidenceRegistry()
 	registry.Stamp("corpus-chunk")
@@ -193,7 +214,7 @@ func TestWebSearchTool_AllQueriesFail(t *testing.T) {
 	search, _ := fixedWebSearch(nil, errors.New("provider: status 500"))
 	out, err := NewWebSearchTool(search).InvokableRun(context.Background(),
 		`{"queries":["a","b"]}`)
-	if err != nil || !strings.Contains(out, toolErrorMarker) {
+	if err != nil || !strings.HasPrefix(out, toolErrorMarker) {
 		t.Fatalf("all-queries-fail must produce a tool_error result, got err=%v out=%.200q", err, out)
 	}
 }
