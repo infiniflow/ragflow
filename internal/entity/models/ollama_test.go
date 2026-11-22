@@ -190,33 +190,59 @@ func TestOllamaThinkingPayloadTriState(t *testing.T) {
 	}
 }
 
-func TestOllamaThinkingOverridesEffortOnlyForGPTOSS(t *testing.T) {
+func TestOllamaThinkingAndEffort(t *testing.T) {
 	withSSRFBypass(t)
+	effort, emptyEffort := "high", ""
 	for _, tc := range []struct {
 		name, model string
+		thinking    *bool
+		effort      *string
 		want        any
 	}{
-		{name: "gpt-oss uses effort", model: "gpt-oss:20b", want: "high"},
-		{name: "other model keeps thinking", model: "llava", want: false},
+		{name: "gpt-oss disabled wins over effort", model: "gpt-oss:20b", thinking: boolPointer(false), effort: &effort, want: false},
+		{name: "gpt-oss enabled uses effort", model: "gpt-oss:20b", thinking: boolPointer(true), effort: &effort, want: "high"},
+		{name: "gpt-oss unset uses effort", model: "gpt-oss:20b", effort: &effort, want: "high"},
+		{name: "gpt-oss disabled without effort", model: "gpt-oss:20b", thinking: boolPointer(false), want: false},
+		{name: "gpt-oss enabled without effort", model: "gpt-oss:20b", thinking: boolPointer(true), want: true},
+		{name: "gpt-oss empty effort omitted", model: "gpt-oss:20b", effort: &emptyEffort},
+		{name: "gpt-oss defaults omitted", model: "gpt-oss:20b"},
+		{name: "other model keeps disabled", model: "llava", thinking: boolPointer(false), effort: &effort, want: false},
+		{name: "other model keeps enabled", model: "llava", thinking: boolPointer(true), effort: &effort, want: true},
+		{name: "other model ignores effort", model: "llava", effort: &effort},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var body map[string]interface{}
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-					t.Errorf("decode request: %v", err)
+		for _, stream := range []bool{false, true} {
+			name := tc.name + "/nonstream"
+			if stream {
+				name = tc.name + "/stream"
+			}
+			t.Run(name, func(t *testing.T) {
+				requestBody := make(chan map[string]interface{}, 1)
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]interface{}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Errorf("decode request: %v", err)
+						http.Error(w, "invalid request", http.StatusBadRequest)
+						return
+					}
+					requestBody <- body
+					_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ok\"},\"done\":true}\n")
+				}))
+				defer srv.Close()
+				runThinkingPayloadRequest(t, newOllamaForChatTest(srv.URL), tc.model, stream, &ChatConfig{Thinking: tc.thinking, Effort: tc.effort})
+				body := <-requestBody
+				if body["stream"] != stream {
+					t.Errorf("stream=%v, want %v", body["stream"], stream)
 				}
-				_, _ = io.WriteString(w, `{"message":{"content":"ok","thinking":""}}`)
-			}))
-			defer srv.Close()
-			thinking := false
-			effort := "high"
-			if _, err := newOllamaForChatTest(srv.URL).ChatWithMessages(t.Context(), tc.model, []Message{{Role: "user", Content: "hello"}}, &APIConfig{}, &ChatConfig{Thinking: &thinking, Effort: &effort}, nil); err != nil {
-				t.Fatalf("ChatWithMessages: %v", err)
-			}
-			if got := body["think"]; got != tc.want {
-				t.Fatalf("think=%v, want %v", got, tc.want)
-			}
-		})
+				got, exists := body["think"]
+				if tc.want == nil {
+					if exists {
+						t.Fatalf("think=%v, want omitted", got)
+					}
+				} else if !exists || got != tc.want {
+					t.Fatalf("think=%v, want %v", got, tc.want)
+				}
+			})
+		}
 	}
 }
 
