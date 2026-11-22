@@ -121,10 +121,12 @@ func TestMergeExistingStructureBucketsSweepsOldRelationIDsByEndpoints(t *testing
 	}
 }
 
-// One relation lookup must bound both endpoint lists: the engines cap a single
-// terms filter (Elasticsearch rejects more than 65,536 values), so an unbounded
-// to_entity_kwd list failed every attempt and kept the batch retrying.
-func TestMergeExistingStructureBucketsBoundsRelationSweepPerBatch(t *testing.T) {
+// One relation lookup must bound the product of its two endpoint lists: the
+// engines reject a single terms filter past 65,536 values, and the filter
+// returns the cross product, so an over-wide group would also page past the
+// 10,000-row result window with no sort cursor. Every incoming endpoint must
+// still reach at least one lookup.
+func TestMergeExistingStructureBucketsBoundsRelationSweepProduct(t *testing.T) {
 	const tenant, kb = "t1", "kb1"
 	buckets := make([]StructureBucket, 0, 3*structureLookupBatch)
 	for i := 0; i < 3*structureLookupBatch; i++ {
@@ -141,6 +143,7 @@ func TestMergeExistingStructureBucketsBoundsRelationSweepPerBatch(t *testing.T) 
 		t.Fatalf("mergeExistingStructureBuckets: %v", err)
 	}
 	relationSearches := 0
+	coveredFroms := map[string]bool{}
 	for _, req := range eng.searchReqs {
 		froms, hasFrom := req.Filter["from_entity_kwd"]
 		tos, hasTo := req.Filter["to_entity_kwd"]
@@ -148,14 +151,26 @@ func TestMergeExistingStructureBucketsBoundsRelationSweepPerBatch(t *testing.T) 
 			continue
 		}
 		relationSearches++
-		if hasFrom && len(froms.([]string)) > structureLookupBatch {
-			t.Fatalf("from_entity_kwd carries %d values, over the batch bound %d", len(froms.([]string)), structureLookupBatch)
+		fromList, _ := froms.([]string)
+		toList, _ := tos.([]string)
+		// A relation request returns the cross product of its endpoint lists;
+		// the engines reject a page whose from+size exceeds the result window
+		// (10,000) and these rows have no sort cursor, so the product must stay
+		// within the cap that keeps offset paging legal.
+		if len(fromList)*len(toList) > relationSweepPairCap {
+			t.Fatalf("relation lookup product = %d values (%d x %d), over the cap %d",
+				len(fromList)*len(toList), len(fromList), len(toList), relationSweepPairCap)
 		}
-		if hasTo && len(tos.([]string)) > structureLookupBatch {
-			t.Fatalf("to_entity_kwd carries %d values, over the batch bound %d", len(tos.([]string)), structureLookupBatch)
+		for _, from := range fromList {
+			coveredFroms[from] = true
 		}
 	}
 	if relationSearches < 2 {
-		t.Fatalf("relation sweep issued %d searches, want the endpoints spread over several bounded batches", relationSearches)
+		t.Fatalf("relation sweep issued %d searches, want the pairs spread over several bounded batches", relationSearches)
+	}
+	for i := 0; i < 3*structureLookupBatch; i++ {
+		if !coveredFroms[fmt.Sprintf("From %d", i)] {
+			t.Fatalf("relation %d: from endpoint missing from every lookup, the sweep is incomplete", i)
+		}
 	}
 }

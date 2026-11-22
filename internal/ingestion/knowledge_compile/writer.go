@@ -795,6 +795,20 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 // under the engines' filter-size limits.
 const structureLookupBatch = 500
 
+// relationSweepPairCap bounds one relation lookup by the product of its two
+// endpoint value lists. The filter matches every stored row whose from and to
+// both fall inside those lists, so this product bounds the rows one request
+// returns; keeping it well under the engines' result window (10,000) lets the
+// lookup page by offset without a sort cursor, which these rows cannot supply.
+const relationSweepPairCap = 1000
+
+// structureRelationPair is one incoming relation's endpoints, the unit the
+// relation sweep splits on.
+type structureRelationPair struct {
+	from string
+	to   string
+}
+
 // mergeExistingStructureBuckets folds the persisted dataset-level rows into the
 // incoming buckets: it unions source doc/chunk ids, keeps a specific entity type
 // over "other", and returns the ids of rows superseded by the current id scheme.
@@ -919,43 +933,56 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 	if err := batchedLookup("name_kwd", entityNames, map[string]interface{}{"knowledge_graph_kwd": "entity"}); err != nil {
 		return nil, err
 	}
-	// Relation sweep: the filter combines from and to with AND, and the engines
-	// cap one terms list (Elasticsearch: 65,536 by default), so the incoming
-	// relations are grouped and each group is looked up with its own endpoints.
-	// Pairs no incoming relation requests are still read when they fall inside a
-	// group's cartesian product; the identity check in applyRow rejects them.
-	var batchFroms, batchTos []string
-	flushRelations := func() error {
-		if len(batchFroms) == 0 && len(batchTos) == 0 {
-			return nil
-		}
-		extra := map[string]interface{}{"knowledge_graph_kwd": "relation"}
-		if len(batchFroms) > 0 {
-			extra["from_entity_kwd"] = batchFroms
-		}
-		if len(batchTos) > 0 {
-			extra["to_entity_kwd"] = batchTos
-		}
-		err := lookup(extra)
-		batchFroms, batchTos = nil, nil
-		return err
-	}
+	// Relation sweep: the filter combines from and to with AND, so one request
+	// matches the cross product of its two endpoint lists. Both the engines'
+	// terms-list cap (Elasticsearch: 65,536 values) and the result window
+	// (index.max_result_window, 10,000 rows; a deep offset cannot be walked with
+	// search_after here because these rows have no sortable unique field) bound
+	// what one request may carry, so the incoming pairs are split until their
+	// from x to value product fits. Pairs no incoming relation requests are
+	// still read when they fall inside a group's product; the identity check in
+	// applyRow rejects them.
+	var pairs []structureRelationPair
+	seenPairs := make(map[structureRelationPair]bool, len(buckets))
 	for i := range buckets {
-		if buckets[i].FromEntity == "" && buckets[i].ToEntity == "" {
+		b := buckets[i]
+		if b.FromEntity == "" && b.ToEntity == "" {
 			continue
 		}
-		froms := common.AppendUnique(batchFroms, []string{buckets[i].FromEntity, strings.ToLower(buckets[i].FromEntity)})
-		tos := common.AppendUnique(batchTos, []string{buckets[i].ToEntity, strings.ToLower(buckets[i].ToEntity)})
-		if len(froms) > structureLookupBatch || len(tos) > structureLookupBatch {
-			if err := flushRelations(); err != nil {
-				return nil, err
-			}
-			froms = common.AppendUnique(nil, []string{buckets[i].FromEntity, strings.ToLower(buckets[i].FromEntity)})
-			tos = common.AppendUnique(nil, []string{buckets[i].ToEntity, strings.ToLower(buckets[i].ToEntity)})
+		pair := structureRelationPair{from: b.FromEntity, to: b.ToEntity}
+		if seenPairs[pair] {
+			continue
 		}
-		batchFroms, batchTos = froms, tos
+		seenPairs[pair] = true
+		pairs = append(pairs, pair)
 	}
-	if err := flushRelations(); err != nil {
+	var sweepRelations func(pairs []structureRelationPair) error
+	sweepRelations = func(pairs []structureRelationPair) error {
+		if len(pairs) == 0 {
+			return nil
+		}
+		var froms, tos []string
+		for _, p := range pairs {
+			froms = common.AppendUnique(froms, []string{p.from, strings.ToLower(p.from)})
+			tos = common.AppendUnique(tos, []string{p.to, strings.ToLower(p.to)})
+		}
+		if len(pairs) > 1 && len(froms)*len(tos) > relationSweepPairCap {
+			half := len(pairs) / 2
+			if err := sweepRelations(pairs[:half]); err != nil {
+				return err
+			}
+			return sweepRelations(pairs[half:])
+		}
+		extra := map[string]interface{}{"knowledge_graph_kwd": "relation"}
+		if len(froms) > 0 {
+			extra["from_entity_kwd"] = froms
+		}
+		if len(tos) > 0 {
+			extra["to_entity_kwd"] = tos
+		}
+		return lookup(extra)
+	}
+	if err := sweepRelations(pairs); err != nil {
 		return nil, err
 	}
 
