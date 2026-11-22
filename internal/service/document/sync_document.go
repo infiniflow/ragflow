@@ -367,17 +367,7 @@ func syncDocumentFilename(name, extension, fallback string) string {
 		name += extension
 	}
 
-	if len(name) <= 255 {
-		return name
-	}
-
-	ext := filepath.Ext(name)
-	baseLimit := 255 - len(ext)
-	if baseLimit < 1 {
-		return name[:255]
-	}
-
-	return name[:baseLimit] + ext
+	return utility.TruncateFilename(name, 255)
 }
 
 // syncDocumentStagedLocation returns a unique object-storage key for unpublished synced content.
