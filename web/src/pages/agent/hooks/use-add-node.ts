@@ -205,6 +205,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Search1APISearch]: initialSearch1APISearchValues,
       [Operator.Search1APICrawl]: initialSearch1APICrawlValues,
       [Operator.AnySearchSearch]: initialAnySearchSearchValues,
+      [Operator.AnySearchDiscover]: { api_key: '' },
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,

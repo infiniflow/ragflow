@@ -214,7 +214,9 @@ const ToolTimelineItem = ({
                                     {key}
                                   </div>
                                   <div className="text-sm text-muted-foreground mt-1">
-                                    {val as string}
+                                    {typeof val === 'string'
+                                      ? val
+                                      : JSON.stringify(val)}
                                   </div>
                                 </div>
                               );

@@ -8,10 +8,17 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  useFormField,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useMemo } from 'react';
+import {
+  type ComponentPropsWithoutRef,
+  type ComponentRef,
+  forwardRef,
+  memo,
+  useMemo,
+} from 'react';
 import { useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -42,6 +49,14 @@ const FormSchema = z.object({
   ...AnySearchSearchFormPartialSchema,
 });
 
+const ZoneSelect = forwardRef<
+  ComponentRef<typeof SelectWithSearch>,
+  ComponentPropsWithoutRef<typeof SelectWithSearch>
+>(function ZoneSelect(props, ref) {
+  const { formItemId } = useFormField();
+  return <SelectWithSearch {...props} triggerId={formItemId} ref={ref} />;
+});
+
 export function AnySearchSearchWidgets() {
   const { t } = useTranslation();
   const form = useFormContext();
@@ -67,7 +82,7 @@ export function AnySearchSearchWidgets() {
               {t('flow.anySearchZone')}
             </FormLabel>
             <FormControl>
-              <SelectWithSearch
+              <ZoneSelect
                 {...field}
                 options={zoneOptions}
                 placeholder={t('flow.anySearchZoneUnset')}

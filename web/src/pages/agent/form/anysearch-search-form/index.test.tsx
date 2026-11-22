@@ -10,6 +10,7 @@ import { initialAnySearchSearchValues } from '../../constant';
 import AnySearchSearchForm from './index';
 
 let mockForm: any;
+let mockUseRealSelect = false;
 
 jest.mock('@/hooks/common-hooks', () => ({
   useTranslate: () => ({ t: (key: string) => key }),
@@ -43,10 +44,25 @@ jest.mock('@/components/originui/select-with-search', () => {
       HTMLSelectElement,
       {
         value?: string;
+        triggerId?: string;
         onChange: (value: string) => void;
         options: { value: string }[];
       }
-    >(function SelectWithSearch({ value, onChange, options }, ref) {
+    >(function SelectWithSearch({ value, onChange, options, triggerId }, ref) {
+      if (mockUseRealSelect) {
+        const ActualSelect = jest.requireActual(
+          '@/components/originui/select-with-search',
+        ).SelectWithSearch;
+        return (
+          <ActualSelect
+            ref={ref}
+            value={value}
+            onChange={onChange}
+            options={options}
+            triggerId={triggerId}
+          />
+        );
+      }
       function handleChange(event: React.ChangeEvent<HTMLSelectElement>) {
         onChange(event.target.value);
       }
@@ -54,6 +70,7 @@ jest.mock('@/components/originui/select-with-search', () => {
         <select
           ref={ref}
           aria-label="Zone"
+          id={triggerId}
           value={value ?? ''}
           onChange={handleChange}
         >
@@ -108,6 +125,7 @@ describe('AnySearch Search node form', () => {
 
   beforeEach(() => {
     mockForm = undefined;
+    mockUseRealSelect = false;
   });
 
   it('renders the settings and the declared outputs', () => {
@@ -212,5 +230,23 @@ describe('AnySearch Search node form', () => {
     const saved = save.mock.calls[0][0];
     expect(saved).not.toHaveProperty('tag');
     expect(saved).not.toHaveProperty('params');
+  });
+  it('associates the zone label with its actual trigger', () => {
+    renderNodeForm();
+    const trigger = screen.getByRole('combobox', { name: 'Zone' });
+    const label = screen.getByText('flow.anySearchZone').closest('label');
+    expect(trigger.id).not.toBe('');
+    expect(label).toHaveAttribute('for', trigger.id);
+  });
+  it('labels the real searchable zone selector', () => {
+    mockUseRealSelect = true;
+    renderNodeForm();
+    const trigger = screen.getByRole('combobox', {
+      name: 'flow.anySearchZone',
+    });
+    expect(
+      screen.getByText('flow.anySearchZone').closest('label'),
+    ).toHaveAttribute('for', trigger.id);
+    expect(trigger.id).not.toBe('');
   });
 });
