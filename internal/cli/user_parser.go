@@ -2687,11 +2687,11 @@ func (p *Parser) parseAPIRetrieve() (*Command, error) {
 		if err != nil {
 			return nil, err
 		}
-	} else if p.curToken.Type == TokenIdentifier {
-		question, err = p.parseIdentifier()
-		if err != nil {
-			return nil, err
-		}
+	} else if p.curToken.Type == TokenIdentifier || (isKeyword(p.curToken.Type) && p.curToken.Type != TokenOn) {
+		// An unquoted one-word question may be a word the lexer reserves for a
+		// command ("retrieve find"). Only ON keeps its grammar meaning, since it
+		// introduces the dataset clause right after the question.
+		question = p.curToken.Value
 	} else {
 		return nil, fmt.Errorf("expected quoted string or identifier")
 	}

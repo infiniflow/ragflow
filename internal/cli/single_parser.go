@@ -101,7 +101,7 @@ func (p *Parser) parseSingleUseWorkspace() (*Command, error) {
 	cmd := NewCommand("single_use_workspace")
 	cmd.Params["command"] = p.original
 
-	workspace, err := p.parseIdentifier()
+	workspace, err := p.parseName()
 	if err != nil {
 		return nil, err
 	}
@@ -117,9 +117,8 @@ func (p *Parser) parseSingleNewWorkspace() (*Command, error) {
 	cmd := NewCommand("single_new_workspace")
 	cmd.Params["command"] = p.original
 
-	newWorkspace, err := p.parseIdentifier()
+	newWorkspace, err := p.parseName()
 	if err != nil {
-		fmt.Println(p.curToken.Type)
 		return nil, err
 	}
 
@@ -134,7 +133,7 @@ func (p *Parser) parseSingleDeleteWorkspace() (*Command, error) {
 	cmd := NewCommand("single_delete_workspace")
 	cmd.Params["command"] = p.original
 
-	workspace, err := p.parseIdentifier()
+	workspace, err := p.parseName()
 	if err != nil {
 		return nil, err
 	}
@@ -187,4 +186,13 @@ func (p *Parser) parseSingleShowCurrentWorkspace() (*Command, error) {
 	cmd.Params["command"] = p.original
 
 	return cmd, nil
+}
+
+// parseName accepts a reserved word as a name: a workspace may be called "new"
+// or "find" even though the lexer now reserves those words for commands.
+func (p *Parser) parseName() (string, error) {
+	if p.curToken.Type != TokenIdentifier && !isKeyword(p.curToken.Type) {
+		return "", fmt.Errorf("expected name, got %s", p.curToken.Value)
+	}
+	return p.curToken.Value, nil
 }

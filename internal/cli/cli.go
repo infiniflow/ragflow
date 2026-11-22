@@ -243,9 +243,19 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 
 	switch commandLineConfig.CLIMode {
 	case CommandMode:
+		// The command text must carry only the command: the global flags were
+		// already applied by the loop above, and leaving them in would make the
+		// parser reject the line ("expected command, got -").
 		for i := 0; i < len(args); i++ {
-			arg := args[i]
-			commandArgs = append(commandArgs, arg)
+			switch arg := args[i]; arg {
+			case "-o", "--output":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					i++
+				}
+			case "-v", "--verbose":
+			default:
+				commandArgs = append(commandArgs, arg)
+			}
 		}
 
 		defaultApiServerConfig := &APIServerConfig{
