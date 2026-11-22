@@ -119,7 +119,7 @@ The downloader prepares the five Go DeepDoc files under `deps/huggingface.co/Inf
 
 With the default `conf/service_conf.yaml`, the host-run Go processes need Elasticsearch, MySQL, MinIO, NATS, Kvrocks, and ClickHouse. Start these services explicitly from the repository root:
 
-The default Elasticsearch service requires `vm.max_map_count` of at least `262144` in the Docker engine's Linux kernel. On Linux hosts, check and set it before starting the containers:
+The default Elasticsearch service requires `vm.max_map_count` of at least `262144` in the Docker engine's Linux kernel. With Docker Engine installed directly on a Linux host, check and set it on the host before starting the containers:
 
 ```bash
 sysctl vm.max_map_count
@@ -128,11 +128,14 @@ sudo sysctl -w vm.max_map_count=262144
 
 The change made with `sysctl -w` is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
 
-On macOS with Docker Desktop, the parameter lives in Docker Desktop's Linux VM, where current releases already default to `262144` (verified on Docker Desktop 28.x), so no action is normally needed. A host-side `sysctl` cannot change the VM. If Elasticsearch logs a `max virtual memory areas` error, raise it inside the running VM (this does not survive a Docker Desktop restart):
+Docker Desktop (on both macOS and Linux) runs the engine inside its own Linux VM, so a host-side `sysctl` does not affect it. Current Docker Desktop releases already default the VM to `262144` (verified on Docker Desktop 28.x), so no action is normally needed. If Elasticsearch logs a `max virtual memory areas` error, raise it inside the running VM (this does not survive a Docker Desktop restart):
 
 ```bash
-docker run --rm --privileged --pid=host justincormack/nsenter1 sysctl -w vm.max_map_count=262144
+docker run --rm --privileged --pid=host justincormack/nsenter1 \
+  /bin/sh -c 'sysctl -w vm.max_map_count=262144'
 ```
+
+`/bin/sh -c` is required because this image `execve`s its argument directly without a `PATH` lookup; a bare `sysctl` fails with `execve: No such file or directory`.
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks clickhouse
