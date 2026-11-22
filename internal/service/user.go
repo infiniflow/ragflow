@@ -136,6 +136,12 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	if err != nil {
 		return nil, common.CodeExceptionError, err
 	}
+	// Admission policies are checked by middleware before this service runs.
+	// This hook may consume a single-use proof, so reject duplicate accounts
+	// and invalid encrypted passwords before calling it.
+	if code, err := consumeRegistrationProof(ctx, req.Email); err != nil {
+		return nil, code, err
+	}
 
 	var hashedPassword string
 	hashedPassword, err = common.GenerateWerkzeugPasswordHash(decryptedPassword)
@@ -244,10 +250,6 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		if err = tx.Create(user).Error; err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
-		if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
-			return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
-		}
-
 		if err = tenantDAO.Create(ctx, tx, tenant); err != nil {
 			return fmt.Errorf("failed to create tenant: %w", err)
 		}
@@ -288,20 +290,11 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 	if user.Status == nil || *user.Status != "1" {
 		return nil, common.CodeForbidden, fmt.Errorf("user is disabled")
 	}
-
-	// Generate new access token
-	token := common.GenerateToken()
-	user.AccessToken = &token
-	now := time.Now().Truncate(time.Second)
-	user.LastLoginTime = &now
-	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
-	}
-	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
-		billingService.SyncLoginTokenRateLimit(ctx, user.ID, token)
+	if code, err := validateLoginTenant(ctx, user); err != nil {
+		return nil, code, err
 	}
 
-	return user, common.CodeSuccess, nil
+	return completePasswordLogin(ctx, user)
 }
 
 // LoginByEmail user login by email
@@ -318,7 +311,7 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 
 	decryptedPassword, err := common.DecryptPassword(req.Password)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password")
+		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password: %w", err)
 	}
 
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
@@ -328,21 +321,43 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	if user.IsActive == "0" {
 		return nil, common.CodeForbidden, fmt.Errorf("this account has been disabled, please contact the administrator")
 	}
-
-	// Generate new access token
-	token := common.GenerateToken()
-	user.AccessToken = &token
-	now := time.Now().Truncate(time.Second)
-	user.LastLoginTime = &now
-
-	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
+	if code, err := validateLoginTenant(ctx, user); err != nil {
+		return nil, code, err
 	}
+
+	return completePasswordLogin(ctx, user)
+}
+
+func completePasswordLogin(ctx context.Context, user *entity.User) (*entity.User, common.ErrorCode, error) {
+	token := common.GenerateToken()
+	now := time.Now().Truncate(time.Second)
+	// A login that checked the old password must not issue a session after a password change.
+	result := dao.DB.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ? AND password = ?", user.ID, user.Password).
+		Updates(map[string]any{"access_token": token, "last_login_time": now})
+	if result.Error != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("invalid email or password")
+	}
+	user.AccessToken = &token
+	user.LastLoginTime = &now
 	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
 		billingService.SyncLoginTokenRateLimit(ctx, user.ID, token)
 	}
-
 	return user, common.CodeSuccess, nil
+}
+
+func validateLoginTenant(ctx context.Context, user *entity.User) (common.ErrorCode, error) {
+	if _, err := ResolveLoginTenantID(ctx, user); err != nil {
+		var coded *common.CodedError
+		if errors.As(err, &coded) {
+			return coded.Code, err
+		}
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 // GetUserByID get user by ID (a 32-char hex UUID string).
@@ -653,7 +668,8 @@ func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map
 
 // UpdateUserSettings updates user settings
 func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
-	// Update fields if provided
+	fields := make(map[string]any)
+	oldHash := user.Password
 	if req.Password != nil {
 		ciphertext, err := base64.StdEncoding.DecodeString(*req.Password)
 		if err != nil {
@@ -691,6 +707,8 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 			user.Password = &hashedPassword
 			invalidToken := "INVALID_" + common.GenerateToken()
 			user.AccessToken = &invalidToken
+			fields["password"] = hashedPassword
+			fields["access_token"] = invalidToken
 		}
 	}
 	if req.Nickname != nil {
@@ -699,28 +717,44 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 			return common.CodeDataError, err
 		}
 		user.Nickname = nickname
+		fields["nickname"] = nickname
 	}
 	if req.Avatar != nil {
 		// In Go version, avatar might be stored differently
 		// For now, just update if field exists
 		user.Avatar = req.Avatar
+		fields["avatar"] = req.Avatar
 	}
 	if req.Language != nil {
 		// Store language preference
 		user.Language = req.Language
+		fields["language"] = req.Language
 	}
 	if req.ColorSchema != nil {
 		// Store color schema preference
 		user.ColorSchema = req.ColorSchema
+		fields["color_schema"] = req.ColorSchema
 	}
 	if req.Timezone != nil {
 		// Store timezone preference
 		user.Timezone = req.Timezone
+		fields["timezone"] = req.Timezone
 	}
 
-	// Save updated user
-	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
-		return common.CodeServerError, err
+	if len(fields) == 0 {
+		return common.CodeSuccess, nil
+	}
+	query := dao.DB.WithContext(ctx).Model(&entity.User{}).Where("id = ?", user.ID)
+	_, passwordChanged := fields["password"]
+	if passwordChanged {
+		query = query.Where("password = ?", oldHash)
+	}
+	result := query.Updates(fields)
+	if result.Error != nil {
+		return common.CodeServerError, result.Error
+	}
+	if passwordChanged && result.RowsAffected != 1 {
+		return common.CodeConflict, fmt.Errorf("account credentials changed; sign in and try again")
 	}
 	return common.CodeSuccess, nil
 }

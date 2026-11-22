@@ -41,15 +41,53 @@ var CitationMarkerPattern = regexp.MustCompile(`\[(?:ID:\s*)?([0-9\x{0660}-\x{06
 
 // badCitationPatterns match malformed citation shapes that LLMs sometimes emit
 var badCitationPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`\(\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\)`), // (ID: 12)
-	regexp.MustCompile(`\[\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`), // [ID: 12]
-	regexp.MustCompile(`【\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*】`),   // 【ID: 12】
-	regexp.MustCompile(`(?i)\bref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`),           // ref12
+	regexp.MustCompile(`\(\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\)`),            // (ID: 12)
+	regexp.MustCompile(`\[\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`),            // [ID: 12]
+	regexp.MustCompile(`【\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*】`),              // 【ID: 12】
+	regexp.MustCompile(`(?i)\[\s*ref\s*(?:[:=]\s*|\s+)([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`), // [ref=12], [ref: 12], [ref 12]
+	regexp.MustCompile(`(?i)\[\s*ref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`),                // [ref12]
+	regexp.MustCompile(`(?i)\bref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`),                      // ref12
 	// (**ID:5**) / (*ID: 5*) — markdown-asterisk-wrapped parenthetical cites that
 	// models sometimes emit instead of [ID:5]. Mirrors Python agentic_rag.py:885
 	// `re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", ...)`, which deep-research runs over
 	// its final answer before it reaches the UI.
 	regexp.MustCompile(`\(\s*\**\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\**\s*\)`), // (**ID: 12**)
+}
+
+// standaloneRefCitationPattern covers the unbracketed ref=12/ref:12 forms.
+// It is applied separately so URL query parameters such as ?ref=12 are left
+// untouched.
+var standaloneRefCitationPattern = regexp.MustCompile(`(?i)\bref\s*[:=]\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`)
+var citationURLPattern = regexp.MustCompile(`(?i)\bhttps?://[^\s<>()]+`)
+
+func citationIndexInsideURL(text string, index int) bool {
+	for _, span := range citationURLPattern.FindAllStringIndex(text, -1) {
+		if index >= span[0] && index < span[1] {
+			return true
+		}
+	}
+	return false
+}
+
+func replaceStandaloneRefCitations(text string, replacement func(string) string) string {
+	matches := standaloneRefCitationPattern.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
+	var b strings.Builder
+	b.Grow(len(text))
+	last := 0
+	for _, m := range matches {
+		b.WriteString(text[last:m[0]])
+		if citationIndexInsideURL(text, m[0]) {
+			b.WriteString(text[m[0]:m[1]])
+		} else {
+			b.WriteString(replacement(normalizeArabicDigits(text[m[2]:m[3]])))
+		}
+		last = m[1]
+	}
+	b.WriteString(text[last:])
+	return b.String()
 }
 
 // InsertCitations decorates answer with [ID:n] citation markers.
@@ -372,6 +410,7 @@ func RepairBadCitationFormats(answer string) string {
 		b.WriteString(working[last:])
 		working = b.String()
 	}
+	working = replaceStandaloneRefCitations(working, func(digits string) string { return "[ID:" + digits + "]" })
 	return working
 }
 
@@ -392,7 +431,7 @@ var rangeCitationPattern = regexp.MustCompile(`(?i)\[\s*ID\s*[:： ]*\s*([0-9]+)
 
 // Keep an unfinished citation until its closing delimiter arrives. Retaining
 // the trailing word also preserves the word boundaries used by refN markers.
-var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslot:：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$|\w+$`)
+var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslotref:=：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[:=]?\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$|\w+$`)
 
 func stripCitations(text string) string {
 	text = cleanCitationMarkers(text)
@@ -402,6 +441,7 @@ func stripCitations(text string) string {
 	for _, pattern := range badCitationPatterns {
 		text = pattern.ReplaceAllString(text, "")
 	}
+	text = replaceStandaloneRefCitations(text, func(string) string { return "" })
 	return text
 }
 
@@ -413,7 +453,12 @@ func (f *citationStreamFilter) write(delta string) string {
 	f.pending += delta
 	end := len(f.pending)
 	if tail := citationStreamTailPattern.FindStringIndex(f.pending); tail != nil {
-		end = tail[0]
+		// A complete URL can end in a query parameter such as `?ref=12`.
+		// Keep that span together so URL context is still available when
+		// stripCitations checks the standalone ref marker.
+		if !citationIndexInsideURL(f.pending, tail[0]) {
+			end = tail[0]
+		}
 	}
 	text := stripCitations(f.pending[:end])
 	f.pending = f.pending[end:]

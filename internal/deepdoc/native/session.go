@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 //go:build cgo
 
 package native
@@ -112,6 +128,12 @@ var (
 	weightCache = map[string]*weightSet{}
 )
 
+// sharedWeightsSeam lets the enterprise GPU build extract device-resident
+// initializers so ORT can share one GPU weight buffer across sessions. The
+// OSS build leaves it nil and always uses the CPU extraction path below.
+// Returning (nil, nil) also falls through to the CPU path.
+var sharedWeightsSeam func(modelPath, inName string, inShape []int64, outName string) (*weightSet, error)
+
 // sharedWeights extracts the constant initializers from modelPath once and
 // caches them keyed by model path. Each subsequent call for the same model
 // returns the cached buffers, so every pooled session of that model shares a
@@ -126,9 +148,30 @@ func sharedWeights(modelPath, inName string, inShape []int64, outName string) (*
 	if ws, ok := weightCache[modelPath]; ok {
 		return ws, nil
 	}
+	// Enterprise GPU seam: extract CUDA-memory shared initializers so ORT
+	// shares one GPU weight buffer across all CUDA sessions (zero-copy).
+	// No-op in OSS and in EE CPU mode (hook returns nil, nil).
+	if sharedWeightsSeam != nil {
+		ws, err := sharedWeightsSeam(modelPath, inName, inShape, outName)
+		if err != nil {
+			return nil, err
+		}
+		if ws != nil {
+			weightCache[modelPath] = ws
+			return ws, nil
+		}
+	}
 	// Throwaway extraction session: the weights live in the graph, not in any
 	// input/output tensor, so we only need valid in/out tensors to load the
 	// model. We never Run it, so the output tensor's shape is irrelevant.
+	//
+	// This session intentionally uses the DEFAULT (CPU) provider even when the
+	// running sessions use CUDA. The shared-initializer patch reads initializers
+	// via CreateCpuMemoryInfo + memcpy; a CUDA extraction session would have the
+	// weights resident on the device and that memcpy would be invalid. The
+	// running (possibly CUDA) sessions receive the extracted CPU buffers via
+	// AddInitializer — ORT's CUDA EP copies external initializers to the device
+	// itself. So extraction stays on CPU while inference may run on GPU.
 	inT, err := ort.NewTensor(ort.NewShape(inShape...), make([]float32, prod(inShape)))
 	if err != nil {
 		return nil, fmt.Errorf("allocate extraction input for %s: %w", modelPath, err)
@@ -260,6 +303,14 @@ func newSessionOptions(weights *weightSet) (*ort.SessionOptions, error) {
 	if err := opts.SetCpuMemArena(false); err != nil {
 		opts.Destroy()
 		return nil, err
+	}
+	// Device selection hook: an accelerator-capable build appends its EP here
+	// when the device selects gpu; the default build is a no-op (ParseDevice
+	// rejects gpu at startup). Fail-fast semantics live in the edition that
+	// provides the accelerator EP.
+	if err := ApplyDeviceOptions(opts); err != nil {
+		opts.Destroy()
+		return nil, fmt.Errorf("apply device execution provider: %w", err)
 	}
 	if weights != nil {
 		for i, v := range weights.vals {

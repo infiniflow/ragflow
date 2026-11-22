@@ -122,7 +122,7 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	}
 
 	// Determine vector column name
-	vectorColName := fmt.Sprintf("q_%d_vec", vecSize)
+	vectorColName := common.VectorColumnName(vecSize)
 
 	// Check if table already exists
 	exists, err := e.tableExistsWithDB(db, tableName)
@@ -1285,7 +1285,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 			// Add vector match if provided
 			if hasVectorMatch {
-				vecFieldName := fmt.Sprintf("q_%d_vec", len(vectorData))
+				vecFieldName := common.VectorColumnName(len(vectorData))
 				dataType := "float"
 				distanceType := "cosine"
 
@@ -1334,15 +1334,18 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 						threshold = s
 					}
 				}
+				denseEF := resolveDenseEF(matchDense, vectorTopN)
 				extraOptions := map[string]string{
 					"threshold": threshold,
 					"filter":    denseFilterStr,
+					"ef":        strconv.Itoa(denseEF),
 				}
 
 				common.Debug("MatchDense for hybrid search",
 					zap.String("fieldName", vecFieldName),
 					zap.String("distanceType", distanceType),
 					zap.Int("topN", vectorTopN),
+					zap.Int("ef", denseEF),
 					zap.Bool("hasFusion", fusionExpr != nil))
 
 				table = table.MatchDense(vecFieldName, vectorData, dataType, distanceType, vectorTopN, extraOptions)
@@ -1528,6 +1531,32 @@ func shouldDefaultAvailableFilter(req *types.SearchRequest, isSkillIndex bool) b
 	return !isSkillIndex && !req.IncludeUnavailable
 }
 
+// defaultDenseEF floors the HNSW candidate pool ("ef") for Infinity dense
+// search. Chunk tables are HNSW-indexed (see createChunkStoreWithDB), and
+// Infinity defaults ef to topN when the caller passes none, which degrades
+// to near-greedy descent on large graphs and silently loses recall: on a
+// 60k-row HNSW graph top-10 self-hit was 54% with the default and 94.5%
+// at ef=200 (#22161).
+const defaultDenseEF = 200
+
+// resolveDenseEF picks the ef for a MatchDense call. An explicit
+// ExtraOptions["ef"] wins when it parses to a positive integer; otherwise
+// the default floor applies, and ef never drops below the requested topN
+// (an ef smaller than topN cannot return topN rows).
+func resolveDenseEF(matchDense *types.MatchDenseExpr, topN int) int {
+	ef := defaultDenseEF
+	if matchDense != nil && matchDense.ExtraOptions != nil {
+		if n, ok := common.GetInt(matchDense.ExtraOptions["ef"]); ok && n > 0 {
+			ef = n
+		} else if s, ok := matchDense.ExtraOptions["ef"].(string); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil && n > 0 {
+				ef = n
+			}
+		}
+	}
+	return max(ef, topN)
+}
+
 const (
 	// regexpSearchDefaultLimit caps a regexp search, matching the Elasticsearch
 	// engine so grep_chunks returns the same page on either backend.
@@ -1581,7 +1610,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	defer release()
 
 	// Chunk tables are per dataset: ragflow_<tenant>_<datasetID>.
-	baseName := fmt.Sprintf("ragflow_%s", tenantID)
+	baseName := chunkTableBaseName(tenantID)
 	tableNames := make([]string, 0, len(req.KbIDs))
 	for _, kbID := range req.KbIDs {
 		if kbID == "" {
@@ -1990,6 +2019,12 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 		chunk["tag_kwd"], _ = splitKeywordList("tag_kwd", val)
 	}
 
+	// Drop the storage-column aliases the mappings derived from, as GetFields
+	// does: an editor echoing "a,b" back as a keyword list gets a 400.
+	for _, col := range []string{"docnm", "important_keywords", "questions", "content", "authors"} {
+		delete(chunk, col)
+	}
+
 	return chunk, nil
 }
 
@@ -2037,6 +2072,11 @@ func chunksFromColumnData(columnData map[string][]interface{}) []map[string]inte
 func applyFieldMappings(chunks []map[string]interface{}) {
 	for _, chunk := range chunks {
 		decodeJSONFields(chunk)
+		// Search always projects tag_feas once a text or vector match exists,
+		// so a search hit carries the column's JSON text unless it is decoded
+		// here too. GetChunk decodes the same column, and the Elasticsearch
+		// backend returns it from _source as an object.
+		decodeVarcharJSONFields(chunk)
 		// docnm -> docnm_kwd, title_tks, title_sm_tks
 		if val, ok := chunk["docnm"].(string); ok {
 			chunk["docnm_kwd"] = val
@@ -2425,15 +2465,27 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 				continue
 			}
 
-			// _feas: JSON parse (Python lines 762-763)
+			// _feas: JSON parse (Python lines 762-763). Only text is parsed:
+			// Search decodes the column in place through applyFieldMappings and
+			// the retrieval path hands those same chunk maps to GetFields, so
+			// replacing every non-string with an empty map would wipe the map
+			// Search had just decoded and echo {} back to the caller.
 			if strings.HasSuffix(fieldLower, "_feas") {
-				if strVal, ok := val.(string); ok && strVal != "" {
-					var parsed interface{}
-					if err := json.Unmarshal([]byte(strVal), &parsed); err == nil {
-						chunk[field] = parsed
-					}
-				} else {
+				if val == nil {
 					chunk[field] = map[string]interface{}{}
+					continue
+				}
+				strVal, ok := val.(string)
+				if !ok {
+					continue
+				}
+				if strVal == "" {
+					chunk[field] = map[string]interface{}{}
+					continue
+				}
+				var parsed interface{}
+				if err := json.Unmarshal([]byte(strVal), &parsed); err == nil {
+					chunk[field] = parsed
 				}
 				continue
 			}
@@ -3145,7 +3197,8 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 
 	var cond []string
 
-	for k, v := range condition {
+	for _, k := range sortedConditionKeys(condition) {
+		v := condition[k]
 		if k == "and" || k == "or" {
 			var children []string
 			for _, child := range types.FilterClauses(v) {

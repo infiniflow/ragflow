@@ -121,66 +121,22 @@ func TestPDFNormalizeResultInfersStructuredTable(t *testing.T) {
 	}
 }
 
-func TestPDFNormalizeResultFlattenPreservesContentAndClearsMediaSubtype(t *testing.T) {
-	p := NewPDFParser()
-	p.FlattenMediaToText = true
-	table := &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell"}}}, Caption: "Caption"}
-	result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: []DocItem{
-		TableItem{Table: table, Extra: map[string]any{"text": "Footnote"}},
-		ImageItem{Text: "Figure", Image: "image-data", Positions: Positions{AbsoluteBox{PageNumber: 2, Left: 1, Right: 5, Top: 2, Bottom: 6}}},
-		TextItem{Text: "Title", Extra: map[string]any{"layout": "heading"}},
-	}})
-	if result.Err != nil {
-		t.Fatal(result.Err)
-	}
-	for i, item := range result.JSON[:2] {
-		fields := item.ToMap()
-		if fields["doc_type_kwd"] != "text" {
-			t.Fatalf("flattened item %d still has media type: %#v", i, fields)
-		}
-	}
-	text, _ := result.JSON[0].ToMap()["text"].(string)
-	for _, want := range []string{"Cell", "Caption", "Footnote"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("missing %q in %q", want, text)
-		}
-	}
-	if result.JSON[1].ToMap()["image"] != "image-data" {
-		t.Fatal("flatten lost image")
-	}
-	if _, ok := ExtractPDFPositions(result.JSON[1].ToMap()); !ok {
-		t.Fatal("flatten lost positions")
-	}
-	if result.JSON[2].ToMap()["layout"] != "heading" {
-		t.Fatal("heading layout changed")
-	}
-}
-
-func TestPDFNormalizeResultFlattenKeepsCropOnlyMedia(t *testing.T) {
-	p := NewPDFParser()
-	p.FlattenMediaToText = true
-	result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{
+func TestPDFNormalizeResultPreservesMediaAndCropRegion(t *testing.T) {
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{
 		{"doc_type_kwd": "image", "layout": "figure", "positions": [][]any{{1, 10, 30, 20, 40}}},
 		{"doc_type_kwd": "image", "layout": "figure", "text": "Figure 1", "positions": [][]any{{1, 10, 30, 50, 70}}},
-		{"doc_type_kwd": "image", "layout": "figure"},
 	})})
-	if result.Err != nil || len(result.JSON) != 3 {
+	if result.Err != nil || len(result.JSON) != 2 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	// A crop-only media item has no content to flatten; vision enhancement and
-	// the on-demand cropper still need its type and region.
-	cropOnly := result.JSON[0].ToMap()
-	if cropOnly["doc_type_kwd"] != "image" || !HasPDFCropRegion(cropOnly) {
-		t.Fatalf("crop-only media lost its type or region: %#v", cropOnly)
+	for _, item := range result.JSON {
+		fields := item.ToMap()
+		if fields["doc_type_kwd"] != "image" || !HasPDFCropRegion(fields) {
+			t.Fatalf("image type or crop region lost: %#v", fields)
+		}
 	}
-	captioned := result.JSON[1].ToMap()
-	if captioned["doc_type_kwd"] != "text" || captioned["text"] != "Figure 1" {
-		t.Fatalf("captioned media not flattened: %#v", captioned)
-	}
-	// Without a region there is nothing to crop, so the empty item still
-	// flattens to text and is dropped downstream as before.
-	if bare := result.JSON[2].ToMap(); bare["doc_type_kwd"] != "text" {
-		t.Fatalf("regionless media kept a media type: %#v", bare)
+	if result.JSON[1].ToMap()["text"] != "Figure 1" {
+		t.Fatalf("image caption lost: %#v", result.JSON[1].ToMap())
 	}
 }
 
@@ -198,27 +154,18 @@ func TestPDFNormalizeResultDowngradesUnstructuredTableSubtype(t *testing.T) {
 }
 
 func TestPDFNormalizeResultKeepsPositionedUnstructuredTables(t *testing.T) {
-	for _, flatten := range []bool{false, true} {
-		p := NewPDFParser()
-		p.FlattenMediaToText = flatten
-		result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{{
-			"doc_type_kwd": "table", "text": "Recognized table without cells",
-			"positions": [][]any{{2, 10, 30, 20, 40}},
-		}})})
-		if result.Err != nil || len(result.JSON) != 1 {
-			t.Fatalf("unexpected result: %+v", result)
-		}
-		item := result.JSON[0].ToMap()
-		want := "table"
-		if flatten {
-			want = "text"
-		}
-		if item["doc_type_kwd"] != want || item["text"] != "Recognized table without cells" {
-			t.Fatalf("flatten=%v: table media identity or text lost: %#v", flatten, item)
-		}
-		if _, ok := ExtractPDFPositions(item); !ok {
-			t.Fatalf("flatten=%v: table crop region lost: %#v", flatten, item)
-		}
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{{
+		"doc_type_kwd": "table", "text": "Recognized table without cells", "positions": [][]any{{2, 10, 30, 20, 40}},
+	}})})
+	if result.Err != nil || len(result.JSON) != 1 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	item := result.JSON[0].ToMap()
+	if item["doc_type_kwd"] != "table" || item["text"] != "Recognized table without cells" {
+		t.Fatalf("table identity or text lost: %#v", item)
+	}
+	if _, ok := ExtractPDFPositions(item); !ok {
+		t.Fatalf("table crop region lost: %#v", item)
 	}
 }
 
@@ -240,34 +187,6 @@ func TestPDFNormalizeResultRecoversUnclosedTableCells(t *testing.T) {
 		}
 		if text, _ := item["text"].(string); text != "" {
 			t.Fatalf("recovered table still carries raw HTML: %q", text)
-		}
-	}
-}
-
-func TestPDFParserSoMarkFlattensStructuredMedia(t *testing.T) {
-	withSSRFBypass(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/parse/async" {
-			_, _ = w.Write([]byte(`{"code":0,"data":{"task_id":"task"}}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{"code":0,"data":{"status":"SUCCESS","result":{"outputs":{"json":{"pages":[{"blocks":[{"type":"figure","content":"Figure caption"},{"type":"table","content":"<table><tr><td>Cell value</td></tr></table>"}]}]}}}}}`))
-	}))
-	defer server.Close()
-	p := NewPDFParser()
-	p.ConfigureFromSetup(map[string]any{"parse_method": "somark", "somark_base_url": server.URL, "flatten_media_to_text": true})
-	result := p.ParseWithResult(t.Context(), "sample.pdf", []byte("pdf"))
-	if result.Err != nil {
-		t.Fatal(result.Err)
-	}
-	if len(result.JSON) != 2 {
-		t.Fatalf("items = %#v", result.JSON)
-	}
-	for i, want := range []string{"Figure caption", "Cell value"} {
-		item := result.JSON[i].ToMap()
-		text, _ := item["text"].(string)
-		if item["doc_type_kwd"] != "text" || !strings.Contains(text, want) {
-			t.Fatalf("item %d = %#v; want text containing %q", i, item, want)
 		}
 	}
 }
@@ -323,8 +242,8 @@ func TestPDFWhitespaceTableDescriptionCannotHideCells(t *testing.T) {
 func TestPDFNormalizeResultPreservesAdjacentTables(t *testing.T) {
 	const markup = "<table><tr><td>First cell</td></tr></table>\n<table><tr><td>Second cell</td></tr></table>\nFootnote"
 	for _, projected := range []bool{false, true} {
-		for _, flatten := range []bool{false, true} {
-			name := fmt.Sprintf("projected=%v/flatten=%v", projected, flatten)
+		{
+			name := fmt.Sprintf("projected=%v", projected)
 			t.Run(name, func(t *testing.T) {
 				item := map[string]any{
 					"doc_type_kwd": "table", "text": markup, "page_number": 3,
@@ -335,44 +254,28 @@ func TestPDFNormalizeResultPreservesAdjacentTables(t *testing.T) {
 				}
 				originalText := item["text"]
 				p := NewPDFParser()
-				p.FlattenMediaToText = flatten
+
 				result := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, 3))
 				if result.Err != nil {
 					t.Fatal(result.Err)
 				}
-				if flatten {
-					var text string
-					for _, doc := range result.JSON {
-						fields := doc.ToMap()
-						if fields["doc_type_kwd"] != "text" || fields["table"] != nil {
-							t.Fatalf("media not flattened: %#v", fields)
-						}
-						value, _ := fields["text"].(string)
-						text += value
+
+				if len(result.JSON) != 3 {
+					t.Fatalf("want two tables and a footnote, got %#v", result.JSON)
+				}
+				for i, want := range []string{"First cell", "Second cell"} {
+					fields := result.JSON[i].ToMap()
+					table, _ := fields["table"].(*entity.TableData)
+					if table == nil || table.Page != 3 || len(table.Grid) != 1 || len(table.Grid[0]) != 1 || table.Grid[0][0].Text != want || fields["text"] != nil {
+						t.Fatalf("table %d lost cells or metadata: %#v", i, fields)
 					}
-					for _, want := range []string{"First cell", "Second cell", "Footnote"} {
-						if strings.Count(text, want) != 1 {
-							t.Fatalf("want %q exactly once in %q", want, text)
-						}
+					if _, ok := ExtractPDFPositions(fields); !ok {
+						t.Fatalf("table %d lost crop positions", i)
 					}
-				} else {
-					if len(result.JSON) != 3 {
-						t.Fatalf("want two tables and a footnote, got %#v", result.JSON)
-					}
-					for i, want := range []string{"First cell", "Second cell"} {
-						fields := result.JSON[i].ToMap()
-						table, _ := fields["table"].(*entity.TableData)
-						if table == nil || table.Page != 3 || len(table.Grid) != 1 || len(table.Grid[0]) != 1 || table.Grid[0][0].Text != want || fields["text"] != nil {
-							t.Fatalf("table %d lost cells or metadata: %#v", i, fields)
-						}
-						if _, ok := ExtractPDFPositions(fields); !ok {
-							t.Fatalf("table %d lost crop positions", i)
-						}
-					}
-					note := result.JSON[2].ToMap()
-					if note["text"] != "Footnote" || note["doc_type_kwd"] != "text" || note["page_number"] != 3 || note["_preserve_order"] != true {
-						t.Fatalf("footnote lost text or metadata: %#v", note)
-					}
+				}
+				note := result.JSON[2].ToMap()
+				if note["text"] != "Footnote" || note["doc_type_kwd"] != "text" || note["page_number"] != 3 || note["_preserve_order"] != true {
+					t.Fatalf("footnote lost text or metadata: %#v", note)
 				}
 				if item["text"] != originalText {
 					t.Fatal("source item mutated")
@@ -384,34 +287,29 @@ func TestPDFNormalizeResultPreservesAdjacentTables(t *testing.T) {
 
 func TestPDFNormalizeResultIsIdempotent(t *testing.T) {
 	const markup = "<table><tr><td>First cell</td></tr></table>\n<table><tr><td>Second cell</td></tr></table>\nFootnote"
-	for _, flatten := range []bool{false, true} {
-		p := NewPDFParser()
-		p.FlattenMediaToText = flatten
-		item := map[string]any{
-			"doc_type_kwd": "table", "text": markup, "page_number": 3,
-			"positions": [][]any{{3, 10, 30, 20, 40}}, "_preserve_order": true,
+	p := NewPDFParser()
+	item := map[string]any{
+		"doc_type_kwd": "table", "text": markup, "page_number": 3,
+		"positions": [][]any{{3, 10, 30, 20, 40}}, "_preserve_order": true,
+	}
+	once := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, 3))
+	if once.Err != nil {
+		t.Fatal(once.Err)
+	}
+	twice := p.NormalizeResult(t.Context(), "sample.pdf", once)
+	if twice.Err != nil {
+		t.Fatal(twice.Err)
+	}
+	if len(once.JSON) != len(twice.JSON) {
+		t.Fatalf("second normalize changed item count %d -> %d", len(once.JSON), len(twice.JSON))
+	}
+	for i := range once.JSON {
+		a, b := once.JSON[i].ToMap(), twice.JSON[i].ToMap()
+		if a["doc_type_kwd"] != b["doc_type_kwd"] {
+			t.Fatalf("item %d type changed %v -> %v", i, a["doc_type_kwd"], b["doc_type_kwd"])
 		}
-		once := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, 3))
-		if once.Err != nil {
-			t.Fatal(once.Err)
-		}
-		twice := p.NormalizeResult(t.Context(), "sample.pdf", once)
-		if twice.Err != nil {
-			t.Fatal(twice.Err)
-		}
-		if len(once.JSON) != len(twice.JSON) {
-			t.Fatalf("flatten=%v: second normalize changed item count %d -> %d", flatten, len(once.JSON), len(twice.JSON))
-		}
-		for i := range once.JSON {
-			a, b := once.JSON[i].ToMap(), twice.JSON[i].ToMap()
-			if a["doc_type_kwd"] != b["doc_type_kwd"] {
-				t.Fatalf("flatten=%v: item %d type changed %v -> %v", flatten, i, a["doc_type_kwd"], b["doc_type_kwd"])
-			}
-			ta, _ := a["text"].(string)
-			tb, _ := b["text"].(string)
-			if ta != tb {
-				t.Fatalf("flatten=%v: item %d text changed %q -> %q", flatten, i, ta, tb)
-			}
+		if a["text"] != b["text"] {
+			t.Fatalf("item %d text changed %v -> %v", i, a["text"], b["text"])
 		}
 	}
 }

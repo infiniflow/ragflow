@@ -4,7 +4,7 @@ title: Dialogue Component
 sidebar_label: Dialogue Component
 slug: /dialogue_component
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideMessageSquareReply
 }
 ---
 

@@ -43,12 +43,12 @@ var chunkerOutputs = map[string]string{
 }
 
 // componentNameCompiler is the canonical, unified component name for the
-// knowledge-compilation flow. It matches the Python side
-// (rag/flow/compiler/compiler.py registers component_name = "Compiler"), so a
-// canvas saved by the Python frontend and Go's built-in ingestion templates
+// knowledge-compilation flow. It matches the side
+// ( registers component_name = "Compiler"), so a
+// canvas saved by the frontend and Go's built-in ingestion templates
 // both reference the node as "Compiler" and resolve to the same component.
-// The value itself lives in the schema package so the pipeline layer can
-// reference the same identity.
+// The value itself lives in common and is re-exported by the schema package so
+// the pipeline layer references the same identity.
 const componentNameCompiler = schema.ComponentNameCompiler
 
 // KnowledgeCompilerComponent is the runtime.Component surface. Param is set at
@@ -181,15 +181,7 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		for k, v := range in.VariantSpecific {
 			specIn.VariantSpecific[k] = v
 		}
-		// The template config (flat: kind/entity/relation/plan/…) is delivered to
-		// the structure and wiki variants under the "parser_config" key — the SAME
-		// key those variants read (structure.Run / wikiPipeline.mapBatch do
-		// VariantSpecific["parser_config"]). Storing it as "config" left the
-		// variants with a nil config, so InferType saw no "kind" and fell back to
-		// "list" (breaking timeline: its compile_kwd became "list" instead of
-		// "timeline", so dropIsolatedTimelineEntities never ran and the timeline
-		// rendered every entity isolated).
-		//
+		// Structure and wiki read the flat template config as parser_config.
 		// Only overwrite when the template actually carries a config: an empty
 		// template config (e.g. a resolver stub) must not clobber a parser_config
 		// the caller already supplied on the inputs.
@@ -408,7 +400,7 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 		// behaviour.
 		//
 		// Structure rows tokenize the FLATTENED PAYLOAD DESCRIPTION, not the
-		// raw JSON: Python indexes
+		// raw JSON: indexes
 		// _tokenize_for_search(_struct_payload_description(payload)), so
 		// tokenizing p.Content here would feed JSON keys/brackets and opaque
 		// chunk ids into the inverted index.
@@ -451,7 +443,7 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 			}
 		}
 		if len(p.Vector) > 0 {
-			if err := doc.SetExtraValue(fmt.Sprintf("q_%d_vec", len(p.Vector)), p.Vector); err != nil {
+			if err := doc.SetExtraValue(clog.VectorColumnName(len(p.Vector)), p.Vector); err != nil {
 				return nil, err
 			}
 		}
@@ -467,7 +459,7 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 			}
 		}
 		// compilation_template_ids: the resolved template ids that produced
-		// this row (Python stamps one per row from the active template; the
+		// this row ( stamps one per row from the active template; the
 		// document-structure endpoint groups rows by this column).
 		if ids := common.MetaStringSlice(p.Meta, "compilation_template_ids"); len(ids) > 0 {
 			if err := doc.SetExtraValue("compilation_template_ids", ids); err != nil {
@@ -502,13 +494,13 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 		}
 		// Page and section roles reuse the same
 		// page-level columns so retrieval-side filters work uniformly.
-		// Match the Python writer contract (api/db/db_models.py slug_kwd):
+		// Match the writer contract ( slug_kwd)
 		// slug_kwd stores the full "<page_type>/<slug>" form, so retrieval
 		// filters (GetWikiPage) can reconstruct it directly. page_type is also
 		// stored separately for topic grouping.
 		if pageType := common.MetaString(p.Meta, "page_type"); pageType != "" {
 			if slug := common.MetaString(p.Meta, "slug"); slug != "" {
-				// Normalize to the full "<page_type>/<slug>" form (Python writer
+				// Normalize to the full "<page_type>/<slug>" form ( writer
 				// contract). Idempotent: a slug that already carries the prefix
 				// (some producers emit pageType/slug directly) is left as-is.
 				fullSlug := slug
@@ -569,7 +561,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 	case common.VariantTree:
 		switch kind {
 		case "entity", "relation", "graph":
-			// The tree is also projected onto the structure-graph shape (Python
+			// The tree is also projected onto the structure-graph shape (
 			// raptor_tree_to_graph + _struct_upsert_tree_graph_rows): entity /
 			// relation rows carry type_kwd and the compact graph blob
 			// (kind "graph") is the /structure/graph discovery row. This is the
@@ -583,7 +575,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 			// tree. So they deliberately skip type_kwd, which keeps
 			// them out of the artifacts query (it filters
 			// type_kwd=["entity","relation"]) without a frontend
-			// change. Python mirrors this in _struct_upsert_tree_claim_rows.
+			// change. mirrors this in _struct_upsert_tree_claim_rows
 			if v := common.MetaString(p.Meta, "name"); v != "" {
 				if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
 					return err
@@ -625,11 +617,11 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 
 	case common.VariantMindmap:
 		// Mindmap now emits entity/relation rows (plan §1.2) so it participates in
-		// dataset-level merge exactly like graph/timeline: each node is an entity,
+		// dataset-level merge exactly like graph: each node is an entity,
 		// each parent→child edge is a relation. Reuse the shared structure-graph
 		// column contract (type_kwd + from/to_entity_kwd + name_kwd +
 		// entity_type_kwd + mention_count_int). The relation type lives in the
-		// content_with_weight payload ({"from","to","type"}), matching Python —
+		// content_with_weight payload ({"from","to","type"}), matching
 		// NOT a dedicated relation_type_kwd column.
 		return applyStructureGraphColumns(doc, p, kind)
 	}
@@ -638,7 +630,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 }
 
 // applyStructureGraphColumns emits the structure-graph row columns shared by the
-// structure and tree variants (Python _struct_to_doc_storage_doc contract):
+// structure and tree variants ( _struct_to_doc_storage_doc contract)
 //   - type_kwd: "entity" | "relation" | "graph"
 //   - relations: from_entity_kwd / to_entity_kwd
 //   - entities: name_kwd (lowercased) / entity_type_kwd
@@ -686,7 +678,7 @@ func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind str
 
 // metaString reads a string-valued Product.Meta key.
 
-// setTitleTokens populates ChunkDoc.title_tks. Python's page row has no
+// setTitleTokens populates ChunkDoc.title_tks. page row has no
 // title_sm_tks, and the Infinity writer folds title_kwd / title_sm_tks into
 // `docnm`, so the twin would make docnm map-order dependent.
 func setTitleTokens(doc *schema.ChunkDoc, title string, tok tokenizer.Tokenizer) {
@@ -833,8 +825,8 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 }
 
 func init() {
-	// Register under the single unified name "Compiler" (matching the Python
-	// side) so both Python-saved canvases and Go's built-in ingestion templates
+	// Register under the single unified name "Compiler" (matching the
+	// side) so both -saved canvases and Go's built-in ingestion templates
 	// resolve to the same component without name translation.
 	meta := runtime.Metadata{
 		Version: "0.1.0",

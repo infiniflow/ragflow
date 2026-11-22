@@ -35,6 +35,10 @@ func SetupEERouter(engine *gin.Engine) {}
 // edition.
 func RegisterEERouter(protected *gin.RouterGroup, r *Router) {}
 
+func checkAdminPasswordChangeTarget(_, _ string) error { return nil }
+
+func passwordChangeErrorCode(_ error) common.ErrorCode { return common.CodeServerError }
+
 // AppendServiceList adds no enterprise service entries.
 func AppendServiceList(serviceInfos []*common.BaseMessage) []*common.BaseMessage {
 	return serviceInfos
@@ -45,7 +49,7 @@ func (s *Service) GetEEServicesStatus(ctx context.Context) []ServiceStatus { ret
 
 // ListUsersEE reports that per-user billing and quota filters are an
 // enterprise capability.
-func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name string, status, role, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, int64, error) {
+func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name string, status, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, int64, error) {
 	return nil, 0, errors.New("listing users with plan and quota filters is only available in the enterprise edition")
 }
 

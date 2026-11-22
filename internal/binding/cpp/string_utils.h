@@ -26,6 +26,68 @@
 #include <cstring>
 #include <string>
 
+inline std::string FullWidthToHalfWidth(const std::string& input)
+{
+    std::string output;
+    size_t i = 0;
+
+    while (i < input.size())
+    {
+        const unsigned char first = static_cast<unsigned char>(input[i]);
+        if (first < 0x80)
+        {
+            output += static_cast<char>(first);
+            ++i;
+            continue;
+        }
+
+        size_t length = 0;
+        uint32_t codepoint = 0;
+        if ((first & 0xE0) == 0xC0 && first >= 0xC2 && i + 1 < input.size())
+        {
+            const unsigned char second = static_cast<unsigned char>(input[i + 1]);
+            if ((second & 0xC0) == 0x80)
+            {
+                codepoint = ((first & 0x1F) << 6) | (second & 0x3F);
+                length = 2;
+            }
+        }
+        else if ((first & 0xF0) == 0xE0 && i + 2 < input.size())
+        {
+            const unsigned char second = static_cast<unsigned char>(input[i + 1]);
+            const unsigned char third = static_cast<unsigned char>(input[i + 2]);
+            if ((second & 0xC0) == 0x80 && (third & 0xC0) == 0x80 &&
+                !(first == 0xE0 && second < 0xA0) && !(first == 0xED && second >= 0xA0))
+            {
+                codepoint = ((first & 0x0F) << 12) | ((second & 0x3F) << 6) | (third & 0x3F);
+                length = 3;
+            }
+        }
+
+        if (length == 0)
+        {
+            output += input[i++];
+            continue;
+        }
+
+        if (codepoint >= 0xFF01 && codepoint <= 0xFF5E)
+        {
+            output += static_cast<char>(codepoint - 0xFEE0);
+        }
+        else if (codepoint == 0x3000)
+        {
+            output += ' ';
+        }
+        else
+        {
+            output.append(input, i, length);
+        }
+        i += length;
+    }
+
+    return output;
+}
+
 [[nodiscard]] constexpr uint8_t ToUpper(uint8_t ch) noexcept { return ch >= 'a' && ch <= 'z' ? ch - 32 : ch; }
 
 [[nodiscard]] constexpr uint8_t ToLower(uint8_t ch) noexcept { return ch >= 'A' && ch <= 'Z' ? ch + 32 : ch; }

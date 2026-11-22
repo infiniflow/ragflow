@@ -26,6 +26,8 @@ import "testing"
 func grantServiceTestResource(_ *testing.T, _ string, _ string, _ string, _ string, _ int32) {
 }
 
+func revokeServiceTestResource(_ *testing.T, _ string, _ string, _ string, _ string) {}
+
 // permissionChangeLogTestModels adds no tables: the community edition has no
 // permission audit log. It lives here for the same reason as the helper above.
 func permissionChangeLogTestModels() []interface{} { return nil }

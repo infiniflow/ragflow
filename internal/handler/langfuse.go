@@ -59,6 +59,9 @@ type SetLangfuseRequest struct {
 
 // SetAPIKey handles POST/PUT /langfuse/api-key.
 func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
+	common.StartOperationLog(c, "set_langfuse_api_key")
+	defer common.FinishOperationLog(c)
+
 	var req SetLangfuseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, "Invalid request: "+err.Error())
@@ -95,6 +98,9 @@ func (h *LangfuseHandler) GetAPIKey(c *gin.Context) {
 
 // DeleteAPIKey handles DELETE /langfuse/api-key.
 func (h *LangfuseHandler) DeleteAPIKey(c *gin.Context) {
+	common.StartOperationLog(c, "delete_langfuse_api_key")
+	defer common.FinishOperationLog(c)
+
 	ctx := c.Request.Context()
 
 	_, code, message, err := h.langfuseService.DeleteAPIKey(ctx)

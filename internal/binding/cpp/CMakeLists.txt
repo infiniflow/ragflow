@@ -30,10 +30,46 @@ endif()
 #     infinity_builder image populates. find_library() does NOT see that
 #     path (pcre2 is built from source there), so calling it here would
 #     break the CI build that worked before.
-#   - macOS: the bare token fails (libpcre2-8.a is under the Homebrew
-#     prefix, off the default path), so resolve the full path explicitly.
+#   - macOS: resolve the STATIC archive and stage it in this build dir, because
+#     the cgo directives in internal/binding link pcre2 from there: cgo cannot
+#     search library paths, and naming a Homebrew prefix in the Go source is
+#     wrong for every host whose Homebrew lives elsewhere. find_file() rather
+#     than find_library(), because the macOS SDK carries a .tbd stub for the
+#     system libpcre2 that find_library() happily returns — a stub is not a
+#     link-time dependency we want to pick up by accident. The search order is
+#     CMake's standard one (CMAKE_PREFIX_PATH, then the Homebrew prefix, then
+#     the usual system paths), and PCRE2_STATIC_LIB overrides it outright.
 if(APPLE)
-    find_library(PCRE2_LIB NAMES pcre2-8 REQUIRED)
+    # HINTS, not CMAKE_PREFIX_PATH: a non-empty CMAKE_PREFIX_PATH variable hides
+    # the same environment variable, which would mask a caller-supplied prefix.
+    find_file(PCRE2_STATIC_LIB NAMES libpcre2-8.a PATH_SUFFIXES lib
+            HINTS "${HOMEBREW_PREFIX}" REQUIRED)
+
+    # A pcre2 built for the other architecture fails deep inside ld64
+    # ("ignoring file ... wrong architecture", then undefined symbols). Say it
+    # here, with the way out.
+    execute_process(
+        COMMAND lipo -archs "${PCRE2_STATIC_LIB}"
+        OUTPUT_VARIABLE _ragflow_pcre2_archs
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    set(_ragflow_target_archs ${CMAKE_OSX_ARCHITECTURES})
+    if(NOT _ragflow_target_archs)
+        set(_ragflow_target_archs ${CMAKE_SYSTEM_PROCESSOR})
+    endif()
+    foreach(_arch IN LISTS _ragflow_target_archs)
+        if(_ragflow_pcre2_archs AND NOT _ragflow_pcre2_archs MATCHES "(^| )${_arch}( |$)")
+            message(FATAL_ERROR
+                "libpcre2-8.a at ${PCRE2_STATIC_LIB} is built for '${_ragflow_pcre2_archs}', "
+                "but this build targets '${_arch}'.\n"
+                "Install pcre2 with the Homebrew that matches the target architecture, "
+                "or point CMake at a matching archive:\n"
+                "  cmake ... -DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a\n"
+                "  build.sh: RAGFLOW_CMAKE_ARGS=-DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a bash build.sh")
+        endif()
+    endforeach()
+    set(PCRE2_LIB "${PCRE2_STATIC_LIB}")
 else()
     set(PCRE2_LIB libpcre2-8.a)
 endif()
@@ -135,10 +171,13 @@ set_target_properties(rag_tokenizer PROPERTIES
 add_library(rag_tokenizer_c_api STATIC
         rag_analyzer_c_api.cpp
         rag_analyzer_c_api.h
+        spm_unigram.cpp
+        spm_unigram.h
         thinc_ner.cpp
         thinc_ner.h
         thinc_parser.cpp
         thinc_parser.h
+        thinc_json.h
         rag_analyzer.cpp
         rag_analyzer.h
         dart_trie.h
@@ -165,6 +204,18 @@ set_target_properties(rag_tokenizer_c_api PROPERTIES
         CXX_STANDARD_REQUIRED ON
 )
 
+# macOS: stage the static pcre2 next to the archive the cgo directives already
+# link, so the Go link finds it without any hard-coded Homebrew prefix (see the
+# PCRE2_LIB resolution above).
+if(APPLE)
+    add_custom_command(TARGET rag_tokenizer_c_api POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${PCRE2_LIB}"
+                    "$<TARGET_FILE_DIR:rag_tokenizer_c_api>/libpcre2-8.a"
+            COMMENT "Staging libpcre2-8.a for the cgo link"
+            VERBATIM)
+endif()
+
 # Test executable for C API
 add_executable(rag_analyzer_c_test
         rag_analyzer_c_test.cpp
@@ -178,6 +229,17 @@ set_target_properties(rag_analyzer_c_test PROPERTIES
 )
 
 if(BUILD_TESTING)
+    add_executable(thinc_json_test
+            thinc_json_test.cpp
+    )
+    target_link_libraries(thinc_json_test rag_tokenizer_c_api stdc++ m ${PCRE2_LIB})
+    target_include_directories(thinc_json_test PUBLIC "${CMAKE_SOURCE_DIR}")
+    set_target_properties(thinc_json_test PROPERTIES
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED ON
+    )
+    add_test(NAME thinc_json COMMAND thinc_json_test)
+
     add_executable(rag_analyzer_opencc_copy_test
             rag_analyzer_opencc_copy_test.cpp
     )

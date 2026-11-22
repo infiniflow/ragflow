@@ -28,8 +28,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// jsonInternalError logs the original error while returning a generic message
-// to avoid exposing internal implementation details in API responses.
+// jsonInternalError logs the original error without exposing internal details.
 func jsonInternalError(c *gin.Context, err error) {
 	common.Warn("handler internal error",
 		zap.Error(err),

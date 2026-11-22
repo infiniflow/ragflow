@@ -40,7 +40,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -58,6 +57,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/chunkcache"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/modelcontext"
@@ -66,8 +66,8 @@ import (
 )
 
 // componentNameExtractor is the canonical Extractor component name; the value
-// lives in the schema package so the pipeline layer can reference the same
-// identity.
+// lives in common and is re-exported by the schema package so both layers
+// reference the same identity.
 const componentNameExtractor = schema.ComponentNameExtractor
 
 // defaultExtractorChatTimeout bounds one Extractor LLM call, including
@@ -78,10 +78,8 @@ const defaultExtractorChatTimeout = 180 * time.Second
 // EXTRACTOR_CHAT_TIMEOUT (seconds), falling back to
 // defaultExtractorChatTimeout on unset/invalid values.
 func extractorChatTimeout() time.Duration {
-	if v := os.Getenv(common.EnvExtractorChatTimeout); v != "" {
-		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 && n <= math.MaxInt64/int64(time.Second) {
-			return time.Duration(n) * time.Second
-		}
+	if n := common.GetEnvInt(common.EnvExtractorChatTimeout, 0); n > 0 && int64(n) <= math.MaxInt64/int64(time.Second) {
+		return time.Duration(n) * time.Second
 	}
 	return defaultExtractorChatTimeout
 }
@@ -95,8 +93,8 @@ var (
 	extractorRetryDelay = common.DefaultRetryDelay
 )
 
-// extractorTemperature mirrors Python's 0.2 default for keyword
-// and question extraction calls (generator.py:230,245).
+// extractorTemperature mirrors 0.2 default for keyword
+// and question extraction calls (,245)
 const extractorTemperature = 0.2
 
 // defaultExtractorConcurrency bounds concurrent chunk extraction jobs
@@ -118,10 +116,8 @@ var extractorPool = utility.NewWorkerPool[extractorJob, struct{}](
 // extractorConcurrency resolves the pool size from EXTRACTOR_CONCURRENCY
 // with a safe default of defaultExtractorConcurrency.
 func extractorConcurrency() int {
-	if v := os.Getenv(common.EnvExtractorConcurrency); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
+	if n := common.GetEnvInt(common.EnvExtractorConcurrency, 0); n > 0 {
+		return n
 	}
 	return defaultExtractorConcurrency
 }
@@ -201,6 +197,18 @@ Create a concise and faithful summary of the provided text content.
 // RWMutex; tests swap it via SetExtractorChatInvoker.
 type ExtractorComponent struct {
 	Param schema.ExtractorParam
+	// resume holds the extraction mode attachResumeHook registered at
+	// construction; nil when none is enabled.
+	resume resumeHook
+}
+
+// resumeHook is an extraction mode: the enabled gate feeding the progress
+// split and the phase run itself. attachResumeHook attaches it at
+// construction; a nil hook means no mode runs. The hook stays unexported:
+// it is this package's internal phase wiring, not a public extension point.
+type resumeHook interface {
+	Enabled() bool
+	Run(ctx context.Context, db *gorm.DB, in extractorInputs, w progress.Window) error
 }
 
 // NewExtractorComponent constructs an Extractor from a DSL param
@@ -303,11 +311,16 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 				p.Metadata.BuiltInMetadata = parseMetadataFieldDefs(v)
 			}
 		}
+
 	}
+
 	if err := p.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: param check: %w", err)
 	}
-	return &ExtractorComponent{Param: p}, nil
+	c := &ExtractorComponent{Param: p}
+	// Attaches the extraction mode when its params are configured.
+	attachResumeHook(c, params)
+	return c, nil
 }
 
 // resolveExtractToggle resolves the enabled switch of one extraction group
@@ -340,9 +353,9 @@ func resolveExtractToggle(group map[string]any, name string, topN int) (bool, er
 	return enabled, nil
 }
 
-// Inputs returns the parameter metadata. Matches the python
+// Inputs returns the parameter metadata. Matches the
 // Extractor._invoke kwargs plus the optional per-call llm_id
-// override (python: args["llm_id"] path is implicit via
+// override (: args["llm_id"] path is implicit via
 // self.chat_mdl; the Go port exposes it explicitly).
 func (c *ExtractorComponent) Inputs() map[string]string {
 	return map[string]string{
@@ -358,10 +371,14 @@ func (c *ExtractorComponent) Inputs() map[string]string {
 //	                                 extracted modular fields (important_kwd,
 //	                                 question_kwd, tag_feas, summary, metadata).
 //	output_format  string          — always "chunks". Parity with
-//	                                 python set_output contract.
+//
+// set_output contract
+//
 //	_ERROR         string          — populated on a short-circuit
-//	                                 error (matches python
-//	                                 set_output("_ERROR", ...)).
+//
+// error (matches
+//
+//	set_output("_ERROR", ...)).
 func (c *ExtractorComponent) Outputs() map[string]string {
 	return map[string]string{
 		"chunks":        "Extraction results — input chunks, each enriched with modular extraction fields (important_kwd, question_kwd, tag_feas, summary, metadata).",
@@ -405,6 +422,10 @@ type extractorChatRequest struct {
 // remain optional / 0-valued.
 type extractorChatResponse struct {
 	Content string
+	// UserTrimmed reports whether context fitting shortened the user turn —
+	// the turn that carries the input text — so a trim means the model saw
+	// less text than the caller passed.
+	UserTrimmed bool
 }
 
 // extractorChatInvokerMu guards defaultExtractorChatInvoker swaps.
@@ -658,7 +679,7 @@ type extractorInputs struct {
 	// temperature overrides the LLM temperature for this call. A
 	// nil value leaves the request's Temperature unset so the model
 	// (or the chat-model default) decides. The keyword/question helpers set it to
-	// extractorTemperature (0.2) to mirror generator.py.
+	// extractorTemperature (0.2) to mirror
 	temperature *float64
 	// cache memoises per-chunk extraction results so a resumed run (which
 	// re-executes every stage after the Parser checkpoint) pays no LLM cost
@@ -757,6 +778,9 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	// of being re-resolved in every callRaw / fitExtractorMessages.
 	ctx = withExtractorModelCache(ctx)
 	in := c.resolveInputs(inputs)
+	if in.lang == "" {
+		in.lang = globals.GlobalOrInput(ctx, inputs, "lang", "")
+	}
 	// Resolve the cache-key model identity once for the whole run and reuse it
 	// across every chunk, rather than re-resolving the (most common) default
 	// model per chunk when keying the per-chunk cache.
@@ -780,10 +804,20 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}, nil
 	}
 
+	resumeOn := c.resume != nil && c.resume.Enabled()
 	keywordsOn := c.Param.Keywords.Enabled
 	tagsOn := c.Param.Tags.Enabled
 	remainingOn := c.Param.Questions.Enabled || c.Param.Summary.Enabled || c.Param.Metadata.Enabled
-	phaseWindows := progress.NewSplit(keywordsOn, tagsOn, remainingOn)
+	phaseWindows := progress.NewSplit(resumeOn, keywordsOn, tagsOn, remainingOn)
+
+	// The attached mode runs first so its important_kwd and metadata are
+	// available to downstream stages without triggering generic summary
+	// shadowing.
+	if resumeOn {
+		if err := c.resume.Run(ctx, db, in, phaseWindows.Take(true)); err != nil {
+			return nil, fmt.Errorf("extractor: %w", err)
+		}
+	}
 
 	// No node-level wall-clock budget (see the package doc): each LLM call
 	// carries its own budget, and an expired call skips its chunk instead
@@ -880,7 +914,7 @@ func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in
 
 // runAutoKeywords extracts keywords for the current chunk and stores
 // them on ck["important_kwd"]. Keyword extraction pins
-// temperature to extractorTemperature (0.2) to mirror generator.py.
+// temperature to extractorTemperature (0.2) to mirror
 func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
 	if strings.TrimSpace(chunkText) == "" {
 		return nil
@@ -1199,7 +1233,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	if !c.Param.Metadata.Enabled || len(c.Param.Metadata.Metadata) == 0 {
 		return nil
 	}
-	// Render the field schema into the prompt, mirroring Python's
+	// Render the field schema into the prompt, mirroring
 	// turn2jsonschema(metadata_conf) rendered into the META_DATA template.
 	schemaMap := common.Turn2JSONSchema(c.Param.Metadata.Metadata)
 	if len(schemaMap) == 0 {
@@ -1367,7 +1401,8 @@ func setMetadataLLMCache(ctx context.Context, store chunkcache.Store, modelID, s
 //   - callText wraps callRaw with the LLM-layer two-step cleanup (think +
 //     tool_call) and returns a plain string.
 //   - callStructured wraps callRaw with cleanup + explicit JSON parsing and
-//     returns a map — the metadata path, matching Python gen_metadata.
+//
+// returns a map — the metadata path, matching gen_metadata
 func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extractorInputs, systemPrompt, chunkText string) (*extractorChatResponse, error) {
 	if strings.TrimSpace(chunkText) == "" {
 		return nil, fmt.Errorf("extractor: chunk text is empty")
@@ -1382,6 +1417,7 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		return nil, fitErr
 	}
 	msgs = fitted
+	userTrimmed := userTurnTrimmed(chunkText, fitted)
 	inv := getExtractorChatInvoker()
 	req := extractorChatRequest{
 		Driver:    driver,
@@ -1392,8 +1428,8 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	}
 	// Only override the temperature when the caller set one. A nil
 	// Temperature lets the model / chat-model default decide, matching
-	// Python's generic Extractor path; keyword/question helpers set
-	// extractorTemperature (0.2) to mirror generator.py.
+	// generic Extractor path; keyword/question helpers set
+	// extractorTemperature (0.2) to mirror
 	if in.temperature != nil {
 		temp := *in.temperature
 		req.Temperature = &temp
@@ -1418,28 +1454,30 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		// panic on resp.Content below. Surface a diagnosable error instead.
 		return nil, fmt.Errorf("extractor: chat: nil response from invoker")
 	}
+	resp.UserTrimmed = userTrimmed
 	return resp, nil
 }
 
-// toolCallRE matches a <tool_call>...</tool_call> block, mirroring Python's
+// toolCallRE matches a <tool_call>...</tool_call> block, mirroring
 // `re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)` at
-// llm_service.py:461. Non-greedy so consecutive tool_call blocks are each
+// . Non-greedy so consecutive tool_call blocks are each
 // stripped.
 var toolCallRE = regexp.MustCompile(`(?s)<tool_call>.*?</tool_call>`)
 
-// cleanLLMText applies the two-step LLM-layer cleanup that Python performs
-// in LLMBundle.async_chat (llm_service.py:459-461) for every response,
-// before any parsing:
+// cleanLLMText applies the two-step LLM-layer cleanup that runs for every
+// response before any parsing:
 //
 //  1. Reasoning content: when the response BEGINS with `<think>`, take
 //     everything after the LAST `</think>`. A `<think>` that appears after
 //     a non-empty prefix is treated as ordinary content and preserved, so a
-//     legitimate prefix is never stripped. Python's _remove_reasoning_content
-//     (llm_service.py:332-346) finds the first `<think>` anywhere; restricting
-//     to a leading `<think>` avoids deleting real content that merely contains
-//     a think-looking tag. A leading `<think>` with no closing `</think>` is
-//     kept unchanged.
-//  2. Tool-call blocks: remove `<tool_call>...</tool_call>` spans.
+//
+// legitimate prefix is never stripped. _remove_reasoning_content
+// finds the first `<think>` anywhere; restricting
+//
+//	   to a leading `<think>` avoids deleting real content that merely contains
+//	   a think-looking tag. A leading `<think>` with no closing `</think>` is
+//	   kept unchanged.
+//	2. Tool-call blocks: remove `<tool_call>...</tool_call>` spans.
 //
 // The result is a plain string, ready for the caller to consume as text or
 // to parse explicitly.
@@ -1452,7 +1490,7 @@ func cleanLLMText(s string) string {
 }
 
 // cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
-// matching Python's keyword_extraction and question_proposal post-processing.
+// matching keyword_extraction and question_proposal post-processing
 func cleanExtractionResult(s string) string {
 	s = common.StripThinkTrailing(s)
 	s = strings.TrimSpace(s)
@@ -1530,7 +1568,7 @@ func (c *ExtractorComponent) callText(ctx context.Context, db *gorm.DB, in extra
 
 // callStructured runs one chat call, cleans the response, and explicitly
 // parses it as a JSON object. Used by the metadata path, which needs a
-// structured value to merge into chunk metadata — matching Python
+// structured value to merge into chunk metadata — matching
 // gen_metadata's json_repair.loads. A non-JSON or empty response returns
 // (nil, nil) so the caller treats it as "nothing extracted", not an error.
 func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in extractorInputs, systemPrompt, chunkText string) (map[string]any, error) {
@@ -1542,12 +1580,12 @@ func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in
 	if s == "" {
 		return nil, nil
 	}
-	// Second cleanup layer, mirroring Python gen_metadata's
+	// Second cleanup layer, mirroring gen_metadata's
 	// re.sub(r"^.*</think>", "", ans, re.DOTALL): cleanLLMText only strips a
 	// leading <think>, so a mid-text reasoning block preceded by a preamble
 	// would otherwise survive into JSON parsing and silently drop the whole
-	// metadata extraction that Python would have kept. No **ERROR** check here
-	// — Python's gen_metadata has none either.
+	// metadata extraction that would have kept. No **ERROR** check here
+	// — gen_metadata has none either
 	s = common.StripThinkTrailing(s)
 	parsed, ok := tryParseJSONObject(s)
 	if !ok {
@@ -1579,7 +1617,7 @@ func resolveExtractorChatTargetUncached(ctx context.Context, db *gorm.DB, llmID 
 	}
 
 	// When llmID is empty, try tenant default chat model
-	// (mirrors Python task_executor.py:573-574 fallback).
+	// (mirrors fallback)
 	if llmID == "" {
 		if cfg := resolveExtractorChatDefaultConfig(ctx, db); cfg.driver != "" {
 			return cfg.driver, cfg.modelName, cfg.apiKey, cfg.baseURL, nil
@@ -1635,9 +1673,10 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 	var driver models.ModelDriver
 	var modelName string
 	var apiConfig *models.APIConfig
-	if isBareTenantModelID(compositeLLMID) {
-		// Resolve the exact tenant model without a separate existence check.
-		resolved, err := resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
+	if _, isGroupRef := common.ParseGroupModelRef(compositeLLMID); isGroupRef || isBareTenantModelID(compositeLLMID) {
+		// Resolve the exact tenant model (or the model group's current
+		// member) without a separate existence check.
+		resolved, err := resolveModelConfigByRef(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
 			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
 		}
@@ -1752,9 +1791,9 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 }
 
 // extractorContextLengthUncached returns the chat model's context window
-// (content_length) for llmID, or 0 when unavailable. Mirrors Python's
-// chat_mdl.max_length. Used as the token budget for message fitting so
-// oversized prompts are trimmed instead of rejected by the provider. When
+// (content_length) for llmID, or 0 when unavailable. It is used as the token
+// budget for message fitting so oversized prompts are trimmed instead of
+// rejected by the provider. When
 // llm_id is empty the call falls back to the tenant default chat model (see
 // resolveExtractorChatTarget), so the same model is resolved here; otherwise
 // the default-model path would never get message fitting. Returns 0 (skip
@@ -1815,7 +1854,7 @@ func extractorContextFitBudget(ctxLen int) int {
 }
 
 // fitExtractorMessages trims msgs to the chat model's context window using
-// the shared tokenizer fitter (mirrors Python's message_fit_in), dropping
+// the shared tokenizer fitter (mirrors message_fit_in), dropping
 // entries the fitter removed. It returns a clear error instead of letting a
 // conversation whose final user turn was trimmed to empty reach the provider:
 // the proportional trim can do that when the system prompt alone exceeds the
@@ -1874,6 +1913,18 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	return fitted, nil
 }
 
+// userTurnTrimmed reports whether message fitting shortened the final user
+// turn. The extractor phases hand their input over in that turn, so a trim
+// means the model's reply is a view of truncated input rather than of the
+// full text the caller passed.
+func userTurnTrimmed(original string, fitted []eschema.Message) bool {
+	if len(fitted) == 0 {
+		return false
+	}
+	last := fitted[len(fitted)-1]
+	return last.Role == eschema.User && len(last.Content) < len(original)
+}
+
 // buildExtractorMessages assembles system + user messages for one extraction
 // call. Normal per-chunk schedulers reject empty chunk text before reaching
 // this low-level builder; the single-space fallback remains for direct
@@ -1901,7 +1952,7 @@ func tryParseJSONObject(s string) (map[string]any, bool) {
 	trimmed := strings.TrimSpace(s)
 	// Strip a surrounding Markdown code fence. Models commonly wrap JSON in
 	// ```json ... ``` (language tag on the opening line) but some emit the tag
-	// on its own line (```\njson\n{...}); Python's json_repair tolerates both,
+	// on its own line (```\njson\n{...}); json_repair tolerates both
 	// encoding/json does not, so we drop the fence and any bare leading
 	// "json"/"JSON" language line before parsing.
 	if strings.HasPrefix(trimmed, "```") {
@@ -1953,15 +2004,8 @@ func parseMetadataFieldDefs(v any) []common.MetadataFieldDef {
 
 // mapInt converts a JSON-compatible value to int.
 func mapInt(v interface{}) int {
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	case int64:
-		return int(n)
-	}
-	return 0
+	n, _ := common.ToIntNum(v)
+	return n
 }
 
 // init registers Extractor under CategoryIngestion (per plan §4

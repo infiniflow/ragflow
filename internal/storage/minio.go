@@ -33,10 +33,11 @@ import (
 
 // MinioStorage implements Storage interface for MinIO
 type MinioStorage struct {
-	client     *minio.Client
-	bucket     string // default bucket
-	prefixPath string // default prefix path
-	config     config.MinioConfig
+	client       *minio.Client
+	healthClient *http.Client
+	bucket       string // default bucket
+	prefixPath   string // default prefix path
+	config       config.MinioConfig
 }
 
 // NewMinioStorage creates a new MinIO storage instance
@@ -87,6 +88,12 @@ func (m *MinioStorage) connect() error {
 	}
 
 	m.client = client
+	m.healthClient = &http.Client{
+		Transport: transport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	return nil
 }
 
@@ -112,19 +119,30 @@ func (m *MinioStorage) resolveBucketAndPath(bucket, fnm string) (string, string)
 
 func (m *MinioStorage) Type() string { return "minio" }
 
-// Health checks MinIO service availability
+// Health checks endpoint liveness with a read-only probe, not bucket permissions.
 func (m *MinioStorage) Health(ctx context.Context) bool {
-	cancelFunction, err := m.client.HealthCheck(time.Second * 5)
-	if cancelFunction != nil {
-		defer cancelFunction()
-	}
-
-	if err != nil {
-		common.Warn("Failed to check MinIO health", zap.Error(err))
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if probeCtx.Err() != nil {
 		return false
 	}
 
-	return m.client.IsOnline()
+	healthURL := m.client.EndpointURL()
+	healthURL.Path = "/minio/health/live"
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodHead, healthURL.String(), nil)
+	if err != nil {
+		return false
+	}
+	resp, err := m.healthClient.Do(req)
+	if err != nil {
+		if probeCtx.Err() == nil {
+			common.Warn("Failed to check MinIO health", zap.Error(err))
+		}
+		return false
+	}
+	defer resp.Body.Close()
+
+	return probeCtx.Err() == nil && resp.StatusCode == http.StatusOK
 }
 
 // Put uploads an object to MinIO

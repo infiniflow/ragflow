@@ -4,7 +4,7 @@ title: "Logs"
 sidebar_label: "Logs"
 slug: /dataset_logs
 sidebar_custom_props:
-  categoryIcon: LucideDatabaseZap
+  categoryIcon: LucideScrollText
 ---
 
 # Logs

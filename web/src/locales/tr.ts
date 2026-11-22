@@ -141,6 +141,20 @@ export default {
       github: 'GitHub',
       help: 'Yardım',
     },
+    sidebar: {
+      context: 'Bağlam',
+      application: 'Uygulama',
+      studio: 'Stüdyo',
+      library: 'Kütüphane',
+      integrations: 'Entegrasyonlar',
+      team: 'Takım',
+      mcp: 'MCP',
+      theme: 'Tema',
+      language: 'Dil',
+      version: 'Sürüm',
+      collapseSidebar: 'Kenar çubuğunu daralt',
+      expandSidebar: 'Kenar çubuğunu genişlet',
+    },
     skills: {
       title: 'Beceriler',
       selectSpace: 'Başlamak için bir beceri alanı seçin',
@@ -155,12 +169,18 @@ export default {
       noSpaces: 'Henüz beceri alanı yok. İlkini oluşturun!',
       enterSpace: 'Gir',
       spaceCreated: 'Beceri alanı başarıyla oluşturuldu',
+      spaceUpdated: 'Beceri alanı başarıyla yeniden adlandırıldı',
       spaceDeleted: 'Beceri alanı başarıyla silindi',
       fetchError: 'Beceriler alınamadı',
       deleteSpaceTitle: 'Beceri alanını sil',
       deleteSpaceDescription:
         'Bu beceri alanını silmek istediğinizden emin misiniz? Bu işlem geri alınamaz ve bu alandaki tüm beceriler kalıcı olarak silinir.',
       deleteSpaceName: 'Alan adı',
+      deleteSelectedTitle: 'Seçili alanları sil',
+      deleteSelectedDescription:
+        'Seçili {{count}} alanı silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
+      renameSpaceTitle: 'Beceri alanını yeniden adlandır',
+      renameSpaceDescription: 'Bu beceri alanı için yeni bir ad girin.',
       uploadSuccess: 'Beceri başarıyla yüklendi',
       uploadError: 'Beceri yüklenemedi',
       deleteSuccess: 'Beceri başarıyla silindi',
@@ -175,17 +195,23 @@ export default {
       foldersCount: '{{count}} klasör',
       pageInfo: 'Sayfa {{current}} / {{total}}',
       totalSkills: 'Toplam {{total}} beceri',
+      space: 'alan',
+      sortAsc: 'Artan sırala',
+      sortDesc: 'Azalan sırala',
       backToSkills: 'Becerilere dön',
       selectFileToView: 'Görüntülemek için bir dosya seçin',
       skillName: 'Beceri adı',
       skillNamePlaceholder: 'örn. harika-becerim',
       skillNameHelp: 'Yalnızca harf, rakam, tire ve alt çizgi kullanılabilir',
+      name: 'Ad',
+      description: 'Açıklama',
       source: 'Kaynak',
       version: 'Sürüm',
       skillVersion: 'Sürüm',
       skillVersionPlaceholder: 'örn. 1.0.0',
       versionFormatHelp: 'Sürüm semver formatında olmalıdır (örn. 1.0.0)',
       versionRequired: 'Sürüm zorunludur',
+      versionExists: 'Bu sürüm zaten var',
       selectFilesOrFolder: 'Dosya veya klasör seçin',
       uploadDescription:
         'Beceri dosyalarını yükleyin. Dosyaları sürükleyip bırakabilir veya bir klasör seçebilirsiniz.',
@@ -291,6 +317,7 @@ export default {
       fieldContent: 'İçerik',
       fieldContentDesc: 'Beceri içeriği (örn. README)',
       weight: 'Ağırlık',
+      pureKeyword: 'Yalnızca anahtar kelime',
       pureVector: 'Yalnızca Vektör',
       hybrid: 'Hibrit',
       keyword: 'Anahtar kelime',
@@ -301,6 +328,7 @@ export default {
       reindex: 'Tümünü Yeniden İndeksle',
       reindexing: 'Yeniden indeksleniyor...',
       reindexSuccess: 'Başarıyla yeniden indekslendi',
+      reindexError: 'Beceriler yeniden dizinlenemedi',
       pleaseSelectEmbeddingModel: 'Lütfen bir embedding modeli seçin',
       saveSuccess: 'Başarıyla kaydedildi',
       saveError: 'Kaydedilemedi',
@@ -598,6 +626,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         "Bu, birleşik benzerlik puanındaki anahtar kelime benzerliğinin ağırlığını ayarlar. Vektör ve anahtar kelime ağırlıklarının toplamı 1.0'a eşit olmalıdır.",
       testText: 'Test metni',
       testTextPlaceholder: 'Sorunuzu buraya girin!',
+      testIntegerValidation: 'Lütfen bir tam sayı girin',
       testingLabel: 'Çalıştır',
       similarity: 'Hibrit benzerlik',
       termSimilarity: 'Terim benzerliği',
@@ -618,7 +647,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       filesPending: '{{count}} dosya bekliyor',
       cancelParsingConfirmTitle: 'Ayrıştırmayı iptal et',
       cancelParsingConfirm:
-        'Şu anda ayrıştırılan {{count}} dosyanın ayrıştırması iptal edilsin mi?',
+        'Şu anda ayrıştırılan {{count}} dosyanın ayrıştırılması iptal edilsin mi?',
       cancelPendingConfirm:
         'Bekleyen {{count}} dosya ayrıştırma kuyruğundan kaldırılsın mı?',
       cancelTasksSuccess: '{{count}} ayrıştırma görevi iptal edildi',
@@ -636,9 +665,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       layoutRecognize: 'PDF ayrıştırıcı',
       layoutRecognizeTip:
         "PDF düzen analizi için görsel model kullanın. Belge başlıklarını, metin bloklarını, görüntüleri ve tabloları etkili bir şekilde konumlandırır. Naive seçeneği seçilirse yalnızca PDF'deki düz metin alınır. Bu seçeneğin şu anda YALNIZCA PDF belgeleri için çalıştığını lütfen unutmayın.",
-      taskPageSize: 'Görev sayfa boyutu',
-      taskPageSizeMessage: 'Lütfen görev sayfa boyutunu girin!',
-      taskPageSizeTip: `Düzen tanıma sırasında bir PDF dosyası parçalara bölünür ve işleme hızını artırmak için paralel olarak işlenir. Bu parametre her parçanın boyutunu ayarlar. Daha büyük parça boyutu, sayfalar arasındaki sürekli metni bölme olasılığını azaltır.`,
       addPage: 'Sayfa ekle',
       greaterThan: 'Geçerli değer bitiş değerinden büyük olmalıdır!',
       greaterThanPrevious:
@@ -668,8 +694,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       delimiterPreviewEmpty:
         'Sınırlayıcı yok — metin yalnızca boyuta göre parçalanacak.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: "Excel'i HTML'ye dönüştür",
-      html4excelTip: `Genel parçalama yöntemi ile kullanın. Devre dışı bırakıldığında, datasetteki elektronik tablolar (XLSX veya XLS(Excel 97-2003)) anahtar-değer çiftlerine ayrıştırılır. Etkinleştirildiğinde HTML tablolarına ayrıştırılır; orijinal tabloda 12'den fazla satır varsa her 12 satırda bölünür. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Otomatik anahtar kelime',
       autoKeywordsTip: `Her parça için otomatik olarak N anahtar kelime çıkarır ve o anahtar kelimeleri içeren sorgular için sıralamalarını artırır. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Bir parçaya eklenen anahtar kelimeleri parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Otomatik soru',
@@ -746,9 +770,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       paddleocrApiUrlPlaceholder:
         'örn. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "AI Studio Erişim Token'ı",
-      paddleocrAccessTokenTip:
-        "PaddleOCR API için erişim token'ı (isteğe bağlı)",
-      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+      paddleocrAccessTokenTip: "PaddleOCR API için erişim token'ı",
+      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız",
       paddleocrAlgorithm: 'PaddleOCR Algoritması',
       paddleocrAlgorithmTip:
         'PaddleOCR ayrıştırması için kullanılacak algoritma',
@@ -1056,6 +1079,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       size: 'Boyut',
       uploadedTime: 'Yükleme zamanı',
       chunk: 'Parça',
+      chunks: 'Parçalar',
       createChunk: 'Parça Oluştur',
       editChunk: 'Parçayı Düzenle',
       bulk: 'Toplu',
@@ -1086,7 +1110,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         knowledge_graph: 'Bilgi grafiği',
         mind_map: 'Zihin haritası',
         page_index: 'Sayfa dizini',
-        timeline: 'Zaman çizelgesi',
         tree: 'Ağaç',
         raptor: 'RAPTOR',
       },
@@ -1099,8 +1122,10 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       replyInstantly: 'Genellikle anında yanıt veririz',
       typeYourMessage: 'Mesajınızı yazın...',
       messagePlaceholder: 'Mesajınızı buraya yazın...',
+      addPhotosAndFiles: 'Fotoğraf ve dosya ekle',
       exit: 'Çıkış',
       multipleModels: 'Birden fazla model',
+      settings: 'Ayarlar',
       applyModelConfigs:
         "Bu modeli ve ayarlarını tek modelli Sohbet'te kullan.",
       conversations: 'Konuşmalar',
@@ -1226,7 +1251,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       agenticTemplateTooLong: 'Şablon en fazla 32768 karakter olmalıdır',
       resetToDefault: 'Varsayılana sıfırla',
       thinkingTip:
-        'Yalnızca resmi Qwen, Kimi ve GLM model sağlayıcıları için düşünme modunu denetler. Sistem varsayılanı, uzun süren görevlerden kaçınmak için Qwen düşünmesini devre dışı bırakır.',
+        "Düşünme varsayılan olarak kapalıdır. Düşünme modunu destekleyen modellerde açmak için Etkin'i seçin.",
       quote: 'Alıntı göster',
       quoteTip: 'Orijinal metnin referans olarak gösterilip gösterilmeyeceği.',
       selfRag: 'Self-RAG',
@@ -1323,12 +1348,18 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       firecrawlApiKeyTip:
         'Firecrawl seçildiğinde, arama sonuçları dataset alımını tamamlar. Yalnızca arama özetleri alınır, tam sayfa kazınmaz.',
       firecrawlApiKeyMessage: 'Lütfen Firecrawl API anahtarınızı girin',
+      keirolabsApiKeyTip:
+        'Keirolabs seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
+      keirolabsApiKeyMessage: 'Lütfen Keirolabs API anahtarınızı girin',
       linkupApiKeyTip:
         'Linkup seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
       linkupApiKeyMessage: 'Lütfen Linkup API anahtarınızı girin',
       parallelApiKeyTip:
         'Parallel seçildiğinde, arama alıntıları dataset alımını tamamlar.',
       parallelApiKeyMessage: 'Lütfen Parallel API anahtarınızı girin',
+      perplexityApiKeyTip:
+        "Perplexity seçildiğinde, Perplexity Search API'sinden gelen sonuçlar dataset alımını tamamlar.",
+      perplexityApiKeyMessage: 'Lütfen Perplexity API anahtarınızı girin',
       queritApiKeyTip:
         'Querit seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
       queritApiKeyMessage: 'Lütfen Querit API Anahtarınızı girin',
@@ -1397,7 +1428,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         errorOther: 'Modeller listelenemedi: {{message}}',
         emptyTitle: 'Çalışan model bulunamadı',
         emptyBody:
-          'GPUStack yalnızca çalışan ve yönlendirmesi olan modelleri sunar. "Model Yönlendirmesini Etkinleştir" açık olarak bir model dağıtın, ardından yenileyin.',
+          'GPUStack yalnızca çalışan ve yönlendirmesi olan modelleri sunar. "Model Yönlendirmesini Etkinleştir" seçeneğini açarak bir model dağıtın, ardından yenileyin.',
         emptyLink: 'Entegrasyon kılavuzunu okuyun',
         addModels: '{{count}} model ekle',
         addSelected: 'Seçilen {{count}} modeli ekle',
@@ -1463,22 +1494,10 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldTenantId: 'Kiracı Kimliği',
       dataSourceFieldClientId: 'İstemci Kimliği',
       dataSourceFieldClientSecret: 'İstemci Gizli Anahtarı',
-      dataSourceFieldFolderPathOptional: 'Klasör Yolu (isteğe bağlı)',
+      dataSourceFieldFolderPathOptional: 'Klasör Yolu',
       dataSourceFieldBatchSize: 'Toplu İşlem Boyutu',
-      dataSourceFieldFeishuAppId: 'Feishu uygulama kimliği',
-      dataSourceFieldFeishuAppSecret: 'Feishu uygulama gizli anahtarı',
-      dataSourceFieldWikiSpaceId: 'Wiki alan kimliği',
-      dataSourceFieldRootNodeToken: "Wiki kök düğüm token'ı",
-      dataSourceFieldIncludeExtensions: 'İzin verilen dosya uzantıları',
-      dataSourceFieldIncludeKeywords: 'Gerekli dosya adı anahtar kelimeleri',
-      dataSourceFieldExcludeKeywords:
-        'Hariç tutulan dosya adı anahtar kelimeleri',
-      dataSourceFieldMaxFileSizeBytes: 'Maksimum dosya boyutu (bayt)',
-      dataSourceValidationFeishuBatchSize:
-        'Toplu işlem boyutu 1 ile 10 arasında olmalıdır',
       dataSourceFieldMailFolder: 'Posta Klasörü',
-      dataSourceFieldMailboxUserIds:
-        'Posta Kutusu Kullanıcı Kimlikleri (isteğe bağlı)',
+      dataSourceFieldMailboxUserIds: 'Posta Kutusu Kullanıcı Kimlikleri',
       dataSourceFieldInstanceUrl: "Örnek URL'si",
       dataSourceFieldObjects: 'Nesneler',
       dataSourceFieldApiVersion: 'API Sürümü',
@@ -1489,7 +1508,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldContainerUrl: "Konteyner URL'si",
       dataSourceFieldSasToken: "SAS Token'ı",
       dataSourceFieldContainerName: 'Konteyner Adı',
-      dataSourceFieldPrefixOptional: 'Ön ek (isteğe bağlı)',
+      dataSourceFieldPrefixOptional: 'Ön ek',
       dataSourceFieldFeedUrl: "Besleme URL'si",
       dataSourceFieldSitemapUrl: "Site haritası URL'si",
       dataSourceFieldUrlFilter: 'URL filtresi (regex)',
@@ -1745,8 +1764,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Bilgi alımı için Notion'dan sayfaları ve veritabanlarını senkronize edin.",
       google_driveDescription:
         "Google Drive'ınızı OAuth ile bağlayın ve belirli klasörleri veya sürücüleri senkronize edin.",
-      feishu_wikiDescription:
-        'Bir Feishu Wiki alt ağacındaki indirilebilir dosya düğümlerini eşitleyin.',
       gmailDescription:
         "E-postaları senkronize etmek için Gmail'inizi OAuth ile bağlayın.",
       webdavDescription:
@@ -1856,8 +1873,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Pull isteklerini ve sorunları alım için senkronize etmek üzere GitHub'ı bağlayın.",
       airtableDescription:
         "Airtable'a bağlanın ve belirli bir çalışma alanındaki tablodan dosyaları senkronize edin.",
-      dingtalkAITableDescription:
-        'Dingtalk AI Tablosuna bağlanın ve belirli bir tablodan kayıtları senkronize edin.',
       gitlabDescription:
         "GitLab'ı bağlayarak depoları, sorunları, birleştirme isteklerini senkronize edin.",
       asanaDescription:
@@ -2101,12 +2116,12 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       deleteChannelModalTitle: 'Sohbet kanalını sil',
       deleteChannelModalContent:
         'Bu sohbet kanalı botunu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
-      connectDialog: 'Asistan bağla',
-      connectDialogTitle: '{{name}} kanalını bir asistana bağla',
-      selectDialog: 'Bir asistan seçin',
+      connectDialog: 'Asistan veya Ajan bağla',
+      connectDialogTitle: '{{name}} kanalını bir asistana veya Ajana bağla',
+      selectDialog: 'Bir asistan veya Ajan seçin',
       connectDialogTip:
-        'Bu kanala gelen mesajlar, bağlı asistan tarafından yanıtlanır. Bağlantıyı kesmek için seçimi temizleyin.',
-      notConnected: 'Bağlı asistan yok',
+        'Bu kanala gelen mesajlar, bağlı asistan veya Ajan tarafından yanıtlanır. Bağlantıyı kesmek için seçimi temizleyin.',
+      notConnected: 'Bağlı asistan veya Ajan yok',
       chatChannelAssistant: 'Sohbet asistanı',
       chatChannelAgent: 'Ajan',
       chatChannelDesc: {
@@ -2143,6 +2158,9 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       avatarTip: 'Bu profilinizde görüntülenecek.',
       profileDescription:
         'Fotoğrafınızı ve kişisel bilgilerinizi buradan güncelleyin.',
+      editName: 'Adı düzenle',
+      editTimeZone: 'Saat dilimini düzenle',
+      editPassword: 'Şifreyi düzenle',
       maxTokens: 'Maksimum token',
       maxTokensMessage: 'Maksimum token gereklidir',
       maxTokensTip: `Modelin maksimum bağlam boyutu; varsayılan 512.`,
@@ -2197,12 +2215,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       apiKeyTip:
         'API anahtarı, ilgili LLM sağlayıcısına kaydolarak elde edilebilir.',
       aimlapiGetKey: 'API anahtarı al',
-      aimlapiCheckStatus: 'Durumu denetle',
-      aimlapiAwaitingConsent: 'AI/ML API penceresinde onay bekleniyor…',
-      aimlapiKeyAdded: 'AI/ML API anahtarınız oluşturuldu ve yukarıya eklendi.',
-      aimlapiAuthDenied: 'Yetkilendirme reddedildi. Lütfen yeniden deneyin.',
-      aimlapiAuthExpired: 'İsteğin süresi doldu. Lütfen yeniden deneyin.',
-      aimlapiAuthFailed: 'Oturum açma başarısız oldu. Lütfen yeniden deneyin.',
       showMoreModels: 'Modelleri görüntüle',
       hideModels: 'Modelleri gizle',
       baseUrl: 'Temel URL',
@@ -2223,18 +2235,20 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       paddleocrApiUrlPlaceholder:
         'örn. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "AI Studio Erişim Token'ı",
-      paddleocrAccessTokenMessage:
-        "PaddleOCR API için erişim token'ı (isteğe bağlı)",
-      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+      paddleocrAccessTokenMessage: "PaddleOCR API için erişim token'ı",
+      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız",
       paddleocrAlgorithm: 'PaddleOCR Algoritması',
       paddleocrAlgorithmMessage: 'Lütfen bir PaddleOCR algoritması seçin',
       paddleocrSelectAlgorithm: 'Algoritma Seçin',
       mineruApiserver: 'MinerU API Sunucusu',
       mineruApiserverMessage: "Lütfen MinerU API Sunucusu URL'sini girin!",
       mineruApiserverPlaceholder: 'örn. http://host.docker.internal:9987',
+      unlimitedOcrServerUrl: "Unlimited-OCR-2 sunucu URL'si",
+      unlimitedOcrServerUrlMessage:
+        "Lütfen Unlimited-OCR-2 sunucu URL'sini girin!",
+      unlimitedOcrServerUrlPlaceholder: 'örn. http://127.0.0.1:18000',
       mineruApiToken: "MinerU API token'ı",
-      mineruApiTokenPlaceholder:
-        'mineru.net API yönetiminden alınan token (isteğe bağlı)',
+      mineruApiTokenPlaceholder: 'mineru.net API yönetiminden alınan token',
       mineruApiTokenTip:
         "Ayarlandığında RAGFlow resmi hassas API'yi (/api/v4, vlm dahil) kullanır. Oturum açma gerektirmeyen ajan API'sini kullanmak için boş bırakın. Kendi barındırdığınız MinerU sunucusu için gerekli değildir.",
       mineruOutputDir: 'MinerU Çıktı Dizini',
@@ -2271,6 +2285,9 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       embeddingModel: 'Embedding',
       embeddingModelTip:
         'Her yeni oluşturulan dataset için varsayılan embedding model. Açılır listede bir embedding model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
+      scoringModel: 'Puanlama',
+      scoringModelTip:
+        'Puanlı anahtar için varsayılan model. Burada yalnızca puanlama türüyle eklenen modeller görünür.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'Her yeni oluşturulan dataset için varsayılan VLM. Bir resmi veya videoyu tanımlar. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
@@ -2293,6 +2310,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         'Aynı fabrika altındaki bu sağlayıcı örneğini tanımlayan benzersiz bir ad.',
       instanceNamePlaceholder: 'Lütfen örnek adını girin',
       instanceNameExists: 'Örnek adı zaten mevcut',
+      noChangesToSave: 'Kaydedilecek değişiklik yok',
       deleteInstance: 'Örneği sil',
       modelName: 'Model adı',
       modelID: 'Model Kimliği',
@@ -2312,7 +2330,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         apiUrl: "PaddleOCR API URL'si",
         apiUrlPlaceholder: 'Örnek: https://paddleocr-server.com/layout-parsing',
         accessToken: "AI Studio Erişim Token'ı",
-        accessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+        accessTokenPlaceholder: "AI Studio token'ınız",
         algorithm: 'PaddleOCR Algoritması',
         selectAlgorithm: 'Algoritma Seçin',
         modelNamePlaceholder: 'Örnek: paddleocr-from-env-1',
@@ -2504,6 +2522,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         ocr: 'OCR',
         speech2text: 'ASR',
         decision: 'Karar',
+        scoring: 'Puanlama',
       },
       showToc: 'İçeriği göster',
       hideToc: 'İçeriği gizle',
@@ -2526,6 +2545,43 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       modelMaxTokens: 'Maksimum token',
       modelFeatures: 'Model özellikleri',
       modelFeatureToolCall: 'Araç çağrısı',
+      modelFeatureImageSupport: 'Görüntü desteği',
+      modelFeatureImageSupportTip:
+        'Puanlı anahtar yalnızca bu açıkken görüntü kabul eder.',
+      modelFeatureBoxSupport: 'Görüntüde bul',
+      modelFeatureBoxSupportTip:
+        'Puanlı anahtar, bir şeyin görüntüde nerede olduğunu yalnızca bu açıkken sorabilir.',
+      modelFeatureYesNo: 'Evet/hayır soruları',
+      modelFeatureYesNoTip:
+        'Puanlı anahtar, evet/hayır sorusu sorup olasılığını yalnızca bu açıkken okuyabilir.',
+      modelFeatureLevels: 'Sıralı düzeyler',
+      modelFeatureLevelsTip:
+        'Puanlı anahtar, durumu sıralı düzeylere göre yalnızca bu açıkken derecelendirebilir.',
+      modelFeatureFields: 'Alan çıkarma',
+      modelFeatureFieldsTip:
+        'Puanlı anahtar, türü belirli alanlar gönderip dal seçmemeyi yalnızca bu açıkken yapar.',
+      modelFeatureFieldText: 'Metin alanları',
+      modelFeatureFieldTextTip:
+        'Bir metin aralığı çıkarır. Değer null olabilir.',
+      modelFeatureFieldDate: 'Tarih alanları',
+      modelFeatureFieldDateTip: 'Bir tarih çıkarır veya hesaplar.',
+      modelFeatureFieldTime: 'Saat alanları',
+      modelFeatureFieldTimeTip: 'Günün bir saatini çıkarır.',
+      modelFeatureFieldDateTime: 'Tarih ve saat alanları',
+      modelFeatureFieldDateTimeTip: 'Saatiyle birlikte bir tarih çıkarır.',
+      modelFeatureFieldDuration: 'Süre alanları',
+      modelFeatureFieldDurationTip: 'Bir zaman uzunluğu çıkarır.',
+      modelFeatureFieldNumber: 'Sayı alanları',
+      modelFeatureFieldNumberTip: 'Bir sayı çıkarır veya hesaplar.',
+      modelFeatureFieldList: 'Liste alanları',
+      modelFeatureFieldListTip:
+        'Metin, sayı veya tarihlerden oluşan bir liste çıkarır.',
+      modelFeatureFieldEstimate: 'Tahmin alanları',
+      modelFeatureFieldEstimateTip:
+        'Bir orta değer ve alttan üste bir aralıkla birlikte değer döndürür.',
+      modelFeatureFieldForecast: 'Öngörü alanları',
+      modelFeatureFieldForecastTip:
+        'Gelecekteki her adım için bir tahmin döndürür.',
       modelFeatureFunctionCall: 'İşlev çağrısı',
       modelNameRequired: 'Model adı gereklidir',
       modelNameDuplicate: 'Model adı zaten mevcut',
@@ -2589,21 +2645,21 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       rechunkRules: 'Yeniden parçalama kuralları',
       rechunkRulesPlaceholder:
         "LLM'nin bu derleme görevi için kaynak parçaları nasıl gruplaması gerektiğini açıklayın.",
+      configuration: 'Yapılandırma',
       jsonPreview: 'JSON önizlemesi',
       processFlow: 'İşlem akışı',
       processFlowComingSoon: 'İşlem akışı önizlemesi yakında',
       compilationTitleSuffix: " dataset'i",
+      artifacts: 'Çıktılar',
       llmWiki: 'Wiki',
       skills: 'Becerilere',
       navTree: 'Ağaç/Sayfa dizini',
       graph: 'Grafik',
       structureMindmap: 'Zihin haritası',
-      structureTimeline: 'Zaman çizelgesi',
       noWikiPages: 'Henüz wiki sayfası yok',
       noSkills: 'Henüz beceri yok',
       noStructureGraph: 'Henüz grafik yok',
       noStructureMindmap: 'Henüz zihin haritası yok',
-      noStructureTimeline: 'Henüz zaman çizelgesi yok',
       contents: 'Gezinme',
       topics: 'Konular',
       selectArtifact: 'Ayrıntıları görmek için içindekilerden bir öğe seçin',
@@ -2749,13 +2805,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
     },
     flow: {
       exportCurrentPage: 'Geçerli sayfayı dışa aktar',
-      preprocess: {
-        preprocess: 'Ön işleme',
-        mainContent: 'Ana içerik',
-        abstract: 'Özet',
-        author: 'Yazar',
-        sectionTitle: 'Bölüm başlığı',
-      },
       includeHeadingContent: 'Üst başlık içeriğini ayır',
       includeHeadingContentTip:
         'Etkinleştirildiğinde parçalar yalnızca başlık yolunu ve içeriğini içerir; üst başlıktan hemen sonra gelen içerik ayrı bir parça olarak tutulur.',
@@ -2865,9 +2914,21 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       enableVisionEnhancement: 'Görsel geliştirmeyi etkinleştir',
       enableVisionEnhancementTip:
         'Görüntü ve tablo bloklarını ayrıştırmak için görsel model kullanın; kapalıyken bunlar düz metin olarak işlenir.',
+      descriptionLanguage: 'Açıklama dili',
+      descriptionLanguageTip:
+        'Modelin ürettiği görüntü ve tablo açıklamaları için kullanılan dil. Bilgi tabanının dilini izlemek için boş bırakın; tokenizasyon ve alım yine bilgi tabanının dilini kullanır.',
+      followKnowledgeBaseLanguage: 'Bilgi tabanını izle',
       imageOcr: 'OCR',
       imageOcrTip:
-        'Yüklenen görüntülerdeki metni yerel OCR ile veya seçilen PaddleOCR modeliyle çıkarır. Görsel geliştirme, bu ayardan bağımsız olarak açıklama ekler.',
+        'Görüntülerdeki metni çıkarır. DeepDoc bir görüntüyü tek sayfalık belge olarak ayrıştırır, bu yüzden düzen analizi ve tablo yapısını da içerir; harici OCR modeli yalnızca metin döndürür. Görsel geliştirme, bu ayardan bağımsız olarak açıklama ekler.',
+      imageOcrParsingMethod: 'Ayrıştırma yöntemi',
+      imageOcrParsingMethodTip:
+        "DeepDoc yerel olarak çalışır; OCR, düzen analizi ve tablo yapısı tanıma yapar. Harici OCR modeli, eklenmiş bir PaddleOCR modelini kullanır ve yalnızca metin döndürür. OCR'yi kapatmak bu seçimi korur ama OCR'yi atlar; SVG metni doğrudan okunur.",
+      imageOcrDeepDoc: 'DeepDoc',
+      imageOcrDeepDocDescription: 'OCR + düzen analizi + tablo yapısı',
+      imageOcrExternal: 'Harici OCR modeli',
+      imageOcrExternalDescription: 'Yalnızca metin; tablo yapısı yok',
+      imageOcrModelPlaceholder: 'Bir OCR modeli seçin',
       imageOcrModel: 'OCR modeli',
       imageOcrLocal: 'DeepDoc',
       imageOcrModelTip:
@@ -2880,9 +2941,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         "Görüntüler için bir metin kaynağı gerekir: OCR'yi veya görsel geliştirmeyi açık tutun.",
       visionEnhancementPromptTip:
         'Görsel model için özel talimat. Yerleşik istemi kullanmak için boş bırakın.',
-      flattenMediaToText: 'Görsel modeli devre dışı bırak',
-      flattenMediaToTextTip:
-        'Görüntü ve tablo bölümlerini düz metin olarak ele alır ve görsel geliştirmeyi atlar.',
       enableChildrenDelimiters: 'Alt parçalar alım için kullanılır',
       merge: 'Birleştir',
       split: 'Böl',
@@ -2980,7 +3038,122 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       retrievalDescription: `Belirtilen datasets içinden bilgi alan bir bileşen.`,
       generateDescription: `LLM'yi yanıt üretmeye yönlendiren bir bileşen.`,
       categorizeDescription:
-        'Geçerli girdiyi önceden tanımlanmış kategorilerden birine sınıflandırmak ve iş akışını o kategoriye bağlı bileşene yönlendirmek için bir sohbet modeli (LLM) veya bir SystemOne karar modeli kullanır. Her kategori için bir ad, açıklama ve örnekler belirtin.',
+        'Geçerli girdiyi önceden tanımlanmış kategorilerden birine sınıflandırmak ve iş akışını o kategoriye bağlı bileşene yönlendirmek için bir sohbet modeli (LLM) veya bir SystemOne veya Nace karar modeli kullanır. Her kategori için bir ad, açıklama ve örnekler belirtin.',
+      scoredSwitchDescription:
+        'Model destekli bir anahtar. Seçilen puanlama modeli her seçeneği puanlar ve en yüksek puan kazanır. İsteğe bağlı aktarma, puanlar birbirine çok yakın ya da çok düşük olduğunda durumu sonraki bir LLM düğümüne aktarır.',
+      scoredSwitchModel: 'Puanlama modeli',
+      scoredSwitchModelTip:
+        'Yalnızca puanlama türüyle eklenen modeller listelenir. Sohbet modeli seçilemez.',
+      scoredSwitchEscalateToLlm: "LLM'e aktar",
+      scoredSwitchEscalateToLlmTip:
+        'Bu açıkken küçük bir fark, düşük bir en yüksek puan ya da tam eşitlik aktarma çıkışını kullanır. Bu çıkışı bir LLM düğümüne bağlayın. Kapalıyken en yüksek puan her zaman kazanır, eşitlikte ilk seçenek kalır ve aktarma çıkışı gizlenir.',
+      scoredSwitchMarginThreshold: 'Puan farkı',
+      scoredSwitchMarginThresholdTip:
+        "En yüksek puan ile ikinci puan arasındaki fark bundan küçükse aktarır. 0.15, 0.15'in altındaki bir farkın çok yakın sayılacağı anlamına gelir. Varsayılan değer 0.15'tir. Aktarma açıkken tam eşitlik her zaman aktarılır.",
+      scoredSwitchMinTopScore: 'En düşük kazanan puan',
+      scoredSwitchMinTopScoreTip:
+        "En yüksek puan bunun altındaysa aktarır. 0 bu denetimi kapatır. Varsayılan değer 0'dır.",
+      scoredSwitchRequestFormat: 'Görüntülerin gönderilme biçimi',
+      scoredSwitchRequestFormatTip:
+        'Mesajın içinde, her görüntüyü durum metniyle birlikte gönderir. Ayrı dosyalar olarak, her görüntüyü tek başına gönderir; bazı puanlama modelleri bunu gerektirir.',
+      scoredSwitchContentParts: 'Mesajın içinde',
+      scoredSwitchAssets: 'Ayrı dosyalar olarak',
+      scoredSwitchOutputChosenId:
+        'Kazanan seçeneğin kimliği. Durum aktarıldığında boştur.',
+      scoredSwitchOutputChosenLabel:
+        'Kazanan seçeneğin etiketi. Durum aktarıldığında boştur.',
+      scoredSwitchOutputScores:
+        'Anahtarları seçenek etiketleri, değerleri 0 ile 1 arasında olasılıklar olan nesne. Örnek: {"Approve": 0.82, "Reject": 0.18}',
+      scoredSwitchOutputMargin: 'En yüksek puan eksi ikinci puan.',
+      scoredSwitchOutputEscalated:
+        'Durum aktarma çıkışından gönderildiyse true.',
+      scoredSwitchOutputSelectedHandle: 'Çalışan çıkışın kimliği.',
+      scoredSwitchOutputConfidence: 'Model döndürüyorsa modelin güven değeri.',
+      scoredSwitchOutputRaw: 'Kısaltılmış model yanıtı.',
+      scoredSwitchYesNo: 'Evet/hayır sorusu',
+      scoredSwitchYesNoTip:
+        'Model, yanıtın evet olma olasılığını 0 ile 1 arasında döndürür. Bu bir dal eklemez.',
+      scoredSwitchLevels: 'Sıralı düzeyler',
+      scoredSwitchLevelsTip:
+        'Model, düzeyleriniz üzerinde iki düzeyin arasına da düşebilen bir konum döndürür. Bu bir dal eklemez.',
+      scoredSwitchBox: 'Görüntüde bul',
+      scoredSwitchBoxTip:
+        'Bir hedefin dört kenarını, her biri 0 ile 1 arasında bir oran olarak döndürür. Bu bir dal eklemez.',
+      scoredSwitchAddQuestion: 'Soru ekle',
+      scoredSwitchQuestionInstructions: 'Soru',
+      scoredSwitchLevelName: 'Düzey adı',
+      scoredSwitchAddLevel: 'Düzey ekle',
+      scoredSwitchTrueMeans: 'Evet şu anlama gelir',
+      scoredSwitchFalseMeans: 'Hayır şu anlama gelir',
+      scoredSwitchOutputAnswers:
+        'Soru veya alan adına göre anahtarlanmış yanıtlar. Seçim dallarını yine yalnızca rota seçimi belirler. Evet/hayır yanıtı 0 ile 1 arasında bir olasılıktır. Sıralı düzey yanıtı, düzeyler üzerinde bir konumdur. Kutu {top, bottom, left, right} biçimindedir ve her biri 0 ile 1 arasındadır. Metin, tarih, saat, tarih-saat, süre veya sayı yanıtında value, guess, span, p_null ve confidence bulunur. Girdi belirlemiyorsa value null olur. Liste yanıtında value ve spans bulunur. Tahminde value, mean, median, p10, p90, p_below ve p_above bulunur. Öngörü, her adım için bir tahmin ekler.',
+      scoredSwitchOutputUsage:
+        'Model bildirdiğinde state_tokens, image_tokens, schema_tokens, input_tokens, output_tokens ve passes.',
+      scoredSwitchOutputStateText:
+        'İstendiğinde, karakter aralıklarının işaret ettiği metin.',
+      scoredSwitchImage: 'Görüntü',
+      scoredSwitchImageTip:
+        'İsteğe bağlı görüntü değişkeni. PNG, JPEG veya WebP baytları durumla birlikte gönderilir. Yalnızca metin göndermek için boş bırakın.',
+      scoredSwitchInstructions: 'Talimatlar',
+      scoredSwitchInstructionsTip:
+        'Seçeneklerle birlikte gönderilen soru. Varsayılan seçim sorusunu kullanmak için boş bırakın.',
+      scoredSwitchAddOption: 'Seçenek ekle',
+      scoredSwitchEscalate: 'Aktar',
+      scoredSwitchOptionMinimum: 'En az iki seçenek ekleyin',
+      scoredSwitchQuestionRequired: 'Her ek soru için yönerge gerekir',
+      scoredSwitchLevelMinimum: 'En az iki düzey ekleyin',
+      scoredSwitchFieldMinimum: 'En az bir alan ekleyin',
+      scoredSwitchFieldName: 'Alan adı',
+      scoredSwitchFieldNameInvalid:
+        'Alan adı bir harf veya alt çizgi ile başlamalıdır',
+      scoredSwitchListItemsRequired: 'Bir liste için öğe türü gerekir',
+      scoredSwitchEstimateBoundsRequired:
+        'Bir tahmin için alt ve üst sınır gerekir',
+      scoredSwitchForecastRequired: 'Bir öngörü için ufuk ve aralık gerekir',
+      scoredSwitchDecimalsRange: 'Ondalık basamak 0 ile 6 arasında olmalıdır',
+      scoredSwitchFieldText: 'Metin',
+      scoredSwitchFieldDate: 'Tarih',
+      scoredSwitchFieldTime: 'Saat',
+      scoredSwitchFieldDateTime: 'Tarih ve saat',
+      scoredSwitchFieldDuration: 'Süre',
+      scoredSwitchFieldNumber: 'Sayı',
+      scoredSwitchFieldList: 'Liste',
+      scoredSwitchFieldEstimate: 'Tahmin',
+      scoredSwitchFieldForecast: 'Öngörü',
+      scoredSwitchFieldUnit: 'Birim',
+      scoredSwitchFieldDecimals: 'Ondalık basamak',
+      scoredSwitchFieldInteger: 'Tam sayı',
+      scoredSwitchFieldMin: 'Minimum',
+      scoredSwitchFieldMax: 'Maksimum',
+      scoredSwitchFieldStep: 'Adım',
+      scoredSwitchFieldHorizon: 'İleriye dönük adım',
+      scoredSwitchScaleLinear: 'Doğrusal',
+      scoredSwitchScaleLog: 'Logaritmik',
+      scoredSwitchReferenceDate: 'Referans tarihi',
+      scoredSwitchReferenceDateTip:
+        'Yılı yazılmamış tarihleri sabitleyen isteğe bağlı ISO tarihi.',
+      scoredSwitchQuantiles: 'Yüzdelikleri dahil et',
+      scoredSwitchQuantilesTip: 'Tahminlere 99 yüzdelik dilim ekler.',
+      scoredSwitchStateText: 'Kaynak metni döndür',
+      scoredSwitchStateTextTip:
+        'Karakter aralıklarının işaret ettiği metni döndürür.',
+      scoredSwitchFieldImageTip:
+        'En fazla 4 gömülü PNG, JPEG veya WebP görüntü. Uzak adresler kabul edilmez. Yalnızca metin göndermek için boş bırakın.',
+      scoredSwitchUnit_seconds: 'Saniye',
+      scoredSwitchUnit_minutes: 'Dakika',
+      scoredSwitchUnit_hours: 'Saat',
+      scoredSwitchUnit_days: 'Gün',
+      scoredSwitchUnit_weeks: 'Hafta',
+      scoredSwitchUnit_months: 'Ay',
+      scoredSwitchUnit_years: 'Yıl',
+      scoredSwitchInterval_step: 'Adım',
+      scoredSwitchInterval_minute: 'Dakika',
+      scoredSwitchInterval_hour: 'Saat',
+      scoredSwitchInterval_day: 'Gün',
+      scoredSwitchInterval_week: 'Hafta',
+      scoredSwitchInterval_month: 'Ay',
+      scoredSwitchInterval_quarter: 'Çeyrek',
+      scoredSwitchInterval_year: 'Yıl',
       relevantDescription: `Yukarı akış çıktısının kullanıcının son sorgusuna uygun olup olmadığını değerlendirmek için LLM kullanan bir bileşen.`,
       rewriteQuestionDescription: `Önceki diyalogların bağlamına dayanarak Etkileşim bileşeninden bir kullanıcı sorgusunu yeniden yazan bir bileşen.`,
       messageDescription:
@@ -2997,6 +3170,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       generate: 'Oluştur',
       answer: 'Etkileşim',
       categorize: 'Kategorize et',
+      scoredSwitch: 'Puanlı anahtar',
       rewriteQuestion: 'Yeniden yaz',
       rewrite: 'Yeniden yaz',
       begin: 'Başla',
@@ -3035,6 +3209,30 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       youComFreshnessYear: 'Son yıl',
       youComApiKeyTip:
         'İsteğe bağlı. Anahtarsız ücretsiz katmanı kullanmak için boş bırakın.',
+      perplexitySearch: 'Perplexity',
+      perplexitySearchDescription:
+        'Perplexity Search API ile çalışan bir web arama bileşeni. Her sonuç bir başlık, URL, alıntı ve biliniyorsa yayın tarihi taşır. Bir API Anahtarı gereklidir.',
+      perplexitySearchType: 'Arama türü',
+      perplexitySearchTypeTip:
+        'Web varsayılan arama türüdür. Hızlı, daha düşük gecikmeye öncelik verir.',
+      perplexitySearchTypeWeb: 'Web',
+      perplexitySearchTypeFast: 'Hızlı',
+      perplexityRecency: 'Güncellik',
+      perplexityRecencyTip: 'Sonuçları yayınlanma tarihlerine göre sınırlar.',
+      perplexityRecencyAny: 'Herhangi bir zaman',
+      perplexityRecencyHour: 'Son saat',
+      perplexityRecencyDay: 'Son gün',
+      perplexityRecencyWeek: 'Son hafta',
+      perplexityRecencyMonth: 'Son ay',
+      perplexityRecencyYear: 'Son yıl',
+      perplexityDomainFilter: 'Alan adı filtresi',
+      perplexityDomainFilterTip:
+        'Virgülle ayrılmış, en fazla 20 alan adından oluşan liste. Her istekte tek bir yöntem kullanın: ya yalnızca aranacak alan adlarını listeleyin (örneğin "ragflow.io, docs.example.com") ya da yalnızca hariç tutulacak alan adlarını "-" önekiyle listeleyin (örneğin "-pinterest.com, -reddit.com"). İkisini karıştırmak reddedilir. Tüm web\'de aramak için boş bırakın.',
+      perplexityCountry: 'Ülke',
+      perplexityCountryTip:
+        'Sonuçlarda o ülkeye öncelik vermek için kullanılan isteğe bağlı ISO 3166-1 alpha-2 ülke kodu (örneğin US).',
+      perplexityApiKeyTip:
+        'Zorunludur. perplexity.ai/account/api/keys adresinden bir API Anahtarı oluşturun.',
       sofyaSearch: 'Sofya',
       sofyaSearchDescription:
         'Sofya tarafından desteklenen bir web arama bileşeni. Sonuçlar, arama derinliğine bağlı olarak her sonuç sayfasının içeriğini veya yalnızca arama alıntısını taşır. Bir API Anahtarı gereklidir.',
@@ -3461,9 +3659,9 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       jsonFormatTip:
         'Yukarı akış bileşeni aşağıdaki formatta JSON dizesi sağlamalıdır:',
       toEmailTip: 'to_email: Alıcı e-posta (Zorunlu)',
-      ccEmailTip: 'cc_email: CC e-posta (İsteğe bağlı)',
-      subjectTip: 'subject: E-posta konusu (İsteğe bağlı)',
-      contentTip: 'content: E-posta içeriği (İsteğe bağlı)',
+      ccEmailTip: 'cc_email: CC e-posta',
+      subjectTip: 'subject: E-posta konusu',
+      contentTip: 'content: E-posta içeriği',
       jsonUploadTypeErrorMessage: 'Lütfen json dosyası yükleyin',
       jsonUploadContentErrorMessage: 'json dosyası hatası',
       jsonUploadCategoryMismatch:
@@ -3537,6 +3735,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         restoreConfirmContent:
           "Geçerli ajan DSL'i bu sürümle değiştirilecek. Yeni bir sürüm oluşturmak için yeniden kaydedin.",
       },
+      canvas: 'Tuval',
       setting: 'Ayarlar',
       settings: {
         agentSetting: 'Ajan ayarları',
@@ -3597,6 +3796,9 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       switchPromptMessage:
         'İstem kelimeleri değişecek. Mevcut istem kelimelerini atmak istiyor musunuz?',
       queryRequired: 'Sorgu gereklidir',
+      highlight: 'Vurgula',
+      highlightTip:
+        'Alınan parçalardaki eşleşen sözcükleri işaretler. Vurgulanan metin her parçayla birlikte döndürülür.',
       queryTip: 'Kullanmak istediğiniz değişkeni seçin',
       agent: 'Ajan',
       addAgent: 'Ajan ekle',
@@ -4029,11 +4231,17 @@ Temel Talimatlar:
       welcomeBack: 'Tekrar hoş geldiniz',
       searchSettings: 'Arama ayarları',
       name: 'Ad',
+      nameRequired: 'Ad zorunludur',
       avatar: 'Avatar',
       description: 'Açıklama',
       datasets: 'Datasets',
+      datasetRequired: 'En az bir dataset gereklidir',
       rerankModel: 'Yeniden sıralama modeli',
+      rerankModelRequired:
+        'Yeniden sıralama etkinken yeniden sıralama modeli zorunludur',
       AISummary: 'Yapay Zeka özeti',
+      modelRequired:
+        'Yapay Zeka özeti, ilgili arama veya sorgu zihin haritası etkinken model zorunludur',
       enableWebSearch: 'Web aramasını etkinleştir',
       enableRelatedSearch: 'İlgili aramayı etkinleştir',
       showQueryMindmap: 'Sorgu zihin haritasını göster',

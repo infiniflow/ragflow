@@ -42,7 +42,7 @@ import (
 func newChunkerByName(name string, params map[string]any) (runtime.Component, error) {
 	switch name {
 	case ComponentNameTokenChunker:
-		// The DSL contract (shared by the web UI and the Python runtime)
+		// The DSL contract (shared by the web UI and the runtime)
 		// expresses single-chunk mode as TokenChunker delimiter_mode "one";
 		// in Go that behaviour lives in the OneChunker component.
 		if mode, _ := params["delimiter_mode"].(string); mode == "one" {
@@ -92,9 +92,9 @@ func stringListFromAny(in []any) []string {
 
 // compileDelimPattern compiles a TokenChunker-style []string delimiter list.
 // Every non-empty entry is active, including bare (non-backtick) delimiters,
-// mirroring Python naive_merge / rag/nlp/delim where bare single-character
-// delimiters still split. Backtick-wrapped entries contribute their inner
-// content. invokeTextPayload decides whether an active delimiter yields one
+// and bare single-character delimiters still split the text. Backtick-wrapped
+// entries contribute their inner content. invokeTextPayload decides whether an
+// active delimiter yields one
 // chunk per segment (custom/backtick, no merge) or splits into paragraphs that
 // are merged by token size (bare). Canonical single-string parser_config.delimiter
 // Legacy single-string parsing is performed by GeneralChunker at its
@@ -450,14 +450,14 @@ func mediaChunkIdentity(image, imgID string, ref *entity.MediaRef) string {
 }
 
 // materializeMediaContext folds a media chunk's surrounding context into its
-// body and clears the two fields that carried it. Python's chunker emits the
+// body and clears the two fields that carried it. chunker emits the
 // same shape — its finalize builds remove_tag(context_above + text +
-// context_below) and drops the fields (rag/flow/chunker/token_chunker.py:343-
-// 359) — which is why Python persists the context inside the chunk body.
+// context_below) and drops the fields — which is why persists the context
+// inside the chunk body
 // Folding here also puts the context into the chunk id (ChunkID hashes the
-// body), matching Python's id, which hashes the context-bearing body.
+// body), matching id, which hashes the context-bearing body
 //
-// Tag stripping runs after the merge, as in Python: the payload was already
+// Tag stripping runs after the merge, as in : the payload was already
 // stripped by the chunker, so this only covers the context, which is collected
 // from neighbouring units.
 //

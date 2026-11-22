@@ -109,6 +109,41 @@ func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
 	}
 }
 
+// TestAutoMigrateRuntimeModelsCreatesEditionRuntimeTables guards the edition seam
+// that adds the chunk edit history and chunk embedding-state tables to the
+// server-mode migration. Those rows are written on every chunk mutation while
+// the data-model migrations only run as the standalone --migrate action, so a
+// server started against a database that never ran them must create the tables
+// itself; otherwise the best-effort writes would fail and the history would be
+// lost silently.
+func TestAutoMigrateRuntimeModelsCreatesEditionRuntimeTables(t *testing.T) {
+	models := chunkVersionRuntimeModelsEE()
+	if len(models) == 0 {
+		t.Skip("edition declares no chunk-version runtime tables")
+	}
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	migrator := db.Migrator()
+	for _, m := range models {
+		if migrator.HasTable(m) {
+			t.Fatalf("expected %T to not exist initially", m)
+		}
+	}
+
+	ctx := context.Background()
+	if err = autoMigrateRuntimeModels(ctx, db); err != nil {
+		t.Fatalf("autoMigrateRuntimeModels failed: %v", err)
+	}
+	for _, m := range models {
+		if !migrator.HasTable(m) {
+			t.Fatalf("expected %T to exist after autoMigrateRuntimeModels", m)
+		}
+	}
+}
+
 func TestAutoMigrateRuntimeModelsAddsIngestionTaskFilterIndexes(t *testing.T) {
 	db := setupTaskTestDB(t)
 	indexes := []string{"idx_ingestion_task_user_id", "idx_ingestion_task_status"}
@@ -567,5 +602,48 @@ func TestAutoMigrateRuntimeModelsNamesFailingTable(t *testing.T) {
 	err = autoMigrateRuntimeModels(t.Context(), db)
 	if err == nil || !strings.Contains(err.Error(), "runtime table ingestion_task") {
 		t.Fatalf("autoMigrateRuntimeModels error = %v, want failing table name", err)
+	}
+}
+
+func TestAutoMigrateLeavesEnterpriseEvaluationHistoryUntouched(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tables := []string{"evaluation_datasets", "evaluation_cases", "evaluation_runs", "evaluation_results"}
+	for _, table := range tables {
+		for _, model := range autoMigrateModels() {
+			stmt := &gorm.Statement{DB: db}
+			if err := stmt.Parse(model); err != nil {
+				t.Fatal(err)
+			}
+			if stmt.Schema.Table == table {
+				t.Fatalf("OSS registers %s", table)
+			}
+		}
+		if err := db.Exec("CREATE TABLE " + table + " (id TEXT PRIMARY KEY, history TEXT)").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec("INSERT INTO " + table + " VALUES ('historical', 'keep')").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := autoMigrateRuntimeModels(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateResourceUserIDs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range tables {
+		var history string
+		if err := db.Table(table).Select("history").Where("id = ?", "historical").Scan(&history).Error; err != nil {
+			t.Fatal(err)
+		}
+		if history != "keep" {
+			t.Fatalf("%s history changed: %q", table, history)
+		}
+		if db.Migrator().HasColumn(table, "user_id") {
+			t.Fatalf("OSS altered %s", table)
+		}
 	}
 }

@@ -75,7 +75,7 @@
 
 جرّب النسخة التجريبية على [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
-للنشر محليًا، راجع قسم [النشر المحلي](#-الاستضافة-الذاتية).
+للنشر محليًا، راجع قسم [النشر المحلي](#-النشر-المحلي).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -84,6 +84,7 @@
 
 ## 🔥 آخر التحديثات
 
+- 2026-11-06 إصدار RAGFlow 1.0.0.
 - 2026-09-29 إصدار RAGFlow 1.0.0-rc1.
 
 - 2026-09-10 إضافة استيعاب محتوى الويب عبر خرائط المواقع.
@@ -168,7 +169,7 @@
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -204,14 +205,15 @@
    cd ragflow
    ```
 
-2. شغّل برامج تنزيل التبعيات لتحضير المكتبات الأصلية الثابتة التي يربطها بناء Go (`download_dev_deps.py`) وموارد النماذج/المحلّلات التي يحمّلها الخلفية أثناء التشغيل (`download_deps.py`):
+2. شغّل برنامج تنزيل التبعيات مرة واحدة لتحضير كل ما يحتاجه خادم Go المحلي للبناء والتشغيل وتحليل المستندات وحساب الرموز. ينزّل `download_dev_deps.py` المكتبات الأصلية الثابتة وموارد التشغيل، بما فيها مفردات cl100k ونماذج DeepDoc بصيغة `.ort` وموارد مُجزِّئات رموز التضمين:
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run deps/download_deps.py
    ```
 
-   يقوم `download_dev_deps.py` بتنزيل وفك pdfium وpdf_oxide وoffice_oxide وonnxruntime تحت `~/ragflow-native-libs`؛ ويقوم `download_deps.py` بتنزيل جدول cl100k ونماذج DeepDoc وأصول محلّلات التضمين تحت `deps/`. كلاهما برنامج Python؛ ويثبّت `uv run` تبعياته المعلنة تلقائيًا (`requests`، بالإضافة إلى `huggingface-hub` لتنزيل النماذج والمحلّلات). تجاوز هذه الخطوة إذا كنت قد جهّزت الموارد نفسها بوسيلة أخرى. عند التشغيل من جذر المستودع تجد خدمات Go مجلد `internal/rag/res/deepdoc` تلقائيًا؛ وللتشغيل من مجلد آخر عيّن `DEEPDOC_MODEL_DIR` على مساره المطلق.
+   يكفي هذا البرنامج وحده للتطوير المحلي. عند تشغيله مجددًا يتجاوز الملفات الموجودة دون إعادة تنزيلها. ينزّل `deps/download_deps.py` المخصّص للصور موارد التشغيل نفسها دون المكتبات الأصلية `.a`؛ شغّله فقط عند بناء صورة التبعيات أو في CI، وليس للتطوير المحلي.
+
+   ينزّل `download_dev_deps.py` مكتبات pdfium وpdf_oxide وoffice_oxide وonnxruntime ويفكّها في `~/ragflow-native-libs`، ويكتب مفردات cl100k ونماذج DeepDoc وموارد مُجزِّئات رموز التضمين في `deps/`. البرنامج مكتوب بلغة Python؛ ويثبّت `uv run` تبعياته المعلنة (`requests` و`huggingface-hub`) تلقائيًا. تجاوز هذه الخطوة إذا جهّزت الموارد نفسها بوسيلة أخرى. عند التشغيل من جذر المستودع تجد خدمات Go مجلد `internal/rag/res/deepdoc` تلقائيًا؛ وللتشغيل من مجلد آخر عيّن `DEEPDOC_MODEL_DIR` على مساره المطلق.
 
 3. ابنِ الخدمات:
 
@@ -226,35 +228,15 @@
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-5. نفّذ ترحيل قاعدة البيانات:
+5. شغّل RAGFlow:
 
    ```bash
-   ./bin/ragflow_server --migrate
+   ./bin/ragflow_server
    ```
 
-6. شغّل الخدمات الأربع في أربع نوافذ طرفية منفصلة:
+   يشغّل الإصدار المفتوح جميع الخدمات في عملية Go واحدة. يرحّل قاعدة البيانات، ثم يشغّل Admin ويهيّئ المستخدم الفائق، وبعد ذلك يشغّل API وIngestor وSyncer وChatter. يستمع Admin على المنفذ `9381` وAPI على المنفذ `9380` افتراضيًا. إيقاف العملية يوقف جميع الخدمات. اضبط إعدادات الخدمات في `conf/service_conf.yaml` أو عبر متغيرات البيئة.
 
-   النافذة 1: Admin على المنفذ `9381`.
-
-   ```bash
-   ./bin/ragflow_server --admin
-   ```
-
-   ```bash
-   ./bin/ragflow_server --ingestor
-   ```
-
-   النافذة 3: Syncer.
-
-   ```bash
-   ./bin/ragflow_server --syncer
-   ```
-
-   النافذة 4: API على المنفذ `9380`.
-
-   ```bash
-   ./bin/ragflow_server --api
-   ```
+6. شغّل `./bin/ragflow_server --help` لعرض الخيارات المتاحة.
 
 7. عند تطوير الواجهة فقط، ثبّت Node.js وnpm ثم تحقق من جاهزية API:
 
@@ -266,7 +248,7 @@
 
 راجع [تشغيل الخدمة من المصدر](./docs/develop/launch_ragflow_from_source.md) لمزيد من التفاصيل.
 
-> **ملاحظات التشغيل:** لجعل إعداد Elasticsearch دائمًا، أضف `vm.max_map_count=262144` إلى `/etc/sysctl.conf`. في إعداد MySQL الافتراضي، ينفذ مدخل صورة Docker ترحيل قاعدة البيانات قبل تشغيل Admin وSyncer وIngestor وAPI. يستخدم DeepDoc في الإصدار المفتوح 1.0 استدلال CPU لتحليل التخطيط وOCR والجداول. بعد تغيير إعداد Docker، أعد تشغيل الخدمات واتبع [دليل Docker](./docker/README.md) للاحتفاظ بالبيانات أو حذفها. يجهز `download_dev_deps.py` المكتبات الأصلية لبناء Go، ويجهز `download_deps.py` النماذج وموارد المحلّلات وجدول cl100k؛ ويعمل كلاهما عبر `uv run`. ينفذ `--migrate` الترحيل ثم يخرج؛ ويشغّل `--admin` خدمة الإدارة، ويشغّل `--ingestor` خدمة الاستيعاب، ويشغّل `--syncer` خدمة مزامنة مصادر البيانات الخارجية، ويشغّل `--api` خدمة API لواجهة الويب وحزم SDK. تعني استجابة HTTP 200 أن API جاهز.
+> **ملاحظات التشغيل:** لجعل إعداد Elasticsearch دائمًا، أضف `vm.max_map_count=262144` إلى `/etc/sysctl.conf`. يستخدم DeepDoc في الإصدار المفتوح 1.0 استدلال CPU لتحليل التخطيط وOCR والجداول. بعد تغيير إعداد Docker، أعد تشغيل الخدمات واتبع [دليل Docker](./docker/README.md) للاحتفاظ بالبيانات أو حذفها. تعني استجابة HTTP 200 أن API جاهز.
 
 ## 📚 التوثيق
 

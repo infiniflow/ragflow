@@ -18,7 +18,6 @@ package indexdoc
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -106,7 +105,7 @@ func ProcessChunksForPipeline(
 }
 
 // StampDatasetPagerank writes the dataset's pagerank onto every chunk a run is
-// about to index. Python's index-time doc template carries it
+// about to index. index-time doc template carries it
 // (`if task["pagerank"]: doc[PAGERANK_FLD] = int(...)`), which is what makes a
 // pagerank configured before parsing apply to the chunks it produces. Without
 // it only the chunks that already existed when the setting was saved carry the
@@ -158,24 +157,29 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 	delete(ck, "summary")
 }
 
-// pipelineOnlyFields are the parser/chunker BOOKKEEPING keys: each one is
-// consumed inside the pipeline (layout drives block-kind decisions, tk_nums
-// carries the chunker's token count into the Tokenizer, layout*/image/context_*
-// describe the media block, and page_number/table_id/sheet/headers/cells
-// describe the table or spreadsheet block) and NONE of them is a chunk-store
-// column.
+// pipelineOnlyFields are the pipeline's BOOKKEEPING keys, none of them a
+// chunk-store column: the parser/chunker keys are consumed inside the
+// pipeline (layout drives block-kind decisions, tk_nums carries the chunker's
+// token count into the Tokenizer, layout*/image/context_* describe the media
+// block, and page_number/table_id/sheet/headers/cells describe the table or
+// spreadsheet block); embedding_text is the extractor's enriched embedding
+// input consumed by the Tokenizer's fields selection; and
+// _managed_metadata_keys carries the extractor-owned document metadata keys
+// that the doc-state merge collects before this strip — the managed-key
+// cleanup needs them, the index doc does not.
 //
-// The Python index doc carries none of them — its chunk builder emits only the
-// persist fields — but Go's chunker hands them on, and the write boundary is
-// where they stop: Elasticsearch and Vastbase would add a field for each key,
-// and Infinity would drop each key at insert with a warning. media_ref is the
-// deferred-image reference consumed by the upload pass; a chunk that still
-// carries one must not reach the index.
+// The index doc carries none of them — its chunk builder emits only the
+// persist fields — and the write boundary is where they stop: Elasticsearch
+// and Vastbase would add a field for each key, and Infinity would drop each
+// key at insert with a warning. media_ref is the deferred-image reference
+// consumed by the upload pass; a chunk that still carries one must not reach
+// the index.
 var pipelineOnlyFields = []string{
 	"tk_nums", "layout", "layout_type", "layoutno", "image", "media_ref",
 	"context_above", "context_below", "page_number", "_preserve_order",
 	"table_id", "sheet", "sheet_index", "headers", "cells",
 	"row_start", "row_end", "col_start", "col_end",
+	"embedding_text", "_managed_metadata_keys",
 }
 
 // stripPipelineOnlyFields drops those bookkeeping keys at the index boundary,
@@ -290,7 +294,7 @@ func isSpreadsheetChunk(ck map[string]any) bool {
 
 // AggregateTableDocMetadata collects unique per-column values across all chunks
 // for columns with role "metadata" or "both", merges them into document metadata.
-// Mirrors Python: rag/utils/table_es_metadata.py:aggregate_table_doc_metadata
+// Mirrors aggregate_table_doc_metadata
 func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
 	mode, roles, tableColumnNames := resolveTableColumnConfig(parserConfig)
 	if mode == "" {
@@ -376,7 +380,7 @@ func resolveTableColumnConfig(parserConfig map[string]interface{}) (mode string,
 		return mode, roles, rawNames
 	}
 	for cid, raw := range parserConfig {
-		if !strings.HasPrefix(cid, "Parser:") {
+		if !common.IsParserComponentID(cid) {
 			continue
 		}
 		comp, _ := raw.(map[string]interface{})

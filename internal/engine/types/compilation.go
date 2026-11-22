@@ -1,6 +1,9 @@
 package types
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // CanonicalCompilationKind returns the persisted knowledge compilation kind.
 func CanonicalCompilationKind(kind string) string {
@@ -110,10 +113,19 @@ func compilationValues(value any) []string {
 
 // CompilationFilter builds predicates for mixed stored generations in one query.
 // Each old-field branch is guarded so it cannot override a canonical value.
+// Fields are visited in sorted order: every rewritten field appends an "or"
+// group, and an unordered walk would emit the same logical filter with a
+// different clause order on each call.
 func CompilationFilter(filter map[string]any) map[string]any {
 	out := make(map[string]any, len(filter))
 	var clauses []map[string]any
-	for field, value := range filter {
+	fields := make([]string, 0, len(filter))
+	for field := range filter {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	for _, field := range fields {
+		value := filter[field]
 		var alternatives []map[string]any
 		switch field {
 		case "compilation_template_kind_kwd":

@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 // Package component — Agent unit tests.
 //
 // Tests inject a canned agentRunner to verify the component contract
@@ -769,19 +785,27 @@ func TestAgent_ForwardsThinkingParam(t *testing.T) {
 		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
 	})
 
-	cmp, err := New("Agent", map[string]any{
-		"model_id":    "stub",
-		"user_prompt": "hello",
-		"thinking":    "enabled",
-	})
-	if err != nil {
-		t.Fatalf("New(Agent): %v", err)
-	}
-	if _, err = cmp.Invoke(t.Context(), nil, nil); err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if gotThinking != "enabled" {
-		t.Fatalf("runner thinking = %q, want enabled", gotThinking)
+	for _, thinking := range []string{"", "default", "disabled", "enabled"} {
+		t.Run(thinking, func(t *testing.T) {
+			cmp, err := New("Agent", map[string]any{
+				"model_id":    "stub",
+				"user_prompt": "hello",
+				"thinking":    thinking,
+			})
+			if err != nil {
+				t.Fatalf("New(Agent): %v", err)
+			}
+			if _, err = cmp.Invoke(t.Context(), nil, nil); err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			want := "disabled"
+			if thinking == "enabled" {
+				want = "enabled"
+			}
+			if gotThinking != want {
+				t.Fatalf("runner thinking = %q, want %q", gotThinking, want)
+			}
+		})
 	}
 }
 

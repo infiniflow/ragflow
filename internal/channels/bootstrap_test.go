@@ -26,26 +26,99 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"ragflow/internal/channels/core"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 )
 
-func TestStartRetryDelay(t *testing.T) {
+func TestStartIsolatesMalformedChannelAndKeepsReconciling(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&entity.ChatChannel{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.ChatChannel{
+		ID: "invalid", TenantID: "tenant", Name: "invalid", Channel: "telegram",
+		Config: entity.JSONMap{}, Status: 1,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	runtime, err := Start(ctx, nil)
+	if err != nil {
+		t.Fatalf("Start() error = %v, want isolated channel failure", err)
+	}
+	defer runtime.Stop()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		runtime.mu.Lock()
+		failure, ok := runtime.failed["invalid"]
+		if ok {
+			cancel()
+			runtime.mu.Unlock()
+			if failure.attempts != 1 {
+				t.Fatalf("failed channel attempts = %d, want 1", failure.attempts)
+			}
+			break
+		}
+		runtime.mu.Unlock()
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			t.Fatal("background reconciliation did not record channel failure")
+		}
+	}
+}
+
+func TestStartReturnsDatabaseFailure(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalDB := dao.DB
+	dao.DB = db
+	defer func() { dao.DB = originalDB }()
+	if _, err := Start(t.Context(), nil); err == nil {
+		t.Fatal("Start() succeeded without the channel table")
+	}
+}
+
+func TestChannelRetryDelay(t *testing.T) {
 	tests := []struct {
 		name     string
 		attempts int
 		want     time.Duration
 	}{
-		{name: "zero attempt uses first delay", attempts: 0, want: initialStartRetryDelay},
-		{name: "first attempt", attempts: 1, want: initialStartRetryDelay},
-		{name: "second attempt doubles", attempts: 2, want: 2 * initialStartRetryDelay},
-		{name: "fifth attempt", attempts: 5, want: 16 * initialStartRetryDelay},
-		{name: "bounded", attempts: 20, want: maxStartRetryDelay},
+		{name: "zero attempt uses first delay", attempts: 0, want: 5 * time.Second},
+		{name: "first attempt", attempts: 1, want: 5 * time.Second},
+		{name: "second attempt doubles", attempts: 2, want: 10 * time.Second},
+		{name: "third attempt", attempts: 3, want: 20 * time.Second},
+		{name: "fourth attempt", attempts: 4, want: time.Minute},
+		{name: "fifth attempt", attempts: 5, want: 3 * time.Minute},
+		{name: "sixth attempt", attempts: 6, want: 10 * time.Minute},
+		{name: "seventh attempt", attempts: 7, want: 30 * time.Minute},
+		{name: "eighth attempt", attempts: 8, want: time.Hour},
+		{name: "ninth attempt", attempts: 9, want: 6 * time.Hour},
+		{name: "reaches cap", attempts: 10, want: 24 * time.Hour},
+		{name: "bounded", attempts: 20, want: 24 * time.Hour},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := startRetryDelay(tt.attempts); got != tt.want {
-				t.Fatalf("startRetryDelay(%d) = %s, want %s", tt.attempts, got, tt.want)
+			if got := channelRetryDelay(tt.attempts); got != tt.want {
+				t.Fatalf("channelRetryDelay(%d) = %s, want %s", tt.attempts, got, tt.want)
 			}
 		})
 	}
@@ -60,8 +133,8 @@ func TestRecordStartFailure(t *testing.T) {
 	if first.attempts != 1 {
 		t.Fatalf("attempts after first failure = %d, want 1", first.attempts)
 	}
-	if !first.nextRetryAt.Equal(now.Add(initialStartRetryDelay)) {
-		t.Fatalf("nextRetryAt after first failure = %s, want %s", first.nextRetryAt, now.Add(initialStartRetryDelay))
+	if !first.nextRetryAt.Equal(now.Add(initialChannelRetryDelay)) {
+		t.Fatalf("nextRetryAt after first failure = %s, want %s", first.nextRetryAt, now.Add(initialChannelRetryDelay))
 	}
 
 	rt.recordStartFailure("account-1", "fp-1", now)
@@ -69,8 +142,8 @@ func TestRecordStartFailure(t *testing.T) {
 	if second.attempts != 2 {
 		t.Fatalf("attempts after second failure = %d, want 2", second.attempts)
 	}
-	if !second.nextRetryAt.Equal(now.Add(2 * initialStartRetryDelay)) {
-		t.Fatalf("nextRetryAt after second failure = %s, want %s", second.nextRetryAt, now.Add(2*initialStartRetryDelay))
+	if !second.nextRetryAt.Equal(now.Add(2 * initialChannelRetryDelay)) {
+		t.Fatalf("nextRetryAt after second failure = %s, want %s", second.nextRetryAt, now.Add(2*initialChannelRetryDelay))
 	}
 
 	rt.recordStartFailure("account-1", "fp-2", now)
@@ -217,5 +290,67 @@ func TestWhatsAppRetireChatWorkerRequiresCurrentEmptyWorker(t *testing.T) {
 	}
 	if _, ok := ch.workers["chat-1"]; ok {
 		t.Fatal("empty retired worker remains in ownership map")
+	}
+}
+
+func TestRuntimeStopWaitsForAdapterCleanup(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&entity.ChatChannel{}); err != nil {
+		t.Fatal(err)
+	}
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+	runtime := NewRuntime()
+	adapter := &shutdownChannel{stopping: make(chan struct{}), release: make(chan struct{})}
+	runtime.running["account"] = runningChannel{channel: adapter}
+	ctx, cancel := context.WithCancel(t.Context())
+	go runtime.Run(ctx)
+	cancel()
+	stopped := make(chan struct{})
+	go func() { runtime.Stop(); close(stopped) }()
+	select {
+	case <-adapter.stopping:
+	case <-time.After(5 * time.Second):
+		t.Fatal("adapter cleanup never started")
+	}
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned before adapter cleanup")
+	default:
+	}
+	close(adapter.release)
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop did not finish after adapter cleanup")
+	}
+	if adapter.canceled {
+		t.Fatal("adapter cleanup received a canceled context")
+	}
+}
+
+type shutdownChannel struct {
+	stopping chan struct{}
+	release  chan struct{}
+	canceled bool
+}
+
+func (*shutdownChannel) ChannelID() string                                { return "test" }
+func (*shutdownChannel) AccountID() string                                { return "account" }
+func (*shutdownChannel) SetMessageHandler(core.MessageHandler)            {}
+func (*shutdownChannel) Start(context.Context) error                      { return nil }
+func (*shutdownChannel) Send(context.Context, core.OutgoingMessage) error { return nil }
+func (c *shutdownChannel) Stop(ctx context.Context) error {
+	c.canceled = ctx.Err() != nil
+	close(c.stopping)
+	select {
+	case <-c.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }

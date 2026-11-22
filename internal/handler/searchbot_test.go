@@ -636,20 +636,25 @@ func TestParseMindMapMarkdown_ThinkTagUnclosed(t *testing.T) {
 // ---- SSE helper direct tests ----
 
 func TestSseAnswer_Final(t *testing.T) {
-	s := sseAnswer("hello", map[string]interface{}{"chunks": []int{}}, true)
-	if !strings.Contains(s, `"answer":"hello"`) {
-		t.Errorf("missing answer: %s", s)
-	}
-	if !strings.Contains(s, `"final":true`) {
-		t.Errorf("missing final=true: %s", s)
-	}
-	if !strings.Contains(s, "data: ") {
-		t.Errorf("missing SSE prefix: %s", s)
+	for _, message := range []string{"", "success", "Restricted question"} {
+		s := sseAnswer("hello", map[string]interface{}{"chunks": []int{}}, true, message)
+		if !strings.Contains(s, `"answer":"hello"`) {
+			t.Errorf("missing answer: %s", s)
+		}
+		if !strings.Contains(s, `"final":true`) {
+			t.Errorf("missing final=true: %s", s)
+		}
+		if !strings.Contains(s, "data: ") {
+			t.Errorf("missing SSE prefix: %s", s)
+		}
+		if !strings.Contains(s, `"message":"`+message+`"`) || !strings.Contains(s, `"code":0`) {
+			t.Errorf("expected success code and message %q: %s", message, s)
+		}
 	}
 }
 
 func TestSseAnswer_NilRefs(t *testing.T) {
-	s := sseAnswer("hello", nil, false)
+	s := sseAnswer("hello", nil, false, "")
 	if !strings.Contains(s, `"reference":{}`) {
 		t.Errorf("nil refs should produce {}: %s", s)
 	}

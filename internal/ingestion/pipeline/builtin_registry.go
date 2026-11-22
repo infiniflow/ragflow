@@ -15,7 +15,7 @@ import (
 
 const builtinTemplatePrefix = "ingestion_pipeline_"
 
-// builtinParserOrder matches Python's settings.PARSERS order, projected onto
+// builtinParserOrder matches settings.PARSERS order, projected onto
 // the canonical builtin templates shipped by Go. Templates not in this list
 // are appended deterministically after the shared parser methods.
 var builtinParserOrder = map[string]int{
@@ -81,9 +81,11 @@ func NewRegistryFromDir(dir string) (*Registry, error) {
 	return NewRegistryFromFS(os.DirFS(dir), ".")
 }
 
+// DefaultRegistry builds the process-wide registry once over the template
+// source selected by editionTemplateFS().
 func DefaultRegistry() (*Registry, error) {
 	defaultRegistryOnce.Do(func() {
-		defaultRegistry, defaultRegistryErr = NewRegistryFromFS(builtinTemplateFS, "template")
+		defaultRegistry, defaultRegistryErr = NewRegistryFromFS(editionTemplateFS(), "template")
 	})
 	return defaultRegistry, defaultRegistryErr
 }
@@ -245,6 +247,8 @@ func parseTemplate(filename string, raw []byte) (*BuiltinPipeline, error) {
 func builtinRefFromFilename(filename string) string {
 	name := strings.TrimSuffix(filename, filepath.Ext(filename))
 	name = strings.TrimPrefix(name, builtinTemplatePrefix)
+	// The optional edition suffix identifies the asset, not the parser_id.
+	name = strings.TrimSuffix(name, "_ee")
 	if name == filename || name == "" {
 		return ""
 	}

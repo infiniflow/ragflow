@@ -2325,3 +2325,29 @@ func TestExtractor_CallTextCached_NoRedis_FailOpen(t *testing.T) {
 		t.Errorf("got summary %v, want 'This is a summary without Redis.'", ck["summary"])
 	}
 }
+
+// TestUserTurnTrimmed verifies the trimmed-user-turn signal callRaw stamps on
+// the chat response: fitting shortens the user turn only when the context
+// budget actually cut it.
+func TestUserTurnTrimmed(t *testing.T) {
+	msgs := buildExtractorMessages("extract contract", "user text")
+	if userTurnTrimmed("user text", msgs) {
+		t.Fatal("an untrimmed user turn must not report trimmed")
+	}
+
+	short := make([]eschema.Message, len(msgs))
+	copy(short, msgs)
+	short[len(short)-1].Content = "user"
+	if !userTurnTrimmed("user text", short) {
+		t.Fatal("a shortened user turn must report trimmed")
+	}
+
+	if userTurnTrimmed("user text", nil) {
+		t.Fatal("no fitted messages must not report trimmed")
+	}
+
+	systemOnly := []eschema.Message{{Role: eschema.System, Content: "contract"}}
+	if userTurnTrimmed("user text", systemOnly) {
+		t.Fatal("a fitted slice without a user turn must not report trimmed")
+	}
+}

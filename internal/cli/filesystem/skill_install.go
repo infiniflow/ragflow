@@ -232,12 +232,6 @@ func (c *SkillInstallCommand) Execute(args []string) error {
 		return fmt.Errorf("failed to install skill: %w", err)
 	}
 
-	// 7. Update index
-	fmt.Printf("Updating search index for skill '%s'...\n", bundle.Name)
-	if err := c.updateIndex(ctx, parsedArgs.SpaceID, bundle.Name); err != nil {
-		fmt.Printf("⚠ Warning: failed to update index: %v\n", err)
-	}
-
 	fmt.Printf("✓ Successfully installed skill '%s' (version: %s)\n", bundle.Name, bundle.Metadata.Version)
 	return nil
 }
@@ -398,14 +392,6 @@ func (c *SkillInstallCommand) skillExists(ctx stdctx.Context, spaceID, skillName
 		return false, nil
 	}
 	return true, nil
-}
-
-// updateIndex updates the search index for a skill
-// Note: Indexing is now handled by SkillUploader during upload
-func (c *SkillInstallCommand) updateIndex(ctx stdctx.Context, spaceID, skillName string) error {
-	// Indexing is automatically performed by SkillUploader.UploadSkill
-	// This method is kept for potential future use
-	return nil
 }
 
 // parseArgs parses command arguments

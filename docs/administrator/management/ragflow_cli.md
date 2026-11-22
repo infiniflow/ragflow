@@ -25,7 +25,7 @@ When `VERSION` is omitted, the installer resolves the latest GitHub Release and 
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh \
-  | VERSION=v1.0.0-rc3 sh
+  | VERSION=v1.0.0 sh
 ```
 
 Both forms are supported. Pin a version for production or reproducible installations so that a later Release does not change the installed version.
@@ -46,7 +46,7 @@ When no version is specified, the Windows installer also uses the latest GitHub 
 
 ```powershell
 irm https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.ps1 -OutFile install.ps1
-./install.ps1 -Version v1.0.0-rc3
+./install.ps1 -Version v1.0.0
 ```
 
 The Windows installer installs `ragflow-cli.exe` under `%LOCALAPPDATA%\Programs\RAGFlow` by default and adds that directory to the user `PATH`. Restart the terminal if the installer reports that `PATH` was updated.
@@ -67,12 +67,12 @@ bash build.sh --all
 
 Use `--all` for the initial build from a fresh checkout. After the native libraries and C++ bindings are available, use `bash build.sh --go` for subsequent Go-only rebuilds.
 
-Before starting Admin, start the required dependencies and complete the standalone database migration as described in [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services) and [Migrate and launch the Go backend](../../develop/launch_ragflow_from_source.md#3-migrate-and-launch-the-go-backend). The CLI does not start or migrate the server for you.
+Start the required dependencies as described in [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services), then follow [Launch the Go backend](../../develop/launch_ragflow_from_source.md#3-launch-the-go-backend). The OSS server runs database migrations and initializes the superuser automatically, then runs Admin, API, Ingestor, Syncer and Chatter in one Go process. The CLI connects to this server; it does not start it.
 
-For a source-development checkout, start the Admin Service with `RAGFLOW_DEV_MODE=true` to bypass the code and database version downgrade check. This setting does not run database migrations or change the schema. Do not set it in production. Start Admin before the API server, ingestors, and syncers:
+From the repository root, start all backend services:
 
 ```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
+./bin/ragflow_server
 ```
 
 If this creates the first superuser, its email is `admin@ragflow.io`. Its initial

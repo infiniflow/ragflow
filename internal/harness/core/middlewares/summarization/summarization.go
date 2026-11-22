@@ -9,9 +9,12 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/harness/core"
 	"ragflow/internal/harness/core/schema"
+	"ragflow/internal/utility"
 )
 
 // TriggerCondition defines when summarization activates.
@@ -205,7 +208,7 @@ func (m *middleware[M]) generateSummary(ctx context.Context, msgs []M) (string, 
 		}
 		lastErr = err
 		if attempt < maxAttempts {
-			time.Sleep(time.Duration(100*(1<<uint(attempt))) * time.Millisecond)
+			time.Sleep(common.ExponentialBackoff(100*time.Millisecond, time.Minute, attempt+1))
 		}
 	}
 	return fmt.Sprintf("(%d messages)", len(msgs)), lastErr
@@ -275,13 +278,12 @@ func truncateText(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	// Slice on a rune boundary; [:maxLen] indexes bytes and can split a
-	// multi-byte UTF-8 character, producing invalid output in the summary.
-	runes := []rune(s)
-	if maxLen > len(runes) {
+	// Slicing on a byte boundary can split a multi-byte rune and produce
+	// invalid output in the summary; truncate on a rune boundary instead.
+	if maxLen > utf8.RuneCountInString(s) {
 		return s
 	}
-	return string(runes[:maxLen]) + "..."
+	return utility.TruncateRunes(s, maxLen) + "..."
 }
 
 func buildSummaryPrompt[M core.MessageType](content string) M {

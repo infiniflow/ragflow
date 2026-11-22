@@ -15,7 +15,6 @@ package document
 import (
 	"encoding/json"
 	"sort"
-	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -42,8 +41,7 @@ func firstExtractorMetadata(t *testing.T, parserConfig entity.JSONMap) map[strin
 	t.Helper()
 	var keys []string
 	for k := range parserConfig {
-		lower := strings.ToLower(k)
-		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+		if common.IsExtractorComponentID(k) {
 			keys = append(keys, k)
 		}
 	}

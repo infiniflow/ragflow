@@ -21,8 +21,7 @@ import "unicode"
 // DetectLanguage returns a best-effort language code based on the
 // proportion of CJK characters.
 func DetectLanguage(text string) string {
-	cjk := 0
-	total := 0
+	cjk, total := 0, 0
 	for _, r := range text {
 		if unicode.Is(unicode.Han, r) {
 			cjk++
@@ -31,6 +30,13 @@ func DetectLanguage(text string) string {
 			total++
 		}
 	}
+	return languageFromCounts(cjk, total)
+}
+
+// languageFromCounts is the counting half of DetectLanguage, split out so a
+// caller that already has CJK/letter counts (e.g. suffix scans) can decide the
+// language without re-scanning the text. The threshold is identical.
+func languageFromCounts(cjk, total int) string {
 	if total > 0 && float64(cjk)/float64(total) > 0.3 {
 		return "zh"
 	}

@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
@@ -59,6 +60,13 @@ type BaseModel struct {
 	// Drivers with non-standard auth (e.g. Xiaomi's api-key header, Xunfei's
 	// spark_api_password bundle) set it in their constructor.
 	authHeader func(*APIConfig) (string, string)
+	// requestHeaders, when non-nil, adds driver-specific headers to every
+	// request built by the shared helpers. It runs before authentication is
+	// applied, so authentication headers take precedence over anything it
+	// sets. It receives the request itself, so a driver can decide from the
+	// actual destination (e.g. AI/ML API sends partner attribution only to its
+	// own gateway host).
+	requestHeaders func(*http.Request)
 }
 
 // chatResponseParts is the provider-normalized result of a non-streaming chat
@@ -111,7 +119,10 @@ func recordResponseUsage(modelUsage *common.ModelUsage, requestID string, usage 
 		return
 	}
 	if modelUsage == nil {
-		modelUsage = &common.ModelUsage{}
+		// The synthetic record is built at response time, so StartAt carries
+		// the completion time; callers that know the call start should pass
+		// a usage with StartAt set before the call instead.
+		modelUsage = &common.ModelUsage{StartAt: time.Now()}
 	}
 	if modelUsage.Type == "" {
 		modelUsage.Type = modelType
@@ -134,10 +145,11 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 		modelUsage.OutputTokens = usage.CompletionTokens
 		modelUsage.TotalTokens = usage.TotalTokens
 	}
-	// StartAt may be zero when the synthetic ModelUsage came from
-	// recordResponseUsage's nil-caller path. In that case we cannot
-	// compute a meaningful response time; leave it at zero instead
-	// of reporting a 50-year epoch delta.
+	// StartAt may still be zero when the caller built an explicit ModelUsage
+	// without one in a build without the usage template resolver (which would
+	// have stamped it in usageFor). In that case we cannot compute a
+	// meaningful response time; leave it at zero instead of reporting a huge
+	// epoch delta.
 	if !modelUsage.StartAt.IsZero() {
 		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 	}
@@ -165,7 +177,7 @@ func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usa
 		chatConfig.UsageResult = usage
 	}
 	if modelUsage == nil {
-		modelUsage = &common.ModelUsage{}
+		modelUsage = &common.ModelUsage{StartAt: time.Now()}
 	}
 	if modelUsage.Type == "" {
 		modelUsage.Type = "chat"
@@ -189,8 +201,12 @@ func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
 
 // applyAuth sets the authentication header on req. Drivers with a custom
 // authHeader hook (e.g. Xiaomi's api-key header, Xunfei's spark_api_password
-// bundle) use it; the default is "Authorization: Bearer <key>".
+// bundle) use it; the default is "Authorization: Bearer <key>". A driver's
+// requestHeaders hook runs first, so the authentication header always wins.
 func (b *BaseModel) applyAuth(req *http.Request, apiConfig *APIConfig) {
+	if b.requestHeaders != nil {
+		b.requestHeaders(req)
+	}
 	if b.authHeader != nil {
 		name, value := b.authHeader(apiConfig)
 		req.Header.Set(name, value)
@@ -506,6 +522,11 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 
 		if model.ContextLength != nil && *model.ContextLength > 0 {
 			modelResponse.ContextLength = model.ContextLength
+		} else if model.ContextWindow != nil && *model.ContextWindow > 0 {
+			modelResponse.ContextLength = model.ContextWindow
+		}
+		if model.MaxTokens != nil && *model.MaxTokens > 0 {
+			modelResponse.MaxOutput = model.MaxTokens
 		}
 
 		// The provider-list merge treats remote entries as authoritative
@@ -737,9 +758,8 @@ func mergeToolCallFunction(existing, delta map[string]interface{}) {
 
 // CloneMap returns a shallow copy of m.
 func cloneMap(m map[string]interface{}) map[string]interface{} {
-	cp := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		cp[k] = v
+	if m == nil {
+		return map[string]interface{}{}
 	}
-	return cp
+	return maps.Clone(m)
 }

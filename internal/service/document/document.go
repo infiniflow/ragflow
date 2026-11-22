@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"ragflow/internal/service"
-	"ragflow/internal/storage"
 	"regexp"
 	"time"
 
@@ -100,10 +99,14 @@ type DocumentResponse struct {
 	ProcessBeginAt          *time.Time                  `json:"process_begin_at,omitempty"`
 	ProcessDuration         float64                     `json:"process_duration"`
 	Suffix                  string                      `json:"suffix"`
-	IngestionStatus         string                      `json:"ingestion_status"`
-	Status                  *string                     `json:"status,omitempty"`
-	CreatedAt               string                      `json:"created_at"`
-	UpdatedAt               string                      `json:"updated_at"`
+	// RestoredVersion is the dataset version the content was replayed from, null
+	// for content a parse produced. Read with ChunkNum it says whether the
+	// restore brought chunks back.
+	RestoredVersion *int64  `json:"restored_version,omitempty"`
+	IngestionStatus string  `json:"ingestion_status"`
+	Status          *string `json:"status,omitempty"`
+	CreatedAt       string  `json:"created_at"`
+	UpdatedAt       string  `json:"updated_at"`
 }
 
 type ThumbnailResponse struct {
@@ -188,6 +191,9 @@ var (
 	// preview response, so the sentinel text itself is never sent to
 	// clients.
 	ErrPreviewFileEmpty = errors.New("preview file empty")
+	// ErrPreviewNotReady marks a type whose preview artifact has not been
+	// generated yet, typically because ingestion is still running or failed.
+	ErrPreviewNotReady = errors.New("preview not ready")
 )
 
 var artifactForceAttachmentExtensions = map[string]struct{}{
@@ -293,27 +299,6 @@ type BatchUpdateMetadatasResponse struct {
 	MatchedDocs int `json:"matched_docs"`
 }
 
-// removeObjectBestEffort retries blob deletion on a context that survives the
-// originating request. Bounded by a timeout so a wedged storage SDK cannot
-// block the caller forever. It always uses the parent request's storage impl,
-// but deliberately NOT the request context, because a cancelled request must
-// not leak the blob it already wrote (or orphan a blob whose row was deleted).
-func removeObjectBestEffort(ctx context.Context, storageImpl storage.Storage, bucket, object string) error {
-	newCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancel()
-
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if err := storageImpl.Remove(newCtx, bucket, object); err != nil {
-			lastErr = err
-			// Treat cancellation of the *new* cleanup ctx as terminal.
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				break
-			}
-			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
-			continue
-		}
-		return nil
-	}
-	return lastErr
-}
+// Blob deletion lives in storage.RemoveBlob: the dataset service reclaims the
+// objects of a removed document with the same retry rule, and sharing it keeps the
+// two services from importing each other for it.

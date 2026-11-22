@@ -1,9 +1,126 @@
 package wiki
 
-import "sort"
+import (
+	"fmt"
+	"sort"
+	"strings"
 
-// This file implements the PLAN-stage page-budget controls that align the Go
-// wiki variant with Python's wiki.py:
+	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+)
+
+// Leave room for chat framing in addition to the configured output allowance.
+const wikiRefineSafetyTokens = 64
+
+type wikiRefineTokenizer struct{ common.Tokenizer }
+
+func (t wikiRefineTokenizer) NumTokens(text string) int {
+	if t.Tokenizer != nil {
+		return t.Tokenizer.NumTokens(text)
+	}
+	// The production resolver may not supply a model tokenizer. A byte bound
+	// avoids the undercount of bytes/4 for numbers, code, and non-English text.
+	return len(text)
+}
+
+func (p *wikiPipeline) wikiRefineTokenCount(text string) int {
+	return (wikiRefineTokenizer{p.deps.Tokenizer}).NumTokens(text)
+}
+
+func (p *wikiPipeline) wikiRefineTokenBudget() (input, output int) {
+	output = p.deps.ModelMaxOutput
+	if p.param.ChatSettings.MaxTokens != nil {
+		output = *p.param.ChatSettings.MaxTokens
+	}
+	if output <= 0 {
+		output = wikiPlanDefaultOutputTokens
+	}
+	return p.deps.ModelContextLen - output - wikiRefineSafetyTokens, output
+}
+
+func (p *wikiPipeline) checkWikiRefineBudget(req common.ChatRequest) error {
+	budget, output := p.wikiRefineTokenBudget()
+	estimated := p.wikiRefineTokenCount(req.SystemPrompt + "\n" + req.UserPrompt)
+	if p.deps.ModelContextLen <= 0 || budget <= 0 || estimated > budget {
+		return fmt.Errorf("knowledge_compiler: wiki REFINE token budget exceeded or unavailable: estimated_tokens=%d input_budget=%d context_window=%d output_reserve=%d", estimated, budget, p.deps.ModelContextLen, output)
+	}
+	return nil
+}
+
+// Keep source blocks intact, including chunk markers and separators. Each
+// complete prompt is checked against the current draft before dispatch.
+func wikiRefineSourceBlocks(chunks []common.Chunk, ids []string) []common.Chunk {
+	var blocks []common.Chunk
+	if len(ids) == 0 {
+		for _, ch := range chunks {
+			if text := common.FirstNonEmpty(ch.Text, ch.Content); text != "" {
+				blocks = append(blocks, common.Chunk{Text: text + "\n\n"})
+			}
+		}
+	} else {
+		lookup := make(map[string]common.Chunk, len(chunks))
+		for i, ch := range chunks {
+			id := strings.TrimSpace(ch.ID)
+			if id == "" {
+				id = fmt.Sprintf("chunk-%d", i+1)
+			}
+			ch.ID = id
+			lookup[id] = ch
+		}
+		for _, id := range ids {
+			if ch, ok := lookup[id]; ok {
+				if text := buildSourceContext([]common.Chunk{ch}, []string{id}); text != "" {
+					blocks = append(blocks, common.Chunk{Text: text})
+				}
+			}
+		}
+	}
+	return blocks
+}
+
+// Select only the next greedy prefix, without tokenizing the remaining suffix.
+// Always keep the first block for the full-prompt check, even when the separate
+// source allowance is exhausted: tokenizer counts need not be additive.
+func wikiRefineSourcePrefix(pending []common.Chunk, budget int, tok common.Tokenizer) []common.Chunk {
+	if len(pending) == 0 || budget <= 0 {
+		return pending[:min(len(pending), 1)]
+	}
+	count := 1
+	remaining := budget
+	for i, block := range pending {
+		tokens := tok.NumTokens(block.Text)
+		if tokens > remaining {
+			break
+		}
+		remaining -= tokens
+		count = i + 1
+	}
+	return pending[:count]
+}
+
+func joinWikiRefineSources(batch []common.Chunk) string {
+	var source strings.Builder
+	for _, ch := range batch {
+		source.WriteString(ch.Text)
+	}
+	return source.String()
+}
+
+// Replace placeholders once so literal placeholders inside a draft or source
+// cannot become new substitutions in the rendered prompt.
+func renderWikiRefineTemplate(template string, fields map[string]string) string {
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, 0, 2*len(keys))
+	for _, key := range keys {
+		pairs = append(pairs, "{"+key+"}", fields[key])
+	}
+	return strings.NewReplacer(pairs...).Replace(template)
+}
+
+// The PLAN-stage page-budget controls below implement:
 //
 //   - a global target_page_count derived from item count (clamp(8, total//3, 60));
 //   - a dynamic max_page_count derived from the model's configured output cap that acts
@@ -17,7 +134,8 @@ import "sort"
 // budget only uses that same value to keep the requested page count within the
 // configured output capacity.
 
-// Python alignment constants (wiki.py:1670-1674, 1783-1787).
+// Plan-stage page-budget constants: default output tokens, a safety reserve,
+// a per-page token estimate, and the min/max target page counts.
 const (
 	wikiPlanDefaultOutputTokens = 4096
 	wikiPlanOutputSafetyTokens  = 256
@@ -26,7 +144,7 @@ const (
 	wikiPlanTargetPageCountMax  = 60
 )
 
-// wikiTargetPageCount mirrors Python _wiki_target_page_count:
+// wikiTargetPageCount mirrors _wiki_target_page_count
 // clamp(8, total//3, 60).
 func wikiTargetPageCount(totalItems int) int {
 	if totalItems <= 0 {

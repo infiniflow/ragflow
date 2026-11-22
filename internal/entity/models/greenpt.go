@@ -62,6 +62,7 @@ func (m *GreenPTModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		switch models[i].Name {
 		case "green-s", "green-s-pro":
 			models[i].ModelTypes = []string{"asr"}
+			models[i].ModelTypesInferred = false
 		}
 	}
 	return models, nil

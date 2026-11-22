@@ -30,7 +30,7 @@ import (
 func TestExecuteMemoryTask_PanicDoesNotPropagate(t *testing.T) {
 	_ = testutil.SetupTestDB(t) // ensure DB helpers are initialized; not exercised here
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"}, nil)
+	ingestor := NewIngestor("test", 1, []string{"pdf"}, common.TierDefault, nil)
 	// Real (non-nil) memory service so executeMemoryTask reaches the
 	// runMemoryTask dispatch path instead of early-Acking on nil service.
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
@@ -70,7 +70,7 @@ func TestHandleAndExecute_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"}, nil)
+	ingestor := NewIngestor("test", 1, []string{"pdf"}, common.TierDefault, nil)
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 	ingestor.runMemoryTask = func(_ context.Context, _, _ string) (servicepkg.MemoryTaskDisposition, error) {
 		panic("simulated memory extraction panic")
@@ -84,10 +84,10 @@ func TestHandleAndExecute_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 		TaskType: common.TaskTypeMemory,
 	}}
 
-	ingestor.handleAndExecute(memHandle)
+	ingestor.handleAndExecute(nil, memHandle)
 
 	docHandle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
-	ingestor.handleAndExecute(docHandle)
+	ingestor.handleAndExecute(nil, docHandle)
 
 	if memHandle.nacks.Load() != 0 || memHandle.acks.Load() != 0 {
 		t.Fatalf("poison memory task: expected unsettled handle, got acks=%d nacks=%d", memHandle.acks.Load(), memHandle.nacks.Load())

@@ -710,3 +710,49 @@ func generateTestCert(t *testing.T, dnsName string) tls.Certificate {
 		PrivateKey:  priv,
 	}
 }
+
+// TestBackoffBounds verifies the exponential backoff helper never exceeds its
+// cap and stays within the (jitter-randomized) capped exponential. Delegation to
+// common.ExponentialBackoff is what keeps the cap consistent across the retry
+// loops in the codebase.
+func TestBackoffBounds(t *testing.T) {
+	cases := []struct {
+		name    string
+		base    time.Duration
+		max     time.Duration
+		attempt int
+	}{
+		{"firstAttempt", 200 * time.Millisecond, 3 * time.Second, 1},
+		{"secondAttempt", 200 * time.Millisecond, 3 * time.Second, 2},
+		{"attemptZeroClampsToFirst", 200 * time.Millisecond, 3 * time.Second, 0},
+		{"largeAttemptCapped", 200 * time.Millisecond, 3 * time.Second, 100},
+		{"baseGreaterThanMax", 10 * time.Second, 3 * time.Second, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// Expected capped exponential, mirroring common.ExponentialBackoff
+			// so this test does not depend on that package directly.
+			want := c.base
+			for i := 1; i < c.attempt; i++ {
+				want *= 2
+				if want > c.max {
+					want = c.max
+					break
+				}
+			}
+			if want > c.max {
+				want = c.max
+			}
+			got := backoff(c.base, c.max, c.attempt)
+			if got < 0 {
+				t.Errorf("backoff returned negative %v", got)
+			}
+			if got > want {
+				t.Errorf("backoff(%v,%v,%d) = %v > %v (exceeds capped exponential)", c.base, c.max, c.attempt, got, want)
+			}
+			if got > c.max {
+				t.Errorf("backoff(%v,%v,%d) = %v > max %v (cap violated)", c.base, c.max, c.attempt, got, c.max)
+			}
+		})
+	}
+}

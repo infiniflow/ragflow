@@ -2,12 +2,32 @@ package common
 
 import "testing"
 
+func TestParseParamThinkingSettings(t *testing.T) {
+	for _, thinking := range []string{"", "default", "disabled", "enabled"} {
+		t.Run(thinking, func(t *testing.T) {
+			p, err := ParseParam(map[string]any{
+				"compilation_template_id": "template-1",
+				"thinking":                thinking,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !p.ChatSettings.ThinkingSet || p.ChatSettings.Thinking == nil {
+				t.Fatal("thinking choice must set an explicit override")
+			}
+			if got, want := *p.ChatSettings.Thinking, thinking == "enabled"; got != want {
+				t.Errorf("thinking = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 // TestKindToVariant_WhitelistCoversAllValidKinds covers O2a: every whitelisted
 // template kind maps to a non-empty variant without error.
 func TestKindToVariant_WhitelistCoversAllValidKinds(t *testing.T) {
 	validKinds := []string{
 		"tree", "mind_map", "mindmap", "wiki", "page_index",
-		"session_essence", "session_graph", "timeline",
+		"session_essence", "session_graph",
 		"knowledge_graph", "structure", "knowledgegraph", "graph",
 	}
 	for _, kind := range validKinds {
@@ -58,7 +78,6 @@ func TestKindToTaskTypePreservesFrontendCategories(t *testing.T) {
 		"tree":            TaskTypeTree,
 		"knowledge_graph": TaskTypeGraph,
 		"mind_map":        TaskTypeMindmap,
-		"timeline":        TaskTypeTimeline,
 		"page_index":      TaskTypePageIndex,
 	}
 	for kind, want := range tests {

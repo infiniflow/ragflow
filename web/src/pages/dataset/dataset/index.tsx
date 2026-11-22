@@ -4,10 +4,11 @@ import {
 } from '@/components/bulk-operate-bar';
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
+import { TruncatedText } from '@/components/truncated-text';
 import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { CardContent, CardHeader } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +26,7 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { LucidePlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PageFrame } from '@/components/page-frame';
 import { MetadataType } from '../components/metedata/constant';
 import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
@@ -152,12 +154,11 @@ export default function Dataset() {
     return item;
   });
 
+  const datasetDescription = t('knowledgeDetails.datasetDescription');
+
   return (
-    <Card
-      as="article"
-      className="mb-5 mr-5 min-w-[880px] bg-transparent shadow-none"
-    >
-      <CardHeader as="header" className="p-5 space-y-0">
+    <PageFrame>
+      <CardHeader as="header" className="p-5 space-y-0 shrink-0">
         <ListFilterBar
           onSearchChange={handleInputChange}
           searchString={searchString}
@@ -168,13 +169,17 @@ export default function Dataset() {
           filters={filters}
           className="items-end"
           leftPanel={
-            <div>
-              <h1 className="leading-normal font-medium">
+            <div className="min-w-0">
+              <h1 className="leading-normal font-medium truncate">
                 {t('knowledgeDetails.subbarFiles')}
               </h1>
-              <p className="text-text-secondary text-sm font-normal">
-                {t('knowledgeDetails.datasetDescription')}
-              </p>
+              <TruncatedText
+                as="p"
+                className="text-text-secondary text-sm font-normal truncate"
+                tooltip={datasetDescription}
+              >
+                {datasetDescription}
+              </TruncatedText>
             </div>
           }
         >
@@ -208,7 +213,7 @@ export default function Dataset() {
         )}
       </CardHeader>
 
-      <CardContent className="px-5 py-0">
+      <CardContent className="px-5 py-0 flex-1 min-h-0 flex flex-col">
         <ShowPrivilegeModalContext.Provider value={{ handShowPrivilegeModal }}>
           <DatasetTable
             documents={documents}
@@ -218,7 +223,6 @@ export default function Dataset() {
             setRowSelection={setRowSelection}
             showManageMetadataModal={showManageMetadataModal}
             loading={loading}
-            bulkOperateBarVisible={!rowSelectionIsEmpty}
           ></DatasetTable>
         </ShowPrivilegeModalContext.Provider>
 
@@ -280,6 +284,6 @@ export default function Dataset() {
         ></PrivilegeManagementDialog>
       )}
       {/* </> */}
-    </Card>
+    </PageFrame>
   );
 }

@@ -27,6 +27,22 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestAPITokenLimitCheckedInSeed(t *testing.T) {
+	seeds, err := loadSystemSettingsSeedFile(filepath.Join("..", "..", "conf", "system_settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, seed := range seeds {
+		if seed.Name == "api_key.max_count" {
+			if seed.Value != "16" || seed.DataType != "integer" || seed.Source != "variable" {
+				t.Fatalf("unexpected API key limit seed: %+v", seed)
+			}
+			return
+		}
+	}
+	t.Fatal("API key limit missing from checked-in system settings")
+}
+
 func TestSeedSystemSettingsInsertsMissingAndKeepsExisting(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

@@ -63,7 +63,8 @@ const (
 	ConfigKeyDurability = "__pregel_durability"
 	// ConfigKeyRuntime holds a Runtime instance with context, store, stream writer, etc.
 	ConfigKeyRuntime = "__pregel_runtime"
-	// ConfigKeyResumeMap holds a mapping of task ns -> resume value for resuming tasks.
+	// ConfigKeyResumeMap maps a task namespace to its resume value(s).
+	// A slice supplies values to successive Interrupt calls within that task.
 	ConfigKeyResumeMap = "__pregel_resume_map"
 )
 

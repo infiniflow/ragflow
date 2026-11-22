@@ -269,6 +269,8 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.AdminListUserDefaultModelsCommand(commandCount, cmd)
 	case "admin_list_user_operation_logs":
 		return c.AdminListUserLogsCommand(commandCount, cmd)
+	case "admin_list_features":
+		return c.CommonListFeaturesCommand(commandCount, cmd)
 	case "admin_stop_user_ingestion_tasks_command":
 		return c.AdminStopUserIngestionTasksCommand(commandCount, cmd)
 	case "admin_remove_user_ingestion_tasks_command":
@@ -538,6 +540,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":
 		return c.APIListEnvironmentsCommand(commandCount, cmd)
+	case "api_check_license":
+		return c.APICheckLicenseCommand(commandCount, cmd)
 	case "api_add_api_server":
 		return c.AddAPIServerCommand(commandCount, cmd)
 	case "api_delete_api_server":
@@ -548,6 +552,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.DeleteAdminServerCommand(commandCount, cmd)
 	case "api_save_config_command":
 		return c.CommonSaveServerConfigCommand(commandCount, cmd)
+	case "api_list_features":
+		return c.CommonListFeaturesCommand(commandCount, cmd)
 
 	// File system commands
 	case "file_system_command":

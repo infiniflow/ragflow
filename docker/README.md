@@ -2,7 +2,15 @@
 
 This guide documents the Go implementation of RAGFlow. Use `docker/.env`, `docker/docker-compose.yml`, `Dockerfile`, and `docker/entrypoint.sh` for a Go deployment.
 
-The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bin/ragflow_server` binary. DeepDoc inference runs in-process. Select an official Go image tag documented in the corresponding release notes, or build the image locally as described below.
+The OSS image runs all services in one `bin/ragflow_server` process. It migrates
+the database, starts Admin and initializes the superuser, starts API, then runs
+Ingestor, Syncer and Chatter in parallel. The entrypoint renders configuration,
+starts nginx, and forwards server options unchanged. No service selection flags
+are needed. Stop the container to stop all services.
+
+DeepDoc inference runs in-process; the OSS server does not launch a standalone
+DeepDoc service. For inbound channel webhooks, publish the configured listener
+ports on the RAGFlow container.
 
 <details open>
 <summary><b>📗 Table of Contents</b></summary>
@@ -37,8 +45,8 @@ it later does not change an existing account's password.
 ```bash
 # Enter the Docker deployment directory.
 cd ragflow/docker
-# Check out the Go v1.0.0-rc3 release tag.
-git checkout v1.0.0-rc3
+# Check out the Go v1.0.0 release tag.
+git checkout v1.0.0
 # Start the Go services and their dependencies in the background.
 docker compose -f docker-compose.yml up -d
 ```
@@ -51,7 +59,7 @@ sudo sysctl -w vm.max_map_count=262144
 
 This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
 
-The `v1.0.0-rc1` tag and later release tags use the Go implementation. The entrypoint migrates the default MySQL metadata database first, then starts the Go Syncer, Admin server, API server, and Ingestor. Open `http://localhost` after the HTTP health check succeeds.
+The `v1.0.0-rc1` tag and later release tags use the Go implementation. The server runs migrations and initializes the superuser before starting its services. Open `http://localhost` after the HTTP health check succeeds.
 
 For local image builds, use the [Go image build guide](../docs/develop/build_docker_image.mdx).
 
@@ -153,6 +161,8 @@ The Go services use NATS JetStream for ingestion, synchronization, memory, and k
   Set to `true` only for development checkouts that intentionally use a development migration marker. Keep it `false` in production.
 - `RAGFLOW_IMAGE`
   The Go Docker image used by `docker-compose.yml`. Use an official Go image tag documented in its release notes, or use the locally built `ragflow:go-local` tag. The RAGFlow Docker image does not include embedding models.
+- `RAGFLOW_CONNECTOR_KEY`
+  The key that encrypts the credentials of data source connectors in the database. Use 32 random bytes in standard base64, for example the output of `openssl rand -base64 32`. Not set by default, and then credentials are stored as plaintext. When the key is set, the database migration encrypts the credentials that are already stored. If the key is lost, stored credentials cannot be read: enter them again through the connector update API, or delete and re-create the connector.
 
 ### Local embedding service
 

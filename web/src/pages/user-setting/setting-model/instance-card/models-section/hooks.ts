@@ -74,9 +74,11 @@ export const API_KEY_GATED_LIST_PROVIDERS: string[] = [
   LLMFactory.SystemOne,
   LLMFactory.RAGcon,
   LLMFactory.VolcEngine,
+  LLMFactory.Nace,
   LLMFactory.DaoXE,
   LLMFactory.RadeonCloud,
   LLMFactory.DemonRoute,
+  LLMFactory.WorldRouter,
 ];
 
 // ---------------------------------------------------------------------------
@@ -415,7 +417,7 @@ export function useModelsCatalog({
 
   // Auto-fetch the provider's available-models catalog when this section
   // mounts (effectively "when the card is expanded"). For VolcEngine and the
-  // providers in API_KEY_GATED_LIST_PROVIDERS (SystemOne, RAGcon) we
+  // providers in API_KEY_GATED_LIST_PROVIDERS (SystemOne, RAGcon, Nace) we
   // wait until an api_key is available (typed in the draft form or loaded
   // from instance details). For providers whose form includes a
   // `base_url` field (e.g. Ollama, Xinference, LocalAI) we defer until a

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 
 	"ragflow/internal/engine/types"
@@ -314,7 +315,7 @@ func buildMetadataOutput(selectFields []string, columns map[string]columnMeta) [
 	}
 	output := make([]string, 0, len(selectFields))
 	for _, field := range selectFields {
-		if _, exists := columns[field]; exists && !containsString(output, field) {
+		if _, exists := columns[field]; exists && !slices.Contains(output, field) {
 			output = append(output, field)
 		}
 	}

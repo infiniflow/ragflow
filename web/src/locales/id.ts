@@ -148,9 +148,6 @@ export default {
       layoutRecognize: 'Pengenalan tata letak',
       layoutRecognizeTip:
         'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, and tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Ukuran halaman tugas',
-      taskPageSizeMessage: 'Silakan masukkan ukuran halaman tugas Anda!',
-      taskPageSizeTip: `Jika menggunakan pengenalan tata letak, file PDF akan dibagi menjadi kelompok berturut-turut. Analisis tata letak akan dilakukan secara paralel antar kelompok untuk meningkatkan kecepatan pemrosesan. 'Ukuran halaman tugas' menentukan ukuran kelompok. Semakin besar ukuran halaman, semakin kecil kemungkinan teks berkelanjutan antara halaman dibagi menjadi potongan yang berbeda.`,
       addPage: 'Tambah halaman',
       greaterThan: 'Nilai saat ini harus lebih besar dari!',
       greaterThanPrevious: 'Nilai saat ini harus lebih besar dari sebelumnya!',
@@ -168,8 +165,6 @@ export default {
       topK: 'Top-K',
       topKTip: `Digunakan bersama dengan Rerank model, pengaturan ini menentukan jumlah potongan teks yang akan dikirim ke model reranking yang ditentukan.`,
       delimiter: `Pemisah untuk segmentasi teks`,
-      html4excel: 'Excel ke HTML',
-      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
     },
     knowledgeConfiguration: {
       parsingMode: 'Mode parsing',
@@ -337,8 +332,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Contoh: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token Akses AI Studio',
-      paddleocrAccessTokenTip: 'Token akses untuk API PaddleOCR (opsional)',
-      paddleocrAccessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
+      paddleocrAccessTokenTip: 'Token akses untuk API PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Token AI Studio Anda',
       paddleocrAlgorithm: 'Algoritma PaddleOCR',
       paddleocrAlgorithmTip:
         'Algoritma yang digunakan untuk pemrosesan PaddleOCR',
@@ -598,7 +593,7 @@ export default {
         apiUrlPlaceholder:
           'Contoh: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token Akses AI Studio',
-        accessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
+        accessTokenPlaceholder: 'Token AI Studio Anda',
         algorithm: 'Algoritma PaddleOCR',
         selectAlgorithm: 'Pilih algoritma',
         modelNamePlaceholder: 'Contoh: paddleocr-from-env-1',
@@ -706,8 +701,6 @@ export default {
       sureQuit: 'Apakah Anda yakin ingin keluar dari tim yang Anda ikuti?',
       modelsToBeAddedTooltip:
         'Jika penyedia model Anda tidak tercantum tetapi mengklaim kompatibel dengan OpenAI, pilih kartu OpenAI-API-compatible untuk menambahkan model yang relevan.',
-      dingtalkAITableDescription:
-        'Hubungkan ke Dingtalk AI Table dan sinkronkan catatan dari tabel yang ditentukan.',
     },
     message: {
       registered: 'Terdaftar!',
@@ -797,6 +790,17 @@ export default {
       retrievalDescription: `Komponen yang mengambil informasi dari basis pengetahuan yang ditentukan dan mengembalikan 'Respon kosong' jika tidak ada informasi yang ditemukan. Pastikan basis pengetahuan yang benar dipilih.`,
       generateDescription: `Komponen yang meminta LLM untuk menghasilkan respons. Pastikan prompt diatur dengan benar.`,
       categorizeDescription: `Komponen yang menggunakan LLM untuk mengklasifikasikan input pengguna ke dalam kategori yang telah ditentukan. Pastikan Anda menentukan nama, deskripsi, dan contoh untuk setiap kategori, bersama dengan komponen berikutnya yang sesuai.`,
+      scoredSwitchQuestionRequired:
+        'Setiap pertanyaan tambahan memerlukan petunjuk',
+      scoredSwitchLevelMinimum: 'Tambahkan setidaknya dua tingkat',
+      scoredSwitchFieldMinimum: 'Tambahkan setidaknya satu bidang',
+      scoredSwitchFieldNameInvalid:
+        'Nama bidang harus diawali huruf atau garis bawah',
+      scoredSwitchListItemsRequired: 'Daftar memerlukan jenis item',
+      scoredSwitchEstimateBoundsRequired:
+        'Estimasi memerlukan nilai minimum dan maksimum',
+      scoredSwitchForecastRequired: 'Prakiraan memerlukan horizon dan interval',
+      scoredSwitchDecimalsRange: 'Desimal harus dari 0 sampai 6',
       relevantDescription: `Komponen yang menggunakan LLM untuk menilai apakah output hulu relevan dengan kueri terbaru pengguna. Pastikan Anda menentukan komponen berikutnya untuk setiap hasil penilaian.`,
       rewriteQuestionDescription: `Komponen yang menyempurnakan kueri pengguna jika gagal mengambil informasi yang relevan dari basis pengetahuan. Ini mengulangi proses ini hingga batas loop yang telah ditentukan tercapai. Pastikan hulu adalah 'Relevan' dan hilir adalah 'Pengambilan'.`,
       messageDescription:

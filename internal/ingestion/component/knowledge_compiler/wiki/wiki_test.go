@@ -618,7 +618,8 @@ func TestMergeWikiPageContent_PreservesShortExistingPage(t *testing.T) {
 	p := &wikiPipeline{
 		ctx: context.Background(),
 		deps: common.Deps{
-			Chat: reconcileChatStub{resp: "# Alpha\n\nAlpha launched a new process in 2026.\n"},
+			ModelContextLen: common.DefaultLLMContextLength,
+			Chat:            reconcileChatStub{resp: "# Alpha\n\nAlpha launched a new process in 2026.\n"},
 		},
 	}
 	merged, err := p.mergeWikiPageContent(
