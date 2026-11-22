@@ -14,7 +14,6 @@
 //  limitations under the License.
 //
 
-
 // Package component — Agent (T1).
 //
 // Multi-turn ReAct agent powered by eino's flow/agent/react package.

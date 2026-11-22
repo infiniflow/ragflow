@@ -14,7 +14,6 @@
 //  limitations under the License.
 //
 
-
 // Package component — LLM (T1).
 //
 // One-shot LLM call. Reads system_prompt + user_prompt, dispatches to a
