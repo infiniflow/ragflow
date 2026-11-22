@@ -803,7 +803,7 @@ func renderAnySearchReferences(queries []anySearchRenderQuery, maxTokens int) st
 		}
 		if query.Error != "" {
 			if !fits(header + "\nError: " + query.Error) {
-				return strings.Join(blocks, "\n")
+				continue
 			}
 			blocks = append(blocks, header+"\nError: "+query.Error)
 			continue

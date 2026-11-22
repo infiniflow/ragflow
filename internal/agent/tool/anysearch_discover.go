@@ -126,12 +126,7 @@ func (d *AnySearchDiscoverTool) InvokableRun(ctx context.Context, argsJSON strin
 
 	reply, err := d.client.call(ctx, http.MethodGet, path, nil)
 	if err != nil {
-		var apiErr *anySearchError
-		envelope := anySearchDiscoverEnvelope{Domains: []any{}, Error: err.Error()}
-		if errors.As(err, &apiErr) {
-			envelope.RequestID = apiErr.requestID
-		}
-		return anySearchJSON(envelope), nil
+		return anySearchDiscoverErrJSON(err), nil
 	}
 	domains, ok := reply.data["domains"].([]any)
 	if !ok {
@@ -143,11 +138,16 @@ func (d *AnySearchDiscoverTool) InvokableRun(ctx context.Context, argsJSON strin
 		if len(args.Domains) > 1 {
 			message += ", ask for fewer domains"
 		}
-		return anySearchDiscoverErrJSON(errors.New(message)), nil
+		return anySearchDiscoverErrJSON(&anySearchError{message: message, requestID: reply.requestID}), nil
 	}
 	return out, nil
 }
 
 func anySearchDiscoverErrJSON(err error) string {
-	return anySearchJSON(anySearchDiscoverEnvelope{Domains: []any{}, Error: err.Error()})
+	envelope := anySearchDiscoverEnvelope{Domains: []any{}, Error: err.Error()}
+	var apiErr *anySearchError
+	if errors.As(err, &apiErr) {
+		envelope.RequestID = apiErr.requestID
+	}
+	return anySearchJSON(envelope)
 }

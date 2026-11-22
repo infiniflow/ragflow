@@ -140,6 +140,22 @@ func TestAnySearchDiscover_ResponseStrictnessAndVendorErrors(t *testing.T) {
 	}
 }
 
+func TestAnySearchDiscover_RejectedCatalogKeepsRequestID(t *testing.T) {
+	for _, domains := range []string{`{}`, `[{"pad":"` + strings.Repeat("x", anySearchDiscoverMaxBytes+1) + `"}]`} {
+		helper, _ := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, _ []byte) {
+			writeAnySearch(w, 200, `{"code":0,"request_id":"rid-rejected","data":{"domains":`+domains+`}}`)
+		})
+		out, err := NewAnySearchDiscoverToolWith(helper, "").InvokableRun(t.Context(), `{}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		env := decodeAnySearchDiscoverEnvelope(t, out)
+		if env.Error == "" || env.RequestID != "rid-rejected" || env.Domains == nil || len(env.Domains) != 0 {
+			t.Errorf("rejected catalog lost its request ID or empty domain list: %.300s", out)
+		}
+	}
+}
+
 func TestAnySearchDiscover_ServerErrorHidesTransportDetails(t *testing.T) {
 	t.Parallel()
 	helper, _ := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, _ []byte) {

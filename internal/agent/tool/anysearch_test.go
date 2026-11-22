@@ -33,6 +33,8 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/tokenizer"
 )
 
 // anySearchSeen is one request as the test server received it.
@@ -1060,6 +1062,20 @@ func TestAnySearch_BatchCancelledMidFlightKeepsEveryRecord(t *testing.T) {
 		if record.Index != i || !strings.Contains(record.Error, "canceled") {
 			t.Errorf("record %d = %+v, want its own canceled error in input order", i, record)
 		}
+	}
+}
+
+func TestAnySearch_RenderSkipsOversizedError(t *testing.T) {
+	queries := []anySearchRenderQuery{
+		{Query: "failed", Error: strings.Repeat("upstream failure ", 500)},
+		{Query: "working", Chunks: []map[string]any{{"id": "1", "url": "https://example.com/", "content": "usable later evidence"}}},
+	}
+	out := renderAnySearchReferences(queries, 200)
+	if !strings.Contains(out, "usable later evidence") || strings.Contains(out, "upstream failure") {
+		t.Fatalf("oversized error suppressed usable later evidence: %q", out)
+	}
+	if tokens := tokenizer.NumTokensFromString(out); float64(tokens) > 200*0.97 {
+		t.Fatalf("rendered output exceeds budget: %d tokens", tokens)
 	}
 }
 
