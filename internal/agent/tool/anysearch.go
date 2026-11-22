@@ -106,7 +106,13 @@ func (i anySearchItem) hasSearchFields() bool {
 
 type anySearchArgs struct {
 	anySearchItem
-	Queries []anySearchItem `json:"queries"`
+	Queries json.RawMessage `json:"queries"`
+}
+
+type anySearchQueryPlan struct {
+	Index   int
+	Request anySearchRequestBody
+	Error   string
 }
 
 // anySearchDefaults holds the node-level configuration. The model's zone,
@@ -418,11 +424,16 @@ func (a *AnySearchTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 	}
 
 	results := make([]anySearchQueryResult, len(requests))
-	if len(requests) == 1 {
-		results[0] = a.search(ctx, 0, requests[0])
-	} else {
-		var wg sync.WaitGroup
-		for i, request := range requests {
+	var wg sync.WaitGroup
+	for _, plan := range requests {
+		i, request := plan.Index, plan.Request
+		if plan.Error != "" {
+			results[i] = anySearchQueryResult{Index: i, Query: request.Query, Tag: request.Tag, Results: []map[string]any{}, Error: plan.Error}
+			continue
+		}
+		if len(requests) == 1 {
+			results[i] = a.search(ctx, i, request)
+		} else {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -436,8 +447,8 @@ func (a *AnySearchTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 				results[i] = a.search(ctx, i, request)
 			}()
 		}
-		wg.Wait()
 	}
+	wg.Wait()
 
 	envelope := anySearchSearchEnvelope{Queries: results}
 	failed := 0
@@ -459,20 +470,26 @@ func (a *AnySearchTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 // An entirely empty call (no query and no other field) is a no-op, like the
 // neighbouring search tools. A call that sets another field but forgets the
 // query is an error, so the model is not told "no results" for a mistake.
-func (a *AnySearchTool) requests(args anySearchArgs) ([]anySearchRequestBody, error) {
-	if len(args.Queries) > 0 && strings.TrimSpace(args.Query) != "" {
+func (a *AnySearchTool) requests(args anySearchArgs) ([]anySearchQueryPlan, error) {
+	var queries []json.RawMessage
+	if args.Queries != nil {
+		if err := json.Unmarshal(args.Queries, &queries); err != nil {
+			return nil, errors.New("anysearch: queries must be an array")
+		}
+	}
+	if len(queries) > 0 && strings.TrimSpace(args.Query) != "" {
 		return nil, errors.New("anysearch: provide either query or queries, not both")
 	}
-	if len(args.Queries) > anySearchMaxQueries {
+	if len(queries) > anySearchMaxQueries {
 		return nil, fmt.Errorf("anysearch: queries must contain at most %d items", anySearchMaxQueries)
 	}
-	if len(args.Queries) > 0 && args.anySearchItem.hasSearchFields() {
+	if len(queries) > 0 && args.anySearchItem.hasSearchFields() {
 		return nil, errors.New("anysearch: with queries, set tag, params, zone, language and max_results inside each item, not at the top level")
 	}
-	if args.Queries != nil && len(args.Queries) == 0 && strings.TrimSpace(args.Query) == "" {
+	if queries != nil && len(queries) == 0 && strings.TrimSpace(args.Query) == "" {
 		return nil, errors.New("anysearch: queries must contain at least one item")
 	}
-	if len(args.Queries) == 0 {
+	if len(queries) == 0 {
 		if strings.TrimSpace(args.Query) == "" {
 			if args.anySearchItem.hasSearchFields() {
 				return nil, errors.New("anysearch: query is required")
@@ -483,15 +500,37 @@ func (a *AnySearchTool) requests(args anySearchArgs) ([]anySearchRequestBody, er
 		if err != nil {
 			return nil, err
 		}
-		return []anySearchRequestBody{request}, nil
+		return []anySearchQueryPlan{{Request: request}}, nil
 	}
-	requests := make([]anySearchRequestBody, 0, len(args.Queries))
-	for i, item := range args.Queries {
-		request, err := a.request(fmt.Sprintf("queries[%d].", i), item)
-		if err != nil {
-			return nil, err
+	requests := make([]anySearchQueryPlan, len(queries))
+	for i, raw := range queries {
+		plan := anySearchQueryPlan{Index: i}
+		label := fmt.Sprintf("queries[%d].", i)
+		if len(raw) == 0 || raw[0] != '{' {
+			plan.Error = fmt.Sprintf("anysearch: queries[%d] must be an object", i)
+			requests[i] = plan
+			continue
 		}
-		requests = append(requests, request)
+		var item anySearchItem
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&item); err != nil {
+			plan.Error = fmt.Sprintf("anysearch: queries[%d] has invalid search fields", i)
+			requests[i] = plan
+			continue
+		}
+		plan.Request = anySearchRequestBody{Query: strings.TrimSpace(item.Query), Tag: strings.TrimSpace(item.Tag)}
+		request, err := a.request(label, item)
+		if err != nil {
+			plan.Error = a.client.safeText(err.Error(), anySearchMessageRunes)
+			if a.client.apiKey != "" {
+				plan.Request.Query = strings.ReplaceAll(plan.Request.Query, a.client.apiKey, "[redacted]")
+				plan.Request.Tag = strings.ReplaceAll(plan.Request.Tag, a.client.apiKey, "[redacted]")
+			}
+		} else {
+			plan.Request = request
+		}
+		requests[i] = plan
 	}
 	return requests, nil
 }

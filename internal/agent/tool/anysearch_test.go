@@ -286,7 +286,6 @@ func TestAnySearch_ArgumentErrorsNeverReachTheAPI(t *testing.T) {
 	cases := []struct{ name, args, wantErr string }{
 		{"both query and queries", `{"query":"a","queries":[{"query":"b"}]}`, "either query or queries"},
 		{"too many queries", `{"queries":[{"query":"1"},{"query":"2"},{"query":"3"},{"query":"4"},{"query":"5"},{"query":"6"}]}`, "at most 5"},
-		{"blank query inside queries", `{"queries":[{"query":"ok"},{"query":"  "}]}`, "queries[1].query is required"},
 		{"params not an object", `{"query":"q","tag":"a.b","params":"library=react"}`, "params must be an object"},
 		{"params without tag", `{"query":"q","params":{"a":"b"}}`, "params require a tag"},
 		{"bad zone", `{"query":"q","zone":"mars"}`, `zone "mars"`},
@@ -548,6 +547,278 @@ func TestAnySearch_BatchRunsInParallelKeepsOrderAndPartialFailure(t *testing.T) 
 	if n := len(rec.all()); n != 3 {
 		t.Errorf("%d requests, want 3", n)
 	}
+}
+
+type anySearchObservedBody struct {
+	io.ReadCloser
+	closed chan struct{}
+}
+
+func (b *anySearchObservedBody) Close() error {
+	err := b.ReadCloser.Close()
+	close(b.closed)
+	return err
+}
+
+func TestAnySearchBatchItemIsolation(t *testing.T) {
+	t.Run("cancel", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		waiting := make(chan struct{})
+		finished := make(chan struct{})
+		helper, rec := anySearchTestServer(t, func(w http.ResponseWriter, r *http.Request, body []byte) {
+			if decodeAnySearchBodyQuery(body) == "done" {
+				anySearchOK(`[{"url":"https://example.com/done","content":"completed"}]`)(w, r, body)
+				return
+			}
+			close(waiting)
+			<-r.Context().Done()
+			close(finished)
+		})
+		completed := make(chan struct{})
+		transport := helper.client.Transport
+		helper.client.Transport = anySearchRoundTripper(func(r *http.Request) (*http.Response, error) {
+			resp, err := transport.RoundTrip(r)
+			if err == nil {
+				resp.Body = &anySearchObservedBody{ReadCloser: resp.Body, closed: completed}
+			}
+			return resp, err
+		})
+		go func() {
+			for _, signal := range []chan struct{}{waiting, completed} {
+				select {
+				case <-signal:
+				case <-ctx.Done():
+					return
+				}
+			}
+			cancel()
+		}()
+		out, err := NewAnySearchToolWith(helper, "key").InvokableRun(ctx, `{"queries":[{"query":""},{"query":"done"},{"query":"waiting"}]}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		env := decodeAnySearchEnvelope(t, out)
+		if env.Error != "" || len(env.Queries) != 3 || len(rec.all()) != 2 {
+			t.Fatalf("output = %s, requests = %d", out, len(rec.all()))
+		}
+		if env.Queries[0].Index != 0 || !strings.Contains(env.Queries[0].Error, "query is required") || env.Queries[0].RequestID != "" ||
+			env.Queries[1].Index != 1 || env.Queries[1].Error != "" || len(env.Queries[1].Results) != 1 ||
+			env.Queries[2].Index != 2 || !strings.Contains(env.Queries[2].Error, "canceled") {
+			t.Errorf("records = %+v", env.Queries)
+		}
+		select {
+		case <-finished:
+		case <-time.After(5 * time.Second):
+			t.Error("canceled HTTP handler did not finish")
+		}
+	})
+	t.Run("order", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		arrived := make(chan struct{}, 3)
+		release := []chan struct{}{make(chan struct{}), make(chan struct{}), make(chan struct{})}
+		finished := make(chan int, 3)
+		helper, rec := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, body []byte) {
+			query := decodeAnySearchBodyQuery(body)
+			i := int(query[0] - '0')
+			arrived <- struct{}{}
+			select {
+			case <-release[i]:
+				anySearchOK(`[{"url":"https://example.com/`+query+`","content":"content `+query+`"}]`)(w, nil, body)
+				finished <- i
+			case <-ctx.Done():
+			}
+		})
+		go func() {
+			for range 3 {
+				select {
+				case <-arrived:
+				case <-ctx.Done():
+					return
+				}
+			}
+			for _, i := range []int{2, 0, 1} {
+				close(release[i])
+				select {
+				case <-finished:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		search := NewAnySearchToolWith(helper, "key")
+		out, err := search.InvokableRun(ctx, `{"queries":[{"query":"0"},{"query":"1"},{"query":"2"}]}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		env := decodeAnySearchEnvelope(t, out)
+		if env.Error != "" || len(env.Queries) != 3 || len(rec.all()) != 3 {
+			t.Fatalf("output = %s, requests = %d", out, len(rec.all()))
+		}
+		var envelope map[string]any
+		if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		chunks, _ := search.BuildReferences(t.Context(), envelope)
+		if len(chunks) != 3 {
+			t.Fatalf("references = %v", chunks)
+		}
+		for i, query := range []string{"0", "1", "2"} {
+			record := env.Queries[i]
+			url := "https://example.com/" + query
+			if record.Index != i || record.Query != query || record.Error != "" || len(record.Results) != 1 || record.Results[0]["url"] != url || chunks[i]["url"] != url {
+				t.Errorf("record %d = %+v, reference = %v", i, record, chunks[i])
+			}
+		}
+	})
+	for _, args := range []string{
+		`{"queries":[]}`, `{"queries":{}}`, `{"queries":`,
+		`{"queries":[{"query":"a"}]} {}`, `{"query":"a","queries":[{"query":"b"}]}`,
+		`{"queries":[{},{},{},{},{},{}]}`,
+	} {
+		t.Run("envelope_"+args, func(t *testing.T) {
+			helper, rec := anySearchTestServer(t, anySearchOK(`[]`))
+			out, err := NewAnySearchToolWith(helper, "key").InvokableRun(t.Context(), args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if env := decodeAnySearchEnvelope(t, out); env.Error == "" || len(env.Queries) != 0 || len(rec.all()) != 0 {
+				t.Fatalf("output = %s, requests = %d; want envelope rejection without dispatch", out, len(rec.all()))
+			}
+		})
+	}
+	t.Run("all_fail", func(t *testing.T) {
+		helper, rec := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, body []byte) {
+			if decodeAnySearchBodyQuery(body) == "unauthorized" {
+				writeAnySearch(w, 401, `{"code":401,"request_id":"unauthorized"}`)
+			} else {
+				writeAnySearch(w, 429, `{"code":429,"request_id":"limited"}`)
+			}
+		})
+		out, err := NewAnySearchToolWith(helper, "key").InvokableRun(t.Context(), `{"queries":[{"query":"unauthorized"},{"query":"limited"}]}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		env := decodeAnySearchEnvelope(t, out)
+		if len(env.Queries) != 2 || !strings.Contains(env.Error, "all 2 queries failed") || len(rec.all()) != 2 {
+			t.Fatalf("output = %s, requests = %d", out, len(rec.all()))
+		}
+		for i, record := range env.Queries {
+			if record.Index != i || record.Error == "" || record.RequestID != record.Query || len(record.Results) != 0 {
+				t.Errorf("record %d = %+v", i, record)
+			}
+		}
+	})
+	for _, tc := range []struct {
+		name, args, wantError string
+		validIndex            int
+	}{
+		{"local_type", `{"queries":[{"query":"RAGFlow"},{"query":5}]}`, "invalid search fields", 0},
+		{"local_null", `{"queries":[null,{"query":"RAGFlow"}]}`, "must be an object", 1},
+		{"local_scalar", `{"queries":[5,{"query":"RAGFlow"}]}`, "must be an object", 1},
+		{"local_array", `{"queries":[[],{"query":"RAGFlow"}]}`, "must be an object", 1},
+		{"local_query", `{"queries":[{"query":""},{"query":"RAGFlow"}]}`, "query is required", 1},
+		{"local_zone", `{"queries":[{"query":"bad","zone":"invalid"},{"query":"RAGFlow"}]}`, "zone", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			helper, rec := anySearchTestServer(t, anySearchOK(`[{"url":"https://ragflow.io","content":"result"}]`))
+			out, err := NewAnySearchToolWith(helper, "key").InvokableRun(t.Context(), tc.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := decodeAnySearchEnvelope(t, out)
+			if env.Error != "" || len(env.Queries) != 2 || len(rec.all()) != 1 {
+				t.Fatalf("output = %s, requests = %d; want one request and two records without envelope error", out, len(rec.all()))
+			}
+			for i, record := range env.Queries {
+				if record.Index != i {
+					t.Errorf("index = %d, want %d", record.Index, i)
+				}
+				if i == tc.validIndex {
+					if record.Query != "RAGFlow" || record.Error != "" || len(record.Results) != 1 {
+						t.Errorf("successful sibling = %+v", record)
+					}
+				} else if !strings.Contains(record.Error, tc.wantError) || record.RequestID != "" || record.Results == nil || len(record.Results) != 0 {
+					t.Errorf("local failure = %+v, want %q and empty results without request ID", record, tc.wantError)
+				}
+			}
+		})
+	}
+	t.Run("all_invalid", func(t *testing.T) {
+		helper, rec := anySearchTestServer(t, anySearchOK(`[]`))
+		out, err := NewAnySearchToolWith(helper, "key").InvokableRun(t.Context(), `{"queries":[{"query":""},{"query":5}]}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		env := decodeAnySearchEnvelope(t, out)
+		if len(env.Queries) != 2 || !strings.Contains(env.Error, "all 2 queries failed") || len(rec.all()) != 0 {
+			t.Fatalf("output = %s, requests = %d", out, len(rec.all()))
+		}
+		for i, record := range env.Queries {
+			if record.Index != i || record.Error == "" || record.Results == nil || len(record.Results) != 0 || record.RequestID != "" {
+				t.Errorf("record %d = %+v", i, record)
+			}
+		}
+	})
+	t.Run("empty_plus_fail", func(t *testing.T) {
+		helper, rec := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, body []byte) {
+			if decodeAnySearchBodyQuery(body) == "empty" {
+				anySearchOK(`[]`)(w, nil, body)
+			} else {
+				writeAnySearch(w, 429, `{"code":429,"request_id":"limited"}`)
+			}
+		})
+		search := NewAnySearchToolWith(helper, "key")
+		out, err := search.InvokableRun(t.Context(), `{"queries":[{"query":"empty"},{"query":"limited"}]}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		env := decodeAnySearchEnvelope(t, out)
+		if env.Error != "" || len(env.Queries) != 2 || len(rec.all()) != 2 {
+			t.Fatalf("output = %s, requests = %d", out, len(rec.all()))
+		}
+		if env.Queries[0].Error != "" || len(env.Queries[0].Results) != 0 || env.Queries[1].Error == "" || env.Queries[1].RequestID != "limited" {
+			t.Errorf("records = %+v", env.Queries)
+		}
+		var envelope map[string]any
+		if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		chunks, docs := search.BuildReferences(t.Context(), envelope)
+		if len(chunks) != 0 || len(docs) != 0 {
+			t.Errorf("invented references: %v, %v", chunks, docs)
+		}
+	})
+	t.Run("local_flight", func(t *testing.T) {
+		helper, rec := anySearchTestServer(t, anySearchOK(`[{"title":"RAGFlow","url":"https://ragflow.io","content":"RAGFlow search result"}]`))
+		search := NewAnySearchToolWith(helper, "key")
+		out, err := search.InvokableRun(t.Context(), `{"queries":[{"query":"RAGFlow"},{"query":"flight status","tag":"travel.flight_status","params":{"departure":""}}]}`)
+		if err != nil {
+			t.Fatalf("InvokableRun: %v", err)
+		}
+		if n := len(rec.all()); n != 1 {
+			t.Errorf("%d upstream requests, want only the valid sibling's request", n)
+		}
+		env := decodeAnySearchEnvelope(t, out)
+		if env.Error != "" || len(env.Queries) != 2 {
+			t.Fatalf("envelope = %s, want two records without a top-level error", out)
+		}
+		if first := env.Queries[0]; first.Index != 0 || first.Query != "RAGFlow" || first.Error != "" || len(first.Results) != 1 {
+			t.Errorf("successful sibling = %+v", first)
+		}
+		if second := env.Queries[1]; second.Index != 1 || !strings.Contains(second.Error, "flight_number") || second.RequestID != "" || len(second.Results) != 0 {
+			t.Errorf("invalid flight = %+v", second)
+		}
+		var envelope map[string]any
+		if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		chunks, docs := search.BuildReferences(t.Context(), envelope)
+		if len(chunks) != 1 || len(docs) != 1 || chunks[0]["url"] != "https://ragflow.io" {
+			t.Errorf("references = %v, %v, want only the successful sibling's reference", chunks, docs)
+		}
+	})
 }
 
 func decodeAnySearchBodyQuery(body []byte) string {
