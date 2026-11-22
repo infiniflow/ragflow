@@ -40,7 +40,7 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-sql-driver/mysql v1.7.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/gomarkdown/markdown v0.0.0-20260614204949-e08cff860f76
+	github.com/gomarkdown/markdown v0.0.0-20261117205700-e8c6d33a8b6c
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
