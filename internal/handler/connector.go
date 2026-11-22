@@ -34,7 +34,7 @@ import (
 )
 
 type connectorServiceIface interface {
-	ListConnectors(ctx context.Context, tenantID string) (*service.ListConnectorsResponse, error)
+	ListConnectors(ctx context.Context, accessUserID string) (*service.ListConnectorsResponse, error)
 	CreateConnector(ctx context.Context, req *service.CreateConnectorRequest) (*entity.Connector, error)
 	GetConnector(ctx context.Context, connectorID string) (*entity.Connector, error)
 	ListLog(ctx context.Context, connectorID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
@@ -66,20 +66,20 @@ func NewConnectorHandler(connectorService *service.ConnectorService, userService
 	}
 }
 
-// ListConnectors lists connectors for an owned tenant or a requested tenant the caller belongs to.
+// ListConnectors lists connectors owned by a user in the current tenant.
 // @Summary List Connectors
-// @Description Get list of connectors for the current user (equivalent to Python's list_connector)
+// @Description List connectors owned by the current or selected user in the current tenant.
 // @Tags connector
 // @Accept json
 // @Produce json
-// @Param tenant_id query string false "tenant whose connectors are listed"
+// @Param access_user_id query string false "user whose connectors are listed"
 // @Success 200 {object} service.ListConnectorsResponse
 // @Router /connector/list [get]
 func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// List connectors
-	result, err := h.connectorService.ListConnectors(ctx, c.Query("tenant_id"))
+	result, err := h.connectorService.ListConnectors(ctx, c.Query("access_user_id"))
 	if err != nil {
 		if connectorErrorResponse(c, err) {
 			return
@@ -136,6 +136,11 @@ func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 
 // UpdateConnector Update an accessible connector's polling configuration.
 func (h *ConnectorHandler) UpdateConnector(c *gin.Context) {
+	common.StartOperationLog(c, "update_connector")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("connector_id"); id != "" {
+		common.SetOperationResource(c, "connector_id", id)
+	}
 
 	req, err := decodeUpdateConnectorRequest(c)
 	if err != nil {
@@ -254,6 +259,8 @@ func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 // @Success 200 {object} service.ListConnectorsResponse
 // @Router /connector/ [post]
 func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
+	common.StartOperationLog(c, "create_connector")
+	defer common.FinishOperationLog(c)
 
 	var req service.CreateConnectorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -273,12 +280,11 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, "config is required")
 		return
 	}
-
 	ctx := c.Request.Context()
 
 	connector, err := h.connectorService.CreateConnector(ctx, &req)
 	if err != nil {
-		if errors.Is(err, service.ErrConnectorInvalidFreq) || errors.Is(err, service.ErrConnectorInvalidName) {
+		if errors.Is(err, service.ErrConnectorInvalidFreq) || errors.Is(err, service.ErrConnectorInvalidName) || errors.Is(err, service.ErrConnectorEncryptedCredentials) {
 			common.RespondError(c, common.CodeDataError, err.Error())
 			return
 		}
@@ -286,6 +292,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "connector_id", connector.ID)
 	common.RespondSuccess(c, connector, "success")
 }
 
@@ -302,6 +309,12 @@ type testConnectorRequest struct {
 // @Param connector_id path string true "connector ID"
 // @Router /api/v1/connectors/{connector_id}/test [post]
 func (h *ConnectorHandler) TestConnector(c *gin.Context) {
+	common.StartOperationLog(c, "test_connector")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("connector_id"); id != "" {
+		common.SetOperationResource(c, "connector_id", id)
+	}
+
 	// check user and connector
 
 	connectorID := c.Param("connector_id")
@@ -366,6 +379,11 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 // @Accept json
 // @Produce json
 func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
+	common.StartOperationLog(c, "delete_connector")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("connector_id"); id != "" {
+		common.SetOperationResource(c, "connector_id", id)
+	}
 
 	ctx := c.Request.Context()
 
@@ -387,13 +405,18 @@ func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /connector/:connector_id/rebuild [post]
 func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
+	common.StartOperationLog(c, "request_connector_rebuild")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("connector_id"); id != "" {
+		common.SetOperationResource(c, "connector_id", id)
+	}
 
 	// Parse request body to get kb_id
 	var req struct {
 		KbID string `json:"kb_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeDataError, "required argument is missing: kb_id")
+		common.RespondError(c, common.CodeDataError, "required argument is missing: kb_id: "+err.Error())
 		return
 	}
 
@@ -402,6 +425,7 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "dataset_id", req.KbID)
 	ctx := c.Request.Context()
 	_, code, err := h.connectorService.RebuildConnector(ctx, c.Param("connector_id"), req.KbID)
 	if err != nil {
@@ -421,13 +445,24 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /connector/:connector_id/resume-failed-sync [post]
 func (h *ConnectorHandler) ResumeFailedSync(c *gin.Context) {
+	common.StartOperationLog(c, "request_connector_sync_resume")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("connector_id"); id != "" {
+		common.SetOperationResource(c, "connector_id", id)
+	}
 
 	var req service.ResumeFailedSyncRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeDataError, "required argument is missing: kb_id or task_id")
+		common.RespondError(c, common.CodeDataError, "required argument is missing: kb_id or task_id: "+err.Error())
 		return
 	}
 
+	if req.KbID != "" {
+		common.SetOperationResource(c, "dataset_id", req.KbID)
+	}
+	if req.TaskID != "" {
+		common.SetOperationResource(c, "task_id", req.TaskID)
+	}
 	ctx := c.Request.Context()
 	_, code, err := h.connectorService.ResumeFailedSync(ctx, c.Param("connector_id"), &req)
 	if err != nil {
@@ -438,6 +473,8 @@ func (h *ConnectorHandler) ResumeFailedSync(c *gin.Context) {
 }
 
 func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {
+	common.StartOperationLog(c, "request_connector_oauth")
+	defer common.FinishOperationLog(c)
 
 	var req service.StartGoogleWebOAuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -501,6 +538,9 @@ func (h *ConnectorHandler) googleWebOAuthCallback(c *gin.Context, source string)
 }
 
 func (h *ConnectorHandler) StartBoxWebOAuth(c *gin.Context) {
+	common.StartOperationLog(c, "request_connector_oauth")
+	defer common.FinishOperationLog(c)
+
 	var req service.StartBoxWebOAuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())

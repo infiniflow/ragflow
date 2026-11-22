@@ -20,16 +20,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"net"
-	"regexp"
-	"strings"
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/tokenizer"
+	"ragflow/internal/engine/internal/esoscommon"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"go.uber.org/zap"
@@ -43,50 +39,9 @@ const (
 const esSQLRetryAttempts = 2
 const esSQLRetryDelay = 3 * time.Second
 
-var whitespaceRe = regexp.MustCompile("[ `]+")
-var lktksMatchRe = regexp.MustCompile(` ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'`)
-
-// Preprocess normalizes SQL for ES: collapses whitespace/backticks,
-// strips '%', and rewrites `<field>_l?tks like/= 'value'` into a
-// tokenized MATCH() call.
-func Preprocess(sql string) string {
-	sql = whitespaceRe.ReplaceAllString(sql, " ")
-	sql = strings.ReplaceAll(sql, "%", "")
-
-	// Collect replacements so we don't re-scan tokens we've already rewritten
-	type replacement struct {
-		old, new string
-	}
-	var replaces []replacement
-	for _, m := range lktksMatchRe.FindAllStringSubmatchIndex(sql, -1) {
-		match := sql[m[0]:m[1]]
-		fld := sql[m[2]:m[3]]
-		val := sql[m[6]:m[7]]
-		tokenized, err := tokenizer.Tokenize(val)
-		if err != nil {
-			continue
-		}
-		fine, err := tokenizer.FineGrainedTokenize(tokenized)
-		if err != nil {
-			continue
-		}
-		replaces = append(replaces, replacement{
-			old: match,
-			// fine comes from tokenizer.FineGrainedTokenize, which strips
-			// non-alphanumerics; defense-in-depth escape just in case a
-			// future tokenizer change reintroduces a quote.
-			new: fmt.Sprintf(" MATCH(%s, '%s', 'operator=OR;minimum_should_match=30%%') ", fld, strings.ReplaceAll(fine, "'", "''")),
-		})
-	}
-	for _, r := range replaces {
-		sql = strings.Replace(sql, r.old, r.new, 1)
-	}
-	return sql
-}
-
 // RunSQL posts SQL to `/_sql`, translates the response into chunk-shaped maps.
 // Returns (nil, nil) on empty rows; (nil, error) when retries exhausted.
-func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
+func (e *Engine) RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
 	if e == nil || e.client == nil {
 		return nil, fmt.Errorf("Elasticsearch RunSQL: client not initialized")
 	}
@@ -95,7 +50,7 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 	}
 
 	common.Debug("ESConnection.sql get sql", zap.String("sql", sqlText))
-	sqlText = Preprocess(sqlText)
+	sqlText = esoscommon.PreprocessSQL(sqlText)
 	common.Debug("ESConnection.sql to es", zap.String("sql", sqlText))
 
 	var lastErr error
@@ -105,7 +60,7 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 			return rows, nil
 		}
 		lastErr = err
-		if !isTimeoutError(err) {
+		if !esoscommon.IsTimeoutError(err) {
 			common.Warn("ESConnection.sql got exception",
 				zap.String("sql", sqlText),
 				zap.Error(err))
@@ -183,27 +138,4 @@ func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) 
 		out = append(out, cm)
 	}
 	return out, nil
-}
-
-// isTimeoutError detects connection-level and per-attempt timeouts
-// via context.DeadlineExceeded, net.Error.Timeout(), and substring
-// matches (for SDKs that wrap without typed errors).
-func isTimeoutError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-	msg := err.Error()
-	for _, sub := range []string{"i/o timeout", "deadline exceeded", "connection timeout", "context deadline"} {
-		if strings.Contains(msg, sub) {
-			return true
-		}
-	}
-	return false
 }

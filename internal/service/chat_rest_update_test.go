@@ -372,6 +372,34 @@ func TestChatServiceUpdateChatNormalizesKeywordsSimilarityWeight(t *testing.T) {
 	}
 }
 
+func TestChatServiceUpdateChatClearsTenantRerankID(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+	if err := db.Model(&entity.Chat{}).Where("id = ?", "chat-1").Updates(map[string]interface{}{
+		"rerank_id":        "custom-rerank",
+		"tenant_rerank_id": "tenant-rerank-1",
+	}).Error; err != nil {
+		t.Fatalf("failed to seed rerank model: %v", err)
+	}
+
+	svc := NewChatService()
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	if _, err := svc.UpdateChat(ctx, "chat-1", map[string]interface{}{"rerank_id": ""}); err != nil {
+		t.Fatalf("UpdateChat failed: %v", err)
+	}
+
+	chat, err := svc.chatDAO.GetByID(ctx, dao.DB, "chat-1")
+	if err != nil {
+		t.Fatalf("failed to fetch updated chat: %v", err)
+	}
+	if chat.RerankID != "" {
+		t.Fatalf("rerank_id = %q, want empty", chat.RerankID)
+	}
+	if chat.TenantRerankID != nil {
+		t.Fatalf("tenant_rerank_id = %q, want nil", *chat.TenantRerankID)
+	}
+}
+
 func TestChatWithKBNamesMarshalJSONOmitsVectorSimilarityWeight(t *testing.T) {
 	payload, err := json.Marshal(&ChatWithKBNames{
 		Chat:       &entity.Chat{VectorSimilarityWeight: 0.3},

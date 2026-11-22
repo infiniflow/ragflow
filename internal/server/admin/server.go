@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"ragflow/internal/utility"
 	"time"
@@ -37,16 +38,8 @@ import (
 
 // Run starts the RAGFlow admin HTTP server. It blocks until ctx is cancelled,
 // then gracefully shuts the HTTP server down.
-func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
+func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 	globalConfig := server.GetConfig()
-	serverMode := globalConfig.GetMode()
-
-	// Set Gin mode
-	if serverMode == "debug" {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
-	}
 
 	adminService := adminapi.NewService()
 	adminHandler := adminapi.NewHandler(adminService)
@@ -58,7 +51,7 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	if args.InitSuperUser {
 		// Initialize default admin user
 		if err := adminService.InitDefaultAdmin(); err != nil {
-			common.Error("Failed to initialize default admin user", err)
+			return fmt.Errorf("initialize default admin user: %w", err)
 		}
 	}
 
@@ -72,12 +65,17 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	// Only honor X-Forwarded-For / X-Real-IP from the configured proxies
 	// (default: the loopback nginx bundled in the image), never from every peer.
 	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
-		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+		return fmt.Errorf("configure trusted proxies: %w", err)
 	}
 
 	// Middleware
 	ginEngine.Use(common.GinLogger())
-	ginEngine.Use(gin.Recovery())
+	ginEngine.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		if !c.Writer.Written() {
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprint(recovered))
+		}
+		c.Abort()
+	}))
 
 	// Setup routes
 	r.Setup(ginEngine)
@@ -88,47 +86,66 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 		Addr:    addr,
 		Handler: ginEngine,
 	}
-	// Print RAGFlow Admin logo
-	common.Info("" +
-		"\n        ____  ___   ______________                 ___       __          _     \n" +
-		"       / __ \\/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ \n" +
-		"      / /_/ / /| |/ / __/ /_  / / __ \\ | /| / /  / /| |/ __  / __ `__ \\/ / __ \\ \n" +
-		"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /\n" +
-		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen admin server on %s: %w", addr, err)
+	}
+	defer listener.Close()
+	if common.GetRAGFlowType() == common.EnterpriseEdition {
+		// Print RAGFlow Admin logo
+		common.Info("" +
+			"\n        ____  ___   ______________                 ___       __          _     \n" +
+			"       / __ \\/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ \n" +
+			"      / /_/ / /| |/ / __/ /_  / / __ \\ | /| / /  / /| |/ __  / __ `__ \\/ / __ \\ \n" +
+			"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /\n" +
+			"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
+	}
 
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow admin version: %s", common.GetRAGFlowVersion()))
 
-	// Set log level
-	bootstrap.SetLogger(serverName, args)
-
 	validator := utility.NewScheduledTask("Admin validator", globalConfig.GetHeartbeatInterval(), adminapi.CheckServicePeriodically)
 	validator.Start()
+	defer validator.Wait()
 	defer validator.Stop()
+	stopMetrics := startMetrics(ctx)
+	defer stopMetrics()
 
 	// Start HTTP server in a goroutine
+	serveErr := make(chan error, 1)
+	common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", adminConfig.HTTPPort))
 	go func() {
-		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", adminConfig.HTTPPort))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			common.Fatal("Failed to start server", zap.Error(err))
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
 		}
 	}()
+	if args.Ready != nil {
+		if err := args.Ready(); err != nil {
+			srv.Close()
+			return fmt.Errorf("report admin readiness: %w", err)
+		}
+	}
 
 	// Wait for shutdown signal from main's signal.NotifyContext
-	<-ctx.Done()
+	var runErr error
+	select {
+	case <-ctx.Done():
+	case runErr = <-serveErr:
+	}
 
 	common.Info("Received shutdown signal")
 	common.Info("Shutting down RAGFlow HTTP server...")
 
 	// Create context with timeout for graceful shutdown
-	quitCtx, quitCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	quitCtx, quitCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer quitCancel()
 
 	// Shutdown HTTP server
 	if err := srv.Shutdown(quitCtx); err != nil {
-		common.Fatal("Server forced to shutdown", zap.Error(err))
+		srv.Close()
+		return fmt.Errorf("shutdown admin server: %w", err)
 	}
 
 	common.Info("Admin HTTP server exited")
-	return nil
+	return runErr
 }

@@ -44,7 +44,7 @@ func TestCompilationQueueCountsPreserveDuplicatesAndRouting(t *testing.T) {
 	entries := []entity.KnowledgeCompileEntry{
 		{DatasetID: "kb", DocID: "same", QueuePosition: 1, TaskTypes: []string{"Graph"}},
 		{DatasetID: "kb", DocID: "same", QueuePosition: 2, TaskTypes: []string{"Graph"}},
-		{DatasetID: "kb", DocID: "timeline", QueuePosition: 3, Variants: []string{"structure"}, TaskTypes: []string{"Timeline"}},
+		{DatasetID: "kb", DocID: "mindmap", QueuePosition: 3, Variants: []string{"structure"}, TaskTypes: []string{"Mindmap"}},
 		{DatasetID: "kb", DocID: "structure", QueuePosition: 4, Variants: []string{"structure"}},
 		{DatasetID: "kb", DocID: "wiki", QueuePosition: 5, Variants: []string{"wiki"}},
 		{DatasetID: "kb", DocID: "unscoped", QueuePosition: 6},
@@ -58,9 +58,9 @@ func TestCompilationQueueCountsPreserveDuplicatesAndRouting(t *testing.T) {
 			kind string
 			want int
 		}{
-			{"", 6}, {"Graph", 4}, {"Timeline", 3}, {"PageIndex", 2}, {"Wiki", 2},
+			{"", 6}, {"Graph", 4}, {"Mindmap", 2}, {"PageIndex", 2}, {"Wiki", 2},
 		} {
-			count, err := countCompilationStatusEntries(db, table, "kb", tc.kind)
+			count, err := countCompilationStatusEntries(t.Context(), db, table, "kb", tc.kind)
 			if err != nil || count != tc.want {
 				t.Fatalf("%s kind=%q count=%d want=%d err=%v", table, tc.kind, count, tc.want, err)
 			}
@@ -144,7 +144,7 @@ func TestGetDatasetCompilationStatus_FullOutput(t *testing.T) {
 		t.Fatalf("insert scheduling row: %v", err)
 	}
 	if err := db.Create(&entity.KnowledgeCompileBacklog{KnowledgeCompileEntry: entity.KnowledgeCompileEntry{
-		DatasetID: row.DatasetID, DocID: "d3", QueuePosition: 1, EventType: "completed", TaskTypes: []string{"Timeline"},
+		DatasetID: row.DatasetID, DocID: "d3", QueuePosition: 1, EventType: "completed", TaskTypes: []string{"Mindmap"},
 	}}).Error; err != nil {
 		t.Fatalf("insert backlog: %v", err)
 	}

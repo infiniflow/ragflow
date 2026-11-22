@@ -1192,7 +1192,7 @@ func (c *CLI) APIListGroupsCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", "/groups", httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/models/groups", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list groups: %w", err)
 	}
@@ -1264,16 +1264,16 @@ func (c *CLI) APIListModelGroupCommand(commandCount int, cmd *Command) (Response
 	return HandleCommonResponse(resp, "get group")
 }
 
-// APIAddGroupModelCommand ADD 'model@instance@provider' GROUP 'group_name'
+// APIAddGroupModelCommand ADD 'model@instance@provider' GROUP 'group_id'
 func (c *CLI) APIAddGroupModelCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	httpClient, err := c.apiModeClient()
 	if err != nil {
 		return nil, err
 	}
 
-	groupName, ok := cmd.Params["group_name"].(string)
+	groupID, ok := cmd.Params["group_id"].(string)
 	if !ok {
-		return nil, fmt.Errorf("group name not provided")
+		return nil, fmt.Errorf("group id not provided")
 	}
 
 	payload := map[string]interface{}{}
@@ -1285,7 +1285,7 @@ func (c *CLI) APIAddGroupModelCommand(commandCount int, cmd *Command) (ResponseI
 		return nil, fmt.Errorf("model identifier not provided")
 	}
 
-	url := utils.APIPath("/models/groups", groupName) + "/model"
+	url := utils.APIPath("/models/groups", groupID) + "/model"
 
 	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -1295,28 +1295,25 @@ func (c *CLI) APIAddGroupModelCommand(commandCount int, cmd *Command) (ResponseI
 	return HandleSimpleResponse(resp, "add model to group")
 }
 
-// APIDeleteGroupModelCommand DELETE 'model@instance@provider' GROUP 'group_name'
+// APIDeleteGroupModelCommand DELETE 'model@instance@provider' GROUP 'group_id'
 func (c *CLI) APIDeleteGroupModelCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	httpClient, err := c.apiModeClient()
 	if err != nil {
 		return nil, err
 	}
 
-	groupName, ok := cmd.Params["group_name"].(string)
+	groupID, ok := cmd.Params["group_id"].(string)
 	if !ok {
-		return nil, fmt.Errorf("group name not provided")
+		return nil, fmt.Errorf("group id not provided")
 	}
 
-	payload := map[string]interface{}{}
-	if v, ok := cmd.Params["composite_model_name"].(string); ok && v != "" {
-		payload["composite_model_name"] = v
-	} else if v, ok := cmd.Params["model_id"].(string); ok && v != "" {
-		payload["model_id"] = v
-	} else {
-		return nil, fmt.Errorf("model identifier not provided")
+	compositeModelName, ok := cmd.Params["composite_model_name"].(string)
+	if !ok || compositeModelName == "" {
+		return nil, fmt.Errorf("composite model name not provided")
 	}
+	payload := map[string]interface{}{"composite_model_name": compositeModelName}
 
-	url := utils.APIPath("/models/groups", groupName) + "/model"
+	url := utils.APIPath("/models/groups", groupID) + "/model"
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -1350,19 +1347,19 @@ func (c *CLI) APICreateModelGroupCommand(commandCount int, cmd *Command) (Respon
 	return HandleSimpleResponse(resp, "create group")
 }
 
-// APIDeleteModelGroupCommand DELETE GROUP 'group_name'
+// APIDeleteModelGroupCommand DELETE GROUP 'group_id'
 func (c *CLI) APIDeleteModelGroupCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	httpClient, err := c.apiModeClient()
 	if err != nil {
 		return nil, err
 	}
 
-	groupName, ok := cmd.Params["group_name"].(string)
+	groupID, ok := cmd.Params["group_id"].(string)
 	if !ok {
-		return nil, fmt.Errorf("group name not provided")
+		return nil, fmt.Errorf("group id not provided")
 	}
 
-	url := utils.APIPath("/models/groups", groupName)
+	url := utils.APIPath("/models/groups", groupID)
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -3212,6 +3209,21 @@ func (c *CLI) APIListEnvironmentsCommand(commandCount int, cmd *Command) (Respon
 	return HandleCommonResponse(resp, "list environments")
 }
 
+// APICheckLicenseCommand checks the system license (api mode only).
+func (c *CLI) APICheckLicenseCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := httpClient.Request(commandCount, "GET", "/system/license", httpClient.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check license: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "check license")
+}
+
 func (c *CLI) APIStartIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	httpClient, err := c.apiModeClient()
 	if err != nil {
@@ -4115,17 +4127,12 @@ func (c *CLI) APIShowModelGroupCommand(commandCount int, cmd *Command) (Response
 		return nil, err
 	}
 
-	// Build the query with url.Values rather than Sprintf: the group name is
-	// caller-supplied and may contain characters that need percent-encoding.
-	query := netUrl.Values{}
-	if v, ok := cmd.Params["group_name"].(string); ok && v != "" {
-		query.Set("group_name", v)
+	groupID, ok := cmd.Params["group_id"].(string)
+	if !ok || groupID == "" {
+		return nil, fmt.Errorf("group id not provided")
 	}
 
-	url := "/models/groups"
-	if encoded := query.Encode(); encoded != "" {
-		url += "?" + encoded
-	}
+	url := utils.APIPath("/models/groups", groupID)
 
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {

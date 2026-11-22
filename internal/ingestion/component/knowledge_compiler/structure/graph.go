@@ -6,7 +6,7 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// Graph projections and rebuild, mirroring Python structure.py's
+// Graph projections and rebuild, mirroring 's
 // _struct_graph_entity / _struct_graph_relation / _struct_merge_graph_entities
 // and _struct_rebuild_graph_json. The compact graph is derived from the
 // surviving entity/relation payload rows (content_with_weight JSON).
@@ -289,7 +289,7 @@ func attachOrphanEntities(entities, relations []map[string]any) []map[string]any
 	}
 
 	if len(repaired) > 0 {
-		// Mirrors Python's log line; the message lands in the compile log.
+		// Mirrors log line; the message lands in the compile log
 		relations = append(relations, repaired...)
 	}
 	return relations

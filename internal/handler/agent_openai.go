@@ -110,6 +110,7 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, req *agentChatCompleti
 		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
+	common.SetOperationResource(c, "session_id", req.SessionID)
 	runContext, cancel := context.WithCancel(service.WithOpenAICompatMessages(c.Request.Context(), req.Messages))
 	defer cancel()
 	events, err := h.chatRunner.RunAgent(
@@ -123,10 +124,16 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, req *agentChatCompleti
 	completionID := req.SessionID
 	promptTokens := countOpenAICompatPromptTokens(req.Messages)
 	if req.Stream {
+		common.FinishOperationLog(c)
 		h.streamOpenAICompat(c, events, completionID, req.AgentID, promptTokens)
 		return
 	}
 
+	// The non-stream path below collects the whole answer before writing it
+	// once, so http.Server.WriteTimeout applies to it exactly as it does to the
+	// stream branch. Clear the deadline before the collection starts, mirroring
+	// openai_chat.go which clears it before branching (issue #21649).
+	clearResponseWriteDeadline(c)
 	response, err := collectOpenAICompatCompletion(events, completionID, req.AgentID, promptTokens)
 	if err != nil {
 		writeOpenAICompatError(c, err)
@@ -135,12 +142,19 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, req *agentChatCompleti
 	c.JSON(http.StatusOK, response)
 }
 
+// streamOpenAICompat writes the OpenAI-compatible chat.completion.chunk stream
+// for an agent run: one `data: {...}` frame per canvas event, then
+// `data: [DONE]`. It clears the server write deadline first so an answer that
+// takes longer than http.Server.WriteTimeout is not truncated (issue #21649).
+// handleOpenAICompat already clears before starting the run, so this call keeps
+// the guarantee for the function's own contract and costs one syscall.
 func (h *AgentHandler) streamOpenAICompat(
 	c *gin.Context,
 	events <-chan canvas.RunEvent,
 	completionID, model string,
 	promptTokens int,
 ) {
+	clearResponseWriteDeadline(c)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")

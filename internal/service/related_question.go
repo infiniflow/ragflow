@@ -21,9 +21,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
@@ -165,34 +167,22 @@ func relatedQuestionsConfig(searchConfig map[string]interface{}) *modelModule.Ch
 }
 
 func intFromRelatedQuestionConfig(value interface{}) (int, bool) {
-	switch v := value.(type) {
-	case int:
-		return v, true
-	case int64:
-		return int(v), true
-	case float64:
-		return int(v), true
-	case json.Number:
-		if n, err := v.Int64(); err == nil {
-			return int(n), true
-		}
+	if n, ok := value.(json.Number); ok {
+		v, err := n.Int64()
+		return int(v), err == nil
 	}
-	return 0, false
+	return common.ToIntNum(value)
 }
 
 func floatFromRelatedQuestionConfig(value interface{}) (float64, bool) {
-	switch v := value.(type) {
-	case float64:
-		return v, true
-	case float32:
-		return float64(v), true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case json.Number:
-		if n, err := v.Float64(); err == nil {
-			return n, true
+	// Keep the pre-convergence contract: native numeric kinds and json.Number
+	// only. common.ToFloat also parses strings, and non-finite values must not
+	// reach the LLM request body (json.Marshal rejects them).
+	switch value.(type) {
+	case float64, float32, int, int64, json.Number:
+		f, ok := common.ToFloat(value)
+		if ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
+			return f, true
 		}
 	}
 	return 0, false

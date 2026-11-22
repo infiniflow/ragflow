@@ -20,20 +20,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
-	"ragflow/internal/common"
-	"ragflow/internal/dao"
-	"ragflow/internal/engine"
-	"ragflow/internal/entity"
-	"ragflow/internal/permission"
-	"ragflow/internal/service/file"
 	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service/file"
 )
 
 func resolveSkillSpaceTenantID(ctx context.Context, spaceID string, operation permission.Operation) (string, error) {

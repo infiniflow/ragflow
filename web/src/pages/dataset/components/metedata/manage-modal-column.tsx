@@ -4,6 +4,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { formatDate } from '@/utils/date';
 import { ColumnDef, Row, Table } from '@tanstack/react-table';
+import dayjs from 'dayjs';
 import { ListChevronsDownUp, LucidePencil, Trash2 } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -262,8 +263,7 @@ export const useMetadataColumns = ({
                           onChange={(value) => {
                             const newValue = {
                               ...editingValue,
-                              newValue: formatDate(
-                                value,
+                              newValue: dayjs(value).format(
                                 'YYYY-MM-DDTHH:mm:ss',
                               ),
                             };
@@ -315,7 +315,7 @@ export const useMetadataColumns = ({
                       <div className="flex gap-1 items-center">
                         <div className="text-sm truncate max-w-24">
                           {row.original.valueType === metadataValueTypeEnum.time
-                            ? formatDate(value, 'DD/MM/YYYY HH:mm:ss')
+                            ? formatDate(value)
                             : value}
                         </div>
                         {isDeleteSingleValue && (
@@ -343,20 +343,19 @@ export const useMetadataColumns = ({
                   </div>
                 </Button>
               )}
-              {hasMore &&
-                isRowExpanded && (
-                  // <div className="self-end mt-1">
-                  <Button
-                    variant={'ghost'}
-                    className="bg-transparent px-2 py-1"
-                    onClick={handleToggleExpand}
-                  >
-                    <div className="text-text-secondary">
-                      <ListChevronsDownUp size={14} />
-                    </div>
-                  </Button>
-                  // </div>
-                )}
+              {hasMore && isRowExpanded && (
+                // <div className="self-end mt-1">
+                <Button
+                  variant={'ghost'}
+                  className="bg-transparent px-2 py-1"
+                  onClick={handleToggleExpand}
+                >
+                  <div className="text-text-secondary">
+                    <ListChevronsDownUp size={14} />
+                  </div>
+                </Button>
+                // </div>
+              )}
             </div>
           );
         },

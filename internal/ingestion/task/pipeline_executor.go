@@ -21,10 +21,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -39,6 +43,8 @@ import (
 	"ragflow/internal/ingestion/mediacache"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/service/chunkversion"
+	"ragflow/internal/service/datasetversion"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -48,16 +54,38 @@ import (
 // indexed, and these bookkeeping inputs remain for the caller to apply to
 // document state (metadata merge + chunk/token counter bumps).
 type PipelineResult struct {
-	DocID            string
-	KbID             string
-	Metadata         map[string]any
-	Chunks           []map[string]any // populated only in debug (dry-run) mode
-	ChunkCount       int
+	DocID    string
+	KbID     string
+	Metadata map[string]any
+	// ManagedMetadataKeys lists document metadata keys owned by the pipeline
+	// (e.g. Resume mode). On re-parse, any key in this set absent from Metadata
+	// is removed while user-maintained keys outside this set stay untouched.
+	ManagedMetadataKeys []string
+	Chunks              []map[string]any // populated only in debug (dry-run) mode
+	ChunkCount          int
+	// OriginalChunkIDs is the set of source chunk ids this run wrote. It drives
+	// the document's chunk counter, so parent rows and compiled products are
+	// deliberately excluded.
+	OriginalChunkIDs []string
+	// WrittenChunkIDs is every engine row id this run wrote: source chunks, the
+	// parent rows materialised from them and the compiled products. The
+	// document-state finalizer diffs it against the chunk history to tombstone
+	// the chunks a re-parse dropped. It must hold the complete written set:
+	// diffing the source-only set would tombstone the parent and compiled rows
+	// the same run just wrote, and a content restore could then never bring
+	// them back.
+	WrittenChunkIDs []string
+	// DatasetVersion is the number this run's chunk baselines are anchored at,
+	// reserved once for the whole run. Zero when the run wrote no chunk, i.e. when
+	// it has no baselines to anchor. The document-state finalizer records the
+	// parse version on this same number, so one parse advances the dataset by one
+	// version instead of leaving a reserved gap behind.
+	DatasetVersion   int64
 	TokenConsumption int
 	Duration         float64 // pipeline wall-clock seconds
 	// DocName, BuiltInMetadataConfig and AutoMetadataEnabled carry what the
 	// document-state finalizer needs to apply built-in metadata
-	// (update_time / file_name), mirroring Python apply_built_in_metadata.
+	// (update_time / file_name), mirroring apply_built_in_metadata
 	DocName               string
 	BuiltInMetadataConfig []any
 	AutoMetadataEnabled   bool
@@ -82,10 +110,13 @@ type PipelineExecutor struct {
 
 	indexWriter      *chunkIndexWriter
 	deleteChunksFunc DeleteChunksFunc
-	loadDSLFunc      func(ctx context.Context, canvasID string) (string, string, error)
-	runPipelineFunc  func(ctx context.Context, dsl string) (map[string]any, string, error)
-	purgeTaskState   func(ctx context.Context, taskID string) error
-	progressSink     pipelinepkg.ProgressSink
+	// historyAnchor is the dataset version every chunk baseline of this run is
+	// stamped with, reserved once on the first batch (see parseBaselineAnchor).
+	historyAnchor   *parseBaselineAnchor
+	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
+	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
+	purgeTaskState  func(ctx context.Context, taskID string) error
+	progressSink    pipelinepkg.ProgressSink
 }
 
 func validateTaskContext(taskCtx *TaskContext) error {
@@ -126,21 +157,105 @@ type noRefreshChunkInserter interface {
 //
 // The first write creates the chunk store, and on Infinity that fixes the
 // fulltext analyzer, so the dataset language has to travel with it.
-func insertChunksForIngestion(eng engine.DocEngine, language string) InsertFunc {
+func insertChunksForIngestion(eng engine.DocEngine, db *gorm.DB, language string, meta chunkversion.SnapshotMeta, anchor *parseBaselineAnchor) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
+		var (
+			ids []string
+			err error
+		)
 		if bulk, ok := eng.(noRefreshChunkInserter); ok {
-			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID, language)
+			ids, err = bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID, language)
+		} else {
+			ids, err = eng.InsertChunks(ctx, chunks, baseName, datasetID, language)
 		}
-		return eng.InsertChunks(ctx, chunks, baseName, datasetID, language)
+		recordParseBaseline(ctx, db, anchor, datasetID, meta, chunks, err)
+		return ids, err
 	}
 }
 
 // insertFinalChunksForIngestion waits for the index refresh before returning.
 // The final write makes every preceding no-refresh batch searchable before the
 // document task is acknowledged and its completion event is published.
-func insertFinalChunksForIngestion(eng engine.DocEngine, language string) InsertFunc {
+func insertFinalChunksForIngestion(eng engine.DocEngine, db *gorm.DB, language string, meta chunkversion.SnapshotMeta, anchor *parseBaselineAnchor) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
-		return eng.InsertChunks(ctx, chunks, baseName, datasetID, language)
+		ids, err := eng.InsertChunks(ctx, chunks, baseName, datasetID, language)
+		recordParseBaseline(ctx, db, anchor, datasetID, meta, chunks, err)
+		return ids, err
+	}
+}
+
+// parseBaselineAnchor is the dataset version number a parse anchors its chunk
+// baselines at.
+//
+// It is reserved once per run and shared by every batch: a parse writes its
+// chunks batch by batch, and a reservation per batch would spend a number each
+// time, pushing the dataset's version far past the few history rows it actually
+// gains. The version that closes the run is recorded on this same number (see
+// docStateUpdater.apply), so one parse advances the dataset by one version and
+// the history has no gap.
+//
+// Batches may be written concurrently, so the number is taken under a lock: two
+// batches must not reserve twice.
+type parseBaselineAnchor struct {
+	mu      sync.Mutex
+	version int64
+}
+
+// number returns the number the run's baselines are anchored at, reserving it on
+// the first batch. Zero means no number could be taken; the baselines are then
+// skipped (a chunk with no history is still a chunk).
+func (a *parseBaselineAnchor) number(ctx context.Context, db *gorm.DB, datasetID string) int64 {
+	if a == nil || db == nil || datasetID == "" {
+		return 0
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.version > 0 {
+		return a.version
+	}
+	version, err := datasetversion.ReserveVersion(ctx, db, datasetID)
+	if err != nil {
+		common.Warn("Ingestion: failed to reserve a dataset version for the parse baseline",
+			zap.String("dataset_id", datasetID), zap.Error(err))
+		return 0
+	}
+	a.version = version
+	return version
+}
+
+// Version reports the number reserved for the run so far, 0 when it took none.
+// It is read once the run finishes, to record its version on the same number.
+func (a *parseBaselineAnchor) Version() int64 {
+	if a == nil {
+		return 0
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.version
+}
+
+// recordParseBaseline stores version 0 of the chunks a batch just wrote.
+//
+// Without it a chunk nobody edits has no history at all, and a content version
+// could not put it back once the document is removed: the parser writes the
+// engine row and moves on. A failure only logs — the chunk content is already
+// indexed, and the history is an observation of it rather than a precondition.
+//
+// The anchor is taken before the parse finishes because the run's version row is
+// recorded once the whole document is written and has to include every baseline
+// it covers; it is reserved rather than recorded because a version row per batch
+// would fill the history with entries describing a run that has not finished.
+func recordParseBaseline(ctx context.Context, db *gorm.DB, anchor *parseBaselineAnchor, datasetID string, meta chunkversion.SnapshotMeta, chunks []map[string]any, insertErr error) {
+	if insertErr != nil || len(chunks) == 0 || db == nil {
+		return
+	}
+	datasetVersion := anchor.number(ctx, db, datasetID)
+	if datasetVersion <= 0 {
+		return
+	}
+	if err := chunkversion.AppendParseBaseline(ctx, db, datasetID, datasetVersion, meta, chunks); err != nil {
+		common.Warn("Ingestion: failed to record the parse baseline of the chunks",
+			zap.String("dataset_id", datasetID), zap.Error(err))
 	}
 }
 
@@ -162,17 +277,19 @@ func NewPipelineExecutor(
 	if deps == nil {
 		return nil, fmt.Errorf("pipeline executor: nil dependency bundle")
 	}
+	anchor := &parseBaselineAnchor{}
 	svc := &PipelineExecutor{
-		taskCtx:     taskCtx,
-		canvasID:    canvasID,
-		docBulkSize: docBulkSize,
-		deps:        deps,
+		taskCtx:       taskCtx,
+		canvasID:      canvasID,
+		docBulkSize:   docBulkSize,
+		deps:          deps,
+		historyAnchor: anchor,
 		indexWriter: newChunkIndexWriter(
-			insertChunksForIngestion(deps.Engine, datasetLanguage(taskCtx)),
+			insertChunksForIngestion(deps.Engine, deps.DB, datasetLanguage(taskCtx), datasetSnapshotMeta(taskCtx), anchor),
 			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
 			taskCtx.Doc.KbID,
 			docBulkSize,
-		).withFinalInsertFunc(insertFinalChunksForIngestion(deps.Engine, datasetLanguage(taskCtx))),
+		).withFinalInsertFunc(insertFinalChunksForIngestion(deps.Engine, deps.DB, datasetLanguage(taskCtx), datasetSnapshotMeta(taskCtx), anchor)),
 		deleteChunksFunc: func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error) {
 			return deps.Engine.DeleteChunks(ctx, condition, baseName, datasetID)
 		},
@@ -229,6 +346,10 @@ func (s *PipelineExecutor) Doc() *entity.Document     { return &s.taskCtx.Doc }
 func (s *PipelineExecutor) Tenant() *entity.Tenant    { return &s.taskCtx.Tenant }
 
 func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error) {
+	ctx = s.withProgressMessageReporter(ctx)
+	ctx, finishIOProgress := agentruntime.WithIOProgress(ctx)
+	defer finishIOProgress()
+
 	start := time.Now()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -279,6 +400,36 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	return result, nil
 }
 
+type pipelineMessageReporter interface {
+	OnComponentMessage(ctx context.Context, taskID, documentID, component, message string)
+}
+
+func (s *PipelineExecutor) withProgressMessageReporter(ctx context.Context) context.Context {
+	if s.taskCtx == nil {
+		return ctx
+	}
+	sink, hasSink := s.progressSink.(pipelineMessageReporter)
+	taskID := ""
+	if s.taskCtx.IngestionTask != nil {
+		taskID = s.taskCtx.IngestionTask.ID
+	}
+	documentID := s.taskCtx.Doc.ID
+	return agentruntime.WithProgressMessageCallback(ctx, func(component, message string) {
+		common.Info("component progress detail",
+			zap.String("component", component),
+			zap.String("task_id", taskID),
+			zap.String("document_id", documentID),
+			zap.String("message", message),
+		)
+		if !hasSink {
+			return
+		}
+		sinkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		sink.OnComponentMessage(sinkCtx, taskID, documentID, component, message)
+	})
+}
+
 // collectDebugOutput builds a PipelineResult for a debug (dry-run) run.
 // It surfaces the pipeline's chunks so a debug endpoint can render them, but
 // performs no DB/index writes — the embedding vectors already computed by the
@@ -313,6 +464,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 
 	embeddingTokenConsumption := indexdoc.GetEmbeddingTokenConsumption(pipelineOutput)
+	managedMetadataKeys := collectManagedMetadataKeys(chunks)
 	metadata, err := indexdoc.ProcessChunksForPipeline(
 		chunks,
 		s.taskCtx.Doc.ID,
@@ -360,11 +512,20 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	indexChunks := append(chunks, parentChunks...)
 	indexdoc.StampDatasetPagerank(indexChunks, s.taskCtx.KB.Pagerank)
-	if err := s.indexWriter.Write(ctx, indexChunks); err != nil {
+	indexWriteStart := time.Now()
+	finishIndexWrite := agentruntime.TrackIO(ctx, "Indexer", "Write chunks", fmt.Sprintf("count=%d", len(indexChunks)))
+	indexWriteErr := s.indexWriter.Write(ctx, indexChunks)
+	finishIndexWrite()
+	indexMessage := fmt.Sprintf("Write chunks | count=%d elapsed=%s", len(indexChunks), time.Since(indexWriteStart).Round(time.Millisecond))
+	if indexWriteErr != nil {
+		indexMessage += " error=" + kccommon.CompactError(indexWriteErr)
+	}
+	agentruntime.ReportIOProgress(ctx, "Indexer", indexMessage)
+	if indexWriteErr != nil {
 		if cleanupErr := s.compensateFailedIndexWrite(ctx, indexChunks); cleanupErr != nil {
-			return nil, fmt.Errorf("write chunks: %w; compensate partial index write: %v", err, cleanupErr)
+			return nil, fmt.Errorf("write chunks: %w; compensate partial index write: %v", indexWriteErr, cleanupErr)
 		}
-		return nil, fmt.Errorf("write chunks: %w", err)
+		return nil, fmt.Errorf("write chunks: %w", indexWriteErr)
 	}
 	if err := s.reconcileDocumentCompiledProducts(ctx, oldCompiledProductIDs, chunks); err != nil {
 		return nil, err
@@ -398,13 +559,21 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// succeeded. Only now drop the run-scoped cache entries this task produced,
 	// so a failure in any of those steps leaves chunk results and parser media
 	// intact for retry.
+	//
+	// The dataset version this run represents is recorded by the caller once the
+	// counters are applied — see docStateUpdater.apply — because the version's
+	// counters come from the dataset row.
 	s.purgeRunState(ctx)
 
 	return &PipelineResult{
 		DocID:                 s.taskCtx.Doc.ID,
 		KbID:                  s.taskCtx.Doc.KbID,
 		Metadata:              metadata,
+		ManagedMetadataKeys:   managedMetadataKeys,
 		ChunkCount:            chunkCount,
+		OriginalChunkIDs:      originalChunkIDs(chunks),
+		WrittenChunkIDs:       writtenChunkIDs(indexChunks),
+		DatasetVersion:        s.historyAnchor.Version(),
 		TokenConsumption:      embeddingTokenConsumption,
 		Duration:              s.terminalDuration(start),
 		DocName:               docNameValue(s.taskCtx.Doc.Name),
@@ -461,13 +630,53 @@ func (s *PipelineExecutor) compensateFailedIndexWrite(ctx context.Context, chunk
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	started := time.Now()
+	finish := agentruntime.TrackIO(ctx, "Indexer", "Delete partial write", fmt.Sprintf("count=%d", len(ids)))
 	_, err := s.deleteChunksFunc(
 		cleanupCtx,
 		map[string]any{"id": ids, "kb_id": s.taskCtx.Doc.KbID},
 		s.indexWriter.baseName,
 		s.taskCtx.Doc.KbID,
 	)
-	return err
+	finish()
+	message := fmt.Sprintf("Delete partial write | count=%d elapsed=%s", len(ids), time.Since(started).Round(time.Millisecond))
+	if err != nil {
+		message += " error=" + kccommon.CompactError(err)
+	}
+	agentruntime.ReportIOProgress(ctx, "Indexer", message)
+	if err != nil {
+		return err
+	}
+	// The rows are gone, so the chunk history has to say so. The batches before
+	// the failing one already recorded their parse baseline (recordParseBaseline
+	// runs per batch), and a baseline left "open" makes a content restore bring
+	// those rows back into a document whose parse never completed. Tombstones are
+	// what a re-parse records for the chunks it dropped, and a later successful
+	// parse revives them (AppendParseBaseline writes one past a tombstone).
+	//
+	// The tombstones carry the number the run already reserved for its baselines:
+	// a run that fails must not take a version of its own, and the removal does
+	// not need one — AppendTombstones writes one past the latest row of each
+	// chunk, so the chunk history already orders the removal after the baseline
+	// it cancels, and carving out a fresh dataset number only pushes the
+	// dataset's counter past a version nothing describes.
+	//
+	// A run that failed before its first batch had nothing to anchor and reserved
+	// no number: there is no baseline to cancel, so nothing is written.
+	if s.deps != nil && s.deps.DB != nil {
+		if datasetVersion := s.historyAnchor.Version(); datasetVersion > 0 {
+			// A fresh budget: the delete above may have spent most of cleanupCtx, and
+			// a cancelled write would leave exactly the stale baseline this is meant
+			// to clear.
+			historyCtx, historyCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer historyCancel()
+			// No actor: the chunks are cancelled by a failed index write, not by a
+			// user's removal.
+			chunkversion.AppendTombstones(
+				historyCtx, s.deps.DB, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, datasetVersion, ids, "")
+		}
+	}
+	return nil
 }
 
 // terminalDuration measures the run from the document's process_begin_at —
@@ -509,6 +718,44 @@ func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) 
 	return common.MetadataRawFieldList(metaObj["built_in_metadata"]), common.ParserConfigBool(metaObj["enabled"])
 }
 
+// collectManagedMetadataKeys gathers the deduplicated managed metadata keys
+// declared by pipeline components (such as Extractor in Resume mode) before
+// ProcessChunksForPipeline strips the internal bookkeeping key.
+func collectManagedMetadataKeys(chunks []map[string]any) []string {
+	var out []string
+	seen := make(map[string]struct{})
+	add := func(k string) {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			return
+		}
+		if _, ok := seen[k]; ok {
+			return
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	for _, ck := range chunks {
+		raw, ok := ck["_managed_metadata_keys"]
+		if !ok || raw == nil {
+			continue
+		}
+		switch list := raw.(type) {
+		case []string:
+			for _, k := range list {
+				add(k)
+			}
+		case []any:
+			for _, item := range list {
+				if k, ok := item.(string); ok {
+					add(k)
+				}
+			}
+		}
+	}
+	return out
+}
+
 func docNameValue(name *string) string {
 	if name == nil {
 		return ""
@@ -525,6 +772,12 @@ func docNameValue(name *string) string {
 // is the number of unique ids — not len(chunks). Mirrors the index-side
 // deduplication that happens at write time.
 func countOriginalChunkIDs(chunks []map[string]any) int {
+	return len(originalChunkIDs(chunks))
+}
+
+// originalChunkIDs lists the source chunk ids of a run in first-seen order.
+func originalChunkIDs(chunks []map[string]any) []string {
+	ids := make([]string, 0, len(chunks))
 	seen := make(map[string]struct{}, len(chunks))
 	for _, ck := range chunks {
 		if _, compiled := ck["compile_kwd"]; compiled {
@@ -534,9 +787,36 @@ func countOriginalChunkIDs(chunks []map[string]any) int {
 		if id == "" {
 			continue
 		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
 		seen[id] = struct{}{}
+		ids = append(ids, id)
 	}
-	return len(seen)
+	return ids
+}
+
+// writtenChunkIDs lists every engine row id a run wrote in first-seen order:
+// source chunks, the parent rows materialised from them, and the knowledge
+// compiler's products. The document-state finalizer tombstones the difference
+// between this set and the document's open history, so it has to be the
+// complete written set — the source-only set of originalChunkIDs would mark
+// the parent and compiled rows the same run wrote as deleted.
+func writtenChunkIDs(rows []map[string]any) []string {
+	ids := make([]string, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		id, _ := row["id"].(string)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // markCompiledProductsHidden stages wiki per-document page rows as
@@ -545,7 +825,7 @@ func countOriginalChunkIDs(chunks []map[string]any) int {
 // every wiki read path selects merged rows only.
 //
 // Tree / structure (page_index) / mindmap rows are the FINAL per-document
-// products — Python writes them visible at compile time
+// products — writes them visible at compile time
 // (_struct_to_doc_storage_doc sets no available_int, index default 1) and its
 // claim recall / hybrid retrieval filter on available_int=1, so they stay
 // searchable here too. Merged dataset-level products are written by the
@@ -575,6 +855,8 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 	oldIDs := make([]string, 0)
 	oldProducts := make([]map[string]any, 0)
 	for offset := 0; ; offset += pageSize {
+		started := time.Now()
+		finish := agentruntime.TrackIO(ctx, "Indexer", "Search compiled products", fmt.Sprintf("offset=%d limit=%d", offset, pageSize))
 		result, err := docEngine.Search(ctx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
 			KbIDs:        []string{s.taskCtx.Doc.KbID},
@@ -583,6 +865,16 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 			SelectFields: []string{"id", "compile_kwd", "compilation_template_kind_kwd", "type_kwd"},
 			Filter:       map[string]any{"doc_id": []string{s.taskCtx.Doc.ID}},
 		})
+		finish()
+		hits := 0
+		if result != nil {
+			hits = len(result.Chunks)
+		}
+		message := fmt.Sprintf("Search compiled products | offset=%d limit=%d hits=%d elapsed=%s", offset, pageSize, hits, time.Since(started).Round(time.Millisecond))
+		if err != nil {
+			message += " error=" + kccommon.CompactError(err)
+		}
+		agentruntime.ReportIOProgress(ctx, "Indexer", message)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("load document compiler products: %w", err)
 		}
@@ -634,11 +926,20 @@ func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context
 	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
 	for start := 0; start < len(staleIDs); start += pageSize {
 		end := min(start+pageSize, len(staleIDs))
-		if _, err := docEngine.DeleteChunks(ctx, map[string]any{
+		started := time.Now()
+		finish := agentruntime.TrackIO(ctx, "Indexer", "Delete stale products", fmt.Sprintf("batch=%d/%d count=%d", start/pageSize+1, (len(staleIDs)+pageSize-1)/pageSize, end-start))
+		_, deleteErr := docEngine.DeleteChunks(ctx, map[string]any{
 			"id":    staleIDs[start:end],
 			"kb_id": s.taskCtx.Doc.KbID,
-		}, indexName, s.taskCtx.Doc.KbID); err != nil {
-			return fmt.Errorf("delete stale document compiler products: %w", err)
+		}, indexName, s.taskCtx.Doc.KbID)
+		finish()
+		message := fmt.Sprintf("Delete stale products | count=%d elapsed=%s", end-start, time.Since(started).Round(time.Millisecond))
+		if deleteErr != nil {
+			message += " error=" + kccommon.CompactError(deleteErr)
+		}
+		agentruntime.ReportIOProgress(ctx, "Indexer", message)
+		if deleteErr != nil {
+			return fmt.Errorf("delete stale document compiler products: %w", deleteErr)
 		}
 	}
 	return nil
@@ -650,7 +951,7 @@ func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context
 // this, later parsing would still write searchable available_int=1 rows.
 // Wiki staging rows are already available_int=0 from markCompiledProductsHidden,
 // so the stamp is a no-op for them; tree / structure rows become hidden
-// together with their document, matching Python's doc_id-scoped availability
+// together with their document, matching doc_id-scoped availability
 // toggle.
 func applyDocumentAvailability(chunks []map[string]any, status *string) {
 	if status == nil || *status != "0" {
@@ -742,12 +1043,10 @@ func mergeTaskTypes(groups ...[]string) []string {
 }
 
 func sortedTaskTypes(seen map[string]struct{}) []string {
-	out := make([]string, 0, len(seen))
-	for taskType := range seen {
-		out = append(out, taskType)
+	if len(seen) == 0 {
+		return []string{}
 	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // mergeCompiledVariants returns the union of the previous and current
@@ -915,16 +1214,10 @@ func recordPipelineLog(
 	if db == nil {
 		return errors.New("pipeline log database is required")
 	}
-	var dslMap entity.JSONMap
-	if strings.TrimSpace(input.DSL) == "" {
-		dslMap = entity.JSONMap{}
-	} else if err := json.Unmarshal([]byte(input.DSL), &dslMap); err != nil {
-		dslMap = entity.JSONMap{"raw": input.DSL}
-	}
 
 	// The task context contains the document snapshot loaded when the task
 	// started. Reload it here so the operation log reflects the final progress
-	// state written by the progress sink, matching the Python operation-log
+	// state written by the progress sink, matching the operation-log
 	// creation path.
 	doc := input.Document
 	if doc.ID == "" {
@@ -955,31 +1248,22 @@ func recordPipelineLog(
 	// parser_id, reuses the document thumbnail as avatar, and leaves
 	// pipeline_id empty. The canvas lookup must not depend on the DSL: terminal
 	// failure/cancel logs are recorded without a DSL, and their pipeline title
-	// and avatar must still resolve from the canvas row (mirrors the Python
+	// and avatar must still resolve from the canvas row (mirrors the
 	// operation-log creation path).
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
-	var pipelineID *string
 	if input.PipelineID != "" {
-		pipelineID = &input.PipelineID
-		if db != nil {
-			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
-				if canvas.Title != nil {
-					pipelineTitle = *canvas.Title
-				}
-				pipelineAvatar = canvas.Avatar
-			} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
-				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", input.PipelineID, err))
+		if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
+			if canvas.Title != nil {
+				pipelineTitle = *canvas.Title
 			}
+			pipelineAvatar = canvas.Avatar
+		} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
+			common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", input.PipelineID, err))
 		}
 	}
 
-	operationStatus := input.Status
-	statusValue := "1"
-	if doc.Status != nil && *doc.Status != "" {
-		statusValue = *doc.Status
-	}
-	if err := updateOpenLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
+	if err := updateOpenLogRow(ctx, db, input, pipelineTitle, pipelineAvatar, doc); err != nil {
 		return fmt.Errorf("advance pipeline log for document %s: %w", input.DocumentID, err)
 	}
 	return nil
@@ -989,14 +1273,35 @@ func recordPipelineLog(
 // state, filling in the DSL, the pipeline identity, and the final progress
 // snapshot.
 //
+// operationStatus / pipelineID / dslMap are derived from input here so the
+// caller no longer passes the same data it already put into PipelineLogInput.
 // The row is targeted by PipelineLogID, so a superseded run whose row was
 // deleted with the task can never reach into the replacement run's row.
 // RowsAffected is not used to decide whether to create: once a target row is
 // known, the write is final — a lost CAS means another writer already finalized
 // this run or the row was dropped with a superseded run, and neither may
 // produce a second entry.
-func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) error {
+func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, pipelineTitle string, pipelineAvatar *string, doc entity.Document) error {
 	targetID := input.PipelineLogID
+
+	operationStatus := input.Status
+	statusValue := "1"
+	if doc.Status != nil && *doc.Status != "" {
+		statusValue = *doc.Status
+	}
+
+	var pipelineID *string
+	if input.PipelineID != "" {
+		pipelineID = &input.PipelineID
+	}
+
+	var dslMap entity.JSONMap
+	if strings.TrimSpace(input.DSL) == "" {
+		dslMap = entity.JSONMap{}
+	} else if err := json.Unmarshal([]byte(input.DSL), &dslMap); err != nil {
+		dslMap = entity.JSONMap{"raw": input.DSL}
+	}
+
 	updates := map[string]interface{}{
 		"operation_status": operationStatus,
 		"status":           statusValue,
@@ -1185,7 +1490,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		// injected in place below without a nil-map assignment panic.
 		parserConfig = map[string]interface{}{}
 	}
-	// Legacy parser_config rows saved by the Python-era frontend nest the
+	// Legacy parser_config rows saved by the -era frontend nest the
 	// Parser's setups under a "setups" key. Lift them BEFORE the runtime
 	// merges this map over the DSL-baked params (override-wins on top-level
 	// key): a nested entry merged as-is would lose to the DSL's flat families
@@ -1300,9 +1605,9 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 //   - canvas-debug (dry-run) runs wire a DebugLogSink, which implements the
 //     optional ResultSink capability. buildLogDSL hands it the FULL result DSL
 //     (BuildDebugResultDSL(dsl, output, true)) so the front-end "View result"
-//     page renders parsed chunks from the Redis END marker
-//     (rag/flow/pipeline.py:98). This is the ONLY place business data leaves
-//     the executor, and it targets Redis — never pipeline_operation_log.
+//     page renders parsed chunks from the Redis END marker. This is the ONLY
+//     place business data leaves the executor, and it targets Redis — never
+//     pipeline_operation_log.
 //   - persist (dataset parse) runs use a DB-backed sink that is NOT a
 //     ResultSink, so the preview branch is skipped. The returned logDSL (DSL
 //     definition only) is what recordPipelineLog persists, matching the
@@ -1381,4 +1686,22 @@ func datasetLanguage(taskCtx *TaskContext) string {
 		return ""
 	}
 	return *taskCtx.KB.Language
+}
+
+// datasetSnapshotMeta names how the derived fields of a parse baseline were
+// produced, so a replay can tell whether the stored tokens and vector are still
+// the ones this dataset's queries read.
+//
+// The embedding model is the dataset's embd_id, the same id the editor records
+// when it rewrites a chunk: a baseline and an edit of the same chunk must agree
+// about their producer, or a restore would refuse one of the two rows and
+// silently re-embed it.
+func datasetSnapshotMeta(taskCtx *TaskContext) chunkversion.SnapshotMeta {
+	if taskCtx == nil {
+		return chunkversion.SnapshotMeta{}
+	}
+	return chunkversion.SnapshotMeta{
+		EmbeddingID: taskCtx.KB.EmbdID,
+		Language:    datasetLanguage(taskCtx),
+	}
 }

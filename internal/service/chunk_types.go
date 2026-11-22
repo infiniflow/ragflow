@@ -157,6 +157,11 @@ type UpdateChunkRequest struct {
 	// ImageUpdateMode is one of append (default), replace, remove.
 	ImageBase64     *string `json:"image_base64,omitempty"`
 	ImageUpdateMode *string `json:"image_update_mode,omitempty"`
+	// ExpectedVersion carries the chunk version the caller read before
+	// editing. An edition that keeps a chunk history compares it against the
+	// current version and rejects the edit with a conflict when another edit
+	// landed first; editions without history reject the field outright.
+	ExpectedVersion *int `json:"expected_version,omitempty"`
 }
 
 // RemoveChunksRequest request for removing chunks

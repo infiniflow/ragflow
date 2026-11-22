@@ -89,9 +89,9 @@ const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
   };
 
   return (
-    <div className="rounded-lg bg-bg-input scrollbar-auto overflow-hidden border border-border-default">
+    <div className="rounded-lg scrollbar-auto overflow-hidden border border-border-default">
       <Table rootClassName="rounded-lg">
-        <TableHeader className="bg-bg-title">
+        <TableHeader>
           <TableRow className="hover:bg-bg-title">
             <TableHead className="h-12 px-4">{t('common.name')}</TableHead>
             <TableHead className="h-12 px-4">
@@ -110,7 +110,7 @@ const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
             <TableHead className="h-12 px-4">{t('common.action')}</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody className="bg-bg-base">
+        <TableBody>
           {loading ? (
             <TableRow>
               <TableCell colSpan={4} className="h-24 text-center">
@@ -141,15 +141,15 @@ const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
                   {tenant.status === TenantMembershipStatus.Invited ? (
                     <div className="flex gap-2">
                       <Button
-                        variant="link"
-                        className="p-0 h-auto"
+                        variant="secondary"
+                        className=" h-auto"
                         onClick={handleAgree(tenant.tenant_id, true)}
                       >
                         {t(`setting.agree`)}
                       </Button>
                       <Button
-                        variant="link"
-                        className="p-0 h-auto"
+                        variant="secondary"
+                        className=" h-auto"
                         onClick={handleAgree(tenant.tenant_id, false)}
                       >
                         {t(`setting.refuse`)}
@@ -158,9 +158,9 @@ const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
                   ) : tenant.role === TenantRole.Normal &&
                     user.id !== tenant.tenant_id ? (
                     <Button
-                      variant="ghost"
+                      variant="secondary"
                       size="icon"
-                      className="h-8 w-8 p-0"
+                      className="h-8 w-8 "
                       onClick={handleQuitTenantUser(user.id, tenant.tenant_id)}
                     >
                       {/* {t('setting.quit')} */}

@@ -6,16 +6,18 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/elastic/go-elasticsearch/v8"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
 )
 
 func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10", "tags^5", "description^3", "content^1"},
 	}, true, false)
@@ -29,7 +31,7 @@ func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
 }
 
 func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10"},
 	}, false, false)
@@ -44,7 +46,7 @@ func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
 func TestBuildQueryStringQueryLowercasesMatchingText(t *testing.T) {
 	// The *_tks/*_ltks fields are whitespace-analyzed and store lowercase
 	// tokens; a capitalized query term must not silently match nothing.
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "Isabel Wood co-lead Ross Feldner Bob Musil Bird Watch Wonder Program",
 	}, false, false)
 
@@ -60,7 +62,7 @@ func TestBuildQueryStringQueryKeepsBooleanOperators(t *testing.T) {
 	// Only AND/OR/NOT are operators, and only in upper case: a folded "or" is a
 	// term clause, which re-bases minimum_should_match and turns a 94-hit search
 	// into a 32-hit one (see lowerCaseQueryText).
-	query := buildQueryStringQuery(&types.MatchTextExpr{
+	query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: `(病毒 OR 勒索)^0.3 (系统)^0.2 ("系统 因为 勒索"~2)^1.5 OR ("MES"^0.7)`,
 	}, false, false)
 
@@ -322,6 +324,68 @@ func TestDeleteChunksIDStringSlice(t *testing.T) {
 	assertEqual(t, terms["id"], []interface{}{"doc-a", "doc-b"})
 }
 
+// TestDeleteChunksScopesByDataset pins the engine-side dataset scope. The ES
+// index is shared by every dataset of a tenant, so DeleteChunks must turn the
+// datasetID argument into a kb_id filter even when the caller's condition does
+// not carry one; otherwise a doc_id-only delete reaches other datasets.
+func TestDeleteChunksScopesByDataset(t *testing.T) {
+	cases := []struct {
+		name      string
+		condition map[string]interface{}
+	}{
+		{name: "condition without kb_id", condition: map[string]interface{}{"doc_id": "doc-1"}},
+		{name: "datasetID wins over conflicting kb_id", condition: map[string]interface{}{"doc_id": "doc-1", "kb_id": "kb-2"}},
+		{name: "typed kb_id slice cannot widen the scope", condition: map[string]interface{}{"id": []string{"chunk-1"}, "kb_id": []string{"kb-2"}}},
+		{name: "empty condition stays dataset-scoped", condition: nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleteQuery map[string]interface{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Elastic-Product", "Elasticsearch")
+				switch r.Method {
+				case http.MethodHead:
+					w.WriteHeader(http.StatusOK)
+				case http.MethodPost:
+					if r.URL.Path != "/ragflow_tenant/_delete_by_query" {
+						t.Errorf("path=%s, want /ragflow_tenant/_delete_by_query", r.URL.Path)
+						http.Error(w, "unexpected request path", http.StatusNotFound)
+						return
+					}
+					if err := json.NewDecoder(r.Body).Decode(&deleteQuery); err != nil {
+						t.Errorf("decode delete query: %v", err)
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"deleted":1}`))
+				default:
+					t.Errorf("method=%s", r.Method)
+					http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+				}
+			}))
+			defer server.Close()
+			client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+			if err != nil {
+				t.Fatalf("new elasticsearch client: %v", err)
+			}
+			engine := &Engine{client: client}
+			if _, err = engine.DeleteChunks(t.Context(), tc.condition, "ragflow_tenant", "kb-1"); err != nil {
+				t.Fatalf("DeleteChunks: %v", err)
+			}
+
+			query, _ := json.Marshal(deleteQuery)
+			if string(query) == `{"query":{"match_all":{}}}` {
+				t.Fatalf("empty condition must stay dataset-scoped, got %s", query)
+			}
+			if !strings.Contains(string(query), `"kb_id":"kb-1"`) {
+				t.Fatalf("delete query lost dataset scope kb-1: %s", query)
+			}
+			if strings.Contains(string(query), `"kb_id":"kb-2"`) {
+				t.Fatalf("delete query kept conflicting kb_id kb-2: %s", query)
+			}
+		})
+	}
+}
+
 // TestUpdateChunksPreservesStringSliceCondition guards the document
 // availability switch: the doc-service caller of UpdateChunks
 // (updateDocumentChunkAvailability) passes a typed []string id list, and a
@@ -549,10 +613,10 @@ func TestElasticsearchGetFieldsFiltersAndUsesIDFallback(t *testing.T) {
 // weights address keys inside the tag_feas map, while pagerank addresses the
 // top-level pagerank_fea rank_feature field.
 func TestBuildRankFeatureQueryUsesTopLevelPagerank(t *testing.T) {
-	queries := buildRankFeatureQuery(map[string]float64{
+	queries := esoscommon.BuildRankFeatureQuery(map[string]float64{
 		common.PAGERANK_FLD: 10,
 		"tag_a":             0.8,
-	})
+	}, true)
 	if len(queries) != 2 {
 		t.Fatalf("queries = %d, want 2", len(queries))
 	}
@@ -774,7 +838,7 @@ func assertEqual(t *testing.T, got, want interface{}) {
 // their storage counterparts and content is tokenized before write,
 // mirroring Python memory/utils/es_conn.py:map_message_to_es_fields.
 func TestMapMemoryMessageToESDoc(t *testing.T) {
-	doc := mapMemoryMessageToESDoc(map[string]interface{}{
+	doc := esoscommon.MapMemoryMessageToESDoc(map[string]interface{}{
 		"id":           "mem-1_42",
 		"doc_id":       "mem-1",
 		"message_id":   int64(42),
@@ -1001,7 +1065,7 @@ func TestSearchDoesNotAddPageRankToHitScore(t *testing.T) {
 // the update path recomputes tokenized_content_ltks before write, same
 // as the Python update path.
 func TestMapMemoryMessageESUpdateFieldsRefreshesTokens(t *testing.T) {
-	doc := mapMemoryMessageESUpdateFields(map[string]interface{}{
+	doc := esoscommon.MapMemoryMessageESUpdateFields(map[string]interface{}{
 		"content": "fresh content",
 		"status":  0,
 	})
@@ -1130,5 +1194,83 @@ func TestCloneFilterSnapshotNonBoolQuery(t *testing.T) {
 	snapshot := cloneFilterSnapshot(query)
 	if snapshot["query_string"] == nil {
 		t.Fatalf("snapshot = %#v, want the query_string clause preserved", snapshot)
+	}
+}
+
+func TestDeleteChunksRejectsEmptyDatasetID(t *testing.T) {
+	for _, condition := range []map[string]interface{}{
+		{"kb_id": "kb-2", "doc_id": "doc-1"},
+		{"doc_id": "doc-1"},
+		nil,
+	} {
+		var requests atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			w.Header().Set("X-Elastic-Product", "Elasticsearch")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method != http.MethodHead {
+				_, _ = w.Write([]byte(`{"deleted":1}`))
+			}
+		}))
+		client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+		if err != nil {
+			server.Close()
+			t.Fatal(err)
+		}
+		engine := &Engine{client: client}
+		deleted, err := engine.DeleteChunks(t.Context(), condition, "ragflow_tenant", "")
+		server.Close()
+		if err == nil {
+			t.Errorf("condition=%v: expected empty datasetID error, got deleted=%d", condition, deleted)
+		}
+		if deleted != 0 {
+			t.Errorf("condition=%v: deleted=%d, want 0", condition, deleted)
+		}
+		if requests.Load() != 0 {
+			t.Errorf("condition=%v: sent %d ES requests, want 0", condition, requests.Load())
+		}
+	}
+}
+
+func TestDeleteChunksRejectsEmptyIDs(t *testing.T) {
+	cases := []struct {
+		name string
+		id   interface{}
+	}{
+		{name: "nil", id: nil},
+		{name: "empty string slice", id: []string{}},
+		{name: "nil string slice", id: []string(nil)},
+		{name: "empty interface slice", id: []interface{}{}},
+		{name: "nil interface slice", id: []interface{}(nil)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var deletes atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Elastic-Product", "Elasticsearch")
+				w.Header().Set("Content-Type", "application/json")
+				if r.Method == http.MethodPost {
+					deletes.Add(1)
+					_, _ = w.Write([]byte(`{"deleted":1}`))
+				}
+			}))
+			defer server.Close()
+			client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			engine := &Engine{client: client}
+			condition := map[string]interface{}{"id": tc.id}
+			deleted, err := engine.DeleteChunks(t.Context(), condition, "ragflow_tenant", "kb-1")
+			if err == nil {
+				t.Error("expected an error for empty IDs")
+			}
+			if deleted != 0 {
+				t.Errorf("deleted=%d, want 0", deleted)
+			}
+			if deletes.Load() != 0 {
+				t.Errorf("sent %d delete requests, want 0", deletes.Load())
+			}
+		})
 	}
 }

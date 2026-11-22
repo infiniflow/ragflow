@@ -30,6 +30,10 @@ import { Form } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { FormLayout } from '@/constants/form';
+import {
+  ExtractorResumeField,
+  useExtractorResumeExclusive,
+} from '@/ee/pages/agent/form/extractor-resume-field';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { MetadataType } from '@/pages/dataset/components/metedata/constant';
 import {
@@ -48,7 +52,7 @@ import { memo, useCallback, useEffect, useMemo } from 'react';
 import { useForm, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { initialExtractorValues } from '../../constant/pipeline';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -164,18 +168,22 @@ const ExtractorForm = ({
     mode: 'onChange',
   });
 
+  // The overlay hook decides whether the standard extraction groups stay
+  // visible; a build without an overlay-registered mode answers false.
+  const resumeExclusive = useExtractorResumeExclusive(form.control);
+
   useSyncExternalFormErrors(form, externalErrors);
 
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
 
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
 
   const tagFileId = useWatch({
     control: form.control,
     name: 'tags.tag_file_id',
   });
-  const { treeData, loadData } = useTagFileTree(tagFileId, ownerTenantId);
+  const { treeData, loadData } = useTagFileTree(tagFileId, resourceTenantId);
 
   const keywordsEnabledRaw = useWatch({
     control: form.control,
@@ -263,147 +271,153 @@ const ExtractorForm = ({
     <Form {...form}>
       <FormWrapper>
         <LargeModelFormField
-          ownerTenantId={ownerTenantId}
+          resourceTenantId={resourceTenantId}
         ></LargeModelFormField>
 
         <div className="space-y-4">
-          <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
-            <Collapse
-              title={t('flow.keywords')}
-              defaultOpen
-              rightContent={
-                <Switch
-                  checked={keywordsEnabled}
-                  onCheckedChange={handleKeywordsSwitch}
-                  data-testid="extractor-keywords-switch"
-                />
-              }
-            >
-              <div className="space-y-4">
-                <AutoKeywordsFormField name="keywords.top_n" />
-                <RAGFlowFormItem
-                  label={t('flow.systemPrompt')}
-                  name="keywords.system_prompt"
-                >
-                  <Textarea
-                    placeholder={t('flow.messagePlaceholder')}
-                    rows={18}
-                    resize="vertical"
-                  />
-                </RAGFlowFormItem>
-              </div>
-            </Collapse>
-          </Card>
+          <ExtractorResumeField />
 
-          <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
-            <Collapse
-              title={t('flow.questions')}
-              defaultOpen
-              rightContent={
-                <Switch
-                  checked={questionsEnabled}
-                  onCheckedChange={handleQuestionsSwitch}
-                  data-testid="extractor-questions-switch"
-                />
-              }
-            >
-              <div className="space-y-4">
-                <AutoQuestionsFormField name="questions.top_n" />
-                <RAGFlowFormItem
-                  label={t('flow.systemPrompt')}
-                  name="questions.system_prompt"
-                >
-                  <Textarea
-                    placeholder={t('flow.messagePlaceholder')}
-                    resize="vertical"
-                    rows={18}
-                  />
-                </RAGFlowFormItem>
-              </div>
-            </Collapse>
-          </Card>
-
-          <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
-            <Collapse
-              title={t('flow.tags') || t('knowledgeDetails.autoTags')}
-              defaultOpen
-              rightContent={
-                <Switch
-                  checked={tagsEnabled}
-                  onCheckedChange={handleTagsSwitch}
-                  data-testid="extractor-tags-switch"
-                />
-              }
-            >
-              <div className="space-y-4">
-                <SliderInputFormField
-                  name="tags.top_n"
-                  label={t('knowledgeDetails.autoTags')}
-                  min={0}
-                  max={10}
-                  defaultValue={0}
-                  layout={FormLayout.Vertical}
-                  integer
-                />
-                <RAGFlowFormItem
-                  label={t('flow.tagFile')}
-                  tooltip={t('flow.tagFileTip')}
-                  name="tags.tag_file_id"
-                >
-                  {(field) => (
-                    <AsyncTreeSelect
-                      treeData={treeData}
-                      value={field.value}
-                      onChange={field.onChange}
-                      loadData={loadData}
-                      canSelect={canSelectTagFile}
+          {!resumeExclusive && (
+            <>
+              <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+                <Collapse
+                  title={t('flow.keywords')}
+                  defaultOpen
+                  rightContent={
+                    <Switch
+                      checked={keywordsEnabled}
+                      onCheckedChange={handleKeywordsSwitch}
+                      data-testid="extractor-keywords-switch"
                     />
-                  )}
-                </RAGFlowFormItem>
-              </div>
-            </Collapse>
-          </Card>
+                  }
+                >
+                  <div className="space-y-4">
+                    <AutoKeywordsFormField name="keywords.top_n" />
+                    <RAGFlowFormItem
+                      label={t('flow.systemPrompt')}
+                      name="keywords.system_prompt"
+                    >
+                      <Textarea
+                        placeholder={t('flow.messagePlaceholder')}
+                        rows={18}
+                        resize="vertical"
+                      />
+                    </RAGFlowFormItem>
+                  </div>
+                </Collapse>
+              </Card>
 
-          <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
-            <Collapse
-              title={t('flow.summary')}
-              defaultOpen
-              rightContent={
-                <Switch
-                  checked={summaryEnabled}
-                  onCheckedChange={handleSummarySwitch}
-                  data-testid="extractor-summary-switch"
-                />
-              }
-            >
-              <RAGFlowFormItem
-                label={t('flow.systemPrompt')}
-                name="summary.system_prompt"
-              >
-                <Textarea
-                  placeholder={t('flow.messagePlaceholder')}
-                  resize="vertical"
-                  rows={18}
-                />
-              </RAGFlowFormItem>
-            </Collapse>
-          </Card>
+              <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+                <Collapse
+                  title={t('flow.questions')}
+                  defaultOpen
+                  rightContent={
+                    <Switch
+                      checked={questionsEnabled}
+                      onCheckedChange={handleQuestionsSwitch}
+                      data-testid="extractor-questions-switch"
+                    />
+                  }
+                >
+                  <div className="space-y-4">
+                    <AutoQuestionsFormField name="questions.top_n" />
+                    <RAGFlowFormItem
+                      label={t('flow.systemPrompt')}
+                      name="questions.system_prompt"
+                    >
+                      <Textarea
+                        placeholder={t('flow.messagePlaceholder')}
+                        resize="vertical"
+                        rows={18}
+                      />
+                    </RAGFlowFormItem>
+                  </div>
+                </Collapse>
+              </Card>
 
-          <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
-            <Collapse
-              title={t('flow.metadata')}
-              defaultOpen
-              rightContent={
-                <Switch
-                  checked={metadataEnabled}
-                  onCheckedChange={handleMetadataSwitch}
-                  data-testid="extractor-metadata-switch"
-                />
-              }
-            >
-              <ExtractorMetadataContent />
-            </Collapse>
-          </Card>
+              <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+                <Collapse
+                  title={t('flow.tags') || t('knowledgeDetails.autoTags')}
+                  defaultOpen
+                  rightContent={
+                    <Switch
+                      checked={tagsEnabled}
+                      onCheckedChange={handleTagsSwitch}
+                      data-testid="extractor-tags-switch"
+                    />
+                  }
+                >
+                  <div className="space-y-4">
+                    <SliderInputFormField
+                      name="tags.top_n"
+                      label={t('knowledgeDetails.autoTags')}
+                      min={0}
+                      max={10}
+                      defaultValue={0}
+                      layout={FormLayout.Vertical}
+                      integer
+                    />
+                    <RAGFlowFormItem
+                      label={t('flow.tagFile')}
+                      tooltip={t('flow.tagFileTip')}
+                      name="tags.tag_file_id"
+                    >
+                      {(field) => (
+                        <AsyncTreeSelect
+                          treeData={treeData}
+                          value={field.value}
+                          onChange={field.onChange}
+                          loadData={loadData}
+                          canSelect={canSelectTagFile}
+                        />
+                      )}
+                    </RAGFlowFormItem>
+                  </div>
+                </Collapse>
+              </Card>
+
+              <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+                <Collapse
+                  title={t('flow.summary')}
+                  defaultOpen
+                  rightContent={
+                    <Switch
+                      checked={summaryEnabled}
+                      onCheckedChange={handleSummarySwitch}
+                      data-testid="extractor-summary-switch"
+                    />
+                  }
+                >
+                  <RAGFlowFormItem
+                    label={t('flow.systemPrompt')}
+                    name="summary.system_prompt"
+                  >
+                    <Textarea
+                      placeholder={t('flow.messagePlaceholder')}
+                      resize="vertical"
+                      rows={18}
+                    />
+                  </RAGFlowFormItem>
+                </Collapse>
+              </Card>
+
+              <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+                <Collapse
+                  title={t('flow.metadata')}
+                  defaultOpen
+                  rightContent={
+                    <Switch
+                      checked={metadataEnabled}
+                      onCheckedChange={handleMetadataSwitch}
+                      data-testid="extractor-metadata-switch"
+                    />
+                  }
+                >
+                  <ExtractorMetadataContent />
+                </Collapse>
+              </Card>
+            </>
+          )}
         </div>
 
         {!hideOutputs && <Output list={outputList}></Output>}

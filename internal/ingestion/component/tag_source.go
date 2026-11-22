@@ -40,6 +40,7 @@ import (
 	"io"
 	"math"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -344,9 +345,9 @@ func tagSourceFileCacheKey(f *entity.File, lang string) string {
 	return fmt.Sprintf("tag-file:%s:%s:%s:%d:%d:%s", f.ID, f.ParentID, location, f.Size, updateTime, lang)
 }
 
-// parseTagSourceByFilename mirrors rag/app/tag.py chunk(): the format is chosen
+// parseTagSourceByFilename mirrors chunk(): the format is chosen
 // by the file extension, and only .xlsx/.xls, .txt and .csv are supported. Any
-// other extension (including no extension) is rejected, matching Python's
+// other extension (including no extension) is rejected, matching
 // NotImplementedError for unsupported formats. xlsx is parsed per-sheet (2
 // columns, no header, multiple sheets); .csv uses a quote-aware reader; .txt
 // uses the delimiter-detecting reader.
@@ -365,9 +366,9 @@ func parseTagSourceByFilename(data []byte, filename string) ([]schema.TagLabel, 
 }
 
 // ----------------------------------------------------------------------
-// Tag source file readers, mirroring rag/app/tag.py's chunk(): xlsx is read
-// per-sheet, .csv with a quote-aware reader, .txt with the delimiter-detecting
-// one. Only parseTagSourceByFilename above calls into this section.
+// Tag source file readers. xlsx is read per-sheet, .csv with a quote-aware
+// reader, .txt with the delimiter-detecting one. Only
+// parseTagSourceByFilename above calls into this section.
 // ----------------------------------------------------------------------
 
 func parseCSVTagSource(text string) []schema.TagLabel {
@@ -378,7 +379,7 @@ func parseCSVTagSourceBytes(data []byte) []schema.TagLabel {
 	return parseCSVTagSourceReader(bytes.NewReader(data), detectCSVDelimiterBytes(data))
 }
 
-// parseCSVTagSourceReader mirrors rag/app/tag.py's txt parsing: lines that do
+// parseCSVTagSourceReader mirrors 's txt parsing: lines that do
 // not split into exactly two columns are accumulated as body text and prepended
 // to the next tagged line. The second column holds comma-separated tags.
 func parseCSVTagSourceReader(r io.Reader, delimiter string) []schema.TagLabel {
@@ -410,25 +411,55 @@ func parseCSVTagSourceReader(r io.Reader, delimiter string) []schema.TagLabel {
 	return result
 }
 
-// csvTagSourceDelimiter mirrors rag/app/tag.py's .csv path: the delimiter is
-// TAB as soon as the file contains one, comma otherwise. Python's docstring
-// asks for TAB-separated .csv, so the comma default must not be assumed.
+// csvTagSourceDelimiter returns comma when the file has no TAB. If the file
+// contains a TAB, it returns comma only when the first non-empty row has no
+// TAB, every non-empty row with a TAB has exactly two non-empty fields, and
+// two-field rows without a TAB outnumber all other non-empty rows. Otherwise
+// it returns TAB.
 func csvTagSourceDelimiter(data []byte) rune {
-	if bytes.Contains(data, []byte("\t")) {
-		return '\t'
+	if !bytes.Contains(data, []byte("\t")) {
+		return ','
 	}
-	return ','
+	reader := csv.NewReader(bytes.NewReader(data))
+	reader.FieldsPerRecord = -1
+	reader.LazyQuotes = true
+	tabFreePairs, otherRows := 0, 0
+	for {
+		// With LazyQuotes and no field count, Read fails only at io.EOF.
+		rec, err := reader.Read()
+		if err != nil {
+			break
+		}
+		values := stripEmptyFields(rec)
+		if len(values) == 0 {
+			continue
+		}
+		hasTab := slices.ContainsFunc(rec, func(f string) bool { return strings.Contains(f, "\t") })
+		firstRow := tabFreePairs+otherRows == 0
+		if hasTab && (firstRow || len(values) != 2) {
+			return '\t'
+		}
+		if len(values) == 2 && !hasTab {
+			tabFreePairs++
+		} else {
+			otherRows++
+		}
+	}
+	if tabFreePairs > otherRows {
+		return ','
+	}
+	return '\t'
 }
 
-// parseCSVQuoteAwareReader mirrors rag/app/tag.py's .csv path: the whole text
+// parseCSVQuoteAwareReader mirrors 's .csv path: the whole text
 // goes through a single encoding/csv reader, so a quoted field may contain the
-// delimiter or span several physical lines (Python's csv.reader pulls further
+// delimiter or span several physical lines ( csv.reader pulls further
 // lines from its generator while inside quotes; Go's reader does the same).
 // Records that do not yield exactly two non-empty columns are accumulated as
 // body text using the raw lines they span, and the second column holds
 // comma-separated tags.
 //
-// LazyQuotes mirrors Python's tolerance for stray quote characters: a bare "
+// LazyQuotes mirrors tolerance for stray quote characters: a bare "
 // inside an unquoted field is data there, not a fatal parse error.
 func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 	data, err := io.ReadAll(r)
@@ -440,7 +471,7 @@ func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 
 	reader := csv.NewReader(strings.NewReader(text))
 	reader.Comma = delimiter
-	reader.FieldsPerRecord = -1 // Python's csv.reader accepts variable column counts.
+	reader.FieldsPerRecord = -1 // the reader accepts variable column counts per record.
 	reader.LazyQuotes = true
 
 	result := make([]schema.TagLabel, 0)
@@ -455,7 +486,7 @@ func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 
 	// InputOffset() reports where a record ended, so the text between the
 	// previous offset and this one is the raw span the record was parsed from,
-	// the equivalent of Python's lines[prev_line_num : reader.line_num].
+	// the equivalent of lines[prev_line_num : reader.line_num]
 	start := 0
 	for {
 		rec, err := reader.Read()
@@ -468,7 +499,7 @@ func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 		end := int(reader.InputOffset())
 		raw := strings.TrimSuffix(strings.TrimSuffix(text[start:end], "\n"), "\r")
 		start = end
-		// encoding/csv skips blank lines without reporting them, while Python's
+		// encoding/csv skips blank lines without reporting them, while
 		// generator hands them to the reader as empty records, which land in
 		// the body text. Replay them as empty lines.
 		for strings.HasPrefix(raw, "\n") || strings.HasPrefix(raw, "\r\n") {
@@ -491,7 +522,7 @@ func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 	return result
 }
 
-// parseXLSXTagSource mirrors rag/app/tag.py's .xlsx path: every sheet is read
+// parseXLSXTagSource mirrors 's .xlsx path: every sheet is read
 // with no header, and each row contributes a (content, tags) pair from its
 // first and second non-empty cells. Single-cell rows are accumulated as body text
 // and prepended to the next tagged row, matching CSV parsing behavior.
@@ -678,7 +709,7 @@ func splitAndTrim(s, sep string) []string {
 
 // TagVocabularyFromBytes is the storage/DAO-free core of
 // TagVocabularyFromTagFileID. It parses a tag source file's raw bytes (mirroring
-// rag/app/tag.py's chunk format) and returns the vocabulary as tag -> number of
+// 's chunk format) and returns the vocabulary as tag -> number of
 // source examples that mention the tag; a tag repeated within one source example
 // counts once, matching buildMemoryTagIndex's per-sample deduplication.
 func TagVocabularyFromBytes(data []byte, filename string) (map[string]int, error) {

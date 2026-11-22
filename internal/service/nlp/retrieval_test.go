@@ -20,6 +20,57 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestSplitRetrievalDocIDsPreservesDatasetProducts(t *testing.T) {
+	datasetIDs := []string{"kb-1", "kb-2"}
+	for _, tc := range []struct {
+		name                string
+		requestedIDs        []string
+		wantDocumentIDs     []string
+		wantProductIDs      []string
+		wantNilDocuments    bool
+		wantNonNilDocuments bool
+	}{
+		{
+			name:             "empty selection includes products for all selected datasets",
+			wantProductIDs:   []string{"kb-1", "kb-2"},
+			wantNilDocuments: true,
+		},
+		{
+			name:            "explicit document and product selection",
+			requestedIDs:    []string{"doc-1", "kb-1", "doc-2", "kb-1"},
+			wantDocumentIDs: []string{"doc-1", "doc-2"},
+			wantProductIDs:  []string{"kb-1"},
+		},
+		{
+			name:                "explicit product selection does not select every document",
+			requestedIDs:        []string{"kb-1"},
+			wantProductIDs:      []string{"kb-1"},
+			wantNonNilDocuments: true,
+		},
+		{
+			name:            "unknown IDs remain document candidates",
+			requestedIDs:    []string{"unknown"},
+			wantDocumentIDs: []string{"unknown"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			documentIDs, productIDs := SplitRetrievalDocIDs(datasetIDs, tc.requestedIDs)
+			if !slices.Equal(documentIDs, tc.wantDocumentIDs) {
+				t.Fatalf("document IDs = %v, want %v", documentIDs, tc.wantDocumentIDs)
+			}
+			if tc.wantNilDocuments && documentIDs != nil {
+				t.Fatal("document IDs are non-nil, want nil for an unrestricted document selection")
+			}
+			if tc.wantNonNilDocuments && documentIDs == nil {
+				t.Fatal("document IDs = nil, want an explicit empty selection")
+			}
+			if !slices.Equal(productIDs, tc.wantProductIDs) {
+				t.Fatalf("dataset product IDs = %v, want %v", productIDs, tc.wantProductIDs)
+			}
+		})
+	}
+}
+
 func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	newRetrievalTestDB(t, "doc-1")
 	for _, tc := range []struct {
@@ -909,7 +960,7 @@ func (e *retrievalCountEngine) GetHighlight([]map[string]interface{}, []string, 
 	e.highlightCalls++
 	return e.highlights
 }
-func (e *retrievalCountEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
+func (e *retrievalCountEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (e *retrievalCountEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {

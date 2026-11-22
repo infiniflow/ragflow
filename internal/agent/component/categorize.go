@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 // Package component — Categorize (T3).
 //
 // Model-based classifier. The component asks the model to pick exactly
@@ -11,6 +27,7 @@ package component
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -69,9 +86,15 @@ func (c *CategorizeComponent) Name() string { return "Categorize" }
 func (c *CategorizeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	p := mergeCategorizeParam(c.param, inputs)
 	var err error
-	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL, entity.ModelTypeChat|entity.ModelTypeDecision)
+	var modelType entity.ModelType
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, modelType, err = resolveModelRefWithType(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL, entity.ModelTypeChat|entity.ModelTypeDecision)
 	if err != nil {
 		return nil, err
+	}
+	if modelType == 0 && isDecisionOnlyDriver(p.Driver) {
+		// The type could not be resolved (an unregistered model name with an
+		// explicit driver); these drivers only serve decision models.
+		modelType = entity.ModelTypeDecision
 	}
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
@@ -92,7 +115,7 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	history := categorizeHistory(ctx, p.MessageHistoryWindowSize, query)
 	var chosen string
 	var score map[string]float64
-	if strings.EqualFold(p.Driver, "SystemOne") {
+	if modelType.Has(entity.ModelTypeDecision) {
 		chosen, err = categorizeWithDecision(ctx, p, query, history)
 		if err == nil {
 			score = make(map[string]float64, len(p.Categories))
@@ -212,7 +235,7 @@ func buildCategorizeSystemPrompt(p CategorizeParam) string {
 	b.WriteString("- Consider both explicit mentions and implied context\n")
 	b.WriteString("- Prioritize the most specific applicable category\n")
 	b.WriteString("- Return only the category name without explanations\n")
-	if containsCategory(cats, "Other") {
+	if slices.Contains(cats, "Other") {
 		b.WriteString("- Use \"Other\" only when no other category fits\n")
 	}
 
@@ -225,15 +248,6 @@ func buildCategorizeSystemPrompt(p CategorizeParam) string {
 		}
 	}
 	return b.String()
-}
-
-func containsCategory(categories []string, target string) bool {
-	for _, c := range categories {
-		if c == target {
-			return true
-		}
-	}
-	return false
 }
 
 func categorizeExamples(p CategorizeParam, cats []string) []string {

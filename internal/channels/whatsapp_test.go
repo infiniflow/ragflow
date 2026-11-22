@@ -18,6 +18,8 @@ package channels
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -161,5 +163,94 @@ func TestWhatsAppEventsURLReachesGatewaySession(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("gateway did not receive the events subscription")
+	}
+}
+
+type whatsappRoundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f whatsappRoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestWhatsAppStopWaitsForRunBeforeRestart(t *testing.T) {
+	started := make(chan struct{}, 2)
+	canceled := make(chan struct{}, 2)
+	release := make(chan struct{})
+	channel := newWhatsAppChannel(whatsappAccount{AccountID: "wait-for-run"})
+	channel.client = &http.Client{Transport: whatsappRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(req.URL.Path, "/start") {
+			started <- struct{}{}
+			<-req.Context().Done()
+			canceled <- struct{}{}
+			<-release
+			return nil, req.Context().Err()
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header)}, nil
+	})}
+	if err := channel.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	stopped := make(chan error, 1)
+	go func() { stopped <- channel.Stop(stopCtx) }()
+	<-canceled
+	select {
+	case err := <-stopped:
+		t.Fatalf("Stop returned before the runtime exited: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	restarted := make(chan error, 1)
+	go func() { restarted <- channel.Start(t.Context()) }()
+	select {
+	case err := <-restarted:
+		t.Fatalf("Start returned before the old runtime stopped: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-restarted; err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if err := channel.Stop(stopCtx); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot := channel.Snapshot(); snapshot.Status != "stopped" || snapshot.QRDataURL != nil {
+		t.Fatalf("stopped snapshot=%+v", snapshot)
+	}
+}
+
+func TestWhatsAppStopRespectsCleanupDeadline(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	channel := newWhatsAppChannel(whatsappAccount{AccountID: "bounded-stop"})
+	channel.client = &http.Client{Transport: whatsappRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(req.URL.Path, "/start") {
+			close(started)
+			<-req.Context().Done()
+			<-release
+			return nil, req.Context().Err()
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header)}, nil
+	})}
+	if err := channel.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	err := channel.Stop(ctx)
+	close(release)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop error=%v, want deadline", err)
+	}
+	cleanupCtx, cleanupCancel := context.WithTimeout(t.Context(), time.Second)
+	defer cleanupCancel()
+	if err := channel.Stop(cleanupCtx); err != nil {
+		t.Fatal(err)
 	}
 }

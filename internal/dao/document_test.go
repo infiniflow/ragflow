@@ -694,3 +694,113 @@ func TestDocumentListParserConfigsByKBIDs(t *testing.T) {
 		t.Fatalf("expected 1 config for kb-2, got %d: %v", len(res["kb-2"]), res["kb-2"])
 	}
 }
+
+// TestDocumentListStatusLetsARestoreDecideOnlyForRestoredContent pins where a
+// restore is allowed to change what a document row shows. A document no restore
+// touched keeps the status of its latest run - including a failure - so an
+// ingestion outcome is never re-read from the content counters. A restored
+// document is the one case the run cannot answer for, because a restore is not a
+// run: the marker says the content came from a version, and the chunk count says
+// whether any chunk came back with it.
+func TestDocumentListStatusLetsARestoreDecideOnlyForRestoredContent(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+
+	restored := int64(1)
+	tests := []struct {
+		id              string
+		task            string
+		chunkNum        int64
+		restoredVersion *int64
+		want            string
+	}{
+		{id: "parsed", task: common.COMPLETED, chunkNum: 3, want: common.COMPLETED},
+		{id: "failed", task: common.FAILED, want: common.FAILED},
+		// The run after the restored version failed, but the content is the
+		// version's: the file reads as parsed.
+		{id: "restored-chunks", task: common.FAILED, chunkNum: 2, restoredVersion: &restored, want: common.COMPLETED},
+		// The version held no chunk for the document, so it reads as never parsed
+		// even though the last run completed.
+		{id: "restored-empty", task: common.COMPLETED, restoredVersion: &restored, want: common.UNSTART},
+		// A run in flight still wins: the restore only decides the terminal state.
+		{id: "restored-running", task: common.RUNNING, restoredVersion: &restored, want: common.RUNNING},
+	}
+	for _, test := range tests {
+		documentID := "doc-" + test.id
+		if err := db.Create(&entity.Document{
+			ID: documentID, KbID: "kb-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
+			SourceType: "local", Type: "document", CreatedBy: "user-1",
+			Name: sp(test.id), Suffix: "pdf",
+			ChunkNum: test.chunkNum, RestoredVersion: test.restoredVersion,
+		}).Error; err != nil {
+			t.Fatalf("create document %s: %v", documentID, err)
+		}
+		if err := db.Create(&entity.File{
+			ID: "file-" + test.id, ParentID: "parent-1", TenantID: "tenant-1",
+			CreatedBy: "user-1", Name: test.id, Type: "document",
+		}).Error; err != nil {
+			t.Fatalf("create file for %s: %v", documentID, err)
+		}
+		if err := db.Create(&entity.File2Document{
+			ID: "link-" + test.id, FileID: sp("file-" + test.id), DocumentID: sp(documentID),
+		}).Error; err != nil {
+			t.Fatalf("link file to %s: %v", documentID, err)
+		}
+		if err := db.Create(&entity.IngestionTask{
+			ID: "task-" + test.id, UserID: "user-1", DocumentID: documentID,
+			DatasetID: "kb-1", Status: test.task,
+		}).Error; err != nil {
+			t.Fatalf("create ingestion task for %s: %v", documentID, err)
+		}
+	}
+
+	dao := NewDocumentDAO()
+	documents, total, err := dao.ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+		KbID: "kb-1", OrderBy: "create_time", Desc: true, Limit: len(tests),
+	})
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if total != int64(len(tests)) || len(documents) != len(tests) {
+		t.Fatalf("listed %d documents (total %d), want %d", len(documents), total, len(tests))
+	}
+	statusByID := make(map[string]string, len(documents))
+	for _, document := range documents {
+		if document.IngestionStatus != nil {
+			statusByID[document.ID] = *document.IngestionStatus
+		}
+	}
+	for _, test := range tests {
+		if got := statusByID["doc-"+test.id]; got != test.want {
+			t.Errorf("status for doc-%s = %q, want %q", test.id, got, test.want)
+		}
+	}
+
+	// The filters and the facet counts read the same expression, so a restored
+	// document is filterable by the status the list shows it as.
+	completedOpts := DocumentListOptions{KbID: "kb-1", RunStatuses: []string{common.COMPLETED}, Limit: len(tests)}
+	ids, err := dao.ListIDsByKBIDWithOptions(t.Context(), db, completedOpts)
+	if err != nil {
+		t.Fatalf("filter completed documents: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("completed documents = %v, want the parsed one and the restored one", ids)
+	}
+	completed := map[string]struct{}{}
+	for _, id := range ids {
+		completed[id] = struct{}{}
+	}
+	for _, want := range []string{"doc-parsed", "doc-restored-chunks"} {
+		if _, ok := completed[want]; !ok {
+			t.Fatalf("completed documents = %v, want %s among them", ids, want)
+		}
+	}
+}

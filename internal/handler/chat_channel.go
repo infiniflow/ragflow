@@ -26,7 +26,7 @@ import (
 )
 
 type ChatChannelService interface {
-	CreateChatChannel(ctx context.Context, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
+	CreateChatChannel(ctx context.Context, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error)
 	List(ctx context.Context) ([]*entity.ChatChannelListResponse, error)
 	GetChatChannel(ctx context.Context, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
 	UpdateChatChannel(ctx context.Context, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
@@ -52,10 +52,14 @@ type CreateChatChannelRequest struct {
 	Channel string         `json:"channel" binding:"required"`
 	Config  entity.JSONMap `json:"config"`
 	ChatID  *string        `json:"chat_id"`
+	AgentID *string        `json:"agent_id"`
 }
 
 // CreateChatChannel handles POST /chat-channels.
 func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
+	common.StartOperationLog(c, "create_chat_channel")
+	defer common.FinishOperationLog(c)
+
 	var req CreateChatChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, "Invalid request: "+err.Error())
@@ -69,6 +73,10 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
+	if req.ChatID != nil && strings.TrimSpace(*req.ChatID) != "" && req.AgentID != nil && strings.TrimSpace(*req.AgentID) != "" {
+		common.RespondError(c, common.CodeDataError, "chat_id and agent_id are mutually exclusive")
+		return
+	}
 
 	ctx := c.Request.Context()
 
@@ -78,6 +86,7 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		req.Channel,
 		req.Config,
 		req.ChatID,
+		req.AgentID,
 	)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
@@ -86,6 +95,7 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
+	common.SetOperationResource(c, "channel_id", row.ID)
 	common.RespondSuccess(c, row, "success")
 }
 
@@ -123,12 +133,16 @@ func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 
 // UpdateChatChannel handles PATCH /chat-channels/:channel_id.
 func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
+	common.StartOperationLog(c, "update_chat_channel")
+	defer common.FinishOperationLog(c)
+
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
 		common.RespondError(c, common.CodeArgumentError, "channel_id is required")
 		return
 	}
 
+	common.SetOperationResource(c, "channel_id", channelID)
 	var request map[string]interface{}
 	if err := c.ShouldBindJSON(&request); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
@@ -167,12 +181,16 @@ func (h *ChatChannelHandler) GetChatChannelRuntime(c *gin.Context) {
 
 // DeleteChatChannel handles DELETE /chat-channels/:channel_id.
 func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
+	common.StartOperationLog(c, "delete_chat_channel")
+	defer common.FinishOperationLog(c)
+
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
 		common.RespondError(c, common.CodeArgumentError, "channel_id is required")
 		return
 	}
 
+	common.SetOperationResource(c, "channel_id", channelID)
 	ctx := c.Request.Context()
 	_, code, err := h.chatChannelService.DeleteChatChannel(ctx, channelID)
 	if code != common.CodeSuccess || err != nil {

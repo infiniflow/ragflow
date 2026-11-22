@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 //go:build cgo
 
 package native
@@ -288,5 +304,52 @@ func TestDetWireNesting(t *testing.T) {
 	want := `{"output":[[[[[1,2],[3,2],[3,4],[1,4]]]]]}`
 	if got != want {
 		t.Fatalf("Wire() = %s, want %s", got, want)
+	}
+}
+
+// TestClampBoxesNaNCoordinate pins the legacy minf/maxf behavior where a NaN
+// coordinate mapped to 0. Replacing those helpers with built-in min/max made
+// NaN propagate (built-in min/max return NaN), which then makes Wire() drop the
+// marshal error and emit an empty string. NaN must be sanitized to 0 on clamp.
+func TestClampBoxesNaNCoordinate(t *testing.T) {
+	nan := float32(math.NaN())
+
+	dla := DLAResult{
+		Boxes: []DLABox{
+			{X0: nan, Y0: nan, X1: nan, Y1: nan, Score: 0.5, Class: 1},
+			{X0: 5, Y0: 5, X1: 20, Y1: 8, Score: 0.7, Class: 2}, // in-bounds control
+		},
+		W: 100, H: 10,
+	}
+	dlaGot := dla.ClampBoxes()
+	db := dlaGot[0]
+	if math.IsNaN(float64(db.X0)) || db.X0 != 0 ||
+		math.IsNaN(float64(db.Y0)) || db.Y0 != 0 ||
+		math.IsNaN(float64(db.X1)) || db.X1 != 0 ||
+		math.IsNaN(float64(db.Y1)) || db.Y1 != 0 {
+		t.Errorf("DLA NaN box clamped to (%v, %v, %v, %v), want all 0", db.X0, db.Y0, db.X1, db.Y1)
+	}
+	if ctrl := dlaGot[1]; ctrl.X0 != 5 || ctrl.X1 != 20 {
+		t.Errorf("DLA in-bounds control changed: %+v", ctrl)
+	}
+	if wire := dla.Wire(); wire == "" || !strings.Contains(wire, "bboxes") {
+		t.Errorf("DLA Wire() with NaN coordinate = %q, want valid JSON", wire)
+	}
+
+	tsr := TSRResult{
+		Boxes: []TSRBox{
+			{Label: "table row", Score: 0.5, X0: nan, X1: nan, Top: nan, Bottom: nan},
+		},
+		W: 100, H: 10,
+	}
+	tb := tsr.ClampBoxes()[0]
+	if math.IsNaN(float64(tb.X0)) || tb.X0 != 0 ||
+		math.IsNaN(float64(tb.X1)) || tb.X1 != 0 ||
+		math.IsNaN(float64(tb.Top)) || tb.Top != 0 ||
+		math.IsNaN(float64(tb.Bottom)) || tb.Bottom != 0 {
+		t.Errorf("TSR NaN box clamped to (%v, %v, %v, %v), want all 0", tb.X0, tb.X1, tb.Top, tb.Bottom)
+	}
+	if wire := tsr.Wire(); wire == "" || !strings.Contains(wire, "bboxes") {
+		t.Errorf("TSR Wire() with NaN coordinate = %q, want valid JSON", wire)
 	}
 }

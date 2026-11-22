@@ -82,6 +82,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 
 ## 🔥 Dernières mises à jour
 
+- 2026-11-06 Publication de RAGFlow 1.0.0.
 - 2026-09-29 Publication de RAGFlow 1.0.0-rc1.
 
 - 2026-09-10 Ajout de l’ingestion de contenus Web à partir de sitemaps.
@@ -165,7 +166,7 @@ Le déploiement local prend en charge Docker et le lancement depuis les sources.
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -201,14 +202,15 @@ Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de
    cd ragflow
    ```
 
-2. Exécutez les scripts de téléchargement des dépendances pour préparer les bibliothèques natives statiques liées par la compilation Go (`download_dev_deps.py`) et les ressources de modèles / tokeniseurs chargées à l'exécution par le backend (`download_deps.py`) :
+2. Exécutez une fois le script de téléchargement des dépendances pour préparer tout ce dont le serveur Go local a besoin pour compiler, fonctionner, analyser les documents et compter les tokens. `download_dev_deps.py` télécharge les bibliothèques natives statiques et les ressources d’exécution : vocabulaire cl100k, modèles DeepDoc `.ort` et ressources de tokeniseurs d’embedding :
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` télécharge et décompresse pdfium, pdf_oxide, office_oxide et onnxruntime sous `~/ragflow-native-libs` ; `download_deps.py` télécharge le vocabulaire cl100k, les modèles DeepDoc et les ressources de tokeniseurs d'embedding sous `deps/`. Les deux sont des scripts Python ; `uv run` installe automatiquement leurs dépendances déclarées (`requests`, plus `huggingface-hub` pour les téléchargements de modèles et de tokeniseurs). Ignorez cette étape si vous avez déjà préparé les mêmes ressources autrement. Lors du démarrage depuis la racine du dépôt, les services Go trouvent automatiquement `internal/rag/res/deepdoc` ; pour démarrer depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
+   Ce seul script suffit au développement local. Les fichiers déjà présents sont ignorés lors des exécutions suivantes, sans nouveau téléchargement. Le script `deps/download_deps.py`, destiné aux images, télécharge les mêmes ressources d’exécution sans les bibliothèques natives `.a` ; exécutez-le uniquement pour construire l’image de dépendances ou en CI, pas pour le développement local.
+
+   `download_dev_deps.py` télécharge et décompresse pdfium, pdf_oxide, office_oxide et onnxruntime sous `~/ragflow-native-libs`, et écrit le vocabulaire cl100k, les modèles DeepDoc et les ressources de tokeniseurs d’embedding sous `deps/`. C’est un script Python ; `uv run` installe automatiquement ses dépendances déclarées (`requests` et `huggingface-hub`). Ignorez cette étape si vous avez déjà préparé les mêmes ressources autrement. Lors du démarrage depuis la racine du dépôt, les services Go trouvent automatiquement `internal/rag/res/deepdoc` ; pour démarrer depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
 
 3. Compilez les services :
 
@@ -223,35 +225,15 @@ Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-5. Exécutez la migration de la base de données :
+5. Démarrez RAGFlow :
 
    ```bash
-   ./bin/ragflow_server --migrate
+   ./bin/ragflow_server
    ```
 
-6. Démarrez les quatre services dans quatre terminaux distincts :
+   La version open source exécute tous les services dans un seul processus Go. Elle migre la base de données, démarre Admin et initialise le superutilisateur, puis démarre API, Ingestor, Syncer et Chatter. Admin écoute sur le port `9381` et API sur le port `9380` par défaut. Arrêter le processus arrête tous les services. Configurez les services dans `conf/service_conf.yaml` ou via les variables d’environnement.
 
-   Terminal 1 : Admin sur le port `9381`.
-
-   ```bash
-   ./bin/ragflow_server --admin
-   ```
-
-   ```bash
-   ./bin/ragflow_server --ingestor
-   ```
-
-   Terminal 3 : Syncer.
-
-   ```bash
-   ./bin/ragflow_server --syncer
-   ```
-
-   Terminal 4 : API sur le port `9380`.
-
-   ```bash
-   ./bin/ragflow_server --api
-   ```
+6. Exécutez `./bin/ragflow_server --help` pour consulter les options disponibles.
 
 7. Uniquement pour développer le front-end, installez Node.js et npm, puis vérifiez la disponibilité de l’API :
 
@@ -263,7 +245,7 @@ Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de
 
 Consultez [Lancer le service depuis les sources](./docs/develop/launch_ragflow_from_source.md) pour plus de détails.
 
-> **Notes d’exploitation :** pour rendre le réglage Elasticsearch permanent, ajoutez `vm.max_map_count=262144` à `/etc/sysctl.conf`. Avec MySQL par défaut, l’entrée de l’image Docker exécute la migration avant de démarrer Admin, Syncer, Ingestor et API. Dans la version open source 1.0, DeepDoc utilise le CPU pour l’analyse de mise en page, l’OCR et les tableaux. Après une modification Docker, redémarrez les services et suivez le [guide Docker](./docker/README.md) pour conserver ou supprimer les données. `download_dev_deps.py` prépare les bibliothèques natives et `download_deps.py` les modèles et ressources de tokeniseurs ; les deux s'exécutent via `uv run`. `--migrate` migre puis quitte ; `--admin` démarre le service d’administration, `--ingestor` le service d’ingestion, `--syncer` le service de synchronisation des sources de données externes et `--api` le service API pour l’interface Web et les SDK. Une réponse HTTP 200 indique que l’API est prête.
+> **Notes d’exploitation :** pour rendre le réglage Elasticsearch permanent, ajoutez `vm.max_map_count=262144` à `/etc/sysctl.conf`. Dans la version open source 1.0, DeepDoc utilise le CPU pour l’analyse de mise en page, l’OCR et les tableaux. Après une modification Docker, redémarrez les services et suivez le [guide Docker](./docker/README.md) pour conserver ou supprimer les données. Une réponse HTTP 200 indique que l’API est prête.
 
 ## 📚 Documentation
 

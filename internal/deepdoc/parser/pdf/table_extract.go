@@ -180,14 +180,25 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		})
 	}
 	var grid [][]pdf.TSRCell
-	if len(cells) > 0 && len(boxInCrop) > 0 {
+	// A builder that renders its own HTML from assembled cells (the EE V/H
+	// builder) needs no OSS cross-product grid or R/C annotation. Skip the
+	// grid path for it so item.Grid stays nil and its grid-free cell stream
+	// is preserved. OSS builders do not implement RendersOwnHTML, so their
+	// behavior is unchanged.
+	type htmlRenderingBuilder interface{ RendersOwnHTML() bool }
+	renderOwn := false
+	if vh, ok := tb.(htmlRenderingBuilder); ok {
+		renderOwn = vh.RendersOwnHTML()
+	}
+	if len(cells) > 0 && len(boxInCrop) > 0 && !renderOwn {
 		// Cross-product grid (structure lines, de-duplicated like Python's
 		// gather) is used ONLY to derive per-box R/C annotations.
 		annotGrid := tb.GroupCells(cells)
 		if len(annotGrid) > 0 {
-			// Derive R/C/H/SP with Python's _table_transformer_job semantics
-			// (whole-row/whole-column line matching), in crop space.
-			tbl.AnnotateBoxesWithGrid(boxInCrop, annotGrid)
+			// Derive R/C/H/SP in crop space. R uses the raw TSR row bands,
+			// not the span-extended grid rows, so a rowspan header does not
+			// pull the next physical row into its origin row.
+			tbl.AnnotateBoxesWithGridAndRows(boxInCrop, annotGrid, tbl.AnnotationRowBands(cells))
 			boxInCrop = dedupSameCellOCRBoxes(boxInCrop)
 			// Rebuild the grid from the derived per-char R/C, exactly like
 			// Python's construct_table groups boxes by their R/C labels —
@@ -204,12 +215,21 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	// overlay). The DeepDoc builder is the identity function, so OSS keeps its
 	// current behavior unchanged.
 	grid = tb.FinalizeGrid(grid, boxInCrop)
+	// An empty leading row must not hide the real header row from the merge
+	// guard. ConstructTable applies the same cleanup before rendering, so
+	// normalizing here also keeps HeaderRows aligned with the rendered grid.
+	grid = tbl.DropAllEmptyRows(grid)
+	headerRows := 0
+	if len(grid) > 0 {
+		headerRows = leadingHeaderRows(tbl.HeaderSetWithBlockType(grid, boxInCrop))
+	}
 	item := pdf.TableItem{
 		Cells: cells, Grid: grid, Positions: positions,
 		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
 		RegionLeft: tm.Region.X0 / scale, RegionRight: tm.Region.X1 / scale,
 		RegionTop: tm.Region.Y0 / scale, RegionBottom: tm.Region.Y1 / scale,
-		Page: pageNum,
+		HeaderRows: headerRows,
+		Page:       pageNum,
 	}
 	tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
 	// Let the active builder attach builder-specific span geometry onto the
@@ -284,4 +304,15 @@ func dedupSameCellOCRBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 		}
 	}
 	return out
+}
+
+// leadingHeaderRows counts the leading consecutive rows flagged as headers.
+// HeaderSetWithBlockType may flag a non-leading row; only the leading run is
+// the table's header block, matching ToTableData's semantics.
+func leadingHeaderRows(headers map[int]bool) int {
+	rows := 0
+	for headers[rows] {
+		rows++
+	}
+	return rows
 }

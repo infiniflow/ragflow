@@ -1104,7 +1104,6 @@ Success:
             "parser_config": {
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
-                "html4excel": false,
                 "layout_recognize": "DeepDOC"
             },
             "run": "UNSTART",
@@ -1229,9 +1228,7 @@ curl --request PATCH \
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_num"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `"DeepDOC"`.
-    - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
-    - `"task_page_size"`: Defaults to `12`. For PDF only.
 - `"enabled"`: (*Body parameter*), `integer`
   Whether the document should be **available** in the Dataset.
   - `1` → （available）
@@ -1287,7 +1284,6 @@ Success:
       "auto_questions": 0,
       "topn_tags": 3,
       "layout_recognize": "DeepDOC",
-      "html4excel": false,
       "image_context_size": 0,
       "table_context_size": 0
     },
@@ -1470,8 +1466,7 @@ Success:
                 "parser_config": {
                     "chunk_token_count": 128,
                     "delimiter": "\n",
-                    "layout_recognize": "DeepDOC",
-                    "task_page_size": 12
+                    "layout_recognize": "DeepDOC"
                 },
                 "chunk_method": "naive",
                 "process_begin_at": null,
@@ -1647,6 +1642,10 @@ Failure:
 **POST** `/api/v1/documents/ingest`
 
 Starts, cancels, or reruns ingestion for documents. Use this endpoint for documents in datasets configured with an ingestion pipeline.
+
+:::note
+Each document is ingested with the parser selection stored on its own record: its `parser_id`, or the pipeline and pinned version captured when parser settings were last applied to it. This is not necessarily the dataset's current parsing mode. After changing the dataset's parsing mode, call `POST /api/v1/datasets/{dataset_id}/documents/apply-parser-config` to update the dataset's existing documents. Otherwise, ingestion continues with each document's previously saved selection.
+:::
 
 #### Request
 
@@ -1930,7 +1929,6 @@ Success:
             "parser_config": {
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
-                "html4excel": false,
                 "layout_recognize": "DeepDOC"
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
@@ -2694,14 +2692,16 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"anysearch"`, `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"anysearch"`, `"brave"`, `"exa"`, `"firecrawl"`, `"keirolabs"`, `"linkup"`, `"parallel"`, `"perplexity"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
   - `"anysearch_api_key"`: `string` The optional [AnySearch](https://anysearch.com/console/api-keys) API key. Set `web_search_provider` to `"anysearch"` when using this field. Omit it or leave it blank for anonymous search; service limits apply.
   - `"tavily_api_key"`: `string`
   - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
   - `"exa_api_key"`: `string` The Exa API key. Set `web_search_provider` to `"exa"` when using this field.
   - `"firecrawl_api_key"`: `string` The [Firecrawl](https://www.firecrawl.dev/search) API key. Set `web_search_provider` to `"firecrawl"` when using this field. See the [Firecrawl Search API reference](https://docs.firecrawl.dev/api-reference/endpoint/search) for details.
+  - `"keirolabs_api_key"`: `string` The [Keirolabs](https://www.keirolabs.cloud) API key. Set `web_search_provider` to `"keirolabs"` when using this field.
   - `"linkup_api_key"`: `string` The Linkup API key. Set `web_search_provider` to `"linkup"` when using this field.
   - `"parallel_api_key"`: `string` The Parallel API key. Set `web_search_provider` to `"parallel"` when using this field.
+  - `"perplexity_api_key"`: `string` The [Perplexity](https://www.perplexity.ai/account/api/keys) API key. Set `web_search_provider` to `"perplexity"` when using this field. Results come from the Perplexity Search API. See the [Perplexity Search API documentation](https://docs.perplexity.ai/docs/search/quickstart) for details.
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
   - `"search1api_api_key"`: `string` The [Search1API](https://s1.dev) API key. Set `web_search_provider` to `"search1api"` when using this field. See the [Search1API documentation](https://s1.dev/docs/basic/search) for details.
   - `"searchapi_api_key"`: `string` The [SearchApi](https://www.searchapi.io) API key. Set `web_search_provider` to `"searchapi"` when using this field. Results come from its Google engine. See the [SearchApi Google documentation](https://www.searchapi.io/docs/google) for details.
@@ -3870,6 +3870,7 @@ Starts a chat completion request. The same endpoint supports three modes:
   - `"chat_id"`: `string` (optional)
   - `"session_id"`: `string` (optional)
   - `"llm_id"`: `string` (optional)
+  - `"reasoning"`: `integer` (optional)
   - `"legacy"`: `boolean` (optional)
 
 ##### Request example
@@ -3927,6 +3928,12 @@ curl --request POST \
   Optional session ID. If `chat_id` is provided but `session_id` is omitted, a new session will be generated automatically.
 - `"llm_id"`: `string`
   Optional model override when a specific chat model should be used for this request.
+- `"reasoning"`: `integer`
+  Selects the retrieval mode:
+  - `0`: Naive RAG (standard retrieval).
+  - `5`: Agentic RAG (agent-driven retrieval).
+
+  Defaults to `0` (Naive RAG) when omitted.
 - `"legacy"`: `boolean`
   Defaults to `false`. Enables backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:
   - Cumulative output: The `"answer"` field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).

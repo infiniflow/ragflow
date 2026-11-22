@@ -82,6 +82,7 @@ Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://clou
 
 ## 🔥 Últimas Atualizações
 
+- 2026-11-06 Lançamento do RAGFlow 1.0.0.
 - 2026-09-29 Lançamento do RAGFlow 1.0.0-rc1.
 
 - 2026-09-10 Adicionada a ingestão de conteúdo da Web por meio de sitemaps.
@@ -170,7 +171,7 @@ O Docker é indicado para avaliação rápida, testes de integração e produç�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -202,14 +203,15 @@ Use `docker/.env` e `docker/docker-compose.yml`. Consulte a [configuração do D
    cd ragflow
    ```
 
-2. Execute os scripts de download de dependências para preparar as bibliotecas nativas estáticas que a compilação do Go utiliza (`download_dev_deps.py`) e os recursos de modelo / tokenizador carregados em tempo de execução pelo backend (`download_deps.py`):
+2. Execute o script de download de dependências uma vez para preparar tudo de que o servidor Go local precisa para compilar, funcionar, analisar documentos e contar tokens. `download_dev_deps.py` baixa as bibliotecas nativas estáticas e os recursos de execução: vocabulário cl100k, modelos DeepDoc `.ort` e recursos de tokenizadores de embedding:
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` baixa e descompacta pdfium, pdf_oxide, office_oxide e onnxruntime em `~/ragflow-native-libs`; `download_deps.py` baixa o vocabulário cl100k, os modelos DeepDoc e os recursos de tokenizadores de embedding em `deps/`. Ambos são scripts Python; o `uv run` instala automaticamente as dependências declaradas (`requests`, além de `huggingface-hub` para os downloads de modelos e tokenizadores). Pule esta etapa se você já preparou os mesmos recursos por outros meios. Quando iniciado a partir da raiz do repositório, os serviços Go encontram `internal/rag/res/deepdoc` automaticamente; para iniciar de outro diretório, defina `DEEPDOC_MODEL_DIR` com seu caminho absoluto.
+   Esse único script basta para o desenvolvimento local. Nas execuções seguintes, os arquivos existentes são ignorados sem novo download. O script `deps/download_deps.py`, voltado a imagens, baixa os mesmos recursos de execução sem as bibliotecas nativas `.a`; execute-o apenas ao construir a imagem de dependências ou em CI, não para o desenvolvimento local.
+
+   `download_dev_deps.py` baixa e descompacta pdfium, pdf_oxide, office_oxide e onnxruntime em `~/ragflow-native-libs` e grava o vocabulário cl100k, os modelos DeepDoc e os recursos de tokenizadores de embedding em `deps/`. É um script Python; `uv run` instala automaticamente as dependências declaradas (`requests` e `huggingface-hub`). Pule esta etapa se já preparou os mesmos recursos por outros meios. Quando iniciados a partir da raiz do repositório, os serviços Go encontram `internal/rag/res/deepdoc` automaticamente; para iniciar de outro diretório, defina `DEEPDOC_MODEL_DIR` com seu caminho absoluto.
 
 3. Compile os serviços:
 
@@ -224,35 +226,15 @@ Use `docker/.env` e `docker/docker-compose.yml`. Consulte a [configuração do D
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-5. Migre o banco de dados:
+5. Inicie o RAGFlow:
 
    ```bash
-   ./bin/ragflow_server --migrate
+   ./bin/ragflow_server
    ```
 
-6. Inicie os quatro serviços em quatro terminais:
+   A versão open source executa todos os serviços em um único processo Go. Ela migra o banco de dados, inicia Admin e inicializa o superusuário, depois inicia API, Ingestor, Syncer e Chatter. Por padrão, Admin escuta na porta `9381` e API na porta `9380`. Encerrar o processo encerra todos os serviços. Configure os serviços em `conf/service_conf.yaml` ou nas variáveis de ambiente.
 
-   Terminal 1: Admin (`9381`).
-
-   ```bash
-   ./bin/ragflow_server --admin
-   ```
-
-   ```bash
-   ./bin/ragflow_server --ingestor
-   ```
-
-   Terminal 3: Syncer.
-
-   ```bash
-   ./bin/ragflow_server --syncer
-   ```
-
-   Terminal 4: API (`9380`).
-
-   ```bash
-   ./bin/ragflow_server --api
-   ```
+6. Execute `./bin/ragflow_server --help` para consultar as opções disponíveis.
 
 7. Somente para o frontend, instale Node.js e npm e verifique a API:
 
@@ -264,7 +246,7 @@ Use `docker/.env` e `docker/docker-compose.yml`. Consulte a [configuração do D
 
 Consulte [Iniciar pelo código-fonte](./docs/develop/launch_ragflow_from_source.md) para detalhes.
 
-> **Notas operacionais:** para tornar o ajuste do Elasticsearch permanente, adicione `vm.max_map_count=262144` a `/etc/sysctl.conf`. Com o MySQL padrão, o entrypoint Docker executa a migração antes de iniciar Admin, Syncer, Ingestor e API. No open source 1.0, o DeepDoc usa CPU para layout, OCR e tabelas. Após alterar o Docker, reinicie os serviços e siga o [guia Docker](./docker/README.md) para manter ou remover dados. `download_dev_deps.py` prepara as bibliotecas nativas e `download_deps.py` os modelos e recursos de tokenizadores; ambos são executados via `uv run`. `--migrate` migra e encerra; `--admin` inicia o serviço de administração, `--ingestor` o serviço de ingestão, `--syncer` o serviço de sincronização de fontes de dados externas e `--api` o serviço de API para a interface Web e os SDKs. HTTP 200 indica que a API está pronta.
+> **Notas operacionais:** para tornar o ajuste do Elasticsearch permanente, adicione `vm.max_map_count=262144` a `/etc/sysctl.conf`. No open source 1.0, o DeepDoc usa CPU para layout, OCR e tabelas. Após alterar o Docker, reinicie os serviços e siga o [guia Docker](./docker/README.md) para manter ou remover dados. HTTP 200 indica que a API está pronta.
 
 ## 📚 Documentação
 

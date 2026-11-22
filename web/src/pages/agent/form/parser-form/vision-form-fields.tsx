@@ -1,7 +1,9 @@
+import { useCrossLanguageOptions } from '@/components/cross-language-form-field';
 import {
   ModelTreeSelectFormField,
   ModelTypeMap,
 } from '@/components/model-tree-select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import message from '@/components/ui/message';
 import { Switch } from '@/components/ui/switch';
@@ -12,7 +14,7 @@ import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { useCallback } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { ParserFormSchemaType } from './schema';
 
 type VisionEnhancementSwitchProps = {
@@ -60,14 +62,16 @@ function VisionEnhancementSwitch({
   return <Switch checked={!!enabled} onCheckedChange={handleCheckedChange} />;
 }
 
-// Global vision enhancement: one switch + img2txt model + description prompt.
-// The fields live at the form's top level (`enable_vision_enhancement` and
-// `vlm.{llm_id, system_prompt}`) alongside `setups`, matching the backend Parser
-// component's params contract. Response language is not offered here on purpose:
-// it belongs to the knowledge base, which also drives tokenization.
+// Global vision enhancement: one switch + img2txt model + description language
+// and prompt. The fields live at the form's top level
+// (`enable_vision_enhancement` and `vlm.{llm_id, system_prompt, lang}`)
+// alongside `setups`, matching the backend Parser component's params contract.
+// The description language is optional: leaving it empty follows the knowledge
+// base language, which still drives tokenization and retrieval.
 export function VisionEnhancementFormFields() {
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
+  const crossLanguageOptions = useCrossLanguageOptions();
   const enabled = useWatch({ name: 'enable_vision_enhancement' });
 
   return (
@@ -93,8 +97,25 @@ export function VisionEnhancementFormFields() {
           label={t('chat.model')}
           modelTypes={ModelTypeMap.img2txt_id}
           allowClear
-          ownerTenantId={ownerTenantId}
+          resourceTenantId={resourceTenantId}
         />
+      )}
+      {enabled && (
+        <RAGFlowFormItem
+          name="vlm.lang"
+          label={t('flow.descriptionLanguage')}
+          tooltip={t('flow.descriptionLanguageTip')}
+        >
+          {(field) => (
+            <SelectWithSearch
+              options={crossLanguageOptions}
+              value={field.value}
+              onChange={field.onChange}
+              allowClear
+              placeholder={t('flow.followKnowledgeBaseLanguage')}
+            />
+          )}
+        </RAGFlowFormItem>
       )}
       {enabled && (
         <RAGFlowFormItem

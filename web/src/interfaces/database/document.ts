@@ -52,15 +52,11 @@ export interface IDocumentInfo {
 
 export interface IParserConfig {
   delimiter?: string;
-  html4excel?: boolean;
   layout_recognize?: string;
   pages?: any[];
   chunk_token_num?: number;
   auto_keywords?: number;
   auto_questions?: number;
-  task_page_size?: number;
-  raptor?: Raptor;
-  graphrag?: GraphRag;
   image_context_window?: number;
   image_table_context_window?: number;
   image_context_size?: number;
@@ -77,19 +73,6 @@ export interface IParserConfig {
   }>;
   enable_metadata?: boolean;
   compilation_template_group_id?: string[];
-}
-
-interface Raptor {
-  use_raptor: boolean;
-}
-
-interface GraphRag {
-  batch_chunk_token_size?: number;
-  community?: boolean;
-  entity_types?: string[];
-  method?: string;
-  resolution?: boolean;
-  use_graphrag?: boolean;
 }
 
 export type IDocumentInfoFilter = {

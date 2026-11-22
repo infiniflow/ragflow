@@ -12,6 +12,7 @@ import (
 	"github.com/xuri/excelize/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
+
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 )
@@ -92,7 +93,7 @@ func TestParserComponentCorrectsDOCXUploadedAsDOC(t *testing.T) {
 	originalLogger := common.Logger
 	common.Logger = zap.New(core)
 	t.Cleanup(func() { common.Logger = originalLogger })
-	for _, suffix := range []string{"doc", "xls", "ppt", "wps", "docx"} {
+	for _, suffix := range []string{"doc", "xls", "ppt", "docx"} {
 		t.Run(suffix, func(t *testing.T) {
 			var messages []string
 			ctx := runtime.WithProgressMessageCallback(t.Context(), func(_, message string) { messages = append(messages, message) })

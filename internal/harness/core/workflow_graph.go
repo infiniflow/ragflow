@@ -101,6 +101,7 @@ func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr checkpo
 			// the underlying array with the graph's concurrent goroutines.
 			msgCopy := append([]*schema.Message(nil), s.Messages...)
 			iter := ag.Run(ctx, &AgentInput{Messages: msgCopy})
+			s.Messages = nil // Return only new messages to the append channel.
 			for {
 				ev, ok := iter.Next()
 				if !ok {
@@ -182,6 +183,7 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr checkpoint.
 			s := state.(*WorkflowGraphState)
 			msgCopy := s.SnapshotMessages()
 			iter := ag.Run(ctx, &AgentInput{Messages: msgCopy})
+			s.Messages = nil // Return only new messages to the append channel.
 			for {
 				ev, ok := iter.Next()
 				if !ok {
@@ -259,6 +261,7 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr checkpoint.BaseChec
 			// the underlying array with the graph's concurrent goroutines.
 			msgCopy := append([]*schema.Message(nil), s.Messages...)
 			iter := ag.Run(ctx, &AgentInput{Messages: msgCopy})
+			s.Messages = nil // Return only new messages to the append channel.
 			for {
 				ev, ok := iter.Next()
 				if !ok {

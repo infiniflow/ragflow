@@ -86,6 +86,7 @@
 
 ## 🔥 近期更新
 
+- 2026-11-06 发布 RAGFlow 1.0.0。
 - 2026-09-30 发布 RAGFlow 1.0.0-rc1。
 - 2026-09-10 支持通过 Sitemap 接入网站内容。
 - 2026-08-19 推出知识编译，支持在文档级和知识库级生成 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills。
@@ -190,10 +191,10 @@
    cd ragflow/docker
    ```
 
-   切换到 `v1.0.0-rc3` 发布标签。
+   切换到 `v1.0.0` 发布标签。
 
    ```bash
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    ```
 
    在启动 RAGFlow 服务及其依赖服务。
@@ -202,10 +203,10 @@
    docker compose -f docker-compose.yml up -d
    ```
 
-   > 💡 **镜像下载提示：** 如果无法从默认仓库拉取镜像，请先在 `docker/.env` 中将 `RAGFLOW_IMAGE` 设置为以下镜像源之一，并保留 `v1.0.0-rc3` 标签：
+   > 💡 **镜像下载提示：** 如果无法从默认仓库拉取镜像，请先在 `docker/.env` 中将 `RAGFLOW_IMAGE` 设置为以下镜像源之一，并保留 `v1.0.0` 标签：
    >
-   > - 华为云：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0-rc3`
-   > - 阿里云：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0-rc3`
+   > - 华为云：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0`
+   > - 阿里云：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0`
 
    默认 MySQL 配置下，镜像入口会先执行数据库迁移，再启动 Admin、Syncer、Ingestor 和 API 等服务。
 
@@ -255,14 +256,15 @@ Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。镜像、端
    cd ragflow
    ```
 
-2. 运行依赖下载脚本，准备 Go 构建所需链接的原生静态库（`download_dev_deps.py`）与后端运行时加载的模型/分词器资源（`download_deps.py`）：
+2. 运行一次依赖下载脚本，准备本地 Go 服务构建、运行、解析文档和统计 token 所需的全部资源。`download_dev_deps.py` 会下载原生静态库及运行时资源，包括 cl100k 词表、DeepDoc `.ort` 模型和 embedding 分词器资源：
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` 拉取并解压 pdfium、pdf_oxide、office_oxide、onnxruntime 等到 `~/ragflow-native-libs`；`download_deps.py` 拉取 cl100k 词表、DeepDoc 模型与 embedding 分词器资源到 `deps/`。两个脚本均为 Python 脚本，`uv run` 会自动安装其声明的依赖（`requests`，模型与分词器下载还需 `huggingface-hub`）。如果已通过其他方式准备好相同资源，可跳过这一步。Go 服务从仓库根目录启动时会自动查找 `internal/rag/res/deepdoc`；如需从其他目录启动，请将 `DEEPDOC_MODEL_DIR` 设为该目录的绝对路径。
+   本地开发只需运行这一个脚本；再次运行时会跳过已有文件，不会重复下载。用于镜像构建的 `deps/download_deps.py` 下载相同的运行时资源，但不下载原生 `.a` 静态库；仅在构建依赖镜像或 CI 中运行，本地开发无需额外执行。
+
+   `download_dev_deps.py` 将 pdfium、pdf_oxide、office_oxide 和 onnxruntime 下载并解压到 `~/ragflow-native-libs`，将 cl100k 词表、DeepDoc 模型和 embedding 分词器资源写入 `deps/`。该脚本使用 Python 编写，`uv run` 会自动安装其声明的依赖（`requests` 和 `huggingface-hub`）。如果已通过其他方式准备好相同资源，可跳过这一步。Go 服务从仓库根目录启动时会自动查找 `internal/rag/res/deepdoc`；如需从其他目录启动，请将 `DEEPDOC_MODEL_DIR` 设为该目录的绝对路径。
 
 3. 编译：
 
@@ -277,43 +279,15 @@ Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。镜像、端
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-5. 数据迁移：
+5. 启动 RAGFlow：
 
    ```bash
-   ./bin/ragflow_server --migrate
+   ./bin/ragflow_server
    ```
 
-6. 启动 4 个终端分别启动 4 个服务：
+   开源版在一个 Go 进程中运行所有服务。启动时先执行数据库迁移，启动 Admin 并初始化超级管理员，随后启动 API、Ingestor、Syncer 和 Chatter。Admin 默认监听 `9381` 端口，API 默认监听 `9380` 端口。停止该进程会停止所有服务。服务设置通过 `conf/service_conf.yaml` 或环境变量配置。
 
-   终端 1：启动 Admin，监听端口 `9381`。
-
-   ```bash
-   ./bin/ragflow_server --admin
-   ```
-
-   ```bash
-   ./bin/ragflow_server --ingestor
-   ```
-
-   终端 3：启动 Syncer。
-
-   ```bash
-   ./bin/ragflow_server --syncer
-   ```
-
-   终端 4：启动 API，监听端口 `9380`。
-
-   ```bash
-   ./bin/ragflow_server --api
-   ```
-
-   各启动参数的作用如下：
-
-   - `--migrate`：执行数据库迁移，完成后即可退出。
-   - `--admin`：启动 Admin 服务，负责管理和初始化操作。
-   - `--ingestor`：启动 Ingestor 服务，负责数据摄取和解析任务。
-   - `--syncer`：启动 Syncer 服务，负责外部数据源的数据同步任务。
-   - `--api`：启动 API 服务，为 Web 和 SDK 提供 API 接口。
+6. 运行 `./bin/ragflow_server --help` 查看可用启动参数。
 
 7. 仅在前端开发时安装 Node.js 和 npm，然后启动 React 前端：
 

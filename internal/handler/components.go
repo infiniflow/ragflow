@@ -14,15 +14,13 @@
 //  limitations under the License.
 //
 
-// Phase 4 of plan port-rag-flow-pipeline-to-go.md.
-//
 // Exposes GET /api/v1/components?category=ingestion,agent,shared
 // (case-insensitive, comma-separated). The data source is
-// runtime.DefaultRegistry — there is no separate catalog map (per
-// plan §4 task 2). Category values are validated against the three
-// known runtime.Category constants; an unknown value yields a
-// 400-style error envelope so the frontend can surface a useful
-// message instead of silently dropping the request.
+// runtime.DefaultRegistry — there is no separate catalog map.
+// Category values are validated against the three known
+// runtime.Category constants; an unknown value yields a 400-style
+// error envelope so the frontend can surface a useful message
+// instead of silently dropping the request.
 package handler
 
 import (

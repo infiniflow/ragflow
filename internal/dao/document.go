@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao/transaction"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"strings"
 
 	"gorm.io/gorm"
@@ -127,6 +128,7 @@ type DocumentListOptions struct {
 	Name               string
 	DocIDs             []string
 	DocIDFilterApplied bool
+	AccessScope        *permission.QueryScope
 	CreateTimeFrom     int64
 	CreateTimeTo       int64
 	OrderBy            string
@@ -161,7 +163,42 @@ const latestIngestionTaskJoin = `LEFT JOIN ingestion_task ON ingestion_task.docu
 		  )
 	)`
 
+// buildDocumentListIngestionStatusExpression is the status a document row shows.
+//
+// It is the latest run's status, with one exception: content a restore put back.
+// A restore does not run the pipeline, so the task row still describes whatever
+// ran last - a parse that failed after the version being restored, or one whose
+// output the restore replaced. For those documents the marker the restore writes
+// decides the terminal status, because it is the only signal a parse never sets:
+// chunks came back means COMPLETED, none came back means UNSTART.
+//
+// A live run still wins over the marker, and every document no restore touched
+// falls through to the run's own status, so the parse paths are untouched: the
+// marker is null there and the expression reduces to what it always was.
+//
+// An empty parse has no chunk count, so its history marker also reads as COMPLETED.
 func buildDocumentListIngestionStatusExpression(db *gorm.DB) string {
+	return `CASE
+		WHEN ingestion_task.status IN ('` + common.CREATED + `', '` + common.SCHEDULED + `', '` + common.RUNNING + `', '` + common.STOPPING + `') THEN ingestion_task.status
+		WHEN document.restored_version IS NOT NULL AND (document.chunk_num > 0 OR ` + restoredParseMarkerExpression(db) + `) THEN '` + common.COMPLETED + `'
+		WHEN document.restored_version IS NOT NULL THEN 'UNSTART'
+		ELSE ` + runStatusExpression(db) + `
+	END`
+}
+
+// restoredParseMarkerExpression falls back to false where chunk_version is not
+// in the schema, so no document query fails on a table it does not use.
+func restoredParseMarkerExpression(db *gorm.DB) string {
+	if !db.Migrator().HasTable("chunk_version") {
+		return "1 = 0"
+	}
+	return restoredParseMarkerExists
+}
+
+// runStatusExpression is the status a row showed before restores were
+// distinguishable: the latest ingestion task's status, or the legacy run column
+// for a database written before the task table existed.
+func runStatusExpression(db *gorm.DB) string {
 	const taskStatus = "COALESCE(NULLIF(ingestion_task.status, ''), 'UNSTART')"
 	if !db.Migrator().HasColumn(&entity.Document{}, "run") {
 		return taskStatus
@@ -310,6 +347,9 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 	}
 
 	query = query.Where(column("kb_id")+" = ?", opts.KbID)
+	if opts.AccessScope != nil {
+		query = opts.AccessScope.Apply(query)
+	}
 	if strings.TrimSpace(opts.Keywords) != "" {
 		query = query.Where("LOWER("+column("name")+") LIKE ?", "%"+strings.ToLower(strings.TrimSpace(opts.Keywords))+"%")
 	}
@@ -512,10 +552,23 @@ func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(ctx context.Context, db *gor
 	return &document, err
 }
 
-// CountByTenantID counts documents by tenant ID
+// CountByTenantID counts documents belonging to datasets owned by a tenant.
 func (dao *DocumentDAO) CountByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
 	var count int64
-	err := db.WithContext(ctx).Model(&entity.Document{}).Where("created_by = ?", tenantID).Count(&count).Error
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Joins("JOIN knowledgebase ON knowledgebase.id = document.kb_id").
+		Where("knowledgebase.tenant_id = ?", tenantID).
+		Count(&count).Error
+	return count, err
+}
+
+// CountByUserID counts documents attributed to a user. created_by may contain
+// either a user ID or a tenant ID, so it is not a reliable user scope.
+func (dao *DocumentDAO) CountByUserID(ctx context.Context, db *gorm.DB, userID string) (int64, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Where("user_id = ?", userID).
+		Count(&count).Error
 	return count, err
 }
 

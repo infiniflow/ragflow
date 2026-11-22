@@ -320,20 +320,7 @@ func endpointTerms(value string) []string {
 	if value == "" {
 		return nil
 	}
-	return sortedUnique([]string{value, strings.ToLower(value)})
-}
-
-func sortedUnique(in []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, s := range in {
-		if s != "" && !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	sort.Strings(out)
-	return out
+	return common.DeduplicateSorted([]string{value, strings.ToLower(value)})
 }
 
 // normalizeRelationEndpoints aligns relation endpoints to returned entity ids.
@@ -662,14 +649,15 @@ func templateDisplayKind(rowKind, templateKind string) string {
 // fault (500).
 var ErrInvalidStructureKind = errors.New("invalid structure kind")
 
-// datasetStructureSupported mirrors the writer's engine guard: only Infinity and
-// Elasticsearch resolve the dataset-structure filter keys (scope_kwd +
-// knowledge_graph_kwd). The writer keeps a private copy in the knowledge_compile
-// package; this service-side copy keeps the API delete path in agreement without
-// exporting an ingestion-internal helper across package boundaries.
+// datasetStructureSupported mirrors the writer's engine guard: only Infinity,
+// Elasticsearch, and OpenSearch resolve the dataset-structure filter keys
+// (scope_kwd + knowledge_graph_kwd). The writer keeps a private copy in the
+// knowledge_compile package; this service-side copy keeps the API delete path
+// in agreement without exporting an ingestion-internal helper across package
+// boundaries.
 func datasetStructureSupported() bool {
 	switch engine.GetEngineType() {
-	case "infinity", "elasticsearch", "":
+	case "infinity", "elasticsearch", "opensearch", "":
 		return true
 	default:
 		return false
@@ -681,14 +669,7 @@ func errDatasetStructureUnsupported() error {
 	return fmt.Errorf("dataset structure graph unsupported on doc engine %q", engine.GetEngineType())
 }
 
-// resolveDatasetStructureKind maps a user-facing dataset-structure kind to the
-// stored top-level kind (mirror Python _DATASET_STRUCTURE_KIND_ALIASES). It is
-// DELIBERATELY separate from compilationTemplateKind: that helper folds
-// knowledge_graph→timeline, which would merge distinct dataset kinds, and it
-// lacks the graph→knowledge_graph / mindmap→mind_map aliases (Python's
-// dataset_api_service.py L1803-1805 documents exactly why it does not reuse the
-// general normalizer). Returns "" for an invalid kind (caller maps that to
-// 400 ARGUMENT_ERROR, never "return all").
+// resolveDatasetStructureKind maps a dataset-structure kind to its stored kind.
 func resolveDatasetStructureKind(kind string) string {
 	k := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(kind, "-", "_")))
 	switch k {
@@ -699,14 +680,12 @@ func resolveDatasetStructureKind(kind string) string {
 		// user-facing "mindmap" to the canonical compilation kind
 		// "mind_map" (the template kind, which is what read/delete paths match on).
 		return "mind_map"
-	case "timeline":
-		return "timeline"
 	case "session_essence":
 		return "session_essence"
 	case "session_graph":
 		return "session_graph"
 	}
-	return ""
+	return additionalDatasetStructureKinds[k]
 }
 
 // structureKindForBucket returns the normalized kind used for tree/page_index

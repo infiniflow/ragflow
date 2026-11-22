@@ -23,6 +23,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 
 	"ragflow/internal/common"
@@ -157,38 +160,35 @@ func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context) ([]map
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
-	providerRows, err := m.modelProviderDAO.ListByTenantIDAndUserID(ctx, dao.DB, ownedTenantID, userID)
+	providerRows, err := m.listReadableModelProvidersForUserEE(ctx, ownedTenantID, userID)
+	if err != nil {
+		if permissionresponse.IsPermissionError(err) {
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
+			return nil, code, normalizedErr
+		}
+		return nil, common.CodeServerError, err
+	}
+	providerIDs := make([]string, 0, len(providerRows))
+	for _, provider := range providerRows {
+		providerIDs = append(providerIDs, provider.ID)
+	}
+	providersWithInstances, err := m.modelInstanceDAO.ListProviderIDsWithInstances(ctx, dao.DB, providerIDs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	providerRefs := make([]permission.ResourceRef, 0, len(providerRows))
-	providerByID := make(map[string]*entity.TenantModelProvider, len(providerRows))
-	for _, provider := range providerRows {
-		providerRefs = append(providerRefs, permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID})
-		providerByID[provider.ID] = provider
-	}
-	accessibleProviders, err := permission.NewDatabaseChecker(dao.DB).FilterResources(
-		ctx,
-
-		providerRefs,
-		permission.OperationRead,
-	)
-	if err != nil {
-		code, normalizedErr := permissionresponse.NormalizeHidden(err)
-		return nil, code, normalizedErr
+	hasInstanceByID := make(map[string]bool, len(providersWithInstances))
+	for _, providerID := range providersWithInstances {
+		hasInstanceByID[providerID] = true
 	}
 
 	type listedProvider struct {
-		id   string
-		info map[string]interface{}
+		nameKey string
+		info    map[string]interface{}
 	}
-	listed := make([]listedProvider, 0, len(accessibleProviders))
-	seenProviderNames := make(map[string]struct{}, len(accessibleProviders))
-	for _, providerRef := range accessibleProviders {
-		providerRow := providerByID[providerRef.ID]
-		if providerRow == nil {
-			continue
-		}
+	listed := make([]listedProvider, 0, len(providerRows))
+	seenProviderNames := make(map[string]struct{}, len(providerRows))
+	hasInstanceByName := make(map[string]bool, len(providerRows))
+	for _, providerRow := range providerRows {
 		providerName := providerRow.ProviderName
 		// Mirror Python's list_providers tenant branch: silently skip system-excluded
 		// factory names (e.g. "Builtin", "Youdao", "FastEmbed", "BAAI",
@@ -198,6 +198,7 @@ func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context) ([]map
 			continue
 		}
 		providerKey := strings.ToLower(providerName)
+		hasInstanceByName[providerKey] = hasInstanceByName[providerKey] || hasInstanceByID[providerRow.ID]
 		if _, exists := seenProviderNames[providerKey]; exists {
 			continue
 		}
@@ -216,24 +217,12 @@ func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context) ([]map
 		// override it with providerName (the DB value), which may differ in
 		// case from historical ToLower writes.
 
-		listed = append(listed, listedProvider{id: providerRow.ID, info: provider})
+		listed = append(listed, listedProvider{nameKey: providerKey, info: provider})
 		seenProviderNames[providerKey] = struct{}{}
-	}
-	providerIDs := make([]string, 0, len(listed))
-	for _, provider := range listed {
-		providerIDs = append(providerIDs, provider.id)
-	}
-	providersWithInstances, err := m.modelInstanceDAO.ListProviderIDsWithInstances(ctx, dao.DB, providerIDs)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	hasInstance := make(map[string]bool, len(providerIDs))
-	for _, providerID := range providersWithInstances {
-		hasInstance[providerID] = true
 	}
 	result := make([]map[string]interface{}, 0, len(listed))
 	for _, provider := range listed {
-		provider.info["has_instance"] = hasInstance[provider.id]
+		provider.info["has_instance"] = hasInstanceByName[provider.nameKey]
 		result = append(result, provider.info)
 	}
 
@@ -486,9 +475,10 @@ var providerAPIKeyConfigFields = map[string]struct{}{
 	"mineru_output_dir":        {},
 	"mineru_server_url":        {},
 	"opendataloader_apiserver": {},
-	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
+	"unlimited_ocr_apiserver":  {},
+	"unlimited_ocr_server_url": {},
 }
 
 var safeProviderAPIKeyConfigFields = map[string]struct{}{
@@ -505,9 +495,10 @@ var safeProviderAPIKeyConfigFields = map[string]struct{}{
 	"mineru_output_dir":        {},
 	"mineru_server_url":        {},
 	"opendataloader_apiserver": {},
-	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
+	"unlimited_ocr_apiserver":  {},
+	"unlimited_ocr_server_url": {},
 }
 
 func hasSavedProviderAPIKeyConfig(raw json.RawMessage) bool {
@@ -848,7 +839,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	extra["base_url"] = baseURL
 	extraByte, err := json.Marshal(extra)
 	if err != nil {
-		return common.CodeServerError, errors.New("fail to marshal extra")
+		return common.CodeServerError, fmt.Errorf("fail to marshal extra: %w", err)
 	}
 	extraStr := string(extraByte)
 
@@ -1016,7 +1007,7 @@ func (m *ModelProviderService) createModelRecord(ctx context.Context, db *gorm.D
 func (m *ModelProviderService) ListProviderInstances(ctx context.Context, providerIDOrName string) ([]map[string]interface{}, common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
-	provider, err := m.resolveProviderInTenant(ctx, providerIDOrName, permission.OperationRead)
+	providers, err := m.providersForInstanceList(ctx, providerIDOrName)
 	if err != nil {
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return []map[string]interface{}{}, common.CodeSuccess, nil
@@ -1030,9 +1021,23 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		}
 		return nil, common.CodeServerError, err
 	}
-	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(ctx, dao.DB, provider.ID)
-	if err != nil {
-		return nil, common.CodeServerError, err
+	providerByID := make(map[string]*entity.TenantModelProvider, len(providers))
+	ownerIDs := make([]string, 0, len(providers))
+	seenOwnerIDs := make(map[string]struct{}, len(providers))
+	instances := make([]*entity.TenantModelInstance, 0)
+	for _, provider := range providers {
+		providerByID[provider.ID] = provider
+		if provider.UserID != "" {
+			if _, exists := seenOwnerIDs[provider.UserID]; !exists {
+				seenOwnerIDs[provider.UserID] = struct{}{}
+				ownerIDs = append(ownerIDs, provider.UserID)
+			}
+		}
+		providerInstances, listErr := m.modelInstanceDAO.GetAllInstancesByProviderID(ctx, dao.DB, provider.ID)
+		if listErr != nil {
+			return nil, common.CodeServerError, listErr
+		}
+		instances = append(instances, providerInstances...)
 	}
 	instanceRefs := make([]permission.ResourceRef, 0, len(instances))
 	for _, instance := range instances {
@@ -1044,6 +1049,10 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
+	ownerNicknames, err := dao.NewUserDAO().GetNicknamesByIDs(ctx, dao.DB, ownerIDs)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("resolve model instance owner nickname: %w", err)
+	}
 
 	// Always emit a non-nil slice so the JSON encoder serializes [] rather
 	// than null when the tenant has no instances on this provider. The
@@ -1052,6 +1061,10 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 	// crash on a freshly created tenant.
 	result := make([]map[string]interface{}, 0, len(instances))
 	for _, instance := range instances {
+		provider := providerByID[instance.ProviderID]
+		if provider == nil {
+			continue
+		}
 		access, ok := instanceAccesses[permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID}]
 		if !ok || !access.Allows(permission.OperationRead) {
 			continue
@@ -1072,6 +1085,8 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		// (provider_api_service.py:563).
 		result = append(result, map[string]interface{}{
 			"id":                  instance.ID,
+			"user_id":             provider.UserID,
+			"nickname":            ownerNicknames[provider.UserID],
 			"instance_name":       instance.InstanceName,
 			"provider_id":         instance.ProviderID,
 			"region":              extraFields["region"],
@@ -1566,6 +1581,8 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				err = verifyASRModel(ctx, driver, modelName, apiConfig)
 			case "ocr":
 				err = verifyOCRModel(ctx, driver, modelName, apiConfig)
+			case "scoring":
+				err = driver.CheckConnection(ctx, apiConfig)
 			case "doc_parse":
 				err = driver.CheckConnection(ctx, apiConfig)
 			case "decision":
@@ -1763,19 +1780,15 @@ func verifyDecisionModel(ctx context.Context, driver modelModule.ModelDriver, mo
 	return nil
 }
 
-// minimalPNG returns a 1×1 white PNG as a byte slice for OCR verification.
+// minimalPNG returns a 1×1 white PNG for OCR verification. OCR services decode
+// it before recognizing anything, so it has to be a well-formed image.
 func minimalPNG() []byte {
-	return []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-		0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
-		0x54, 0x08, 0xD7, 0x63, 0x60, 0x60, 0xF8, 0x0F,
-		0x00, 0x01, 0x01, 0x00, 0x05, 0x18, 0xD8, 0x32,
-		0x48, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
-		0x44, 0xAE, 0x42, 0x60, 0x82,
-	}
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.White)
+	var buf bytes.Buffer
+	// Encoding an in-memory image into a bytes.Buffer cannot fail.
+	_ = png.Encode(&buf, img)
+	return buf.Bytes()
 }
 
 func taskDriverConfig(provider *entity.TenantModelProvider, instance *entity.TenantModelInstance) (modelModule.ModelDriver, *modelModule.APIConfig, error) {
@@ -1846,10 +1859,10 @@ func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, insta
 	return taskResponse, common.CodeSuccess, nil
 }
 
-// ListModelsForUserInTenant returns models available to the current user in the requested
-// tenant context, filtered by the user's resource permissions. Provider and
-// instance configuration comes from the tenant owner.
-func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, requestedTenantID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
+// ListModelsForUserInTenant returns models available to the current user in the
+// requested tenant context. ownerIDs filters by resource owner, while
+// accessUserID intersects visibility with another user's permissions.
+func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, requestedTenantID string, ownerIDs []string, accessUserID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
 	tenant, code, err := m.resolveModelListTenant(ctx, requestedTenantID)
 	if err != nil {
 		return nil, code, err
@@ -1858,6 +1871,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 		return []map[string]interface{}{}, common.CodeSuccess, nil
 	}
 	tenantID := tenant.ID
+	ownerIDs = common.DeduplicateTrimmed(ownerIDs)
 	tenantName := ""
 	if tenant.Name != nil {
 		tenantName = *tenant.Name
@@ -1870,6 +1884,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	// Mirror Python's ensure_*_from_env calls.
 	if permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantOwner) == nil {
 		_ = m.ensureMineruFromEnv(ctx, tenantID)
+		_ = m.ensureUnlimitedOCRFromEnv(ctx, tenantID)
 		_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 		_ = m.ensureMonkeyOCRFromEnv(ctx, tenantID)
 		_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
@@ -1882,20 +1897,20 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	}
 
 	checker := permission.NewDatabaseChecker(dao.DB)
-	tenantOwner, err := m.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("get tenant owner for model listing: %w", err)
-	}
-	providerScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
+	providerScope, err := queryScopeForAccessUser(ctx, checker, permission.ScopeQuery{
+		TenantID:  tenantID,
 		Kind:      permission.ResourceKindModelProvider,
 		Operation: permission.OperationRead,
-	})
+	}, accessUserID)
 	if err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
 	providerQuery := providerScope.Apply(dao.DB.Model(&entity.TenantModelProvider{}))
-	providers, err := m.modelProviderDAO.ListByTenantIDAndUserID(ctx, providerQuery, tenantID, tenantOwner.UserID)
+	if len(ownerIDs) > 0 {
+		providerQuery = providerQuery.Where("tenant_model_provider.user_id IN ?", ownerIDs)
+	}
+	providers, err := m.listModelProvidersForTenantEE(ctx, providerQuery, tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1924,18 +1939,20 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	}
 
 	// Apply model visibility in SQL so hidden model rows are never loaded into
-	// the service layer. Model access for a tenant is limited to its owner's
-	// provider configuration; personal model settings remain in the provider
-	// management endpoints.
-	modelScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
+	// the service layer. Model access follows the instance's tenant resource
+	// permissions.
+	modelScope, err := queryScopeForAccessUser(ctx, checker, permission.ScopeQuery{
+		TenantID:  tenantID,
 		Kind:      permission.ResourceKindModel,
 		Operation: permission.OperationRead,
-	})
+	}, accessUserID)
 	if err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
-	modelRecords, err := m.modelDAO.ListByTenantIDAndModelType(ctx, dao.DB, tenantID, int(modelTypeFilterBin), modelScope.Apply)
+	modelRecords, err := m.modelDAO.ListByTenantIDAndModelType(ctx, dao.DB, tenantID, int(modelTypeFilterBin), func(query *gorm.DB) *gorm.DB {
+		return modelScope.Apply(query).Where("tenant_model.provider_id IN ?", providerIDs)
+	})
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2015,6 +2032,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 			"instance_id":     modelRecord.InstanceID,
 			"instance_name":   instInfo.InstanceName,
 			"rank":            rank,
+			"features":        featuresFromModelExtra(modelRecord.Extra),
 		})
 	}
 
@@ -2051,6 +2069,9 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 				})
 			}
 		}
+	}
+	if err := m.setModelOwnerInfoEE(ctx, added, providerInfoByID); err != nil {
+		return nil, common.CodeServerError, err
 	}
 
 	// Sort by factory rank desc, provider_name, instance_name, model rank desc, name.
@@ -2131,6 +2152,31 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
+func buildUnlimitedOCRProviderConfig(config map[string]interface{}) map[string]interface{} {
+	if config == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"unlimited_ocr_server_url": config[common.EnvUnlimitedOCRServerURL],
+		"unlimited_ocr_apiserver":  config[common.EnvUnlimitedOCRAPIServer],
+		"unlimited_ocr_timeout":    config[common.EnvUnlimitedOCRTimeout],
+	}
+}
+
+func (m *ModelProviderService) ensureUnlimitedOCRFromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(unlimitedOCREnvKeys, unlimitedOCRDefaultConfig)
+	if config == nil {
+		return nil
+	}
+	serverURL, _ := config[common.EnvUnlimitedOCRServerURL].(string)
+	apiServer, _ := config[common.EnvUnlimitedOCRAPIServer].(string)
+	if strings.TrimSpace(serverURL) == "" && strings.TrimSpace(apiServer) == "" {
+		return nil
+	}
+	providerConfig := buildUnlimitedOCRProviderConfig(config)
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "Unlimited-OCR-2", "unlimited-ocr-2-from-env", providerConfig)
+}
+
 // ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
 func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, tenantID string) error {
 	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
@@ -2170,13 +2216,11 @@ var (
 		common.EnvPaddleOCRBaseUrl,
 		common.EnvPaddleOCRAPIURL,
 		common.EnvPaddleOCRAccessToken,
-		common.EnvPaddleOCRAlgorithm,
 	}
 	paddleOCRDefaultConfig = map[string]interface{}{
 		common.EnvPaddleOCRBaseUrl:     "",
 		common.EnvPaddleOCRAPIURL:      "",
 		common.EnvPaddleOCRAccessToken: nil,
-		common.EnvPaddleOCRAlgorithm:   "PaddleOCR-VL",
 	}
 	openDataLoaderEnvKeys = []string{
 		common.EnvOpenDataLoaderAPIServer,
@@ -2205,6 +2249,16 @@ var (
 		common.EnvMonkeyOCRServerURL:    "",
 		common.EnvMonkeyOCRBackend:      "vlm-engine",
 		common.EnvMonkeyOCRDeleteOutput: 1,
+	}
+	unlimitedOCREnvKeys = []string{
+		common.EnvUnlimitedOCRServerURL,
+		common.EnvUnlimitedOCRAPIServer,
+		common.EnvUnlimitedOCRTimeout,
+	}
+	unlimitedOCRDefaultConfig = map[string]interface{}{
+		common.EnvUnlimitedOCRServerURL: "",
+		common.EnvUnlimitedOCRAPIServer: "",
+		common.EnvUnlimitedOCRTimeout:   600,
 	}
 )
 
@@ -2438,8 +2492,9 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, provid
 		return common.CodeServerError, fmt.Errorf("fail to update instance: %w", err)
 	}
 
-	// Upsert models: add new ones, update existing ones, remove ones no longer selected.
-	// Delete models that are no longer in the submitted model_info.
+	// Upsert models: add new ones, update existing ones, inactivate ones no longer selected.
+	// Models no longer in the submitted model_info are soft deleted, like the
+	// dedicated drop-models endpoint, so their rows and references survive.
 	var idsToRemove []string
 	for name, mdl := range existingModelMap {
 		if !submittedModelNames[name] {
@@ -2447,7 +2502,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, provid
 		}
 	}
 	if len(idsToRemove) > 0 {
-		if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToRemove); err != nil {
+		if _, err = m.modelDAO.UpdateStatusByIDsAndScope(ctx, dao.DB, idsToRemove, provider.ID, instance.ID, "inactive"); err != nil {
 			return common.CodeServerError, err
 		}
 	}
@@ -2485,6 +2540,9 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, provid
 				}
 				extraBytes, _ = json.Marshal(mergedExtra)
 				updates["extra"] = string(extraBytes)
+				if !strings.EqualFold(existingMdl.Status, "active") {
+					updates["status"] = "active"
+				}
 				if len(updates) > 0 {
 					if err = m.modelDAO.UpdateByID(ctx, dao.DB, existingMdl.ID, updates); err != nil {
 						return common.CodeServerError, err
@@ -2655,7 +2713,7 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 		}
 	}
 
-	if _, err = m.modelDAO.DeleteByIDs(ctx, dao.DB, idsToDelete); err != nil {
+	if _, err = m.modelDAO.UpdateStatusByIDsAndScope(ctx, dao.DB, idsToDelete, provider.ID, instance.ID, "inactive"); err != nil {
 		return common.CodeServerError, err
 	}
 
@@ -2709,6 +2767,9 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 		if !ok || !access.Allows(permission.OperationRead) {
 			continue
 		}
+		if model.Status == "inactive" {
+			continue
+		}
 		modelExtra := make(map[string]interface{})
 		if model.Extra != "" {
 			_ = json.Unmarshal([]byte(model.Extra), &modelExtra)
@@ -2736,6 +2797,11 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 		if v, ok := modelExtra["thinking"]; ok && isTruthy(v) {
 			features = append(features, "thinking")
 		}
+		for _, key := range scoringFeatureKeys {
+			if v, ok := modelExtra[key]; ok && isTruthy(v) {
+				features = append(features, key)
+			}
+		}
 
 		modelList = append(modelList, map[string]interface{}{
 			"id":         model.ID,
@@ -2755,6 +2821,37 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	})
 
 	return modelList, nil
+}
+
+var scoringFeatureKeys = []string{
+	"supports_image",
+	"supports_box",
+	"supports_noul",
+	"supports_score",
+	"supports_fields",
+	"supports_field_text",
+	"supports_field_number",
+	"supports_field_date",
+	"supports_field_time",
+	"supports_field_datetime",
+	"supports_field_duration",
+	"supports_field_list",
+	"supports_field_estimate",
+	"supports_field_forecast",
+}
+
+func featuresFromModelExtra(raw string) []string {
+	extra := map[string]interface{}{}
+	if raw != "" {
+		_ = json.Unmarshal([]byte(raw), &extra)
+	}
+	features := make([]string, 0)
+	for _, key := range scoringFeatureKeys {
+		if v, ok := extra[key]; ok && isTruthy(v) {
+			features = append(features, key)
+		}
+	}
+	return features
 }
 
 func (m *ModelProviderService) AlterModel(ctx context.Context, providerName, instanceName, modelName, modelID string, updateDict map[string]interface{}) (common.ErrorCode, error) {
@@ -3031,13 +3128,18 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		return code, normalizedErr
 	}
 
-	// Check for duplicate model.
-	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, modelName)
-	if err == nil {
-		return common.CodeConflict, fmt.Errorf("model '%s' already exists for provider '%s' and instance '%s'", modelName, request.ProviderName, request.InstanceName)
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	// Check for duplicate model. An inactive row is reactivated below with the
+	// fields this request computes, instead of rejecting it as a duplicate.
+	var existing *entity.TenantModel
+	obj, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, modelName)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+	case err != nil:
 		return common.CodeServerError, err
+	case obj.Status == "active":
+		return common.CodeConflict, fmt.Errorf("model '%s' already exists for provider '%s' and instance '%s'", modelName, request.ProviderName, request.InstanceName)
+	default:
+		existing = obj
 	}
 
 	// Compute model type bitmask. Matches Python's calculate_model_type:
@@ -3083,7 +3185,18 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
-		return common.CodeServerError, errors.New("fail to marshal extra")
+		return common.CodeServerError, fmt.Errorf("fail to marshal extra: %w", err)
+	}
+
+	if existing != nil {
+		if err = m.modelDAO.UpdateByID(ctx, dao.DB, existing.ID, map[string]interface{}{
+			"model_type": int(combinedType),
+			"extra":      string(extraBytes),
+			"status":     "active",
+		}); err != nil {
+			return common.CodeServerError, fmt.Errorf("fail to reactivate model '%s': %w", modelName, err)
+		}
+		return common.CodeSuccess, nil
 	}
 
 	modelID := common.GenerateToken()
@@ -3117,6 +3230,8 @@ func (m *ModelProviderService) ListAllModels(pageIndex, pageSize int) ([]map[str
 	if start >= len(models) {
 		return []map[string]interface{}{}, nil
 	}
+	// Models are loaded from a file and kept in memory, so slice-based pagination is appropriate.
+	// If models are stored in a database, apply pagination in the query instead.
 	return models[start:min(start+pageSize, len(models))], nil
 }
 

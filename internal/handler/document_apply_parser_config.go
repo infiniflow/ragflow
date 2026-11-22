@@ -10,6 +10,9 @@ import (
 
 // ApplyDatasetParserConfig handles POST /api/v1/datasets/:dataset_id/documents/apply-parser-config.
 func (h *DocumentHandler) ApplyDatasetParserConfig(c *gin.Context) {
+	common.StartOperationLog(c, "apply_dataset_parser_config")
+	defer common.FinishOperationLog(c)
+
 	_, code, message := GetUser(c)
 	if code != common.CodeSuccess {
 		common.RespondError(c, code, message)

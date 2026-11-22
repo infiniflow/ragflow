@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,7 +91,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				effectiveReq.SelectFields = append(effectiveReq.SelectFields, field)
 			}
 		}
-		if kind == "memory" && containsString(effectiveReq.SelectFields, "content_embed") {
+		if kind == "memory" && slices.Contains(effectiveReq.SelectFields, "content_embed") {
 			expectedVectorColumn := ""
 			if plan.dense != nil {
 				expectedVectorColumn = plan.dense.VectorColumnName
@@ -160,9 +161,24 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 }
 
 func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan) ([]map[string]interface{}, int64, error) {
-	fieldsSQL, _, err := buildSelectFields(req.SelectFields, kind)
+	var tableColumns map[string]bool
+	if kind == "chunk" && chunkSelectionNeedsSchema(req.SelectFields) {
+		var err error
+		tableColumns, err = e.tableColumns(ctx, tableName)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	fieldsSQL, _, err := buildSelectFieldsWithAlias(req.SelectFields, kind, "", tableColumns)
 	if err != nil {
 		return nil, 0, err
+	}
+	var extra *chunkExtraSelection
+	if tableColumns != nil {
+		extra = &chunkExtraSelection{
+			fields:    chunkFieldsFromExtra(req.SelectFields, tableColumns),
+			keepExtra: slices.Contains(req.SelectFields, "extra"),
+		}
 	}
 	filterSQL, filterArgs, err := buildFilter(condition, kind)
 	if err != nil {
@@ -176,15 +192,15 @@ func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string,
 
 	switch {
 	case plan.text != nil && plan.dense != nil:
-		qualifiedFieldsSQL, _, err := buildQualifiedSelectFields(req.SelectFields, kind, "t")
+		qualifiedFieldsSQL, _, err := buildSelectFieldsWithAlias(req.SelectFields, kind, "t", tableColumns)
 		if err != nil {
 			return nil, 0, err
 		}
-		return e.searchFusionSQL(ctx, tableName, kind, fieldsSQL, qualifiedFieldsSQL, filterSQL, filterArgs, offset, limit, plan)
+		return e.searchFusionSQL(ctx, tableName, kind, fieldsSQL, qualifiedFieldsSQL, filterSQL, filterArgs, offset, limit, plan, extra)
 	case plan.dense != nil:
-		return e.searchVectorSQL(ctx, tableName, kind, fieldsSQL, filterSQL, filterArgs, offset, limit, plan.dense)
+		return e.searchVectorSQL(ctx, tableName, kind, fieldsSQL, filterSQL, filterArgs, offset, limit, plan.dense, extra)
 	case plan.text != nil:
-		return e.searchFullTextSQL(ctx, tableName, kind, fieldsSQL, filterSQL, filterArgs, offset, limit, plan.text)
+		return e.searchFullTextSQL(ctx, tableName, kind, fieldsSQL, filterSQL, filterArgs, offset, limit, plan.text, extra)
 	default:
 		count, err := scanCount(e.db.QueryRowContext(ctx, "SELECT COUNT("+quoteIdentifier(identifierField(kind))+") FROM "+quoteIdentifier(tableName)+" WHERE "+filterSQL, filterArgs...))
 		if err != nil || count == 0 {
@@ -196,11 +212,11 @@ func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string,
 		}
 		query := fmt.Sprintf("SELECT %s FROM %s WHERE %s%s LIMIT %d, %d", fieldsSQL, quoteIdentifier(tableName), filterSQL, orderSQL, offset, limit)
 		rows, err := e.queryRows(ctx, query, filterArgs...)
-		return decodeRows(rows, kind), count, err
+		return decodeRowsWithSelection(rows, kind, extra), count, err
 	}
 }
 
-func (e *Engine) searchFullTextSQL(ctx context.Context, tableName, kind, fieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit int, text *types.MatchTextExpr) ([]map[string]interface{}, int64, error) {
+func (e *Engine) searchFullTextSQL(ctx context.Context, tableName, kind, fieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit int, text *types.MatchTextExpr, extra *chunkExtraSelection) ([]map[string]interface{}, int64, error) {
 	filterExpr, filterTextArgs, scoreExpr, scoreArgs := e.fullTextExpressions(kind, text)
 	hint := e.fullTextHint(tableName, kind)
 	countQuery := fmt.Sprintf("SELECT %sCOUNT(%s) FROM %s WHERE %s AND %s", hint, quoteIdentifier(identifierField(kind)), quoteIdentifier(tableName), filterSQL, filterExpr)
@@ -214,10 +230,10 @@ func (e *Engine) searchFullTextSQL(ctx context.Context, tableName, kind, fieldsS
 	args := appendCopy(scoreArgs, filterArgs...)
 	args = append(args, filterTextArgs...)
 	rows, err := e.queryRows(ctx, query, args...)
-	return decodeRows(rows, kind), count, err
+	return decodeRowsWithSelection(rows, kind, extra), count, err
 }
 
-func (e *Engine) searchVectorSQL(ctx context.Context, tableName, kind, fieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit int, dense *types.MatchDenseExpr) ([]map[string]interface{}, int64, error) {
+func (e *Engine) searchVectorSQL(ctx context.Context, tableName, kind, fieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit int, dense *types.MatchDenseExpr, extra *chunkExtraSelection) ([]map[string]interface{}, int64, error) {
 	if err := validateVectorExpr(dense); err != nil {
 		return nil, 0, err
 	}
@@ -240,10 +256,10 @@ func (e *Engine) searchVectorSQL(ctx context.Context, tableName, kind, fieldsSQL
 	args = append(args, filterArgs...)
 	args = append(args, vector, threshold, vector)
 	rows, err := e.queryRows(ctx, query, args...)
-	return decodeRows(rows, kind), count, err
+	return decodeRowsWithSelection(rows, kind, extra), count, err
 }
 
-func (e *Engine) searchFusionSQL(ctx context.Context, tableName, kind, fieldsSQL, qualifiedFieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit int, plan searchPlan) ([]map[string]interface{}, int64, error) {
+func (e *Engine) searchFusionSQL(ctx context.Context, tableName, kind, fieldsSQL, qualifiedFieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit int, plan searchPlan, extra *chunkExtraSelection) ([]map[string]interface{}, int64, error) {
 	if err := validateVectorExpr(plan.dense); err != nil {
 		return nil, 0, err
 	}
@@ -262,7 +278,7 @@ func (e *Engine) searchFusionSQL(ctx context.Context, tableName, kind, fieldsSQL
 
 	if !e.flags.useFullTextFirstFusionSearch {
 		return e.searchSymmetricFusionSQL(ctx, tableName, kind, qualifiedFieldsSQL, filterSQL, filterArgs, offset, limit, candidates, hint,
-			textFilter, textFilterArgs, textScore, textScoreArgs, vector, vectorColumn, vectorScore, threshold, textWeight, vectorWeight, plan)
+			textFilter, textFilterArgs, textScore, textScoreArgs, vector, vectorColumn, vectorScore, threshold, textWeight, vectorWeight, plan, extra)
 	}
 
 	cte := fmt.Sprintf("WITH fulltext_results AS (SELECT %s*, %s AS relevance FROM %s WHERE %s AND %s ORDER BY relevance DESC LIMIT %d)",
@@ -286,10 +302,10 @@ func (e *Engine) searchFusionSQL(ctx context.Context, tableName, kind, fieldsSQL
 	args = append(args, textFilterArgs...)
 	args = append(args, vector, vector, threshold)
 	rows, err := e.queryRows(ctx, query, args...)
-	return decodeRows(rows, kind), count, err
+	return decodeRowsWithSelection(rows, kind, extra), count, err
 }
 
-func (e *Engine) searchSymmetricFusionSQL(ctx context.Context, tableName, kind, fieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit, candidates int, hint, textFilter string, textFilterArgs []interface{}, textScore string, textScoreArgs []interface{}, vector, vectorColumn, vectorScore string, threshold, textWeight, vectorWeight float64, plan searchPlan) ([]map[string]interface{}, int64, error) {
+func (e *Engine) searchSymmetricFusionSQL(ctx context.Context, tableName, kind, fieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit, candidates int, hint, textFilter string, textFilterArgs []interface{}, textScore string, textScoreArgs []interface{}, vector, vectorColumn, vectorScore string, threshold, textWeight, vectorWeight float64, plan searchPlan, extra *chunkExtraSelection) ([]map[string]interface{}, int64, error) {
 	fullTextLimit := positiveOr(plan.text.TopN, candidates)
 	vectorLimit := positiveOr(plan.dense.TopN, candidates)
 	pagerankColumn := ""
@@ -319,7 +335,7 @@ func (e *Engine) searchSymmetricFusionSQL(ctx context.Context, tableName, kind, 
 	query := cte + fmt.Sprintf(" SELECT %s, %s AS _score FROM (SELECT COALESCE(f.id, v.id) AS id, %s AS score%s) c JOIN %s t ON c.id = t.%s ORDER BY c.score DESC LIMIT %d, %d",
 		fieldsSQL, "c.score", score, join, quoteIdentifier(tableName), identifier, offset, limit)
 	rows, err := e.queryRows(ctx, query, countArgs...)
-	return decodeRows(rows, kind), count, err
+	return decodeRowsWithSelection(rows, kind, extra), count, err
 }
 
 func (e *Engine) fullTextExpressions(kind string, text *types.MatchTextExpr) (string, []interface{}, string, []interface{}) {
@@ -502,9 +518,13 @@ func fusionVectorWeight(fusion *types.FusionExpr) float64 {
 }
 
 func decodeRows(rows []map[string]interface{}, kind string) []map[string]interface{} {
+	return decodeRowsWithSelection(rows, kind, nil)
+}
+
+func decodeRowsWithSelection(rows []map[string]interface{}, kind string, extra *chunkExtraSelection) []map[string]interface{} {
 	result := make([]map[string]interface{}, len(rows))
 	for i, row := range rows {
-		result[i] = decodeLogicalRow(row, kind)
+		result[i] = decodeLogicalRow(row, kind, extra)
 	}
 	return result
 }
@@ -567,12 +587,12 @@ func expandSearchPlan(plan searchPlan, candidateLimit int) searchPlan {
 }
 
 func searchHiddenSortFields(req *types.SearchRequest, mergeTables bool) []string {
-	if !mergeTables || req.OrderBy == nil || len(req.OrderBy.Fields) == 0 || len(req.SelectFields) == 0 || containsString(req.SelectFields, "*") {
+	if !mergeTables || req.OrderBy == nil || len(req.OrderBy.Fields) == 0 || len(req.SelectFields) == 0 || slices.Contains(req.SelectFields, "*") {
 		return nil
 	}
 	fields := make([]string, 0, len(req.OrderBy.Fields))
 	for _, order := range req.OrderBy.Fields {
-		if order.Field == "_score" || containsString(req.SelectFields, order.Field) || containsString(fields, order.Field) {
+		if order.Field == "_score" || slices.Contains(req.SelectFields, order.Field) || slices.Contains(fields, order.Field) {
 			continue
 		}
 		fields = append(fields, order.Field)

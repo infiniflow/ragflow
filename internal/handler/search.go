@@ -55,10 +55,7 @@ func (h *SearchHandler) SetCompletionDependencies(modelFactory *service.ModelFac
 
 func getOwnerIDs(c *gin.Context) []string {
 	values := c.QueryArray("owner_ids")
-	if len(values) == 0 {
-		values = c.QueryArray("owner_id")
-	}
-	ownerIDs := make([]string, 0, len(values))
+	var ownerIDs []string
 	for _, value := range values {
 		for _, ownerID := range strings.Split(value, ",") {
 			ownerID = strings.TrimSpace(ownerID)
@@ -147,6 +144,9 @@ type CreateSearchRequest struct {
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {
+	common.StartOperationLog(c, "create_search")
+	defer common.FinishOperationLog(c)
+
 	user, errorCode, err := billingQuotaUser(c)
 	if err != nil {
 		common.RespondError(c, errorCode, err.Error())
@@ -175,6 +175,8 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 		common.Respond(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "search_id", result.SearchID)
 
 	// Return success response (same as Python get_json_result(data={"search_id": req["id"]}))
 	common.RespondSuccess(c, result, "success")
@@ -212,6 +214,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Convert to response format (same as Python get_json_result(data=search))
 	result := map[string]interface{}{
 		"id":            search.ID,
+		"user_id":       search.UserID,
 		"tenant_id":     search.TenantID,
 		"name":          search.Name,
 		"description":   search.Description,
@@ -239,6 +242,9 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searches/{search_id} [delete]
 func (h *SearchHandler) DeleteSearch(c *gin.Context) {
+	common.StartOperationLog(c, "delete_search")
+	defer common.FinishOperationLog(c)
+
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
@@ -272,6 +278,9 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searches/{search_id} [put]
 func (h *SearchHandler) UpdateSearch(c *gin.Context) {
+	common.StartOperationLog(c, "update_search")
+	defer common.FinishOperationLog(c)
+
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
@@ -335,11 +344,14 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	common.RespondSuccess(c, result, "success")
 }
 
+// Completion authorizes and prepares the search before committing an SSE response.
 func (h *SearchHandler) Completion(c *gin.Context) {
+	common.StartOperationLog(c, "request_search_answer")
+	defer common.FinishOperationLog(c)
 
 	var req service.SearchCompletionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeArgumentError, "question is required")
+		common.RespondError(c, common.CodeArgumentError, "question is required: "+err.Error())
 		return
 	}
 
@@ -375,6 +387,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	if writer == nil {
 		writer = &ginSSEWriter{}
 	}
+	common.FinishOperationLog(c)
 	if plan.ModelID == "" {
 		writer.Write(c, sseError("chat model not configured"))
 		return
@@ -399,14 +412,14 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			ok = writer.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = writer.Write(c, sseAnswer(delta.Value, nil, false, "success"))
 		case service.AskDeltaMarker:
 			ok = writer.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
 			hadError = true
 			ok = writer.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			ok = writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = writer.Write(c, sseAnswer(delta.Value, delta.Refs, true, delta.Message))
 		}
 		if !ok || ctx.Err() != nil {
 			cancel()

@@ -72,6 +72,7 @@ import {
   pickSavedProviderConfigOverrides,
 } from './saved-provider-config';
 import { InstanceSaveButton } from './components/instance-save-button';
+import { InstanceNameSection } from './components/instance-name-section';
 import { SavedCredentialInput } from './saved-credential-input';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
@@ -130,14 +131,21 @@ export const BedrockInstanceCard = forwardRef<
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
   const [open, setOpen] = useState(isDraft || defaultOpen);
   const [draftName, setDraftName] = useState('');
+  const [draftNameError, setDraftNameError] = useState('');
   const modelInfoRef = useRef<IModelInfo[]>([]);
   const modelsLoadedRef = useRef(false);
 
   useEffect(() => {
     if (isDraft) {
       setDraftName('');
+      setDraftNameError('');
     }
   }, [providerName, isDraft]);
+
+  const handleDraftNameChange = useCallback((name: string) => {
+    setDraftName(name);
+    setDraftNameError('');
+  }, []);
 
   const { data: instanceDetails, refetch: refetchInstanceDetails } =
     useFetchProviderInstance(
@@ -623,7 +631,10 @@ export const BedrockInstanceCard = forwardRef<
   // Form validation shared by the header Save button and the
   // imperative API.
   const validate = useCallback(async () => {
-    if (isDraft && !draftNameRef.current.trim()) return false;
+    if (isDraft && !draftNameRef.current.trim()) {
+      setDraftNameError(tSetting('instanceNameMessage'));
+      return false;
+    }
     if (!isDraft && !modelsLoadedRef.current) {
       message.error(tSetting('selectModelBeforeSave'));
       return false;
@@ -886,40 +897,14 @@ export const BedrockInstanceCard = forwardRef<
     >
       {isDraft ? (
         <div className="px-2 py-3 flex flex-col gap-4">
-          <div
-            className="flex flex-col gap-1.5"
-            data-testid="instance-name-section"
-          >
-            <label
-              htmlFor="instance-name-input"
-              className="text-sm font-medium text-text-primary"
-            >
-              <span className="text-destructive mr-0.5">*</span>
-              {tSetting('instanceName')}
-            </label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="instance-name-input"
-                value={draftName}
-                onChange={(e) => setDraftName(e.target.value)}
-                placeholder={tSetting('instanceNamePlaceholder')}
-                className="flex-1"
-                data-testid="instance-name-input"
-              />
-              <ConfirmDeleteDialog onOk={handleDelete}>
-                <Button
-                  variant="delete"
-                  size="icon-sm"
-                  className="shrink-0"
-                  aria-label={tSetting('deleteInstance')}
-                  data-testid="draft-delete"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </ConfirmDeleteDialog>
-              <InstanceSaveButton onSave={handleSave} saving={saving} />
-            </div>
-          </div>
+          <InstanceNameSection
+            draftName={draftName}
+            setDraftName={handleDraftNameChange}
+            error={draftNameError}
+            handleDelete={handleDelete}
+            handleSave={handleSave}
+            saving={saving}
+          />
 
           {renderFields()}
 

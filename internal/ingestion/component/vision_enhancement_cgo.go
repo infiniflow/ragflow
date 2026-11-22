@@ -27,13 +27,13 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/parser/parser"
-
-	"gorm.io/gorm"
 )
 
 // visionSourceFetcher and visionEngineOpener are the injection seams for the
