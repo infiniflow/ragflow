@@ -791,71 +791,149 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	return nil
 }
 
+// structureLookupBatch bounds one lookup so a batch with many buckets stays
+// under the engines' filter-size limits.
+const structureLookupBatch = 500
+
+// mergeExistingStructureBuckets folds the persisted dataset-level rows into the
+// incoming buckets: it unions source doc/chunk ids, keeps a specific entity type
+// over "other", and returns the ids of rows superseded by the current id scheme.
+//
+// The lookups are keyed (current ids, then the entity/relation identity fields),
+// never a paged scan of every dataset-level row: this read runs while the caller
+// holds the dataset write lock, and a full scan on a large mind map kept that
+// lock past innodb_lock_wait_timeout, so the claim heartbeat failed and the batch
+// was retried forever (#22626). The identity sweep still finds rows stored under
+// an older id scheme, which is what the stale cleanup exists for.
 func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, baseName, tenant, kb string, buckets []StructureBucket) ([]string, error) {
 	byIdentity := make(map[string]int, len(buckets))
+	byID := make(map[string]bool, len(buckets))
 	compileKinds := make([]string, 0, len(buckets))
+	entityNames := make([]string, 0, len(buckets))
+	relationFroms := make([]string, 0, len(buckets))
+	relationTos := make([]string, 0, len(buckets))
 	for i := range buckets {
-		byIdentity[structureBucketIdentity(buckets[i])] = i
-		compileKinds = common.AppendUnique(compileKinds, []string{structureCompileKind(buckets[i].CompileKwd)})
+		b := buckets[i]
+		byIdentity[structureBucketIdentity(b)] = i
+		byID[datasetLevelStructureID(tenant, kb, structureTemplateIdentity(b.TemplateID, b.TemplateKind), b.Name, b.Type, b.CompileKwd, b.RelationType)] = true
+		compileKinds = common.AppendUnique(compileKinds, []string{structureCompileKind(b.CompileKwd)})
+		if b.FromEntity != "" || b.ToEntity != "" {
+			relationFroms = common.AppendUnique(relationFroms, []string{b.FromEntity, strings.ToLower(b.FromEntity)})
+			relationTos = common.AppendUnique(relationTos, []string{b.ToEntity, strings.ToLower(b.ToEntity)})
+		} else {
+			entityNames = common.AppendUnique(entityNames, []string{b.Name, strings.ToLower(b.Name)})
+		}
 	}
 	if len(byIdentity) == 0 {
 		return nil, nil
 	}
 
-	const pageSize = 500
+	selectFields := []string{
+		"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
+		"type_kwd", "knowledge_graph_kwd", "name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
+		"content_with_weight", "source_doc_ids", "source_chunk_ids",
+	}
 	stale := map[string]bool{}
-	for offset := 0; ; offset += pageSize {
-		res, err := eng.Search(ctx, &types.SearchRequest{
-			IndexNames: []string{baseName},
-			KbIDs:      []string{kb},
-			SelectFields: []string{
-				"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
-				"type_kwd", "knowledge_graph_kwd", "name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
-				"content_with_weight", "source_doc_ids", "source_chunk_ids",
-			},
-			Filter: map[string]interface{}{
-				"kb_id":               kb,
-				"scope_kwd":           "dataset",
-				"compile_kwd":         compileKinds,
-				"knowledge_graph_kwd": []string{"entity", "relation"},
-			},
-			Offset: offset,
-			Limit:  pageSize,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("structure merge load existing rows: %w", err)
+	// applyRow is shared by every lookup; a row reaching it has already been
+	// narrowed by id or by identity fields, so it only needs the identity check.
+	applyRow := func(row map[string]interface{}) {
+		idx, ok := byIdentity[structureRowIdentity(row)]
+		if !ok {
+			return
 		}
-		for _, row := range res.Chunks {
-			identity := structureRowIdentity(row)
-			idx, ok := byIdentity[identity]
-			if !ok {
-				continue
-			}
-			bucket := &buckets[idx]
-			if !structureBucketWritable(*bucket) {
-				continue
-			}
-			bucket.SourceDocIDs = common.AppendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
-			bucket.SourceChunkIDs = common.AppendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
-			payload := structureRowPayload(row)
-			if bucket.FromEntity == "" && bucket.ToEntity == "" {
-				existingType := structureString(row["entity_type_kwd"])
-				if existingType == "" {
-					existingType = structureString(payload["type"])
-				}
-				bucket.Type = preferredStructureEntityType(existingType, bucket.Type)
-			}
-			id := structureString(row["id"])
-			newID := datasetLevelStructureID(tenant, kb, structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind), bucket.Name, bucket.Type, bucket.CompileKwd, bucket.RelationType)
-			if id != "" && id != newID {
-				stale[id] = true
-			}
+		bucket := &buckets[idx]
+		if !structureBucketWritable(*bucket) {
+			return
 		}
-		if len(res.Chunks) < pageSize {
-			break
+		bucket.SourceDocIDs = common.AppendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
+		bucket.SourceChunkIDs = common.AppendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
+		payload := structureRowPayload(row)
+		if bucket.FromEntity == "" && bucket.ToEntity == "" {
+			existingType := structureString(row["entity_type_kwd"])
+			if existingType == "" {
+				existingType = structureString(payload["type"])
+			}
+			bucket.Type = preferredStructureEntityType(existingType, bucket.Type)
+		}
+		id := structureString(row["id"])
+		newID := datasetLevelStructureID(tenant, kb, structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind), bucket.Name, bucket.Type, bucket.CompileKwd, bucket.RelationType)
+		if id != "" && id != newID {
+			stale[id] = true
 		}
 	}
-	ids := make([]string, 0, len(stale))
+	lookup := func(extra map[string]interface{}) error {
+		filter := make(map[string]interface{}, len(extra)+3)
+		filter["kb_id"] = kb
+		filter["scope_kwd"] = "dataset"
+		filter["compile_kwd"] = compileKinds
+		for k, v := range extra {
+			filter[k] = v
+		}
+		for offset := 0; ; offset += structureLookupBatch {
+			res, err := eng.Search(ctx, &types.SearchRequest{
+				IndexNames:   []string{baseName},
+				KbIDs:        []string{kb},
+				SelectFields: selectFields,
+				Filter:       filter,
+				Offset:       offset,
+				Limit:        structureLookupBatch,
+			})
+			if err != nil {
+				return fmt.Errorf("structure merge load existing rows: %w", err)
+			}
+			for _, row := range res.Chunks {
+				applyRow(row)
+			}
+			if len(res.Chunks) < structureLookupBatch {
+				return nil
+			}
+		}
+	}
+
+	// Rows already stored under the current id scheme: fetch them by id so the
+	// source doc/chunk union does not depend on how name_kwd was stored.
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for start := 0; start < len(ids); start += structureLookupBatch {
+		end := min(start+structureLookupBatch, len(ids))
+		if err := lookup(map[string]interface{}{
+			"id":                  ids[start:end],
+			"knowledge_graph_kwd": []string{"entity", "relation"},
+		}); err != nil {
+			return nil, err
+		}
+	}
+	// Rows stored under an older id scheme: find them by the identity fields so
+	// they are still superseded instead of accumulating as orphans.
+	batchedLookup := func(field string, values []string, extra map[string]interface{}) error {
+		for start := 0; start < len(values); start += structureLookupBatch {
+			end := min(start+structureLookupBatch, len(values))
+			filter := map[string]interface{}{field: values[start:end]}
+			for k, v := range extra {
+				filter[k] = v
+			}
+			if err := lookup(filter); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := batchedLookup("name_kwd", entityNames, map[string]interface{}{"knowledge_graph_kwd": "entity"}); err != nil {
+		return nil, err
+	}
+	// Both endpoints narrow the relation sweep; the identity check in applyRow
+	// still rejects the cross-product pairs the filter cannot express.
+	if err := batchedLookup("from_entity_kwd", relationFroms, map[string]interface{}{
+		"knowledge_graph_kwd": "relation",
+		"to_entity_kwd":       relationTos,
+	}); err != nil {
+		return nil, err
+	}
+
+	ids = ids[:0]
 	for id := range stale {
 		ids = append(ids, id)
 	}
