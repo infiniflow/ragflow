@@ -90,7 +90,7 @@ const ToolTimelineItem = ({
           <TimelineItem
             key={'tool_' + idx}
             step={idx}
-            className="group-data-[orientation=vertical]/timeline:ms-10 group-data-[orientation=vertical]/timeline:not-last:pb-8"
+            className="min-w-0 group-data-[orientation=vertical]/timeline:ms-10 group-data-[orientation=vertical]/timeline:not-last:pb-8"
           >
             <TimelineHeader>
               <TimelineSeparator
@@ -213,7 +213,7 @@ const ToolTimelineItem = ({
                                   <div className="text-sm font-medium leading-none">
                                     {key}
                                   </div>
-                                  <div className="text-sm text-muted-foreground mt-1">
+                                  <div className="min-w-0 max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-muted-foreground mt-1">
                                     {typeof val === 'string'
                                       ? val
                                       : JSON.stringify(val)}
