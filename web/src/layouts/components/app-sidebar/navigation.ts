@@ -99,7 +99,7 @@ export const IntegrationChildren: IntegrationChild[] = [
   {
     key: 'model',
     path: `${Routes.Integrations}${Routes.Model}`,
-    labelKey: 'sidebar.models',
+    labelKey: 'setting.model',
   },
   {
     key: 'data-source',

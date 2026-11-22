@@ -16,6 +16,10 @@ import message from '@/components/ui/message';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchAgent, useSaveAgent } from '@/hooks/use-agent-request';
+import {
+  ModelResourceAccessUserIdContext,
+  ModelResourceTenantIdContext,
+} from '@/hooks/use-llm-request';
 import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
 import { AgentEditGuard } from '@/ee/pages/agent/agent-edit-guard';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -36,7 +40,7 @@ import { DropdownProvider } from './canvas/context';
 import { CanvasChecklist } from './components/canvas-checklist';
 import { PublishConfirmDialog } from './components/publish-confirm-dialog';
 import { Operator } from './constant';
-import { OwnerTenantIdContext } from './context';
+import { ResourceTenantIdContext } from './context';
 import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useBuildDslData } from './hooks/use-build-dsl';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
@@ -111,10 +115,11 @@ export default function Agent() {
     },
     [saveGraph],
   );
-  const { data: agentDetail } = useFetchAgent();
+  const { data: agentDetail, loading: agentLoading } = useFetchAgent();
   // The checklist displays all issues; Run separately checks blocking rules.
   const { issues } = useCanvasChecklist({
-    ownerTenantId: agentDetail?.tenant_id,
+    resourceTenantId: agentDetail?.tenant_id,
+    ownerUserId: agentLoading ? null : (agentDetail?.user_id ?? null),
     canvasID: id,
   });
   const { buildDslData } = useBuildDslData();
@@ -345,16 +350,22 @@ export default function Agent() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <OwnerTenantIdContext.Provider value={agentDetail?.tenant_id}>
-        <ReactFlowProvider>
-          <DropdownProvider>
-            <AgentCanvas
-              drawerVisible={chatDrawerVisible}
-              hideDrawer={hideChatDrawer}
-            ></AgentCanvas>
-          </DropdownProvider>
-        </ReactFlowProvider>
-      </OwnerTenantIdContext.Provider>
+      <ModelResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>
+        <ModelResourceAccessUserIdContext.Provider
+          value={agentLoading ? null : (agentDetail?.user_id ?? null)}
+        >
+          <ResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>
+            <ReactFlowProvider>
+              <DropdownProvider>
+                <AgentCanvas
+                  drawerVisible={chatDrawerVisible}
+                  hideDrawer={hideChatDrawer}
+                ></AgentCanvas>
+              </DropdownProvider>
+            </ReactFlowProvider>
+          </ResourceTenantIdContext.Provider>
+        </ModelResourceAccessUserIdContext.Provider>
+      </ModelResourceTenantIdContext.Provider>
       {embedVisible && (
         <EmbedDialog
           visible={embedVisible}

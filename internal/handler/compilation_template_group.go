@@ -18,8 +18,6 @@ package handler
 
 import (
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
-	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -36,15 +34,15 @@ func NewCompilationTemplateGroupHandler(svc *service.CompilationTemplateGroupSer
 	return &CompilationTemplateGroupHandler{compilationTemplateGroupService: svc}
 }
 
-// List returns the tenant's compilation template groups with their nested
-// templates and pagination.
+// List returns the selected user's compilation template groups in the current
+// tenant with their nested templates and pagination.
 //
 //	@Summary List compilation template groups
 //	@Tags compilation template group
 //	@Security ApiKeyAuth
 //	@Param keywords query string false "name keyword filter"
 //	@Param scope query string false "scope filter (file|dataset)"
-//	@Param tenant_id query string false "tenant whose groups are listed (defaults to the current user)"
+//	@Param access_user_id query string false "user whose groups are listed (defaults to the current user)"
 //	@Param page query int false "page number" default(1)
 //	@Param page_size query int false "items per page" default(30)
 //	@Param orderby query string false "order field" default(create_time)
@@ -61,24 +59,13 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 
 	keywords := c.Query("keywords")
 	scope := c.Query("scope")
-	tenantID := c.Query("tenant_id")
 	ctx := c.Request.Context()
-	if tenantID == "" {
-		tenantID = permission.TenantIDFromContext(ctx)
-		if tenantID == "" {
-			tenantID = permission.UserIDFromContext(ctx)
-		}
-	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(
-		ctx, tenantID, permission.TenantMember,
-	); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
+	accessUserID := c.Query("access_user_id")
 	orderby := c.DefaultQuery("orderby", "create_time")
 	desc := c.DefaultQuery("desc", "true") != "false"
 	terms := orderTermsFromQuery(c, orderby, desc)
 
-	groups, err := h.compilationTemplateGroupService.ListSaved(ctx, tenantID, keywords, scope, terms)
+	groups, err := h.compilationTemplateGroupService.ListSaved(ctx, accessUserID, keywords, scope, terms)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return

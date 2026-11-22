@@ -122,7 +122,7 @@ func mcpListDatasets(ctx context.Context, ds *dataset.DatasetService, page, page
 	}
 	data, total, _, err := ds.ListDatasets(ctx,
 		"", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}},
-		"", nil, "", nil, "",
+		"", nil, "", "", nil, "",
 	)
 	return data, total, err
 }

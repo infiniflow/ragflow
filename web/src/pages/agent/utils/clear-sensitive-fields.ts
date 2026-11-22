@@ -1,5 +1,6 @@
 import { Operator } from '@/constants/agent';
 import { cloneDeepWith, get, isPlainObject } from 'lodash';
+import { embeddedToolName, isPerplexityOperator } from './perplexity-tool-name';
 
 const apiKeyOperators = [
   Operator.TavilySearch,
@@ -67,6 +68,7 @@ function isNodeLabelApiKeyOperator(value: unknown) {
     isQueritOperator(value) ||
     isSearch1APIOperator(value) ||
     isAnySearchOperator(value) ||
+    isPerplexityOperator(value) ||
     nodeLabelApiKeyOperators.includes(value)
   );
 }
@@ -104,7 +106,8 @@ export function clearSensitiveFields<T>(obj: T): T {
       (apiKeyOperators.includes(value.component_name) ||
         isQueritOperator(value.component_name) ||
         isSearch1APIOperator(value.component_name) ||
-        isAnySearchOperator(value.component_name)) &&
+        isAnySearchOperator(embeddedToolName(value)) ||
+        isPerplexityOperator(embeddedToolName(value))) &&
       get(value, 'params.api_key')
     ) {
       return { ...value, params: { ...value.params, api_key: '' } };

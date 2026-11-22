@@ -5,14 +5,13 @@ jest.mock('@/constants/agent', () => ({
     Google: 'Google',
     KeenableSearch: 'KeenableSearch',
     YouComSearch: 'YouComSearch',
+    PerplexitySearch: 'PerplexitySearch',
     SofyaSearch: 'SofyaSearch',
     BGPT: 'Bing',
     QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
     Search1APISearch: 'Search1APISearch',
     Search1APICrawl: 'Search1APICrawl',
-    AnySearchSearch: 'AnySearchSearch',
-    AnySearchDiscover: 'AnySearchDiscover',
     Begin: 'Begin',
   },
   AgentDialogueMode: { Webhook: 'Webhook' },
@@ -238,6 +237,151 @@ describe('clearSensitiveFields', () => {
   );
 
   it.each([
+    'PerplexitySearch',
+    'perplexitysearch',
+    'perplexity',
+    'perplexity_search',
+    ' PerplexitySearch ',
+    ' perplexity ',
+    '\tperplexity_search\n',
+  ])(
+    'clears a %s key from a canvas node, a tool record and a nested agent tool',
+    (operator) => {
+      const dsl = {
+        graph: {
+          nodes: [
+            {
+              data: {
+                label: operator,
+                form: {
+                  api_key: 'pplx-graph-secret',
+                  search_type: 'fast',
+                },
+              },
+            },
+          ],
+        },
+        tools: [
+          {
+            component_name: operator,
+            params: {
+              api_key: 'pplx-tool-secret',
+              top_n: 5,
+            },
+          },
+        ],
+        components: {
+          agent: {
+            obj: {
+              component_name: 'Agent',
+              params: {
+                tools: [
+                  {
+                    component_name: operator,
+                    params: { api_key: 'pplx-nested-secret', country: 'US' },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+      expect(sanitized.graph.nodes[0].data.form.search_type).toBe('fast');
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.top_n).toBe(5);
+      expect(
+        sanitized.components.agent.obj.params.tools[0].params.api_key,
+      ).toBe('');
+      expect(
+        sanitized.components.agent.obj.params.tools[0].params.country,
+      ).toBe('US');
+      expect(dsl.graph.nodes[0].data.form.api_key).toBe('pplx-graph-secret');
+      expect(dsl.tools[0].params.api_key).toBe('pplx-tool-secret');
+      expect(dsl.components.agent.obj.params.tools[0].params.api_key).toBe(
+        'pplx-nested-secret',
+      );
+    },
+  );
+
+  it.each([
+    ['tool_name', { tool_name: 'PerplexitySearch' }],
+    ['name', { name: ' perplexity ' }],
+    [
+      'blank component_name then tool_name',
+      { component_name: '', tool_name: 'perplexity_search' },
+    ],
+    [
+      'blank component_name and tool_name then name',
+      { component_name: '  ', tool_name: '', name: 'perplexitysearch' },
+    ],
+  ])(
+    'clears a Perplexity tool record named through %s, like the backend resolves it',
+    (_label, discriminator) => {
+      const dsl = {
+        tools: [
+          {
+            ...discriminator,
+            params: { api_key: 'pplx-tool-secret', top_n: 5 },
+          },
+        ],
+        components: {
+          agent: {
+            obj: {
+              component_name: 'Agent',
+              params: {
+                tools: [
+                  {
+                    component_name: 'Agent',
+                    params: {
+                      tools: [
+                        {
+                          ...discriminator,
+                          params: { api_key: 'pplx-nested-secret' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.top_n).toBe(5);
+      expect(
+        sanitized.components.agent.obj.params.tools[0].params.tools[0].params
+          .api_key,
+      ).toBe('');
+      expect(dsl.tools[0].params.api_key).toBe('pplx-tool-secret');
+      expect(
+        dsl.components.agent.obj.params.tools[0].params.tools[0].params.api_key,
+      ).toBe('pplx-nested-secret');
+    },
+  );
+
+  it('keeps the key when component_name names another tool even if name says Perplexity', () => {
+    const dsl = {
+      tools: [
+        {
+          component_name: 'Retrieval',
+          name: 'perplexity',
+          params: { api_key: 'not-a-perplexity-record' },
+        },
+      ],
+    };
+
+    expect(clearSensitiveFields(dsl)).toEqual(dsl);
+  });
+
+  it.each([
     'AnySearchSearch',
     'AnySearchDiscover',
     'anysearchsearch',
@@ -364,4 +508,21 @@ describe('clearSensitiveFields', () => {
       'component-token-secret',
     );
   });
+  it.each(['tool_name', 'name'])(
+    'clears AnySearch credentials identified by %s in tool records',
+    (field) => {
+      const dsl = {
+        tools: [
+          {
+            [field]: 'anysearch_search',
+            params: { api_key: 'local-test-secret', top_n: 3 },
+          },
+        ],
+      };
+      const sanitized = clearSensitiveFields(dsl);
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.top_n).toBe(3);
+      expect(dsl.tools[0].params.api_key).toBe('local-test-secret');
+    },
+  );
 });

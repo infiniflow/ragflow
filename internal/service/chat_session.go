@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -125,6 +124,7 @@ type ChatSessionPayload struct {
 	Name       *string                  `json:"name,omitempty"`
 	Messages   []map[string]interface{} `json:"messages"`
 	UserID     *string                  `json:"user_id,omitempty"`
+	Source     entity.ChatSessionSource `json:"source"`
 	Avatar     *string                  `json:"avatar,omitempty"`
 	CreateDate *time.Time               `json:"create_date,omitempty"`
 	UpdateDate *time.Time               `json:"update_date,omitempty"`
@@ -257,6 +257,7 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, chatID string, r
 		Name:     &name,
 		Message:  messagesJSON,
 		UserID:   &userID,
+		Source:   entity.ChatSessionSourceNormal,
 	}
 
 	if err = s.chatSessionDAO.Create(ctx, dao.DB, conv); err != nil {
@@ -496,7 +497,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, chatID, sessionI
 	updateFields := make(map[string]interface{})
 	for k, v := range req {
 		switch k {
-		case "id", "dialog_id", "chat_id", "user_id":
+		case "id", "dialog_id", "chat_id", "user_id", "source":
 			continue
 		default:
 			updateFields[k] = v
@@ -972,26 +973,7 @@ func (s *ChatSessionService) updateChunkWeight(ctx context.Context, tenantID, ch
 }
 
 func floatValue(value interface{}) (float64, bool) {
-	switch v := value.(type) {
-	case float64:
-		return v, true
-	case float32:
-		return float64(v), true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case int32:
-		return float64(v), true
-	case json.Number:
-		f, err := v.Float64()
-		return f, err == nil
-	case string:
-		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-		return f, err == nil
-	default:
-		return 0, false
-	}
+	return common.ToFloat(value)
 }
 
 func sessionHistoryOptions(options ...dao.ConversationHistoryOptions) dao.ConversationHistoryOptions {
@@ -1033,6 +1015,7 @@ func (s *ChatSessionService) buildSessionPayload(session *entity.ChatSession, di
 		Name:       session.Name,
 		Messages:   messages,
 		UserID:     session.UserID,
+		Source:     session.Source,
 		Avatar:     avatar,
 		CreateDate: session.CreateDate,
 		UpdateDate: session.UpdateDate,
@@ -1651,6 +1634,7 @@ func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, cha
 		Name:     &name,
 		Message:  msgJSON,
 		UserID:   &userID,
+		Source:   entity.ChatSessionSourceNormal,
 	}
 	session.ID = common.GenerateUUID()
 	if err := s.chatSessionDAO.Create(ctx, dao.DB, session); err != nil {
@@ -1682,6 +1666,7 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 		DialogID: dialogID,
 		Name:     &name,
 		Message:  messagesJSON,
+		Source:   entity.ChatSessionSourceChatChannel,
 	}
 	if err = s.chatSessionDAO.Create(ctx, dao.DB, session); err != nil {
 		session, rereadErr := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)

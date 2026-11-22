@@ -56,9 +56,9 @@ var chatOrderExpressions = []string{
 func seedOrderableChats(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	chats := []entity.Chat{
-		{ID: "c-1", TenantID: "t1", Name: stringPtr("zulu"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(100)}},
-		{ID: "c-2", TenantID: "t1", Name: stringPtr("mike"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(200)}},
-		{ID: "c-3", TenantID: "t1", Name: stringPtr("alpha"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(300)}},
+		{ID: "c-1", UserID: "t1", TenantID: "t1", Name: stringPtr("zulu"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(100)}},
+		{ID: "c-2", UserID: "t1", TenantID: "t1", Name: stringPtr("mike"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(200)}},
+		{ID: "c-3", UserID: "t1", TenantID: "t1", Name: stringPtr("alpha"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(300)}},
 	}
 	for i := range chats {
 		chats[i].LLMID = "llm-1"
@@ -222,6 +222,7 @@ func seedChatRowsWithCreateTime(t *testing.T, db *gorm.DB, tenantID string, coun
 		createTime := int64(i * 100)
 		chat := entity.Chat{
 			ID:           fmt.Sprintf("c-%d", i),
+			UserID:       tenantID,
 			TenantID:     tenantID,
 			Name:         &name,
 			LLMID:        "llm-1",

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"encoding/json"
 	"image"
 	"strings"
 	"testing"
@@ -224,6 +225,36 @@ func TestPDFParseResultToJSONConvertsPositiveSourcePageNumbers(t *testing.T) {
 	}
 }
 
+func TestPDFParseResultToJSONAnchorsCrossPageTable(t *testing.T) {
+	parsed := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{{
+			Text:       "<table><tr><td>Cross-page table</td></tr></table>",
+			LayoutType: deepdoctype.LayoutTypeTable,
+			Positions: []deepdoctype.Position{{
+				PageNumbers: []int{6, 7},
+				Left:        43,
+				Right:       550,
+				Top:         520,
+				Bottom:      772,
+			}},
+		}},
+	}
+	res := pdfParseResultToJSON("cross-page.pdf", parsed)
+	if res.Err != nil || len(res.JSON) != 1 {
+		t.Fatalf("got %d items, err = %v, want one table", len(res.JSON), res.Err)
+	}
+	item := res.JSON[0].ToMap()
+	want := `[[7,43,550,520,772]]`
+	for _, key := range []string{"_pdf_positions", "positions"} {
+		if got, err := json.Marshal(item[key]); err != nil || string(got) != want {
+			t.Errorf("%s = %s, err = %v, want %s", key, got, err, want)
+		}
+	}
+	if got := item["page_number"]; got != 7 {
+		t.Errorf("page_number = %v, want 7", got)
+	}
+}
+
 func TestPDFParseResultToJSON_EmptySectionsStillEmitPlaceholder(t *testing.T) {
 	res := pdfParseResultToJSON("empty.pdf", &deepdoctype.ParseResult{})
 	if res.Err != nil {
@@ -407,7 +438,7 @@ func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
 // dispatcher-handled OCR methods remain recognized by the selector vocabulary.
 func TestPDFParseMethodTablesAgree(t *testing.T) {
 	const unsetSentinel = ""
-	dispatcherHandled := map[string]bool{"monkeyocr": true, "monkeyocrv2": true, "paddleocr": true}
+	dispatcherHandled := map[string]bool{"monkeyocr": true, "monkeyocrv2": true, "paddleocr": true, "unlimited_ocr": true}
 	reachable := make(map[string]bool, len(pdfParseMethodSpellings))
 	for spelling, canonical := range pdfParseMethodSpellings {
 		if canonical == unsetSentinel {

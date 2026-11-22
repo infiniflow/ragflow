@@ -22,18 +22,18 @@ import (
 	"errors"
 	"fmt"
 	"math"
-
-	"ragflow/internal/agentic_rag"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	"ragflow/internal/permission"
-	permissionresponse "ragflow/internal/permission/response"
 	"strings"
 	"unicode/utf8"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/agentic_rag"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/dao/transaction"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 var DefaultRerankModels = map[string]struct{}{
@@ -157,11 +157,15 @@ func (s *ChatService) ListChats(ctx context.Context, status, keywords, id, name 
 		}
 		chat.Chat.OperatorPermission = access.PermissionMask
 		kbNames, datasetIDs := s.getDatasetNamesAndIDs(ctx, chat.KBIDs)
+		nickname := ""
+		if chat.Nickname != nil {
+			nickname = *chat.Nickname
+		}
 		chatsWithKBNames = append(chatsWithKBNames, &ChatWithKBNames{
 			Chat:         &chat.Chat,
 			KBNames:      kbNames,
 			DatasetIDs:   datasetIDs,
-			Nickname:     ownerNickname(chat.Nickname, chat.TenantID),
+			Nickname:     nickname,
 			TenantAvatar: chat.TenantAvatar,
 		})
 	}
@@ -170,13 +174,6 @@ func (s *ChatService) ListChats(ctx context.Context, status, keywords, id, name 
 		Total: total,
 		Chats: chatsWithKBNames,
 	}, nil
-}
-
-func ownerNickname(nickname *string, tenantID string) string {
-	if nickname != nil && strings.TrimSpace(*nickname) != "" {
-		return *nickname
-	}
-	return tenantID
 }
 
 type CreateChatRequest struct {

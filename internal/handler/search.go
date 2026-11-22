@@ -55,10 +55,7 @@ func (h *SearchHandler) SetCompletionDependencies(modelFactory *service.ModelFac
 
 func getOwnerIDs(c *gin.Context) []string {
 	values := c.QueryArray("owner_ids")
-	if len(values) == 0 {
-		values = c.QueryArray("owner_id")
-	}
-	ownerIDs := make([]string, 0, len(values))
+	var ownerIDs []string
 	for _, value := range values {
 		for _, ownerID := range strings.Split(value, ",") {
 			ownerID = strings.TrimSpace(ownerID)
@@ -217,6 +214,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Convert to response format (same as Python get_json_result(data=search))
 	result := map[string]interface{}{
 		"id":            search.ID,
+		"user_id":       search.UserID,
 		"tenant_id":     search.TenantID,
 		"name":          search.Name,
 		"description":   search.Description,
@@ -414,14 +412,14 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			ok = writer.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = writer.Write(c, sseAnswer(delta.Value, nil, false, "success"))
 		case service.AskDeltaMarker:
 			ok = writer.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
 			hadError = true
 			ok = writer.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			ok = writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = writer.Write(c, sseAnswer(delta.Value, delta.Refs, true, delta.Message))
 		}
 		if !ok || ctx.Err() != nil {
 			cancel()

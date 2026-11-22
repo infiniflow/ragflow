@@ -36,6 +36,13 @@ func (s *DocumentService) ApplyDatasetParserConfig(ctx context.Context, datasetI
 	}
 	result := &ApplyDatasetParserConfigResponse{DatasetID: datasetID}
 	code := common.CodeServerError
+	// Every document the transaction rewrites, so the change lands on the
+	// dataset timeline as one version instead of an untraceable row update, and
+	// its settings land in the document's own history. The rows are built from
+	// the settings the transaction already resolved, which saves reading the
+	// documents back (parser_config is the largest column they carry).
+	changedIDs := make([]string, 0)
+	changedDocs := make([]*entity.Document, 0)
 	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var kb entity.Knowledgebase
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -158,6 +165,16 @@ func (s *DocumentService) ApplyDatasetParserConfig(ctx context.Context, datasetI
 					return err
 				}
 				result.UpdatedDocuments += int64(len(ids))
+				changedIDs = append(changedIDs, ids...)
+				for _, id := range ids {
+					changedDocs = append(changedDocs, &entity.Document{
+						ID: id, KbID: datasetID,
+						ParserID:          settings.parserID,
+						PipelineID:        settings.pipelineID,
+						PipelineVersionID: settings.versionID,
+						ParserConfig:      settings.config,
+					})
+				}
 			}
 			lastID = docs[len(docs)-1].ID
 		}
@@ -165,6 +182,16 @@ func (s *DocumentService) ApplyDatasetParserConfig(ctx context.Context, datasetI
 	})
 	if err != nil {
 		return nil, code, err
+	}
+	if len(changedIDs) > 0 {
+		// The version and the settings it names are one write: a history that
+		// could not take them fails the request rather than leaving documents
+		// that moved with no state a replay can read.
+		if err := recordDocumentVersionSettingsTx(ctx, datasetID,
+			documentVersionChanges(entity.DatasetVersionChangeActionUpdate, documentNamesByID(ctx, changedIDs)),
+			changedDocs); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to record the settings history: %w", err)
+		}
 	}
 	return result, common.CodeSuccess, nil
 }

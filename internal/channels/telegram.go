@@ -39,7 +39,6 @@ const (
 	defaultTelegramAPIBaseURL = "https://api.telegram.org"
 	telegramPollTimeout       = 30 * time.Second
 	telegramHTTPTimeout       = 40 * time.Second
-	telegramReconnectDelay    = 3 * time.Second
 )
 
 type telegramAccount struct {
@@ -223,6 +222,7 @@ func (c *telegramChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 
 // run drops queued updates and consumes Telegram updates until stopped.
 func (c *telegramChannel) run(ctx context.Context) {
+	attempts := 0
 	for ctx.Err() == nil {
 		err := c.callAPI(ctx, "deleteWebhook", map[string]any{
 			"drop_pending_updates": true,
@@ -231,7 +231,8 @@ func (c *telegramChannel) run(ctx context.Context) {
 			break
 		}
 		common.Error("telegram: failed to start polling", err, zap.String("account_id", c.account.AccountID))
-		if !waitForTelegramRetry(ctx) {
+		attempts++
+		if !waitForContext(ctx, channelRetryDelay(attempts)) {
 			return
 		}
 	}
@@ -239,6 +240,7 @@ func (c *telegramChannel) run(ctx context.Context) {
 		return
 	}
 
+	attempts = 0
 	for ctx.Err() == nil {
 		updates, err := c.getUpdates(ctx)
 		if err != nil {
@@ -246,11 +248,13 @@ func (c *telegramChannel) run(ctx context.Context) {
 				return
 			}
 			common.Error("telegram: polling failed", err, zap.String("account_id", c.account.AccountID))
-			if !waitForTelegramRetry(ctx) {
+			attempts++
+			if !waitForContext(ctx, channelRetryDelay(attempts)) {
 				return
 			}
 			continue
 		}
+		attempts = 0
 		for _, update := range updates {
 			if update.UpdateID >= c.offset {
 				c.offset = update.UpdateID + 1
@@ -396,15 +400,4 @@ func (c *telegramChannel) callAPI(ctx context.Context, method string, params map
 		}
 	}
 	return nil
-}
-
-func waitForTelegramRetry(ctx context.Context) bool {
-	timer := time.NewTimer(telegramReconnectDelay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
 }

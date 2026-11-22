@@ -26,6 +26,7 @@ import Search1APICrawlForm from '../form/search1api-crawl-form';
 import Search1APIForm from '../form/search1api-form';
 import AnySearchSearchForm from '../form/anysearch-search-form';
 import YouComForm from '../form/youcom-form';
+import PerplexityForm from '../form/perplexity-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
@@ -35,6 +36,7 @@ import QueritContentsForm from '../form/querit-contents-form';
 import QueritForm from '../form/querit-form';
 import BGPTForm from '../form/bgpt-form';
 import RetrievalForm from '../form/retrieval-form/next';
+import ScoredSwitchForm from '../form/scored-switch-form';
 import SearXNGForm from '../form/searxng-form';
 import StringTransformForm from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
@@ -89,6 +91,9 @@ export const FormConfigMap: Partial<Record<Operator, OperatorFormConfig>> = {
   [Operator.YouComSearch]: {
     component: YouComForm,
   },
+  [Operator.PerplexitySearch]: {
+    component: PerplexityForm,
+  },
   [Operator.SofyaSearch]: {
     component: SofyaForm,
   },
@@ -130,6 +135,9 @@ export const FormConfigMap: Partial<Record<Operator, OperatorFormConfig>> = {
   },
   [Operator.Switch]: {
     component: SwitchForm,
+  },
+  [Operator.ScoredSwitch]: {
+    component: ScoredSwitchForm,
   },
   [Operator.WenCai]: {
     component: WenCaiForm,

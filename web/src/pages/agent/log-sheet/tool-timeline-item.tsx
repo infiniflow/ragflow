@@ -34,6 +34,7 @@ type IToolIcon =
   | Operator.QueritSearch
   | Operator.KeenableSearch
   | Operator.YouComSearch
+  | Operator.PerplexitySearch
   | Operator.SofyaSearch
   | Operator.Search1APISearch
   | Operator.Search1APICrawl

@@ -327,9 +327,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"remove_toc":           false,
 			"remove_header_footer": false,
 		},
-		"markdown": {
-			"remove_toc": false,
-		},
+		"markdown":  {},
 		"text&code": {},
 		"html": {
 			"remove_toc":           false,

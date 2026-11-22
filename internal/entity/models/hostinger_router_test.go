@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/common"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -231,14 +233,14 @@ func TestHostingerRouterListModelsKeepsCatalogueTypes(t *testing.T) {
 		got[m.Name] = m.ModelTypes
 	}
 	for _, name := range []string{"claude-sonnet-5", "gpt-5-mini-eu"} {
-		if !containsModelType(got[name], "vision") || !containsModelType(got[name], "chat") {
+		if !slices.ContainsFunc(got[name], func(t string) bool { return strings.EqualFold(t, "vision") }) || !slices.ContainsFunc(got[name], func(t string) bool { return strings.EqualFold(t, "chat") }) {
 			t.Errorf("%s types=%v, want chat and vision", name, got[name])
 		}
 	}
-	if !containsModelType(got["text-embedding-3-small"], "embedding") {
+	if !slices.ContainsFunc(got["text-embedding-3-small"], func(t string) bool { return strings.EqualFold(t, "embedding") }) {
 		t.Errorf("text-embedding-3-small types=%v, want embedding", got["text-embedding-3-small"])
 	}
-	if !containsModelType(got["glm-5.2"], "chat") {
+	if !slices.ContainsFunc(got["glm-5.2"], func(t string) bool { return strings.EqualFold(t, "chat") }) {
 		t.Errorf("glm-5.2 types=%v, want name-inferred chat", got["glm-5.2"])
 	}
 }

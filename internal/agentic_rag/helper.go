@@ -708,16 +708,10 @@ func zeroHitNextStep(tool string) string {
 
 // dedupStrings returns s in first-occurrence order without duplicates.
 func dedupStrings(s []string) []string {
-	seen := make(map[string]struct{}, len(s))
-	out := make([]string, 0, len(s))
-	for _, v := range s {
-		if _, dup := seen[v]; dup {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
+	if s == nil {
+		return []string{}
 	}
-	return out
+	return common.Deduplicate(s)
 }
 
 // formatChunksXML serialises the ordered chunks of a single document into the

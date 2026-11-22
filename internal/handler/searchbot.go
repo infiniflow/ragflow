@@ -27,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
@@ -211,6 +212,10 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	}
 
 	svcReq := toRetrievalServiceRequest(&req)
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
+		common.RespondSuccess(c, service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, err.Error())
+		return
+	}
 	ctx := c.Request.Context()
 	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq)
 	if err != nil {
@@ -335,14 +340,14 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false, "success"))
 		case service.AskDeltaMarker:
 			ok = h.sseWriter.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
 			hadError = true
 			ok = h.sseWriter.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true, delta.Message))
 		}
 		if !ok || ctx.Err() != nil {
 			cancel()
@@ -497,13 +502,13 @@ type askSSEData struct {
 	EndToThink   bool        `json:"end_to_think,omitempty"`
 }
 
-func sseAnswer(answer string, refs interface{}, final bool) string {
+func sseAnswer(answer string, refs interface{}, final bool, message string) string {
 	if refs == nil {
 		refs = map[string]interface{}{}
 	}
 	payload := ssePayload{
 		Code:    0,
-		Message: "success",
+		Message: message,
 		Data: askSSEData{
 			Answer:    answer,
 			Reference: refs,

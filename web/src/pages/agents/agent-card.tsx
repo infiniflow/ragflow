@@ -139,7 +139,11 @@ export function AgentCard({
           <MoreButton />
         </AgentDropdown>
       }
-      sharedBadge={<SharedBadge>{data.nickname}</SharedBadge>}
+      sharedBadge={
+        <SharedBadge userId={data.user_id} ownerNickname={data.nickname}>
+          {data.nickname}
+        </SharedBadge>
+      }
       onClick={handleCardClick}
       icon={<AgentTypeIcon data={data} />}
       extra={<AgentTags tags={data.tags} />}

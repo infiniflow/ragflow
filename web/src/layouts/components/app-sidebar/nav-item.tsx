@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { RAGFlowTooltip } from '@/components/ui/tooltip';
+import { useVisibleIntegrationChildren } from '@/ee/hooks/use-visible-integration-children';
 import { cn } from '@/lib/utils';
 import { LucideChevronDown } from 'lucide-react';
 import {
@@ -9,9 +10,11 @@ import {
   type PropsWithChildren,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router';
 import {
   IntegrationChildren,
   IntegrationsNavItem,
+  matchesPath,
   NavItem,
   useActiveNavigation,
 } from './navigation';
@@ -68,8 +71,13 @@ export function NavItemLink({ item }: { item: NavItem }) {
 
 export function IntegrationsNavGroup() {
   const { t } = useTranslation();
-  const { activeIntegrationKey } = useActiveNavigation();
+  const { pathname } = useLocation();
   const { collapsed } = useSidebarCollapse();
+  const integrationChildren =
+    useVisibleIntegrationChildren(IntegrationChildren);
+  const activeIntegrationKey = integrationChildren.find((child) =>
+    matchesPath(pathname, child.path),
+  )?.key;
   const [expanded, setExpanded] = useState(Boolean(activeIntegrationKey));
 
   // Follow navigation into an integrations page even when the user
@@ -135,7 +143,7 @@ export function IntegrationsNavGroup() {
             collapsed ? 'items-center' : 'max-md:items-center',
           )}
         >
-          {IntegrationChildren.map((child) => {
+          {integrationChildren.map((child) => {
             const isChildActive = activeIntegrationKey === child.key;
             return (
               <li key={child.key}>
@@ -176,3 +184,5 @@ export function IntegrationsNavGroup() {
     </div>
   );
 }
+
+// Enterprise: integration children use an EE/OSS hook for role-based visibility.

@@ -47,11 +47,16 @@ type Chat struct {
 	// tag would force GORM to overwrite an explicit zero (e.g.
 	// similarity_threshold=0) with the column default during Create, breaking
 	// the API contract that permits 0.
+	//
+	// TopK carries no `type:` tag either: the MySQL driver derives an integer
+	// column from the Go field's width (int64 -> bigint) and ignores the tag, so
+	// declaring int only made the manual migration and AutoMigrate rewrite the
+	// column in turn on every startup.
 	SimilarityThreshold    float64   `gorm:"column:similarity_threshold" json:"similarity_threshold"`
 	VectorSimilarityWeight float64   `gorm:"column:vector_similarity_weight" json:"vector_similarity_weight"`
 	TopN                   int64     `gorm:"column:top_n" json:"top_n"`
 	RerankCandidatesCount  int64     `gorm:"column:rerank_candidates_count" json:"rerank_candidates_count"`
-	TopK                   int64     `gorm:"column:top_k;type:int" json:"top_k"`
+	TopK                   int64     `gorm:"column:top_k" json:"top_k"`
 	DoRefer                string    `gorm:"column:do_refer;size:1;not null" json:"do_refer"`
 	RerankID               string    `gorm:"column:rerank_id;size:128;not null;default:''" json:"rerank_id"`
 	TenantRerankID         *string   `gorm:"column:tenant_rerank_id;size:35;index" json:"tenant_rerank_id,omitempty"`
@@ -73,14 +78,22 @@ type ChatListItem struct {
 	TenantAvatar *string `gorm:"column:tenant_avatar" json:"tenant_avatar,omitempty"`
 }
 
+type ChatSessionSource string
+
+const (
+	ChatSessionSourceNormal      ChatSessionSource = "normal"
+	ChatSessionSourceChatChannel ChatSessionSource = "chat_channel"
+)
+
 // ChatSession chat session model. Messages are hydrated from
 // the ordered message table.
 type ChatSession struct {
-	ID       string          `gorm:"column:id;primaryKey;size:32" json:"id"`
-	DialogID string          `gorm:"column:dialog_id;size:32;not null;index" json:"dialog_id"`
-	Name     *string         `gorm:"column:name;size:255;index" json:"name,omitempty"`
-	Message  json.RawMessage `gorm:"-" json:"message,omitempty"`
-	UserID   *string         `gorm:"column:user_id;size:255;index" json:"user_id,omitempty"`
+	ID       string            `gorm:"column:id;primaryKey;size:32" json:"id"`
+	DialogID string            `gorm:"column:dialog_id;size:32;not null;index" json:"dialog_id"`
+	Name     *string           `gorm:"column:name;size:255;index" json:"name,omitempty"`
+	Message  json.RawMessage   `gorm:"-" json:"message,omitempty"`
+	UserID   *string           `gorm:"column:user_id;size:255;index" json:"user_id,omitempty"`
+	Source   ChatSessionSource `gorm:"column:source;size:32;not null;default:normal" json:"source"`
 	BaseModel
 }
 

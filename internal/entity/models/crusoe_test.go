@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/common"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -87,7 +88,7 @@ func TestCrusoeProviderConfig(t *testing.T) {
 		t.Fatal("Crusoe catalog is empty")
 	}
 	for _, model := range provider.Models {
-		if !containsModelType(model.ModelTypes, "chat") {
+		if !slices.ContainsFunc(model.ModelTypes, func(t string) bool { return strings.EqualFold(t, "chat") }) {
 			t.Errorf("%s types=%v, want chat", model.Name, model.ModelTypes)
 		}
 		if model.ContextLength == nil || model.MaxOutput == nil {

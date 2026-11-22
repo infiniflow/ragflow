@@ -231,6 +231,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
+			// Doc-analyzer availability: which PDF structure/table engines this
+			// deployment can actually serve. Requires auth so the availability
+			// of internal backends is not exposed to anonymous clients.
+			v1.GET("/system/doc-analyzers", r.systemHandler.DocAnalyzers)
+
 			// Auth routes
 			auth := v1.Group("/auth")
 			{
@@ -562,12 +567,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
 
-				model.POST("/groups", r.providerHandler.CreateModelGroup)                  // CREATE MODEL GROUP
-				model.GET("/groups", r.providerHandler.ListModelGroups)                    // LIST MODEL GROUPS
-				model.GET("/groups/:group_name", r.providerHandler.ShowModelGroup)         // SHOW MODEL GROUP
-				model.DELETE("/groups/:group_name", r.providerHandler.DeleteModelGroup)    // DELETE MODEL GROUP
-				model.POST("/groups/:group_name/model", r.providerHandler.AddModelToGroup) // ADD MODEL TO GROUP
-				model.DELETE("/groups/:group_name/model", r.providerHandler.RemoveModelFromGroup)
+				model.POST("/groups", r.providerHandler.CreateModelGroup)                // CREATE MODEL GROUP
+				model.GET("/groups", r.providerHandler.ListModelGroups)                  // LIST MODEL GROUPS
+				model.GET("/groups/:group_id", r.providerHandler.ShowModelGroup)         // SHOW MODEL GROUP
+				model.DELETE("/groups/:group_id", r.providerHandler.DeleteModelGroup)    // DELETE MODEL GROUP
+				model.POST("/groups/:group_id/model", r.providerHandler.AddModelToGroup) // ADD MODEL TO GROUP
+				model.DELETE("/groups/:group_id/model", r.providerHandler.RemoveModelFromGroup)
 			}
 
 			allModels := v1.Group("/all-models", ToggleModel())

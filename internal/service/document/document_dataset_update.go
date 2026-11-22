@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -20,11 +21,17 @@ import (
 	componentpkg "ragflow/internal/ingestion/component"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service/datasetversion"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
+
+// ErrDocumentNameTaken is returned when a restore cannot put a document back
+// under its recorded name because another document of the dataset holds it.
+var ErrDocumentNameTaken = errors.New("another document of the dataset already holds that name")
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	statusInt, convErr := strconv.Atoi(status)
@@ -82,6 +89,9 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 		return result, common.CodeDataError, fmt.Errorf("dataset not found")
 	}
 
+	// changed collects the documents this call actually moved, so the dataset
+	// timeline records one version for the switch instead of one per document.
+	changed := make([]DocumentStatusChange, 0, len(accessibleDocuments))
 	for _, docID := range documentIDs {
 		doc, ok := accessibleDocuments[docID]
 		if !ok {
@@ -132,6 +142,20 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 		// and a visible 20-second oscillation.
 		s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 		result[docID] = map[string]string{"status": status}
+		changed = append(changed, DocumentStatusChange{
+			DocumentID: docID,
+			DatasetID:  datasetID,
+			Name:       documentNameOf(doc),
+			Status:     status,
+		})
+	}
+
+	// The switch takes the document's chunks out of retrieval, so it is a change
+	// to what the dataset exposes: one version for the batch, with a state row per
+	// document so a restore can put the switch back. A toggle that moved nothing
+	// records nothing.
+	if recordErr := RecordDocumentStatusChangesEE(ctx, dao.DB, datasetID, changed); recordErr != nil {
+		return result, common.CodeServerError, fmt.Errorf("documents updated but their status version was not recorded: %w", recordErr)
 	}
 
 	if hasError {
@@ -141,7 +165,9 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 }
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	datasetRef := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
+	if err := checker.CheckResource(ctx, datasetRef, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -160,6 +186,10 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 			return nil, common.CodeDataError, errors.New("the dataset doesn't own the document")
 		}
 		return nil, common.CodeServerError, err
+	}
+	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, doc, req, present); err != nil {
 		return nil, code, err
@@ -354,8 +384,22 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 	}
 
 	if present["meta_fields"] {
+		// The metadata values live in the metadata store, not on the document row, so
+		// the state being replaced is read from there. A store that is not wired
+		// answers with nothing, and the request is then taken at its word: what was
+		// just written is the change.
+		beforeMetadata := s.documentMetadataForUpdate(ctx, doc.ID)
 		if err = s.replaceDocumentMetadata(ctx, documentID, req.MetaFields); err != nil {
 			return nil, common.CodeDataError, err
+		}
+		// An edit of the values is a version of its own: the store is not rebuilt by a
+		// restore, so the timeline is what says whose metadata moved and when.
+		if configValueChanged(beforeMetadata, req.MetaFields) && kb != nil {
+			// The version is part of the edit: a change the timeline cannot name
+			// fails the request instead of leaving values no restore can reach.
+			if err := recordDocumentMetadataEditEE(ctx, kb.ID, doc, beforeMetadata, req.MetaFields); err != nil {
+				return nil, common.CodeServerError, fmt.Errorf("failed to record the metadata history: %w", err)
+			}
 		}
 	}
 	if present["name"] && req.Name != nil && (doc.Name == nil || *req.Name != *doc.Name) {
@@ -363,6 +407,18 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 			return nil, common.CodeDataError, err
 		}
 	}
+	// A save resends the settings form, so parserUpdates is filled even when
+	// nothing moved. The write stays - it also reconciles the row with the current
+	// pipeline template - but the version and the settings history below do not: a
+	// timeline entry for an edit the user never made would fill the history with
+	// no-ops, each one restorable to the state it already holds.
+	//
+	// What counts as a change is the request's own selection, its pinned pipeline
+	// version, and the parameters it submitted. A parameter the request omits is
+	// the rebuild's business, not the user's: the template fills it in.
+	parserSettingsChanged := len(parserUpdates) > 0 &&
+		(selectionChanged || versionChanged ||
+			(hasConfig && parserConfigSubmittedChanged(doc.ParserConfig, req.ParserConfig)))
 	if len(parserUpdates) > 0 {
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, parserUpdates); err != nil {
 			return nil, common.CodeDataError, err
@@ -383,6 +439,23 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 		return nil, common.CodeDataError, fmt.Errorf("database operation failed: %w", err)
 	}
 
+	if parserSettingsChanged {
+		// The document's parse settings moved, which changes what its next parse
+		// runs under, so the dataset timeline names it the same way a
+		// dataset-level configuration change does. Best effort: the settings are
+		// already written and a history row must not undo them.
+		//
+		// The settings themselves are recorded under that version, which is what a
+		// restore reads to put them back. One record: an edit that lands in the
+		// same millisecond as another still gets its own version number, so a
+		// restore can tell the two apart instead of reading one overwritten row.
+		if err := recordDocumentVersionSettingsTx(ctx, datasetID,
+			[]entity.DatasetVersionChange{documentVersionChange(entity.DatasetVersionChangeActionUpdate, updatedDoc)},
+			[]*entity.Document{updatedDoc}); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to record the settings history: %w", err)
+		}
+	}
+
 	metaFields := map[string]interface{}{}
 	if s.docEngine != nil && s.metadataSvc != nil {
 		metaFields, _ = s.GetDocumentMetadataByID(ctx, updatedDoc.ID)
@@ -393,6 +466,17 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 		return nil, common.CodeServerError, err
 	}
 	return resp, common.CodeSuccess, nil
+}
+
+func activeTaskStatusLabel(status string) string {
+	switch status {
+	case common.CREATED, common.SCHEDULED:
+		return "Queued"
+	case common.RUNNING, common.STOPPING:
+		return "Parsing"
+	default:
+		return status
+	}
 }
 
 // validateDocumentModifiable rejects configuration edits while the document is
@@ -414,7 +498,7 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	switch {
 	case common.IsActiveTaskStatus(task.Status):
 		return common.CodeDataError, fmt.Errorf(
-			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", task.Status)
+			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", activeTaskStatusLabel(task.Status))
 	case common.IsTerminalTaskStatus(task.Status):
 		return common.CodeSuccess, nil
 	default:
@@ -563,9 +647,88 @@ func validateMetaFields(meta map[string]any) error {
 	return nil
 }
 
-// updateDocumentNameOnly renames a document and re-tokenizes its chunks' title
-// fields with the dataset language, the way ingestion tokenized them.
+// updateDocumentNameOnly renames a document and records the rename as a version
+// of its own: a name is metadata, not content, so the timeline says who renamed
+// which file while the document set is left alone (it is keyed on ids, and the
+// names it carries are a snapshot of the moment it was taken).
 func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, newName string) error {
+	// Captured before the row moves: a version older than this rename has no
+	// rename of its own to answer with, so this entry carries the name it replaced
+	// and is what that older version reads (see datasetVersionDocumentNames).
+	previousName := ""
+	if doc.Name != nil {
+		previousName = *doc.Name
+	}
+	if err := s.renameDocumentRow(ctx, doc, kb, newName); err != nil {
+		return err
+	}
+	// Recorded after the row moved: the index title fields the rename also writes
+	// are a mirror of it, and a failure there does not undo the rename.
+	if kb != nil {
+		if _, err := datasetversion.RecordContentVersionChangesOwnTx(
+			ctx, kb.ID, entity.DatasetVersionKindDocumentRename,
+			[]entity.DatasetVersionChange{{
+				DocID:        doc.ID,
+				Entity:       entity.DatasetVersionChangeEntityDocument,
+				Action:       entity.DatasetVersionChangeActionRename,
+				Name:         newName,
+				PreviousName: previousName,
+			}}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RenameDocumentForRestore puts a document back under the name it carried at the
+// version being restored, and reports whether it moved.
+//
+// No version is recorded here: the restore that calls this records one version for
+// the whole operation, and a rename version written mid-restore would describe a
+// state the restore itself is undoing. A name another document of the dataset
+// already holds is refused with ErrDocumentNameTaken - the caller keeps the current
+// name rather than failing, because the content still came back.
+func (s *DocumentService) RenameDocumentForRestore(ctx context.Context, datasetID, docID, name string) (bool, error) {
+	name = strings.TrimSpace(name)
+	if datasetID == "" || docID == "" || name == "" || dao.DB == nil {
+		return false, nil
+	}
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// The document did not come back (its row was gone), so there is no
+			// row to rename.
+			return false, nil
+		}
+		return false, fmt.Errorf("load document %s for its restore: %w", docID, err)
+	}
+	if doc == nil || doc.KbID != datasetID {
+		return false, nil
+	}
+	if doc.Name != nil && *doc.Name == name {
+		return false, nil
+	}
+	taken, err := s.documentDAO.NameExistsInKB(ctx, dao.DB, datasetID, name)
+	if err != nil {
+		return false, fmt.Errorf("check the restored name of %s: %w", docID, err)
+	}
+	if taken {
+		return false, ErrDocumentNameTaken
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return false, fmt.Errorf("load dataset %s for a document rename: %w", datasetID, err)
+	}
+	if kb == nil {
+		return false, nil
+	}
+	return true, s.renameDocumentRow(ctx, doc, kb, name)
+}
+
+// renameDocumentRow writes the name onto the document row, the file row it came
+// from and the title fields of its chunks. It records nothing: a user rename wraps
+// it with a version, a restore does not (it has one of its own).
+func (s *DocumentService) renameDocumentRow(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, newName string) error {
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"name": newName}); err != nil {
 		return fmt.Errorf("database error (Document rename): %w", err)
 	}
@@ -590,7 +753,8 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 	titleTks, _ := tok.Tokenize(newName)
 	titleSmTks, _ := tok.FineGrainedTokenize(titleTks)
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	if doc.ChunkNum == 0 && engine.Type(s.docEngine) == engine.EngineElasticsearch {
+	docEngineType := engine.Type(s.docEngine)
+	if doc.ChunkNum == 0 && (docEngineType == engine.EngineElasticsearch || docEngineType == engine.EngineOpenSearch) {
 		exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
 		if err != nil {
 			return err
@@ -610,24 +774,6 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 		indexName,
 		doc.KbID,
 	)
-}
-
-func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, documentID string, config map[string]any) error {
-	if len(config) == 0 {
-		return nil
-	}
-
-	doc, err := s.documentDAO.GetByID(ctx, dao.DB, documentID)
-	if err != nil {
-		return fmt.Errorf("document(%s) not found", documentID)
-	}
-
-	merged := common.DeepMergeMaps(doc.ParserConfig, config)
-	pipelinepkg.ApplyParentChildChunkerConfig(merged, config)
-
-	return s.documentDAO.UpdateByID(ctx, dao.DB, documentID, map[string]interface{}{
-		"parser_config": entity.JSONMap(merged),
-	})
 }
 
 func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, doc *entity.Document, metaFields map[string]interface{}) (*UpdateDatasetDocumentResponse, error) {
@@ -738,4 +884,89 @@ func pyRepr(v interface{}) string {
 		return "{" + strings.Join(parts, ", ") + "}"
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// documentMetadataForUpdate reads the metadata values a save is about to replace.
+//
+// It answers nil when the metadata store is not wired or cannot be read: the caller
+// then treats the submitted values as the change, rather than dropping the edit
+// from the timeline. A store that is simply empty reads as an empty map, which is
+// what makes "nothing moved" detectable.
+func (s *DocumentService) documentMetadataForUpdate(ctx context.Context, docID string) map[string]interface{} {
+	if s.docEngine == nil || s.metadataSvc == nil || !s.metadataSvc.Available() || docID == "" {
+		return nil
+	}
+	meta, err := s.GetDocumentMetadataByID(ctx, docID)
+	if err != nil {
+		return nil
+	}
+	return meta
+}
+
+// documentNameOf is a document's display name, empty when the row carries none.
+func documentNameOf(doc *entity.Document) string {
+	if doc == nil || doc.Name == nil {
+		return ""
+	}
+	return *doc.Name
+}
+
+// parserConfigSubmittedChanged reports whether the configuration a save carries
+// differs from the one the document holds.
+//
+// Only the parameters the request names are compared. The settings form resends
+// the values it shows and omits the rest, and the rebuild that follows fills every
+// omitted parameter from the pipeline template; a template default arriving is not
+// an edit the user made, so it must not append a version to the timeline.
+//
+// Values compare through their JSON form, so a number read back from storage as
+// float64 equals the int the request carried, and an unset parameter (absent,
+// null or empty) equals another unset one - the form renders all three as one
+// empty field.
+func parserConfigSubmittedChanged(stored entity.JSONMap, submitted map[string]any) bool {
+	if len(submitted) == 0 {
+		return false
+	}
+	return configValueChanged(stored, submitted)
+}
+
+// configValueChanged descends into the objects a parameter is nested in. A
+// component the stored row does not carry reads as an empty one, so a component
+// whose submitted values are all unset is not a change either.
+func configValueChanged(stored any, submitted any) bool {
+	submittedObject, submittedIsObject := submitted.(map[string]any)
+	if !submittedIsObject {
+		return configValueKey(stored) != configValueKey(submitted)
+	}
+	storedObject, storedIsObject := stored.(map[string]any)
+	if !storedIsObject {
+		if jsonMap, ok := stored.(entity.JSONMap); ok {
+			storedObject, storedIsObject = jsonMap, true
+		}
+	}
+	if !storedIsObject {
+		storedObject = map[string]any{}
+	}
+	for key, value := range submittedObject {
+		if configValueChanged(storedObject[key], value) {
+			return true
+		}
+	}
+	return false
+}
+
+// configValueKey renders one parameter for comparison: an unset value
+// answers the empty key, everything else answers its JSON form.
+func configValueKey(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok && text == "" {
+		return ""
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("%v", value)
+	}
+	return string(encoded)
 }

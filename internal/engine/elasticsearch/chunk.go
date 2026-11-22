@@ -25,11 +25,9 @@ import (
 	"io"
 	"net/http"
 	"reflect"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine/internal/esoscommon"
@@ -1733,6 +1731,7 @@ func searchAfterPaginate(
 			if chunk == nil {
 				chunk = map[string]interface{}{}
 			}
+			mergeHitFields(chunk, hit.Fields)
 			chunk["_score"] = hit.Score
 			chunk["_id"] = hit.ID
 			chunk["id"] = hit.ID // shim id to _id, matching Python es_conn.py behavior
@@ -2155,6 +2154,7 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 }
 
 func (e *Engine) searchChunkInDataset(ctx context.Context, baseName, chunkID, datasetID string) (map[string]interface{}, bool, error) {
+	// ES 9.x omits dense_vector fields from a default _source, so project explicitly.
 	searchReq := map[string]interface{}{
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{
@@ -2164,6 +2164,7 @@ func (e *Engine) searchChunkInDataset(ctx context.Context, baseName, chunkID, da
 				},
 			},
 		},
+		"_source": []string{"*"},
 	}
 
 	body, err := json.Marshal(searchReq)
@@ -2270,7 +2271,7 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 	}
 
 	for _, chunk := range chunks {
-		docID, ok := elasticsearchChunkID(chunk)
+		docID, ok := esoscommon.ChunkID(chunk)
 		if !ok {
 			continue
 		}
@@ -2366,7 +2367,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 				separator = "###"
 			}
 			for tag := range strings.SplitSeq(valueStr, separator) {
-				countElasticsearchAggregationTag(tagCounts, tag)
+				esoscommon.CountAggregationTag(tagCounts, tag)
 			}
 			continue
 		}
@@ -2374,7 +2375,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 		if valueList, ok := value.([]interface{}); ok {
 			for _, item := range valueList {
 				if itemStr, ok := item.(string); ok {
-					countElasticsearchAggregationTag(tagCounts, itemStr)
+					esoscommon.CountAggregationTag(tagCounts, itemStr)
 				}
 			}
 		}
@@ -2408,7 +2409,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
 	ids := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
-		if id, ok := elasticsearchChunkID(chunk); ok {
+		if id, ok := esoscommon.ChunkID(chunk); ok {
 			ids = append(ids, id)
 		}
 	}
@@ -2418,10 +2419,10 @@ func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
 // GetHighlight returns highlighted text for matching keywords
 func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
 	result := make(map[string]string)
-	pattern := compileElasticsearchHighlightPattern(keywords)
+	pattern := esoscommon.CompileHighlightPattern(keywords)
 
 	for _, chunk := range chunks {
-		docID, ok := elasticsearchChunkID(chunk)
+		docID, ok := esoscommon.ChunkID(chunk)
 		if !ok {
 			continue
 		}
@@ -2438,45 +2439,6 @@ func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string
 		result[docID] = txt
 	}
 	return result
-}
-
-func elasticsearchChunkID(chunk map[string]interface{}) (string, bool) {
-	if id, ok := chunk["id"].(string); ok && id != "" {
-		return id, true
-	}
-	if id, ok := chunk["_id"].(string); ok && id != "" {
-		return id, true
-	}
-	return "", false
-}
-
-func countElasticsearchAggregationTag(counts map[string]int, tag string) {
-	if tag = strings.TrimSpace(tag); tag != "" {
-		counts[tag]++
-	}
-}
-
-func compileElasticsearchHighlightPattern(keywords []string) *regexp.Regexp {
-	nonEmpty := make([]string, 0, len(keywords))
-	for _, kw := range keywords {
-		if kw != "" {
-			nonEmpty = append(nonEmpty, kw)
-		}
-	}
-	if len(nonEmpty) == 0 {
-		return nil
-	}
-	slices.SortStableFunc(nonEmpty, func(a, b string) int {
-		return cmp.Compare(utf8.RuneCountInString(b), utf8.RuneCountInString(a))
-	})
-	parts := make([]string, len(nonEmpty))
-	for i, keyword := range nonEmpty {
-		parts[i] = regexp.QuoteMeta(keyword)
-		if esoscommon.IsLatinKeyword(keyword) {
-			parts[i] += `\p{Latin}*`
-		}
-	}
-	return regexp.MustCompile("(?i)" + strings.Join(parts, "|"))
 }
 
 // DropChunkStore deletes a chunk index
@@ -2808,6 +2770,7 @@ func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[str
 		if chunks[i] == nil {
 			chunks[i] = make(map[string]interface{})
 		}
+		mergeHitFields(chunks[i], hit.Fields)
 		chunks[i]["_score"] = hit.Score
 		chunks[i]["_id"] = hit.ID
 		chunks[i]["id"] = hit.ID // shim id to _id, matching Python es_conn.py behavior
@@ -2817,6 +2780,24 @@ func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[str
 		}
 	}
 	return chunks
+}
+
+// mergeHitFields copies values Elasticsearch returns only under the hit's
+// `fields` projection (dense_vector on ES 9.x, where _source drops them) into
+// the chunk. _source wins on duplicate keys, and the extra array level around
+// a vector value ([[v1, v2, ...]]) is unwrapped, matching Python get_fields.
+func mergeHitFields(chunk, fields map[string]interface{}) {
+	for name, value := range fields {
+		if _, ok := chunk[name]; ok {
+			continue
+		}
+		if values, ok := value.([]interface{}); ok && len(values) == 1 {
+			if _, nested := values[0].([]interface{}); nested {
+				value = values[0]
+			}
+		}
+		chunk[name] = value
+	}
 }
 
 // parseOrderByExpr parses the OrderBy expression into ES sort format

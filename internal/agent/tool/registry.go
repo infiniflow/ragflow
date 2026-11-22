@@ -18,6 +18,7 @@ package tool
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -57,6 +58,7 @@ var registry = map[string]Factory{
 	"google_scholar_search":      buildGoogleScholarTool,
 	"jin10":                      noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
 	"keenable":                   buildKeenableTool,
+	"perplexity":                 buildPerplexityTool,
 	"pubmed":                     buildPubMedTool,
 	"qweather":                   buildQWeatherTool,
 	"querit":                     buildQueritTool,
@@ -90,6 +92,7 @@ var canvasToolNames = map[string]string{
 	"codeexec":          "code_exec",
 	"googlescholar":     "google_scholar",
 	"keenablesearch":    "keenable",
+	"perplexitysearch":  "perplexity",
 	"queritcontents":    "querit_contents",
 	"queritsearch":      "querit_search",
 	"search1apicrawl":   "search1api_crawl",
@@ -171,7 +174,7 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 	// "search_my_dataset" resolves to that registry key, not "retrieval".
 	cleanParams := params
 	if cleanParams != nil {
-		cleanParams = cloneToolParams(cleanParams)
+		cleanParams = maps.Clone(cleanParams)
 		delete(cleanParams, "component_name")
 		if _, isRetrieval := retrievalRegistryKeys[key]; !isRetrieval {
 			delete(cleanParams, "function_name")
@@ -179,14 +182,6 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return factory(cleanParams)
-}
-
-func cloneToolParams(in map[string]any) map[string]any {
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
 
 // BuildAll resolves a list of tool names into Eino BaseTool instances.
@@ -475,7 +470,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		switch key {
 		case "dataset_ids", "kb_ids", "top_n", "rerank_candidates_count", "top_k", "similarity_threshold",
 			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
-			"meta_data_filter", "retrieval_from", "memory_ids",
+			"highlight", "meta_data_filter", "retrieval_from", "memory_ids",
 			"kb_vars", "cross_languages", "function_name", "description", "meta",
 			"inputs", "outputs", "user_id":
 		default:
@@ -531,6 +526,9 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	if v, ok := boolParam(params, "use_kg"); ok {
 		defaults.UseKG = v
 	}
+	if v, ok := boolParam(params, "highlight"); ok {
+		defaults.Highlight = boolPtr(v)
+	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
 		defaults.SimilarityThreshold = &v
 	}
@@ -564,7 +562,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		if !ok {
 			return nil, fmt.Errorf("agent tool: retrieval tool requires object node-level param meta_data_filter")
 		}
-		defaults.MetaDataFilter = cloneStringAnyMap(filter)
+		defaults.MetaDataFilter = maps.Clone(filter)
 	}
 	if value, ok := params["retrieval_from"]; ok {
 		retrievalFrom, ok := value.(string)
@@ -906,6 +904,56 @@ func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.TopN = topN
 	}
 	return newSofyaTool(nil, apiKey, defaults), nil
+}
+
+func buildPerplexityTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := perplexityDefaults{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "perplexity")
+		}
+	}
+	if value, ok := params["search_type"]; ok {
+		searchType, valid := value.(string)
+		normalized := strings.ToLower(strings.TrimSpace(searchType))
+		if !valid || (normalized != "" && !slices.Contains(perplexitySearchTypes, normalized)) {
+			return nil, fmt.Errorf("agent tool: tool %q requires search_type to be web, fast, or blank for the default", "perplexity")
+		}
+		defaults.SearchType = normalized
+	}
+	if value, ok := params["search_recency_filter"]; ok {
+		recency, valid := value.(string)
+		normalized := strings.ToLower(strings.TrimSpace(recency))
+		if !valid || (normalized != "" && !slices.Contains(perplexityRecencyValues, normalized)) {
+			return nil, fmt.Errorf("agent tool: tool %q requires search_recency_filter to be any, hour, day, week, month, year, or blank for the default", "perplexity")
+		}
+		defaults.SearchRecencyFilter = normalized
+	}
+	if value, ok := params["search_domain_filter"]; ok {
+		domains, err := perplexityDomainFilterArg(value)
+		if err != nil {
+			return nil, fmt.Errorf("agent tool: tool %q %w", "perplexity", err)
+		}
+		defaults.SearchDomainFilter = domains
+	}
+	if value, ok := params["country"]; ok {
+		country, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param country", "perplexity")
+		}
+		defaults.Country = strings.ToUpper(strings.TrimSpace(country))
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 || topN > perplexityMaxResults {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param top_n within [1, %d]", "perplexity", perplexityMaxResults)
+		}
+		defaults.TopN = topN
+	}
+	return newPerplexityTool(nil, apiKey, defaults), nil
 }
 
 func buildSearch1APITool(params map[string]any) (einotool.BaseTool, error) {

@@ -365,8 +365,8 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	if !ok {
 		t.Fatalf("no user text captured in VLM messages: %#v", drv.captured)
 	}
-	if got != "自定义视觉提示" {
-		t.Fatalf("VLM user text = %q, want %q (image branch must read system_prompt)", got, "自定义视觉提示")
+	if !strings.Contains(got, "自定义视觉提示") || !strings.Contains(got, "Respond in English.") {
+		t.Fatalf("VLM user text = %q, want the configured prompt and default response language", got)
 	}
 }
 
@@ -458,20 +458,25 @@ func TestMaybeDispatchImage_GlobalVisionPromptDrivesImage(t *testing.T) {
 		familyLang   string
 		globalPrompt string
 		familyPrompt string
+		language     string
 		want         string
+		wantLanguage string
 	}{
 		{
 			name:         "global prompt wins over the family value",
-			inputs:       map[string]any{"tenant_id": "t1"},
+			inputs:       map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 			globalPrompt: "global prompt",
 			familyPrompt: "family prompt",
+			language:     "French",
 			want:         "global prompt",
+			wantLanguage: "Respond in French.",
 		},
 		{
 			name:         "family prompt still applies when global is unset",
-			inputs:       map[string]any{"tenant_id": "t1"},
+			inputs:       map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 			familyPrompt: "family prompt",
 			want:         "family prompt",
+			wantLanguage: "Respond in Japanese.",
 		},
 		{
 			name:       "language comes from the dataset, not the enhancement settings",
@@ -490,7 +495,7 @@ func TestMaybeDispatchImage_GlobalVisionPromptDrivesImage(t *testing.T) {
 			setups["image"]["system_prompt"] = tc.familyPrompt
 			_, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), dao.DB, utility.FileTypeVISUAL, "test.png", picturePNG(t),
 				tc.inputs, setups, true,
-				visionSettings{systemPrompt: tc.globalPrompt},
+				visionSettings{systemPrompt: tc.globalPrompt, language: tc.language},
 			)
 			if err != nil {
 				t.Fatalf("maybeDispatchImage: %v", err)
@@ -501,6 +506,9 @@ func TestMaybeDispatchImage_GlobalVisionPromptDrivesImage(t *testing.T) {
 			}
 			if !strings.Contains(got, tc.want) {
 				t.Fatalf("VLM user text = %q, want %q", got, tc.want)
+			}
+			if tc.wantLanguage != "" && !strings.Contains(got, tc.wantLanguage) {
+				t.Fatalf("VLM user text = %q, want %q", got, tc.wantLanguage)
 			}
 		})
 	}

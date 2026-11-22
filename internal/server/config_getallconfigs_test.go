@@ -18,16 +18,18 @@ package server
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
-	"os"
-	"path/filepath"
+
 	"ragflow/internal/common"
-	"reflect"
-	"strings"
-	"testing"
 )
 
 func TestPrintAllMasksCredentials(t *testing.T) {
