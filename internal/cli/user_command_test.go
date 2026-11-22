@@ -259,3 +259,45 @@ func TestAPIListIngestionTasksOmitsDatasetIDWhenAbsent(t *testing.T) {
 		t.Fatal("no request was sent")
 	}
 }
+
+func TestChatCompletionsStreamPreservesFinalReference(t *testing.T) {
+	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, `data: {"code":0,"message":"success","data":{"answer":"See "}}
+
+data: {"code":0,"message":"success","data":{"answer":"the manual.","reference":{"chunks":[{"document_name":"manual.pdf"}]}}}
+
+data: {"code":0,"message":"success","data":true}
+
+`)
+	}))
+	client.useAPIKey = true
+	c := &CLI{
+		Config: &CommandLineConfig{
+			CLIMode:         APIMode,
+			APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+		},
+		APIServerClientMap: map[string]*HTTPClient{"test": client},
+	}
+	result, err := c.ChatCompletions(1, &Command{Params: map[string]interface{}{
+		"chat_id": "chat-id", "question": "where?", "stream": true,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := result.(*ChatCompletionsResponse)
+	if response.Data.Answer != "See the manual." {
+		t.Errorf("answer = %q", response.Data.Answer)
+	}
+	var reference struct {
+		Chunks []struct {
+			DocumentName string `json:"document_name"`
+		} `json:"chunks"`
+	}
+	if err := json.Unmarshal(response.Data.Reference, &reference); err != nil {
+		t.Fatalf("reference = %s: %v", response.Data.Reference, err)
+	}
+	if len(reference.Chunks) != 1 || reference.Chunks[0].DocumentName != "manual.pdf" {
+		t.Errorf("reference = %s, want manual.pdf chunk", response.Data.Reference)
+	}
+}

@@ -3842,6 +3842,7 @@ func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (Re
 	start := time.Now()
 	scanner := bufio.NewScanner(reader)
 	var fullContent string
+	var reference json.RawMessage
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || !strings.HasPrefix(line, "data:") {
@@ -3863,13 +3864,17 @@ func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (Re
 		if chunk.Data.Answer != "" {
 			fullContent += chunk.Data.Answer
 		}
+		if ref := chunk.Data.Reference; len(ref) > 0 && string(ref) != "null" {
+			reference = ref
+		}
 	}
 
 	fullContent = strings.TrimLeft(fullContent, "\n\r")
 	return &ChatCompletionsResponse{
 		Duration: time.Since(start).Seconds(),
 		Data: &chatCompletionData{
-			Answer: fullContent,
+			Answer:    fullContent,
+			Reference: reference,
 		},
 		streamed: true,
 	}, nil
