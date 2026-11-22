@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 )
 
@@ -122,10 +123,8 @@ func TestMergeExistingStructureBucketsSweepsOldRelationIDsByEndpoints(t *testing
 }
 
 // One relation lookup must bound the product of its two endpoint lists: the
-// engines reject a single terms filter past 65,536 values, and the filter
-// returns the cross product, so an over-wide group would also page past the
-// 10,000-row result window with no sort cursor. Every incoming endpoint must
-// still reach at least one lookup.
+// engines reject a single terms filter past 65,536 values. Every incoming
+// endpoint must still reach at least one lookup.
 func TestMergeExistingStructureBucketsBoundsRelationSweepProduct(t *testing.T) {
 	const tenant, kb = "t1", "kb1"
 	buckets := make([]StructureBucket, 0, 3*structureLookupBatch)
@@ -153,10 +152,8 @@ func TestMergeExistingStructureBucketsBoundsRelationSweepProduct(t *testing.T) {
 		relationSearches++
 		fromList, _ := froms.([]string)
 		toList, _ := tos.([]string)
-		// A relation request returns the cross product of its endpoint lists;
-		// the engines reject a page whose from+size exceeds the result window
-		// (10,000) and these rows have no sort cursor, so the product must stay
-		// within the cap that keeps offset paging legal.
+		// The terms filter takes both endpoint lists; the engines cap one terms
+		// list far below the product this sweep allows.
 		if len(fromList)*len(toList) > relationSweepPairCap {
 			t.Fatalf("relation lookup product = %d values (%d x %d), over the cap %d",
 				len(fromList)*len(toList), len(fromList), len(toList), relationSweepPairCap)
@@ -172,5 +169,128 @@ func TestMergeExistingStructureBucketsBoundsRelationSweepProduct(t *testing.T) {
 		if !coveredFroms[fmt.Sprintf("From %d", i)] {
 			t.Fatalf("relation %d: from endpoint missing from every lookup, the sweep is incomplete", i)
 		}
+	}
+}
+
+// The endpoint product does not bound the rows one relation lookup returns: an
+// endpoint pair can hold one row per relation type, template and superseded id.
+// A group whose rows fill the engine result window must be split until every
+// request stays inside the window, or the offset paging dies on the deep page
+// and the merge never writes.
+func TestMergeExistingStructureBucketsSplitsRelationSweepAtTheResultWindow(t *testing.T) {
+	const tenant, kb = "t1", "kb1"
+	const fromCount, toCount, copies = 20, 20, 26 // 400 pairs x 26 rows = 10,400 rows
+	buckets := make([]StructureBucket, 0, fromCount*toCount)
+	for i := 0; i < fromCount; i++ {
+		for j := 0; j < toCount; j++ {
+			from, to := fmt.Sprintf("entity-%d", i), fmt.Sprintf("target-%d", j)
+			index := i*toCount + j
+			buckets = append(buckets, StructureBucket{
+				Name: from + " -> " + to, Type: "relation", Description: "links",
+				FromEntity: from, ToEntity: to, RelationType: "links",
+				CompileKwd: "knowledge_graph", TemplateID: "tpl1", TemplateKind: "knowledge_graph",
+				SourceDocIDs:   []string{fmt.Sprintf("incoming-doc-%d", index)},
+				SourceChunkIDs: []string{fmt.Sprintf("incoming-chunk-%d", index)},
+			})
+		}
+	}
+	stored := make([]map[string]interface{}, 0, fromCount*toCount*copies)
+	currentIDs := make(map[string]bool, fromCount*toCount)
+	wantStale := make(map[string]bool, fromCount*toCount*(copies-1))
+	for i := 0; i < fromCount; i++ {
+		for j := 0; j < toCount; j++ {
+			from, to := fmt.Sprintf("entity-%d", i), fmt.Sprintf("target-%d", j)
+			currentID := datasetLevelStructureID(tenant, kb, structureTemplateIdentity("tpl1", "knowledge_graph"), from+" -> "+to, "relation", "knowledge_graph", "links")
+			currentIDs[currentID] = true
+			for k := 0; k < copies; k++ {
+				id := currentID
+				if k > 0 {
+					id = fmt.Sprintf("legacy-%d-%d-%d", i, j, k)
+					wantStale[id] = true
+				}
+				stored = append(stored, map[string]interface{}{
+					"id": id, "compile_kwd": "knowledge_graph",
+					"compilation_template_ids":      []string{"tpl1"},
+					"compilation_template_kind_kwd": "knowledge_graph",
+					"type_kwd":                      "relation",
+					"from_entity_kwd":               from, "to_entity_kwd": to,
+					"content_with_weight": fmt.Sprintf(`{"from":%q,"to":%q,"type":"links"}`, from, to),
+					"source_doc_ids":      []string{fmt.Sprintf("stored-doc-%d-%d-%d", i, j, k)},
+					"source_chunk_ids":    []string{fmt.Sprintf("stored-chunk-%d-%d-%d", i, j, k)},
+				})
+			}
+		}
+	}
+	eng := &fakeEngine{engineType: "infinity", searchFn: func(req *types.SearchRequest) ([]map[string]interface{}, error) {
+		if req.Offset+req.Limit > common.MAX_RESULT_WINDOW {
+			return nil, fmt.Errorf("Result window is too large, from + size must be <= %d", common.MAX_RESULT_WINDOW)
+		}
+		matched := stored
+		if raw, ok := req.Filter["id"]; ok {
+			wanted := make(map[string]bool, len(raw.([]string)))
+			for _, id := range raw.([]string) {
+				wanted[id] = true
+			}
+			matched = nil
+			for _, row := range stored {
+				if wanted[row["id"].(string)] {
+					matched = append(matched, row)
+				}
+			}
+		}
+		if raw, ok := req.Filter["from_entity_kwd"]; ok {
+			froms := make(map[string]bool, len(raw.([]string)))
+			for _, from := range raw.([]string) {
+				froms[from] = true
+			}
+			tos := make(map[string]bool)
+			for _, to := range req.Filter["to_entity_kwd"].([]string) {
+				tos[to] = true
+			}
+			filtered := matched[:0:0]
+			for _, row := range matched {
+				if froms[row["from_entity_kwd"].(string)] && tos[row["to_entity_kwd"].(string)] {
+					filtered = append(filtered, row)
+				}
+			}
+			matched = filtered
+		}
+		start, end := req.Offset, req.Offset+req.Limit
+		if start > len(matched) {
+			start = len(matched)
+		}
+		if end > len(matched) {
+			end = len(matched)
+		}
+		return matched[start:end], nil
+	}}
+
+	stale, err := mergeExistingStructureBuckets(context.Background(), eng, "ragflow_t1", tenant, kb, buckets)
+	if err != nil {
+		t.Fatalf("mergeExistingStructureBuckets: %v", err)
+	}
+	if len(stale) != len(wantStale) {
+		t.Fatalf("stale ids = %d, want %d (every superseded row)", len(stale), len(wantStale))
+	}
+	for _, id := range stale {
+		if !wantStale[id] {
+			t.Fatalf("stale id %q is not a superseded stored row", id)
+		}
+	}
+	for k := range buckets {
+		b := buckets[k]
+		if len(b.SourceDocIDs) != copies+1 || len(b.SourceChunkIDs) != copies+1 {
+			t.Fatalf("bucket %q kept %d docs and %d chunks, want the incoming one plus all %d stored rows",
+				b.Name, len(b.SourceDocIDs), len(b.SourceChunkIDs), copies)
+		}
+	}
+	relationSearches := 0
+	for _, req := range eng.searchReqs {
+		if _, ok := req.Filter["from_entity_kwd"]; ok {
+			relationSearches++
+		}
+	}
+	if relationSearches < 2 {
+		t.Fatalf("relation sweep issued %d searches, want the window-filling group split into bounded batches", relationSearches)
 	}
 }

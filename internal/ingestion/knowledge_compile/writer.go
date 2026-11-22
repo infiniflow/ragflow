@@ -796,10 +796,11 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 const structureLookupBatch = 500
 
 // relationSweepPairCap bounds one relation lookup by the product of its two
-// endpoint value lists. The filter matches every stored row whose from and to
-// both fall inside those lists, so this product bounds the rows one request
-// returns; keeping it well under the engines' result window (10,000) lets the
-// lookup page by offset without a sort cursor, which these rows cannot supply.
+// endpoint value lists, which keeps the terms lists a single request carries
+// well below the engines' filter-size limits. It does not bound the rows the
+// request returns: one endpoint pair can hold several stored rows (different
+// relation types, templates or superseded ids), so the sweep also splits a
+// group whose rows reach the engine result window.
 const relationSweepPairCap = 1000
 
 // structureRelationPair is one incoming relation's endpoints, the unit the
@@ -870,7 +871,11 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			stale[id] = true
 		}
 	}
-	lookup := func(extra map[string]interface{}) error {
+	// lookup pages through the rows a filter matches and returns how many it
+	// fetched. A positive stopAtOffset stops before the page that would start
+	// there, so a caller bound by an engine result window never requests an
+	// offset the engine rejects; 0 pages until the first short page.
+	lookup := func(extra map[string]interface{}, stopAtOffset int) (int, error) {
 		filter := make(map[string]interface{}, len(extra)+3)
 		filter["kb_id"] = kb
 		filter["scope_kwd"] = "dataset"
@@ -878,7 +883,8 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 		for k, v := range extra {
 			filter[k] = v
 		}
-		for offset := 0; ; offset += structureLookupBatch {
+		fetched := 0
+		for offset := 0; stopAtOffset <= 0 || offset < stopAtOffset; offset += structureLookupBatch {
 			res, err := eng.Search(ctx, &types.SearchRequest{
 				IndexNames:   []string{baseName},
 				KbIDs:        []string{kb},
@@ -888,15 +894,17 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 				Limit:        structureLookupBatch,
 			})
 			if err != nil {
-				return fmt.Errorf("structure merge load existing rows: %w", err)
+				return fetched, fmt.Errorf("structure merge load existing rows: %w", err)
 			}
 			for _, row := range res.Chunks {
 				applyRow(row)
 			}
+			fetched += len(res.Chunks)
 			if len(res.Chunks) < structureLookupBatch {
-				return nil
+				break
 			}
 		}
+		return fetched, nil
 	}
 
 	// Rows already stored under the current id scheme: fetch them by id so the
@@ -908,10 +916,10 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 	sort.Strings(ids)
 	for start := 0; start < len(ids); start += structureLookupBatch {
 		end := min(start+structureLookupBatch, len(ids))
-		if err := lookup(map[string]interface{}{
+		if _, err := lookup(map[string]interface{}{
 			"id":                  ids[start:end],
 			"knowledge_graph_kwd": []string{"entity", "relation"},
-		}); err != nil {
+		}, 0); err != nil {
 			return nil, err
 		}
 	}
@@ -924,7 +932,7 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			for k, v := range extra {
 				filter[k] = v
 			}
-			if err := lookup(filter); err != nil {
+			if _, err := lookup(filter, 0); err != nil {
 				return err
 			}
 		}
@@ -934,14 +942,15 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 		return nil, err
 	}
 	// Relation sweep: the filter combines from and to with AND, so one request
-	// matches the cross product of its two endpoint lists. Both the engines'
-	// terms-list cap (Elasticsearch: 65,536 values) and the result window
-	// (index.max_result_window, 10,000 rows; a deep offset cannot be walked with
-	// search_after here because these rows have no sortable unique field) bound
-	// what one request may carry, so the incoming pairs are split until their
-	// from x to value product fits. Pairs no incoming relation requests are
-	// still read when they fall inside a group's product; the identity check in
-	// applyRow rejects them.
+	// matches the cross product of its two endpoint lists. That product only
+	// bounds the endpoint lists; it does not bound the rows that come back,
+	// because one endpoint pair can hold several stored rows. The engines still
+	// reject a page whose offset+limit passes the result window
+	// (index.max_result_window, 10,000 rows) and these rows have no sortable
+	// unique field for search_after, so a group that fills the window is split
+	// in half and read again instead of paging past it. Pairs no incoming
+	// relation requests are still read when they fall inside a group's product;
+	// the identity check in applyRow rejects them.
 	var pairs []structureRelationPair
 	seenPairs := make(map[structureRelationPair]bool, len(buckets))
 	for i := range buckets {
@@ -957,6 +966,13 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 		pairs = append(pairs, pair)
 	}
 	var sweepRelations func(pairs []structureRelationPair) error
+	splitPairs := func(pairs []structureRelationPair) error {
+		half := len(pairs) / 2
+		if err := sweepRelations(pairs[:half]); err != nil {
+			return err
+		}
+		return sweepRelations(pairs[half:])
+	}
 	sweepRelations = func(pairs []structureRelationPair) error {
 		if len(pairs) == 0 {
 			return nil
@@ -967,11 +983,7 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			tos = common.AppendUnique(tos, []string{p.to, strings.ToLower(p.to)})
 		}
 		if len(pairs) > 1 && len(froms)*len(tos) > relationSweepPairCap {
-			half := len(pairs) / 2
-			if err := sweepRelations(pairs[:half]); err != nil {
-				return err
-			}
-			return sweepRelations(pairs[half:])
+			return splitPairs(pairs)
 		}
 		extra := map[string]interface{}{"knowledge_graph_kwd": "relation"}
 		if len(froms) > 0 {
@@ -980,7 +992,19 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 		if len(tos) > 0 {
 			extra["to_entity_kwd"] = tos
 		}
-		return lookup(extra)
+		fetched, err := lookup(extra, common.MAX_RESULT_WINDOW)
+		if err != nil {
+			return err
+		}
+		if fetched < common.MAX_RESULT_WINDOW {
+			return nil
+		}
+		if len(pairs) == 1 {
+			return fmt.Errorf("structure merge relation lookup for %q -> %q fills the engine result window (%d rows); the rows stored for one relation exceed what offset paging can read", pairs[0].from, pairs[0].to, fetched)
+		}
+		// The rows already applied are idempotent to re-read (source ids are
+		// unioned, stale ids are a set), so the halves start from offset 0.
+		return splitPairs(pairs)
 	}
 	if err := sweepRelations(pairs); err != nil {
 		return nil, err
