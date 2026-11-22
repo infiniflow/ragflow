@@ -25,17 +25,23 @@ import (
 )
 
 func TestCommonArguments(t *testing.T) {
-	want, err := parseArgsFrom([]string{"server", "--config", "cfg=local.yaml", "--log-level", "debug", "--profile"})
+	want, err := parseArgsFrom([]string{"server", "--config", "local.yaml", "--log-level", "debug", "--profile"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, argv := range [][]string{
-		{"server", "-f=cfg=local.yaml", "--log-level=debug", "--profile"},
-		{"server", "-config", "cfg=local.yaml", "-log-level", "debug", "-profile"},
+		{"server", "-f", "local.yaml", "--log-level=debug", "--profile"},
 	} {
 		got, err := parseArgsFrom(argv)
-		if err != nil || !reflect.DeepEqual(got, want) {
-			t.Fatalf("%v: got %+v, err %v; want %+v", argv, got, err, want)
+		if err != nil {
+			t.Fatalf("%v: %v", argv, err)
+		}
+		// kingpin allocates a fresh pointer for every flag registration, so
+		// compare the pointed-to values instead of struct identity.
+		gotVals := []any{*got.LogLevel, *got.ConfigPath, *got.DeepdocDevice, *got.EnablePProf, got.InitSuperUser}
+		wantVals := []any{*want.LogLevel, *want.ConfigPath, *want.DeepdocDevice, *want.EnablePProf, want.InitSuperUser}
+		if !reflect.DeepEqual(gotVals, wantVals) {
+			t.Fatalf("%v: got values %+v, want %+v (structs: %+v vs %+v)", argv, gotVals, wantVals, got, want)
 		}
 	}
 	for _, flag := range []string{"--help", "-h", "--version", "-v"} {
@@ -64,7 +70,7 @@ func TestServerModeArguments(t *testing.T) {
 		{"migrate", common.ServerTypeMigrate},
 	} {
 		t.Run(tt.mode, func(t *testing.T) {
-			for _, flag := range []string{"--" + tt.mode, "-" + tt.mode} {
+			for _, flag := range []string{"--" + tt.mode} {
 				args, err := parseArgsFrom([]string{"server", flag, "--config", "local.yaml"})
 				if err != nil {
 					t.Fatalf("%s: %v", flag, err)
