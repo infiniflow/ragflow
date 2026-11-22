@@ -428,7 +428,9 @@ Follow the discovered parameter descriptions, including conditional requirements
 
 Searches in a `queries` call are independent. If one fails, for example because of an unknown tag, the other results are still returned, and the failed record carries the AnySearch message and `request_id`. The whole call reports an error only when every search failed. An invalid argument, such as an unsupported zone, a missing query, or more than 5 queries, is rejected before any search runs. An invalid API key is reported as an error and is never retried without the key.
 
-Both the standalone component and Agent tool runs record search results as retrieval references. Their document and display IDs use RAGFlow's shared citation contract so the results remain available for citation grounding.
+Both the standalone component and Agent tool runs record search results as retrieval references. Their document and display IDs are derived from the full result text before display truncation, using RAGFlow's shared citation contract.
+
+Before the next model call, an Agent checks AnySearch tool output against the configured model context window, accounting for tool definitions and response space. Oversized tool messages are replaced with an explicit error asking for a smaller search. Recorded retrieval sources and standalone Canvas JSON are retained.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.
