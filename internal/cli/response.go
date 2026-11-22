@@ -865,8 +865,6 @@ type OpenAIChatResponse struct {
 	OutputFormat OutputFormat    `json:"-"`
 	// Reasoning from the model's chain-of-thought.
 	Reasoning string `json:"-"`
-	// streamed skips the "Answer:" line in PrintOut to avoid duplication.
-	streamed bool
 	// raw HTTP body for the "raw" output format.
 	raw []byte
 }
@@ -948,13 +946,11 @@ func (r *OpenAIChatResponse) PrintOut() {
 		fmt.Println("(no data)")
 		return
 	}
-	if !r.streamed {
-		if r.Reasoning != "" {
-			fmt.Printf("Thinking: %s\n", r.Reasoning)
-		}
-		if content := r.Content(); content != "" {
-			fmt.Printf("Answer: %s\n", content)
-		}
+	if r.Reasoning != "" {
+		fmt.Printf("Thinking: %s\n", r.Reasoning)
+	}
+	if content := r.Content(); content != "" {
+		fmt.Printf("Answer: %s\n", content)
 	}
 
 	// Print reference chunks and their document_metadata when available.
@@ -1291,9 +1287,6 @@ type ChatCompletionsResponse struct {
 	OutputFormat OutputFormat        `json:"-"`
 	// raw HTTP body for "raw" output.
 	raw []byte
-	// streamed skips the "Answer:" line in PrintOut to avoid duplication
-	// (used by the streaming path which prints chunk-by-chunk).
-	streamed bool
 }
 
 type chatCompletionData struct {
@@ -1322,10 +1315,8 @@ func (r *ChatCompletionsResponse) PrintOut() {
 		fmt.Println("(no data)")
 		return
 	}
-	if !r.streamed {
-		if r.Data.Answer != "" {
-			fmt.Printf("Answer: %s\n", r.Data.Answer)
-		}
+	if r.Data.Answer != "" {
+		fmt.Printf("Answer: %s\n", r.Data.Answer)
 	}
 	if r.Data != nil && len(r.Data.Reference) > 0 {
 		printReferenceChunks(r.Data.Reference)

@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -257,5 +258,41 @@ func TestAPIListIngestionTasksOmitsDatasetIDWhenAbsent(t *testing.T) {
 		}
 	default:
 		t.Fatal("no request was sent")
+	}
+}
+
+func TestStreamingChatCommandsPrintAssembledAnswer(t *testing.T) {
+	tests := []struct {
+		name, data string
+		call       func(*CLI, int, *Command) (ResponseIf, error)
+	}{
+		{"OPENAI_CHAT", `{"choices":[{"delta":{"content":"hello"}}]}`, (*CLI).APIOpenaiChatCommand},
+		{"CHAT COMPLETIONS", `{"code":0,"data":{"answer":"hello"}}`, (*CLI).ChatCompletions},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", tt.data)
+			}))
+			client.useAPIKey = true
+			c := &CLI{
+				Config: &CommandLineConfig{
+					CLIMode:         APIMode,
+					APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+				},
+				APIServerClientMap: map[string]*HTTPClient{"test": client},
+			}
+			result, err := tt.call(c, 1, &Command{Params: map[string]interface{}{
+				"chat_id": "chat-id", "message": "hi", "question": "hi", "stream": true,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			output, panicValue := capturePrintOut(t, result.PrintOut)
+			if panicValue != nil || strings.Count(output, "Answer: hello") != 1 {
+				t.Fatalf("output = %q, panic = %v, want one answer", output, panicValue)
+			}
+		})
 	}
 }

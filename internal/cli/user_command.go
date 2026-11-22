@@ -3624,8 +3624,7 @@ func (c *CLI) oneshotOpenaiChat(url string, body map[string]interface{}) (Respon
 	return out, nil
 }
 
-// streamOpenaiChat performs a streaming POST and prints SSE chunks to
-// stdout as they arrive
+// streamOpenaiChat collects SSE chunks from a streaming POST.
 func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (ResponseIf, error) {
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 	resp, err := httpClient.Request(1, "POST", url, httpClient.AuthKind(), nil, body)
@@ -3691,8 +3690,7 @@ func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (Respons
 			Model:   resolvedMod,
 			Choices: []openAIChatChoice{{Message: openAIChatMessage{Content: fullContent, ReasoningContent: fullReason}}},
 		},
-		streamed: true,
-		raw:      resp.Body,
+		raw: resp.Body,
 	}, nil
 }
 
@@ -3871,7 +3869,6 @@ func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (Re
 		Data: &chatCompletionData{
 			Answer: fullContent,
 		},
-		streamed: true,
 	}, nil
 }
 
