@@ -129,13 +129,14 @@ type anySearchRequestBody struct {
 // anySearchQueryResult is one search's outcome. request_id is kept for
 // diagnostics, including on failures.
 type anySearchQueryResult struct {
-	Index           int              `json:"index"`
-	Query           string           `json:"query"`
-	Tag             string           `json:"tag,omitempty"`
-	RequestID       string           `json:"request_id,omitempty"`
-	Results         []map[string]any `json:"results"`
-	Error           string           `json:"_ERROR,omitempty"`
-	TruncatedFields map[int][]string `json:"truncated_fields,omitempty"`
+	Index           int               `json:"index"`
+	Query           string            `json:"query"`
+	Tag             string            `json:"tag,omitempty"`
+	RequestID       string            `json:"request_id,omitempty"`
+	Results         []map[string]any  `json:"results"`
+	Error           string            `json:"_ERROR,omitempty"`
+	TruncatedFields map[int][]string  `json:"truncated_fields,omitempty"`
+	ReferenceIDs    map[int][2]string `json:"reference_ids,omitempty"`
 }
 
 // anySearchSearchEnvelope is what the model and the Canvas component see. The
@@ -254,7 +255,30 @@ func (c *anySearchClient) call(ctx context.Context, method, path string, body []
 	if !ok {
 		return nil, anySearchFailure("missing data", "", requestID)
 	}
+	if c.apiKey != "" && anySearchContainsCredential(data, c.apiKey) {
+		return nil, anySearchFailure("response contains configured credential", "", requestID)
+	}
 	return &anySearchReply{data: data, requestID: requestID}, nil
+}
+
+func anySearchContainsCredential(value any, key string) bool {
+	switch value := value.(type) {
+	case string:
+		return strings.Contains(value, key)
+	case []any:
+		for _, item := range value {
+			if anySearchContainsCredential(item, key) {
+				return true
+			}
+		}
+	case map[string]any:
+		for name, item := range value {
+			if strings.Contains(name, key) || anySearchContainsCredential(item, key) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func anySearchFailure(what, message, requestID string) *anySearchError {
@@ -565,6 +589,7 @@ func (a *AnySearchTool) search(ctx context.Context, index int, request anySearch
 	}
 	results := make([]map[string]any, 0, len(rawResults))
 	truncatedFields := make(map[int][]string)
+	referenceKeys := make(map[int][2]string)
 	resultBytes := 2 // JSON array brackets.
 	for _, raw := range rawResults {
 		item, ok := raw.(map[string]any)
@@ -576,6 +601,14 @@ func (a *AnySearchTool) search(ctx context.Context, index int, request anySearch
 			continue
 		}
 		result, truncated := anySearchModelResult(item)
+		fullContent := anySearchText(item["content"])
+		if fullContent == "" {
+			fullContent = anySearchText(item["snippet"])
+		}
+		if resultURL := anySearchText(item["url"]); isAnySearchHTTPURL(resultURL) && fullContent != "" {
+			documentID, displayID := referenceIDs(resultURL, strings.Join(strings.Fields(fullContent), " "))
+			referenceKeys[len(results)] = [2]string{documentID, displayID}
+		}
 		encoded, err := json.Marshal(result)
 		if err != nil || resultBytes+len(encoded)+1 > anySearchMaxQueryResultBytes {
 			record.Error = anySearchFailure("results exceed output limit", "", reply.requestID).Error()
@@ -589,6 +622,7 @@ func (a *AnySearchTool) search(ctx context.Context, index int, request anySearch
 	}
 	record.Results = results
 	record.TruncatedFields = truncatedFields
+	record.ReferenceIDs = referenceKeys
 	return record
 }
 
@@ -691,7 +725,7 @@ func collectAnySearchReferences(envelope map[string]any) ([]anySearchRenderQuery
 			continue
 		}
 		rq := anySearchRenderQuery{Query: anySearchText(record["query"]), Tag: anySearchText(record["tag"]), Error: anySearchText(record["_ERROR"])}
-		for _, rawResult := range envelopeSlice(record, "results") {
+		for resultIndex, rawResult := range envelopeSlice(record, "results") {
 			result, ok := rawResult.(map[string]any)
 			if !ok {
 				continue
@@ -709,6 +743,13 @@ func collectAnySearchReferences(envelope map[string]any) ([]anySearchRenderQuery
 				continue
 			}
 			documentID, displayID := referenceIDs(resultURL, content)
+			if ids, ok := record["reference_ids"].(map[string]any); ok {
+				if pair, ok := ids[strconv.Itoa(resultIndex)].([]any); ok && len(pair) == 2 {
+					if doc, display := anySearchText(pair[0]), anySearchText(pair[1]); doc != "" && display != "" {
+						documentID, displayID = doc, display
+					}
+				}
+			}
 			title := anySearchText(result["title"])
 			chunk := map[string]any{
 				"id":            displayID,
@@ -767,20 +808,22 @@ func renderAnySearchReferences(queries []anySearchRenderQuery, maxTokens int) st
 			blocks = append(blocks, header+"\nError: "+query.Error)
 			continue
 		}
-		for i, chunk := range query.Chunks {
+		headerRendered := false
+		for _, chunk := range query.Chunks {
 			block := strings.Join([]string{
 				"\nID: " + anySearchText(chunk["id"]),
 				"├── Title: " + strings.Join(strings.Fields(anySearchText(chunk["document_name"])), " "),
 				"├── URL: " + anySearchText(chunk["url"]),
 				"└── Content:\n" + anySearchText(chunk["content"]),
 			}, "\n")
-			if i == 0 {
+			if !headerRendered {
 				block = header + block
 			}
 			if !fits(block) {
-				return strings.Join(blocks, "\n")
+				continue
 			}
 			blocks = append(blocks, block)
+			headerRendered = true
 		}
 	}
 	return strings.Join(blocks, "\n")

@@ -973,7 +973,11 @@ func TestAnySearch_ReportsTruncatedTextFields(t *testing.T) {
 func TestAnySearch_BatchPreservesResultsWhenOneExceedsOutputLimit(t *testing.T) {
 	t.Parallel()
 	helper, _ := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, body []byte) {
-		request := decodeAnySearchBody(t, body)
+		var request map[string]any
+		if err := json.Unmarshal(body, &request); err != nil {
+			t.Errorf("decode request body: %v", err)
+			return
+		}
 		result := map[string]any{"url": "https://example.com/", "content": "market"}
 		if request["query"] == "large" {
 			result["data"] = map[string]any{"details": strings.Repeat("x", anySearchMaxQueryResultBytes)}
@@ -1027,14 +1031,23 @@ func TestAnySearch_TransportTimeoutIsReportedWithoutDetails(t *testing.T) {
 
 func TestAnySearch_BatchCancelledMidFlightKeepsEveryRecord(t *testing.T) {
 	t.Parallel()
-	var arrived sync.WaitGroup
-	arrived.Add(3)
-	ctx, cancel := context.WithCancel(t.Context())
+	arrived := make(chan struct{}, 3)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
 	helper, _ := anySearchTestServer(t, func(w http.ResponseWriter, r *http.Request, _ []byte) {
-		arrived.Done()
+		arrived <- struct{}{}
 		<-r.Context().Done()
 	})
-	go func() { arrived.Wait(); cancel() }()
+	go func() {
+		for range 3 {
+			select {
+			case <-arrived:
+			case <-ctx.Done():
+				return
+			}
+		}
+		cancel()
+	}()
 	out, err := NewAnySearchToolWith(helper, "key").InvokableRun(ctx, `{"queries":[{"query":"a"},{"query":"b"},{"query":"c"}]}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -1047,6 +1060,54 @@ func TestAnySearch_BatchCancelledMidFlightKeepsEveryRecord(t *testing.T) {
 		if record.Index != i || !strings.Contains(record.Error, "canceled") {
 			t.Errorf("record %d = %+v, want its own canceled error in input order", i, record)
 		}
+	}
+}
+
+func TestAnySearch_RenderSkipsOversizedHit(t *testing.T) {
+	queries := []anySearchRenderQuery{{Query: "q", Chunks: []map[string]any{
+		{"id": "1", "document_name": strings.Repeat("large ", 1000), "content": "large"},
+		{"id": "2", "document_name": "small", "content": "usable later hit"},
+	}}}
+	if out := renderAnySearchReferences(queries, 200); !strings.Contains(out, "usable later hit") || !strings.Contains(out, "Query: q") {
+		t.Fatalf("later hit and its query header were lost: %s", out)
+	}
+}
+
+func TestAnySearch_SuccessDoesNotExposeConfiguredKey(t *testing.T) {
+	for _, discover := range []bool{false, true} {
+		helper, _ := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, _ []byte) {
+			writeAnySearch(w, 200, `{"code":0,"request_id":"rid-ok","data":{"results":[{"content":"private-test-key"}],"domains":[{"description":"private-test-key"}]}}`)
+		})
+		var out string
+		if discover {
+			out, _ = NewAnySearchDiscoverToolWith(helper, "private-test-key").InvokableRun(t.Context(), `{}`)
+		} else {
+			out, _ = NewAnySearchToolWith(helper, "private-test-key").InvokableRun(t.Context(), `{"query":"q"}`)
+		}
+		if strings.Contains(out, "private-test-key") || !strings.Contains(out, "_ERROR") {
+			t.Fatalf("credential-bearing response was forwarded: %s", out)
+		}
+	}
+}
+
+func TestAnySearch_ReferencesUseFullTextIdentity(t *testing.T) {
+	content := strings.Repeat("prefix ", 300)
+	helper, _ := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, _ []byte) {
+		results, _ := json.Marshal([]map[string]any{
+			{"url": "https://example.com/page", "content": content + "first ending"},
+			{"url": "https://example.com/page", "content": content + "different ending"},
+		})
+		anySearchOK(string(results))(w, nil, nil)
+	})
+	search := NewAnySearchToolWith(helper, "")
+	out, _ := search.InvokableRun(t.Context(), `{"query":"q"}`)
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	chunks, _ := search.BuildReferences(t.Context(), envelope)
+	if len(chunks) != 2 || chunks[0]["chunk_id"] == chunks[1]["chunk_id"] {
+		t.Fatalf("distinct full pages share citation identity: %#v", chunks)
 	}
 }
 

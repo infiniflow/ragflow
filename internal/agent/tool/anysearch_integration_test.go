@@ -55,6 +55,11 @@ var anySearchLiveRequestID = regexp.MustCompile(`^([0-9a-fA-F]{32}|[0-9a-fA-F]{8
 
 func (tr *anySearchLiveTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	seen := anySearchLiveRequest{Method: req.Method, Path: req.URL.Path, RawQuery: req.URL.RawQuery}
+	defer func() {
+		tr.mu.Lock()
+		tr.seen = append(tr.seen, seen)
+		tr.mu.Unlock()
+	}()
 	_, seen.HasAuthorization = req.Header["Authorization"]
 	seen.BearerMatches = seen.HasAuthorization && req.Header.Get("Authorization") == "Bearer "+tr.key
 	if req.GetBody != nil {
@@ -70,10 +75,6 @@ func (tr *anySearchLiveTransport) RoundTrip(req *http.Request) (*http.Response, 
 	seen.Status = resp.StatusCode
 	data, readErr := io.ReadAll(io.LimitReader(resp.Body, anySearchMaxResponseBytes+1))
 	resp.Body.Close()
-	if readErr != nil {
-		return nil, readErr
-	}
-	resp.Body = io.NopCloser(bytes.NewReader(data))
 	var reply struct {
 		RequestID string `json:"request_id"`
 	}
@@ -81,9 +82,10 @@ func (tr *anySearchLiveTransport) RoundTrip(req *http.Request) (*http.Response, 
 		(tr.key == "" || !strings.Contains(strings.ToLower(reply.RequestID), strings.ToLower(tr.key))) {
 		seen.RequestID = reply.RequestID
 	}
-	tr.mu.Lock()
-	tr.seen = append(tr.seen, seen)
-	tr.mu.Unlock()
+	if readErr != nil {
+		return nil, readErr
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(data))
 	return resp, nil
 }
 
@@ -94,6 +96,29 @@ func (tr *anySearchLiveTransport) take() []anySearchLiveRequest {
 	out := tr.seen
 	tr.seen = nil
 	return out
+}
+
+func TestAnySearchLiveTransportRecordsFailedAttempts(t *testing.T) {
+	tr := &anySearchLiveTransport{}
+	req, _ := http.NewRequest(http.MethodGet, "unsupported://example.com", nil)
+	if _, err := tr.RoundTrip(req); err == nil {
+		t.Fatal("expected transport failure")
+	}
+	if got := tr.take(); len(got) != 1 {
+		t.Fatalf("failed attempt missing: %#v", got)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "100")
+		_, _ = w.Write([]byte(`{"request_id":"afc46a53d1874905b912103642d412ef"}`))
+	}))
+	defer server.Close()
+	req, _ = http.NewRequest(http.MethodGet, server.URL, nil)
+	if _, err := tr.RoundTrip(req); err == nil {
+		t.Fatal("expected incomplete body error")
+	}
+	if got := tr.take(); len(got) != 1 || got[0].Status != http.StatusOK || got[0].RequestID != "afc46a53d1874905b912103642d412ef" {
+		t.Fatalf("body failure attempt missing: %#v", got)
+	}
 }
 
 func TestAnySearchLiveRequestIDFormats(t *testing.T) {

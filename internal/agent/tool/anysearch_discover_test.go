@@ -208,19 +208,29 @@ func TestAnySearchDiscover_BlankArgumentsListDomains(t *testing.T) {
 }
 
 func TestAnySearchDiscover_OversizedCatalogIsRejectedNotTruncated(t *testing.T) {
-	t.Parallel()
-	helper, _ := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, _ []byte) {
-		writeAnySearch(w, 200, `{"code":0,"request_id":"rid-big","data":{"domains":[{"domain":"x","pad":"`+strings.Repeat("a", anySearchDiscoverMaxBytes+1)+`"}]}}`)
-	})
-	out, err := NewAnySearchDiscoverToolWith(helper, "").InvokableRun(t.Context(), `{"domains":["x"]}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
-	env := decodeAnySearchDiscoverEnvelope(t, out)
-	if !strings.Contains(env.Error, "ask for fewer domains") || len(env.Domains) != 0 {
-		t.Errorf("envelope = %s, want an error and no partial catalog", out[:min(len(out), 200)])
-	}
-	if len(out) > 1024 {
-		t.Errorf("error result is %d bytes, want it small", len(out))
+	for _, tc := range []struct {
+		name, args string
+		wantFewer  bool
+	}{
+		{"domain list", `{}`, false},
+		{"single domain", `{"domains":["code"]}`, false},
+		{"multiple domains", `{"domains":["code","finance"]}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			helper, _ := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, _ []byte) {
+				writeAnySearch(w, 200, `{"code":0,"request_id":"rid-big","data":{"domains":[{"domain":"x","pad":"`+strings.Repeat("a", anySearchDiscoverMaxBytes+1)+`"}]}}`)
+			})
+			out, err := NewAnySearchDiscoverToolWith(helper, "").InvokableRun(t.Context(), tc.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := decodeAnySearchDiscoverEnvelope(t, out)
+			if !strings.Contains(env.Error, "catalog exceeds") || strings.Contains(env.Error, "fewer domains") != tc.wantFewer || len(env.Domains) != 0 {
+				t.Fatalf("unexpected catalog error: %.200s", out)
+			}
+			if len(out) > 1024 {
+				t.Fatalf("error result is %d bytes", len(out))
+			}
+		})
 	}
 }

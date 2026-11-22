@@ -139,7 +139,11 @@ func (d *AnySearchDiscoverTool) InvokableRun(ctx context.Context, argsJSON strin
 	}
 	out := anySearchJSON(anySearchDiscoverEnvelope{Domains: domains, RequestID: reply.requestID})
 	if len(out) > anySearchDiscoverMaxBytes {
-		return anySearchDiscoverErrJSON(fmt.Errorf("anysearch: the catalog is larger than %d bytes, ask for fewer domains", anySearchDiscoverMaxBytes)), nil
+		message := fmt.Sprintf("anysearch: the requested catalog exceeds the %d byte output limit", anySearchDiscoverMaxBytes)
+		if len(args.Domains) > 1 {
+			message += ", ask for fewer domains"
+		}
+		return anySearchDiscoverErrJSON(errors.New(message)), nil
 	}
 	return out, nil
 }
