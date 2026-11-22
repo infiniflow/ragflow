@@ -32,11 +32,16 @@ import (
 	"ragflow/internal/utility"
 )
 
-// This exercises the production Agent/registry/ReAct path against real anonymous
-// AnySearch. The local HTTP model is scripted; this is not live model inference.
+// This exercises the production Agent/registry/ReAct path against real AnySearch.
+// The local HTTP model is scripted; this is not live model inference.
 func TestAnySearchAgentBatchItemIsolationLive(t *testing.T) {
 	if os.Getenv("RAGFLOW_TEST_ANYSEARCH") != "1" {
 		t.Skip("set RAGFLOW_TEST_ANYSEARCH=1 to call the real AnySearch API")
+	}
+	key := strings.TrimSpace(os.Getenv("ANYSEARCH_TEST_API_KEY"))
+	mode := "anonymous"
+	if key != "" {
+		mode = "keyed"
 	}
 	setupAllowAnyHost(t, true)
 	if err := models.InitProviderManager("../../../conf/models"); err != nil {
@@ -156,7 +161,7 @@ func TestAnySearchAgentBatchItemIsolationLive(t *testing.T) {
 	agent := NewAgentComponent(AgentParam{
 		ModelID: modelID, Driver: "OpenAI-API-Compatible", BaseURL: server.URL, APIKey: "synthetic",
 		MaxTokens: &responseTokens, MaxRounds: 1, UserPrompt: "Search RAGFlow and report the available source and missing flight parameter.",
-		Tools: []string{"AnySearchSearch"}, ToolParams: map[string]map[string]any{"anysearch_search": {"api_key": "", "top_n": 1}},
+		Tools: []string{"AnySearchSearch"}, ToolParams: map[string]map[string]any{"anysearch_search": {"api_key": key, "top_n": 1}},
 	})
 	out, err := agent.Invoke(ctx, db, nil)
 	if err != nil {
@@ -210,5 +215,5 @@ func TestAnySearchAgentBatchItemIsolationLive(t *testing.T) {
 	if len(chunks) != 1 || chunks[0]["url"] != seen.url || chunks[0]["document_name"] != seen.title || chunks[0]["content"] != seen.content {
 		t.Fatal("successful sibling reference was not preserved with matching URL, title and content")
 	}
-	t.Logf("real anonymous AnySearch request_id=%s; success and local error reached the scripted HTTP model; references=%d; actual LLM inference not exercised", seen.requestID, len(chunks))
+	t.Logf("real AnySearch mode=%s request_id=%s; success and local error reached the scripted HTTP model; references=%d; actual LLM inference not exercised", mode, seen.requestID, len(chunks))
 }
