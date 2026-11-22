@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -30,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -48,7 +48,7 @@ import (
 	ingestorpkg "ragflow/internal/server/ingestor"
 	"ragflow/internal/server/local"
 	syncerpkg "ragflow/internal/server/syncer"
-	billing "ragflow/internal/service/billing"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/storage"
 )
 
@@ -104,55 +104,51 @@ func pprofAddr() string {
 // "=true"/"=false". Flags absent from argv leave their bootstrap.ServerArgs field nil,
 // which callers use to distinguish "unspecified" from an explicit zero value.
 func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
-	fs := flag.NewFlagSet("ragflow_server", flag.ContinueOnError)
-	// Suppress the standard usage/error dump: main prints its own one-line
-	// error and printHelp owns the usage text.
-	fs.SetOutput(io.Discard)
-	fs.Usage = func() {}
 
 	args := &bootstrap.ServerArgs{}
+	app := kingpin.New("ragflow_server", "RAGFlow server")
 
-	var logLevel, configPath string
-	fs.StringVar(&logLevel, "log-level", "", "")
-	fs.StringVar(&configPath, "config", "", "")
-	fs.StringVar(&configPath, "f", "", "")
-	var deepdocDevice string
-	fs.StringVar(&deepdocDevice, "deepdoc-device", "", "")
-	fs.BoolVar(&args.EnablePProf, "profile", false, "")
-	fs.BoolVar(&args.HelpFlag, "help", false, "")
-	fs.BoolVar(&args.HelpFlag, "h", false, "")
-	fs.BoolVar(&args.VersionFlag, "version", false, "")
-	fs.BoolVar(&args.VersionFlag, "v", false, "")
+	args.ConfigPath = app.Flag("config", "Config path").Short('f').String()
+	args.DeepdocDevice = app.Flag("deepdoc-device", "DeepDoc inference device").String()
+	args.EnablePProf = app.Flag("profile", "Enable pprof profiling").Bool()
+	args.LogLevel = app.Flag("log-level", "Log level").String()
+
 	modes := []string{"admin", "api", "ingestor", "syncer", "chatter", "migrate"}
 	modeFlags := make([]*bool, len(modes))
 	for i, mode := range modes {
-		modeFlags[i] = fs.Bool(mode, false, "")
+		modeFlags[i] = app.Flag(mode, fmt.Sprintf("Enable %s mode", mode)).Bool()
 	}
 
+	// kingpin owns --help itself, so registering another "help" flag above would
+	// fail with "duplicate long flag --help". Handle -h/--help and -v/--version
+	// ourselves: keep them out of app.Parse, and return early so no server-only
+	// validation runs. Also return parse errors instead of letting MustParse
+	// os.Exit (which kills the test binary and hides the failing case).
+	help, version := false, false
+	rest := make([]string, 0, len(argv))
 	if len(argv) > 0 {
-		if err := fs.Parse(argv[1:]); err != nil {
-			return nil, err
+		rest = append(rest, argv[0])
+	}
+	for _, arg := range argv[1:] {
+		switch arg {
+		case "-h", "--help":
+			help = true
+		case "-v", "--version":
+			version = true
+		default:
+			rest = append(rest, arg)
 		}
 	}
-	// The flag package silently stops at the first positional argument, which
-	// would hide a mistyped mode (e.g. "ragflow_server apii" starting with no
-	// mode). This binary has no positional arguments, so reject them.
-	if fs.NArg() > 0 {
-		return nil, fmt.Errorf("unexpected argument: %s", fs.Arg(0))
+	args.HelpFlag = &help
+	args.VersionFlag = &version
+
+	if _, err := app.Parse(rest[1:]); err != nil {
+		return nil, err
+	}
+	if help || version {
+		return args, nil
 	}
 
-	// Visit visits exactly the flags present on the command line, which
-	// preserves the "unspecified" (nil) vs explicit-zero distinction.
-	fs.Visit(func(f *flag.Flag) {
-		switch f.Name {
-		case "log-level":
-			args.LogLevel = &logLevel
-		case "config", "f":
-			args.ConfigPath = &configPath
-		case "deepdoc-device":
-			args.DeepdocDevice = &deepdocDevice
-		}
-	})
 	for i, enabled := range modeFlags {
 		if !*enabled {
 			continue
@@ -162,9 +158,13 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 		}
 		args.Mode = &modes[i]
 	}
+
 	args.InitSuperUser = args.Mode != nil && *args.Mode == "admin"
 
 	if args.LogLevel != nil {
+		if *args.LogLevel == "" {
+			*args.LogLevel = "info"
+		}
 		if err := validateLogLevel(*args.LogLevel); err != nil {
 			return nil, err
 		}
@@ -214,12 +214,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if arguments.HelpFlag {
+	if *arguments.HelpFlag {
 		printHelp(arguments)
 		return
 	}
 
-	if arguments.VersionFlag {
+	if *arguments.VersionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		return
 	}
@@ -313,7 +313,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 		return fmt.Errorf("initialize audit logger: %w", err)
 	}
 	defer common.SyncAudit()
-	if arguments.EnablePProf {
+	if *arguments.EnablePProf {
 		if err = startPProf(pprofAddr()); err != nil {
 			common.Error("pprof server failed", err)
 		}

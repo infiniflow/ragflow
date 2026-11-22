@@ -70,7 +70,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	if cli.Arguments.Command != nil {
+	if cli.Arguments.CLIMode == cli.CommandMode {
 		if err = client.RunSingleCommand(cli.Arguments.Command); err != nil {
 			fmt.Printf("Command execution failed: %v\n", err)
 			os.Exit(1)
