@@ -30,6 +30,9 @@ func (c *CLI) ExecuteCommand(commandCount int, cmd *Command) (ResponseIf, error)
 	case AdminMode:
 		// Admin mode: execute command with admin privileges
 		return c.ExecuteAdminCommand(commandCount, cmd)
+	case CommandMode:
+		// Command mode: execute command with user privileges
+		return c.ExecuteSingleCommand(commandCount, cmd)
 	default:
 		return nil, fmt.Errorf("invalid server type: %s", c.Config.CLIMode)
 	}
@@ -585,5 +588,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
+}
 
+func (c *CLI) ExecuteSingleCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	return nil, fmt.Errorf("single command mode: %s", cmd.Type)
 }

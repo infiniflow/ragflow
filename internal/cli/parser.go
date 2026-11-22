@@ -232,6 +232,16 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	}
 }
 
+func (p *Parser) parseSingleCommand() (*Command, error) {
+	switch p.curToken.Type {
+	case TokenLS, TokenCat, TokenSearch:
+		// For context engine
+		return p.parseFileSystemCommands()
+	default:
+		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
+	}
+}
+
 func (p *Parser) parseCommand(cliMode CommandLineMode) (*Command, error) {
 	if p.curToken.Type != TokenIdentifier && !isKeyword(p.curToken.Type) {
 		return nil, fmt.Errorf("expected command, got %s", p.curToken.Value)
@@ -242,6 +252,8 @@ func (p *Parser) parseCommand(cliMode CommandLineMode) (*Command, error) {
 		return p.parseAdminCommand()
 	case APIMode:
 		return p.parseUserCommand()
+	case CommandMode:
+		return p.parseSingleCommand()
 	default:
 		return nil, fmt.Errorf("unknown mode: %s", cliMode)
 	}
