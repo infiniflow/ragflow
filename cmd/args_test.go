@@ -30,7 +30,7 @@ func TestCommonArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, argv := range [][]string{
-		{"server", "-f=cfg=local.yaml", "--log-level=debug", "--profile=true"},
+		{"server", "-f=cfg=local.yaml", "--log-level=debug", "--profile"},
 		{"server", "-config", "cfg=local.yaml", "-log-level", "debug", "-profile"},
 	} {
 		got, err := parseArgsFrom(argv)
@@ -40,11 +40,11 @@ func TestCommonArguments(t *testing.T) {
 	}
 	for _, flag := range []string{"--help", "-h", "--version", "-v"} {
 		args, err := parseArgsFrom([]string{"server", flag})
-		if err != nil || !(args.HelpFlag || args.VersionFlag) {
+		if err != nil || !(*args.HelpFlag || *args.VersionFlag) {
 			t.Fatalf("%s: args=%+v, err=%v", flag, args, err)
 		}
 	}
-	for _, argv := range [][]string{{"--config"}, {"--log-level=trace"}, {"--profile=maybe"}, {"unexpected"}} {
+	for _, argv := range [][]string{{"--config"}, {"--log-level=trace"}, {"--profile=true"}, {"unexpected"}} {
 		if _, err := parseArgsFrom(append([]string{"server"}, argv...)); err == nil {
 			t.Fatalf("accepted invalid arguments %v", argv)
 		}
@@ -64,7 +64,7 @@ func TestServerModeArguments(t *testing.T) {
 		{"migrate", common.ServerTypeMigrate},
 	} {
 		t.Run(tt.mode, func(t *testing.T) {
-			for _, flag := range []string{"--" + tt.mode, "-" + tt.mode, "--" + tt.mode + "=true"} {
+			for _, flag := range []string{"--" + tt.mode, "-" + tt.mode} {
 				args, err := parseArgsFrom([]string{"server", flag, "--config", "local.yaml"})
 				if err != nil {
 					t.Fatalf("%s: %v", flag, err)
@@ -89,8 +89,8 @@ func TestServerModeArguments(t *testing.T) {
 func TestDisabledServerModeArguments(t *testing.T) {
 	for _, flags := range [][]string{
 		nil,
-		{"--migrate=false"},
-		{"--admin=false", "--api=false", "--ingestor=false", "--syncer=false", "--chatter=false", "--migrate=false"},
+		{"--no-migrate"},
+		{"--no-admin", "--no-api", "--no-ingestor", "--no-syncer", "--no-chatter", "--no-migrate"},
 	} {
 		args, err := parseArgsFrom(append([]string{"server"}, flags...))
 		if err != nil {
@@ -100,7 +100,7 @@ func TestDisabledServerModeArguments(t *testing.T) {
 			t.Errorf("%v: expected default startup arguments, got %+v", flags, args)
 		}
 	}
-	args, err := parseArgsFrom([]string{"server", "--api=false", "--migrate"})
+	args, err := parseArgsFrom([]string{"server", "--no-api", "--migrate"})
 	if err != nil || args.Mode == nil || *args.Mode != "migrate" {
 		t.Fatalf("disabled API flag affected migration selection: args=%+v, err=%v", args, err)
 	}
