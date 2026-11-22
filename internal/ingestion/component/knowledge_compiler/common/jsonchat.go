@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/kaptinlin/jsonrepair"
-	"ragflow/internal/agent/runtime"
-	appcommon "ragflow/internal/common"
-
 	"go.uber.org/zap"
+
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 )
 
 // jsonRetryMax is how many times a non-JSON (or otherwise transiently failed)
@@ -86,7 +86,7 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 		if err != nil {
 			// Permanent chat errors (auth, unknown model, context-length,
 			// cancelled ctx) cannot succeed on a retry; escape immediately.
-			if !appcommon.IsTransientError(err) {
+			if !common.IsTransientError(err) {
 				if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, 0, err, true); ok {
 					runtime.ReportProgressMessage(ctx, "Compiler", message)
 				}
@@ -117,7 +117,7 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			// (PII), so it is deliberately excluded from the log.
 			for i, candidate := range candidates {
 				_, perr := tryUnmarshalJSONErr(candidate)
-				appcommon.Info("knowledge_compiler: GenJSON unparseable candidate",
+				common.Info("knowledge_compiler: GenJSON unparseable candidate",
 					zap.Int("attempt", attempt), zap.Int("candidate", i),
 					zap.Int("len", len(candidate)), zap.Error(perr))
 			}
@@ -135,8 +135,8 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 		// Compute the capped, jittered delay for the current attempt
 		// (1-indexed: attempt 0 -> baseDelay) before sleeping, so the first
 		// retry is also clamped to the 1-minute ceiling.
-		d := appcommon.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
-		appcommon.Info("knowledge_compiler: GenJSON attempt failed, retrying",
+		d := common.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
+		common.Info("knowledge_compiler: GenJSON attempt failed, retrying",
 			zap.Int("attempt", attempt), zap.Duration("delay", d),
 			zap.Error(lastErr))
 		select {
@@ -155,7 +155,7 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 // malformed forms such as trailing commas or unquoted keys. The returned text
 // is guaranteed to be a valid JSON object or array.
 func RepairJSONText(s string) (string, error) {
-	s = appcommon.StripThinkTrailing(s)
+	s = common.StripThinkTrailing(s)
 	var lastErr error
 	for _, candidate := range jsonCandidates(s) {
 		candidate = strings.TrimSpace(candidate)

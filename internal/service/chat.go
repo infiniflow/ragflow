@@ -22,18 +22,18 @@ import (
 	"errors"
 	"fmt"
 	"math"
-
-	"ragflow/internal/agentic_rag"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	"ragflow/internal/permission"
-	permissionresponse "ragflow/internal/permission/response"
 	"strings"
 	"unicode/utf8"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/agentic_rag"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/dao/transaction"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 var DefaultRerankModels = map[string]struct{}{
