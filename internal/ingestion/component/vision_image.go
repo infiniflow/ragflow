@@ -21,9 +21,15 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	_ "image/gif"
+	_ "image/jpeg"
 	"image/png"
 	"io"
 	"strings"
+
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
 
 	"ragflow/internal/parser/media"
 	parserlib "ragflow/internal/parser/parser"
