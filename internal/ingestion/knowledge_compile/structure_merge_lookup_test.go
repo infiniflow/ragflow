@@ -2,6 +2,7 @@ package knowledge_compile
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -117,5 +118,44 @@ func TestMergeExistingStructureBucketsSweepsOldRelationIDsByEndpoints(t *testing
 		if keyedStructureLookupFilter(req) == "" {
 			t.Fatalf("unkeyed structure lookup: %+v", req.Filter)
 		}
+	}
+}
+
+// One relation lookup must bound both endpoint lists: the engines cap a single
+// terms filter (Elasticsearch rejects more than 65,536 values), so an unbounded
+// to_entity_kwd list failed every attempt and kept the batch retrying.
+func TestMergeExistingStructureBucketsBoundsRelationSweepPerBatch(t *testing.T) {
+	const tenant, kb = "t1", "kb1"
+	buckets := make([]StructureBucket, 0, 3*structureLookupBatch)
+	for i := 0; i < 3*structureLookupBatch; i++ {
+		from, to := fmt.Sprintf("From %d", i), fmt.Sprintf("To %d", i)
+		buckets = append(buckets, StructureBucket{
+			Name: from + " -> " + to, Type: "relation", Description: "links",
+			FromEntity: from, ToEntity: to, RelationType: "links",
+			CompileKwd: "knowledge_graph", TemplateID: "tpl1", TemplateKind: "knowledge_graph",
+		})
+	}
+	eng := &fakeEngine{engineType: "infinity"}
+
+	if _, err := mergeExistingStructureBuckets(context.Background(), eng, "ragflow_t1", tenant, kb, buckets); err != nil {
+		t.Fatalf("mergeExistingStructureBuckets: %v", err)
+	}
+	relationSearches := 0
+	for _, req := range eng.searchReqs {
+		froms, hasFrom := req.Filter["from_entity_kwd"]
+		tos, hasTo := req.Filter["to_entity_kwd"]
+		if !hasFrom && !hasTo {
+			continue
+		}
+		relationSearches++
+		if hasFrom && len(froms.([]string)) > structureLookupBatch {
+			t.Fatalf("from_entity_kwd carries %d values, over the batch bound %d", len(froms.([]string)), structureLookupBatch)
+		}
+		if hasTo && len(tos.([]string)) > structureLookupBatch {
+			t.Fatalf("to_entity_kwd carries %d values, over the batch bound %d", len(tos.([]string)), structureLookupBatch)
+		}
+	}
+	if relationSearches < 2 {
+		t.Fatalf("relation sweep issued %d searches, want the endpoints spread over several bounded batches", relationSearches)
 	}
 }

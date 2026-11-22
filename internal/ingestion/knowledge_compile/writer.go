@@ -810,17 +810,12 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 	byID := make(map[string]bool, len(buckets))
 	compileKinds := make([]string, 0, len(buckets))
 	entityNames := make([]string, 0, len(buckets))
-	relationFroms := make([]string, 0, len(buckets))
-	relationTos := make([]string, 0, len(buckets))
 	for i := range buckets {
 		b := buckets[i]
 		byIdentity[structureBucketIdentity(b)] = i
 		byID[datasetLevelStructureID(tenant, kb, structureTemplateIdentity(b.TemplateID, b.TemplateKind), b.Name, b.Type, b.CompileKwd, b.RelationType)] = true
 		compileKinds = common.AppendUnique(compileKinds, []string{structureCompileKind(b.CompileKwd)})
-		if b.FromEntity != "" || b.ToEntity != "" {
-			relationFroms = common.AppendUnique(relationFroms, []string{b.FromEntity, strings.ToLower(b.FromEntity)})
-			relationTos = common.AppendUnique(relationTos, []string{b.ToEntity, strings.ToLower(b.ToEntity)})
-		} else {
+		if b.FromEntity == "" && b.ToEntity == "" {
 			entityNames = common.AppendUnique(entityNames, []string{b.Name, strings.ToLower(b.Name)})
 		}
 	}
@@ -924,12 +919,43 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 	if err := batchedLookup("name_kwd", entityNames, map[string]interface{}{"knowledge_graph_kwd": "entity"}); err != nil {
 		return nil, err
 	}
-	// Both endpoints narrow the relation sweep; the identity check in applyRow
-	// still rejects the cross-product pairs the filter cannot express.
-	if err := batchedLookup("from_entity_kwd", relationFroms, map[string]interface{}{
-		"knowledge_graph_kwd": "relation",
-		"to_entity_kwd":       relationTos,
-	}); err != nil {
+	// Relation sweep: the filter combines from and to with AND, and the engines
+	// cap one terms list (Elasticsearch: 65,536 by default), so the incoming
+	// relations are grouped and each group is looked up with its own endpoints.
+	// Pairs no incoming relation requests are still read when they fall inside a
+	// group's cartesian product; the identity check in applyRow rejects them.
+	var batchFroms, batchTos []string
+	flushRelations := func() error {
+		if len(batchFroms) == 0 && len(batchTos) == 0 {
+			return nil
+		}
+		extra := map[string]interface{}{"knowledge_graph_kwd": "relation"}
+		if len(batchFroms) > 0 {
+			extra["from_entity_kwd"] = batchFroms
+		}
+		if len(batchTos) > 0 {
+			extra["to_entity_kwd"] = batchTos
+		}
+		err := lookup(extra)
+		batchFroms, batchTos = nil, nil
+		return err
+	}
+	for i := range buckets {
+		if buckets[i].FromEntity == "" && buckets[i].ToEntity == "" {
+			continue
+		}
+		froms := common.AppendUnique(batchFroms, []string{buckets[i].FromEntity, strings.ToLower(buckets[i].FromEntity)})
+		tos := common.AppendUnique(batchTos, []string{buckets[i].ToEntity, strings.ToLower(buckets[i].ToEntity)})
+		if len(froms) > structureLookupBatch || len(tos) > structureLookupBatch {
+			if err := flushRelations(); err != nil {
+				return nil, err
+			}
+			froms = common.AppendUnique(nil, []string{buckets[i].FromEntity, strings.ToLower(buckets[i].FromEntity)})
+			tos = common.AppendUnique(nil, []string{buckets[i].ToEntity, strings.ToLower(buckets[i].ToEntity)})
+		}
+		batchFroms, batchTos = froms, tos
+	}
+	if err := flushRelations(); err != nil {
 		return nil, err
 	}
 
