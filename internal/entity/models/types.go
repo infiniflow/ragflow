@@ -303,10 +303,15 @@ type ChatConfig struct {
 	ModelClass       *string
 	Effort           *string
 	Verbosity        *string
-	Tools            interface{}               `json:"tools,omitempty"`
-	ToolChoice       *string                   `json:"tool_choice,omitempty"`
-	ToolChoiceValue  any                       `json:"-"`
-	ToolCallsResult  *[]map[string]interface{} `json:"-"`
+	// JSONMode asks an OpenAI-compatible provider for a JSON object reply
+	// (`response_format: {"type": "json_object"}`). Knowledge compilation sets
+	// it so a prose reply does not fail JSON parsing. nil leaves the request
+	// without response_format, as the provider default.
+	JSONMode        *bool
+	Tools           interface{}               `json:"tools,omitempty"`
+	ToolChoice      *string                   `json:"tool_choice,omitempty"`
+	ToolChoiceValue any                       `json:"-"`
+	ToolCallsResult *[]map[string]interface{} `json:"-"`
 	// UsageResult receives the token usage extracted from the final
 	// streaming chunk when stream_options.include_usage is true.
 	// The ChatStreamlyWithSender driver writes to this pointer (if
