@@ -15,3 +15,77 @@
 //
 
 package cli
+
+import "fmt"
+
+func (c *CLI) SingleListFilesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	result := SimpleResponse{}
+	result.Code = 1
+	result.SetOutputFormat(c.Config.OutputFormat)
+	result.Message = "List files not implemented"
+	return &result, nil
+}
+
+func (c *CLI) SingleCatFileCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	result := SimpleResponse{}
+	result.Code = 1
+	result.SetOutputFormat(c.Config.OutputFormat)
+	result.Message = "Cat file not implemented"
+	return &result, nil
+}
+
+func (c *CLI) SingleSearchCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	result := SimpleResponse{}
+	result.Code = 1
+	result.SetOutputFormat(c.Config.OutputFormat)
+	result.Message = "Search not implemented"
+	return &result, nil
+}
+
+func (c *CLI) SingleFindCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	result := SimpleResponse{}
+	result.Code = 1
+	result.SetOutputFormat(c.Config.OutputFormat)
+	result.Message = "Find not implemented"
+	return &result, nil
+}
+
+func (c *CLI) SingleUseWorkspaceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	result := SimpleResponse{}
+	result.Code = 0
+	result.SetOutputFormat(c.Config.OutputFormat)
+	result.Message = fmt.Sprintf("Use workspace %s", cmd.Params["workspace"])
+	return &result, nil
+}
+
+func (c *CLI) SingleNewWorkspaceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	result := SimpleResponse{}
+	result.Code = 1
+	result.SetOutputFormat(c.Config.OutputFormat)
+	result.Message = fmt.Sprintf("New workspace %s", cmd.Params["new_workspace"])
+	return &result, nil
+}
+
+func (c *CLI) SingleDeleteWorkspaceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	result := SimpleResponse{}
+	result.Code = 1
+	result.SetOutputFormat(c.Config.OutputFormat)
+	result.Message = fmt.Sprintf("Delete workspace %s", cmd.Params["workspace"])
+	return &result, nil
+}
+
+func (c *CLI) SingleSaveMessageCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	result := SimpleResponse{}
+	result.Code = 1
+	result.SetOutputFormat(c.Config.OutputFormat)
+	result.Message = fmt.Sprintf("Attempt to save message: %s", cmd.Params["message"])
+	return &result, nil
+}
+
+func (c *CLI) SingleShowCurrentWorkspaceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	result := SimpleResponse{}
+	result.Code = 1
+	result.SetOutputFormat(c.Config.OutputFormat)
+	result.Message = "Show current workspace not implemented"
+	return &result, nil
+}

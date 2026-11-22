@@ -591,5 +591,26 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 }
 
 func (c *CLI) ExecuteSingleCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	return nil, fmt.Errorf("single command mode: %s", cmd.Type)
+	switch cmd.Type {
+	case "single_list_files":
+		return c.SingleListFilesCommand(commandCount, cmd)
+	case "single_cat_file":
+		return c.SingleCatFileCommand(commandCount, cmd)
+	case "single_search":
+		return c.SingleSearchCommand(commandCount, cmd)
+	case "single_find":
+		return c.SingleFindCommand(commandCount, cmd)
+	case "single_use_workspace":
+		return c.SingleUseWorkspaceCommand(commandCount, cmd)
+	case "single_new_workspace":
+		return c.SingleNewWorkspaceCommand(commandCount, cmd)
+	case "single_save_message":
+		return c.SingleSaveMessageCommand(commandCount, cmd)
+	case "single_show_workspace":
+		return c.SingleShowCurrentWorkspaceCommand(commandCount, cmd)
+	case "file_system_command":
+		return c.ExecuteFilesystemCommand(commandCount, cmd)
+	default:
+		return nil, fmt.Errorf("single command mode: %s", cmd.Type)
+	}
 }
