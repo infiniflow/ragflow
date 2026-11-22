@@ -25,6 +25,46 @@ import (
 	"testing"
 )
 
+func TestAPIOpenaiChatStreamPreservesCompletionMetadata(t *testing.T) {
+	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/openai/chat-id/chat/completions" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, `data: {"model":"example","choices":[{"delta":{"content":"hello"},"finish_reason":null}]}
+
+data: {"model":"example","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}
+
+data: [DONE]
+
+`)
+	}))
+	client.useAPIKey = true
+	c := &CLI{
+		Config: &CommandLineConfig{
+			CLIMode:         APIMode,
+			APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+		},
+		APIServerClientMap: map[string]*HTTPClient{"test": client},
+	}
+	result, err := c.APIOpenaiChatCommand(1, &Command{Params: map[string]interface{}{
+		"chat_id": "chat-id", "message": "hi", "stream": true,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := result.(*OpenAIChatResponse)
+	if response.Content() != "hello" || response.Model() != "example" {
+		t.Errorf("response content/model = %q/%q", response.Content(), response.Model())
+	}
+	if got := response.Data.Choices[0].FinishReason; got != "stop" {
+		t.Errorf("finish reason = %q, want stop", got)
+	}
+	if got := response.Usage(); got == nil || *got != (openAIChatUsage{PromptTokens: 3, CompletionTokens: 1, TotalTokens: 4}) {
+		t.Errorf("usage = %+v, want 3 prompt, 1 completion, 4 total tokens", got)
+	}
+}
+
 func TestParseLocalHTMLWithInlineImage(t *testing.T) {
 	filename := filepath.Join(t.TempDir(), "image.html")
 	if err := os.WriteFile(filename, []byte(`<p>hello</p><img alt="image" src="data:image/png;base64,aGVsbG8=">`), 0600); err != nil {

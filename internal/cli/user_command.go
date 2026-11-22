@@ -3645,6 +3645,8 @@ func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (Respons
 		fullContent string
 		fullReason  string
 		resolvedMod string
+		finish      string
+		usage       *openAIChatUsage
 	)
 	for _, line := range strings.Split(full, "\n") {
 		line = strings.TrimSpace(line)
@@ -3672,12 +3674,18 @@ func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (Respons
 		if chunk.Model != "" {
 			resolvedMod = chunk.Model
 		}
+		if chunk.Usage != nil {
+			usage = chunk.Usage
+		}
 		if len(chunk.Choices) > 0 {
 			if d := chunk.Choices[0].Delta.Content; d != "" {
 				fullContent += d
 			}
 			if r := chunk.Choices[0].Delta.ReasoningContent; r != "" {
 				fullReason += r
+			}
+			if reason := chunk.Choices[0].FinishReason; reason != "" {
+				finish = reason
 			}
 		}
 	}
@@ -3689,7 +3697,8 @@ func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (Respons
 		Reasoning: fullReason,
 		Data: &openAIChatData{
 			Model:   resolvedMod,
-			Choices: []openAIChatChoice{{Message: openAIChatMessage{Content: fullContent, ReasoningContent: fullReason}}},
+			Choices: []openAIChatChoice{{FinishReason: finish, Message: openAIChatMessage{Content: fullContent, ReasoningContent: fullReason}}},
+			Usage:   usage,
 		},
 		streamed: true,
 		raw:      resp.Body,
