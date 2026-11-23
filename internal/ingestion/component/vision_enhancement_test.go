@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -1356,6 +1357,8 @@ func TestVisionChatTimeoutOverride(t *testing.T) {
 		{"malformed falls back", "abc", defaultVisionChatTimeout},
 		{"zero falls back", "0", defaultVisionChatTimeout},
 		{"negative falls back", "-5", defaultVisionChatTimeout},
+		{"past time.Duration range falls back", fmt.Sprint(int64(math.MaxInt64/int64(time.Second)) + 1), defaultVisionChatTimeout},
+		{"past int64 range falls back", "9223372036854775808", defaultVisionChatTimeout},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {

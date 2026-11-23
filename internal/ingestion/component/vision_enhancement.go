@@ -28,8 +28,6 @@ import (
 	"io"
 	"maps"
 	"math"
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -58,9 +56,9 @@ var (
 
 const (
 	visionEnhancementConcurrency int = 10
-	// defaultVisionChatTimeout bounds a single VLM call so a hung endpoint
-	// cannot occupy one of the concurrency slots indefinitely. It wraps each
-	// per-image call with a 30-second timeout and 3 retries.
+	// defaultVisionChatTimeout is the fallback budget for a single VLM call
+	// when VISION_CHAT_TIMEOUT is unset or invalid, so a hung endpoint cannot
+	// occupy one of the concurrency slots indefinitely.
 	defaultVisionChatTimeout = 30 * time.Second
 	visionMediaItemBudget    = 10 * time.Second
 )
@@ -71,10 +69,8 @@ const (
 // than 30s for one image, and an expired budget fails the call instead of
 // retrying it.
 func visionChatTimeout() time.Duration {
-	if v := os.Getenv(common.EnvVisionChatTimeout); v != "" {
-		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 && n <= math.MaxInt64/int64(time.Second) {
-			return time.Duration(n) * time.Second
-		}
+	if n := common.GetEnvInt(common.EnvVisionChatTimeout, 0); n > 0 && int64(n) <= math.MaxInt64/int64(time.Second) {
+		return time.Duration(n) * time.Second
 	}
 	return defaultVisionChatTimeout
 }
