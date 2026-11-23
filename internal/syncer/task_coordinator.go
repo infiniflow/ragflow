@@ -69,7 +69,7 @@ func (c *TaskCoordinator) Execute(ctx context.Context, taskContext dao.SyncTaskC
 	defer cancel()
 	ctx = runCtx
 
-	recordTaskEvent(ctx, c.taskDAO, taskContext.Task.ID, dao.EventTypeMessage, "connector", "Opening source connection")
+	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "connector", "Opening source connection")
 	connector, err := c.registry.Open(ctx, taskContext)
 	if err != nil {
 		return TaskOutcome{}, err
@@ -78,7 +78,7 @@ func (c *TaskCoordinator) Execute(ctx context.Context, taskContext dao.SyncTaskC
 		return TaskOutcome{}, err
 	}
 
-	recordTaskEvent(ctx, c.taskDAO, taskContext.Task.ID, dao.EventTypeMessage, "connector", "Source connection validated")
+	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "connector", "Source connection validated")
 	switch taskContext.Task.TaskType {
 	case dao.TaskTypeSync:
 		queue, err := c.executor.RegisterTask(ctx, taskContext.Task.ID)

@@ -60,7 +60,7 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 				return "", err
 			}
 			common.Warn("prune unsupported by connector, completing as no-op", zap.String("task_id", taskContext.Task.ID), zap.Error(err))
-			recordTaskEvent(ctx, r.taskDAO, taskContext.Task.ID, dao.EventTypeMessage, "prune", "Source does not support pruning")
+			recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", "Source does not support pruning")
 			return r.taskService.CompletePrune(ctx, taskContext, 0)
 		}
 		return "", err
@@ -87,11 +87,11 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 	if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 		return "", err
 	}
-	recordTaskEvent(ctx, r.taskDAO, taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("Source scan found %d files to retain", len(retain)))
+	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("Source scan found %d files to retain", len(retain)))
 	removed, err := r.pruneService.DeleteStale(ctx, taskContext, retain)
 	if err != nil {
 		return "", err
 	}
-	recordTaskEvent(ctx, r.taskDAO, taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("Removed %d stale files", removed))
+	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("Removed %d stale files", removed))
 	return r.taskService.CompletePrune(ctx, taskContext, removed)
 }

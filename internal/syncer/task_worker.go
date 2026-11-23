@@ -132,7 +132,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			nackEnvelope(envelope)
 			return
 		}
-		recordTaskEvent(ctx, w.taskDAO, envelope.TaskID, dao.EventTypeTerminal, "setup", "[ERROR] Could not load sync task configuration")
+		recordTaskEvent(envelope.TaskID, dao.EventTypeTerminal, "setup", "[ERROR] Could not load sync task configuration")
 		ackEnvelope(envelope)
 		return
 	}
@@ -169,12 +169,12 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	defer w.locker.Unlock(taskContext.Connector.ID, taskContext.Knowledgebase.ID)
 
 	startedAt := time.Now()
-	recordTaskEvent(ctx, w.taskDAO, envelope.TaskID, dao.EventTypeSystem, taskContext.Task.TaskType, "Task started")
+	recordTaskEvent(envelope.TaskID, dao.EventTypeSystem, taskContext.Task.TaskType, "Task started")
 	outcome, err := w.coordinator.Execute(ctx, taskContext, lease)
 	if err != nil { // execute the task(sync/ prune)
 		logSyncTaskDuration(taskContext, startedAt) // test sync task run time
 		if errors.Is(err, errSyncTaskCanceled) {    // task is canceled by the user
-			recordTaskEvent(ctx, w.taskDAO, envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, "Task cancelled")
+			recordTaskEvent(envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, "Task cancelled")
 			ackEnvelope(envelope)
 			return
 		}
@@ -186,7 +186,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 				return
 			}
 			if restored {
-				recordTaskEvent(ctx, w.taskDAO, envelope.TaskID, dao.EventTypeSystem, taskContext.Task.TaskType, "[WARN] Worker stopped. Task queued to resume")
+				recordTaskEvent(envelope.TaskID, dao.EventTypeSystem, taskContext.Task.TaskType, "[WARN] Worker stopped. Task queued to resume")
 				w.scheduleRetry(context.WithoutCancel(ctx), taskContext.Task.ID, 3*time.Second)
 			}
 			ackEnvelope(envelope)
@@ -203,10 +203,10 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 		}
 		logSyncRetry(taskContext, attempts, failed, maxRetries, err)
 		if failed {
-			recordTaskEvent(ctx, w.taskDAO, envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, fmt.Sprintf("[ERROR] Task failed after %d attempts", attempts))
+			recordTaskEvent(envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, fmt.Sprintf("[ERROR] Task failed after %d attempts", attempts))
 		} else if attempts > 0 {
 			delay := transientRetryDelay(attempts)
-			recordTaskEvent(ctx, w.taskDAO, envelope.TaskID, dao.EventTypeSystem, taskContext.Task.TaskType, fmt.Sprintf("[WARN] Attempt %d failed. Retrying in %s", attempts, delay))
+			recordTaskEvent(envelope.TaskID, dao.EventTypeSystem, taskContext.Task.TaskType, fmt.Sprintf("[WARN] Attempt %d failed. Retrying in %s", attempts, delay))
 			w.scheduleRetry(ctx, taskContext.Task.ID, delay)
 		} else {
 			w.scheduleRetry(ctx, taskContext.Task.ID, transientRetryDelay(attempts))
@@ -215,7 +215,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 		return
 	}
 	logSyncTaskDuration(taskContext, startedAt)
-	recordTaskEvent(ctx, w.taskDAO, envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, "Task completed")
+	recordTaskEvent(envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, "Task completed")
 	w.scheduleNext(ctx, outcome.NextTaskID)
 	ackEnvelope(envelope)
 }
