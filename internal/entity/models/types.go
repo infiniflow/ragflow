@@ -898,7 +898,15 @@ func (m *ChatModel) withDefaults(config *ChatConfig) *ChatConfig {
 		config = &ChatConfig{}
 	}
 	if config.Thinking == nil {
-		config.Thinking = new(false)
+		// Preserve an unset switch when Ollama's GPT-OSS driver needs to
+		// resolve a configured effort. Explicit false still reaches the driver.
+		_, isOllama := m.ModelDriver.(*OllamaModel)
+		hasOllamaEffort := isOllama && m.ModelName != nil &&
+			strings.HasPrefix(strings.ToLower(*m.ModelName), "gpt-oss") &&
+			config.Effort != nil && *config.Effort != ""
+		if !hasOllamaEffort {
+			config.Thinking = new(false)
+		}
 	}
 	if m.info == nil {
 		return config

@@ -246,6 +246,63 @@ func TestOllamaThinkingAndEffort(t *testing.T) {
 	}
 }
 
+func TestOllamaChatModelThinkingAndEffort(t *testing.T) {
+	withSSRFBypass(t)
+	for _, tc := range []struct {
+		name, model string
+		thinking    *bool
+		effort      *string
+		want        any
+	}{
+		{name: "unset thinking keeps effort", model: "gpt-oss:20b", effort: new("high"), want: "high"},
+		{name: "case insensitive family", model: "GPT-OSS:20b", effort: new("low"), want: "low"},
+		{name: "disabled overrides effort", model: "gpt-oss:20b", thinking: new(false), effort: new("high"), want: false},
+		{name: "enabled uses effort", model: "gpt-oss:20b", thinking: new(true), effort: new("high"), want: "high"},
+		{name: "enabled without effort", model: "gpt-oss:20b", thinking: new(true), want: true},
+		{name: "disabled without effort", model: "gpt-oss:20b", thinking: new(false), want: false},
+		{name: "no effort keeps default disabled", model: "gpt-oss:20b", want: false},
+		{name: "empty effort keeps default disabled", model: "gpt-oss:20b", effort: new(""), want: false},
+		{name: "other family keeps default disabled", model: "llava", effort: new("high"), want: false},
+		{name: "other family keeps enabled", model: "llava", thinking: new(true), effort: new("high"), want: true},
+	} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, stream), func(t *testing.T) {
+				requestBody := make(chan map[string]any, 1)
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Errorf("decode request: %v", err)
+						http.Error(w, "invalid request", http.StatusBadRequest)
+						return
+					}
+					requestBody <- body
+					_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ok\"},\"done\":true}\n")
+				}))
+				defer srv.Close()
+				model := NewChatModelWithInfo(newOllamaForChatTest(srv.URL), &tc.model, &APIConfig{}, &ModelInfo{
+					Thinking: &ModelThinking{DefaultValue: true},
+				})
+				cfg := &ChatConfig{Thinking: tc.thinking, Effort: tc.effort}
+				messages := []Message{{Role: "user", Content: "hello"}}
+				if stream {
+					if err := model.ChatStreamlyWithSender(t.Context(), messages, cfg, nil, func(*string, *string) error { return nil }); err != nil {
+						t.Fatal(err)
+					}
+				} else if _, err := model.ChatWithMessages(t.Context(), messages, cfg, nil); err != nil {
+					t.Fatal(err)
+				}
+				body := <-requestBody
+				if body["think"] != tc.want {
+					t.Errorf("think=%v, want %v", body["think"], tc.want)
+				}
+				if body["stream"] != stream {
+					t.Errorf("stream=%v, want %v", body["stream"], stream)
+				}
+			})
+		}
+	}
+}
+
 func TestOllamaListModels(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
