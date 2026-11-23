@@ -341,6 +341,23 @@ func TestSoMarkPositionsAtPageEdges(t *testing.T) {
 	}
 }
 
+func TestSoMarkPositionsAtPageEdgesWithScaling(t *testing.T) {
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+		map[string]any{"page_num": 0, "page_size": map[string]any{"w": 1000, "h": 2000}, "blocks": []any{
+			map[string]any{"type": "text", "content": "body", "bbox": []any{-100, -200, 1100, 2200}},
+		}},
+	}}}}
+	items, _, warnings := soMarkItems(t.Context(), result, false, [][2]float64{{612, 792}})
+	if len(items) != 1 || len(warnings) != 0 {
+		t.Fatalf("items = %d, warnings = %q", len(items), warnings)
+	}
+	want := []any{1, 0.0, 612.0, 0.0, 792.0}
+	rows, _ := items[0]["positions"].([][]any)
+	if len(rows) != 1 || !reflect.DeepEqual(rows[0], want) {
+		t.Fatalf("position = %v, want %v", rows, want)
+	}
+}
+
 func TestSoMarkPagePointSizesHonorRotate(t *testing.T) {
 	// Fixture page 3 declares MediaBox [0 0 400 300] with /Rotate 90: the
 	// rendered page is 300 wide x 400 high, and positions must scale and

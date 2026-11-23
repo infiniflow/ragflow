@@ -33,6 +33,16 @@ func TestExternalBlockPosition(t *testing.T) {
 		{"bottom-left origin needs the page height", ExternalBlockOptions{}, ExternalRegion{Page: 1, Box: [4]float64{100, 50, 200, 80}, BottomLeft: true}, nil},
 		{"bleed inside the tolerance is clamped", ExternalBlockOptions{PageSizes: letter, BleedTolerance: 0.1}, ExternalRegion{Page: 1, Box: [4]float64{-20, 12, 620, 92}}, []any{1, 0.0, 612.0, 12.0, 92.0}},
 		{"bleed beyond the tolerance is another space", ExternalBlockOptions{PageSizes: letter, BleedTolerance: 0.1}, ExternalRegion{Page: 1, Box: [4]float64{0, 0, 1275, 1650}}, nil},
+		{"bleed at tolerance with non-integer scaling is clamped", ExternalBlockOptions{
+			PageSizes:      map[int][2]float64{1: {612, 792}},
+			SourceSizes:    map[int][2]float64{1: {1000, 2000}},
+			BleedTolerance: 0.1,
+		}, ExternalRegion{Page: 1, Box: [4]float64{-100, -200, 1100, 2200}}, []any{1, 0.0, 612.0, 0.0, 792.0}},
+		{"bleed beyond tolerance with scaling is dropped", ExternalBlockOptions{
+			PageSizes:      map[int][2]float64{1: {612, 792}},
+			SourceSizes:    map[int][2]float64{1: {1000, 2000}},
+			BleedTolerance: 0.1,
+		}, ExternalRegion{Page: 1, Box: [4]float64{-101, -200, 1100, 2200}}, nil},
 		{"pixels are scaled to points", raster, ExternalRegion{Page: 3, Box: [4]float64{30, 40, 300, 160}}, []any{3, 15.0, 150.0, 20.0, 80.0}},
 		{"normalized box scales by the page alone", ExternalBlockOptions{PageSizes: map[int][2]float64{2: {300, 400}}, SourceSizes: map[int][2]float64{2: {1, 1}}}, ExternalRegion{Page: 2, Box: [4]float64{0.25, 0.5, 0.75, 0.75}}, []any{2, 75.0, 225.0, 200.0, 300.0}},
 		{"scaled box is clipped to the page", raster, ExternalRegion{Page: 3, Box: [4]float64{-30, -40, 1200, 1000}}, []any{3, 0.0, 300.0, 0.0, 400.0}},

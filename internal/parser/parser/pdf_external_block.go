@@ -362,6 +362,10 @@ func (s *externalBlockSpace) position(region ExternalRegion) []any {
 			if s.mismatched[page] {
 				return nil
 			}
+			if tolerance := s.opts.BleedTolerance; tolerance > 0 && s.boxExceedsBleed(x0, y0, x1, y1, source, tolerance) {
+				s.reportBleedMismatch(page, region.Box, size)
+				return nil
+			}
 			x0, x1 = x0*size[0]/source[0], x1*size[0]/source[0]
 			y0, y1 = y0*size[1]/source[1], y1*size[1]/source[1]
 		case s.opts.KeepUnscaled:
@@ -380,6 +384,11 @@ func (s *externalBlockSpace) position(region ExternalRegion) []any {
 			}
 			return nil
 		}
+	} else if sized {
+		if tolerance := s.opts.BleedTolerance; tolerance > 0 && s.boxExceedsBleed(x0, y0, x1, y1, size, tolerance) {
+			s.reportBleedMismatch(page, region.Box, size)
+			return nil
+		}
 	}
 	if region.BottomLeft {
 		// The flip needs the page height. It assumes both sides describe the
@@ -392,23 +401,34 @@ func (s *externalBlockSpace) position(region ExternalRegion) []any {
 	if !sized {
 		return []any{page, x0, x1, y0, y1}
 	}
-	if tolerance := s.opts.BleedTolerance; tolerance > 0 {
-		overflowX := math.Max(0, math.Max(-x0, x1-size[0]))
-		overflowY := math.Max(0, math.Max(-y0, y1-size[1]))
-		if overflowX > size[0]*tolerance || overflowY > size[1]*tolerance {
-			if s.reported[page] == "" {
-				s.reported[page] = fmt.Sprintf("%s page %d: element box [%g %g %g %g] does not fit page size %gx%g; positions omitted because the service coordinates do not match the PDF point space",
-					s.opts.Provider, page, region.Box[0], region.Box[1], region.Box[2], region.Box[3], size[0], size[1])
-			}
-			return nil
-		}
-	}
 	x0, x1 = math.Max(0, math.Min(size[0], x0)), math.Max(0, math.Min(size[0], x1))
 	y0, y1 = math.Max(0, math.Min(size[1], y0)), math.Max(0, math.Min(size[1], y1))
 	if x1 <= x0 || y1 <= y0 {
 		return nil
 	}
 	return []any{page, x0, x1, y0, y1}
+}
+
+// boxExceedsBleed reports whether any edge of an unscaled box extends beyond
+// the page bleed tolerance in its native coordinate space. It preserves boxes
+// at exactly the tolerance and drops only boxes that extend beyond it.
+func (s *externalBlockSpace) boxExceedsBleed(x0, y0, x1, y1 float64, extent [2]float64, tolerance float64) bool {
+	if tolerance <= 0 || extent[0] <= 0 || extent[1] <= 0 {
+		return false
+	}
+	overflowX := math.Max(-x0, x1-extent[0])
+	overflowY := math.Max(-y0, y1-extent[1])
+	limitX := extent[0] * tolerance
+	limitY := extent[1] * tolerance
+	const eps = 1e-9
+	return overflowX > limitX*(1+eps) || overflowY > limitY*(1+eps)
+}
+
+func (s *externalBlockSpace) reportBleedMismatch(page int, box [4]float64, size [2]float64) {
+	if s.reported[page] == "" {
+		s.reported[page] = fmt.Sprintf("%s page %d: element box [%g %g %g %g] does not fit page size %gx%g; positions omitted because the service coordinates do not match the PDF point space",
+			s.opts.Provider, page, box[0], box[1], box[2], box[3], size[0], size[1])
+	}
 }
 
 // warnings returns the reported pages in page order.
