@@ -18,52 +18,27 @@ package chatter
 import (
 	"context"
 	"fmt"
-	"sync"
+	"net"
+	"strconv"
 
 	"ragflow/internal/channels"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
-	"ragflow/internal/service"
 )
 
 // Run owns the channel runtime until cancellation, including adapter shutdown.
-func Run(ctx context.Context, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 	if !kvrocks.IsEnabled() {
 		return fmt.Errorf("chatter requires Kvrocks for shared channel runtime status")
 	}
-	var closeTokenizer func()
-	var runtimeMu sync.Mutex
-	stopped := false
-	defer func() {
-		runtimeMu.Lock()
-		defer runtimeMu.Unlock()
-		stopped = true
-		if closeTokenizer != nil {
-			closeTokenizer()
-		}
-	}()
-	getAgentService := sync.OnceValues(func() (*service.AgentService, error) {
-		if services != nil {
-			return services.AgentService, nil
-		}
-		// Adapter shutdown can time out while a first message is initializing.
-		runtimeMu.Lock()
-		defer runtimeMu.Unlock()
-		if stopped {
-			return nil, context.Canceled
-		}
-		// A standalone chatter needs the dictionaries only when a message arrives.
-		common.Info("Initializing chat-channel agent runtime")
-		var err error
-		closeTokenizer, err = bootstrap.InitializeAgentTokenizer()
-		if err != nil {
-			return nil, err
-		}
-		return bootstrap.NewAgentServices().AgentService, nil
-	})
-	runtime, err := channels.Start(ctx, getAgentService)
+	api := server.GetConfig().GetAPIServerConfig()
+	host := api.Host
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	runtime, err := channels.Start(ctx, "http://"+net.JoinHostPort(host, strconv.Itoa(api.HTTPPort)))
 	if err != nil {
 		return fmt.Errorf("start chat-channel: %w", err)
 	}
