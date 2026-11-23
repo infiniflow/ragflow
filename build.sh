@@ -1081,9 +1081,13 @@ infinity_embedded_lib() {
         printf '%s\n' "$INFINITY_EMBEDDED_LIB"
         return 0
     fi
-    # The shared object is preferred over the archive: the archive embeds its
-    # own zstd/lz4 copies, which collide with the copies inside pdfium and
-    # onnxruntime at link time. A dylib/so/dll keeps those private.
+    # The shared object is preferred over the archive. Linking the archive into
+    # the desktop binary fails on macOS with 132 duplicate symbols, measured:
+    # `_rust_eh_personality` (Rust std) collides with liboffice_oxide.a, which is
+    # a Rust staticlib too, and the ZSTD_* copies the archive bundles collide
+    # with office_oxide's. Rust staticlibs export their whole std; a dylib keeps
+    # them private. Making the engine static therefore means making
+    # office_oxide dynamic in the same change.
     local shared_suffix
     case "$(uname -s)" in
         Darwin) shared_suffix="dylib" ;;
