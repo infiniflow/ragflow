@@ -30,8 +30,8 @@ func TestNewQueryBuilder(t *testing.T) {
 	}
 	// Check default fields
 	expectedFields := []string{
-		"title_tks^10",
-		"title_sm_tks^5",
+		"title_tks^2",
+		"title_sm_tks^2",
 		"important_kwd^30",
 		"important_tks^20",
 		"question_tks^20",
@@ -383,8 +383,8 @@ func TestQueryBuilder_Paragraph(t *testing.T) {
 			}
 			// Check default fields
 			defaultFields := []string{
-				"title_tks^10",
-				"title_sm_tks^5",
+				"title_tks^2",
+				"title_sm_tks^2",
 				"important_kwd^30",
 				"important_tks^20",
 				"question_tks^20",

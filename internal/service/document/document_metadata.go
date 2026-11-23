@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/service/datasetversion"
 	"reflect"
 	"regexp"
 	"sort"
@@ -58,6 +60,12 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 	if err = s.docEngine.UpdateMetadata(ctx, docID, doc.KbID, meta, tenantID); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
+	// The store keeps only the current values, so the history is the only place a
+	// restore can read them back from. A history that cannot be recorded fails the
+	// call: a row naming values nobody stored would replay an empty map.
+	if err := recordDocumentMetadataState(ctx, dao.DB, docID, doc.KbID, meta); err != nil {
+		return fmt.Errorf("failed to record the metadata history: %w", err)
+	}
 
 	return nil
 }
@@ -80,6 +88,19 @@ func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID stri
 	err = s.docEngine.DeleteMetadataKeys(ctx, docID, doc.KbID, keys, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to delete metadata: %w", err)
+	}
+	// The delete left a smaller map behind; that map is the state a restore to a
+	// later version has to put back, so it is recorded as the document's newest
+	// one. A read failure keeps the delete successful and leaves the history
+	// without the row rather than guessing at what remained.
+	remaining, readErr := s.GetDocumentMetadataByID(ctx, docID)
+	if readErr != nil {
+		common.Warn("Document: failed to read the metadata left after a delete",
+			zap.String("document_id", docID), zap.Error(readErr))
+		return nil
+	}
+	if err := recordDocumentMetadataState(ctx, dao.DB, docID, doc.KbID, remaining); err != nil {
+		return fmt.Errorf("failed to record the metadata history: %w", err)
 	}
 
 	return nil
@@ -110,7 +131,10 @@ func (s *DocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID s
 	if err != nil {
 		return fmt.Errorf("failed to delete document metadata: %w", err)
 	}
-
+	// Nothing is recorded: this is only called while the document itself is being
+	// removed, and the delete version already says the document is gone. A state
+	// row here would name a document that no longer exists - and, once its id is
+	// reused, describe the next document with the previous one's values.
 	return nil
 }
 
@@ -139,6 +163,46 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 	}
 
 	return make(map[string]interface{}), nil
+}
+
+// GetDocumentMetadataByIDs returns metadata for a batch of documents in one
+// dataset, sharing the tenant and index lookups across all of them.
+func (s *DocumentService) GetDocumentMetadataByIDs(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error) {
+	out := make(map[string]map[string]interface{}, len(docIDs))
+	if len(docIDs) == 0 {
+		return out, nil
+	}
+	// Retry the whole tenant-lookup + index-search unit once: a transient
+	// failure in either step would otherwise clear metadata for every doc in
+	// the batch.
+	search := func() (*service.SearchMetadataResponse, error) {
+		tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, kbID)
+		if err != nil {
+			return nil, err
+		}
+		return s.metadataSvc.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
+	}
+	result, err := search()
+	if err != nil {
+		result, err = search()
+		if err != nil {
+			return out, err
+		}
+	}
+	seen := make(map[string]bool, len(result.MetadataRecords))
+	for _, record := range result.MetadataRecords {
+		docID, ok := service.ExtractDocumentID(record)
+		if !ok || docID == "" || seen[docID] {
+			continue
+		}
+		seen[docID] = true
+		fields, err := service.ExtractMetaFields(record)
+		if err != nil {
+			fields = map[string]interface{}{}
+		}
+		out[docID] = fields
+	}
+	return out, nil
 }
 
 // GetMetadataByKBs get metadata for knowledge bases
@@ -507,30 +571,99 @@ func isTimeString(s string) bool {
 	return matched
 }
 
-func (s *DocumentService) replaceDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
-	if s.docEngine == nil || s.metadataSvc == nil {
-		return nil
+// documentMetadataScope resolves the document and the tenant whose metadata
+// store holds its values.
+func (s *DocumentService) documentMetadataScope(ctx context.Context, docID string) (*entity.Document, string, error) {
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+	if err != nil {
+		return nil, "", fmt.Errorf("document not found: %w", err)
 	}
-	if err := s.DeleteDocumentAllMetadata(ctx, docID); err != nil {
-		return err
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get tenant ID: %w", err)
 	}
-	return s.SetDocumentMetadata(ctx, docID, meta)
+	return doc, tenantID, nil
 }
 
-func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID string, before, after map[string]interface{}) error {
-	if s.docEngine == nil || s.metadataSvc == nil {
+// clearDocumentMetadataStore drops every value a document holds.
+func (s *DocumentService) clearDocumentMetadataStore(ctx context.Context, doc *entity.Document, tenantID string) error {
+	if _, err := s.docEngine.DeleteMetadata(ctx,
+		map[string]interface{}{"id": doc.ID, "kb_id": doc.KbID}, tenantID); err != nil {
+		return fmt.Errorf("failed to delete document metadata: %w", err)
+	}
+	return nil
+}
+
+// writeDocumentMetadataStore writes the values a document is left with. An
+// empty map writes nothing: the callers clear the row first when they mean to
+// remove every key, so a write of nothing has nothing to do.
+func (s *DocumentService) writeDocumentMetadataStore(ctx context.Context, doc *entity.Document, tenantID string, meta map[string]interface{}) error {
+	if len(meta) == 0 {
 		return nil
+	}
+	if err := s.docEngine.UpdateMetadata(ctx, doc.ID, doc.KbID,
+		splitCombinedDocumentMetadataValues(meta), tenantID); err != nil {
+		return fmt.Errorf("failed to update metadata: %w", err)
+	}
+	return nil
+}
+
+// writeDocumentMetadataSnapshot replaces a document's stored metadata with the
+// given values and reports the dataset the document belongs to.
+//
+// It is the store half of a metadata write: no history row is appended, so a
+// caller whose write has several steps records the state once, when it is
+// final. The values are replaced as a whole - a snapshot says what the document
+// holds, so a key it does not mention is a key the document does not have. A
+// service without a document engine answers with no dataset and writes nothing,
+// which is what the unit tests of the callers run against.
+func (s *DocumentService) writeDocumentMetadataSnapshot(ctx context.Context, docID string, meta map[string]interface{}) (string, error) {
+	if s.docEngine == nil || s.metadataSvc == nil {
+		return "", nil
+	}
+	doc, tenantID, err := s.documentMetadataScope(ctx, docID)
+	if err != nil {
+		return "", err
+	}
+	if err := s.clearDocumentMetadataStore(ctx, doc, tenantID); err != nil {
+		return "", err
+	}
+	if len(meta) == 0 {
+		return doc.KbID, nil
+	}
+	// The store is created on first write, which is why the clear (which only
+	// removes rows) comes first: a document nobody wrote metadata for has no
+	// store yet, and clearing before creating it is the order the engine expects.
+	if err := s.metadataSvc.EnsureMetadataStore(ctx, tenantID); err != nil {
+		return "", fmt.Errorf("failed to ensure metadata store: %w", err)
+	}
+	if err := s.writeDocumentMetadataStore(ctx, doc, tenantID, meta); err != nil {
+		return "", err
+	}
+	return doc.KbID, nil
+}
+
+func (s *DocumentService) replaceDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
+	// The state itself is recorded by the caller under the version that records
+	// the change (see UpdateDatasetDocument): one record, keyed by that number.
+	_, err := s.writeDocumentMetadataSnapshot(ctx, docID, meta)
+	return err
+}
+
+// patchDocumentMetadata writes the new values and reports the document's display
+// name, which the caller puts in the dataset timeline's change set. The name
+// comes from the read the write already needs, so reporting it costs no extra
+// lookup; a document that is not found answers with no name rather than failing
+// a write that the caller has already decided to make.
+func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID string, before, after map[string]interface{}) (string, error) {
+	if s.docEngine == nil || s.metadataSvc == nil {
+		return "", nil
 	}
 
 	deleteKeys := make([]string, 0)
 	for key := range before {
 		if _, ok := after[key]; !ok {
 			deleteKeys = append(deleteKeys, key)
-		}
-	}
-	if len(deleteKeys) > 0 {
-		if err := s.DeleteDocumentMetadata(ctx, docID, deleteKeys); err != nil {
-			return err
 		}
 	}
 
@@ -543,18 +676,34 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 		}
 	}
 	if !changed && len(deleteKeys) == 0 {
-		return nil
+		return "", nil
 	}
 
-	// If 'after' is empty, all keys were deleted — the record has already
-	// been cleaned up by DeleteDocumentMetadata above; skip the write.
-	if len(after) == 0 {
-		return nil
+	doc, tenantID, err := s.documentMetadataScope(ctx, docID)
+	if err != nil {
+		return "", err
 	}
-
-	// Send the complete 'after' map — UpdateMetadata does a full replace,
-	// not a merge, so a partial delta would wipe unchanged keys.
-	return s.SetDocumentMetadata(ctx, docID, after)
+	if len(after) == 0 && len(deleteKeys) > 0 {
+		if err := s.docEngine.DeleteMetadataKeys(ctx, docID, doc.KbID, deleteKeys, tenantID); err != nil {
+			return "", fmt.Errorf("failed to delete metadata: %w", err)
+		}
+	}
+	if len(after) > 0 {
+		if err := s.metadataSvc.EnsureMetadataStore(ctx, tenantID); err != nil {
+			return "", fmt.Errorf("failed to ensure metadata store: %w", err)
+		}
+	}
+	// Send the complete 'after' map — UpdateMetadata replaces the stored
+	// meta_fields wholesale on every engine, so a write carrying only the
+	// delta would drop untouched keys. The delete above stays a separate step
+	// for the empty-'after' case: writeDocumentMetadataStore skips empty maps,
+	// so removing the last keys is the delete's job.
+	if err := s.writeDocumentMetadataStore(ctx, doc, tenantID, after); err != nil {
+		return "", err
+	}
+	// The values are recorded by the caller under the version that records the
+	// change (see BatchUpdateDocumentMetadatas): one record, keyed by its number.
+	return documentNameOf(doc), nil
 }
 
 // BatchUpdateDocumentMetadatas implements the shared logic for
@@ -647,11 +796,21 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 	// Apply updates and deletes per document using Python's batch_update_metadata
 	// semantics instead of a simple merge-then-delete.
 	updated := 0
+	failed := 0
+	// The documents whose values moved, gathered for the dataset timeline and
+	// recorded once at the end: one batch update is one moment, so it appends one
+	// version rather than a row per document it touched.
+	metadataChanges := make([]entity.DatasetVersionChange, 0, len(ids))
+	// The values each document came to hold, kept beside the change set: the
+	// version row says who moved, and this is what a replay of that version puts
+	// back when a later edit lands in the same millisecond.
+	metaByDocument := make(map[string]map[string]interface{}, len(ids))
 	for _, docID := range ids {
 		currentMeta, err := s.GetDocumentMetadataByID(ctx, docID)
 		if err != nil {
 			common.Warn("BatchUpdateDocumentMetadata: get metadata failed",
 				zap.String("docID", docID), zap.Error(err))
+			failed++
 			continue
 		}
 
@@ -667,15 +826,66 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 			continue
 		}
 
-		if err = s.patchDocumentMetadata(ctx, docID, originalMeta, meta); err != nil {
+		docName, patchErr := s.patchDocumentMetadata(ctx, docID, originalMeta, meta)
+		if patchErr != nil {
 			common.Warn("BatchUpdateDocumentMetadata: patch metadata failed",
-				zap.String("docID", docID), zap.Error(err))
+				zap.String("docID", docID), zap.Error(patchErr))
+			failed++
 			continue
 		}
 		updated++
+		metaByDocument[docID] = meta
+		metadataChanges = append(metadataChanges, entity.DatasetVersionChange{
+			DocID:       docID,
+			Entity:      entity.DatasetVersionChangeEntityDocument,
+			Action:      entity.DatasetVersionChangeActionUpdate,
+			Name:        docName,
+			MetaChanges: metadataFieldChanges(originalMeta, meta),
+		})
+	}
+
+	// An edit of the values is a version of its own: the metadata store is not
+	// rebuilt by a restore, so the timeline is what says whose metadata moved and
+	// when - the same reason the single-document path records one. A batch that
+	// moved nothing records nothing: a version marks a moment, and a save that
+	// repeated the previous values is not one.
+	if err := recordMetadataVersionChanges(ctx, datasetID, metadataChanges, metaByDocument); err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to record the metadata history: %w", err)
+	}
+	if failed > 0 {
+		return nil, common.CodeServerError, fmt.Errorf("failed to save metadata for %d of %d documents", failed, len(ids))
 	}
 
 	return &BatchUpdateMetadatasResponse{Updated: updated, MatchedDocs: len(ids)}, common.CodeSuccess, nil
+}
+
+// recordMetadataVersionChanges appends the dataset timeline row that names the
+// documents a batch metadata update moved.
+//
+// It is its own function so the writer can be exercised without a metadata
+// store: the row is the observable half of a change whose values live in a store
+// the unit tests do not carry. An empty set is not a moment at all, but a state
+// that cannot be stored is an error: a row naming values nobody holds would
+// replay an empty map over the document.
+func recordMetadataVersionChanges(ctx context.Context, datasetID string, changes []entity.DatasetVersionChange, metaByDocument map[string]map[string]interface{}) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	version, err := datasetversion.RecordContentVersionChangesOwnTx(
+		ctx, datasetID, entity.DatasetVersionKindDocumentMetadata, changes)
+	if err != nil {
+		return err
+	}
+	// The values a replay of this version puts back, recorded by number so a
+	// later edit in the same millisecond cannot displace them.
+	for _, change := range changes {
+		if meta, ok := metaByDocument[change.DocID]; ok {
+			if err := recordDocumentVersionMetadata(ctx, dao.DB, version, change.DocID, datasetID, meta); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func validateBatchUpdateDocumentMetadatasRequest(
@@ -802,6 +1012,14 @@ func applyDocumentMetadataUpdates(meta map[string]interface{}, updates []Metadat
 		}
 
 		if curList, ok := toMetadataInterfaceSlice(current); ok {
+			if !matchProvided {
+				switch strings.ToLower(strings.TrimSpace(upd.ValueType)) {
+				case "string", "number", "time":
+					meta[key] = normalizedValue
+					changed = true
+					continue
+				}
+			}
 			if !matchProvided {
 				newList := append([]interface{}{}, curList...)
 				if appendList, ok := toMetadataInterfaceSlice(normalizedValue); ok {
@@ -935,7 +1153,7 @@ func normalizeDocumentMetadataUpdateValue(value interface{}, valueType string) i
 		if list, ok := normalizeMetadataListValue(value); ok {
 			return list
 		}
-		return []interface{}{}
+		return []interface{}{value}
 	case "number":
 		scalar, ok := firstScalarMetadataValue(value)
 		if !ok {

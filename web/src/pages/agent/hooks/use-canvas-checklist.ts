@@ -68,7 +68,7 @@ export function useCanvasChecklist({
   canvasID,
 }: {
   resourceTenantId?: string;
-  ownerUserId?: string;
+  ownerUserId?: string | null;
   canvasID?: string;
 } = {}) {
   const nodes = useGraphStore((state) => state.nodes);
@@ -83,18 +83,16 @@ export function useCanvasChecklist({
   } = useFetchAllMemoryList(ownerUserId);
   // Model, template-group, and memory references use the canvas owner's
   // access scope. Dataset references are scoped separately by canvasID.
-  const { validIds: modelValidIds, isSettled: modelsFetched } =
+  const { validIds: modelValidIds, isFetched: modelsFetched } =
     useModelValidIds(ModelTypeMap.llm_id, resourceTenantId, ownerUserId);
   const {
     validIds: categorizeModelValidIds,
-    isSettled: categorizeModelsFetched,
+    isFetched: categorizeModelsFetched,
   } = useModelValidIds(
-    ['chat', 'vision', 'decision'],
+    ['chat', 'vlm', 'decision'],
     resourceTenantId,
     ownerUserId,
   );
-  const { validIds: scoringModelValidIds, isFetched: scoringModelsFetched } =
-    useModelValidIds(ModelTypeMap.scoring_id, resourceTenantId, ownerUserId);
   const {
     groups: templateGroups,
     isFetched: templateGroupsFetched,
@@ -104,6 +102,7 @@ export function useCanvasChecklist({
   const { staleDatasetIds, settled: datasetsSettled } = useStaleDatasetIds(
     datasetIds,
     canvasID,
+    ownerUserId,
   );
 
   const inputs: CanvasChecklistInputs = useMemo(
@@ -121,9 +120,6 @@ export function useCanvasChecklist({
       modelValidIds: modelsFetched ? modelValidIds : undefined,
       categorizeModelValidIds: categorizeModelsFetched
         ? categorizeModelValidIds
-        : undefined,
-      scoringModelValidIds: scoringModelsFetched
-        ? scoringModelValidIds
         : undefined,
       staleDatasetIds: datasetsSettled ? staleDatasetIds : undefined,
       // The groups query fetches only the first page (page_size: 100) — a
@@ -149,8 +145,6 @@ export function useCanvasChecklist({
       modelValidIds,
       categorizeModelsFetched,
       categorizeModelValidIds,
-      scoringModelsFetched,
-      scoringModelValidIds,
       datasetsSettled,
       staleDatasetIds,
       templateGroups,

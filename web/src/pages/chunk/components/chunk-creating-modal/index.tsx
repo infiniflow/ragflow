@@ -164,6 +164,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
                       <Input
                         type="text"
                         value={t(`chunk.docType.${chunkType}`)}
+                        disabled={true}
                         readOnly
                       />
                     </FormControl>

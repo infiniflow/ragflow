@@ -6,7 +6,10 @@ import { z } from 'zod';
 
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
-import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
+import {
+  RerankCandidatesCountFormField,
+  rerankCandidatesCountSchema,
+} from '@/components/rerank-candidates-count-item';
 import {
   MetadataFilter,
   MetadataFilterSchema,
@@ -54,7 +57,6 @@ export default function TestingForm({
   const resourceTenantId = useResourceTenantId();
   const knowledgeBaseId = id;
 
-  const integerValidationMessage = t('knowledgeDetails.testIntegerValidation');
   const formSchema = z
     .object({
       question: z.string().min(1, {
@@ -64,12 +66,8 @@ export default function TestingForm({
       ...keywordsSimilarityWeightSchema,
       dataset_ids: z.array(z.string()).optional(),
       ...MetadataFilterSchema,
-      page_size: z.number().int(integerValidationMessage).min(1).max(100),
-      rerank_candidates_count: z
-        .number()
-        .int(integerValidationMessage)
-        .min(64)
-        .max(256),
+      page_size: z.number().int().min(1).max(100),
+      ...rerankCandidatesCountSchema,
     })
     .refine((values) => values.rerank_candidates_count >= values.page_size, {
       message: t('chat.rerankCandidatesCountValidation'),
@@ -102,11 +100,10 @@ export default function TestingForm({
   return (
     <Form {...form}>
       <form
-        className="size-full min-h-0 flex flex-col"
-        noValidate
+        className="size-full flex flex-col"
         onSubmit={form.handleSubmit(onSubmit)}
       >
-        <div className="px-5 h-0 flex-1 min-h-0">
+        <div className="px-5 h-0 flex-1">
           <FormContainer className="p-5 h-full overflow-auto">
             <SimilaritySliderFormField
               isTooltipShown={true}
@@ -123,7 +120,7 @@ export default function TestingForm({
           </FormContainer>
         </div>
 
-        <footer className="shrink-0 p-5">
+        <footer className="flex-0 p-5">
           <FormField
             control={form.control}
             name="question"

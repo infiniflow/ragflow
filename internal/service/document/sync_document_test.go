@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -84,6 +85,77 @@ func assertSyncDocumentState(t *testing.T, db *gorm.DB, store *fakeUploadStorage
 		t.Fatalf("published blob = %q, err = %v", blob, err)
 	}
 	return doc
+}
+
+func TestSyncDocumentUpsertUTF8Filename(t *testing.T) {
+	tests := []struct {
+		name      string
+		title     string
+		extension string
+		want      string
+	}{
+		{
+			name:      "cyrillic_page_hierarchy",
+			title:     "Wiki / Parent / " + strings.Repeat("П", 150),
+			extension: ".txt",
+			want:      "Wiki _ Parent _ " + strings.Repeat("П", 117) + ".txt",
+		},
+		{
+			name:      "chinese_inside_rune",
+			title:     strings.Repeat("文", 100),
+			extension: ".txt",
+			want:      strings.Repeat("文", 83) + ".txt",
+		},
+		{
+			name:      "emoji_with_existing_extension",
+			title:     strings.Repeat("📄", 80) + ".TXT",
+			extension: ".txt",
+			want:      strings.Repeat("📄", 62) + ".TXT",
+		},
+		{
+			name:      "cut_at_rune_boundary",
+			title:     "AB" + strings.Repeat("文", 84),
+			extension: ".txt",
+			want:      "AB" + strings.Repeat("文", 83) + ".txt",
+		},
+		{
+			name:      "already_at_byte_limit",
+			title:     "AB" + strings.Repeat("文", 83) + ".txt",
+			extension: ".txt",
+			want:      "AB" + strings.Repeat("文", 83) + ".txt",
+		},
+		{
+			name:      "ascii_over_byte_limit",
+			title:     strings.Repeat("a", 260),
+			extension: ".md",
+			want:      strings.Repeat("a", 252) + ".md",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, db, store, input := setupSyncDocumentTest(t, false)
+			input.SourceDocument.SemanticIdentifier = tt.title
+			input.SourceDocument.Extension = tt.extension
+			result, err := svc.Upsert(t.Context(), input)
+			if err != nil || result.Action != service.DocumentActionAdded {
+				t.Fatalf("Upsert = %+v, err = %v, want added document", result, err)
+			}
+			doc := assertSyncDocumentState(t, db, store, input, input.SourceDocument.Fingerprint)
+			if doc.Name == nil {
+				t.Fatal("persisted document has no name")
+			}
+			got := *doc.Name
+			if !utf8.ValidString(got) {
+				t.Fatalf("persisted document name is invalid UTF-8 (last bytes %q)", got[max(0, len(got)-8):])
+			}
+			if len(got) > 255 {
+				t.Fatalf("persisted document name is %d bytes, want at most 255", len(got))
+			}
+			if got != tt.want {
+				t.Fatalf("persisted document name = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestSyncDocumentDownstreamFailurePreservesPublishedBlobAndRetries(t *testing.T) {

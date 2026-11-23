@@ -18,6 +18,7 @@ package common
 
 import (
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -171,6 +172,53 @@ func TestParseAndConvert_NoName(t *testing.T) {
 	result := ParseAndConvert(input)
 	if result != nil {
 		t.Errorf("expected nil for empty name, got %v", result)
+	}
+}
+
+// The API documents a metadata condition value as a string, so "in" / "not in"
+// arrive as a comma-separated string. ParseAndConvert feeds the metadata/update
+// selector and the OpenAI-compatible metadata_condition, and must split that
+// string the same way the retrieval filter does instead of matching nothing.
+func TestParseAndConvert_InStringValueFiltersDocuments(t *testing.T) {
+	metas := MetaData{"year": {"2023": {"d1"}, "2024": {"d2"}, "2025": {"d3"}}}
+	cases := []struct {
+		name  string
+		op    string
+		value interface{}
+		want  []string
+	}{
+		{"in comma list", "in", "2023,2024", []string{"d1", "d2"}},
+		{"in single value", "in", "2023", []string{"d1"}},
+		{"in trims spaces", "in", " 2023 , 2024 ", []string{"d1", "d2"}},
+		{"not in comma list", "not in", "2023,2024", []string{"d3"}},
+		{"not in single value", "not in", "2023", []string{"d2", "d3"}},
+		{"in JSON list unchanged", "in", []interface{}{"2023", "2024"}, []string{"d1", "d2"}},
+		{"not in JSON list unchanged", "not in", []interface{}{"2023", "2024"}, []string{"d3"}},
+		{"in non-string scalar still matches nothing", "in", float64(2023), []string{}},
+		// A blank value has no items. It must match nothing, as before,
+		// and must not turn "not in" into "every document".
+		{"in empty string matches nothing", "in", "", []string{}},
+		{"not in empty string matches nothing", "not in", "", []string{}},
+		{"not in whitespace matches nothing", "not in", "   ", []string{}},
+		{"not in comma only matches nothing", "not in", ",", []string{}},
+		{"not in spaced comma matches nothing", "not in", " , ", []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ParseAndConvert(map[string]interface{}{
+				"conditions": []interface{}{
+					map[string]interface{}{"name": "year", "comparison_operator": tc.op, "value": tc.value},
+				},
+			})
+			got := MetaFilter(metas, input)
+			sort.Strings(got)
+			if got == nil {
+				got = []string{}
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("%s %v: got %v, want %v", tc.op, tc.value, got, tc.want)
+			}
+		})
 	}
 }
 

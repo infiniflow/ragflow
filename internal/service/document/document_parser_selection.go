@@ -207,6 +207,7 @@ func rebuildParserConfig(ctx context.Context, kb *entity.Knowledgebase, target, 
 	if meta, ok := raw["metadata"]; ok {
 		cleaned["metadata"] = meta
 	}
+	inheritFallbackParserOptions(cleaned, raw, componentpkg.ParserFileFamily(utility.GetFileExtension(filename)))
 	pipelinepkg.ApplyParentChildChunkerConfig(cleaned, raw)
 	llmID := ""
 	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {

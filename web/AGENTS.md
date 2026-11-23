@@ -164,14 +164,20 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 
 ### Prefer Shared Building Blocks
 
-**Do not hand-roll ad-hoc elements when a shared component, hook, util, or constant already covers the need.** Before writing a raw styled element or a local helper, check the shared layers first:
+**Do not hand-roll ad-hoc elements when a shared component, hook, util, or constant already covers the need.** Before writing a raw styled element or a local helper, check the shared layers first and prefer the highest-level abstraction that covers the use case:
 
-- Interactive elements (buttons, inputs, tooltips, dialogs, pagination, …) → compose `src/components/ui/` primitives via `variant`/`size`/`className` (e.g. an icon-only action is `<Button variant="ghost" size="icon">` or `variant="static" size="auto"`, not a raw `<button className="...">`).
+- **Feature-level components before primitives**: when a shared component already provides the interaction, use it instead of importing its underlying shadcn/Radix primitives or recreating equivalent JSX. Common examples:
+  - Selects, including searchable selects → `SelectWithSearch` from `src/components/originui/select-with-search.tsx`.
+  - Tooltips → `RAGFlowTooltip`; form-field help → `FormTooltip` from `src/components/ui/tooltip.tsx`.
+  - Destructive-action confirmations → `ConfirmDeleteDialog` from `src/components/confirm-delete-dialog.tsx`.
+- Basic primitives without a higher-level wrapper may be composed directly via `variant`/`size`/`className` (e.g. an icon-only action is `<Button variant="ghost" size="icon">` or `variant="static" size="auto"`, not a raw `<button className="...">`).
 - Reusable logic → existing hooks in `src/hooks/` (or `ahooks`).
 - Pure helpers → existing utils in `src/utils/` (or `lodash`/`dayjs`).
 - Domain constant lists → the page's `constant/` directory.
 
 Writing your own one-off version of something the shared layer already provides is a defect, not a style choice. Beyond the `ui/` primitives, `src/components/` already covers most recurring needs — empty states, truncation tooltips, confirm/rename dialogs, list-page scaffolding (filter bar, pagination, skeletons), icons, avatars, and layout wrappers — so skim `src/components/`, `src/hooks/`, and `src/utils/` before writing anything new.
+
+If an existing wrapper lacks a required capability, prefer extending its API or composing it in a component outside `src/components/ui/` rather than bypassing it. A missing prop or a small styling difference alone is not a reason to drop to the underlying primitive; any exception needs a written justification and reviewer approval.
 
 ### React Patterns and Conventions
 

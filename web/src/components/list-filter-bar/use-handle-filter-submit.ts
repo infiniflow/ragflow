@@ -51,8 +51,9 @@ const mergeFilterValue = (
     } else {
       const nestedValue: Record<string, string[]> = {};
       for (const nestedKey in fieldValue) {
-        nestedValue[nestedKey] = ids.filter((id) =>
-          fieldValue[nestedKey].includes(id),
+        nestedValue[nestedKey] = ids.filter(
+          (id) =>
+            fieldValue[nestedKey]?.length && fieldValue[nestedKey].includes(id),
         );
       }
       value[key] = nestedValue;

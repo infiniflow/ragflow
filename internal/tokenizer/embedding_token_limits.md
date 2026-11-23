@@ -711,6 +711,12 @@ halves matter, and both are pinned by tests.
 
 ## Performance
 
+- `spm.go`'s vocabulary lookup and Viterbi run in `internal/binding/cpp/spm_unigram.cpp` over the
+  Darts-clone double-array the repository already ships (`internal/binding/cpp/darts/darts.h`,
+  the same structure `DartsTrie` uses). The 250k-piece XLM-R vocabulary occupies ~4 MB of
+  4-byte units; the previous per-node Go map trie needed ~87 MB for the same 505k nodes. The
+  loop stays native because every Viterbi step is a trie transition, so a cgo round trip per
+  byte would cost more than the counting.
 - `spm.go` / `wordpiece.go` count in O(n) over the text (trie walk + Viterbi);
   `trimToLimit` binary-searches rune prefixes, so O(n log n).
 - `bpe.go` keeps a min-heap over adjacent pairs keyed by `(rank, position)` and

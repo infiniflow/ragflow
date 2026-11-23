@@ -76,8 +76,8 @@ func InitQueryBuilder(wordnetDir string) error {
 	qbOnce.Do(func() {
 		globalQueryBuilder = &QueryBuilder{
 			queryFields: []string{
-				"title_tks^10",
-				"title_sm_tks^5",
+				"title_tks^2",
+				"title_sm_tks^2",
 				"important_kwd^30",
 				"important_tks^20",
 				"question_tks^20",
@@ -110,8 +110,8 @@ func GetQueryBuilder() *QueryBuilder {
 func NewQueryBuilder() *QueryBuilder {
 	return &QueryBuilder{
 		queryFields: []string{
-			"title_tks^10",
-			"title_sm_tks^5",
+			"title_tks^2",
+			"title_sm_tks^2",
 			"important_kwd^30",
 			"important_tks^20",
 			"question_tks^20",

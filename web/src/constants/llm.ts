@@ -133,6 +133,7 @@ export enum LLMFactory {
   Crusoe = 'Crusoe',
   HopBase = 'HopBase',
   GreenNode = 'GreenNode',
+  Morse = 'Morse',
 }
 
 // Please lowercase the file name
@@ -247,6 +248,7 @@ export const IconMap = {
   [LLMFactory.Crusoe]: 'crusoe',
   [LLMFactory.HopBase]: 'hopbase',
   [LLMFactory.GreenNode]: 'greennode',
+  [LLMFactory.Morse]: 'morse',
 };
 
 /**
@@ -265,7 +267,7 @@ export const ModelTypeToField: Record<string, string> = {
   decision: 'decision_id',
   embedding: 'embd_id',
   scoring: 'scoring_id',
-  vision: 'img2txt_id',
+  vlm: 'img2txt_id',
   asr: 'asr_id',
   rerank: 'rerank_id',
   tts: 'tts_id',
@@ -276,7 +278,7 @@ export const FieldToModelType: Record<string, string> = {
   decision_id: 'decision',
   embd_id: 'embedding',
   scoring_id: 'scoring',
-  img2txt_id: 'vision',
+  img2txt_id: 'vlm',
   asr_id: 'asr',
   rerank_id: 'rerank',
   tts_id: 'tts',
@@ -310,6 +312,7 @@ export const APIMapUrl = {
   [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
   [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
   [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
+  [LLMFactory.Morse]: 'https://console.trymorse.ai',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

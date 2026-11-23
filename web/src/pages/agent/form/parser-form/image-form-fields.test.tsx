@@ -140,7 +140,7 @@ describe('image OCR engine selection', () => {
       name: 'Not an OCR model',
       provider_name: 'PaddleOCR',
       instance_name: 'Vision',
-      model_type: ['vision'],
+      model_type: ['vlm'],
     },
   ];
 

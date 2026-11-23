@@ -1385,8 +1385,6 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       modelsToBeAddedTooltip:
         'Si votre fournisseur de modèle n\\\'est pas listé mais prétend être "compatible OpenAI", sélectionnez la carte compatible OpenAI-API pour ajouter le(s) modèle(s) pertinent(s).',
       mcp: 'MCP',
-      dingtalkAITableDescription:
-        "Connectez-vous à Dingtalk AI Table et synchronisez les enregistrements d'une table spécifiée.",
       Verify: 'Vérifier',
       keyValid: 'Votre clé API est valide.',
       keyInvalid: 'Votre clé API est invalide.',
@@ -1820,7 +1818,7 @@ Exemple : Virtual Hosted Style`,
         rerank: 'Rerank',
         sequence2text: 'ASR',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
         speech2text: 'ASR',
         decision: 'Decision',
       },

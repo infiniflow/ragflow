@@ -21,6 +21,37 @@ import (
 	"time"
 )
 
+const (
+	initialChannelRetryDelay = 5 * time.Second
+	maxChannelRetryDelay     = 24 * time.Hour
+)
+
+func channelRetryDelay(attempts int) time.Duration {
+	delays := [...]time.Duration{
+		initialChannelRetryDelay, 10 * time.Second, 20 * time.Second,
+		time.Minute, 3 * time.Minute, 10 * time.Minute, 30 * time.Minute,
+		time.Hour, 6 * time.Hour, maxChannelRetryDelay,
+	}
+	if attempts < 1 {
+		return delays[0]
+	}
+	if attempts >= len(delays) {
+		return delays[len(delays)-1]
+	}
+	return delays[attempts-1]
+}
+
+func waitForContext(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
 // retryChannelCall runs call up to attempts times, bounding every attempt with
 // perCallLimit so a stalled request cannot consume the whole reply, and backing off
 // between attempts. A cancelled outer context stops the retries immediately: at that

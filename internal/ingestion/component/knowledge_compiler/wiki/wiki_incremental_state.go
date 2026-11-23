@@ -18,6 +18,8 @@ package wiki
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -155,10 +157,8 @@ func normalizedWikiTerm(value string) string {
 }
 
 func sortedStringSet(values map[string]struct{}) []string {
-	result := make([]string, 0, len(values))
-	for value := range values {
-		result = append(result, value)
+	if len(values) == 0 {
+		return []string{}
 	}
-	sort.Strings(result)
-	return result
+	return slices.Sorted(maps.Keys(values))
 }

@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 // Package component — Categorize (T3).
 //
 // Model-based classifier. The component asks the model to pick exactly
@@ -11,6 +27,7 @@ package component
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -218,7 +235,7 @@ func buildCategorizeSystemPrompt(p CategorizeParam) string {
 	b.WriteString("- Consider both explicit mentions and implied context\n")
 	b.WriteString("- Prioritize the most specific applicable category\n")
 	b.WriteString("- Return only the category name without explanations\n")
-	if containsCategory(cats, "Other") {
+	if slices.Contains(cats, "Other") {
 		b.WriteString("- Use \"Other\" only when no other category fits\n")
 	}
 
@@ -231,15 +248,6 @@ func buildCategorizeSystemPrompt(p CategorizeParam) string {
 		}
 	}
 	return b.String()
-}
-
-func containsCategory(categories []string, target string) bool {
-	for _, c := range categories {
-		if c == target {
-			return true
-		}
-	}
-	return false
 }
 
 func categorizeExamples(p CategorizeParam, cats []string) []string {

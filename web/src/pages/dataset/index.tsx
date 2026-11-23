@@ -21,15 +21,6 @@ export default function DatasetWrapper() {
   const isCompilation = Boolean(
     useMatch(`${Routes.DatasetBase}${Routes.Compilation}/:id`),
   );
-  const isDatasetOverview = Boolean(
-    useMatch(`${Routes.DatasetBase}${Routes.DataSetOverview}/:id`),
-  );
-  const isDatasetFiles = Boolean(
-    useMatch(`${Routes.DatasetBase}${Routes.Files}/:id`),
-  );
-  const isDatasetTesting = Boolean(
-    useMatch(`${Routes.DatasetBase}${Routes.DatasetTesting}/:id`),
-  );
 
   useEffect(() => {
     setCollapsed(false);
@@ -54,7 +45,9 @@ export default function DatasetWrapper() {
 
   return (
     <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
-      <ModelResourceAccessUserIdContext.Provider value={data?.user_id}>
+      <ModelResourceAccessUserIdContext.Provider
+        value={loading ? null : (data?.user_id ?? null)}
+      >
         <ResourceTenantIdContext.Provider value={data?.tenant_id ?? ''}>
           <KnowledgeBaseProvider knowledgeBase={data} loading={loading}>
             <article
@@ -73,14 +66,7 @@ export default function DatasetWrapper() {
                 />
               )}
 
-              <div
-                className={cn(
-                  'min-h-0 min-w-0',
-                  isDatasetOverview || isDatasetFiles || isDatasetTesting
-                    ? 'pt-2.5'
-                    : 'pt-3',
-                )}
-              >
+              <div className="min-h-0 min-w-0 pt-2.5">
                 <Outlet />
               </div>
             </article>

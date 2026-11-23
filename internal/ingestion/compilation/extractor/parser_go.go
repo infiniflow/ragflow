@@ -10,6 +10,8 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
+
+	"ragflow/internal/utility"
 	"unsafe"
 )
 
@@ -76,8 +78,8 @@ func RunTagger(nerDir, taggerDir string, tokensJSON string) (string, error) {
 
 // ParseTokensWithParser runs the C++ parser and returns parsed DepToken slice.
 func ParseTokensWithParser(nerDir, parserDir string, tokens []string) ([]DepTokenC, error) {
-	tj, _ := json.Marshal(tokens)
-	resultJSON, err := RunParser(nerDir, parserDir, string(tj))
+	tj := utility.MustJSON(tokens)
+	resultJSON, err := RunParser(nerDir, parserDir, tj)
 	if err != nil {
 		return nil, err
 	}

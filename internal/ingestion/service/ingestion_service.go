@@ -34,12 +34,15 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/observability"
+	"ragflow/internal/permission"
 	servicepkg "ragflow/internal/service"
+	"ragflow/internal/service/datasetversion"
 	documentpkg "ragflow/internal/service/document"
 	"ragflow/internal/utility"
 
 	"github.com/cenkalti/backoff/v5"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // defaultHeartbeatInterval paces the InProgress() working pulse that keeps an
@@ -215,7 +218,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tie
 		workerQueue:              make(chan *worker, maxConcurrency),
 		ShutdownCh:               make(chan struct{}, 1),
 		ingestionTaskSvc:         servicepkg.NewIngestionTaskService(),
-		docState:                 newDocStateUpdater(),
+		docState:                 newDocStateUpdater(deps.DB, deps.Engine),
 		heartbeatInterval:        defaultHeartbeatInterval,
 		memoryReconcileInterval:  defaultMemoryTaskReconcileInterval,
 		memoryReconcileBatchSize: defaultMemoryTaskReconcileBatchSize,
@@ -227,6 +230,16 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tie
 	ingestor.cancelCheck = ingestor.defaultCancelCheck
 	ingestor.kcConcurrency = maxConcurrency // parallel dataset-level compile workers default to the task width
 	return ingestor
+}
+
+// ingestionDB is the relational handle injected at assembly time. The history
+// writers on the task path use it; nil means this ingestor has no database and
+// the history is not recorded.
+func (e *Ingestor) ingestionDB() *gorm.DB {
+	if e == nil || e.deps == nil {
+		return nil
+	}
+	return e.deps.DB
 }
 
 func (e *Ingestor) ID() string {
@@ -632,6 +645,14 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
+	// Attribute the run to the user who created the task: the pipeline's model
+	// resolutions and usage records (embedder, knowledge compiler) run on this
+	// context, and without an authenticated user their usage rows carry an
+	// empty user_id and user_email. WithIdentity keeps the tenant already on
+	// the context (pipeline components re-scope it per dataset downstream).
+	if task.UserID != "" {
+		taskCtx.Ctx = permission.WithIdentity(taskCtx.Ctx, task.UserID, permission.TenantIDFromContext(taskCtx.Ctx))
+	}
 	// The ingestor name and NATS subject already ride on the root context
 	// (set in NewIngestor); here we add the worker that claimed this task so the
 	// emitted lifecycle event names it. An absent worker (e.g. test callers that
@@ -1315,7 +1336,36 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		return err
 	}
 	e.stagePendingCompileEvent(ingestionTask.ID, docTaskCtx.Tenant.ID, result)
-	e.docState.apply(ctx, result)
+	// The run closes the history for whoever queued it. This context is the
+	// worker's, not that request's, so the requester has to be named: without it
+	// the parse version would be attributed to nobody and read as a system change,
+	// even though a user pressed Parse. Only the history writes take this context;
+	// the run itself keeps the worker's, whose model dispatch reads its own
+	// identity.
+	historyCtx := datasetversion.WithActor(ctx, ingestionTask.UserID)
+	if result != nil {
+		return e.docState.apply(historyCtx, result)
+	}
+	// A run that wrote no chunks still changes the history when it cleared the
+	// chunks an earlier parse left behind. recordParseVersion works that out from
+	// the document's chunk history, and records a version either way: the history
+	// lists runs, so a parse that produced nothing is a version too. With no batch
+	// there is no baseline to anchor, so the run reserves its own number.
+	docName := ""
+	if docTaskCtx.Doc.Name != nil {
+		docName = *docTaskCtx.Doc.Name
+	}
+	dropped, err := recordParseVersion(historyCtx, e.ingestionDB(), docTaskCtx.Doc.ID, docTaskCtx.Doc.KbID, docName, nil, 0)
+	if err != nil {
+		return err
+	}
+	// The run wrote nothing, so every chunk the history still holds is one this
+	// parse dropped: they leave the index with their tombstones.
+	e.docState.removeDroppedChunks(historyCtx, &taskpkg.PipelineResult{
+		DocID:    docTaskCtx.Doc.ID,
+		KbID:     docTaskCtx.Doc.KbID,
+		TenantID: docTaskCtx.Tenant.ID,
+	}, dropped)
 	return nil
 }
 

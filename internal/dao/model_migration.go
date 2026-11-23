@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1163,15 +1164,6 @@ func normalizeModelID(value string) (string, bool) {
 	return modelName + "@default@" + providerName, true
 }
 
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-
 // normalizeModelIDConfig recursively normalizes model id fields inside a decoded
 // JSON document, mirroring ModelIdConfigStage.normalize_config.
 func normalizeModelIDConfig(value any, path []string) (any, bool) {
@@ -1181,7 +1173,7 @@ func normalizeModelIDConfig(value any, path []string) (any, bool) {
 		normalized := make(map[string]any, len(typed))
 		for key, item := range typed {
 			keyPath := append(append([]string{}, path...), key)
-			shouldNormalize := modelIDFieldSet[key] || (searchConfigModelIDFieldSet[key] && containsString(path, "search_config"))
+			shouldNormalize := modelIDFieldSet[key] || (searchConfigModelIDFieldSet[key] && slices.Contains(path, "search_config"))
 			if shouldNormalize {
 				if str, ok := item.(string); ok {
 					normalizedValue, itemChanged := normalizeModelID(str)

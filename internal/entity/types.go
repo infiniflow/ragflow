@@ -112,7 +112,7 @@ func (mt ModelType) HumanReadable() []string {
 		parts = append(parts, "asr")
 	}
 	if mt.Has(ModelTypeImage2Text) {
-		parts = append(parts, "vision")
+		parts = append(parts, "vlm")
 	}
 	if mt.Has(ModelTypeRerank) {
 		parts = append(parts, "rerank")
@@ -141,7 +141,7 @@ func ModelTypeFromString(s string) ModelType {
 		return ModelTypeEmbedding
 	case "asr", "speech2text":
 		return ModelTypeSpeech2Text
-	case "vision", "image2text":
+	case "vlm", "vision", "image2text":
 		return ModelTypeImage2Text
 	case "rerank":
 		return ModelTypeRerank

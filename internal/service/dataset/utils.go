@@ -139,6 +139,15 @@ func datasetToMap(ctx context.Context, kb *entity.Knowledgebase) map[string]inte
 		"parser_config":              kb.ParserConfig,
 		"pagerank":                   kb.Pagerank,
 		"create_time":                kb.CreateTime,
+		// The dataset header shows "Updated <date> · v<version>"; the version is
+		// the dataset's own sequence, advanced by every recorded change.
+		"version": kb.Version,
+	}
+	if kb.UpdateTime != nil {
+		item["update_time"] = *kb.UpdateTime
+	}
+	if kb.UpdateDate != nil {
+		item["update_date"] = kb.UpdateDate.Format("2006-01-02 15:04:05")
 	}
 	if kb.Avatar != nil {
 		item["avatar"] = *kb.Avatar

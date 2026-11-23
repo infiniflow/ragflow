@@ -64,7 +64,6 @@ export default function ShareSearchPage() {
             searchText={searchText}
             setSearchText={setSearchText}
             canSearch={!canSearch}
-            showEmbedLogo={false}
           />
         </div>
       )}
@@ -75,7 +74,6 @@ export default function ShareSearchPage() {
             searchText={searchText}
             setSearchText={setSearchText}
             data={searchData as ISearchAppDetailProps}
-            showEmbedLogo={false}
           />
         </div>
       )}

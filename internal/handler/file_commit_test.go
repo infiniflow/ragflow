@@ -421,6 +421,42 @@ func TestFileCommit_ListCommits_Success(t *testing.T) {
 	}
 }
 
+// Python clients serialise a boolean query parameter as desc=False, so the
+// value must be read case-insensitively like the chat and document lists do.
+func TestFileCommit_ListCommits_DescIsCaseInsensitive(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  bool
+	}{
+		{"", true},
+		{"&desc=true", true},
+		{"&desc=True", true},
+		{"&desc=false", false},
+		{"&desc=False", false},
+		{"&desc=FALSE", false},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			r, mock := setupFileCommitTest("user-1")
+			var gotDesc *bool
+			mock.listCommitsFn = func(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
+				gotDesc = &desc
+				return nil, 0, nil
+			}
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits?page=1&page_size=10"+tc.query, nil)
+			r.ServeHTTP(w, req)
+
+			if gotDesc == nil {
+				t.Fatalf("ListCommits was not called: %d %s", w.Code, w.Body.String())
+			}
+			if *gotDesc != tc.want {
+				t.Errorf("desc = %v, want %v", *gotDesc, tc.want)
+			}
+		})
+	}
+}
+
 func TestFileCommit_ListCommits_PageSlugFilter(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
 	var gotPageType, gotSlug string

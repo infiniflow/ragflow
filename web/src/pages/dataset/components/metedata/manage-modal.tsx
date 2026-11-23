@@ -1,3 +1,4 @@
+import { DataTable } from '@/components/data-table';
 import { BulkOperateBar } from '@/components/bulk-operate-bar';
 import {
   ConfirmDeleteDialog,
@@ -17,10 +18,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { MetadataManagedFieldsHint } from '@/ee/components/metadata-managed-fields-hint';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import {
-  flexRender,
   getCoreRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
@@ -266,7 +267,10 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
 
       return Array.from(fieldMap.values());
     });
-    setShouldSave(true);
+    // The values dialog only updates the table the reader is looking at. The
+    // modal's own Save is the one write: confirming here and then saving again
+    // sent the same edit twice, and the server - which reads the metadata before
+    // it writes - recorded one version per request.
     setIsAddValueMode(false);
   };
 
@@ -356,6 +360,10 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                 unit={t('knowledgeDetails.metadata.fields')}
               ></BulkOperateBar>
             )}
+            <MetadataManagedFieldsHint
+              metadataType={metadataType}
+              doc={otherData}
+            />
             {metadataType === MetadataType.Setting ||
             metadataType === MetadataType.SingleFileSetting ? (
               <Tabs
@@ -400,53 +408,14 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                 </div>
 
                 <TabsContent value="generation">
-                  <Table rootClassName="max-h-[800px]">
-                    <TableHeader>
-                      {table.getHeaderGroups().map((headerGroup) => (
-                        <TableRow key={headerGroup.id}>
-                          {headerGroup.headers.map((header) => (
-                            <TableHead key={header.id}>
-                              {header.isPlaceholder
-                                ? null
-                                : flexRender(
-                                    header.column.columnDef.header,
-                                    header.getContext(),
-                                  )}
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                      ))}
-                    </TableHeader>
-                    <TableBody className="relative">
-                      {table.getRowModel().rows?.length ? (
-                        table.getRowModel().rows.map((row) => (
-                          <TableRow
-                            key={row.id}
-                            data-state={row.getIsSelected() && 'selected'}
-                            className="group"
-                          >
-                            {row.getVisibleCells().map((cell) => (
-                              <TableCell key={cell.id}>
-                                {flexRender(
-                                  cell.column.columnDef.cell,
-                                  cell.getContext(),
-                                )}
-                              </TableCell>
-                            ))}
-                          </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell
-                            colSpan={columns.length}
-                            className="h-24 text-center"
-                          >
-                            <Empty type={EmptyType.Data} />
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                  <DataTable
+                    table={table}
+                    columnsLength={columns.length}
+                    rootClassName="max-h-[800px]"
+                    bodyClassName="relative"
+                    rowClassName="group"
+                    emptyContent={<Empty type={EmptyType.Data} />}
+                  />
                 </TabsContent>
                 <TabsContent value="built-in">
                   <Table rootClassName="max-h-[800px]">
@@ -524,53 +493,14 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                 </TabsContent>
               </Tabs>
             ) : (
-              <Table rootClassName="max-h-[800px]">
-                <TableHeader>
-                  {table.getHeaderGroups().map((headerGroup) => (
-                    <TableRow key={headerGroup.id}>
-                      {headerGroup.headers.map((header) => (
-                        <TableHead key={header.id}>
-                          {header.isPlaceholder
-                            ? null
-                            : flexRender(
-                                header.column.columnDef.header,
-                                header.getContext(),
-                              )}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableHeader>
-                <TableBody className="relative">
-                  {table.getRowModel().rows?.length ? (
-                    table.getRowModel().rows.map((row) => (
-                      <TableRow
-                        key={row.id}
-                        data-state={row.getIsSelected() && 'selected'}
-                        className="group"
-                      >
-                        {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id}>
-                            {flexRender(
-                              cell.column.columnDef.cell,
-                              cell.getContext(),
-                            )}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={columns.length}
-                        className="h-24 text-center"
-                      >
-                        <Empty type={EmptyType.Data} />
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+              <DataTable
+                table={table}
+                columnsLength={columns.length}
+                rootClassName="max-h-[800px]"
+                bodyClassName="relative"
+                rowClassName="group"
+                emptyContent={<Empty type={EmptyType.Data} />}
+              />
             )}
           </div>
           {metadataType === MetadataType.Manage && (

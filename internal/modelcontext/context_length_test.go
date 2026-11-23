@@ -487,3 +487,21 @@ func TestResolveModelContentLength_LegacyCompositeDoesNotGuessBetweenActiveInsta
 		t.Fatalf("resolveTestContextLength(gpt-4o@staging@OpenAI) = %d, want 16000", got)
 	}
 }
+
+// TestResolveModelMaxOutput resolves max_output from the provider catalog: the composite
+// reference, the driver+modelName fallback, and 0 for an unknown model. The caller derives
+// Codex's auto-compaction limit as context_length - max_output, so 0 must mean "unknown".
+func TestResolveModelMaxOutput(t *testing.T) {
+	if got := ResolveModelMaxOutput(t.Context(), nil, "", "gpt-4o@openai", "", ""); got != 16384 {
+		t.Fatalf("ResolveModelMaxOutput(gpt-4o@openai) = %d, want 16384", got)
+	}
+	if got := ResolveModelMaxOutput(t.Context(), nil, "", "", "openai", "gpt-4o"); got != 16384 {
+		t.Fatalf("ResolveModelMaxOutput(openai/gpt-4o) = %d, want 16384", got)
+	}
+	if got := ResolveModelMaxOutput(t.Context(), nil, "", "no-such-model@no-such-provider", "", ""); got != 0 {
+		t.Fatalf("unknown model = %d, want 0", got)
+	}
+	if got := ResolveModelMaxOutput(t.Context(), nil, "", "", "", ""); got != 0 {
+		t.Fatalf("empty reference = %d, want 0", got)
+	}
+}

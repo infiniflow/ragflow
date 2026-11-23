@@ -24,7 +24,10 @@ import KeenableForm from '../form/keenable-form';
 import SofyaForm from '../form/sofya-form';
 import Search1APICrawlForm from '../form/search1api-crawl-form';
 import Search1APIForm from '../form/search1api-form';
+import AnySearchExtractForm from '../form/anysearch-extract-form';
+import AnySearchSearchForm from '../form/anysearch-search-form';
 import YouComForm from '../form/youcom-form';
+import PerplexityForm from '../form/perplexity-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
@@ -89,6 +92,9 @@ export const FormConfigMap: Partial<Record<Operator, OperatorFormConfig>> = {
   [Operator.YouComSearch]: {
     component: YouComForm,
   },
+  [Operator.PerplexitySearch]: {
+    component: PerplexityForm,
+  },
   [Operator.SofyaSearch]: {
     component: SofyaForm,
   },
@@ -97,6 +103,12 @@ export const FormConfigMap: Partial<Record<Operator, OperatorFormConfig>> = {
   },
   [Operator.Search1APICrawl]: {
     component: Search1APICrawlForm,
+  },
+  [Operator.AnySearchSearch]: {
+    component: AnySearchSearchForm,
+  },
+  [Operator.AnySearchExtract]: {
+    component: AnySearchExtractForm,
   },
   [Operator.Wikipedia]: {
     component: WikipediaForm,

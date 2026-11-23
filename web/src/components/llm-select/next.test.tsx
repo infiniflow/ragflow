@@ -13,7 +13,7 @@ jest.mock('@/constants/knowledge', () => ({
 }));
 
 jest.mock('../model-tree-select', () => ({
-  ModelTypeMap: { llm_id: ['chat', 'vision'] },
+  ModelTypeMap: { llm_id: ['chat', 'vlm'] },
 }));
 
 jest.mock('@/ee/components/model-reference-label', () => ({

@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"gorm.io/gorm"
+
 	"ragflow/internal/agent/chat"
 	"ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
