@@ -1,29 +1,10 @@
 import { decodeBlobText } from '../file-util';
 
-// decodeBlobText routes a Blob through one of five decoder branches based on
-// the first up-to-3 bytes. The branches, in order:
-//   1. UTF-16LE BOM  (0xff 0xfe)         -> TextDecoder('utf-16le')
-//   2. UTF-16BE BOM  (0xfe 0xff)         -> TextDecoder('utf-16be')
-//   3. UTF-8 BOM     (0xef 0xbb 0xbf)    -> TextDecoder('utf-8')
-//   4. Strict UTF-8  (no BOM, valid UTF-8) -> TextDecoder('utf-8', { fatal: true })
-//   5. GBK fallback  (strict UTF-8 throws) -> TextDecoder('gbk')
-//
-// Pinned by #19222; the helper is now used by csv-preview.tsx and
-// txt-preview.tsx. The tests below cover every branch plus the small-buffer
-// edge cases that exercise the `Math.min(3, buffer.byteLength)` slice.
-//
-// We construct a minimal Blob-substitute that exposes only `arrayBuffer()`,
-// the single method decodeBlobText actually calls. This avoids depending on
-// the jsdom Blob polyfill (which in this project's test environment does
-// not implement `arrayBuffer()`); the production paths in csv-preview.tsx
-// and txt-preview.tsx pass the real browser Blob returned by axios.
-
-// Minimal Blob stand-in: only `arrayBuffer()` is needed by the function
-// under test. Cast to `Blob` so the call site type-checks.
+// jsdom's Blob class does not provide arrayBuffer().
 const blobOf = (bytes: Uint8Array): Blob =>
-  ({
+  Object.assign(new Blob(), {
     arrayBuffer: () => Promise.resolve(bytes.buffer as ArrayBuffer),
-  }) as unknown as Blob;
+  });
 
 describe('decodeBlobText', () => {
   it('decodes UTF-8 with BOM and strips the leading U+FEFF', async () => {
@@ -36,7 +17,7 @@ describe('decodeBlobText', () => {
       0xbf,
       ...new TextEncoder().encode(payload),
     ]);
-    const got = await decodeBlobText(blobOf(bytes));
+    const got = await decodeBlobText(blobOf(bytes), 'windows-1252');
     expect(got).toBe(payload);
     expect(got.charCodeAt(0)).toBe('H'.charCodeAt(0));
   });
@@ -59,6 +40,11 @@ describe('decodeBlobText', () => {
     const bytes = new TextEncoder().encode('Hello, 世界');
     const got = await decodeBlobText(blobOf(bytes));
     expect(got).toBe('Hello, 世界');
+  });
+
+  it('uses the declared encoding for a file without a BOM', async () => {
+    const bytes = new Uint8Array([0x63, 0x61, 0x66, 0xe9]);
+    expect(await decodeBlobText(blobOf(bytes), 'windows-1252')).toBe('café');
   });
 
   it('falls back to GBK when strict UTF-8 throws (GB2312 Chinese text)', async () => {

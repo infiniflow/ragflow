@@ -2814,6 +2814,7 @@ Example: Virtual Hosted Style`,
       s3: 'S3 uploads',
       preview: 'Preview',
       fileError: 'File error',
+      htmlPreviewError: 'Could not load the HTML preview.',
       uploadLimit:
         'Each file must not exceed 10MB, and the total number of files must not exceed 128.',
       destinationFolder: 'Destination folder',

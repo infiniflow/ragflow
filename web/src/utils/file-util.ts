@@ -86,12 +86,18 @@ export const transformBase64ToFile = (
 
 // Decode a text file blob without assuming UTF-8. Detection order:
 // 1. Unicode BOM (UTF-8 / UTF-16LE / UTF-16BE) — authoritative when present.
-// 2. Strict UTF-8 decode (`fatal: true`) — throws on any byte sequence that
+// 2. A supported declared encoding, when provided.
+// 3. Strict UTF-8 decode (`fatal: true`) — throws on any byte sequence that
 //    is not valid UTF-8, which GB2312/GBK Chinese text almost always is.
-// 3. GBK fallback — covers GB2312/GBK/GB18030 single- and double-byte text.
+// 4. GBK fallback — covers GB2312/GBK/GB18030 single- and double-byte text.
 //    Browsers map the 'gb2312' label to the same decoder as 'gbk'.
-export const decodeBlobText = async (data: BlobPart): Promise<string> => {
-  const buffer = await new Blob([data]).arrayBuffer();
+export const decodeBlobText = async (
+  data: BlobPart,
+  declaredEncoding?: string,
+): Promise<string> => {
+  const buffer = await (
+    data instanceof Blob ? data : new Blob([data])
+  ).arrayBuffer();
   const bytes = new Uint8Array(buffer, 0, Math.min(3, buffer.byteLength));
   if (bytes[0] === 0xff && bytes[1] === 0xfe) {
     return new TextDecoder('utf-16le').decode(buffer);
@@ -101,6 +107,13 @@ export const decodeBlobText = async (data: BlobPart): Promise<string> => {
   }
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     return new TextDecoder('utf-8').decode(buffer);
+  }
+  if (declaredEncoding) {
+    try {
+      return new TextDecoder(declaredEncoding, { fatal: true }).decode(buffer);
+    } catch {
+      // Ignore unsupported labels and proceed with the normal fallback.
+    }
   }
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(buffer);

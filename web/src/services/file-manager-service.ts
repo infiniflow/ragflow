@@ -15,6 +15,7 @@
  */
 
 import api from '@/utils/api';
+import nextRequest from '@/utils/next-request';
 import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
 
@@ -83,6 +84,19 @@ const fileManagerService = registerServer<keyof typeof methods>(
   methods,
   request,
 );
+
+export async function getDocumentPreviewBlob(url: string, signal: AbortSignal) {
+  if (new URL(url, window.location.href).origin !== window.location.origin) {
+    throw new Error('Document preview requires a same-origin URL');
+  }
+  const options = {
+    responseType: 'blob' as const,
+    signal,
+    skipGlobalErrorNotification: true,
+  };
+  const { data } = await nextRequest.get<Blob>(url, options);
+  return data;
+}
 
 export const downloadAgentFile = (data: { docId: string; ext: string }) => {
   return request.get(getAttachmentFileDownload(data.docId), {
