@@ -218,7 +218,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tie
 		workerQueue:              make(chan *worker, maxConcurrency),
 		ShutdownCh:               make(chan struct{}, 1),
 		ingestionTaskSvc:         servicepkg.NewIngestionTaskService(),
-		docState:                 newDocStateUpdater(deps.DB),
+		docState:                 newDocStateUpdater(deps.DB, deps.Engine),
 		heartbeatInterval:        defaultHeartbeatInterval,
 		memoryReconcileInterval:  defaultMemoryTaskReconcileInterval,
 		memoryReconcileBatchSize: defaultMemoryTaskReconcileBatchSize,
@@ -1355,7 +1355,18 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if docTaskCtx.Doc.Name != nil {
 		docName = *docTaskCtx.Doc.Name
 	}
-	return recordParseVersion(historyCtx, e.ingestionDB(), docTaskCtx.Doc.ID, docTaskCtx.Doc.KbID, docName, nil, 0)
+	dropped, err := recordParseVersion(historyCtx, e.ingestionDB(), docTaskCtx.Doc.ID, docTaskCtx.Doc.KbID, docName, nil, 0)
+	if err != nil {
+		return err
+	}
+	// The run wrote nothing, so every chunk the history still holds is one this
+	// parse dropped: they leave the index with their tombstones.
+	e.docState.removeDroppedChunks(historyCtx, &taskpkg.PipelineResult{
+		DocID:    docTaskCtx.Doc.ID,
+		KbID:     docTaskCtx.Doc.KbID,
+		TenantID: docTaskCtx.Tenant.ID,
+	}, dropped)
+	return nil
 }
 
 func (e *Ingestor) stagePendingCompileEvent(taskID, tenantID string, result *taskpkg.PipelineResult) {
