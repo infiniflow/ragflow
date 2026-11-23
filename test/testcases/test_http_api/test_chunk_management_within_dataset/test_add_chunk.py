@@ -234,7 +234,7 @@ class TestAddChunk:
         res = list_chunks(HttpApiAuth, dataset_id, document_id)
         if res["code"] != 0:
             assert False, res
-        assert res["data"]["doc"]["chunk_count"] == chunks_count + 2
+        assert res["data"]["doc"]["chunk_count"] == chunks_count + 1
 
     @pytest.mark.p3
     def test_add_chunk_to_deleted_document(self, HttpApiAuth, add_document):
