@@ -22,14 +22,14 @@ package bootstrap
 // still receive the parsed arguments.
 type ServerArgs struct {
 	Mode          *string // admin | api | ingestor | syncer | chatter | deepdoc | migrate
-	HelpFlag      bool
-	VersionFlag   bool
+	HelpFlag      *bool   // show help
+	VersionFlag   *bool
 	LogLevel      *string
 	ConfigPath    *string      // Used by admin, api; user defined config path
 	InitSuperUser bool         // Used by admin;
 	Port          *int         // Used by admin, api
 	Name          *string      // server name
-	EnablePProf   bool         // enable pprof
+	EnablePProf   *bool        // enable pprof
 	Ready         func() error // called after service startup
 
 	// DeepdocInferenceConcurrency, when set, overrides the DeepDoc inference
@@ -48,14 +48,14 @@ type ServerArgs struct {
 }
 
 // SelectedLogLevel resolves the effective log level: an explicit --log-level
-// (non-nil) wins, otherwise the configured level, otherwise "info".
+// (non-nil) wins, otherwise the configured level, otherwise "warn".
 func SelectedLogLevel(args *ServerArgs, configured string) string {
 	if args.LogLevel != nil {
 		return *args.LogLevel
 	}
 
 	if configured == "" {
-		return "info"
+		return "warn"
 	}
 
 	return configured

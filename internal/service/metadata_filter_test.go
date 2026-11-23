@@ -679,6 +679,32 @@ func TestApplyMetaDataFilter_SeparatesNoNarrowingFromNoMatch(t *testing.T) {
 			t.Fatalf("got %v, want [doc-1]", got)
 		}
 	})
+
+	t.Run("manual numeric range filters work_experience_years >= 5 and highest_degree = 硕士", func(t *testing.T) {
+		resumeMetas := common.MetaData{
+			"highest_degree": {
+				"硕士": []string{"doc-1", "doc-2"},
+				"本科": []string{"doc-3"},
+			},
+			"work_experience_years": {
+				"10":  []string{"doc-1"},
+				"3.5": []string{"doc-2"},
+				"8":   []string{"doc-3"},
+			},
+		}
+		filter := map[string]interface{}{
+			"method": "manual",
+			"logic":  "and",
+			"manual": []interface{}{
+				map[string]interface{}{"key": "highest_degree", "op": "=", "value": "硕士"},
+				map[string]interface{}{"key": "work_experience_years", "op": ">=", "value": "5"},
+			},
+		}
+		got := ApplyMetaDataFilter(t.Context(), filter, resumeMetas, "", nil, []string{"doc-1", "doc-2", "doc-3"}, nil)
+		if len(got) != 1 || got[0] != "doc-1" {
+			t.Fatalf("got %v, want [doc-1] (numeric >= 5 must match 10 and exclude 3.5)", got)
+		}
+	})
 }
 
 // capturingFilterDriver records the system prompt gen_meta_filter sends and

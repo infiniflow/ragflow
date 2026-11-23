@@ -19,6 +19,7 @@ package admin
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -785,8 +786,9 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 		return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "not connected", startTime, err.Error())
 	}
 
-	// Execute SELECT 1 to check connectivity
-	err = sqlDB.PingContext(ctx)
+	// Execute SELECT 1 to check connectivity, with the same 3s cap as the
+	// non-MySQL database probe so an unreachable host cannot hold ListServices.
+	err = pingWithTimeout(ctx, sqlDB)
 	if err != nil {
 		mysqlConfig := server.GetConfig().GetMySQLConfig()
 		return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "timeout", startTime, err.Error())
@@ -794,6 +796,15 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 
 	mysqlConfig := server.GetConfig().GetMySQLConfig()
 	return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "alive", startTime, "")
+}
+
+// pingWithTimeout caps a connectivity probe at 3s. The DSN allows a 30s
+// connect_timeout, so an unreachable host would otherwise stall the request.
+// A caller deadline shorter than 3s is preserved by context.WithTimeout.
+func pingWithTimeout(ctx context.Context, sqlDB *sql.DB) error {
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return sqlDB.PingContext(pingCtx)
 }
 
 // pingDatabaseStatus reports the SQL metadata database status for the
@@ -810,9 +821,7 @@ func (s *Service) pingDatabaseStatus(ctx context.Context, name, host string, por
 
 	// The DSN allows a 30s connect_timeout, so an unreachable host would
 	// otherwise hold ListServices for the full dial timeout.
-	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	if err = sqlDB.PingContext(pingCtx); err != nil {
+	if err = pingWithTimeout(ctx, sqlDB); err != nil {
 		return newServiceStatus(serviceType, name, host, port, "timeout", startTime, err.Error())
 	}
 

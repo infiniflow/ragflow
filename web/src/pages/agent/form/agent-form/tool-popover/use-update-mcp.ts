@@ -1,5 +1,4 @@
 import { useListMcpServer } from '@/hooks/use-mcp-request';
-import { ModelResourceAccessUserIdContext } from '@/hooks/use-llm-request';
 import { IAgentForm } from '@/interfaces/database/agent';
 import { AgentFormContext, useResourceTenantId } from '@/pages/agent/context';
 import useGraphStore from '@/pages/agent/store';
@@ -20,11 +19,9 @@ export function useUpdateAgentNodeMCP() {
   const node = useContext(AgentFormContext);
   const mcpList = useGetNodeMCP();
   const resourceTenantId = useResourceTenantId();
-  const accessUserId = useContext(ModelResourceAccessUserIdContext);
   const { data } = useListMcpServer(
     resourceTenantId,
     Boolean(resourceTenantId),
-    accessUserId,
   );
   const mcpServers = data.mcp_servers;
 

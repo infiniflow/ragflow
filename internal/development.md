@@ -436,8 +436,16 @@ The OSS executable runs all services in one Go process. It migrates the database
 superuser, waits for API readiness, then starts Ingestor, Syncer and Chatter.
 Services run as goroutines, sharing process-wide connections, model resources and
 tokenizers. They stop together on failure or shutdown.
-Admin defaults to port 9381 and API to 9380; change their configuration keys
-rather than passing a port flag. `bash build.sh --run` builds and starts this executable.
+Admin defaults to port 9381 and API to 9380. `--port 9400` overrides the API port;
+`--admin --port 9401` overrides the port when running only Admin. Configuration
+and environment values apply when `--port` is omitted.
+`bash build.sh --run` builds and starts this executable.
+
+To run an individual service, select exactly one of `--admin`, `--api`,
+`--ingestor`, `--syncer` or `--chatter`. Run `./bin/ragflow_server --migrate`
+before starting individual services; it applies database migrations and exits.
+The `--admin` mode also initializes the superuser. Standalone DeepDoc inference
+servers require the enterprise edition.
 
 Service identities come from `<service>.name` or `RAGFLOW_<SERVICE>_NAME`.
 Admin discovery uses `admin.host` / `admin.http_port` or
@@ -446,6 +454,11 @@ Admin discovery uses `admin.host` / `admin.http_port` or
 `RAGFLOW_INGESTOR_CONCURRENT_WORKERS` / `RAGFLOW_INGESTOR_PAGE_CONCURRENCY`.
 Environment variables override the corresponding configuration values.
 `--profile` enables profiling for the whole process.
+
+The log level defaults to `warn`. Override it with `log.level`,
+`RAGFLOW_LOG_LEVEL`, or `--log-level` (in increasing precedence).
+For `warn` and `error`, startup logs remain at `info` until all services are ready,
+then switch to the selected level. `debug` and `info` apply throughout startup.
 
 Validate startup and shutdown against isolated test dependencies with:
 

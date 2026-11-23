@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
@@ -118,7 +119,10 @@ func recordResponseUsage(modelUsage *common.ModelUsage, requestID string, usage 
 		return
 	}
 	if modelUsage == nil {
-		modelUsage = &common.ModelUsage{}
+		// The synthetic record is built at response time, so StartAt carries
+		// the completion time; callers that know the call start should pass
+		// a usage with StartAt set before the call instead.
+		modelUsage = &common.ModelUsage{StartAt: time.Now()}
 	}
 	if modelUsage.Type == "" {
 		modelUsage.Type = modelType
@@ -141,10 +145,11 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 		modelUsage.OutputTokens = usage.CompletionTokens
 		modelUsage.TotalTokens = usage.TotalTokens
 	}
-	// StartAt may be zero when the synthetic ModelUsage came from
-	// recordResponseUsage's nil-caller path. In that case we cannot
-	// compute a meaningful response time; leave it at zero instead
-	// of reporting a 50-year epoch delta.
+	// StartAt may still be zero when the caller built an explicit ModelUsage
+	// without one in a build without the usage template resolver (which would
+	// have stamped it in usageFor). In that case we cannot compute a
+	// meaningful response time; leave it at zero instead of reporting a huge
+	// epoch delta.
 	if !modelUsage.StartAt.IsZero() {
 		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 	}
@@ -172,7 +177,7 @@ func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usa
 		chatConfig.UsageResult = usage
 	}
 	if modelUsage == nil {
-		modelUsage = &common.ModelUsage{}
+		modelUsage = &common.ModelUsage{StartAt: time.Now()}
 	}
 	if modelUsage.Type == "" {
 		modelUsage.Type = "chat"
@@ -604,6 +609,9 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 		setOpt(reqBody, "frequency_penalty", cfg.FrequencyPenalty)
 		setOpt(reqBody, "max_tokens", cfg.MaxTokens)
 		setOpt(reqBody, "stop", cfg.Stop)
+		if cfg.JSONMode != nil && *cfg.JSONMode {
+			reqBody["response_format"] = map[string]any{"type": "json_object"}
+		}
 
 		if cfg.Tools != nil {
 			reqBody["tools"] = cfg.Tools
@@ -753,9 +761,8 @@ func mergeToolCallFunction(existing, delta map[string]interface{}) {
 
 // CloneMap returns a shallow copy of m.
 func cloneMap(m map[string]interface{}) map[string]interface{} {
-	cp := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		cp[k] = v
+	if m == nil {
+		return map[string]interface{}{}
 	}
-	return cp
+	return maps.Clone(m)
 }

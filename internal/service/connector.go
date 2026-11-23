@@ -400,15 +400,7 @@ func (s *ConnectorService) ListConnectors(ctx context.Context, accessUserID stri
 	if accessUserID == "" {
 		accessUserID = userID
 	}
-	scope, err := permission.NewDatabaseChecker(dao.DB).QueryScope(ctx, permission.ScopeQuery{
-		TenantID:  tenantID,
-		Kind:      permission.ResourceKindConnector,
-		Operation: permission.OperationRead,
-	})
-	if err != nil {
-		return nil, err
-	}
-	connectors, err := s.connectorDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, accessUserID, scope.Apply)
+	connectors, err := s.connectorDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, accessUserID)
 	if err != nil {
 		return nil, err
 	}

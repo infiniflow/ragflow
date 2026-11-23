@@ -79,7 +79,7 @@ function ImagePhotoView({
     showModal();
   };
 
-  const wrapped = (
+  const card = (
     <div className="relative">
       <div className="relative">
         <Image
@@ -102,6 +102,14 @@ function ImagePhotoView({
           {middleEllipsis(documentName, 10, 6)}
         </span>
       </Button>
+    </div>
+  );
+
+  return (
+    <div className="relative">
+      {/* Keep the sheet outside PhotoView: portal events still bubble through
+          the React tree, so a close click inside the sheet would open preview. */}
+      {src ? <PhotoView src={src}>{card}</PhotoView> : card}
       {visible && (
         <PdfSheet
           visible={visible}
@@ -112,14 +120,6 @@ function ImagePhotoView({
       )}
     </div>
   );
-
-  // When src is not yet available, render image without PhotoView
-  // to avoid PhotoView caching an empty src that would show blank preview
-  if (!src) {
-    return wrapped;
-  }
-
-  return <PhotoView src={src}>{wrapped}</PhotoView>;
 }
 
 function ImageCarousel({ images }: { images: ImageItem[] }) {

@@ -22,7 +22,8 @@ import (
 	"testing"
 
 	"gorm.io/gorm"
-	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
 // The doc engine is a hard dependency of the dataset-level compile reader,
@@ -74,7 +75,7 @@ func TestEngineReaderWithoutEngineFailsFast(t *testing.T) {
 			return err
 		}},
 		{"SearchSimilar", func() error {
-			_, _, err := r.SearchSimilar(ctx, "tenant-1", "kb-1", kccommon.VariantWiki, []float64{0.1, 0.2}, 5, 0.85)
+			_, _, err := r.SearchSimilar(ctx, "tenant-1", "kb-1", common.VariantWiki, []float64{0.1, 0.2}, 5, 0.85)
 			return err
 		}},
 	}
@@ -92,7 +93,7 @@ func TestEngineWriterWithoutEngineFailsFast(t *testing.T) {
 	w := engineWriter{}
 
 	oneDoc := []string{"doc-1"}
-	oneProduct := []kccommon.Product{{ID: "product-1"}}
+	oneProduct := []common.Product{{ID: "product-1"}}
 
 	cases := []struct {
 		name string
@@ -126,7 +127,7 @@ func TestEngineWriterWithoutEngineFailsFast(t *testing.T) {
 			return w.DeleteMerged(ctx, "tenant-1", "kb-1")
 		}},
 		{"DeleteMergedForVariant", func() error {
-			return w.DeleteMergedForVariant(ctx, "tenant-1", "kb-1", []kccommon.Variant{kccommon.VariantWiki})
+			return w.DeleteMergedForVariant(ctx, "tenant-1", "kb-1", []common.Variant{common.VariantWiki})
 		}},
 		{"loadWikiPageContent", func() error {
 			_, err := w.loadWikiPageContent(ctx, "tenant-1", "kb-1", oneProduct)
@@ -164,7 +165,7 @@ func TestNewConsumerWithoutConfiguredStorageFailsFast(t *testing.T) {
 	}
 	err := consumer.processBatch(context.Background(), "tenant-1", "kb-1", "claim-token-1",
 		[]BacklogEntry{{DocID: "doc-1", EventType: string(EventTypeCompleted), Variants: []string{"wiki"}}},
-		[]string{kccommon.TaskTypeWiki})
+		[]string{common.TaskTypeWiki})
 	requireEngineError(t, err)
 }
 

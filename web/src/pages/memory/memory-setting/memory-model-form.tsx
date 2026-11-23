@@ -33,6 +33,7 @@ export const MemoryModelForm = () => {
   const { data } = useFetchMemoryMessageList();
   const { data: configData } = useMemorySettingContext();
   const resourceTenantId = configData?.tenant_id;
+  const accessUserId = configData?.user_id;
   return (
     <>
       <RenderField
@@ -50,6 +51,7 @@ export const MemoryModelForm = () => {
               isEdit={false}
               disabled={data?.messages?.total_count > 0}
               resourceTenantId={resourceTenantId}
+              accessUserId={accessUserId}
             />
           ),
 
@@ -70,6 +72,7 @@ export const MemoryModelForm = () => {
               onChange={field.onChange}
               placeholder={t('memories.selectModel')}
               resourceTenantId={resourceTenantId}
+              accessUserId={accessUserId}
             />
           ),
           tooltip: t('memories.llmTooltip'),

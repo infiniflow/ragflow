@@ -28,7 +28,6 @@ import (
 	"maps"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
@@ -797,18 +796,8 @@ func lookupCodeExecArgumentRef(ref string, merged map[string]any, state *runtime
 // toFloatParam coerces a node-param float value to float64. Same
 // JSON-float64 / numeric-string tolerance as toIntParam.
 func toFloatParam(v any) float64 {
-	switch x := v.(type) {
-	case float64:
-		return x
-	case int:
-		return float64(x)
-	case int64:
-		return float64(x)
-	case string:
-		f, _ := strconv.ParseFloat(x, 64)
-		return f
-	}
-	return 0
+	f, _ := common.ToFloat(v)
+	return f
 }
 
 // Compile-time interface checks.

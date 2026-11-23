@@ -22,4 +22,10 @@ func TestTruncateText(t *testing.T) {
 	if got != "日本語" {
 		t.Fatalf("got %q want %q", got, "日本語")
 	}
+
+	// Byte length exceeds maxLen but rune count does not: the rune guard must
+	// keep the whole string rather than dropping a character.
+	if got := truncateText("日本語", 4); got != "日本語" {
+		t.Fatalf("rune-guard case: got %q want %q", got, "日本語")
+	}
 }

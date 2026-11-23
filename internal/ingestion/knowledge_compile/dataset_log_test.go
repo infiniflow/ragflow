@@ -2,6 +2,7 @@ package knowledge_compile
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -92,7 +93,8 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 
 func TestTaskTypesForEntryLegacyFallbacks(t *testing.T) {
 	got := taskTypesForEntry(BacklogEntry{Variants: []string{"structure"}})
-	want := []string{kccommon.TaskTypeGraph, kccommon.TaskTypePageIndex, kccommon.TaskTypeTimeline}
+	want := append([]string{kccommon.TaskTypeGraph, kccommon.TaskTypePageIndex}, additionalStructureTaskTypes...)
+	slices.Sort(want)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("legacy structure task types = %v, want %v", got, want)
 	}

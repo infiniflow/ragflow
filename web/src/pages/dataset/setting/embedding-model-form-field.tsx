@@ -14,12 +14,14 @@ import { useHasParsedDocument } from './hooks';
 interface IProps {
   line?: 1 | 2;
   isEdit?: boolean;
+  accessUserId?: string;
 }
 
 export function EmbeddingModelItem({
   line = 1,
   isEdit,
   resourceTenantId,
+  accessUserId,
 }: IProps & { resourceTenantId?: string }) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
@@ -54,6 +56,7 @@ export function EmbeddingModelItem({
                     disabled={disabled}
                     testId="ds-settings-basic-embedding-model-select"
                     resourceTenantId={resourceTenantId}
+                    accessUserId={accessUserId}
                   ></EmbeddingSelect>
                 </FormControl>
               </div>

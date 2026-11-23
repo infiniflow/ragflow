@@ -30,89 +30,79 @@ import { Control, UseFormTrigger, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
-export const buildSearchSettingFormSchema = (t: (key: string) => string) =>
-  z
-    .object({
-      search_id: z.string().optional(),
-      name: z.string().min(1, t('search.nameRequired')),
-      avatar: z.string().optional(),
-      description: z.string().optional(),
-      search_config: z.object({
-        kb_ids: z.array(z.string()).min(1, t('search.datasetRequired')),
-        keywords_similarity_weight: z.number().min(0).max(1),
-        web_search: z.boolean(),
-        similarity_threshold: z.number(),
-        use_kg: z.boolean(),
-        rerank_id: z.string(),
-        use_rerank: z.boolean(),
-        ...rerankCandidatesCountSchema,
-        summary: z.boolean(),
-        llm_setting: z.object({
-          ...LlmSettingFieldSchema,
-          ...LLMIdFormField,
-        }),
-        related_search: z.boolean(),
-        query_mindmap: z.boolean(),
-        doc_ids: z.array(z.string()),
-        chat_id: z.string(),
-        highlight: z.boolean(),
-        keyword: z.boolean(),
-        chat_settingcross_languages: z.array(z.string()),
-        ...MetadataFilterSchema,
-      }),
-      ...LlmSettingEnabledSchema,
-    })
-    .superRefine((data, ctx) => {
-      if (data.search_config.use_rerank && !data.search_config.rerank_id) {
-        ctx.addIssue({
-          path: ['search_config', 'rerank_id'],
-          message: t('search.rerankModelRequired'),
-          code: z.ZodIssueCode.custom,
-        });
-      }
+export const SearchSettingFormSchema = z
+  .object({
+    search_id: z.string().optional(),
+    name: z.string().min(1, 'Name is required'),
+    avatar: z.string().optional(),
+    description: z.string().optional(),
+    search_config: z.object({
+      kb_ids: z.array(z.string()).min(1, 'At least one dataset is required'),
+      keywords_similarity_weight: z.number().min(0).max(1),
+      web_search: z.boolean(),
+      similarity_threshold: z.number(),
+      use_kg: z.boolean(),
+      rerank_id: z.string(),
+      use_rerank: z.boolean(),
+      ...rerankCandidatesCountSchema,
+      summary: z.boolean(),
+      llm_setting: z.object({ ...LlmSettingFieldSchema, ...LLMIdFormField }),
+      related_search: z.boolean(),
+      query_mindmap: z.boolean(),
+      doc_ids: z.array(z.string()),
+      chat_id: z.string(),
+      highlight: z.boolean(),
+      keyword: z.boolean(),
+      chat_settingcross_languages: z.array(z.string()),
+      ...MetadataFilterSchema,
+    }),
+    ...LlmSettingEnabledSchema,
+  })
+  .superRefine((data, ctx) => {
+    if (data.search_config.use_rerank && !data.search_config.rerank_id) {
+      ctx.addIssue({
+        path: ['search_config', 'rerank_id'],
+        message: 'Rerank model is required when rerank is enabled',
+        code: z.ZodIssueCode.custom,
+      });
+    }
 
-      const { summary, related_search, query_mindmap, llm_setting } =
-        data.search_config;
-      if ((summary || related_search || query_mindmap) && !llm_setting.llm_id) {
-        ctx.addIssue({
-          path: ['search_config', 'llm_setting', 'llm_id'],
-          message: t('search.modelRequired'),
-          code: z.ZodIssueCode.custom,
-        });
-      }
-    });
+    const { summary, related_search, query_mindmap, llm_setting } =
+      data.search_config;
+    if ((summary || related_search || query_mindmap) && !llm_setting.llm_id) {
+      ctx.addIssue({
+        path: ['search_config', 'llm_setting', 'llm_id'],
+        message:
+          'Model is required when AI summary, related search, or query mindmap is enabled',
+        code: z.ZodIssueCode.custom,
+      });
+    }
+  });
 
-export type SearchSettingFormData = z.infer<
-  ReturnType<typeof buildSearchSettingFormSchema>
->;
+export type SearchSettingFormData = z.infer<typeof SearchSettingFormSchema>;
 
 /**
- * Builds the translated schema and extends it with an existence check against
- * the added-model list: a persisted value may reference a model that has since
- * been deleted.
+ * Extends the static schema with an existence check against the added-model
+ * list: a persisted value may reference a model that has since been deleted.
  * Only validate selected models when their corresponding feature is enabled.
  */
 export const useSearchSettingFormSchema = (
   resourceTenantId?: string,
-  accessUserId?: string,
+  accessUserId?: string | null,
 ) => {
   const { t } = useTranslation();
-  const {
-    validIds: validRerankIds,
-    isFetched: rerankModelsFetched,
-    isSettled: rerankModelsSettled,
-    getPendingMessage: getRerankPendingMessage,
-  } = useModelValidIds(ModelTypeMap.rerank_id, resourceTenantId, accessUserId);
-  const {
-    validIds: validLlmIds,
-    isFetched: llmModelsFetched,
-    isSettled: llmModelsSettled,
-    getPendingMessage: getLlmPendingMessage,
-  } = useModelValidIds(ModelTypeMap.llm_id, resourceTenantId, accessUserId);
+  const { validIds: validRerankIds, isFetched: modelsFetched } =
+    useModelValidIds(ModelTypeMap.rerank_id, resourceTenantId, accessUserId);
+  const { validIds: validLlmIds } = useModelValidIds(
+    ModelTypeMap.llm_id,
+    resourceTenantId,
+    accessUserId,
+  );
 
   const formSchema = useMemo(
     () =>
-      buildSearchSettingFormSchema(t).superRefine((formData, ctx) => {
+      SearchSettingFormSchema.superRefine((formData, ctx) => {
+        if (!modelsFetched) return;
         const {
           use_rerank,
           rerank_id,
@@ -121,58 +111,29 @@ export const useSearchSettingFormSchema = (
           query_mindmap,
           llm_setting,
         } = formData.search_config;
-        if (use_rerank && rerank_id) {
-          const pendingMessage = getRerankPendingMessage(rerank_id);
-          if (pendingMessage) {
-            ctx.addIssue({
-              path: ['search_config', 'rerank_id'],
-              message: pendingMessage,
-              code: z.ZodIssueCode.custom,
-            });
-          } else if (rerankModelsFetched && !validRerankIds.has(rerank_id)) {
-            ctx.addIssue({
-              path: ['search_config', 'rerank_id'],
-              message: t('common.modelUnavailable'),
-              code: z.ZodIssueCode.custom,
-            });
-          }
+        if (use_rerank && rerank_id && !validRerankIds.has(rerank_id)) {
+          ctx.addIssue({
+            path: ['search_config', 'rerank_id'],
+            message: t('common.modelUnavailable'),
+            code: z.ZodIssueCode.custom,
+          });
         }
         if (
           (summary || related_search || query_mindmap) &&
-          llm_setting?.llm_id
+          llm_setting?.llm_id &&
+          !validLlmIds.has(llm_setting.llm_id)
         ) {
-          const llmId = llm_setting.llm_id;
-          const pendingMessage = getLlmPendingMessage(llmId);
-          if (pendingMessage) {
-            ctx.addIssue({
-              path: ['search_config', 'llm_setting', 'llm_id'],
-              message: pendingMessage,
-              code: z.ZodIssueCode.custom,
-            });
-          } else if (llmModelsFetched && !validLlmIds.has(llmId)) {
-            ctx.addIssue({
-              path: ['search_config', 'llm_setting', 'llm_id'],
-              message: t('common.modelUnavailable'),
-              code: z.ZodIssueCode.custom,
-            });
-          }
+          ctx.addIssue({
+            path: ['search_config', 'llm_setting', 'llm_id'],
+            message: t('common.modelUnavailable'),
+            code: z.ZodIssueCode.custom,
+          });
         }
       }),
-    [
-      rerankModelsFetched,
-      llmModelsFetched,
-      validRerankIds,
-      validLlmIds,
-      getRerankPendingMessage,
-      getLlmPendingMessage,
-      t,
-    ],
+    [modelsFetched, validRerankIds, validLlmIds, t],
   );
 
-  return {
-    formSchema,
-    modelsFetched: rerankModelsSettled && llmModelsSettled,
-  };
+  return { formSchema, modelsFetched };
 };
 
 /**

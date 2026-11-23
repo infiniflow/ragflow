@@ -39,6 +39,12 @@ var extractorValidParamKeys = func() map[string]struct{} {
 	return keys
 }()
 
+// extractorParamCloneKeys lists the modular Extractor sub-objects that
+// NormalizeExtractorParams clones one level deep.
+var extractorParamCloneKeys = []string{
+	"keywords", "questions", "tags", "summary", "metadata",
+}
+
 // componentParamSchemaKeys maps a DSL component_name (lower-cased) to the
 // param keys its param schema declares. cleanComponentParams unions these with
 // the keys a template already bakes, so a param the component can read is
@@ -305,10 +311,10 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 		out[k] = v
 	}
 
-	// The five modular extractor sub-objects are cloned one level deep so the
+	// The modular extractor sub-objects are cloned one level deep so the
 	// caller can mutate them without aliasing the request map. Any other value
 	// (scalars, unknown nested maps) is carried over by reference.
-	for _, key := range []string{"keywords", "questions", "tags", "summary", "metadata"} {
+	for _, key := range extractorParamCloneKeys {
 		if sub, ok := out[key].(map[string]any); ok {
 			cp := make(map[string]any, len(sub))
 			for k, v := range sub {

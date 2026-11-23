@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
@@ -172,16 +173,8 @@ func (b *Bm25Adapter) SearchBm25(ctx context.Context, req runtime.Bm25Request) (
 
 // floatFromMap returns m[key] as float64 when present and numeric.
 func floatFromMap(m map[string]interface{}, key string) float64 {
-	if v, ok := m[key].(float64); ok {
-		return v
-	}
-	if v, ok := m[key].(int); ok {
-		return float64(v)
-	}
-	if v, ok := m[key].(int64); ok {
-		return float64(v)
-	}
-	return 0
+	f, _ := common.ToFloat(m[key])
+	return f
 }
 
 // buildMatchExpr converts a raw query into the match expression SearchBm25
