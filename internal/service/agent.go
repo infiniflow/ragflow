@@ -1696,7 +1696,7 @@ func (s *AgentService) ApplyVersion(ctx context.Context, canvasID, versionID str
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
-func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (events <-chan canvas.RunEvent, runErr error) {
 	userID := permission.UserIDFromContext(ctx)
 	receivedAt := float64(time.Now().UnixNano()) / 1e9
 	canvasRow, err := s.loadCanvasForUser(ctx, canvasID, permission.OperationRun)
@@ -1704,6 +1704,11 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		return nil, err
 	}
 	agentTenantID := canvasRow.EffectiveTenantID()
+	defer func() {
+		if runErr == nil && events != nil {
+			events = logAgentCompletion(permission.WithTenantID(ctx, agentTenantID), canvasID, sessionID, userInput, events)
+		}
+	}()
 	newSession := sessionID == ""
 	if sessionID == "" {
 		sessionID = common.GenerateToken()
