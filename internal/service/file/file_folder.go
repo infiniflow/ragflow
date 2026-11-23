@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -733,6 +736,28 @@ func (s *FileService) renameLinkedDocuments(ctx context.Context, fileID, newName
 	return nil
 }
 
+// uniqueStorageLocation returns an object name free in the destination bucket.
+// The conflict-free path is unchanged: one probe and the original name. Once
+// the name is taken, a unique token replaces the old name_, name__, ... walk,
+// so K occupied names no longer cost K+1 sequential storage calls. A fresh,
+// unpredictable suffix also narrows the check-then-move window in which another
+// writer could claim the probed name. A token collision falls back to the
+// original deterministic naming so correctness never depends on the clock.
+func uniqueStorageLocation(ctx context.Context, store storage.Storage, bucket, name string) string {
+	if !store.ObjExist(ctx, bucket, name) {
+		return name
+	}
+	candidate := name + "_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	if !store.ObjExist(ctx, bucket, candidate) {
+		return candidate
+	}
+	candidate = name + "_"
+	for store.ObjExist(ctx, bucket, candidate) {
+		candidate += "_"
+	}
+	return candidate
+}
+
 // moveEntryRecursive recursively moves a file or folder entry
 func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity.File, destFolder *entity.File, overrideName string) error {
 	effectiveName := overrideName
@@ -792,10 +817,7 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity
 		}
 
 		// Calculate new location
-		newLocation := effectiveName
-		for storageImpl.ObjExist(ctx, destFolder.ID, newLocation) {
-			newLocation += "_"
-		}
+		newLocation := uniqueStorageLocation(ctx, storageImpl, destFolder.ID, effectiveName)
 
 		// Perform storage move (copy + delete)
 		if sourceFile.Location == nil || *sourceFile.Location == "" {

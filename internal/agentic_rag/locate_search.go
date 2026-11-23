@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -126,9 +127,6 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 	ectx, ecancel := engineCallContext(ctx)
 	defer ecancel()
 
-	seen := map[string]struct{}{}
-	var merged []runtime.RetrievalChunk
-	var failed []error
 	// Over-fetching candidates is a FUSION need: the weighted sum needs a pool
 	// larger than the page to re-rank inside. A vector-only request returns
 	// exactly what the kNN ranked, so pulling 4x and discarding three quarters
@@ -137,33 +135,55 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 	if spec.vectorOnly {
 		topK = topN
 	}
-	for _, q := range queries {
-		chunks, err := svc.Search(ectx, dao.DB, runtime.RetrievalRequest{
-			Query:                    q,
-			DatasetIDs:               datasetIDs,
-			TopN:                     topN,
-			TopK:                     topK,
-			SimilarityThreshold:      &similarityThreshold,
-			KeywordsSimilarityWeight: &weight,
-			DocScope:                 docScope,
-			TenantID:                 tenantID,
-			VectorOnly:               spec.vectorOnly,
-			// Agentic, so no dense-only rescue.
-			AllowDenseFallback: new(false),
-			SelectFields:       grepChunksSelectFields,
-			// Same "only ordinary prose" filter as grep_chunks: exclude
-			// compiled products so the model reads original document text, not
-			// derived graph content.
-			OnlyOriginalText: true,
+
+	// Fan the queries out, but keep each response in its query's slot. A plain
+	// Group (not WithContext) joins them without handing a failed query's
+	// cancellation to its siblings: ectx stays the single engine context for
+	// every call, and a per-query error is recorded in errs[i] instead of
+	// aborting the group.
+	results := make([][]runtime.RetrievalChunk, len(queries))
+	errs := make([]error, len(queries))
+	var group errgroup.Group
+	for i, q := range queries {
+		i, q := i, q
+		group.Go(func() error {
+			results[i], errs[i] = svc.Search(ectx, dao.DB, runtime.RetrievalRequest{
+				Query:                    q,
+				DatasetIDs:               datasetIDs,
+				TopN:                     topN,
+				TopK:                     topK,
+				SimilarityThreshold:      &similarityThreshold,
+				KeywordsSimilarityWeight: &weight,
+				DocScope:                 docScope,
+				TenantID:                 tenantID,
+				VectorOnly:               spec.vectorOnly,
+				// Agentic, so no dense-only rescue.
+				AllowDenseFallback: new(false),
+				SelectFields:       grepChunksSelectFields,
+				// Same "only ordinary prose" filter as grep_chunks: exclude
+				// compiled products so the model reads original document text, not
+				// derived graph content.
+				OnlyOriginalText: true,
+			})
+			return nil
 		})
-		if err != nil {
+	}
+	_ = group.Wait()
+
+	// Merge in the original query order, never completion order: the dedup
+	// set and the XML the model reads are both order-sensitive.
+	seen := map[string]struct{}{}
+	var merged []runtime.RetrievalChunk
+	var failed []error
+	for i, q := range queries {
+		if err := errs[i]; err != nil {
 			// Record and fall back on failure, keep other queries' results.
 			// (A query embedding failure lands here: the semantic bridge is
 			// dead for that query, but the others may still return hits.)
 			failed = append(failed, fmt.Errorf("%q: %w", q, err))
 			continue
 		}
-		for _, c := range chunks {
+		for _, c := range results[i] {
 			if _, dup := seen[c.ID]; dup {
 				continue
 			}
