@@ -122,6 +122,9 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 	}()
 
 	// prepare sourceType, waterline, stats, resultChan
+	if checkpointState.Checkpoint != nil {
+		recordTaskEvent(ctx, r.taskDAO, taskContext.Task.ID, dao.EventTypeMessage, "checkpoint", "Resuming from saved checkpoint")
+	}
 	stats := statsFromCheckpointState(checkpointState) // count `add`, `updated`, `skipped`
 	resultChans := make([]<-chan syncJobResult, 0)
 
@@ -219,6 +222,7 @@ func (r *SyncRunner) restartSyncSession(ctx context.Context, taskContext dao.Syn
 // resetCheckpointForRestart discards committed progress and restarts the same
 // source window when the resume anchor is no longer valid.
 func (r *SyncRunner) resetCheckpointForRestart(ctx context.Context, taskID string, checkpointState *syncerconnector.SyncCheckpointState) error {
+	recordTaskEvent(ctx, r.taskDAO, taskID, dao.EventTypeSystem, "checkpoint", "[WARN] Saved checkpoint is no longer valid. Restarting the source scan")
 	checkpointState.RestartCount++
 	checkpointState.Checkpoint = nil
 	checkpointState.NextCommitSeq = 1
@@ -310,7 +314,15 @@ func applyStatsToCheckpointState(state *syncerconnector.SyncCheckpointState, sta
 // submitBatch submits one source batch as one BatchJob.
 func (r *SyncRunner) submitBatch(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, batch syncerconnector.SyncBatch) (<-chan syncJobResult, error) {
 	resultChan, err := r.queue.submit(ctx, func(jobCtx context.Context) (service.SyncStats, error) {
-		return r.processDocuments(jobCtx, taskContext, sourceType, session, batch.Documents)
+		stats, err := r.processDocuments(jobCtx, taskContext, sourceType, session, batch.Documents)
+		message := fmt.Sprintf("Batch of %d files: %d added, %d updated, %d skipped, %d errors", len(batch.Documents), stats.Added, stats.Updated, stats.Skipped, stats.ErrorCount)
+		if err != nil {
+			message = "[WARN] Batch encountered a processing error. " + message
+		} else if stats.ErrorCount > 0 {
+			message = "[WARN] " + message
+		}
+		recordTaskEvent(jobCtx, r.taskDAO, taskContext.Task.ID, dao.EventTypeMessage, "batch", message)
+		return stats, err
 	}, batch.Checkpoint)
 	if err != nil {
 		return nil, err
