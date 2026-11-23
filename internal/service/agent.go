@@ -381,6 +381,10 @@ type AgentService struct {
 	runTracker     *canvas.RunTracker
 	runMu          sync.Mutex
 	activeSessions map[string]*activeAgentRun
+	// sessionWaiters maps a session to the channel closed when its local run
+	// releases the active slot. It is guarded by runMu; each wake closes the
+	// current channel and removes it so a new waiter gets a fresh channel.
+	sessionWaiters map[string]chan struct{}
 }
 
 type activeAgentRun struct {
@@ -400,6 +404,42 @@ func (r *activeAgentRun) requestCancel() {
 	if r.cancelRun != nil {
 		r.cancelRun()
 	}
+}
+
+// sessionReleaseChLocked returns the channel broadcast when the local run for
+// sessionID is released, creating it on first use. Caller must hold s.runMu.
+func (s *AgentService) sessionReleaseChLocked(sessionID string) chan struct{} {
+	if s.sessionWaiters == nil {
+		s.sessionWaiters = make(map[string]chan struct{})
+	}
+	ch := s.sessionWaiters[sessionID]
+	if ch == nil {
+		ch = make(chan struct{})
+		s.sessionWaiters[sessionID] = ch
+	}
+	return ch
+}
+
+// notifySessionReleasedLocked wakes every waiter for sessionID and removes the
+// closed channel so the next waiter creates a fresh one. Caller must hold
+// s.runMu.
+func (s *AgentService) notifySessionReleasedLocked(sessionID string) {
+	if ch := s.sessionWaiters[sessionID]; ch != nil {
+		close(ch)
+		delete(s.sessionWaiters, sessionID)
+	}
+}
+
+// releaseLocalSession drops the local active slot for a finished run and
+// wakes every waiter on that session. It is a no-op when a newer run already
+// owns the slot.
+func (s *AgentService) releaseLocalSession(sessionID string, active *activeAgentRun) {
+	s.runMu.Lock()
+	if s.activeSessions[sessionID] == active {
+		delete(s.activeSessions, sessionID)
+		s.notifySessionReleasedLocked(sessionID)
+	}
+	s.runMu.Unlock()
 }
 
 // NewAgentService create agent service
@@ -436,6 +476,7 @@ func NewAgentServiceWithOptions(
 		compilationTemplateDAO:      dao.NewCompilationTemplateDAO(),
 		runner:                      canvas.NewRunner(),
 		activeSessions:              make(map[string]*activeAgentRun),
+		sessionWaiters:              make(map[string]chan struct{}),
 		checkpointStore:             cp,
 		stateSerializer:             ser,
 		runTracker:                  rt,
@@ -1766,22 +1807,23 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		leaseToken: lockToken,
 		cancelRun:  cancelRun,
 	}
-	releaseLocal := func() {
-		s.runMu.Lock()
-		if s.activeSessions[sessionID] == active {
-			delete(s.activeSessions, sessionID)
-		}
-		s.runMu.Unlock()
-	}
 	// Accept concurrent questions, but serialize stateful runs so checkpoints
 	// and persisted DSL cannot be overwritten by another run of this session.
-	wait := time.NewTicker(100 * time.Millisecond)
-	defer wait.Stop()
+	// Waiters block on the in-process release channel; the slow ticker only
+	// re-checks the distributed lease held by another process.
+	recheck := time.NewTicker(time.Second)
+	defer recheck.Stop()
 	for {
 		if err := ctx.Err(); err != nil {
 			cancelRun()
 			return nil, err
 		}
+		// Capture the release channel before touching the distributed lease:
+		// a release landing during registration must still close the channel
+		// this waiter will select on.
+		s.runMu.Lock()
+		waitCh := s.sessionReleaseChLocked(sessionID)
+		s.runMu.Unlock()
 		registered := true
 		if s.runTracker != nil {
 			var registerErr error
@@ -1824,7 +1866,8 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		case <-ctx.Done():
 			cancelRun()
 			return nil, ctx.Err()
-		case <-wait.C:
+		case <-waitCh:
+		case <-recheck.C:
 		}
 	}
 
@@ -1848,7 +1891,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 			_ = canvas.ClearCancel(cleanupCtx, sessionID)
 		}
 		cleanupCancel()
-		releaseLocal()
+		s.releaseLocalSession(sessionID, active)
 	}
 
 	// Start cancellation and lease watchers as soon as the active registration
