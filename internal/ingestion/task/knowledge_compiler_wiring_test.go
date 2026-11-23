@@ -179,3 +179,18 @@ func TestDatasetEmbeddingIDBindsTheDatasetModel(t *testing.T) {
 		})
 	}
 }
+
+// GenJSON sets ChatRequest.JSONMode on every knowledge-compiler call; the
+// production invoker used to drop it, so the provider never received
+// response_format and replied with prose (#22402). chatConfigForRequest is the
+// single place that maps the request onto the provider config.
+func TestChatConfigForRequestCarriesJSONMode(t *testing.T) {
+	cfg := chatConfigForRequest(kc.ChatRequest{JSONMode: true})
+	if cfg == nil || cfg.JSONMode == nil || !*cfg.JSONMode {
+		t.Fatalf("config = %+v, want JSONMode enabled so response_format is requested", cfg)
+	}
+
+	if cfg := chatConfigForRequest(kc.ChatRequest{}); cfg != nil {
+		t.Fatalf("config = %+v, want nil so the driver defaults apply", cfg)
+	}
+}
