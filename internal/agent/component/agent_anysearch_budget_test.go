@@ -17,13 +17,19 @@
 package component
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -103,6 +109,121 @@ func TestAnySearchAgentFitsActualModelRequest(t *testing.T) {
 			}
 			if input[2].Content != original {
 				t.Fatal("original tool evidence was mutated")
+			}
+		})
+	}
+}
+
+func TestAnySearchAgentBudgetPreservesImageAndEvidence(t *testing.T) {
+	setupAllowAnyHost(t, true)
+	if err := models.InitProviderManager("../../../conf/models"); err != nil {
+		t.Fatal(err)
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, 96, 96))
+	_, _ = rand.New(rand.NewSource(1)).Read(img.Pix)
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+	uri := "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes())
+	const evidence = `{"queries":[{"results":[{"content":"small usable result"}]}]}`
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprint(streaming), func(t *testing.T) {
+			var received atomic.Bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					Messages []struct {
+						Role    string          `json:"role"`
+						Content json.RawMessage `json:"content"`
+					} `json:"messages"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				received.Store(true)
+				if len(request.Messages) != 3 {
+					t.Errorf("messages=%d, want user, tool call and tool result", len(request.Messages))
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				var parts []struct {
+					Type     string `json:"type"`
+					Text     string `json:"text"`
+					ImageURL *struct {
+						URL string `json:"url"`
+					} `json:"image_url"`
+				}
+				if err := json.Unmarshal(request.Messages[0].Content, &parts); err != nil {
+					t.Error(err)
+				}
+				if len(parts) != 2 || parts[0].Text != "Compare the image with web evidence" || parts[1].ImageURL == nil || parts[1].ImageURL.URL != uri {
+					t.Error("model request lost or changed user text/image")
+				}
+				var result string
+				if err := json.Unmarshal(request.Messages[2].Content, &result); err != nil || result != evidence {
+					t.Errorf("successful AnySearch evidence changed: %s", request.Messages[2].Content)
+				}
+				if streaming {
+					w.Header().Set("Content-Type", "text/event-stream")
+					fmt.Fprint(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"compared\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+					return
+				}
+				fmt.Fprint(w, `{"choices":[{"index":0,"message":{"role":"assistant","content":"compared"},"finish_reason":"stop"}]}`)
+			}))
+			defer server.Close()
+			outputTokens := 128
+			inner, err := buildAgentChatModel(t.Context(), AgentParam{ModelID: "small-model", Driver: "OpenAI-API-Compatible", APIKey: "synthetic", BaseURL: server.URL, MaxTokens: &outputTokens})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wrapper := &roundLimitedChatModel{ToolCallingChatModel: inner, remaining: 2, contextLength: 1024, outputTokens: outputTokens}
+			bound, err := wrapper.WithTools([]*schema.ToolInfo{{Name: "anysearch_search", Desc: "Search the web"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wrapper = bound.(*roundLimitedChatModel)
+			input := buildAgentInputMessages(t.Context(), AgentParam{UserPrompt: "Compare the image with web evidence", visualFiles: []string{uri}})
+			input = append(input, &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{ID: "call-1", Type: "function", Function: schema.FunctionCall{Name: "anysearch_search", Arguments: `{"query":"q"}`}}}}, &schema.Message{Role: schema.Tool, ToolCallID: "call-1", ToolName: "anysearch_search", Content: evidence})
+			if streaming {
+				stream, err := wrapper.Stream(t.Context(), input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer stream.Close()
+				for {
+					_, err := stream.Recv()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+			} else if _, err := wrapper.Generate(t.Context(), input); err != nil {
+				t.Fatal(err)
+			}
+			if !received.Load() {
+				t.Fatal("no actual HTTP model request")
+			}
+			if *input[0].UserInputMultiContent[1].Image.URL != uri || input[2].Content != evidence {
+				t.Fatal("original image or tool evidence was mutated")
+			}
+		})
+	}
+}
+
+func TestAnySearchAgentBudgetRejectsOversizedMultimodalText(t *testing.T) {
+	for _, plainContent := range []string{"", "Plain content alongside multipart text"} {
+		t.Run(plainContent, func(t *testing.T) {
+			user := userMessageWithImages("Short first part", []string{"https://example.com/image.png"})
+			user.Content = plainContent
+			user.UserInputMultiContent = append(user.UserInputMultiContent, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: strings.Repeat("oversized user text ", 5000)})
+			model := &roundLimitedChatModel{contextLength: 1024, outputTokens: 128}
+			input := []*schema.Message{&user, {Role: schema.Tool, ToolName: "anysearch_search", Content: "small usable result"}}
+			if _, err := model.fitAnySearchInput(input); err == nil {
+				t.Fatal("oversized multipart user text was accepted after omitting AnySearch output")
 			}
 		})
 	}

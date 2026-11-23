@@ -79,7 +79,23 @@ func (m *roundLimitedChatModel) fitAnySearchInput(input []*schema.Message) ([]*s
 	}
 	budget := int(float64(m.contextLength)*0.97) - m.outputTokens - m.toolSchemaTokens
 	fits := func(messages []*schema.Message) bool {
-		encoded, err := json.Marshal(messages)
+		// Estimate text as in chat.FitMessages; image tokens depend on the
+		// provider and image dimensions, not the length of their data URI.
+		textOnly := make([]*schema.Message, len(messages))
+		for i, msg := range messages {
+			if msg == nil {
+				continue
+			}
+			copied := *msg
+			copied.UserInputMultiContent = nil
+			for _, part := range msg.UserInputMultiContent {
+				if part.Type == schema.ChatMessagePartTypeText {
+					copied.UserInputMultiContent = append(copied.UserInputMultiContent, part)
+				}
+			}
+			textOnly[i] = &copied
+		}
+		encoded, err := json.Marshal(textOnly)
 		return err == nil && tokenizer.NumTokensFromString(string(encoded)) <= budget
 	}
 	if fits(input) {
