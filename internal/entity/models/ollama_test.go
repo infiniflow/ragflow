@@ -150,7 +150,9 @@ func TestOllamaChatSendsToolCallArgumentsAsObject(t *testing.T) {
 	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		decoder := json.NewDecoder(r.Body)
+		decoder.UseNumber()
+		if err := decoder.Decode(&body); err != nil {
 			t.Errorf("decode request: %v", err)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
@@ -180,7 +182,9 @@ func TestOllamaStreamingChatSendsToolCallArgumentsAsObject(t *testing.T) {
 	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		decoder := json.NewDecoder(r.Body)
+		decoder.UseNumber()
+		if err := decoder.Decode(&body); err != nil {
 			t.Errorf("decode request: %v", err)
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
@@ -219,7 +223,7 @@ func ollamaToolCallTestMessages() []Message {
 					"type": "function",
 					"function": map[string]any{
 						"name":      "get_weather",
-						"arguments": `{"location":"Paris"}`,
+						"arguments": `{"location":"Paris","id":9007199254740993}`,
 					},
 				},
 			},
@@ -236,7 +240,8 @@ func assertOllamaToolCallArgumentsAreObjects(t *testing.T, body map[string]inter
 	t.Helper()
 	messages, ok := body["messages"].([]interface{})
 	if !ok {
-		t.Fatalf("messages=%v, want array", body["messages"])
+		t.Errorf("messages=%v, want array", body["messages"])
+		return
 	}
 	var found bool
 	for _, m := range messages {
@@ -252,23 +257,29 @@ func assertOllamaToolCallArgumentsAreObjects(t *testing.T, body map[string]inter
 		for _, c := range calls {
 			call, ok := c.(map[string]interface{})
 			if !ok {
-				t.Fatalf("tool_call=%v, want object", c)
+				t.Errorf("tool_call=%v, want object", c)
+				return
 			}
 			fn, ok := call["function"].(map[string]interface{})
 			if !ok {
-				t.Fatalf("function=%v, want object", call["function"])
+				t.Errorf("function=%v, want object", call["function"])
+				return
 			}
 			args, ok := fn["arguments"].(map[string]interface{})
 			if !ok {
-				t.Fatalf("arguments=%v (%T), want JSON object", fn["arguments"], fn["arguments"])
+				t.Errorf("arguments=%v (%T), want JSON object", fn["arguments"], fn["arguments"])
+				return
 			}
 			if args["location"] != "Paris" {
 				t.Errorf("arguments[location]=%v, want Paris", args["location"])
 			}
+			if args["id"] != json.Number("9007199254740993") {
+				t.Errorf("arguments[id]=%v, want 9007199254740993", args["id"])
+			}
 		}
 	}
 	if !found {
-		t.Fatal("no assistant message with tool_calls in request payload")
+		t.Error("no assistant message with tool_calls in request payload")
 	}
 }
 
@@ -315,6 +326,7 @@ func TestOllamaNormalizesMalformedToolCallArguments(t *testing.T) {
 				{"id": "call_arr", "type": "function", "function": map[string]any{"name": "d", "arguments": "[1,2]"}},
 				{"id": "call_scalar", "type": "function", "function": map[string]any{"name": "e", "arguments": "123"}},
 				{"id": "call_null", "type": "function", "function": map[string]any{"name": "g", "arguments": "null"}},
+				{"id": "call_trailing", "type": "function", "function": map[string]any{"name": "h", "arguments": "{} {}"}},
 				{"id": "call_obj", "type": "function", "function": map[string]any{"name": "f", "arguments": `{"x":1}`}},
 			},
 		},
@@ -338,7 +350,7 @@ func TestOllamaNormalizesMalformedToolCallArguments(t *testing.T) {
 			continue
 		}
 		if call["id"] == "call_obj" {
-			if args["x"] != float64(1) {
+			if args["x"] != json.Number("1") {
 				t.Errorf("call[%d] arguments=%v, want {\"x\":1}", i, args)
 			}
 			continue

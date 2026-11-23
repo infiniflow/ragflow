@@ -145,7 +145,9 @@ func ollamaArgumentsAsObject(value any) any {
 		return value
 	}
 	var obj map[string]any
-	if err := json.Unmarshal([]byte(argsStr), &obj); err == nil && obj != nil {
+	decoder := json.NewDecoder(strings.NewReader(argsStr))
+	decoder.UseNumber()
+	if err := decoder.Decode(&obj); err == nil && obj != nil && decoder.Decode(new(any)) == io.EOF {
 		return obj
 	}
 	return map[string]any{}
