@@ -131,7 +131,7 @@ func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interf
 	if err != nil || !exists {
 		return 0, err
 	}
-	whereSQL, args, err := buildFilter(condition, "metadata")
+	whereSQL, args, err := buildFilter(condition, "metadata", nil)
 	if err != nil {
 		return 0, err
 	}
@@ -212,7 +212,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 	if err != nil {
 		return nil, err
 	}
-	whereSQL, args, err := buildFilter(req.Filter, "metadata")
+	whereSQL, args, err := buildFilter(req.Filter, "metadata", nil)
 	if err != nil {
 		return nil, err
 	}

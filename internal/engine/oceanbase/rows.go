@@ -240,7 +240,7 @@ func parseSelectField(field, kind string, tableColumns map[string]bool) (*select
 	// from an existing table; those are read from extra instead. The projection
 	// selects the extra object once and decoding lifts the requested fields, so
 	// the value keeps its stored JSON type.
-	if kind == "chunk" && optionalChunkColumns[column] && tableColumns != nil && !tableColumns[column] {
+	if kind == "chunk" && chunkFieldInExtra(column, tableColumns) {
 		return &selectField{column: "extra", alias: "extra"}, nil
 	}
 	if !vectorColumnPattern.MatchString(column) && !validColumns(kind)[column] {
@@ -295,7 +295,7 @@ func chunkFieldsFromExtra(fields []string, tableColumns map[string]bool) map[str
 			continue
 		}
 		column := mapChunkField(field)
-		if optionalChunkColumns[column] && !tableColumns[column] {
+		if chunkFieldInExtra(column, tableColumns) {
 			lifted[column] = true
 		}
 	}

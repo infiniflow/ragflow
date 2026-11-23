@@ -17,12 +17,60 @@
 package oceanbase
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 )
 
-func buildFilter(condition map[string]interface{}, kind string) (string, []interface{}, error) {
+// chunkFilterUsesExtra takes a nil schema when the caller is deciding whether
+// to look it up. In that case every optional field is potentially in extra.
+func chunkFilterUsesExtra(condition map[string]interface{}, tableColumns map[string]bool) bool {
+	for key, value := range condition {
+		if isEmptyFilterValue(value) {
+			continue
+		}
+		switch key {
+		case "exists":
+			key, _ = value.(string)
+		case "must_not":
+			object, _ := value.(map[string]interface{})
+			key, _ = object["exists"].(string)
+		}
+		key = mapChunkField(key)
+		if optionalChunkColumns[key] && !tableColumns[key] {
+			return true
+		}
+	}
+	return false
+}
+
+func chunkFieldInExtra(column string, tableColumns map[string]bool) bool {
+	return tableColumns != nil && optionalChunkColumns[column] && !tableColumns[column]
+}
+
+func chunkExtraPath(column string) string {
+	// The caller has already checked column against optionalChunkColumns.
+	return "$." + column
+}
+
+func chunkExtraExtract(column string) string {
+	return "JSON_EXTRACT(`extra`, '" + chunkExtraPath(column) + "')"
+}
+
+func filterColumn(kind, column string, tableColumns map[string]bool, scalar bool) string {
+	if kind != "chunk" || !chunkFieldInExtra(column, tableColumns) {
+		return quoteIdentifier(column)
+	}
+	extracted := chunkExtraExtract(column)
+	value := extracted
+	if scalar && !jsonColumns[column] {
+		value = "JSON_UNQUOTE(" + extracted + ")"
+	}
+	return "CASE WHEN JSON_TYPE(" + extracted + ") <> 'NULL' THEN " + value + " END"
+}
+
+func buildFilter(condition map[string]interface{}, kind string, tableColumns map[string]bool) (string, []interface{}, error) {
 	valid := validColumns(kind)
 	parts := make([]string, 0, len(condition))
 	args := make([]interface{}, 0, len(condition))
@@ -53,9 +101,11 @@ func buildFilter(condition map[string]interface{}, kind string) (string, []inter
 			}
 			if kind == "memory" {
 				column = mapMemoryField(column)
+			} else if kind == "chunk" {
+				column = mapChunkField(column)
 			}
 			if valid[column] {
-				parts = append(parts, quoteIdentifier(column)+" IS NOT NULL")
+				parts = append(parts, filterColumn(kind, column, tableColumns, false)+" IS NOT NULL")
 			}
 		case "must_not":
 			object, ok := value.(map[string]interface{})
@@ -68,9 +118,11 @@ func buildFilter(condition map[string]interface{}, kind string) (string, []inter
 			}
 			if kind == "memory" {
 				column = mapMemoryField(column)
+			} else if kind == "chunk" {
+				column = mapChunkField(column)
 			}
 			if valid[column] {
-				parts = append(parts, quoteIdentifier(column)+" IS NULL")
+				parts = append(parts, filterColumn(kind, column, tableColumns, false)+" IS NULL")
 			}
 		case "metadata_filtering_conditions":
 			part, partArgs, err := buildMetadataFilter(value)
@@ -111,20 +163,32 @@ func buildFilter(condition map[string]interface{}, kind string) (string, []inter
 			if kind == "chunk" && arrayColumns[key] {
 				values, isSlice := interfaceSlice(value)
 				if !isSlice {
-					parts = append(parts, fmt.Sprintf("ARRAY_CONTAINS(%s, ?)", quoteIdentifier(key)))
-					args = append(args, value)
-					continue
+					values = []interface{}{value}
 				}
 				arrayParts := make([]string, 0, len(values))
 				for _, item := range values {
-					arrayParts = append(arrayParts, fmt.Sprintf("ARRAY_CONTAINS(%s, ?)", quoteIdentifier(key)))
+					if chunkFieldInExtra(key, tableColumns) {
+						text, ok := item.(string)
+						if !ok {
+							return "", nil, fmt.Errorf("filter %s requires string array elements", key)
+						}
+						encoded, _ := json.Marshal(text)
+						extracted := chunkExtraExtract(key)
+						arrayParts = append(arrayParts, "(JSON_TYPE("+extracted+") = 'ARRAY' AND JSON_CONTAINS("+extracted+", ?))")
+						item = string(encoded)
+					} else {
+						arrayParts = append(arrayParts, fmt.Sprintf("ARRAY_CONTAINS(%s, ?)", quoteIdentifier(key)))
+					}
 					args = append(args, item)
 				}
-				if len(arrayParts) > 0 {
+				if len(arrayParts) == 1 {
+					parts = append(parts, arrayParts[0])
+				} else if len(arrayParts) > 1 {
 					parts = append(parts, "("+strings.Join(arrayParts, " OR ")+")")
 				}
 				continue
 			}
+			expression := filterColumn(kind, key, tableColumns, true)
 			values, isSlice := interfaceSlice(value)
 			if isSlice {
 				if len(values) == 0 {
@@ -135,9 +199,9 @@ func buildFilter(condition map[string]interface{}, kind string) (string, []inter
 					placeholders[i] = "?"
 					args = append(args, item)
 				}
-				parts = append(parts, fmt.Sprintf("%s IN (%s)", quoteIdentifier(key), strings.Join(placeholders, ", ")))
+				parts = append(parts, fmt.Sprintf("%s IN (%s)", expression, strings.Join(placeholders, ", ")))
 			} else {
-				parts = append(parts, quoteIdentifier(key)+" = ?")
+				parts = append(parts, expression+" = ?")
 				args = append(args, value)
 			}
 		}

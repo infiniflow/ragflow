@@ -105,7 +105,7 @@ func TestSkillFilterSearchCountsPhysicalPrimaryKey(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(`skill_id`) FROM `skill_tenant-1_default` WHERE 1=1")).
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(skill_id)"}).AddRow(0))
 
-	chunks, total, err := engine.searchTableWithSQL(t.Context(), "skill_tenant-1_default", "skill", map[string]interface{}{}, &types.SearchRequest{Limit: 10}, searchPlan{})
+	chunks, total, err := engine.searchTableWithSQL(t.Context(), "skill_tenant-1_default", "skill", map[string]interface{}{}, &types.SearchRequest{Limit: 10}, searchPlan{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestSkillFilterSearchCountsPhysicalPrimaryKey(t *testing.T) {
 }
 
 func TestMemorySourceIDUsesScalarSQL(t *testing.T) {
-	where, args, err := buildFilter(map[string]interface{}{"source_id": "source-1"}, "memory")
+	where, args, err := buildFilter(map[string]interface{}{"source_id": "source-1"}, "memory", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestMemorySourceIDUsesScalarSQL(t *testing.T) {
 }
 
 func TestKnowledgeGraphFilterSupportsCurrentAndLegacyRows(t *testing.T) {
-	where, args, err := buildFilter(map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}}, "chunk")
+	where, args, err := buildFilter(map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}}, "chunk", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestKnowledgeGraphFilterSupportsCurrentAndLegacyRows(t *testing.T) {
 }
 
 func TestChunkSourceIDUsesArraySQL(t *testing.T) {
-	where, args, err := buildFilter(map[string]interface{}{"source_id": "source-1"}, "chunk")
+	where, args, err := buildFilter(map[string]interface{}{"source_id": "source-1"}, "chunk", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

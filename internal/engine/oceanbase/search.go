@@ -124,7 +124,15 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			condition["kb_id"] = req.KbIDs
 		}
 
-		if e.hybridAvailable.Load() && isDBMSHybridPlan(plan) {
+		var tableColumns map[string]bool
+		if kind == "chunk" && (chunkSelectionNeedsSchema(effectiveReq.SelectFields) || chunkFilterUsesExtra(condition, nil)) {
+			tableColumns, err = e.tableColumns(ctx, tableName)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if e.hybridAvailable.Load() && isDBMSHybridPlan(plan) &&
+			(kind != "chunk" || !chunkFilterUsesExtra(condition, tableColumns)) {
 			chunks, used, hybridErr := e.searchWithDBMS(ctx, tableName, kind, condition, &effectiveReq, effectivePlan)
 			if hybridErr != nil {
 				if !isHybridUnavailableError(hybridErr) {
@@ -139,7 +147,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			}
 		}
 
-		chunks, total, err := e.searchTableWithSQL(ctx, tableName, kind, condition, &effectiveReq, effectivePlan)
+		chunks, total, err := e.searchTableWithSQL(ctx, tableName, kind, condition, &effectiveReq, effectivePlan, tableColumns)
 		if err != nil {
 			return nil, err
 		}
@@ -160,27 +168,19 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	return result, nil
 }
 
-func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan) ([]map[string]interface{}, int64, error) {
-	var tableColumns map[string]bool
-	if kind == "chunk" && chunkSelectionNeedsSchema(req.SelectFields) {
-		var err error
-		tableColumns, err = e.tableColumns(ctx, tableName)
-		if err != nil {
-			return nil, 0, err
-		}
-	}
+func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan, tableColumns map[string]bool) ([]map[string]interface{}, int64, error) {
 	fieldsSQL, _, err := buildSelectFieldsWithAlias(req.SelectFields, kind, "", tableColumns)
 	if err != nil {
 		return nil, 0, err
 	}
 	var extra *chunkExtraSelection
-	if tableColumns != nil {
+	if tableColumns != nil && chunkSelectionNeedsSchema(req.SelectFields) {
 		extra = &chunkExtraSelection{
 			fields:    chunkFieldsFromExtra(req.SelectFields, tableColumns),
 			keepExtra: slices.Contains(req.SelectFields, "extra"),
 		}
 	}
-	filterSQL, filterArgs, err := buildFilter(condition, kind)
+	filterSQL, filterArgs, err := buildFilter(condition, kind, tableColumns)
 	if err != nil {
 		return nil, 0, err
 	}

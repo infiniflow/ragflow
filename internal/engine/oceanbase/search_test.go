@@ -17,7 +17,6 @@
 package oceanbase
 
 import (
-	"context"
 	"reflect"
 	"regexp"
 	"testing"
@@ -101,19 +100,22 @@ func TestSearchWildcardWithOptionalFieldKeepsExtra(t *testing.T) {
 	defer db.Close()
 	engine := newEngineWithDB("seekdb", "legacy_doc", db)
 
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?")).
+		WithArgs("legacy_doc", "ragflow_tenant_1").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(`id`) FROM `ragflow_tenant_1` WHERE 1=1")).
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(id)"}).AddRow(1))
 	mock.ExpectQuery("SELECT \\* FROM `ragflow_tenant_1` WHERE 1=1").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "extra"}).
 			AddRow("chunk-1", `{"compile_kwd":"tree","token_num":12}`))
 
-	rows, count, err := engine.searchTableWithSQL(context.Background(), "ragflow_tenant_1", "chunk",
-		map[string]interface{}{},
-		&types.SearchRequest{SelectFields: []string{"*", "compile_kwd"}},
-		searchPlan{})
+	result, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant_1"}, SelectFields: []string{"*", "compile_kwd"},
+	})
 	if err != nil {
-		t.Fatalf("searchTableWithSQL: %v", err)
+		t.Fatalf("Search: %v", err)
 	}
+	rows, count := result.Chunks, result.Total
 	if count != 1 || len(rows) != 1 {
 		t.Fatalf("count=%d rows=%d, want one row", count, len(rows))
 	}

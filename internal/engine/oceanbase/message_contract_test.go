@@ -23,11 +23,11 @@ import (
 )
 
 func TestMessageSubstringFilterKeepsExactFilters(t *testing.T) {
-	got, args, err := buildFilter(map[string]interface{}{"session_id_contains": "part_%'x"}, "memory")
+	got, args, err := buildFilter(map[string]interface{}{"session_id_contains": "part_%'x"}, "memory", nil)
 	if err != nil || got != "INSTR(`session_id`, ?) > 0" || !reflect.DeepEqual(args, []interface{}{"part_%'x"}) {
 		t.Fatalf("%s %v %v", got, args, err)
 	}
-	exact, _, err := buildFilter(map[string]interface{}{"session_id": "part"}, "memory")
+	exact, _, err := buildFilter(map[string]interface{}{"session_id": "part"}, "memory", nil)
 	if err != nil || !strings.Contains(exact, " = ?") {
 		t.Fatal(exact, err)
 	}

@@ -19,6 +19,7 @@ package oceanbase
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -175,7 +176,7 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 	} else if kind == "chunk" {
 		condition["kb_id"] = datasetIDs
 	}
-	whereSQL, args, err := buildFilter(condition, kind)
+	whereSQL, args, err := buildFilter(condition, kind, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +191,27 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 		return nil, nil
 	}
 	return decodeLogicalRow(rows[0], kind, nil), nil
+}
+
+func chunkUpdateNeedsSchema(fields map[string]interface{}) bool {
+	for key, value := range fields {
+		if optionalChunkColumns[mapChunkField(key)] {
+			return true
+		}
+		switch key {
+		case "remove", "add":
+			if column, ok := value.(string); ok && optionalChunkColumns[mapChunkField(column)] {
+				return true
+			}
+			items, _ := value.(map[string]interface{})
+			for column := range items {
+				if optionalChunkColumns[column] {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // UpdateChunks updates rows while retaining the dataset-level scope used by
@@ -213,16 +235,27 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 	if !exists {
 		return fmt.Errorf("%w: '%s'", types.ErrIndexNotFound, baseName)
 	}
+	var tableColumns map[string]bool
 	if kind == "chunk" {
 		newValue = normalizeImportantKeywordFields(newValue)
+		if chunkFilterUsesExtra(condition, nil) || chunkUpdateNeedsSchema(newValue) {
+			tableColumns, err = e.tableColumns(ctx, baseName)
+			if err != nil {
+				return err
+			}
+		}
 	}
-	whereSQL, args, err := buildFilter(condition, kind)
+	whereSQL, args, err := buildFilter(condition, kind, tableColumns)
 	if err != nil {
 		return err
 	}
 	setParts := make([]string, 0, len(newValue))
 	setArgs := make([]interface{}, 0, len(newValue))
-	for key, value := range newValue {
+	var extraAssignments []string
+	var extraArgs []interface{}
+	var extraRemove string
+	for _, rawKey := range sortedColumns(newValue) {
+		key, value := rawKey, newValue[rawKey]
 		if kind == "memory" {
 			key = mapMemoryField(key)
 		} else if kind == "chunk" {
@@ -242,11 +275,18 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 				if err := validateIdentifier(remove); err != nil {
 					return err
 				}
+				if chunkFieldInExtra(remove, tableColumns) {
+					extraRemove = chunkExtraPath(remove)
+					continue
+				}
 				setParts = append(setParts, quoteIdentifier(remove)+" = NULL")
 			case map[string]interface{}:
 				for column, item := range remove {
 					if kind != "chunk" || !arrayColumns[column] {
 						return fmt.Errorf("column %s is not an array column", column)
+					}
+					if chunkFieldInExtra(column, tableColumns) {
+						return fmt.Errorf("cannot remove an item from %s in extra; replace the array instead", column)
 					}
 					setParts = append(setParts, fmt.Sprintf("%s = ARRAY_REMOVE(%s, ?)", quoteIdentifier(column), quoteIdentifier(column)))
 					setArgs = append(setArgs, item)
@@ -263,6 +303,9 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 				if kind != "chunk" || !arrayColumns[column] {
 					return fmt.Errorf("column %s is not an array column", column)
 				}
+				if chunkFieldInExtra(column, tableColumns) {
+					return fmt.Errorf("cannot add an item to %s in extra; replace the array instead", column)
+				}
 				if column == "important_kwd" {
 					if text, ok := item.(string); ok {
 						item, _ = sanitizeImportantKeyword(text)
@@ -274,6 +317,16 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 		default:
 			if err := validateIdentifier(key); err != nil {
 				return err
+			}
+			if chunkFieldInExtra(key, tableColumns) {
+				// Match InsertChunks' JSON encoding, including arrays, objects and null.
+				encoded, err := json.Marshal(value)
+				if err != nil {
+					return fmt.Errorf("encode %s: %w", key, err)
+				}
+				extraAssignments = append(extraAssignments, "?, CAST(? AS JSON)")
+				extraArgs = append(extraArgs, chunkExtraPath(key), string(encoded))
+				continue
 			}
 			encoded, encodeErr := encodeUpdateValue(kind, key, value)
 			if encodeErr != nil {
@@ -297,6 +350,22 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 				}
 			}
 		}
+	}
+	if len(extraAssignments) > 0 || extraRemove != "" {
+		if _, replacesExtra := newValue["extra"]; replacesExtra {
+			return fmt.Errorf("cannot replace extra and modify individual extra fields in the same update")
+		}
+		expression := "`extra`"
+		if len(extraAssignments) > 0 {
+			expression = "JSON_SET(COALESCE(CASE WHEN JSON_TYPE(`extra`) <> 'NULL' THEN `extra` END, JSON_OBJECT()), " +
+				strings.Join(extraAssignments, ", ") + ")"
+		}
+		if extraRemove != "" {
+			expression = "JSON_REMOVE(" + expression + ", ?)"
+			extraArgs = append(extraArgs, extraRemove)
+		}
+		setParts = append(setParts, "`extra` = "+expression)
+		setArgs = append(setArgs, extraArgs...)
 	}
 	if len(setParts) == 0 {
 		return nil
@@ -325,7 +394,14 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	if !exists {
 		return 0, nil
 	}
-	whereSQL, args, err := buildFilter(condition, kind)
+	var tableColumns map[string]bool
+	if kind == "chunk" && chunkFilterUsesExtra(condition, nil) {
+		tableColumns, err = e.tableColumns(ctx, baseName)
+		if err != nil {
+			return 0, err
+		}
+	}
+	whereSQL, args, err := buildFilter(condition, kind, tableColumns)
 	if err != nil {
 		return 0, err
 	}
