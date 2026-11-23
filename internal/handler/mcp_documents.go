@@ -8,16 +8,10 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
 	"ragflow/internal/mcp"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
-
-type mcpDocumentService interface {
-	ListDocumentsByDatasetIDWithOptions(context.Context, dao.DocumentListOptions, int, int) ([]*entity.DocumentListItem, int64, error)
-	GetDocumentMetadataByID(context.Context, string) (map[string]interface{}, error)
-}
 
 type mcpChunkService interface {
 	List(context.Context, *service.ListChunksRequest) (*service.ListChunksResponse, error)
@@ -61,12 +55,20 @@ func mcpListDocuments(ctx context.Context, documents mcpDocumentService, req mcp
 	if err != nil {
 		return "", err
 	}
-	items := make([]map[string]any, 0, len(rows))
-	for _, row := range rows {
-		metadata, err := documents.GetDocumentMetadataByID(ctx, row.ID)
+	var metaByID map[string]map[string]interface{}
+	if len(rows) > 0 {
+		docIDs := make([]string, 0, len(rows))
+		for _, row := range rows {
+			docIDs = append(docIDs, row.ID)
+		}
+		metaByID, err = documents.GetDocumentMetadataByIDs(ctx, req.DatasetID, docIDs)
 		if err != nil {
 			return "", err
 		}
+	}
+	items := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		metadata := metaByID[row.ID]
 		if metadata == nil {
 			metadata = map[string]any{}
 		}

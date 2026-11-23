@@ -19,15 +19,15 @@ import (
 
 type mcpDocumentStub struct {
 	list     func(context.Context, dao.DocumentListOptions, int, int) ([]*entity.DocumentListItem, int64, error)
-	metadata func(context.Context, string) (map[string]interface{}, error)
+	metadata func(context.Context, string, []string) (map[string]map[string]interface{}, error)
 }
 
 func (s mcpDocumentStub) ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, size int) ([]*entity.DocumentListItem, int64, error) {
 	return s.list(ctx, opts, page, size)
 }
 
-func (s mcpDocumentStub) GetDocumentMetadataByID(ctx context.Context, id string) (map[string]interface{}, error) {
-	return s.metadata(ctx, id)
+func (s mcpDocumentStub) GetDocumentMetadataByIDs(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error) {
+	return s.metadata(ctx, kbID, docIDs)
 }
 
 type mcpChunkStub func(context.Context, *service.ListChunksRequest) (*service.ListChunksResponse, error)
@@ -53,9 +53,10 @@ func TestMCPDocumentToolsRequireIdentityAndPermission(t *testing.T) {
 func TestMCPListDocumentsMetadataAndPagination(t *testing.T) {
 	setupDocumentPermissionDB(t, true)
 	ctx := permission.WithIdentity(t.Context(), "user-1", "tenant-owner")
+	metadataCalls := 0
 	documents := mcpDocumentStub{
 		list: func(ctx context.Context, opts dao.DocumentListOptions, page, size int) ([]*entity.DocumentListItem, int64, error) {
-			if opts.KbID != "kb-owner" || opts.Keywords != "contract" || opts.Name != "contract.pdf" || opts.OrderBy != "create_time" || !opts.Desc || page != 2 || size != 1 {
+			if opts.KbID != "kb-owner" || opts.Keywords != "contract" || opts.Name != "contract.pdf" || opts.OrderBy != "create_time" || !opts.Desc || page != 2 || size != 2 {
 				t.Fatalf("listing options = %+v, page=%d size=%d", opts, page, size)
 			}
 			if opts.AccessScope == nil {
@@ -68,18 +69,27 @@ func TestMCPListDocumentsMetadataAndPagination(t *testing.T) {
 			if !reflect.DeepEqual(ids, []string{"doc-1"}) {
 				t.Fatalf("visible document IDs = %v", ids)
 			}
-			return []*entity.DocumentListItem{{ID: "doc-1", KbID: "kb-owner", Name: sptr("contract.pdf"), Type: "pdf", ChunkNum: 10, TokenNum: 500, IngestionStatus: sptr(common.COMPLETED)}}, 2, nil
+			return []*entity.DocumentListItem{
+				{ID: "doc-1", KbID: "kb-owner", Name: sptr("contract.pdf"), Type: "pdf", ChunkNum: 10, TokenNum: 500, IngestionStatus: sptr(common.COMPLETED)},
+				{ID: "doc-2", KbID: "kb-owner", Name: sptr("notes.txt"), Type: "txt", ChunkNum: 2, TokenNum: 80, IngestionStatus: sptr(common.UNSTART)},
+			}, 4, nil
 		},
-		metadata: func(_ context.Context, id string) (map[string]interface{}, error) {
-			if id != "doc-1" {
-				t.Fatalf("metadata ID = %s", id)
+		metadata: func(_ context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error) {
+			metadataCalls++
+			if kbID != "kb-owner" || !reflect.DeepEqual(docIDs, []string{"doc-1", "doc-2"}) {
+				t.Fatalf("metadata args = kbID=%s docIDs=%v", kbID, docIDs)
 			}
-			return map[string]interface{}{"year": 2026}, nil
+			return map[string]map[string]interface{}{
+				"doc-1": {"year": 2026},
+			}, nil
 		},
 	}
-	text, err := mcpListDocuments(ctx, documents, mcp.ListDocumentsRequest{DatasetID: "kb-owner", Keywords: "contract", Name: "contract.pdf", Page: 2, PageSize: 1})
+	text, err := mcpListDocuments(ctx, documents, mcp.ListDocumentsRequest{DatasetID: "kb-owner", Keywords: "contract", Name: "contract.pdf", Page: 2, PageSize: 2})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if metadataCalls != 1 {
+		t.Fatalf("metadata calls = %d, want 1", metadataCalls)
 	}
 	var result struct {
 		Documents []map[string]any `json:"documents"`
@@ -90,15 +100,27 @@ func TestMCPListDocumentsMetadataAndPagination(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Total != 2 || result.Page != 2 || result.PageSize != 1 || len(result.Documents) != 1 || result.Documents[0]["name"] != "contract.pdf" || result.Documents[0]["ingestion_status"] != common.COMPLETED || result.Documents[0]["meta_fields"].(map[string]any)["year"] != float64(2026) {
+	if result.Total != 4 || result.Page != 2 || result.PageSize != 2 || len(result.Documents) != 2 ||
+		result.Documents[0]["name"] != "contract.pdf" || result.Documents[0]["ingestion_status"] != common.COMPLETED || result.Documents[0]["meta_fields"].(map[string]any)["year"] != float64(2026) ||
+		result.Documents[1]["name"] != "notes.txt" || len(result.Documents[1]["meta_fields"].(map[string]any)) != 0 {
 		t.Fatalf("documents result = %s", text)
 	}
 	documents.list = func(context.Context, dao.DocumentListOptions, int, int) ([]*entity.DocumentListItem, int64, error) {
 		return nil, 0, nil
 	}
 	text, err = mcpListDocuments(ctx, documents, mcp.ListDocumentsRequest{DatasetID: "kb-owner"})
-	if err != nil || !strings.Contains(text, `"documents":[]`) {
-		t.Fatalf("empty listing = %s, %v", text, err)
+	if err != nil || !strings.Contains(text, `"documents":[]`) || metadataCalls != 1 {
+		t.Fatalf("empty listing = %s, %v, metadataCalls=%d", text, err, metadataCalls)
+	}
+	sentinel := errors.New("metadata backend unavailable")
+	documents.list = func(context.Context, dao.DocumentListOptions, int, int) ([]*entity.DocumentListItem, int64, error) {
+		return []*entity.DocumentListItem{{ID: "doc-1", KbID: "kb-owner", Name: sptr("contract.pdf")}}, 1, nil
+	}
+	documents.metadata = func(context.Context, string, []string) (map[string]map[string]interface{}, error) {
+		return nil, sentinel
+	}
+	if _, err := mcpListDocuments(ctx, documents, mcp.ListDocumentsRequest{DatasetID: "kb-owner"}); !errors.Is(err, sentinel) {
+		t.Fatalf("metadata error = %v, want %v", err, sentinel)
 	}
 }
 
@@ -178,6 +200,7 @@ func TestMCPListChunksUsesDocumentListStatus(t *testing.T) {
 		{name: "new task completed", run: "0", withTask: true, taskStatus: common.COMPLETED, wantStatus: common.COMPLETED},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			isolateKnowledgeCompilePublisher(t)
 			setupDocumentPermissionDB(t, true)
 			if err := dao.DB.AutoMigrate(&entity.File{}, &entity.File2Document{}, &entity.UserCanvas{}, &entity.IngestionTask{}); err != nil {
 				t.Fatal(err)
