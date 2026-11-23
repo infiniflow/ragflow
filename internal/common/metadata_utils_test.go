@@ -195,6 +195,13 @@ func TestParseAndConvert_InStringValueFiltersDocuments(t *testing.T) {
 		{"in JSON list unchanged", "in", []interface{}{"2023", "2024"}, []string{"d1", "d2"}},
 		{"not in JSON list unchanged", "not in", []interface{}{"2023", "2024"}, []string{"d3"}},
 		{"in non-string scalar still matches nothing", "in", float64(2023), []string{}},
+		// A blank value has no items. It must match nothing, as before,
+		// and must not turn "not in" into "every document".
+		{"in empty string matches nothing", "in", "", []string{}},
+		{"not in empty string matches nothing", "not in", "", []string{}},
+		{"not in whitespace matches nothing", "not in", "   ", []string{}},
+		{"not in comma only matches nothing", "not in", ",", []string{}},
+		{"not in spaced comma matches nothing", "not in", " , ", []string{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

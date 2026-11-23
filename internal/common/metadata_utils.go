@@ -111,7 +111,9 @@ func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput 
 
 // splitSetValue turns the documented string form of an "in" / "not in" value
 // ("a,b") into the list filterSet expects, trimming spaces and dropping empty
-// items. Lists and non-string values are returned unchanged.
+// items. Lists and non-string values are returned unchanged. A string with no
+// items ("", " , ") returns nil, which filterSet treats as matching nothing, so
+// a blank "not in" value cannot select every document.
 func splitSetValue(value interface{}) interface{} {
 	s, ok := value.(string)
 	if !ok {
@@ -123,6 +125,9 @@ func splitSetValue(value interface{}) interface{} {
 		if t := strings.TrimSpace(p); t != "" {
 			list = append(list, t)
 		}
+	}
+	if len(list) == 0 {
+		return nil
 	}
 	return list
 }
