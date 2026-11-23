@@ -29,6 +29,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/scrypt"
@@ -173,6 +174,43 @@ func GenerateWerkzeugPasswordHash(password string) (string, error) {
 // The password is expected to be base64 encoded RSA encrypted data
 // If decryption fails, the original password is returned (assumed to be plain text)
 func DecryptPassword(encryptedPassword string) (string, error) {
+	plaintext, err := decryptRSAPassword(encryptedPassword)
+	if err != nil {
+		return "", err
+	}
+	// The SPA base64-encodes the password before RSA encryption
+	// (web/src/utils/index.ts::rsaPsw), and the Python-era decrypt2
+	// base64-decoded the recovered plaintext. Restore that inner decode;
+	// if the plaintext is not the canonical base64 of a UTF-8 string,
+	// it was sent as RSA(plaintext) and is returned as-is.
+	if decoded, ok := decodeInnerPassword(plaintext); ok {
+		return decoded, nil
+	}
+	return plaintext, nil
+}
+
+// DecryptPasswordCandidates decrypts the password and returns the candidate
+// plaintexts to verify a stored hash against, decoded first.
+//
+// Accounts created from the raw password (bootstrap superuser, API/CLI
+// created users) store the hash of the raw password, while accounts
+// registered through the SPA before the inner decode was restored store
+// the hash of the base64 form. Login must try both so neither population
+// is locked out (see infiniflow/ragflow#22570).
+func DecryptPasswordCandidates(encryptedPassword string) ([]string, error) {
+	plaintext, err := decryptRSAPassword(encryptedPassword)
+	if err != nil {
+		return nil, err
+	}
+	if decoded, ok := decodeInnerPassword(plaintext); ok && decoded != plaintext {
+		return []string{decoded, plaintext}, nil
+	}
+	return []string{plaintext}, nil
+}
+
+// decryptRSAPassword base64-decodes the transport wrapper and RSA-decrypts
+// the payload, returning the raw decrypted plaintext.
+func decryptRSAPassword(encryptedPassword string) (string, error) {
 	// Try to decode base64
 	ciphertext, err := base64.StdEncoding.DecodeString(encryptedPassword)
 	if err != nil {
@@ -194,6 +232,21 @@ func DecryptPassword(encryptedPassword string) (string, error) {
 	}
 
 	return string(plaintext), nil
+}
+
+// decodeInnerPassword base64-decodes a decrypted plaintext. It reports
+// false unless the plaintext is the canonical base64 encoding of a valid
+// UTF-8 string, so a raw password that merely looks like base64 is never
+// mangled.
+func decodeInnerPassword(plaintext string) (string, bool) {
+	decoded, err := base64.StdEncoding.DecodeString(plaintext)
+	if err != nil || !utf8.Valid(decoded) {
+		return "", false
+	}
+	if base64.StdEncoding.EncodeToString(decoded) != plaintext {
+		return "", false
+	}
+	return string(decoded), true
 }
 
 // LoadPrivateKey loads and decrypts the RSA private key from conf/private.pem

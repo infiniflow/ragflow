@@ -18,7 +18,6 @@ package service
 
 import (
 	"context"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
@@ -276,14 +275,15 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 		return nil, common.CodeAuthenticationError, fmt.Errorf("invalid email or password")
 	}
 
-	// Decrypt password using RSA
-	decryptedPassword, err := common.DecryptPassword(req.Password)
+	// Decrypt password using RSA; try each candidate plaintext against the
+	// stored hash (see common.DecryptPasswordCandidates).
+	candidates, err := common.DecryptPasswordCandidates(req.Password)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to decrypt password: %w", err)
 	}
 
 	// Verify password
-	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
+	if user.Password == nil || !s.verifyPasswordCandidates(*user.Password, candidates) {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("invalid username or password")
 	}
 
@@ -309,12 +309,12 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 		return nil, common.CodeAuthenticationError, fmt.Errorf("email: %s is not registered", req.Email)
 	}
 
-	decryptedPassword, err := common.DecryptPassword(req.Password)
+	candidates, err := common.DecryptPasswordCandidates(req.Password)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password: %w", err)
 	}
 
-	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
+	if user.Password == nil || !s.verifyPasswordCandidates(*user.Password, candidates) {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("email and password do not match")
 	}
 
@@ -394,6 +394,17 @@ func (s *UserService) VerifyPassword(hashedPassword, password string) bool {
 		return s.verifyScryptPassword(hashedPassword, password)
 	}
 
+	return false
+}
+
+// verifyPasswordCandidates checks the stored hash against each candidate
+// plaintext in order, succeeding on the first match.
+func (s *UserService) verifyPasswordCandidates(hashedPassword string, candidates []string) bool {
+	for _, candidate := range candidates {
+		if s.VerifyPassword(hashedPassword, candidate) {
+			return true
+		}
+	}
 	return false
 }
 
@@ -671,36 +682,22 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 	fields := make(map[string]any)
 	oldHash := user.Password
 	if req.Password != nil {
-		ciphertext, err := base64.StdEncoding.DecodeString(*req.Password)
-		if err != nil {
-			return common.CodeExceptionError, fmt.Errorf("Error('Incorrect padding')")
-		}
-		privateKey, err := common.LoadPrivateKey()
+		candidates, err := common.DecryptPasswordCandidates(*req.Password)
 		if err != nil {
 			return common.CodeExceptionError, err
 		}
-		oldPasswordBytes, err := rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
-		oldPassword := "Fail to decrypt password!"
-		if err == nil {
-			oldPassword = string(oldPasswordBytes)
-		}
-		if user.Password == nil || !s.VerifyPassword(*user.Password, oldPassword) {
+		if user.Password == nil || !s.verifyPasswordCandidates(*user.Password, candidates) {
 			return common.CodeAuthenticationError, fmt.Errorf("password error")
 		}
 
 		if req.NewPassword != nil {
-			ciphertext, err = base64.StdEncoding.DecodeString(*req.NewPassword)
-			if err != nil {
-				return common.CodeExceptionError, fmt.Errorf("Error('Incorrect padding')")
-			}
-			var newPasswordBytes []byte
-			newPasswordBytes, err = rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
+			newPassword, err := common.DecryptPassword(*req.NewPassword)
 			if err != nil {
 				return common.CodeExceptionError, err
 			}
 
 			var hashedPassword string
-			hashedPassword, err = common.GenerateWerkzeugPasswordHash(string(newPasswordBytes))
+			hashedPassword, err = common.GenerateWerkzeugPasswordHash(newPassword)
 			if err != nil {
 				return common.CodeExceptionError, err
 			}
