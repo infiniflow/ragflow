@@ -934,6 +934,11 @@ var tenantModelInstanceAPIKeyColumnSpec = columnSpec{
 	columnType: "varchar(4096)",
 	nullable:   false,
 	definition: "varchar(4096) NOT NULL",
+	// The backfill below reads the column through this bound, so a failed
+	// widening must stop the migration instead of being logged and ignored:
+	// the narrow column left in place is what makes the backfill fail (strict
+	// mode) or truncate the credential (non-strict mode).
+	strict: true,
 }
 
 // dropLegacyTenantModelInstanceAPIKeyIndex removes the composite unique index
@@ -1311,6 +1316,14 @@ type columnSpec struct {
 	// so a value whose length is missing from this list is reset to NULL. An
 	// empty list means the change cannot invalidate values and skips the sweep.
 	keepLengths []int
+	// strict makes a failed ALTER fatal instead of a warning. It is set for the
+	// specs whose widening a later step depends on: the backfill that copies
+	// tenant_llm keys into tenant_model_instance.api_key runs after this and
+	// reads the column through the bound it establishes. A swallowed ALTER
+	// error would leave the narrow column in place and let the backfill write
+	// a key the column cannot hold — MySQL strict mode aborts the whole
+	// backfill, a non-strict session truncates the credential silently.
+	strict bool
 }
 
 // applyColumnSpec aligns a column with its expected definition, issuing DDL only
@@ -1344,6 +1357,9 @@ func applyColumnSpec(ctx context.Context, db *gorm.DB, spec columnSpec) error {
 			zap.String("table", spec.table),
 			zap.String("column", spec.column),
 			zap.Error(err))
+		if spec.strict {
+			return fmt.Errorf("widen %s.%s to %s: %w", spec.table, spec.column, spec.columnType, err)
+		}
 		return nil
 	}
 	discardOrphanedColumnValues(ctx, db, spec)

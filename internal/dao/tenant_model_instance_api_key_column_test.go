@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -252,5 +253,55 @@ func TestLegacyModelInstanceAPIKeyIndexDropSkipsMissingIndexAndTable(t *testing.
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("a missing table must trigger no catalog reads or DDL: %v", err)
+	}
+}
+
+// TestTenantModelInstanceAPIKeyWideningFailureIsFatal pins that a failed
+// widening ALTER stops the migration instead of being logged and ignored.
+// The backfill that copies tenant_llm keys into tenant_model_instance.api_key
+// runs after this step and reads the column through the bound the widening
+// establishes, so a swallowed ALTER error leaves the narrow varchar(512)
+// column in place: the backfill then either aborts the whole startup (MySQL
+// strict mode, Error 1406) or stores a truncated credential (non-strict
+// session). Failing at the widening is the only outcome that keeps the two in
+// step, and the error must name the column it is about.
+func TestTenantModelInstanceAPIKeyWideningFailureIsFatal(t *testing.T) {
+	db, mock := openMySQLSpecMock(t)
+
+	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(512)", "NO")
+	mock.ExpectExec(
+		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key varchar\(4096\) NOT NULL`,
+	).WillReturnError(errors.New("ERROR 1071 (42000): Specified key was too long; max key length is 3072 bytes"))
+
+	err := applyColumnSpec(context.Background(), db, tenantModelInstanceAPIKeyColumnSpec)
+	if err == nil {
+		t.Fatal("applyColumnSpec must fail when the widening ALTER fails, not swallow the error")
+	}
+	if !strings.Contains(err.Error(), "tenant_model_instance") || !strings.Contains(err.Error(), "api_key") {
+		t.Fatalf("the widening error must name the table and column, got %q", err.Error())
+	}
+}
+
+// TestNonStrictColumnSpecsStillTolerateAFailedAlter pins that the strict
+// behaviour is scoped to the specs that need it. The other specs share
+// applyColumnSpec, and a failed ALTER there has never stopped the startup;
+// widening api_key must not change that for the rest of the schema.
+func TestNonStrictColumnSpecsStillTolerateAFailedAlter(t *testing.T) {
+	db, mock := openMySQLSpecMock(t)
+
+	nonStrict := columnSpec{
+		table:      "knowledgebase",
+		column:     "raptor_task_finish_at",
+		columnType: "datetime",
+		nullable:   true,
+		definition: "datetime",
+	}
+	expectSchemaLookups(mock, "knowledgebase", "raptor_task_finish_at", "varchar(32)", "YES")
+	mock.ExpectExec(
+		`ALTER TABLE knowledgebase MODIFY COLUMN raptor_task_finish_at datetime`,
+	).WillReturnError(errors.New("ERROR 1064 (42000): You have an error in your SQL syntax"))
+
+	if err := applyColumnSpec(context.Background(), db, nonStrict); err != nil {
+		t.Fatalf("a non-strict spec must keep tolerating a failed ALTER, got %v", err)
 	}
 }
