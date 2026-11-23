@@ -125,3 +125,15 @@ def test_less_than_or_equal():
     filters = [{"key": "score", "op": "≤", "value": "5"}]
 
     assert set(meta_filter(metas, filters)) == {"doc1", "doc3"}
+
+
+def test_and_logic_condition_matching_nothing_is_not_overwritten():
+    # an AND condition that matches nothing must not be replaced by a later one
+    metas = {"author": {"alice": ["doc1"], "bob": ["doc2"]}, "status": {"open": ["doc2"]}}
+    filters = [
+        {"key": "author", "op": "=", "value": "carol"},
+        {"key": "status", "op": "=", "value": "open"},
+    ]
+
+    assert meta_filter(metas, filters, "and") == []
+    assert meta_filter(metas, filters, "or") == ["doc2"]

@@ -150,6 +150,7 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                 ids.extend(docids)
         return ids
 
+    first_filter = True
     for f in filters:
         k = f["key"]
         if k not in metas:
@@ -159,16 +160,20 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             v2docs = metas[k]
             ids = filter_out(v2docs, f["op"], f["value"])
 
-        if not doc_ids:
+        # Initialize on the first filter only: an empty match set is a real
+        # result, not an uninitialized accumulator. Treating it as the latter
+        # let a later filter overwrite it and return documents that fail the
+        # earlier condition.
+        if first_filter:
+            first_filter = False
             doc_ids = set(ids)
+        elif logic == "and":
+            doc_ids = doc_ids & set(ids)
+            if not doc_ids:
+                logging.debug(f"meta_filter filters={filters}, logic={logic}, early return []")
+                return []
         else:
-            if logic == "and":
-                doc_ids = doc_ids & set(ids)
-                if not doc_ids:
-                    logging.debug(f"meta_filter filters={filters}, logic={logic}, early return []")
-                    return []
-            else:
-                doc_ids = doc_ids | set(ids)
+            doc_ids = doc_ids | set(ids)
     logging.debug(f"meta_filter filters={filters}, logic={logic}, returning doc_ids={list(doc_ids)}")
     return list(doc_ids)
 
