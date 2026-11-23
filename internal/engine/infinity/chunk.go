@@ -34,6 +34,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
 
@@ -168,9 +169,15 @@ func createFullTextIndexes(table *infinity.Table, specs []fullTextIndexSpec) err
 	return nil
 }
 
-func (e *Engine) ensureSearchLanguageIndexes(table *infinity.Table, tableName, language string) error {
+func (e *Engine) languageIndexReadiness(tableName, language string) *atomic.Bool {
 	cacheKey := tableName + "\x00" + analyzerForLanguage("rag-coarse", language)
-	if _, ok := e.languageIndexes.Load(cacheKey); ok {
+	entry, _ := e.languageIndexes.LoadOrStore(cacheKey, new(atomic.Bool))
+	return entry.(*atomic.Bool)
+}
+
+func (e *Engine) ensureSearchLanguageIndexes(table *infinity.Table, tableName, language string) error {
+	ready := e.languageIndexReadiness(tableName, language)
+	if ready.Load() {
 		return nil
 	}
 
@@ -213,7 +220,9 @@ func (e *Engine) ensureSearchLanguageIndexes(table *infinity.Table, tableName, l
 			return fmt.Errorf("ensure full-text indexes for %s: %w", tableName, err)
 		}
 	}
-	e.languageIndexes.Store(cacheKey, struct{}{})
+	// DropChunkStore can detach this entry while preparation is in flight.
+	// Mark the captured entry ready without restoring it to the map.
+	ready.Store(true)
 	return nil
 }
 

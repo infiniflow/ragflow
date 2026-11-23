@@ -130,6 +130,27 @@ func TestSlovakChunkStoreMatchesWithAndWithoutDiacritics(t *testing.T) {
 					t.Errorf("%s: accented query returned %d chunks, want 1", step.language, got)
 				}
 			}
+
+			tableName := buildChunkTableName(baseName, tt.datasetID)
+			oldReadiness := eng.languageIndexReadiness(tableName, "Slovak")
+			if !oldReadiness.Load() {
+				t.Fatal("expected the old table's Slovak indexes to be cached")
+			}
+			oldReadiness.Store(false)
+			if err := eng.DropChunkStore(ctx, baseName, tt.datasetID); err != nil {
+				t.Fatalf("drop old table: %v", err)
+			}
+			if err := eng.CreateChunkStore(ctx, baseName, tt.datasetID, 2, "naive", "English"); err != nil {
+				t.Fatalf("recreate table: %v", err)
+			}
+			if _, err := eng.InsertChunks(ctx, []map[string]interface{}{chunk}, baseName, tt.datasetID, "English"); err != nil {
+				t.Fatalf("insert into recreated table: %v", err)
+			}
+			// Model a delayed completion that captured the old cache entry before drop.
+			oldReadiness.Store(true)
+			if got := search(tt.datasetID, "Slovak", "skoly"); got != 1 {
+				t.Errorf("recreated table returned %d chunks, want 1 after preparing its Slovak indexes", got)
+			}
 		}
 	}
 }
