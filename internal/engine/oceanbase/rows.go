@@ -279,7 +279,7 @@ func chunkSelectionNeedsSchema(fields []string) bool {
 		if field == "" || field == "*" {
 			continue
 		}
-		if optionalChunkColumns[mapChunkField(field)] {
+		if isOptionalChunkColumn(mapChunkField(field)) {
 			return true
 		}
 	}

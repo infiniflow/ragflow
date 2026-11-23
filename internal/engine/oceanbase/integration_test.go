@@ -211,17 +211,20 @@ func TestChunkExtraFilterAndMutation(t *testing.T) {
 				{"id": "literal-null", "kb_id": dataset, "compile_kwd": "null"},
 				{"id": "absent", "kb_id": dataset},
 				{"id": "json-null", "kb_id": dataset, "compile_kwd": nil},
+				{"id": "numeric-zero", "kb_id": dataset, "token_num": 0},
 				{"id": "other-kb", "kb_id": "other-kb", "compile_kwd": compileType, "token_num": 12, "children_kwd": []string{"child%"}},
 			}, table, dataset, ""); err != nil {
 				t.Fatal(err)
 			}
+			// Test an incorrectly typed legacy value and a stale extra key next
+			// to a physical NULL in the current schema.
+			extra := `{"token_num":"invalid","compile_kwd":null}`
 			if schema == "current" {
-				// A physical NULL still wins over an extra key left by an older writer.
-				_, err := engine.db.ExecContext(ctx, "UPDATE "+quoteIdentifier(table)+" SET extra = ? WHERE id = ?",
-					`{"compile_kwd":"tree's"}`, "absent")
-				if err != nil {
-					t.Fatal(err)
-				}
+				extra = `{"token_num":"invalid","compile_kwd":"tree's"}`
+			}
+			if _, err := engine.db.ExecContext(ctx, "UPDATE "+quoteIdentifier(table)+" SET extra = ? WHERE id = ?",
+				extra, "json-null"); err != nil {
+				t.Fatal(err)
 			}
 
 			checkSearch := func(filter map[string]interface{}, fields []string, wantIDs ...string) []map[string]interface{} {
@@ -248,8 +251,9 @@ func TestChunkExtraFilterAndMutation(t *testing.T) {
 			}
 			checkSearch(matches, []string{"compile_kwd", "children_kwd"}, "target")
 			checkSearch(map[string]interface{}{"exists": "compile_kwd"}, nil, "literal-null", "target")
-			checkSearch(map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}, nil, "absent", "json-null")
+			checkSearch(map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}, nil, "absent", "json-null", "numeric-zero")
 			checkSearch(map[string]interface{}{"compile_kwd": "null"}, nil, "literal-null")
+			checkSearch(map[string]interface{}{"token_num": 0}, nil, "numeric-zero")
 
 			if err := engine.UpdateChunks(ctx, matches, map[string]interface{}{
 				"compile_kwd": "wiki", "claims": map[string]interface{}{"new": true},

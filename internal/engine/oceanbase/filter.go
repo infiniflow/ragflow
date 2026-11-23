@@ -38,7 +38,7 @@ func chunkFilterUsesExtra(condition map[string]interface{}, tableColumns map[str
 			key, _ = object["exists"].(string)
 		}
 		key = mapChunkField(key)
-		if optionalChunkColumns[key] && !tableColumns[key] {
+		if isOptionalChunkColumn(key) && !tableColumns[key] {
 			return true
 		}
 	}
@@ -46,11 +46,11 @@ func chunkFilterUsesExtra(condition map[string]interface{}, tableColumns map[str
 }
 
 func chunkFieldInExtra(column string, tableColumns map[string]bool) bool {
-	return tableColumns != nil && optionalChunkColumns[column] && !tableColumns[column]
+	return tableColumns != nil && isOptionalChunkColumn(column) && !tableColumns[column]
 }
 
 func chunkExtraPath(column string) string {
-	// The caller has already checked column against optionalChunkColumns.
+	// The caller has already checked that column is a declared optional field.
 	return "$." + column
 }
 
@@ -63,11 +63,17 @@ func filterColumn(kind, column string, tableColumns map[string]bool, scalar bool
 		return quoteIdentifier(column)
 	}
 	extracted := chunkExtraExtract(column)
+	jsonType := "JSON_TYPE(" + extracted + ")"
 	value := extracted
 	if scalar && !jsonColumns[column] {
 		value = "JSON_UNQUOTE(" + extracted + ")"
+		if strings.HasPrefix(optionalChunkColumnTypes[column], "INTEGER ") {
+			// SQL comparisons coerce text like "invalid" to zero. A numeric
+			// condition must not match such rows in an update or delete.
+			return "CASE WHEN " + jsonType + " IN ('INTEGER', 'DOUBLE', 'DECIMAL') THEN CAST(" + value + " AS DOUBLE) END"
+		}
 	}
-	return "CASE WHEN JSON_TYPE(" + extracted + ") <> 'NULL' THEN " + value + " END"
+	return "CASE WHEN " + jsonType + " <> 'NULL' THEN " + value + " END"
 }
 
 func buildFilter(condition map[string]interface{}, kind string, tableColumns map[string]bool) (string, []interface{}, error) {

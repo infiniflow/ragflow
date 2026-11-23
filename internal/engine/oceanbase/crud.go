@@ -195,17 +195,17 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 
 func chunkUpdateNeedsSchema(fields map[string]interface{}) bool {
 	for key, value := range fields {
-		if optionalChunkColumns[mapChunkField(key)] {
+		if isOptionalChunkColumn(mapChunkField(key)) {
 			return true
 		}
 		switch key {
 		case "remove", "add":
-			if column, ok := value.(string); ok && optionalChunkColumns[mapChunkField(column)] {
+			if column, ok := value.(string); ok && isOptionalChunkColumn(mapChunkField(column)) {
 				return true
 			}
 			items, _ := value.(map[string]interface{})
 			for column := range items {
-				if optionalChunkColumns[column] {
+				if isOptionalChunkColumn(column) {
 					return true
 				}
 			}

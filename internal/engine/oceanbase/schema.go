@@ -164,13 +164,17 @@ var additiveChunkColumns = []columnDefinition{
 
 var chunkColumns = append(append([]columnDefinition{}, baseChunkColumns...), additiveChunkColumns...)
 
-var optionalChunkColumns = func() map[string]bool {
-	optional := make(map[string]bool, len(additiveChunkColumns))
+var optionalChunkColumnTypes = func() map[string]string {
+	optional := make(map[string]string, len(additiveChunkColumns))
 	for _, column := range additiveChunkColumns {
-		optional[column.name] = true
+		optional[column.name] = column.typeSQL
 	}
 	return optional
 }()
+
+func isOptionalChunkColumn(column string) bool {
+	return optionalChunkColumnTypes[column] != ""
+}
 
 var chunkExtraColumns = selectColumnDefinitions(chunkColumns,
 	"_order_id",
