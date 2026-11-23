@@ -905,6 +905,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest)
 	searchReq := &types.SearchRequest{
 		IndexNames:         []string{indexName},
 		MatchExprs:         matchExprs,
+		Language:           datasetLanguageOf(kb),
 		KbIDs:              []string{doc.KbID},
 		Offset:             (page - 1) * size,
 		Limit:              size,

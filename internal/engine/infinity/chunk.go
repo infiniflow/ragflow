@@ -91,12 +91,7 @@ func (e *Engine) EnsureChunkStoreLanguage(ctx context.Context, baseName, dataset
 		return fmt.Errorf("failed to open chunk table %s: %w", tableName, err)
 	}
 
-	mappingFile := chunkMappingFileName(baseName, datasetID, e.mappingFileName)
-	schema, err := readChunkSchema(mappingFile)
-	if err != nil {
-		return err
-	}
-	return createFullTextIndexes(table, schema, language)
+	return e.ensureSearchLanguageIndexes(table, tableName, chunkSearchLanguage(language))
 }
 
 func readChunkSchema(mappingFile string) (orderedFields, error) {
@@ -143,31 +138,23 @@ func fullTextIndexSpecs(schema orderedFields, language string) []fullTextIndexSp
 		}
 
 		for _, analyzer := range analyzers {
-			localizedAnalyzer := analyzerForLanguage(analyzer, language)
-			indexSpecs := []fullTextIndexSpec{{
-				field: fieldName, name: fulltextIndexName(fieldName, localizedAnalyzer), analyzer: localizedAnalyzer,
-			}}
-			if localizedAnalyzer != analyzer {
-				// Mixed-language searches use the default analyzer name because a
-				// single query cannot select one language for every dataset.
-				indexSpecs = append(indexSpecs, fullTextIndexSpec{
-					field: fieldName, name: fulltextIndexName(fieldName, analyzer), analyzer: analyzer,
-				})
+			if language != "" && analyzer != "rag-coarse" && analyzer != "rag-fine" {
+				continue
 			}
-			for _, spec := range indexSpecs {
-				if _, exists := seen[spec.name]; exists {
-					continue
-				}
-				seen[spec.name] = struct{}{}
-				specs = append(specs, spec)
+			resolvedAnalyzer := analyzerForLanguage(analyzer, language)
+			name := chunkFullTextIndexName(fieldName, analyzer, language)
+			if _, exists := seen[name]; exists {
+				continue
 			}
+			seen[name] = struct{}{}
+			specs = append(specs, fullTextIndexSpec{field: fieldName, name: name, analyzer: resolvedAnalyzer})
 		}
 	}
 	return specs
 }
 
-func createFullTextIndexes(table *infinity.Table, schema orderedFields, language string) error {
-	for _, spec := range fullTextIndexSpecs(schema, language) {
+func createFullTextIndexes(table *infinity.Table, specs []fullTextIndexSpec) error {
+	for _, spec := range specs {
 		_, err := table.CreateIndex(
 			spec.name,
 			infinity.NewIndexInfo(spec.field, infinity.IndexTypeFullText, map[string]string{"ANALYZER": spec.analyzer}),
@@ -182,10 +169,7 @@ func createFullTextIndexes(table *infinity.Table, schema orderedFields, language
 }
 
 func (e *Engine) ensureSearchLanguageIndexes(table *infinity.Table, tableName, language string) error {
-	if analyzerForLanguage("rag-coarse", language) == "rag-coarse" {
-		return nil
-	}
-	cacheKey := tableName + "\x00" + strings.ToLower(strings.TrimSpace(language))
+	cacheKey := tableName + "\x00" + analyzerForLanguage("rag-coarse", language)
 	if _, ok := e.languageIndexes.Load(cacheKey); ok {
 		return nil
 	}
@@ -207,15 +191,25 @@ func (e *Engine) ensureSearchLanguageIndexes(table *infinity.Table, tableName, l
 	if err != nil {
 		return err
 	}
-	missing := false
+	var missing []fullTextIndexSpec
 	for _, spec := range fullTextIndexSpecs(schema, language) {
 		if _, ok := existing[spec.name]; !ok {
-			missing = true
-			break
+			missing = append(missing, spec)
 		}
 	}
-	if missing {
-		if err := createFullTextIndexes(table, schema, language); err != nil {
+	if len(missing) > 0 {
+		columns, err := loadTableColumns(table)
+		if err != nil {
+			return fmt.Errorf("load columns for %s: %w", tableName, err)
+		}
+		// Older tables may not have every column in the configured mapping.
+		available := missing[:0]
+		for _, spec := range missing {
+			if _, ok := columns[spec.field]; ok {
+				available = append(available, spec)
+			}
+		}
+		if err := createFullTextIndexes(table, available); err != nil {
 			return fmt.Errorf("ensure full-text indexes for %s: %w", tableName, err)
 		}
 	}
@@ -385,8 +379,12 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	}
 	common.Info("Created vector index", zap.String("indexName", vectorIndexName), zap.String("column", vectorColName))
 
-	// Create language-specific full-text indexes for analyzed varchar fields.
-	if err := createFullTextIndexes(table, schema, language); err != nil {
+	// Keep the unqualified names used by queries without dataset language.
+	specs := fullTextIndexSpecs(schema, "")
+	if datasetID != "skill" && !isMemoryIndexName(baseName) {
+		specs = append(specs, fullTextIndexSpecs(schema, chunkSearchLanguage(language))...)
+	}
+	if err := createFullTextIndexes(table, specs); err != nil {
 		return err
 	}
 
@@ -1303,16 +1301,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				}
 				continue
 			}
-			if hasTextMatch && !isSkillIndex && !isMemoryIndex && !strings.HasPrefix(indexName, "ragflow_doc_meta_") {
-				if err := e.ensureSearchLanguageIndexes(tbl, tableName, req.Language); err != nil {
-					common.Warn("Failed to ensure language-specific Infinity indexes",
-						zap.String("tableName", tableName), zap.String("language", req.Language), zap.Error(err))
-					if queryErr == nil {
-						queryErr = err
-					}
-					continue
-				}
-			}
 			// Resolve partial-wildcard projections ("q_*_vec") against this table's
 			// real columns: Infinity parses "q_*_vec" as the arithmetic expression
 			// "q_" * "_vec" and fails to bind it (3013), while Elasticsearch expands
@@ -1341,11 +1329,24 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			if wildcardSelect {
 				tableOutputColumns = expandSelectWildcards(tableOutputColumns, tableColumns)
 			}
+			language := ""
+			if !isSkillIndex && !isMemoryIndex && !strings.HasPrefix(indexName, "ragflow_doc_meta_") {
+				language = chunkSearchLanguage(req.Language)
+			}
 			tableFilterParts := append([]string(nil), filterParts...)
-			if len(filterCopy) > 0 {
-				if condition := equivalentConditionToStrForLanguage(filterCopy, tableColumns, []bool{isMemoryIndex}, req.Language); condition != "" {
-					tableFilterParts = append(tableFilterParts, condition)
+			condition := equivalentConditionToStrForLanguage(filterCopy, tableColumns, []bool{isMemoryIndex}, language)
+			if language != "" && (questionText != "" || condition != equivalentConditionToStrForLanguage(filterCopy, tableColumns, []bool{isMemoryIndex}, "")) {
+				if err := e.ensureSearchLanguageIndexes(tbl, tableName, language); err != nil {
+					common.Warn("Failed to ensure language-specific Infinity indexes",
+						zap.String("tableName", tableName), zap.String("language", language), zap.Error(err))
+					if queryErr == nil {
+						queryErr = err
+					}
+					continue
 				}
+			}
+			if condition != "" {
+				tableFilterParts = append(tableFilterParts, condition)
 			}
 			filterStr := strings.Join(tableFilterParts, " AND ")
 			table := tbl.Output(tableOutputColumns)
@@ -1375,7 +1376,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			// Convert field names for Infinity
 			var convertedFields []string
 			for _, f := range textFields {
-				cf := convertMatchingFieldForLanguage(f, req.Language)
+				cf := convertMatchingFieldForLanguage(f, language)
 				convertedFields = append(convertedFields, cf)
 			}
 			fields := strings.Join(convertedFields, ",")
@@ -3204,31 +3205,48 @@ func convertMatchingField(fieldWeightStr string) string {
 	return strings.Join(parts, "^")
 }
 
+func chunkSearchLanguage(language string) string {
+	if strings.TrimSpace(language) == "" {
+		return "English"
+	}
+	return language
+}
+
+func chunkFullTextIndexName(field, analyzer, language string) string {
+	resolved := analyzerForLanguage(analyzer, language)
+	name := fulltextIndexName(field, resolved)
+	if language != "" && resolved == analyzer && (analyzer == "rag-coarse" || analyzer == "rag-fine") {
+		// Older chunk stores reused the unqualified name for localized analyzers.
+		return name + "_default"
+	}
+	return name
+}
+
 func convertMatchingFieldForLanguage(fieldWeightStr, language string) string {
-	parts := strings.SplitN(fieldWeightStr, "^", 2)
-	converted := convertMatchingField(parts[0])
-	ref := strings.SplitN(converted, "@", 2)
-	if len(ref) != 2 {
+	converted := convertMatchingField(fieldWeightStr)
+	if language == "" {
+		return converted
+	}
+	fieldRef, weight, weighted := strings.Cut(converted, "^")
+	field, index, indexed := strings.Cut(fieldRef, "@")
+	if !indexed {
 		return converted
 	}
 
-	analyzer := ""
-	switch {
-	case strings.HasSuffix(ref[1], "_rag_coarse"):
+	var analyzer string
+	switch index {
+	case fulltextIndexName(field, "rag-coarse"):
 		analyzer = "rag-coarse"
-	case strings.HasSuffix(ref[1], "_rag_fine"):
+	case fulltextIndexName(field, "rag-fine"):
 		analyzer = "rag-fine"
 	default:
 		return converted
 	}
-	if localized := analyzerForLanguage(analyzer, language); localized != analyzer {
-		ref[1] = fulltextIndexName(ref[0], localized)
-		converted = strings.Join(ref, "@")
+	ref := field + "@" + chunkFullTextIndexName(field, analyzer, language)
+	if weighted {
+		ref += "^" + weight
 	}
-	if len(parts) == 2 {
-		return converted + "^" + parts[1]
-	}
-	return converted
+	return ref
 }
 
 // escapeFilterValue escapes single quotes for filter values
@@ -4172,7 +4190,15 @@ func encodeJSONField(fieldName string, value interface{}) interface{} {
 
 // DropChunkStore drops a chunk table from Infinity
 func (e *Engine) DropChunkStore(ctx context.Context, baseName, datasetID string) error {
-	return e.dropTable(ctx, buildChunkTableName(baseName, datasetID))
+	tableName := buildChunkTableName(baseName, datasetID)
+	if err := e.dropTable(ctx, tableName); err != nil {
+		return err
+	}
+	e.languageIndexes.Delete(tableName + "\x00rag-coarse")
+	for language := range analyzerLanguages {
+		e.languageIndexes.Delete(tableName + "\x00" + analyzerForLanguage("rag-coarse", language))
+	}
+	return nil
 }
 
 // ChunkStoreExists checks if a chunk table exists in Infinity
