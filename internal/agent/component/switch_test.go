@@ -532,6 +532,97 @@ func TestSwitch_LegacyEmptyItemsFallsThrough(t *testing.T) {
 	}
 }
 
+// TestSwitch_LegacyIncompleteItemFallsThrough covers the row the
+// front end's "Add" button creates: it appends `{operator}` and nothing
+// else, so `cpn_id` and `value` are absent until the user fills them in.
+// Python skips such an item (`if not item["cpn_id"]: continue`), leaving
+// the group with no clause, which cannot match. Go appended the clause
+// anyway, and "" compared against "" satisfies contains, "=" and empty,
+// so the run was routed to a branch whose condition was never configured.
+func TestSwitch_LegacyIncompleteItemFallsThrough(t *testing.T) {
+	cases := []struct {
+		name  string
+		item  map[string]any
+		state func(*canvas.CanvasState)
+	}{
+		{
+			name: "contains without value",
+			item: map[string]any{"operator": "contains"},
+		},
+		{
+			name: "equals an empty value",
+			item: map[string]any{"operator": "=", "value": ""},
+		},
+		{
+			name: "empty operator",
+			item: map[string]any{"operator": "empty"},
+		},
+		{
+			name: "not empty operator",
+			item: map[string]any{"operator": "not empty"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := NewSwitchComponent(nil)
+			state := canvas.NewCanvasState("run-legacy-incomplete", "task-1")
+			ctx := withStateForTest(t.Context(), state)
+
+			inputs := map[string]any{
+				"conditions": []any{
+					map[string]any{
+						"logical_operator": "and",
+						"items":            []any{tc.item},
+						"to":               []any{"WRONG_TARGET"},
+					},
+				},
+				"default": "DEFAULT",
+			}
+			out, err := s.Invoke(ctx, nil, inputs)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			targets := nextTargets(out)
+			if len(targets) != 1 || targets[0] != "DEFAULT" {
+				t.Errorf("an item with no operand reference must not match, got _next = %v, want [\"DEFAULT\"]", targets)
+			}
+		})
+	}
+}
+
+// TestSwitch_IncompleteItemDoesNotDisableSiblingClauses pins that skipping an
+// incomplete row leaves a sibling, fully configured clause in force — the skip
+// must not short-circuit the whole group.
+func TestSwitch_IncompleteItemDoesNotDisableSiblingClauses(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-legacy-mixed", "task-1")
+	state.Sys["greeting"] = "hello world"
+	ctx := withStateForTest(t.Context(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"operator": "contains"},
+					map[string]any{"cpn_id": "sys.greeting", "operator": "contains", "value": "hello"},
+				},
+				"to": []any{"CORRECT_TARGET"},
+			},
+		},
+		"default": "DEFAULT",
+	}
+	out, err := s.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) != 1 || targets[0] != "CORRECT_TARGET" {
+		t.Errorf("skipping the incomplete item must leave the real clause in force, got _next = %v", targets)
+	}
+}
+
 // TestSwitch_SatisfiedAndConditionStillRoutes is the negative
 // control: a genuinely satisfied "and" condition MUST still match
 // after the fix. Without this guard, a refactor that breaks the

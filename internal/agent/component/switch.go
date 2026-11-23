@@ -223,6 +223,16 @@ func normalizeLegacyGroup(group map[string]any) (string, []any) {
 			continue
 		}
 		left := legacySwitchLeft(item)
+		if left == "" {
+			// No operand: neither the legacy `cpn_id` nor the newer `left`
+			// field names what to compare. Python skips such an item
+			// (`if not item["cpn_id"]: continue`), and the front end creates
+			// one whenever "Add" is pressed and the row is left unfilled — it
+			// appends `{operator}` only. Keeping the clause would compare ""
+			// against "", which satisfies `contains`, `=` and `empty` and
+			// routes the run to a branch whose condition was never configured.
+			continue
+		}
 		operator, _ := item["operator"].(string)
 		clause := map[string]any{
 			"left": left,
