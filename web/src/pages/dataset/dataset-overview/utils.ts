@@ -1,3 +1,4 @@
+import { RunningStatus, RunningStatusOld } from '@/constants/knowledge';
 import { LogTabs } from './dataset-common';
 import { IFileLogList, IOverviewTotal } from './interface';
 
@@ -50,3 +51,21 @@ export const buildDatasetOverviewStats = (summary?: IOverviewTotal) => ({
 export const hasActiveIngestionLogs = (logs?: IFileLogList) =>
   logs?.logs.some((log) => ActiveLogStatuses.has(log.operation_status)) ??
   false;
+
+/**
+ * Pipeline logs carry the legacy task status ("0".."5", or names such as
+ * "SCHEDULE"). A scheduled run is enqueued but has not started, which the
+ * document list renders as QUEUED; map it the same way here so the log modal
+ * reads "Queued" with the file list's color instead of the legacy "Scheduled".
+ */
+export const getLogRunningStatus = (
+  status?: string,
+): RunningStatus | undefined => {
+  if (
+    status === RunningStatusOld.SCHEDULE ||
+    status === RunningStatus.SCHEDULE
+  ) {
+    return RunningStatus.QUEUED;
+  }
+  return status as RunningStatus | undefined;
+};

@@ -1,5 +1,10 @@
 import type { IFileLogList } from '../interface';
-import { buildDatasetOverviewStats, hasActiveIngestionLogs } from '../utils';
+import {
+  buildDatasetOverviewStats,
+  getLogRunningStatus,
+  hasActiveIngestionLogs,
+} from '../utils';
+import { RunningStatus, RunningStatusOld } from '@/constants/knowledge';
 
 const Summary = {
   doc_num: 9,
@@ -50,5 +55,12 @@ describe('dataset overview helpers', () => {
         total: 1,
       }),
     ).toBe(false);
+  });
+
+  it('renders a scheduled pipeline run as queued', () => {
+    expect(getLogRunningStatus('5')).toBe(RunningStatus.QUEUED);
+    expect(getLogRunningStatus('SCHEDULE')).toBe(RunningStatus.QUEUED);
+    expect(getLogRunningStatus('3')).toBe(RunningStatusOld.DONE);
+    expect(getLogRunningStatus(undefined)).toBeUndefined();
   });
 });
