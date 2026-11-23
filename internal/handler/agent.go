@@ -947,7 +947,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	toDate := c.Query("to_date")
 	orderby := c.DefaultQuery("orderby", "update_time")
 	descParam := c.Query("desc")
-	desc := descParam != "false" && descParam != "False"
+	desc := !strings.EqualFold(descParam, "false")
 	sessionID := c.Query("id")
 	queryUserID := c.Query("user_id")
 	expUserID := c.Query("exp_user_id")
