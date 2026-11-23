@@ -20,6 +20,7 @@ import {
   ModelResourceAccessUserIdContext,
   ModelResourceTenantIdContext,
 } from '@/hooks/use-llm-request';
+import { showPipelineRunButton } from '@/ee/constants/feature-flags';
 import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
 import { AgentEditGuard } from '@/ee/pages/agent/agent-edit-guard';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -98,9 +99,9 @@ export default function Agent() {
   // debug preview limits. It is shown ONLY for a dataflow (ingestion pipeline)
   // canvas — an agent canvas runs the agent, not an ingestion debug preview.
   const runTooltipKey = debugRunLimitsTooltipKey(isPipeline);
-  // The ingestion (dataflow) canvas hides the Run/test-run entry entirely;
-  // the agent canvas keeps its Run button.
-  const showRunButton = !isPipeline;
+  // The ingestion (dataflow) canvas shows the Run/test-run entry only when the
+  // edition enables it; the agent canvas always keeps its Run button.
+  const showRunButton = showPipelineRunButton || !isPipeline;
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
@@ -115,11 +116,11 @@ export default function Agent() {
     },
     [saveGraph],
   );
-  const { data: agentDetail } = useFetchAgent();
+  const { data: agentDetail, loading: agentLoading } = useFetchAgent();
   // The checklist displays all issues; Run separately checks blocking rules.
   const { issues } = useCanvasChecklist({
     resourceTenantId: agentDetail?.tenant_id,
-    ownerUserId: agentDetail?.user_id,
+    ownerUserId: agentLoading ? null : (agentDetail?.user_id ?? null),
     canvasID: id,
   });
   const { buildDslData } = useBuildDslData();
@@ -351,7 +352,9 @@ export default function Agent() {
         </div>
       </PageHeader>
       <ModelResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>
-        <ModelResourceAccessUserIdContext.Provider value={agentDetail?.user_id}>
+        <ModelResourceAccessUserIdContext.Provider
+          value={agentLoading ? null : (agentDetail?.user_id ?? null)}
+        >
           <ResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>
             <ReactFlowProvider>
               <DropdownProvider>

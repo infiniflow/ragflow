@@ -5,7 +5,6 @@ import {
   ColumnFiltersState,
   SortingState,
   VisibilityState,
-  flexRender,
   getCoreRowModel,
   getFilteredRowModel,
   getSortedRowModel,
@@ -14,22 +13,13 @@ import {
 import { Pencil, Trash2 } from 'lucide-react';
 import * as React from 'react';
 
-import { TableEmpty } from '@/components/table-skeleton';
+import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
 import { VariableFormSchemaType } from './schema';
@@ -154,50 +144,12 @@ export function VariableTable({
   return (
     <div className="w-full">
       <div className="rounded-md border">
-        <Table rootClassName="rounded-md">
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && 'selected'}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      className={cn(cell.column.columnDef.meta?.cellClassName)}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableEmpty columnsLength={columns.length}></TableEmpty>
-            )}
-          </TableBody>
-        </Table>
+        <DataTable
+          table={table}
+          columnsLength={columns.length}
+          rootClassName="rounded-md"
+          applyColumnCellClassName
+        />
       </div>
     </div>
   );

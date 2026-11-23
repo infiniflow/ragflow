@@ -7,6 +7,7 @@ import (
 	"maps"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/mcp"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
@@ -45,10 +46,21 @@ type mcpDatasetService interface {
 	GetDataset(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error)
 }
 
+// mcpDocumentService is the document surface mcpRetrieval depends on. It is
+// injectable so the per-request lookup count is observable in tests.
+type mcpDocumentService interface {
+	ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
+	GetDocumentMetadataByIDs(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]interface{}, error)
+}
+
 // mcpRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
 func mcpRetrieval(ctx context.Context, ds mcpDatasetService, req mcp.RetrievalRequest) (string, error) {
+	return mcpRetrievalWithDocs(ctx, ds, document.NewDocumentService(), req)
+}
+
+func mcpRetrievalWithDocs(ctx context.Context, ds mcpDatasetService, docs mcpDocumentService, req mcp.RetrievalRequest) (string, error) {
 	if permission.UserIDFromContext(ctx) == "" {
 		return "", permission.ErrUnauthenticated
 	}
@@ -121,39 +133,81 @@ func mcpRetrieval(ctx context.Context, ds mcpDatasetService, req mcp.RetrievalRe
 	}
 
 	// Metadata reads use the same authorized service paths as the REST API.
-	documents := document.NewDocumentService()
 	datasetNames := make(map[string]string)
 	documentMetadata := make(map[string]map[string]any)
+
+	// Collect the unique document IDs per dataset first, so each dataset needs
+	// only one document-list and one metadata query. The first dataset that
+	// references a document wins, matching the previous per-chunk dedup order.
+	docIDsByDataset := make(map[string][]string, len(datasetIDs))
+	seenDocIDs := make(map[string]bool)
+	seenDatasetIDs := make(map[string]bool, len(datasetIDs))
+	uniqueDatasetIDs := make([]string, 0, len(datasetIDs))
 	for _, id := range datasetIDs {
+		if seenDatasetIDs[id] {
+			continue
+		}
+		seenDatasetIDs[id] = true
+		uniqueDatasetIDs = append(uniqueDatasetIDs, id)
+	}
+	for _, id := range uniqueDatasetIDs {
 		info, code, err := ds.GetDataset(ctx, id)
 		if err != nil || code != common.CodeSuccess {
 			continue
 		}
 		name, _ := info["name"].(string)
 		datasetNames[id] = name
-		// Read only documents returned by retrieval, through the existing listing
-		// and metadata services. This avoids loading entire document collections.
 		for _, chunk := range resp.Chunks {
 			chunkDataset, _ := chunk["dataset_id"].(string)
 			docID, _ := chunk["document_id"].(string)
-			if chunkDataset != id || docID == "" {
+			if chunkDataset != id || docID == "" || seenDocIDs[docID] {
 				continue
 			}
-			if _, ok := documentMetadata[docID]; ok {
+			seenDocIDs[docID] = true
+			docIDsByDataset[id] = append(docIDsByDataset[id], docID)
+		}
+	}
+
+	for _, id := range uniqueDatasetIDs {
+		docIDs := docIDsByDataset[id]
+		if len(docIDs) == 0 {
+			continue
+		}
+		listOpts := dao.DocumentListOptions{KbID: id, DocIDs: docIDs, DocIDFilterApplied: true}
+		listedDocs, _, err := docs.ListDocumentsByDatasetIDWithOptions(ctx, listOpts, 1, len(docIDs))
+		if err != nil {
+			// One bounded retry keeps a transient list failure from dropping
+			// enrichment for every document in the dataset.
+			listedDocs, _, err = docs.ListDocumentsByDatasetIDWithOptions(ctx, listOpts, 1, len(docIDs))
+		}
+		if err != nil || len(listedDocs) == 0 {
+			continue
+		}
+		docByID := make(map[string]*entity.DocumentListItem, len(listedDocs))
+		listedIDs := make([]string, 0, len(listedDocs))
+		for _, listed := range listedDocs {
+			if listed != nil {
+				docByID[listed.ID] = listed
+				listedIDs = append(listedIDs, listed.ID)
+			}
+		}
+		metaByID, metaErr := docs.GetDocumentMetadataByIDs(ctx, id, listedIDs)
+		if metaErr != nil {
+			metaByID = nil
+		}
+		for _, docID := range docIDs {
+			doc := docByID[docID]
+			if doc == nil {
 				continue
 			}
-			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}, DocIDFilterApplied: true}, 1, 1)
-			if err != nil || len(docs) == 0 {
-				continue
-			}
-			fields, err := documents.GetDocumentMetadataByID(ctx, docID)
-			if err != nil {
+			fields := metaByID[docID]
+			if fields == nil {
 				fields = map[string]any{}
 			}
-			doc := mapDocumentListItem(docs[0], fields, nil)
+			item := mapDocumentListItem(doc, fields, nil)
 			metadata := map[string]any{"document_id": docID}
 			for _, key := range []string{"name", "location", "type", "size", "chunk_count", "create_date", "update_date", "token_count", "thumbnail", "dataset_id", "meta_fields"} {
-				metadata[key] = doc[key]
+				metadata[key] = item[key]
 			}
 			documentMetadata[docID] = metadata
 		}

@@ -954,7 +954,6 @@ export default {
         knowledge_graph: 'Bilimlar grafi',
         mind_map: 'On’a xaritasi',
         page_index: 'Sahifa indeksi',
-        timeline: 'Vaqt chizig‘i',
         tree: 'Daraxt',
         raptor: 'RAPTOR',
       },
@@ -1642,8 +1641,6 @@ export default {
         'Olish uchun GitHub’dan pull request va issue’larni sinxronlang.',
       airtableDescription:
         'Airtable’ga ulaning va belgilangan workspace’dagi aniq jadvaldan fayllarni sinxronlang.',
-      dingtalkAITableDescription:
-        'Dingtalk AI Table’ga ulaning va aniq jadvaldan yozuvlarni sinxronlang.',
       gitlabDescription:
         'GitLab’ni ulab, repositorylar, issue’lar, merge requestlar va tegishli hujjatlarni sinxronlang.',
       asanaDescription:
@@ -2385,12 +2382,10 @@ export default {
       navTree: 'Daraxt/PageIndex',
       graph: 'Graf',
       structureMindmap: 'On’a xaritasi',
-      structureTimeline: 'Vaqt chizig‘i',
       noWikiPages: 'Hozircha wiki yo‘q',
       noSkills: 'Hozircha ko‘nikmalar yo‘q',
       noStructureGraph: 'Hozircha graf yo‘q',
       noStructureMindmap: 'Hozircha on’a xaritasi yo‘q',
-      noStructureTimeline: 'Hozircha vaqt chizig‘i yo‘q',
       contents: 'Mundarija',
       topics: 'Mavzular',
       searchEntity: 'Obyektni qidirish',

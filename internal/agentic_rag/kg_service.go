@@ -910,15 +910,6 @@ func kgParseGraphRow(row map[string]interface{}) ([]KgEntity, []KgRelation) {
 
 // kgFloat reads a JSON number that may decode as any numeric type.
 func kgFloat(v interface{}) float64 {
-	switch x := v.(type) {
-	case float64:
-		return x
-	case float32:
-		return float64(x)
-	case int:
-		return float64(x)
-	case int64:
-		return float64(x)
-	}
-	return 0
+	f, _ := common.ToFloat(v)
+	return f
 }

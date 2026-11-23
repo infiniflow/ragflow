@@ -430,6 +430,8 @@ func (p *Parser) parseAdminShowCommands() (*Command, error) {
 		return p.parseAdminShowLogCommands()
 	case TokenHardware:
 		return p.parseAdminShowHardware()
+	case TokenDeploy:
+		return p.parseAdminShowDeploy()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -3058,6 +3060,20 @@ func (p *Parser) parseAdminShowHardware() (*Command, error) {
 
 	return cmd, nil
 }
+
+func (p *Parser) parseAdminShowDeploy() (*Command, error) {
+	p.nextToken() // consume DEPLOY
+	cmd := NewCommand("admin_show_deploy")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW DEPLOY
 
 // PURGE PREVIEW ORPHAN
 // PURGE ORPHAN

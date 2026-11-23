@@ -16,19 +16,12 @@ package service
 
 import (
 	"context"
-	"encoding/json/v2"
 	"errors"
 	"strings"
 
-	"ragflow/internal/agent/canvas"
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 )
-
-type chatChannelAgentRunner interface {
-	RunAgent(context.Context, string, string, string, any, []map[string]any) (<-chan canvas.RunEvent, error)
-}
 
 type channelAgentRunContextKey struct{}
 
@@ -54,83 +47,4 @@ func validateChannelBinding(ctx context.Context, chatID, agentID *string) error 
 		return nil
 	}
 	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, ref, operation)
-}
-
-func (s *ChatChannelService) handleChannelAgentMessage(ctx context.Context, channel *entity.ChatChannel, msg ChatChannelIncomingMessage, onDelta func(string)) (string, error) {
-	sessionID := channelSessionID(*channel.AgentID, channel.ID, msg.ChatID)
-	// RunAgent creates and authorizes the persisted session; this boundary only
-	// supplies its stable identity for the first message and subsequent turns.
-	ctx = WithAgentSessionID(ctx, sessionID)
-	ctx = context.WithValue(ctx, channelAgentRunContextKey{}, true)
-	ctx = withAgentChannelName(ctx, channel.Name)
-	events, err := s.agentRunner.RunAgent(ctx, *channel.AgentID, sessionID, "", msg.Text, nil)
-	if err != nil {
-		return "", err
-	}
-	var answer strings.Builder
-	var runErr error
-	thinking := false
-	// Report every visible change so a streaming channel can render the answer as it
-	// grows; thinking blocks are already filtered out above.
-	emit := func() {
-		if onDelta != nil && answer.Len() > 0 {
-			onDelta(answer.String())
-		}
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case ev, ok := <-events:
-			if !ok {
-				if runErr != nil {
-					return "", runErr
-				}
-				return answer.String(), nil
-			}
-			switch ev.Type {
-			case "message":
-				var data canvas.MessageEvent
-				if err := json.Unmarshal([]byte(ev.Data), &data); err != nil {
-					return "", err
-				}
-				if data.StartToThink {
-					thinking = true
-				}
-				if data.EndToThink {
-					thinking = false
-					continue
-				}
-				if !thinking {
-					answer.WriteString(data.Content)
-					emit()
-				}
-			case "waiting_for_user":
-				var data canvas.WaitingForUserEvent
-				if err := json.Unmarshal([]byte(ev.Data), &data); err != nil {
-					return "", err
-				}
-				if len(data.Inputs) > 1 {
-					answer.Reset()
-					answer.WriteString("This workflow requires structured input. Please continue in RAGFlow.")
-					emit()
-					continue
-				}
-				if answer.Len() > 0 && data.Tips != "" {
-					answer.WriteString("\n")
-				}
-				answer.WriteString(data.Tips)
-				if answer.Len() == 0 {
-					answer.WriteString("Please reply to continue.")
-				}
-				emit()
-			case "error":
-				// Provider/internal errors may contain credentials or implementation
-				// details; adapters receive an error, never that raw event payload.
-				runErr = errors.New("channel workflow execution failed")
-			case "cancelled":
-				runErr = context.Canceled
-			}
-		}
-	}
 }

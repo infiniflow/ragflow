@@ -19,8 +19,11 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"ragflow/internal/entity/models"
 	"strings"
+	"unicode/utf8"
+
+	"ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 )
 
 type ResponseIf interface {
@@ -1156,11 +1159,10 @@ func (r *UserStorageResponse) PrintOut() {
 
 func truncateStr(s string, maxLen int) string {
 	s = strings.TrimSpace(s)
-	runes := []rune(s)
-	if len(runes) <= maxLen {
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
-	return string(runes[:maxLen]) + "..."
+	return utility.TruncateRunes(s, maxLen) + "..."
 }
 
 type UserQuotaResponse struct {

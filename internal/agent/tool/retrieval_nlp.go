@@ -64,6 +64,7 @@ package tool
 import (
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 
@@ -324,7 +325,7 @@ func resolveRankFeature(
 	// authoritative: nil means "said nothing, label it", an empty map means
 	// "there are none" and must not turn into a label lookup.
 	if requested != nil {
-		return cloneRankFeature(*requested)
+		return maps.Clone(*requested)
 	}
 	// Only the engine-side clause needs a text leg, so a dense-only request is not
 	// labelled. The features still reach the similarity - with no scored bool, the
@@ -334,18 +335,9 @@ func resolveRankFeature(
 		return map[string]float64{}
 	}
 	if labels := enhancer.LabelQuestion(ctx, query, kbs); labels != nil {
-		return cloneRankFeature(labels)
+		return maps.Clone(labels)
 	}
 	return map[string]float64{}
-}
-
-// cloneRankFeature detaches the request's map from the caller's.
-func cloneRankFeature(features map[string]float64) map[string]float64 {
-	clone := make(map[string]float64, len(features))
-	for field, weight := range features {
-		clone[field] = weight
-	}
-	return clone
 }
 
 func nlpRequestFromRetrieval(

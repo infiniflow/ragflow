@@ -19,7 +19,6 @@
 package bootstrap
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -27,28 +26,18 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/server"
-	"ragflow/internal/server/local"
 )
 
-func TestHeartbeatReportersKeepSeparateIdentities(t *testing.T) {
-	var mu sync.Mutex
-	reports := map[string]common.ServerType{}
+func TestStartHeartbeatDoesNotReportInCommunityEdition(t *testing.T) {
+	var reports atomic.Int32
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var message common.BaseMessage
-		if err := json.NewDecoder(r.Body).Decode(&message); err != nil {
-			t.Error(err)
-			http.Error(w, "invalid message", http.StatusBadRequest)
-			return
-		}
-		mu.Lock()
-		reports[message.ServerName] = message.ServerType
-		mu.Unlock()
+		reports.Add(1)
 		fmt.Fprintf(w, `{"code":%d}`, common.CodeLicenseValid)
 	}))
 	defer httpServer.Close()
@@ -69,39 +58,21 @@ func TestHeartbeatReportersKeepSeparateIdentities(t *testing.T) {
 	if err := server.Init(configPath); err != nil {
 		t.Fatal(err)
 	}
-	local.InitAdminStatus()
-	api := StartHeartbeat(common.ServerTypeAPI, "api-test", port, time.Hour)
-	if api == nil {
-		t.Fatal("API heartbeat did not start")
-	}
-	api.Stop()
-	api.Wait()
-	ingestor := StartHeartbeat(common.ServerTypeIngestion, "ingestor-test", 0, time.Hour)
-	if ingestor == nil {
-		t.Fatal("ingestor heartbeat did not start")
-	}
-	ingestor.Stop()
-	ingestor.Wait()
-
-	for _, reporter := range []struct {
-		name       string
-		serverType common.ServerType
-		job        func()
-	}{
-		{"api-test", common.ServerTypeAPI, api.Job},
-		{"ingestor-test", common.ServerTypeIngestion, ingestor.Job},
+	for _, serverType := range []common.ServerType{
+		common.ServerTypeAPI,
+		common.ServerTypeIngestion,
+		common.ServerTypeFileSyncer,
+		common.ServerTypeChatter,
 	} {
-		mu.Lock()
-		clear(reports)
-		mu.Unlock()
-		// Drive enough ticks to send a heartbeat even if the startup report succeeded.
-		for range 11 {
-			reporter.job()
-		}
-		mu.Lock()
-		if len(reports) != 1 || reports[reporter.name] != reporter.serverType {
-			t.Errorf("reports = %v, want only %s (%s)", reports, reporter.name, reporter.serverType)
-		}
-		mu.Unlock()
+		t.Run(string(serverType), func(t *testing.T) {
+			if task := StartHeartbeat(serverType, "test-server", port, time.Hour); task != nil {
+				task.Stop()
+				task.Wait()
+				t.Fatal("community heartbeat reporter started")
+			}
+		})
+	}
+	if got := reports.Load(); got != 0 {
+		t.Fatalf("heartbeat reports = %d, want 0", got)
 	}
 }

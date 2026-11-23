@@ -16,7 +16,6 @@
 
 import message from '@/components/ui/message';
 import { ModelTypeToField } from '@/constants/llm';
-import { useAdditionalModelValidIds } from '@/ee/hooks/use-additional-model-valid-ids';
 import {
   IAddedModel,
   IAvailableProvider,
@@ -43,7 +42,7 @@ import {
 } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createContext, useCallback, useContext, useMemo } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -54,7 +53,7 @@ import {
 import { useWarnEmptyModel } from './use-warn-empty-model';
 
 export const ModelResourceAccessUserIdContext = createContext<
-  string | undefined
+  string | undefined | null
 >(undefined);
 export const ModelResourceTenantIdContext = createContext<string | undefined>(
   undefined,
@@ -143,13 +142,19 @@ export const useFetchAddedProviders = () => {
 export const useFetchAllAddedModels = (
   modelType?: string,
   resourceTenantId?: string,
-  accessUserId?: string,
+  accessUserId?: string | null,
   ownerIDs?: string[],
 ) => {
   const contextTenantId = useContext(ModelResourceTenantIdContext);
   const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
   const modelResourceTenantId = resourceTenantId || contextTenantId;
-  const modelAccessUserId = accessUserId ?? contextAccessUserId;
+  const waitingForAccessUser =
+    accessUserId === null ||
+    (accessUserId === undefined && contextAccessUserId === null);
+  const modelAccessUserId =
+    accessUserId === undefined
+      ? (contextAccessUserId ?? undefined)
+      : (accessUserId ?? undefined);
   const {
     data,
     isFetching: loading,
@@ -165,11 +170,9 @@ export const useFetchAllAddedModels = (
     ),
     initialData: [],
     gcTime: 0,
+    enabled: !waitingForAccessUser,
     queryFn: async () => {
       const params: IListAllModelsRequestParams = {};
-      if (modelResourceTenantId) {
-        params.tenant_id = modelResourceTenantId;
-      }
       if (modelType) {
         params.type = modelType;
       }
@@ -204,59 +207,37 @@ export const useFetchAllAddedModels = (
 export const useModelValidIds = (
   modelTypes: string[],
   resourceTenantId?: string,
-  accessUserId?: string,
-  includeAdditionalValidIds = true,
+  accessUserId?: string | null,
 ) => {
-  const contextTenantId = useContext(ModelResourceTenantIdContext);
+  const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
+  const waitingForAccessUser =
+    accessUserId === null ||
+    (accessUserId === undefined && contextAccessUserId === null);
   const { data, isFetched, refetch } = useFetchAllAddedModels(
     undefined,
     resourceTenantId,
     accessUserId,
   );
-  const directValidIds = useMemo(
+  const validIds = useMemo(
     () => buildValidModelIds(data, modelTypes),
     [data, modelTypes],
   );
-  const {
-    validIds: additionalValidIds,
-    isSettled,
-    getPendingMessage,
-    resolveValidIds: resolveAdditionalValidIds,
-  } = useAdditionalModelValidIds({
-    modelTypes,
-    models: data,
-    modelsFetched: isFetched,
-    enabled: includeAdditionalValidIds,
-    ownerTenantId: resourceTenantId || contextTenantId,
-  });
-  const validIds = useMemo(
-    () => new Set([...directValidIds, ...additionalValidIds]),
-    [additionalValidIds, directValidIds],
-  );
 
-  const resolveValidIds = useCallback(async () => {
+  const resolveValidIds = async () => {
+    if (waitingForAccessUser) {
+      throw new Error('Resource owner is not loaded');
+    }
     const result = await refetch();
     if (result.isError) throw result.error;
-    const freshModels = result.data ?? [];
-    const freshAdditionalIds = await resolveAdditionalValidIds(freshModels);
-    return new Set([
-      ...buildValidModelIds(freshModels, modelTypes),
-      ...freshAdditionalIds,
-    ]);
-  }, [modelTypes, refetch, resolveAdditionalValidIds]);
-
-  return {
-    validIds,
-    isFetched,
-    isSettled,
-    getPendingMessage,
-    resolveValidIds,
+    return buildValidModelIds(result.data ?? [], modelTypes);
   };
+
+  return { validIds, isFetched, resolveValidIds };
 };
 
 export function useFindLlmByUuid(
   resourceTenantId?: string,
-  accessUserId?: string,
+  accessUserId?: string | null,
 ) {
   const { data: models } = useFetchAllAddedModels(
     undefined,

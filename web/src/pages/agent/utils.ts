@@ -1,4 +1,5 @@
 import { FileType } from '@/constants/file';
+import { extraExtractorParams } from '@/ee/pages/agent/extractor-params-private';
 import {
   DSL,
   DSLComponents,
@@ -356,12 +357,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
-        case FileType.TextMarkdown:
-          filteredSetup = {
-            ...filteredSetup,
-            remove_toc: cur.remove_toc || false,
-          };
-          break;
         case FileType.Audio:
           // Audio keeps its own per-setup model: it is an ASR model, not the
           // shared vision one.
@@ -657,6 +652,10 @@ export function transformExtractorParams(
       metadata: metadataList,
       built_in_metadata: builtInMetadataList,
     },
+    // Sub-tasks the shared form has no control for ride through the overlay:
+    // a copied canvas must keep them or the Tokenizer's configured field
+    // goes stale.
+    ...extraExtractorParams(raw),
   };
 }
 

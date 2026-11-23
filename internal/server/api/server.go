@@ -68,6 +68,20 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 
 	globalConfig := server.GetConfig()
 
+	// Install the mode-8 Codex configuration before any chat path reads it. A
+	// missing endpoint keeps mode 8 disabled (the engine degrades to the
+	// regular pipeline).
+	apiServerCfg := globalConfig.GetAPIServerConfig()
+	service.SetCodexConfig(&apiServerCfg.Codex)
+	// Bind the mode 8 MCP handle/binding store to the shared Kvrocks, so
+	// authorization survives across the processes that mint (API) and resolve
+	// (/mcp/codex).
+	service.InstallCodexKVStore()
+	// Install the bridge's web-search seam: the /mcp/codex handler rebuilds a
+	// conversation's provider callback on demand (only for turns that enabled
+	// web search), so the credentials never enter the shared KV.
+	service.InstallCodexWebSearchResolver()
+
 	// Initialize service layer
 	userService := service.NewUserService()
 	userTenantService := service.NewUserTenantService()

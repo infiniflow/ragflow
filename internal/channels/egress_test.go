@@ -142,8 +142,12 @@ func TestSafeChannelWebSocketRejectsUntrustedLocalHost(t *testing.T) {
 	}
 }
 
-func TestChannelSDKWebSocketDialerOnlyAllowsTLSPlatformEndpoints(t *testing.T) {
-	dialer := newChannelSDKWebSocketDialer(&websocket.Dialer{})
+func TestChannelPlatformWebSocketDestinationsRequireTLS(t *testing.T) {
+	t.Setenv(channelAllowedHostsEnv, "")
+	originalLookup := common.LookupHost
+	t.Cleanup(func() { common.LookupHost = originalLookup })
+	common.LookupHost = func(string) ([]string, error) { return []string{"93.184.216.34"}, nil }
+	policy := channelURLPolicy{exactHosts: []string{"msg-frontier.feishu.cn", "msg-frontier.larksuite.com", "wss-open-connection.dingtalk.com"}}
 	for _, test := range []struct {
 		url      string
 		wantFail bool
@@ -160,23 +164,18 @@ func TestChannelSDKWebSocketDialerOnlyAllowsTLSPlatformEndpoints(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if parsed.Scheme == "wss" {
-				parsed.Scheme = "https"
-			} else if parsed.Scheme == "ws" {
-				parsed.Scheme = "http"
-			}
-			_, err = dialer.Proxy(&http.Request{URL: parsed})
+			_, _, _, err = resolveChannelDestination(parsed, policy, true)
 			if (err != nil) != test.wantFail {
-				t.Fatalf("Proxy() error = %v, wantFail %t", err, test.wantFail)
+				t.Fatalf("resolveChannelDestination() error = %v, wantFail %t", err, test.wantFail)
 			}
 		})
 	}
 }
 
-func TestChannelSDKWebSocketDialerRejectsNonPublicResolution(t *testing.T) {
+func TestChannelPlatformWebSocketRejectsNonPublicResolution(t *testing.T) {
+	t.Setenv(channelAllowedHostsEnv, "")
 	originalLookup := common.LookupHost
 	t.Cleanup(func() { common.LookupHost = originalLookup })
-	dialer := newChannelSDKWebSocketDialer(&websocket.Dialer{})
 
 	for _, address := range []string{"169.254.169.254", "::ffff:169.254.169.254", "fe80::1"} {
 		t.Run(address, func(t *testing.T) {
@@ -186,9 +185,9 @@ func TestChannelSDKWebSocketDialerRejectsNonPublicResolution(t *testing.T) {
 				}
 				return []string{address}, nil
 			}
-			_, err := dialer.NetDialContext(context.Background(), "tcp", "msg-frontier.feishu.cn:443")
+			_, _, err := dialSafeChannelWebSocket(context.Background(), "wss://msg-frontier.feishu.cn/ws/v2", nil, time.Second, channelURLPolicy{exactHosts: []string{"msg-frontier.feishu.cn"}})
 			if err == nil || !strings.Contains(err.Error(), "not safe") {
-				t.Fatalf("NetDialContext() error = %v, want unsafe-address rejection", err)
+				t.Fatalf("dialSafeChannelWebSocket() error = %v, want unsafe-address rejection", err)
 			}
 		})
 	}

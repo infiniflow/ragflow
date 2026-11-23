@@ -293,6 +293,7 @@ const (
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
 	EnvPaddleOCRAPIURL                   = "PADDLEOCR_API_URL"
 	EnvPaddleOCRAccessToken              = "PADDLEOCR_ACCESS_TOKEN"
+	EnvPaddleOCRTimeout                  = "PADDLEOCR_TIMEOUT"
 	EnvSOMarkBaseUrl                     = "SOMARK_BASE_URL"
 	EnvSOMarkAPIKey                      = "SOMARK_API_KEY"
 	EnvSOMarkImageFormat                 = "SOMARK_IMAGE_FORMAT"
@@ -385,6 +386,10 @@ const (
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
 	// --deepdoc-inference-cpu-cores CLI flag.
 	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
+	// EnvDeepDocDevice selects the DeepDoc inference device (cpu | gpu[:id]).
+	// The default build accepts only cpu; gpu fails fast at startup with a
+	// "not supported" error (GPU requires the enterprise edition).
+	EnvDeepDocDevice = "RAGFLOW_DEEPDOC_DEVICE"
 
 	// Media extraction limits. The parser media budget and the run media cache
 	// read these per call: the per-image payload limit, the number of distinct
@@ -586,6 +591,13 @@ const (
 	// web_search is NEVER in scope because its hits carry no corpus document with
 	// a source_chunk_ids linkage.
 	EnvCompiledServeScope = "RAGFLOW_COMPILED_SERVE_SCOPE"
+
+	// Adaptive chapter splitter settings for large PDF documents.
+	EnvEnableAdaptiveChapterSplit = "PARSER_ENABLE_ADAPTIVE_CHAPTER_SPLIT"
+	EnvChapterSplitThreshold      = "PARSER_CHAPTER_SPLIT_THRESHOLD"
+	EnvChapterMinPages            = "PARSER_CHAPTER_MIN_PAGES"
+	EnvChapterMaxPages            = "PARSER_CHAPTER_MAX_PAGES"
+	EnvChapterConcurrency         = "PARSER_CHAPTER_CONCURRENCY"
 )
 
 // EnvLLMHTTPResponseHeaderTimeout bounds how long an outbound provider call may

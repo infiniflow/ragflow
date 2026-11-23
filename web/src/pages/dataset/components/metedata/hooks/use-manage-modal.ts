@@ -11,7 +11,7 @@ import {
 } from '@/services/knowledge-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RowSelectionState } from '@tanstack/react-table';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import {
@@ -223,6 +223,12 @@ export const useMetadataOperations = () => {
         const updatedOperations = {
           ...prev,
           updates: updatedUpdates,
+          deletes:
+            type === metadataValueTypeEnum.list && originalValue === ''
+              ? prev.deletes.filter(
+                  (item) => item.key !== key || item.value !== undefined,
+                )
+              : prev.deletes,
         };
         return updatedOperations;
       });
@@ -299,6 +305,11 @@ export const useManageMetaDataModal = (
 
   const [tableData, setTableData] = useState<IMetaDataTableData[]>(metaData);
   const queryClient = useQueryClient();
+  // Whether a write is already on its way. The dataset history records one
+  // version per metadata write, and a second request sent while the first is in
+  // flight reads the metadata before that write lands: both then find a change
+  // and one edit ends up as two versions.
+  const savingRef = useRef(false);
   const {
     // operationsRef,
     operations,
@@ -377,23 +388,37 @@ export const useManageMetaDataModal = (
 
   const handleSaveManage = useCallback(
     async (callback: () => void) => {
-      console.log('handleSaveManage', tableData);
-      const { data: res } = await updateDocumentsMetadata({
-        dataset_id: id as string,
-        selector: { document_ids: documentIds },
-        updates: operations.updates,
-        deletes: operations.deletes,
-      });
-      if (res.code === 0) {
-        queryClient.invalidateQueries({
-          queryKey: [DocumentApiAction.FetchDocumentList],
-        });
-        resetOperations();
-        message.success(t('message.operated'));
+      // One write at a time: the values dialog and the modal's Save are two
+      // triggers for the same operations, and a write that overlaps the one it
+      // repeats is what turns one edit into two versions.
+      if (savingRef.current) {
+        // The in-flight write carries these operations already, so the promise
+        // the caller awaits has nothing left to send. Close the dialog as the
+        // finished write would.
         callback();
+        return;
+      }
+      savingRef.current = true;
+      try {
+        const { data: res } = await updateDocumentsMetadata({
+          dataset_id: id as string,
+          selector: { document_ids: documentIds },
+          updates: operations.updates,
+          deletes: operations.deletes,
+        });
+        if (res.code === 0) {
+          queryClient.invalidateQueries({
+            queryKey: [DocumentApiAction.FetchDocumentList],
+          });
+          resetOperations();
+          message.success(t('message.operated'));
+          callback();
+        }
+      } finally {
+        savingRef.current = false;
       }
     },
-    [operations, id, t, queryClient, resetOperations, documentIds, tableData],
+    [operations, id, t, queryClient, resetOperations, documentIds],
   );
 
   // const handleSaveUpdateSingle = useCallback(

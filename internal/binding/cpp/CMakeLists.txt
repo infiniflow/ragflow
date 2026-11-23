@@ -171,6 +171,8 @@ set_target_properties(rag_tokenizer PROPERTIES
 add_library(rag_tokenizer_c_api STATIC
         rag_analyzer_c_api.cpp
         rag_analyzer_c_api.h
+        spm_unigram.cpp
+        spm_unigram.h
         thinc_ner.cpp
         thinc_ner.h
         thinc_parser.cpp

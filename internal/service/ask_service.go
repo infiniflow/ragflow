@@ -56,9 +56,10 @@ const (
 
 // AskDelta is a single streaming event from AskService.Stream.
 type AskDelta struct {
-	Kind  AskDeltaKind
-	Value string
-	Refs  interface{} // populated on AskDeltaFinal: {chunks, doc_aggs}
+	Kind    AskDeltaKind
+	Value   string
+	Message string
+	Refs    interface{} // populated on AskDeltaFinal: {chunks, doc_aggs}
 }
 
 // AskStreamOptions carries optional retrieval settings supplied by saved
@@ -151,7 +152,7 @@ func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, qu
 
 func (s *AskService) run(ctx context.Context, llm StreamingLLM, question string, datasetIDs []string, opts AskStreamOptions, out chan<- AskDelta) {
 	if err := compliance.ValidateQuestion(ctx, question); err != nil {
-		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: err.Error()}, ctx)
+		s.sendOrCancel(out, AskDelta{Kind: AskDeltaFinal, Message: err.Error(), Refs: map[string]interface{}{"chunks": []map[string]interface{}{}, "doc_aggs": []map[string]interface{}{}}}, ctx)
 		return
 	}
 	// Phase 1: Retrieval.
@@ -289,7 +290,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, question string,
 		"chunks":   chunkRefs,
 		"doc_aggs": result.DocAggs,
 	}
-	s.sendOrCancel(out, AskDelta{Kind: AskDeltaFinal, Value: visible, Refs: refs}, ctx)
+	s.sendOrCancel(out, AskDelta{Kind: AskDeltaFinal, Value: visible, Message: "success", Refs: refs}, ctx)
 }
 
 func (s *AskService) sendOrCancel(out chan<- AskDelta, d AskDelta, ctx context.Context) {

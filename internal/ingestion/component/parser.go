@@ -208,6 +208,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			s[k][fk] = cloneParserSetupValue(fv)
 		}
 	}
+	schema.ApplyParserGlobalOptions(params, s)
 	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement, vision: vision}
 	if err := pc.Check(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
@@ -327,9 +328,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"remove_toc":           false,
 			"remove_header_footer": false,
 		},
-		"markdown": {
-			"remove_toc": false,
-		},
+		"markdown":  {},
 		"text&code": {},
 		"html": {
 			"remove_toc":           false,

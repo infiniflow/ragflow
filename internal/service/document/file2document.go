@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service/datasetversion"
 
 	"ragflow/internal/utility"
 )
@@ -174,6 +175,9 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, req *LinkToDa
 // convertFiles mirrors Python _convert_files: keep existing links, remove links
 // outside the requested KBs in replace mode, then add any missing links.
 func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, mode string) error {
+	// The settings the created documents run under are recorded under the upload
+	// version each dataset allocates at the end: the sink holds them until then.
+	ctx = datasetversion.WithStateSink(ctx)
 	userID := permission.UserIDFromContext(ctx)
 	replaceExisting := mode != "add"
 	kbIDs = dedupeStrings(kbIDs)
@@ -181,6 +185,13 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 	for _, kbID := range kbIDs {
 		requestedKBIDs[kbID] = struct{}{}
 	}
+	// Datasets this request actually added documents to. The version is
+	// recorded per dataset at the end: one request is one change, however many
+	// files it carried.
+	touchedKBIDs := make(map[string]struct{})
+	// One version per dataset per request, so the change set is collected per
+	// dataset while the files are converted and written with that version.
+	changesByKB := make(map[string][]entity.DatasetVersionChange)
 	for _, fileID := range fileIDs {
 		mappings, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 		if err != nil {
@@ -265,6 +276,9 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
 				continue
 			}
+			touchedKBIDs[kbID] = struct{}{}
+			changesByKB[kbID] = append(changesByKB[kbID],
+				documentVersionChange(entity.DatasetVersionChangeActionAdd, doc))
 
 			mapping := &entity.File2Document{
 				ID:         common.GenerateUUID(),
@@ -275,6 +289,17 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 				common.Warn("convertFiles: Create file2document mapping failed",
 					zap.String("fileID", fileID), zap.String("docID", doc.ID), zap.Error(err))
 			}
+		}
+	}
+	for kbID := range touchedKBIDs {
+		// One version per dataset: the states the sink holds for that dataset go
+		// in with it, and the states of the other datasets wait for their own.
+		version, verr := datasetversion.RecordContentVersionChangesOwnTx(ctx, kbID, entity.DatasetVersionKindUpload, changesByKB[kbID])
+		if verr != nil {
+			return verr
+		}
+		if verr := datasetversion.FlushStates(ctx, dao.DB, kbID, version); verr != nil {
+			return verr
 		}
 	}
 	return nil
@@ -305,14 +330,8 @@ func (s *File2DocumentService) getAllInnermostFileIDs(ctx context.Context, folde
 // dedupeStrings returns the input slice with duplicates removed, preserving the
 // first-seen order.
 func dedupeStrings(in []string) []string {
-	seen := make(map[string]struct{}, len(in))
-	out := make([]string, 0, len(in))
-	for _, v := range in {
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
+	if in == nil {
+		return []string{}
 	}
-	return out
+	return common.Deduplicate(in)
 }

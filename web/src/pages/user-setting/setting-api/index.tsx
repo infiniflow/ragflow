@@ -15,9 +15,17 @@
  */
 
 import ApiContent from '@/components/api-service/chat-overview-modal/api-content';
+import { UserSettingCloseButton } from '../components/user-setting-close-button';
 
 const ApiPage = () => {
-  return <ApiContent idKey="dialogId"></ApiContent>;
+  return (
+    <section className="relative size-full min-w-0 pt-16">
+      <UserSettingCloseButton />
+      <div className="flex size-full min-h-0 min-w-0 overflow-hidden px-4 pb-6 md:px-8">
+        <ApiContent idKey="dialogId" />
+      </div>
+    </section>
+  );
 };
 
 export default ApiPage;

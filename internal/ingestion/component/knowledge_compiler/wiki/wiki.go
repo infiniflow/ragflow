@@ -974,9 +974,8 @@ func shouldReportRefineProgress(completed, total int) bool {
 	return completed > 0 && total > 0 && (completed%wikiRefineProgressStep == 0 || completed == total)
 }
 
-// runRefinePage generates one page result from a normalized plan page. UPDATE
-// merge, evidence assembly, and source-context building are unchanged; this is
-// the per-page unit that runRefine fans out.
+// runRefinePage generates one page result, refining a draft over source batches
+// when the complete prompt would exceed the model's input budget.
 func (p *wikiPipeline) runRefinePage(
 	planItem wikiPlanPage,
 	allPlanSlugs []string,
@@ -987,9 +986,11 @@ func (p *wikiPipeline) runRefinePage(
 ) (wikiPageResult, error) {
 	evidence := assembleWikiPageEvidence(planItem, p.reduced.Claims, entityLookup, conceptLookup)
 	sourceChunkIDs := collectWikiEvidenceChunkIDs(evidence)
-	sourceContext := buildSourceContext(p.inputs.Chunks, sourceChunkIDs)
+	contextChunkIDs := sourceChunkIDs
+	sourceContext := buildSourceContext(p.inputs.Chunks, contextChunkIDs)
 	if strings.TrimSpace(sourceContext) == "" {
-		sourceContext = buildSourceContext(p.inputs.Chunks, p.reduced.sourceChunkIDs())
+		contextChunkIDs = p.reduced.sourceChunkIDs()
+		sourceContext = buildSourceContext(p.inputs.Chunks, contextChunkIDs)
 	}
 	available := make([]string, 0, len(allPlanSlugs))
 	for _, slug := range allPlanSlugs {
@@ -1008,40 +1009,88 @@ func (p *wikiPipeline) runRefinePage(
 			return wikiPageResult{}, err
 		}
 	}
-	existingSection := ""
 	existingRaw := ""
 	if existing != nil {
 		existingRaw = common.FirstNonEmpty(existing.ContentMDRaw, existing.ContentMD)
-		if strings.TrimSpace(existingRaw) != "" {
-			existingSection = "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + existingRaw + "\n"
-		}
 	}
-	user := renderWikiTemplate(wikiRefineWriterUserTemplate, map[string]string{
+	fields := map[string]string{
 		"action":           common.FirstNonEmpty(planItem.Action, "CREATE"),
 		"slug":             planItem.Slug,
 		"title":            common.FirstNonEmpty(planItem.Title, planItem.Slug),
 		"page_type":        common.FirstNonEmpty(planItem.PageType, "concept"),
 		"all_plan_slugs":   strings.Join(available, "\n"),
 		"related_kb_pages": formatWikiRelatedKB(planItem.RelatedKB, pageTitles),
-		"existing_section": existingSection,
-		"source_context":   sourceContext,
 		"evidence_count":   fmt.Sprintf("%d", len(evidence)),
 		"evidence_blocks":  formatWikiEvidenceBlocks(evidence),
-	})
-	resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
-		LLMID:        p.llmID,
-		SystemPrompt: buildWikiRefineWriterSystem(""),
-		UserPrompt:   user,
-	})
-	if err != nil {
-		return wikiPageResult{}, err
 	}
-	if resp == nil {
-		return wikiPageResult{}, fmt.Errorf("knowledge_compiler: wiki refine returned no response")
+	request := func(source, draft string) common.ChatRequest {
+		fields["source_context"] = source
+		fields["existing_section"] = ""
+		if strings.TrimSpace(draft) != "" {
+			fields["existing_section"] = "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + draft + "\n"
+		}
+		return common.ChatRequest{
+			LLMID: p.llmID, SystemPrompt: buildWikiRefineWriterSystem(""),
+			UserPrompt: renderWikiRefineTemplate(wikiRefineWriterUserTemplate, fields),
+		}
 	}
-	contentRaw := strings.TrimSpace(common.FirstNonEmpty(resp.Content))
-	if contentRaw == "" {
-		contentRaw = "# " + common.FirstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
+	pending := []common.Chunk{{Text: sourceContext}}
+	batched := false
+	if budgetErr := p.checkWikiRefineBudget(request(sourceContext, existingRaw)); budgetErr != nil {
+		if err := p.checkWikiRefineBudget(request("", existingRaw)); err != nil {
+			return wikiPageResult{}, budgetErr
+		}
+		pending = wikiRefineSourceBlocks(p.inputs.Chunks, contextChunkIDs)
+		if len(pending) == 0 {
+			return wikiPageResult{}, budgetErr
+		}
+		batched = true
+	}
+	contentRaw := existingRaw
+	for round := 0; len(pending) > 0; round++ {
+		if err := p.ctx.Err(); err != nil {
+			return wikiPageResult{}, err
+		}
+		if round > 0 {
+			fields["action"] = "UPDATE"
+		}
+		batch := pending
+		if batched {
+			inputBudget, _ := p.wikiRefineTokenBudget()
+			base := request("", contentRaw)
+			overhead := p.wikiRefineTokenCount(base.SystemPrompt + "\n" + base.UserPrompt)
+			// Repack against the actual draft, including its wrapper. The input
+			// budget already reserves space for the next response and framing.
+			batch = wikiRefineSourcePrefix(pending, inputBudget-overhead, wikiRefineTokenizer{p.deps.Tokenizer})
+		}
+		var req common.ChatRequest
+		for {
+			req = request(joinWikiRefineSources(batch), contentRaw)
+			if err := p.checkWikiRefineBudget(req); err != nil {
+				if len(batch) == 1 {
+					return wikiPageResult{}, err
+				}
+				// Token counts need not be additive at source boundaries.
+				batch = batch[:len(batch)-1]
+				continue
+			}
+			break
+		}
+		resp, err := p.deps.Chat.Chat(p.ctx, req)
+		if err != nil {
+			return wikiPageResult{}, err
+		}
+		if resp == nil {
+			return wikiPageResult{}, fmt.Errorf("knowledge_compiler: wiki REFINE returned no response")
+		}
+		if next := strings.TrimSpace(resp.Content); next != "" {
+			contentRaw = next
+		} else if batched {
+			return wikiPageResult{}, fmt.Errorf("knowledge_compiler: wiki REFINE returned empty content for source batch %d", round+1)
+		} else {
+			contentRaw = "# " + common.FirstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
+		}
+		pending = pending[len(batch):]
 	}
 	if strings.TrimSpace(existingRaw) != "" {
 		contentRaw, err = p.mergeWikiPageContent(existingRaw, contentRaw, planItem.Slug)
@@ -1539,11 +1588,15 @@ func (p *wikiPipeline) mergeWikiPageContent(existingMD, newMD, slug string) (str
 	}
 	fallback := conservativeMergeWikiMarkdown(existingMD, newMD)
 	user := fmt.Sprintf("Merge these two versions of wiki page `%s`:\n\n## EXISTING VERSION\n\n%s\n\n---\n\n## INCOMING VERSION\n\n%s\n\n---\n\nProduce the merged page now. Return only the markdown content.", slug, existingMD, newMD)
-	resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
+	req := common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: wikiRefineMergeSystem,
 		UserPrompt:   user,
-	})
+	}
+	if err := p.checkWikiRefineBudget(req); err != nil {
+		return "", err
+	}
+	resp, err := p.deps.Chat.Chat(p.ctx, req)
 	if err != nil {
 		return "", err
 	}
@@ -1554,7 +1607,7 @@ func (p *wikiPipeline) mergeWikiPageContent(existingMD, newMD, slug string) (str
 	if merged == "" {
 		return fallback, nil
 	}
-	minAcceptable := int(float64(maxInt(len(existingMD), len(newMD))) * wikiMergeShrinkRatio)
+	minAcceptable := int(float64(max(len(existingMD), len(newMD))) * wikiMergeShrinkRatio)
 	if len(merged) < minAcceptable {
 		return fallback, nil
 	}
@@ -2568,7 +2621,10 @@ func assembleWikiPageEvidence(planItem wikiPlanPage, claims []wikiClaim, entityB
 	patterns := make([]*regexp.Regexp, 0, len(rawNames))
 	for _, n := range rawNames {
 		namesLower = append(namesLower, strings.ToLower(n))
-		patterns = append(patterns, regexp.MustCompile(`(?i)\b`+regexp.QuoteMeta(n)+`\b`))
+		// RE2's \b only knows ASCII word characters, so it never fires next to
+		// CJK and fires inside a CJK run around a Latin name. Spell out the
+		// Unicode boundary the Python version got from \b.
+		patterns = append(patterns, regexp.MustCompile(`(?i)(?:^|[^\p{L}\p{N}_])`+regexp.QuoteMeta(n)+`(?:$|[^\p{L}\p{N}_])`))
 	}
 
 	var evidence []wikiEvidenceItem
@@ -3274,13 +3330,6 @@ func cosine32(a, b []float32) float64 {
 		dot += float64(a[i]) * float64(b[i])
 	}
 	return dot / (na * nb)
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // wikiHistoricalK is the K used for the historical-dedup KNN lookup.

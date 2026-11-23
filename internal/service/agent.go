@@ -1696,7 +1696,7 @@ func (s *AgentService) ApplyVersion(ctx context.Context, canvasID, versionID str
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
-func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (events <-chan canvas.RunEvent, runErr error) {
 	userID := permission.UserIDFromContext(ctx)
 	receivedAt := float64(time.Now().UnixNano()) / 1e9
 	canvasRow, err := s.loadCanvasForUser(ctx, canvasID, permission.OperationRun)
@@ -1704,6 +1704,11 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		return nil, err
 	}
 	agentTenantID := canvasRow.EffectiveTenantID()
+	defer func() {
+		if runErr == nil && events != nil {
+			events = logAgentCompletion(permission.WithTenantID(ctx, agentTenantID), canvasID, sessionID, userInput, events)
+		}
+	}()
 	newSession := sessionID == ""
 	if sessionID == "" {
 		sessionID = common.GenerateToken()
@@ -2155,6 +2160,15 @@ func validateAgentChatModelReferences(ctx context.Context, tenantID string, dsl 
 }
 
 func checkAgentSessionRunPermission(ctx context.Context, sessionID string) error {
+	if grant, ok := ctx.Value(channelAgentSessionContextKey{}).(channelAgentSession); ok && grant.sessionID == sessionID {
+		session, err := dao.NewAPI4ConversationDAO().GetMetadataBySessionID(ctx, dao.DB, sessionID, grant.targetID)
+		if err != nil {
+			return fmt.Errorf("check channel agent session: %w: %w", err, ErrAgentStorageError)
+		}
+		if session != nil && session.Source != nil && *session.Source == string(entity.AgentSessionSourceChatChannel) {
+			return nil
+		}
+	}
 	err := permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
 		permission.ResourceRef{Kind: permission.ResourceKindAgentSession, ID: sessionID},
@@ -2283,8 +2297,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		startedAt := float64(time.Now().UnixNano()) / 1e9
 
 		userInput := root["user_input"]
+		filteredResponse := ""
 		if err := compliance.ValidateQuestion(ctx, stringifyAgentUserInput(agentRunQuery(userInput))); err != nil {
-			return nil, err
+			filteredResponse = err.Error()
 		}
 
 		resumeID, isResume := root["__resume_interrupt_id__"].(string)
@@ -2296,9 +2311,12 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		runID := runIDFor(canvasID, root)
 		state := canvas.NewCanvasState(runID, sessionID)
 
-		// Graceful placeholder: no version published AND no DSL.
-		if versionRow == nil && len(dsl) == 0 {
-			answer := fmt.Sprintf("No published version found for canvas %q — publish a version before running.", canvasID)
+		// Complete filtered requests and unpublished canvases without running nodes.
+		if filteredResponse != "" || (versionRow == nil && len(dsl) == 0) {
+			answer := filteredResponse
+			if answer == "" {
+				answer = fmt.Sprintf("No published version found for canvas %q — publish a version before running.", canvasID)
+			}
 			state.RecordOutput("answer", "answer", answer)
 			if err := s.persistAgentRunSession(ctx, canvasID, sessionID, messageID, userInput, answer, "", nil, dsl, state, true); err != nil {
 				return nil, canvas.NewInternalRunError(fmt.Errorf("persist agent session: %w: %w", err, ErrAgentStorageError))
@@ -2798,7 +2816,7 @@ func (s *AgentService) persistAgentRunQuestion(ctx context.Context, agentID, ses
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
-	userID := permission.UserIDFromContext(ctx)
+	userID := agentSessionHistoryUserID(ctx, agentID, sessionID)
 	text := stringifyAgentUserInput(agentRunQuery(userInput))
 	if text == "" {
 		return nil
@@ -2822,7 +2840,7 @@ func (s *AgentService) persistAgentRunSession(
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
-	userID := permission.UserIDFromContext(ctx)
+	userID := agentSessionHistoryUserID(ctx, agentID, sessionID)
 	history := dao.ConversationHistoryUpdate{}
 	if stringifyAgentUserInput(agentRunQuery(userInput)) != "" {
 		history.QuestionID = messageID
@@ -3275,7 +3293,7 @@ func (s *AgentService) markAgentSessionFailed(ctx context.Context, canvasID, ses
 	if s == nil || s.api4ConversationDAO == nil || dao.DB == nil || sessionID == "" {
 		return
 	}
-	userID := permission.UserIDFromContext(ctx)
+	userID := agentSessionHistoryUserID(ctx, canvasID, sessionID)
 	if err := s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, sessionID, canvasID, userID,
 		map[string]interface{}{"errors": reason}, dao.ConversationHistoryUpdate{}); err != nil {
 		common.Warn("agent run: persist failed session status failed",

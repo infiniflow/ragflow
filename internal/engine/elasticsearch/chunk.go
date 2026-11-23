@@ -1731,6 +1731,7 @@ func searchAfterPaginate(
 			if chunk == nil {
 				chunk = map[string]interface{}{}
 			}
+			mergeHitFields(chunk, hit.Fields)
 			chunk["_score"] = hit.Score
 			chunk["_id"] = hit.ID
 			chunk["id"] = hit.ID // shim id to _id, matching Python es_conn.py behavior
@@ -2153,6 +2154,7 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 }
 
 func (e *Engine) searchChunkInDataset(ctx context.Context, baseName, chunkID, datasetID string) (map[string]interface{}, bool, error) {
+	// ES 9.x omits dense_vector fields from a default _source, so project explicitly.
 	searchReq := map[string]interface{}{
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{
@@ -2162,6 +2164,7 @@ func (e *Engine) searchChunkInDataset(ctx context.Context, baseName, chunkID, da
 				},
 			},
 		},
+		"_source": []string{"*"},
 	}
 
 	body, err := json.Marshal(searchReq)
@@ -2767,6 +2770,7 @@ func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[str
 		if chunks[i] == nil {
 			chunks[i] = make(map[string]interface{})
 		}
+		mergeHitFields(chunks[i], hit.Fields)
 		chunks[i]["_score"] = hit.Score
 		chunks[i]["_id"] = hit.ID
 		chunks[i]["id"] = hit.ID // shim id to _id, matching Python es_conn.py behavior
@@ -2776,6 +2780,24 @@ func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[str
 		}
 	}
 	return chunks
+}
+
+// mergeHitFields copies values Elasticsearch returns only under the hit's
+// `fields` projection (dense_vector on ES 9.x, where _source drops them) into
+// the chunk. _source wins on duplicate keys, and the extra array level around
+// a vector value ([[v1, v2, ...]]) is unwrapped, matching Python get_fields.
+func mergeHitFields(chunk, fields map[string]interface{}) {
+	for name, value := range fields {
+		if _, ok := chunk[name]; ok {
+			continue
+		}
+		if values, ok := value.([]interface{}); ok && len(values) == 1 {
+			if _, nested := values[0].([]interface{}); nested {
+				value = values[0]
+			}
+		}
+		chunk[name] = value
+	}
 }
 
 // parseOrderByExpr parses the OrderBy expression into ES sort format

@@ -5,7 +5,8 @@
   },
   "url_suffix": {
     "decision": "systemone",
-    "models": "models"
+    "models": "models",
+    "ocr": "documents/parse"
   },
   "class": "nace",
   "models": [
@@ -21,6 +22,24 @@
       "context_length": 262144,
       "model_types": [
         "decision"
+      ]
+    },
+    {
+      "name": "ndi-parse-high",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "ndi-parse-low",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "ndi-parse-medium",
+      "model_types": [
+        "ocr"
       ]
     }
   ]

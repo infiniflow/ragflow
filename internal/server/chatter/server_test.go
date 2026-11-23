@@ -22,7 +22,7 @@ import (
 )
 
 func TestRunRequiresSharedRuntimeCache(t *testing.T) {
-	err := Run(t.Context(), nil, nil)
+	err := Run(t.Context(), nil)
 	if err == nil || !strings.Contains(err.Error(), "requires Kvrocks") {
 		t.Fatalf("Run without Kvrocks = %v, want an explicit shared-status startup error", err)
 	}

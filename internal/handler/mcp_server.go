@@ -87,8 +87,8 @@ func (h *MCPServerHandler) NewStandalone(ctx context.Context, auth *AuthHandler,
 
 // HandleMCP is the Gin handler for the MCP endpoint. It reads the JSON-RPC
 // request body, creates a connector for the authenticated user, and returns
-// the JSON-RPC response. The endpoint is placed behind BetaAuthMiddleware
-// so the user is already resolved from the Authorization header.
+// the JSON-RPC response. The endpoint is placed behind AuthMiddleware so the
+// user is already resolved from a user token or API key.
 //
 // @Summary MCP Endpoint (JSON-RPC over HTTP)
 // @Tags mcp

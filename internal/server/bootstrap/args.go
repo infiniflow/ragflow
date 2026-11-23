@@ -22,14 +22,14 @@ package bootstrap
 // still receive the parsed arguments.
 type ServerArgs struct {
 	Mode          *string // admin | api | ingestor | syncer | chatter | deepdoc | migrate
-	HelpFlag      bool
-	VersionFlag   bool
+	HelpFlag      *bool   // show help
+	VersionFlag   *bool
 	LogLevel      *string
 	ConfigPath    *string      // Used by admin, api; user defined config path
 	InitSuperUser bool         // Used by admin;
 	Port          *int         // Used by admin, api
 	Name          *string      // server name
-	EnablePProf   bool         // enable pprof
+	EnablePProf   *bool        // enable pprof
 	Ready         func() error // called after service startup
 
 	// DeepdocInferenceConcurrency, when set, overrides the DeepDoc inference
@@ -38,20 +38,24 @@ type ServerArgs struct {
 	// DeepdocInferenceCPUCores, when set, overrides the DeepDoc inference CPU-core
 	// budget from env/config. nil means "unspecified" (0 means "all cores").
 	DeepdocInferenceCPUCores *int
+	// DeepdocDevice, when set, selects the DeepDoc inference device
+	// (cpu | gpu[:id]). The OSS build accepts only cpu; gpu fails fast at
+	// startup with a "not supported" error (GPU is enterprise-only).
+	DeepdocDevice *string
 	// IngestorTier, when set, restricts which ingestion lanes the ingestor
 	// consumes. nil means "unspecified" (default: the lowest-priority lane).
 	IngestorTier *string
 }
 
 // SelectedLogLevel resolves the effective log level: an explicit --log-level
-// (non-nil) wins, otherwise the configured level, otherwise "info".
+// (non-nil) wins, otherwise the configured level, otherwise "warn".
 func SelectedLogLevel(args *ServerArgs, configured string) string {
 	if args.LogLevel != nil {
 		return *args.LogLevel
 	}
 
 	if configured == "" {
-		return "info"
+		return "warn"
 	}
 
 	return configured

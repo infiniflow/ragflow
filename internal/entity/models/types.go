@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const defaultMaxRerankTokens = 8196
@@ -126,20 +128,32 @@ type TTSResponse struct {
 
 // OCRPage retains the source image dimensions and reading-order blocks.
 // Index is the zero-based source PDF page index, including blank pages.
+// A Normalized page gives block boxes as fractions (0-1) of the page instead
+// of source-image pixels, and leaves Width and Height zero.
 type OCRPage struct {
-	Index  int        `json:"index"`
-	Width  float64    `json:"width"`
-	Height float64    `json:"height"`
-	Blocks []OCRBlock `json:"blocks"`
+	Index      int        `json:"index"`
+	Width      float64    `json:"width"`
+	Height     float64    `json:"height"`
+	Normalized bool       `json:"normalized,omitempty"`
+	Blocks     []OCRBlock `json:"blocks"`
 }
 
-// OCRBlock carries a layout region in source-image pixels. BBox is
-// [left, top, right, bottom]; an absent box is unlocated. Drivers normalize
-// provider coordinates to this rectangle before returning blocks.
+// OCRBlock carries a layout region in source-image pixels, or in page
+// fractions on a Normalized page. BBox is [left, top, right, bottom]; an
+// absent box is unlocated. Drivers normalize provider coordinates to this
+// rectangle before returning blocks.
 type OCRBlock struct {
 	Text  string    `json:"text"`
 	Label string    `json:"label,omitempty"`
 	BBox  []float64 `json:"bbox,omitempty"`
+}
+
+// OCRBlockBody is the part of a block's text that the PDF projection
+// (parser.OCRPDFResult) indexes: the text without image markup, trimmed. The
+// projection drops a block whose body is empty unless it is a media region
+// with a usable position.
+func OCRBlockBody(text string) string {
+	return strings.TrimSpace(utility.StripMarkdownImages(text))
 }
 
 type OCRFileResponse struct {
@@ -302,10 +316,15 @@ type ChatConfig struct {
 	ModelClass       *string
 	Effort           *string
 	Verbosity        *string
-	Tools            interface{}               `json:"tools,omitempty"`
-	ToolChoice       *string                   `json:"tool_choice,omitempty"`
-	ToolChoiceValue  any                       `json:"-"`
-	ToolCallsResult  *[]map[string]interface{} `json:"-"`
+	// JSONMode asks an OpenAI-compatible provider for a JSON object reply
+	// (`response_format: {"type": "json_object"}`). Knowledge compilation sets
+	// it so a prose reply does not fail JSON parsing. nil leaves the request
+	// without response_format, as the provider default.
+	JSONMode        *bool
+	Tools           interface{}               `json:"tools,omitempty"`
+	ToolChoice      *string                   `json:"tool_choice,omitempty"`
+	ToolChoiceValue any                       `json:"-"`
+	ToolCallsResult *[]map[string]interface{} `json:"-"`
 	// UsageResult receives the token usage extracted from the final
 	// streaming chunk when stream_options.include_usage is true.
 	// The ChatStreamlyWithSender driver writes to this pointer (if
@@ -365,6 +384,9 @@ type OCRConfig struct {
 	// parser setup's "pages" shape. Empty means the whole document. Drivers
 	// whose backend cannot select pages ignore it.
 	Pages [][]int
+	// Timeout bounds the whole OCR call. Zero keeps the driver default.
+	// Drivers without a configurable deadline ignore it.
+	Timeout time.Duration
 }
 
 type ParseFileConfig struct {
@@ -383,13 +405,24 @@ type ParseFileConfig struct {
 // install the resolver at startup; the community build leaves it nil.
 var usageTemplateResolver func(info *ModelInfo, usage *common.ModelUsage) *common.ModelUsage
 
-// usageFor resolves the usage record for one call. The community build
-// forwards usage untouched.
+// usageFor resolves the usage record for one call and stamps the call start
+// time on it. The community build forwards usage untouched.
+//
+// Every typed model entry point (chat, stream, embed, rerank) funnels through
+// here exactly once, at the start of the call, so this is the one place that
+// can guarantee a usage row carries the time the call was made even when the
+// call site forgot to set StartAt (nil usage falling back to a template clone,
+// or an explicit record built without a timestamp). A non-zero StartAt set by
+// the caller is kept untouched.
 func usageFor(info *ModelInfo, usage *common.ModelUsage) *common.ModelUsage {
 	if usageTemplateResolver == nil {
 		return usage
 	}
-	return usageTemplateResolver(info, usage)
+	resolved := usageTemplateResolver(info, usage)
+	if resolved != nil && resolved.StartAt.IsZero() {
+		resolved.StartAt = time.Now()
+	}
+	return resolved
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration
