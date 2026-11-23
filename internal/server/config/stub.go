@@ -117,3 +117,15 @@ func (c *IngestLogConfig) ParseIngestLogConfig(v *viper.Viper) error { return ni
 func (c *IngestLogConfig) GetFileOutput() common.FileOutput {
 	return common.FileOutput{}
 }
+
+// CodexConfig configures the mode 8 Codex engine. The OSS build has no mode 8,
+// so the type exists only to satisfy the shared APIServerConfig field and the
+// derived-MCP-base helper; every site that reads it gets the zero value and the
+// engine stays disabled.
+type CodexConfig struct {
+	Endpoint      string
+	MCPPublicBase string
+}
+
+// parseCodexConfig ignores Codex configuration: the OSS build has no mode 8.
+func (c *Config) parseCodexConfig(v *viper.Viper) error { return nil }

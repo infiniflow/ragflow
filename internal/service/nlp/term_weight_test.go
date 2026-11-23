@@ -966,3 +966,28 @@ func TestWeightsDependOnlyOnTheTerm(t *testing.T) {
 		t.Errorf("a/hello = %v alone, %v when a repeats last", want, got)
 	}
 }
+
+// TestPretokenPunctPattern pins the fixture this package once carried as a
+// latent bug: the pattern must compile (the trailing "\\]" is an escaped
+// backslash plus the class terminator, not an escaped bracket), and it must be
+// anchored like Python's re.match so only a LEADING punctuation char collapses a
+// token to "#".
+func TestPretokenPunctPattern(t *testing.T) {
+	if rePretokenPunct == nil {
+		t.Fatal("rePretokenPunct is nil")
+	}
+
+	dropped := []string{",abc", "、x", "「引」", `\path`, "。好", "（括号）"}
+	for _, tok := range dropped {
+		if !rePretokenPunct.MatchString(tok) {
+			t.Errorf("%q must match (leading punctuation)", tok)
+		}
+	}
+
+	kept := []string{"刘备", "abc,", "世界。", "x}y", "hello"}
+	for _, tok := range kept {
+		if rePretokenPunct.MatchString(tok) {
+			t.Errorf("%q must NOT match (punctuation is not leading)", tok)
+		}
+	}
+}

@@ -23,11 +23,14 @@ import (
 	"fmt"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	serverconfig "ragflow/internal/server/config"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -168,4 +171,83 @@ func logChatCompletion(_ context.Context, _ *entity.Chat, _ []map[string]any, _ 
 
 func logAgentCompletion(_ context.Context, _, _ string, _ any, in <-chan canvas.RunEvent) <-chan canvas.RunEvent {
 	return in
+}
+
+// ── mode 8 (Codex) ───────────────────────────────────────────────────────────
+// The community edition ships no mode 8 engine: internal/codexagent, the MCP
+// bridge wiring and the Codex pipeline live in the *_ee.go files. These stubs
+// keep the shared dispatch compiling, and every mode-8 request degrades to the
+// regular pipeline because codexConfigured always reports false.
+
+// ── mode 8 (Codex) ───────────────────────────────────────────────────────────
+// The community edition ships no mode 8 engine: internal/codexagent, the MCP
+// bridge wiring and the Codex pipeline live in the *_ee.go files. These stubs
+// keep the shared dispatch compiling, and every mode-8 request degrades to the
+// regular pipeline because codexConfigured always reports false.
+
+// SetCodexConfig ignores the mode 8 configuration in the community edition.
+func SetCodexConfig(cfg *serverconfig.CodexConfig) {}
+
+// InstallCodexKVStore is a no-op in the community edition.
+func InstallCodexKVStore() {}
+
+// InstallCodexWebSearchResolver is a no-op in the community edition.
+func InstallCodexWebSearchResolver() {}
+
+// codexConfigured reports whether mode 8 can run. The community edition has no
+// Codex engine, so it is always false and the turn falls back to the pipeline.
+func codexConfigured() bool { return false }
+
+// cleanupCodexThread drops a session's Codex thread mapping. The community
+// edition never creates one, so this is a no-op.
+func cleanupCodexThread(ctx context.Context, sessionID string) {}
+
+// codexResponsesCapable reports whether the dialog model speaks the Responses
+// API. Unused in the community edition (mode 8 is never selected), but declared
+// so the shared dispatch compiles.
+func (s *ChatPipelineService) codexResponsesCapable(ctx context.Context, userID string, chat *entity.Chat) bool {
+	return false
+}
+
+// codexAgent runs one mode 8 turn. The community edition never reaches it:
+// codexConfigured() is false, so the dispatcher keeps the regular pipeline.
+func (s *ChatPipelineService) codexAgent(
+	ctx context.Context,
+	userID string,
+	chat *entity.Chat,
+	messages []map[string]interface{},
+	stream bool,
+	kwargs map[string]interface{},
+	useWebSearch bool,
+	quote bool,
+) (<-chan AsyncChatResult, error) {
+	return nil, fmt.Errorf("codex (mode 8) is not available in the community edition")
+}
+
+// iterativeSynthesis runs one mode 7 turn. The community edition has no
+// iterative-synthesis engine, so a level-7 request degrades to the regular RAG
+// pipeline: strip the reasoning level from the request so the dispatcher does
+// not re-select the missing engine, then run the ordinary chat path.
+func (s *ChatPipelineService) iterativeSynthesis(
+	ctx context.Context,
+	chat *entity.Chat,
+	messages []map[string]interface{},
+	stream bool,
+	kwargs map[string]interface{},
+	useWebSearch bool,
+	quote bool,
+) (<-chan AsyncChatResult, error) {
+	common.WarnCtx(ctx, "iterative synthesis (mode 7) requested in the community edition; using the regular pipeline",
+		zap.String("chat_id", chat.ID))
+	plain := make(map[string]interface{}, len(kwargs))
+	for k, v := range kwargs {
+		if k == "reasoning" {
+			continue
+		}
+		plain[k] = v
+	}
+	if useWebSearch {
+		ctx = agentic_rag.WithWebSearch(ctx, s.webSearchFunc(chat.PromptConfig))
+	}
+	return s.AsyncChat(ctx, chat, messages, stream, plain)
 }

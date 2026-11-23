@@ -28,7 +28,7 @@ import (
 func TestAsyncChatResultCostWireKeys(t *testing.T) {
 	result := AsyncChatResult{
 		Answer: "an answer",
-		Usage: &ChatTurnUsage{
+		Usage: &TurnUsage{
 			PromptTokens:     1200,
 			CompletionTokens: 340,
 			TotalTokens:      1540,
