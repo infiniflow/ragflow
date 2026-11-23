@@ -10,13 +10,15 @@ export const EmbeddingSelect = ({
   field,
   disabled = false,
   testId,
-  ownerTenantId,
+  resourceTenantId,
+  accessUserId,
 }: {
   isEdit: boolean;
   field: FieldValues;
   disabled?: boolean;
   testId?: string;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
+  accessUserId?: string;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const { checkKbEmbedding, checking } = useCheckKbEmbedding();
@@ -28,14 +30,15 @@ export const EmbeddingSelect = ({
         onChange={async (value) => {
           const oldValue = field.value;
           field.onChange(value);
-          if (isEdit && disabled) {
+          if (isEdit && disabled && value.trim()) {
             const res = await checkKbEmbedding(value);
             if (res?.code !== 0) {
               field.onChange(oldValue);
             }
           }
         }}
-        ownerTenantId={ownerTenantId}
+        resourceTenantId={resourceTenantId}
+        accessUserId={accessUserId}
         disabled={(disabled && !isEdit) || checking}
         value={field.value}
         placeholder={t('embeddingModelPlaceholder')}

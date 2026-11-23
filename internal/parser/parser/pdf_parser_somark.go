@@ -17,6 +17,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/parser/media"
+	"ragflow/internal/utility"
 )
 
 const soMarkPollTimeout = 30 * time.Minute
@@ -72,13 +73,13 @@ func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, pa
 		return "", fmt.Errorf("parser: SoMark write file: %w", err)
 	}
 	_ = writer.WriteField("output_formats", "json")
-	elementFormats, _ := json.Marshal(map[string]any{
+	elementFormats := utility.MustJSON(map[string]any{
 		"image":   parser.envOrDefault(common.EnvSOMarkImageFormat, parser.SoMarkImageFormat, "url"),
 		"formula": parser.envOrDefault(common.EnvSOMarkFormulaFormat, parser.SoMarkFormulaFormat, "latex"),
 		"table":   parser.envOrDefault(common.EnvSOMarkTableFormat, parser.SoMarkTableFormat, "html"),
 		"cs":      parser.envOrDefault(common.EnvSOMarkCSFormat, parser.SoMarkCSFormat, "image"),
 	})
-	featureConfig, _ := json.Marshal(map[string]any{
+	featureConfig := utility.MustJSON(map[string]any{
 		"enable_text_cross_page":         parser.envOrBool(common.EnvSOMarkEnableTextCrossPage, parser.SoMarkEnableTextCrossPage),
 		"enable_table_cross_page":        parser.envOrBool(common.EnvSOMarkEnableTableCrossPage, parser.SoMarkEnableTableCrossPage),
 		"enable_title_level_recognition": parser.envOrBool(common.EnvSOMarkEnableTitleLevelRecognition, parser.SoMarkEnableTitleLevelRecognition),
@@ -87,8 +88,8 @@ func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, pa
 		"enable_image_understanding":     parser.envOrBool(common.EnvSOMarkEnableImageUnderstanding, parser.SoMarkEnableImageUnderstanding),
 		"keep_header_footer":             parser.envOrBool(common.EnvSOMarkKeepHeaderFooter, parser.SoMarkKeepHeaderFooter),
 	})
-	_ = writer.WriteField("element_formats", string(elementFormats))
-	_ = writer.WriteField("feature_config", string(featureConfig))
+	_ = writer.WriteField("element_formats", elementFormats)
+	_ = writer.WriteField("feature_config", featureConfig)
 	if apiKey != "" {
 		_ = writer.WriteField("api_key", apiKey)
 	}

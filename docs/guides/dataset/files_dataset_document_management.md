@@ -4,7 +4,7 @@ title: "Files: Dataset Document Management"
 sidebar_label: "Files: Dataset Document Management"
 slug: /files_dataset_document_management
 sidebar_custom_props:
-  categoryIcon: LucideDatabaseZap
+  categoryIcon: LucideFiles
 ---
 
 # Files: Dataset Document Management

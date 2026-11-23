@@ -47,6 +47,9 @@ func TestModelFactoryIDAndNameShareValidation(t *testing.T) {
 				}
 			}
 			ctx := serviceTestContext(t, "user-1", "user-1")
+			if test.name == "foreign owner" {
+				revokeServiceTestResource(t, "user-1", "model_instance", "instance-1", "user-1")
+			}
 			factory := NewModelFactory()
 			for _, ref := range []string{"model-1", "gpt-test@default@OpenAI"} {
 				info, infoErr := factory.ResolveInfo(ctx, entity.ModelTypeChat, ref)

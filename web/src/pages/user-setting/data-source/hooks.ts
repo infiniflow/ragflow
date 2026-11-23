@@ -31,6 +31,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { RefObject, useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
+import { resolveEeDataSourceSource } from '@/ee/pages/user-setting/data-source/ee-extensions';
 import { DataSourceKey, useDataSourceInfo } from './constant';
 import {
   IDataSorceInfo,
@@ -40,9 +41,9 @@ import {
 } from './interface';
 
 const DataSourceKeys = {
-  list: (tenantId?: string) =>
-    tenantId
-      ? (['data-source', tenantId] as const)
+  list: (accessUserId?: string) =>
+    accessUserId
+      ? (['data-source', accessUserId] as const)
       : (['data-source'] as const),
   detail: (id?: string | null) => ['data-source-detail', id] as const,
   logs: (
@@ -53,14 +54,14 @@ const DataSourceKeys = {
   logsPrefix: (id?: string | null) => ['data-source-logs', id] as const,
 };
 
-export const useListDataSource = (tenantId?: string, enabled = true) => {
+export const useListDataSource = (accessUserId?: string, enabled = true) => {
   const { dataSourceInfo } = useDataSourceInfo();
   const { data: list, isFetching } = useQuery<IDataSource[]>({
-    queryKey: DataSourceKeys.list(tenantId),
+    queryKey: DataSourceKeys.list(accessUserId),
     enabled,
     queryFn: async () => {
       const { data } = await dataSourceService.dataSourceList(
-        tenantId ? { tenant_id: tenantId } : undefined,
+        accessUserId ? { access_user_id: accessUserId } : undefined,
       );
       return data.data;
     },
@@ -128,13 +129,15 @@ export const useAddDataSource = ({ isEdit = false }: { isEdit?: boolean }) => {
   const handleAddOk = useCallback(
     async (data: any) => {
       setAddLoading(true);
+      // The enterprise overlay may map the filled form to another backend source.
+      const payload = { ...data, source: resolveEeDataSourceSource(data) };
       try {
         const { data: res } = isEdit
-          ? await dataSourceUpdate(data.id, {
-              ...data,
+          ? await dataSourceUpdate(payload.id, {
+              ...payload,
               reschedule: true,
             })
-          : await dataSourceService.dataSourceSet(data);
+          : await dataSourceService.dataSourceSet(payload);
         if (res.code === 0) {
           if (isEdit && res.data?.id) {
             queryClient.setQueryData(
@@ -306,7 +309,8 @@ export const useTestDataSource = (
 
   const handleTest = useCallback(async () => {
     const values = formRef.current?.getFilteredValues();
-    const source = values?.source;
+    // The enterprise overlay may map the filled form to another backend source.
+    const source = resolveEeDataSourceSource(values);
     const connectorID = id || values?.id || connectorId || source;
     if (!connectorID || !source) return;
 

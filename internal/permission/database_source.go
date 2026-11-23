@@ -505,7 +505,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, kind ResourceKind
 			return nil, fmt.Errorf("%w: documents require a dataset parent scope", ErrInvalidPermission)
 		}
 		if err := s.db.WithContext(ctx).Model(&entity.Document{}).
-			Where("kb_id = ? AND status = ?", parent.ID, string(entity.StatusValid)).
+			Where("kb_id = ?", parent.ID).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
@@ -554,7 +554,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, kind ResourceKind
 			return nil, fmt.Errorf("%w: files and folders require a folder parent scope", ErrInvalidPermission)
 		}
 		parentQuery := s.db.WithContext(ctx).Model(&entity.File{}).
-			Where("id = ? AND tenant_id = ? AND type = ?", parent.ID, userID, "folder")
+			Where("id = ? AND type = ?", parent.ID, "folder")
 		var parentFile entity.File
 		if err := parentQuery.First(&parentFile).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -998,7 +998,7 @@ func (s *databaseSource) loadDocuments(ctx context.Context, ids []string) (map[s
 		return documentsByID, nil
 	}
 	query := s.db.WithContext(ctx).Model(&entity.Document{}).
-		Where("id IN ? AND status = ?", ids, string(entity.StatusValid))
+		Where("id IN ?", ids)
 	if s.lockRows {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
@@ -1049,8 +1049,11 @@ func (s *databaseSource) loadDatasets(ctx context.Context, ids []string) (map[st
 	return datasetsByID, ownerIDsByTenant, nil
 }
 
-func datasetResource(dataset *entity.Knowledgebase, ownerIDsByTenant map[string]string) Resource {
-	ownerUserID := ownerIDsByTenant[dataset.TenantID]
+func datasetResource(dataset *entity.Knowledgebase, _ map[string]string) Resource {
+	ownerUserID := strings.TrimSpace(dataset.UserID)
+	if ownerUserID == "" {
+		ownerUserID = strings.TrimSpace(dataset.CreatedBy)
+	}
 	visibility := VisibilityPrivate
 	switch dataset.Permission {
 	case string(entity.TenantPermissionMe):
@@ -1073,17 +1076,21 @@ func datasetResource(dataset *entity.Knowledgebase, ownerIDsByTenant map[string]
 
 func documentResource(document *entity.Document, dataset *entity.Knowledgebase, ownerIDsByTenant map[string]string) Resource {
 	datasetAccess := datasetResource(dataset, ownerIDsByTenant)
+	ownerUserID := strings.TrimSpace(document.UserID)
+	if ownerUserID == "" {
+		ownerUserID = strings.TrimSpace(document.CreatedBy)
+	}
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindDocument, ID: document.ID},
 		TenantID:          datasetAccess.TenantID,
 		CreatedBy:         document.CreatedBy,
-		OwnerUserID:       document.CreatedBy,
+		OwnerUserID:       ownerUserID,
 		Visibility:        datasetAccess.Visibility,
 		TenantRequirement: datasetAccess.TenantRequirement,
 		OwnerOperations:   datasetAccess.OwnerOperations,
 		TenantOperations:  datasetAccess.TenantOperations,
 		CreatorOperations: datasetAccess.CreatorOperations,
-		Active:            datasetAccess.Active && document.Status != nil && *document.Status == string(entity.StatusValid),
+		Active:            datasetAccess.Active,
 	}
 }
 
@@ -1124,10 +1131,14 @@ func memoryResource(memory *entity.Memory) Resource {
 	if memory.Permissions == string(entity.TenantPermissionTeam) {
 		visibility = VisibilityTenant
 	}
+	ownerUserID := memory.UserID
+	if ownerUserID == "" {
+		ownerUserID = memory.TenantID
+	}
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindMemory, ID: memory.ID},
 		TenantID:          memory.TenantID,
-		OwnerUserID:       memory.TenantID,
+		OwnerUserID:       ownerUserID,
 		Visibility:        visibility,
 		TenantRequirement: TenantMember,
 		OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse},
@@ -1137,10 +1148,14 @@ func memoryResource(memory *entity.Memory) Resource {
 }
 
 func chatResource(chat *entity.Chat) Resource {
+	ownerUserID := strings.TrimSpace(chat.UserID)
+	if ownerUserID == "" {
+		ownerUserID = chat.TenantID
+	}
 	return Resource{
 		Ref:             ResourceRef{Kind: ResourceKindChat, ID: chat.ID},
 		TenantID:        chat.TenantID,
-		OwnerUserID:     chat.TenantID,
+		OwnerUserID:     ownerUserID,
 		Visibility:      VisibilityPrivate,
 		OwnerOperations: []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationRun, OperationUse},
 		Active:          chat.Status != nil && *chat.Status == string(entity.StatusValid),
@@ -1148,11 +1163,15 @@ func chatResource(chat *entity.Chat) Resource {
 }
 
 func searchAppResource(searchApp *entity.Search) Resource {
+	ownerUserID := strings.TrimSpace(searchApp.UserID)
+	if ownerUserID == "" {
+		ownerUserID = strings.TrimSpace(searchApp.CreatedBy)
+	}
 	return Resource{
 		Ref:             ResourceRef{Kind: ResourceKindSearchApp, ID: searchApp.ID},
 		TenantID:        searchApp.TenantID,
 		CreatedBy:       searchApp.CreatedBy,
-		OwnerUserID:     searchApp.CreatedBy,
+		OwnerUserID:     ownerUserID,
 		Visibility:      VisibilityPrivate,
 		OwnerOperations: []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse},
 		Active:          searchApp.Status != nil && *searchApp.Status == string(entity.StatusValid),
@@ -1193,11 +1212,16 @@ func chatChannelResource(channel *entity.ChatChannel) Resource {
 }
 
 func connectorResource(connector *entity.Connector) Resource {
+	ownerUserID := connector.UserID
+	if ownerUserID == "" {
+		// In the community edition the legacy tenant ID is also the owner ID.
+		ownerUserID = connector.TenantID
+	}
 	ownerOperations := []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse}
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindConnector, ID: connector.ID},
 		TenantID:          connector.TenantID,
-		OwnerUserID:       connector.TenantID,
+		OwnerUserID:       ownerUserID,
 		Visibility:        VisibilityTenant,
 		TenantRequirement: TenantMember,
 		OwnerOperations:   ownerOperations,

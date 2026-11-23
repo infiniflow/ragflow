@@ -10,6 +10,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
 import { File } from 'lucide-react';
 import { useCallback } from 'react';
@@ -91,7 +92,7 @@ export function DataflowTimeline({ traceList }: DataflowTimelineProps) {
                             className="text-text-secondary text-xs space-x-2 py-2.5 !m-0"
                           >
                             <span className="whitespace-nowrap">
-                              {x.datetime}
+                              {formatDate(x.timestamp * 1000)}
                             </span>
                             {item.component_id !== 'END' && (
                               <span

@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import './register-react-devtools';
 import React from 'react';
 import { Inspector } from 'react-dev-inspector';
 import ReactDOM from 'react-dom/client';

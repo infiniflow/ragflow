@@ -313,3 +313,57 @@ func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
 		t.Fatalf("custom metadata should still be written even when built_in is off, got %v", svc.metaData)
 	}
 }
+
+func TestDocStateUpdater_ManagedMetadataClearsStaleKeysAndPreservesUserFields(t *testing.T) {
+	t.Run("re-parse removes stale managed keys and keeps user fields", func(t *testing.T) {
+		svc := &stubDocStateSvc{metaData: map[string]any{
+			"highest_degree":        "硕士",
+			"work_experience_years": 6.0,
+			"skills":                []string{"Go", "OldSkill"},
+			"interview_stage":       "二面",
+		}}
+		u := &docStateUpdater{docSvc: svc}
+		u.apply(t.Context(), &taskpkg.PipelineResult{
+			DocID: "doc-1",
+			Metadata: map[string]any{
+				"highest_degree": "硕士",
+				"skills":         []string{"Go", "Rust"},
+			},
+			ManagedMetadataKeys: []string{"highest_degree", "work_experience_years", "skills", "certificates"},
+		})
+		if !svc.setCalled {
+			t.Fatal("expected SetDocumentMetadata to be called")
+		}
+		if _, exists := svc.metaData["work_experience_years"]; exists {
+			t.Fatalf("stale work_experience_years must be deleted on re-parse, got %#v", svc.metaData)
+		}
+		if svc.metaData["interview_stage"] != "二面" {
+			t.Fatalf("user-maintained interview_stage must be preserved, got %#v", svc.metaData)
+		}
+		if !reflect.DeepEqual(svc.metaData["skills"], []string{"Go", "Rust"}) {
+			t.Fatalf("skills = %#v, want [Go Rust]", svc.metaData["skills"])
+		}
+	})
+
+	t.Run("all-empty re-parse still cleans stale managed keys", func(t *testing.T) {
+		svc := &stubDocStateSvc{metaData: map[string]any{
+			"work_experience_years": 5.0,
+			"interview_stage":       "终面",
+		}}
+		u := &docStateUpdater{docSvc: svc}
+		u.apply(t.Context(), &taskpkg.PipelineResult{
+			DocID:               "doc-1",
+			Metadata:            nil,
+			ManagedMetadataKeys: []string{"work_experience_years", "highest_degree"},
+		})
+		if !svc.setCalled {
+			t.Fatal("expected SetDocumentMetadata to be called when stale managed keys exist")
+		}
+		if _, exists := svc.metaData["work_experience_years"]; exists {
+			t.Fatalf("stale managed key must be cleared even when Metadata is empty: %#v", svc.metaData)
+		}
+		if svc.metaData["interview_stage"] != "终面" {
+			t.Fatalf("user-maintained key lost: %#v", svc.metaData)
+		}
+	})
+}

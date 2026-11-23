@@ -4,7 +4,7 @@ title: Flow Components
 sidebar_label: Flow Components
 slug: /flow_components
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideSplit
 }
 ---
 

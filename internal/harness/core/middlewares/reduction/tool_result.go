@@ -2,8 +2,10 @@ package reduction
 
 import (
 	"fmt"
+	"unicode/utf8"
 
 	"ragflow/internal/harness/core/schema"
+	"ragflow/internal/utility"
 )
 
 // TruncateToolResult truncates a tool result to the given max length.
@@ -12,12 +14,11 @@ func TruncateToolResult(result string, maxLen int) string {
 	if maxLen <= 0 || len(result) <= maxLen {
 		return result
 	}
-	// Truncate at rune boundary ([:maxLen] may split multi-byte chars).
-	runes := []rune(result)
-	if maxLen > len(runes) {
+	// Truncate at a rune boundary ([:maxLen] may split multi-byte chars).
+	if maxLen > utf8.RuneCountInString(result) {
 		return result
 	}
-	truncated := string(runes[:maxLen])
+	truncated := utility.TruncateRunes(result, maxLen)
 	return fmt.Sprintf("%s\n...(truncated %d bytes)", truncated, len(result)-len(truncated))
 }
 

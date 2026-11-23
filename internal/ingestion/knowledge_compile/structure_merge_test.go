@@ -324,12 +324,12 @@ func TestDatasetLevelStructureID_StableAndCaseInsensitive(t *testing.T) {
 }
 
 // TestKwdToVariant_MapsStructureSubKinds covers B1a: structure doc-level products
-// stamp their inferred compile kind verbatim (hypergraph/list/set/timeline/
+// stamp their inferred compile kind verbatim (hypergraph/list/set/
 // page_index/...), and KwdToVariant must reverse-map each to VariantStructure so
 // the reader does NOT drop them before the dataset-level merge / nav dispatch.
 func TestKwdToVariant_MapsStructureSubKinds(t *testing.T) {
 	for _, kwd := range []string{
-		"hypergraph", "list", "set", "timeline", "page_index",
+		"hypergraph", "list", "set", "page_index",
 		"session_essence", "session_graph", "knowledge_graph", "graph", "structure",
 	} {
 		v, err := KwdToVariant(kwd)

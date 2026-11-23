@@ -16,7 +16,11 @@
 
 package utility
 
-import "reflect"
+import (
+	"reflect"
+
+	"ragflow/internal/common"
+)
 
 // UpdateMetadataTo merges metadata into an existing metadata map.
 // String lists are merged and deduplicated; incoming scalars otherwise win.
@@ -142,13 +146,8 @@ func metadataStringList(v any) ([]string, bool) {
 
 // dedupeStrings removes duplicates while preserving order.
 func dedupeStrings(input []string) []string {
-	seen := make(map[string]struct{}, len(input))
-	out := make([]string, 0, len(input))
-	for _, s := range input {
-		if _, ok := seen[s]; !ok {
-			seen[s] = struct{}{}
-			out = append(out, s)
-		}
+	if input == nil {
+		return []string{}
 	}
-	return out
+	return common.Deduplicate(input)
 }

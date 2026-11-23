@@ -1,30 +1,19 @@
-import { AvatarUpload } from '@/components/avatar-upload';
+import { AvatarNameDescription } from '@/components/avatar-name-description';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import PageRankFormField from '@/components/page-rank-form-field';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import {
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import {
-  DESCRIPTION_MAX_LENGTH,
-  LanguageTranslationMap,
-} from '@/constants/common';
+import { LanguageTranslationMap } from '@/constants/common';
 import { useMemo } from 'react';
-import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useOwnerTenantId } from '../contexts/knowledge-base-context';
+import { showPermissionField } from '@/ee/constants/feature-flags';
+import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { EmbeddingModelItem } from './embedding-model-form-field';
 import { PermissionFormField } from './permission-form-field';
 
 export function GeneralForm() {
-  const form = useFormContext();
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
+  const { knowledgeBase } = useKnowledgeBaseContext();
+  const resourceTenantId = knowledgeBase?.tenant_id;
 
   const languageOptions = useMemo(() => {
     return Object.keys(LanguageTranslationMap).map((x) => ({
@@ -35,29 +24,9 @@ export function GeneralForm() {
 
   return (
     <>
-      <FormField
-        control={form.control}
-        name="name"
-        render={({ field }) => (
-          <FormItem className="items-center space-y-0">
-            <div className="flex">
-              <FormLabel className="text-sm whitespace-nowrap w-1/4">
-                <span className="text-red-600">*</span>
-                {t('common.name')}
-              </FormLabel>
-              <FormControl className="w-3/4">
-                <Input
-                  {...field}
-                  data-testid="ds-settings-basic-name-input"
-                ></Input>
-              </FormControl>
-            </div>
-            <div className="flex pt-1">
-              <div className="w-1/4"></div>
-              <FormMessage />
-            </div>
-          </FormItem>
-        )}
+      <AvatarNameDescription
+        avatarField="avatar"
+        descriptionPlaceholder={t('knowledgeConfiguration.datasetDescription')}
       />
       <div className="items-center">
         <RAGFlowFormItem
@@ -72,66 +41,11 @@ export function GeneralForm() {
           ></SelectWithSearch>
         </RAGFlowFormItem>
       </div>
-      <FormField
-        control={form.control}
-        name="avatar"
-        render={({ field }) => (
-          <FormItem className="items-center space-y-0">
-            <div className="flex">
-              <FormLabel className="text-sm  whitespace-nowrap w-1/4">
-                {t('setting.avatar')}
-              </FormLabel>
-              <FormControl className="w-3/4">
-                <AvatarUpload
-                  {...field}
-                  uploadInputTestId="ds-settings-basic-avatar-upload"
-                  cropModalTestId="ds-settings-basic-avatar-crop-modal"
-                  cropModalOkButtonTestId="ds-settings-basic-avatar-crop-confirm-btn"
-                ></AvatarUpload>
-              </FormControl>
-            </div>
-            <div className="flex pt-1">
-              <div className="w-1/4"></div>
-              <FormMessage />
-            </div>
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name="description"
-        render={({ field }) => {
-          // null initialize empty string
-          if (typeof field.value === 'object' && !field.value) {
-            form.setValue('description', '');
-          }
-          return (
-            <FormItem className="items-center space-y-0">
-              <div className="flex">
-                <FormLabel className="text-sm  whitespace-nowrap w-1/4">
-                  {t('flow.description')}
-                </FormLabel>
-                <FormControl className="w-3/4">
-                  <Input
-                    {...field}
-                    maxLength={DESCRIPTION_MAX_LENGTH}
-                    placeholder={t('knowledgeConfiguration.datasetDescription')}
-                    data-testid="ds-settings-basic-description-input"
-                  ></Input>
-                </FormControl>
-              </div>
-              <div className="flex pt-1">
-                <div className="w-1/4"></div>
-                <FormMessage />
-              </div>
-            </FormItem>
-          );
-        }}
-      />
-      <PermissionFormField></PermissionFormField>
+      {showPermissionField && <PermissionFormField></PermissionFormField>}
       <EmbeddingModelItem
         isEdit={true}
-        ownerTenantId={ownerTenantId}
+        resourceTenantId={resourceTenantId}
+        accessUserId={knowledgeBase?.user_id}
       ></EmbeddingModelItem>
       <PageRankFormField></PageRankFormField>
     </>

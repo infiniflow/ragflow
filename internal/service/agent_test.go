@@ -784,9 +784,7 @@ func TestRunAgentRejectsUntrustedSessionContinuation(t *testing.T) {
 // follow-up: when loadCanvasForUser's underlying DAO surfaces a
 // real DB error (NOT the ErrUserCanvasNotFound sentinel), RunAgent
 // must return an error wrapped with ErrAgentStorageError so the
-// handler maps it to CodeServerError (500) with a sanitized
-// message — the raw DAO string (DSN, table name, etc.) MUST NOT
-// reach the client.
+// handler maps it to CodeServerError (500) with the underlying cause.
 //
 // We simulate a real DB failure by closing the underlying sql.DB
 // connection mid-test. The next query against the test SQLite DB
@@ -845,19 +843,13 @@ func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
 	if !errors.Is(err, ErrAgentStorageError) {
 		t.Errorf("expected ErrAgentStorageError in chain, got %v", err)
 	}
-	// The raw "sql: database is closed" / gorm error text must
-	// not be in the user-facing message — the handler's
-	// mapAgentError returns a sanitized message, but we pin the
-	// contract at the service layer too: the error wraps the
-	// sentinel, and a wrapping chain that includes
-	// ErrAgentStorageError means the handler will sanitize.
 }
 
 // TestLoadCanvasForUser_StorageErrorWrap pins the same wrapping
 // contract at the loadCanvasForUser level (not just through
 // RunAgent). loadCanvasForUser is shared by GetAgent, UpdateAgent,
 // DeleteAgent, PublishAgent, ListVersions, GetVersion, and
-// Session cancellation — sanitising its DAO errors closes the leak in all
+// Session cancellation — its DAO errors retain the same classification in all
 // eight call sites.
 func TestLoadCanvasForUser_StorageErrorWrap(t *testing.T) {
 	testDB := setupServiceTestDB(t)
@@ -1261,6 +1253,9 @@ func TestAgentModelValidationUsesCanvasTenant(t *testing.T) {
 	const creatorID = "creator-user"
 	const tenantOwnerID = "tenant-owner"
 	valid := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Tenant{ID: tenantID, ParserIDs: ""}).Error; err != nil {
+		t.Fatalf("create Tenant: %v", err)
+	}
 	if err := dao.DB.Exec("INSERT INTO user (id, email, nickname) VALUES (?, ?, ?)", tenantOwnerID, "owner@example.test", "Tenant owner").Error; err != nil {
 		t.Fatalf("create tenant owner: %v", err)
 	}
@@ -2112,6 +2107,9 @@ func TestCreateAgentDedupesDuplicateTitle(t *testing.T) {
 func seedAgentServiceCreateContext(t *testing.T) context.Context {
 	t.Helper()
 	active := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Tenant{ID: "tenant-agent", ParserIDs: ""}).Error; err != nil {
+		t.Fatalf("create agent Tenant: %v", err)
+	}
 	if err := dao.DB.Create(&entity.User{ID: "user-1", Email: "user-1@example.test", Nickname: "user-1"}).Error; err != nil {
 		t.Fatalf("create agent owner: %v", err)
 	}
@@ -2540,8 +2538,8 @@ func TestListAgents_MultiCategoryFilter(t *testing.T) {
 // TestListAgents_MergesCompilationTemplateGroups verifies that a compilation
 // template group owned by the caller appears in the merged /agents list
 // (no canvas_category filter), carrying the "compilation_template_group" type
-// discriminator and its title = name. Groups without the caller's tenant
-// ownership must NOT leak in.
+// discriminator and its title = name. Groups owned by another user or tenant
+// must NOT leak in.
 func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
@@ -2553,14 +2551,27 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	}
 	// Agent updated most recently (canvasUpdate > groupUpdate).
 	if err := dao.DB.Create(&entity.UserCanvas{
-		ID: "canvas-1", UserID: "user-1", Title: sptr("Agent canvas"),
+		ID: "canvas-1", UserID: "user-1", TenantID: sptr("tenant-1"), Title: sptr("Agent canvas"),
 		CanvasCategory: "agent_canvas",
 		BaseModel:      entity.BaseModel{CreateTime: &canvasUpdate, UpdateTime: &canvasUpdate},
 	}).Error; err != nil {
 		t.Fatalf("failed to seed agent: %v", err)
 	}
+	if err := dao.DB.AutoMigrate(&entity.Tenant{}); err != nil {
+		t.Fatalf("failed to migrate Tenant: %v", err)
+	}
+	valid := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Tenant{ID: "tenant-1", Status: &valid}).Error; err != nil {
+		t.Fatalf("failed to seed tenant: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "agent-list-owner-membership", UserID: "user-1", TenantID: "tenant-1",
+		Role: string(permission.RoleOwner), Status: &valid,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed owner membership: %v", err)
+	}
 	// The caller's own group (must appear), updated before the canvas.
-	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", groupUpdate)
+	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", "tenant-1", groupUpdate)
 	// An unowned group with empty tenant_id (must NOT appear).
 	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
 		ID: "group-builtin", TenantID: "", Name: "Built-in templates",
@@ -2569,7 +2580,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 		t.Fatalf("failed to seed builtin group: %v", err)
 	}
 
-	resp, code, err := NewAgentService().ListAgents(serviceTestContext(t, "user-1", "user-1"), "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "", "", nil)
+	resp, code, err := NewAgentService().ListAgents(serviceTestContext(t, "user-1", "tenant-1"), "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "", "", nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
 	}
@@ -2665,10 +2676,10 @@ func TestSlicePage_NoOverflowPanic(t *testing.T) {
 	}
 }
 
-func createAgentSessionTestCompilationGroup(t *testing.T, id, tenantID string, now int64) {
+func createAgentSessionTestCompilationGroup(t *testing.T, id, ownerUserID, tenantID string, now int64) {
 	t.Helper()
 	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
-		ID: id, TenantID: tenantID, Name: "own-group", Scope: "file",
+		ID: id, UserID: ownerUserID, TenantID: tenantID, Name: "own-group", Scope: "file",
 		BaseModel: entity.BaseModel{CreateTime: &now, UpdateTime: &now},
 	}).Error; err != nil {
 		t.Fatalf("failed to seed group %s: %v", id, err)

@@ -18,8 +18,10 @@ package chunker
 
 import (
 	"context"
-	"ragflow/internal/ingestion/component/schema"
+	"encoding/json"
 	"testing"
+
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // oneChunksOf drives OneChunker.Invoke and returns the emitted chunk maps.
@@ -167,5 +169,95 @@ func TestOneChunkerKeepsImgIDForTextlessItem(t *testing.T) {
 	}
 	if chunks[0]["img_id"] != "kb-1-chunk-1" {
 		t.Fatalf("img_id = %v, want kb-1-chunk-1", chunks[0]["img_id"])
+	}
+}
+
+func TestOneChunker_MultiItemMergesPDFPositions(t *testing.T) {
+	chunks := oneChunksOf(t, map[string]any{
+		"name":          "resume.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{
+				"text":           "Page 2 experience",
+				"_pdf_positions": [][]float64{{2, 20, 200, 40, 80}},
+				"positions":      [][]float64{{2, 20, 200, 40, 80}},
+			},
+			{
+				"text":           "Page 1 header",
+				"_pdf_positions": [][]float64{{1, 10, 200, 10, 30}, {2, 20, 200, 40, 80}},
+				"positions":      [][]float64{{1, 10, 200, 10, 30}, {3, 0, 0, 0, 0}},
+			},
+		},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+	pdfRows, ok := chunks[0]["_pdf_positions"].([][]float64)
+	if !ok {
+		t.Fatalf("_pdf_positions type = %T, want [][]float64", chunks[0]["_pdf_positions"])
+	}
+	if len(pdfRows) != 2 || pdfRows[0][0] != 1 || pdfRows[1][0] != 2 {
+		t.Fatalf("_pdf_positions = %v, want sorted deduplicated page 1 then page 2", pdfRows)
+	}
+	posRows, ok := chunks[0]["positions"].([][]float64)
+	if !ok {
+		t.Fatalf("positions type = %T, want [][]float64", chunks[0]["positions"])
+	}
+	if len(posRows) != 3 {
+		t.Fatalf("positions rows = %v, want 3 rows", posRows)
+	}
+}
+
+func TestOneChunker_MultiItemSpreadsheetSkipsPDFPositions(t *testing.T) {
+	chunks := oneChunksOf(t, map[string]any{
+		"name":          "sheet.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "row 1", "sheet": "Sheet1", "positions": [][]float64{{1, 0, 1, 0, 2}}},
+			{"text": "row 2", "sheet": "Sheet1", "positions": [][]float64{{1, 1, 2, 0, 2}}},
+		},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+	if _, exists := chunks[0]["positions"]; exists {
+		t.Fatalf("spreadsheet positions should not be merged as PDF positions: %v", chunks[0]["positions"])
+	}
+}
+
+func TestOneChunker_NonPDFSkipsPDFPositionsAndRejectsMalformedFlatPositions(t *testing.T) {
+	nonPDF := oneChunksOf(t, map[string]any{
+		"name":          "notes.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "para 1", "_pdf_positions": [][]float64{{1, 10, 100, 10, 30}}},
+			{"text": "para 2", "_pdf_positions": [][]float64{{2, 10, 100, 40, 60}}},
+		},
+	})
+	if len(nonPDF) != 1 {
+		t.Fatalf("want 1 non-PDF chunk, got %d", len(nonPDF))
+	}
+	if _, exists := nonPDF[0]["_pdf_positions"]; exists {
+		t.Fatalf("non-PDF chunk should not merge _pdf_positions: %v", nonPDF[0]["_pdf_positions"])
+	}
+
+	if got := mergeRawPositionMatrix(json.RawMessage(`[1, 10, 100, 20, 80, 999]`)); got != nil {
+		t.Fatalf("6-element flat position array should be rejected, got %s", got)
+	}
+	gotValid := mergeRawPositionMatrix(
+		json.RawMessage(`[[1, 10, 100, 20, 80], [2, 1, 2, 3, 4, 5]]`),
+	)
+	if string(gotValid) != `[[1,10,100,20,80]]` {
+		t.Fatalf("mergeRawPositionMatrix mixed valid/malformed = %s, want [[1,10,100,20,80]]", gotValid)
+	}
+	gotMalformedFirst := mergeRawPositionMatrix(
+		json.RawMessage(`[1, 10, 100, 20, 80, 999]`),
+		json.RawMessage(`[1, 10, 100, 20, 80]`),
+	)
+	if string(gotMalformedFirst) != `[[1,10,100,20,80]]` {
+		t.Fatalf("malformed row before valid row = %s, want [[1,10,100,20,80]]", gotMalformedFirst)
 	}
 }

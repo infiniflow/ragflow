@@ -27,6 +27,7 @@ import (
 // @Tags agents
 // @Produce json
 // @Param category query string true "Canvas category" Enums(dataflow,agent)
+// @Param access_user_id query string false "Resource owner user ID"
 // @Success 200 {array} service.AgentVersionCatalogItem
 // @Router /api/v1/agents/versions [get]
 func (h *AgentHandler) ListVersionCatalog(c *gin.Context) {
@@ -44,7 +45,7 @@ func (h *AgentHandler) ListVersionCatalog(c *gin.Context) {
 		common.RespondError(c, common.CodeBadRequest, "category must be dataflow or agent")
 		return
 	}
-	items, err := h.agentService.ListVersionCatalog(c.Request.Context(), canvasCategory)
+	items, err := h.agentService.ListVersionCatalog(c.Request.Context(), canvasCategory, c.Query("access_user_id"))
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return

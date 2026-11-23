@@ -15,7 +15,7 @@ type IProps = {
   isCreate?: boolean;
 };
 export const AddOrEditModal = memo(function AddOrEditModal(props: IProps) {
-  const { open, onClose, onSubmit, initialMemory, isCreate } = props;
+  const { open, onClose, onSubmit, initialMemory, isCreate, loading } = props;
   const { t } = useTranslation();
   // const { modelOptions } = useModelOptions();
 
@@ -57,6 +57,7 @@ export const AddOrEditModal = memo(function AddOrEditModal(props: IProps) {
       }
       showfooter={false}
       confirmLoading={props.loading}
+      maskClosable={false}
     >
       <DynamicForm.Root
         fields={fields}
@@ -66,8 +67,9 @@ export const AddOrEditModal = memo(function AddOrEditModal(props: IProps) {
         <div className="flex justify-end gap-2 pb-5">
           <DynamicForm.CancelButton handleCancel={onClose} />
           <DynamicForm.SavingButton
-            submitLoading={props.loading}
+            submitLoading={!!loading}
             submitFunc={(data) => {
+              if (loading) return;
               onSubmit?.(data);
             }}
           />

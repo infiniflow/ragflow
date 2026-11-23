@@ -78,6 +78,7 @@ export const API_KEY_GATED_LIST_PROVIDERS: string[] = [
   LLMFactory.DaoXE,
   LLMFactory.RadeonCloud,
   LLMFactory.DemonRoute,
+  LLMFactory.WorldRouter,
 ];
 
 // ---------------------------------------------------------------------------

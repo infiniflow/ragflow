@@ -18,7 +18,7 @@ export const getDataSourceLogsTableColumns = ({
 }: {
   now: number;
   showDatasetColumn?: boolean;
-  handleToDataSetDetail?: (id: string) => void;
+  handleToDataSetDetail?: (id: string) => () => void;
 }): ColumnDef<IDataSourceLog>[] => {
   const columns: ColumnDef<IDataSourceLog>[] = [
     {
@@ -55,9 +55,7 @@ export const getDataSourceLogsTableColumns = ({
       cell: ({ row }) => (
         <div
           className="flex items-center gap-2 text-text-primary cursor-pointer"
-          onClick={() => {
-            handleToDataSetDetail?.(row.original.kb_id);
-          }}
+          onClick={handleToDataSetDetail?.(row.original.kb_id)}
         >
           <RAGFlowAvatar
             avatar={row.original.avatar}

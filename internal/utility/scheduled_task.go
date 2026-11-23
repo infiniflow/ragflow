@@ -32,6 +32,7 @@ type ScheduledTask struct {
 	Interval  time.Duration
 	Job       func()
 	stop      chan struct{}
+	done      chan struct{}
 	mu        sync.Mutex
 	running   bool
 	executing int32 // atomic flag: 0 - not executed, 1 running
@@ -55,12 +56,15 @@ func (t *ScheduledTask) Start() {
 	}
 	stop := make(chan struct{})
 	t.stop = stop
+	done := make(chan struct{})
+	t.done = done
 	t.running = true
 	t.mu.Unlock()
 
 	t.runSafely()
 
 	go func(stop <-chan struct{}) {
+		defer close(done)
 		ticker := time.NewTicker(t.Interval)
 		defer ticker.Stop()
 
@@ -117,4 +121,14 @@ func (t *ScheduledTask) Stop() {
 // IsExecuting returns whether the task is currently executing
 func (t *ScheduledTask) IsExecuting() bool {
 	return atomic.LoadInt32(&t.executing) == 1
+}
+
+// Wait joins the task loop after Stop, including an in-flight job.
+func (t *ScheduledTask) Wait() {
+	t.mu.Lock()
+	done := t.done
+	t.mu.Unlock()
+	if done != nil {
+		<-done
+	}
 }

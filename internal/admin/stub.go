@@ -26,7 +26,6 @@ import (
 	"ragflow/internal/server"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // SetupEERouter adds no enterprise middleware in the community edition.
@@ -35,6 +34,10 @@ func SetupEERouter(engine *gin.Engine) {}
 // RegisterEERouter registers no enterprise admin routes in the community
 // edition.
 func RegisterEERouter(protected *gin.RouterGroup, r *Router) {}
+
+func checkAdminPasswordChangeTarget(_, _ string) error { return nil }
+
+func passwordChangeErrorCode(_ error) common.ErrorCode { return common.CodeServerError }
 
 // AppendServiceList adds no enterprise service entries.
 func AppendServiceList(serviceInfos []*common.BaseMessage) []*common.BaseMessage {
@@ -46,7 +49,7 @@ func (s *Service) GetEEServicesStatus(ctx context.Context) []ServiceStatus { ret
 
 // ListUsersEE reports that per-user billing and quota filters are an
 // enterprise capability.
-func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name string, status, role, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, int64, error) {
+func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name string, status, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, int64, error) {
 	return nil, 0, errors.New("listing users with plan and quota filters is only available in the enterprise edition")
 }
 
@@ -72,8 +75,4 @@ func InitLicense(ctx context.Context) error { return nil }
 // expiry to watch.
 func CheckServicePeriodically() {
 	GlobalServerStore.CleanupStaleStatuses(server.GetConfig().GetHeartbeatInterval() * 10)
-}
-
-func deleteEvaluationsEE(context.Context, *gorm.DB, string, string, *DeleteUserResult) error {
-	return nil
 }
