@@ -19,6 +19,7 @@ package router
 import (
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+	"ragflow/internal/mcp"
 
 	"github.com/gin-gonic/gin"
 )
@@ -150,6 +151,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
+
+	// mode 8 Codex MCP bridge. Authenticated by the per-thread ticket carried in the
+	// path, not by a user token: the shared Codex server (not a browser) calls this, and
+	// the ticket scopes every call to one tenant + knowledge-base set. See
+	// docs/develop/mode-8-codex-mcp-agent.md.
+	engine.Any("/mcp/codex/:token", gin.WrapH(mcp.NewCodexHandler(mcp.DefaultCodexTickets())))
 
 	apiNoAuth := engine.Group("/api/v1")
 	{

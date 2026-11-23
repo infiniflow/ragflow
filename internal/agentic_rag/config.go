@@ -36,18 +36,29 @@ import (
 
 // Template is one agent configuration: its identity plus the tunables that were
 // previously hardcoded — the system prompt (content) and the ordered tool set.
-// Putting these in a file lets operators experiment with different prompts
+// Putting these in a JSON file lets operators experiment with different prompts
 // and tool subsets without recompiling (or even restarting) RAGFlow.
+//
+// AuditMaxPass is how many audit passes the delivery gate may spend on a
+// template's FINAL message: one pass = one answer_auditor audit plus, on FAIL,
+// one repair turn. It is both the switch and the budget — 0 (or absent) means
+// the template ships unaudited, so a template opts into the gate by naming how
+// much it is willing to spend rather than by a separate boolean.
+//
+// The auditor is kept out of the agent's toolset on purpose: the agent only
+// produces the deliverable, the gate runs the audit (see runDeliveryGate).
 type Template struct {
-	ID          string `json:"id" yaml:"id"`
-	Name        string `json:"name" yaml:"name"`
-	Description string `json:"description" yaml:"description"`
+	ID           string `json:"id" yaml:"id"`
+	Name         string `json:"name" yaml:"name"`
+	Description  string `json:"description" yaml:"description"`
+	AuditMaxPass int    `json:"audit_max_pass" yaml:"audit_max_pass"`
 	// Temperature pins the sampling temperature of the model this agent runs
-	// on. A producer's declaration is the operator's reasoning-strategy choice
-	// for that template - smart-reasoning pins 0.5 after the un-pinned
-	// model-default runs proved noisier than the exploration its sampling
-	// buys. An undeclared template leaves the field unset: the model's own
-	// default applies.
+	// on. The auditor's declaration is noise control in a machine-parsed
+	// verdict (see AuditTemperature); a producer's declaration is the
+	// operator's reasoning-strategy choice for that template - smart-reasoning
+	// pins 0.5 after the un-pinned model-default runs proved noisier than the
+	// exploration its sampling buys. An undeclared template leaves the field
+	// unset: the model's own default applies.
 	Temperature   *float64 `json:"temperature" yaml:"temperature"`
 	Tools         []string `json:"tools" yaml:"tools"`
 	Content       string   `json:"content" yaml:"content"`
@@ -56,7 +67,7 @@ type Template struct {
 }
 
 // configFile is the on-disk shape: a plain list of templates. Which template
-// runs is decided solely by each request's agent_mode (see resolveTemplateFor).
+// runs is decided by the caller, which names an id (see resolveTemplateFor).
 // The yaml tags are required: without them yaml.v3 matches field names
 // case-insensitively rather than via snake_case keys.
 type configFile struct {
@@ -70,17 +81,23 @@ type toolFactory func(tenantID string, datasetIDs []string) tool.BaseTool
 
 // toolRegistry maps every supported tool name to its constructor. Keeping this
 // here means adding a new tool is a one-line registration, and the config drives
-// which subset is actually loaded. web_search is NOT in this map and must not
-// appear in a template's tools list: toolsFor adds it when the conversation
-// has a search provider.
+// which subset is actually loaded. The answer_auditor is NOT in this map and must
+// not appear in a template's tools list: it wraps a nested ADK sub-agent bound to
+// the run's chat model and is assembled by Run for templates that declare
+// audit_max_pass > 0 — the delivery gate invokes it, not the agent. web_search is
+// NOT in this map either: toolsFor adds it when the conversation has a search
+// provider.
 func toolRegistry() map[string]toolFactory {
 	return map[string]toolFactory{
-		"think":              func(_ string, _ []string) tool.BaseTool { return NewThinkTool() },
-		"todo_write":         func(_ string, _ []string) tool.BaseTool { return NewTodoWriteTool() },
-		"run_javascript":     func(_ string, _ []string) tool.BaseTool { return NewRunJavascriptTool() },
-		"grep_chunks":        func(t string, d []string) tool.BaseTool { return NewGrepChunksTool(t, d) },
-		"search_chunks":      func(t string, d []string) tool.BaseTool { return NewSearchChunksTool(t, d) },
-		"search_bm25_chunks": func(t string, d []string) tool.BaseTool { return NewSearchBm25ChunksTool(t, d) },
+		"think":          func(_ string, _ []string) tool.BaseTool { return NewThinkTool() },
+		"todo_write":     func(_ string, _ []string) tool.BaseTool { return NewTodoWriteTool() },
+		"run_javascript": func(_ string, _ []string) tool.BaseTool { return NewRunJavascriptTool() },
+		// The draft decomposition's structural check: header-only, deterministic
+		// and callable before any search (see tool_check_decomposition.go).
+		"check_decomposition": func(_ string, _ []string) tool.BaseTool { return NewCheckDecompositionTool() },
+		"grep_chunks":         func(t string, d []string) tool.BaseTool { return NewGrepChunksTool(t, d) },
+		"search_chunks":       func(t string, d []string) tool.BaseTool { return NewSearchChunksTool(t, d) },
+		"search_bm25_chunks":  func(t string, d []string) tool.BaseTool { return NewSearchBm25ChunksTool(t, d) },
 		// The pure-vector leg: same payload as search_chunks, no keyword leg at
 		// all (see tool_search_semantic_chunks.go).
 		"search_semantic_chunks": func(t string, d []string) tool.BaseTool { return NewSearchSemanticChunksTool(t, d) },
@@ -181,14 +198,14 @@ func GetConfigFile() *configFile {
 	return cachedFile
 }
 
-// resolveTemplateFor returns the template whose id was explicitly requested
-// (from the request's agent_mode). There is intentionally no default_id, env
-// override, or first-template fallback: if the request does not name an id
-// that exists in conf/agentic_rag.yaml, this is a hard error so misconfiguration
-// surfaces loudly instead of silently running a different agent.
+// resolveTemplateFor returns the template with the requested id. There is
+// intentionally no default_id, env override, or first-template fallback: a caller
+// that names an id conf/agentic_rag.yaml does not carry is a hard error, so a
+// renaming or a deletion surfaces loudly instead of silently running a different
+// agent.
 func resolveTemplateFor(id string) (Template, error) {
 	if id == "" {
-		return Template{}, errors.New("agentic_rag: no template requested (empty agent_mode)")
+		return Template{}, errors.New("agentic_rag: empty agent_mode (no template requested; empty template id)")
 	}
 	if f := GetConfigFile(); f != nil {
 		for _, t := range f.Templates {

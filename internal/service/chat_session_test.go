@@ -360,7 +360,7 @@ func TestChatCompletionsPersistsAnswerDetailsForHistory(t *testing.T) {
 					final.AnswerIsAuthoritative = true
 				}
 				if withCost {
-					final.Usage = &ChatTurnUsage{PromptTokens: 896, CompletionTokens: 71, TotalTokens: 967}
+					final.Usage = &TurnUsage{PromptTokens: 896, CompletionTokens: 71, TotalTokens: 967}
 					final.ElapsedMs = 4168.774506
 				}
 				pipeline := &fakePipeline{resultChan: makeResultChan(
@@ -2032,6 +2032,95 @@ func TestChatCompletions_CancelledNonStreamDoesNotPersistBlankTurn(t *testing.T)
 			if hu.Message["role"] == "assistant" {
 				t.Fatalf("assistant message should not be persisted on cancelled context: %v", hu.Message)
 			}
+		}
+	}
+}
+
+func TestDisplayTextKeepsStreamedReasoning(t *testing.T) {
+	raw := "<think>hmm</think>\n\n答案"
+	if got, want := displayText(raw, "答案 [ID:0]"), "<think>hmm</think>\n\n答案 [ID:0]"; got != want {
+		t.Fatalf("displayText = %q, want %q", got, want)
+	}
+	// A final answer that already carries think tags is used verbatim.
+	if got := displayText(raw, "<think>x</think>y"); got != "<think>x</think>y" {
+		t.Fatalf("displayText = %q", got)
+	}
+	// An empty final answer leaves the streamed text.
+	if got := displayText(raw, ""); got != raw {
+		t.Fatalf("displayText = %q, want the raw text", got)
+	}
+}
+
+func TestMessagesForDisplayPrefersPresentationCopy(t *testing.T) {
+	msgs := []map[string]interface{}{
+		{"role": "user", "content": "q"},
+		{"role": "assistant", "content": "raw chunk_id: c1", "content_display": "答案 [ID:0]"},
+	}
+	got := messagesForDisplay(msgs)
+	if got[1]["content"] != "答案 [ID:0]" {
+		t.Fatalf("content = %v, want the presentation copy", got[1]["content"])
+	}
+	if _, ok := got[1]["content_display"]; ok {
+		t.Fatal("content_display must not leak to the client")
+	}
+	if got[0]["content"] != "q" {
+		t.Fatalf("a message without a copy must be unchanged: %v", got[0]["content"])
+	}
+}
+
+// TestSSEMarshalChunkCarriesTurnAccounting pins that the STREAM serializer copies the
+// turn's accounting. It builds a fixed struct, so a field the producer sets and this
+// forgets never reaches the live client — token usage reached a non-streamed benchmark
+// while the UI (which streams) never saw it.
+func TestSSEMarshalChunkCarriesTurnAccounting(t *testing.T) {
+	ans := map[string]interface{}{
+		"answer":           "hi",
+		"final":            true,
+		"usage":            &TurnUsage{PromptTokens: 10, CompletionTokens: 2, TotalTokens: 12, LLMCalls: 3},
+		"elapsed_seconds":  float64(4.5),
+		"tool_call_counts": map[string]int{"search_bm25_chunks": 2},
+		"retrieved_docids": []string{"d1"},
+		"deep_read_chunks": 7,
+		"compactions":      1,
+	}
+	var wrapper struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(sseMarshalChunk(ans, "chat-1")), &wrapper); err != nil {
+		t.Fatalf("chunk is not JSON: %v", err)
+	}
+	d := wrapper.Data
+	if d["usage"] == nil {
+		t.Error("stream chunk lost usage")
+	}
+	if got, _ := d["elapsed_seconds"].(float64); got != 4.5 {
+		t.Errorf("elapsed_seconds = %v, want 4.5", d["elapsed_seconds"])
+	}
+	if d["tool_call_counts"] == nil || d["retrieved_docids"] == nil {
+		t.Errorf("stream chunk lost retrieval accounting: %v", d)
+	}
+	if got, _ := d["deep_read_chunks"].(float64); got != 7 {
+		t.Errorf("deep_read_chunks = %v, want 7", d["deep_read_chunks"])
+	}
+	// Mode 8's context-compaction count rides the final chunk too; the fixed struct
+	// drops any field not copied here.
+	if got, _ := d["compactions"].(float64); got != 1 {
+		t.Errorf("compactions = %v, want 1", d["compactions"])
+	}
+	if got, _ := d["final"].(bool); !got {
+		t.Error("final flag lost")
+	}
+
+	// A plain delta must not grow an empty accounting block.
+	var plain struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(sseMarshalChunk(map[string]interface{}{"answer": "x"}, "")), &plain); err != nil {
+		t.Fatalf("chunk is not JSON: %v", err)
+	}
+	for _, k := range []string{"usage", "elapsed_seconds", "tool_call_counts", "rounds"} {
+		if _, present := plain.Data[k]; present {
+			t.Errorf("a plain delta grew %q: %v", k, plain.Data)
 		}
 	}
 }
