@@ -1111,16 +1111,17 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 //     adapter lives in agent_openai.go so the regular Agent event contract
 //     remains unchanged.
 type agentChatCompletionsRequest struct {
-	Question     string                   `json:"question,omitempty"`
-	AgentID      string                   `json:"agent_id"`
-	Query        string                   `json:"query"`
-	Inputs       map[string]interface{}   `json:"inputs"`
-	SessionID    string                   `json:"session_id"`
-	Stream       bool                     `json:"stream"`
-	OpenAICompat bool                     `json:"openai-compatible"`
-	Model        string                   `json:"model"`
-	Messages     []map[string]interface{} `json:"messages"`
-	ReturnTrace  bool                     `json:"return_trace"`
+	ChannelContext *service.ChatChannelExecutionContext `json:"channel_context,omitempty"`
+	Question       string                               `json:"question,omitempty"`
+	AgentID        string                               `json:"agent_id"`
+	Query          string                               `json:"query"`
+	Inputs         map[string]interface{}               `json:"inputs"`
+	SessionID      string                               `json:"session_id"`
+	Stream         bool                                 `json:"stream"`
+	OpenAICompat   bool                                 `json:"openai-compatible"`
+	Model          string                               `json:"model"`
+	Messages       []map[string]interface{}             `json:"messages"`
+	ReturnTrace    bool                                 `json:"return_trace"`
 	// Files carries the uploaded file references for a run, normalized to
 	// the 1D file-dict list. See agentFiles for the two accepted wire
 	// shapes.
@@ -1258,6 +1259,25 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, "at least one message is required in openai-compatible mode.")
 		return
 	}
+	if req.ChannelContext != nil {
+		if req.OpenAICompat {
+			common.RespondError(c, common.CodeArgumentError, "channel_context requires the regular completion format")
+			return
+		}
+		ctx, sessionID, err := service.PrepareChatChannelCompletion(c.Request.Context(), *req.ChannelContext, req.AgentID, question, true)
+		if err != nil {
+			if !respondPermissionErrorIf(c, err, true) {
+				common.RespondError(c, common.CodeArgumentError, err.Error())
+			}
+			return
+		}
+		if req.SessionID != "" && req.SessionID != sessionID {
+			common.RespondError(c, common.CodeArgumentError, "session_id does not match the chat channel conversation")
+			return
+		}
+		req.SessionID = sessionID
+		c.Request = c.Request.WithContext(ctx)
+	}
 	common.Debug("agent chat completions: request received",
 		zap.String("user_id", user.ID),
 		zap.String("agent_id", req.AgentID),
@@ -1286,7 +1306,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// skipped when the loader is absent or the canvas is not a DataFlow. No
 	// kb_id is involved: the debug context always runs KB-less (see
 	// runCanvasPipelineDebug).
-	if h.loader != nil {
+	if h.loader != nil && req.ChannelContext == nil {
 		if cv, lerr := h.loader.LoadCanvasByID(c.Request.Context(), req.AgentID); lerr == nil && cv.CanvasCategory == "dataflow_canvas" {
 			fileName, fileData := h.extractChatDebugFile(c.Request.Context(), req.Files)
 			if len(fileData) == 0 {
@@ -1359,7 +1379,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		doneSent := false
 		for ev := range events {
 			h.persistAgentToolInvocations(c.Request.Context(), req.AgentID, ev)
-			if ev.Type == "error" {
+			if ev.Type == "error" && req.ChannelContext == nil {
 				ev = convertAgentRunErrorToMessage(ev)
 			}
 			emitted = true
@@ -1432,6 +1452,10 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		h.persistAgentToolInvocations(c.Request.Context(), req.AgentID, ev)
 		hasEvents = true
 		if ev.Type == "error" {
+			if req.ChannelContext != nil {
+				common.RespondError(c, common.CodeServerError, canvas.InternalRunErrorMessage)
+				return
+			}
 			ev = convertAgentRunErrorToMessage(ev)
 			copy := ev
 			finalAns = &copy

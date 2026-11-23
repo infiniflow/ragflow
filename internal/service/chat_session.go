@@ -1177,9 +1177,13 @@ func (s *ChatSessionService) ChatCompletions(
 			if session.DialogID != chatID {
 				return fail(common.NewCodedError(common.CodeDataError, "Session does not belong to this chat!"))
 			}
-			if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationRun); err != nil {
-				code, normalizedErr := permissionresponse.NormalizeHidden(err)
-				return fail(common.NewCodedError(code, normalizedErr.Error()))
+			authorizedChannelSession, _ := ctx.Value(channelChatSessionContextKey{}).(string)
+			// The validated channel grants use of its conversation across API key rotations.
+			if authorizedChannelSession != sessionID || session.Source != entity.ChatSessionSourceChatChannel {
+				if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationRun); err != nil {
+					code, normalizedErr := permissionresponse.NormalizeHidden(err)
+					return fail(common.NewCodedError(code, normalizedErr.Error()))
+				}
 			}
 		} else if storeHistoryMessages {
 			session, err = s.createSessionForCompletion(ctx, chatID, dialog)
@@ -1667,6 +1671,9 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 		Name:     &name,
 		Message:  messagesJSON,
 		Source:   entity.ChatSessionSourceChatChannel,
+	}
+	if userID := permission.UserIDFromContext(ctx); userID != "" {
+		session.UserID = new(userID)
 	}
 	if err = s.chatSessionDAO.Create(ctx, dao.DB, session); err != nil {
 		session, rereadErr := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
