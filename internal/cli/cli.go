@@ -243,21 +243,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 
 	switch commandLineConfig.CLIMode {
 	case CommandMode:
-		// The command text must carry only the command: the global flags were
-		// already applied by the loop above, and leaving them in would make the
-		// parser reject the line ("expected command, got -").
-		for i := 0; i < len(args); i++ {
-			switch arg := args[i]; arg {
-			case "-o", "--output":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					i++
-				}
-			case "-v", "--verbose":
-			default:
-				commandArgs = append(commandArgs, arg)
-			}
-		}
-
 		defaultApiServerConfig := &APIServerConfig{
 			UserName:     nil,
 			UserPassword: nil,
@@ -265,6 +250,12 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		}
 
 		configFile := "rf.yml"
+		var err error
+		commandArgs, configFile, err = collectCommandArgs(args, defaultApiServerConfig, configFile)
+		if err != nil {
+			return nil, err
+		}
+
 		APIClientConfig, err := ReadAPIServerConfig(defaultApiServerConfig, configFile)
 		if err != nil {
 			return nil, err
@@ -279,81 +270,10 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		}
 
 		configFile := "rf.yml"
-		for i := 0; i < len(args); i++ {
-			arg := args[i]
-
-			// Handle known global flags (already parsed in first pass).
-			// Intercept here regardless of position so they are never
-			// mistaken for command args or unknown flags downstream.
-			switch arg {
-			case "-o", "--output":
-				if i+1 < len(args) {
-					i++
-				}
-				continue
-			case "-v", "--verbose", "--help", "-help", "--version", "-V":
-				continue
-			case "--admin", "-admin":
-				return nil, fmt.Errorf("unexpected parameter: --admin")
-			}
-
-			// If we've found the command, collect remaining args
-			if foundCommand {
-				commandArgs = append(commandArgs, arg)
-				continue
-			}
-
-			switch arg {
-			case "-h", "--host":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					hostVal := args[i+1]
-					h, port, err := parseHostPort(hostVal)
-					if err != nil {
-						return nil, fmt.Errorf("invalid host format: %w", err)
-					}
-					defaultApiServerConfig.IP = h
-					defaultApiServerConfig.Port = port
-					i++
-				}
-			case "-t", "--token":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					defaultApiServerConfig.APIKey = &args[i+1]
-					i++
-				}
-			case "-u", "--user":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					defaultApiServerConfig.UserName = &args[i+1]
-					i++
-				}
-			case "-p", "--password":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					defaultApiServerConfig.UserPassword = &args[i+1]
-					i++
-				}
-			case "-f", "--config":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					configFile = args[i+1]
-					// Convert to absolute path immediately
-					if !filepath.IsAbs(configFile) {
-						absPath, err := filepath.Abs(configFile)
-						if err == nil {
-							configFile = absPath
-						}
-					}
-					i++
-				}
-			case "-k", "--key":
-				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					defaultApiServerConfig.KeyFile = &args[i+1]
-					i++
-				}
-			default:
-				// Non-flag argument (command)
-				if !strings.HasPrefix(arg, "-") {
-					commandArgs = append(commandArgs, arg)
-					foundCommand = true
-				}
-			}
+		var err error
+		commandArgs, configFile, err = collectCommandArgs(args, defaultApiServerConfig, configFile)
+		if err != nil {
+			return nil, err
 		}
 
 		APIClientConfig, err := ReadAPIServerConfig(defaultApiServerConfig, configFile)
@@ -445,6 +365,96 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 	}
 
 	return commandLineConfig, nil
+}
+
+// collectCommandArgs applies the connection flags of the API-backed modes to
+// cfg and returns the positional command words. The command text must carry
+// only the command: a flag left in it makes the parser reject the line with
+// "expected command, got -". Once the first positional word starts the
+// command, every later word belongs to the command, even if it looks like a
+// flag.
+func collectCommandArgs(args []string, cfg *APIServerConfig, configFile string) ([]string, string, error) {
+	var commandArgs []string
+	var foundCommand bool
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		// Handle known global flags (already parsed in first pass).
+		// Intercept here regardless of position so they are never
+		// mistaken for command args or unknown flags downstream.
+		switch arg {
+		case "-o", "--output":
+			if i+1 < len(args) {
+				i++
+			}
+			continue
+		case "-v", "--verbose", "--help", "-help", "--version", "-V":
+			continue
+		case "--admin", "-admin":
+			return nil, configFile, fmt.Errorf("unexpected parameter: --admin")
+		}
+
+		// If we've found the command, collect remaining args
+		if foundCommand {
+			commandArgs = append(commandArgs, arg)
+			continue
+		}
+
+		switch arg {
+		case "-h", "--host":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				hostVal := args[i+1]
+				h, port, err := parseHostPort(hostVal)
+				if err != nil {
+					return nil, configFile, fmt.Errorf("invalid host format: %w", err)
+				}
+				cfg.IP = h
+				cfg.Port = port
+				i++
+			}
+		case "-t", "--token":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				cfg.APIKey = &args[i+1]
+				i++
+			}
+		case "-u", "--user":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				cfg.UserName = &args[i+1]
+				i++
+			}
+		case "-p", "--password":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				cfg.UserPassword = &args[i+1]
+				i++
+			}
+		case "-f", "--config":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				configFile = args[i+1]
+				// Convert to absolute path immediately
+				if !filepath.IsAbs(configFile) {
+					absPath, err := filepath.Abs(configFile)
+					if err == nil {
+						configFile = absPath
+					}
+				}
+				i++
+			}
+		case "-k", "--key":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				cfg.KeyFile = &args[i+1]
+				i++
+			}
+		default:
+			// Non-flag argument (command)
+			if !strings.HasPrefix(arg, "-") {
+				commandArgs = append(commandArgs, arg)
+				foundCommand = true
+			}
+		}
+	}
+
+	return commandArgs, configFile, nil
 }
 
 // parseHostPort parses a host:port string and returns host and port
@@ -714,6 +724,10 @@ func (c *CLI) Run() error {
 			}
 		}
 
+	case CommandMode:
+		// No credentials to prompt for: the single-command REPL talks to the
+		// default API server like any other command.
+
 	default:
 		return fmt.Errorf("unexpected CLI mode: %s", cliConfig.CLIMode)
 	}
@@ -747,6 +761,8 @@ func (c *CLI) Run() error {
 			prompt = fmt.Sprintf("RAGFlow(api/%s)> ", c.Config.APIClientConfig.CurrentAPIServer)
 		case AdminMode:
 			prompt = "RAGFlow(admin)> "
+		case CommandMode:
+			prompt = "RAGFlow(user)> "
 		default:
 			return fmt.Errorf("unexpected CLI mode: %s", cliConfig.CLIMode)
 		}

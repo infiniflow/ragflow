@@ -70,7 +70,8 @@ func main() {
 		os.Exit(0)
 	}()
 
-	if cli.Arguments.CLIMode == cli.CommandMode {
+	// A command runs once and exits; without one the CLI stays interactive.
+	if cli.Arguments.Command != nil {
 		if err = client.RunSingleCommand(cli.Arguments.Command); err != nil {
 			fmt.Printf("Command execution failed: %v\n", err)
 			os.Exit(1)

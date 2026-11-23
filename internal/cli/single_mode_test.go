@@ -43,6 +43,40 @@ func TestParseArgsCommandModeStripsGlobalFlags(t *testing.T) {
 	}
 }
 
+// The connection flags configure the API client instead of joining the
+// command text, and without a command the CLI stays interactive.
+func TestParseArgsCommandModeConnectionFlags(t *testing.T) {
+	cfg, err := ParseArgs([]string{"-h", "10.1.2.3:9380", "-t", "secret", "-u", "alice", "-p", "pw", "ws", "ls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Command == nil || *cfg.Command != "ws ls" {
+		t.Fatalf("command = %v, want %q", cfg.Command, "ws ls")
+	}
+	api := cfg.APIClientConfig.APIServerMap[cfg.APIClientConfig.CurrentAPIServer]
+	if api.IP != "10.1.2.3" || api.Port != 9380 {
+		t.Errorf("host = %s:%d, want 10.1.2.3:9380", api.IP, api.Port)
+	}
+	if api.APIKey == nil || *api.APIKey != "secret" {
+		t.Errorf("api key not applied")
+	}
+	if api.UserName == nil || *api.UserName != "alice" {
+		t.Errorf("user name not applied")
+	}
+
+	cfg, err = ParseArgs([]string{"-h", "10.1.2.3:9380"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Command != nil {
+		t.Errorf("command = %q, want nil so the CLI stays interactive", *cfg.Command)
+	}
+	api = cfg.APIClientConfig.APIServerMap[cfg.APIClientConfig.CurrentAPIServer]
+	if api.IP != "10.1.2.3" || api.Port != 9380 {
+		t.Errorf("host = %s:%d, want 10.1.2.3:9380", api.IP, api.Port)
+	}
+}
+
 // A reserved word is a valid unquoted one-word question: "retrieve find" must
 // ask "find", not fail, while ON keeps its grammar role before the dataset
 // clause.
