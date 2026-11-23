@@ -428,7 +428,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	case common.ServerTypeFileSyncer:
 		return syncerpkg.Run(ctx, cancel, arguments)
 	case common.ServerTypeChatter:
-		return chatterpkg.Run(ctx, arguments, services)
+		return chatterpkg.Run(ctx, arguments)
 	default:
 		return fmt.Errorf("unsupported server mode %q", *arguments.Mode)
 	}

@@ -45,7 +45,7 @@ func (c *ChatChannelRESTClient) HandleIncomingMessage(ctx context.Context, msg C
 	if channel.Status != 1 || (channel.ChatID == nil && channel.AgentID == nil) {
 		return "", nil
 	}
-	key, err := FirstChatChannelAPIKey(ctx, channel.TenantID)
+	key, err := chatChannelExecutionKey(ctx, channel)
 	if err != nil {
 		return "", err
 	}

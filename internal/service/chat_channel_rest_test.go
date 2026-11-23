@@ -18,13 +18,26 @@ func TestChatChannelRESTExecution(t *testing.T) {
 			if err := db.AutoMigrate(&entity.APIToken{}); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.Create(&entity.APIToken{TenantID: "owner", UserID: new("owner"), Token: "first-key"}).Error; err != nil {
-				t.Fatal(err)
+			serviceTestContext(t, "owner", "owner", "member")
+			for _, row := range []any{
+				&entity.User{ID: "owner", Email: "owner@example.com", AccessToken: new("owner-access")},
+				&entity.User{ID: "member", Email: "member@example.com", AccessToken: new("member-access")},
+				&entity.APIToken{TenantID: "owner", UserID: new("member"), Token: "aaa-denied"},
+				&entity.APIToken{TenantID: "owner", UserID: new("owner"), Token: "first-key"},
+			} {
+				if err := db.Create(row).Error; err != nil {
+					t.Fatal(err)
+				}
 			}
 			channel := &entity.ChatChannel{Config: entity.JSONMap{}, ID: "channel", TenantID: "owner", Name: "Support", Status: 1, ChatID: new("target")}
 			if agent {
 				channel.ChatID = nil
 				channel.AgentID = new("target")
+				if err := db.Create(&entity.UserCanvas{ID: "target", UserID: "owner"}).Error; err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				createServiceTestDialog(t, db, "target", "owner", "Support")
 			}
 			createServiceTestChannel(t, db, channel)
 			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +76,12 @@ func TestChatChannelRESTExecution(t *testing.T) {
 			}
 			if len(deltas) == 0 || strings.Contains(strings.Join(deltas, ""), "private") || strings.Contains(strings.Join(deltas, ""), "[ID:") {
 				t.Fatalf("deltas=%q", deltas)
+			}
+			if err := db.Where("tenant_id = ? AND token = ?", "owner", "first-key").Delete(&entity.APIToken{}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, err := client.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: "channel", ChatID: "external", Text: "hello"}, nil); err == nil || !strings.Contains(err.Error(), "no tenant API key can run") {
+				t.Fatalf("expected rejection with only an unauthorized key, got %v", err)
 			}
 		})
 	}
@@ -126,6 +145,11 @@ func TestChatChannelRESTRejectsMissingKeyAndStopsDisabledChannel(t *testing.T) {
 func TestChatChannelRESTRejectsBusinessErrorWithoutLeakingMessage(t *testing.T) {
 	db := setupChatChannelServiceTestDB(t)
 	createChatChannelTestAPIKey(t, db, "owner")
+	serviceTestContext(t, "owner", "owner")
+	if err := db.Create(&entity.User{ID: "owner", Email: "owner@example.com", AccessToken: new("owner-access")}).Error; err != nil {
+		t.Fatal(err)
+	}
+	createServiceTestDialog(t, db, "chat", "owner", "Support")
 	createServiceTestChannel(t, db, &entity.ChatChannel{ID: "channel", TenantID: "owner", Config: entity.JSONMap{}, ChatID: new("chat"), Status: 1})
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
