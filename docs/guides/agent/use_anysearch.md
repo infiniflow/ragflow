@@ -50,7 +50,7 @@ Use the selected tag's current parameter descriptions to distinguish source sele
 
 For financial news, inspect the declared `type` before setting `news_src`; a source option for one operation need not apply to another. For esports, player, match and leaderboard operations have different required identifiers. Keep required-but-unused empty strings only where the operation's description calls for them; omitting a key, sending `null` and sending `""` are different requests.
 
-The tool forwards the supplied parameter object without interpreting provider-specific enums or formats. AnySearch validates these contracts and reports errors to the Agent. Inspect the failed query's `_ERROR` and available `request_id`, correct the named parameter, and retry that query rather than treating a failure as empty search results. Do not infer that a source filter worked solely from an empty or successful response; inspect the returned source information.
+The tool forwards the supplied parameter object without interpreting provider-specific enums or formats. AnySearch may reject invalid parameters. Some fields can be ignored or summary-only, as the catalog describes. The tool reports returned HTTP and business errors to the Agent. Inspect the failed query's `_ERROR` and available `request_id`, correct the named parameter, and retry that query rather than treating a failure as empty search results. Do not infer that a source filter worked solely from an empty or successful response; inspect the returned source information.
 
 ### Run independent searches together
 
