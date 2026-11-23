@@ -445,6 +445,10 @@ func stripCitations(text string) string {
 	return text
 }
 
+// Keep an unfinished HTTP URL together so a ref parameter remains part of
+// the URL when the next delta arrives. Include a partially streamed scheme.
+var citationStreamURLTailPattern = regexp.MustCompile(`(?i)\bhttps?:(?://[^\s<>()]*|/?)$`)
+
 type citationStreamFilter struct {
 	pending string
 }
@@ -453,12 +457,10 @@ func (f *citationStreamFilter) write(delta string) string {
 	f.pending += delta
 	end := len(f.pending)
 	if tail := citationStreamTailPattern.FindStringIndex(f.pending); tail != nil {
-		// A complete URL can end in a query parameter such as `?ref=12`.
-		// Keep that span together so URL context is still available when
-		// stripCitations checks the standalone ref marker.
-		if !citationIndexInsideURL(f.pending, tail[0]) {
-			end = tail[0]
-		}
+		end = tail[0]
+	}
+	if url := citationStreamURLTailPattern.FindStringIndex(f.pending); url != nil {
+		end = min(end, url[0])
 	}
 	text := stripCitations(f.pending[:end])
 	f.pending = f.pending[end:]

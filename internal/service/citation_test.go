@@ -379,10 +379,27 @@ func TestRepairBadCitationFormats(t *testing.T) {
 }
 
 func TestCitationStreamFilterPreservesURLRefQuery(t *testing.T) {
-	var filter citationStreamFilter
-	got := filter.write("See https://example.com/?ref=") + filter.write("12 now.") + filter.flush()
-	if got != "See https://example.com/?ref=12 now." {
-		t.Fatalf("URL query parameter changed by citation filtering: %q", got)
+	for _, test := range []struct{ input, want string }{
+		{"See https://example.com/?ref=12 now.", "See https://example.com/?ref=12 now."},
+		{"See https://example.com/?ref=12", "See https://example.com/?ref=12"},
+		{"[Guide](http://example.com/?x=y&ref=12) ref=15", "[Guide](http://example.com/?x=y&ref=12) "},
+	} {
+		for split := 1; split < len(test.input); split++ {
+			var filter citationStreamFilter
+			got := filter.write(test.input[:split]) + filter.write(test.input[split:]) + filter.flush()
+			if got != test.want {
+				t.Errorf("split %q | %q: got %q, want %q", test.input[:split], test.input[split:], got, test.want)
+			}
+		}
+		var filter citationStreamFilter
+		var streamed strings.Builder
+		for _, char := range test.input {
+			streamed.WriteString(filter.write(string(char)))
+		}
+		streamed.WriteString(filter.flush())
+		if got := streamed.String(); got != test.want {
+			t.Errorf("character-by-character stream of %q: got %q, want %q", test.input, got, test.want)
+		}
 	}
 }
 
