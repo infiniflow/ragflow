@@ -158,3 +158,12 @@ func parseRDBMSCursor(cursor string) (rdbmsResumeCursor, error) {
 	}
 	return c, nil
 }
+
+// truncateRunes shortens a value to at most max runes.
+func truncateRunes(value string, max int) string {
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return string(runes[:max])
+}

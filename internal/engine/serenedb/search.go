@@ -486,18 +486,8 @@ func toInt64(v interface{}) int64 {
 }
 
 func toFloat64(v interface{}) float64 {
-	switch n := v.(type) {
-	case float64:
-		return n
-	case int64:
-		return float64(n)
-	case int:
-		return float64(n)
-	case string:
-		f, _ := strconv.ParseFloat(n, 64)
-		return f
-	}
-	return 0
+	f, _ := common.ToFloat(v)
+	return f
 }
 
 func sortByScore(chunks []map[string]interface{}) {

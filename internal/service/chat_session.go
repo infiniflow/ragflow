@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -974,26 +973,7 @@ func (s *ChatSessionService) updateChunkWeight(ctx context.Context, tenantID, ch
 }
 
 func floatValue(value interface{}) (float64, bool) {
-	switch v := value.(type) {
-	case float64:
-		return v, true
-	case float32:
-		return float64(v), true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case int32:
-		return float64(v), true
-	case json.Number:
-		f, err := v.Float64()
-		return f, err == nil
-	case string:
-		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-		return f, err == nil
-	default:
-		return 0, false
-	}
+	return common.ToFloat(value)
 }
 
 func sessionHistoryOptions(options ...dao.ConversationHistoryOptions) dao.ConversationHistoryOptions {

@@ -419,7 +419,7 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
             type="button"
             data-testid={testId}
             className={cn(
-              'flex items-center justify-between border border-border-button rounded-md px-3 py-1.5 w-full',
+              'flex items-center justify-between border border-border-button rounded-2xl px-3 py-1.5 w-full',
               'bg-bg-input text-sm',
               'hover:bg-border-button transition-colors',
               disabled && 'opacity-50 cursor-not-allowed',
@@ -447,7 +447,7 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
           </button>
         </PopoverTrigger>
         <PopoverContent
-          className="p-0 w-auto min-w-[var(--radix-popover-trigger-width)]"
+          className="rounded-2xl p-0 w-auto min-w-[var(--radix-popover-trigger-width)]"
           align="start"
           sideOffset={4}
         >

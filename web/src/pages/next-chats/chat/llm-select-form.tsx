@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 export function LLMSelectForm() {
   const FormSchema = z.object(LlmSettingSchema);
-  const { data } = useFetchChat();
+  const { data, loading } = useFetchChat();
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -34,7 +34,9 @@ export function LLMSelectForm() {
   return (
     <Form {...form}>
       <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
-        <ModelResourceAccessUserIdContext.Provider value={data?.user_id}>
+        <ModelResourceAccessUserIdContext.Provider
+          value={loading ? null : (data?.user_id ?? null)}
+        >
           <LargeModelFormFieldWithoutFilter
             resourceTenantId={data?.tenant_id}
           ></LargeModelFormFieldWithoutFilter>

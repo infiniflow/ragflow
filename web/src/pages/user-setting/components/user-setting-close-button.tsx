@@ -14,27 +14,25 @@
  *  limitations under the License.
  */
 
-import { cn } from '@/lib/utils';
-import { useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
-import { useX6Graph } from './hooks/use-x6-graph';
-import { type TimelineX6GraphProps } from './types';
-
-export function TimelineX6Graph({
-  data,
-  show = true,
-  onNodeClick,
-}: TimelineX6GraphProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useX6Graph(containerRef, data, onNodeClick);
+export function UserSettingCloseButton() {
+  const { t } = useTranslation();
+  const { closeUserSetting } = useNavigatePage();
 
   return (
-    <div
-      ref={containerRef}
-      className={cn('w-full h-full min-h-0', !show && 'hidden')}
-    />
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={t('common.close')}
+      title={t('common.close')}
+      onClick={closeUserSetting}
+      className="absolute right-2 top-4 z-10 md:right-6"
+    >
+      <X className="size-6" />
+    </Button>
   );
 }
-
-export default TimelineX6Graph;

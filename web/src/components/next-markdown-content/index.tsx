@@ -406,7 +406,10 @@ function MarkdownContent({
                     fileExtension,
                     documentUrl,
                   )}
-                  className="text-ellipsis text-wrap"
+                  className={classNames('text-ellipsis text-wrap', {
+                    'hover:no-underline cursor-default':
+                      !documentUrl && !supportsSourceLocate(fileExtension),
+                  })}
                 >
                   {document?.doc_name}
                 </Button>

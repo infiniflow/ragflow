@@ -51,7 +51,7 @@ func TestAPIShowVersionCommandReadsVersionObject(t *testing.T) {
 	c := &CLI{
 		Config: &CommandLineConfig{
 			CLIMode:         APIMode,
-			APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+			APIClientConfig: &APIModeConfig{CurrentAPIServer: "test"},
 		},
 		APIServerClientMap: map[string]*HTTPClient{"test": client},
 	}
@@ -97,7 +97,7 @@ func TestDevUpdateChunkCommandUsesChunkResource(t *testing.T) {
 	c := &CLI{
 		Config: &CommandLineConfig{
 			CLIMode:         APIMode,
-			APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+			APIClientConfig: &APIModeConfig{CurrentAPIServer: "test"},
 		},
 		APIServerClientMap: map[string]*HTTPClient{"test": client},
 	}
@@ -157,7 +157,7 @@ func TestDevRemoveChunksCommandReadsDeletedCount(t *testing.T) {
 			c := &CLI{
 				Config: &CommandLineConfig{
 					CLIMode:         APIMode,
-					APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+					APIClientConfig: &APIModeConfig{CurrentAPIServer: "test"},
 				},
 				APIServerClientMap: map[string]*HTTPClient{"test": client},
 			}
@@ -210,7 +210,7 @@ func TestAPIListIngestionTasksSendsDatasetIDFilter(t *testing.T) {
 	c := &CLI{
 		Config: &CommandLineConfig{
 			CLIMode:         APIMode,
-			APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+			APIClientConfig: &APIModeConfig{CurrentAPIServer: "test"},
 		},
 		APIServerClientMap: map[string]*HTTPClient{"test": client},
 	}
@@ -243,7 +243,7 @@ func TestAPIListIngestionTasksOmitsDatasetIDWhenAbsent(t *testing.T) {
 	c := &CLI{
 		Config: &CommandLineConfig{
 			CLIMode:         APIMode,
-			APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+			APIClientConfig: &APIModeConfig{CurrentAPIServer: "test"},
 		},
 		APIServerClientMap: map[string]*HTTPClient{"test": client},
 	}

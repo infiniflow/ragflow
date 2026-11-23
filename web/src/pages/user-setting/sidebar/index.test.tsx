@@ -25,8 +25,8 @@ describe('settings SideBar', () => {
       screen.getByRole('button', { name: 'setting.profile' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'setting.api' }),
-    ).toBeInTheDocument();
+      screen.queryByRole('button', { name: 'setting.api' }),
+    ).not.toBeInTheDocument();
     expect(container.querySelector('header')).not.toBeInTheDocument();
     expect(container.querySelector('footer')).not.toBeInTheDocument();
     expect(

@@ -50,7 +50,6 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "r2", NewR2Connector)
 	registerBuiltIn(registry, "s3", newS3SourceConnector)
 	registerBuiltIn(registry, "s3_compatible", NewS3CompatibleConnector)
-	registerBuiltIn(registry, "dingtalk_ai_table", NewDingTalkAITableConnector)
 	registerBuiltIn(registry, "imap", NewIMAPConnector)
 	registerBuiltIn(registry, "jira", NewJiraConnector)
 	registerBuiltIn(registry, "outlook", NewOutlookConnector)
@@ -69,6 +68,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "seafile", NewSeaFileConnector)
 	registerBuiltIn(registry, "bigquery", NewBigQueryConnector)
 	registerBuiltIn(registry, "zotero", NewZoteroConnector)
+	registerEnterpriseBuiltIns(registry)
 }
 
 // newS3SourceConnector selects the client for the bucket type stored under an S3 source.

@@ -30,8 +30,8 @@ import (
 
 // ExecuteFilesystemCommand ExecuteFilesystem executes a Filesystem command and returns a ResponseIf.
 func (c *CLI) ExecuteFilesystemCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	if c.Config.CLIMode == AdminMode {
+		return nil, fmt.Errorf("this command is only allowed in USER or SINGLE mode")
 	}
 
 	rawInput, _ := cmd.Params["command"].(string)

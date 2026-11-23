@@ -20,43 +20,34 @@ package dataset
 
 import (
 	"context"
-	"gorm.io/gorm"
+
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 func accessUserContext(ctx context.Context, _ string) (context.Context, bool) {
 	return ctx, false
 }
 
-// deleteDatasetChunkRuntimeTxEE has nothing to drop: the community edition
-// keeps no chunk history, chunk index state or removed-document rows.
 func deleteDatasetChunkRuntimeTxEE(_ context.Context, _ *gorm.DB, _ string) error {
 	return nil
 }
 
-// deleteDatasetMetadataStatesEE has nothing to drop: the community edition keeps
-// no metadata history, so no values live in the document engine.
 func deleteDatasetMetadataStatesEE(_ context.Context, _ string) {}
 
-// seedDatasetBaselineVersionTxEE records no baseline: the community edition
-// keeps no dataset history.
-func (d *DatasetService) seedDatasetBaselineVersionTxEE(_ context.Context, _ *gorm.DB, _ *entity.Knowledgebase, _ string) error {
-	return nil
-}
-
-// recordDatasetConfigVersionTxEE records no version: the community edition
-// keeps no dataset history.
-func (d *DatasetService) recordDatasetConfigVersionTxEE(_ context.Context, _ *gorm.DB, _, _ *entity.Knowledgebase, _ []entity.JSONMap, _ string, _ string, _ int64) (int64, error) {
-	return 0, nil
-}
-
-// datasetConfigBindingsEE reads nothing: the community edition records no
-// snapshot, so nothing needs the bindings as they stood before a change.
 func (d *DatasetService) datasetConfigBindingsEE(_ context.Context, _ *gorm.DB, _ *entity.Knowledgebase) ([]entity.JSONMap, error) {
 	return nil, nil
 }
 
-// deleteDatasetVersionsTxEE has no history to drop.
+func (d *DatasetService) seedDatasetBaselineVersionTxEE(_ context.Context, _ *gorm.DB, _ *entity.Knowledgebase, _ string) error {
+	return nil
+}
+
+func (d *DatasetService) recordDatasetConfigVersionTxEE(_ context.Context, _ *gorm.DB, _, _ *entity.Knowledgebase, _ []entity.JSONMap, _, _ string, _ int64) (int64, error) {
+	return 0, nil
+}
+
 func (d *DatasetService) deleteDatasetVersionsTxEE(_ context.Context, _ *gorm.DB, _ string) error {
 	return nil
 }

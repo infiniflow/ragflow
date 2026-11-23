@@ -92,6 +92,14 @@ func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpse
 		return service.DocumentUpsertResult{}, err
 	}
 	if existing != nil && existing.ContentHash != nil && *existing.ContentHash == contentHash {
+		// Content is unchanged but the source may have renamed the document
+		// (a moved node, or a name that only now resolves), so re-align the name.
+		if existing.Name == nil || *existing.Name != filename {
+			if err := s.documentDAO.UpdateByID(ctx, dao.DB, existing.ID, map[string]any{"name": filename}); err != nil {
+				return service.DocumentUpsertResult{}, err
+			}
+			existing.Name = &filename
+		}
 		if err := s.ensureSyncDocumentPostWrite(ctx, input, existing); err != nil {
 			return service.DocumentUpsertResult{}, err
 		}
