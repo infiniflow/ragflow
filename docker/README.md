@@ -192,7 +192,7 @@ In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference.
 
 ## 🐋 Service configuration
 
-[service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for the Go API, Admin, Ingestor, and Syncer services. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template (replacing all environment variables by their values).
+[service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for the Go API, Admin, Ingestor, and Syncer services. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template by expanding `$NAME`, `${NAME}`, and `${NAME:-default}` placeholders. Other template text, including YAML quotes and comments, is copied verbatim.
 
 - `api`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.

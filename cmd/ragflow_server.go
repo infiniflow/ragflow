@@ -44,6 +44,7 @@ import (
 	apipkg "ragflow/internal/server/api"
 	"ragflow/internal/server/bootstrap"
 	chatterpkg "ragflow/internal/server/chatter"
+	"ragflow/internal/server/config"
 	deepdocpkg "ragflow/internal/server/deepdoc"
 	ingestorpkg "ragflow/internal/server/ingestor"
 	"ragflow/internal/server/local"
@@ -98,11 +99,8 @@ func pprofAddr() string {
 }
 
 // parseArgsFrom parses argv (argv[0] is the program name, mirroring os.Args)
-// into a bootstrap.ServerArgs using the standard library flag package. The accepted
-// syntax is exactly the standard one: every flag works as "-flag value",
-// "-flag=value", "--flag value" and "--flag=value"; boolean flags also accept
-// "=true"/"=false". Flags absent from argv leave their bootstrap.ServerArgs field nil,
-// which callers use to distinguish "unspecified" from an explicit zero value.
+// into a bootstrap.ServerArgs using kingpin. An omitted port or log level
+// leaves its field nil so configuration and environment values can take effect.
 func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 
 	args := &bootstrap.ServerArgs{}
@@ -111,7 +109,9 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	args.ConfigPath = app.Flag("config", "Config path").Short('f').String()
 	args.DeepdocDevice = app.Flag("deepdoc-device", "DeepDoc inference device").String()
 	args.EnablePProf = app.Flag("profile", "Enable pprof profiling").Bool()
-	args.LogLevel = app.Flag("log-level", "Log level").String()
+	var logLevelSet, portSet bool
+	args.LogLevel = app.Flag("log-level", "Log level").IsSetByUser(&logLevelSet).String()
+	args.Port = app.Flag("port", "HTTP port (API by default, admin with --admin)").IsSetByUser(&portSet).Int()
 
 	modes := []string{"admin", "api", "ingestor", "syncer", "chatter", "migrate"}
 	modeFlags := make([]*bool, len(modes))
@@ -161,13 +161,19 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 
 	args.InitSuperUser = args.Mode != nil && *args.Mode == "admin"
 
-	if args.LogLevel != nil {
-		if *args.LogLevel == "" {
-			*args.LogLevel = "info"
-		}
+	if logLevelSet {
 		if err := validateLogLevel(*args.LogLevel); err != nil {
 			return nil, err
 		}
+	} else {
+		args.LogLevel = nil
+	}
+	if portSet {
+		if *args.Port < config.MinPort || *args.Port > config.MaxPort {
+			return nil, fmt.Errorf("invalid --port %d: must be in [%d, %d]", *args.Port, config.MinPort, config.MaxPort)
+		}
+	} else {
+		args.Port = nil
 	}
 
 	return args, nil
@@ -200,6 +206,7 @@ func printHelp(_ *bootstrap.ServerArgs) {
 	fmt.Fprintln(os.Stderr, "  -f, --config string\tPath to configuration file")
 	fmt.Fprintln(os.Stderr, "  -v, --version      \tPrint version information and exit")
 	fmt.Fprintln(os.Stderr, "  --log-level string \tLog level: debug, info, warn, error (default: warn)")
+	fmt.Fprintln(os.Stderr, "  --port int         \tHTTP port: API by default, admin with --admin (1-65535)")
 	fmt.Fprintln(os.Stderr, "  --profile          \tEnable pprof server")
 	fmt.Fprintln(os.Stderr, "  -h, --help         \tShow this help message and exit")
 }
@@ -276,7 +283,11 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 		config.SetAPIServerHTTPPort(port)
 	}
 	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAdmin {
-		port, err = config.ResolvePort(config.GetAdminServerConfig().HTTPPort, arguments.Port)
+		var adminPort *int
+		if serverType == common.ServerTypeAdmin {
+			adminPort = arguments.Port
+		}
+		port, err = config.ResolvePort(config.GetAdminServerConfig().HTTPPort, adminPort)
 		if err != nil {
 			return fmt.Errorf("resolve admin port: %w", err)
 		}
@@ -428,7 +439,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	case common.ServerTypeFileSyncer:
 		return syncerpkg.Run(ctx, cancel, arguments)
 	case common.ServerTypeChatter:
-		return chatterpkg.Run(ctx, arguments, services)
+		return chatterpkg.Run(ctx, arguments)
 	default:
 		return fmt.Errorf("unsupported server mode %q", *arguments.Mode)
 	}
@@ -502,7 +513,7 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 		return syncerpkg.Run(ctx, cancel, args)
 	})
 	startService("chatter", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return chatterpkg.Run(ctx, args, services)
+		return chatterpkg.Run(ctx, args)
 	})
 	if startupErr == nil {
 		for _, ready := range workerReady {

@@ -98,3 +98,5 @@ type BillingSubscriptionDAO struct{}
 
 // NewBillingSubscriptionDAO creates the billing subscription DAO.
 func NewBillingSubscriptionDAO() *BillingSubscriptionDAO { return &BillingSubscriptionDAO{} }
+
+func completionLogModelsEE() []any { return nil }

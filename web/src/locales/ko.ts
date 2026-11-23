@@ -1749,7 +1749,7 @@ export default {
         rerank: 'Rerank',
         sequence2text: 'ASR',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
         speech2text: 'ASR',
         decision: 'Decision',
       },

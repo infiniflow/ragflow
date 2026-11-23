@@ -38,6 +38,7 @@ import (
 	"ragflow/internal/deepdoc/parser/pdf"
 	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	pdftype "ragflow/internal/deepdoc/parser/pdf/type"
+	doctype "ragflow/internal/deepdoc/parser/type"
 )
 
 // TestMultiPDFThroughput parses every PDF in DEEPDOC_BENCH_DIR as a single
@@ -45,8 +46,8 @@ import (
 // memory. Inference runs single-threaded per session (intraOpThreads is pinned
 // to 1 in native/session.go), so the process-wide inference ceiling is exactly
 // the number of concurrent Runs the parser admits — the page worker pool and
-// the native inference gate are both sized to DeepDocConcurrency(). See
-// pdf.parser_concurrency.go and native/inference_limit.go.
+// the process inference gate are both sized to DeepDocConcurrency(). See
+// pdf.parser_concurrency.go and doctype/inference_gate.go.
 //
 // Run:
 //
@@ -83,7 +84,7 @@ func TestMultiPDFThroughput(t *testing.T) {
 	// the page worker pool and the native inference gate are sized to it.
 	budget := pdf.DeepDocConcurrency()
 	pdf.SetPageWorkerPoolSize(budget)
-	native.SetInferenceLimit(budget)
+	doctype.SetInferenceLimit(budget)
 	t.Logf("page worker pool = %d, inference gate = %d", budget, budget)
 
 	// Collect PDFs, sorted for a stable doc ordering across runs.

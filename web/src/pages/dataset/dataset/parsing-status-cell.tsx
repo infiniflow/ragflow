@@ -2,20 +2,26 @@ import { IconFontFill } from '@/components/icon-font';
 import { ParserUnavailableLabel } from '@/components/parser-unavailable-label';
 import { PipelineVersionLabel } from '@/components/pipeline-version-label';
 import { Button } from '@/components/ui/button';
-import message from '@/components/ui/message';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import message from '@/components/ui/message';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
-import { CircleQuestionMark, CircleX, Clock3, Loader2 } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import {
+  CircleQuestionMark,
+  CircleX,
+  Clock3,
+  Loader2,
+  TriangleAlert,
+} from 'lucide-react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DocumentType, RunningStatus } from './constant';
 import { ParsingCard } from './parsing-card';
@@ -29,29 +35,28 @@ import {
   isDocumentProcessing,
   isDocumentStopping,
 } from './utils';
+
 const IconMap = {
   [RunningStatus.UNSTART]: (
-    <IconFontFill name="play" className="text-accent-primary size-[1em]" />
+    <IconFontFill name="play" className="text-accent-primary size-4" />
   ),
-  [RunningStatus.RUNNING]: (
-    <CircleX color="rgba(var(--state-error))" className="size-[1em]" />
-  ),
+  [RunningStatus.RUNNING]: <CircleX className="size-4 text-state-error" />,
   [RunningStatus.CANCEL]: (
-    <IconFontFill name="reparse" className="text-accent-primary" />
+    <IconFontFill name="reparse" className="text-accent-primary size-4" />
   ),
   [RunningStatus.DONE]: (
-    <IconFontFill name="reparse" className="text-accent-primary" />
+    <IconFontFill name="reparse" className="text-accent-primary size-4" />
   ),
   [RunningStatus.FAIL]: (
-    <IconFontFill name="reparse" className="text-accent-primary" />
+    <IconFontFill name="reparse" className="text-accent-primary size-4" />
   ),
   [RunningStatus.SCHEDULE]: (
-    <IconFontFill name="reparse" className="text-accent-primary" />
+    <IconFontFill name="reparse" className="text-accent-primary size-4" />
   ),
-  // QUEUED documents render a dedicated clock button in the processing
-  // branch below; this key only keeps the icon map type-exhaustive.
+  // Status renders QUEUED as a dedicated clock chip; this key only keeps the
+  // icon map type-exhaustive.
   [RunningStatus.QUEUED]: (
-    <IconFontFill name="play" className="text-accent-primary size-[1em]" />
+    <IconFontFill name="play" className="text-accent-primary size-4" />
   ),
 };
 
@@ -67,7 +72,6 @@ const ParseStatusStateMap = {
 export function ParseDropdownButton({
   record,
   showChangeParserModal,
-  // showSetMetaModal,
 }: {
   record: IDocumentInfo;
 } & UseChangeDocumentParserShowType) {
@@ -137,22 +141,17 @@ export function ParseDropdownButton({
   );
 }
 
-export function ParsingStatusCell({
+export function ParseCell({
   record,
-  showLog,
-  datasetEditButtonDisabled = false,
   showChangeParserModal,
+  datasetEditButtonDisabled = false,
 }: {
   record: IDocumentInfo;
-  showLog: (record: IDocumentInfo) => void;
   datasetEditButtonDisabled?: boolean;
 } & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
-  const { progress, chunk_count, id } = record;
-  // Resolve one effective status for the icon, state attribute and labels.
+  const { chunk_count, id } = record;
   const effectiveRun = getDocumentRunningStatus(record);
-  const operationIcon = IconMap[effectiveRun];
-  const p = Number((progress * 100).toFixed(2));
   const {
     handleRunDocumentByIds,
     loading: isRunLoading,
@@ -161,10 +160,13 @@ export function ParsingStatusCell({
     hideModal: hideReparseDialogModal,
   } = useHandleRunDocumentByIds(id, showChangeParserModal);
   const isRunning = isDocumentProcessing(record);
-  const isQueued = effectiveRun === RunningStatus.QUEUED;
+  const operationIcon = isRunning
+    ? IconMap[RunningStatus.RUNNING]
+    : IconMap[effectiveRun];
   const isStopping = isDocumentStopping(record);
   const isZeroChunk = chunk_count === 0;
   const { missing: parserMissing } = useDocumentPipelineVersion(record);
+  const showParse = record.type !== DocumentType.Virtual;
 
   const handleOperationIconClick = (option?: {
     delete: boolean;
@@ -199,16 +201,70 @@ export function ParsingStatusCell({
     handleOperationIconClick();
   };
 
-  const showParse = useMemo(() => {
-    return record.type !== DocumentType.Virtual;
-  }, [record]);
+  return (
+    <section className="flex w-full items-center gap-2">
+      <ParseDropdownButton
+        record={record}
+        showChangeParserModal={showChangeParserModal}
+      />
+      {showParse && (
+        <>
+          <Separator orientation="vertical" className="ml-auto h-4 shrink-0" />
+          {isRunLoading && !isRunning ? (
+            <Button size="icon-xs" variant="ghost" disabled>
+              <Loader2 className="size-4 animate-spin" />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              disabled={isStopping}
+              onClick={handleParseClick}
+              data-testid="document-parse-toggle"
+            >
+              {operationIcon}
+            </Button>
+          )}
+        </>
+      )}
+      {reparseDialogVisible && (
+        <ReparseDialog
+          handleOperationIconClick={handleOperationIconClick}
+          visible={reparseDialogVisible}
+          hideModal={hideReparseDialogModal}
+        />
+      )}
+    </section>
+  );
+}
 
-  const handleShowLog = (record: IDocumentInfo) => {
+export function ParsingStatusCell({
+  record,
+  showLog,
+}: {
+  record: IDocumentInfo;
+  showLog: (record: IDocumentInfo) => void;
+}) {
+  const { t } = useTranslation();
+  const { progress } = record;
+  const effectiveRun = getDocumentRunningStatus(record);
+  const p = Number((progress * 100).toFixed(2));
+  const isRunning = isDocumentProcessing(record);
+  const isQueued = effectiveRun === RunningStatus.QUEUED;
+  const isStopping = isDocumentStopping(record);
+  const showParse = record.type !== DocumentType.Virtual;
+
+  const handleShowLog = useCallback(() => {
     showLog(record);
-  };
+  }, [record, showLog]);
+
+  if (!showParse) {
+    return null;
+  }
+
   return (
     <section
-      className="flex gap-8 items-center"
+      className="flex items-center"
       data-testid="document-parse-status"
       data-state={
         isQueued
@@ -218,105 +274,73 @@ export function ParsingStatusCell({
             : (ParseStatusStateMap[effectiveRun] ?? 'unknown')
       }
     >
-      {showParse && (
-        <div className="flex items-center gap-2">
-          <Separator orientation="vertical" className="h-[1em]" />
-
-          {isRunning ? (
-            <div className="relative">
-              {/* While STOPPING the underlying running row stays visible
-                  but reads as disabled: dimmed, non-interactive, with both
-                  action buttons disabled. The scrim on top carries the
-                  spinner. */}
-              <div
-                data-testid="document-processing-row"
-                data-stopping={isStopping || undefined}
-                className={cn(
-                  'flex items-center gap-2',
-                  isStopping && 'pointer-events-none opacity-50',
-                )}
-              >
-                {isQueued ? (
-                  <Button
-                    size="auto"
-                    variant="static"
-                    disabled={isStopping}
-                    onClick={() => handleShowLog(record)}
-                  >
-                    <Clock3 className="size-[1em]" />
-                    {t('knowledgeDetails.runningStatusQueued')}
-                  </Button>
-                ) : (
-                  <Button
-                    size="auto"
-                    variant="static"
-                    disabled={isStopping}
-                    onClick={() => handleShowLog(record)}
-                  >
-                    <Progress value={p} className="h-1 flex-1 min-w-10" />
-                    <div className="flex items-center gap-1">
-                      {p}%
-                      <span className="inline-flex items-center">
-                        <CircleQuestionMark className="size-[1em]" />
-                      </span>
-                    </div>
-                  </Button>
-                )}
-
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  disabled={isStopping}
-                  onClick={handleParseClick}
-                  data-testid="document-parse-toggle"
-                >
-                  <CircleX
-                    color="rgba(var(--state-error))"
-                    className="size-[1em]"
-                  />
-                </Button>
-              </div>
-
-              {/* Go only: STOPPING means a cancel request is in flight but
-                  the worker has not reached a terminal state yet. The
-                  translucent scrim keeps the dimmed running row visible
-                  while the spinner marks the in-flight cancel, until the
-                  next poll observes STOPPED/FAILED. */}
-              {isStopping && (
-                <div
-                  data-testid="document-stopping-overlay"
-                  className="absolute inset-0 z-10 flex items-center justify-center rounded bg-bg-card/60"
-                >
-                  <Loader2 className="size-[1em] animate-spin text-text-disabled" />
-                </div>
-              )}
-            </div>
-          ) : isRunLoading ? (
-            <Button size="auto" variant="static" disabled>
-              <Loader2 className="size-[1em] animate-spin" />
-            </Button>
-          ) : (
-            <>
+      {isRunning ? (
+        <div className="relative">
+          {/* While STOPPING the underlying running row stays visible
+              but reads as disabled: dimmed, non-interactive, with the
+              status button disabled. The scrim on top carries the spinner. */}
+          <div
+            data-testid="document-processing-row"
+            data-stopping={isStopping || undefined}
+            className={cn(
+              'flex items-center gap-2',
+              isStopping && 'pointer-events-none opacity-50',
+            )}
+          >
+            {isQueued ? (
               <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={handleParseClick}
-                data-testid="document-parse-toggle"
+                size="auto"
+                variant="static"
+                disabled={isStopping}
+                onClick={handleShowLog}
               >
-                {operationIcon}
+                <Clock3 className="size-4" />
+                {t('knowledgeDetails.runningStatusQueued')}
               </Button>
+            ) : (
+              <Button
+                size="auto"
+                variant="static"
+                disabled={isStopping}
+                onClick={handleShowLog}
+              >
+                <Progress value={p} className="h-1 flex-1 min-w-10" />
+                <div className="flex items-center gap-1">
+                  {p}%
+                  <span className="inline-flex items-center">
+                    <CircleQuestionMark className="size-4" />
+                  </span>
+                </div>
+              </Button>
+            )}
+          </div>
 
-              <ParsingCard record={record} handleShowLog={handleShowLog} />
-            </>
+          {/* STOPPING means a cancel request is in flight but the worker has
+              not reached a terminal state yet. The translucent scrim keeps the
+              dimmed running row visible while the spinner marks the in-flight
+              cancel, until the next poll observes STOPPED/FAILED. */}
+          {isStopping && (
+            <div
+              data-testid="document-stopping-overlay"
+              className="absolute inset-0 z-10 flex items-center justify-center rounded bg-[color-mix(in_srgb,var(--bg-card)_60%,transparent)]"
+            >
+              <Loader2 className="size-4 animate-spin text-text-disabled" />
+            </div>
           )}
         </div>
-      )}
-      {reparseDialogVisible && (
-        <ReparseDialog
-          handleOperationIconClick={handleOperationIconClick}
-          visible={reparseDialogVisible}
-          hideModal={hideReparseDialogModal}
-        ></ReparseDialog>
+      ) : effectiveRun === RunningStatus.FAIL ? (
+        <Button
+          variant="danger"
+          size="xs"
+          className="bg-state-error-5"
+          onClick={handleShowLog}
+          data-testid="document-view-error"
+        >
+          <TriangleAlert />
+          {t('knowledgeDetails.viewError')}
+        </Button>
+      ) : (
+        <ParsingCard record={record} handleShowLog={showLog} />
       )}
     </section>
   );

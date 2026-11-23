@@ -78,6 +78,16 @@ func TestRemoveRedundantSpaces(t *testing.T) {
 		{"korean", "안녕 세계", "안녕 세계"},
 		{"arabic", "مرحبا بالعالم", "مرحبا بالعالم"},
 		{"chinese", "中文 测试 句子", "中文 测试 句子"},
+		// Regression: combining marks (\p{M}) are word characters too. Many
+		// Indic words end in a vowel sign such as U+0947 (Mn) or U+0940 (Mc);
+		// the space after them must stay ("के बाद" -> "केबाद" before).
+		{"hindi word ending in vowel sign e (Mn)", "के बाद", "के बाद"},
+		{"hindi namaste", "नमस्ते दुनिया", "नमस्ते दुनिया"},
+		{"hindi word ending in vowel sign ii (Mc)", "यह किताब मेरी है", "यह किताब मेरी है"},
+		{"bengali", "আমি ভালো আছি", "আমি ভালো আছি"},
+		{"decomposed accent at word end", "café bar", "café bar"},
+		{"hindi, space before ! is still dropped", "नमस्ते !", "नमस्ते!"},
+		{"hindi in parens", "( नमस्ते )", "(नमस्ते)"},
 		// Punctuation cleanup still applies to non-Latin text.
 		{"accented, space before !", "sécurité des données !", "sécurité des données!"},
 		{"space before punctuation is still dropped", "привет !", "привет!"},

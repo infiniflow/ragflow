@@ -78,7 +78,7 @@ export const RunningStatusMap = {
   [RunningStatusOld.CANCEL]: 'Canceled',
   [RunningStatusOld.DONE]: 'Success',
   [RunningStatusOld.FAIL]: 'Failed',
-  [RunningStatusOld.SCHEDULE]: 'Scheduled',
+  [RunningStatusOld.SCHEDULE]: 'Queued',
 };
 
 export enum ModelVariableType {

@@ -65,7 +65,8 @@ func TestCitationParadigmCompare(t *testing.T) {
 
 	for _, c := range cases {
 		// OLD path: the caller fetches the named ids, keeps the resolvable ones,
-		// and marks by position. Simulate the fetch keeping only c1..c3.
+		// and rewrites each tuple to the marker at its position. Simulate the
+		// fetch keeping only c1..c3.
 		oldIDs := ExtractCitedChunkIDs(c.oldAnswer)
 		resolved := make([]string, 0, len(oldIDs))
 		for _, id := range oldIDs {
@@ -73,7 +74,11 @@ func TestCitationParadigmCompare(t *testing.T) {
 				resolved = append(resolved, id)
 			}
 		}
-		oldMarked := InsertCitationMarkers(c.oldAnswer, resolved)
+		oldIndex := make(map[string]int, len(resolved))
+		for i, id := range resolved {
+			oldIndex[id] = i
+		}
+		oldMarked := RewriteProvenance(c.oldAnswer, oldIndex)
 
 		// NEW path: handles resolve against the registry; publishable is what a
 		// fetch would keep.

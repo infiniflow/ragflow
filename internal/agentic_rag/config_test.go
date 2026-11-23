@@ -183,12 +183,18 @@ func TestShippedConfigIsADirectAnswerTemplate(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("shipped config failed to load")
 	}
-	if len(cfg.Templates) != 1 {
-		t.Fatalf("shipped config carries %d templates, want exactly 1 (smart-reasoning)", len(cfg.Templates))
+	// The shipped config also carries the planer-explorer-auditor engine's gate
+	// machinery (planner / plan_auditor / answer_auditor) and its producer; this
+	// test pins the DIRECT-ANSWER producer (smart-reasoning) and its contract.
+	var tmpl *Template
+	for i := range cfg.Templates {
+		if cfg.Templates[i].ID == "smart-reasoning" {
+			tmpl = &cfg.Templates[i]
+			break
+		}
 	}
-	tmpl := cfg.Templates[0]
-	if tmpl.ID != "smart-reasoning" {
-		t.Fatalf("template id = %q, want smart-reasoning", tmpl.ID)
+	if tmpl == nil {
+		t.Fatalf("shipped config is missing the smart-reasoning template")
 	}
 	// The compiled-knowledge tools (navigate_tree / navigate_structure /
 	// graph_explore) are NOT declared here: Run injects them only when the bound

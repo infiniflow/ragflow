@@ -173,7 +173,7 @@ function AgentForm({ node }: INextOperatorForm) {
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField resourceTenantId={resourceTenantId} />
-          {findLlmByUuid(llmId)?.model_type?.includes('vision') && (
+          {findLlmByUuid(llmId)?.model_type?.includes('vlm') && (
             <QueryVariable
               name="visual_files_var"
               label={t('flow.visualInputFile')}

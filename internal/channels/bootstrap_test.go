@@ -53,7 +53,7 @@ func TestStartIsolatesMalformedChannelAndKeepsReconciling(t *testing.T) {
 	t.Cleanup(func() { dao.DB = originalDB })
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	runtime, err := Start(ctx, nil)
+	runtime, err := Start(ctx, "http://127.0.0.1:9380")
 	if err != nil {
 		t.Fatalf("Start() error = %v, want isolated channel failure", err)
 	}
@@ -90,7 +90,7 @@ func TestStartReturnsDatabaseFailure(t *testing.T) {
 	originalDB := dao.DB
 	dao.DB = db
 	defer func() { dao.DB = originalDB }()
-	if _, err := Start(t.Context(), nil); err == nil {
+	if _, err := Start(t.Context(), "http://127.0.0.1:9380"); err == nil {
 		t.Fatal("Start() succeeded without the channel table")
 	}
 }

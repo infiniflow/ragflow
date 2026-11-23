@@ -683,7 +683,7 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 	if err != nil {
 		return "", err
 	}
-	if len(deleteKeys) > 0 {
+	if len(after) == 0 && len(deleteKeys) > 0 {
 		if err := s.docEngine.DeleteMetadataKeys(ctx, docID, doc.KbID, deleteKeys, tenantID); err != nil {
 			return "", fmt.Errorf("failed to delete metadata: %w", err)
 		}
@@ -796,6 +796,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 	// Apply updates and deletes per document using Python's batch_update_metadata
 	// semantics instead of a simple merge-then-delete.
 	updated := 0
+	failed := 0
 	// The documents whose values moved, gathered for the dataset timeline and
 	// recorded once at the end: one batch update is one moment, so it appends one
 	// version rather than a row per document it touched.
@@ -809,6 +810,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 		if err != nil {
 			common.Warn("BatchUpdateDocumentMetadata: get metadata failed",
 				zap.String("docID", docID), zap.Error(err))
+			failed++
 			continue
 		}
 
@@ -828,6 +830,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 		if patchErr != nil {
 			common.Warn("BatchUpdateDocumentMetadata: patch metadata failed",
 				zap.String("docID", docID), zap.Error(patchErr))
+			failed++
 			continue
 		}
 		updated++
@@ -848,6 +851,9 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 	// repeated the previous values is not one.
 	if err := recordMetadataVersionChanges(ctx, datasetID, metadataChanges, metaByDocument); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to record the metadata history: %w", err)
+	}
+	if failed > 0 {
+		return nil, common.CodeServerError, fmt.Errorf("failed to save metadata for %d of %d documents", failed, len(ids))
 	}
 
 	return &BatchUpdateMetadatasResponse{Updated: updated, MatchedDocs: len(ids)}, common.CodeSuccess, nil
@@ -1147,7 +1153,7 @@ func normalizeDocumentMetadataUpdateValue(value interface{}, valueType string) i
 		if list, ok := normalizeMetadataListValue(value); ok {
 			return list
 		}
-		return []interface{}{}
+		return []interface{}{value}
 	case "number":
 		scalar, ok := firstScalarMetadataValue(value)
 		if !ok {
