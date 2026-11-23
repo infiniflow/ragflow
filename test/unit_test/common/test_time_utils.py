@@ -168,6 +168,13 @@ class TestTimestampToDate:
         result = timestamp_to_date(timestamp, "---")
         assert result == "---"
 
+    def test_falsy_timestamp_falls_back_to_current_time(self):
+        """A falsy timestamp means "now", not the scaled-down epoch."""
+        now = time.time()
+        for value in (None, ""):
+            parsed = time.mktime(time.strptime(timestamp_to_date(value), "%Y-%m-%d %H:%M:%S"))
+            assert abs(parsed - now) < 120
+
 
 class TestDateStringToTimestamp:
     """Test cases for date_string_to_timestamp function"""

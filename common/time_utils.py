@@ -47,7 +47,9 @@ def timestamp_to_date(timestamp, format_string="%Y-%m-%d %H:%M:%S"):
         '2024-01-01 08:00:00'
     """
     if not timestamp:
-        timestamp = time.time()
+        # The argument is milliseconds (see current_timestamp), so the
+        # fallback must be in milliseconds too; time.time() is in seconds.
+        timestamp = time.time() * 1000
     timestamp = int(timestamp) / 1000
     time_array = time.localtime(timestamp)
     str_date = time.strftime(format_string, time_array)
