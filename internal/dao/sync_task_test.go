@@ -171,7 +171,7 @@ func TestHandleTransientFailureUsesClassScopedRetryBudget(t *testing.T) {
 	// The task already exhausted the non-transient budget (3 failures), then
 	// hits a transient error whose budget (4) must start fresh.
 	insertRunningSyncTask(t, db, "task-1", 3, 3, "non_transient")
-	attempts, failed, err := dao.HandleTransientFailure(ctx, "task-1", "", "boom", "transient", 4)
+	attempts, failed, _, err := dao.HandleTransientFailure(ctx, "task-1", "", "boom", "transient", 4)
 	if err != nil {
 		t.Fatalf("HandleTransientFailure: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestHandleTransientFailureUsesClassScopedRetryBudget(t *testing.T) {
 		if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", SyncStatusRunning).Error; err != nil {
 			t.Fatalf("mark running: %v", err)
 		}
-		attempts, failed, err = dao.HandleTransientFailure(ctx, "task-1", "", "timeout", "transient", 4)
+		attempts, failed, _, err = dao.HandleTransientFailure(ctx, "task-1", "", "timeout", "transient", 4)
 		if err != nil {
 			t.Fatalf("HandleTransientFailure: %v", err)
 		}

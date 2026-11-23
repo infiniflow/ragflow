@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -149,7 +150,7 @@ func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit int, cursor 
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
-		Where("sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune})
+		Where("sync_logs.status = ? AND connector.status <> ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusCancel, []string{TaskTypeSync, TaskTypePrune})
 	if cursor != nil {
 		query = query.Where("COALESCE(sync_logs.update_time, 0) < ? OR (COALESCE(sync_logs.update_time, 0) = ? AND sync_logs.id < ?)", cursor.UpdateTime, cursor.UpdateTime, cursor.ID)
 	}
@@ -180,7 +181,7 @@ func (d *SyncTaskDAO) GetScheduledTask(ctx context.Context, taskID string) (Sche
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
-		Where("sync_logs.id = ? AND sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", taskID, SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune}).
+		Where("sync_logs.id = ? AND sync_logs.status = ? AND connector.status <> ? AND sync_logs.task_type IN ?", taskID, SyncStatusSchedule, SyncStatusCancel, []string{TaskTypeSync, TaskTypePrune}).
 		First(&row).Error; err != nil {
 		return ScheduledSyncTask{}, err
 	}
@@ -359,17 +360,34 @@ func (d *SyncTaskDAO) FailTask(ctx context.Context, taskID, connectorID, message
 // class is reached. errorClass identifies the current failure class; the
 // class-scoped retry counter resets whenever the class changes, so failures of
 // one class never consume another class's retry budget. ErrorCount is kept as
-// the total failure count for diagnostics.
-func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connectorID, message, errorClass string, maxRetries int64) (int64, bool, error) {
+// the total failure count for diagnostics. Exhausted periodic tasks keep their
+// failure record and create a new round without advancing the sync waterline.
+func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connectorID, message, errorClass string, maxRetries int64) (int64, bool, string, error) {
 	var attempts int64
 	var failed bool
+	var nextTaskID string
 	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task entity.SyncLogs
-		query := tx.WithContext(ctx)
+		connectorQuery := tx.WithContext(ctx)
+		taskQuery := tx.WithContext(ctx)
 		if tx.Dialector.Name() != "sqlite" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+			connectorQuery = connectorQuery.Clauses(clause.Locking{Strength: "UPDATE"})
+			taskQuery = taskQuery.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
-		if err := query.Where("id = ? AND status = ?", taskID, SyncStatusRunning).First(&task).Error; err != nil {
+		// Connector updates also lock this row before canceling task rows.
+		var connector entity.Connector
+		if connectorID != "" {
+			if err := connectorQuery.Where("id = ?", connectorID).First(&connector).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return err
+			}
+			if connector.Status == SyncStatusCancel {
+				return nil
+			}
+		}
+		var task entity.SyncLogs
+		if err := taskQuery.Where("id = ? AND status = ?", taskID, SyncStatusRunning).First(&task).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
@@ -405,9 +423,57 @@ func (d *SyncTaskDAO) HandleTransientFailure(ctx context.Context, taskID, connec
 		if connectorID == "" {
 			return nil
 		}
+		if failed {
+			var err error
+			nextTaskID, err = scheduleAfterFailure(ctx, tx, connector, task)
+			if err != nil || nextTaskID != "" {
+				return err
+			}
+		}
 		return tx.Model(&entity.Connector{}).Where("id = ?", connectorID).Update("status", connectorStatus).Error
 	})
-	return attempts, failed, err
+	return attempts, failed, nextTaskID, err
+}
+
+// scheduleAfterFailure starts the next periodic round from the failed round's
+// original window. Partial ingestion must not skip unfinished source records.
+func scheduleAfterFailure(ctx context.Context, tx *gorm.DB, connector entity.Connector, task entity.SyncLogs) (string, error) {
+	frequency := connector.RefreshFreq
+	switch task.TaskType {
+	case TaskTypeSync:
+	case TaskTypePrune:
+		if !utility.ConfigBool(connector.Config, "sync_deleted_files") {
+			return "", nil
+		}
+		frequency = connector.PruneFreq
+	default:
+		return "", nil
+	}
+	if frequency <= 0 {
+		return "", nil
+	}
+
+	var binding entity.Connector2Kb
+	if err := tx.WithContext(ctx).Where("connector_id = ? AND kb_id = ?", connector.ID, task.KbID).First(&binding).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	var knowledgebase entity.Knowledgebase
+	if err := tx.WithContext(ctx).Select("id").Where("id = ?", task.KbID).First(&knowledgebase).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	var pollRangeStart *time.Time
+	if task.PollRangeStart != nil {
+		start := task.PollRangeStart.Time()
+		pollRangeStart = &start
+	}
+	fromBeginning := task.FromBeginning != nil && (*task.FromBeginning == "1" || strings.EqualFold(*task.FromBeginning, "true"))
+	return createScheduledTask(ctx, tx, connector.ID, task.KbID, task.TaskType, fromBeginning, pollRangeStart, task.TotalDocsIndexed)
 }
 
 // CompleteSyncTask marks SYNC done and creates the next schedule task.
