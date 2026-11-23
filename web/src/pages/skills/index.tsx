@@ -254,6 +254,12 @@ const SkillsPage: React.FC = () => {
       sortOrder,
     );
     setTotalSkills(result.total);
+    // A delete can empty the last page; fall back so the list never sits on a
+    // page past the end of the result set.
+    const lastPage = Math.max(1, Math.ceil(result.total / pageSize));
+    if (currentPage > lastPage) {
+      setCurrentPage(lastPage);
+    }
   }, [
     fetchSkills,
     selectedSpaceName,
@@ -386,12 +392,16 @@ const SkillsPage: React.FC = () => {
         selectedSpaceName,
         folderId,
       );
-      // If delete succeeded and we have search results, remove the skill from searchResults
       if (success) {
         setSearchResults((prev) => prev.filter((s) => s.id !== skillId));
+        // Refresh the authoritative list and totals after every deletion,
+        // including while a search is active: clearing the search otherwise
+        // falls back to stale skills that still contain the deleted item.
+        // deleteSkill no longer fetches, so this is the only post-delete refresh.
+        await loadSkills();
       }
     },
-    [deleteSkill, selectedSpaceId, selectedSpaceName],
+    [deleteSkill, selectedSpaceId, selectedSpaceName, loadSkills],
   );
 
   const handleCreateHub = useCallback(async () => {

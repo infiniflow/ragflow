@@ -712,6 +712,16 @@ export const useSkills = () => {
           return { skills: skillsData, total };
         }
 
+        // The search backend knows the real total even when this page is empty
+        // (e.g. deleting the last row on page 4 of a 61-skill list). The
+        // filesystem fallback only scans at most 30 folders, so using its count
+        // here would clamp currentPage to an earlier page. Keep the search total
+        // whenever it is non-zero and let the caller re-fetch the last valid page.
+        if (total > 0) {
+          setSkills([]);
+          return { skills: [], total };
+        }
+
         // Search returned empty, fall back to file system
         // oxlint-disable-next-line no-console
         console.log(
@@ -1125,8 +1135,6 @@ export const useSkills = () => {
         if (data.code !== 0) throw new Error('Failed to delete skill');
 
         message.success(t('skills.deleteSuccess'));
-        // Refresh skills list using space name and space id
-        await fetchSkills(normalizedSpaceName, normalizedSpaceId);
         return true;
       } catch (error) {
         console.error('Error deleting skill:', error);
@@ -1135,7 +1143,7 @@ export const useSkills = () => {
       }
     },
     // oxlint-disable-next-line react/exhaustive-deps
-    [t, fetchSkills, ensureSkillSpaceFolder, skills],
+    [t, ensureSkillSpaceFolder, skills],
   );
 
   // Recursively find file by path in folder structure
