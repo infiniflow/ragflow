@@ -43,6 +43,26 @@ func TestParseArgsCommandModeStripsGlobalFlags(t *testing.T) {
 	}
 }
 
+// Every single-mode command the parser produces must reach a handler: a type
+// the dispatch switch does not know fails with "single command mode: <type>".
+func TestSingleCommandDispatchCoversParserTypes(t *testing.T) {
+	statements := []string{
+		"ws ls", "ws cat f", "ws search q", "ws find q", "ws",
+		"ws use docs", "ws new docs", "ws delete docs", "ws save hi",
+	}
+	for _, stmt := range statements {
+		cmd, err := NewParser(stmt).Parse(CommandMode)
+		if err != nil {
+			t.Errorf("%q: %v", stmt, err)
+			continue
+		}
+		c := &CLI{Config: &CommandLineConfig{OutputFormat: OutputFormatPlain}}
+		if _, err := c.ExecuteSingleCommand(1, cmd); err != nil {
+			t.Errorf("%q (%s): %v", stmt, cmd.Type, err)
+		}
+	}
+}
+
 // The connection flags configure the API client instead of joining the
 // command text, and without a command the CLI stays interactive.
 func TestParseArgsCommandModeConnectionFlags(t *testing.T) {
