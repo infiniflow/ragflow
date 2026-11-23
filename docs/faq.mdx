@@ -668,6 +668,16 @@ Enter the base URL without the `/layout-parsing` suffix because the Go provider 
 
 `PADDLEOCR_API_URL` configures and auto-provisions the asynchronous **PaddleOCR** model provider. `PADDLEOCR_BASE_URL` is the fallback used by the direct PDF parser. These variables are not required when configuring a provider through the UI and do not select **PaddleOCR.local**.
 
+#### PaddleOCR parsing timeout
+
+| Environment Variable | Description | Default | Example |
+|---------------------|-------------|---------|---------|
+| `PADDLEOCR_TIMEOUT` | Timeout for one PaddleOCR PDF parsing request | `1200` (20m) | `PADDLEOCR_TIMEOUT=3600` |
+
+Set `PADDLEOCR_TIMEOUT` (seconds or duration string like `1h`) when large documents or a slow PaddleOCR service fail with `Task timed out.` after 20 minutes. It applies to both the **PaddleOCR** and **PaddleOCR.local** providers. In a custom Parser component, `paddleocr_timeout` or `paddleocr_timeout_seconds` in the parser setup overrides it. Configured values are clamped within 1s to 24h; unset or invalid values keep the 20-minute default.
+
+A synchronous **PaddleOCR.local** service returns its response only when parsing is done. When a PaddleOCR timeout is configured, that timeout alone bounds the request and `LLM_HTTP_RESPONSE_HEADER_TIMEOUT` does not apply to it.
+
 ---
 
 ### How do I use Ollama with RAGFlow for local LLM inference?

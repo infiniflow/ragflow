@@ -136,7 +136,7 @@ describe('LLMLabelCard', () => {
     renderCard('m1');
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision'],
+      ['chat', 'vlm'],
       'owner-tenant',
     );
   });
@@ -151,13 +151,13 @@ describe('LLMLabelCard', () => {
       <ResourceTenantIdContext.Provider value="owner-tenant">
         <LLMLabelCard
           llmId="decision-model"
-          modelTypes={['chat', 'vision', 'decision']}
+          modelTypes={['chat', 'vlm', 'decision']}
         />
       </ResourceTenantIdContext.Provider>,
     );
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision', 'decision'],
+      ['chat', 'vlm', 'decision'],
       'owner-tenant',
     );
     expect(screen.queryByTitle('common.modelUnavailable')).toBeNull();

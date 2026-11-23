@@ -55,7 +55,8 @@ func naceClientValueFor(version string) string {
 }
 
 // naceClientTransport adds the attribution header to every request this driver
-// sends to Nace (decide, model discovery and connection checks).
+// sends to Nace (decide, document parsing, model discovery and connection
+// checks).
 type naceClientTransport struct {
 	base http.RoundTripper
 }
@@ -67,11 +68,12 @@ func (t naceClientTransport) RoundTrip(req *http.Request) (*http.Response, error
 }
 
 // NaceModel drives Nace (https://console.nace.ai/v1), which serves the Drex
-// decision models (drex-max, drex-v2.0) over the TypeSafe System One protocol.
-// The embedded SystemOneModel already speaks the decide call; this driver adds
-// the catalog, because GET /models on Nace answers {"models": [{"name": ...}]}
-// rather than the OpenAI {"data": [{"id": ...}]} shape the generic lister
-// expects, and the generic lister rejects that body as malformed.
+// decision models (drex-max, drex-v2.0) over the TypeSafe System One protocol
+// and NDI document parsing as OCR models (nace_ndi.go). The embedded
+// SystemOneModel already speaks the decide call; this driver adds the catalog,
+// because GET /models on Nace answers {"models": [{"name": ...}]} rather than
+// the OpenAI {"data": [{"id": ...}]} shape the generic lister expects, and the
+// generic lister rejects that body as malformed.
 type NaceModel struct {
 	*SystemOneModel
 }
@@ -154,7 +156,8 @@ type naceModelList struct {
 }
 
 // ListModels asks which models the key can call and returns them as decision
-// models; every model Nace serves is one.
+// models; every model in that catalog is one. The NDI OCR models are not in it
+// and come from the bundled provider catalog.
 //
 // Aliases are skipped so a user adds the model that is actually billed and
 // reported, not a pointer that moves to a newer version on an announced date.

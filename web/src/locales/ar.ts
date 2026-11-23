@@ -1280,7 +1280,7 @@ export default {
         rerank: 'إعادة الترتيب',
         sequence2text: 'ASR',
         tts: 'تحويل النص إلى كلام',
-        image2text: 'التعرف الضوئي على الحروف',
+        image2text: 'VLM',
         speech2text: 'ASR',
         decision: 'Decision',
       },

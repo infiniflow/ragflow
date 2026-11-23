@@ -36,17 +36,20 @@ func ContainsFold(s, substr string) bool {
 // Pass 1: drop spaces after a "left boundary" character (parens, <, >).
 // Pass 2: drop spaces before a "right boundary" character (parens, !).
 //
-// The word-character class is Unicode-aware (`\p{L}`, `\p{N}`, `_`), matching
-// Python's `\w`. An ASCII-only `a-z0-9` puts every non-Latin letter into the
-// negated "punctuation" set, which deletes the space between two words:
-// "привет мир" -> "приветмир". Letter case needs no flag because `\p{L}`
-// covers both cases — that is what Python's `re.IGNORECASE` does for `a-z`.
+// The word-character class is Unicode-aware: letters, combining marks,
+// numbers and `_` (`\p{L}`, `\p{M}`, `\p{N}`, `_`). An ASCII-only `a-z0-9`
+// puts every non-Latin letter into the negated "punctuation" set, which
+// deletes the space between two words: "привет мир" -> "приветмир". Marks
+// belong in the class too (Python's `\w` leaves them out): many Indic words
+// end in a vowel sign such as U+0947 (Mn) or U+0940 (Mc), and without `\p{M}`
+// "के बाद" becomes "केबाद". Letter case needs no flag because `\p{L}` covers
+// both cases — that is what Python's `re.IGNORECASE` does for `a-z`.
 //
 // The non-space class is a literal space, like Python's `[^ ]`: a tab or
 // newline is a boundary character there, not whitespace to skip.
 var (
-	redundantSpacePass1Re = regexp.MustCompile(`([^\p{L}\p{N}_.,)>]) +([^ ])`)
-	redundantSpacePass2Re = regexp.MustCompile(`([^ ]) +([^\p{L}\p{N}_.,(<])`)
+	redundantSpacePass1Re = regexp.MustCompile(`([^\p{L}\p{M}\p{N}_.,)>]) +([^ ])`)
+	redundantSpacePass2Re = regexp.MustCompile(`([^ ]) +([^\p{L}\p{M}\p{N}_.,(<])`)
 )
 
 // RemoveRedundantSpaces removes redundant spaces around punctuation marks

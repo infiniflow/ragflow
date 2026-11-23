@@ -9,7 +9,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
-import { ChunkVersionBadge } from '@/ee/pages/chunk/components/chunk-card/chunk-version-badge';
+import { ChunkDetailEntry } from '@/ee/pages/chunk/components/chunk-card/chunk-detail-entry';
 import { ChunkVersionEntry } from '@/ee/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-creating-modal/chunk-version-entry';
 import type { ChunkDocType, IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
@@ -96,21 +96,22 @@ const ChunkCard = ({
         selected && 'bg-text-primary/15',
       )}
     >
-      {/* Corner row: the chunk type and, where the edition keeps a chunk history,
-          the version the text shown is at. The history entry is an action on the
-          chunk rather than a label of it, so it sits in the action column below
-          instead of in this strip. */}
+      {/* Corner row: the chunk type, then the entry into its details - which the
+          enterprise build also uses to name the chunk by id. The version the text
+          is at is one of those details, so it is not printed on the card. The
+          type keeps its own box and spacing; the entry takes what the card can
+          spare. */}
       <div
         className="
-        absolute top-0 right-0 flex items-center gap-0.5 pr-2
+        absolute top-0 right-0 flex max-w-[70%] items-center gap-0.5 pr-2
         leading-none text-xs text-text-disabled
         bg-bg-card rounded-bl-2xl rounded-tr-lg
         border-l-0.5 border-b-0.5 border-border-button"
       >
-        <span className="pl-4 py-1 mr-2">
+        <span className="shrink-0 pl-4 py-1 mr-2">
           {t(`chunk.docType.${chunkType}`)}
         </span>
-        <ChunkVersionBadge chunk={item} />
+        <ChunkDetailEntry chunk={item} />
       </div>
 
       <div className="flex items-start justify-between gap-2.5">
@@ -177,7 +178,7 @@ const ChunkCard = ({
               checked={enabled}
               onCheckedChange={onChange}
               aria-readonly
-              className="!m-0"
+              className="!m-0 !mt-[22px]"
               disabled={datasetEditButtonDisabled || switching}
             />
             <Button

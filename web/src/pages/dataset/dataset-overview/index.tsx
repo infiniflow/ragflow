@@ -47,7 +47,7 @@ const StatCard: FC<StatCardProps> = ({
 }) => {
   return (
     <Card
-      className="px-5 py-2.5 rounded-lg border-border-default grid grid-cols-[1fr_auto] grid-rows-[1fr_auto]"
+      className="px-5 py-2.5 rounded-2xl border-border-default grid grid-cols-[1fr_auto] grid-rows-[1fr_auto]"
       style={{
         gridTemplateAreas: '"data icon" "footer footer"',
       }}

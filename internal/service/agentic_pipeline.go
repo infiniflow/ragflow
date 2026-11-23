@@ -57,6 +57,15 @@ func resolveChatAgenticTemplate(chat *entity.Chat, kwargs map[string]interface{}
 	return agentic_rag.ResolveTemplate(mode, override)
 }
 
+// gateTemplateID is the producer template the planer-explorer-auditor engine (mode 6)
+// runs: the two-stage producer whose plan is verified by check_decomposition and whose
+// deliverable the answer auditor audits. It is deliberately distinct from
+// defaultAgenticTemplateID (mode 5's plain direct-answer explorer) so the two engines
+// never share a prompt. The agentic_rag package keys its plan stage on the same id
+// (PlanProducerTemplateID), so this is the single source of truth for which template
+// goes through the plan pipeline.
+const gateTemplateID = agentic_rag.PlanProducerTemplateID
+
 // agenticRag drives ONE conversation turn through the smart-reasoning agent
 // (internal/agentic_rag): an eino-ADK ReAct explorer whose toolset is the
 // corpus itself (grep / lexical / semantic locate, list_chunks deep read).
@@ -361,7 +370,7 @@ func (s *ChatPipelineService) agenticRag(
 			Reference:             reference,
 			Final:                 true,
 			AnswerIsAuthoritative: true,
-			Usage: &ChatTurnUsage{
+			Usage: &TurnUsage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
 				TotalTokens:      totalTokens,

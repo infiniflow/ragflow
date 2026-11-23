@@ -50,15 +50,15 @@ type failedChannel struct {
 }
 
 type Runtime struct {
-	getAgentService func() (*service.AgentService, error)
-	mu              sync.Mutex
-	running         map[string]runningChannel
-	failed          map[string]failedChannel
-	cancel          context.CancelFunc
-	done            chan struct{}
-	stopping        bool
-	messages        sync.WaitGroup
-	statusCache     *service.ChatChannelRuntimeCache
+	completionClient *service.ChatChannelRESTClient
+	mu               sync.Mutex
+	running          map[string]runningChannel
+	failed           map[string]failedChannel
+	cancel           context.CancelFunc
+	done             chan struct{}
+	stopping         bool
+	messages         sync.WaitGroup
+	statusCache      *service.ChatChannelRuntimeCache
 
 	gatewayAttempts    int
 	gatewayNextRetryAt time.Time
@@ -73,11 +73,10 @@ func NewRuntime() *Runtime {
 	}
 }
 
-// Start launches reconciliation. getAgentService is called on the first message
-// so an idle standalone chatter does not load the agent dictionaries.
-func Start(ctx context.Context, getAgentService func() (*service.AgentService, error)) (*Runtime, error) {
+// Start launches reconciliation using the API for channel execution.
+func Start(ctx context.Context, apiURL string) (*Runtime, error) {
 	channelRuntime := NewRuntime()
-	channelRuntime.getAgentService = getAgentService
+	channelRuntime.completionClient = service.NewChatChannelRESTClient(apiURL)
 	if kvrocks.IsEnabled() {
 		channelRuntime.statusCache = service.NewChatChannelRuntimeCache(kvrocks.Get().GetClient())
 	}
@@ -291,16 +290,6 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 		return nil
 	}
 
-	getChannelService := sync.OnceValues(func() (*service.ChatChannelService, error) {
-		if r.getAgentService == nil {
-			return service.NewChatChannelService(), nil
-		}
-		agentService, err := r.getAgentService()
-		if err != nil {
-			return nil, fmt.Errorf("initialize chat-channel agent runtime: %w", err)
-		}
-		return service.NewChatChannelServiceWithAgentService(agentService), nil
-	})
 	ch.SetMessageHandler(func(ctx context.Context, msg core.IncomingMessage) error {
 		r.mu.Lock()
 		if r.stopping {
@@ -310,13 +299,6 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 		r.messages.Add(1)
 		r.mu.Unlock()
 		defer r.messages.Done()
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		channelService, err := getChannelService()
-		if err != nil {
-			return err
-		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -351,7 +333,7 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 			}
 		}
 
-		answer, err := channelService.HandleIncomingMessage(ctx, service.ChatChannelIncomingMessage{
+		answer, err := r.completionClient.HandleIncomingMessage(ctx, service.ChatChannelIncomingMessage{
 			Channel:   msg.Channel,
 			AccountID: msg.AccountID,
 			ChatID:    msg.ChatID,

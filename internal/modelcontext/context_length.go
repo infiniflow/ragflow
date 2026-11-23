@@ -88,7 +88,42 @@ func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, model
 	return 0
 }
 
-// lookupTenantModel resolves the tenant_model row for modelRef by UUID, or
+// ResolveModelMaxOutput returns the chat model's maximum output length
+// (max_output) in tokens for modelRef, or 0 when it cannot be resolved. It
+// mirrors ResolveModelContentLength's resolution order but reads the catalog's
+// max_output instead of context_length, and honors no tenant override: the
+// per-model `extra.max_tokens` key is documented as the context WINDOW, not the
+// output cap. Callers use (context_length - max_output) as the input budget, so
+// 0 (unknown) must be treated as "leave the auto-compact limit unset".
+func ResolveModelMaxOutput(ctx context.Context, db *gorm.DB, tenantID, modelRef, driver, modelName string) int {
+	if db == nil {
+		db = dao.DB
+	}
+	pureName, instanceName, providerName, composite := splitCompositeModelRef(modelRef)
+
+	obj := lookupTenantModel(ctx, db, tenantID, modelRef, pureName, instanceName, providerName, composite)
+	// Active tenant row → its provider row → catalog max_output.
+	if obj != nil && obj.Status == "active" {
+		if provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
+			if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(provider.ProviderName), obj.ModelName); err == nil && mdl.MaxOutput != nil {
+				return *mdl.MaxOutput
+			}
+		}
+	}
+	if composite {
+		if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(providerName), pureName); err == nil && mdl.MaxOutput != nil {
+			return *mdl.MaxOutput
+		}
+	}
+	if driver != "" && modelName != "" {
+		if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(driver), modelName); err == nil && mdl.MaxOutput != nil {
+			return *mdl.MaxOutput
+		}
+	}
+	return 0
+}
+
+// lookupTenantModel resolves the tenant_model row for modelRef — by UUID, or
 // for a composite reference through the tenant's provider/instance rows (chat
 // model type). Returns nil when the row cannot be resolved.
 func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pureName, instanceName, providerName string, composite bool) *entity.TenantModel {

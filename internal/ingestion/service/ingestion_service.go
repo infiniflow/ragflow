@@ -34,6 +34,7 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/observability"
+	"ragflow/internal/permission"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/service/datasetversion"
 	documentpkg "ragflow/internal/service/document"
@@ -217,7 +218,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tie
 		workerQueue:              make(chan *worker, maxConcurrency),
 		ShutdownCh:               make(chan struct{}, 1),
 		ingestionTaskSvc:         servicepkg.NewIngestionTaskService(),
-		docState:                 newDocStateUpdater(deps.DB),
+		docState:                 newDocStateUpdater(deps.DB, deps.Engine),
 		heartbeatInterval:        defaultHeartbeatInterval,
 		memoryReconcileInterval:  defaultMemoryTaskReconcileInterval,
 		memoryReconcileBatchSize: defaultMemoryTaskReconcileBatchSize,
@@ -644,6 +645,14 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
+	// Attribute the run to the user who created the task: the pipeline's model
+	// resolutions and usage records (embedder, knowledge compiler) run on this
+	// context, and without an authenticated user their usage rows carry an
+	// empty user_id and user_email. WithIdentity keeps the tenant already on
+	// the context (pipeline components re-scope it per dataset downstream).
+	if task.UserID != "" {
+		taskCtx.Ctx = permission.WithIdentity(taskCtx.Ctx, task.UserID, permission.TenantIDFromContext(taskCtx.Ctx))
+	}
 	// The ingestor name and NATS subject already ride on the root context
 	// (set in NewIngestor); here we add the worker that claimed this task so the
 	// emitted lifecycle event names it. An absent worker (e.g. test callers that
@@ -1346,7 +1355,18 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if docTaskCtx.Doc.Name != nil {
 		docName = *docTaskCtx.Doc.Name
 	}
-	return recordParseVersion(historyCtx, e.ingestionDB(), docTaskCtx.Doc.ID, docTaskCtx.Doc.KbID, docName, nil, 0)
+	dropped, err := recordParseVersion(historyCtx, e.ingestionDB(), docTaskCtx.Doc.ID, docTaskCtx.Doc.KbID, docName, nil, 0)
+	if err != nil {
+		return err
+	}
+	// The run wrote nothing, so every chunk the history still holds is one this
+	// parse dropped: they leave the index with their tombstones.
+	e.docState.removeDroppedChunks(historyCtx, &taskpkg.PipelineResult{
+		DocID:    docTaskCtx.Doc.ID,
+		KbID:     docTaskCtx.Doc.KbID,
+		TenantID: docTaskCtx.Tenant.ID,
+	}, dropped)
+	return nil
 }
 
 func (e *Ingestor) stagePendingCompileEvent(taskID, tenantID string, result *taskpkg.PipelineResult) {
