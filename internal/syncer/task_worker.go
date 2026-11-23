@@ -140,6 +140,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	// lock the connector and the KB
 	lease, locked, lockErr := w.locker.TryLock(taskContext.Connector.ID, taskContext.Knowledgebase.ID)
 	if lockErr != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeSystem, "setup", "[WARN] Could not acquire connector lock")
 		common.Warn("syncer connector lock acquisition failed", zap.String("task_id", taskContext.Task.ID), zap.Error(lockErr))
 		restored, rescheduleErr := w.rescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID, taskContext.Task.TimeStarted)
 		if rescheduleErr != nil {
