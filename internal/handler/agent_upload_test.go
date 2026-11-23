@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
@@ -100,6 +102,51 @@ func makeUploadCtxNoFile(t *testing.T) (*gin.Context, *httptest.ResponseRecorder
 	return c, w
 }
 
+func executeUpload(h *AgentHandler, c *gin.Context, w *httptest.ResponseRecorder) {
+	// 1. Run RequireCanvasAccess middleware
+	mw := h.RequireCanvasAccess()
+	mw(c)
+	if c.IsAborted() {
+		return
+	}
+	// 2. Enforce 64 MiB limit
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadMaxBytes)
+	if cl := c.Request.ContentLength; cl > uploadMaxBytes {
+		common.RespondError(c, common.CodeArgumentError, "request body too large.")
+		return
+	}
+	// 3. Parse multipart form
+	if err := c.Request.ParseMultipartForm(uploadMaxBytes); err != nil {
+		common.RespondError(c, common.CodeArgumentError, "invalid multipart form: "+err.Error())
+		return
+	}
+	defer func() {
+		if c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
+	// 4. Bind request struct
+	req := &UploadAgentFileReq{
+		CanvasID: c.Param("canvas_id"),
+		URL:      c.Query("url"),
+	}
+	if c.Request.MultipartForm != nil {
+		req.Files = c.Request.MultipartForm.File["file"]
+	}
+	// 5. Invoke typed handler
+	res, err := h.UploadAgentFile(c.Request.Context(), req)
+	if err != nil {
+		var codedErr *common.CodedError
+		if errors.As(err, &codedErr) {
+			common.RespondError(c, codedErr.Code, codedErr.Message)
+			return
+		}
+		common.RespondError(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, res, "success")
+}
+
 // TestUploadAgentFile_SingleFile pins the 1-file → single-dict
 // response shape (python agent_api.py:775-779).
 func TestUploadAgentFile_SingleFile(t *testing.T) {
@@ -112,7 +159,7 @@ func TestUploadAgentFile_SingleFile(t *testing.T) {
 	h := &AgentHandler{loader: fu.loader, fileService: fu.fileSvc}
 
 	c, w := makeUploadCtx(t, 1)
-	h.UploadAgentFile(c)
+	executeUpload(h, c, w)
 
 	if w.Code != 200 {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -146,7 +193,7 @@ func TestUploadAgentFile_MultiFile(t *testing.T) {
 	h := &AgentHandler{loader: fu.loader, fileService: fu.fileSvc}
 
 	c, w := makeUploadCtx(t, 3)
-	h.UploadAgentFile(c)
+	executeUpload(h, c, w)
 
 	if w.Code != 200 {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -173,7 +220,7 @@ func TestUploadAgentFile_MissingFileField(t *testing.T) {
 	h := &AgentHandler{loader: loader, fileService: &fakeAgentFileService{}}
 
 	c, w := makeUploadCtxNoFile(t)
-	h.UploadAgentFile(c)
+	executeUpload(h, c, w)
 
 	code, msg := errBody(t, w.Body.Bytes())
 	if code != 101 { // CodeArgumentError
@@ -193,7 +240,7 @@ func TestUploadAgentFile_CannotAccessCanvas(t *testing.T) {
 	h := &AgentHandler{loader: loader, fileService: &fakeAgentFileService{}}
 
 	c, w := makeUploadCtx(t, 1)
-	h.UploadAgentFile(c)
+	executeUpload(h, c, w)
 
 	code, msg := errBody(t, w.Body.Bytes())
 	if code != 103 { // CodeOperatingError
@@ -217,7 +264,7 @@ func TestUploadAgentFile_URLImport(t *testing.T) {
 
 	c, w := makeUploadCtx(t, 1)
 	c.Request.URL.RawQuery = "url=https%3A%2F%2Fexample.com%2Ffile.bin"
-	h.UploadAgentFile(c)
+	executeUpload(h, c, w)
 
 	if w.Code != 200 {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -255,7 +302,7 @@ func TestUploadAgentFile_URLImport_IgnoredForMultiFile(t *testing.T) {
 
 	c, w := makeUploadCtx(t, 3)
 	c.Request.URL.RawQuery = "url=https%3A%2F%2Fexample.com%2Ffile.bin"
-	h.UploadAgentFile(c)
+	executeUpload(h, c, w)
 
 	if w.Code != 200 {
 		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -273,11 +320,6 @@ func TestUploadAgentFile_URLImport_IgnoredForMultiFile(t *testing.T) {
 	if len(env.Data) != 3 {
 		t.Errorf("data has %d items, want 3 (url was ignored)", len(env.Data))
 	}
-	// Sanity check: the urlUpload map should NOT have been consumed.
-	// We don't read it back, but the test setup proves the
-	// handler didn't dispatch to UploadFromURL (otherwise it would
-	// have returned the single urlUpload dict, not the 3-element
-	// list from uploadList).
 }
 
 // TestUploadAgentFile_URLImport_LoaderError pins that a failed URL
@@ -290,7 +332,7 @@ func TestUploadAgentFile_URLImport_LoaderError(t *testing.T) {
 
 	c, w := makeUploadCtx(t, 1)
 	c.Request.URL.RawQuery = "url=https%3A%2F%2Finternal.example.com%2Fsecret"
-	h.UploadAgentFile(c)
+	executeUpload(h, c, w)
 
 	code, msg := errBody(t, w.Body.Bytes())
 	if code != 500 { // CodeServerError
@@ -308,7 +350,7 @@ func TestUploadAgentFile_LoaderError(t *testing.T) {
 	h := &AgentHandler{loader: loader, fileService: &fakeAgentFileService{}}
 
 	c, w := makeUploadCtx(t, 1)
-	h.UploadAgentFile(c)
+	executeUpload(h, c, w)
 
 	code, msg := errBody(t, w.Body.Bytes())
 	if code != 500 { // CodeServerError
@@ -316,5 +358,65 @@ func TestUploadAgentFile_LoaderError(t *testing.T) {
 	}
 	if !strings.Contains(msg, "deadline") {
 		t.Errorf("msg = %q, want contains 'deadline'", msg)
+	}
+}
+
+// TestUploadAgentFile_BodySizeLimit verifies that a request exceeding 64 MiB
+// is immediately rejected with CodeArgumentError ("request body too large.").
+func TestUploadAgentFile_BodySizeLimit(t *testing.T) {
+	loader := &fakeCanvasLoader{canvas: &entity.UserCanvas{ID: "c1"}}
+	h := &AgentHandler{loader: loader, fileService: &fakeAgentFileService{}}
+
+	c, w := makeUploadCtx(t, 1)
+	c.Request.ContentLength = 65 << 20 // 65 MiB > 64 MiB
+	executeUpload(h, c, w)
+
+	code, msg := errBody(t, w.Body.Bytes())
+	if code != 101 { // CodeArgumentError
+		t.Errorf("code = %d, want 101; msg=%q", code, msg)
+	}
+	if !strings.Contains(msg, "request body too large.") {
+		t.Errorf("msg = %q, want 'request body too large.'", msg)
+	}
+}
+
+// TestUploadAgentFile_FormURLIgnored verifies that a `url` field inside
+// the multipart body is ignored and does NOT trigger URL import.
+func TestUploadAgentFile_FormURLIgnored(t *testing.T) {
+	loader := &fakeCanvasLoader{canvas: &entity.UserCanvas{ID: "c1"}}
+	fu := &uploadFakes{loader: loader, fileSvc: &fakeAgentFileService{}}
+	fu.fileSvc.urlUpload = map[string]interface{}{"id": "should-not-be-called"}
+	fu.setUploadResult([]map[string]interface{}{{"id": "normal-file-upload"}})
+	h := &AgentHandler{loader: fu.loader, fileService: fu.fileSvc}
+
+	// Construct multipart body with BOTH a file and a form field named "url"
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	fw, _ := mw.CreateFormFile("file", "test.txt")
+	fw.Write([]byte("content"))
+	_ = mw.WriteField("url", "https://example.com/exploit")
+	mw.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest("POST", "/api/v1/agents/c1/upload", body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	c.Request = req
+	c.Params = gin.Params{{Key: "canvas_id", Value: "c1"}}
+
+	executeUpload(h, c, w)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if env.Data["id"] != "normal-file-upload" {
+		t.Errorf("expected normal file upload, got %v", env.Data["id"])
 	}
 }
