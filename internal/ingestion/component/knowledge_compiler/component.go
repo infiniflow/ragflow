@@ -181,15 +181,7 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		for k, v := range in.VariantSpecific {
 			specIn.VariantSpecific[k] = v
 		}
-		// The template config (flat: kind/entity/relation/plan/…) is delivered to
-		// the structure and wiki variants under the "parser_config" key — the SAME
-		// key those variants read (structure.Run / wikiPipeline.mapBatch do
-		// VariantSpecific["parser_config"]). Storing it as "config" left the
-		// variants with a nil config, so InferType saw no "kind" and fell back to
-		// "list" (breaking timeline: its compile_kwd became "list" instead of
-		// "timeline", so dropIsolatedTimelineEntities never ran and the timeline
-		// rendered every entity isolated).
-		//
+		// Structure and wiki read the flat template config as parser_config.
 		// Only overwrite when the template actually carries a config: an empty
 		// template config (e.g. a resolver stub) must not clobber a parser_config
 		// the caller already supplied on the inputs.
@@ -451,7 +443,7 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 			}
 		}
 		if len(p.Vector) > 0 {
-			if err := doc.SetExtraValue(fmt.Sprintf("q_%d_vec", len(p.Vector)), p.Vector); err != nil {
+			if err := doc.SetExtraValue(clog.VectorColumnName(len(p.Vector)), p.Vector); err != nil {
 				return nil, err
 			}
 		}
@@ -625,7 +617,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 
 	case common.VariantMindmap:
 		// Mindmap now emits entity/relation rows (plan §1.2) so it participates in
-		// dataset-level merge exactly like graph/timeline: each node is an entity,
+		// dataset-level merge exactly like graph: each node is an entity,
 		// each parent→child edge is a relation. Reuse the shared structure-graph
 		// column contract (type_kwd + from/to_entity_kwd + name_kwd +
 		// entity_type_kwd + mention_count_int). The relation type lives in the

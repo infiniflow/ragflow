@@ -82,14 +82,14 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
-	"ragflow/internal/parser/parser"
-
 	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/parser"
 )
 
 type tokenChunkerParam struct {

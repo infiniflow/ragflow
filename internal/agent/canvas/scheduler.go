@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 // Package canvas — eino Workflow topology builder.
 //
 // BuildWorkflow turns a Canvas (DSL) into a *compose.Workflow. The
@@ -122,7 +138,7 @@ func isKnownPrimitive(name string) bool {
 		return true
 	}
 	switch strings.ToLower(name) {
-	case "begin", "message", "llm", "categorize", "switch",
+	case "begin", "message", "llm", "categorize", "scoredswitch", "switch",
 		"agent", "invoke", "dataoperations", "listoperations",
 		"stringtransform", "variableaggregator", "variableassigner",
 		"loop", "parallel": // macros in BuildWorkflow; the pre-pass absorbs them.
@@ -848,31 +864,29 @@ func messageConsumesComponent(c *Canvas, msgID, cpnID string) bool {
 		return false
 	}
 	msgComp, ok := c.Components[msgID]
-	if !ok || len(msgComp.Obj.Params) == 0 {
+	if !ok {
 		return false
 	}
-	needle := strings.ToLower(cpnID) + "@"
-	for _, v := range msgComp.Obj.Params {
-		switch x := v.(type) {
+	text := ""
+	if v, ok := msgComp.Obj.Params["text"].(string); ok {
+		text = v
+	} else {
+		switch x := msgComp.Obj.Params["content"].(type) {
 		case string:
-			if strings.Contains(strings.ToLower(x), needle) {
-				return true
-			}
+			text = x
 		case []string:
-			for _, s := range x {
-				if strings.Contains(strings.ToLower(s), needle) {
-					return true
-				}
-			}
+			text = strings.Join(x, "")
 		case []any:
+			parts := make([]string, 0, len(x))
 			for _, item := range x {
-				if s, ok := item.(string); ok && strings.Contains(strings.ToLower(s), needle) {
-					return true
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					parts = append(parts, s)
 				}
 			}
+			text = strings.Join(parts, "")
 		}
 	}
-	return false
+	return strings.Contains(strings.ToLower(text), strings.ToLower(cpnID)+"@")
 }
 
 func hasStructuredOutput(params map[string]any) bool {

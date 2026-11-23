@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 )
 
@@ -40,19 +41,20 @@ type AgentVersionCatalogItem struct {
 
 // ListVersionCatalog returns accessible canvases in the selected category and
 // their saved versions, newest first. Empty canvases keep an empty version list.
-func (s *AgentService) ListVersionCatalog(ctx context.Context, canvasCategory string) ([]AgentVersionCatalogItem, error) {
-	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
+func (s *AgentService) ListVersionCatalog(ctx context.Context, canvasCategory, accessUserID string) ([]AgentVersionCatalogItem, error) {
+	scope, err := queryScopeForAccessUser(ctx, permission.NewDatabaseChecker(dao.DB), permission.ScopeQuery{
 		Kind: permission.ResourceKindCanvas, Operation: permission.OperationRead,
-	})
+	}, accessUserID)
 	if err != nil {
 		return nil, fmt.Errorf("scope version catalog: %w", err)
 	}
 	items := make([]AgentVersionCatalogItem, 0)
-	if scope.Mode == permission.ScopeNone {
-		return items, nil
-	}
-	canvases, err := s.canvasDAO.ListMetadataByIDs(ctx, dao.DB, scope.ResourceIDs, canvasCategory)
-	if err != nil {
+	var canvases []entity.UserCanvas
+	if err := scope.Apply(dao.DB.WithContext(ctx).Model(&entity.UserCanvas{})).
+		Select("id", "title").
+		Where("canvas_category = ?", canvasCategory).
+		Order("create_time DESC").Order("id ASC").
+		Find(&canvases).Error; err != nil {
 		return nil, fmt.Errorf("list version catalog canvases: %w", err)
 	}
 	canvasIDs := make([]string, 0, len(canvases))

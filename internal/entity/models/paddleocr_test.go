@@ -39,6 +39,37 @@ func TestOCRUploadFilename(t *testing.T) {
 	}
 }
 
+func TestPaddleOCRDetectFileType(t *testing.T) {
+	pdfURL := "http://example.com/doc.pdf"
+	pdfURLWithQuery := "http://example.com/doc.pdf?token=123"
+	imgURL := "http://example.com/pic.png"
+	noExtURL := "http://example.com/doc-no-ext"
+
+	cases := []struct {
+		name    string
+		content []byte
+		url     *string
+		want    int
+	}{
+		{"pdf content nil url", []byte("%PDF-1.4"), nil, 0},
+		{"pdf content pdf url", []byte("%PDF-1.4"), &pdfURL, 0},
+		{"pdf content query url", []byte("%PDF-1.4"), &pdfURLWithQuery, 0},
+		{"pdf content no-ext url", []byte("%PDF-1.4"), &noExtURL, 0},
+		{"image content pdf url", []byte("\x89PNG\r\n\x1a\n"), &pdfURL, 0},
+		{"image content image url", []byte("\x89PNG\r\n\x1a\n"), &imgURL, 1},
+		{"image content nil url", []byte("\x89PNG\r\n\x1a\n"), nil, 1},
+		{"empty content nil url", nil, nil, 1},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := paddleOCRDetectFileType(tc.content, tc.url); got != tc.want {
+				t.Fatalf("paddleOCRDetectFileType = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestPaddleOCRLocalListModels verifies that the local PaddleOCR driver lists
 // the default models shipped in conf/models/paddleocr_local.json, so that the
 // "add model by selection" flow can pick them up.
@@ -70,10 +101,9 @@ func TestPaddleOCRLocalListModels(t *testing.T) {
 	}
 }
 
-// TestPaddleOCRConfigFromAPIKey pins the api_key JSON contract shared with
-// Python's PaddleOCROcrModel: the cloud provider stores
-// paddleocr_base_url / paddleocr_api_url, paddleocr_access_token and
-// paddleocr_algorithm in the api_key payload — either with the lower-case UI
+// TestPaddleOCRConfigFromAPIKey covers the resolution of
+// paddleocr_base_url / paddleocr_api_url and paddleocr_access_token
+// in the api_key payload — either with the lower-case UI
 // keys or the upper-case env-style keys the env auto-provisioning writes —
 // while a plain-text api_key (PaddleOCR.local bearer token) yields zero
 // values.
@@ -83,77 +113,65 @@ func TestPaddleOCRConfigFromAPIKey(t *testing.T) {
 		apiKey    string
 		wantURL   string
 		wantToken string
-		wantAlgo  string
 	}{
 		{
 			name:      "empty",
 			apiKey:    "",
 			wantURL:   "",
 			wantToken: "",
-			wantAlgo:  "",
 		},
 		{
 			name:      "plain token (PaddleOCR.local)",
 			apiKey:    "tok-123",
 			wantURL:   "",
 			wantToken: "",
-			wantAlgo:  "",
 		},
 		{
 			name:      "api_url payload",
-			apiKey:    `{"paddleocr_api_url":"http://ocr.test/api","paddleocr_access_token":"tok-456","paddleocr_algorithm":"PaddleOCR-VL"}`,
+			apiKey:    `{"paddleocr_api_url":"http://ocr.test/api","paddleocr_access_token":"tok-456"}`,
 			wantURL:   "http://ocr.test/api",
 			wantToken: "tok-456",
-			wantAlgo:  "PaddleOCR-VL",
 		},
 		{
 			name:      "base_url wins over api_url",
 			apiKey:    `{"paddleocr_base_url":"http://base.test","paddleocr_api_url":"http://api.test","paddleocr_access_token":"tok-789"}`,
 			wantURL:   "http://base.test",
 			wantToken: "tok-789",
-			wantAlgo:  "",
 		},
 		{
 			name:      "nested api_key key",
 			apiKey:    `{"api_key":{"paddleocr_api_url":"http://nested.test","paddleocr_access_token":"tok-nested"}}`,
 			wantURL:   "http://nested.test",
 			wantToken: "tok-nested",
-			wantAlgo:  "",
 		},
 		{
 			name:      "unrelated json ignored",
 			apiKey:    `{"openai_api_key":"sk-xxx"}`,
 			wantURL:   "",
 			wantToken: "",
-			wantAlgo:  "",
 		},
 		{
 			name:      "upper-case env-style payload",
-			apiKey:    `{"PADDLEOCR_BASE_URL":"http://envbase.test","PADDLEOCR_ACCESS_TOKEN":"tok-env","PADDLEOCR_ALGORITHM":"PP-OCRv5"}`,
+			apiKey:    `{"PADDLEOCR_BASE_URL":"http://envbase.test","PADDLEOCR_ACCESS_TOKEN":"tok-env"}`,
 			wantURL:   "http://envbase.test",
 			wantToken: "tok-env",
-			wantAlgo:  "PP-OCRv5",
 		},
 		{
 			name:      "upper-case api_url fallback",
 			apiKey:    `{"PADDLEOCR_API_URL":"http://envapi.test","PADDLEOCR_ACCESS_TOKEN":"tok-env2"}`,
 			wantURL:   "http://envapi.test",
 			wantToken: "tok-env2",
-			wantAlgo:  "",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			url, token, algo := paddleOCRConfigFromAPIKey(tc.apiKey)
+			url, token := paddleOCRConfigFromAPIKey(tc.apiKey)
 			if url != tc.wantURL {
 				t.Errorf("baseURL = %q, want %q", url, tc.wantURL)
 			}
 			if token != tc.wantToken {
 				t.Errorf("accessToken = %q, want %q", token, tc.wantToken)
-			}
-			if algo != tc.wantAlgo {
-				t.Errorf("algorithm = %q, want %q", algo, tc.wantAlgo)
 			}
 		})
 	}
@@ -359,8 +377,9 @@ func TestPaddleOCRModelOCRFileUnwrapsAPIKeyPayload(t *testing.T) {
 }
 
 // TestPaddleOCRLocalModelOCRFileResolvesPayload pins the local driver's share
-// of the same contract: bearer token and algorithm are resolved inside the
-// driver from the tenant api_key payload.
+// of the same contract: bearer token and base URL are resolved inside the
+// driver from the tenant api_key payload, and request body conforms to the
+// official PaddleX layout-parsing endpoint without redundant algorithm parameters.
 func TestPaddleOCRLocalModelOCRFileResolvesPayload(t *testing.T) {
 	withSSRFBypass(t)
 
@@ -377,8 +396,11 @@ func TestPaddleOCRLocalModelOCRFileResolvesPayload(t *testing.T) {
 			t.Errorf("decode body: %v", err)
 			return
 		}
-		if got, want := body["algorithm"], "PaddleOCR-VL"; got != want {
-			t.Errorf("algorithm = %v, want %v", got, want)
+		if _, hasAlgo := body["algorithm"]; hasAlgo {
+			t.Errorf("expected no algorithm field in local layout-parsing request, found: %v", body["algorithm"])
+		}
+		if got, want := body["fileType"], float64(0); got != want {
+			t.Errorf("fileType = %v, want %v", got, want)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Local Title\n"}}]}}`))
@@ -386,7 +408,7 @@ func TestPaddleOCRLocalModelOCRFileResolvesPayload(t *testing.T) {
 	defer server.Close()
 
 	driver := NewPaddleOCRLocalModel(nil, URLSuffix{OCR: "layout-parsing"})
-	apiKey := fmt.Sprintf(`{"paddleocr_base_url":%q,"paddleocr_access_token":"tok-local","paddleocr_algorithm":"PaddleOCR-VL"}`, server.URL)
+	apiKey := fmt.Sprintf(`{"paddleocr_base_url":%q,"paddleocr_access_token":"tok-local"}`, server.URL)
 	emptyBaseURL := ""
 	modelName := "PaddleOCR-VL"
 
@@ -396,6 +418,44 @@ func TestPaddleOCRLocalModelOCRFileResolvesPayload(t *testing.T) {
 	}
 	if resp == nil || resp.Text == nil || !strings.Contains(*resp.Text, "Local Title") {
 		t.Fatalf("OCRFile text = %v, want Local Title", resp)
+	}
+
+	// Verify local driver tolerates nil modelName without panicking.
+	resp, err = driver.OCRFile(context.Background(), nil, []byte("%PDF-1.4"), nil, &APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL}, nil, nil)
+	if err != nil {
+		t.Fatalf("OCRFile with nil modelName: %v", err)
+	}
+	if resp == nil || resp.Text == nil || !strings.Contains(*resp.Text, "Local Title") {
+		t.Fatalf("OCRFile with nil modelName text = %v, want Local Title", resp)
+	}
+}
+
+func TestPaddleOCRModelOCRFileRejectsEmptyModelName(t *testing.T) {
+	driver := NewPaddleOCRModel(nil, URLSuffix{OCR: "v2/ocr/jobs"})
+	baseURL := "https://ocr.example"
+
+	for _, tc := range []struct {
+		name      string
+		modelName *string
+	}{
+		{name: "nil modelName", modelName: nil},
+		{name: "empty modelName", modelName: ptr("")},
+		{name: "whitespace modelName", modelName: ptr("   ")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("OCRFile panicked: %v", r)
+				}
+			}()
+			resp, err := driver.OCRFile(t.Context(), tc.modelName, []byte("%PDF-1.4"), nil, &APIConfig{BaseURL: &baseURL}, nil, nil)
+			if resp != nil {
+				t.Fatalf("OCRFile response = %+v, want nil", resp)
+			}
+			if err == nil || !strings.Contains(err.Error(), "model name") {
+				t.Fatalf("OCRFile error = %v, want non-empty model name error", err)
+			}
+		})
 	}
 }
 

@@ -54,9 +54,9 @@ var arxivNewlinePattern = regexp.MustCompile(`\n+`)
 // arxivParams carries the query and ArXiv search settings. Info exposes only
 // query to match Python's tool meta; top_n and sort_by come from node params.
 type arxivParams struct {
-	Query  string `json:"query"`
-	TopN   int    `json:"top_n"`
-	SortBy string `json:"sort_by"`
+	Query  string `json:"query" doc:"The search keywords to execute with arXiv. The keywords should be the most important words/terms(includes synonyms) from the original request." required:"true"`
+	TopN   int    `json:"top_n" schema:"-" component:"-"`
+	SortBy string `json:"sort_by" schema:"-" component:"-"`
 }
 
 // arxivResult is one entry in the model-facing result list.
@@ -141,30 +141,19 @@ func NewArxivToolWithParams(h *HTTPHelper, topN int, sortBy string) *ArxivTool {
 
 // Info returns the tool's metadata for the chat model.
 func (a *ArxivTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: arxivToolName,
-		Desc: arxivToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with arXiv. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(arxivToolName, arxivToolDescription, arxivParams{})
 }
 
 func (a *ArxivTool) ComponentSpec() ComponentSpec {
-	return ComponentSpec{
-		Inputs: map[string]string{"query": "Search query."},
-		Outputs: map[string]string{
-			"formalized_content": "Rendered arXiv references for downstream prompts.",
-			"json":               "arXiv paper list.",
-		},
-		InputForm: map[string]any{
-			"query": map[string]any{"name": "Query", "type": "line"},
-		},
+	spec := BuildComponentSpec(arxivParams{})
+	spec.Outputs = map[string]string{
+		"formalized_content": "Rendered arXiv references for downstream prompts.",
+		"json":               "arXiv paper list.",
 	}
+	spec.InputForm = map[string]any{
+		"query": map[string]any{"name": "Query", "type": "line"},
+	}
+	return spec
 }
 
 // buildArxivURL constructs the ArXiv /api/query URL.

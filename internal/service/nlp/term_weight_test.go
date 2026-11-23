@@ -215,6 +215,34 @@ func TestPretoken(t *testing.T) {
 	}
 }
 
+// TestPretokenPunctOnlyMatchesLeadingPunctuation pins the anchored punct class:
+// only a leading punctuation character turns a token into "#".
+func TestPretokenPunctOnlyMatchesLeadingPunctuation(t *testing.T) {
+	cases := []struct {
+		token string
+		want  bool
+	}{
+		{"@abc", true},
+		{"，abc", true},
+		{"#x", true},
+		{"‘x", true},
+		{"“x", true},
+		{".5", true},
+		{"`x", true},
+		{`\x`, true},
+		{"]x", true},
+		{"abc", false},
+		{"a,b", false}, // mid-token punctuation is kept
+		{"-5", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := rePretokenPunct.MatchString(c.token); got != c.want {
+			t.Errorf("MatchString(%q) = %v, want %v", c.token, got, c.want)
+		}
+	}
+}
+
 // TestTokenMerge tests token merging
 func TestTokenMerge(t *testing.T) {
 	d := NewTermWeightDealer("")

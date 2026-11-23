@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 //go:build cgo
 
 package native
@@ -44,10 +60,10 @@ func nms(boxes []nmsBox, iouThr float32, plusOne bool) []int {
 		xx2 := make([]float32, len(order)-1)
 		yy2 := make([]float32, len(order)-1)
 		for k, j := range order[1:] {
-			xx1[k] = maxf(boxes[i].X0, boxes[j].X0)
-			yy1[k] = maxf(boxes[i].Y0, boxes[j].Y0)
-			xx2[k] = minf(boxes[i].X1, boxes[j].X1)
-			yy2[k] = minf(boxes[i].Y1, boxes[j].Y1)
+			xx1[k] = max(boxes[i].X0, boxes[j].X0)
+			yy1[k] = max(boxes[i].Y0, boxes[j].Y0)
+			xx2[k] = min(boxes[i].X1, boxes[j].X1)
+			yy2[k] = min(boxes[i].Y1, boxes[j].Y1)
 		}
 		w := subMax0(xx2, xx1)
 		h := subMax0(yy2, yy1)
@@ -76,20 +92,6 @@ func nms(boxes []nmsBox, iouThr float32, plusOne bool) []int {
 		order = next
 	}
 	return keep
-}
-
-func maxf(a, b float32) float32 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func minf(a, b float32) float32 {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func subMax0(a, b []float32) []float32 {

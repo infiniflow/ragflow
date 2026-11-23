@@ -19,6 +19,7 @@ package config
 import "ragflow/internal/common"
 
 type Config struct {
+	serverNames             map[string]string
 	general                 GeneralConfig
 	generalStorageEngineSet bool
 	database                DatabaseConfig

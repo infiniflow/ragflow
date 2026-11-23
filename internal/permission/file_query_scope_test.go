@@ -121,6 +121,77 @@ func TestFileQueryScopeFiltersInSQLAndReturnsBatchAccessMasks(t *testing.T) {
 	}
 }
 
+func TestFileQueryScopeUsesLinkedDatasetOwner(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.File{}, &entity.File2Document{}, &entity.Document{}, &entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate permission tables: %v", err)
+	}
+
+	valid := string(entity.StatusValid)
+	dataset := entity.Knowledgebase{
+		ID: "private-dataset", UserID: "dataset-member", TenantID: "dataset-tenant", CreatedBy: "tenant-owner",
+		Name: "Private", EmbdID: "embedding", Permission: string(entity.TenantPermissionMe), Status: &valid,
+	}
+	document := entity.Document{
+		ID: "private-document", KbID: dataset.ID, UserID: "dataset-member", CreatedBy: "tenant-owner",
+		ParserID: "general", ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "pdf", Suffix: "pdf", Status: &valid,
+	}
+	root := entity.File{ID: "root", ParentID: "root", TenantID: "file-tenant", CreatedBy: "file-owner", Name: "/", Type: "folder"}
+	linkedFile := entity.File{ID: "linked-file", ParentID: "root", TenantID: "file-tenant", CreatedBy: "file-owner", Name: "private.pdf", Type: "pdf"}
+	for _, value := range []any{&dataset, &document, &root, &linkedFile} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("create fixture %T: %v", value, err)
+		}
+	}
+	fileID, documentID := linkedFile.ID, document.ID
+	if err := db.Create(&entity.File2Document{ID: "file-document-link", FileID: &fileID, DocumentID: &documentID}).Error; err != nil {
+		t.Fatalf("link file and document: %v", err)
+	}
+	for _, membership := range []entity.UserTenant{
+		{ID: "dataset-tenant-owner", UserID: "tenant-owner", TenantID: "dataset-tenant", Role: string(RoleOwner), Status: &valid},
+		{ID: "dataset-member", UserID: "dataset-member", TenantID: "dataset-tenant", Role: string(RoleNormal), Status: &valid},
+		{ID: "file-tenant-owner", UserID: "file-owner", TenantID: "file-tenant", Role: string(RoleOwner), Status: &valid},
+		{ID: "tenant-owner-file-member", UserID: "tenant-owner", TenantID: "file-tenant", Role: string(RoleNormal), Status: &valid},
+	} {
+		if err := db.Create(&membership).Error; err != nil {
+			t.Fatalf("create membership %q: %v", membership.ID, err)
+		}
+	}
+
+	checker := newCommunityDatabaseChecker(db)
+	for _, tc := range []struct {
+		userID  string
+		visible bool
+	}{
+		{userID: "dataset-member", visible: true},
+		{userID: "tenant-owner", visible: false},
+	} {
+		ctx := WithIdentity(context.Background(), tc.userID, "file-tenant")
+		err := checker.CheckResource(ctx, ResourceRef{Kind: ResourceKindFile, ID: linkedFile.ID}, OperationRead)
+		if allowed := err == nil; allowed != tc.visible {
+			t.Errorf("CheckResource(file, user=%s) allowed = %v, want %v (err=%v)", tc.userID, allowed, tc.visible, err)
+		}
+		scope, err := checker.QueryScope(ctx, ScopeQuery{
+			Kind: ResourceKindFile, Parent: ResourceRef{Kind: ResourceKindFolder, ID: root.ID}, Operation: OperationRead,
+		})
+		if err != nil {
+			t.Fatalf("QueryScope(files, user=%s) error: %v", tc.userID, err)
+		}
+		var fileIDs []string
+		if err := scope.Apply(db.Model(&entity.File{})).
+			Where("file.parent_id = ? AND file.id <> ?", root.ID, root.ID).
+			Pluck("file.id", &fileIDs).Error; err != nil {
+			t.Fatalf("query files for %s: %v", tc.userID, err)
+		}
+		if visible := len(fileIDs) == 1 && fileIDs[0] == linkedFile.ID; visible != tc.visible {
+			t.Errorf("QueryScope(file IDs, user=%s) = %v, want linked file visible=%v", tc.userID, fileIDs, tc.visible)
+		}
+	}
+}
+
 func stringPointer(value string) *string { return &value }
 
 func fileIDs(files []entity.File) []string {

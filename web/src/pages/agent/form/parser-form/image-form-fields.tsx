@@ -10,7 +10,7 @@ import { Cloud, LucideIcon, ScanText } from 'lucide-react';
 import { useCallback, useId, useMemo, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { CommonProps } from './interface';
 import { ParserFormSchemaType } from './schema';
 import { buildFieldNameWithPrefix } from './utils';
@@ -113,7 +113,7 @@ function OcrEngineCard({
 /** Lists enrolled PaddleOCR models using the canvas owner's tenant context. */
 function ImageOcrEngineFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   const groupId = useId();
   const {
     treeData: modelTree,
@@ -123,7 +123,7 @@ function ImageOcrEngineFields({ prefix }: CommonProps) {
   } = useModelTree({
     modelTypes: ImageOcrModelTypes,
     providers: ImageOcrProviders,
-    ownerTenantId,
+    resourceTenantId,
   });
   // Auto-pick and restore need tenant UUIDs; entries without a model_id still
   // appear in the tree through buildModelTree's legacy id fallback.
@@ -137,9 +137,9 @@ function ImageOcrEngineFields({ prefix }: CommonProps) {
   );
   const renderMissingModel = useCallback(
     (value: string) => (
-      <MissingModelLabel value={value} ownerTenantId={ownerTenantId} />
+      <MissingModelLabel value={value} resourceTenantId={resourceTenantId} />
     ),
-    [ownerTenantId],
+    [resourceTenantId],
   );
   // The last external model survives a DeepDoc detour so switching back
   // restores it instead of silently landing on the first listed model.

@@ -46,7 +46,7 @@ func (h *ChatHandler) Recommendation(c *gin.Context) {
 
 	var req ChatRecommendationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeArgumentError, "question is required")
+		common.RespondError(c, common.CodeArgumentError, "question is required: "+err.Error())
 		return
 	}
 	if strings.TrimSpace(req.Question) == "" {

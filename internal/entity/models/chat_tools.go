@@ -137,7 +137,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		tcChoice := "auto"
 		cfg.ToolChoice = &tcChoice
 
-		resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil)
+		resp, err := cm.ChatWithMessages(ctx, history, &cfg, nil)
 		if err != nil {
 			return "", totalTokens, fmt.Errorf("round %d: %w", round, err)
 		}
@@ -187,7 +187,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		Content: fmt.Sprintf("Exceed max rounds: %d", maxRounds),
 	})
 	cfg := *chatCfg
-	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil)
+	resp, err := cm.ChatWithMessages(ctx, history, &cfg, nil)
 	if err != nil {
 		return "", totalTokens, fmt.Errorf("final call: %w", err)
 	}
@@ -305,7 +305,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		var pendingThinkClose bool
 		var roundTokens int
 
-		err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
+		err := cm.ChatStreamlyWithSender(ctx, history, &cfg, nil, func(delta *string, reason *string) error {
 			if reason != nil && *reason != "" {
 				if !reasoningStarted {
 					reasoningStarted = true
@@ -395,7 +395,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	var exceedUsage TokenUsage
 	cfg.UsageResult = &exceedUsage
 	var exceedTokens int
-	err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
+	err := cm.ChatStreamlyWithSender(ctx, history, &cfg, nil, func(delta *string, reason *string) error {
 		if delta != nil && *delta != "" && *delta != "[DONE]" {
 			exceedTokens += tokenizer.NumTokensFromString(*delta)
 		}

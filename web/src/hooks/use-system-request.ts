@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { ISystemConfig } from '@/interfaces/database/system';
 import userService from '@/services/user-service';
 import { useQuery } from '@tanstack/react-query';
 
@@ -22,11 +23,13 @@ import { useQuery } from '@tanstack/react-query';
  * @returns System configuration with loading status
  */
 export const useSystemConfig = () => {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<ISystemConfig>({
     queryKey: ['systemConfig'],
     queryFn: async () => {
       const { data = {} } = await userService.getSystemConfig();
-      return data.data || { registerEnabled: 1 }; // Default to enabling registration
+      return (
+        data.data || { registerEnabled: 1, emailVerificationEnabled: false }
+      ); // Default to enabling registration, no email verification
     },
   });
 

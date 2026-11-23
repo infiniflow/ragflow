@@ -232,6 +232,64 @@ func TestMergeProviderModelsInheritsCatalogTypesOnConflict(t *testing.T) {
 	}
 }
 
+func TestMergeProviderModelsKeepsCatalogTypesOverInferredTypes(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "vision-chat", "model_types": []string{"chat", "vision"}},
+		{"name": "plain-chat", "model_types": []string{"chat"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "vision-chat", "model_types": []string{"chat"}, "model_types_inferred": true},
+		{"name": "plain-chat", "model_types": []string{"chat"}, "model_types_inferred": true},
+		{"name": "remote-only", "model_types": []string{"chat"}, "model_types_inferred": true},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if types := providerModelMapTypes(got["vision-chat"]); !reflect.DeepEqual(types, []string{"chat", "vision"}) {
+		t.Errorf("vision-chat model_types = %v, want catalog [chat vision]", types)
+	}
+	if types := providerModelMapTypes(got["plain-chat"]); !reflect.DeepEqual(types, []string{"chat"}) {
+		t.Errorf("plain-chat model_types = %v, want [chat]", types)
+	}
+	if types := providerModelMapTypes(got["remote-only"]); !reflect.DeepEqual(types, []string{"chat"}) {
+		t.Errorf("remote-only model_types = %v, want [chat]", types)
+	}
+	for name, m := range got {
+		if _, ok := m["model_types_inferred"]; ok {
+			t.Errorf("%s still carries the internal model_types_inferred hint", name)
+		}
+	}
+}
+
+func TestMergeProviderModelsKeepsDeclaredRemoteChat(t *testing.T) {
+	// Bedrock-style drivers declare ["chat"] for text-only models; the catalog's
+	// vision must not be copied onto them.
+	static := []map[string]interface{}{
+		{"name": "amazon.nova-pro-v1:0", "model_types": []string{"chat", "vision"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "amazon.nova-pro-v1:0", "model_types": []string{"chat"}, "model_types_inferred": false},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if types := providerModelMapTypes(got["amazon.nova-pro-v1:0"]); !reflect.DeepEqual(types, []string{"chat"}) {
+		t.Errorf("model_types = %v, want declared remote [chat]", types)
+	}
+}
+
+func TestMergeProviderModelsKeepsExplicitRemoteTypes(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "multi", "model_types": []string{"chat"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "multi", "model_types": []string{"chat", "vision"}},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if types := providerModelMapTypes(got["multi"]); !reflect.DeepEqual(types, []string{"chat", "vision"}) {
+		t.Errorf("multi model_types = %v, want remote [chat vision]", types)
+	}
+}
+
 func TestValidateInstanceName(t *testing.T) {
 	tests := []struct {
 		name  string

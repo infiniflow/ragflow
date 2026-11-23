@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/datasetversion"
 	"ragflow/internal/service/file"
 
 	"github.com/gin-gonic/gin"
@@ -61,6 +62,7 @@ func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) 
 		if dao.IsNotFoundErr(err) {
 			common.RespondError(c, common.CodeNotFound, "dataset not found")
 		} else {
+			common.Error("failed to resolve dataset", err)
 			common.RespondError(c, common.CodeServerError, "failed to resolve dataset")
 		}
 		return nil, "", ""
@@ -123,6 +125,9 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 // UpdateArtifact handles PUT /artifacts/<page_type>/<slug> — edit a wiki page.
 // The slug may contain nested path segments, such as location/长社.
 func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_artifact")
+	defer common.FinishOperationLog(c)
+
 	user, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
@@ -170,12 +175,34 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 	// Record a wiki-page edit audit commit (git-style parent chain) when the
 	// content actually changed. Best-effort: a commit write failure must not
 	// roll back the page edit already persisted above.
+	//
+	// The commit id is kept so the version entry below can name the commit that
+	// explains it: the diff a page edit produced is stored on that commit's item,
+	// and the versions panel reads it back instead of diffing by timestamp.
+	var pageCommitID string
 	if canRecordAudit && req.ContentMd != oldContent && h.fileCommitSvc != nil {
 		title := req.Title
 		if title == "" {
 			title = detail.Title
 		}
-		if _, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
+		// The snapshot is the whole page, not only the body it just wrote: a restore
+		// of this version has to bring the summary, links and entities back with the
+		// text, and a body-only snapshot cannot.
+		page := map[string]any{
+			"content_with_weight":  detail.ContentMd,
+			"title_kwd":            detail.Title,
+			"summary_with_weight":  detail.Summary,
+			"topic_kwd":            detail.Topic,
+			"entity_names_kwd":     detail.EntityNames,
+			"outlinks_kwd":         detail.Outlinks,
+			"related_kb_pages_kwd": detail.RelatedKbPages,
+			"source_chunk_ids":     detail.SourceChunkIDs,
+			"source_doc_ids":       detail.SourceDocIDs,
+			"slug_kwd":             pageType + "/" + slug,
+			"page_type_kwd":        pageType,
+			"kb_id":                datasetID,
+		}
+		commit, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
 			DatasetID:  datasetID,
 			Slug:       slug,
 			PageType:   pageType,
@@ -184,8 +211,48 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 			AuthorID:   user.ID,
 			OldContent: oldContent,
 			NewContent: req.ContentMd,
-		}); cerr != nil {
+			Page:       page,
+		})
+		if cerr != nil {
 			common.Warn("failed to record wiki page edit commit", zap.Error(cerr))
+		} else if commit != nil {
+			pageCommitID = commit.ID
+		}
+	}
+
+	// The page edit is a version of the dataset, not only of the page: the
+	// versions page lists it beside the document edits that happened around it,
+	// and a restore of any later version puts the page back with the documents
+	// (see datasetcontent.restoreWikiPagesAtEE).
+	//
+	// Recorded on the same condition as the page's own commit - the content
+	// actually moved, and the prior body was read - because a version that only
+	// repeats the previous body marks a moment that did not happen. Unlike the
+	// commit this does not need the commit service: a deployment without page
+	// history still has a timeline.
+	if canRecordAudit && req.ContentMd != oldContent {
+		pageTitle := req.Title
+		if pageTitle == "" {
+			pageTitle = detail.Title
+		}
+		if _, verr := datasetversion.RecordContentVersionChangesOwnTx(c.Request.Context(), datasetID,
+			entity.DatasetVersionKindArtifactEdit,
+			[]entity.DatasetVersionChange{{
+				// The page id is the same one the page history keys on, so the
+				// timeline entry and the commit that explains it name one thing.
+				DocID:  datasetID + "/" + pageType + "/" + slug,
+				Entity: entity.DatasetVersionChangeEntityArtifact,
+				Action: entity.DatasetVersionChangeActionUpdate,
+				Name:   pageTitle,
+				// Which commit holds this edit's diff; empty when the page
+				// history could not be written, and the panel then reads the
+				// page's newest commit at the version's anchor instead.
+				CommitID: pageCommitID,
+			}}); verr != nil {
+			// The page body was written, but the edit is not on the timeline: the
+			// caller is told rather than given a success whose version is missing.
+			common.RespondError(c, common.CodeServerError, verr.Error())
+			return
 		}
 	}
 
@@ -387,6 +454,9 @@ func (h *DatasetArtifactHandler) GetSkillTree(c *gin.Context) {
 
 // DeleteSkills handles DELETE /skills — delete all skills.
 func (h *DatasetArtifactHandler) DeleteSkills(c *gin.Context) {
+	common.StartOperationLog(c, "delete_dataset_skills")
+	defer common.FinishOperationLog(c)
+
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
@@ -419,6 +489,9 @@ func (h *DatasetArtifactHandler) GetSkillPage(c *gin.Context) {
 
 // DeleteSkill handles DELETE /skills/<skill_kwd> — delete a single skill.
 func (h *DatasetArtifactHandler) DeleteSkill(c *gin.Context) {
+	common.StartOperationLog(c, "delete_dataset_skill")
+	defer common.FinishOperationLog(c)
+
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
@@ -439,6 +512,10 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	}
 	datasetID := c.Param("dataset_id")
 	documentID := c.Param("document_id")
+	if err := service.CheckDocumentAccess(c.Request.Context(), documentID, datasetID, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, true)
+		return
+	}
 	resp, err := h.svc.GetDocumentGraph(c.Request.Context(), service.DocumentStructureGraphInput{
 		TenantID:   tenantID,
 		DatasetID:  datasetID,
@@ -467,6 +544,10 @@ func (h *DatasetArtifactHandler) GetDocumentClaims(c *gin.Context) {
 	}
 	datasetID := c.Param("dataset_id")
 	documentID := c.Param("document_id")
+	if err := service.CheckDocumentAccess(c.Request.Context(), documentID, datasetID, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, true)
+		return
+	}
 
 	templateID := strings.TrimSpace(c.Query("template_id"))
 	var chunkIDs []string
@@ -500,6 +581,9 @@ func (h *DatasetArtifactHandler) GetDocumentClaims(c *gin.Context) {
 
 // DeleteDocumentGraph handles DELETE /documents/<document_id>/structure/graph — delete document structure graph.
 func (h *DatasetArtifactHandler) DeleteDocumentGraph(c *gin.Context) {
+	common.StartOperationLog(c, "delete_dataset_document_graph")
+	defer common.FinishOperationLog(c)
+
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return

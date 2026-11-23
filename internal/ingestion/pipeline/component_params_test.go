@@ -319,3 +319,75 @@ func TestExtractAllComponentParams_DisallowMultipleExtractors(t *testing.T) {
 		t.Errorf("expected at most 1 Extractor error message, got: %v", err)
 	}
 }
+
+// TestComponentParamsDefaults_DeepCopyIndependent guards the deep-copy contract
+// of ComponentParamsDefaults: mutating nested values in a returned map must not
+// leak into a later call's result. Each call must return a fresh deep structure,
+// never an aliased reference shared with a prior or future call. This locks the
+// call site's reliance on common.DeepCopyValue for nested map/slice copying.
+func TestComponentParamsDefaults_DeepCopyIndependent(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Parser:P1": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parser",
+					"params": map[string]any{
+						"nested": map[string]any{"k": "v"},
+						"list":   []any{"a", "b"},
+					},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+
+	first, err := ComponentParamsDefaults(dslJSON)
+	if err != nil {
+		t.Fatalf("ComponentParamsDefaults: %v", err)
+	}
+	// Mutate a nested map and a nested slice in the returned structure.
+	first["Parser:P1"]["nested"].(map[string]any)["k"] = "MUTATED"
+	first["Parser:P1"]["list"].([]any)[0] = "MUTATED"
+
+	second, err := ComponentParamsDefaults(dslJSON)
+	if err != nil {
+		t.Fatalf("ComponentParamsDefaults (2nd): %v", err)
+	}
+	nested, ok := second["Parser:P1"]["nested"].(map[string]any)
+	if !ok {
+		t.Fatalf("nested not a map: %T", second["Parser:P1"]["nested"])
+	}
+	if nested["k"] != "v" {
+		t.Errorf("second call leaked mutation: nested.k = %q, want %q", nested["k"], "v")
+	}
+	list, ok := second["Parser:P1"]["list"].([]any)
+	if !ok {
+		t.Fatalf("list not a slice: %T", second["Parser:P1"]["list"])
+	}
+	if list[0] != "a" {
+		t.Errorf("second call leaked mutation: list[0] = %v, want %q", list[0], "a")
+	}
+}
+
+// TestComponentParamsDefaults_EmptyComponents guards the empty/edge contract: a
+// DSL with no components yields a non-nil empty result and no error.
+func TestComponentParamsDefaults_EmptyComponents(t *testing.T) {
+	dsl := map[string]any{"components": map[string]any{}}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	got, err := ComponentParamsDefaults(dslJSON)
+	if err != nil {
+		t.Fatalf("ComponentParamsDefaults: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("empty components: len = %d, want 0", len(got))
+	}
+	if got == nil {
+		t.Error("empty components: got nil, want non-nil empty map")
+	}
+}

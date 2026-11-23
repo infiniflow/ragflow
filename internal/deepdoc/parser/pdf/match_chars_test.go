@@ -43,7 +43,7 @@ func TestMatchCharsToBoxes_AreaTieBreak(t *testing.T) {
 		{Text: "么", X0: 100, X1: 112, Top: 577, Bottom: 589}, // inside both
 	}
 
-	got := matchCharsToBoxes(boxes, chars)
+	got, _ := matchCharsToBoxes(boxes, chars)
 
 	if len(got) != 2 {
 		t.Fatalf("expected 2 box char groups, got %d", len(got))
@@ -115,7 +115,7 @@ func TestMatchCharsToBoxes_FullyContainedSmallChar(t *testing.T) {
 		{Text: "e", X0: 680, X1: 688, Top: 497.4, Bottom: 505.7}, // h=8.3, inside (certifi)
 	}
 
-	got := matchCharsToBoxes(boxes, chars)
+	got, _ := matchCharsToBoxes(boxes, chars)
 
 	if len(got) != 1 {
 		t.Fatalf("expected 1 box char group, got %d", len(got))
@@ -153,7 +153,7 @@ func TestMatchCharsToBoxes_FullyContainedTinyDropped(t *testing.T) {
 	chars := []pdftype.TextChar{
 		{X0: 5, X1: 10, Top: 40, Bottom: 41, Text: "t"},
 	}
-	got := matchCharsToBoxes(boxes, chars)
+	got, _ := matchCharsToBoxes(boxes, chars)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 box group, got %d", len(got))
 	}
@@ -182,7 +182,7 @@ func TestMatchCharsToBoxes_DeferredSpaceOnlyNormalDropped(t *testing.T) {
 		{X0: 5, X1: 6, Top: 5, Bottom: 20, Text: " "},
 		{X0: 10, X1: 16, Top: 6, Bottom: 12, Text: "x"}, // h=6 vs bh=40 -> ratio 0.85
 	}
-	got := matchCharsToBoxes(boxes, chars)
+	got, _ := matchCharsToBoxes(boxes, chars)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 box group, got %d", len(got))
 	}
@@ -211,7 +211,7 @@ func TestMatchCharsToBoxes_PartialOverlapHeightFiltered(t *testing.T) {
 	chars := []pdftype.TextChar{
 		{X0: 5, X1: 12, Top: -2, Bottom: 3, Text: "x"},
 	}
-	got := matchCharsToBoxes(boxes, chars)
+	got, _ := matchCharsToBoxes(boxes, chars)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 box group, got %d", len(got))
 	}
@@ -236,7 +236,7 @@ func TestMatchCharsToBoxes_FullyContainedSmallOvershoot(t *testing.T) {
 		{Text: "在", X0: 100, X1: 112, Top: 500, Bottom: 512},       // normal, h=12
 		{Text: "①", X0: 100, X1: 108, Top: 493.35, Bottom: 501.45}, // h=8.1, top 0.65pt above box -> overlap ~0.92
 	}
-	got := matchCharsToBoxes(boxes, chars)
+	got, _ := matchCharsToBoxes(boxes, chars)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 box group, got %d", len(got))
 	}

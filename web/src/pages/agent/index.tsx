@@ -4,14 +4,6 @@ import EmbedDialog, {
 } from '@/components/embed-dialog';
 import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
 import { PageHeader } from '@/components/page-header';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -21,23 +13,23 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import message from '@/components/ui/message';
-import { AgentCategory } from '@/constants/agent';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useSaveAgent } from '@/hooks/use-agent-request';
+import { useFetchAgent, useSaveAgent } from '@/hooks/use-agent-request';
+import {
+  ModelResourceAccessUserIdContext,
+  ModelResourceTenantIdContext,
+} from '@/hooks/use-llm-request';
 import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
 import { AgentEditGuard } from '@/ee/pages/agent/agent-edit-guard';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
   CirclePlay,
-  Compass,
   History,
   LaptopMinimalCheck,
   MessageSquareCode,
   ScreenShare,
-  Settings,
   Upload,
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback, useMemo } from 'react';
@@ -48,19 +40,15 @@ import { DropdownProvider } from './canvas/context';
 import { CanvasChecklist } from './components/canvas-checklist';
 import { PublishConfirmDialog } from './components/publish-confirm-dialog';
 import { Operator } from './constant';
-import { OwnerTenantIdContext } from './context';
+import { ResourceTenantIdContext } from './context';
 import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useBuildDslData } from './hooks/use-build-dsl';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
 import { useCanvasChecklist } from './hooks/use-canvas-checklist';
 import { useHandleExportJsonFile } from './hooks/use-export-json';
-import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { useFetchPipelineLog } from './hooks/use-fetch-pipeline-log';
 import { useIsPipeline } from './hooks/use-is-pipeline';
-import {
-  useIsConversationMode,
-  useIsWebhookMode,
-} from './hooks/use-is-webhook';
+import { useIsWebhookMode } from './hooks/use-is-webhook';
 import { useRunDataflow } from './hooks/use-run-dataflow';
 import {
   useSaveGraph,
@@ -70,7 +58,6 @@ import {
 import { OnlineUsers } from '@/ee/pages/agent/online-users';
 import { PipelineLogSheet } from './pipeline-log-sheet';
 import PipelineRunSheet from './pipeline-run-sheet';
-import { SettingDialog } from './setting-dialog';
 import useGraphStore from './store';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
@@ -100,7 +87,6 @@ const AgentWidgetSettingsGlobalKey = 'sys.widget_settings';
 export default function Agent() {
   const { id } = useParams();
   const isPipeline = useIsPipeline();
-  const { navigateToAgents } = useNavigatePage();
   const {
     visible: chatDrawerVisible,
     hideModal: hideChatDrawer,
@@ -129,17 +115,11 @@ export default function Agent() {
     },
     [saveGraph],
   );
-  // Back-link lands on the agents list tab matching this canvas: ingestion
-  // pipeline canvases return to the pipeline tab, agent canvases to workflow.
-  const handleBackToAgents = useCallback(() => {
-    navigateToAgents(
-      isPipeline ? AgentCategory.DataflowCanvas : AgentCategory.AgentCanvas,
-    );
-  }, [isPipeline, navigateToAgents]);
-  const { flowDetail: agentDetail } = useFetchDataOnMount();
+  const { data: agentDetail, loading: agentLoading } = useFetchAgent();
   // The checklist displays all issues; Run separately checks blocking rules.
   const { issues } = useCanvasChecklist({
-    ownerTenantId: agentDetail?.tenant_id,
+    resourceTenantId: agentDetail?.tenant_id,
+    ownerUserId: agentLoading ? null : (agentDetail?.user_id ?? null),
     canvasID: id,
   });
   const { buildDslData } = useBuildDslData();
@@ -151,19 +131,10 @@ export default function Agent() {
     showModal: showVersionDialog,
   } = useSetModalState();
 
-  const {
-    visible: settingDialogVisible,
-    hideModal: hideSettingDialog,
-    showModal: showSettingDialog,
-  } = useSetModalState();
-
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
-  const { navigateToAgentLogs, navigateToAgentExplore } = useNavigatePage();
   const time = useWatchAgentChange(chatDrawerVisible);
   const isWebhookMode = useIsWebhookMode();
-
-  const isConversationMode = useIsConversationMode();
 
   // pipeline
 
@@ -248,10 +219,6 @@ export default function Agent() {
     showWebhookTestSheet,
   ]);
 
-  const handleExploreClick = useCallback(() => {
-    navigateToAgentExplore(id as string)();
-  }, [id, navigateToAgentExplore]);
-
   const handleEmbedClick = useCallback(() => {
     showEmbedModal();
   }, [showEmbedModal]);
@@ -310,22 +277,9 @@ export default function Agent() {
 
   return (
     <section className="h-full" data-testid="agent-detail">
-      <PageHeader>
+      <PageHeader className="pl-0">
         <section>
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink onClick={handleBackToAgents}>
-                  {t('header.flow')}
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{agentDetail.title}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-          <div className="text-xs text-text-secondary translate-y-3">
+          <div className="text-xs text-text-secondary">
             {t('flow.autosaved')} {time}
           </div>
         </section>
@@ -346,12 +300,6 @@ export default function Agent() {
               ) : (
                 runButton
               ))}
-            {isConversationMode && (
-              <Button variant={'secondary'} onClick={handleExploreClick}>
-                <Compass />
-                {t('explore.title')}
-              </Button>
-            )}
             {/* <PublishConfirmDialog
               agentDetail={agentDetail}
               loading={loading}
@@ -384,18 +332,10 @@ export default function Agent() {
                 {t('flow.historyVersion')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
               </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
-              <AgentEditGuard operatorPermission={operatorPermission}>
-                <AgentDropdownMenuItem onClick={showSettingDialog}>
-                  <Settings />
-                  {t('flow.setting')}
-                </AgentDropdownMenuItem>
-              </AgentEditGuard>
               {isPipeline ||
                 (location.hostname !== 'cloud.ragflow.io' && (
                   <>
@@ -410,16 +350,22 @@ export default function Agent() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <OwnerTenantIdContext.Provider value={agentDetail?.tenant_id}>
-        <ReactFlowProvider>
-          <DropdownProvider>
-            <AgentCanvas
-              drawerVisible={chatDrawerVisible}
-              hideDrawer={hideChatDrawer}
-            ></AgentCanvas>
-          </DropdownProvider>
-        </ReactFlowProvider>
-      </OwnerTenantIdContext.Provider>
+      <ModelResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>
+        <ModelResourceAccessUserIdContext.Provider
+          value={agentLoading ? null : (agentDetail?.user_id ?? null)}
+        >
+          <ResourceTenantIdContext.Provider value={agentDetail?.tenant_id}>
+            <ReactFlowProvider>
+              <DropdownProvider>
+                <AgentCanvas
+                  drawerVisible={chatDrawerVisible}
+                  hideDrawer={hideChatDrawer}
+                ></AgentCanvas>
+              </DropdownProvider>
+            </ReactFlowProvider>
+          </ResourceTenantIdContext.Provider>
+        </ModelResourceAccessUserIdContext.Provider>
+      </ModelResourceTenantIdContext.Provider>
       {embedVisible && (
         <EmbedDialog
           visible={embedVisible}
@@ -438,10 +384,6 @@ export default function Agent() {
           <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
         </DropdownProvider>
       )}
-      {settingDialogVisible && (
-        <SettingDialog hideModal={hideSettingDialog}></SettingDialog>
-      )}
-
       {pipelineLogSheetVisible && (
         <PipelineLogSheet
           hideModal={hidePipelineLogSheet}
