@@ -1816,7 +1816,7 @@ func dispatchPaddleOCRPdf(
 	filename string,
 	binary []byte,
 	tenantID string,
-	_ schema.ParserSetup,
+	setup schema.ParserSetup,
 	modelID string,
 ) (parser.ParseResult, error) {
 	driver, modelName, apiConfig, err := resolvePaddleOCRModelForDispatch(ctx, db, tenantID, modelID)
@@ -1828,13 +1828,47 @@ func dispatchPaddleOCRPdf(
 			"parser: PaddleOCR requires a PaddleOCR OCR model; found %q. Please add a PaddleOCR OCR model to your tenant", driver.Name())
 	}
 
-	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, nil, nil)
+	ocrConfig := &modelModule.OCRConfig{Timeout: paddleOCRRequestTimeout(setup, apiConfig)}
+	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, ocrConfig, nil)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
 	}
 
 	result := parser.OCRPDFResult(ctx, "PaddleOCR", filename, binary, resp)
 	return result, result.Err
+}
+
+// paddleOCRRequestTimeout resolves the PaddleOCR parse timeout with precedence:
+//  1. setup["paddleocr_timeout"] / setup["paddleocr_timeout_seconds"] (authoritative; non-empty invalid values
+//     do not fall through to API config or env)
+//  2. apiConfig provider JSON (paddleocr_timeout, paddleocr_timeout_seconds, PADDLEOCR_TIMEOUT)
+//  3. PADDLEOCR_TIMEOUT environment variable
+//
+// It returns 0 when no valid value is configured, which keeps the driver default (20m).
+// Configured durations are clamped to [1s, 24h].
+func paddleOCRRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
+	value := ""
+	if raw, ok := setup["paddleocr_timeout"]; ok && raw != nil {
+		value = strings.TrimSpace(fmt.Sprint(raw))
+	}
+	if value == "" {
+		if raw, ok := setup["paddleocr_timeout_seconds"]; ok && raw != nil {
+			value = strings.TrimSpace(fmt.Sprint(raw))
+		}
+	}
+	if value == "" {
+		value = modelModule.ProviderJSONConfigValueFromAPIConfig(
+			apiConfig,
+			"paddleocr_timeout",
+			"paddleocr_timeout_seconds",
+			common.EnvPaddleOCRTimeout,
+		)
+	}
+	if value == "" {
+		value = strings.TrimSpace(os.Getenv(common.EnvPaddleOCRTimeout))
+	}
+	timeout, _ := parseOCRRequestTimeout(value)
+	return timeout
 }
 
 // isMiniCPMOCRModelSelector reports whether selector — a tenant model UUID or
@@ -1969,34 +2003,39 @@ func mineruRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APICo
 	if value == "" {
 		value = os.Getenv("MINERU_TIMEOUT_SECONDS")
 	}
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return mineruDefaultTimeout
+	if timeout, ok := parseOCRRequestTimeout(strings.TrimSpace(value)); ok {
+		return timeout
 	}
+	return mineruDefaultTimeout
+}
+
+// parseOCRRequestTimeout reads a timeout given as seconds or as a duration string and clamps it
+// to [1s, 24h]. It reports false for an empty, non-positive, or unparseable value.
+func parseOCRRequestTimeout(value string) (time.Duration, bool) {
 	minSec := parser.MinMinerURequestTimeout.Seconds()
 	maxSec := parser.MaxMinerURequestTimeout.Seconds()
 	if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
 		if float64(seconds) < minSec {
-			return parser.MinMinerURequestTimeout
+			return parser.MinMinerURequestTimeout, true
 		}
 		if float64(seconds) > maxSec {
-			return parser.MaxMinerURequestTimeout
+			return parser.MaxMinerURequestTimeout, true
 		}
-		return clampMinerUTimeout(time.Duration(seconds) * time.Second)
+		return clampMinerUTimeout(time.Duration(seconds) * time.Second), true
 	}
 	if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds > 0 {
 		if seconds < minSec {
-			return parser.MinMinerURequestTimeout
+			return parser.MinMinerURequestTimeout, true
 		}
 		if seconds > maxSec {
-			return parser.MaxMinerURequestTimeout
+			return parser.MaxMinerURequestTimeout, true
 		}
-		return clampMinerUTimeout(time.Duration(seconds * float64(time.Second)))
+		return clampMinerUTimeout(time.Duration(seconds * float64(time.Second))), true
 	}
 	if d, err := time.ParseDuration(value); err == nil && d > 0 {
-		return clampMinerUTimeout(d)
+		return clampMinerUTimeout(d), true
 	}
-	return mineruDefaultTimeout
+	return 0, false
 }
 
 // mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
