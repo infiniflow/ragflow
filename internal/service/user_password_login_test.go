@@ -24,6 +24,38 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
+func TestLoginByEmailInvalidCredentials(t *testing.T) {
+	db := testutil.SetupTestDB(t, &entity.User{})
+	t.Cleanup(testutil.ReplaceDBForTest(t, db))
+	hash, err := common.GenerateWerkzeugPasswordHash("correct-password!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered := &entity.User{ID: "user-id", Email: "registered@example.com", Password: &hash}
+	if err := db.Create(registered).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	users := NewUserService()
+	for _, tc := range []struct {
+		name  string
+		email string
+	}{
+		{name: "unregistered email", email: "unregistered@example.com"},
+		{name: "incorrect password", email: registered.Email},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			user, code, err := users.LoginByEmail(t.Context(), &EmailLoginRequest{
+				Email:    tc.email,
+				Password: "incorrect-password!",
+			})
+			if user != nil || code != common.CodeAuthenticationError || err == nil || err.Error() != "email and password do not match" {
+				t.Fatalf("login returned user = %t, code = %v, error = %v", user != nil, code, err)
+			}
+		})
+	}
+}
+
 func TestCompletePasswordLoginRequiresUnchangedPassword(t *testing.T) {
 	db := testutil.SetupTestDB(t, &entity.User{})
 	t.Cleanup(testutil.ReplaceDBForTest(t, db))
