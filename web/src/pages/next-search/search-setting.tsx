@@ -15,6 +15,7 @@
  */
 
 import AvatarNameDescription from '@/components/avatar-name-description';
+import { SettingsFormContainer } from '@/components/settings-form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import { MetadataFilter } from '@/components/metadata-filter';
@@ -205,8 +206,8 @@ function SearchSetting({ onClose, data }: SearchSettingProps) {
   return (
     <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
       <ModelResourceAccessUserIdContext.Provider value={data?.user_id ?? null}>
-        <section
-          className="mx-auto flex h-full w-full max-w-5xl min-h-0 flex-col p-5 text-text-primary"
+        <SettingsFormContainer
+          className="flex h-full min-h-0 flex-col p-5 text-text-primary"
           data-testid="search-detail-settings"
         >
           <div className="mb-8 shrink-0 text-base text-text-primary">
@@ -350,7 +351,7 @@ function SearchSetting({ onClose, data }: SearchSettingProps) {
               </div>
             </form>
           </Form>
-        </section>
+        </SettingsFormContainer>
       </ModelResourceAccessUserIdContext.Provider>
     </ModelResourceTenantIdContext.Provider>
   );
