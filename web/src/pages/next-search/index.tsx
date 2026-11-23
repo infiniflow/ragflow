@@ -71,7 +71,7 @@ export default function SearchPage() {
         />
       )}
 
-      <section className="min-h-0 min-w-0 flex-1 pt-3">
+      <section className="min-h-0 min-w-0 flex-1 pt-2.5">
         <PageFrame>
           <header className="flex shrink-0 justify-end p-5">
             <SearchEmbedButton />

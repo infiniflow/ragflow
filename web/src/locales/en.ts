@@ -572,6 +572,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       datasetLog: 'Dataset log',
       created: 'Created',
       learnMore: 'View built-in parser details',
+      builtInParserDetails: 'Built-in parser details',
       general: 'General',
       chunkMethodTab: 'Chunk method',
       testResults: 'Results',
@@ -584,7 +585,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
-      nextConfiguration: 'Dataset configuration',
       knowledgeGraph: 'Knowledge graph',
       compilation: 'Compilation',
       name: 'Name',
@@ -808,7 +808,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       editLinkDataPipeline: 'Edit ingestion pipeline',
       linkPipelineSetTip: 'Manage ingestion pipeline linkage with this dataset',
       default: 'Default',
-      dataPipeline: 'Select or switch the parsing mode',
       linkDataPipeline: 'Link ingestion pipeline',
       enableAutoGenerate: 'Enable auto generate',
       teamPlaceholder: 'Please select a team.',
@@ -827,8 +826,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Dataset settings saved, but existing files were not updated. Choose “Yes” to retry.',
       noConfigChunkerHint:
         'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
-      titleDescription:
-        'Update your dataset configuration here, particularly the LLM and prompts.',
       name: 'Dataset name',
       photo: 'Dataset photo',
       photoTip: 'You can upload an image up to 4 MB.',
