@@ -1,3 +1,4 @@
+import { RunningStatusMap, RunningStatusOld } from '@/constants/knowledge';
 import type { IFileLogList } from '../interface';
 import { buildDatasetOverviewStats, hasActiveIngestionLogs } from '../utils';
 
@@ -50,5 +51,9 @@ describe('dataset overview helpers', () => {
         total: 1,
       }),
     ).toBe(false);
+  });
+
+  it('labels a scheduled pipeline run as queued', () => {
+    expect(RunningStatusMap[RunningStatusOld.SCHEDULE]).toBe('Queued');
   });
 });

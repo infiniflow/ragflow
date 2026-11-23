@@ -358,7 +358,9 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       fileName: row.original.document_name,
       source: row.original.source_from,
       task: row.original?.task_type,
-      status: row.original.status as RunningStatus,
+      // The pipeline log reports the legacy "Scheduled" ("5") for an enqueued
+      // run; render it like the file list's queue state instead.
+      status: row.original.operation_status,
       startDate: formatDate(row.original.process_begin_at),
       duration: formatSecondsToHumanReadable(
         row.original.process_duration || 0,
