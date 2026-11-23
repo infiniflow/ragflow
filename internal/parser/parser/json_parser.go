@@ -14,18 +14,9 @@
 //  limitations under the License.
 //
 
-// JSONParser handles .json, .jsonl, and .ldjson files. It detects
-// the payload shape:
-//
-//   - JSON array: each element becomes one item.
-//   - Single JSON object: emitted as one item.
-//   - JSONL (newline-delimited JSON): each non-empty line is
-//     independently parsed; lines that fail to parse are skipped
-//     with a warning — matching the Python JsonParser behaviour.
-//
-// For JSON objects, the parser serialises the full object into a
-// `text` field so the downstream chunker receives a readable
-// representation. Arrays of objects emit one item per element.
+// JSONParser handles JSON and JSON Lines files. In .jsonl and .ldjson files,
+// each valid line becomes one item. Other inputs are parsed by shape, so a
+// JSON array produces one item per element and an object produces one item.
 
 package parser
 
@@ -36,6 +27,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -53,9 +45,8 @@ func (p *JSONParser) String() string {
 	return "JSONParser"
 }
 
-// ParseWithResult implements ParseResultProducer. It detects the JSON
-// shape (array, single object, or line-delimited) and emits one JSON
-// item per logical record, with {text, doc_type_kwd:"text"}.
+// ParseWithResult reads declared JSON Lines files one value per line and
+// detects the shape of other JSON input. Each record becomes a text item.
 func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	decoded, encName := charset.DecodeToUTF8(data, "application/json")
 	text := string(bytes.TrimSpace(decoded))
@@ -70,7 +61,15 @@ func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data 
 		}
 	}
 
-	items := parseJSONContent(text)
+	var items []map[string]any
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".jsonl", ".ldjson":
+		// A line can hold any JSON value, including an array or scalar.
+		items = parseJSONLines(text)
+	}
+	if items == nil {
+		items = parseJSONContent(text)
+	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}

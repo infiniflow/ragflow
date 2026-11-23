@@ -118,3 +118,46 @@ func TestJSONParser_DecodesNonUTF8(t *testing.T) {
 		})
 	}
 }
+
+func TestJSONParser_JSONLinesKeepOneValuePerRecord(t *testing.T) {
+	for _, test := range []struct {
+		name, filename, input string
+		want                  []string
+	}{
+		{
+			name:     "array followed by scalars and objects",
+			filename: "records.jsonl",
+			input:    "[\"first\",1]\r\ntrue\r\n42\r\n\"text\"\r\nnull\r\n{\"a\":2}",
+			want:     []string{`["first",1]`, "true", "42", "text", "null", `{"a":2}`},
+		},
+		{
+			name:     "string before objects with a malformed line",
+			filename: "records.ldjson",
+			input:    "\"first\"\n{\"a\":1}\ninvalid\n{\"a\":2}",
+			want:     []string{"first", `{"a":1}`, `{"a":2}`},
+		},
+		{
+			name:     "single array record",
+			filename: "records.JSONL",
+			input:    `["first","second"]`,
+			want:     []string{`["first","second"]`},
+		},
+		{
+			name:     "ordinary JSON array",
+			filename: "records.json",
+			input:    `["first","second"]`,
+			want:     []string{"first", "second"},
+		},
+		{
+			name:     "raw text fallback when every line is malformed",
+			filename: "records.jsonl",
+			input:    "invalid\nstill invalid",
+			want:     []string{"invalid\nstill invalid"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result := NewJSONParser().ParseWithResult(t.Context(), test.filename, []byte(test.input))
+			assertJSONTexts(t, result, test.want...)
+		})
+	}
+}
