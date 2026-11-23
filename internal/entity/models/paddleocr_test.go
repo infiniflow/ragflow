@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestOCRUploadFilename checks content-derived image extensions and the
@@ -427,6 +428,102 @@ func TestPaddleOCRLocalModelOCRFileResolvesPayload(t *testing.T) {
 	}
 	if resp == nil || resp.Text == nil || !strings.Contains(*resp.Text, "Local Title") {
 		t.Fatalf("OCRFile with nil modelName text = %v, want Local Title", resp)
+	}
+}
+
+// TestPaddleOCRDriversHonorConfiguredTimeout pins the configurable deadline of
+// both drivers: an OCR call that outlasts the shared long-operation default
+// fails without a configured timeout and completes with one.
+func TestPaddleOCRDriversHonorConfiguredTimeout(t *testing.T) {
+	withSSRFBypass(t)
+	original := longOpCallTimeout
+	longOpCallTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { longOpCallTimeout = original })
+
+	// slow answers only after the default deadline has passed.
+	slow := func(w http.ResponseWriter, r *http.Request, body string) {
+		select {
+		case <-time.After(300 * time.Millisecond):
+			_, _ = w.Write([]byte(body))
+		case <-r.Context().Done():
+		}
+	}
+	const result = `{"logId":"l1","errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Slow\n"}}]}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/layout-parsing":
+			slow(w, r, result)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/ocr/jobs":
+			slow(w, r, `{"data":{"jobId":"job-1"}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/ocr/jobs/job-1":
+			_, _ = w.Write([]byte(`{"data":{"state":"done","resultUrl":{"jsonUrl":"http://` + r.Host + `/result"}}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/result":
+			_, _ = w.Write([]byte("[" + result + "]"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	for _, tc := range []struct {
+		name    string
+		driver  ModelDriver
+		baseURL string
+	}{
+		{name: "local", driver: NewPaddleOCRLocalModel(nil, URLSuffix{OCR: "layout-parsing"}), baseURL: server.URL},
+		{name: "cloud", driver: NewPaddleOCRModel(nil, URLSuffix{OCR: "v2/ocr/jobs"}), baseURL: server.URL + "/api"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			modelName := "PaddleOCR-VL"
+			apiConfig := &APIConfig{BaseURL: &tc.baseURL}
+
+			_, err := tc.driver.OCRFile(t.Context(), &modelName, []byte("%PDF-1.4"), nil, apiConfig, &OCRConfig{}, nil)
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("OCRFile without a configured timeout: err = %v, want deadline exceeded", err)
+			}
+
+			resp, err := tc.driver.OCRFile(t.Context(), &modelName, []byte("%PDF-1.4"), nil, apiConfig, &OCRConfig{Timeout: 30 * time.Second}, nil)
+			if err != nil {
+				t.Fatalf("OCRFile with a configured timeout: %v", err)
+			}
+			if resp == nil || resp.Text == nil || !strings.Contains(*resp.Text, "Slow") {
+				t.Fatalf("OCRFile text = %v, want Slow", resp)
+			}
+		})
+	}
+}
+
+// TestPaddleOCRLocalModelConfiguredTimeoutOutlastsResponseHeaderTimeout guards
+// the synchronous driver: its service sends headers only when OCR is done, so
+// the shared client's response-header timeout would cap a configured timeout.
+// Without a configured timeout the shared client still applies.
+func TestPaddleOCRLocalModelConfiguredTimeoutOutlastsResponseHeaderTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(300 * time.Millisecond):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Slow\n"}}]}}`))
+		case <-r.Context().Done():
+		}
+	}))
+	defer server.Close()
+
+	driver := NewPaddleOCRLocalModel(nil, URLSuffix{OCR: "layout-parsing"})
+	driver.baseModel.httpClient = &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: 50 * time.Millisecond}}
+	apiConfig := &APIConfig{BaseURL: &server.URL}
+
+	_, err := driver.OCRFile(t.Context(), nil, []byte("%PDF-1.4"), nil, apiConfig, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "timeout awaiting response headers") {
+		t.Fatalf("OCRFile without a configured timeout: err = %v, want response header timeout", err)
+	}
+
+	resp, err := driver.OCRFile(t.Context(), nil, []byte("%PDF-1.4"), nil, apiConfig, &OCRConfig{Timeout: 30 * time.Second}, nil)
+	if err != nil {
+		t.Fatalf("OCRFile with a configured timeout: %v", err)
+	}
+	if resp == nil || resp.Text == nil || !strings.Contains(*resp.Text, "Slow") {
+		t.Fatalf("OCRFile text = %v, want Slow", resp)
 	}
 }
 

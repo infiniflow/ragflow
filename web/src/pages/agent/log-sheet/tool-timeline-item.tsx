@@ -38,6 +38,9 @@ type IToolIcon =
   | Operator.SofyaSearch
   | Operator.Search1APISearch
   | Operator.Search1APICrawl
+  | Operator.AnySearchSearch
+  | Operator.AnySearchDiscover
+  | Operator.AnySearchExtract
   | Operator.Wikipedia
   | Operator.YahooFinance
   | Operator.WenCai
@@ -88,7 +91,7 @@ const ToolTimelineItem = ({
           <TimelineItem
             key={'tool_' + idx}
             step={idx}
-            className="group-data-[orientation=vertical]/timeline:ms-10 group-data-[orientation=vertical]/timeline:not-last:pb-8"
+            className="min-w-0 group-data-[orientation=vertical]/timeline:ms-10 group-data-[orientation=vertical]/timeline:not-last:pb-8"
           >
             <TimelineHeader>
               <TimelineSeparator
@@ -211,8 +214,10 @@ const ToolTimelineItem = ({
                                   <div className="text-sm font-medium leading-none">
                                     {key}
                                   </div>
-                                  <div className="text-sm text-muted-foreground mt-1">
-                                    {val as string}
+                                  <div className="min-w-0 max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-muted-foreground mt-1">
+                                    {typeof val === 'string'
+                                      ? val
+                                      : JSON.stringify(val)}
                                   </div>
                                 </div>
                               );

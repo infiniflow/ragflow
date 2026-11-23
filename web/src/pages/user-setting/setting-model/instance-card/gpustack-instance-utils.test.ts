@@ -11,7 +11,9 @@ import {
 describe('kindFromModelTypes', () => {
   it.each([
     [['chat'], 'chat'],
-    [['chat', 'vision'], 'vision'],
+    [['chat', 'vlm'], 'vlm'],
+    [['chat', 'vision'], 'vlm'],
+    [['chat', 'image2text'], 'vlm'],
     [['embedding'], 'embedding'],
     [['rerank'], 'rerank'],
     [['asr'], 'asr'],
@@ -23,8 +25,8 @@ describe('kindFromModelTypes', () => {
   });
 
   it('round-trips through modelTypesFromKind', () => {
-    expect(modelTypesFromKind('vision')).toEqual(['chat', 'vision']);
-    expect(kindFromModelTypes(modelTypesFromKind('vision'))).toBe('vision');
+    expect(modelTypesFromKind('vlm')).toEqual(['chat', 'vlm']);
+    expect(kindFromModelTypes(modelTypesFromKind('vlm'))).toBe('vlm');
     expect(modelTypesFromKind('tts')).toEqual(['tts']);
   });
 });

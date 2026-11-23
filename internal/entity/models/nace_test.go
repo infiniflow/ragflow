@@ -79,15 +79,18 @@ func TestNaceProviderConfig(t *testing.T) {
 	if provider.URLSuffix.Decision != "systemone" {
 		t.Errorf("url_suffix.decision=%q, want systemone", provider.URLSuffix.Decision)
 	}
+	// The NDI OCR models in the same catalog are covered by
+	// TestNaceNDIProviderConfig.
 	names := make([]string, 0, len(provider.Models))
 	for _, model := range provider.Models {
-		names = append(names, model.Name)
-		if !model.ModelTypeMap["decision"] {
-			t.Errorf("%s is not a decision model: %v", model.Name, model.ModelTypes)
+		if model.ModelTypeMap["decision"] {
+			names = append(names, model.Name)
+		} else if !model.ModelTypeMap["ocr"] {
+			t.Errorf("%s is neither a decision nor an OCR model: %v", model.Name, model.ModelTypes)
 		}
 	}
 	if len(names) != 2 || names[0] != "drex-max" || names[1] != "drex-v2.0" {
-		t.Errorf("models=%v, want [drex-max drex-v2.0]", names)
+		t.Errorf("decision models=%v, want [drex-max drex-v2.0]", names)
 	}
 }
 

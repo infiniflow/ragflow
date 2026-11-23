@@ -226,8 +226,16 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		if common.IsExtractorComponentID(key) {
 			params = NormalizeExtractorParams(params)
 		}
+		var globalOptions map[string]bool
+		if isParser {
+			globalOptions = schema.ParserGlobalOptions(params)
+		}
 		cleaned := make(map[string]any, len(params))
 		for pk, pv := range params {
+			if enabled, ok := globalOptions[pk]; ok {
+				cleaned[pk] = enabled
+				continue
+			}
 			if isParser {
 				pv = stripParserFamilySuffix(pv)
 			}

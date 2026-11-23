@@ -1023,6 +1023,40 @@ func (c *CLI) CommonShowHardwareCommand(commandCount int, cmd *Command) (Respons
 	return &result, nil
 }
 
+func (c *CLI) CommonShowDeployCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	var resp *Response
+	var err error
+	switch c.Config.CLIMode {
+	case AdminMode:
+		httpClient := c.AdminServerClient
+		resp, err = httpClient.Request(commandCount, "GET", "/admin/system/deployment-type", httpClient.AuthKind(), nil, nil)
+	case APIMode:
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		resp, err = httpClient.Request(commandCount, "GET", "/system/deployment-type", httpClient.AuthKind(), nil, nil)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to show deploy: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show deploy: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to show hardware: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 func (c *CLI) CommonListAPIServersCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	var result CommonResponse

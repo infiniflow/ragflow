@@ -88,10 +88,14 @@ func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput 
 			op, _ = cond["operator"].(string) // OpenAI API uses "operator"
 		}
 		op = convertOperator(op)
+		value := cond["value"]
+		if op == "in" || op == "not in" {
+			value = splitSetValue(value)
+		}
 		conditions = append(conditions, MetaCondition{
 			Operator: op,
 			Key:      name,
-			Value:    cond["value"],
+			Value:    value,
 		})
 	}
 
@@ -103,6 +107,29 @@ func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput 
 		Conditions: conditions,
 		Logic:      logic,
 	}
+}
+
+// splitSetValue turns the documented string form of an "in" / "not in" value
+// ("a,b") into the list filterSet expects, trimming spaces and dropping empty
+// items. Lists and non-string values are returned unchanged. A string with no
+// items ("", " , ") returns nil, which filterSet treats as matching nothing, so
+// a blank "not in" value cannot select every document.
+func splitSetValue(value interface{}) interface{} {
+	s, ok := value.(string)
+	if !ok {
+		return value
+	}
+	parts := strings.Split(s, ",")
+	list := make([]interface{}, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			list = append(list, t)
+		}
+	}
+	if len(list) == 0 {
+		return nil
+	}
+	return list
 }
 
 // convertOperator translates operator aliases to their canonical form.

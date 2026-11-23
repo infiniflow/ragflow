@@ -1,6 +1,65 @@
 package document
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"fmt"
+	"reflect"
+	"testing"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/service"
+)
+
+type metadataWriteEngine struct {
+	*metadataDocEngine
+	writeErr error
+}
+
+func (e *metadataWriteEngine) UpdateMetadata(ctx context.Context, docID, datasetID string, meta map[string]interface{}, tenantID string) error {
+	if e.writeErr != nil {
+		return e.writeErr
+	}
+	return e.metadataDocEngine.UpdateMetadata(ctx, docID, datasetID, meta, tenantID)
+}
+
+func TestBatchUpdateDocumentMetadatasDeleteScalarAndAddList(t *testing.T) {
+	for _, oldValue := range []interface{}{"old", "2026-11-23T12:00:00", float64(42)} {
+		for _, failWrite := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%v/fail=%t", oldValue, failWrite), func(t *testing.T) {
+				db := setupServiceTestDB(t)
+				pushServiceDB(t, db)
+				insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+				insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 0, 0)
+				before := map[string]interface{}{"status": oldValue, "keep": "value"}
+				engine := &metadataWriteEngine{metadataDocEngine: newMetadataDocEngine(
+					map[string]map[string]interface{}{"doc-1": before}, map[string]string{"doc-1": "kb-1"})}
+				if failWrite {
+					engine.writeErr = errors.New("write failed")
+				}
+				svc := testDocumentService(t)
+				svc.docEngine = engine
+				svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
+				values := []interface{}{"first", "second"}
+				result, code, err := svc.BatchUpdateDocumentMetadatas(t.Context(), "kb-1",
+					&MetadataSelector{DocumentIDs: []string{"doc-1"}},
+					[]MetadataUpdate{{Key: "tags", Value: values, ValueType: "list"}},
+					[]MetadataDelete{{Key: "status"}})
+				if failWrite {
+					if result != nil || code != common.CodeServerError || err == nil || !reflect.DeepEqual(engine.records["doc-1"], before) {
+						t.Fatalf("failed save: result=%#v code=%v err=%v metadata=%#v", result, code, err, engine.records["doc-1"])
+					}
+					return
+				}
+				want := map[string]interface{}{"tags": values, "keep": "value"}
+				if err != nil || code != common.CodeSuccess || result.Updated != 1 || !reflect.DeepEqual(engine.records["doc-1"], want) {
+					t.Fatalf("save: result=%#v code=%v err=%v metadata=%#v", result, code, err, engine.records["doc-1"])
+				}
+			})
+		}
+	}
+}
 
 func TestCloneDocumentMetadata(t *testing.T) {
 	if got := cloneDocumentMetadata(nil); got == nil {

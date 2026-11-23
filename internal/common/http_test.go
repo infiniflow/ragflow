@@ -308,12 +308,33 @@ func TestProviderSlowStreamReportsTimingsWithoutDebug(t *testing.T) {
 // from it behind for later tests.
 func resetSharedHTTPClients(t *testing.T) {
 	t.Helper()
-	previousSSRF, previousSchemeSafe := ssrfHTTPClient, schemeSafeHTTPClient
+	previousSSRF, previousSchemeSafe, previousLongCall := ssrfHTTPClient, schemeSafeHTTPClient, schemeSafeLongCallHTTPClient
 	ssrfHTTPClient = sync.OnceValue(newSSRFHTTPClient)
 	schemeSafeHTTPClient = sync.OnceValue(newSchemeSafeHTTPClient)
+	schemeSafeLongCallHTTPClient = sync.OnceValue(newSchemeSafeLongCallHTTPClient)
 	t.Cleanup(func() {
-		ssrfHTTPClient, schemeSafeHTTPClient = previousSSRF, previousSchemeSafe
+		ssrfHTTPClient, schemeSafeHTTPClient, schemeSafeLongCallHTTPClient = previousSSRF, previousSchemeSafe, previousLongCall
 	})
+}
+
+// TestSchemeSafeLongCallHTTPClientHasNoResponseHeaderTimeout pins the client
+// used by synchronous endpoints: neither the shared default nor the override
+// may cut a call that its context deadline still allows.
+func TestSchemeSafeLongCallHTTPClientHasNoResponseHeaderTimeout(t *testing.T) {
+	for _, value := range []string{"", "15s"} {
+		t.Run("override="+value, func(t *testing.T) {
+			t.Setenv(EnvLLMHTTPResponseHeaderTimeout, value)
+			resetSharedHTTPClients(t)
+
+			client := GetSchemeSafeLongCallHTTPClient()
+			if got := responseHeaderTimeoutOf(t, client); got != 0 {
+				t.Errorf("long-call response header timeout = %v, want none", got)
+			}
+			if client == GetSchemeSafeHTTPClient() {
+				t.Error("long-call client must not be the shared scheme-safe client")
+			}
+		})
+	}
 }
 
 func TestSharedHTTPClientsConcurrentInitialization(t *testing.T) {

@@ -96,7 +96,7 @@ export default {
       nicknamePlaceholder: '请输入名称',
       register: '创建账户',
       continue: '继续',
-      title: 'A leading RAG engine for LLM context',
+      title: '面向 LLM 上下文的领先 RAG 引擎',
       start: '立即开始',
       description:
         '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强业务',
@@ -515,6 +515,7 @@ export default {
       datasetLog: '知识库日志',
       created: '创建于',
       learnMore: '查看内置解析模板说明',
+      builtInParserDetails: '内置解析模板说明',
       general: '通用',
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
@@ -526,7 +527,6 @@ export default {
       dataset: '知识库',
       testing: '检索测试',
       configuration: '配置',
-      nextConfiguration: '知识库配置',
       knowledgeGraph: 'Graph',
       compilation: '编译',
       files: '个文件',
@@ -544,6 +544,10 @@ export default {
       parsingMode: '解析方式',
       enabled: '启用',
       disabled: '禁用',
+      enabledStatus: '已启用',
+      disabledStatus: '已禁用',
+      info: '信息',
+      viewError: '查看错误',
       action: '操作',
       parsingStatus: '解析状态',
       parsingStatusTip:
@@ -739,7 +743,6 @@ export default {
       editLinkDataPipeline: '编辑 pipeline',
       linkPipelineSetTip: '管理与此知识库的数据管道链接',
       default: '默认',
-      dataPipeline: '选择或切换解析方式',
       linkDataPipeline: '关联 pipeline',
       enableAutoGenerate: '是否启用自动生成',
       teamPlaceholder: '请选择团队',
@@ -757,7 +760,6 @@ export default {
         '知识库设置已保存，但现有文件尚未更新。选择“是”可重试。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
-      titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
       photoTip: '可以上传 4MB 以内的文件',
@@ -2857,6 +2859,29 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       search1APICrawlUrl: '网页地址',
       search1APICrawlUrlTip:
         '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
+      anySearchSearch: 'AnySearch',
+      anySearchSearchDescription:
+        '通过 AnySearch 进行网页与垂直领域搜索：通用网页结果，或金融、学术、代码、法律等垂直领域。无需 API Key 即可使用。',
+      anySearchDiscover: 'AnySearch 领域发现',
+      anySearchDiscoverDescription:
+        '列出 AnySearch 当前支持的领域，以及各领域可用的垂直标签和参数，便于智能体选择有效的标签。',
+      anySearchExtract: 'AnySearch 网页提取',
+      anySearchExtractDescription:
+        '通过 AnySearch 读取单个网页并返回其文本。支持 HTML、文本、JSON 和 Markdown（不支持 PDF 或 Office 文件）。无需 API Key 即可使用。',
+      anySearchExtractUrl: '网页地址',
+      anySearchExtractUrlTip:
+        '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
+      anySearchApiKeyTip:
+        '可选。AnySearch 无需 Key 即可使用。填写后将使用你账户的额度，服务限制仍然适用。',
+      anySearchZone: '区域',
+      anySearchZoneTip:
+        '搜索所用的区域。留空则使用 AnySearch 的默认值。作为智能体工具时，智能体可以在每次调用时选择区域。',
+      anySearchZoneUnset: '未设置',
+      anySearchZoneIntl: '国际',
+      anySearchZoneCn: '中国',
+      anySearchLanguage: '语言',
+      anySearchLanguageTip:
+        '结果的首选语言，例如 en 或 zh-CN。留空则使用 AnySearch 的默认值。作为智能体工具时，智能体可以在每次调用时选择语言。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       subtitle: '副标题',
@@ -3351,6 +3376,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         tavilySearch: '正在网上搜索',
         queritSearch: '正在使用 Querit 搜索网络',
         queritContents: '正在使用 Querit 读取网页',
+        anySearchSearch: '正在使用 AnySearch 搜索',
+        anySearchDiscover: '正在查询 AnySearch 垂直领域',
+        anySearchExtract: '正在使用 AnySearch 读取网页',
         tavilyExtract: '读取网页内容',
         exeSQL: '查询数据库',
         google: '正在网上搜索',

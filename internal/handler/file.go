@@ -100,7 +100,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	orderBy := c.DefaultQuery("orderby", "create_time")
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
-		desc = descStr != "false"
+		desc = !strings.EqualFold(descStr, "false")
 	}
 	terms := orderTermsFromQuery(c, orderBy, desc)
 

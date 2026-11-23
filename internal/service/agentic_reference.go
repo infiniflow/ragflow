@@ -122,12 +122,32 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 			resolved = append(resolved, id)
 		}
 	}
+	// A web passage cited by url (the FOS web shape) joins the payload after the corpus
+	// chunks. It is the model's own claim: nothing in the turn records what a search
+	// served, so url/title/snippet are taken from the answer as written.
+	for _, w := range agentic_rag.ExtractCitedWebSources(normalized) {
+		if _, dup := byID[w.URL]; dup {
+			continue
+		}
+		title := w.Title
+		if title == "" {
+			title = w.URL
+		}
+		byID[w.URL] = map[string]interface{}{
+			"id": w.URL, "doc_id": w.URL, "docnm_kwd": title,
+			"content_with_weight": w.Snippet, "url": w.URL,
+			"kb_id": []interface{}{}, "img_id": "", "positions": []interface{}{},
+		}
+		resolved = append(resolved, w.URL)
+	}
 	if len(resolved) == 0 {
 		return map[string]interface{}{}, normalized
 	}
 	ordered := make([]map[string]interface{}, 0, len(resolved))
-	for _, id := range resolved {
+	index := make(map[string]int, len(resolved))
+	for i, id := range resolved {
 		ordered = append(ordered, byID[id])
+		index[id] = i
 	}
 	marked := normalized
 	if byHandles {
@@ -135,7 +155,7 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 		// first-citation order ("[ID:0]"), the numbering the payload ships.
 		marked, _ = agentic_rag.ResolveCitations(normalized, registry, resolved)
 	}
-	marked = agentic_rag.InsertCitationMarkers(marked, resolved)
+	marked = agentic_rag.RewriteProvenance(marked, index)
 	common.InfoCtx(ctx, "agentic citations built",
 		zap.Int("cited", len(cited)),
 		zap.Int("resolved", len(resolved)),

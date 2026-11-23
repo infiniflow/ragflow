@@ -45,7 +45,7 @@ export const enum ParseDocumentType {
 }
 
 // Stable reference: useModelTree keys its memoized tree on its identity.
-const LayoutRecognizeModelTypes = ['image2text', 'ocr', 'vision'];
+const LayoutRecognizeModelTypes = ['ocr', 'vlm'];
 
 function renderExperimentalLeaf(node: TreeSelectNode) {
   return (

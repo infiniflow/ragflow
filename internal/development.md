@@ -441,6 +441,15 @@ Admin defaults to port 9381 and API to 9380. `--port 9400` overrides the API por
 and environment values apply when `--port` is omitted.
 `bash build.sh --run` builds and starts this executable.
 
+Chatter executes Chat and Agent turns through the REST API at `api.host` /
+`api.http_port`, using the first tenant API key whose user can run the bound
+chat or agent. A wildcard API host resolves to loopback for these requests. Create an API
+key before adding a channel; if all keys are deleted, channel execution is rejected.
+Channel configuration reconciliation and runtime status still use the existing
+database and Kvrocks paths. Completion requests carry validated channel context so
+conversation history, channel labels, and Agent workflow refresh/resume survive
+the HTTP boundary.
+
 To run an individual service, select exactly one of `--admin`, `--api`,
 `--ingestor`, `--syncer` or `--chatter`. Run `./bin/ragflow_server --migrate`
 before starting individual services; it applies database migrations and exits.

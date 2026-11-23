@@ -417,7 +417,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	case common.ServerTypeFileSyncer:
 		return syncerpkg.Run(ctx, cancel, arguments)
 	case common.ServerTypeChatter:
-		return chatterpkg.Run(ctx, arguments, services)
+		return chatterpkg.Run(ctx, arguments)
 	default:
 		return fmt.Errorf("unsupported server mode %q", *arguments.Mode)
 	}
@@ -491,7 +491,7 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 		return syncerpkg.Run(ctx, cancel, args)
 	})
 	startService("chatter", func(ctx context.Context, args *bootstrap.ServerArgs) error {
-		return chatterpkg.Run(ctx, args, services)
+		return chatterpkg.Run(ctx, args)
 	})
 	if startupErr == nil {
 		for _, ready := range workerReady {
