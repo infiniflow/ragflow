@@ -21,7 +21,7 @@ type TenantModelInstance struct {
 	ID           string `gorm:"column:id;primaryKey;size:32" json:"id"`
 	InstanceName string `gorm:"column:instance_name;size:128;not null" json:"instance_name"`
 	ProviderID   string `gorm:"column:provider_id;size:32;not null" json:"provider_id"`
-	// varchar(4096), bounded on purpose (review of #22422): provider keys are
+	// varchar(4096), bounded on purpose (review of #22424): provider keys are
 	// not uniformly short (IONOS model-hub keys exceed 1,700 chars) and MySQL
 	// rejects writes past a sized varchar with Error 1406, but the column
 	// keeps a declared maximum so the schema cannot grow it without a

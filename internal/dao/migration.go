@@ -938,7 +938,7 @@ var tenantModelInstanceAPIKeyColumnSpec = columnSpec{
 
 // dropLegacyTenantModelInstanceAPIKeyIndex removes the composite unique index
 // idx_api_key_provider_id (provider_id, api_key) that the releases between
-// #14423 and #15460 declared through the entity's uniqueIndex tags and that
+// #13922 and #15460 declared through the entity's uniqueIndex tags and that
 // later releases dropped again. Databases created in that window still carry
 // it, and it must go before api_key is widened anywhere in the upgrade:
 // MODIFY COLUMN past the legacy varchar(512) makes MySQL rebuild the index,

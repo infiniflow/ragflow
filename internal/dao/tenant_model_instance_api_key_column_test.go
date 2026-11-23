@@ -110,6 +110,19 @@ func expectSchemaLookups(mock sqlmock.Sqlmock, table, column, liveType, isNullab
 func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
 	db, mock := openMySQLSpecMock(t)
 
+	// sqlmock rejects unregistered statements but ExpectationsWereMet does not
+	// report unexpected calls, so a regressed convergence guard could still
+	// pass. Count the ALTER statements the session issues and assert the
+	// converged call adds none.
+	var alterStatements int
+	if err := db.Callback().Raw().Before("gorm:raw").Register("test_count_alter_statements", func(tx *gorm.DB) {
+		if strings.Contains(strings.ToUpper(tx.Statement.SQL.String()), "ALTER TABLE") {
+			alterStatements++
+		}
+	}); err != nil {
+		t.Fatalf("failed to register the ALTER counter: %v", err)
+	}
+
 	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(512)", "NO")
 	mock.ExpectExec(
 		`ALTER TABLE tenant_model_instance MODIFY COLUMN api_key varchar\(4096\) NOT NULL`,
@@ -121,6 +134,9 @@ func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sqlmock expectations: %v", err)
 	}
+	if alterStatements != 1 {
+		t.Fatalf("ALTER statements issued on the narrow column = %d, want exactly the one widening ALTER", alterStatements)
+	}
 
 	// Converged shape: the ALTER must not repeat on later startups.
 	expectSchemaLookups(mock, "tenant_model_instance", "api_key", "varchar(4096)", "NO")
@@ -129,6 +145,9 @@ func TestTenantModelInstanceAPIKeyWidenedBeforeBackfill(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("the converged column must trigger no further DDL: %v", err)
+	}
+	if alterStatements != 1 {
+		t.Fatalf("ALTER statements after the converged call = %d, want no repeated DDL", alterStatements)
 	}
 }
 
