@@ -177,7 +177,7 @@ const ChunkCard = ({
               checked={enabled}
               onCheckedChange={onChange}
               aria-readonly
-              className="!m-0"
+              className="!m-0 !mt-[22px]"
               disabled={datasetEditButtonDisabled || switching}
             />
             <Button
