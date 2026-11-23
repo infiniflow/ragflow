@@ -765,6 +765,57 @@ func TestClaimTextLegDegradesOnEngineError(t *testing.T) {
 	}
 }
 
+func TestClaimTextLegEncodesWithEachDatasetTenant(t *testing.T) {
+	claimTextOn(t)
+	var encoded []string
+	var scoped [][]string
+	installClaimTextSearch(t,
+		func(_ context.Context, tenantID, _ string) []float64 {
+			encoded = append(encoded, tenantID)
+			if tenantID == "tenant-a" {
+				return []float64{0.1}
+			}
+			return []float64{0.1, 0.2}
+		},
+		func(_ context.Context, req *enginetypes.SearchRequest) ([]map[string]interface{}, error) {
+			scoped = append(scoped, append(append([]string(nil), req.IndexNames...), req.KbIDs...))
+			return nil, nil
+		})
+	ctx := WithDatasetTenants(context.Background(), map[string]string{"kb-a": "tenant-a", "kb-b": "tenant-b"})
+	searchClaimsForQuestion(ctx, "tenant-chat", []string{"kb-a", "kb-b"}, nil, "q", 50)
+	if len(encoded) != 2 || encoded[0] != "tenant-a" || encoded[1] != "tenant-b" {
+		t.Fatalf("encoded tenants = %v, want [tenant-a tenant-b]", encoded)
+	}
+	if len(scoped) != 2 || len(scoped[0]) != 2 || scoped[0][0] != "ragflow_tenant-a" || scoped[0][1] != "kb-a" {
+		t.Fatalf("first search scope = %v, want ragflow_tenant-a + kb-a", scoped)
+	}
+	if len(scoped[1]) != 2 || scoped[1][0] != "ragflow_tenant-b" || scoped[1][1] != "kb-b" {
+		t.Fatalf("second search scope = %v, want ragflow_tenant-b + kb-b", scoped)
+	}
+}
+
+func TestClaimTextLegFallsBackToTheRunTenant(t *testing.T) {
+	claimTextOn(t)
+	var encoded []string
+	searches := 0
+	installClaimTextSearch(t,
+		func(_ context.Context, tenantID, _ string) []float64 {
+			encoded = append(encoded, tenantID)
+			return []float64{0.1, 0.2}
+		},
+		func(context.Context, *enginetypes.SearchRequest) ([]map[string]interface{}, error) {
+			searches++
+			return nil, nil
+		})
+	searchClaimsForQuestion(context.Background(), "tenant-1", []string{"kb1", "kb2"}, nil, "q", 50)
+	if len(encoded) != 1 || encoded[0] != "tenant-1" {
+		t.Fatalf("encoded tenants = %v, want [tenant-1]", encoded)
+	}
+	if searches != 1 {
+		t.Fatalf("searches = %d, want 1", searches)
+	}
+}
+
 // installNoDecision keeps the claim filter out of the way of the merge tests.
 func installNoDecision(t *testing.T) {
 	t.Helper()

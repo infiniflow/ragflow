@@ -494,13 +494,6 @@ func searchClaimsForQuestion(ctx context.Context, tenantID string, datasetIDs, d
 	if question == "" {
 		return nil
 	}
-	// The tenant's default embedding model decides the column: the rows carry a
-	// vector per model dimension, and addressing a column the rows do not have is
-	// an empty result, not an error.
-	vec := claimQueryVector(ctx, tenantID, question)
-	if len(vec) == 0 {
-		return nil
-	}
 	filter := map[string]interface{}{
 		"entity_type_kwd": []string{navClaimRowType},
 		"scope_kwd":       []string{navClaimDocScope},
@@ -508,33 +501,45 @@ func searchClaimsForQuestion(ctx context.Context, tenantID string, datasetIDs, d
 	if len(docScope) > 0 {
 		filter["doc_id"] = docScope
 	}
-	rows, err := claimSearchRows(ctx, &enginetypes.SearchRequest{
-		IndexNames: IndexNamesFor(ctx, datasetIDs),
-		KbIDs:      datasetIDs,
-		SelectFields: []string{
-			"content_with_weight", "source_chunk_ids", "entity_type_kwd", "compile_kwd", "doc_id",
-		},
-		Filter:             filter,
-		Limit:              limit,
-		IncludeUnavailable: true,
-		MatchExprs: []interface{}{&enginetypes.MatchDenseExpr{
-			VectorColumnName:  common.VectorColumnName(len(vec)),
-			EmbeddingData:     vec,
-			EmbeddingDataType: "float",
-			DistanceType:      "cosine",
-			TopN:              limit,
-		}},
-	})
-	if err != nil {
-		common.DebugCtx(ctx, "agentic_rag: claim text search failed",
-			zap.Strings("datasets", datasetIDs), zap.Error(err))
-		return nil
-	}
-	out := make([]claimHit, 0, len(rows))
-	for _, row := range rows {
-		if h, ok := parseClaimHit(row); ok {
-			out = append(out, h)
+	var out []claimHit
+	for _, group := range groupDatasetsByTenant(ctx, datasetIDs, tenantID) {
+		// The tenant's default embedding model decides the column: the rows carry a
+		// vector per model dimension, and addressing a column the rows do not have is
+		// an empty result, not an error.
+		vec := claimQueryVector(ctx, group.TenantID, question)
+		if len(vec) == 0 {
+			continue
 		}
+		rows, err := claimSearchRows(ctx, &enginetypes.SearchRequest{
+			IndexNames: IndexNamesFor(ctx, group.KBIDs),
+			KbIDs:      group.KBIDs,
+			SelectFields: []string{
+				"content_with_weight", "source_chunk_ids", "entity_type_kwd", "compile_kwd", "doc_id",
+			},
+			Filter:             filter,
+			Limit:              limit,
+			IncludeUnavailable: true,
+			MatchExprs: []interface{}{&enginetypes.MatchDenseExpr{
+				VectorColumnName:  common.VectorColumnName(len(vec)),
+				EmbeddingData:     vec,
+				EmbeddingDataType: "float",
+				DistanceType:      "cosine",
+				TopN:              limit,
+			}},
+		})
+		if err != nil {
+			common.DebugCtx(ctx, "agentic_rag: claim text search failed",
+				zap.Strings("datasets", group.KBIDs), zap.Error(err))
+			continue
+		}
+		for _, row := range rows {
+			if h, ok := parseClaimHit(row); ok {
+				out = append(out, h)
+			}
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
 	}
 	return out
 }

@@ -203,8 +203,8 @@ func (a *KgAdapter) Explore(ctx context.Context, req KgExploreRequest) (KgExplor
 		return empty, nil
 	}
 
-	// Encode the seed text ONCE: one embedding request serves every dataset.
-	seedVec := a.seedVector(ctx, req.TenantID, query)
+	tenants := DatasetTenants(ctx, datasetIDs)
+	seedVecs := make(map[string][]float64, len(tenants))
 
 	var entities []KgEntity
 	var relations []KgRelation
@@ -234,6 +234,15 @@ func (a *KgAdapter) Explore(ctx context.Context, req KgExploreRequest) (KgExplor
 	}
 
 	for _, kbID := range datasetIDs {
+		tenantID := tenants[kbID]
+		if tenantID == "" {
+			tenantID = req.TenantID
+		}
+		seedVec, ok := seedVecs[tenantID]
+		if !ok {
+			seedVec = a.seedVector(ctx, tenantID, query)
+			seedVecs[tenantID] = seedVec
+		}
 		seedRows := a.seedSearch(ctx, kbID, docs, query, scopeKwd, seedVec)
 		var seeds []KgEntity
 		for _, row := range seedRows {
