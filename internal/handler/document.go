@@ -2011,8 +2011,13 @@ func parseMetadataUpdates(raw interface{}) ([]document.MetadataUpdate, string) {
 		if key == "" {
 			return nil, "Each update requires key and value."
 		}
-		value := m["value"]
-		updates = append(updates, document.MetadataUpdate{Key: key, Value: value})
+		valueType, _ := m["valueType"].(string)
+		updates = append(updates, document.MetadataUpdate{
+			Key:       key,
+			Value:     m["value"],
+			Match:     m["match"],
+			ValueType: valueType,
+		})
 	}
 	return updates, ""
 }
