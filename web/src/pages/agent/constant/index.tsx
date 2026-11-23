@@ -407,6 +407,21 @@ export const initialAnySearchSearchValues = {
   },
 };
 
+export const initialAnySearchExtractValues = {
+  api_key: '',
+  url: '',
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
 export const initialKeenableValues = {
   api_key: '',
   query: AgentGlobals.SysQuery,
@@ -962,6 +977,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Search1APISearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APICrawl]: [Operator.Begin],
   [Operator.AnySearchSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.AnySearchExtract]: [Operator.Begin],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -1024,6 +1040,7 @@ export const NodeMap = {
   [Operator.Search1APISearch]: 'ragNode',
   [Operator.Search1APICrawl]: 'ragNode',
   [Operator.AnySearchSearch]: 'ragNode',
+  [Operator.AnySearchExtract]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',

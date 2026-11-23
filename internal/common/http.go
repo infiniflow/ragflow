@@ -548,7 +548,7 @@ func assertURLSafe(rawURL string, lookup func(string) ([]string, error)) (hostna
 		if ip == nil {
 			return "", "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, hostname)
 		}
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !IsGlobalIP(effectiveIP(ip)) {
 			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed", ip.String())
 		}
 		if resolvedIP == "" {
@@ -577,7 +577,7 @@ var AssertHostSafe = func(host string) (resolvedIP string, err error) {
 
 	allowAny := allowAnyHost()
 	if ip := net.ParseIP(host); ip != nil {
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !IsGlobalIP(effectiveIP(ip)) {
 			return "", fmt.Errorf("host is not a public address (%s), which is not allowed", ip.String())
 		}
 		return ip.String(), nil
@@ -596,7 +596,7 @@ var AssertHostSafe = func(host string) (resolvedIP string, err error) {
 		if ip == nil {
 			return "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, host)
 		}
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !IsGlobalIP(effectiveIP(ip)) {
 			return "", fmt.Errorf("hostname '%s' resolves to a non-public address (%s), which is not allowed", host, ip.String())
 		}
 		if resolvedIP == "" {
@@ -616,11 +616,11 @@ func effectiveIP(ip net.IP) net.IP {
 	return ip
 }
 
-// isGlobalIP mirrors Python's ipaddress.IPv*Address.is_global: an address is
-// global if it is none of {unspecified, loopback, multicast, link-local,
+// IsGlobalIP reports address routability without consulting ALLOW_ANY_HOST.
+// An address is global if it is none of {unspecified, loopback, multicast, link-local,
 // private (including CGNAT and IPv6 ULA), benchmarking, documentation,
 // reserved}.
-func isGlobalIP(ip net.IP) bool {
+func IsGlobalIP(ip net.IP) bool {
 	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsPrivate() {
 		return false
 	}
@@ -668,7 +668,7 @@ func isGlobalIP(ip net.IP) bool {
 		// an arbitrary IPv4 address that none of the checks above look at. Unwrap
 		// and re-check it so 2002:7f00:1::1 is treated as 127.0.0.1.
 		for _, inner := range embeddedIPv4(v6) {
-			if !isGlobalIP(inner) {
+			if !IsGlobalIP(inner) {
 				return false
 			}
 		}

@@ -54,9 +54,12 @@ function isAnySearchOperator(value: unknown) {
     return false;
   }
 
-  return ['anysearch', 'anysearchsearch', 'anysearchdiscover'].includes(
-    value.replace(/_/g, '').toLowerCase(),
-  );
+  return [
+    'anysearch',
+    'anysearchsearch',
+    'anysearchdiscover',
+    'anysearchextract',
+  ].includes(value.replace(/_/g, '').toLowerCase());
 }
 
 function isNodeLabelApiKeyOperator(value: unknown) {
