@@ -662,6 +662,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	}
 
 	titleWeight := c.param.FilenameEmbdWeight
+	store = embeddingCacheForWrite(store, embdID, contentResults)
 	// Wire freshly embedded content into the resolved slice; cache hits already
 	// carry their vector from the loop above.
 	for i, idx := range pairs {
@@ -689,11 +690,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		// that alters the embedded input forces a fresh embed rather than serving
 		// a stale vector.
 		if !re.isHit {
-			if chunkID, ok := chunks[i].GetExtraString("id"); ok && embdID != "" && store != nil {
-				if b, merr := json.Marshal(re.content); merr == nil {
-					chunkcache.Set(ctx, store, chunkcache.Key("emb", embdID, chunkID, re.trunc), string(b))
-				}
-			}
+			cacheEmbedding(ctx, store, embdID, chunks[i], re.trunc, re.content)
 		}
 	}
 	return chunks, tokenCount, nil
