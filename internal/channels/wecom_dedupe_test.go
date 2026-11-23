@@ -21,22 +21,26 @@ import (
 	"time"
 )
 
-func TestWeComMessageSeenDeduplicatesRetries(t *testing.T) {
+func TestWeComMessageReservationDeduplicatesRetries(t *testing.T) {
 	resetWeComDedupeForTest(t)
 
-	if weComMessageSeen("account-1", "msg-1") {
+	if state := weComReserveMessage("account-1", "msg-1"); state != weComMessageAccepted {
 		t.Fatal("first delivery must not be treated as a duplicate")
 	}
-	if !weComMessageSeen("account-1", "msg-1") {
-		t.Fatal("WeCom retry of the same message id must be deduplicated")
+	if state := weComReserveMessage("account-1", "msg-1"); state != weComMessageInFlight {
+		t.Fatalf("in-flight retry state = %v, want in-flight", state)
 	}
-	if weComMessageSeen("account-1", "msg-2") {
+	weComMarkMessageProcessed("account-1", "msg-1")
+	if state := weComReserveMessage("account-1", "msg-1"); state != weComMessageProcessed {
+		t.Fatalf("processed retry state = %v, want processed", state)
+	}
+	if state := weComReserveMessage("account-1", "msg-2"); state != weComMessageAccepted {
 		t.Fatal("a different message id must not be a duplicate")
 	}
-	if weComMessageSeen("account-1", "") {
+	if state := weComReserveMessage("account-1", ""); state != weComMessageAccepted {
 		t.Fatal("an empty message id must never be deduplicated")
 	}
-	if weComMessageSeen("account-2", "msg-1") {
+	if state := weComReserveMessage("account-2", "msg-1"); state != weComMessageAccepted {
 		t.Fatal("the dedupe window must be scoped per account")
 	}
 }
@@ -48,7 +52,7 @@ func TestWeComMessageSeenExpiresAfterWindow(t *testing.T) {
 	weComInFlightMessages = map[string]struct{}{}
 	weComSeenMessagesMu.Unlock()
 
-	if weComMessageSeen("account-1", "msg-1") {
+	if state := weComReserveMessage("account-1", "msg-1"); state != weComMessageAccepted {
 		t.Fatal("a message id older than the dedupe window must be handled again")
 	}
 }
@@ -56,11 +60,11 @@ func TestWeComMessageSeenExpiresAfterWindow(t *testing.T) {
 func TestWeComForgetMessageAllowsRetryAfterFailure(t *testing.T) {
 	resetWeComDedupeForTest(t)
 
-	if weComMessageSeen("account-1", "msg-1") {
+	if state := weComReserveMessage("account-1", "msg-1"); state != weComMessageAccepted {
 		t.Fatal("first delivery must not be treated as a duplicate")
 	}
 	weComForgetMessage("account-1", "msg-1")
-	if weComMessageSeen("account-1", "msg-1") {
+	if state := weComReserveMessage("account-1", "msg-1"); state != weComMessageAccepted {
 		t.Fatal("a message cleared after a retryable failure must be handled again")
 	}
 }
@@ -68,15 +72,15 @@ func TestWeComForgetMessageAllowsRetryAfterFailure(t *testing.T) {
 func TestWeComMessageStaysDeduplicatedUntilProcessed(t *testing.T) {
 	resetWeComDedupeForTest(t)
 
-	if weComMessageSeen("account-1", "msg-1") {
+	if state := weComReserveMessage("account-1", "msg-1"); state != weComMessageAccepted {
 		t.Fatal("first delivery must not be treated as a duplicate")
 	}
-	if !weComMessageSeen("account-1", "msg-1") {
-		t.Fatal("an in-flight message must stay deduplicated regardless of the completion window")
+	if state := weComReserveMessage("account-1", "msg-1"); state != weComMessageInFlight {
+		t.Fatalf("in-flight retry state = %v, want in-flight", state)
 	}
 	weComMarkMessageProcessed("account-1", "msg-1")
-	if !weComMessageSeen("account-1", "msg-1") {
-		t.Fatal("a successfully processed message must stay deduplicated")
+	if state := weComReserveMessage("account-1", "msg-1"); state != weComMessageProcessed {
+		t.Fatalf("processed retry state = %v, want processed", state)
 	}
 }
 

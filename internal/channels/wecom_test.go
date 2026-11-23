@@ -932,12 +932,12 @@ func TestWeComWebhookAcknowledgesBeforeHandlerFinishesAndDeduplicatesRetry(t *te
 	}()
 	select {
 	case code := <-secondCode:
-		if code != http.StatusOK {
-			t.Fatalf("duplicate callback status = %d, want 200", code)
+		if code != http.StatusServiceUnavailable {
+			t.Fatalf("in-flight duplicate callback status = %d, want 503", code)
 		}
 	case <-time.After(time.Second):
 		close(release)
-		t.Fatal("duplicate callback did not return while the first handler was in flight")
+		t.Fatal("in-flight duplicate callback did not return")
 	}
 	select {
 	case <-started:

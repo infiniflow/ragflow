@@ -302,10 +302,16 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		if weComMessageSeen(accountID, message.MsgID) {
+		switch weComReserveMessage(accountID, message.MsgID) {
+		case weComMessageInFlight:
 			releaseWeComWork()
-			common.Info("wecom: skipping duplicate callback", zap.String("account_id", accountID), zap.String("message_id", message.MsgID))
-		} else {
+			common.Info("wecom: callback already in flight; requesting retry", zap.String("account_id", accountID), zap.String("message_id", message.MsgID))
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		case weComMessageProcessed:
+			releaseWeComWork()
+			common.Info("wecom: skipping processed duplicate callback", zap.String("account_id", accountID), zap.String("message_id", message.MsgID))
+		default:
 			// WeCom retries callbacks that are not acknowledged within a few
 			// seconds, while answering runs an LLM completion that takes far
 			// longer. Acknowledge immediately and answer in the background; the
@@ -395,12 +401,20 @@ func releaseSlot(slots chan struct{}) {
 	<-slots
 }
 
-// weComMessageSeen records an inbound message id and reports whether it was
-// already handled inside the dedupe window.
-func weComMessageSeen(accountID, messageID string) bool {
+type weComMessageState uint8
+
+const (
+	weComMessageAccepted weComMessageState = iota
+	weComMessageInFlight
+	weComMessageProcessed
+)
+
+// weComReserveMessage records an inbound message id. In-flight retries receive
+// 503 until the first delivery completes, so they remain retryable if it fails.
+func weComReserveMessage(accountID, messageID string) weComMessageState {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
-		return false
+		return weComMessageAccepted
 	}
 	key := accountID + ":" + messageID
 	now := time.Now()
@@ -409,10 +423,10 @@ func weComMessageSeen(accountID, messageID string) bool {
 	defer weComSeenMessagesMu.Unlock()
 
 	if _, ok := weComInFlightMessages[key]; ok {
-		return true
+		return weComMessageInFlight
 	}
 	if seenAt, ok := weComSeenMessages[key]; ok && now.Sub(seenAt) < weComDedupeWindow {
-		return true
+		return weComMessageProcessed
 	}
 	for existing, seenAt := range weComSeenMessages {
 		if now.Sub(seenAt) >= weComDedupeWindow {
@@ -430,7 +444,7 @@ func weComMessageSeen(accountID, messageID string) bool {
 		delete(weComSeenMessages, oldestKey)
 	}
 	weComInFlightMessages[key] = struct{}{}
-	return false
+	return weComMessageAccepted
 }
 
 // weComMarkMessageProcessed keeps a successfully handled message id in the
