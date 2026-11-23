@@ -350,8 +350,15 @@ func migrateTenantModelInstances(ctx context.Context, db *gorm.DB) error {
 	}
 
 	rows = filterExistingTenantModelInstances(rows, existing)
-	rows = dedupTenantModelInstances(rows)
+	// The over-length filter runs before the dedup. Dedup compares canonical
+	// keys and a legacy {"api_key":K,"is_tools":true} wrapper canonicalizes to
+	// K, so an over-length wrapper and the bounded plain key of the same
+	// provider share one canonical key. The source query has no ORDER BY, so
+	// dedup could keep the over-length wrapper and drop the plain key; the
+	// filter would then drop the wrapper as well and the provider would end
+	// up with no instance at all. Filtering first keeps the bounded plain key.
 	rows, overlength := dropOverlengthTenantModelInstanceKeys(rows)
+	rows = dedupTenantModelInstances(rows)
 	for _, row := range overlength {
 		common.Warn("Skipping tenant_llm api key migration: the key exceeds the tenant_model_instance.api_key bound",
 			zap.String("tenant_id", row.TenantID),
