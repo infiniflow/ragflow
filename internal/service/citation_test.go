@@ -365,9 +365,10 @@ func TestRepairBadCitationFormats(t *testing.T) {
 		{"(ID:12)", "[ID:12]"},   // plain parenthetical (existing pattern)
 		{"[ID: 12]", "[ID:12]"},  // already canonical-ish but spaced
 		{"[ref=14] [ref: 15] [ref 16] [ref17]", "[ID:14] [ID:15] [ID:16] [ID:17]"},
-		{"ref=18 ref:19 ref20", "[ID:18] [ID:19] [ID:20]"},
+		{"ref=18 ref:19 ref20 ref 21", "[ID:18] [ID:19] [ID:20] [ID:21]"},
 		{"[reference 31] prefer=32", "[reference 31] prefer=32"},
 		{"https://example.com/?ref=12", "https://example.com/?ref=12"},
+		{"[Guide](https://example.com/ref12?next=ref34) ref56", "[Guide](https://example.com/ref12?next=ref34) [ID:56]"},
 		{"Built in 1865 (**ID:1**).", "Built in 1865 [ID:1]."},
 		{"plain text no cites", "plain text no cites"},
 	}
@@ -381,6 +382,8 @@ func TestRepairBadCitationFormats(t *testing.T) {
 func TestCitationStreamFilterPreservesURLRefQuery(t *testing.T) {
 	for _, test := range []struct{ input, want string }{
 		{"See https://example.com/?ref=12 now.", "See https://example.com/?ref=12 now."},
+		{"See https://example.com/?ref= 12 results.", "See https://example.com/?ref= 12 results."},
+		{"[Guide](https://example.com/ref12?next=ref34) ref56", "[Guide](https://example.com/ref12?next=ref34) "},
 		{"See https://example.com/?ref=12", "See https://example.com/?ref=12"},
 		{"[Guide](http://example.com/?x=y&ref=12) ref=15", "[Guide](http://example.com/?x=y&ref=12) "},
 	} {
@@ -400,6 +403,22 @@ func TestCitationStreamFilterPreservesURLRefQuery(t *testing.T) {
 		if got := streamed.String(); got != test.want {
 			t.Errorf("character-by-character stream of %q: got %q, want %q", test.input, got, test.want)
 		}
+	}
+}
+
+func TestCitationStreamFilterPreservesEmptyURLRefParameter(t *testing.T) {
+	const want = "See https://example.com/?ref= 12 results."
+	var filter citationStreamFilter
+	var got string
+	for _, delta := range []string{"See https://example.com/?ref=", " ", "12 results."} {
+		got += filter.write(delta)
+		if !strings.HasPrefix(want, got) {
+			t.Fatalf("stream prefix = %q, want a prefix of %q", got, want)
+		}
+	}
+	got += filter.flush()
+	if got != want {
+		t.Fatalf("filtered answer = %q, want %q", got, want)
 	}
 }
 

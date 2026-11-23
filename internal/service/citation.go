@@ -46,7 +46,6 @@ var badCitationPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`【\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*】`),              // 【ID: 12】
 	regexp.MustCompile(`(?i)\[\s*ref\s*(?:[:=]\s*|\s+)([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`), // [ref=12], [ref: 12], [ref 12]
 	regexp.MustCompile(`(?i)\[\s*ref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`),                // [ref12]
-	regexp.MustCompile(`(?i)\bref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`),                      // ref12
 	// (**ID:5**) / (*ID: 5*) — markdown-asterisk-wrapped parenthetical cites that
 	// models sometimes emit instead of [ID:5]. Mirrors Python agentic_rag.py:885
 	// `re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", ...)`, which deep-research runs over
@@ -54,10 +53,9 @@ var badCitationPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\(\s*\**\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\**\s*\)`), // (**ID: 12**)
 }
 
-// standaloneRefCitationPattern covers the unbracketed ref=12/ref:12 forms.
-// It is applied separately so URL query parameters such as ?ref=12 are left
-// untouched.
-var standaloneRefCitationPattern = regexp.MustCompile(`(?i)\bref\s*[:=]\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`)
+// standaloneRefCitationPattern covers unbracketed forms such as ref12,
+// ref 12, ref=12, and ref:12. Apply it separately to preserve URL text.
+var standaloneRefCitationPattern = regexp.MustCompile(`(?i)\bref\s*[:=]?\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`)
 var citationURLPattern = regexp.MustCompile(`(?i)\bhttps?://[^\s<>()]+`)
 
 func citationIndexInsideURL(text string, index int) bool {
@@ -456,7 +454,7 @@ type citationStreamFilter struct {
 func (f *citationStreamFilter) write(delta string) string {
 	f.pending += delta
 	end := len(f.pending)
-	if tail := citationStreamTailPattern.FindStringIndex(f.pending); tail != nil {
+	if tail := citationStreamTailPattern.FindStringIndex(f.pending); tail != nil && !citationIndexInsideURL(f.pending, tail[0]) {
 		end = tail[0]
 	}
 	if url := citationStreamURLTailPattern.FindStringIndex(f.pending); url != nil {
