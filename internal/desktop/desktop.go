@@ -46,8 +46,8 @@ import (
 	"path/filepath"
 	"time"
 
+	pebbis "github.com/infiniflow/pebbis"
 	"github.com/nats-io/nats-server/v2/server"
-	pebbis "github.com/pebbis/pebbis"
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/backend/posix"
 	"github.com/versity/versitygw/embedgw"
