@@ -26,6 +26,7 @@ import { NICKNAME_PATTERN } from '../user-setting/profile/constants';
 import { BgSvg } from './bg';
 import FlipCard3D, { FlipFaceContext } from './card';
 import './index.less';
+import { LanguageSwitch } from './language-switch';
 
 type LoginFormContentProps = {
   isLoginPage: boolean;
@@ -172,36 +173,26 @@ function LoginFormContent({
           </form>
         </Form>
 
-        {title === 'login' && registerEnabled && (
-          <div className="mt-10 text-right">
-            <p className="text-text-disabled text-sm">
-              {t('signInTip')}
+        <div className="mt-10 flex items-center justify-between gap-4">
+          <LanguageSwitch />
+          {(title === 'register' || (title === 'login' && registerEnabled)) && (
+            <p className="min-w-0 text-right text-text-disabled text-sm">
+              {title === 'login' ? t('signInTip') : t('signUpTip')}
               <Button
-                data-testid="auth-toggle-register"
+                data-testid={
+                  title === 'login'
+                    ? 'auth-toggle-register'
+                    : 'auth-toggle-login'
+                }
                 variant={'transparent'}
                 onClick={changeTitle}
                 className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
               >
-                {t('signUp')}
+                {title === 'login' ? t('signUp') : t('login')}
               </Button>
             </p>
-          </div>
-        )}
-        {title === 'register' && (
-          <div className="mt-10 text-right">
-            <p className="text-text-disabled text-sm">
-              {t('signUpTip')}
-              <Button
-                data-testid="auth-toggle-login"
-                variant={'transparent'}
-                onClick={changeTitle}
-                className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
-              >
-                {t('login')}
-              </Button>
-            </p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -243,7 +234,7 @@ const Login = () => {
 
   const FormSchema = z
     .object({
-      nickname: z.string().optional(),
+      nickname: z.string(),
       email: z
         .string()
         .email()

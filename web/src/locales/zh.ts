@@ -96,7 +96,7 @@ export default {
       nicknamePlaceholder: '请输入名称',
       register: '创建账户',
       continue: '继续',
-      title: 'A leading RAG engine for LLM context',
+      title: '面向 LLM 上下文的领先 RAG 引擎',
       start: '立即开始',
       description:
         '免费注册以探索顶级 RAG 技术。 创建知识库和人工智能来增强业务',
