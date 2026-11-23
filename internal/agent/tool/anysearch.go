@@ -190,7 +190,7 @@ type anySearchReply struct {
 
 // call performs one request and returns the validated envelope's data. A POST is
 // never retried (the helper only retries idempotent methods).
-func (c *anySearchClient) call(ctx context.Context, method, path string, body []byte) (*anySearchReply, error) {
+func (c *anySearchClient) call(ctx context.Context, method, path string, body []byte, diagnosticSecrets ...string) (*anySearchReply, error) {
 	headers := map[string]string{
 		"Accept":     "application/json",
 		"User-Agent": "RAGFlow anysearch-integration/infiniflow-ragflow",
@@ -244,8 +244,8 @@ func (c *anySearchClient) call(ctx context.Context, method, path string, body []
 		}
 		return nil, &anySearchError{message: fmt.Sprintf("anysearch: invalid JSON response (HTTP %d)", resp.StatusCode)}
 	}
-	requestID := c.safeText(envelope.RequestID, 64)
-	message := c.safeText(envelope.Message, anySearchMessageRunes)
+	requestID := c.safeText(envelope.RequestID, 64, diagnosticSecrets...)
+	message := c.safeText(envelope.Message, anySearchMessageRunes, diagnosticSecrets...)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, anySearchFailure(fmt.Sprintf("HTTP %d", resp.StatusCode), message, requestID)
@@ -310,11 +310,16 @@ func anySearchIntegerCode(value any) (int64, bool) {
 }
 
 // safeText turns an upstream string into a short single-line value with the API
-// key removed.
-func (c *anySearchClient) safeText(value any, limit int) string {
+// key and request-specific secrets removed before truncation.
+func (c *anySearchClient) safeText(value any, limit int, diagnosticSecrets ...string) string {
 	text, ok := value.(string)
 	if !ok {
 		return ""
+	}
+	for _, secret := range diagnosticSecrets {
+		if secret != "" {
+			text = strings.ReplaceAll(text, secret, "[redacted]")
+		}
 	}
 	if c.apiKey != "" {
 		text = strings.ReplaceAll(text, c.apiKey, "[redacted]")

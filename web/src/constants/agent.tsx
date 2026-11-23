@@ -133,6 +133,7 @@ export enum Operator {
   Search1APICrawl = 'Search1APICrawl',
   AnySearchSearch = 'AnySearchSearch',
   AnySearchDiscover = 'AnySearchDiscover',
+  AnySearchExtract = 'AnySearchExtract',
   DocGenerator = 'DocGenerator',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',

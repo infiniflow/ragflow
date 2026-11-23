@@ -44,8 +44,16 @@ func TestAnySearchAgentFitsActualModelRequest(t *testing.T) {
 	if err := models.InitProviderManager("../../../conf/models"); err != nil {
 		t.Fatal(err)
 	}
-	for _, streaming := range []bool{false, true} {
-		t.Run(fmt.Sprint(streaming), func(t *testing.T) {
+	for _, tc := range []struct {
+		name, toolName string
+		streaming      bool
+	}{
+		{"search", "anysearch_search", false},
+		{"search stream", "anysearch_search", true},
+		{"extract", "anysearch_extract", false},
+		{"extract stream", "anysearch_extract", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			const window = 1024
 			var received bool
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,14 +85,14 @@ func TestAnySearchAgentFitsActualModelRequest(t *testing.T) {
 				t.Fatal(err)
 			}
 			wrapper := &roundLimitedChatModel{ToolCallingChatModel: inner, remaining: 2, contextLength: window, outputTokens: 128}
-			bound, err := wrapper.WithTools([]*schema.ToolInfo{{Name: "anysearch_search", Desc: strings.Repeat("Search the web. ", 20)}})
+			bound, err := wrapper.WithTools([]*schema.ToolInfo{{Name: tc.toolName, Desc: strings.Repeat("Read the web. ", 20)}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			wrapper = bound.(*roundLimitedChatModel)
 			original := strings.Repeat("evidence ", 5000)
-			input := []*schema.Message{schema.UserMessage("Find evidence"), {Role: schema.Assistant, ToolCalls: []schema.ToolCall{{ID: "call-1", Type: "function", Function: schema.FunctionCall{Name: "anysearch_search", Arguments: `{"query":"q"}`}}}}, {Role: schema.Tool, ToolCallID: "call-1", ToolName: "anysearch_search", Content: original}}
-			if streaming {
+			input := []*schema.Message{schema.UserMessage("Find evidence"), {Role: schema.Assistant, ToolCalls: []schema.ToolCall{{ID: "call-1", Type: "function", Function: schema.FunctionCall{Name: tc.toolName, Arguments: `{}`}}}}, {Role: schema.Tool, ToolCallID: "call-1", ToolName: tc.toolName, Content: original}}
+			if tc.streaming {
 				stream, err := wrapper.Stream(t.Context(), input)
 				if err != nil {
 					t.Fatal(err)

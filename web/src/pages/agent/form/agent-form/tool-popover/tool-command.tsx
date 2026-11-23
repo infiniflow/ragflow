@@ -37,6 +37,7 @@ const Menus = [
       Operator.Search1APICrawl,
       Operator.AnySearchSearch,
       Operator.AnySearchDiscover,
+      Operator.AnySearchExtract,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.BGPT,

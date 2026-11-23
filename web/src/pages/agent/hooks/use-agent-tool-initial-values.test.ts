@@ -1,5 +1,9 @@
 import { renderHook } from '@testing-library/react';
-import { initialAnySearchSearchValues, Operator } from '../constant';
+import {
+  initialAnySearchExtractValues,
+  initialAnySearchSearchValues,
+  Operator,
+} from '../constant';
 import { getQueritAgentInitialValues } from './querit-agent-initial-values';
 import { useInitializeOperatorParams } from './use-add-node';
 import { useAgentToolInitialValues } from './use-agent-tool-initial-values';
@@ -49,6 +53,7 @@ describe('useAgentToolInitialValues', () => {
     jest.mocked(useInitializeOperatorParams).mockReturnValue({
       initialFormValuesMap: {
         [Operator.AnySearchSearch]: { ...initialAnySearchSearchValues },
+        [Operator.AnySearchExtract]: { ...initialAnySearchExtractValues },
       },
     } as any);
   });
@@ -66,6 +71,14 @@ describe('useAgentToolInitialValues', () => {
 
     expect(
       result.current.initializeAgentToolValues(Operator.AnySearchDiscover),
+    ).toEqual({ api_key: '' });
+  });
+
+  it('creates AnySearch Extract tool params with only the optional key', () => {
+    const { result } = renderHook(() => useAgentToolInitialValues());
+
+    expect(
+      result.current.initializeAgentToolValues(Operator.AnySearchExtract),
     ).toEqual({ api_key: '' });
   });
 
