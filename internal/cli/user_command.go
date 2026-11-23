@@ -3860,6 +3860,13 @@ func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (Re
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
 			continue
 		}
+		if chunk.Code != 0 {
+			return &ChatCompletionsResponse{
+				Code:     chunk.Code,
+				Message:  chunk.Message,
+				Duration: time.Since(start).Seconds(),
+			}, nil
+		}
 		if chunk.Data.Answer != "" {
 			fullContent += chunk.Data.Answer
 		}
