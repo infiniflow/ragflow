@@ -14,6 +14,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { ParseType } from '@/constants/knowledge';
+import { DatasetParserOptions } from '@/ee/components/parser-extension-fields';
 import { buildParserSelectValue } from '@/hooks/use-parser-options';
 import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import {
@@ -369,19 +370,21 @@ export default function DatasetSetting() {
                     </div>
                   </FormItem>
                   {showOperatorTabs && (
-                    <PipelineOperatorTabs
-                      nodes={operatorNodes}
-                      activeTab={activeTab}
-                      onTabChange={setActiveTab}
-                      onOperatorValuesChange={handleOperatorValuesChange}
-                      operatorValues={parserConfigValues}
-                      operatorFormErrors={
-                        errors.parser_config as
-                          | Record<string, FieldErrors | undefined>
-                          | undefined
-                      }
-                      fixedFileFormats
-                    />
+                    <DatasetParserOptions>
+                      <PipelineOperatorTabs
+                        nodes={operatorNodes}
+                        activeTab={activeTab}
+                        onTabChange={setActiveTab}
+                        onOperatorValuesChange={handleOperatorValuesChange}
+                        operatorValues={parserConfigValues}
+                        operatorFormErrors={
+                          errors.parser_config as
+                            | Record<string, FieldErrors | undefined>
+                            | undefined
+                        }
+                        fixedFileFormats
+                      />
+                    </DatasetParserOptions>
                   )}
                 </section>
               </div>
