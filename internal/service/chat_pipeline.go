@@ -5142,6 +5142,12 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := chatConfigFloat(dialog.LLMSetting["top_p"]); ok {
 			cfg.TopP = &v
 		}
+		if v, ok := chatConfigFloat(dialog.LLMSetting["presence_penalty"]); ok {
+			cfg.PresencePenalty = &v
+		}
+		if v, ok := chatConfigFloat(dialog.LLMSetting["frequency_penalty"]); ok {
+			cfg.FrequencyPenalty = &v
+		}
 		if v, ok := dialog.LLMSetting["do_sample"].(bool); ok {
 			cfg.DoSample = &v
 		}
@@ -5183,6 +5189,12 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		}
 		if v, ok := chatConfigFloat(config["top_p"]); ok {
 			cfg.TopP = &v
+		}
+		if v, ok := chatConfigFloat(config["presence_penalty"]); ok {
+			cfg.PresencePenalty = &v
+		}
+		if v, ok := chatConfigFloat(config["frequency_penalty"]); ok {
+			cfg.FrequencyPenalty = &v
 		}
 		if v, ok := config["do_sample"].(bool); ok {
 			cfg.DoSample = &v
