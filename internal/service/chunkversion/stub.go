@@ -38,7 +38,7 @@ func AppendEmptyParseBaseline(context.Context, *gorm.DB, string, int64, string) 
 
 // AppendAddBaseline records nothing: the community edition keeps no chunk
 // history, so a manually added chunk has no timeline to start.
-func AppendAddBaseline(context.Context, *gorm.DB, string, string, string, int64, SnapshotMeta, map[string]interface{}) {
+func AppendAddBaseline(context.Context, *gorm.DB, string, string, string, int64, SnapshotMeta, map[string]interface{}, string) {
 }
 
 // HasEmptyParseMarker has no history to consult: the community edition keeps no
