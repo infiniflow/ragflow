@@ -14,10 +14,10 @@
  *  limitations under the License.
  */
 
-/** What a model is used as. Vision is a chat model that also accepts images. */
+/** What a model is used as. VLM is a chat model that also accepts images. */
 export type GPUStackModelKind =
   | 'chat'
-  | 'vision'
+  | 'vlm'
   | 'embedding'
   | 'rerank'
   | 'asr'
@@ -26,7 +26,7 @@ export type GPUStackModelKind =
 /** Display order of the model groups. */
 export const GPUSTACK_MODEL_KINDS: GPUStackModelKind[] = [
   'chat',
-  'vision',
+  'vlm',
   'embedding',
   'rerank',
   'asr',
@@ -46,7 +46,13 @@ export type GPUStackConnectionError = 'auth' | 'unreachable' | 'other';
 
 export function kindFromModelTypes(types?: string[] | null): GPUStackModelKind {
   const list = types ?? [];
-  if (list.includes('vision') || list.includes('image2text')) return 'vision';
+  if (
+    list.includes('vlm') ||
+    list.includes('vision') ||
+    list.includes('image2text')
+  ) {
+    return 'vlm';
+  }
   if (list.includes('embedding')) return 'embedding';
   if (list.includes('rerank')) return 'rerank';
   if (list.includes('asr') || list.includes('speech2text')) return 'asr';
@@ -55,7 +61,7 @@ export function kindFromModelTypes(types?: string[] | null): GPUStackModelKind {
 }
 
 export function modelTypesFromKind(kind: GPUStackModelKind): string[] {
-  return kind === 'vision' ? ['chat', 'vision'] : [kind];
+  return kind === 'vlm' ? ['chat', 'vlm'] : [kind];
 }
 
 export function toGPUStackModel(item: {

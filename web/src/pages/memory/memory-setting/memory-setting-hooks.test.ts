@@ -13,7 +13,7 @@ jest.mock('@/hooks/use-llm-request', () => ({
 
 jest.mock('@/components/model-tree-select', () => ({
   ModelTypeMap: {
-    llm_id: ['chat', 'vision'],
+    llm_id: ['chat', 'vlm'],
     embd_id: ['embedding'],
   },
 }));
@@ -84,7 +84,7 @@ describe('useMemoryFormSchema', () => {
     expect(parsed.success).toBe(true);
     expect(result.current.modelsFetched).toBe(true);
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision'],
+      ['chat', 'vlm'],
       undefined,
       undefined,
     );
@@ -109,7 +109,7 @@ describe('useMemoryFormSchema', () => {
     expect(parsed.success).toBe(true);
     expect(result.current.modelsFetched).toBe(true);
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision'],
+      ['chat', 'vlm'],
       'tenant-1',
       undefined,
     );
