@@ -1732,25 +1732,134 @@ func dispatchMonkeyOCRPDF(
 	// The MonkeyOCR adapter fronts the same MinerU-compatible /file_parse API,
 	// so it shares the MinerU timeout resolution (default 30m) that
 	// mineruStreamParse was already written against.
+
 	timeout := mineruRequestTimeout(setup, apiConfig)
-	extraction := mineruExtractionOptions{formulaEnable: true, tableEnable: true}
-	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction, timeout)
-	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
-	}
-	sections, err := mineruExtractSections(zipBytes)
-	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR extract: %w", err)
+	extraction := mineruExtractionOptions{
+		formulaEnable: true,
+		tableEnable:   true,
 	}
 
-	var parts []string
-	for _, s := range sections {
-		if s != "" {
-			parts = append(parts, s)
+	zipBytes, err := mineruStreamParse(
+		ctx, apiURL, apiKeyRaw, binary,
+		parseMethod, mineruLang, backend,
+		serverURL, extraction, timeout,
+	)
+
+	// MonkeyOCR 서버 요청 실패 확인
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf(
+			"parser: MonkeyOCR stream: %w", err,
+		)
+	}
+
+	// PDF 페이지 크기 계산
+	sizes, geometryErr := mineruPageSizes(ctx, binary)
+
+	// ZIP 내부 JSON을 ParseResult로 변환
+	res, err := monkeyOCRZIPToParseResult(
+		ctx, filename, zipBytes, sizes,
+	)
+	if err != nil {
+		return parser.ParseResult{}, err
+	}
+
+	// 페이지 크기 계산 오류가 있으면 경고 기록
+	appendMineruGeometryWarning(&res, geometryErr)
+
+	return res, nil
+
+}
+
+// monkeyOCRZIPToParseResult converts the structured JSON
+// returned by MonkeyOCR v1 into a ParseResult while
+// preserving page numbers, layout types, and PDF positions.
+
+func monkeyOCRZIPToParseResult(
+	ctx context.Context,
+	filename string,
+	zipBytes []byte,
+	sizes map[int][2]float64,
+) (parser.ParseResult, error) {
+	items, warnings, err := mineruExtractJSONItems(zipBytes, sizes)
+	if err != nil {
+		// Fall back only when neither structured JSON member exists.
+		md, found, fallbackErr := monkeyOCRMarkdownFromZIP(zipBytes)
+		if fallbackErr != nil {
+			return parser.ParseResult{}, fmt.Errorf(
+				"parser: MonkeyOCR Markdown fallback: %w", fallbackErr,
+			)
+		}
+		if found {
+			res := normalizePDFMarkdown(ctx, filename, md)
+			if res.Err != nil {
+				return parser.ParseResult{}, res.Err
+			}
+			res.File["parse_method"] = "monkeyocr"
+			res.Warnings = append(res.Warnings,
+				"MonkeyOCR Markdown fallback: PDF page positions are unavailable",
+			)
+			return res, nil
+		}
+		return parser.ParseResult{}, fmt.Errorf(
+			"parser: MonkeyOCR extract: %w", err,
+		)
+	}
+
+	res := mineruJSONParseResult(filename, items)
+	res.File["parse_method"] = "monkeyocr"
+	res.Warnings = append(res.Warnings, warnings...)
+	return res, nil
+}
+
+func monkeyOCRMarkdownFromZIP(zipBytes []byte) (string, bool, error) {
+	zr, err := zip.NewReader(
+		bytes.NewReader(zipBytes), int64(len(zipBytes)),
+	)
+	if err != nil {
+		return "", false, err
+	}
+
+	var markdownFile *zip.File
+	for _, f := range zr.File {
+		name := strings.ToLower(
+			strings.ReplaceAll(f.Name, "\\", "/"),
+		)
+
+		// Never hide a structured JSON parsing error.
+		if strings.HasSuffix(name, "content_list.json") ||
+			strings.HasSuffix(name, "structured_content.json") {
+			return "", false, nil
+		}
+
+		if strings.HasSuffix(name, ".md") {
+			if markdownFile == nil ||
+				path.Base(name) == "full.md" {
+				markdownFile = f
+			}
 		}
 	}
-	md := strings.Join(parts, "\n")
-	return normalizePDFMarkdown(ctx, filename, md), nil
+
+	if markdownFile == nil {
+		return "", false, nil
+	}
+
+	// Bound decompressed Markdown to 16 MiB.
+	data, ok := mineruReadBounded(markdownFile, 16<<20)
+	if !ok {
+		return "", false, fmt.Errorf(
+			"cannot read Markdown ZIP member %q within size limit",
+			markdownFile.Name,
+		)
+	}
+
+	md := strings.TrimSpace(string(data))
+	if md == "" {
+		return "", false, fmt.Errorf(
+			"Markdown ZIP member %q is empty",
+			markdownFile.Name,
+		)
+	}
+	return md, true, nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
@@ -2172,75 +2281,6 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 		))
 	}
 	return out, warnings, nil
-}
-
-// mineruExtractSections reads MinerU content_list.json from a zip archive
-// and extracts plain text blocks, mirroring _transfer_to_sections
-// Used by MonkeyOCR v1 /file_parse dispatch when returning markdown sections.
-func mineruExtractSections(zipBytes []byte) ([]string, error) {
-	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
-	if err != nil {
-		return nil, fmt.Errorf("open zip: %w", err)
-	}
-
-	var contentList []byte
-	for _, f := range zipReader.File {
-		if strings.HasSuffix(f.Name, "content_list.json") {
-			rc, openErr := f.Open()
-			if openErr != nil {
-				continue
-			}
-			contentList, _ = io.ReadAll(rc)
-			_ = rc.Close()
-			break
-		}
-	}
-	if len(contentList) == 0 {
-		return nil, fmt.Errorf("content_list.json not found in MinerU zip")
-	}
-
-	var items []map[string]any
-	if err = json.Unmarshal(contentList, &items); err != nil {
-		return nil, fmt.Errorf("parse content_list.json: %w", err)
-	}
-
-	var sections []string
-	for _, item := range items {
-		typ, _ := item["type"].(string)
-		switch typ {
-		case "text":
-			if text, ok := item["text"].(string); ok {
-				sections = append(sections, text)
-			}
-		case "table":
-			if tb, ok := item["table_body"].(string); ok {
-				sections = append(sections, tb)
-			}
-			for _, caption := range stringSlice(item["table_caption"]) {
-				sections = append(sections, caption)
-			}
-		case "image":
-			for _, caption := range stringSlice(item["image_caption"]) {
-				sections = append(sections, caption)
-			}
-			if desc, ok := item["vlm_description"].(string); ok && desc != "" {
-				sections = append(sections, desc)
-			}
-		case "equation", "code":
-			if text, ok := item["text"].(string); ok {
-				sections = append(sections, text)
-			}
-		case "list":
-			for _, li := range stringSlice(item["list_items"]) {
-				sections = append(sections, li)
-			}
-		default:
-			if text, ok := item["text"].(string); ok {
-				sections = append(sections, text)
-			}
-		}
-	}
-	return sections, nil
 }
 
 // mineruReadZipFile reads one MinerU zip member in full for JSON extraction.

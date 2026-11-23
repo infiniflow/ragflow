@@ -1254,3 +1254,190 @@ func TestMonkeyOCRv2AttachPositionsLeadingUnpositionedTable(t *testing.T) {
 		t.Fatalf("second table must keep its own section's page 2, got %#v", second)
 	}
 }
+
+func TestMonkeyOCRv1ZIPPreservesPositions(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	entry, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = entry.Write([]byte(`[
+        {
+            "type": "text",
+            "text": "First page",
+            "page_idx": 0,
+            "bbox": [10, 20, 110, 40]
+        },
+        {
+            "type": "text",
+            "text": "Second page",
+            "page_idx": 1,
+            "bbox": [20, 30, 120, 50]
+        }
+    ]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	sizes := map[int][2]float64{
+		0: {612, 792},
+		1: {612, 792},
+	}
+
+	result, err := monkeyOCRZIPToParseResult(
+		context.Background(), "test.pdf", buf.Bytes(), sizes,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.File["page_count"] != 2 {
+		t.Fatalf("expected 2 pages, got %v",
+			result.File["page_count"])
+	}
+
+	if result.File["parse_method"] != "monkeyocr" {
+		t.Fatalf("unexpected parse_method: %v",
+			result.File["parse_method"])
+	}
+
+	if len(result.JSON) != 2 {
+		t.Fatalf("expected 2 items, got %d",
+			len(result.JSON))
+	}
+
+	for i, item := range result.JSON {
+		data := item.ToMap()
+		expectedPage := i + 1
+
+		if data["page_number"] != expectedPage {
+			t.Errorf("item %d: page = %v, want %d",
+				i, data["page_number"], expectedPage)
+		}
+
+		positions, ok := data["_pdf_positions"].([][]any)
+		if !ok || len(positions) != 1 {
+			t.Fatalf("item %d: missing positions", i)
+		}
+
+		if positions[0][0] != expectedPage {
+			t.Errorf("item %d: position page = %v",
+				i, positions[0][0])
+		}
+
+		expected := [][]float64{
+			{6.12, 67.32, 15.84, 31.68},
+			{12.24, 73.44, 23.76, 39.60},
+		}
+
+		for j := 1; j <= 4; j++ {
+			coord, ok := positions[0][j].(float64)
+			if !ok {
+				t.Fatalf("item %d coordinate %d is not float64", i, j)
+			}
+
+			want := expected[i][j-1]
+			if math.Abs(coord-want) > 1e-6 {
+				t.Errorf(
+					"item %d coordinate %d = %v, want %v",
+					i, j, coord, want,
+				)
+			}
+		}
+
+	}
+}
+
+func TestMonkeyOCRv1InvalidZIP(t *testing.T) {
+	_, err := monkeyOCRZIPToParseResult(
+		context.Background(), "test.pdf", []byte("invalid zip data"), nil,
+	)
+
+	if err == nil {
+		t.Fatal("expected error for invalid ZIP")
+	}
+}
+
+func TestMonkeyOCRv1MarkdownFallback(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	f, err := zw.Create("sample/full.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte("# Hello\n\nFallback content")); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := monkeyOCRZIPToParseResult(
+		context.Background(), "test.pdf", buf.Bytes(), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.File["parse_method"] != "monkeyocr" {
+		t.Fatalf("unexpected parse_method: %v",
+			result.File["parse_method"])
+	}
+
+	if len(result.JSON) == 0 {
+		t.Fatal("expected parsed Markdown content")
+	}
+
+	foundWarning := false
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "positions are unavailable") {
+			foundWarning = true
+		}
+	}
+	if !foundWarning {
+		t.Fatalf("missing positions warning: %v", result.Warnings)
+	}
+}
+
+func TestMonkeyOCRv1MalformedJSONDoesNotFallback(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	jsonFile, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := jsonFile.Write([]byte("{invalid json")); err != nil {
+		t.Fatal(err)
+	}
+
+	mdFile, err := zw.Create("full.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mdFile.Write([]byte("# Should not be used")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = monkeyOCRZIPToParseResult(
+		context.Background(), "test.pdf", buf.Bytes(), nil,
+	)
+	if err == nil {
+		t.Fatal("expected an error for malformed structured JSON")
+	}
+	if !strings.Contains(err.Error(), "parse content_list.json") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
