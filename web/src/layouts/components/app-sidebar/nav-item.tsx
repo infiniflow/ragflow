@@ -95,6 +95,10 @@ export function IntegrationsNavGroup() {
   const Icon = IntegrationsNavItem.icon;
   const isActive = Boolean(activeIntegrationKey);
 
+  if (integrationChildren.length === 0) {
+    return null;
+  }
+
   return (
     <div>
       <NavItemTooltip

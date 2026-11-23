@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
+import { useVisibleRoleIntegrationItems } from '@/ee/hooks/use-visible-role-integration-items';
 import { ProfileSettingWrapperCard } from '../components/user-setting-header';
 import AddDataSourceModal from './add-datasource-modal';
 import { getAvailableDataSourceKeys } from './backend-adapter';
@@ -77,14 +78,19 @@ const AvailableSourceCard = ({
 const DataSource = () => {
   const { t } = useTranslation();
   const { dataSourceInfo } = useDataSourceInfo();
-  const dataSourceTemplates = getAvailableDataSourceKeys().map((id) => {
-    return {
+  const dataSourceTemplates = useVisibleRoleIntegrationItems(
+    'data_source',
+    getAvailableDataSourceKeys().map((id) => ({
       id,
       name: dataSourceInfo[id].name,
       description: dataSourceInfo[id].description,
       icon: dataSourceInfo[id].icon,
-    };
-  });
+    })),
+    (item) =>
+      String(item.id) === 'dingtalk_ai_table'
+        ? ['dingtalk_ai_table', 'dingtalk_wiki', 'dingtalk_drive']
+        : [item.id],
+  );
 
   // useListTenantUser();
   const { categorizedList } = useListDataSource();
