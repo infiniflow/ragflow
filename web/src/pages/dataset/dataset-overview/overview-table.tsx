@@ -52,7 +52,6 @@ import { DatasetTableLayout } from '../components/dataset-table-layout';
 import { useIngestionMessages } from '../ingestion-message-hooks';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
-import { getLogRunningStatus } from './utils';
 
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
@@ -361,9 +360,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       task: row.original?.task_type,
       // The pipeline log reports the legacy "Scheduled" ("5") for an enqueued
       // run; render it like the file list's queue state instead.
-      status: getLogRunningStatus(
-        row.original.operation_status || row.original.status,
-      ),
+      status: row.original.operation_status,
       startDate: formatDate(row.original.process_begin_at),
       duration: formatSecondsToHumanReadable(
         row.original.process_duration || 0,

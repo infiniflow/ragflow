@@ -1,10 +1,6 @@
+import { RunningStatusMap, RunningStatusOld } from '@/constants/knowledge';
 import type { IFileLogList } from '../interface';
-import {
-  buildDatasetOverviewStats,
-  getLogRunningStatus,
-  hasActiveIngestionLogs,
-} from '../utils';
-import { RunningStatus, RunningStatusOld } from '@/constants/knowledge';
+import { buildDatasetOverviewStats, hasActiveIngestionLogs } from '../utils';
 
 const Summary = {
   doc_num: 9,
@@ -57,10 +53,7 @@ describe('dataset overview helpers', () => {
     ).toBe(false);
   });
 
-  it('renders a scheduled pipeline run as queued', () => {
-    expect(getLogRunningStatus('5')).toBe(RunningStatus.QUEUED);
-    expect(getLogRunningStatus('SCHEDULE')).toBe(RunningStatus.QUEUED);
-    expect(getLogRunningStatus('3')).toBe(RunningStatusOld.DONE);
-    expect(getLogRunningStatus(undefined)).toBeUndefined();
+  it('labels a scheduled pipeline run as queued', () => {
+    expect(RunningStatusMap[RunningStatusOld.SCHEDULE]).toBe('Queued');
   });
 });
