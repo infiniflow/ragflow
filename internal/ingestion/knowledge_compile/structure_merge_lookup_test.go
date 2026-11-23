@@ -294,3 +294,238 @@ func TestMergeExistingStructureBucketsSplitsRelationSweepAtTheResultWindow(t *te
 		t.Fatalf("relation sweep issued %d searches, want the window-filling group split into bounded batches", relationSearches)
 	}
 }
+
+// excludedStructureIDs reads the ids a must_not exclusion carries, in both the
+// single-clause and the chunked "and" shape relationExclusionClauses emits.
+func excludedStructureIDs(raw interface{}) []string {
+	var out []string
+	var walk func(interface{})
+	walk = func(value interface{}) {
+		switch typed := value.(type) {
+		case map[string]interface{}:
+			if ids, ok := typed["id"].([]string); ok {
+				out = append(out, ids...)
+			}
+			if inner, ok := typed["must_not"]; ok {
+				walk(inner)
+			}
+			if children, ok := typed["and"]; ok {
+				walk(children)
+			}
+		case []map[string]interface{}:
+			for _, child := range typed {
+				walk(child)
+			}
+		case []interface{}:
+			for _, child := range typed {
+				walk(child)
+			}
+		}
+	}
+	walk(raw)
+	return out
+}
+
+// A single endpoint pair cannot be split any further, but its stored rows can
+// still fill the engine result window. The sweep must read the pair completely
+// in window-sized rounds (excluding the ids already read) instead of failing the
+// merge, for a pair holding exactly the window and for one holding more.
+func TestMergeExistingStructureBucketsReadsASinglePairPastTheResultWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		rows          int
+		wantExclusion bool
+	}{
+		{name: "exactly the window", rows: common.MAX_RESULT_WINDOW},
+		{name: "past the window", rows: common.MAX_RESULT_WINDOW + 400, wantExclusion: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const tenant, kb = "t1", "kb1"
+			const from, to = "entity-a", "target-b"
+			bucket := StructureBucket{
+				Name: from + " -> " + to, Type: "relation", Description: "links",
+				FromEntity: from, ToEntity: to, RelationType: "links",
+				CompileKwd: "knowledge_graph", TemplateID: "tpl1", TemplateKind: "knowledge_graph",
+				SourceDocIDs: []string{"incoming-doc"}, SourceChunkIDs: []string{"incoming-chunk"},
+			}
+			currentID := datasetLevelStructureID(tenant, kb, structureTemplateIdentity("tpl1", "knowledge_graph"), bucket.Name, "relation", "knowledge_graph", "links")
+			wantStale := make(map[string]bool, tc.rows-1)
+			stored := make([]map[string]interface{}, 0, tc.rows)
+			for k := 0; k < tc.rows; k++ {
+				id := currentID
+				if k > 0 {
+					id = fmt.Sprintf("legacy-%d", k)
+					wantStale[id] = true
+				}
+				stored = append(stored, map[string]interface{}{
+					"id": id, "compile_kwd": "knowledge_graph",
+					"compilation_template_ids":      []string{"tpl1"},
+					"compilation_template_kind_kwd": "knowledge_graph",
+					"type_kwd":                      "relation",
+					"from_entity_kwd":               from, "to_entity_kwd": to,
+					"content_with_weight": fmt.Sprintf(`{"from":%q,"to":%q,"type":"links"}`, from, to),
+					"source_doc_ids":      []string{fmt.Sprintf("stored-doc-%d", k)},
+					"source_chunk_ids":    []string{fmt.Sprintf("stored-chunk-%d", k)},
+				})
+			}
+			sawExclusion := false
+			eng := &fakeEngine{engineType: "infinity", searchFn: func(req *types.SearchRequest) ([]map[string]interface{}, error) {
+				if req.Offset+req.Limit > common.MAX_RESULT_WINDOW {
+					return nil, fmt.Errorf("Result window is too large, from + size must be <= %d", common.MAX_RESULT_WINDOW)
+				}
+				matched := stored
+				if raw, ok := req.Filter["id"]; ok {
+					wanted := make(map[string]bool, len(raw.([]string)))
+					for _, id := range raw.([]string) {
+						wanted[id] = true
+					}
+					matched = nil
+					for _, row := range stored {
+						if wanted[row["id"].(string)] {
+							matched = append(matched, row)
+						}
+					}
+				}
+				if raw, ok := req.Filter["must_not"]; ok {
+					sawExclusion = true
+					excluded := make(map[string]bool)
+					for _, id := range excludedStructureIDs(raw) {
+						excluded[id] = true
+					}
+					kept := make([]map[string]interface{}, 0, len(matched))
+					for _, row := range matched {
+						if !excluded[row["id"].(string)] {
+							kept = append(kept, row)
+						}
+					}
+					matched = kept
+				}
+				start, end := req.Offset, req.Offset+req.Limit
+				if start > len(matched) {
+					start = len(matched)
+				}
+				if end > len(matched) {
+					end = len(matched)
+				}
+				return matched[start:end], nil
+			}}
+
+			buckets := []StructureBucket{bucket}
+			stale, err := mergeExistingStructureBuckets(context.Background(), eng, "ragflow_t1", tenant, kb, buckets)
+			if err != nil {
+				t.Fatalf("mergeExistingStructureBuckets: %v", err)
+			}
+			if len(stale) != len(wantStale) {
+				t.Fatalf("stale ids = %d, want %d (every superseded row)", len(stale), len(wantStale))
+			}
+			for _, id := range stale {
+				if !wantStale[id] {
+					t.Fatalf("stale id %q is not a superseded stored row", id)
+				}
+			}
+			if got := len(buckets[0].SourceDocIDs); got != tc.rows+1 {
+				t.Fatalf("bucket kept %d docs, want the incoming one plus all %d stored rows", got, tc.rows)
+			}
+			if got := len(buckets[0].SourceChunkIDs); got != tc.rows+1 {
+				t.Fatalf("bucket kept %d chunks, want the incoming one plus all %d stored rows", got, tc.rows)
+			}
+			// A window-filling read always probes with the ids it already read,
+			// which is what tells "exactly the window" from "more rows behind it".
+			if !sawExclusion {
+				t.Fatalf("no exclusion round: the window was filled but the read never continued past it")
+			}
+		})
+	}
+}
+
+// A backend that drops the must_not clause (the SQL engines only implement
+// must_not.exists) hands back the same window-sized rows every round. The read
+// must stop with a clear error instead of spinning forever.
+func TestMergeExistingStructureBucketsStopsWhenTheWindowReadMakesNoProgress(t *testing.T) {
+	const tenant, kb = "t1", "kb1"
+	const from, to = "entity-a", "target-b"
+	buckets := []StructureBucket{{
+		Name: from + " -> " + to, Type: "relation", Description: "links",
+		FromEntity: from, ToEntity: to, RelationType: "links",
+		CompileKwd: "knowledge_graph", TemplateID: "tpl1", TemplateKind: "knowledge_graph",
+		SourceDocIDs: []string{"incoming-doc"}, SourceChunkIDs: []string{"incoming-chunk"},
+	}}
+	stored := make([]map[string]interface{}, 0, common.MAX_RESULT_WINDOW)
+	for k := 0; k < common.MAX_RESULT_WINDOW; k++ {
+		stored = append(stored, map[string]interface{}{
+			"id": fmt.Sprintf("legacy-%d", k), "compile_kwd": "knowledge_graph",
+			"compilation_template_ids":      []string{"tpl1"},
+			"compilation_template_kind_kwd": "knowledge_graph",
+			"type_kwd":                      "relation",
+			"from_entity_kwd":               from, "to_entity_kwd": to,
+			"content_with_weight": fmt.Sprintf(`{"from":%q,"to":%q,"type":"links"}`, from, to),
+			"source_doc_ids":      []string{fmt.Sprintf("stored-doc-%d", k)},
+			"source_chunk_ids":    []string{fmt.Sprintf("stored-chunk-%d", k)},
+		})
+	}
+	eng := &fakeEngine{engineType: "infinity", searchFn: func(req *types.SearchRequest) ([]map[string]interface{}, error) {
+		// Deliberately ignore must_not: emulate a backend without id exclusion.
+		if req.Offset+req.Limit > common.MAX_RESULT_WINDOW {
+			return nil, fmt.Errorf("Result window is too large, from + size must be <= %d", common.MAX_RESULT_WINDOW)
+		}
+		matched := stored
+		if raw, ok := req.Filter["id"]; ok {
+			wanted := make(map[string]bool)
+			for _, id := range raw.([]string) {
+				wanted[id] = true
+			}
+			matched = nil
+			for _, row := range stored {
+				if wanted[row["id"].(string)] {
+					matched = append(matched, row)
+				}
+			}
+		}
+		start, end := req.Offset, req.Offset+req.Limit
+		if start > len(matched) {
+			start = len(matched)
+		}
+		if end > len(matched) {
+			end = len(matched)
+		}
+		return matched[start:end], nil
+	}}
+
+	_, err := mergeExistingStructureBuckets(context.Background(), eng, "ragflow_t1", tenant, kb, buckets)
+	if err == nil || !strings.Contains(err.Error(), "keeps returning rows already read") {
+		t.Fatalf("mergeExistingStructureBuckets error = %v, want the no-progress guard", err)
+	}
+}
+
+// The exclusion filter is the only thing that keeps a continued read from
+// re-reading the rows it already has, so pin its shape: an "and" of must_not
+// id-terms chunks, each within the engine term-count limit.
+func TestRelationExclusionClausesChunksTheReadIDs(t *testing.T) {
+	ids := make([]string, relationExclusionChunk*2+7)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("id-%d", i)
+	}
+	filter := relationExclusionClauses(ids)
+	children, ok := filter["and"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("filter = %#v, want an and of must_not clauses", filter)
+	}
+	if len(children) != 3 {
+		t.Fatalf("chunks = %d, want 3", len(children))
+	}
+	seen := 0
+	for _, child := range children {
+		mustNot, ok := child["must_not"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("chunk %#v lacks a must_not clause", child)
+		}
+		chunk, ok := mustNot["id"].([]string)
+		if !ok || len(chunk) == 0 || len(chunk) > relationExclusionChunk {
+			t.Fatalf("chunk %#v is not a bounded id list", mustNot)
+		}
+		seen += len(chunk)
+	}
+	if seen != len(ids) {
+		t.Fatalf("excluded ids = %d, want %d", seen, len(ids))
+	}
+}

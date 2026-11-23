@@ -800,14 +800,33 @@ const structureLookupBatch = 500
 // well below the engines' filter-size limits. It does not bound the rows the
 // request returns: one endpoint pair can hold several stored rows (different
 // relation types, templates or superseded ids), so the sweep also splits a
-// group whose rows reach the engine result window.
+// group whose rows reach the engine result window, and a single pair that
+// fills the window is read in window-sized rounds instead of failing.
 const relationSweepPairCap = 1000
+
+// relationExclusionChunk caps the ids one must_not terms clause carries. The
+// engines reject a single terms clause past their term-count limit, so the
+// ids a round already read are excluded in clauses of at most this many values.
+const relationExclusionChunk = 512
 
 // structureRelationPair is one incoming relation's endpoints, the unit the
 // relation sweep splits on.
 type structureRelationPair struct {
 	from string
 	to   string
+}
+
+// relationExclusionClauses renders ids already read as must_not clauses, so the
+// next read continues after them. Chunked because a single terms clause over
+// the whole set would pass the engines' term-count limit; the read enters this
+// path with at least one result window of ids, so it is always chunked.
+func relationExclusionClauses(ids []string) map[string]interface{} {
+	clauses := make([]map[string]interface{}, 0, (len(ids)+relationExclusionChunk-1)/relationExclusionChunk)
+	for start := 0; start < len(ids); start += relationExclusionChunk {
+		end := min(start+relationExclusionChunk, len(ids))
+		clauses = append(clauses, map[string]interface{}{"must_not": map[string]interface{}{"id": ids[start:end]}})
+	}
+	return map[string]interface{}{"and": clauses}
 }
 
 // mergeExistingStructureBuckets folds the persisted dataset-level rows into the
@@ -874,8 +893,10 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 	// lookup pages through the rows a filter matches and returns how many it
 	// fetched. A positive stopAtOffset stops before the page that would start
 	// there, so a caller bound by an engine result window never requests an
-	// offset the engine rejects; 0 pages until the first short page.
-	lookup := func(extra map[string]interface{}, stopAtOffset int) (int, error) {
+	// offset the engine rejects; 0 pages until the first short page. A non-nil
+	// readIDs collects the ids of the rows fetched, so a later round can exclude
+	// them and continue past the window.
+	lookup := func(extra map[string]interface{}, stopAtOffset int, readIDs *[]string) (int, error) {
 		filter := make(map[string]interface{}, len(extra)+3)
 		filter["kb_id"] = kb
 		filter["scope_kwd"] = "dataset"
@@ -898,6 +919,11 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			}
 			for _, row := range res.Chunks {
 				applyRow(row)
+				if readIDs != nil {
+					if id := structureString(row["id"]); id != "" {
+						*readIDs = append(*readIDs, id)
+					}
+				}
 			}
 			fetched += len(res.Chunks)
 			if len(res.Chunks) < structureLookupBatch {
@@ -919,7 +945,7 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 		if _, err := lookup(map[string]interface{}{
 			"id":                  ids[start:end],
 			"knowledge_graph_kwd": []string{"entity", "relation"},
-		}, 0); err != nil {
+		}, 0, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -932,7 +958,7 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			for k, v := range extra {
 				filter[k] = v
 			}
-			if _, err := lookup(filter, 0); err != nil {
+			if _, err := lookup(filter, 0, nil); err != nil {
 				return err
 			}
 		}
@@ -948,7 +974,9 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 	// reject a page whose offset+limit passes the result window
 	// (index.max_result_window, 10,000 rows) and these rows have no sortable
 	// unique field for search_after, so a group that fills the window is split
-	// in half and read again instead of paging past it. Pairs no incoming
+	// in half and read again. A single pair cannot be split further: it is read
+	// in window-sized rounds, each excluding the ids already read, so a pair with
+	// more rows than the window is still read completely. Pairs no incoming
 	// relation requests are still read when they fall inside a group's product;
 	// the identity check in applyRow rejects them.
 	var pairs []structureRelationPair
@@ -964,6 +992,48 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 		}
 		seenPairs[pair] = true
 		pairs = append(pairs, pair)
+	}
+	// readPastWindow continues a read whose rows filled the engine result window.
+	// Each round excludes the ids read so far (must_not) and pages again from
+	// offset 0, so every request stays inside the window and the pair is still
+	// read completely. Re-applied rows are idempotent, so a round overlapping an
+	// earlier one folds each source id once.
+	readPastWindow := func(pair structureRelationPair, extra map[string]interface{}, readIDs []string) error {
+		known := make(map[string]bool, len(readIDs))
+		for _, id := range readIDs {
+			known[id] = true
+		}
+		for {
+			roundExtra := make(map[string]interface{}, len(extra)+1)
+			for k, v := range extra {
+				roundExtra[k] = v
+			}
+			if len(readIDs) > 0 {
+				roundExtra["must_not"] = relationExclusionClauses(readIDs)
+			}
+			var roundIDs []string
+			fetched, err := lookup(roundExtra, common.MAX_RESULT_WINDOW, &roundIDs)
+			if err != nil {
+				return err
+			}
+			added := 0
+			for _, id := range roundIDs {
+				if !known[id] {
+					known[id] = true
+					readIDs = append(readIDs, id)
+					added++
+				}
+			}
+			if fetched < common.MAX_RESULT_WINDOW {
+				return nil
+			}
+			if added == 0 {
+				// A backend that drops the must_not clause hands back the same
+				// rows every round. Re-applying them is harmless, but the rows
+				// behind the window stay unreachable, so stop instead of spinning.
+				return fmt.Errorf("structure merge relation lookup for %q -> %q keeps returning rows already read (%d ids); this engine does not apply the id exclusion needed to read past its result window", pair.from, pair.to, len(readIDs))
+			}
+		}
 	}
 	var sweepRelations func(pairs []structureRelationPair) error
 	splitPairs := func(pairs []structureRelationPair) error {
@@ -992,7 +1062,8 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 		if len(tos) > 0 {
 			extra["to_entity_kwd"] = tos
 		}
-		fetched, err := lookup(extra, common.MAX_RESULT_WINDOW)
+		var groupIDs []string
+		fetched, err := lookup(extra, common.MAX_RESULT_WINDOW, &groupIDs)
 		if err != nil {
 			return err
 		}
@@ -1000,7 +1071,7 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			return nil
 		}
 		if len(pairs) == 1 {
-			return fmt.Errorf("structure merge relation lookup for %q -> %q fills the engine result window (%d rows); the rows stored for one relation exceed what offset paging can read", pairs[0].from, pairs[0].to, fetched)
+			return readPastWindow(pairs[0], extra, groupIDs)
 		}
 		// The rows already applied are idempotent to re-read (source ids are
 		// unioned, stale ids are a set), so the halves start from offset 0.
