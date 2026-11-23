@@ -34,6 +34,7 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/observability"
+	"ragflow/internal/permission"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/service/datasetversion"
 	documentpkg "ragflow/internal/service/document"
@@ -644,6 +645,14 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
+	// Attribute the run to the user who created the task: the pipeline's model
+	// resolutions and usage records (embedder, knowledge compiler) run on this
+	// context, and without an authenticated user their usage rows carry an
+	// empty user_id and user_email. WithIdentity keeps the tenant already on
+	// the context (pipeline components re-scope it per dataset downstream).
+	if task.UserID != "" {
+		taskCtx.Ctx = permission.WithIdentity(taskCtx.Ctx, task.UserID, permission.TenantIDFromContext(taskCtx.Ctx))
+	}
 	// The ingestor name and NATS subject already ride on the root context
 	// (set in NewIngestor); here we add the worker that claimed this task so the
 	// emitted lifecycle event names it. An absent worker (e.g. test callers that

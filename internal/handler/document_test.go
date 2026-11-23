@@ -43,6 +43,24 @@ import (
 	"ragflow/internal/service/document"
 )
 
+func TestParseMetadataUpdatesPreservesTypeAndMatch(t *testing.T) {
+	var body map[string]any
+	if err := json.Unmarshal([]byte(`{"updates":[
+		{"key":"score","value":"42","valueType":"number"},
+		{"key":"tags","value":"new","match":"old","valueType":"list"}
+	]}`), &body); err != nil {
+		t.Fatal(err)
+	}
+	updates, errMsg := parseMetadataUpdates(body["updates"])
+	want := []document.MetadataUpdate{
+		{Key: "score", Value: "42", ValueType: "number"},
+		{Key: "tags", Value: "new", Match: "old", ValueType: "list"},
+	}
+	if errMsg != "" || !reflect.DeepEqual(updates, want) {
+		t.Fatalf("updates = %#v, error = %q, want %#v", updates, errMsg, want)
+	}
+}
+
 func TestParseMetadataSelectorDocumentIDs(t *testing.T) {
 	tests := []struct {
 		name    string

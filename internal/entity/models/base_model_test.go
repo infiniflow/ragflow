@@ -155,3 +155,24 @@ func TestParseListModelPrefersRemoteContextLength(t *testing.T) {
 		t.Fatalf("ContextLength = %v, want remote %d", got[0].ContextLength, remoteContextLength)
 	}
 }
+
+// The knowledge compiler asks for JSON mode on every GenJSON call, but the
+// provider body only carried it once ChatConfig.JSONMode reached this builder;
+// without the field the endpoints replied with prose and the compile failed
+// with "LLM response is not parseable JSON" (#22402).
+func TestBuildRequestBodyJSONMode(t *testing.T) {
+	on := true
+	off := false
+	body := buildRequestBody(&ChatConfig{JSONMode: &on}, "m", []Message{{Role: "user", Content: "x"}}, false)
+	format, ok := body["response_format"].(map[string]any)
+	if !ok || format["type"] != "json_object" {
+		t.Fatalf("response_format = %v, want json_object", body["response_format"])
+	}
+
+	for name, cfg := range map[string]*ChatConfig{"unset": {}, "explicitly off": {JSONMode: &off}} {
+		body := buildRequestBody(cfg, "m", []Message{{Role: "user", Content: "x"}}, false)
+		if _, present := body["response_format"]; present {
+			t.Errorf("%s: response_format must stay absent, got %v", name, body["response_format"])
+		}
+	}
+}

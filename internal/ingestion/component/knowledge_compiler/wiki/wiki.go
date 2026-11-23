@@ -2621,7 +2621,10 @@ func assembleWikiPageEvidence(planItem wikiPlanPage, claims []wikiClaim, entityB
 	patterns := make([]*regexp.Regexp, 0, len(rawNames))
 	for _, n := range rawNames {
 		namesLower = append(namesLower, strings.ToLower(n))
-		patterns = append(patterns, regexp.MustCompile(`(?i)\b`+regexp.QuoteMeta(n)+`\b`))
+		// RE2's \b only knows ASCII word characters, so it never fires next to
+		// CJK and fires inside a CJK run around a Latin name. Spell out the
+		// Unicode boundary the Python version got from \b.
+		patterns = append(patterns, regexp.MustCompile(`(?i)(?:^|[^\p{L}\p{N}_])`+regexp.QuoteMeta(n)+`(?:$|[^\p{L}\p{N}_])`))
 	}
 
 	var evidence []wikiEvidenceItem

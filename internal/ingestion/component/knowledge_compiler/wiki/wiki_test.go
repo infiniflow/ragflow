@@ -726,3 +726,29 @@ func TestCosine32RejectsDifferentDimensions(t *testing.T) {
 		t.Fatalf("cosine32 unequal dimensions = %v, want 0", got)
 	}
 }
+
+func TestAssembleWikiPageEvidence_UnicodeWordBoundary(t *testing.T) {
+	subjects := func(plan wikiPlanPage, claims []wikiClaim) []string {
+		var out []string
+		for _, ev := range assembleWikiPageEvidence(plan, claims, nil, nil) {
+			out = append(out, ev.Subject)
+		}
+		return out
+	}
+	claims := []wikiClaim{
+		{Statement: "发布于2023年。", Subject: "华为 Mate 60", SourceChunkIDs: []string{"c1"}},
+		{Statement: "总部在深圳。", Subject: "华为（中国）", SourceChunkIDs: []string{"c2"}},
+		{Statement: "是另一家公司。", Subject: "华为公司", SourceChunkIDs: []string{"c3"}},
+		{Statement: "是一款手机。", Subject: "华为Mate手机", SourceChunkIDs: []string{"c4"}},
+		{Statement: "Alpha ships it.", Subject: "Alpha Corp", SourceChunkIDs: []string{"c5"}},
+	}
+	if got := subjects(wikiPlanPage{Title: "华为", EntityNames: []string{"华为"}}, claims); !reflect.DeepEqual(got, []string{"华为 Mate 60", "华为（中国）"}) {
+		t.Fatalf("华为 evidence subjects = %q", got)
+	}
+	if got := subjects(wikiPlanPage{Title: "Mate", EntityNames: []string{"Mate"}}, claims); !reflect.DeepEqual(got, []string{"华为 Mate 60"}) {
+		t.Fatalf("Mate evidence subjects = %q", got)
+	}
+	if got := subjects(wikiPlanPage{Title: "Alpha", EntityNames: []string{"Alpha"}}, claims); !reflect.DeepEqual(got, []string{"Alpha Corp"}) {
+		t.Fatalf("Alpha evidence subjects = %q", got)
+	}
+}

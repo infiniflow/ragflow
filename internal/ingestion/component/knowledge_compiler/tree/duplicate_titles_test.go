@@ -11,12 +11,14 @@ import (
 
 // renameChat replies with a canned rename JSON for any prompt.
 type renameChat struct {
-	response string
-	prompts  []string
+	response  string
+	prompts   []string
+	jsonModes []bool
 }
 
 func (f *renameChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
 	f.prompts = append(f.prompts, req.UserPrompt)
+	f.jsonModes = append(f.jsonModes, req.JSONMode)
 	return &common.ChatResponse{Content: f.response}, nil
 }
 
@@ -44,6 +46,11 @@ func TestRewriteDuplicatesLLMRenames(t *testing.T) {
 
 	if len(chat.prompts) != 1 {
 		t.Fatalf("LLM calls = %d, want 1 (only the Alpha group qualifies)", len(chat.prompts))
+	}
+	// The prompt asks for a bare array; object mode would demand the opposite
+	// shape and break every provider that enforces it.
+	if chat.jsonModes[0] {
+		t.Error("rename request enabled JSON object mode, but the reply is an array")
 	}
 	if got := products[0].Meta["title"]; got != "Alpha Plan" {
 		t.Errorf("products[0] title = %v, want Alpha Plan", got)

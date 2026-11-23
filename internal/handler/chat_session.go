@@ -129,22 +129,23 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 }
 
 type ChatCompletionsRequest struct {
-	ChatID           string                   `json:"chat_id,omitempty"`
-	SessionID        string                   `json:"session_id,omitempty"`
-	ConversationID   string                   `json:"conversation_id,omitempty"`
-	Messages         []map[string]interface{} `json:"messages,omitempty"`
-	Question         string                   `json:"question,omitempty"`
-	Query            string                   `json:"query,omitempty"`
-	Files            []interface{}            `json:"files,omitempty"`
-	LLMID            string                   `json:"llm_id,omitempty"`
-	Legacy           bool                     `json:"legacy,omitempty"`
-	Stream           *bool                    `json:"stream"`
-	Thinking         string                   `json:"thinking"`
-	Temperature      *float64                 `json:"temperature,omitempty"`
-	TopP             *float64                 `json:"top_p,omitempty"`
-	FrequencyPenalty *float64                 `json:"frequency_penalty,omitempty"`
-	PresencePenalty  *float64                 `json:"presence_penalty,omitempty"`
-	MaxTokens        *int                     `json:"max_tokens,omitempty"`
+	ChannelContext   *service.ChatChannelExecutionContext `json:"channel_context,omitempty"`
+	ChatID           string                               `json:"chat_id,omitempty"`
+	SessionID        string                               `json:"session_id,omitempty"`
+	ConversationID   string                               `json:"conversation_id,omitempty"`
+	Messages         []map[string]interface{}             `json:"messages,omitempty"`
+	Question         string                               `json:"question,omitempty"`
+	Query            string                               `json:"query,omitempty"`
+	Files            []interface{}                        `json:"files,omitempty"`
+	LLMID            string                               `json:"llm_id,omitempty"`
+	Legacy           bool                                 `json:"legacy,omitempty"`
+	Stream           *bool                                `json:"stream"`
+	Thinking         string                               `json:"thinking"`
+	Temperature      *float64                             `json:"temperature,omitempty"`
+	TopP             *float64                             `json:"top_p,omitempty"`
+	FrequencyPenalty *float64                             `json:"frequency_penalty,omitempty"`
+	PresencePenalty  *float64                             `json:"presence_penalty,omitempty"`
+	MaxTokens        *int                                 `json:"max_tokens,omitempty"`
 
 	StoreHistoryMessages *bool `json:"store_history_messages,omitempty"`
 }
@@ -228,9 +229,32 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		genConfig["max_tokens"] = *req.MaxTokens
 	}
 
+	if req.ChannelContext != nil {
+		question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+		if err != nil {
+			common.RespondError(c, common.CodeArgumentError, err.Error())
+			return
+		}
+		ctx, channelSessionID, err := service.PrepareChatChannelCompletion(c.Request.Context(), *req.ChannelContext, req.ChatID, question, false)
+		if err != nil {
+			if !respondPermissionErrorIf(c, err, true) {
+				common.RespondError(c, common.CodeArgumentError, err.Error())
+			}
+			return
+		}
+		if (req.SessionID != "" && req.SessionID != channelSessionID) ||
+			(req.ConversationID != "" && req.ConversationID != channelSessionID) {
+			common.RespondError(c, common.CodeArgumentError, "session_id does not match the chat channel conversation")
+			return
+		}
+		c.Request = c.Request.WithContext(ctx)
+		sessionID = channelSessionID
+		common.SetOperationResource(c, "session_id", sessionID)
+	}
+
 	// Remove known keys from rawBody; what remains is passthrough kwargs
 	knownKeys := []string{
-		"chat_id", "session_id", "conversation_id",
+		"chat_id", "session_id", "conversation_id", "channel_context",
 		"messages", "question", "query", "files",
 		"llm_id",
 		"legacy", "stream", "thinking",
