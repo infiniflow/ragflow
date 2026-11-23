@@ -1832,32 +1832,29 @@ func (c *CLI) APIChatToModelCommand(commandCount int, cmd *Command) (ResponseIf,
 			line := scanner.Text()
 			if strings.HasPrefix(line, "data:") {
 				data := strings.TrimPrefix(line, "data:")
-				data = strings.TrimSpace(data)
+				// SSE allows one formatting space after the colon. The
+				// remaining whitespace belongs to the streamed text.
+				data = strings.TrimPrefix(data, " ")
 
-				if strings.HasPrefix(data, "[REASONING]") {
-					data = strings.TrimPrefix(data, "[REASONING]")
+				if reasoning, ok := strings.CutPrefix(data, "[REASONING]"); ok {
 					if reasoningPrint {
 						fmt.Print("Thinking: ")
 						reasoningPrint = false
 						thinking = true
-					} else {
-						fmt.Print(data)
 					}
+					fmt.Print(reasoning)
 					os.Stdout.Sync()
-				}
-				if strings.HasPrefix(data, "[MESSAGE]") {
-					data = strings.TrimPrefix(data, "[MESSAGE]")
+				} else if message, ok := strings.CutPrefix(data, "[MESSAGE]"); ok {
 					if messagePrint {
 						if thinking {
 							fmt.Println()
 						}
 						fmt.Print("Answer: ")
 						messagePrint = false
-					} else {
-						fmt.Print(data)
-						os.Stdout.Sync()
-						fullMessage.WriteString(data)
 					}
+					fmt.Print(message)
+					os.Stdout.Sync()
+					fullMessage.WriteString(message)
 				}
 			} else if strings.HasPrefix(line, "event:error") {
 				// error event

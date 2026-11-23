@@ -25,6 +25,32 @@ import (
 	"testing"
 )
 
+func TestChatToModelStreamKeepsFirstAnswerChunk(t *testing.T) {
+	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/chat/to-model" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data:[REASONING]inspect\n\ndata:[MESSAGE]Hello \n\ndata:[MESSAGE]world\n\n")
+	}))
+	client.useAPIKey = true
+	c := &CLI{
+		Config:             &CommandLineConfig{CLIMode: APIMode, APIClientConfig: APIModeConfig{CurrentAPIServer: "test"}},
+		APIServerClientMap: map[string]*HTTPClient{"test": client},
+	}
+	result, err := c.APIChatToModelCommand(1, &Command{Params: map[string]interface{}{
+		"model_id": "model-1", "messages": []string{"Say hello"},
+		"images": []string{}, "videos": []string{}, "audios": []string{}, "files": []string{},
+		"thinking": true, "stream": true, "effort": "", "verbosity": "",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response := result.(*StreamMessageResponse); response.Message != "Hello world" {
+		t.Errorf("message = %q, want %q", response.Message, "Hello world")
+	}
+}
+
 func TestParseLocalHTMLWithInlineImage(t *testing.T) {
 	filename := filepath.Join(t.TempDir(), "image.html")
 	if err := os.WriteFile(filename, []byte(`<p>hello</p><img alt="image" src="data:image/png;base64,aGVsbG8=">`), 0600); err != nil {
