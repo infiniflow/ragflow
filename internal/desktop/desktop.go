@@ -70,13 +70,18 @@ const (
 // Directory names under the data directory. They are part of the on-disk
 // contract: an operator backing up the tree must keep them together.
 const (
-	kvrocksDirName  = "kvrocks"
+	pebbisDirName   = "pebbis"
 	natsDirName     = "nats"
 	objectsDirName  = "s3-objects"
 	objectsMetaName = "s3-meta"
 	objectsVersName = "s3-versions"
 	infinityDirName = "infinity"
 )
+
+// legacyPebbisdDirName is what the RESP store's directory was called before it
+// was named after the engine that serves it. Start renames it in place so an
+// existing installation does not come up looking like a fresh one.
+const legacyPebbisdDirName = "kvrocks"
 
 // Runtime describes the endpoints the rest of the process must connect to, and
 // owns the shutdown of everything Start launched.
@@ -135,10 +140,12 @@ func Start(ctx context.Context, dataDir string) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("desktop: resolve data directory: %w", err)
 	}
+	if err := migrateLegacyLayout(abs); err != nil {
+		return nil, err
+	}
 	if err := ensureLayout(abs); err != nil {
 		return nil, err
 	}
-
 	rt := &Runtime{
 		DataDir:         abs,
 		KvrocksPassword: KvrocksPassword,
@@ -185,12 +192,32 @@ func Start(ctx context.Context, dataDir string) (*Runtime, error) {
 	return rt, nil
 }
 
+// migrateLegacyLayout renames directories that were created under an older
+// name. The RESP store used to live in <data>/kvrocks; leaving it there would
+// make an existing installation come up with an empty key-value store.
+func migrateLegacyLayout(dataDir string) error {
+	legacy := filepath.Join(dataDir, legacyPebbisdDirName)
+	if _, err := os.Stat(legacy); err != nil {
+		return nil
+	}
+	current := filepath.Join(dataDir, pebbisDirName)
+	if _, err := os.Stat(current); err == nil {
+		// Both exist: the new directory is the one in use, so leave the old one
+		// untouched rather than merging two stores.
+		return nil
+	}
+	if err := os.Rename(legacy, current); err != nil {
+		return fmt.Errorf("desktop: rename %s to %s: %w", legacy, current, err)
+	}
+	return nil
+}
+
 // ensureLayout creates the per-backend directories. objects-meta and
 // objects-versions must live outside the gateway root, so they are siblings of
 // objects rather than children.
 func ensureLayout(dataDir string) error {
 	for _, name := range []string{
-		kvrocksDirName,
+		pebbisDirName,
 		natsDirName,
 		objectsDirName,
 		objectsMetaName,
@@ -215,13 +242,13 @@ func startKvrocks(dataDir string) (addr string, stop func() error, err error) {
 	cfg.RequirePass = KvrocksPassword
 
 	emb, err := pebbis.OpenEmbedded(pebbis.EmbedOptions{
-		Dir:     filepath.Join(dataDir, kvrocksDirName),
+		Dir:     filepath.Join(dataDir, pebbisDirName),
 		Network: "tcp",
 		Addr:    "127.0.0.1:0",
 		Config:  cfg,
 	})
 	if err != nil {
-		return "", nil, fmt.Errorf("desktop: start kvrocks: %w", err)
+		return "", nil, fmt.Errorf("desktop: start pebbis: %w", err)
 	}
 	return emb.Addr(), emb.Close, nil
 }

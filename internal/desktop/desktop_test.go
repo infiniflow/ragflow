@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -52,6 +54,41 @@ func TestStartBootsEveryBackend(t *testing.T) {
 	t.Run("nats", func(t *testing.T) { assertNATS(t, ctx, rt) })
 	t.Run("s3", func(t *testing.T) { assertS3(t, ctx, rt) })
 	t.Run("infinity", func(t *testing.T) { assertInfinity(t, ctx, rt) })
+}
+
+// The RESP store used to live in <data>/kvrocks. Starting on such a directory
+// must adopt it under the new name, or the installation would look empty.
+//
+// The migration is exercised on its own rather than through Start: Pebble
+// rejects any stray file in its directory ("invalid marker filename"), so a
+// marker inside the store cannot coexist with opening it.
+func TestLegacyKvrocksDirectoryIsAdopted(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, legacyPebbisdDirName)
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatalf("create legacy dir: %v", err)
+	}
+	marker := filepath.Join(legacy, "marker.txt")
+	if err := os.WriteFile(marker, []byte("store"), 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	if err := migrateLegacyLayout(dir); err != nil {
+		t.Fatalf("migrate legacy layout: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, pebbisDirName, "marker.txt")); err != nil {
+		t.Fatalf("the store was not moved to %s: %v", pebbisDirName, err)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatalf("legacy directory still exists: %v", err)
+	}
+
+	// A second call is a no-op, and an existing pebbis directory is never
+	// overwritten by a stale legacy one.
+	if err := migrateLegacyLayout(dir); err != nil {
+		t.Fatalf("second migrate: %v", err)
+	}
 }
 
 // assertInfinity checks the document engine answers on its loopback port. The

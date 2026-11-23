@@ -96,7 +96,7 @@ func (dao *API4ConversationDAO) Stats(ctx context.Context, db *gorm.DB, tenantID
 		dateExpr = "strftime('%Y-%m-%d 00:00:00', a.create_date, 'localtime')"
 	}
 	query := db.WithContext(ctx).Table("api_4_conversation AS a").
-		Select(dateExpr + ` AS dt,
+		Select(dateExpr+` AS dt,
 			COUNT(a.id) AS pv,
 			COUNT(DISTINCT a.user_id) AS uv,
 			COALESCE(SUM(a.tokens), 0) AS tokens,
