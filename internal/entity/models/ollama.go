@@ -219,8 +219,9 @@ func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 }
 
 type ollamaChatMessage struct {
-	Content  string `json:"content"`
-	Thinking string `json:"thinking"`
+	Content   string           `json:"content"`
+	Thinking  string           `json:"thinking"`
+	ToolCalls []map[string]any `json:"tool_calls"`
 }
 
 type ollamaChatResponse struct {
@@ -231,6 +232,41 @@ type ollamaChatResponse struct {
 	EvalCount       int               `json:"eval_count"`
 	TotalDuration   int64             `json:"total_duration"`
 	Error           any               `json:"error"`
+}
+
+// ollamaToolCallsToOpenAI converts Ollama-format tool_calls (function.arguments
+// decoded into map[string]any) into the OpenAI-format slice the chat tool loop
+// expects: function.arguments as a JSON string, which is what appendToolResults
+// reads (chat_tools.go). A call whose function map is missing is skipped; one
+// whose arguments field is absent defaults to "{}" rather than "null"
+// (json.Marshal(nil)), so the tool receives an empty object instead of nil —
+// matching how the request direction normalises empty/missing arguments
+// (#22061). Shared by the non-streaming and streaming response handlers.
+func ollamaToolCallsToOpenAI(calls []map[string]any) ([]map[string]any, error) {
+	converted := make([]map[string]any, 0, len(calls))
+	for _, tc := range calls {
+		fn, ok := tc["function"].(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := fn["name"].(string)
+		args := fn["arguments"]
+		if args == nil {
+			args = map[string]any{}
+		}
+		argsBytes, err := json.Marshal(args)
+		if err != nil {
+			return nil, fmt.Errorf("ollama: marshal tool arguments: %w", err)
+		}
+		converted = append(converted, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":      name,
+				"arguments": string(argsBytes),
+			},
+		})
+	}
+	return converted, nil
 }
 
 func handleOllamaNonStreamingResponse(body []byte, modelUsage *common.ModelUsage, chatConfig *ChatConfig) (*ChatResponse, error) {
@@ -250,12 +286,17 @@ func handleOllamaNonStreamingResponse(body []byte, modelUsage *common.ModelUsage
 			chatConfig.UsageResult = usage
 		}
 	}
-	if content == "" && reasonContent == "" {
+	toolCalls, err := ollamaToolCallsToOpenAI(result.Message.ToolCalls)
+	if err != nil {
+		return nil, err
+	}
+	if content == "" && reasonContent == "" && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("no message in response")
 	}
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 		Usage:         usage,
 	}, nil
 }
@@ -266,6 +307,7 @@ func handleOllamaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage
 	}
 	var usage *TokenUsage
 	sawDone := false
+	var accumulatedToolCalls []map[string]any
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -290,6 +332,9 @@ func handleOllamaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage
 				return err
 			}
 		}
+		if len(event.Message.ToolCalls) > 0 {
+			accumulatedToolCalls = append(accumulatedToolCalls, event.Message.ToolCalls...)
+		}
 		if event.Done {
 			sawDone = true
 			usage = ollamaTokenUsage(event)
@@ -305,6 +350,15 @@ func handleOllamaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage
 		recordResponseUsage(modelUsage, "", usage, "chat")
 		if chatConfig != nil {
 			chatConfig.UsageResult = usage
+		}
+	}
+	if len(accumulatedToolCalls) > 0 {
+		toolCalls, err := ollamaToolCallsToOpenAI(accumulatedToolCalls)
+		if err != nil {
+			return err
+		}
+		if chatConfig != nil {
+			chatConfig.ToolCallsResult = &toolCalls
 		}
 	}
 	endOfStream := "[DONE]"
