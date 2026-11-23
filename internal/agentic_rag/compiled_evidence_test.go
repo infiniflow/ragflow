@@ -51,7 +51,7 @@ func installClaimLookup(t *testing.T, fn func(context.Context, string, []string,
 func installClaimProbe(t *testing.T, present bool) {
 	t.Helper()
 	prev := claimRowsPresent
-	claimRowsPresent = func(context.Context, string, []string) bool { return present }
+	claimRowsPresent = func(context.Context, []string) bool { return present }
 	t.Cleanup(func() { claimRowsPresent = prev })
 }
 
@@ -493,7 +493,7 @@ func TestCompiledEvidenceNoticeShownOnce(t *testing.T) {
 func TestCompiledEvidenceNoticeSkippedWithoutCorpusClaims(t *testing.T) {
 	probes := 0
 	prev := claimRowsPresent
-	claimRowsPresent = func(context.Context, string, []string) bool { probes++; return false }
+	claimRowsPresent = func(context.Context, []string) bool { probes++; return false }
 	t.Cleanup(func() { claimRowsPresent = prev })
 	installClaimLookup(t, func(context.Context, string, []string, []string, []string, int) []claimHit {
 		t.Error("a corpus without claims must not be looked up")

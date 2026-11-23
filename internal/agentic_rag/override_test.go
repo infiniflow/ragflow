@@ -282,7 +282,7 @@ func TestStrictEmptyToolsNeverExpandToRegistry(t *testing.T) {
 func TestStrictToolsPreventCompiledInjection(t *testing.T) {
 	setupTestConfig(t)
 	de := &kgProbeFakeEngine{entityRows: []map[string]any{{"id": "compiled"}}}
-	if !datasetsHaveCompiledKnowledge(t.Context(), de, "tenant", []string{"kb1"}) {
+	if !datasetsHaveCompiledKnowledge(t.Context(), de, []string{"kb1"}) {
 		t.Fatal("mock corpus must have compiled knowledge")
 	}
 	in := Input{TenantID: "tenant", DatasetIDs: []string{"kb1"}}

@@ -161,10 +161,10 @@ func (r *compiledRun) claimsPresent(ctx context.Context) bool {
 		r.mu.Unlock()
 		return present
 	}
-	tenant, datasets := r.tenantID, r.datasetIDs
+	datasets := r.datasetIDs
 	r.mu.Unlock()
 
-	present := claimRowsPresent(ctx, tenant, datasets)
+	present := claimRowsPresent(ctx, datasets)
 
 	r.mu.Lock()
 	r.probed = true

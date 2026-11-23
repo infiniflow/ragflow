@@ -63,15 +63,16 @@ func compiledKnowledgeTools(tenantID string, datasetIDs []string) []tool.BaseToo
 // carry compile_kwd; ordinary chunks do not (that is what the default retriever
 // excludes with must_not/exists compile_kwd), so a single existence read answers
 // it. A missing engine or an empty scope is false, leaving the tools undeclared.
-func datasetsHaveCompiledKnowledge(ctx context.Context, de engine.DocEngine, tenantID string, datasetIDs []string) bool {
+func datasetsHaveCompiledKnowledge(ctx context.Context, de engine.DocEngine, datasetIDs []string) bool {
 	if len(datasetIDs) == 0 {
 		return false
 	}
 	if de == nil {
 		return false
 	}
+	indexNames := IndexNamesFor(ctx, datasetIDs)
 	res, err := de.Search(ctx, &enginetypes.SearchRequest{
-		IndexNames:         IndexNamesFor(ctx, datasetIDs),
+		IndexNames:         indexNames,
 		KbIDs:              datasetIDs,
 		SelectFields:       []string{"id"},
 		Filter:             map[string]interface{}{"exists": "compile_kwd"},
@@ -83,7 +84,7 @@ func datasetsHaveCompiledKnowledge(ctx context.Context, de engine.DocEngine, ten
 		// missing) must not read as "this corpus was never compiled": say so,
 		// and let the caller's own INFO line carry the decision.
 		common.DebugCtx(ctx, "agentic_rag: compiled-knowledge probe failed",
-			zap.String("tenant_id", tenantID),
+			zap.Strings("indexes", indexNames),
 			zap.Strings("datasets", datasetIDs),
 			zap.Error(err))
 		return false
@@ -97,7 +98,7 @@ func toolsForRun(ctx context.Context, tmpl Template, in Input, de engine.DocEngi
 		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools skipped",
 			zap.Strings("datasets", in.DatasetIDs),
 			zap.String("reason", "explicit tool selection"))
-	} else if datasetsHaveCompiledKnowledge(ctx, de, in.TenantID, in.DatasetIDs) {
+	} else if datasetsHaveCompiledKnowledge(ctx, de, in.DatasetIDs) {
 		compiled := compiledKnowledgeTools(in.TenantID, in.DatasetIDs)
 		tools = append(tools, compiled...)
 		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools injected",
@@ -121,7 +122,7 @@ func toolsForRun(ctx context.Context, tmpl Template, in Input, de engine.DocEngi
 // let the pipeline spend a routing call plus two retrieval legs per document to
 // learn that there is nothing to prefetch. claimRowsPresent wraps it so tests can
 // drive the gate without an engine.
-func datasetsHaveClaims(ctx context.Context, tenantID string, datasetIDs []string) bool {
+func datasetsHaveClaims(ctx context.Context, datasetIDs []string) bool {
 	if len(datasetIDs) == 0 {
 		return false
 	}
@@ -129,8 +130,9 @@ func datasetsHaveClaims(ctx context.Context, tenantID string, datasetIDs []strin
 	if de == nil {
 		return false
 	}
+	indexNames := IndexNamesFor(ctx, datasetIDs)
 	res, err := de.Search(ctx, &enginetypes.SearchRequest{
-		IndexNames:         IndexNamesFor(ctx, datasetIDs),
+		IndexNames:         indexNames,
 		KbIDs:              datasetIDs,
 		SelectFields:       []string{"id"},
 		Filter:             map[string]interface{}{"entity_type_kwd": []string{navClaimRowType}},
@@ -139,7 +141,7 @@ func datasetsHaveClaims(ctx context.Context, tenantID string, datasetIDs []strin
 	})
 	if err != nil || res == nil {
 		common.DebugCtx(ctx, "agentic_rag: claim probe failed",
-			zap.String("tenant_id", tenantID),
+			zap.Strings("indexes", indexNames),
 			zap.Strings("datasets", datasetIDs),
 			zap.Error(err))
 		return false

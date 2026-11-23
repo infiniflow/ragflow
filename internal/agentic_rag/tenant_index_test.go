@@ -123,7 +123,7 @@ func TestDeepReadSearchesEveryDatasetTenant(t *testing.T) {
 func TestCompiledProbeSearchesEveryDatasetTenant(t *testing.T) {
 	fe := &grepFakeEngine{}
 
-	if datasetsHaveCompiledKnowledge(sharedScopeCtx(), fe, "tenant-b", []string{"kb-a", "kb-b"}) {
+	if datasetsHaveCompiledKnowledge(sharedScopeCtx(), fe, []string{"kb-a", "kb-b"}) {
 		t.Fatal("probe reported compiled knowledge for an empty result set")
 	}
 
