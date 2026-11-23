@@ -207,6 +207,7 @@ export interface ITurnUsage {
 
 export interface IAnswer {
   answer: string;
+  session_id?: string;
   attachment?: IAttachment;
   downloads?: IDocumentDownloadInfo[];
   reference?: IReference;
