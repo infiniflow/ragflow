@@ -20,7 +20,7 @@
  * Upstream ships this as an empty list: the open-source build only offers the
  * naive ('0') and react ('5') levels, which the shared selector declares itself.
  * The enterprise repository fills the same path with the planer-explorer-
- * auditor, IterSynth and coding-agent options.
+ * auditor, IterSynth and agentic pro options.
  */
 import type { ThinkingOption } from '@/hooks/use-thinking-level';
 
