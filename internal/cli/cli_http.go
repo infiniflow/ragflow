@@ -30,6 +30,9 @@ func (c *CLI) ExecuteCommand(commandCount int, cmd *Command) (ResponseIf, error)
 	case AdminMode:
 		// Admin mode: execute command with admin privileges
 		return c.ExecuteAdminCommand(commandCount, cmd)
+	case CommandMode:
+		// Command mode: execute command with user privileges
+		return c.ExecuteSingleCommand(commandCount, cmd)
 	default:
 		return nil, fmt.Errorf("invalid server type: %s", c.Config.CLIMode)
 	}
@@ -540,6 +543,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":
 		return c.APIListEnvironmentsCommand(commandCount, cmd)
+	case "api_check_license":
+		return c.APICheckLicenseCommand(commandCount, cmd)
 	case "api_add_api_server":
 		return c.AddAPIServerCommand(commandCount, cmd)
 	case "api_delete_api_server":
@@ -583,5 +588,29 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
+}
 
+func (c *CLI) ExecuteSingleCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	switch cmd.Type {
+	case "single_list_files":
+		return c.SingleListFilesCommand(commandCount, cmd)
+	case "single_cat_file":
+		return c.SingleCatFileCommand(commandCount, cmd)
+	case "single_search":
+		return c.SingleSearchCommand(commandCount, cmd)
+	case "single_find":
+		return c.SingleFindCommand(commandCount, cmd)
+	case "single_use_workspace":
+		return c.SingleUseWorkspaceCommand(commandCount, cmd)
+	case "single_new_workspace":
+		return c.SingleNewWorkspaceCommand(commandCount, cmd)
+	case "single_save_message":
+		return c.SingleSaveMessageCommand(commandCount, cmd)
+	case "single_show_workspace":
+		return c.SingleShowCurrentWorkspaceCommand(commandCount, cmd)
+	case "file_system_command":
+		return c.ExecuteFilesystemCommand(commandCount, cmd)
+	default:
+		return nil, fmt.Errorf("single command mode: %s", cmd.Type)
+	}
 }

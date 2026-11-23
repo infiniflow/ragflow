@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -30,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -48,7 +48,7 @@ import (
 	ingestorpkg "ragflow/internal/server/ingestor"
 	"ragflow/internal/server/local"
 	syncerpkg "ragflow/internal/server/syncer"
-	billing "ragflow/internal/service/billing"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/storage"
 )
 
@@ -104,56 +104,67 @@ func pprofAddr() string {
 // "=true"/"=false". Flags absent from argv leave their bootstrap.ServerArgs field nil,
 // which callers use to distinguish "unspecified" from an explicit zero value.
 func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
-	fs := flag.NewFlagSet("ragflow_server", flag.ContinueOnError)
-	// Suppress the standard usage/error dump: main prints its own one-line
-	// error and printHelp owns the usage text.
-	fs.SetOutput(io.Discard)
-	fs.Usage = func() {}
 
 	args := &bootstrap.ServerArgs{}
+	app := kingpin.New("ragflow_server", "RAGFlow server")
 
-	var logLevel, configPath string
-	fs.StringVar(&logLevel, "log-level", "", "")
-	fs.StringVar(&configPath, "config", "", "")
-	fs.StringVar(&configPath, "f", "", "")
-	var deepdocDevice string
-	fs.StringVar(&deepdocDevice, "deepdoc-device", "", "")
-	fs.BoolVar(&args.EnablePProf, "profile", false, "")
-	fs.BoolVar(&args.HelpFlag, "help", false, "")
-	fs.BoolVar(&args.HelpFlag, "h", false, "")
-	fs.BoolVar(&args.VersionFlag, "version", false, "")
-	fs.BoolVar(&args.VersionFlag, "v", false, "")
-	finish := registerFlags(fs, args)
+	args.ConfigPath = app.Flag("config", "Config path").Short('f').String()
+	args.DeepdocDevice = app.Flag("deepdoc-device", "DeepDoc inference device").String()
+	args.EnablePProf = app.Flag("profile", "Enable pprof profiling").Bool()
+	args.LogLevel = app.Flag("log-level", "Log level").String()
 
+	modes := []string{"admin", "api", "ingestor", "syncer", "chatter", "migrate"}
+	modeFlags := make([]*bool, len(modes))
+	for i, mode := range modes {
+		modeFlags[i] = app.Flag(mode, fmt.Sprintf("Enable %s mode", mode)).Bool()
+	}
+
+	// kingpin owns --help itself, so registering another "help" flag above would
+	// fail with "duplicate long flag --help". Handle -h/--help and -v/--version
+	// ourselves: keep them out of app.Parse, and return early so no server-only
+	// validation runs. Also return parse errors instead of letting MustParse
+	// os.Exit (which kills the test binary and hides the failing case).
+	help, version := false, false
+	rest := make([]string, 0, len(argv))
 	if len(argv) > 0 {
-		if err := fs.Parse(argv[1:]); err != nil {
-			return nil, err
+		rest = append(rest, argv[0])
+	}
+	for _, arg := range argv[1:] {
+		switch arg {
+		case "-h", "--help":
+			help = true
+		case "-v", "--version":
+			version = true
+		default:
+			rest = append(rest, arg)
 		}
 	}
-	// The flag package silently stops at the first positional argument, which
-	// would hide a mistyped mode (e.g. "ragflow_server apii" starting with no
-	// mode). This binary has no positional arguments, so reject them.
-	if fs.NArg() > 0 {
-		return nil, fmt.Errorf("unexpected argument: %s", fs.Arg(0))
-	}
+	args.HelpFlag = &help
+	args.VersionFlag = &version
 
-	// Visit visits exactly the flags present on the command line, which
-	// preserves the "unspecified" (nil) vs explicit-zero distinction.
-	fs.Visit(func(f *flag.Flag) {
-		switch f.Name {
-		case "log-level":
-			args.LogLevel = &logLevel
-		case "config", "f":
-			args.ConfigPath = &configPath
-		case "deepdoc-device":
-			args.DeepdocDevice = &deepdocDevice
-		}
-	})
-	if err := finish(); err != nil {
+	if _, err := app.Parse(rest[1:]); err != nil {
 		return nil, err
 	}
+	if help || version {
+		return args, nil
+	}
+
+	for i, enabled := range modeFlags {
+		if !*enabled {
+			continue
+		}
+		if args.Mode != nil {
+			return nil, fmt.Errorf("only one mode flag may be specified: --%s and --%s", *args.Mode, modes[i])
+		}
+		args.Mode = &modes[i]
+	}
+
+	args.InitSuperUser = args.Mode != nil && *args.Mode == "admin"
 
 	if args.LogLevel != nil {
+		if *args.LogLevel == "" {
+			*args.LogLevel = "info"
+		}
 		if err := validateLogLevel(*args.LogLevel); err != nil {
 			return nil, err
 		}
@@ -171,7 +182,21 @@ func validateLogLevel(level string) error {
 	}
 }
 
-func printCommonHelp() {
+func printHelp(_ *bootstrap.ServerArgs) {
+	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
+	fmt.Fprintln(os.Stderr, "RAGFlow Server - runs admin, API, ingestor, syncer and chatter in one process by default.")
+	fmt.Fprintln(os.Stderr, "Default startup runs database migrations and initializes the superuser automatically.")
+	fmt.Fprintln(os.Stderr, "Default ports: admin 9381, API 9380.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Select at most one mode:")
+	fmt.Fprintln(os.Stderr, "  --admin            \tRun only the admin server and initialize the superuser")
+	fmt.Fprintln(os.Stderr, "  --api              \tRun only the API server")
+	fmt.Fprintln(os.Stderr, "  --ingestor         \tRun only the ingestion worker")
+	fmt.Fprintln(os.Stderr, "  --syncer           \tRun only the file syncer")
+	fmt.Fprintln(os.Stderr, "  --chatter          \tRun only the chat-channel service")
+	fmt.Fprintln(os.Stderr, "  --migrate          \tRun database migrations and exit")
+	fmt.Fprintln(os.Stderr, "Run --migrate before starting individual services.")
+	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  -f, --config string\tPath to configuration file")
 	fmt.Fprintln(os.Stderr, "  -v, --version      \tPrint version information and exit")
 	fmt.Fprintln(os.Stderr, "  --log-level string \tLog level: debug, info, warn, error (default: warn)")
@@ -189,12 +214,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if arguments.HelpFlag {
+	if *arguments.HelpFlag {
 		printHelp(arguments)
 		return
 	}
 
-	if arguments.VersionFlag {
+	if *arguments.VersionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		return
 	}
@@ -206,16 +231,13 @@ func main() {
 }
 
 func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.ServerArgs) error {
-	if err := validateServerMode(arguments); err != nil {
-		return err
-	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	standalone := arguments.Mode == nil
 	serverType := common.ServerTypeUnknown
 	var serverName string
-	if standalone {
+	if arguments.Mode == nil {
+		serverType = common.ServerTypeStandalone
 		serverName = "ragflow_standalone"
 	} else {
 		serverType = bootstrap.GetServerType(arguments)
@@ -246,21 +268,21 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	}
 	config.SetLogLevel(resolvedLogLevel)
 	var port int
-	if standalone || serverType == common.ServerTypeAPI {
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI {
 		port, err = config.ResolvePort(config.GetAPIServerConfig().HTTPPort, arguments.Port)
 		if err != nil {
 			return fmt.Errorf("resolve API port: %w", err)
 		}
 		config.SetAPIServerHTTPPort(port)
 	}
-	if standalone || serverType == common.ServerTypeAdmin {
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAdmin {
 		port, err = config.ResolvePort(config.GetAdminServerConfig().HTTPPort, arguments.Port)
 		if err != nil {
 			return fmt.Errorf("resolve admin port: %w", err)
 		}
 		config.SetAdminHTTPPort(port)
 	}
-	if !standalone {
+	if serverType != common.ServerTypeStandalone {
 		arguments.Name = config.GetServerName(*arguments.Mode)
 		serverName, err = bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, port)
 		if err != nil {
@@ -291,7 +313,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 		return fmt.Errorf("initialize audit logger: %w", err)
 	}
 	defer common.SyncAudit()
-	if arguments.EnablePProf {
+	if *arguments.EnablePProf {
 		if err = startPProf(pprofAddr()); err != nil {
 			common.Error("pprof server failed", err)
 		}
@@ -299,7 +321,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	if isStandaloneDeepDocServer(serverType) {
 		return runDeepDoc(ctx, serverName, arguments)
 	}
-	runtimeNeeded := standalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion
+	runtimeNeeded := serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion
 	common.Info("Starting RAGFlow", zap.String("server", serverName))
 	// Keep the full configuration dump tied to the operator's chosen verbosity.
 	if !common.LogLevelHigherThanInfo(resolvedLogLevel) {
@@ -319,9 +341,10 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 		}
 	}()
 
-	if err = dao.InitDB(ctx, standalone || serverType == common.ServerTypeMigrate); err != nil {
+	if err = dao.InitDB(ctx, serverType == common.ServerTypeStandalone || serverType == common.ServerTypeMigrate); err != nil {
 		return fmt.Errorf("initialize database: %w", err)
 	}
+	// Migration mode exits before initializing dependencies used only by services.
 	if serverType == common.ServerTypeMigrate {
 		common.Info("Database migrations completed")
 		return nil
@@ -358,7 +381,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	if err = server.InitVariables(kvrocks.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.Error(err))
 	}
-	if standalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
 		if err = billing.Init(ctx, config.GetBillingConfig()); err != nil {
 			return fmt.Errorf("initialize billing: %w", err)
 		}
@@ -393,7 +416,22 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	}
 	// Stop and join service work before closing any process-wide resource.
 	defer cancel()
-	return runEEServices(ctx, cancel, arguments, services)
+	switch serverType {
+	case common.ServerTypeStandalone:
+		return runServices(ctx, cancel, arguments, services)
+	case common.ServerTypeAdmin:
+		return admin.Run(ctx, arguments)
+	case common.ServerTypeAPI:
+		return apipkg.Run(ctx, *arguments.Name, arguments, services)
+	case common.ServerTypeIngestion:
+		return ingestorpkg.Run(ctx, cancel, arguments, services)
+	case common.ServerTypeFileSyncer:
+		return syncerpkg.Run(ctx, cancel, arguments)
+	case common.ServerTypeChatter:
+		return chatterpkg.Run(ctx, arguments, services)
+	default:
+		return fmt.Errorf("unsupported server mode %q", *arguments.Mode)
+	}
 }
 
 func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {

@@ -224,7 +224,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 	if err := compliance.ValidateQuestion(c.Request.Context(), req.Query); err != nil {
-		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.RespondSuccess(c, gin.H{"records": []difyRecord{}}, err.Error())
 		return
 	}
 

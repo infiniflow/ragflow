@@ -448,6 +448,12 @@ database and Kvrocks paths. Completion requests carry validated channel context 
 conversation history, channel labels, and Agent workflow refresh/resume survive
 the HTTP boundary.
 
+To run an individual service, select exactly one of `--admin`, `--api`,
+`--ingestor`, `--syncer` or `--chatter`. Run `./bin/ragflow_server --migrate`
+before starting individual services; it applies database migrations and exits.
+The `--admin` mode also initializes the superuser. Standalone DeepDoc inference
+servers require the enterprise edition.
+
 Service identities come from `<service>.name` or `RAGFLOW_<SERVICE>_NAME`.
 Admin discovery uses `admin.host` / `admin.http_port` or
 `RAGFLOW_ADMIN_HOST` / `RAGFLOW_ADMIN_HTTP_PORT`. Ingestor concurrency uses

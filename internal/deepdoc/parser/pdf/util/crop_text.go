@@ -10,6 +10,10 @@ import (
 // CropTextSectionPositions preserves whole rasterized lines around estimated
 // text boundaries. Source positions stay unchanged; only preview pixels expand.
 func CropTextSectionPositions(positions []pdf.Position, pages map[int]image.Image, zoom float64) string {
+	return cropTextSectionPositionsLimited(positions, pages, zoom, defaultMaxChunkCropPixels)
+}
+
+func cropTextSectionPositionsLimited(positions []pdf.Position, pages map[int]image.Image, zoom float64, maxPixels int64) string {
 	plan, ok := buildSectionRasterPlan(positions, pages, zoom)
 	if !ok {
 		return ""
@@ -57,7 +61,7 @@ func CropTextSectionPositions(positions []pdf.Position, pages map[int]image.Imag
 		}
 		bottom.y1, _ = snapTextBoundary(pages[bottom.page], bottom.x0, bottom.x1, bottom.y1, 1, radius)
 	}
-	if !measureSectionRasterPlan(plan, pages) {
+	if !measureSectionRasterPlan(plan, pages) || rasterPlanExceedsLimit(plan, maxPixels) {
 		return ""
 	}
 	return encodeCroppedImage(renderSectionRaster(plan, pages))

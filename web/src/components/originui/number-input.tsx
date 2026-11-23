@@ -205,7 +205,7 @@ const NumberInput = forwardRef<
       `}</style>
       <div
         className={cn(
-          `flex h-10 items-center space-x-2 border-[1px] rounded-lg w-[150px]`,
+          `flex h-10 items-center space-x-2 border-[1px] rounded-2xl w-[150px]`,
           className,
         )}
         style={style}
@@ -230,7 +230,7 @@ const NumberInput = forwardRef<
             'w-full flex-1 text-center bg-transparent focus-visible:outline-none number-input-hide-spin',
             'disabled:cursor-not-allowed disabled:opacity-50 transition-colors',
             {
-              'focus-visible:ring-1 focus-visible:ring-accent-primary rounded-lg':
+              'focus-visible:ring-1 focus-visible:ring-accent-primary rounded-2xl':
                 hideIcons,
             },
             inputClassName,

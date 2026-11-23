@@ -1045,16 +1045,6 @@ func anyStrings(v interface{}) []string {
 }
 
 func anyFloat(v interface{}) float64 {
-	switch x := v.(type) {
-	case float64:
-		return x
-	case float32:
-		return float64(x)
-	case int:
-		return float64(x)
-	case int64:
-		return float64(x)
-	default:
-		return 0
-	}
+	f, _ := appcommon.ToFloat(v)
+	return f
 }

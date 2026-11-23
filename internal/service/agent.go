@@ -2292,8 +2292,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		startedAt := float64(time.Now().UnixNano()) / 1e9
 
 		userInput := root["user_input"]
+		filteredResponse := ""
 		if err := compliance.ValidateQuestion(ctx, stringifyAgentUserInput(agentRunQuery(userInput))); err != nil {
-			return nil, err
+			filteredResponse = err.Error()
 		}
 
 		resumeID, isResume := root["__resume_interrupt_id__"].(string)
@@ -2305,9 +2306,12 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		runID := runIDFor(canvasID, root)
 		state := canvas.NewCanvasState(runID, sessionID)
 
-		// Graceful placeholder: no version published AND no DSL.
-		if versionRow == nil && len(dsl) == 0 {
-			answer := fmt.Sprintf("No published version found for canvas %q — publish a version before running.", canvasID)
+		// Complete filtered requests and unpublished canvases without running nodes.
+		if filteredResponse != "" || (versionRow == nil && len(dsl) == 0) {
+			answer := filteredResponse
+			if answer == "" {
+				answer = fmt.Sprintf("No published version found for canvas %q — publish a version before running.", canvasID)
+			}
 			state.RecordOutput("answer", "answer", answer)
 			if err := s.persistAgentRunSession(ctx, canvasID, sessionID, messageID, userInput, answer, "", nil, dsl, state, true); err != nil {
 				return nil, canvas.NewInternalRunError(fmt.Errorf("persist agent session: %w: %w", err, ErrAgentStorageError))

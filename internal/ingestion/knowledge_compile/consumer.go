@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1497,12 +1499,10 @@ func variantsContain(variants []string, wanted string) bool {
 }
 
 func sortedStringSet(values map[string]struct{}) []string {
-	result := make([]string, 0, len(values))
-	for value := range values {
-		result = append(result, value)
+	if len(values) == 0 {
+		return []string{}
 	}
-	sort.Strings(result)
-	return result
+	return slices.Sorted(maps.Keys(values))
 }
 
 // candidateIdentity returns a compact identity string for a product, preferring

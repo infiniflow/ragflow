@@ -4,9 +4,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { PageFrame } from '@/components/page-frame';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { t } from 'i18next';
-import { DatasetPageFrame } from '../components/dataset-page-frame';
 import TestingForm from './testing-form';
 import { TestingResult } from './testing-result';
 
@@ -15,7 +15,7 @@ export default function RetrievalTesting() {
     useTestRetrieval();
 
   return (
-    <DatasetPageFrame>
+    <PageFrame>
       <CardHeader className="p-5 border-b-0.5 border-border-button shrink-0">
         <header>
           <CardTitle as="h1">
@@ -54,6 +54,6 @@ export default function RetrievalTesting() {
           />
         </div>
       </CardContent>
-    </DatasetPageFrame>
+    </PageFrame>
   );
 }
