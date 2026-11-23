@@ -178,14 +178,14 @@ func (s *BotService) AgentbotLogs(ctx context.Context, agentID, messageID string
 	}
 	payload, err := kvrocks.Get().Get(ctx, fmt.Sprintf("%s-%s-logs", agentID, messageID))
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("failed to read agent logs")
+		return nil, common.CodeServerError, fmt.Errorf("failed to read agent logs: %w", err)
 	}
 	data := map[string]any{}
 	if payload == "" {
 		return data, common.CodeSuccess, nil
 	}
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {
-		return nil, common.CodeServerError, errors.New("failed to decode agent logs")
+		return nil, common.CodeServerError, fmt.Errorf("failed to decode agent logs: %w", err)
 	}
 	return data, common.CodeSuccess, nil
 }

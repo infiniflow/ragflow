@@ -21,30 +21,30 @@ package bootstrap
 // runners and the API server wiring can be moved into their own packages and
 // still receive the parsed arguments.
 type ServerArgs struct {
-	Mode          *string // admin | api | ingestor | syncer | deepdoc | migrate
-	HelpFlag      bool
-	VersionFlag   bool
+	Mode          *string // admin | api | ingestor | syncer | chatter | deepdoc | migrate
+	HelpFlag      *bool   // show help
+	VersionFlag   *bool
 	LogLevel      *string
-	ConfigPath    *string // Used by admin, api; user defined config path
-	InitSuperUser bool    // Used by admin;
-	Port          *int    // Used by admin, api
-	AdminHost     *string // Used by api, ingestor, syncer, deepdoc for heartbeat
-	AdminPort     *int    // Used by api, ingestor, syncer, deepdoc for heartbeat, "ip:port"
-	Name          *string // server name
-	EnablePProf   bool    // enable pprof
+	ConfigPath    *string      // Used by admin, api; user defined config path
+	InitSuperUser bool         // Used by admin;
+	Port          *int         // Used by admin, api
+	Name          *string      // server name
+	EnablePProf   *bool        // enable pprof
+	Ready         func() error // called after service startup
 
 	// DeepdocInferenceConcurrency, when set, overrides the DeepDoc inference
 	// concurrency from env/config. nil means "unspecified".
 	DeepdocInferenceConcurrency *int
-	// IngestorConcurrentWorkers, when set, overrides the ingestor worker
-	// count (NATS consumer count K) from env/config. nil means "unspecified".
-	IngestorConcurrentWorkers *int
-	// IngestorPageConcurrency, when set, overrides the per-document page
-	// concurrency (N) from env/config. nil means "unspecified".
-	IngestorPageConcurrency *int
 	// DeepdocInferenceCPUCores, when set, overrides the DeepDoc inference CPU-core
 	// budget from env/config. nil means "unspecified" (0 means "all cores").
 	DeepdocInferenceCPUCores *int
+	// DeepdocDevice, when set, selects the DeepDoc inference device
+	// (cpu | gpu[:id]). The OSS build accepts only cpu; gpu fails fast at
+	// startup with a "not supported" error (GPU is enterprise-only).
+	DeepdocDevice *string
+	// IngestorTier, when set, restricts which ingestion lanes the ingestor
+	// consumes. nil means "unspecified" (default: the lowest-priority lane).
+	IngestorTier *string
 }
 
 // SelectedLogLevel resolves the effective log level: an explicit --log-level

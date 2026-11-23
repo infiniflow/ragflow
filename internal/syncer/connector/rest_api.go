@@ -34,6 +34,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"ragflow/internal/common"
 )
 
 // RestAPIConnector is a configuration-driven REST API data source connector.
@@ -1358,22 +1360,7 @@ func convertRestAPITypedValue(value any, hint string) any {
 }
 
 func restAPIToFloat(value any) (float64, bool) {
-	switch typed := value.(type) {
-	case json.Number:
-		f, err := typed.Float64()
-		return f, err == nil
-	case float64:
-		return typed, true
-	case int:
-		return float64(typed), true
-	case int64:
-		return float64(typed), true
-	case string:
-		f, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
-		return f, err == nil
-	default:
-		return 0, false
-	}
+	return common.ToFloat(value)
 }
 
 // extractTimestamp mirrors _extract_timestamp.

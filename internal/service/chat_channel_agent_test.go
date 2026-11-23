@@ -163,6 +163,9 @@ func testChatChannelAgentUpdateDuringPause(t *testing.T, mode string) {
 	if session.Name == nil || *session.Name != "(channel: channel) start" {
 		t.Fatalf("session name = %v", session.Name)
 	}
+	if session.Source == nil || *session.Source != string(entity.AgentSessionSourceChatChannel) {
+		t.Fatalf("session source = %v, want %q", session.Source, entity.AgentSessionSourceChatChannel)
+	}
 	msg.Text = "hello"
 	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
 	if err != nil || answer != "got: hello" {

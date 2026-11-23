@@ -66,12 +66,7 @@ func syncWhatsAppGateway(ctx context.Context, enabled bool) error {
 
 // gatewayEnabled reads the environment switch controlling gateway process management.
 func gatewayEnabled() bool {
-	raw := strings.TrimSpace(os.Getenv("WHATSAPP_GATEWAY_ENABLED"))
-	if raw == "" {
-		return false
-	}
-	v, err := strconv.ParseBool(raw)
-	return err == nil && v
+	return common.GetEnvBool("WHATSAPP_GATEWAY_ENABLED", false)
 }
 
 // gatewayCommand resolves the command and working directory used to start the gateway.
@@ -245,20 +240,20 @@ func gatewayReachable(ctx context.Context) bool {
 
 // waitForGateway blocks until the gateway health endpoint is ready or times out.
 func waitForGateway(ctx context.Context, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for {
-		if gatewayReachable(ctx) {
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	for waitCtx.Err() == nil {
+		if gatewayReachable(waitCtx) {
 			return nil
 		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("WhatsApp gateway did not become ready at %s within %s", gatewayHealthURL(), timeout)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(gatewayProbeEvery):
+		if !waitForContext(waitCtx, gatewayProbeEvery) {
+			break
 		}
 	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return fmt.Errorf("WhatsApp gateway did not become ready at %s within %s: %w", gatewayHealthURL(), timeout, waitCtx.Err())
 }
 
 // gatewayHealthURL returns the health endpoint for the default managed gateway address.

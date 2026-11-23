@@ -199,27 +199,38 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > OFFICE_OXIDE_PREFIX="${RAGFLOW_DEPS}/office_oxide/v${OFFICE_OXIDE_VERSION}"
 > PDFIUM_PREFIX="${RAGFLOW_DEPS}/pdfium-static/v${PDFIUM_STATIC_VERSION}"
 > PDF_OXIDE_PREFIX="${RAGFLOW_DEPS}/pdf_oxide/v${PDF_OXIDE_VERSION}"
+> # Keep the Go link cache keyed to PDFium contents, even for a reissued archive
+> # with the same version. Resolve the same linker paths as build.sh.
+> if PDFIUM_LINK_DIR="$(pdfium_static_link_dir "${PDFIUM_PREFIX}/lib" "$TARGET_OS" "${REPO_ROOT}/.cache/pdfium")"; then
+>   OFFICE_OXIDE_A="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+>   PDFIUM_A="${PDFIUM_LINK_DIR}/libpdfium.a"
+>   PDF_OXIDE_A="${PDF_OXIDE_PREFIX}/lib/${PLATFORM}/libpdf_oxide.a"
+>   # macOS PDFium uses the system libc++ provided by the flags above.
+>   PDFIUM_CXX_ARCHIVES=""
+>   if [ "$TARGET_OS" = "linux" ]; then
+>     PDFIUM_CXX_ARCHIVES="\"${PDFIUM_LINK_DIR}/libc++.a\" \"${PDFIUM_LINK_DIR}/libc++abi.a\""
+>   fi
 >
-> OFFICE_OXIDE_A="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
-> PDFIUM_A="${PDFIUM_PREFIX}/lib/libpdfium.a"
-> PDFIUM_CXX_A="${PDFIUM_PREFIX}/lib/libc++.a"
-> PDFIUM_CXXABI_A="${PDFIUM_PREFIX}/lib/libc++abi.a"
-> PDF_OXIDE_A="${PDF_OXIDE_PREFIX}/lib/${PLATFORM}/libpdf_oxide.a"
->
-> # Derive the include dir from the resolved office_oxide archive: the shell does
-> # not expand globs inside double quotes, so a literal
-> # ".../office_oxide/v*/include/..." passed to CGO_CFLAGS would never resolve and
-> # cgo would fail to find office_oxide.h on the first native compile.
-> export CGO_CFLAGS="-I$(dirname "$(dirname "$OFFICE_OXIDE_A")")/include/office_oxide_c"
-> export CGO_LDFLAGS="\
->     ${OFFICE_OXIDE_A} \
->     ${PDFIUM_A} \
->     ${PDFIUM_CXX_A} \
->     ${PDFIUM_CXXABI_A} \
->     ${PDF_OXIDE_A} \
->     ${ORT_LINK} \
->     ${SYS_LIBS}"
+>   # Derive the include dir from the resolved office_oxide archive: the shell does
+>   # not expand globs inside double quotes, so a literal
+>   # ".../office_oxide/v*/include/..." passed to CGO_CFLAGS would never resolve and
+>   # cgo would fail to find office_oxide.h on the first native compile.
+>   export CGO_CFLAGS="-I$(dirname "$(dirname "$OFFICE_OXIDE_A")")/include/office_oxide_c"
+>   export CGO_LDFLAGS="\
+>       ${OFFICE_OXIDE_A} \
+>       \"${PDFIUM_A}\" \
+>       ${PDFIUM_CXX_ARCHIVES} \
+>       ${PDF_OXIDE_A} \
+>       ${ORT_LINK} \
+>       ${SYS_LIBS}"
+> else
+>   unset CGO_CFLAGS CGO_LDFLAGS
+>   printf '%s\n' 'Could not prepare PDFium linker inputs. Run uv run tools/scripts/download_dev_deps.py.' >&2
+>   false
+> fi
 > ```
+>
+> When sourcing this block from a build script, check its exit status before invoking Go.
 >
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
 >
@@ -352,13 +363,13 @@ missing from the model directory.
   (§1.4 explains the ORT link failure; `build.sh` fails fast with
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 
-- **Run the binary directly (local dev)** — `./bin/ragflow_server --api`
-  (start `--admin` first, see §2) launches the Go server and registers the
+- **Run the binary directly (local dev)** — `./bin/ragflow_server`
+  (see §2) launches all services in one Go process and registers the
   backend. Run it from the repo root so the weights above are auto-discovered
   (see the CWD caveat); no environment variable is required there.
 
 - **Run the Go Docker image** — the container entrypoint only starts the server
-  (`bin/ragflow_server --api/--ingestor/--admin`)
+  (`bin/ragflow_server`)
 
 - ORT is resolved via `dlopen(NULL)` at runtime, so no `LD_LIBRARY_PATH` /
   `-rpath` is needed and no `libonnxruntime.so` ships with the image.
@@ -416,39 +427,43 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
   ```
 
 - Start RAGFlow
-Note: Database migrations must complete before starting any server mode.
-After migration, start the admin server before the API and ingestor servers;
-otherwise, they will encounter errors when sending heartbeats.
 
 ```bash
-# Run database migrations (standalone action; does not start a server)
-./bin/ragflow_server --migrate
+./bin/ragflow_server
 ```
-`--migrate` writes the database version marker that server modes check on
-startup, and a development branch regularly records a version for a release
-that has not been tagged yet — a build from a `v0.27.x` commit that writes
-`v1.0.0-rc1` refuses to start afterwards, because the recorded version
-looks newer than the code. Set `RAGFLOW_DEV_MODE=true` (see `docker/.env`) for
-such a checkout: it turns the "code version must not be older than the database
-version" guard off. Leave it off in production.
 
+The OSS executable runs all services in one Go process. It migrates the database, starts Admin and initializes the
+superuser, waits for API readiness, then starts Ingestor, Syncer and Chatter.
+Services run as goroutines, sharing process-wide connections, model resources and
+tokenizers. They stop together on failure or shutdown.
+Admin defaults to port 9381 and API to 9380; change their configuration keys
+rather than passing a port flag. `bash build.sh --run` builds and starts this executable.
+
+To run an individual service, select exactly one of `--admin`, `--api`,
+`--ingestor`, `--syncer` or `--chatter`. Run `./bin/ragflow_server --migrate`
+before starting individual services; it applies database migrations and exits.
+The `--admin` mode also initializes the superuser. Standalone DeepDoc inference
+servers require the enterprise edition.
+
+Service identities come from `<service>.name` or `RAGFLOW_<SERVICE>_NAME`.
+Admin discovery uses `admin.host` / `admin.http_port` or
+`RAGFLOW_ADMIN_HOST` / `RAGFLOW_ADMIN_HTTP_PORT`. Ingestor concurrency uses
+`ingestor.concurrent_workers` / `ingestor.page_concurrency` or
+`RAGFLOW_INGESTOR_CONCURRENT_WORKERS` / `RAGFLOW_INGESTOR_PAGE_CONCURRENCY`.
+Environment variables override the corresponding configuration values.
+`--profile` enables profiling for the whole process.
+
+Validate startup and shutdown against isolated test dependencies with:
 
 ```bash
-# Start admin server
-./bin/ragflow_server --admin
+RAGFLOW_SINGLE_PROCESS_TEST_CONFIG=/absolute/path/to/test-service-conf.yaml bash build.sh --test-integration-go -run '^TestSingleProcessStartupAndShutdown$' ./cmd
 ```
 
+The test migrates the supplied test database, checks both HTTP listeners and
+verifies that no child RAGFlow server is launched before shutting everything down.
 
-
-```bash
-# Start RAGFlow server
-./bin/ragflow_server --api
-```
-
-```bash
-# Start RAGFlow ingestor
-./bin/ragflow_server --ingestor
-```
+Leave `RAGFLOW_DEV_MODE` unset in production. It bypasses the code-versus-database
+version check and is intended only for development checkouts.
 
 ```bash
 # Run CLI in API mode

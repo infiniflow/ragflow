@@ -52,6 +52,9 @@ func TestEmitLifecycleEventForwardsToEmitter(t *testing.T) {
 	}
 	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "boom")
 
+	if !waitForEmitCount(rec.count, 1) {
+		t.Fatalf("event not emitted (async) within timeout")
+	}
 	got := rec.last()
 	if got.EventType != "completed" {
 		t.Errorf("EventType = %q, want completed", got.EventType)
@@ -87,6 +90,9 @@ func TestSetEventEmitterSwapsSink(t *testing.T) {
 	task := &entity.IngestionTask{ID: "t2", DocumentID: "d2", DatasetID: "kb2", UserID: "u2"}
 	svc.emitLifecycleEvent(context.Background(), task, "running", "RUNNING", "")
 
+	if !waitForEmitCount(rec.count, 1) {
+		t.Fatalf("event not emitted (async) within timeout")
+	}
 	if len(rec.events) != 1 {
 		t.Fatalf("expected 1 emitted event, got %d", len(rec.events))
 	}

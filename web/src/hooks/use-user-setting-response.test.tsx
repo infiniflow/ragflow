@@ -1,14 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import {
   useAgreeTenant,
   useDeleteLangfuseConfig,
   useDeleteTenantUser,
   useFetchSystemVersion,
+  useFetchTenantInfo,
   useRemoveSystemToken,
 } from './use-user-setting-request';
 
 const mockGetSystemVersion = jest.fn();
+const mockGetTenantInfo = jest.fn();
 const mockDeleteLangfuseConfig = jest.fn();
 const mockRemoveToken = jest.fn();
 const mockDeleteTenantUser = jest.fn();
@@ -22,9 +24,7 @@ jest.mock('@/services/user-service', () => ({
     getSystemVersion: () => mockGetSystemVersion(),
     deleteLangfuseConfig: () => mockDeleteLangfuseConfig(),
     removeToken: (...args: unknown[]) => mockRemoveToken(...args),
-    getTenantInfo: async () => ({
-      data: { code: 0, data: { tenant_id: 'tenant-1' } },
-    }),
+    getTenantInfo: () => mockGetTenantInfo(),
   },
   deleteTenantUser: (...args: unknown[]) => mockDeleteTenantUser(...args),
   agreeTenant: (...args: unknown[]) => mockAgreeTenant(...args),
@@ -53,7 +53,10 @@ jest.mock('@/components/ui/message', () => ({
 
 function createWrapper() {
   const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
   });
   return function Wrapper({ children }: { children?: any }) {
     return (
@@ -62,7 +65,62 @@ function createWrapper() {
   };
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockGetTenantInfo.mockResolvedValue({
+    data: { code: 0, data: { tenant_id: 'tenant-1' } },
+  });
+});
+
+it('exposes tenant query settlement and supports imperative refresh', async () => {
+  mockGetTenantInfo
+    .mockResolvedValueOnce({
+      data: { code: 0, data: { tenant_id: 'tenant-1' } },
+    })
+    .mockResolvedValueOnce({
+      data: { code: 0, data: { tenant_id: 'tenant-2' } },
+    });
+  const { result } = renderHook(() => useFetchTenantInfo(), {
+    wrapper: createWrapper(),
+  });
+
+  expect(result.current.isFetched).toBe(false);
+  await waitFor(() => expect(result.current.isFetched).toBe(true));
+  expect(result.current.data.tenant_id).toBe('tenant-1');
+
+  let refreshedTenantId: string | undefined;
+  await act(async () => {
+    const refreshed = await result.current.refetch();
+    refreshedTenantId = refreshed.data?.tenant_id;
+  });
+  expect(refreshedTenantId).toBe('tenant-2');
+  expect(mockGetTenantInfo).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(result.current.data.tenant_id).toBe('tenant-2'));
+});
+
+it('exposes a failed tenant refresh while retaining the last tenant', async () => {
+  mockGetTenantInfo
+    .mockResolvedValueOnce({
+      data: { code: 0, data: { tenant_id: 'tenant-1' } },
+    })
+    .mockRejectedValueOnce(new Error('tenant refresh failed'));
+  const { result } = renderHook(() => useFetchTenantInfo(), {
+    wrapper: createWrapper(),
+  });
+
+  await waitFor(() => expect(result.current.isFetched).toBe(true));
+  expect(result.current.data.tenant_id).toBe('tenant-1');
+  expect(result.current.isError).toBe(false);
+
+  await act(async () => {
+    const refreshed = await result.current.refetch();
+    expect(refreshed.isError).toBe(true);
+  });
+
+  await waitFor(() => expect(result.current.isError).toBe(true));
+  expect(result.current.isFetched).toBe(true);
+  expect(result.current.data.tenant_id).toBe('tenant-1');
+});
 
 it('reads the system version from data.version', async () => {
   mockGetSystemVersion.mockResolvedValue({

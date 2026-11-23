@@ -872,7 +872,7 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 	for i, v := range queryVec {
 		vec[i] = float64(v)
 	}
-	vectorField := fmt.Sprintf("q_%d_vec", len(vec))
+	vectorField := appcommon.VectorColumnName(len(vec))
 	req := &enginetypes.SearchRequest{
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
@@ -1045,16 +1045,6 @@ func anyStrings(v interface{}) []string {
 }
 
 func anyFloat(v interface{}) float64 {
-	switch x := v.(type) {
-	case float64:
-		return x
-	case float32:
-		return float64(x)
-	case int:
-		return float64(x)
-	case int64:
-		return float64(x)
-	default:
-		return 0
-	}
+	f, _ := appcommon.ToFloat(v)
+	return f
 }

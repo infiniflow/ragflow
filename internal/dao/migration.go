@@ -63,8 +63,8 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to modify column types: %w", err)
 	}
 
-	if err := migrateNameColumnWidths(ctx, db); err != nil {
-		return fmt.Errorf("failed to widen name columns: %w", err)
+	if err := migrateColumnWidths(ctx, db); err != nil {
+		return fmt.Errorf("failed to widen columns: %w", err)
 	}
 
 	// Add case-insensitive unique constraint on knowledgebase (tenant_id, name)
@@ -90,18 +90,19 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate tenant model data: %w", err)
 	}
 
-	// Drop the unused tenant-level model group tables. Failover is configured
-	// per conversation instead, so nothing reads or writes these any more.
-	if err := dropModelGroupTables(ctx, db); err != nil {
-		return fmt.Errorf("failed to drop tenant model group tables: %w", err)
+	// Drop the tables left behind by the abandoned tenant-level model group
+	// feature. Failover is configured per conversation instead, so nothing
+	// read or wrote them any more.
+	if err := dropAbandonedModelGroupTables(ctx, db); err != nil {
+		return fmt.Errorf("failed to drop abandoned model group tables: %w", err)
 	}
 
 	common.Info("All manual migrations completed successfully")
 	return nil
 }
 
-// dropModelGroupTables removes tenant_model_group and
-// tenant_model_group_mapping.
+// dropAbandonedModelGroupTables removes tenant_model_group_mapping, and a
+// tenant_model_group table that still carries the abandoned feature's schema.
 //
 // The tables were created by AutoMigrate for a tenant-scoped failover-group
 // feature that was never shipped: no service read them, and the per-conversation
@@ -109,30 +110,39 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 // without this they would linger in every existing database with no way to remove
 // them. AutoMigrate cannot express a drop, hence the explicit migration.
 //
-// Guarded by HasTable so a database that never had them is a no-op, and
-// mapping-first because it references the group table.
-func dropModelGroupTables(ctx context.Context, db *gorm.DB) error {
+// The enterprise model-group feature now owns the tenant_model_group name
+// (entity.TenantModelGroup, auto-migrated together with tenant_model_group_map),
+// so the group table must never be dropped blindly. It is removed only when the
+// feature's map table is absent: the feature always creates both tables in one
+// auto-migrate pass, so their presence proves the table is live, while their
+// absence proves the table is the abandoned feature's leftover and safe to drop
+// before AutoMigrate recreates it with the current definition.
+func dropAbandonedModelGroupTables(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
-	for _, table := range []string{"tenant_model_group_mapping", "tenant_model_group"} {
-		if !migrator.HasTable(table) {
-			continue
+	if migrator.HasTable("tenant_model_group_mapping") {
+		if err := migrator.DropTable("tenant_model_group_mapping"); err != nil {
+			return fmt.Errorf("drop tenant_model_group_mapping: %w", err)
 		}
-		if err := migrator.DropTable(table); err != nil {
-			return fmt.Errorf("drop %s: %w", table, err)
+		common.Info("Dropped unused table", zap.String("table", "tenant_model_group_mapping"))
+	}
+	if migrator.HasTable("tenant_model_group") && !migrator.HasTable("tenant_model_group_map") {
+		if err := migrator.DropTable("tenant_model_group"); err != nil {
+			return fmt.Errorf("drop tenant_model_group: %w", err)
 		}
-		common.Info("Dropped unused table", zap.String("table", table))
+		common.Info("Dropped unused table", zap.String("table", "tenant_model_group"))
 	}
 	return nil
 }
 
-// migrateNameColumnWidths widens name columns whose values are copied from a
-// wider source. It is idempotent: it reads the current width and only issues
-// DDL when the column is narrower than the target.
+// migrateColumnWidths widens columns whose values are copied from a wider
+// source or carry a new, longer format. It is idempotent: it reads the
+// current width and only issues DDL when the column is narrower than the
+// target.
 //
-// On MySQL, widening pipeline_title from varchar(32) to varchar(255) changes
-// the VARCHAR length prefix for utf8mb4 and can rebuild the table. Run it
-// through the standalone --migrate action during a maintenance window.
-func migrateNameColumnWidths(ctx context.Context, db *gorm.DB) error {
+// On MySQL, widening a VARCHAR column changes its length prefix and can
+// rebuild the table. Run it through the standalone --migrate action during a
+// maintenance window.
+func migrateColumnWidths(ctx context.Context, db *gorm.DB) error {
 	specs := []struct {
 		model  any
 		field  string
@@ -142,6 +152,24 @@ func migrateNameColumnWidths(ctx context.Context, db *gorm.DB) error {
 	}{
 		{&entity.PipelineOperationLog{}, "PipelineTitle", "pipeline_operation_log", "pipeline_title", common.PipelineTitleLimit},
 		{&entity.Tenant{}, "Name", "tenant", "name", common.TenantNameLimit},
+		// The tenant_*id model-reference columns hold a tenant_model id or,
+		// since the model group feature, a gp-<group_id> reference that does
+		// not fit the legacy varchar(32) width.
+		{&entity.UserTenant{}, "TenantLLMID", "user_tenant", "tenant_llm_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantEmbdID", "user_tenant", "tenant_embd_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantASRID", "user_tenant", "tenant_asr_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantImg2TxtID", "user_tenant", "tenant_img2txt_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantRerankID", "user_tenant", "tenant_rerank_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantTTSID", "user_tenant", "tenant_tts_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantOCRID", "user_tenant", "tenant_ocr_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantDecisionID", "user_tenant", "tenant_decision_id", common.GroupModelRefWidth},
+		{&entity.Chat{}, "TenantLLMID", "dialog", "tenant_llm_id", common.GroupModelRefWidth},
+		{&entity.Chat{}, "TenantDecisionID", "dialog", "tenant_decision_id", common.GroupModelRefWidth},
+		{&entity.Chat{}, "TenantRerankID", "dialog", "tenant_rerank_id", common.GroupModelRefWidth},
+		{&entity.Knowledgebase{}, "TenantEmbdID", "knowledgebase", "tenant_embd_id", common.GroupModelRefWidth},
+		{&entity.Memory{}, "TenantEmbdID", "memory", "tenant_embd_id", common.GroupModelRefWidth},
+		{&entity.Memory{}, "TenantLLMID", "memory", "tenant_llm_id", common.GroupModelRefWidth},
+		{&entity.SkillSearchConfig{}, "TenantRerankID", "skill_search_configs", "tenant_rerank_id", common.GroupModelRefWidth},
 	}
 
 	migrator := db.WithContext(ctx).Migrator()
@@ -168,7 +196,7 @@ func migrateNameColumnWidths(ctx context.Context, db *gorm.DB) error {
 			if err := migrator.AlterColumn(spec.model, spec.field); err != nil {
 				return fmt.Errorf("widen %s.%s to %d: %w", spec.table, spec.column, spec.width, err)
 			}
-			common.Info("Widened name column",
+			common.Info("Widened column",
 				zap.String("table", spec.table),
 				zap.String("column", spec.column),
 				zap.Int64("width", spec.width))
@@ -816,12 +844,12 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 	}
 
 	specs := []columnSpec{
-		// dialog.top_k mirrors Python's IntegerField(default=1024).
-		{
-			table: "dialog", column: "top_k",
-			columnType: "int", nullable: false,
-			definition: "int NOT NULL DEFAULT 1024",
-		},
+		// dialog.top_k is deliberately absent. The entity field is int64, and the
+		// MySQL driver maps an int64 to bigint by width (getSchemaIntAndUnitType
+		// switches on field.Size, so a `type:int` tag cannot override it).
+		// AutoMigrate therefore rewrote the column back to bigint immediately
+		// after this pass ran, and the two owners traded the column on every
+		// startup. AutoMigrate is the single owner now.
 		// tenant_llm.api_key mirrors Python's TextField(null=True).
 		{
 			table: "tenant_llm", column: "api_key",
@@ -874,11 +902,27 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// tenantModelIDLength is the width of a tenant_model row id. The model-reference
+// columns hold either one of these or a GroupModelRefWidth-long gp-<group_id>
+// reference, so both shapes are valid values in the same column.
+const tenantModelIDLength = 32
+
 // tenantModelIDColumnSpecs projects tenantModelIDFields into column specs for
 // the tenant model id columns. These columns were once declared *int64, so a
 // database built by one of those releases holds them as bigint and the daily
-// cast back to varchar(32) is what lets AutoMigrate succeed at all. Sharing
+// cast back to varchar is what lets AutoMigrate succeed at all. Sharing
 // tenantModelIDFields keeps this list and the backfill reading one inventory.
+//
+// The width is GroupModelRefWidth, the same one migrateColumnWidths enforces:
+// the columns hold a tenant_model id (32 chars) or a gp-<group_id> reference
+// (35). Declaring the legacy 32 here would narrow every group reference on boot
+// and let the widening migration restore it, so the two would fight over the
+// same columns on every startup.
+//
+// Widening a legacy varchar(32) column to varchar(35) changes its type and so
+// runs the orphan sweep. Both reference shapes must survive that sweep: the
+// 32-character ids already stored and the gp- references the wider column
+// exists for.
 func tenantModelIDColumnSpecs() []columnSpec {
 	tables := tenantModelIDFieldTables()
 
@@ -887,15 +931,17 @@ func tenantModelIDColumnSpecs() []columnSpec {
 		total += len(tenantModelIDFields[table])
 	}
 
+	keepLengths := []int{tenantModelIDLength, int(common.GroupModelRefWidth)}
+	definition := fmt.Sprintf("varchar(%d)", common.GroupModelRefWidth)
 	specs := make([]columnSpec, 0, total)
 	for _, table := range tables {
 		for _, field := range tenantModelIDFields[table] {
 			specs = append(specs, columnSpec{
 				table:      table,
 				column:     field.tenantIDColumn,
-				columnType: "varchar(32)", nullable: true,
-				definition: "varchar(32)",
-				keepLength: 32,
+				columnType: definition, nullable: true,
+				definition:  definition,
+				keepLengths: keepLengths,
 			})
 		}
 	}
@@ -1210,7 +1256,13 @@ type columnSpec struct {
 	columnType string // compared against INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE
 	nullable   bool
 	definition string // used verbatim when an ALTER is required
-	keepLength int    // when non-zero, values wider or narrower than this are orphaned by the type change and reset to NULL
+	// keepLengths lists the value lengths that survive the type change this
+	// spec performs. A conversion from a numeric column leaves its old values
+	// behind (an int column keeps "3"), which every reader then treats as an
+	// unresolved model reference rather than as the unset value it has become,
+	// so a value whose length is missing from this list is reset to NULL. An
+	// empty list means the change cannot invalidate values and skips the sweep.
+	keepLengths []int
 }
 
 // applyColumnSpec aligns a column with its expected definition, issuing DDL only
@@ -1256,14 +1308,25 @@ func applyColumnSpec(ctx context.Context, db *gorm.DB, spec columnSpec) error {
 // hex-id column keeps "3", which every reader treats as an unresolved model
 // reference rather than as the unset value it has become.
 //
-// LENGTH() is NULL on NULL rows and NULL <> any number is not true, so rows
+// Only lengths that cannot be a live reference are discarded, which is why the
+// spec carries a set: widening varchar(32) to varchar(35) must keep the
+// 32-character ids already stored while still clearing an int column's
+// leftovers.
+//
+// LENGTH() is NULL on NULL rows and NULL NOT IN (...) is not true, so rows
 // already unset are never counted or rewritten.
 func discardOrphanedColumnValues(ctx context.Context, db *gorm.DB, spec columnSpec) {
-	if spec.keepLength <= 0 {
+	if len(spec.keepLengths) == 0 {
 		return
 	}
 
-	stale := fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE LENGTH(%s) <> %d", spec.table, spec.column, spec.keepLength)
+	accepted := make([]string, 0, len(spec.keepLengths))
+	for _, length := range spec.keepLengths {
+		accepted = append(accepted, fmt.Sprint(length))
+	}
+	keepList := strings.Join(accepted, ", ")
+
+	stale := fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE LENGTH(%s) NOT IN (%s)", spec.table, spec.column, keepList)
 	var count int64
 	if err := db.WithContext(ctx).Raw(stale).Scan(&count).Error; err != nil {
 		common.Warn("Failed to count orphaned values",
@@ -1281,7 +1344,7 @@ func discardOrphanedColumnValues(ctx context.Context, db *gorm.DB, spec columnSp
 		zap.String("column", spec.column),
 		zap.Int64("count", count))
 	result := db.WithContext(ctx).Exec(
-		fmt.Sprintf("UPDATE %s SET %s = NULL WHERE LENGTH(%s) <> %d", spec.table, spec.column, spec.column, spec.keepLength),
+		fmt.Sprintf("UPDATE %s SET %s = NULL WHERE LENGTH(%s) NOT IN (%s)", spec.table, spec.column, spec.column, keepList),
 	)
 	if result.Error != nil {
 		common.Warn("Failed to discard orphaned values",

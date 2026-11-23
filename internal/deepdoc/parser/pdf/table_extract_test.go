@@ -442,3 +442,15 @@ func TestProcessOneTable_DeduplicatesSameCellOCR(t *testing.T) {
 		})
 	}
 }
+
+func TestHeaderRowsSkipEmptyLeadingGridRow(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{},
+		{{Text: "Header", Label: "table column header"}},
+		{{Text: "data"}},
+	}
+	grid = tbl.DropAllEmptyRows(grid)
+	if got, want := leadingHeaderRows(tbl.HeaderSetWithBlockType(grid, nil)), 1; got != want {
+		t.Fatalf("header rows = %d, want %d", got, want)
+	}
+}

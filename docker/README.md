@@ -2,7 +2,15 @@
 
 This guide documents the Go implementation of RAGFlow. Use `docker/.env`, `docker/docker-compose.yml`, `Dockerfile`, and `docker/entrypoint.sh` for a Go deployment.
 
-The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bin/ragflow_server` binary. DeepDoc inference runs in-process. Select an official Go image tag documented in the corresponding release notes, or build the image locally as described below.
+The OSS image runs all services in one `bin/ragflow_server` process. It migrates
+the database, starts Admin and initializes the superuser, starts API, then runs
+Ingestor, Syncer and Chatter in parallel. The entrypoint renders configuration,
+starts nginx, and forwards server options unchanged. No service selection flags
+are needed. Stop the container to stop all services.
+
+DeepDoc inference runs in-process; the OSS server does not launch a standalone
+DeepDoc service. For inbound channel webhooks, publish the configured listener
+ports on the RAGFlow container.
 
 <details open>
 <summary><b>📗 Table of Contents</b></summary>
@@ -51,7 +59,7 @@ sudo sysctl -w vm.max_map_count=262144
 
 This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
 
-The `v1.0.0-rc1` tag and later release tags use the Go implementation. The entrypoint migrates the default MySQL metadata database first, then starts the Go Syncer, Admin server, API server, and Ingestor. Open `http://localhost` after the HTTP health check succeeds.
+The `v1.0.0-rc1` tag and later release tags use the Go implementation. The server runs migrations and initializes the superuser before starting its services. Open `http://localhost` after the HTTP health check succeeds.
 
 For local image builds, use the [Go image build guide](../docs/develop/build_docker_image.mdx).
 

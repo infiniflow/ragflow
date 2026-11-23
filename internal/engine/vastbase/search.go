@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -134,7 +135,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			// Memory fusion computes the vector score on the CTE rows, so the
 			// vector column must be selected even when not requested.
 			column := effectivePlan.dense.VectorColumnName
-			if _, exists := columns[column]; exists && !containsString(output, column) {
+			if _, exists := columns[column]; exists && !slices.Contains(output, column) {
 				output = append(output, column)
 			}
 		}
@@ -240,7 +241,7 @@ func buildSearchOutput(selectFields []string, kind string, columns map[string]co
 		if field == "" {
 			continue
 		}
-		if _, exists := columns[field]; exists && !containsString(output, field) {
+		if _, exists := columns[field]; exists && !slices.Contains(output, field) {
 			output = append(output, field)
 		}
 	}
@@ -420,7 +421,7 @@ func parseTSVectorLexemes(rendered string) []string {
 	lexemes := make([]string, 0, len(matches))
 	for _, match := range matches {
 		lexeme := strings.TrimSpace(strings.ReplaceAll(match[1], "''", "'"))
-		if lexeme != "" && !containsString(lexemes, lexeme) {
+		if lexeme != "" && !slices.Contains(lexemes, lexeme) {
 			lexemes = append(lexemes, lexeme)
 		}
 	}
@@ -1013,12 +1014,12 @@ func expandSearchPlan(plan searchPlan, candidateLimit int) searchPlan {
 // searchHiddenSortFields lists ORDER BY fields missing from SelectFields, so
 // merged SQL can still sort by them before the page window drops rows.
 func searchHiddenSortFields(req *types.SearchRequest, mergeTables bool) []string {
-	if !mergeTables || req.OrderBy == nil || len(req.OrderBy.Fields) == 0 || len(req.SelectFields) == 0 || containsString(req.SelectFields, "*") {
+	if !mergeTables || req.OrderBy == nil || len(req.OrderBy.Fields) == 0 || len(req.SelectFields) == 0 || slices.Contains(req.SelectFields, "*") {
 		return nil
 	}
 	fields := make([]string, 0, len(req.OrderBy.Fields))
 	for _, order := range req.OrderBy.Fields {
-		if order.Field == "_score" || containsString(req.SelectFields, order.Field) || containsString(fields, order.Field) {
+		if order.Field == "_score" || slices.Contains(req.SelectFields, order.Field) || slices.Contains(fields, order.Field) {
 			continue
 		}
 		fields = append(fields, order.Field)

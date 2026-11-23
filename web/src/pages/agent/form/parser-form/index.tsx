@@ -28,7 +28,6 @@ import { AudioFormFields } from './audio-form-fields';
 import { EmailFormFields } from './email-form-fields';
 import { HtmlFormFields } from './html-form-fields';
 import { ImageFormFields } from './image-form-fields';
-import { MarkdownFormFields } from './markdown-form-fields';
 import { PdfFormFields } from './pdf-form-fields';
 import { PptFormFields } from './ppt-form-fields';
 import { FormSchema, ParserFormSchemaType } from './schema';
@@ -52,7 +51,6 @@ const FileFormatWidgetMap = {
   [FileType.Email]: EmailFormFields,
   [FileType.Image]: ImageFormFields,
   [FileType.Html]: HtmlFormFields,
-  [FileType.TextMarkdown]: MarkdownFormFields,
 };
 
 type ParserItemProps = {
@@ -72,7 +70,7 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
   const Widget =
     typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
       ? FileFormatWidgetMap[fileFormat as keyof typeof FileFormatWidgetMap]
-      : () => <></>;
+      : null;
 
   const handleRemove = useCallback(() => {
     onRemove(index);
@@ -99,9 +97,11 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
           ) : undefined
         }
       >
-        <div className="space-y-5">
-          <Widget prefix={prefix}></Widget>
-        </div>
+        {Widget && (
+          <div className="space-y-5">
+            <Widget prefix={prefix} />
+          </div>
+        )}
       </Collapse>
     </Card>
   );

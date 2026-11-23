@@ -186,11 +186,15 @@ func FilenameType(filename string) FileType {
 	}
 
 	// Editions may register an extension→type mapping, including overriding a
-	// built-in extension. Honor it before the community upload-bucket logic so
-	// the upload is classified with the registered type, keeping FilenameType
-	// consistent with GetFileType (which also consults this map first).
+	// built-in extension. Honor it before the community upload-bucket logic;
+	// registered Office types still share the document upload bucket.
 	if ext := strings.TrimPrefix(filepath.Ext(normalized), "."); ext != "" {
 		if ft, ok := extensionFileTypes[strings.ToLower(ext)]; ok {
+			// Office parsers use distinct types, but uploads share the document bucket.
+			switch ft {
+			case FileTypeDOC, FileTypeDOCX, FileTypeXLS, FileTypeXLSX, FileTypePPT, FileTypePPTX:
+				return FileTypeDOC
+			}
 			return ft
 		}
 	}
@@ -240,6 +244,27 @@ func FilenameType(filename string) FileType {
 	}
 
 	return FileTypeOTHER
+}
+
+// forbiddenFSChars are filesystem-forbidden characters replaced with underscore.
+const forbiddenFSChars = "\\/:*?\"<>|"
+
+// SanitizeFileNameComponent strips control characters and replaces
+// filesystem-forbidden characters with underscore. It does NOT handle
+// extensions, length caps, or empty fallbacks - callers apply those.
+func SanitizeFileNameComponent(name string) string {
+	name = strings.TrimSpace(name)
+	var b strings.Builder
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		if strings.ContainsRune(forbiddenFSChars, r) {
+			r = '_'
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func SanitizeFilename(filename string) string {

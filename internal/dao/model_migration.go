@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,6 +60,8 @@ var modelTypeStringToBit = map[string]int{
 	"rerank":      16,
 	"tts":         32,
 	"ocr":         64,
+	"decision":    128,
+	"scoring":     256,
 }
 
 // ensureTenantModelTables creates the tenant model tables the base step backfills
@@ -1113,7 +1116,8 @@ func tenantModelModelTypeIsInteger(db *gorm.DB) (bool, error) {
 // Model id normalization ports ModelIdConfigStage.
 
 var modelIDStringColumns = map[string][]string{
-	"tenant":        {"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id", "decision_id"},
+	"tenant":        {"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id", "decision_id", "scoring_id"},
+	"user_tenant":   {"scoring_id"},
 	"knowledgebase": {"embd_id"},
 	"dialog":        {"llm_id", "rerank_id", "decision_id"},
 	"memory":        {"embd_id", "llm_id"},
@@ -1141,6 +1145,7 @@ var modelIDFieldSet = map[string]bool{
 	"tts_id":          true,
 	"ocr_id":          true,
 	"decision_id":     true,
+	"scoring_id":      true,
 }
 
 var searchConfigModelIDFieldSet = map[string]bool{"chat_id": true}
@@ -1159,15 +1164,6 @@ func normalizeModelID(value string) (string, bool) {
 	return modelName + "@default@" + providerName, true
 }
 
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-
 // normalizeModelIDConfig recursively normalizes model id fields inside a decoded
 // JSON document, mirroring ModelIdConfigStage.normalize_config.
 func normalizeModelIDConfig(value any, path []string) (any, bool) {
@@ -1177,7 +1173,7 @@ func normalizeModelIDConfig(value any, path []string) (any, bool) {
 		normalized := make(map[string]any, len(typed))
 		for key, item := range typed {
 			keyPath := append(append([]string{}, path...), key)
-			shouldNormalize := modelIDFieldSet[key] || (searchConfigModelIDFieldSet[key] && containsString(path, "search_config"))
+			shouldNormalize := modelIDFieldSet[key] || (searchConfigModelIDFieldSet[key] && slices.Contains(path, "search_config"))
 			if shouldNormalize {
 				if str, ok := item.(string); ok {
 					normalizedValue, itemChanged := normalizeModelID(str)

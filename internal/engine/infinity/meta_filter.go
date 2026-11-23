@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 
+	"ragflow/internal/common"
+
 	infinity "github.com/infiniflow/infinity-go-sdk"
 )
 
@@ -433,21 +435,7 @@ func escapeLikeWildcards(text string) string {
 
 // coerceToFloat tries to convert interface{} to float64
 func coerceToFloat(value interface{}) (float64, bool) {
-	switch v := value.(type) {
-	case float64:
-		return v, true
-	case float32:
-		return float64(v), true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case string:
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			return f, true
-		}
-	}
-	return 0, false
+	return common.ToFloat(value)
 }
 
 // isNumericZero checks if value is numeric zero (0, 0.0, etc.)

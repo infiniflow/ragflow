@@ -678,7 +678,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 				return nil, 0, fmt.Errorf("tokenizer: merge vectors: %w", err)
 			}
 		}
-		if err := chunks[i].SetExtraValue(fmt.Sprintf("q_%d_vec", len(merged)), merged); err != nil {
+		if err := chunks[i].SetExtraValue(common.VectorColumnName(len(merged)), merged); err != nil {
 			return nil, 0, fmt.Errorf("tokenizer: vector marshal: %w", err)
 		}
 		// Backfill the per-chunk cache only for freshly embedded content; cache
@@ -1174,7 +1174,7 @@ func hasEmbeddingVector(ck schema.ChunkDoc) bool {
 		return false
 	}
 	for key, raw := range ck.Extra {
-		if !strings.HasPrefix(key, "q_") || !strings.HasSuffix(key, "_vec") {
+		if !common.IsVectorColumn(key) {
 			continue
 		}
 		var vec []float64

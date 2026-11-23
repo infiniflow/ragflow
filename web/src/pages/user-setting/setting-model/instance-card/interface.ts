@@ -197,6 +197,7 @@ export interface DraftModeCardProps {
   modelInfoRef: React.MutableRefObject<IModelInfo[]>;
   draftName: string;
   setDraftName: (name: string) => void;
+  draftNameError: string;
   /** Provider-specific transform forwarded to ModelsSection for per-model verify. */
   verifyTransform?: VerifyTransform;
 }

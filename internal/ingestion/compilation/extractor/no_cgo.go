@@ -41,6 +41,8 @@ package extractor
 import (
 	"encoding/json"
 	"errors"
+
+	"ragflow/internal/utility"
 	"sync"
 )
 
@@ -118,8 +120,8 @@ func RunTagger(nerDir, taggerDir string, tokensJSON string) (string, error) {
 // around RunParser. Production callers should check the error
 // before using the returned slice.
 func ParseTokensWithParser(nerDir, parserDir string, tokens []string) ([]DepTokenC, error) {
-	tj, _ := json.Marshal(tokens)
-	resultJSON, err := RunParser(nerDir, parserDir, string(tj))
+	tj := utility.MustJSON(tokens)
+	resultJSON, err := RunParser(nerDir, parserDir, tj)
 	if err != nil {
 		return nil, err
 	}

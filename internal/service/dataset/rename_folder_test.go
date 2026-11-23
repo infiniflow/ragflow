@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"mime/multipart"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -147,7 +148,7 @@ func TestDatasetRenameFolderRollsBack(t *testing.T) {
 			if err == nil || code != common.CodeServerError {
 				t.Fatalf("rename: code=%v err=%v; want server error", code, err)
 			}
-			if table == "file" && err.Error() != "database operation failed" {
+			if !strings.Contains(err.Error(), "rename rejected") {
 				t.Fatalf("unexpected public database error: %v", err)
 			}
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")

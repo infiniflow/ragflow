@@ -14,22 +14,30 @@
  *  limitations under the License.
  */
 
+import { SharedResourceOwnerBadge } from '@/ee/components/shared-resource-owner-badge';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { PropsWithChildren } from 'react';
 
-export function SharedBadge({ children }: PropsWithChildren) {
+type SharedBadgeProps = PropsWithChildren<{
+  userId?: string;
+  ownerNickname?: string;
+}>;
+
+export function SharedBadge({
+  children,
+  userId,
+  ownerNickname,
+}: SharedBadgeProps) {
   const { data: userInfo } = useFetchUserInfo();
 
-  if (typeof children === 'string' && userInfo.nickname === children) {
-    return null;
-  }
-
   return (
-    <span
-      title={typeof children === 'string' ? children : undefined}
-      className="inline-block max-w-[120px] truncate align-middle bg-bg-card rounded-sm px-1 text-xs"
+    <SharedResourceOwnerBadge
+      userId={userId}
+      currentUserId={userInfo.id}
+      currentUserNickname={userInfo.nickname}
+      ownerNickname={ownerNickname}
     >
       {children}
-    </span>
+    </SharedResourceOwnerBadge>
   );
 }

@@ -296,7 +296,10 @@ const MarkdownContent = ({
                 )}
                 <Button
                   variant="link"
-                  className={'text-wrap p-0 flex-1 h-auto'}
+                  className={classNames('text-wrap p-0 flex-1 h-auto', {
+                    'hover:no-underline cursor-default':
+                      !documentUrl && !supportsSourceLocate(fileExtension),
+                  })}
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
@@ -330,10 +333,23 @@ const MarkdownContent = ({
           if (!hasReference && !(loading && match.startsWith('[ID:'))) {
             return match;
           }
+          const { documentId, documentUrl, fileExtension, chunkItem } =
+            getReferenceInfo(chunkIndex);
 
           return (
             <HoverCard key={i}>
-              <HoverCardTrigger>
+              <HoverCardTrigger
+                onClick={
+                  hasReference && documentId
+                    ? handleDocumentButtonClick(
+                        documentId,
+                        chunkItem,
+                        fileExtension,
+                        documentUrl,
+                      )
+                    : undefined
+                }
+              >
                 <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
                   [{chunkIndex + 1}]
                 </bdi>
@@ -352,7 +368,13 @@ const MarkdownContent = ({
 
       return replacedText;
     },
-    [getPopoverContent, loading, reference?.chunks],
+    [
+      getPopoverContent,
+      getReferenceInfo,
+      handleDocumentButtonClick,
+      loading,
+      reference?.chunks,
+    ],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));

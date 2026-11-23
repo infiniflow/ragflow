@@ -23,17 +23,17 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"os/exec"
-	"path/filepath"
-
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
 	"net"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 func TestSSH_ProviderTypeAndLanguages(t *testing.T) {

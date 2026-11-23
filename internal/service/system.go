@@ -28,6 +28,8 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/server"
 	"ragflow/internal/storage"
+
+	"go.uber.org/zap"
 )
 
 // SystemService system service
@@ -43,6 +45,7 @@ func NewSystemService() *SystemService {
 type ConfigResponse struct {
 	EnableRegister       bool `json:"registerEnabled"`
 	DisablePasswordLogin bool `json:"disablePasswordLogin"`
+	APIKeyMaxCount       int  `json:"apiKeyMaxCount"`
 	configExtras
 }
 
@@ -53,9 +56,15 @@ func (s *SystemService) GetConfig(ctx context.Context) (*ConfigResponse, error) 
 	if err != nil {
 		return nil, err
 	}
+	limit, err := dao.GetAPITokenLimit(ctx, dao.DB)
+	if err != nil {
+		common.Warn("Failed to load public API key limit configuration", zap.Error(err))
+		limit = dao.DefaultAPITokenLimit
+	}
 	return &ConfigResponse{
 		EnableRegister:       cfg.EnableRegister(),
 		DisablePasswordLogin: cfg.DisablePasswordLogin(),
+		APIKeyMaxCount:       limit,
 		configExtras:         extras,
 	}, nil
 }

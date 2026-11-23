@@ -124,14 +124,24 @@ export const FilterField = memo(
     item,
     parent,
     level = 0,
+    autoExpand = false,
   }: {
     item: FilterType;
     parent: FilterType;
     level?: number;
+    autoExpand?: boolean;
   }) => {
     const form = useFormContext();
-    const [showAll, setShowAll] = useState(false);
+    const [showAll, setShowAll] = useState(autoExpand);
+    const [prevAutoExpand, setPrevAutoExpand] = useState(autoExpand);
     const hasNestedList = item.list && item.list.length > 0;
+
+    if (autoExpand !== prevAutoExpand) {
+      setPrevAutoExpand(autoExpand);
+      if (autoExpand) {
+        setShowAll(true);
+      }
+    }
 
     return (
       <FormField
@@ -167,6 +177,7 @@ export const FilterField = memo(
                         field: `${parent.field}.${item.field}`,
                       }}
                       level={level + 1}
+                      autoExpand={autoExpand}
                     />
                   ))}
               </div>
