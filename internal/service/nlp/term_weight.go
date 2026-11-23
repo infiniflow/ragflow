@@ -519,7 +519,18 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool, lang string) [
 	} else {
 		// With preprocessing
 		for _, tk := range tks {
-			tokens := d.Pretoken(tk, true, true, lang)
+			tokens := d.Pretoken(tk, true, false, lang)
+			// TokenMerge treats empty tokens as phrase boundaries. Deleting a
+			// stop word here would make its two neighbors appear adjacent.
+			for i, token := range tokens {
+				if _, stop := d.stopWords[token]; stop {
+					tokens[i] = ""
+				}
+			}
+			// Preserve TokenMerge's special handling of the first real token.
+			for len(tokens) > 0 && tokens[0] == "" {
+				tokens = tokens[1:]
+			}
 			tt := d.TokenMerge(tokens)
 			if len(tt) == 0 {
 				continue
