@@ -258,7 +258,7 @@ func previewForChunk(content string) (string, bool) {
 }
 
 // snippetForMatches renders the fragment of content that CONTAINS the match
-// span [firstByte,lastByte), extended to natural boundaries. It returns the
+// rune span [start,end), extended to natural boundaries. It returns the
 // fragment and whether anything was left out.
 //
 // The match span is always inside the returned fragment, so a keyword can never
@@ -278,33 +278,15 @@ func previewForChunk(content string) (string, bool) {
 // Reason for the whole dance: a fixed byte window ends mid-sentence and hides
 // the sentence right after the keyword — observed as "the document surfaced as
 // a snippet, but the paragraph carrying the answer was never read".
-func snippetForMatches(content string, firstByte, lastByte int) (string, bool) {
-	if content == "" {
-		return "", false
-	}
+func snippetForMatches(content string, start, end int) (string, bool) {
 	runes := []rune(content)
-	if firstByte < 0 {
-		firstByte = 0
+	start = min(max(start, 0), len(runes))
+	end = min(max(end, 0), len(runes))
+	if start > end {
+		start, end = end, start
 	}
-	if firstByte > len(content) {
-		firstByte = len(content)
-	}
-	if lastByte < 0 {
-		lastByte = 0
-	}
-	if lastByte > len(content) {
-		lastByte = len(content)
-	}
-	if firstByte > lastByte {
-		firstByte, lastByte = lastByte, firstByte
-	}
-	start := utf8.RuneCountInString(content[:firstByte])
-	end := utf8.RuneCountInString(content[:lastByte])
 	if start >= len(runes) {
 		return "", false
-	}
-	if end > len(runes) {
-		end = len(runes)
 	}
 	if end <= start {
 		end = start + 1
@@ -474,23 +456,13 @@ func isSentenceTerminator(r rune) bool {
 	return false
 }
 
-// regexMatchSpan returns the earliest match start / latest match end byte
-// offsets of re over ALL occurrences in content.
+// regexMatchSpan returns the rune span covering all regex matches in content.
 func regexMatchSpan(re *regexp.Regexp, content string) (int, int, bool) {
 	locs := re.FindAllStringIndex(content, -1)
 	if len(locs) == 0 {
 		return 0, 0, false
 	}
-	first, last := locs[0][0], locs[0][1]
-	for _, l := range locs[1:] {
-		if l[0] < first {
-			first = l[0]
-		}
-		if l[1] > last {
-			last = l[1]
-		}
-	}
-	return first, last, true
+	return runeMatchSpan(content, locs[0][0], locs[len(locs)-1][1])
 }
 
 // termMatchSpan is regexMatchSpan's literal-term counterpart: over every
@@ -500,10 +472,8 @@ func regexMatchSpan(re *regexp.Regexp, content string) (int, int, bool) {
 // It scans one lowercased copy of the content instead of compiling an (?i)
 // regex per term — measured ~30x faster on the locate path, where this runs once
 // per located chunk — and lowercases the term so the scan stays case-insensitive
-// regardless of how the caller cased it. The offsets therefore come from the
-// lowercased copy: for the few characters whose lowercase form has a different
-// byte length (U+0130, U+1E9E) they can land a byte or two off in the original,
-// which shifts a snippet window but never hides the match.
+// regardless of how the caller cased it. Go's lowercase mapping preserves
+// rune positions even when the UTF-8 width changes (for example, İ to i).
 func termMatchSpan(terms []string, content string) (int, int, bool) {
 	lower := strings.ToLower(content)
 	first, last := -1, -1
@@ -528,10 +498,17 @@ func termMatchSpan(terms []string, content string) (int, int, bool) {
 			from = hi
 		}
 	}
+	return runeMatchSpan(lower, first, last)
+}
+
+// runeMatchSpan converts byte offsets in the searched text to rune offsets
+// for the original chunk. A negative start indicates a missing match.
+func runeMatchSpan(text string, first, last int) (int, int, bool) {
 	if first < 0 {
 		return 0, 0, false
 	}
-	return first, last, true
+	start := utf8.RuneCountInString(text[:first])
+	return start, start + utf8.RuneCountInString(text[first:last]), true
 }
 
 // snippetHit couples a located chunk with its pre-rendered snippet line.
