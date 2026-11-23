@@ -33,8 +33,6 @@ const (
 	TokenShow
 	TokenCreate
 	TokenService
-	TokenShutdown
-	TokenRestart
 	TokenUsers
 	TokenDrop
 	TokenUser
@@ -179,7 +177,6 @@ const (
 	TokenURL
 	TokenTask
 	TokenTasks
-	TokenIngestor
 	TokenIngestors
 	TokenStart
 	TokenStop

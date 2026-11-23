@@ -1672,7 +1672,7 @@ func (p *Parser) parseAdminGrantPermission() (*Command, error) {
 	}
 	actions := strings.Split(actionListStr, ",")
 	p.nextToken()
-	for idx, _ := range actions {
+	for idx := range actions {
 		actions[idx] = strings.TrimSpace(actions[idx])
 	}
 
@@ -1750,7 +1750,7 @@ func (p *Parser) parseAdminRevokePermission() (*Command, error) {
 	}
 	actions := strings.Split(actionListStr, ",")
 	p.nextToken()
-	for idx, _ := range actions {
+	for idx := range actions {
 		actions[idx] = strings.TrimSpace(actions[idx])
 	}
 
@@ -2097,104 +2097,6 @@ func (p *Parser) parseAdminBenchmarkCommand() (*Command, error) {
 	}
 	cmd.Params["command"] = nestedCmd
 
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminStartService() (*Command, error) {
-	p.nextToken() // consume START
-
-	if p.curToken.Type != TokenService {
-		return nil, fmt.Errorf("expected SERVICE")
-	}
-	p.nextToken()
-
-	serviceName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("admin_start_service")
-	cmd.Params["service_name"] = serviceName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminShutdownCommands() (*Command, error) {
-	p.nextToken() // consume SHUTDOWN
-
-	switch p.curToken.Type {
-	case TokenService:
-		return p.parseAdminShutdownService()
-	case TokenIngestor:
-		return p.parseAdminShutdownIngestor()
-	default:
-		return nil, fmt.Errorf("expected SERVICE or INGESTOR")
-	}
-}
-
-func (p *Parser) parseAdminShutdownService() (*Command, error) {
-	p.nextToken() // consume SERVICE
-
-	serviceName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("admin_shutdown_service")
-	cmd.Params["service_name"] = serviceName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminShutdownIngestor() (*Command, error) {
-	p.nextToken() // consume INGESTOR
-
-	ingestorName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("admin_shutdown_ingestor_command")
-	cmd.Params["ingestor_name"] = ingestorName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminRestart() (*Command, error) {
-	p.nextToken() // consume RESTART
-	if p.curToken.Type != TokenService {
-		return nil, fmt.Errorf("expected SERVICE")
-	}
-	p.nextToken()
-
-	serviceName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("admin_restart_service")
-	cmd.Params["service_name"] = serviceName
-
-	p.nextToken()
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
 	return cmd, nil
 }
 

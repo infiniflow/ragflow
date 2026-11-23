@@ -81,8 +81,7 @@ func logTokenizerCounters() {
 }
 
 // Run starts the RAGFlow ingestion worker. It blocks until ctx is cancelled
-// (OS shutdown signal) or the ingestor receives a shutdown command from the
-// admin, then gracefully stops the ingestor.
+// (OS shutdown signal), then gracefully stops the ingestor.
 func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
 	globalConfig := server.GetConfig()
 	logTokenizerCounters()
@@ -171,19 +170,14 @@ func Run(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerA
 		}
 	}
 
-	// Wait for either an OS shutdown signal or a shutdown command from the admin
-	select {
-	case <-ctx.Done():
-		common.Info("Received shutdown signal")
-		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.Name))
-	case <-ingestor.ShutdownCh:
-		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *args.Name))
-		cancel()
-	}
+	// Wait for OS shutdown signal
+	<-ctx.Done()
+	common.Info("Received shutdown signal")
+	common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.Name))
 
 	// Create context with timeout for graceful shutdown
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer shutdownCancel()
 
 	ingestor.Stop(shutdownCtx)
 
