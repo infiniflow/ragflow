@@ -147,7 +147,7 @@ func TestBuildQualifiedSelectFieldsUsesStructuredColumns(t *testing.T) {
 	}
 }
 
-func TestSearchResolvesSchemaForLegacySortOnly(t *testing.T) {
+func TestSearchResolvesTableCollationForLegacySortOnly(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 	if err != nil {
 		t.Fatal(err)
@@ -158,15 +158,16 @@ func TestSearchResolvesSchemaForLegacySortOnly(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?").
 		WithArgs("legacy_doc", table).
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
-	mock.ExpectQuery("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?").
+	mock.ExpectQuery(chunkTableSchemaSQL).
 		WithArgs("legacy_doc", table).
-		WillReturnRows(sqlmock.NewRows([]string{"COLUMN_NAME"}).AddRow("id").AddRow("extra").AddRow("title_kwd"))
+		WillReturnRows(sqlmock.NewRows([]string{"COLUMN_NAME", "TABLE_COLLATION"}).
+			AddRow("id", "utf8mb4_unicode_ci").AddRow("extra", "utf8mb4_unicode_ci").AddRow("outlinks_int", "utf8mb4_unicode_ci"))
 	mock.ExpectQuery("SELECT COUNT(`id`) FROM `ragflow_tenant_1` WHERE 1=1").
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(id)"}).AddRow(3))
-	const outlinks = "JSON_EXTRACT(`extra`, '$.outlinks_int')"
+	const title = "JSON_EXTRACT(`extra`, '$.title_kwd')"
 	mock.ExpectQuery("SELECT `id` FROM `ragflow_tenant_1` WHERE 1=1 ORDER BY " +
-		"CASE WHEN JSON_TYPE(" + outlinks + ") IN ('INTEGER', 'DOUBLE', 'DECIMAL') THEN CAST(JSON_UNQUOTE(" + outlinks + ") AS DOUBLE) END DESC, " +
-		"`title_kwd` ASC LIMIT 1, 1").
+		"`outlinks_int` DESC, (CASE WHEN JSON_TYPE(" + title + ") <> 'NULL' THEN JSON_UNQUOTE(" + title +
+		") END) COLLATE utf8mb4_unicode_ci ASC LIMIT 1, 1").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("page-2"))
 	result, err := engine.Search(t.Context(), &types.SearchRequest{
 		IndexNames: []string{table}, SelectFields: []string{"id"}, Offset: 1, Limit: 1,

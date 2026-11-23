@@ -124,17 +124,17 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			condition["kb_id"] = req.KbIDs
 		}
 
-		var tableColumns map[string]bool
+		var schema chunkTableSchema
 		if kind == "chunk" && (chunkSelectionNeedsSchema(effectiveReq.SelectFields) ||
 			chunkFilterUsesExtra(condition, nil) || chunkOrderUsesExtra(effectiveReq.OrderBy, nil)) {
-			tableColumns, err = e.tableColumns(ctx, tableName)
+			schema, err = e.loadChunkTableSchema(ctx, tableName)
 			if err != nil {
 				return nil, err
 			}
 		}
 		if e.hybridAvailable.Load() && isDBMSHybridPlan(plan) &&
-			(kind != "chunk" || (!chunkFilterUsesExtra(condition, tableColumns) &&
-				!chunkOrderUsesExtra(effectiveReq.OrderBy, tableColumns))) {
+			(kind != "chunk" || (!chunkFilterUsesExtra(condition, schema.columns) &&
+				!chunkOrderUsesExtra(effectiveReq.OrderBy, schema.columns))) {
 			chunks, used, hybridErr := e.searchWithDBMS(ctx, tableName, kind, condition, &effectiveReq, effectivePlan)
 			if hybridErr != nil {
 				if !isHybridUnavailableError(hybridErr) {
@@ -149,7 +149,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			}
 		}
 
-		chunks, total, err := e.searchTableWithSQL(ctx, tableName, kind, condition, &effectiveReq, effectivePlan, tableColumns)
+		chunks, total, err := e.searchTableWithSQL(ctx, tableName, kind, condition, &effectiveReq, effectivePlan, schema)
 		if err != nil {
 			return nil, err
 		}
@@ -170,7 +170,8 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	return result, nil
 }
 
-func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan, tableColumns map[string]bool) ([]map[string]interface{}, int64, error) {
+func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan, schema chunkTableSchema) ([]map[string]interface{}, int64, error) {
+	tableColumns := schema.columns
 	fieldsSQL, _, err := buildSelectFieldsWithAlias(req.SelectFields, kind, "", tableColumns)
 	if err != nil {
 		return nil, 0, err
@@ -182,7 +183,7 @@ func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string,
 			keepExtra: slices.Contains(req.SelectFields, "extra"),
 		}
 	}
-	filterSQL, filterArgs, err := e.buildFilter(condition, kind, tableColumns)
+	filterSQL, filterArgs, err := buildFilter(condition, kind, schema)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -208,7 +209,7 @@ func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string,
 		if err != nil || count == 0 {
 			return []map[string]interface{}{}, count, err
 		}
-		orderSQL, err := e.buildOrderBy(req.OrderBy, kind, tableColumns)
+		orderSQL, err := buildOrderBy(req.OrderBy, kind, schema)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -438,7 +439,7 @@ func chunkOrderUsesExtra(orderBy *types.OrderByExpr, tableColumns map[string]boo
 	return false
 }
 
-func (e *Engine) buildOrderBy(orderBy *types.OrderByExpr, kind string, tableColumns map[string]bool) (string, error) {
+func buildOrderBy(orderBy *types.OrderByExpr, kind string, schema chunkTableSchema) (string, error) {
 	if orderBy == nil || len(orderBy.Fields) == 0 {
 		return "", nil
 	}
@@ -456,12 +457,12 @@ func (e *Engine) buildOrderBy(orderBy *types.OrderByExpr, kind string, tableColu
 		}
 		var expression string
 		if kind == "chunk" && arrayColumns[column] {
-			if chunkFieldInExtra(column, tableColumns) {
+			if chunkFieldInExtra(column, schema.columns) {
 				return "", fmt.Errorf("cannot sort by string array field %s", order.Field)
 			}
 			expression = "ARRAY_AVG(" + quoteIdentifier(column) + ")"
 		} else {
-			expression = e.filterColumn(kind, column, tableColumns, true)
+			expression = schema.filterColumn(kind, column, true)
 		}
 		direction := "ASC"
 		if order.Type == types.SortDesc {

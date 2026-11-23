@@ -310,6 +310,56 @@ func TestChunkExtraFilterAndMutation(t *testing.T) {
 	}
 }
 
+func TestChunkExtraTextUsesTableCollation(t *testing.T) {
+	engine := newIntegrationEngine(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	table := "ragflow_go_collation_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	defer cleanupChunkStore(t, engine, table, "")
+
+	// The binary collation differs from the engine's DDL default. Use legacy
+	// storage to verify that filters and sorting respect the live table.
+	if _, err := engine.db.ExecContext(ctx, "CREATE TABLE "+quoteIdentifier(table)+
+		" (id VARCHAR(64) PRIMARY KEY, kb_id VARCHAR(64) NOT NULL, extra JSON) DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_bin"); err != nil {
+		t.Fatal(err)
+	}
+	const dataset = "collation-kb"
+	if _, err := engine.db.ExecContext(ctx, "INSERT INTO "+quoteIdentifier(table)+" (id,kb_id,extra) VALUES (?,?,?),(?,?,?)",
+		"upper", dataset, `{"compile_kwd":"Tree","title_kwd":"Zebra"}`,
+		"lower", dataset, `{"compile_kwd":"tree","title_kwd":"alpha"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	req := &types.SearchRequest{
+		IndexNames: []string{table}, KbIDs: []string{dataset}, SelectFields: []string{"id"},
+		OrderBy: (&types.OrderByExpr{}).Asc("title_kwd"),
+	}
+	result, err := engine.Search(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Chunks) != 2 || result.Chunks[0]["id"] != "upper" || result.Chunks[1]["id"] != "lower" {
+		t.Fatalf("expected binary sort order Zebra, alpha: %#v", result)
+	}
+	req.Filter = map[string]interface{}{"compile_kwd": "Tree"}
+	result, err = engine.Search(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 1 || len(result.Chunks) != 1 || result.Chunks[0]["id"] != "upper" {
+		t.Fatalf("case-sensitive filter matched unexpected rows: %#v", result)
+	}
+	if err := engine.UpdateChunks(ctx, req.Filter, map[string]interface{}{"title_kwd": "Updated"}, table, dataset); err != nil {
+		t.Fatal(err)
+	}
+	assertStoredJSON(ctx, t, engine, table, "extra", "upper", map[string]interface{}{"compile_kwd": "Tree", "title_kwd": "Updated"})
+	assertStoredJSON(ctx, t, engine, table, "extra", "lower", map[string]interface{}{"compile_kwd": "tree", "title_kwd": "alpha"})
+	deleted, err := engine.DeleteChunks(ctx, req.Filter, table, dataset)
+	if err != nil || deleted != 1 {
+		t.Fatalf("case-sensitive delete affected %d rows, error %v", deleted, err)
+	}
+}
+
 func assertStoredJSON(ctx context.Context, t *testing.T, engine *Engine, tableName, columnName, rowID string, want interface{}) {
 	t.Helper()
 	var raw interface{}

@@ -62,9 +62,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	// actually exists, so fields an existing table lacks go to its extra column
 	// instead of a column it does not have. Read before the transaction so the
 	// metadata query does not borrow a second connection mid-transaction.
-	var chunkTableColumns map[string]bool
+	var schema chunkTableSchema
 	if !strings.HasPrefix(baseName, "memory_") && !strings.HasPrefix(baseName, "skill_") && datasetID != "skill" {
-		chunkTableColumns, err = e.tableColumns(ctx, baseName)
+		schema, err = e.loadChunkTableSchema(ctx, baseName)
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +96,7 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 				return nil, err
 			}
 		default:
-			normalized, err = normalizeChunk(chunk, chunkTableColumns)
+			normalized, err = normalizeChunk(chunk, schema.columns)
 			if err != nil {
 				return nil, err
 			}
@@ -176,7 +176,7 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 	} else if kind == "chunk" {
 		condition["kb_id"] = datasetIDs
 	}
-	whereSQL, args, err := e.buildFilter(condition, kind, nil)
+	whereSQL, args, err := buildFilter(condition, kind, chunkTableSchema{})
 	if err != nil {
 		return nil, err
 	}
@@ -235,17 +235,17 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 	if !exists {
 		return fmt.Errorf("%w: '%s'", types.ErrIndexNotFound, baseName)
 	}
-	var tableColumns map[string]bool
+	var schema chunkTableSchema
 	if kind == "chunk" {
 		newValue = normalizeImportantKeywordFields(newValue)
 		if chunkFilterUsesExtra(condition, nil) || chunkUpdateNeedsSchema(newValue) {
-			tableColumns, err = e.tableColumns(ctx, baseName)
+			schema, err = e.loadChunkTableSchema(ctx, baseName)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	whereSQL, args, err := e.buildFilter(condition, kind, tableColumns)
+	whereSQL, args, err := buildFilter(condition, kind, schema)
 	if err != nil {
 		return err
 	}
@@ -275,7 +275,7 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 				if err := validateIdentifier(remove); err != nil {
 					return err
 				}
-				if chunkFieldInExtra(remove, tableColumns) {
+				if chunkFieldInExtra(remove, schema.columns) {
 					extraRemove = chunkExtraPath(remove)
 					continue
 				}
@@ -285,7 +285,7 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 					if kind != "chunk" || !arrayColumns[column] {
 						return fmt.Errorf("column %s is not an array column", column)
 					}
-					if chunkFieldInExtra(column, tableColumns) {
+					if chunkFieldInExtra(column, schema.columns) {
 						return fmt.Errorf("cannot remove an item from %s in extra; replace the array instead", column)
 					}
 					setParts = append(setParts, fmt.Sprintf("%s = ARRAY_REMOVE(%s, ?)", quoteIdentifier(column), quoteIdentifier(column)))
@@ -303,7 +303,7 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 				if kind != "chunk" || !arrayColumns[column] {
 					return fmt.Errorf("column %s is not an array column", column)
 				}
-				if chunkFieldInExtra(column, tableColumns) {
+				if chunkFieldInExtra(column, schema.columns) {
 					return fmt.Errorf("cannot add an item to %s in extra; replace the array instead", column)
 				}
 				if column == "important_kwd" {
@@ -318,7 +318,7 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 			if err := validateIdentifier(key); err != nil {
 				return err
 			}
-			if chunkFieldInExtra(key, tableColumns) {
+			if chunkFieldInExtra(key, schema.columns) {
 				// Match InsertChunks' JSON encoding, including arrays, objects and null.
 				encoded, err := json.Marshal(value)
 				if err != nil {
@@ -394,14 +394,14 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	if !exists {
 		return 0, nil
 	}
-	var tableColumns map[string]bool
+	var schema chunkTableSchema
 	if kind == "chunk" && chunkFilterUsesExtra(condition, nil) {
-		tableColumns, err = e.tableColumns(ctx, baseName)
+		schema, err = e.loadChunkTableSchema(ctx, baseName)
 		if err != nil {
 			return 0, err
 		}
 	}
-	whereSQL, args, err := e.buildFilter(condition, kind, tableColumns)
+	whereSQL, args, err := buildFilter(condition, kind, schema)
 	if err != nil {
 		return 0, err
 	}

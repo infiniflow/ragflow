@@ -60,8 +60,8 @@ func chunkExtraExtract(column string) string {
 
 // filterColumn renders a column reference for a predicate or sort. Value
 // comparisons decode JSON scalars. Existence checks only need SQL NULL.
-func (e *Engine) filterColumn(kind, column string, tableColumns map[string]bool, valueComparison bool) string {
-	if kind != "chunk" || !chunkFieldInExtra(column, tableColumns) {
+func (schema chunkTableSchema) filterColumn(kind, column string, valueComparison bool) string {
+	if kind != "chunk" || !chunkFieldInExtra(column, schema.columns) {
 		return quoteIdentifier(column)
 	}
 	extracted := chunkExtraExtract(column)
@@ -74,12 +74,12 @@ func (e *Engine) filterColumn(kind, column string, tableColumns map[string]bool,
 			// condition must not match such rows in an update or delete.
 			return "CASE WHEN " + jsonType + " IN ('INTEGER', 'DOUBLE', 'DECIMAL') THEN CAST(" + value + " AS DOUBLE) END"
 		}
-		return "(CASE WHEN " + jsonType + " <> 'NULL' THEN " + value + " END) COLLATE " + e.tableCollation()
+		return "(CASE WHEN " + jsonType + " <> 'NULL' THEN " + value + " END) COLLATE " + schema.collation
 	}
 	return "CASE WHEN " + jsonType + " <> 'NULL' THEN " + value + " END"
 }
 
-func (e *Engine) buildFilter(condition map[string]interface{}, kind string, tableColumns map[string]bool) (string, []interface{}, error) {
+func buildFilter(condition map[string]interface{}, kind string, schema chunkTableSchema) (string, []interface{}, error) {
 	valid := validColumns(kind)
 	parts := make([]string, 0, len(condition))
 	args := make([]interface{}, 0, len(condition))
@@ -114,7 +114,7 @@ func (e *Engine) buildFilter(condition map[string]interface{}, kind string, tabl
 				column = mapChunkField(column)
 			}
 			if valid[column] {
-				parts = append(parts, e.filterColumn(kind, column, tableColumns, false)+" IS NOT NULL")
+				parts = append(parts, schema.filterColumn(kind, column, false)+" IS NOT NULL")
 			}
 		case "must_not":
 			object, ok := value.(map[string]interface{})
@@ -131,7 +131,7 @@ func (e *Engine) buildFilter(condition map[string]interface{}, kind string, tabl
 				column = mapChunkField(column)
 			}
 			if valid[column] {
-				parts = append(parts, e.filterColumn(kind, column, tableColumns, false)+" IS NULL")
+				parts = append(parts, schema.filterColumn(kind, column, false)+" IS NULL")
 			}
 		case "metadata_filtering_conditions":
 			part, partArgs, err := buildMetadataFilter(value)
@@ -176,7 +176,7 @@ func (e *Engine) buildFilter(condition map[string]interface{}, kind string, tabl
 				}
 				arrayParts := make([]string, 0, len(values))
 				for _, item := range values {
-					if chunkFieldInExtra(key, tableColumns) {
+					if chunkFieldInExtra(key, schema.columns) {
 						text, ok := item.(string)
 						if !ok {
 							return "", nil, fmt.Errorf("filter %s requires string array elements", key)
@@ -197,7 +197,7 @@ func (e *Engine) buildFilter(condition map[string]interface{}, kind string, tabl
 				}
 				continue
 			}
-			expression := e.filterColumn(kind, key, tableColumns, true)
+			expression := schema.filterColumn(kind, key, true)
 			values, isSlice := interfaceSlice(value)
 			if isSlice {
 				if len(values) == 0 {
