@@ -1,3 +1,5 @@
+import { PageFrame } from '@/components/page-frame';
+import { SettingsFormContainer } from '@/components/settings-form-container';
 import { ButtonLoading } from '@/components/ui/button';
 import { useSaveAgent } from '@/hooks/use-agent-request';
 import { useCallback } from 'react';
@@ -20,8 +22,8 @@ export default function AgentSetting() {
   );
 
   return (
-    <section className="h-full overflow-y-auto p-5">
-      <div className="mx-auto w-full max-w-3xl">
+    <PageFrame className="overflow-y-auto">
+      <SettingsFormContainer className="p-5">
         <header className="pb-8">
           <h1 className="text-xl font-semibold text-text-primary">
             {t('flow.setting')}
@@ -33,7 +35,7 @@ export default function AgentSetting() {
             {t('common.save')}
           </ButtonLoading>
         </footer>
-      </div>
-    </section>
+      </SettingsFormContainer>
+    </PageFrame>
   );
 }

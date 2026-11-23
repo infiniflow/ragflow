@@ -62,10 +62,10 @@ let capturedForm: { getValues: (name: string) => unknown };
 
 function Harness({
   groupId,
-  ownerTenantId,
+  accessUserId,
 }: {
   groupId: string;
-  ownerTenantId?: string;
+  accessUserId?: string;
 }) {
   const form = useForm({
     defaultValues: { compilation_template_group_id: groupId },
@@ -77,7 +77,7 @@ function Harness({
       <Form {...form}>
         <CompilationTemplateFormField
           name="compilation_template_group_id"
-          ownerTenantId={ownerTenantId}
+          accessUserId={accessUserId}
         />
       </Form>
     </TooltipProvider>
@@ -124,8 +124,8 @@ describe('CompilationTemplateFormField', () => {
     expect(trigger.querySelector('svg.size-4')).toBeNull();
   });
 
-  it('requests the options of the canvas owner tenant', () => {
-    render(<Harness groupId="g1" ownerTenantId="owner-1" />);
+  it('requests the options of the canvas owner user', () => {
+    render(<Harness groupId="g1" accessUserId="owner-1" />);
 
     expect(mockUseCompilationTemplateGroupOptions).toHaveBeenCalledWith(
       'owner-1',

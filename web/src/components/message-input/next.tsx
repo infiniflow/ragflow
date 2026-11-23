@@ -48,6 +48,7 @@ import {
   ThinkingMode,
   useThinkingLevel,
 } from '@/hooks/use-thinking-level';
+import { extraThinkingOptions } from '@/ee/hooks/use-thinking-modes';
 import { SelectWithSearch } from '../originui/select-with-search';
 import { AudioButton } from '../ui/audio-button';
 import {
@@ -166,8 +167,14 @@ export function NextMessageInput({
 
   // Level 5 is not a deeper step on the same ladder: the backend hands it to
   // the agentic RAG agent, which runs its own retrieval instead of the
-  // pipeline's.
+  // pipeline's. Higher engine levels (6-8) are contributed by the edition
+  // overlay and render ahead of these, highest effort first.
   const thinkingOptions = [
+    ...extraThinkingOptions.map((option) => ({
+      label: t(option.labelKey),
+      value: option.value,
+      description: option.descriptionKey ? t(option.descriptionKey) : undefined,
+    })),
     {
       label: t('chat.thinkingLevelAgentic'),
       value: '5',
@@ -177,11 +184,9 @@ export function NextMessageInput({
   ];
 
   const handleThinkingChange = useCallback((value: string) => {
-    setThinkingLevel(
-      value === ThinkingMode.Agentic
-        ? ThinkingMode.Agentic
-        : ThinkingMode.Naive,
-    );
+    // Storage sanitizes anything outside the accepted set on read, so the
+    // selector's own option values pass through unchanged here.
+    setThinkingLevel(value as ThinkingMode);
   }, []);
 
   const handleInternetSelect = useCallback(() => {
@@ -230,10 +235,11 @@ export function NextMessageInput({
     // Mirror the send button's disabled condition so pressing Enter with an
     // empty message does nothing — previously it cleared the uploaded file
     // list without sending anything.
-    if (sendDisabled || isUploading || sendLoading || !value.trim()) return;
+    if (disabled || sendDisabled || isUploading || sendLoading || !value.trim())
+      return;
     pressEnter();
     setFiles([]);
-  }, [sendDisabled, isUploading, sendLoading, value, pressEnter]);
+  }, [disabled, sendDisabled, isUploading, sendLoading, value, pressEnter]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -333,7 +339,9 @@ export function NextMessageInput({
                   size="icon-lg"
                   variant="transparent"
                   className="rounded-full border-0"
-                  disabled={(isUploading || sendLoading) && !showInternet}
+                  disabled={
+                    disabled || ((isUploading || sendLoading) && !showInternet)
+                  }
                   data-testid="chat-detail-add-menu"
                 >
                   <Plus className="size-5" />
@@ -350,7 +358,7 @@ export function NextMessageInput({
                   <FileUploadTrigger asChild>
                     <DropdownMenuItem
                       justifyBetween={false}
-                      disabled={isUploading || sendLoading}
+                      disabled={disabled || isUploading || sendLoading}
                       data-testid="chat-detail-attach"
                       className="items-center justify-start gap-2 px-3 py-2"
                     >
@@ -362,6 +370,7 @@ export function NextMessageInput({
                 {showInternet && (
                   <DropdownMenuItem
                     justifyBetween={false}
+                    disabled={disabled}
                     onClick={handleInternetSelect}
                     data-testid="chat-detail-internet-toggle"
                     className="items-center justify-start gap-2 px-3 py-2"
@@ -388,6 +397,7 @@ export function NextMessageInput({
                 variant="transparent"
                 size="icon-xs"
                 className="size-5 shrink-0 rounded-full border-0 text-accent-primary hover:bg-accent-primary-5 hover:text-accent-primary focus-visible:bg-accent-primary-5 focus-visible:text-accent-primary"
+                disabled={disabled}
                 onClick={handleInternetRemove}
                 data-testid="chat-detail-internet-remove"
                 aria-label={`${t('common.delete')} ${t('chat.webSearch')}`}
@@ -420,6 +430,7 @@ export function NextMessageInput({
                   value={enableThinking}
                   options={thinkingOptions}
                   onChange={handleThinkingChange}
+                  disabled={disabled}
                   triggerClassName="h-9 w-fit border-0 !bg-transparent px-2 text-sm shadow-none hover:!bg-transparent focus-visible:!bg-transparent"
                   testId="chat-detail-thinking-toggle"
                 />
@@ -439,17 +450,23 @@ export function NextMessageInput({
               </Button>
             ) : (
               <>
-                <AudioButton
-                  onOk={setAudioInputValue}
-                  testId="chat-detail-audio-toggle"
-                />
+                <fieldset disabled={disabled} className="contents">
+                  <AudioButton
+                    onOk={setAudioInputValue}
+                    testId="chat-detail-audio-toggle"
+                  />
+                </fieldset>
 
                 <Button
                   type="submit"
                   size="icon-lg"
                   className="rounded-full"
                   disabled={
-                    sendDisabled || isUploading || sendLoading || !value.trim()
+                    disabled ||
+                    sendDisabled ||
+                    isUploading ||
+                    sendLoading ||
+                    !value.trim()
                   }
                   data-testid="chat-detail-send"
                 >

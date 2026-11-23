@@ -103,9 +103,9 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
     }
   };
   return (
-    <div className="rounded-lg bg-bg-input scrollbar-auto overflow-hidden border border-border-default">
+    <div className="rounded-lg scrollbar-auto overflow-hidden border border-border-default">
       <Table rootClassName="rounded-lg">
-        <TableHeader className="bg-bg-title">
+        <TableHeader>
           <TableRow className="hover:bg-bg-title">
             <TableHead className="h-12 px-4">{t('common.name')}</TableHead>
             <TableHead className="h-12 px-4">
@@ -125,7 +125,7 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
             <TableHead className="h-12 px-4">{t('common.action')}</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody className="bg-bg-base">
+        <TableBody>
           {loading ? (
             <TableRow>
               <TableCell colSpan={5} className="h-24 text-center">

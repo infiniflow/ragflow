@@ -377,18 +377,21 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 // persists for its plain-text option (ParseDocumentType.PlainText), so they
 // are parse methods rather than model names.
 var pdfParseMethodSpellings = map[string]string{
-	"deepdoc":        "deepdoc",
-	"plain_text":     "plain_text",
-	"plaintext":      "plain_text",
-	"plain text":     "plain_text",
-	"mineru":         "mineru",
-	"monkeyocr":      "monkeyocr",
-	"monkeyocrv2":    "monkeyocrv2",
-	"docling":        "docling",
-	"opendataloader": "opendataloader",
-	"tcadp parser":   "tcadp",
-	"paddleocr":      "paddleocr",
-	"somark":         "somark",
+	"deepdoc":         "deepdoc",
+	"plain_text":      "plain_text",
+	"plaintext":       "plain_text",
+	"plain text":      "plain_text",
+	"mineru":          "mineru",
+	"monkeyocr":       "monkeyocr",
+	"monkeyocrv2":     "monkeyocrv2",
+	"unlimited_ocr":   "unlimited_ocr",
+	"unlimited-ocr-2": "unlimited_ocr",
+	"unlimited-ocr":   "unlimited_ocr",
+	"docling":         "docling",
+	"opendataloader":  "opendataloader",
+	"tcadp parser":    "tcadp",
+	"paddleocr":       "paddleocr",
+	"somark":          "somark",
 }
 
 // IsPDFParseMethod reports whether raw names a PDF parse method rather than
@@ -601,6 +604,22 @@ func RegisterAnalyzerFactory(method string, factory func(baseURL string) (deepdo
 	analyzerFactories[m] = factory
 }
 
+// ReportsPageProgress reports whether a PDF parse method drives the per-page
+// completion callback (ParserConfig.OnPageDone). The in-process "deepdoc" path
+// and the default method do; so does every method backed by a registered
+// external analyzer -- those backends run the same runPageWorkers loop and fire
+// the callback per page. Whole-document engines and unknown methods do not.
+// This is the single source of truth for the ingest progress bridge, so callers
+// never hard-code method names.
+func ReportsPageProgress(method string) bool {
+	m := normalizePDFParseMethod(method)
+	if m == "" || m == "deepdoc" {
+		return true
+	}
+	_, registered := analyzerFactories[m]
+	return registered
+}
+
 // externalAnalyzerURL derives the endpoint for a registered external method
 // from the generic <METHOD>_URL environment convention (upper-cased canonical
 // token). The value is trimmed and otherwise handed to the factory verbatim —
@@ -795,16 +814,7 @@ func normalizeDeepDocPageNumber(raw any) (int, bool) {
 }
 
 func numericAny(raw any) (float64, bool) {
-	switch v := raw.(type) {
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case float64:
-		return v, true
-	default:
-		return 0, false
-	}
+	return common.ToFloat(raw)
 }
 
 // ExtractPDFPositions is the single source of truth for "does this parsed item

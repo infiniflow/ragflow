@@ -57,6 +57,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/chunkcache"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/modelcontext"
@@ -196,6 +197,18 @@ Create a concise and faithful summary of the provided text content.
 // RWMutex; tests swap it via SetExtractorChatInvoker.
 type ExtractorComponent struct {
 	Param schema.ExtractorParam
+	// resume holds the extraction mode attachResumeHook registered at
+	// construction; nil when none is enabled.
+	resume resumeHook
+}
+
+// resumeHook is an extraction mode: the enabled gate feeding the progress
+// split and the phase run itself. attachResumeHook attaches it at
+// construction; a nil hook means no mode runs. The hook stays unexported:
+// it is this package's internal phase wiring, not a public extension point.
+type resumeHook interface {
+	Enabled() bool
+	Run(ctx context.Context, db *gorm.DB, in extractorInputs, w progress.Window) error
 }
 
 // NewExtractorComponent constructs an Extractor from a DSL param
@@ -298,11 +311,16 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 				p.Metadata.BuiltInMetadata = parseMetadataFieldDefs(v)
 			}
 		}
+
 	}
+
 	if err := p.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: param check: %w", err)
 	}
-	return &ExtractorComponent{Param: p}, nil
+	c := &ExtractorComponent{Param: p}
+	// Attaches the extraction mode when its params are configured.
+	attachResumeHook(c, params)
+	return c, nil
 }
 
 // resolveExtractToggle resolves the enabled switch of one extraction group
@@ -404,6 +422,10 @@ type extractorChatRequest struct {
 // remain optional / 0-valued.
 type extractorChatResponse struct {
 	Content string
+	// UserTrimmed reports whether context fitting shortened the user turn —
+	// the turn that carries the input text — so a trim means the model saw
+	// less text than the caller passed.
+	UserTrimmed bool
 }
 
 // extractorChatInvokerMu guards defaultExtractorChatInvoker swaps.
@@ -756,6 +778,9 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	// of being re-resolved in every callRaw / fitExtractorMessages.
 	ctx = withExtractorModelCache(ctx)
 	in := c.resolveInputs(inputs)
+	if in.lang == "" {
+		in.lang = globals.GlobalOrInput(ctx, inputs, "lang", "")
+	}
 	// Resolve the cache-key model identity once for the whole run and reuse it
 	// across every chunk, rather than re-resolving the (most common) default
 	// model per chunk when keying the per-chunk cache.
@@ -779,10 +804,20 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}, nil
 	}
 
+	resumeOn := c.resume != nil && c.resume.Enabled()
 	keywordsOn := c.Param.Keywords.Enabled
 	tagsOn := c.Param.Tags.Enabled
 	remainingOn := c.Param.Questions.Enabled || c.Param.Summary.Enabled || c.Param.Metadata.Enabled
-	phaseWindows := progress.NewSplit(keywordsOn, tagsOn, remainingOn)
+	phaseWindows := progress.NewSplit(resumeOn, keywordsOn, tagsOn, remainingOn)
+
+	// The attached mode runs first so its important_kwd and metadata are
+	// available to downstream stages without triggering generic summary
+	// shadowing.
+	if resumeOn {
+		if err := c.resume.Run(ctx, db, in, phaseWindows.Take(true)); err != nil {
+			return nil, fmt.Errorf("extractor: %w", err)
+		}
+	}
 
 	// No node-level wall-clock budget (see the package doc): each LLM call
 	// carries its own budget, and an expired call skips its chunk instead
@@ -1382,6 +1417,7 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		return nil, fitErr
 	}
 	msgs = fitted
+	userTrimmed := userTurnTrimmed(chunkText, fitted)
 	inv := getExtractorChatInvoker()
 	req := extractorChatRequest{
 		Driver:    driver,
@@ -1418,6 +1454,7 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		// panic on resp.Content below. Surface a diagnosable error instead.
 		return nil, fmt.Errorf("extractor: chat: nil response from invoker")
 	}
+	resp.UserTrimmed = userTrimmed
 	return resp, nil
 }
 
@@ -1636,9 +1673,10 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 	var driver models.ModelDriver
 	var modelName string
 	var apiConfig *models.APIConfig
-	if isBareTenantModelID(compositeLLMID) {
-		// Resolve the exact tenant model without a separate existence check.
-		resolved, err := resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
+	if _, isGroupRef := common.ParseGroupModelRef(compositeLLMID); isGroupRef || isBareTenantModelID(compositeLLMID) {
+		// Resolve the exact tenant model (or the model group's current
+		// member) without a separate existence check.
+		resolved, err := resolveModelConfigByRef(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
 			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
 		}
@@ -1875,6 +1913,18 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	return fitted, nil
 }
 
+// userTurnTrimmed reports whether message fitting shortened the final user
+// turn. The extractor phases hand their input over in that turn, so a trim
+// means the model's reply is a view of truncated input rather than of the
+// full text the caller passed.
+func userTurnTrimmed(original string, fitted []eschema.Message) bool {
+	if len(fitted) == 0 {
+		return false
+	}
+	last := fitted[len(fitted)-1]
+	return last.Role == eschema.User && len(last.Content) < len(original)
+}
+
 // buildExtractorMessages assembles system + user messages for one extraction
 // call. Normal per-chunk schedulers reject empty chunk text before reaching
 // this low-level builder; the single-space fallback remains for direct
@@ -1954,15 +2004,8 @@ func parseMetadataFieldDefs(v any) []common.MetadataFieldDef {
 
 // mapInt converts a JSON-compatible value to int.
 func mapInt(v interface{}) int {
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	case int64:
-		return int(n)
-	}
-	return 0
+	n, _ := common.ToIntNum(v)
+	return n
 }
 
 // init registers Extractor under CategoryIngestion (per plan §4

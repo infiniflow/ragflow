@@ -176,6 +176,12 @@ const (
 	EnvTenkiImage                        = "TENKI_IMAGE"
 	EnvTenkiTimeout                      = "TENKI_TIMEOUT"
 	EnvTenkiAllowOutbound                = "TENKI_ALLOW_OUTBOUND"
+	EnvKosa8APIKey                       = "KOSA8_API_KEY"
+	EnvKosa8APIURL                       = "KOSA8_API_URL"
+	EnvKosa8PythonTemplate               = "KOSA8_PYTHON_TEMPLATE"
+	EnvKosa8NodeTemplate                 = "KOSA8_NODE_TEMPLATE"
+	EnvKosa8Timeout                      = "KOSA8_TIMEOUT"
+	EnvKosa8AllowInternet                = "KOSA8_ALLOW_INTERNET"
 	EnvUCloudSandboxAPIKey               = "UCLOUD_SANDBOX_API_KEY"
 	EnvUCloudSandboxRegion               = "UCLOUD_SANDBOX_REGION"
 	EnvUCloudSandboxDomain               = "UCLOUD_SANDBOX_DOMAIN"
@@ -279,11 +285,15 @@ const (
 	EnvMonkeyOCRServerURL                = "MONKEYOCR_SERVER_URL"
 	EnvMonkeyOCRBackend                  = "MONKEYOCR_BACKEND"
 	EnvMonkeyOCRDeleteOutput             = "MONKEYOCR_DELETE_OUTPUT"
+	EnvUnlimitedOCRServerURL             = "UNLIMITED_OCR_SERVER_URL"
+	EnvUnlimitedOCRAPIServer             = "UNLIMITED_OCR_APISERVER"
+	EnvUnlimitedOCRTimeout               = "UNLIMITED_OCR_TIMEOUT"
 	EnvOpenDataLoaderAPIServer           = "OPENDATALOADER_APISERVER"
 	EnvOpenDataLoaderAPIKey              = "OPENDATALOADER_API_KEY"
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
 	EnvPaddleOCRAPIURL                   = "PADDLEOCR_API_URL"
 	EnvPaddleOCRAccessToken              = "PADDLEOCR_ACCESS_TOKEN"
+	EnvPaddleOCRTimeout                  = "PADDLEOCR_TIMEOUT"
 	EnvSOMarkBaseUrl                     = "SOMARK_BASE_URL"
 	EnvSOMarkAPIKey                      = "SOMARK_API_KEY"
 	EnvSOMarkImageFormat                 = "SOMARK_IMAGE_FORMAT"
@@ -376,6 +386,10 @@ const (
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
 	// --deepdoc-inference-cpu-cores CLI flag.
 	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
+	// EnvDeepDocDevice selects the DeepDoc inference device (cpu | gpu[:id]).
+	// The default build accepts only cpu; gpu fails fast at startup with a
+	// "not supported" error (GPU requires the enterprise edition).
+	EnvDeepDocDevice = "RAGFLOW_DEEPDOC_DEVICE"
 
 	// Media extraction limits. The parser media budget and the run media cache
 	// read these per call: the per-image payload limit, the number of distinct
@@ -577,6 +591,13 @@ const (
 	// web_search is NEVER in scope because its hits carry no corpus document with
 	// a source_chunk_ids linkage.
 	EnvCompiledServeScope = "RAGFLOW_COMPILED_SERVE_SCOPE"
+
+	// Adaptive chapter splitter settings for large PDF documents.
+	EnvEnableAdaptiveChapterSplit = "PARSER_ENABLE_ADAPTIVE_CHAPTER_SPLIT"
+	EnvChapterSplitThreshold      = "PARSER_CHAPTER_SPLIT_THRESHOLD"
+	EnvChapterMinPages            = "PARSER_CHAPTER_MIN_PAGES"
+	EnvChapterMaxPages            = "PARSER_CHAPTER_MAX_PAGES"
+	EnvChapterConcurrency         = "PARSER_CHAPTER_CONCURRENCY"
 )
 
 // EnvLLMHTTPResponseHeaderTimeout bounds how long an outbound provider call may

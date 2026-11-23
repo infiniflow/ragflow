@@ -88,6 +88,7 @@ export enum LLMFactory {
   PaddleOCRLocal = 'PaddleOCR.local',
   MiniCPMOCR = 'MiniCPM-OCR',
   OpenDataLoader = 'OpenDataLoader',
+  UnlimitedOCR = 'Unlimited-OCR-2',
   SoMark = 'SoMark',
   N1n = 'n1n',
   Avian = 'Avian',
@@ -131,6 +132,8 @@ export enum LLMFactory {
   Wiro = 'Wiro AI',
   Crusoe = 'Crusoe',
   HopBase = 'HopBase',
+  GreenNode = 'GreenNode',
+  Morse = 'Morse',
 }
 
 // Please lowercase the file name
@@ -215,6 +218,7 @@ export const IconMap = {
   [LLMFactory.OrcaRouter]: 'orcarouter',
   [LLMFactory.Qiniu]: 'qiniu',
   [LLMFactory.TokenHub]: 'tokenhub',
+  [LLMFactory.UnlimitedOCR]: 'unlimited-ocr',
   [LLMFactory.SoMark]: 'somark',
   [LLMFactory.NewAPI]: 'new-api',
   [LLMFactory.DaoXE]: 'daoxe',
@@ -243,6 +247,8 @@ export const IconMap = {
   [LLMFactory.Wiro]: 'wiro',
   [LLMFactory.Crusoe]: 'crusoe',
   [LLMFactory.HopBase]: 'hopbase',
+  [LLMFactory.GreenNode]: 'greennode',
+  [LLMFactory.Morse]: 'morse',
 };
 
 /**
@@ -260,7 +266,8 @@ export const ModelTypeToField: Record<string, string> = {
   chat: 'llm_id',
   decision: 'decision_id',
   embedding: 'embd_id',
-  vision: 'img2txt_id',
+  scoring: 'scoring_id',
+  vlm: 'img2txt_id',
   asr: 'asr_id',
   rerank: 'rerank_id',
   tts: 'tts_id',
@@ -270,7 +277,8 @@ export const FieldToModelType: Record<string, string> = {
   llm_id: 'chat',
   decision_id: 'decision',
   embd_id: 'embedding',
-  img2txt_id: 'vision',
+  scoring_id: 'scoring',
+  img2txt_id: 'vlm',
   asr_id: 'asr',
   rerank_id: 'rerank',
   tts_id: 'tts',
@@ -304,6 +312,7 @@ export const APIMapUrl = {
   [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
   [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
   [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
+  [LLMFactory.Morse]: 'https://console.trymorse.ai',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
@@ -389,6 +398,7 @@ export const APIMapUrl = {
   [LLMFactory.JiekouAI]: 'https://jiekou.ai',
   [LLMFactory.MinerU]: 'https://mineru.net',
   [LLMFactory.MinerUNet]: 'https://mineru.net',
+  [LLMFactory.UnlimitedOCR]: 'https://github.com/baidu/Unlimited-OCR',
   [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',

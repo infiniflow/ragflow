@@ -709,3 +709,91 @@ func TestCropImageChunks_StreamingUploadUsesCanonicalID(t *testing.T) {
 		t.Errorf("ImgID = %q, want %q", out[0].ImgID, "kb1-"+wantID)
 	}
 }
+
+type pageTrackingCropEngine struct {
+	mockCropEngine
+	mu       sync.Mutex
+	rendered map[int]bool
+}
+
+func (e *pageTrackingCropEngine) RenderPageImage(pageIdx int, scale float64) (image.Image, error) {
+	e.mu.Lock()
+	if e.rendered == nil {
+		e.rendered = make(map[int]bool)
+	}
+	e.rendered[pageIdx] = true
+	e.mu.Unlock()
+	return e.mockCropEngine.RenderPageImage(pageIdx, scale)
+}
+
+func TestLimitCropPositions(t *testing.T) {
+	in := []deepdoctype.Position{
+		{PageNumbers: []int{-1}, Left: 10, Right: 50, Top: 10, Bottom: 50},
+		{PageNumbers: []int{0}, Left: 10, Right: 10, Top: 10, Bottom: 50},
+		{PageNumbers: []int{0}, Left: 10, Right: 50, Top: 10, Bottom: 50},
+		{PageNumbers: []int{1}, Left: 10, Right: 50, Top: 10, Bottom: 50},
+		{PageNumbers: []int{2}, Left: 10, Right: 50, Top: 10, Bottom: 50},
+		{PageNumbers: []int{3, 4, 5, 6}, Left: 10, Right: 50, Top: 10, Bottom: 50},
+		{PageNumbers: []int{7}, Left: 10, Right: 50, Top: 10, Bottom: 50},
+		{PageNumbers: []int{2}, Left: 60, Right: 90, Top: 60, Bottom: 90},
+	}
+	got := limitCropPositions(in, 5)
+	if len(got) != 5 {
+		t.Fatalf("len(limitCropPositions) = %d, want 5", len(got))
+	}
+	if len(got[3].PageNumbers) != 2 || got[3].PageNumbers[0] != 3 || got[3].PageNumbers[1] != 4 {
+		t.Fatalf("trimmed spanning PageNumbers = %v, want [3 4]", got[3].PageNumbers)
+	}
+	if len(got[4].PageNumbers) != 1 || got[4].PageNumbers[0] != 2 || got[4].Left != 60 {
+		t.Fatalf("trailing region on already-selected page = %+v, want page 2 Left=60", got[4])
+	}
+	if len(in[5].PageNumbers) != 4 {
+		t.Fatalf("limitCropPositions mutated input slice PageNumbers to %v", in[5].PageNumbers)
+	}
+}
+
+func TestCropImageChunks_CapsPreviewPagesAndMergesTextPositions(t *testing.T) {
+	ctx := withIngestionGlobals(t, "kb1", "doc1")
+
+	rec := &recordingUploader{}
+	orig := ChunkImageUploader
+	ChunkImageUploader = rec.upload
+	t.Cleanup(func() { ChunkImageUploader = orig })
+
+	eng := &pageTrackingCropEngine{}
+	in := schema.ChunkDoc{
+		DocType: "text",
+		Text:    "multi-page text",
+		PDFPositions: jsonPositions(t,
+			[]float64{1, 10, 100, 10, 100},
+			[]float64{2, 10, 100, 10, 100},
+			[]float64{3, 10, 100, 10, 100},
+		),
+		Positions: jsonPositions(t,
+			[]float64{4, 10, 100, 10, 100},
+			[]float64{5, 10, 100, 10, 100},
+			[]float64{6, 10, 100, 10, 100},
+			[]float64{7, 10, 100, 10, 100},
+		),
+	}
+	out := cropImageChunks(ctx, eng, []schema.ChunkDoc{in})
+	if len(out) != 1 || len(rec.calls) != 1 {
+		t.Fatalf("out=%d uploads=%d, want 1 and 1", len(out), len(rec.calls))
+	}
+	if len(eng.rendered) != maxChunkPreviewPages {
+		t.Fatalf("rendered %d distinct pages %v, want %d", len(eng.rendered), eng.rendered, maxChunkPreviewPages)
+	}
+	for pn := 0; pn < maxChunkPreviewPages; pn++ {
+		if !eng.rendered[pn] {
+			t.Fatalf("expected 0-based page %d (including positions-only pages) to be rendered; got %v", pn, eng.rendered)
+		}
+	}
+	for pn := maxChunkPreviewPages; pn < 7; pn++ {
+		if eng.rendered[pn] {
+			t.Fatalf("expected 0-based page %d beyond cap not to be rendered; got %v", pn, eng.rendered)
+		}
+	}
+	if string(out[0].PDFPositions) != string(in.PDFPositions) || string(out[0].Positions) != string(in.Positions) {
+		t.Fatalf("expected chunk metadata positions to remain unmodified")
+	}
+}

@@ -1142,3 +1142,77 @@ func TestDropIndexClearsIDSortFieldCacheWhenIndexIsGone(t *testing.T) {
 		t.Error("an index that is already gone must not keep its memoized id sort field")
 	}
 }
+
+// TestConvertESResponseMergesHitFields covers ES 9.x, where dense_vector
+// TestConvertESResponseMergesHitFields covers ES 9.x, where dense_vector
+// values live in the hit's `fields` projection instead of _source. Without
+// the merge, FetchChunkVectors reads no vector and citations score as zeros.
+func TestConvertESResponseMergesHitFields(t *testing.T) {
+	resp := makeResponse(1, 0, 1)
+	resp.Hits.Hits[0].Source = map[string]interface{}{"content_with_weight": "body"}
+	resp.Hits.Hits[0].Fields = map[string]interface{}{
+		"q_3_vec":  []interface{}{[]interface{}{0.1, 0.2, 0.3}},
+		"name_kwd": []interface{}{"guide.md"},
+	}
+
+	chunks := convertESResponse(&resp, "")
+
+	assertEqual(t, chunks[0]["q_3_vec"], []interface{}{0.1, 0.2, 0.3})
+	// A one-element scalar list keeps its list shape; only the extra
+	// array level around a vector is unwrapped.
+	assertEqual(t, chunks[0]["name_kwd"], []interface{}{"guide.md"})
+	assertEqual(t, chunks[0]["content_with_weight"], "body")
+	assertEqual(t, chunks[0]["id"], "h-0")
+}
+
+func TestConvertESResponseSourceWinsOverHitFields(t *testing.T) {
+	resp := makeResponse(1, 0, 1)
+	resp.Hits.Hits[0].Source = map[string]interface{}{
+		"q_3_vec": []interface{}{9.0, 8.0},
+	}
+	resp.Hits.Hits[0].Fields = map[string]interface{}{
+		"q_3_vec": []interface{}{[]interface{}{0.1, 0.2}},
+	}
+
+	chunks := convertESResponse(&resp, "")
+
+	assertEqual(t, chunks[0]["q_3_vec"], []interface{}{9.0, 8.0})
+}
+
+func TestConvertESResponseWithoutHitFieldsIsUnchanged(t *testing.T) {
+	resp := makeResponse(1, 7, 1)
+	resp.Hits.Hits[0].Source = map[string]interface{}{"content_with_weight": "body"}
+
+	chunks := convertESResponse(&resp, "")
+
+	if len(chunks) != 1 {
+		t.Fatalf("len(chunks) = %d, want 1", len(chunks))
+	}
+	assertEqual(t, chunks[0]["content_with_weight"], "body")
+	assertEqual(t, chunks[0]["_id"], "h-7")
+	assertEqual(t, chunks[0]["id"], "h-7")
+	assertEqual(t, chunks[0]["_score"], float64(0))
+	if _, ok := chunks[0]["fields"]; ok {
+		t.Fatalf("chunk gained a fields key: %#v", chunks[0])
+	}
+}
+
+// TestSearchAfterPaginateMergesHitFields keeps the deep-pagination path in
+// sync with convertESResponse: it has its own hit conversion, so a vector
+// search past the result window must not silently drop the vector either.
+func TestSearchAfterPaginateMergesHitFields(t *testing.T) {
+	resp := makeResponse(1, 0, 1)
+	resp.Hits.Hits[0].Fields = map[string]interface{}{
+		"q_3_vec": []interface{}{[]interface{}{0.5, 0.25}},
+	}
+	m := &mockFetcher{scripted: []SearchResponse{resp}, scriptedTotal: 1}
+
+	got, _, err := searchAfterPaginate(t.Context(), map[string]interface{}{}, 0, 1, m.fetch)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(hits) = %d, want 1", len(got))
+	}
+	assertEqual(t, got[0]["q_3_vec"], []interface{}{0.5, 0.25})
+}

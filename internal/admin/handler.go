@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
@@ -373,8 +374,8 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err = h.service.ChangePassword(ctx, username, req.NewPassword); err != nil {
-		common.RespondError(c, common.CodeServerError, err.Error())
+	if err = h.service.ChangePassword(ctx, c.GetString("user_id"), username, req.NewPassword); err != nil {
+		common.RespondError(c, passwordChangeErrorCode(err), err.Error())
 		return
 	}
 
@@ -503,6 +504,10 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 	ctx := c.Request.Context()
 	apiKey, err := h.service.GenerateUserAPIToken(ctx, username)
 	if err != nil {
+		if errors.Is(err, dao.ErrAPITokenLimitReached) {
+			common.RespondError(c, common.CodeBadRequest, err.Error())
+			return
+		}
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}

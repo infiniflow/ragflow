@@ -180,7 +180,17 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		})
 	}
 	var grid [][]pdf.TSRCell
-	if len(cells) > 0 && len(boxInCrop) > 0 {
+	// A builder that renders its own HTML from assembled cells (the EE V/H
+	// builder) needs no OSS cross-product grid or R/C annotation. Skip the
+	// grid path for it so item.Grid stays nil and its grid-free cell stream
+	// is preserved. OSS builders do not implement RendersOwnHTML, so their
+	// behavior is unchanged.
+	type htmlRenderingBuilder interface{ RendersOwnHTML() bool }
+	renderOwn := false
+	if vh, ok := tb.(htmlRenderingBuilder); ok {
+		renderOwn = vh.RendersOwnHTML()
+	}
+	if len(cells) > 0 && len(boxInCrop) > 0 && !renderOwn {
 		// Cross-product grid (structure lines, de-duplicated like Python's
 		// gather) is used ONLY to derive per-box R/C annotations.
 		annotGrid := tb.GroupCells(cells)

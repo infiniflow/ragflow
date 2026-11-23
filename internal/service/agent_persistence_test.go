@@ -93,6 +93,43 @@ func TestAgentRunSessionUpdateFailurePreventsSuccessEvents(t *testing.T) {
 	}
 }
 
+func TestCreateAgentRunSessionSource(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	pushServiceDB(t, testDB)
+	svc := NewAgentService()
+
+	tests := []struct {
+		name      string
+		sessionID string
+		channel   bool
+		want      string
+	}{
+		{name: "ordinary run", sessionID: "session-agent", want: string(entity.AgentSessionSourceAgent)},
+		{name: "channel run", sessionID: "session-channel", channel: true, want: string(entity.AgentSessionSourceChatChannel)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
+			if tt.channel {
+				ctx = context.WithValue(ctx, channelAgentRunContextKey{}, true)
+			}
+			if err := svc.createAgentRunSession(ctx, tt.sessionID, "canvas-source", map[string]any{}, nil, "hello"); err != nil {
+				t.Fatalf("createAgentRunSession: %v", err)
+			}
+			session, err := dao.NewAPI4ConversationDAO().GetMetadataBySessionID(t.Context(), testDB, tt.sessionID, "canvas-source")
+			if err != nil {
+				t.Fatalf("load session: %v", err)
+			}
+			if session == nil {
+				t.Fatal("session not found")
+			}
+			if session.Source == nil || *session.Source != tt.want {
+				t.Fatalf("session source = %v, want %q", session.Source, tt.want)
+			}
+		})
+	}
+}
+
 func TestAgentSessionMessageContent(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -110,6 +110,38 @@ func TestEnsureMonkeyOCRFromEnvSkipsBlankAPIServer(t *testing.T) {
 	}
 }
 
+func TestEnsureUnlimitedOCRFromEnvSkipsBlankServerURL(t *testing.T) {
+	t.Setenv(common.EnvUnlimitedOCRTimeout, "1800")
+	t.Setenv(common.EnvUnlimitedOCRServerURL, "")
+	t.Setenv(common.EnvUnlimitedOCRAPIServer, "")
+
+	svc := &ModelProviderService{}
+	if err := svc.ensureUnlimitedOCRFromEnv(context.Background(), "tenant-id"); err != nil {
+		t.Fatalf("ensureUnlimitedOCRFromEnv: %v", err)
+	}
+}
+
+func TestEnsureUnlimitedOCRFromEnvMapsLowercaseKeys(t *testing.T) {
+	t.Setenv(common.EnvUnlimitedOCRServerURL, "http://127.0.0.1:18000")
+	t.Setenv(common.EnvUnlimitedOCRAPIServer, "http://127.0.0.1:18000")
+	t.Setenv(common.EnvUnlimitedOCRTimeout, "900")
+
+	config := collectEnvConfig(unlimitedOCREnvKeys, unlimitedOCRDefaultConfig)
+	if config == nil {
+		t.Fatal("expected config to be non-nil")
+	}
+	providerConfig := buildUnlimitedOCRProviderConfig(config)
+	if providerConfig["unlimited_ocr_server_url"] != "http://127.0.0.1:18000" {
+		t.Fatalf("unlimited_ocr_server_url = %v", providerConfig["unlimited_ocr_server_url"])
+	}
+	if providerConfig["unlimited_ocr_apiserver"] != "http://127.0.0.1:18000" {
+		t.Fatalf("unlimited_ocr_apiserver = %v", providerConfig["unlimited_ocr_apiserver"])
+	}
+	if providerConfig["unlimited_ocr_timeout"] != "900" {
+		t.Fatalf("unlimited_ocr_timeout = %v", providerConfig["unlimited_ocr_timeout"])
+	}
+}
+
 func TestMonkeyOCRv2EnvConfig(t *testing.T) {
 	t.Setenv(common.EnvMonkeyOCRv2ServerURL, "http://monkeyocrv2:8000")
 	t.Setenv(common.EnvMonkeyOCRv2Timeout, "120")
@@ -523,6 +555,7 @@ func setupModelProviderServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&entity.User{},
 		&entity.UserTenant{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
@@ -928,7 +961,7 @@ func TestMergeProviderAPIKeyPreservesBlankCredentialsAndSupportsClear(t *testing
 	}
 }
 
-func TestResolveSavedProviderModelConfigUsePermissionCannotOverrideSavedEndpoint(t *testing.T) {
+func TestResolveSavedProviderModelConfigUsesStoredEndpointForOwner(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
@@ -943,46 +976,24 @@ func TestResolveSavedProviderModelConfigUsePermissionCannotOverrideSavedEndpoint
 		t.Fatalf("update saved instance: %v", err)
 	}
 	if err := db.Create(&entity.UserTenant{
-		ID: "user-tenant-member", UserID: "member-1", TenantID: "tenant-1", Role: string(permission.RoleNormal), Status: &activeStatus,
-	}).Error; err != nil {
-		t.Fatalf("seed tenant member: %v", err)
-	}
-	if err := db.Create(&entity.UserTenant{
 		ID: "user-tenant-owner", UserID: "user-1", TenantID: "tenant-1", Role: string(permission.RoleOwner), Status: &activeStatus,
 	}).Error; err != nil {
 		t.Fatalf("seed tenant owner: %v", err)
 	}
-	service := NewModelProviderService()
-	ctx := serviceTestContext(t, "member-1", "tenant-1")
-	config, err := service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", SavedProviderModelOptions{})
+
+	svc := NewModelProviderService()
+	ownerCtx := serviceTestContext(t, "user-1", "tenant-1")
+	config, err := svc.ResolveSavedProviderModelConfig(ownerCtx, "OpenAI", "default", SavedProviderModelOptions{})
 	if err != nil {
-		t.Fatalf("ResolveSavedProviderModelConfig(use saved credentials) error = %v, want success", err)
+		t.Fatalf("ResolveSavedProviderModelConfig(stored credentials) error = %v, want success", err)
 	}
 	if config.APIKey != "sk-owner-secret" || config.BaseURL != "https://stored.example" || config.Region != "us-east-1" {
 		t.Fatalf("saved model config = %+v, want stored credentials and endpoint", config)
 	}
 
-	attackerURL := "https://attacker.example"
-	_, err = service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", SavedProviderModelOptions{BaseURL: &attackerURL})
-	if err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("ResolveSavedProviderModelConfig(use permission with endpoint override) error = %v, want hidden denial", err)
-	}
-
-	_, err = service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", SavedProviderModelOptions{
-		APIKeyConfig: json.RawMessage(`{"paddleocr_api_url":"https://attacker.example"}`),
-	})
-	if err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("ResolveSavedProviderModelConfig(use permission with provider endpoint override) error = %v, want hidden denial", err)
-	}
-
-	ownerCtx := serviceTestContext(t, "user-1", "tenant-1")
-	ownerInstance, code, err := service.ShowProviderInstance(ownerCtx, "OpenAI", "default")
-	if err != nil || code != common.CodeSuccess || ownerInstance["is_owner"] != true {
-		t.Fatalf("ShowProviderInstance(owner) = (%v, %v, %v), want owner metadata", ownerInstance, code, err)
-	}
 	ownerURL := "https://owner-override.example"
 	ownerRegion := "eu-west-1"
-	ownerConfig, err := service.ResolveSavedProviderModelConfig(ownerCtx, "OpenAI", "default", SavedProviderModelOptions{
+	ownerConfig, err := svc.ResolveSavedProviderModelConfig(ownerCtx, "OpenAI", "default", SavedProviderModelOptions{
 		APIKeyConfig: json.RawMessage(`{"group_id":"owner-group"}`),
 		BaseURL:      &ownerURL,
 		Region:       &ownerRegion,
@@ -1452,7 +1463,7 @@ func TestModelFactoryResolveModelConfigReportsToolSupport(t *testing.T) {
 	}
 
 	solver := NewModelFactory()
-	ctx := serviceTestContext(t, "user-1", "tenant-1")
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 
 	// A reference that passes validation still reads the persisted flag.
 	target, err := solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, "model-active")
@@ -1527,7 +1538,7 @@ func TestModelFactoryResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 	}
 
 	solver := NewModelFactory()
-	ctx := serviceTestContext(t, "user-1", "tenant-1")
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 
 	target, err := solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, toolsOn+"@default@OpenAI")
 	if err != nil {
@@ -1570,7 +1581,7 @@ func TestModelFactoryResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 	}
 
 	solver := NewModelFactory()
-	ctx := serviceTestContext(t, "user-1", "tenant-1")
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 	if target, err := solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, "model-1"); err != nil || target == nil || !target.SupportsTools {
 		t.Fatalf("baseline = (%v, %v), want tool support", target, err)
 	}

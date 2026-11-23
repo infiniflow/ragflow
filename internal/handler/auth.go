@@ -37,7 +37,9 @@ type AuthHandler struct {
 }
 
 // ResolveMCPUser applies the same API-key and user-token resolution used by
-// the public MCP route, for the standalone native MCP transport.
+// the public MCP route, for the standalone native MCP transport. Beta tokens
+// are rejected: they are embedded in share links and must not grant the full
+// identity that MCP tools act with.
 func (h *AuthHandler) ResolveMCPUser(ctx context.Context, authorization string) (*entity.User, error) {
 	if authorization == "" {
 		return nil, fmt.Errorf("missing authorization header")
@@ -46,15 +48,6 @@ func (h *AuthHandler) ResolveMCPUser(ctx context.Context, authorization string) 
 		return identity.User, nil
 	}
 	if identity, code, err := h.userService.ResolveAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
-		if allowed, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); !allowed {
-			if err == nil {
-				err = errors.New("access is not allowed")
-			}
-			return nil, err
-		}
-		return identity.User, nil
-	}
-	if identity, code, err := h.userService.ResolveBetaAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
 		if allowed, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); !allowed {
 			if err == nil {
 				err = errors.New("access is not allowed")

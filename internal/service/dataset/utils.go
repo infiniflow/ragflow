@@ -85,6 +85,7 @@ func datasetListItemToMap(latestByCanvas map[string]string, kb *entity.Knowledge
 	// matching Python's full-row dict response.
 	item := map[string]interface{}{
 		"id":                         kb.ID,
+		"user_id":                    kb.UserID,
 		"name":                       kb.Name,
 		"avatar":                     stringPointerValue(kb.Avatar),
 		"language":                   stringPointerValue(kb.Language),
@@ -123,6 +124,7 @@ func datasetListItemToMap(latestByCanvas map[string]string, kb *entity.Knowledge
 func datasetToMap(ctx context.Context, kb *entity.Knowledgebase) map[string]interface{} {
 	item := map[string]interface{}{
 		"id":                         kb.ID,
+		"user_id":                    kb.UserID,
 		"tenant_id":                  kb.TenantID,
 		"name":                       kb.Name,
 		"embedding_model":            kb.EmbdID,
@@ -137,6 +139,15 @@ func datasetToMap(ctx context.Context, kb *entity.Knowledgebase) map[string]inte
 		"parser_config":              kb.ParserConfig,
 		"pagerank":                   kb.Pagerank,
 		"create_time":                kb.CreateTime,
+		// The dataset header shows "Updated <date> · v<version>"; the version is
+		// the dataset's own sequence, advanced by every recorded change.
+		"version": kb.Version,
+	}
+	if kb.UpdateTime != nil {
+		item["update_time"] = *kb.UpdateTime
+	}
+	if kb.UpdateDate != nil {
+		item["update_date"] = kb.UpdateDate.Format("2006-01-02 15:04:05")
 	}
 	if kb.Avatar != nil {
 		item["avatar"] = *kb.Avatar

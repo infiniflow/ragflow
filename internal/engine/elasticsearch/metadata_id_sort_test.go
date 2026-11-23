@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
 )
 
@@ -75,7 +76,7 @@ func newMetadataSearchStub(t *testing.T, index, mapping string, searchBodies *[]
 // deterministic sort key metadata pagination had (#19649).
 func TestSearchMetadataEmitsIDSort(t *testing.T) {
 	const tenant = "metadata_id_sort_keyword"
-	index := buildMetadataIndexName(tenant)
+	index := esoscommon.BuildMetadataIndexName(tenant)
 	t.Cleanup(func() { idSortFieldCache.Delete(index) })
 
 	var searchBodies []map[string]interface{}
@@ -118,7 +119,7 @@ func TestSearchMetadataEmitsIDSort(t *testing.T) {
 // fails there with a fielddata error.
 func TestSearchMetadataRewritesIDSortForLegacyMapping(t *testing.T) {
 	const tenant = "metadata_id_sort_legacy"
-	index := buildMetadataIndexName(tenant)
+	index := esoscommon.BuildMetadataIndexName(tenant)
 	t.Cleanup(func() { idSortFieldCache.Delete(index) })
 
 	var searchBodies []map[string]interface{}
@@ -161,7 +162,7 @@ func TestSearchMetadataRewritesIDSortForLegacyMapping(t *testing.T) {
 // without an OrderBy the metadata search must keep going out unsorted.
 func TestSearchMetadataWithoutOrderByLeavesSortAbsent(t *testing.T) {
 	const tenant = "metadata_id_sort_unsorted"
-	index := buildMetadataIndexName(tenant)
+	index := esoscommon.BuildMetadataIndexName(tenant)
 	t.Cleanup(func() { idSortFieldCache.Delete(index) })
 
 	var searchBodies []map[string]interface{}

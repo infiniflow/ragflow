@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"go.uber.org/zap"
@@ -252,6 +253,17 @@ func (s *AgentService) TestDBConnection(ctx context.Context, req *TestDBConnecti
 			}.Encode(),
 		}
 		db, err = sql.Open("postgres", dsn.String())
+	case "mssql", "sqlserver":
+		dsn := url.URL{
+			Scheme: "sqlserver",
+			User:   url.UserPassword(req.Username, req.Password),
+			Host:   net.JoinHostPort(safeHost, dbConnectionPort(req.Port)),
+			RawQuery: url.Values{
+				"database":           {req.Database},
+				"connection timeout": {"5"},
+			}.Encode(),
+		}
+		db, err = sql.Open("sqlserver", dsn.String())
 	default:
 		return common.CodeExceptionError, errors.New("unsupported database type")
 	}

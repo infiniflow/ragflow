@@ -25,7 +25,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestCompilationTemplateGroupDAO_TenantScope(t *testing.T) {
+func TestCompilationTemplateGroupDAO_TenantAndOwnerScope(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -35,14 +35,15 @@ func TestCompilationTemplateGroupDAO_TenantScope(t *testing.T) {
 	}
 	status := string(entity.StatusValid)
 	if err = db.Create([]*entity.CompilationTemplateGroup{
-		{ID: "tenant-group", TenantID: "tenant-1", Name: "Tenant", Scope: "file", Status: &status},
+		{ID: "tenant-group", UserID: "user-1", TenantID: "tenant-1", Name: "Tenant", Scope: "file", Status: &status},
+		{ID: "other-owner-group", UserID: "user-2", TenantID: "tenant-1", Name: "Other owner", Scope: "file", Status: &status},
 		{ID: "global-group", TenantID: "", Name: "Built-in templates", Scope: "file", Status: &status},
 	}).Error; err != nil {
 		t.Fatalf("insert groups: %v", err)
 	}
 
 	dao := NewCompilationTemplateGroupDAO()
-	groups, err := dao.ListSaved(t.Context(), db, "tenant-1", "", "", nil)
+	groups, err := dao.ListSaved(t.Context(), db, "tenant-1", "user-1", "", "", nil)
 	if err != nil {
 		t.Fatalf("ListSaved: %v", err)
 	}

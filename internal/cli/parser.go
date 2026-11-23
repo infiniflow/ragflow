@@ -242,6 +242,8 @@ func (p *Parser) parseCommand(cliMode CommandLineMode) (*Command, error) {
 		return p.parseAdminCommand()
 	case APIMode:
 		return p.parseUserCommand()
+	case CommandMode:
+		return p.parseSingleCommand()
 	default:
 		return nil, fmt.Errorf("unknown mode: %s", cliMode)
 	}

@@ -135,6 +135,8 @@ const svgIcons = [
   LLMFactory.Wiro,
   LLMFactory.Crusoe,
   LLMFactory.HopBase,
+  LLMFactory.GreenNode,
+  LLMFactory.Morse,
 ];
 
 export const LlmIcon = ({

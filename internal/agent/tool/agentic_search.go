@@ -41,11 +41,11 @@ const (
 
 // hybridSearchArgs is the shared JSON schema for the three retrieval tools.
 type hybridSearchArgs struct {
-	Query    string   `json:"query"`
-	KbIDs    []string `json:"kb_ids,omitempty"`
-	TopN     int      `json:"top_n,omitempty"`
-	DocScope []string `json:"doc_scope,omitempty"`
-	Keywords string   `json:"keywords,omitempty"`
+	Query    string   `json:"query" doc:"The search query." required:"true"`
+	KbIDs    []string `json:"kb_ids,omitempty" doc:"Optional dataset ids to restrict to."`
+	TopN     int      `json:"top_n,omitempty" doc:"Number of passages to return (default 12)."`
+	DocScope []string `json:"doc_scope,omitempty" doc:"Optional doc ids to restrict to."`
+	Keywords string   `json:"keywords,omitempty" doc:"Comma-separated keywords to narrow results."`
 }
 
 type agenticSearchResult struct {
@@ -54,11 +54,13 @@ type agenticSearchResult struct {
 }
 
 // AgenticSearchTool is the hybrid/vector/bm25 retrieval tool. The search mode
-// selects the vector-similarity weight used by the underlying retrieval service:
+// selects the keyword share of the fusion weight used by the underlying
+// retrieval service (RetrievalRequest.KeywordsSimilarityWeight; the vector
+// share is its complement):
 //
-//	hybrid: 0.3 (hybrid of keyword + vector)
-//	vector: 1.0 (vector-only)
-//	bm25:   0.0 (keyword-only)
+//	hybrid: 0.7 (hybrid of keyword + vector)
+//	vector: 0.0 (vector-only)
+//	bm25:   1.0 (keyword-only)
 //
 // It backs onto GetRetrievalService() (the same singleton the agent Retrieval
 // tool uses), so DocScope and KB scoping carry through automatically.
@@ -70,30 +72,18 @@ type AgenticSearchTool struct {
 
 // NewAgenticSearchTool returns the retrieval tool for the given mode.
 func NewAgenticSearchTool(mode string) *AgenticSearchTool {
-	weight := 0.3
+	weight := 0.7
 	switch mode {
 	case toolVectorSearch:
-		weight = 1.0
-	case toolBM25Search:
 		weight = 0.0
+	case toolBM25Search:
+		weight = 1.0
 	}
 	return &AgenticSearchTool{mode: mode, weight: weight, defaults: hybridSearchArgs{TopN: 12}}
 }
 
 func (a *AgenticSearchTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: a.mode,
-		Desc: fmt.Sprintf("Search the bound knowledge base(s) for the query (mode=%s). Returns relevant passages.", a.mode),
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type: schema.String, Required: true, Desc: "The search query.",
-			},
-			"kb_ids":    {Type: schema.Array, Desc: "Optional dataset ids to restrict to."},
-			"top_n":     {Type: schema.Number, Desc: "Number of passages to return (default 12)."},
-			"doc_scope": {Type: schema.Array, Desc: "Optional doc ids to restrict to."},
-			"keywords":  {Type: schema.String, Desc: "Comma-separated keywords to narrow results."},
-		}),
-	}, nil
+	return BuildToolInfo(a.mode, fmt.Sprintf("Search the bound knowledge base(s) for the query (mode=%s). Returns relevant passages.", a.mode), hybridSearchArgs{})
 }
 
 // InvokableRun executes the retrieval. It returns JSON with "chunks" (array of
@@ -203,48 +193,29 @@ func splitKeywords(keywords string) []string {
 
 var sentEnd = regexp.MustCompile(`[。！？；!?;]+|\.`)
 
-// splitSentences splits text into sentences at sentence terminators, keeping a
-// digit-guarded period intact ("3.14" / "v1.2" are not split). Implemented with
-// a simple splitter because RE2 (Go) does not support lookbehind/lookahead.
+// splitSentences splits text into sentences, keeping each terminator attached
+// like Python _split_plain. A period next to a digit is not a terminator
+// ("3.14" / "v1.2"); RE2 has no lookaround, so that guard is applied here.
 func splitSentences(content string) []string {
-	raw := sentEnd.Split(content, -1)
-	sents := make([]string, 0, len(raw))
-	for _, s := range raw {
-		if strings.TrimSpace(s) == "" {
+	var sents []string
+	start := 0
+	for _, m := range sentEnd.FindAllStringIndex(content, -1) {
+		if content[m[0]] == '.' && (m[0] > 0 && isASCIIDigit(content[m[0]-1]) || m[1] < len(content) && isASCIIDigit(content[m[1]])) {
 			continue
 		}
-		// Re-join a trailing digit-period-digit that the splitter cut apart:
-		// if s ends with a digit and content had ".<digit>" following, reattach.
-		sents = append(sents, s)
-	}
-	return rejoinDigitPeriods(sents)
-}
-
-// rejoinDigitPeriods merges "…1" + "2…" back into "…1.2…" when a decimal point
-// separated two digit groups.
-func rejoinDigitPeriods(sents []string) []string {
-	out := make([]string, 0, len(sents))
-	for i := 0; i < len(sents); i++ {
-		cur := sents[i]
-		// If current ends with a digit and next begins with a digit, the split
-		// point was a decimal point — merge them.
-		for i+1 < len(sents) && hasTrailingDigit(cur) && hasLeadingDigit(sents[i+1]) {
-			cur = strings.TrimRight(cur, " \t") + "." + sents[i+1]
-			i++
+		if seg := content[start:m[1]]; strings.TrimSpace(seg) != "" {
+			sents = append(sents, seg)
 		}
-		out = append(out, cur)
+		start = m[1]
 	}
-	return out
+	if tail := content[start:]; strings.TrimSpace(tail) != "" {
+		sents = append(sents, tail)
+	}
+	return sents
 }
 
-func hasTrailingDigit(s string) bool {
-	s = strings.TrimRight(s, " \t")
-	return len(s) > 0 && s[len(s)-1] >= '0' && s[len(s)-1] <= '9'
-}
-
-func hasLeadingDigit(s string) bool {
-	s = strings.TrimLeft(s, " \t")
-	return len(s) > 0 && s[0] >= '0' && s[0] <= '9'
+func isASCIIDigit(b byte) bool {
+	return b >= '0' && b <= '9'
 }
 
 // narrowContent returns the keyword-bearing sentences (+/-1 neighbour) with the

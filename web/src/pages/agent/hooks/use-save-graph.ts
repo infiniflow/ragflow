@@ -86,10 +86,11 @@ export const useSaveGraph = (
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { saveGraph, loading } = useSaveGraph();
   const { resetAgent } = useResetAgent();
-  const { data: agent } = useFetchAgent();
+  const { data: agent, loading: agentLoading } = useFetchAgent();
   const { resolveValidIds } = useModelValidIds(
     ModelTypeMap.llm_id,
     agent?.tenant_id,
+    agentLoading ? null : (agent?.user_id ?? null),
   );
 
   const handleRun = useCallback(

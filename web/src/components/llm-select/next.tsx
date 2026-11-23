@@ -34,7 +34,7 @@ export interface NextInnerLLMSelectProps {
   filter?: string;
   triggerTestId?: string;
   optionTestIdPrefix?: string;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
 }
 
 const NextInnerLLMSelect = forwardRef<
@@ -48,7 +48,7 @@ const NextInnerLLMSelect = forwardRef<
       filter,
       triggerTestId,
       optionTestIdPrefix,
-      ownerTenantId,
+      resourceTenantId,
     },
     ref,
   ) => {
@@ -59,9 +59,9 @@ const NextInnerLLMSelect = forwardRef<
       if (filter === LlmModelType.Chat) {
         return ['chat'];
       } else if (filter === LlmModelType.Image2text) {
-        return ['vision'];
+        return ['vlm'];
       } else {
-        return ['chat', 'vision'];
+        return ['chat', 'vlm'];
       }
     }, [filter]);
 
@@ -72,7 +72,7 @@ const NextInnerLLMSelect = forwardRef<
     // dropdown display, not validity.
     const { validIds, isFetched: ownModelsFetched } = useModelValidIds(
       ModelTypeMap.llm_id,
-      ownerTenantId,
+      resourceTenantId,
     );
     const isModelMissing = !!value && ownModelsFetched && !validIds.has(value);
 
@@ -92,10 +92,10 @@ const NextInnerLLMSelect = forwardRef<
                 {isModelMissing ? (
                   <MissingModelLabel
                     value={value}
-                    ownerTenantId={ownerTenantId}
+                    resourceTenantId={resourceTenantId}
                   />
                 ) : (
-                  <LLMLabel value={value} ownerTenantId={ownerTenantId} />
+                  <LLMLabel value={value} resourceTenantId={resourceTenantId} />
                 )}
               </SelectValue>
             </SelectTrigger>
@@ -104,7 +104,7 @@ const NextInnerLLMSelect = forwardRef<
             <LlmSettingFieldItems
               modelTypes={modelTypes}
               llmOptionTestIdPrefix={optionTestIdPrefix}
-              ownerTenantId={ownerTenantId}
+              resourceTenantId={resourceTenantId}
             ></LlmSettingFieldItems>
           </PopoverContent>
         </Popover>

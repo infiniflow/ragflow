@@ -301,7 +301,12 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		if err := d.kbDAO.Create(ctx, tx, kb); err != nil {
 			return err
 		}
-		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID})
+		if err := permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}); err != nil {
+			return err
+		}
+		// Version 0 describes the dataset as created, so every later change has a
+		// starting point to diff against and restore to.
+		return d.seedDatasetBaselineVersionTxEE(ctx, tx, kb, userID)
 	}); err != nil {
 		if dao.IsDuplicateKeyErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("dataset name '%s' already exists", name)
@@ -575,10 +580,25 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 		if err := tx.Where("id = ?", kb.ID).Delete(&entity.Knowledgebase{}).Error; err != nil {
 			return fmt.Errorf("delete dataset error for %s: %w", kb.ID, err)
 		}
+		// The history names a dataset that no longer exists, so nothing can
+		// restore it; drop it in the same transaction.
+		if err := d.deleteDatasetVersionsTxEE(ctx, tx, kb.ID); err != nil {
+			return fmt.Errorf("delete dataset error for %s", kb.ID)
+		}
+		// The per-chunk history and index state of the removed documents have no
+		// other collector: the removed-document cleanup only walks removal rows,
+		// and a dataset delete never writes one.
+		if err := deleteDatasetChunkRuntimeTxEE(ctx, tx, kb.ID); err != nil {
+			return fmt.Errorf("delete dataset content history for %s: %w", kb.ID, err)
+		}
 		return nil
 	}); err != nil {
 		return err
 	}
+	// The metadata values of the removed documents live in the document engine,
+	// which the transaction above cannot reach: drop them once the rows that
+	// named them are committed away.
+	deleteDatasetMetadataStatesEE(ctx, kb.ID)
 	common.Info("Deleted dataset", zap.String("dataset", datasetNameID), zap.String("kb_id", kb.ID))
 	return nil
 }
@@ -598,9 +618,10 @@ func datasetNameAndID(kb *entity.Knowledgebase) string {
 }
 
 // ListDatasets applies resource permissions before pagination and optional canvas filtering.
-func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, accessUserID, parserID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	canvasID = strings.TrimSpace(canvasID)
+	accessUserID = strings.TrimSpace(accessUserID)
 	if id != "" && len(ids) > 0 {
 		return nil, 0, common.CodeDataError, fmt.Errorf("should not provide both 'id':%s and 'ids':%s", id, pythonStringListRepr(ids))
 	}
@@ -646,18 +667,28 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	operatorPermissions := make(map[string]int32)
 	err := dao.DB.Transaction(func(tx *gorm.DB) error {
 		checker := permission.NewDatabaseChecker(tx)
+		accessCtx, hasAccessUser := accessUserContext(ctx, accessUserID)
 		operation := permission.OperationRead
 		var entry *permission.ResourceRef
 		if canvasID != "" {
 			operation = permission.OperationUse
 			entry = &permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
 		}
-		checkAccess := func(datasetID string) error {
+		checkAccessAs := func(checkCtx context.Context, datasetID string) error {
 			dependency := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
 			if entry == nil {
-				return checker.CheckResource(ctx, dependency, operation)
+				return checker.CheckResource(checkCtx, dependency, operation)
 			}
-			return checker.CheckDependency(ctx, *entry, dependency, permission.OperationRun, operation)
+			return checker.CheckDependency(checkCtx, *entry, dependency, permission.OperationRun, operation)
+		}
+		checkAccess := func(datasetID string) error {
+			if err := checkAccessAs(ctx, datasetID); err != nil {
+				return err
+			}
+			if hasAccessUser {
+				return checkAccessAs(accessCtx, datasetID)
+			}
+			return nil
 		}
 		listQuery := tx.WithContext(ctx).Model(&entity.Knowledgebase{})
 		var resourceIDs []string
@@ -701,6 +732,18 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 				return checkErr
 			}
 			listQuery = scope.Apply(listQuery)
+			if hasAccessUser {
+				accessScope, checkErr := checker.QueryScope(accessCtx, scopeQuery)
+				if checkErr != nil {
+					if errors.Is(checkErr, permission.ErrPermissionDenied) || errors.Is(checkErr, permission.ErrMembershipNotFound) || errors.Is(checkErr, permission.ErrResourceNotFound) {
+						listQuery = listQuery.Where("1 = 0")
+					} else {
+						return checkErr
+					}
+				} else {
+					listQuery = accessScope.Apply(listQuery)
+				}
+			}
 		}
 		listed, count, err := d.kbDAO.ListByQuery(ctx, listQuery, filteredOwnerIDs, page, pageSize, terms, keywords, parserID, name)
 		if err != nil {
@@ -757,7 +800,6 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		item["embedding_model"] = service.ResolveTenantModelDisplayName(ctx, dao.DB, tenantEmbdID, kb.EmbdID, modelNameCache)
 		data = append(data, item)
 	}
-
 	return data, total, common.CodeSuccess, nil
 }
 

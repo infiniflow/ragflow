@@ -9,6 +9,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
+import { ChunkDetailEntry } from '@/ee/pages/chunk/components/chunk-card/chunk-detail-entry';
+import { ChunkVersionEntry } from '@/ee/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-creating-modal/chunk-version-entry';
 import type { ChunkDocType, IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
@@ -23,7 +25,7 @@ import styles from './index.module.less';
 interface IProps {
   item: IChunk;
   checked: boolean;
-  switchChunk: (available?: number, chunkIds?: string[]) => void;
+  switchChunk: (available?: number, chunkIds?: string[]) => Promise<void>;
   editChunk: (chunkId: string) => void;
   removeChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
@@ -50,10 +52,16 @@ const ChunkCard = ({
 
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
-  const onChange = (checked: boolean) => {
+  const onChange = async (checked: boolean) => {
     setEnabled(checked);
-    switchChunk(available === 0 ? 1 : 0, [item.chunk_id]);
+    setSwitching(true);
+    try {
+      await switchChunk(available === 0 ? 1 : 0, [item.chunk_id]);
+    } finally {
+      setSwitching(false);
+    }
   };
 
   const handleCheck = (e: CheckedState) => {
@@ -88,15 +96,23 @@ const ChunkCard = ({
         selected && 'bg-text-primary/15',
       )}
     >
-      <span
+      {/* Corner row: the chunk type, then the entry into its details - which the
+          enterprise build also uses to name the chunk by id. The version the text
+          is at is one of those details, so it is not printed on the card. The
+          type keeps its own box and spacing; the entry takes what the card can
+          spare. */}
+      <div
         className="
-        absolute top-0 right-0 px-4 py-1
+        absolute top-0 right-0 flex max-w-[70%] items-center gap-0.5 pr-2
         leading-none text-xs text-text-disabled
         bg-bg-card rounded-bl-2xl rounded-tr-lg
         border-l-0.5 border-b-0.5 border-border-button"
       >
-        {t(`chunk.docType.${chunkType}`)}
-      </span>
+        <span className="shrink-0 pl-4 py-1 mr-2">
+          {t(`chunk.docType.${chunkType}`)}
+        </span>
+        <ChunkDetailEntry chunk={item} />
+      </div>
 
       <div className="flex items-start justify-between gap-2.5">
         <Checkbox
@@ -149,41 +165,47 @@ const ChunkCard = ({
           />
         </section>
 
-        <span
-          className={cn(
-            'm-1.5 size-2 rounded-full group-hover:hidden group-focus-within:hidden',
-            enabled ? 'bg-state-success' : 'bg-text-disabled',
-          )}
-        />
-
-        <div className="hidden group-hover:flex group-focus-within:flex flex-col items-center gap-2">
-          <Switch
-            checked={enabled}
-            onCheckedChange={onChange}
-            aria-readonly
-            className="!m-0"
-            disabled={datasetEditButtonDisabled}
+        <div className="flex w-7 shrink-0 flex-col items-center">
+          <span
+            className={cn(
+              'm-1.5 size-2 rounded-full group-hover:hidden group-has-[:focus-visible]:hidden',
+              enabled ? 'bg-state-success' : 'bg-text-disabled',
+            )}
           />
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={t('common.edit')}
-            title={t('common.edit')}
-            onClick={handleEditClick}
-            disabled={datasetEditButtonDisabled}
-          >
-            <PenLine className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={t('common.delete')}
-            title={t('common.delete')}
-            onClick={handleDeleteClick}
-            disabled={datasetEditButtonDisabled}
-          >
-            <Trash2 className="size-4 text-state-error" />
-          </Button>
+
+          <div className="hidden group-hover:flex group-has-[:focus-visible]:flex flex-col items-center gap-2">
+            <Switch
+              checked={enabled}
+              onCheckedChange={onChange}
+              aria-readonly
+              className="!m-0 !mt-[22px]"
+              disabled={datasetEditButtonDisabled || switching}
+            />
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t('common.edit')}
+              title={t('common.edit')}
+              onClick={handleEditClick}
+              disabled={datasetEditButtonDisabled}
+            >
+              <PenLine className="size-4" />
+            </Button>
+            {/* The history sits above delete: it opens from the card so a reader
+                can inspect what changed without opening an edit, and delete stays
+                the last action in the column where a destructive control belongs. */}
+            <ChunkVersionEntry chunkId={item.chunk_id} docId={item.doc_id} />
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t('common.delete')}
+              title={t('common.delete')}
+              onClick={handleDeleteClick}
+              disabled={datasetEditButtonDisabled}
+            >
+              <Trash2 className="size-4 text-state-error" />
+            </Button>
+          </div>
         </div>
       </div>
     </Card>

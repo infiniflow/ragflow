@@ -484,8 +484,6 @@ export default {
       apiVersionMessage: '¡Por favor ingresa la versión de la API',
       modelsToBeAddedTooltip:
         'Si tu proveedor de modelos no aparece en la lista pero afirma ser compatible con OpenAI, selecciona la tarjeta OpenAI-API-compatible para añadir el/los modelo(s) correspondiente(s).',
-      dingtalkAITableDescription:
-        'Conéctese a Dingtalk AI Table y sincronice registros de una tabla especificada.',
     },
     message: {
       registered: '¡Registrado',
@@ -579,6 +577,18 @@ export default {
         'Un componente que solicita al LLM generar respuestas. Asegúrate de que el prompt esté configurado correctamente.',
       categorizeDescription:
         'Un componente que utiliza el LLM para clasificar las entradas del usuario en categorías predefinidas. Asegúrate de especificar el nombre, descripción y ejemplos para cada categoría, junto con el componente siguiente correspondiente.',
+      scoredSwitchQuestionRequired:
+        'Cada pregunta adicional necesita instrucciones',
+      scoredSwitchLevelMinimum: 'Añade al menos dos niveles',
+      scoredSwitchFieldMinimum: 'Añade al menos un campo',
+      scoredSwitchFieldNameInvalid:
+        'El nombre del campo debe empezar por una letra o un guion bajo',
+      scoredSwitchListItemsRequired: 'Una lista necesita un tipo de elemento',
+      scoredSwitchEstimateBoundsRequired:
+        'Una estimación necesita un mínimo y un máximo',
+      scoredSwitchForecastRequired:
+        'Una previsión necesita un horizonte y un intervalo',
+      scoredSwitchDecimalsRange: 'Los decimales deben estar entre 0 y 6',
       relevantDescription:
         'Un componente que usa el LLM para evaluar si la salida previa es relevante para la última consulta del usuario. Asegúrate de especificar el próximo componente para cada resultado.',
       rewriteQuestionDescription:

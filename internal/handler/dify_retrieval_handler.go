@@ -101,6 +101,18 @@ type difyMetadataCondition struct {
 	Logic      string          `json:"logic"`
 }
 
+func canIncludeDifyKnowledgeGraph(readableDocumentIDs []string, totalDocuments int64, hasMetadataFilter bool) bool {
+	if hasMetadataFilter || totalDocuments <= 0 || int64(len(readableDocumentIDs)) != totalDocuments {
+		return false
+	}
+	for _, documentID := range readableDocumentIDs {
+		if documentID == service.NoMatchDocIDSentinel {
+			return false
+		}
+	}
+	return true
+}
+
 // toMetaFilterConditions converts Dify-format conditions to internal MetaFilterConditions.
 func (c difyMetadataCondition) toMetaFilterConditions() []service.MetaFilterCondition {
 	if len(c.Conditions) == 0 {
@@ -211,12 +223,12 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "knowledge_id and query are required")
 		return
 	}
-
-	ctx := c.Request.Context()
-	if err := compliance.ValidateQuestion(ctx, req.Query); err != nil {
-		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Query); err != nil {
+		common.RespondSuccess(c, gin.H{"records": []difyRecord{}}, err.Error())
 		return
 	}
+
+	ctx := c.Request.Context()
 	kb, err := h.kbSvc.GetKnowledgebaseByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -263,7 +275,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// actually supplied, and matched nothing, narrow the search to the
 	// no-match sentinel.
 	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs(ctx, []string{req.KnowledgeID})
-	docIDs := make([]string, 0)
+	var docIDs []string
 	if metaErr == nil && req.MetadataCondition != nil && len(req.MetadataCondition.Conditions) > 0 {
 		logic := req.MetadataCondition.Logic
 		if logic == "" {
@@ -274,6 +286,15 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		if len(docIDs) == 0 {
 			docIDs = []string{service.NoMatchDocIDSentinel}
 		}
+	}
+	docIDs, err = service.ListReadableDocumentIDs(ctx, []string{req.KnowledgeID}, docIDs)
+	if err != nil {
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to resolve readable documents: %v", err))
+		return
+	}
+	readableDocumentIDs := append([]string(nil), docIDs...)
+	if len(docIDs) == 0 {
+		docIDs = []string{service.NoMatchDocIDSentinel}
 	}
 
 	// Hand the label result over unconditionally: an empty map says "issue no
@@ -287,17 +308,18 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// Keep 64 as the floor so a small top_k still ranks the same candidates.
 	rerankWindow := max(pageSize, 64)
 	sr := &nlp.RetrievalRequest{
-		Question:              req.Query,
-		TenantIDs:             []string{kb.TenantID},
-		KbIDs:                 []string{req.KnowledgeID},
-		DocIDs:                docIDs,
-		Page:                  1,
-		PageSize:              pageSize,
-		RerankCandidatesCount: &rerankWindow,
-		KNNTopK:               topK,
-		SimilarityThreshold:   scoreThreshold,
-		EmbeddingModel:        embModel,
-		Language:              entity.KnowledgebasesLanguage(kbs),
+		Question:                   req.Query,
+		TenantIDs:                  []string{kb.TenantID},
+		KbIDs:                      []string{req.KnowledgeID},
+		DocIDs:                     docIDs,
+		DocumentPermissionsChecked: true,
+		Page:                       1,
+		PageSize:                   pageSize,
+		RerankCandidatesCount:      &rerankWindow,
+		KNNTopK:                    topK,
+		SimilarityThreshold:        scoreThreshold,
+		EmbeddingModel:             embModel,
+		Language:                   entity.KnowledgebasesLanguage(kbs),
 	}
 	sr.RankFeature = &rankFeature
 
@@ -315,7 +337,18 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	chunks := nlp.RetrievalByChildren(result.Chunks, []string{kb.TenantID}, h.docEngine, c.Request.Context())
 
 	// KG retrieval (optional)
-	if req.UseKG {
+	hasMetadataFilter := req.MetadataCondition != nil && len(req.MetadataCondition.Conditions) > 0
+	canReadWholeDataset := false
+	if req.UseKG && !hasMetadataFilter && len(readableDocumentIDs) > 0 {
+		var totalDocuments int64
+		if err := dao.DB.WithContext(ctx).Model(&entity.Document{}).
+			Where("kb_id = ?", req.KnowledgeID).Count(&totalDocuments).Error; err != nil {
+			common.Warn("KG retrieval: failed to check readable document coverage", zap.String("kbID", req.KnowledgeID), zap.Error(err))
+		} else {
+			canReadWholeDataset = canIncludeDifyKnowledgeGraph(readableDocumentIDs, totalDocuments, hasMetadataFilter)
+		}
+	}
+	if req.UseKG && canReadWholeDataset {
 		chatModel, kgErr := h.modelFactory.NewDefaultChatModel(ctx)
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))

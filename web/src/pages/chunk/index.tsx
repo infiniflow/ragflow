@@ -440,7 +440,7 @@ interface ChunkVirtualListProps {
   editChunk: (chunkId: string) => void;
   removeChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
-  switchChunk: (available?: number, chunkIds?: string[]) => void;
+  switchChunk: (available?: number, chunkIds?: string[]) => Promise<void>;
   clickChunkCard: (chunkId: string) => void;
   imageCacheKey?: string | number;
 }

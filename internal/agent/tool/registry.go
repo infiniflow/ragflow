@@ -18,6 +18,7 @@ package tool
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -35,6 +36,9 @@ type Factory func(params map[string]any) (einotool.BaseTool, error)
 
 var registry = map[string]Factory{
 	"akshare":                    buildAkShareTool,
+	"anysearch_discover":         buildAnySearchDiscoverTool,
+	"anysearch_extract":          buildAnySearchExtractTool,
+	"anysearch_search":           buildAnySearchTool,
 	"arxiv":                      buildArxivTool,
 	"bgpt":                       buildBGPTTool,
 	"code_exec":                  noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
@@ -55,6 +59,7 @@ var registry = map[string]Factory{
 	"google_scholar_search":      buildGoogleScholarTool,
 	"jin10":                      noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
 	"keenable":                   buildKeenableTool,
+	"perplexity":                 buildPerplexityTool,
 	"pubmed":                     buildPubMedTool,
 	"qweather":                   buildQWeatherTool,
 	"querit":                     buildQueritTool,
@@ -83,18 +88,22 @@ var registry = map[string]Factory{
 // names such as "CodeExec" and "GoogleScholar", while the tool registry uses
 // snake_case names for several tools.
 var canvasToolNames = map[string]string{
-	"codeexec":         "code_exec",
-	"googlescholar":    "google_scholar",
-	"keenablesearch":   "keenable",
-	"queritcontents":   "querit_contents",
-	"queritsearch":     "querit_search",
-	"search1apicrawl":  "search1api_crawl",
-	"search1apisearch": "search1api",
-	"sofyasearch":      "sofya",
-	"tavilyextract":    "tavily_extract",
-	"tavilysearch":     "tavily",
-	"yahoofinance":     "yahoo_finance",
-	"youcomsearch":     "youcom",
+	"anysearchdiscover": "anysearch_discover",
+	"anysearchextract":  "anysearch_extract",
+	"anysearchsearch":   "anysearch_search",
+	"codeexec":          "code_exec",
+	"googlescholar":     "google_scholar",
+	"keenablesearch":    "keenable",
+	"perplexitysearch":  "perplexity",
+	"queritcontents":    "querit_contents",
+	"queritsearch":      "querit_search",
+	"search1apicrawl":   "search1api_crawl",
+	"search1apisearch":  "search1api",
+	"sofyasearch":       "sofya",
+	"tavilyextract":     "tavily_extract",
+	"tavilysearch":      "tavily",
+	"yahoofinance":      "yahoo_finance",
+	"youcomsearch":      "youcom",
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -167,7 +176,7 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 	// "search_my_dataset" resolves to that registry key, not "retrieval".
 	cleanParams := params
 	if cleanParams != nil {
-		cleanParams = cloneToolParams(cleanParams)
+		cleanParams = maps.Clone(cleanParams)
 		delete(cleanParams, "component_name")
 		if _, isRetrieval := retrievalRegistryKeys[key]; !isRetrieval {
 			delete(cleanParams, "function_name")
@@ -175,14 +184,6 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return factory(cleanParams)
-}
-
-func cloneToolParams(in map[string]any) map[string]any {
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
 
 // BuildAll resolves a list of tool names into Eino BaseTool instances.
@@ -471,7 +472,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		switch key {
 		case "dataset_ids", "kb_ids", "top_n", "rerank_candidates_count", "top_k", "similarity_threshold",
 			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
-			"meta_data_filter", "retrieval_from", "memory_ids",
+			"highlight", "meta_data_filter", "retrieval_from", "memory_ids",
 			"kb_vars", "cross_languages", "function_name", "description", "meta",
 			"inputs", "outputs", "user_id":
 		default:
@@ -527,6 +528,9 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	if v, ok := boolParam(params, "use_kg"); ok {
 		defaults.UseKG = v
 	}
+	if v, ok := boolParam(params, "highlight"); ok {
+		defaults.Highlight = boolPtr(v)
+	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
 		defaults.SimilarityThreshold = &v
 	}
@@ -560,7 +564,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		if !ok {
 			return nil, fmt.Errorf("agent tool: retrieval tool requires object node-level param meta_data_filter")
 		}
-		defaults.MetaDataFilter = cloneStringAnyMap(filter)
+		defaults.MetaDataFilter = maps.Clone(filter)
 	}
 	if value, ok := params["retrieval_from"]; ok {
 		retrievalFrom, ok := value.(string)
@@ -904,6 +908,56 @@ func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {
 	return newSofyaTool(nil, apiKey, defaults), nil
 }
 
+func buildPerplexityTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := perplexityDefaults{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "perplexity")
+		}
+	}
+	if value, ok := params["search_type"]; ok {
+		searchType, valid := value.(string)
+		normalized := strings.ToLower(strings.TrimSpace(searchType))
+		if !valid || (normalized != "" && !slices.Contains(perplexitySearchTypes, normalized)) {
+			return nil, fmt.Errorf("agent tool: tool %q requires search_type to be web, fast, or blank for the default", "perplexity")
+		}
+		defaults.SearchType = normalized
+	}
+	if value, ok := params["search_recency_filter"]; ok {
+		recency, valid := value.(string)
+		normalized := strings.ToLower(strings.TrimSpace(recency))
+		if !valid || (normalized != "" && !slices.Contains(perplexityRecencyValues, normalized)) {
+			return nil, fmt.Errorf("agent tool: tool %q requires search_recency_filter to be any, hour, day, week, month, year, or blank for the default", "perplexity")
+		}
+		defaults.SearchRecencyFilter = normalized
+	}
+	if value, ok := params["search_domain_filter"]; ok {
+		domains, err := perplexityDomainFilterArg(value)
+		if err != nil {
+			return nil, fmt.Errorf("agent tool: tool %q %w", "perplexity", err)
+		}
+		defaults.SearchDomainFilter = domains
+	}
+	if value, ok := params["country"]; ok {
+		country, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param country", "perplexity")
+		}
+		defaults.Country = strings.ToUpper(strings.TrimSpace(country))
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 || topN > perplexityMaxResults {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param top_n within [1, %d]", "perplexity", perplexityMaxResults)
+		}
+		defaults.TopN = topN
+	}
+	return newPerplexityTool(nil, apiKey, defaults), nil
+}
+
 func buildSearch1APITool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := search1APIDefaults{}
 	apiKey := ""
@@ -960,6 +1014,79 @@ func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
+}
+
+// anySearchAPIKeyParam reads the node-level api_key. AnySearch works without a
+// key, so a missing, null or blank value means anonymous access.
+func anySearchAPIKeyParam(params map[string]any, toolName string) (string, error) {
+	value, ok := params["api_key"]
+	if !ok || value == nil {
+		return "", nil
+	}
+	apiKey, valid := value.(string)
+	if !valid {
+		return "", fmt.Errorf("agent tool: tool %q requires string node-level param api_key", toolName)
+	}
+	apiKey = strings.TrimSpace(apiKey)
+	if strings.ContainsAny(apiKey, "\r\n") {
+		return "", fmt.Errorf("agent tool: tool %q has an invalid api_key", toolName)
+	}
+	return apiKey, nil
+}
+
+func buildAnySearchTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, err := anySearchAPIKeyParam(params, anySearchToolName)
+	if err != nil {
+		return nil, err
+	}
+	defaults := anySearchDefaults{}
+	if value, ok := params["top_n"]; ok && value != nil {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 || topN > anySearchMaxResults {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param top_n within [1, %d]", anySearchToolName, anySearchMaxResults)
+		}
+		defaults.TopN = topN
+	}
+	if value, ok := params["zone"]; ok && value != nil {
+		zone, valid := value.(string)
+		zone = strings.ToLower(strings.TrimSpace(zone))
+		if !valid || (zone != "" && !slices.Contains(anySearchZones, zone)) {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported zone %v, it should be one of %v", anySearchToolName, value, anySearchZones)
+		}
+		defaults.Zone = zone
+	}
+	if value, ok := params["language"]; ok && value != nil {
+		language, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param language", anySearchToolName)
+		}
+		defaults.Language = strings.TrimSpace(language)
+	}
+	return newAnySearchTool(nil, apiKey, defaults), nil
+}
+
+func buildAnySearchDiscoverTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, err := anySearchAPIKeyParam(params, anySearchDiscoverToolName)
+	if err != nil {
+		return nil, err
+	}
+	return NewAnySearchDiscoverToolWith(nil, apiKey), nil
+}
+
+func buildAnySearchExtractTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, err := anySearchAPIKeyParam(params, anySearchExtractToolName)
+	if err != nil {
+		return nil, err
+	}
+	defaultURL := ""
+	if value, ok := params["url"]; ok && value != nil {
+		var valid bool
+		defaultURL, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param url", anySearchExtractToolName)
+		}
+	}
+	return newAnySearchExtractTool(nil, apiKey, defaultURL), nil
 }
 
 // buildDeepLTool and buildQWeatherTool take the node-level api_key without

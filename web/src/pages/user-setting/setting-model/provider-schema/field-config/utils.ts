@@ -24,7 +24,7 @@ export function capitalize(s: string): string {
 }
 
 /**
- * When model_type contains chat and vision=true, automatically add vision.
+ * When model_type contains chat and vision=true, automatically add vlm.
  */
 export function applyChatToVision(
   modelType: string[] | string | undefined,
@@ -36,7 +36,7 @@ export function applyChatToVision(
       ? [modelType]
       : [];
   if (arr.includes('chat') && vision) {
-    return [...arr, 'vision'];
+    return [...arr, 'vlm'];
   }
   return arr;
 }

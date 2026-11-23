@@ -35,7 +35,6 @@ const (
 	TaskTypeTree      = "Tree"
 	TaskTypeGraph     = "Graph"
 	TaskTypeMindmap   = "Mindmap"
-	TaskTypeTimeline  = "Timeline"
 	TaskTypePageIndex = "PageIndex"
 )
 
@@ -199,15 +198,11 @@ func ParseParam(m map[string]any) (Param, error) {
 			return p, fmt.Errorf("knowledge_compiler: thinking must be a string")
 		}
 		switch strings.TrimSpace(thinking) {
-		case "", "default":
-			p.ChatSettings.ThinkingSet = true
 		case "enabled":
-			enabled := true
-			p.ChatSettings.Thinking = &enabled
+			p.ChatSettings.Thinking = new(true)
 			p.ChatSettings.ThinkingSet = true
-		case "disabled":
-			disabled := false
-			p.ChatSettings.Thinking = &disabled
+		case "", "default", "disabled":
+			p.ChatSettings.Thinking = new(false)
 			p.ChatSettings.ThinkingSet = true
 		default:
 			return p, fmt.Errorf("knowledge_compiler: unsupported thinking setting %q", thinking)
@@ -303,14 +298,14 @@ func (p Param) PlanEnabled() bool {
 // KindToVariant maps a compilation_template.kind to the Go compiler Variant.
 //
 // The model uses richer kind values (mind_map, page_index
-// session_essence, session_graph, timeline, knowledge_graph, tree, wiki); the
+// session_essence, session_graph, knowledge_graph, tree, wiki); the
 // Go port collapses them onto its variants. Per the agreed mapping:
 //
 //	tree                            -> tree
 //	mind_map                        -> mindmap
 //	wiki                            -> wiki
 //	page_index / session_essence /  -> structure (the graph/knowledge-graph path)
-//	session_graph / timeline /      ->
+//	session_graph /                 ->
 //	knowledge_graph                 ->
 //
 // The canonical variant names are also accepted as identity (so a template kind
@@ -329,17 +324,20 @@ func KindToVariant(kind string) (Variant, error) {
 		return VariantMindmap, nil
 	case "wiki":
 		return VariantWiki, nil
-	case "page_index", "session_essence", "session_graph", "timeline",
+	case "page_index", "session_essence", "session_graph",
 		"knowledge_graph", "structure", "knowledgegraph", "graph":
 		return VariantStructure, nil
 	default:
+		if _, ok := additionalKindTaskTypes[strings.ToLower(strings.TrimSpace(kind))]; ok {
+			return VariantStructure, nil
+		}
 		return "", fmt.Errorf("%w: %q", ErrUnknownVariant, kind)
 	}
 }
 
 // KindToTaskType maps the original compilation template kind to the category
 // shown in pipeline operation logs. Unlike KindToVariant, this mapping keeps
-// structure sub-kinds distinct so graph, timeline, and page-index logs are not
+// structure sub-kinds distinct so graph and page-index logs are not
 // mislabeled as the same task.
 func KindToTaskType(kind string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
@@ -351,11 +349,12 @@ func KindToTaskType(kind string) (string, error) {
 		return TaskTypeGraph, nil
 	case "mind_map", "mindmap":
 		return TaskTypeMindmap, nil
-	case "timeline":
-		return TaskTypeTimeline, nil
 	case "page_index":
 		return TaskTypePageIndex, nil
 	default:
+		if taskType, ok := additionalKindTaskTypes[strings.ToLower(strings.TrimSpace(kind))]; ok {
+			return taskType, nil
+		}
 		return "", fmt.Errorf("%w: %q", ErrUnknownVariant, kind)
 	}
 }

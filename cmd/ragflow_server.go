@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -27,11 +26,13 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
+	"time"
 
+	"github.com/alecthomas/kingpin/v2"
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -42,10 +43,13 @@ import (
 	"ragflow/internal/server/admin"
 	apipkg "ragflow/internal/server/api"
 	"ragflow/internal/server/bootstrap"
+	chatterpkg "ragflow/internal/server/chatter"
+	"ragflow/internal/server/config"
 	deepdocpkg "ragflow/internal/server/deepdoc"
 	ingestorpkg "ragflow/internal/server/ingestor"
+	"ragflow/internal/server/local"
 	syncerpkg "ragflow/internal/server/syncer"
-	billing "ragflow/internal/service/billing"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/storage"
 )
 
@@ -95,179 +99,84 @@ func pprofAddr() string {
 }
 
 // parseArgsFrom parses argv (argv[0] is the program name, mirroring os.Args)
-// into a bootstrap.ServerArgs using the standard library flag package. The accepted
-// syntax is exactly the standard one: every flag works as "-flag value",
-// "-flag=value", "--flag value" and "--flag=value"; boolean flags also accept
-// "=true"/"=false". Flags absent from argv leave their bootstrap.ServerArgs field nil,
-// which callers use to distinguish "unspecified" from an explicit zero value.
+// into a bootstrap.ServerArgs using kingpin. An omitted port or log level
+// leaves its field nil so configuration and environment values can take effect.
 func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
-	fs := flag.NewFlagSet("ragflow_server", flag.ContinueOnError)
-	// Suppress the standard usage/error dump: main prints its own one-line
-	// error and printHelp owns the usage text.
-	fs.SetOutput(io.Discard)
-	fs.Usage = func() {}
 
 	args := &bootstrap.ServerArgs{}
+	app := kingpin.New("ragflow_server", "RAGFlow server")
 
-	var (
-		logLevel           string
-		configPath         string
-		adminHost          string
-		name               string
-		port               int
-		deepdocConcurrency int
-		ingestorWorkers    int
-		pageConcurrency    int
-		cpuCores           int
-		ingestorTier       string
-		initSuperUser      bool
-		enablePProf        bool
-		helpFlag           bool
-		versionFlag        bool
-		modes              []string
-	)
+	args.ConfigPath = app.Flag("config", "Config path").Short('f').String()
+	args.DeepdocDevice = app.Flag("deepdoc-device", "DeepDoc inference device").String()
+	args.EnablePProf = app.Flag("profile", "Enable pprof profiling").Bool()
+	var logLevelSet, portSet bool
+	args.LogLevel = app.Flag("log-level", "Log level").IsSetByUser(&logLevelSet).String()
+	args.Port = app.Flag("port", "HTTP port (API by default, admin with --admin)").IsSetByUser(&portSet).Int()
 
-	fs.StringVar(&logLevel, "log-level", "", "")
-	fs.StringVar(&configPath, "config", "", "")
-	fs.StringVar(&configPath, "f", "", "")
-	fs.StringVar(&adminHost, "admin-host", "", "")
-	fs.StringVar(&name, "name", "", "")
-	fs.IntVar(&port, "port", 0, "")
-	fs.IntVar(&port, "p", 0, "")
-	fs.IntVar(&deepdocConcurrency, "deepdoc-inference-concurrency", 0, "")
-	fs.IntVar(&ingestorWorkers, "ingestor-concurrent-workers", 0, "")
-	fs.IntVar(&pageConcurrency, "ingestor-page-concurrency", 0, "")
-	fs.IntVar(&cpuCores, "deepdoc-inference-cpu-cores", 0, "")
-	fs.StringVar(&ingestorTier, "ingestor-tier", "", "")
-	fs.BoolVar(&initSuperUser, "init-superuser", false, "")
-	fs.BoolVar(&enablePProf, "profile", false, "")
-	fs.BoolVar(&helpFlag, "help", false, "")
-	fs.BoolVar(&helpFlag, "h", false, "")
-	fs.BoolVar(&versionFlag, "version", false, "")
-	fs.BoolVar(&versionFlag, "v", false, "")
-	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "deepdoc", "migrate"} {
-		fs.Var(modeFlag{name: mode, seen: &modes}, mode, "")
+	modes := []string{"admin", "api", "ingestor", "syncer", "chatter", "migrate"}
+	modeFlags := make([]*bool, len(modes))
+	for i, mode := range modes {
+		modeFlags[i] = app.Flag(mode, fmt.Sprintf("Enable %s mode", mode)).Bool()
 	}
 
+	// kingpin owns --help itself, so registering another "help" flag above would
+	// fail with "duplicate long flag --help". Handle -h/--help and -v/--version
+	// ourselves: keep them out of app.Parse, and return early so no server-only
+	// validation runs. Also return parse errors instead of letting MustParse
+	// os.Exit (which kills the test binary and hides the failing case).
+	help, version := false, false
+	rest := make([]string, 0, len(argv))
 	if len(argv) > 0 {
-		if err := fs.Parse(argv[1:]); err != nil {
-			return nil, err
+		rest = append(rest, argv[0])
+	}
+	for _, arg := range argv[1:] {
+		switch arg {
+		case "-h", "--help":
+			help = true
+		case "-v", "--version":
+			version = true
+		default:
+			rest = append(rest, arg)
 		}
 	}
-	// The flag package silently stops at the first positional argument, which
-	// would hide a mistyped mode (e.g. "ragflow_server apii" starting with no
-	// mode). This binary has no positional arguments, so reject them.
-	if fs.NArg() > 0 {
-		return nil, fmt.Errorf("unexpected argument: %s", fs.Arg(0))
+	args.HelpFlag = &help
+	args.VersionFlag = &version
+
+	if _, err := app.Parse(rest[1:]); err != nil {
+		return nil, err
+	}
+	if help || version {
+		return args, nil
 	}
 
-	// Visit visits exactly the flags present on the command line, which
-	// preserves the "unspecified" (nil) vs explicit-zero distinction.
-	seen := map[string]bool{}
-	fs.Visit(func(f *flag.Flag) {
-		seen[f.Name] = true
-		switch f.Name {
-		case "log-level":
-			args.LogLevel = &logLevel
-		case "config", "f":
-			args.ConfigPath = &configPath
-		case "name":
-			args.Name = &name
-		case "port", "p":
-			args.Port = &port
-		case "deepdoc-inference-concurrency":
-			args.DeepdocInferenceConcurrency = &deepdocConcurrency
-		case "ingestor-concurrent-workers":
-			args.IngestorConcurrentWorkers = &ingestorWorkers
-		case "ingestor-page-concurrency":
-			args.IngestorPageConcurrency = &pageConcurrency
-		case "deepdoc-inference-cpu-cores":
-			args.DeepdocInferenceCPUCores = &cpuCores
-		case "ingestor-tier":
-			args.IngestorTier = &ingestorTier
-		case "init-superuser":
-			args.InitSuperUser = initSuperUser
-		case "profile":
-			args.EnablePProf = enablePProf
-		case "help", "h":
-			args.HelpFlag = helpFlag
-		case "version", "v":
-			args.VersionFlag = versionFlag
+	for i, enabled := range modeFlags {
+		if !*enabled {
+			continue
 		}
-	})
-
-	if seen["admin-host"] {
-		parts := strings.SplitN(adminHost, ":", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return nil, errors.New("--admin-host must be in the form 'ip:port'")
+		if args.Mode != nil {
+			return nil, fmt.Errorf("only one mode flag may be specified: --%s and --%s", *args.Mode, modes[i])
 		}
-		adminPort, convErr := strconv.Atoi(parts[1])
-		if convErr != nil {
-			return nil, fmt.Errorf("failed to parse admin port: %w", convErr)
-		}
-		args.AdminHost = &parts[0]
-		args.AdminPort = &adminPort
+		args.Mode = &modes[i]
 	}
 
-	// Mode flags share one slot; the last one on the command line wins.
-	if len(modes) > 0 {
-		mode := modes[len(modes)-1]
-		args.Mode = &mode
-	}
+	args.InitSuperUser = args.Mode != nil && *args.Mode == "admin"
 
-	if args.LogLevel != nil {
+	if logLevelSet {
 		if err := validateLogLevel(*args.LogLevel); err != nil {
 			return nil, err
 		}
+	} else {
+		args.LogLevel = nil
 	}
-	if args.Port != nil && (*args.Port <= 0 || *args.Port > 65535) {
-		return nil, fmt.Errorf("invalid port: %d", *args.Port)
-	}
-	if args.DeepdocInferenceConcurrency != nil && *args.DeepdocInferenceConcurrency <= 0 {
-		return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", *args.DeepdocInferenceConcurrency)
-	}
-	if args.IngestorConcurrentWorkers != nil && *args.IngestorConcurrentWorkers <= 0 {
-		return nil, fmt.Errorf("invalid --ingestor-concurrent-workers %d: must be positive", *args.IngestorConcurrentWorkers)
-	}
-	if args.IngestorPageConcurrency != nil && *args.IngestorPageConcurrency <= 0 {
-		return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", *args.IngestorPageConcurrency)
-	}
-	if args.DeepdocInferenceCPUCores != nil && *args.DeepdocInferenceCPUCores < 0 {
-		return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", *args.DeepdocInferenceCPUCores)
-	}
-	if args.IngestorTier != nil {
-		if _, err := common.ParseIngestorTier(*args.IngestorTier); err != nil {
-			return nil, err
+	if portSet {
+		if *args.Port < config.MinPort || *args.Port > config.MaxPort {
+			return nil, fmt.Errorf("invalid --port %d: must be in [%d, %d]", *args.Port, config.MinPort, config.MaxPort)
 		}
+	} else {
+		args.Port = nil
 	}
 
 	return args, nil
-}
-
-func parseArgs() (*bootstrap.ServerArgs, error) {
-	return parseArgsFrom(os.Args)
-}
-
-// modeFlag is a boolean flag that records which mode flag was set and in what
-// order, so the last mode on the command line wins (matching the previous
-// hand-rolled parser). "=false" selects nothing.
-type modeFlag struct {
-	name string
-	seen *[]string
-}
-
-func (m modeFlag) String() string   { return "" }
-func (m modeFlag) IsBoolFlag() bool { return true }
-
-func (m modeFlag) Set(value string) error {
-	on, err := strconv.ParseBool(value)
-	if err != nil {
-		return err
-	}
-	if on {
-		*m.seen = append(*m.seen, m.name)
-	}
-	return nil
 }
 
 func validateLogLevel(level string) error {
@@ -279,349 +188,353 @@ func validateLogLevel(level string) error {
 	}
 }
 
-func printHelp(args *bootstrap.ServerArgs) {
-	switch {
-	case args.Mode == nil || *args.Mode == "migrate":
-		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer|--deepdoc [OPTIONS]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "       %s --migrate [OPTIONS]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
-		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
-		fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
-		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n")
-		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n")
-		fmt.Fprintf(os.Stderr, "  --deepdoc      \tRun as DeepDoc server\n\n")
-		fmt.Fprintf(os.Stderr, "Standalone action (mutually exclusive with a mode):\n")
-		fmt.Fprintf(os.Stderr, "  --migrate      \tRun database migrations and exit\n\n")
-		fmt.Fprintf(os.Stderr, "Common options:\n")
-		fmt.Fprintf(os.Stderr, "  -f, --config string\tPath to configuration file\n")
-		fmt.Fprintf(os.Stderr, "  -p, --port int \tServer port (overrides config file)\n")
-		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (ingestor, syncer, deepdoc)\n")
-		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor, syncer, deepdoc)\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tProcess-wide page concurrency N, range [1, 16] (default: 2)\n")
-		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account (admin)\n")
-		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
-		fmt.Fprintf(os.Stderr, "  --profile      \tEnable pprof server\n")
-		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n\n")
-		fmt.Fprintln(os.Stderr, "MCP settings: service_conf.yaml mcp section or RAGFLOW_MCP_* environment variables.")
-		fmt.Fprintf(os.Stderr, "Run '%s --api --help' for API server options.\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Run '%s --admin --help' for admin server options.\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Run '%s --ingestor --help' for ingester options.\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Run '%s --syncer --help' for syncer options.\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Run '%s --deepdoc --help' for DeepDoc server options.\n", os.Args[0])
-	case *args.Mode == "api":
-		fmt.Fprintf(os.Stderr, "Usage: %s --api [OPTIONS]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "RAGFlow API Server\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  --port int     	\tServer port (overrides config file)\n")
-		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to configuration file\n")
-		fmt.Fprintf(os.Stderr, "  -v, --version 	 \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
-		fmt.Fprintf(os.Stderr, "  --profile          \t\tEnable pprof server\n")
-		fmt.Fprintf(os.Stderr, "  -h, --help       	  \tShow this help message and exit\n")
-		fmt.Fprintln(os.Stderr, "\nMCP settings: service_conf.yaml mcp section or RAGFLOW_MCP_* environment variables.")
-	case *args.Mode == "admin":
-		fmt.Fprintf(os.Stderr, "Usage: %s --admin [OPTIONS]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "RAGFlow Admin Server\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  -f --config string\t\tPath to configuration file\n")
-		fmt.Fprintf(os.Stderr, "  --port int    \t\t\tServer port (overrides config file)\n")
-		fmt.Fprintf(os.Stderr, "  --init-superuser\t\t\tInitialize superuser account\n")
-		fmt.Fprintf(os.Stderr, "  -v, --version  \t\t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --log-level string\t\tLog level: debug, info, warn, error (default: warn)\n")
-		fmt.Fprintf(os.Stderr, "  --profile      \t\t\tEnable pprof server\n")
-		fmt.Fprintf(os.Stderr, "  -h, --help     \t\t\tShow this help message and exit\n")
-	case *args.Mode == "ingestor":
-		fmt.Fprintf(os.Stderr, "Usage: %s --ingestor [OPTIONS]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "RAGFlow Ingestion Worker - Document ingestion processing\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
-		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tProcess-wide page concurrency N, range [1, 16] (default: 2)\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor-tier string\tIngestor task lane (default: low)\n")
-		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
-		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
-		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
-		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
-	case *args.Mode == "syncer":
-		fmt.Fprintf(os.Stderr, "Usage: %s --syncer [OPTIONS]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "RAGFlow Sync Service - Sync files from source to RAGFlow\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
-		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
-		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
-		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
-		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
-		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
-	case *args.Mode == "deepdoc":
-		fmt.Fprintf(os.Stderr, "Usage: %s --deepdoc [OPTIONS]\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "RAGFlow DeepDoc Inference Service - DeepDoc model inference service\n\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
-		fmt.Fprintf(os.Stderr, "  --name string\t\t\tDeepDoc server name (default: \"deepdoc_server\")\n")
-		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
-		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
-		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
-	}
+func printHelp(_ *bootstrap.ServerArgs) {
+	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
+	fmt.Fprintln(os.Stderr, "RAGFlow Server - runs admin, API, ingestor, syncer and chatter in one process by default.")
+	fmt.Fprintln(os.Stderr, "Default startup runs database migrations and initializes the superuser automatically.")
+	fmt.Fprintln(os.Stderr, "Default ports: admin 9381, API 9380.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Select at most one mode:")
+	fmt.Fprintln(os.Stderr, "  --admin            \tRun only the admin server and initialize the superuser")
+	fmt.Fprintln(os.Stderr, "  --api              \tRun only the API server")
+	fmt.Fprintln(os.Stderr, "  --ingestor         \tRun only the ingestion worker")
+	fmt.Fprintln(os.Stderr, "  --syncer           \tRun only the file syncer")
+	fmt.Fprintln(os.Stderr, "  --chatter          \tRun only the chat-channel service")
+	fmt.Fprintln(os.Stderr, "  --migrate          \tRun database migrations and exit")
+	fmt.Fprintln(os.Stderr, "Run --migrate before starting individual services.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "  -f, --config string\tPath to configuration file")
+	fmt.Fprintln(os.Stderr, "  -v, --version      \tPrint version information and exit")
+	fmt.Fprintln(os.Stderr, "  --log-level string \tLog level: debug, info, warn, error (default: warn)")
+	fmt.Fprintln(os.Stderr, "  --port int         \tHTTP port: API by default, admin with --admin (1-65535)")
+	fmt.Fprintln(os.Stderr, "  --profile          \tEnable pprof server")
+	fmt.Fprintln(os.Stderr, "  -h, --help         \tShow this help message and exit")
 }
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer cancel()
 
-	arguments, err := parseArgs()
+	arguments, err := parseArgsFrom(os.Args)
 	if err != nil {
 		fmt.Printf("Failed to parse arguments: %v\n", err)
 		os.Exit(1)
 	}
 
-	if arguments.HelpFlag || arguments.Mode == nil {
+	if *arguments.HelpFlag {
 		printHelp(arguments)
-		os.Exit(1)
+		return
 	}
 
-	if arguments.VersionFlag {
+	if *arguments.VersionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
-		os.Exit(1)
+		return
 	}
 
-	// Initialize local variables (runtime variables from Redis)
-	err = server.InitLocalVariables()
-	if err != nil {
-		fmt.Printf("Failed to start %s server: %v\n", *arguments.Mode, err)
+	if err = runServer(ctx, cancel, arguments); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start RAGFlow: %v\n", err)
 		os.Exit(1)
 	}
+}
 
-	serverType := bootstrap.GetServerType(arguments)
+func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.ServerArgs) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	// Temporary logger name (pre-config): explicit --name wins, else
-	// "<mode>_server". The final name (with the resolved port for api/admin)
-	// is derived below after the configuration is loaded.
-	serverName := bootstrap.TempServerName(serverType, arguments.Name)
-
+	serverType := common.ServerTypeUnknown
+	var serverName string
+	if arguments.Mode == nil {
+		serverType = common.ServerTypeStandalone
+		serverName = "ragflow_standalone"
+	} else {
+		serverType = bootstrap.GetServerType(arguments)
+		serverName = bootstrap.TempServerName(serverType, arguments.Name)
+	}
+	if err := server.InitLocalVariables(); err != nil {
+		return fmt.Errorf("initialize local variables: %w", err)
+	}
 	logLevel := bootstrap.SelectedLogLevel(arguments, "")
-	higherThanInfo := common.LogLevelHigherThanInfo(logLevel)
-	if higherThanInfo {
+	if common.LogLevelHigherThanInfo(logLevel) {
 		logLevel = "info"
 	}
-
-	err = common.InitLogger(logLevel, common.FileOutput{}, serverName)
-	if err != nil {
-		panic("failed to initialize logger: " + err.Error())
+	if err := common.InitLogger(logLevel, common.FileOutput{}, serverName); err != nil {
+		return fmt.Errorf("initialize logger: %w", err)
 	}
-
-	// Initialize configuration
+	defer common.SyncLog()
 	var configPath string
 	if arguments.ConfigPath != nil {
 		configPath = *arguments.ConfigPath
 	}
-
-	if err = server.Init(configPath); err != nil {
-		common.Error("Failed to initialize configuration", err)
-		os.Exit(1)
+	if err := server.Init(configPath); err != nil {
+		return fmt.Errorf("initialize configuration: %w", err)
 	}
-
-	globalConfig := server.GetConfig()
-
-	// Resolve the effective log level once (CLI > config/env > default) and
-	// validate the final value: an invalid level from the config file or the
-	// environment must abort startup instead of being silently downgraded by
-	// the logger. The early logger above stays CLI-only because the config is
-	// not loaded yet at that point.
-	resolvedLogLevel, err := globalConfig.ResolveLogLevel(arguments.LogLevel)
+	config := server.GetConfig()
+	resolvedLogLevel, err := config.ResolveLogLevel(arguments.LogLevel)
 	if err != nil {
-		fmt.Printf("Failed to resolve log level: %v\n", err)
-		os.Exit(1)
+		return err
 	}
-	globalConfig.SetLogLevel(resolvedLogLevel)
-
+	config.SetLogLevel(resolvedLogLevel)
 	var port int
-	switch serverType {
-	case common.ServerTypeAPI:
-		port, err = globalConfig.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.Port)
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI {
+		port, err = config.ResolvePort(config.GetAPIServerConfig().HTTPPort, arguments.Port)
 		if err != nil {
-			fmt.Printf("Failed to resolve API server port: %v\n", port)
-			os.Exit(1)
+			return fmt.Errorf("resolve API port: %w", err)
 		}
-		globalConfig.SetAPIServerHTTPPort(port)
-	case common.ServerTypeAdmin:
-		port, err = globalConfig.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, arguments.Port)
+		config.SetAPIServerHTTPPort(port)
+	}
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAdmin {
+		var adminPort *int
+		if serverType == common.ServerTypeAdmin {
+			adminPort = arguments.Port
+		}
+		port, err = config.ResolvePort(config.GetAdminServerConfig().HTTPPort, adminPort)
 		if err != nil {
-			fmt.Printf("Failed to resolve admin server port: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("resolve admin port: %w", err)
 		}
-		globalConfig.SetAdminHTTPPort(port)
-	case common.ServerTypeIngestion, common.ServerTypeFileSyncer, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend, common.ServerTypeDeepDocCPU, common.ServerTypeMigrate:
-		// No port embedding; the final name is derived below.
-	default:
-		common.Error(fmt.Sprintf("invalid server mode: %v", serverType), nil)
-		os.Exit(1)
+		config.SetAdminHTTPPort(port)
 	}
-
-	serverName, err = bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, port)
-	if err != nil {
-		common.Error("invalid server mode", err)
-		os.Exit(1)
-	}
-
-	auditConfig := globalConfig.GetAuditConfig()
-	err = common.InitAudit(auditConfig.Type, auditConfig.GetFileOutput(), serverName)
-	if err != nil {
-		common.Error("Failed to initialize audit logger", err)
-		os.Exit(1)
-	}
-	defer func() {
-		common.SyncAudit()
-	}()
-
-	// set server name and log file path
-	server.SetServerName(serverName)
-
-	switch serverType {
-	case common.ServerTypeAPI, common.ServerTypeIngestion:
-		err = deepdocpkg.RegisterNativeDeepDoc(arguments)
+	if serverType != common.ServerTypeStandalone {
+		arguments.Name = config.GetServerName(*arguments.Mode)
+		serverName, err = bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, port)
 		if err != nil {
-			common.Error("Failed to register in-process DeepDoc backend", err)
-			common.SyncAudit()
-			os.Exit(1)
+			return err
 		}
-	case common.ServerTypeDeepDocCPU, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend:
-		err = runDeepDoc(ctx, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
-			common.SyncAudit()
-			os.Exit(1)
-		}
-
-		// Start pprof server if requested
-		if arguments.EnablePProf {
-			err = startPProf(pprofAddr())
-			if err != nil {
-				common.Error("pprof server failed", err)
-			}
-		}
-		return
-	default:
-	}
-
-	// Print all configuration settings
-	common.Info(fmt.Sprintf("Starting %v server: %s, mode: %s", serverType, serverName, globalConfig.GetMode()))
-	server.PrintAll()
-
-	// Initialize database.
-	migrate := serverType == common.ServerTypeMigrate
-	if migrate {
-		common.Info("Running database migrations")
-	}
-
-	err = dao.InitDB(ctx, migrate)
-	if err != nil {
-		common.Fatal("Failed to initialize database", zap.Error(err))
-	}
-	if migrate {
-		common.Info("Database migrations completed")
-		return
-	}
-
-	err = checkDatabaseVersion(ctx)
-	if err != nil {
-		common.Fatal("Database has a newer version", zap.Error(err))
-	}
-
-	// Initialize doc engine
-	err = engine.InitDocEngine(ctx)
-	if err != nil {
-		common.Fatal("Failed to initialize doc engine", zap.Error(err))
-	}
-	defer engine.Close()
-
-	// Initialize Kvrocks cache
-	err = kvrocks.Init(ctx)
-	if err != nil {
-		common.Fatal("Failed to initialize Kvrocks", zap.Error(err))
-	}
-	defer kvrocks.Close()
-
-	err = storage.Init(ctx)
-	if err != nil {
-		common.Error("Failed to initialize storage factory", err)
-	}
-	defer storage.CloseStorage()
-
-	err = engine.InitMessageQueue()
-	if err != nil {
-		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
-	}
-
-	err = server.InitVariables(kvrocks.Get())
-	if err != nil {
-		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
-	}
-
-	// Billing owns the plan catalogue and the points/quota state machine.
-	// It needs the database, cache and MQ to be ready, and only the API server
-	// serves billing routes.
-	if arguments.Mode != nil && *arguments.Mode == "api" {
-		if err = billing.Init(ctx, server.GetConfig().GetBillingConfig()); err != nil {
-			common.Fatal("Failed to initialize billing", zap.Error(err))
-		}
-		if err = billing.Start(ctx); err != nil {
-			common.Fatal("Failed to start billing", zap.Error(err))
-		}
-	}
-
-	err = server.StartServer(ctx, cancel, serverName, serverType)
-	if err != nil {
-		common.Error("Failed to start EE server", err)
-		common.SyncAudit()
-		os.Exit(1)
-	}
-	defer server.ShutdownServer(ctx)
-
-	if arguments.Name == nil {
 		arguments.Name = &serverName
 	}
-
-	switch serverType {
-	case common.ServerTypeAPI:
-		err = apipkg.Run(ctx, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start API server: %v\n", err)
-			common.SyncAudit()
-			os.Exit(1)
+	server.SetServerName(serverName)
+	bootstrap.SetLogger(serverName, resolvedLogLevel)
+	onReady := arguments.Ready
+	arguments.Ready = func() error {
+		if err := common.SetLogLevel(resolvedLogLevel); err != nil {
+			return fmt.Errorf("set runtime log level: %w", err)
 		}
-	case common.ServerTypeAdmin:
-		err = admin.Run(ctx, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start ADMIN server: %v\n", err)
-			common.SyncAudit()
-			os.Exit(1)
+		if onReady != nil {
+			return onReady()
 		}
-	case common.ServerTypeIngestion:
-		err = ingestorpkg.Run(ctx, cancel, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
-			common.SyncAudit()
-			os.Exit(1)
-		}
-	case common.ServerTypeFileSyncer:
-		err = syncerpkg.Run(ctx, cancel, serverName, arguments)
-		if err != nil {
-			fmt.Printf("Failed to start SYNCER: %v\n", err)
-			common.SyncAudit()
-			os.Exit(1)
-		}
-	default:
-		fmt.Printf("Invalid server mode: %v\n", serverType)
-		common.SyncAudit()
-		os.Exit(1)
+		return nil
 	}
+	if config.GetMode() == "debug" {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
+	local.InitAdminStatus()
+	auditConfig := config.GetAuditConfig()
+	if err = common.InitAudit(auditConfig.Type, auditConfig.GetFileOutput(), serverName); err != nil {
+		return fmt.Errorf("initialize audit logger: %w", err)
+	}
+	defer common.SyncAudit()
+	if *arguments.EnablePProf {
+		if err = startPProf(pprofAddr()); err != nil {
+			common.Error("pprof server failed", err)
+		}
+	}
+	if isStandaloneDeepDocServer(serverType) {
+		return runDeepDoc(ctx, serverName, arguments)
+	}
+	runtimeNeeded := serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion
+	common.Info("Starting RAGFlow", zap.String("server", serverName))
+	// Keep the full configuration dump tied to the operator's chosen verbosity.
+	if !common.LogLevelHigherThanInfo(resolvedLogLevel) {
+		server.PrintAll()
+	}
+	defer func() {
+		if dao.DB == nil {
+			return
+		}
+		db, err := dao.DB.DB()
+		if err != nil {
+			common.Error("Failed to get database for shutdown", err)
+			return
+		}
+		if err := db.Close(); err != nil {
+			common.Error("Failed to close database", err)
+		}
+	}()
+
+	if err = dao.InitDB(ctx, serverType == common.ServerTypeStandalone || serverType == common.ServerTypeMigrate); err != nil {
+		return fmt.Errorf("initialize database: %w", err)
+	}
+	// Migration mode exits before initializing dependencies used only by services.
+	if serverType == common.ServerTypeMigrate {
+		common.Info("Database migrations completed")
+		return nil
+	}
+	if err = checkDatabaseVersion(ctx); err != nil {
+		return err
+	}
+	if err = engine.InitDocEngine(ctx); err != nil {
+		return fmt.Errorf("initialize doc engine: %w", err)
+	}
+	defer func() {
+		if err := engine.Close(); err != nil {
+			common.Error("Failed to close doc engine", err)
+		}
+	}()
+	if err = kvrocks.Init(ctx); err != nil {
+		return fmt.Errorf("initialize Kvrocks: %w", err)
+	}
+	defer kvrocks.Close()
+	if err = storage.Init(ctx); err != nil {
+		return fmt.Errorf("initialize storage: %w", err)
+	}
+	defer storage.CloseStorage()
+	if err = engine.InitMessageQueue(); err != nil {
+		return fmt.Errorf("initialize message queue: %w", err)
+	}
+	if closer, ok := engine.GetMessageQueueEngine().(io.Closer); ok {
+		defer func() {
+			if err := closer.Close(); err != nil {
+				common.Error("Failed to close message queue", err)
+			}
+		}()
+	}
+	if err = server.InitVariables(kvrocks.Get()); err != nil {
+		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.Error(err))
+	}
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
+		if err = billing.Init(ctx, config.GetBillingConfig()); err != nil {
+			return fmt.Errorf("initialize billing: %w", err)
+		}
+		if err = billing.Start(ctx); err != nil {
+			return fmt.Errorf("start billing: %w", err)
+		}
+	}
+	if err = server.StartServer(ctx, cancel, serverName, serverType); err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer shutdownCancel()
+		if err := server.ShutdownServer(shutdownCtx); err != nil {
+			common.Error("Failed to stop server services", err)
+		}
+	}()
+	defer cancel()
+	var services *bootstrap.AgentServices
+	if runtimeNeeded {
+		if err = deepdocpkg.RegisterNativeDeepDoc(arguments); err != nil {
+			return fmt.Errorf("register in-process DeepDoc backend: %w", err)
+		}
+		closeTokenizer, err := bootstrap.InitializeAgentTokenizer()
+		if err != nil {
+			return err
+		}
+		defer closeTokenizer()
+		bootstrap.SetIngestLog(serverName)
+		defer common.SyncIngestLog()
+		services = bootstrap.NewAgentServices()
+	}
+	// Stop and join service work before closing any process-wide resource.
+	defer cancel()
+	switch serverType {
+	case common.ServerTypeStandalone:
+		return runServices(ctx, cancel, arguments, services)
+	case common.ServerTypeAdmin:
+		return admin.Run(ctx, arguments)
+	case common.ServerTypeAPI:
+		return apipkg.Run(ctx, *arguments.Name, arguments, services)
+	case common.ServerTypeIngestion:
+		return ingestorpkg.Run(ctx, cancel, arguments, services)
+	case common.ServerTypeFileSyncer:
+		return syncerpkg.Run(ctx, cancel, arguments)
+	case common.ServerTypeChatter:
+		return chatterpkg.Run(ctx, arguments)
+	default:
+		return fmt.Errorf("unsupported server mode %q", *arguments.Mode)
+	}
+}
+
+func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+	group, serviceCtx := errgroup.WithContext(ctx)
+	var workerReady []<-chan struct{}
+	waitReady := func(mode string, ready <-chan struct{}) error {
+		timer := time.NewTimer(5 * time.Minute)
+		defer timer.Stop()
+		select {
+		case <-ready:
+			return nil
+		case <-serviceCtx.Done():
+			return serviceCtx.Err()
+		case <-timer.C:
+			return fmt.Errorf("%s startup timed out", mode)
+		}
+	}
+	var startupErr error
+	startService := func(mode string, run func(context.Context, *bootstrap.ServerArgs) error) {
+		if startupErr != nil || serviceCtx.Err() != nil {
+			return
+		}
+		serviceArgs := *args
+		serviceArgs.Mode = &mode
+		serviceArgs.InitSuperUser = mode == "admin"
+		var port int
+		config := server.GetConfig()
+		if mode == "admin" {
+			port = config.GetAdminServerConfig().HTTPPort
+		} else if mode == "api" {
+			port = config.GetAPIServerConfig().HTTPPort
+		}
+		name, err := bootstrap.ResolveServerName(mode, config.GetServerName(mode), port)
+		if err != nil {
+			startupErr = err
+			return
+		}
+		serviceArgs.Name = &name
+		ready := make(chan struct{})
+		serviceArgs.Ready = func() error { close(ready); return nil }
+		group.Go(func() error {
+			err := run(serviceCtx, &serviceArgs)
+			if err != nil {
+				if errors.Is(err, context.Canceled) && serviceCtx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("%s: %w", mode, err)
+			}
+			if serviceCtx.Err() == nil {
+				return fmt.Errorf("%s exited unexpectedly", mode)
+			}
+			return nil
+		})
+		if mode == "admin" || mode == "api" {
+			startupErr = waitReady(mode, ready)
+		} else {
+			workerReady = append(workerReady, ready)
+		}
+	}
+	startService("admin", admin.Run)
+	startService("api", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+		return apipkg.Run(ctx, *args.Name, args, services)
+	})
+	startService("ingestor", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+		return ingestorpkg.Run(ctx, cancel, args, services)
+	})
+	startService("syncer", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+		return syncerpkg.Run(ctx, cancel, args)
+	})
+	startService("chatter", func(ctx context.Context, args *bootstrap.ServerArgs) error {
+		return chatterpkg.Run(ctx, args)
+	})
+	if startupErr == nil {
+		for _, ready := range workerReady {
+			if startupErr = waitReady("worker", ready); startupErr != nil {
+				break
+			}
+		}
+	}
+	if startupErr == nil && serviceCtx.Err() == nil && args.Ready != nil {
+		startupErr = args.Ready()
+	}
+	if startupErr != nil {
+		cancel()
+	}
+	if err := group.Wait(); err != nil {
+		return err
+	}
+	if errors.Is(startupErr, context.Canceled) {
+		return nil
+	}
+	return startupErr
 }
 
 func checkDatabaseVersion(ctx context.Context) error {

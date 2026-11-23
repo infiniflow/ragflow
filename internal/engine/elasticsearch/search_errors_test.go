@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	elastic "github.com/elastic/go-elasticsearch/v8"
+
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 )

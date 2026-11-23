@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 )

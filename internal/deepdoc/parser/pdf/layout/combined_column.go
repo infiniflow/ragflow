@@ -60,10 +60,16 @@ func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
 	// column count wins; on a tie the FIRST page's count wins (Python keeps
 	// dict insertion order). Iterate in page order so the result never depends
 	// on Go map iteration order.
+	type pageColumn struct {
+		k     int
+		cents []float64
+	}
+	perPage := make([]pageColumn, len(sortedPages))
 	colCount := map[int]int{}
 	var firstK []int
-	for _, pg := range sortedPages {
-		k, _ := detectColumnCount(boxes, pageGroups[pg])
+	for pi, pg := range sortedPages {
+		k, cents := detectColumnCount(boxes, pageGroups[pg])
+		perPage[pi] = pageColumn{k: k, cents: cents}
 		if colCount[k] == 0 {
 			firstK = append(firstK, k)
 		}
@@ -82,10 +88,10 @@ func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
 		return result
 	}
 
-	for _, pg := range sortedPages {
+	for pi, pg := range sortedPages {
 		indices := pageGroups[pg]
-		k, cents := detectColumnCount(boxes, indices)
-		assignColIDs(boxes, result, indices, k, cents)
+		cached := perPage[pi]
+		assignColIDs(boxes, result, indices, cached.k, cached.cents)
 	}
 	return result
 }
