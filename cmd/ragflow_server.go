@@ -25,8 +25,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -107,6 +105,7 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	app := kingpin.New("ragflow_server", "RAGFlow server")
 
 	args.ConfigPath = app.Flag("config", "Config path").Short('f').String()
+	args.DataDir = app.Flag("data-dir", "Data directory for the in-process backends (desktop build only)").String()
 	args.DeepdocDevice = app.Flag("deepdoc-device", "DeepDoc inference device").String()
 	args.EnablePProf = app.Flag("profile", "Enable pprof profiling").Bool()
 	var logLevelSet, portSet bool
@@ -204,37 +203,12 @@ func printHelp(_ *bootstrap.ServerArgs) {
 	fmt.Fprintln(os.Stderr, "Run --migrate before starting individual services.")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  -f, --config string\tPath to configuration file")
+	fmt.Fprintln(os.Stderr, "  --data-dir string  \tData directory for in-process backends (desktop build only)")
 	fmt.Fprintln(os.Stderr, "  -v, --version      \tPrint version information and exit")
 	fmt.Fprintln(os.Stderr, "  --log-level string \tLog level: debug, info, warn, error (default: warn)")
 	fmt.Fprintln(os.Stderr, "  --port int         \tHTTP port: API by default, admin with --admin (1-65535)")
 	fmt.Fprintln(os.Stderr, "  --profile          \tEnable pprof server")
 	fmt.Fprintln(os.Stderr, "  -h, --help         \tShow this help message and exit")
-}
-
-func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	defer cancel()
-
-	arguments, err := parseArgsFrom(os.Args)
-	if err != nil {
-		fmt.Printf("Failed to parse arguments: %v\n", err)
-		os.Exit(1)
-	}
-
-	if *arguments.HelpFlag {
-		printHelp(arguments)
-		return
-	}
-
-	if *arguments.VersionFlag {
-		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
-		return
-	}
-
-	if err = runServer(ctx, cancel, arguments); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start RAGFlow: %v\n", err)
-		os.Exit(1)
-	}
 }
 
 func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.ServerArgs) error {
@@ -269,6 +243,10 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 		return fmt.Errorf("initialize configuration: %w", err)
 	}
 	config := server.GetConfig()
+	// The desktop build started its own cache, queue and object store; repoint
+	// the parsed configuration at them before anything dials out. A no-op in
+	// the server build.
+	bootstrap.ApplyConfigOverrides(config)
 	resolvedLogLevel, err := config.ResolveLogLevel(arguments.LogLevel)
 	if err != nil {
 		return err

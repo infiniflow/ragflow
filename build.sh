@@ -39,6 +39,12 @@ CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
 RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/ragflow_server"
 RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
+# Desktop build: the same server and CLI entry points, compiled with the
+# `desktop` tag so the cache (pebbis), message queue (JetStream) and object
+# store (S3 gateway) run in-process instead of being dialed out to. It is a
+# different binary from the server build and never overwrites it.
+RAGFLOW_DESKTOP_BINARY="$PROJECT_ROOT/bin/ragflow-desktop"
+RAGFLOW_DESKTOP_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-desktop-cli"
 
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
@@ -97,6 +103,13 @@ if [ -z "$PDF_OXIDE_VERSION" ]; then
     echo -e "${RED}Error: could not read pdf_oxide version from go.mod${NC}" >&2; exit 1
 fi
 PDF_OXIDE_PREFIX="${NATIVE_LIBS_DIR}/pdf_oxide/v${PDF_OXIDE_VERSION}"
+
+# The desktop build links Infinity's embedded engine (a Rust static library
+# from infinity/rust_engine/crates/embedded-ffi). It is built from source
+# rather than downloaded, so take it from the environment first and fall back
+# to the usual local checkouts. .cache/infinity-embedded is what the cgo
+# directive in internal/desktop/infinity.go points at.
+INFINITY_EMBEDDED_LIB="${RAGFLOW_INFINITY_EMBEDDED_LIB:-}"
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
@@ -357,6 +370,7 @@ check_pcre2() {
     #   generic Linux  -> /usr/lib, /usr/local/lib
     #   macOS Homebrew -> /opt/homebrew/lib (Apple Silicon), /usr/local/lib (Intel)
     for p in \
+        "$BUILD_DIR/libpcre2-8.a" \
         /usr/lib/x86_64-linux-gnu/libpcre2-8.a \
         /usr/lib/x86_64-linux-gnu/libpcre2-8.so \
         /usr/lib64/libpcre2-8.a \
@@ -955,9 +969,12 @@ build_cpp_test() {
     echo -e "${GREEN}✓ C++ test executable built successfully: $BUILD_DIR/rag_analyzer_c_test${NC}"
 }
 
-# Build Go server
-build_go() {
-    print_section "Building RAGFlow go"
+# Build the Go binaries for one variant.
+#   build_go_binaries <label> <build-tags> <server-out> <cli-out>
+build_go_binaries() {
+    local label="$1" tags="$2" server_out="$3" cli_out="$4"
+
+    print_section "Building RAGFlow go ($label)"
 
     cd "$PROJECT_ROOT"
 
@@ -1017,25 +1034,99 @@ build_go() {
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
-    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY, $RAGFLOW_SERVER_BINARY"
+    echo "Building RAGFlow $label binary: $cli_out, $server_out"
     set -x
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
-        go build -tags "$GO_BUILD_TAGS" "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
+        go build -tags "$tags" "${strip_flags[@]}" -o "$cli_out" cmd/ragflow-cli.go
 
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -tags "$GO_BUILD_TAGS" "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
+        go build -tags "$tags" "${strip_flags[@]}" -o "$server_out" \
         ./cmd
     set +x
 
 
-    if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
-        echo -e "${RED}Error: Failed to build RAGFlow main binary${NC}"
+    if [ ! -f "$server_out" ]; then
+        echo -e "${RED}Error: Failed to build RAGFlow $label main binary${NC}"
         exit 1
     fi
 
-    echo -e "${GREEN}✓ Go ragflow-cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
-    echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
+    echo -e "${GREEN}✓ Go $label cli built successfully: $cli_out${NC}"
+    echo -e "${GREEN}✓ Go $label server built successfully: $server_out${NC}"
+}
+
+# Build the server binaries: external services, configured by the operator.
+build_go() {
+    build_go_binaries "server" "$GO_BUILD_TAGS" "$RAGFLOW_SERVER_BINARY" "$RAGFLOW_CLI_BINARY"
+}
+
+# Build the desktop binaries: every external backend runs in-process, so the
+# result is a different binary with its own name, never an overwrite of the
+# server build.
+build_desktop() {
+    prepare_infinity_embedded || exit 1
+    build_go_binaries "desktop" "$GO_BUILD_TAGS,desktop" \
+        "$RAGFLOW_DESKTOP_BINARY" "$RAGFLOW_DESKTOP_CLI_BINARY"
+}
+
+# Resolve the embedded document engine archive. RAGFLOW_INFINITY_EMBEDDED_LIB
+# wins; otherwise look in the native-lib cache and then in a sibling Infinity
+# checkout. Prints the path.
+infinity_embedded_lib() {
+    if [ -n "$INFINITY_EMBEDDED_LIB" ]; then
+        if [ ! -f "$INFINITY_EMBEDDED_LIB" ]; then
+            echo "RAGFLOW_INFINITY_EMBEDDED_LIB points at a missing file: $INFINITY_EMBEDDED_LIB" >&2
+            return 1
+        fi
+        printf '%s\n' "$INFINITY_EMBEDDED_LIB"
+        return 0
+    fi
+    # The shared object is preferred over the archive: the archive embeds its
+    # own zstd/lz4 copies, which collide with the copies inside pdfium and
+    # onnxruntime at link time. A dylib/so/dll keeps those private.
+    local shared_suffix
+    case "$(uname -s)" in
+        Darwin) shared_suffix="dylib" ;;
+        Linux) shared_suffix="so" ;;
+        *) shared_suffix="dll" ;;
+    esac
+    local root candidate
+    for root in \
+        "${NATIVE_LIBS_DIR}/infinity-embedded/lib" \
+        "${PROJECT_ROOT}/../infinity/rust_engine/target/release" \
+        "${HOME}/codebase/workspace/infinity/rust_engine/target/release"; do
+        for candidate in \
+            "$root/libinfinity_embedded.${shared_suffix}" \
+            "$root/infinity_embedded.${shared_suffix}" \
+            "$root/libinfinity_embedded.a" \
+            "$root/infinity_embedded.lib"; do
+            if [ -f "$candidate" ]; then
+                printf '%s\n' "$candidate"
+                return 0
+            fi
+        done
+    done
+    return 1
+}
+
+# Stage the archive where the cgo directive expects it. A symlink keeps the
+# 100+ MB archive out of the tree and makes a rebuilt library visible without
+# rerunning the script.
+prepare_infinity_embedded() {
+    local lib
+    if ! lib="$(infinity_embedded_lib)"; then
+        echo -e "${RED}Error: the desktop build needs Infinity's embedded engine.${NC}" >&2
+        echo "Build it with:" >&2
+        echo "  cd <infinity>/rust_engine && cargo build --release -p embedded-ffi" >&2
+        echo "then point RAGFLOW_INFINITY_EMBEDDED_LIB at target/release/libinfinity_embedded.a" >&2
+        echo "(or pre-seed ${NATIVE_LIBS_DIR}/infinity-embedded/lib)." >&2
+        return 1
+    fi
+    mkdir -p "$PROJECT_ROOT/.cache/infinity-embedded"
+    rm -f "$PROJECT_ROOT"/.cache/infinity-embedded/libinfinity_embedded.* \
+        "$PROJECT_ROOT"/.cache/infinity-embedded/infinity_embedded.*
+    ln -sf "$lib" "$PROJECT_ROOT/.cache/infinity-embedded/$(basename "$lib")"
+    echo -e "${GREEN}✓ Embedded document engine: $lib${NC}"
 }
 
 # Print the path of a libpdf_oxide.a that links next to liboffice_oxide.a on
@@ -1399,6 +1490,8 @@ clean() {
     rm -rf "$BUILD_DIR"
     rm -f "$RAGFLOW_SERVER_BINARY"
     rm -f "$RAGFLOW_CLI_BINARY"
+    rm -f "$RAGFLOW_DESKTOP_BINARY"
+    rm -f "$RAGFLOW_DESKTOP_CLI_BINARY"
 
     echo -e "${GREEN}✓ Build artifacts cleaned${NC}"
 }
@@ -1430,6 +1523,16 @@ OPTIONS:
     --cpp, -c       Build only C++ static library
     --cpp-test      Build C++ test executable (builds the C++ library if needed)
     --go, -g        Build only Go server (requires C++ library to be built)
+    --desktop, -d   Build the desktop binaries: bin/ragflow-desktop and
+                    bin/ragflow-desktop-cli (requires the C++ library, i.e.
+                    --cpp first, and Infinity's embedded engine in
+                    RAGFLOW_INFINITY_EMBEDDED_LIB or the native-lib cache).
+                    Same entry points as the server build, compiled with the
+                    `desktop` tag so the cache (pebbis), message queue
+                    (JetStream), object store (S3 gateway), metadata store
+                    (SQLite) and document engine (embedded Infinity) are the
+                    process itself. These names never collide with the server
+                    build's binaries.
     --test, -t      Run Go unit tests (no build tag). Sets up the CGO env and
                     native static libs (office_oxide/pdfium/pdf_oxide) needed to
                     build (same contract as the Go tier table in AGENTS.md).
@@ -1463,6 +1566,7 @@ EXAMPLES:
     $0              # Build everything
     $0 --cpp        # Build only C++ library
     $0 --go         # Build only Go server
+    $0 --desktop    # Build the desktop binaries (in-process backends)
     $0 --cpp-test   # Build C++ test executable
     $0 --test       # Run all Go tests (unit tier, no build tag)
     $0 --test -run TestFoo ./internal/admin/...      # Targeted Go tests
@@ -1515,6 +1619,12 @@ main() {
         --go|-g)
             check_go_deps
             build_go
+            ;;
+        --desktop|-d)
+            check_go_deps
+            build_desktop
+            echo -e "\n${GREEN}=== Desktop build completed successfully! ===${NC}"
+            echo "Binary: $RAGFLOW_DESKTOP_BINARY, $RAGFLOW_DESKTOP_CLI_BINARY"
             ;;
         --test|-t)
             check_go_deps

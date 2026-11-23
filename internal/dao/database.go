@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -30,6 +31,10 @@ import (
 	"ragflow/internal/server/config"
 
 	"go.uber.org/zap"
+
+	// The desktop build's metadata store. The driver is pure Go, so it needs no
+	// cgo and builds for every platform the desktop binary targets.
+	"github.com/glebarez/sqlite"
 
 	// The vastbase metadata connection speaks lib/pq (DriverName "postgres"),
 	// matching the document engine's client; the import registers the
@@ -320,6 +325,24 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		dialector = newVastbaseDialector(vastbaseConfig)
 		maxConnections = vastbaseConfig.MaxConnections
 		staleTimeout = vastbaseConfig.StaleTimeout
+	case "sqlite":
+		sqliteConfig := globalConfig.GetSQLiteConfig()
+		if sqliteConfig.Path == "" {
+			return fmt.Errorf("sqlite path is empty")
+		}
+		// The DAO's hand-written SQL uses REGEXP for canvas tag filtering;
+		// SQLite has the operator but no implementation.
+		if err := registerSQLiteRegexp(); err != nil {
+			return fmt.Errorf("failed to register the SQLite REGEXP function: %w", err)
+		}
+		// WAL lets a reader proceed while a write is in flight, and the busy
+		// timeout covers the short overlaps that remain; the desktop process is
+		// the only writer.
+		dsn := "file:" + filepath.ToSlash(sqliteConfig.Path) +
+			"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
+		dialector = sqlite.Open(dsn)
+		maxConnections = 6
+		staleTimeout = 0
 	default:
 		databaseConfig := globalConfig.GetMySQLConfig()
 		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
@@ -370,7 +393,17 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	// Auto migrate all dataModels
 	dataModels := autoMigrateModels()
 
-	if migrateDB {
+	if globalConfig.DatabaseType() == "sqlite" {
+		// A desktop store is created by this binary and only ever upgraded by
+		// it, so it needs "create what is missing", not the convergence the
+		// other branches perform. AutoMigrate cannot do that on SQLite: it has
+		// no ALTER COLUMN, so GORM converges an existing table by rebuilding it,
+		// and the rebuild fails as soon as the model and the file disagree.
+		common.Info("Migrating the desktop SQLite store...")
+		if err = migrateSQLiteStore(ctx, DB, dataModels); err != nil {
+			return err
+		}
+	} else if migrateDB {
 		// Mirror the Python flow, where tools/scripts/run_migrations.sh runs before
 		// the ORM creates and converges the schema: the manual migrations have to see
 		// the legacy tables as they are. Running them after AutoMigrate would let
@@ -528,6 +561,40 @@ func GetDB() *gorm.DB {
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
 // This handles cases where indexes already exist (e.g., created by Python backend)
+// migrateSQLiteStore converges the desktop metadata file without ALTER COLUMN:
+// it creates missing tables (with their indexes) and adds columns the model
+// gained. SQLite cannot change a column's type or drop one, and a desktop file
+// is never migrated from another database, so those cases do not arise here.
+func migrateSQLiteStore(ctx context.Context, db *gorm.DB, models []interface{}) error {
+	migrator := db.WithContext(ctx).Migrator()
+	for _, m := range models {
+		stmt := &gorm.Statement{DB: db}
+		if err := stmt.Parse(m); err != nil {
+			return fmt.Errorf("failed to parse model %T: %w", m, err)
+		}
+		if !migrator.HasTable(m) {
+			// CreateTable issues the table's indexes as well, so there is no
+			// separate index pass here.
+			if err := migrator.CreateTable(m); err != nil {
+				return fmt.Errorf("failed to create table for %T: %w", m, err)
+			}
+			continue
+		}
+		for _, field := range stmt.Schema.Fields {
+			if field.DBName == "" || field.IgnoreMigration {
+				continue
+			}
+			if migrator.HasColumn(m, field.DBName) {
+				continue
+			}
+			if err := migrator.AddColumn(m, field.DBName); err != nil {
+				return fmt.Errorf("failed to add %T.%s: %w", m, field.DBName, err)
+			}
+		}
+	}
+	return nil
+}
+
 func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) error {
 	//err := db.Debug().AutoMigrate(model) // to print debug info
 	err := db.WithContext(ctx).AutoMigrate(model)
