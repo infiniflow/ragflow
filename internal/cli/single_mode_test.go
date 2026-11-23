@@ -76,6 +76,9 @@ func TestSingleWorkspaceNameMayBeReservedWord(t *testing.T) {
 		{"ws use new", "workspace", "new"},
 		{"ws new ws", "new_workspace", "ws"},
 		{"ws delete find", "workspace", "find"},
+		{"ws use date", "workspace", "date"},
+		{"ws new features", "new_workspace", "features"},
+		{"ws delete groups", "workspace", "groups"},
 	}
 	for _, tc := range cases {
 		cmd, err := NewParser(tc.stmt).Parse(CommandMode)
@@ -90,5 +93,8 @@ func TestSingleWorkspaceNameMayBeReservedWord(t *testing.T) {
 		if got := cmd.Params[tc.param]; got != tc.value {
 			t.Errorf("%q: %s = %v, want %q", tc.stmt, tc.param, got, tc.value)
 		}
+	}
+	if _, err := NewParser(`ws new "docs"`).Parse(CommandMode); err == nil {
+		t.Fatal("a quoted string is not a workspace name")
 	}
 }
