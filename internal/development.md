@@ -111,7 +111,7 @@ Install `uv` before running the downloaders; it installs each script's declared 
 
 `download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `deps/download_deps.py` provisions the same runtime resources and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
 
-On macOS (Apple Silicon), the equivalent build prerequisites come from Homebrew: `brew install llvm cmake simde pcre2`. Put `/opt/homebrew/opt/llvm/bin` first on `PATH` and export `CC` / `CXX` to that Clang (the verified setup uses Homebrew LLVM 21); `simde` supplies the x86 SSE/AVX headers the C++ sources include on ARM. LLD is not used on macOS, and CMake must still be 4.0 or later. See `docs/develop/launch_ragflow_from_source.md` for the complete source-build walkthrough.
+On macOS, contributors install the equivalent prerequisites with Homebrew: `brew install llvm cmake simde pcre2`. Put `/opt/homebrew/opt/llvm/bin` first on `PATH` and export `CC` / `CXX` to that Clang; `simde` supplies the x86 SSE/AVX headers the C++ sources include on ARM. LLD is not used on macOS, and CMake must still be 4.0 or later. If another CMake must be kept, install 4.x into an isolated environment, for example `uv venv ~/ragflow-native-libs/tools/cmake-venv && uv pip install --python ~/ragflow-native-libs/tools/cmake-venv/bin/python 'cmake>=4,<5'`, and prepend its `bin` to `PATH` only while building. macOS is not part of project CI; these notes summarize contributor experience rather than a maintained platform. See `docs/develop/launch_ragflow_from_source.md` for the source-build walkthrough.
 
 Build the Go resource image from `deps/` after preparing these files:
 
@@ -382,6 +382,21 @@ missing from the model directory.
 ```bash
 docker compose -f docker/docker-compose-base.yml --profile infinity up -d
 ```
+
+- Elasticsearch requires `vm.max_map_count` of at least `262144` in the Docker
+  engine's Linux kernel. On a Linux host with a local Docker Engine set it with
+  `sudo sysctl -w vm.max_map_count=262144` (persist via `/etc/sysctl.conf`).
+  Docker Desktop (macOS or Linux) runs the engine in its own Linux VM, where a
+  host-side `sysctl` has no effect and recent releases preconfigure the value;
+  if Elasticsearch logs a `max virtual memory areas` error, raise it inside the
+  running VM (does not survive a Docker Desktop restart):
+  ```bash
+  docker run --rm --privileged --pid=host justincormack/nsenter1 \
+    /bin/sh -c 'sysctl -w vm.max_map_count=262144'
+  ```
+  Invoke through `/bin/sh -c`: the image `execve`s its argument directly
+  without a `PATH` lookup, so a bare `sysctl` fails with
+  `execve: No such file or directory`.
 
 - Kvrocks coordinates for a host-run Go process come from `kvrocks.host` in
   `conf/service_conf.yaml` (default `localhost:6379`, loopback, reusing the
