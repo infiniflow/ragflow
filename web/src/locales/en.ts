@@ -602,6 +602,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       parsingMode: 'Parsing mode',
       enabled: 'Enable',
       disabled: 'Disable',
+      enabledStatus: 'Enabled',
+      disabledStatus: 'Disabled',
+      info: 'Info',
+      viewError: 'View error',
       action: 'Action',
       parsingStatus: 'Parsing status',
       parsingStatusTip:

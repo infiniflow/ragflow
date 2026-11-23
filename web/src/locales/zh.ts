@@ -544,6 +544,10 @@ export default {
       parsingMode: '解析方式',
       enabled: '启用',
       disabled: '禁用',
+      enabledStatus: '已启用',
+      disabledStatus: '已禁用',
+      info: '信息',
+      viewError: '查看错误',
       action: '操作',
       parsingStatus: '解析状态',
       parsingStatusTip:
