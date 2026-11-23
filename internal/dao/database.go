@@ -619,6 +619,7 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	// and only log).
 	goRuntimeModels = append(goRuntimeModels, chunkVersionRuntimeModelsEE()...)
 	goRuntimeModels = append(goRuntimeModels, datasetVersionRuntimeModelsEE()...)
+	goRuntimeModels = append(goRuntimeModels, permissionRuntimeModelsEE()...)
 	goRuntimeModels = append(goRuntimeModels, completionLogModelsEE()...)
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
