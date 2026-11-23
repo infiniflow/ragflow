@@ -48,14 +48,14 @@ type ServerArgs struct {
 }
 
 // SelectedLogLevel resolves the effective log level: an explicit --log-level
-// (non-nil) wins, otherwise the configured level, otherwise "info".
+// (non-nil) wins, otherwise the configured level, otherwise "warn".
 func SelectedLogLevel(args *ServerArgs, configured string) string {
 	if args.LogLevel != nil {
 		return *args.LogLevel
 	}
 
 	if configured == "" {
-		return "info"
+		return "warn"
 	}
 
 	return configured
