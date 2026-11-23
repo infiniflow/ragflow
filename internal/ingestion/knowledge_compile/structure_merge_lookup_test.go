@@ -295,35 +295,51 @@ func TestMergeExistingStructureBucketsSplitsRelationSweepAtTheResultWindow(t *te
 	}
 }
 
-// excludedStructureIDs reads the ids a must_not exclusion carries, in both the
-// single-clause and the chunked "and" shape relationExclusionClauses emits.
-func excludedStructureIDs(raw interface{}) []string {
-	var out []string
-	var walk func(interface{})
-	walk = func(value interface{}) {
-		switch typed := value.(type) {
-		case map[string]interface{}:
-			if ids, ok := typed["id"].([]string); ok {
-				out = append(out, ids...)
+// structureFilterMatches evaluates the subset of the engine filter language the
+// structure merge writes — id value lists, "and" groups and must_not negation —
+// with the Boolean meaning the engines give it. Keys outside that subset are
+// left to the caller, which narrows the rows it feeds in.
+func structureFilterMatches(filter map[string]interface{}, id string) bool {
+	for k, v := range filter {
+		switch k {
+		case "id":
+			switch ids := v.(type) {
+			case []string:
+				found := false
+				for _, candidate := range ids {
+					if candidate == id {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return false
+				}
+			case string:
+				if ids != id {
+					return false
+				}
+			default:
+				return false
 			}
-			if inner, ok := typed["must_not"]; ok {
-				walk(inner)
+		case "and":
+			children := types.FilterClauses(v)
+			if len(children) == 0 {
+				return false
 			}
-			if children, ok := typed["and"]; ok {
-				walk(children)
+			for _, child := range children {
+				if !structureFilterMatches(child, id) {
+					return false
+				}
 			}
-		case []map[string]interface{}:
-			for _, child := range typed {
-				walk(child)
-			}
-		case []interface{}:
-			for _, child := range typed {
-				walk(child)
+		case "must_not":
+			negated, ok := v.(map[string]interface{})
+			if !ok || structureFilterMatches(negated, id) {
+				return false
 			}
 		}
 	}
-	walk(raw)
-	return out
+	return true
 }
 
 // A single endpoint pair cannot be split any further, but its stored rows can
@@ -373,32 +389,14 @@ func TestMergeExistingStructureBucketsReadsASinglePairPastTheResultWindow(t *tes
 				if req.Offset+req.Limit > common.MAX_RESULT_WINDOW {
 					return nil, fmt.Errorf("Result window is too large, from + size must be <= %d", common.MAX_RESULT_WINDOW)
 				}
-				matched := stored
-				if raw, ok := req.Filter["id"]; ok {
-					wanted := make(map[string]bool, len(raw.([]string)))
-					for _, id := range raw.([]string) {
-						wanted[id] = true
-					}
-					matched = nil
-					for _, row := range stored {
-						if wanted[row["id"].(string)] {
-							matched = append(matched, row)
-						}
+				matched := make([]map[string]interface{}, 0, len(stored))
+				for _, row := range stored {
+					if structureFilterMatches(req.Filter, row["id"].(string)) {
+						matched = append(matched, row)
 					}
 				}
-				if raw, ok := req.Filter["must_not"]; ok {
+				if _, ok := req.Filter["and"]; ok {
 					sawExclusion = true
-					excluded := make(map[string]bool)
-					for _, id := range excludedStructureIDs(raw) {
-						excluded[id] = true
-					}
-					kept := make([]map[string]interface{}, 0, len(matched))
-					for _, row := range matched {
-						if !excluded[row["id"].(string)] {
-							kept = append(kept, row)
-						}
-					}
-					matched = kept
 				}
 				start, end := req.Offset, req.Offset+req.Limit
 				if start > len(matched) {
@@ -464,7 +462,8 @@ func TestMergeExistingStructureBucketsStopsWhenTheWindowReadMakesNoProgress(t *t
 		})
 	}
 	eng := &fakeEngine{engineType: "infinity", searchFn: func(req *types.SearchRequest) ([]map[string]interface{}, error) {
-		// Deliberately ignore must_not: emulate a backend without id exclusion.
+		// Deliberately ignore the conjoined exclusion: emulate a backend that
+		// drops it and keeps handing back the same rows.
 		if req.Offset+req.Limit > common.MAX_RESULT_WINDOW {
 			return nil, fmt.Errorf("Result window is too large, from + size must be <= %d", common.MAX_RESULT_WINDOW)
 		}
@@ -497,24 +496,21 @@ func TestMergeExistingStructureBucketsStopsWhenTheWindowReadMakesNoProgress(t *t
 	}
 }
 
-// The exclusion filter is the only thing that keeps a continued read from
-// re-reading the rows it already has, so pin its shape: an "and" of must_not
-// id-terms chunks, each within the engine term-count limit.
+// The exclusion clauses are the only thing that keeps a continued read from
+// re-reading the rows it already has, so pin both their shape — must_not id
+// chunks, each within the engine term-count limit — and their polarity once
+// conjoined under "and".
 func TestRelationExclusionClausesChunksTheReadIDs(t *testing.T) {
 	ids := make([]string, relationExclusionChunk*2+7)
 	for i := range ids {
 		ids[i] = fmt.Sprintf("id-%d", i)
 	}
-	filter := relationExclusionClauses(ids)
-	children, ok := filter["and"].([]map[string]interface{})
-	if !ok {
-		t.Fatalf("filter = %#v, want an and of must_not clauses", filter)
-	}
-	if len(children) != 3 {
-		t.Fatalf("chunks = %d, want 3", len(children))
+	clauses := relationExclusionClauses(ids)
+	if len(clauses) != 3 {
+		t.Fatalf("chunks = %d, want 3", len(clauses))
 	}
 	seen := 0
-	for _, child := range children {
+	for _, child := range clauses {
 		mustNot, ok := child["must_not"].(map[string]interface{})
 		if !ok {
 			t.Fatalf("chunk %#v lacks a must_not clause", child)
@@ -527,5 +523,27 @@ func TestRelationExclusionClausesChunksTheReadIDs(t *testing.T) {
 	}
 	if seen != len(ids) {
 		t.Fatalf("excluded ids = %d, want %d", seen, len(ids))
+	}
+}
+
+// Nesting the exclusion under a top-level must_not instead of conjoining it
+// flips the predicate: the engines read NOT(a AND b) of two negations as a OR b,
+// so the round would select the ids it means to exclude. Pin both directions.
+func TestStructureFilterMatchesKeepsExclusionPolarity(t *testing.T) {
+	ids := []string{"id-a", "id-b"}
+	conjoined := map[string]interface{}{"and": relationExclusionClauses(ids)}
+	for _, id := range ids {
+		if structureFilterMatches(conjoined, id) {
+			t.Fatalf("conjoined exclusion selected the already-read id %q", id)
+		}
+	}
+	if !structureFilterMatches(conjoined, "id-c") {
+		t.Fatal("conjoined exclusion dropped an unread id")
+	}
+	negated := map[string]interface{}{"must_not": map[string]interface{}{"and": relationExclusionClauses(ids)}}
+	for _, id := range ids {
+		if !structureFilterMatches(negated, id) {
+			t.Fatalf("a doubly negated exclusion removed the id %q it selects", id)
+		}
 	}
 }

@@ -816,17 +816,20 @@ type structureRelationPair struct {
 	to   string
 }
 
-// relationExclusionClauses renders ids already read as must_not clauses, so the
-// next read continues after them. Chunked because a single terms clause over
-// the whole set would pass the engines' term-count limit; the read enters this
-// path with at least one result window of ids, so it is always chunked.
-func relationExclusionClauses(ids []string) map[string]interface{} {
+// relationExclusionClauses renders ids already read as must_not id clauses for
+// the caller to conjoin with its positive filter under "and". Nesting the list
+// under a top-level must_not instead would negate the conjunction, and the
+// engines read NOT(a AND b) of two negations as a OR b: the round would select
+// exactly the ids it means to exclude. Chunked because a single terms clause
+// over the whole set would pass the engines' term-count limit; the read enters
+// this path with at least one result window of ids, so it is always chunked.
+func relationExclusionClauses(ids []string) []map[string]interface{} {
 	clauses := make([]map[string]interface{}, 0, (len(ids)+relationExclusionChunk-1)/relationExclusionChunk)
 	for start := 0; start < len(ids); start += relationExclusionChunk {
 		end := min(start+relationExclusionChunk, len(ids))
 		clauses = append(clauses, map[string]interface{}{"must_not": map[string]interface{}{"id": ids[start:end]}})
 	}
-	return map[string]interface{}{"and": clauses}
+	return clauses
 }
 
 // mergeExistingStructureBuckets folds the persisted dataset-level rows into the
@@ -994,8 +997,8 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 		pairs = append(pairs, pair)
 	}
 	// readPastWindow continues a read whose rows filled the engine result window.
-	// Each round excludes the ids read so far (must_not) and pages again from
-	// offset 0, so every request stays inside the window and the pair is still
+	// Each round conjoins the ids read so far as must_not id clauses and pages
+	// again from offset 0, so every request stays inside the window and the pair is still
 	// read completely. Re-applied rows are idempotent, so a round overlapping an
 	// earlier one folds each source id once.
 	readPastWindow := func(pair structureRelationPair, extra map[string]interface{}, readIDs []string) error {
@@ -1009,7 +1012,7 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 				roundExtra[k] = v
 			}
 			if len(readIDs) > 0 {
-				roundExtra["must_not"] = relationExclusionClauses(readIDs)
+				roundExtra["and"] = relationExclusionClauses(readIDs)
 			}
 			var roundIDs []string
 			fetched, err := lookup(roundExtra, common.MAX_RESULT_WINDOW, &roundIDs)
