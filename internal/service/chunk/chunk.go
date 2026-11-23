@@ -321,11 +321,12 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 
 	// Apply cross_languages and keyword extraction with tenant default chat model
 	modifiedQuestion := req.Question
+	crossLanguages := service.ResolveSearchCrossLanguages(req.CrossLanguages, searchConfig)
 	var chatModel *models.ChatModel
 
 	// Get chat model for cross_languages and keyword_extraction
 	var llmModelName string
-	if len(req.CrossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
+	if len(crossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
 		var err error
 		chatModel, err = modelFactory.NewDefaultChatModel(permission.WithTenantID(ctx, tenantIDs[0]))
 		if err != nil {
@@ -341,8 +342,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	}
 
 	// Apply cross_languages on the question (translate question)
-	if len(req.CrossLanguages) > 0 {
-		translated, err := service.CrossLanguages(ctx, tenantIDs[0], llmModelName, req.Question, req.CrossLanguages)
+	if len(crossLanguages) > 0 {
+		translated, err := service.CrossLanguages(ctx, tenantIDs[0], llmModelName, req.Question, crossLanguages)
 		if err != nil {
 			common.Warn("Failed to translate question", zap.Error(err))
 		} else {
@@ -364,7 +365,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		common.Info("Modified question after transformations",
 			zap.String("originalQuestion", req.Question),
 			zap.String("modifiedQuestion", modifiedQuestion),
-			zap.Strings("crossLanguages", req.CrossLanguages),
+			zap.Strings("crossLanguages", crossLanguages),
 			zap.Bool("keywordExtraction", req.Keyword != nil && *req.Keyword))
 	}
 

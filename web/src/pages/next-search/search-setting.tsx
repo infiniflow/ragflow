@@ -15,6 +15,7 @@
  */
 
 import AvatarNameDescription from '@/components/avatar-name-description';
+import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import { MetadataFilter } from '@/components/metadata-filter';
@@ -111,7 +112,7 @@ function SearchSetting({ onClose, data }: SearchSettingProps) {
           parameter: llm_setting?.parameter || '',
           ...resolveInitialLlmSetting(llm_setting),
         },
-        chat_settingcross_languages: [],
+        cross_languages: search_config?.cross_languages ?? [],
         highlight: false,
         keyword: false,
         related_search: search_config?.related_search || false,
@@ -268,6 +269,7 @@ function SearchSetting({ onClose, data }: SearchSettingProps) {
                       ></RerankFormFields>
                     </>
                   )}
+                  <CrossLanguageFormField name="search_config.cross_languages" />
                   <LlmSettingFieldItems
                     prefix="search_config.llm_setting"
                     showCollapse
