@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // sentenceSplitRE splits text on Chinese / English / Arabic sentence-ending
@@ -54,8 +55,9 @@ var badCitationPatterns = []*regexp.Regexp{
 }
 
 // standaloneRefCitationPattern covers unbracketed forms such as ref12,
-// ref 12, ref=12, and ref:12. Apply it separately to preserve URL text.
-var standaloneRefCitationPattern = regexp.MustCompile(`(?i)\bref\s*[:=]?\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`)
+// ref 12, ref=12, and ref:12. Match the whole digit run before consuming
+// an ASCII word suffix so a longer identifier can be kept intact.
+var standaloneRefCitationPattern = regexp.MustCompile(`(?i)\bref\s*[:=]?\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\w*`)
 var citationURLPattern = regexp.MustCompile(`(?i)\bhttps?://[^\s<>()]+`)
 
 func citationIndexInsideURL(text string, index int) bool {
@@ -77,7 +79,7 @@ func replaceStandaloneRefCitations(text string, replacement func(string) string)
 	last := 0
 	for _, m := range matches {
 		b.WriteString(text[last:m[0]])
-		if citationIndexInsideURL(text, m[0]) {
+		if m[1] != m[3] || citationIndexInsideURL(text, m[0]) {
 			b.WriteString(text[m[0]:m[1]])
 		} else {
 			b.WriteString(replacement(normalizeArabicDigits(text[m[2]:m[3]])))
@@ -429,7 +431,7 @@ var rangeCitationPattern = regexp.MustCompile(`(?i)\[\s*ID\s*[:： ]*\s*([0-9]+)
 
 // Keep an unfinished citation until its closing delimiter arrives. Retaining
 // the trailing word also preserves the word boundaries used by refN markers.
-var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslotref:=：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[:=]?\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$|\w+$`)
+var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslotref:=：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[:=]?\s*(?:[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\w*)?$|\w+$`)
 
 func stripCitations(text string) string {
 	text = cleanCitationMarkers(text)
@@ -448,10 +450,21 @@ func stripCitations(text string) string {
 var citationStreamURLTailPattern = regexp.MustCompile(`(?i)\bhttps?:(?://[^\s<>()]*|/?)$`)
 
 func citationTailBoundary(text string, pattern *regexp.Regexp) int {
-	if tail := pattern.FindStringIndex(text); tail != nil && !citationIndexInsideURL(text, tail[0]) {
-		return tail[0]
+	tail := pattern.FindStringIndex(text)
+	if tail == nil || citationIndexInsideURL(text, tail[0]) {
+		return len(text)
 	}
-	return len(text)
+	start := tail[0]
+	// An ASCII word boundary can occur between an Arabic digit and a suffix
+	// such as "ref". Keep that suffix if it is part of a longer identifier.
+	if start > 0 && text[start-1] >= utf8.RuneSelf {
+		for _, match := range standaloneRefCitationPattern.FindAllStringSubmatchIndex(text, -1) {
+			if match[3] <= start && start < match[1] {
+				return len(text)
+			}
+		}
+	}
+	return start
 }
 
 type citationStreamFilter struct {

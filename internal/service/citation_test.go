@@ -449,3 +449,47 @@ func TestCitationStreamFilterHoldsRefMarkersAcrossDeltas(t *testing.T) {
 		t.Fatalf("completed ref marker leaked into stream: %q", got)
 	}
 }
+
+func TestStandaloneRefCitationDigitBoundaries(t *testing.T) {
+	for _, test := range []struct{ input, repaired, withoutCitations string }{
+		{"ref 2۱", "[ID:21]", ""},
+		{"ref ۲۱", "[ID:21]", ""},
+		{"ref:١٢.", "[ID:12].", "."},
+		{"ref٢1中文", "[ID:21]中文", "中文"},
+		{"ref21abc", "ref21abc", "ref21abc"},
+		{"ref١٢abc", "ref١٢abc", "ref١٢abc"},
+		{"ref١٢ref3", "ref١٢ref3", "ref١٢ref3"},
+		{"ref2۱ref3", "ref2۱ref3", "ref2۱ref3"},
+		{"ref١٢ref", "ref١٢ref", "ref١٢ref"},
+		{"ref١٢re", "ref١٢re", "ref١٢re"},
+		{"https://example.com/?ref=۲۱", "https://example.com/?ref=۲۱", "https://example.com/?ref=۲۱"},
+	} {
+		if got := RepairBadCitationFormats(test.input); got != test.repaired {
+			t.Errorf("RepairBadCitationFormats(%q) = %q, want %q", test.input, got, test.repaired)
+		}
+		if got := stripCitations(test.input); got != test.withoutCitations {
+			t.Errorf("stripCitations(%q) = %q, want %q", test.input, got, test.withoutCitations)
+		}
+		for _, streaming := range []bool{true, false} {
+			if got := stripChannelCitations(test.input, streaming); got != test.withoutCitations {
+				t.Errorf("stripChannelCitations(%q, %t) = %q, want %q", test.input, streaming, got, test.withoutCitations)
+			}
+		}
+		for split := range test.input {
+			var filter citationStreamFilter
+			got := filter.write(test.input[:split]) + filter.write(test.input[split:]) + filter.flush()
+			if got != test.withoutCitations {
+				t.Errorf("stream split %q | %q: got %q, want %q", test.input[:split], test.input[split:], got, test.withoutCitations)
+			}
+		}
+		var filter citationStreamFilter
+		var output strings.Builder
+		for _, char := range test.input {
+			output.WriteString(filter.write(string(char)))
+		}
+		output.WriteString(filter.flush())
+		if got := output.String(); got != test.withoutCitations {
+			t.Errorf("character-by-character stream of %q: got %q, want %q", test.input, got, test.withoutCitations)
+		}
+	}
+}
