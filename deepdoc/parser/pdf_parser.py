@@ -596,6 +596,27 @@ class RAGFlowPdfParser:
                     pg.append(it)
             self.tb_cpns.extend(pg)
 
+        def _has_gridline(prev_comp, comp):
+            try:
+                page = prev_comp["pn"]
+                cum = self.page_cum_height[page]
+                y = round((prev_comp["bottom"] + comp["top"]) / 2 * ZM - cum * ZM)
+                img = self.page_images[page]
+                x0 = int(max(0, prev_comp["x0"] * ZM))
+                x1 = int(min(img.width, prev_comp["x1"] * ZM))
+                if x1 - x0 < 20 or y < 1 or y >= img.height - 1:
+                    return False
+                # TSR boxes snap to text, not to the rule itself, so scan a
+                # small vertical window around the shared edge.
+                w = max(2, int(ZM))
+                strip = np.asarray(img.convert("L"), dtype=np.uint8)[max(0, y - w) : y + w + 1, x0:x1]
+                dark_frac = (strip < 160).mean(axis=1)
+                return bool((dark_frac > 0.6).any())
+            except (KeyError, IndexError, TypeError, AttributeError, ValueError):
+                return False
+
+        self.tb_cpns = self._merge_continuation_row_components(self.tb_cpns, self.boxes, _has_gridline)
+
         def gather(kwd, fzy=10, ption=0.6):
             eles = Recognizer.sort_Y_firstly([r for r in self.tb_cpns if re.match(kwd, r["label"])], fzy)
             eles = Recognizer.layouts_cleanup(self.boxes, eles, 5, ption)
@@ -638,6 +659,159 @@ class RAGFlowPdfParser:
                 b["H_left"] = spans[ii]["x0"]
                 b["H_right"] = spans[ii]["x1"]
                 b["SP"] = ii
+
+    # A row boundary with a text gap above this multiple of the table's
+    # median OCR line height is treated as a real row boundary; tighter gaps
+    # are wrapped-text continuation inside one cell.
+    _CONTINUATION_GAP_FACTOR = 1.5
+
+    @staticmethod
+    def _merge_continuation_row_components(tb_cpns, boxes, has_separator=None):
+        """Merge phantom ``table row`` components from cross-page continuations.
+
+        On a cross-page table continuation whose column holds a long wrapped
+        paragraph, the TSR model emits one ``table row`` component per wrapped
+        text line instead of one per physical row (issue #18569). Geometry
+        alone cannot separate those phantom splits from real adjacent rows,
+        because both abut or overlap vertically, so this pass uses the OCR
+        text lines inside the table to decide each boundary:
+
+        * a row component that covers no text merges into the next one
+          (split-line and padding artifacts);
+        * a visible horizontal separator (gridline) between two components
+          always keeps them apart;
+        * a boundary is kept when a new label-column text run starts below
+          it: a real row starts with a new label, while a wrapped label
+          continues at the regular line pitch;
+        * otherwise the boundary is kept when every content column with text
+          below it starts a fresh run there (real rows start new cells), and
+          is merged when at least one content column keeps flowing at the
+          regular line pitch or when only the label column wraps.
+
+        ``has_separator`` is an optional ``(prev_comp, comp) -> bool``
+        predicate reporting a visible horizontal rule between the two
+        components; when it is not provided, only the text evidence above is
+        used. When in doubt the boundary is kept, so ordinary tables are
+        returned unchanged. Components of non-row labels and tables without
+        column components are passed through as-is.
+        """
+        row_pat = re.compile(r".* (row|header)$")
+        col_pat = re.compile(r"table column$")
+
+        groups = {}
+        for idx, c in enumerate(tb_cpns):
+            groups.setdefault((c.get("pn"), c.get("layoutno")), []).append(idx)
+
+        result = []
+        for key in sorted(groups, key=lambda k: (k[0] is None, k[0], str(k[1]))):
+            comps = [tb_cpns[i] for i in groups[key]]
+            row_comps = sorted(
+                (c for c in comps if row_pat.match(c["label"])),
+                key=lambda c: (c["top"], c["x0"]),
+            )
+            other_comps = [c for c in comps if not row_pat.match(c["label"])]
+            cols = sorted(
+                (c for c in comps if col_pat.match(c["label"])),
+                key=lambda c: c["x0"],
+            )
+            if len(row_comps) < 2 or not cols:
+                result.extend(comps)
+                continue
+
+            pn = key[0]
+            x0 = min(c["x0"] for c in row_comps) - 5
+            x1 = max(c["x1"] for c in row_comps) + 5
+            y0 = min(c["top"] for c in row_comps) - 5
+            y1 = max(c["bottom"] for c in row_comps) + 5
+            tbl_boxes = [
+                b
+                for b in boxes
+                if b.get("page_number") == pn + 1 and b.get("layout_type", "") == "table" and b.get("text", "").strip() and b["x1"] > x0 and b["x0"] < x1 and b["bottom"] > y0 and b["top"] < y1
+            ]
+            if len(tbl_boxes) < 3:
+                result.extend(comps)
+                continue
+
+            heights = sorted(b["bottom"] - b["top"] for b in tbl_boxes)
+            med_h = heights[len(heights) // 2]
+            gap_limit = RAGFlowPdfParser._CONTINUATION_GAP_FACTOR * med_h
+            label_x1 = cols[0]["x1"]
+
+            def col_of(b, label_x1=label_x1, cols=cols):
+                cx = (b["x0"] + b["x1"]) / 2
+                if cx < label_x1:
+                    return 0
+                for ci, c in enumerate(cols[1:], start=1):
+                    if c["x0"] - 3 <= cx <= c["x1"] + 3:
+                        return ci
+                return None
+
+            label_boxes = [b for b in tbl_boxes if col_of(b) == 0]
+            column_boxes = {}
+            for b in tbl_boxes:
+                ci = col_of(b)
+                if ci is not None:
+                    column_boxes.setdefault(ci, []).append(b)
+
+            merged = []
+            for comp in row_comps:
+                if not merged:
+                    merged.append(dict(comp))
+                    continue
+                acc = merged[-1]
+                boundary = acc["bottom"]
+                a_texts = [b for b in tbl_boxes if b["top"] < boundary and b["bottom"] > acc["top"]]
+                if not a_texts:
+                    # Component covering no text: split-line or padding strip.
+                    acc["bottom"] = max(acc["bottom"], comp["bottom"])
+                    acc["score"] = max(acc.get("score", 0), comp.get("score", 0))
+                    continue
+                if has_separator is not None and has_separator(acc, comp):
+                    merged.append(dict(comp))
+                    continue
+
+                b_texts = [b for b in tbl_boxes if boundary - 1 <= b["top"] < comp["bottom"] + 1]
+
+                new_label = False
+                for tb in b_texts:
+                    if col_of(tb) != 0:
+                        continue
+                    prev = [ta for ta in label_boxes if tb["top"] - gap_limit <= ta["bottom"] <= tb["top"] + 1]
+                    if not prev:
+                        new_label = True
+                        break
+                if new_label:
+                    merged.append(dict(comp))
+                    continue
+
+                fresh_starts = 0
+                tight_continuations = 0
+                for ci, cbs in column_boxes.items():
+                    if ci == 0:
+                        continue
+                    below = [b["top"] for b in cbs if boundary - 1 <= b["top"] < comp["bottom"] + 1]
+                    if not below:
+                        continue
+                    above = [b["bottom"] for b in cbs if boundary - 4 * gap_limit < b["bottom"] <= boundary + med_h / 2]
+                    if above and min(below) - max(above) <= gap_limit:
+                        tight_continuations += 1
+                    else:
+                        fresh_starts += 1
+                # A fresh text run starting in every content column means the
+                # boundary is a real row line (new cells). Wrapped paragraphs
+                # keep at least one column flowing at the regular line pitch;
+                # when only the label column wraps (new label runs were
+                # already excluded above), the split is still a phantom one.
+                continuation = tight_continuations > 0 or (fresh_starts == 0 and b_texts)
+                if continuation:
+                    acc["bottom"] = max(acc["bottom"], comp["bottom"])
+                    acc["score"] = max(acc.get("score", 0), comp.get("score", 0))
+                else:
+                    merged.append(dict(comp))
+
+            result.extend(other_comps)
+            result.extend(merged)
+        return result
 
     def _ocr_rotated_tables(self, ZM, table_layouts, tsr_results, tbcnt):
         """
