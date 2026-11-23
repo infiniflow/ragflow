@@ -447,16 +447,20 @@ func stripCitations(text string) string {
 // the URL when the next delta arrives. Include a partially streamed scheme.
 var citationStreamURLTailPattern = regexp.MustCompile(`(?i)\bhttps?:(?://[^\s<>()]*|/?)$`)
 
+func citationTailBoundary(text string, pattern *regexp.Regexp) int {
+	if tail := pattern.FindStringIndex(text); tail != nil && !citationIndexInsideURL(text, tail[0]) {
+		return tail[0]
+	}
+	return len(text)
+}
+
 type citationStreamFilter struct {
 	pending string
 }
 
 func (f *citationStreamFilter) write(delta string) string {
 	f.pending += delta
-	end := len(f.pending)
-	if tail := citationStreamTailPattern.FindStringIndex(f.pending); tail != nil && !citationIndexInsideURL(f.pending, tail[0]) {
-		end = tail[0]
-	}
+	end := citationTailBoundary(f.pending, citationStreamTailPattern)
 	if url := citationStreamURLTailPattern.FindStringIndex(f.pending); url != nil {
 		end = min(end, url[0])
 	}

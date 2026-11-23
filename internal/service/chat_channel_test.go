@@ -647,3 +647,22 @@ func TestConsumeChannelStreamAdoptsRewrittenFinal(t *testing.T) {
 		t.Fatalf("deltas = %v, want the delta and then the final text", seen)
 	}
 }
+
+func TestStripChannelCitationsPreservesURLSuffixes(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, test := range []struct{ input, want string }{
+			{"See https://example.com/ref12", "See https://example.com/ref12"},
+			{"See https://example.com/re", "See https://example.com/re"},
+			{"See https://example.com/guide#12", "See https://example.com/guide#12"},
+			{"See https://example.com/guide?next=ref12", "See https://example.com/guide?next=ref12"},
+			{"See https://example.com/guide ref12", "See https://example.com/guide "},
+		} {
+			if got := stripChannelCitations(test.input, streaming); got != test.want {
+				t.Errorf("stripChannelCitations(%q, %t) = %q, want %q", test.input, streaming, got, test.want)
+			}
+		}
+	}
+	if got := stripChannelCitations("Answer [ID", true); got != "Answer " {
+		t.Errorf("partial citation leaked into the snapshot: %q", got)
+	}
+}

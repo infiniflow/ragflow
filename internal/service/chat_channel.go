@@ -334,9 +334,9 @@ var channelCitationWordTailPattern = regexp.MustCompile(`(?i)\br(?:e)?$`)
 
 func stripChannelCitations(text string, streaming bool) string {
 	if streaming {
-		text = channelCitationWordTailPattern.ReplaceAllString(text, "")
+		text = text[:citationTailBoundary(text, channelCitationWordTailPattern)]
 	}
-	text = channelCitationTailPattern.ReplaceAllString(text, "")
+	text = text[:citationTailBoundary(text, channelCitationTailPattern)]
 	text = stripCitations(text)
 	return channelCitationPattern.ReplaceAllString(text, "")
 }
