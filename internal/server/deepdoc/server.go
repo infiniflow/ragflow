@@ -20,6 +20,7 @@
 package deepdoc
 
 import (
+	"context"
 	"fmt"
 	"os"
 	native "ragflow/internal/deepdoc/native"
@@ -32,6 +33,7 @@ import (
 	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf"
 	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
 )
@@ -127,32 +129,26 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	if errN != nil {
 		return fmt.Errorf("invalid deepdoc inference cpu cores: %w", errN)
 	}
-	// When N is unset, derive it from K so each Run opens with a single intra-op
-	// thread (coresPerInference = max(1, K/K) = 1), preserving the prior
-	// single-core-per-run semantics. An explicit N (including 0 = all cores) is
-	// honoured as-is below.
-	resolvedN := rawN
-	if !explicitN {
-		resolvedN = K
-	}
-	totalCores := inferenceTotalCores()
-	// Validate K and N against the process's CPU budget (cgroup-aware) and
-	// derive the per-Run intra-op thread count (max(1, N/K)). N == 0 resolves to
-	// all cores here.
-	coresPerInference, totalCPUCores, errV := native.ValidateInferenceConfig(totalCores, resolvedN, K)
+	// Register both inference gates through the shared, backend-independent
+	// seam. The single user-facing concurrency K drives an outer gate bounding
+	// every inference call at K and an inner/local gate bounding in-process
+	// ONNX Runs at min(K, cores). An explicit CPU-core budget N is honoured
+	// verbatim (including N=0 = all cores); only an unset N is derived from K.
+	budget, errV := RegisterInferenceBudget(K, rawN, explicitN, inferenceTotalCores())
 	if errV != nil {
 		return fmt.Errorf("invalid deepdoc inference configuration: %w", errV)
 	}
-	// Register the per-session intra-op thread count before any model session is
-	// created (the native package reads it on every SessionOptions build).
-	native.SetIntraOpThreads(coresPerInference)
-	pdf.SetDeepDocConcurrency(K)
-	native.SetInferenceLimit(K)
-	common.Info("in-process DeepDoc inference limit registered",
-		zap.Int("max_concurrent_inference", K),
-		zap.Int("cpu_cores_per_inference", coresPerInference),
-		zap.Int("total_cpu_cores_budget", totalCPUCores),
+	common.Info("DeepDoc inference limits registered",
+		zap.Int("max_concurrent_inference", budget.K),
+		zap.Int("local_concurrent_inference", budget.localCap),
+		zap.Int("cpu_cores_per_inference", budget.coresPerInference),
+		zap.Int("total_cpu_cores_budget", budget.totalCPUCores),
 		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
+
+	// Optional adaptive resource budget for in-process (CPU) inference: bounds
+	// idle sessions by cgroup-aware memory and engages backpressure under
+	// pressure. Default OFF; opt in with RAGFLOW_DEEPDOC_RESOURCE_BUDGET=1.
+	native.InitResourceBudget(context.Background(), native.CPUResource{}, false)
 
 	// Resolve the per-document page concurrency (N) from CLI > env > config >
 	// default(2) and register it with the shared page worker pool. Fail fast on
@@ -185,4 +181,17 @@ func resolveDeepDocDropScore() float64 {
 			zap.String("value", v), zap.Float64("default", infnative.DefaultDropScore))
 	}
 	return infnative.DefaultDropScore
+}
+
+// deriveLocalBudget derives the in-process Run budget from the single
+// user-facing K and the machine's core budget. It is min(K, totalCores) so
+// local inference never oversubscribes, further capped by an explicit
+// inference_cpu_cores when set. K itself (the remote/outer gate) is never
+// reduced by this — only the local gate uses the result.
+func deriveLocalBudget(k, totalCores, rawN int, explicitN bool) int {
+	cap := doctype.LocalInferenceCapacity(k, totalCores)
+	if explicitN && rawN > 0 && rawN < cap {
+		cap = rawN
+	}
+	return cap
 }

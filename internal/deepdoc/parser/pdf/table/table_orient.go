@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
+	doctype "ragflow/internal/deepdoc/parser/type"
 )
 
 // ocrBoxToPts converts a detected OCR quad (8 coords, DBNet corner order
@@ -76,7 +77,16 @@ func EvaluateTableOrientation(ctx context.Context, tableImg image.Image, doc pdf
 		// individually. Sending the whole table image to a single rec call
 		// (as the previous implementation did) treats the entire table as one
 		// line, collapsing regions to 1 and yielding a degenerate score.
+		// This helper calls the analyzer directly (not through a Parser
+		// wrapper), so it must acquire the process inference slot itself.
+		// One slot per OCR call, matching the wrapper contract; a cancelled
+		// context yields a zero score for this angle rather than an error.
+		if err := doctype.AcquireInference(ctx); err != nil {
+			scores[rot.angle] = 0
+			continue
+		}
 		boxes, derr := doc.OCRDetect(ctx, rotated)
+		doctype.ReleaseInference()
 		if derr != nil || len(boxes) == 0 {
 			scores[rot.angle] = 0
 			continue
@@ -86,7 +96,11 @@ func EvaluateTableOrientation(ctx context.Context, tableImg image.Image, doc pdf
 		regions := 0
 		for _, box := range boxes {
 			line := util.WarpCrop(rotated, ocrBoxToPts(box))
+			if err := doctype.AcquireInference(ctx); err != nil {
+				continue
+			}
 			texts, rerr := doc.OCRRecognize(ctx, line)
+			doctype.ReleaseInference()
 			if rerr != nil || len(texts) == 0 {
 				continue
 			}
