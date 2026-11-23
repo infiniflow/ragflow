@@ -12,21 +12,19 @@ TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"
 CONF_FILE="${CONF_DIR}/service_conf.yaml"
 
 rm -f "${CONF_FILE}"
-DEF_ENV_VALUE_PATTERN="\$\{([^:]+):-([^}]+)\}"
+# Expand environment placeholders without reinterpreting the YAML around them.
+ENV_PLACEHOLDER_PATTERN='[$][{]([a-zA-Z_][a-zA-Z0-9_]*)(:-([^}]*))?[}]|[$]([a-zA-Z_][a-zA-Z0-9_]*)'
 while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" =~ DEF_ENV_VALUE_PATTERN ]]; then
-        varname="${BASH_REMATCH[1]}"
-        default="${BASH_REMATCH[2]}"
-
-        if [ -n "${!varname}" ]; then
-            eval "echo \"$line"\" >> "${CONF_FILE}"
-        else
-            echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
-        fi
-    else
-        eval "echo \"$line\"" >> "${CONF_FILE}"
-    fi
-done < "${TEMPLATE_FILE}"
+    rendered=""
+    while [[ "$line" =~ $ENV_PLACEHOLDER_PATTERN ]]; do
+        placeholder="${BASH_REMATCH[0]}"
+        varname="${BASH_REMATCH[1]:-${BASH_REMATCH[4]}}"
+        value="${!varname}"
+        rendered+="${line%%"$placeholder"*}${value:-${BASH_REMATCH[3]}}"
+        line="${line#*"$placeholder"}"
+    done
+    printf '%s%s\n' "$rendered" "$line"
+done < "${TEMPLATE_FILE}" > "${CONF_FILE}"
 
 if [ "$#" -eq 0 ]; then
     echo "Starting nginx..."
