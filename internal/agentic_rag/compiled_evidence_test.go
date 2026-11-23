@@ -348,7 +348,7 @@ func TestListChunksServesCompiledEvidenceBeforeText(t *testing.T) {
 	ctx = WithQuery(ctx, "when was Acme founded")
 	ctx = withCompiledRun(ctx, "t", []string{"kb1"})
 
-	tool := NewListChunksTool("t", []string{"kb1"})
+	tool := NewListChunksTool([]string{"kb1"})
 	args := `{"doc_id":"d1","anchor_chunk_ids":["c1"],"intent":"founding year of Acme"}`
 
 	gated, err := tool.InvokableRun(ctx, args)

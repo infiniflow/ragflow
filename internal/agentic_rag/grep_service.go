@@ -352,8 +352,12 @@ func (g *GrepAdapter) Grep(ctx context.Context, req runtime.GrepRequest) ([]runt
 	// fallback (a pushdown failure is a real error the caller should surface,
 	// not silently "no matches").
 	if se, ok := g.docEngine.(regexpSearchable); ok {
+		indexNames := IndexNamesFor(ctx, req.DatasetIDs)
+		if len(indexNames) == 0 {
+			return nil, runtime.ErrCorpusScopeUnresolved
+		}
 		res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
-			IndexNames:   IndexNamesFor(ctx, req.DatasetIDs),
+			IndexNames:   indexNames,
 			KbIDs:        req.DatasetIDs,
 			Pattern:      req.Pattern,
 			Sort:         sortExprFromFields(req.Sort), // same reading order as list_chunks
@@ -438,7 +442,6 @@ func degradeGrep(
 				DatasetIDs: req.DatasetIDs,
 				DocScope:   req.DocScope,
 				TopN:       max(req.Limit, grepChunksMaxResults) * grepDegradeTopNFactor,
-				TenantID:   req.TenantID,
 			})
 			if bmErr == nil && len(chunks) > 0 {
 				common.WarnCtx(ctx, "agentic_rag: grep pushdown degraded to a lexical prefilter (approximate coverage)",

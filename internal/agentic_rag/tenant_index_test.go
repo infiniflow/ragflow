@@ -57,6 +57,11 @@ func TestIndexNamesForWithoutResolutionIsEmpty(t *testing.T) {
 	if got := IndexNamesFor(context.Background(), []string{"kb-a"}); len(got) != 0 {
 		t.Fatalf("IndexNamesFor without resolution = %v, want no index names", got)
 	}
+	// An empty resolution is never pinned: pinning it would freeze one failed
+	// lookup into "this turn has no corpus", with no chance to recover.
+	if _, pinned := datasetTenantsFromContext(WithDatasetTenants(context.Background(), nil)); pinned {
+		t.Fatal("an empty dataset→tenant resolution must not be pinned")
+	}
 }
 
 // TestGrepAndBm25SearchEveryDatasetTenant asserts both lexical legs address the
@@ -66,7 +71,6 @@ func TestGrepAndBm25SearchEveryDatasetTenant(t *testing.T) {
 	ctx := sharedScopeCtx()
 
 	if _, err := NewGrepAdapter(fe).Grep(ctx, runtime.GrepRequest{
-		TenantID:   "tenant-b",
 		Pattern:    "alpha",
 		DatasetIDs: []string{"kb-a", "kb-b"},
 	}); err != nil {
@@ -80,7 +84,6 @@ func TestGrepAndBm25SearchEveryDatasetTenant(t *testing.T) {
 	}
 
 	if _, err := NewBm25Adapter(fe).SearchBm25(ctx, runtime.Bm25Request{
-		TenantID:   "tenant-b",
 		Queries:    []string{"alpha"},
 		DatasetIDs: []string{"kb-a", "kb-b"},
 	}); err != nil {
@@ -101,7 +104,6 @@ func TestDeepReadSearchesEveryDatasetTenant(t *testing.T) {
 		{"id": "c1", "doc_id": "d1", "kb_id": "kb-a", "content_with_weight": "shared text", "chunk_order_int": 0},
 	}}
 	if _, err := NewGrepAdapter(fe).ListByDocIDs(sharedScopeCtx(), runtime.GrepRequest{
-		TenantID:   "tenant-b",
 		DatasetIDs: []string{"kb-a", "kb-b"},
 		DocScope:   []string{"d1"},
 	}); err != nil {

@@ -33,7 +33,13 @@ type datasetTenantsContextKey struct{}
 
 // WithDatasetTenants pins the dataset → tenant resolution for one run, so every
 // corpus tool of that run reads the same scope without re-querying the database.
+// An empty resolution (a failed lookup) is NOT pinned: pinning it would turn one
+// transient database error into "this turn has no corpus" for every tool, so the
+// lookup is left to run per call and can recover within the turn.
 func WithDatasetTenants(ctx context.Context, tenants map[string]string) context.Context {
+	if len(tenants) == 0 {
+		return ctx
+	}
 	return context.WithValue(ctx, datasetTenantsContextKey{}, tenants)
 }
 

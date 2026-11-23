@@ -65,18 +65,17 @@ const (
 )
 
 // NavigateTreeTool routes a question to documents via the compiled navigation
-// tree. It is stateless: the tenant and dataset scope are injected at
-// construction from the session, and the routing backend is the production
-// nav-tree service (nav.NavServiceRouter).
+// tree. It is stateless: the dataset scope is injected at construction from the
+// session, each dataset is routed in its own tenant index, and the routing
+// backend is the production nav-tree service (nav.NavServiceRouter).
 type NavigateTreeTool struct {
-	tenantID   string
 	datasetIDs []string
 }
 
-// NewNavigateTreeTool returns a NavigateTreeTool scoped to the given tenant and
-// datasets, implementing eino's runtime.InvokableTool.
-func NewNavigateTreeTool(tenantID string, datasetIDs []string) *NavigateTreeTool {
-	return &NavigateTreeTool{tenantID: tenantID, datasetIDs: datasetIDs}
+// NewNavigateTreeTool returns a NavigateTreeTool scoped to the given datasets,
+// implementing eino's runtime.InvokableTool.
+func NewNavigateTreeTool(datasetIDs []string) *NavigateTreeTool {
+	return &NavigateTreeTool{datasetIDs: datasetIDs}
 }
 
 // Info returns the tool's metadata for the chat model.

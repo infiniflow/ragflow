@@ -156,7 +156,6 @@ type GrepRequest struct {
 	Sort []string // Ordered ascending sort fields.
 	// SelectFields limits the ES _source fields returned per hit.
 	SelectFields []string
-	TenantID     string // Tenant that owns the running canvas.
 }
 
 // Bm25Service is the lexical full-text (BM25) search surface used by
@@ -175,7 +174,6 @@ type Bm25Request struct {
 	DatasetIDs []string // Knowledge base IDs to restrict to.
 	DocScope   []string // Document IDs to restrict to (empty = no doc filter).
 	TopN       int      // Max chunks per query before merging.
-	TenantID   string   // Tenant that owns the running canvas.
 }
 
 // ErrRetrievalServiceMissing is returned when no RetrievalService is registered.
@@ -215,6 +213,8 @@ var ErrRegexpNotSupported = errors.New(
 // apart from a transport or scope failure and degrade deliberately instead of
 // surfacing an opaque backend error.
 var ErrRegexpPushdown = errors.New("grep_chunks: regexp pushdown failed")
+
+var ErrCorpusScopeUnresolved = errors.New("grep_chunks: corpus scope could not be resolved")
 
 var (
 	retrievalServiceMu   sync.RWMutex

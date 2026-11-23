@@ -202,7 +202,7 @@ func TestScoreGrepChunks_ScoreAndDedupe(t *testing.T) {
 }
 
 func TestGrepChunksTool_InvalidRegex(t *testing.T) {
-	out, err := NewGrepChunksTool("", nil).InvokableRun(context.Background(), `{"query":"("}`)
+	out, err := NewGrepChunksTool(nil).InvokableRun(context.Background(), `{"query":"("}`)
 	if err != nil {
 		t.Fatalf("failure must become a result, got error: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestGrepChunksTool_InvalidRegex(t *testing.T) {
 }
 
 func TestGrepChunksTool_EmptyQuery(t *testing.T) {
-	out, err := NewGrepChunksTool("", nil).InvokableRun(context.Background(), `{"query":""}`)
+	out, err := NewGrepChunksTool(nil).InvokableRun(context.Background(), `{"query":""}`)
 	if err != nil {
 		t.Fatalf("failure must become a result, got error: %v", err)
 	}
@@ -508,7 +508,6 @@ func TestGrepAdapter_NoFallbackOnRegexpError(t *testing.T) {
 	adapter := NewGrepAdapter(fe)
 
 	_, err := adapter.Grep(context.Background(), runtime.GrepRequest{
-		TenantID:   "t",
 		Pattern:    `\bbeta\b`,
 		DatasetIDs: []string{"kb1"},
 		Limit:      30,
@@ -531,8 +530,8 @@ func TestGrepAdapter_RegexpPushdownSucceeds(t *testing.T) {
 	}
 	adapter := NewGrepAdapter(fe)
 
-	chunks, err := adapter.Grep(context.Background(), runtime.GrepRequest{
-		TenantID: "t", Pattern: "beta", DatasetIDs: []string{"kb1"}, Limit: 30,
+	chunks, err := adapter.Grep(WithDatasetTenants(context.Background(), map[string]string{"kb1": "t"}), runtime.GrepRequest{
+		Pattern: "beta", DatasetIDs: []string{"kb1"}, Limit: 30,
 	})
 	if err != nil {
 		t.Fatalf("Grep: %v", err)
@@ -613,7 +612,7 @@ func TestListChunks_DeepRead(t *testing.T) {
 	defer runtime.SetGrepService(nil)
 	stubOwner(t, "kb1")
 
-	out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+	out, err := NewListChunksTool([]string{"kb1"}).InvokableRun(context.Background(),
 		`{"doc_id":"d1","anchor_chunk_ids":["c1","c3"]}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -656,7 +655,7 @@ func TestListChunks_AnchorNeighbors(t *testing.T) {
 	defer runtime.SetGrepService(nil)
 	stubOwner(t, "kb1")
 
-	tool := NewListChunksTool("t", []string{"kb1"})
+	tool := NewListChunksTool([]string{"kb1"})
 
 	// Single anchor + 1 neighbor → window c2..c4, header carries doc_chunks_total.
 	out, err := tool.InvokableRun(context.Background(),
@@ -777,15 +776,15 @@ func TestListChunks_DocIDRequired(t *testing.T) {
 	stubOwner(t, "kb1")
 
 	// Both required args must be present: doc_id and at least one anchor.
-	if out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+	if out, err := NewListChunksTool([]string{"kb1"}).InvokableRun(context.Background(),
 		`{"anchor_chunk_ids":["c1"]}`); err != nil || !strings.Contains(out, "doc_id is required") {
 		t.Fatalf("missing doc_id must produce a tool_error result, got err=%v out=%.200q", err, out)
 	}
-	if out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+	if out, err := NewListChunksTool([]string{"kb1"}).InvokableRun(context.Background(),
 		`{"doc_id":"d1"}`); err != nil || !strings.Contains(out, "anchor_chunk_ids is required") {
 		t.Fatalf("missing anchors must produce a tool_error result, got err=%v out=%.200q", err, out)
 	}
-	if out, err := NewListChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(), `{}`); err != nil ||
+	if out, err := NewListChunksTool([]string{"kb1"}).InvokableRun(context.Background(), `{}`); err != nil ||
 		!strings.Contains(out, toolErrorMarker) {
 		t.Fatalf("everything missing must produce a tool_error result, got err=%v out=%.200q", err, out)
 	}

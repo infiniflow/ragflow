@@ -234,7 +234,7 @@ func (a *KgAdapter) Explore(ctx context.Context, req KgExploreRequest) (KgExplor
 	}
 
 	for _, kbID := range datasetIDs {
-		seedRows := a.seedSearch(ctx, req.TenantID, kbID, docs, query, scopeKwd, seedVec)
+		seedRows := a.seedSearch(ctx, kbID, docs, query, scopeKwd, seedVec)
 		var seeds []KgEntity
 		for _, row := range seedRows {
 			if e, ok := kgParseEntity(row); ok {
@@ -369,7 +369,7 @@ func (a *KgAdapter) seedVector(ctx context.Context, tenantID, text string) []flo
 // seedSearch resolves the seed entity rows: dense KNN over the entity rows
 // re-ranked by mention_count desc, or a keyword match when no vector is
 // available.
-func (a *KgAdapter) seedSearch(ctx context.Context, tenantID, kbID string, docs []string, text, scopeKwd string, seedVec []float64) []map[string]interface{} {
+func (a *KgAdapter) seedSearch(ctx context.Context, kbID string, docs []string, text, scopeKwd string, seedVec []float64) []map[string]interface{} {
 	if len(seedVec) > 0 {
 		dense := &enginetypes.MatchDenseExpr{
 			VectorColumnName:  common.VectorColumnName(len(seedVec)),
