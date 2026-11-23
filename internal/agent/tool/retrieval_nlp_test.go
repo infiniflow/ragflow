@@ -398,22 +398,16 @@ func TestNLPRetrievalAdapter_ResolveDatasetsRequiresEveryDataset(t *testing.T) {
 	}
 }
 
-func TestNLPRetrievalAdapter_SearchRejectsDatasetsFromMultipleTenants(t *testing.T) {
-	a := &NLPRetrievalAdapter{
-		svc: &nlp.RetrievalService{},
-		kbDAO: fakeKnowledgebaseLookup{
-			kbs: []*entity.Knowledgebase{
-				{ID: "kb-1", TenantID: "tenant-a", EmbdID: "embedding@provider"},
-				{ID: "kb-2", TenantID: "tenant-b", EmbdID: "embedding@provider"},
-			},
-		},
-	}
-	_, err := a.Search(t.Context(), nil, RetrievalRequest{
+func TestNLPRetrievalAdapter_RequestKeepsEveryDatasetTenant(t *testing.T) {
+	// Datasets bound to one conversation may live in different tenants (a
+	// team-shared dataset stays in the sharing tenant), and the retrieval request
+	// must carry all of them so the engine searches every dataset's index.
+	got := nlpRequestFromRetrieval(RetrievalRequest{
 		Query:      "hi",
 		DatasetIDs: []string{"kb-1", "kb-2"},
-	})
-	if err == nil || err.Error() != "retrieval: datasets span multiple tenants" {
-		t.Fatalf("Search error = %v, want multiple-tenant rejection", err)
+	}, []string{"tenant-a", "tenant-b"}, 3, &modelModule.EmbeddingModel{}, false)
+	if len(got.TenantIDs) != 2 || got.TenantIDs[0] != "tenant-a" || got.TenantIDs[1] != "tenant-b" {
+		t.Fatalf("TenantIDs = %v, want [tenant-a tenant-b]", got.TenantIDs)
 	}
 }
 

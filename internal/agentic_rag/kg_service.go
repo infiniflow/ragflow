@@ -399,7 +399,7 @@ func (a *KgAdapter) graphRowsExist(ctx context.Context, tenantID, kbID string, d
 		condition["doc_id"] = docs
 	}
 	res, err := a.docEngine.Search(ctx, &enginetypes.SearchRequest{
-		IndexNames:         []string{kgIndexName(tenantID)},
+		IndexNames:         IndexNamesFor(ctx, []string{kbID}),
 		KbIDs:              []string{kbID},
 		SelectFields:       []string{"id"},
 		Filter:             condition,
@@ -425,7 +425,7 @@ func (a *KgAdapter) kgSearchRaw(ctx context.Context, tenantID, kbID string, docs
 		condition[key] = value
 	}
 	req := &enginetypes.SearchRequest{
-		IndexNames: []string{kgIndexName(tenantID)},
+		IndexNames: IndexNamesFor(ctx, []string{kbID}),
 		KbIDs:      []string{kbID},
 		SelectFields: []string{
 			"id", "content_with_weight", "source_chunk_ids", "doc_id", "docnm_kwd",
@@ -525,7 +525,7 @@ func (a *KgAdapter) loadPassages(ctx context.Context, tenantID string, datasetID
 		chunkIDs = chunkIDs[:limit]
 	}
 	res, err := a.docEngine.Search(ctx, &enginetypes.SearchRequest{
-		IndexNames:   []string{kgIndexName(tenantID)},
+		IndexNames:   IndexNamesFor(ctx, datasetIDs),
 		KbIDs:        datasetIDs,
 		Filter:       map[string]interface{}{"id": chunkIDs},
 		SelectFields: []string{"content_with_weight", "doc_id", "docnm_kwd", "kb_id"},
@@ -549,11 +549,6 @@ func (a *KgAdapter) loadPassages(ctx context.Context, tenantID string, datasetID
 		})
 	}
 	return out
-}
-
-// kgIndexName is the chunk index of a tenant.
-func kgIndexName(tenantID string) string {
-	return "ragflow_" + tenantID
 }
 
 // kgTopMentionCount re-ranks rows by mention_count desc and returns the top N.

@@ -1398,13 +1398,14 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	}, nil
 }
 
-// esIndexNameForTenant maps one tenant id to its physical ES index. Regexp
-// search deliberately has no multi-tenant mode.
-
 // SearchByRegexp executes a regex-match-only search over chunk content. It
 // reuses the same scope-filter builder and response converter as Search but
 // emits a Lucene `regexp` query on the chunk content field instead of text /
 // dense match expressions. This backs the agent's grep_chunks tool.
+//
+// It walks req.IndexNames one index per dataset tenant, the same way Search
+// does, so a conversation bound to datasets from different tenants greps all of
+// them. A tenant without an index yet contributes an empty result, not an error.
 //
 // The caller is responsible for translating a user regex into Lucene syntax;
 // patterns using unsupported constructs should be detected and handled by the
@@ -1413,11 +1414,8 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	if req == nil {
 		return nil, fmt.Errorf("regexp search request cannot be nil")
 	}
-	// Map the engine-agnostic tenant to this engine's physical index. ES
-	// stores one index per tenant (ragflow_<tenant>).
-	indexName, err := esoscommon.EsIndexNameForTenant(req.TenantID)
-	if err != nil {
-		return nil, err
+	if len(req.IndexNames) == 0 {
+		return nil, fmt.Errorf("index names cannot be empty")
 	}
 	if strings.TrimSpace(req.Pattern) == "" {
 		return nil, fmt.Errorf("regexp pattern cannot be empty")
@@ -1498,39 +1496,21 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 
 	payload := append([]byte(nil), buf.Bytes()...)
 
-	res, err := e.client.Search(
-		e.client.Search.WithContext(ctx),
-		e.client.Search.WithIndex(indexName),
-		e.client.Search.WithBody(bytes.NewReader(payload)),
-		e.client.Search.WithTrackTotalHits(true),
-	)
-	if err != nil {
-		common.Warn("Elasticsearch regexp query failed", zap.String("index", indexName), zap.Error(err))
-		return nil, err
+	var allResults []map[string]interface{}
+	var totalHits int64
+	for _, indexName := range req.IndexNames {
+		chunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload)
+		if esErr != nil {
+			return nil, fmt.Errorf("elasticsearch: regexp search index %q: %w", indexName, esErr)
+		}
+		totalHits += indexTotal
+		allResults = append(allResults, chunks...)
 	}
 
-	if res.IsError() {
-		bodyBytes, _ := io.ReadAll(res.Body)
-		res.Body.Close()
-		common.Warn("Elasticsearch regexp error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
-		return nil, fmt.Errorf("elasticsearch regexp error on index %q: %s", indexName, strings.TrimSpace(string(bodyBytes)))
-	}
-
-	var esResp SearchResponse
-	decodeErr := json.NewDecoder(res.Body).Decode(&esResp)
-	res.Body.Close()
-	if decodeErr != nil {
-		common.Warn("Elasticsearch regexp failed to parse response", zap.String("index", indexName), zap.Error(decodeErr))
-		return nil, fmt.Errorf("elasticsearch regexp parse error on index %q: %w", indexName, decodeErr)
-	}
-
-	allResults := convertESResponse(&esResp, "")
-	totalHits := esResp.Hits.Total.Value
+	// A reading-order request is sorted ONCE over the merged set: sorting each
+	// index separately would leave the concatenation unordered.
 	if req.Sort != nil && len(req.Sort.Fields) > 0 {
 		allResults = esoscommon.SortByFields(allResults, req.Sort)
-	} else {
-		// Regexp matches have no meaningful relevance score. Preserve ES's
-		// returned order when no explicit deterministic sort was requested.
 	}
 	if len(allResults) > maxResults {
 		allResults = allResults[:maxResults]

@@ -84,7 +84,7 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest)
 	// the caller requests a sort (e.g. reading order), push it down so the engine
 	// returns the deterministic first page.
 	res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
-		TenantID:     req.TenantID,
+		IndexNames:   IndexNamesFor(ctx, req.DatasetIDs),
 		KbIDs:        req.DatasetIDs,
 		Pattern:      ".*",
 		Sort:         sortExprFromFields(req.Sort), // reading order: doc_id, page_num_int, chunk_order_int
@@ -256,7 +256,7 @@ func (g *GrepAdapter) fetchScoped(
 	// read: the scope filter and the reading-order sort both go to the engine.
 	if se, ok := g.docEngine.(regexpSearchable); ok {
 		res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
-			TenantID:     req.TenantID,
+			IndexNames:   IndexNamesFor(ctx, req.DatasetIDs),
 			KbIDs:        req.DatasetIDs,
 			Pattern:      ".*",
 			Sort:         sortExprFromFields(grepChunksSortFields),
@@ -289,7 +289,7 @@ func (g *GrepAdapter) fetchScoped(
 	// visible, and needs no regex support from the engine. Reading order is
 	// restored in Go by toChunks.
 	res, err := g.docEngine.Search(ectx, &enginetypes.SearchRequest{
-		IndexNames:   []string{indexNameFor(req.TenantID, "")},
+		IndexNames:   IndexNamesFor(ctx, req.DatasetIDs),
 		KbIDs:        req.DatasetIDs,
 		Limit:        deepReadFetchLimit,
 		Filter:       filter,
@@ -353,7 +353,7 @@ func (g *GrepAdapter) Grep(ctx context.Context, req runtime.GrepRequest) ([]runt
 	// not silently "no matches").
 	if se, ok := g.docEngine.(regexpSearchable); ok {
 		res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
-			TenantID:     req.TenantID,
+			IndexNames:   IndexNamesFor(ctx, req.DatasetIDs),
 			KbIDs:        req.DatasetIDs,
 			Pattern:      req.Pattern,
 			Sort:         sortExprFromFields(req.Sort), // same reading order as list_chunks

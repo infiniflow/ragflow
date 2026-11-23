@@ -71,7 +71,7 @@ func datasetsHaveCompiledKnowledge(ctx context.Context, de engine.DocEngine, ten
 		return false
 	}
 	res, err := de.Search(ctx, &enginetypes.SearchRequest{
-		IndexNames:         []string{indexNameFor(tenantID, "")},
+		IndexNames:         IndexNamesFor(ctx, datasetIDs),
 		KbIDs:              datasetIDs,
 		SelectFields:       []string{"id"},
 		Filter:             map[string]interface{}{"exists": "compile_kwd"},
@@ -130,7 +130,7 @@ func datasetsHaveClaims(ctx context.Context, tenantID string, datasetIDs []strin
 		return false
 	}
 	res, err := de.Search(ctx, &enginetypes.SearchRequest{
-		IndexNames:         []string{indexNameFor(tenantID, "")},
+		IndexNames:         IndexNamesFor(ctx, datasetIDs),
 		KbIDs:              datasetIDs,
 		SelectFields:       []string{"id"},
 		Filter:             map[string]interface{}{"entity_type_kwd": []string{navClaimRowType}},

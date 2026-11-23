@@ -395,6 +395,7 @@ type grepFakeEngine struct {
 	searchErr         error
 	searchCalls       int
 	lastReq           *enginetypes.SearchRequest
+	lastRegexpReq     *enginetypes.RegexpSearchRequest
 }
 
 func (e *grepFakeEngine) GetType() string { return string(engine.EngineElasticsearch) }
@@ -461,6 +462,7 @@ func keepByKey(chunks []map[string]interface{}, want []string, keys ...string) [
 	return out
 }
 func (e *grepFakeEngine) SearchByRegexp(_ context.Context, req *enginetypes.RegexpSearchRequest) (*enginetypes.SearchResult, error) {
+	e.lastRegexpReq = req
 	if e.searchByRegexpErr != nil {
 		return nil, e.searchByRegexpErr
 	}

@@ -191,17 +191,6 @@ func CopyFields(m map[string]interface{}) map[string]interface{} {
 	return result
 }
 
-func EsIndexNameForTenant(tenantID string) (string, error) {
-	tenantID = strings.TrimSpace(tenantID)
-	if tenantID == "" {
-		return "", fmt.Errorf("tenant id cannot be empty")
-	}
-	if strings.Contains(tenantID, ",") {
-		return "", fmt.Errorf("regexp search supports exactly one tenant")
-	}
-	return "ragflow_" + tenantID, nil
-}
-
 func FormatOrderedTagFeas(v any) (json.RawMessage, bool) {
 	if v == nil {
 		return nil, false

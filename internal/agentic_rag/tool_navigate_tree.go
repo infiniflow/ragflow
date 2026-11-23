@@ -173,8 +173,11 @@ func (g *NavigateTreeTool) invokableRun(ctx context.Context, argumentsInJSON str
 		anyTree  bool
 		anyError error
 	)
+	// Each dataset is routed in ITS OWN tenant: a team-shared dataset lives in
+	// the sharing tenant's index, which is not the conversation's tenant.
+	tenants := DatasetTenants(ctx, datasetIDs)
 	for _, kbID := range datasetIDs {
-		routed, rerr := router.Route(ctx, g.tenantID, kbID, full, docScope, navSearchMaxDocs)
+		routed, rerr := router.Route(ctx, tenants[kbID], kbID, full, docScope, navSearchMaxDocs)
 		if rerr != nil {
 			anyError = rerr
 			common.DebugCtx(ctx, "navigate_tree: nav-tree descent failed",

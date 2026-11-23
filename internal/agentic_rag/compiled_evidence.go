@@ -295,7 +295,7 @@ func readCompiledClaimsByChunk(ctx context.Context, tenantID string, datasetIDs,
 		filter["doc_id"] = docScope
 	}
 	res, err := de.Search(ctx, &enginetypes.SearchRequest{
-		IndexNames: []string{indexNameFor(tenantID, "")},
+		IndexNames: IndexNamesFor(ctx, datasetIDs),
 		KbIDs:      datasetIDs,
 		SelectFields: []string{
 			"content_with_weight", "source_chunk_ids", "entity_type_kwd", "compile_kwd", "doc_id",
@@ -509,7 +509,7 @@ func searchClaimsForQuestion(ctx context.Context, tenantID string, datasetIDs, d
 		filter["doc_id"] = docScope
 	}
 	rows, err := claimSearchRows(ctx, &enginetypes.SearchRequest{
-		IndexNames: []string{indexNameFor(tenantID, "")},
+		IndexNames: IndexNamesFor(ctx, datasetIDs),
 		KbIDs:      datasetIDs,
 		SelectFields: []string{
 			"content_with_weight", "source_chunk_ids", "entity_type_kwd", "compile_kwd", "doc_id",
