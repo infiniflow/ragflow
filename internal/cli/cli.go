@@ -657,79 +657,8 @@ func sanitizeCLIError(err error) string {
 
 // Run starts the interactive CLI
 func (c *CLI) Run() error {
-	// If username is provided without password, prompt for password
-	cliConfig := c.Config
-	switch cliConfig.CLIMode {
-	case APIMode:
-		apiConfig := c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer]
-		if apiConfig.UserName != nil && apiConfig.UserPassword == nil && apiConfig.APIKey == nil {
-			// provider username but no password or api token
-			maxAttempts := 3
-			for attempt := 1; attempt <= maxAttempts; attempt++ {
-				fmt.Printf("Please input your password: ")
-
-				password, err := ReadPassword()
-
-				if password == "" {
-					if attempt < maxAttempts {
-						fmt.Println("Password cannot be empty, please try again")
-						continue
-					}
-					return errors.New("no password provided after 3 attempts")
-				}
-
-				apiConfig.UserPassword = &password
-
-				if err = c.VerifyAuth(*apiConfig.UserName, *apiConfig.UserPassword); err != nil {
-					if attempt < maxAttempts {
-						fmt.Printf("Authentication failed (%d/%d attempts)\n", attempt, maxAttempts)
-						continue
-					}
-					return fmt.Errorf("authentication failed after %d attempts", maxAttempts)
-				}
-
-				break
-			}
-		}
-
-	case AdminMode:
-		adminConfig := c.Config.AdminClientConfig
-		if adminConfig.AdminName != nil && adminConfig.AdminPassword == nil {
-			// provider username but no password or api token
-			maxAttempts := 3
-			for attempt := 1; attempt <= maxAttempts; attempt++ {
-				fmt.Printf("Please input your password: ")
-
-				password, err := ReadPassword()
-
-				if password == "" {
-					if attempt < maxAttempts {
-						fmt.Println("Password cannot be empty, please try again")
-						continue
-					}
-					return errors.New("no password provided after 3 attempts")
-				}
-
-				adminConfig.AdminPassword = &password
-
-				if err = c.VerifyAuth(*adminConfig.AdminName, *adminConfig.AdminPassword); err != nil {
-					if attempt < maxAttempts {
-						fmt.Printf("Authentication failed (%d/%d attempts)\n", attempt, maxAttempts)
-						continue
-					}
-					return fmt.Errorf("authentication failed after %d attempts", maxAttempts)
-				}
-
-				break
-			}
-		}
-
-	case CommandMode:
-		// No credentials to prompt for: the single-command REPL talks to the
-		// default API server like any other command.
-
-	default:
-		return fmt.Errorf("unexpected CLI mode: %s", cliConfig.CLIMode)
+	if err := c.prepareAuth(); err != nil {
+		return err
 	}
 
 	c.running = true
@@ -756,7 +685,7 @@ func (c *CLI) Run() error {
 
 	for c.running {
 		var prompt string
-		switch cliConfig.CLIMode {
+		switch c.Config.CLIMode {
 		case APIMode:
 			prompt = fmt.Sprintf("RAGFlow(api/%s)> ", c.Config.APIClientConfig.CurrentAPIServer)
 		case AdminMode:
@@ -764,7 +693,7 @@ func (c *CLI) Run() error {
 		case CommandMode:
 			prompt = "RAGFlow(user)> "
 		default:
-			return fmt.Errorf("unexpected CLI mode: %s", cliConfig.CLIMode)
+			return fmt.Errorf("unexpected CLI mode: %s", c.Config.CLIMode)
 		}
 		input, err := c.line.Prompt(prompt)
 		if err != nil {
@@ -940,11 +869,75 @@ func (c *CLI) RunSingleCommand(command *string) error {
 	// Ensure cleanup is called on exit to restore terminal settings
 	defer c.Cleanup()
 
+	if err := c.prepareAuth(); err != nil {
+		return err
+	}
+
 	// Execute the command
 	if err := c.execute(*command); err != nil {
 		return err
 	}
 	return nil
+}
+
+// prepareAuth brings the client to an authenticated state before any command
+// runs, so the interactive loop and a single command share one login path: a
+// supplied username without a password prompts, and an API key needs no login.
+func (c *CLI) prepareAuth() error {
+	switch c.Config.CLIMode {
+	case APIMode, CommandMode:
+		apiConfig := c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer]
+		if apiConfig.UserName == nil || apiConfig.UserPassword != nil || apiConfig.APIKey != nil {
+			return nil
+		}
+		return c.promptAndVerifyPassword(*apiConfig.UserName)
+	case AdminMode:
+		adminConfig := c.Config.AdminClientConfig
+		if adminConfig.AdminName == nil || adminConfig.AdminPassword != nil {
+			return nil
+		}
+		return c.promptAndVerifyPassword(*adminConfig.AdminName)
+	default:
+		return fmt.Errorf("unexpected CLI mode: %s", c.Config.CLIMode)
+	}
+}
+
+func (c *CLI) promptAndVerifyPassword(username string) error {
+	const maxAttempts = 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		fmt.Printf("Please input your password: ")
+
+		entered, err := c.readPassword()
+		if err != nil {
+			return err
+		}
+
+		if entered == "" {
+			if attempt < maxAttempts {
+				fmt.Println("Password cannot be empty, please try again")
+				continue
+			}
+			return errors.New("no password provided after 3 attempts")
+		}
+
+		if err = c.VerifyAuth(username, entered); err != nil {
+			if attempt < maxAttempts {
+				fmt.Printf("Authentication failed (%d/%d attempts)\n", attempt, maxAttempts)
+				continue
+			}
+			return fmt.Errorf("authentication failed after %d attempts", maxAttempts)
+		}
+
+		return nil
+	}
+	return errors.New("no password provided after 3 attempts")
+}
+
+func (c *CLI) readPassword() (string, error) {
+	if c.PasswordPrompt != nil {
+		return c.PasswordPrompt("")
+	}
+	return ReadPassword()
 }
 
 // VerifyAuth verifies authentication if needed
@@ -973,7 +966,7 @@ func (c *CLI) GetPublicKeyPEM() ([]byte, error) {
 	switch c.Config.CLIMode {
 	case AdminMode:
 		publicKeyFile = c.Config.AdminClientConfig.KeyFile
-	case APIMode:
+	case APIMode, CommandMode:
 		publicKeyFile = c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer].KeyFile
 	}
 	if publicKeyFile == nil {

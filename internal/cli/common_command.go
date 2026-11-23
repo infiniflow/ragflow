@@ -80,7 +80,7 @@ func (c *CLI) LoginUserInteractive(email, password string) error {
 	case AdminMode:
 		baseURL = "/admin/login"
 		httpClient = c.AdminServerClient
-	case APIMode:
+	case APIMode, CommandMode:
 		baseURL = "/auth/login"
 		httpClient = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 	default:
@@ -102,7 +102,7 @@ func (c *CLI) LoginUserInteractive(email, password string) error {
 		c.AdminServerClient.LoginToken = &token
 		c.Config.AdminClientConfig.AdminName = &email
 		c.Config.AdminClientConfig.AdminPassword = &password
-	case APIMode:
+	case APIMode, CommandMode:
 		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken = &token
 		c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer].UserName = &email
 		c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer].UserPassword = &password
@@ -125,7 +125,7 @@ func (c *CLI) PingServer(commandCount int) (ResponseIf, error) {
 		pingPath = "/admin/ping"
 		httpClient := c.AdminServerClient
 		resp, err = httpClient.Request(commandCount, "GET", pingPath, httpClient.AuthKind(), nil, nil)
-	case APIMode:
+	case APIMode, CommandMode:
 		pingPath = "/system/ping"
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 		resp, err = httpClient.Request(commandCount, "GET", pingPath, httpClient.AuthKind(), nil, nil)
@@ -150,7 +150,7 @@ func (c *CLI) PingServer(commandCount int) (ResponseIf, error) {
 		if err = json.Unmarshal(resp.Body, &result); err != nil {
 			return nil, fmt.Errorf("ping failed: invalid JSON (%w)", err)
 		}
-	case APIMode:
+	case APIMode, CommandMode:
 		if string(resp.Body) == "pong" {
 			result.Code = 0
 			result.Message = "Pong"
