@@ -52,14 +52,26 @@ type docStateUpdater struct {
 	// history writers need it, and the orchestration layer must not resolve the
 	// process-wide handle itself (arch_test.go guards that rule).
 	db *gorm.DB
+	// engine drops the rows a re-parse did not produce, so the chunk list stops
+	// showing them. Only their rows go; the history keeps their content and a
+	// document restore rebuilds them from it.
+	engine chunkRowDeleter
+}
+
+// chunkRowDeleter is the slice of the document engine the finalizer needs: it
+// removes the rows a re-parse dropped. Narrowing it keeps the tests free of the
+// whole engine interface.
+type chunkRowDeleter interface {
+	DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName string, datasetID string) (int64, error)
 }
 
 // newDocStateUpdater creates a docStateUpdater with the real DocumentService
 // injected at construction time. Tests inject stubs via the docSvc field.
-func newDocStateUpdater(db *gorm.DB) *docStateUpdater {
+func newDocStateUpdater(db *gorm.DB, docEngine chunkRowDeleter) *docStateUpdater {
 	return &docStateUpdater{
 		docSvc: documentpkg.NewDocumentService(),
 		db:     db,
+		engine: docEngine,
 	}
 }
 
@@ -94,7 +106,37 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 	// parent rows and compiled products carry the same document and are
 	// written into the engine by the same run, so treating them as "not kept"
 	// would tombstone them the moment the parse lands.
-	return recordParseVersion(ctx, u.db, r.DocID, r.KbID, r.DocName, r.WrittenChunkIDs, r.DatasetVersion)
+	dropped, err := recordParseVersion(ctx, u.db, r.DocID, r.KbID, r.DocName, r.WrittenChunkIDs, r.DatasetVersion)
+	if err != nil {
+		return err
+	}
+	u.removeDroppedChunks(ctx, r, dropped)
+	return nil
+}
+
+// removeDroppedChunks deletes the engine rows of the chunks a re-parse did not
+// produce, so the chunk list and retrieval stop showing them. The history keeps
+// their content: a document version recorded before the parse still describes
+// them, and replaying it rebuilds them from the snapshots.
+//
+// A failure is logged rather than returned: the run already succeeded and its
+// history is written; a stale row that still shows up is better than failing a
+// parse the user watched complete.
+func (u *docStateUpdater) removeDroppedChunks(ctx context.Context, r *taskpkg.PipelineResult, dropped []string) {
+	if u.engine == nil || r == nil || r.TenantID == "" || len(dropped) == 0 {
+		return
+	}
+	indexName := fmt.Sprintf("ragflow_%s", r.TenantID)
+	if _, err := u.engine.DeleteChunks(ctx, map[string]interface{}{
+		"id":     dropped,
+		"kb_id":  r.KbID,
+		"doc_id": r.DocID,
+	}, indexName, r.KbID); err != nil {
+		common.Warn("Ingestion: failed to delete the chunks a re-parse dropped",
+			zap.String("document_id", r.DocID),
+			zap.String("dataset_id", r.KbID),
+			zap.Error(err))
+	}
 }
 
 // recordParseVersion closes a parse run in the dataset history.
@@ -135,15 +177,15 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 // A failure is returned to the run that produced it: the chunks are indexed, so
 // the run reports the failure and is retried, but the history never silently
 // loses the version that would have closed it.
-func recordParseVersion(ctx context.Context, db *gorm.DB, docID, datasetID, docName string, keptChunkIDs []string, pinnedVersion int64) error {
+func recordParseVersion(ctx context.Context, db *gorm.DB, docID, datasetID, docName string, keptChunkIDs []string, pinnedVersion int64) ([]string, error) {
 	if docID == "" || datasetID == "" || db == nil {
-		return nil
+		return nil, nil
 	}
 	writeCtx := context.WithoutCancel(ctx)
 
 	openIDs, err := chunkversion.OpenChunkIDs(writeCtx, db, docID)
 	if err != nil {
-		return fmt.Errorf("failed to list the chunk history of document %s: %w", docID, err)
+		return nil, fmt.Errorf("failed to list the chunk history of document %s: %w", docID, err)
 	}
 	dropped := missingIDs(openIDs, keptChunkIDs)
 	// anchor is the one number this run occupies. A run that wrote chunks pinned
@@ -153,7 +195,7 @@ func recordParseVersion(ctx context.Context, db *gorm.DB, docID, datasetID, docN
 	if anchor <= 0 {
 		reserved, reserveErr := datasetversion.ReserveVersion(writeCtx, db, datasetID)
 		if reserveErr != nil {
-			return fmt.Errorf("failed to reserve a dataset version for document %s: %w", docID, reserveErr)
+			return nil, fmt.Errorf("failed to reserve a dataset version for document %s: %w", docID, reserveErr)
 		}
 		anchor = reserved
 	}
@@ -207,9 +249,9 @@ func recordParseVersion(ctx context.Context, db *gorm.DB, docID, datasetID, docN
 		)
 	}
 	if err != nil {
-		return err
+		return dropped, err
 	}
-	return datasetversion.FlushStates(writeCtx, db, datasetID, version)
+	return dropped, datasetversion.FlushStates(writeCtx, db, datasetID, version)
 }
 
 // missingIDs returns the ids of `known` that `kept` does not contain.
