@@ -3,6 +3,7 @@ import zh from '@/locales/zh';
 import { get } from 'lodash';
 import {
   buildSearchSettingFormSchema,
+  SearchSettingFormSchema,
   type SearchSettingFormData,
 } from './search-setting-hooks';
 
@@ -25,9 +26,37 @@ const ValidFormData: SearchSettingFormData = {
     chat_id: '',
     highlight: false,
     keyword: false,
-    chat_settingcross_languages: [],
+    cross_languages: [],
   },
 };
+
+describe('Search language settings', () => {
+  it('keeps the selected retrieval languages in the save payload', () => {
+    const search_config = {
+      ...ValidFormData.search_config,
+      cross_languages: ['German', 'French'],
+    };
+    const parsed = SearchSettingFormSchema.parse({
+      ...ValidFormData,
+      search_config,
+    });
+
+    expect(parsed.search_config.cross_languages).toEqual(['German', 'French']);
+  });
+
+  it('defaults to the original query when an older search has no languages', () => {
+    const search_config = {
+      ...ValidFormData.search_config,
+      cross_languages: undefined,
+    };
+    const parsed = SearchSettingFormSchema.parse({
+      ...ValidFormData,
+      search_config,
+    });
+
+    expect(parsed.search_config.cross_languages).toEqual([]);
+  });
+});
 
 const InvalidFormData: SearchSettingFormData = {
   ...ValidFormData,

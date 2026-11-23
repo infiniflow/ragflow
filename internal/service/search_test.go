@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -150,6 +151,44 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	}
 	if persisted.Name != "Updated Name" {
 		t.Fatalf("expected persisted name, got %q", persisted.Name)
+	}
+}
+
+func TestSearchCrossLanguagesRoundTrip(t *testing.T) {
+	setupSearchServiceTestDB(t)
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
+	createSearchServiceTestSearch(t, "s1", "tenant-1", "Multilingual search")
+	svc := NewSearchService()
+	selected := []string{"French", "German"}
+	_, err := svc.UpdateSearch(ctx, "s1", &UpdateSearchRequest{
+		Name:         "Multilingual search",
+		SearchConfig: map[string]interface{}{"cross_languages": selected},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := svc.GetDetail(ctx, "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := searchConfigMapFromValue(detail["search_config"])
+	if got := BuildAskStreamOptions("s1", config).CrossLanguages; !slices.Equal(got, selected) {
+		t.Fatalf("summary retrieval languages = %v, want %v", got, selected)
+	}
+	for _, tc := range []struct {
+		name      string
+		requested []string
+		want      []string
+	}{
+		{"inherit saved languages", nil, selected},
+		{"override for this query", []string{"Italian"}, []string{"Italian"}},
+		{"disable for this query", []string{}, []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ResolveSearchCrossLanguages(tc.requested, config); !slices.Equal(got, tc.want) {
+				t.Errorf("retrieval languages = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

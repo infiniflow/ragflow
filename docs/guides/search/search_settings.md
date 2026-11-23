@@ -66,6 +66,10 @@ Reranking can generally improve the quality of the final result ordering, but it
 
 Enable it if search accuracy is the priority. Leave it disabled if response speed is more important or no rerank model has been configured.
 
+## Cross-language search
+
+Select the languages used in your documents. For example, if users search in English across French and German documents, select **French** and **German**. Search translates the query into the selected languages before retrieval. Leave the selection empty to search with the original query.
+
 ## Model
 
 Use **Model** below **Rerank model** to select the LLM used by Search's generated content, such as **AI summary**, **Enable related search**, and **Show query mindmap**. This is separate from the embedding model used to retrieve content and the rerank model used to order results.

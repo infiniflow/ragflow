@@ -362,7 +362,7 @@ func BuildAskStreamOptions(searchID string, searchConfig map[string]interface{})
 	opts := AskStreamOptions{
 		SearchID:       searchID,
 		DocIDs:         stringSliceFromSearchConfig(searchConfig["doc_ids"]),
-		CrossLanguages: stringSliceFromSearchConfig(searchConfig["cross_languages"]),
+		CrossLanguages: ResolveSearchCrossLanguages(nil, searchConfig),
 	}
 	if value, ok := searchConfig["use_kg"].(bool); ok {
 		opts.UseKG = &value
@@ -433,6 +433,15 @@ func searchConfigMapValue(value interface{}) (map[string]interface{}, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// ResolveSearchCrossLanguages uses the saved Search App languages when the
+// request omits them. An explicit empty list requests the original query.
+func ResolveSearchCrossLanguages(requested []string, searchConfig map[string]interface{}) []string {
+	if requested != nil {
+		return requested
+	}
+	return stringSliceFromSearchConfig(searchConfig["cross_languages"])
 }
 
 func stringSliceFromSearchConfig(value interface{}) []string {

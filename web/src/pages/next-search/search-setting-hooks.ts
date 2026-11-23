@@ -53,7 +53,7 @@ export const SearchSettingFormSchema = z
       chat_id: z.string(),
       highlight: z.boolean(),
       keyword: z.boolean(),
-      chat_settingcross_languages: z.array(z.string()),
+      cross_languages: z.array(z.string()).default([]),
       ...MetadataFilterSchema,
     }),
     ...LlmSettingEnabledSchema,

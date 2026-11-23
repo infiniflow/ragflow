@@ -195,7 +195,7 @@ export interface ISearchAppDetailProps {
   id: string;
   name: string;
   search_config: {
-    cross_languages: string[];
+    cross_languages?: string[];
     doc_ids: string[];
     chat_id: string;
     highlight: boolean;
@@ -213,7 +213,6 @@ export interface ISearchAppDetailProps {
     use_kg: boolean;
     keywords_similarity_weight?: number;
     web_search: boolean;
-    chat_settingcross_languages: string[];
     meta_data_filter?: {
       method: string;
       manual: { key: string; op: string; value: string }[];
