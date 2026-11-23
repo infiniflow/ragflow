@@ -23,6 +23,7 @@ const ChatContainer = () => {
     locale,
     theme,
     visibleAvatar,
+    reasoning,
   } = useGetSharedChatSearchParams();
   useSyncThemeFromParams(theme);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
@@ -101,6 +102,8 @@ const ChatContainer = () => {
           <div className="flex w-full justify-center md:mb-8">
             <div className="w-full md:w-5/6">
               <NextMessageInput
+                key={`${conversationId}:${reasoning}`}
+                initialThinkingMode={reasoning}
                 isShared
                 value={value}
                 disabled={hasError}

@@ -1,6 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
 import { useSendSharedMessage } from './use-send-shared-message';
-import { useThinkingLevel } from '@/hooks/use-thinking-level';
 import storage from '@/utils/authorization-util';
 
 const mockSend = jest.fn().mockResolvedValue(undefined);
@@ -24,21 +23,17 @@ jest.mock('@/hooks/logic-hooks', () => ({
 
 beforeEach(() => {
   mockSend.mockClear();
+  mockParams.set('reasoning', '0');
   storage.setThinkingLevel('5');
 });
 afterEach(() => storage.setThinkingLevel('0'));
 
 it('initializes thinking from the URL and sends the disabled level', async () => {
-  const { result } = renderHook(() => ({
-    chat: useSendSharedMessage(),
-    level: useThinkingLevel(),
-  }));
-  expect(result.current.level).toBe('0');
+  const { result } = renderHook(() => useSendSharedMessage());
   await act(async () => {
-    result.current.chat.handlePressEnter({
-      enableThinking: result.current.level,
-    });
+    result.current.handlePressEnter({});
   });
+  expect(storage.getThinkingLevel()).toBe('5');
   expect(mockSend).toHaveBeenLastCalledWith(
     '/api/v1/chatbots/shared-chat/completions',
     expect.objectContaining({ question: 'Hello', reasoning: 0 }),
@@ -65,4 +60,18 @@ it('allows the message input to override the embedded thinking preference', asyn
     '/api/v1/chatbots/shared-chat/completions',
     expect.objectContaining({ reasoning: 5 }),
   );
+});
+
+it('uses agentic reasoning when the widget supplies no override', async () => {
+  mockParams.set('reasoning', '5');
+  storage.setThinkingLevel('0');
+  const { result } = renderHook(() => useSendSharedMessage());
+  await act(async () => {
+    result.current.handlePressEnter({ enableInternet: false });
+  });
+  expect(mockSend).toHaveBeenLastCalledWith(
+    '/api/v1/chatbots/shared-chat/completions',
+    expect.objectContaining({ reasoning: 5, internet: false }),
+  );
+  expect(storage.getThinkingLevel()).toBe('0');
 });

@@ -7,7 +7,7 @@ import {
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
-import { setThinkingLevel } from '@/hooks/use-thinking-level';
+import { ThinkingMode } from '@/hooks/use-thinking-level';
 import { Message } from '@/interfaces/database/chat';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
@@ -34,12 +34,16 @@ export const useGetSharedChatSearchParams = () => {
       ),
     [searchParams],
   );
+  const reasoning = searchParams.get('reasoning');
   return {
     from: searchParams.get('from') as SharedFrom,
     sharedId: searchParams.get('shared_id'),
     locale: searchParams.get('locale'),
     theme: searchParams.get('theme'),
-    reasoning: searchParams.get('reasoning'),
+    reasoning:
+      reasoning === ThinkingMode.Agentic || reasoning === ThinkingMode.Naive
+        ? reasoning
+        : undefined,
     data: data,
     visibleAvatar: searchParams.get('visible_avatar')
       ? searchParams.get('visible_avatar') !== '1'
@@ -70,12 +74,6 @@ export const useSendSharedMessage = () => {
   } = useSelectDerivedMessages();
   const [hasError, setHasError] = useState(false);
 
-  useEffect(() => {
-    if (reasoning === '0' || reasoning === '5') {
-      setThinkingLevel(reasoning);
-    }
-  }, [reasoning]);
-
   const sendMessage = useCallback(
     async (
       message: Message,
@@ -88,7 +86,7 @@ export const useSendSharedMessage = () => {
         quote: true,
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
-        reasoning: Number(enableThinking ?? reasoning ?? 0),
+        reasoning: Number(enableThinking ?? reasoning ?? ThinkingMode.Naive),
         internet: enableInternet,
         ...(chatInfo?.llm_id ? { model_name: chatInfo.llm_id } : {}),
       });
