@@ -462,6 +462,12 @@ func TestStandaloneRefCitationDigitBoundaries(t *testing.T) {
 		{"ref2۱ref3", "ref2۱ref3", "ref2۱ref3"},
 		{"ref١٢ref", "ref١٢ref", "ref١٢ref"},
 		{"ref١٢re", "ref١٢re", "ref١٢re"},
+		{"ref١٢ref٣aref4.", "ref١٢ref٣aref4.", "ref١٢ref٣aref4."},
+		{"ref۱۲ref۳aref4.", "ref۱۲ref۳aref4.", "ref۱۲ref۳aref4."},
+		{"ref١٢ref٣ref4.", "ref١٢ref٣ref4.", "ref١٢ref٣ref4."},
+		{"ref١٢ref٣re ref5.", "ref١٢ref٣re [ID:5].", "ref١٢ref٣re ."},
+		{"ref١٢ref٣re", "ref١٢ref٣re", "ref١٢ref٣re"},
+		{"ref4.", "[ID:4].", "."},
 		{"https://example.com/?ref=۲۱", "https://example.com/?ref=۲۱", "https://example.com/?ref=۲۱"},
 	} {
 		if got := RepairBadCitationFormats(test.input); got != test.repaired {

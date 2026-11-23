@@ -54,10 +54,12 @@ var badCitationPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\(\s*\**\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\**\s*\)`), // (**ID: 12**)
 }
 
+const standaloneRefWordSuffix = `[\w\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*`
+
 // standaloneRefCitationPattern covers unbracketed forms such as ref12,
 // ref 12, ref=12, and ref:12. Match the whole digit run before consuming
-// an ASCII word suffix so a longer identifier can be kept intact.
-var standaloneRefCitationPattern = regexp.MustCompile(`(?i)\bref\s*[:=]?\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\w*`)
+// a word suffix, including supported Arabic digits, as part of the same identifier.
+var standaloneRefCitationPattern = regexp.MustCompile(`(?i)\bref\s*[:=]?\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)` + standaloneRefWordSuffix)
 var citationURLPattern = regexp.MustCompile(`(?i)\bhttps?://[^\s<>()]+`)
 
 func citationIndexInsideURL(text string, index int) bool {
@@ -431,7 +433,7 @@ var rangeCitationPattern = regexp.MustCompile(`(?i)\[\s*ID\s*[:： ]*\s*([0-9]+)
 
 // Keep an unfinished citation until its closing delimiter arrives. Retaining
 // the trailing word also preserves the word boundaries used by refN markers.
-var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslotref:=：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[:=]?\s*(?:[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\w*)?$|\w+$`)
+var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslotref:=：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[:=]?\s*(?:[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+` + standaloneRefWordSuffix + `)?$|\w+$`)
 
 func stripCitations(text string) string {
 	text = cleanCitationMarkers(text)
