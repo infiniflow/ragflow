@@ -222,11 +222,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		apiBetaAuth.POST("/agents/:canvas_id/upload", r.agentHandler.UploadAgentFile)
 		apiBetaAuth.GET("/agents/attachments/:attachment_id/download", r.agentHandler.DownloadAttachment)
-
-		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
-		// Uses BetaAuthMiddleware to resolve the user from the
-		// Authorization header.
-		apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
 	}
 
 	// Protected routes
@@ -645,6 +640,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connectors.POST("/:connector_id/resume-failed-sync", r.connectorHandler.ResumeFailedSync)
 				connectors.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
+
+			// MCP endpoint exposing RAGFlow capabilities as MCP tools. Its
+			// tools act with the caller's full identity, so it sits behind the
+			// strict middleware: the beta token embedded in share links must
+			// not reach it.
+			v1.POST("/mcp", r.mcpServerHandler.HandleMCP)
 
 			// MCP server routes.
 			mcp := v1.Group("/mcp")
