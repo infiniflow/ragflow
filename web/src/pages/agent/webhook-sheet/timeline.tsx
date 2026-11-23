@@ -63,7 +63,7 @@ export const typeMap = {
   email: t('flow.logTimeline.email'),
   httpRequest: t('flow.logTimeline.httpRequest'),
   wenCai: t('flow.logTimeline.wenCai'),
-  yahooFinance: t('flow.logTimeline.yahooFinance'),
+  yahooFinance: t('flow.logTimeline.wenCai'),
   userFillUp: t('flow.logTimeline.userFillUp'),
 };
 export const toLowerCaseStringAndDeleteChar = (

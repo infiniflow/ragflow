@@ -5,7 +5,7 @@ import { DESCRIPTION_MAX_LENGTH } from '@/constants/common';
 import { t } from 'i18next';
 import { z } from 'zod';
 export const basicInfoSchema = {
-  name: z.string().min(1, { message: t('setting.nameRequired') }),
+  name: z.string().min(1, { message: t('common.namePlaceholder') }),
   avatar: z.string().optional(),
   description: z
     .string()
