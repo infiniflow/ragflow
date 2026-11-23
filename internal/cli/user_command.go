@@ -3864,6 +3864,9 @@ func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (Re
 			fullContent += chunk.Data.Answer
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read chat completions stream: %w", err)
+	}
 
 	fullContent = strings.TrimLeft(fullContent, "\n\r")
 	return &ChatCompletionsResponse{
