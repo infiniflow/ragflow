@@ -26,6 +26,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// restoredParseMarkerExists answers false: the community edition keeps no chunk
+// history, so a restored document with no chunks has no parse marker to read.
+const restoredParseMarkerExists = "1 = 0"
+
 // tenantDAOTestExtraModels adds no tables beyond the community schema.
 func tenantDAOTestExtraModels() []interface{} { return nil }
 
@@ -35,6 +39,27 @@ func permissionDataModelsEE() []interface{} { return nil }
 
 // billingDataModelsEE returns no billing tables in the community edition.
 func billingDataModelsEE() []interface{} { return nil }
+
+// requireDatasetVersionColumnEE requires nothing in the community edition: it
+// keeps no dataset versions, so knowledgebase carries no version column and a
+// server started without --migrate is a supported state.
+func requireDatasetVersionColumnEE(context.Context, *gorm.DB) error { return nil }
+
+// chunkVersionDataModelsEE returns no chunk history table in the community
+// edition.
+func chunkVersionDataModelsEE() []interface{} { return nil }
+
+// chunkVersionRuntimeModelsEE returns no chunk history table in the community
+// edition: it keeps no per-chunk edit history.
+func chunkVersionRuntimeModelsEE() []interface{} { return nil }
+
+// datasetVersionDataModelsEE returns no dataset history table in the community
+// edition.
+func datasetVersionDataModelsEE() []interface{} { return nil }
+
+// datasetVersionRuntimeModelsEE returns no dataset history table in the
+// community edition: it keeps no dataset versions.
+func datasetVersionRuntimeModelsEE() []interface{} { return nil }
 
 // migrateBillingSchemaEE is a no-op in the community edition.
 func migrateBillingSchemaEE(ctx context.Context, db *gorm.DB) error { return nil }
@@ -73,3 +98,5 @@ type BillingSubscriptionDAO struct{}
 
 // NewBillingSubscriptionDAO creates the billing subscription DAO.
 func NewBillingSubscriptionDAO() *BillingSubscriptionDAO { return &BillingSubscriptionDAO{} }
+
+func completionLogModelsEE() []any { return nil }

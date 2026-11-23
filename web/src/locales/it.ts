@@ -1298,8 +1298,6 @@ Esempio: Virtual Hosted Style`,
         'Connetti GitHub per sincronizzare pull request e issue per il recupero.',
       airtableDescription:
         "Connettiti ad Airtable e sincronizza i file da una tabella specificata all'interno di un workspace designato.",
-      dingtalkAITableDescription:
-        'Connettiti a Dingtalk AI Table e sincronizza i record da una tabella specificata.',
       gitlabDescription:
         'Connetti GitLab per sincronizzare repository, issue, merge request e documentazione correlata.',
       asanaDescription:
@@ -1767,7 +1765,7 @@ Esempio: Virtual Hosted Style`,
         rerank: 'Rerank',
         sequence2text: 'ASR',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
         speech2text: 'ASR',
         decision: 'Decision',
       },

@@ -1,4 +1,5 @@
 import { DynamicForm } from '@/components/dynamic-form';
+import { SettingsFormContainer } from '@/components/settings-form-container';
 import {
   ModelResourceAccessUserIdContext,
   ModelResourceTenantIdContext,
@@ -29,10 +30,11 @@ import { MemorySettingProvider } from './memory-setting-context';
 
 export default function MemoryMessage() {
   const { t } = useTranslation();
-  const { data } = useFetchMemoryBaseConfiguration();
+  const { data, loading: memoryConfigLoading } =
+    useFetchMemoryBaseConfiguration();
   const { formSchema, modelsFetched, modelsEditable } = useMemoryFormSchema(
     data?.tenant_id,
-    data?.user_id,
+    memoryConfigLoading ? null : data?.user_id,
   );
   const form = useForm<IMemory>({
     resolver: zodResolver(formSchema),
@@ -78,7 +80,7 @@ export default function MemoryMessage() {
     onMemoryRenameOk(data);
   };
   return (
-    <section className="h-full flex flex-col">
+    <SettingsFormContainer className="flex h-full flex-col">
       <TopTitle
         title={t('knowledgeDetails.configuration')}
         description={t('memory.config.titleDescription')}
@@ -86,13 +88,15 @@ export default function MemoryMessage() {
       <div className="flex gap-14 flex-1 min-h-0">
         <MemorySettingProvider data={data}>
           <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
-            <ModelResourceAccessUserIdContext.Provider value={data?.user_id}>
+            <ModelResourceAccessUserIdContext.Provider
+              value={memoryConfigLoading ? null : (data?.user_id ?? null)}
+            >
               <Form {...form}>
                 <form
                   onSubmit={form.handleSubmit(() => {})}
-                  className="space-y-6 "
+                  className="w-full space-y-6"
                 >
-                  <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
+                  <div className="w-full h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
                     <section className="space-y-5 text-text-secondary !space-y-10">
                       <div className="text-base font-medium text-text-primary">
                         {t('knowledgeConfiguration.baseInfo')}
@@ -103,7 +107,7 @@ export default function MemoryMessage() {
                       <AdvancedSettingsForm />
                     </section>
                   </div>
-                  <div className="text-right items-center flex justify-end gap-3 w-[768px]">
+                  <div className="text-right items-center flex justify-end gap-3 w-full">
                     <Button
                       type="reset"
                       className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
@@ -126,6 +130,6 @@ export default function MemoryMessage() {
           </ModelResourceTenantIdContext.Provider>
         </MemorySettingProvider>
       </div>
-    </section>
+    </SettingsFormContainer>
   );
 }

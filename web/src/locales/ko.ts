@@ -1267,8 +1267,6 @@ export default {
         'GitHub를 연결하여 풀 리퀘스트와 이슈를 검색용으로 동기화합니다.',
       airtableDescription:
         'Airtable에 연결하여 지정된 워크스페이스 내 특정 테이블의 파일을 동기화합니다.',
-      dingtalkAITableDescription:
-        'DingTalk AI Table에 연결하여 지정된 테이블의 레코드를 동기화합니다.',
       gitlabDescription:
         'GitLab을 연결하여 저장소, 이슈, 머지 리퀘스트 및 관련 문서를 동기화합니다.',
       asanaDescription:
@@ -1751,7 +1749,7 @@ export default {
         rerank: 'Rerank',
         sequence2text: 'ASR',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
         speech2text: 'ASR',
         decision: 'Decision',
       },

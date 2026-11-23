@@ -18,6 +18,8 @@ package chatter
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 
 	"ragflow/internal/channels"
 	"ragflow/internal/common"
@@ -27,11 +29,16 @@ import (
 )
 
 // Run owns the channel runtime until cancellation, including adapter shutdown.
-func Run(ctx context.Context, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+func Run(ctx context.Context, args *bootstrap.ServerArgs) error {
 	if !kvrocks.IsEnabled() {
 		return fmt.Errorf("chatter requires Kvrocks for shared channel runtime status")
 	}
-	runtime, err := channels.Start(ctx, services.AgentService)
+	api := server.GetConfig().GetAPIServerConfig()
+	host := api.Host
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	runtime, err := channels.Start(ctx, "http://"+net.JoinHostPort(host, strconv.Itoa(api.HTTPPort)))
 	if err != nil {
 		return fmt.Errorf("start chat-channel: %w", err)
 	}

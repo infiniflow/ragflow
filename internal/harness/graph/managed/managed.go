@@ -4,6 +4,7 @@ package managed
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
 	"strings"
@@ -652,14 +653,7 @@ func (r *Runtime) Override(overrides map[string]interface{}) *Runtime {
 }
 
 func cloneMap(src map[string]any) map[string]any {
-	if src == nil {
-		return nil
-	}
-	clone := make(map[string]any, len(src))
-	for key, val := range src {
-		clone[key] = val
-	}
-	return clone
+	return maps.Clone(src)
 }
 
 // GetTaskID returns the task ID from config.
@@ -848,7 +842,7 @@ func RecastCheckpointNS(ns string) string {
 	// Remove task ID if present (usually the last part)
 	lastPart := parts[len(parts)-1]
 	if isTaskID(lastPart) {
-		return joinCheckpointNS(parts[:len(parts)-1])
+		return strings.Join(parts[:len(parts)-1], "|")
 	}
 
 	return ns
@@ -856,19 +850,6 @@ func RecastCheckpointNS(ns string) string {
 
 func splitCheckpointNS(ns string) []string {
 	return strings.Split(ns, "|")
-}
-
-func joinCheckpointNS(parts []string) string {
-	// Simple implementation - join with separator
-	// In a full implementation, this would use proper namespace separator
-	if len(parts) == 0 {
-		return ""
-	}
-	result := parts[0]
-	for i := 1; i < len(parts); i++ {
-		result += "|" + parts[i]
-	}
-	return result
 }
 
 var uuidRE = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)

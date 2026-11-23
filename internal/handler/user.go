@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
+	"strings"
 	"time"
 
 	"ragflow/internal/service"
@@ -463,7 +464,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		}
 	}
 	if len(missing) > 0 {
-		common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
+		common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("required argument are missing: %s; ", strings.Join(missing, ",")))
 		return
 	}
 
@@ -497,15 +498,4 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	}
 
 	common.RespondSuccess(c, nil, "success")
-}
-
-func joinStrings(values []string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	result := values[0]
-	for i := 1; i < len(values); i++ {
-		result += "," + values[i]
-	}
-	return result
 }

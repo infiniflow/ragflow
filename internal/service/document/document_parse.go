@@ -223,6 +223,11 @@ func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, do
 		return fmt.Errorf("apply dataset parser config for document %s: %w", doc.ID, err)
 	}
 	doc.ParserConfig = merged
+	// This rewrote the document's own settings, so it is a change to their
+	// history like any other. Without the state row, a restore to a version after
+	// this parse would put back the settings from before it and drop the
+	// dataset's metadata binding from the timeline.
+	recordDocumentParserSettingStates(ctx, dao.DB, []*entity.Document{doc})
 	return nil
 }
 

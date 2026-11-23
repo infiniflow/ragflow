@@ -163,7 +163,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 //
 // The entity/relation discriminator is carried in Meta["kind"] so the consumer's
 // mergeStructureDataset buckets entities by (name,type) and relations by
-// (from,type,to), matching graph/timeline.
+// (from,type,to), matching graph.
 func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceChunkIDs []string) []common.Product {
 	var out []common.Product
 	if root == nil || root.ID == "" {

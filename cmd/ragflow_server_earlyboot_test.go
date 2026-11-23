@@ -44,6 +44,7 @@ func TestIsStandaloneDeepDocServer(t *testing.T) {
 	}
 
 	notStandalone := []common.ServerType{
+		common.ServerTypeStandalone,
 		common.ServerTypeAPI,
 		common.ServerTypeAdmin,
 		common.ServerTypeIngestion,

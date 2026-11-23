@@ -217,8 +217,8 @@ func TestExternalBlockWire_SoMarkKeepsHeaderFooter(t *testing.T) {
 	assertExternalBlockWire(t, "pdf_external_block.somark_header_footer", soMarkWireResult(t, true, sizes))
 }
 
-// An unreadable source PDF leaves the page sizes unknown: boxes stay in the
-// service's pixel space, as SoMark's original converter left them.
+// An unreadable source PDF leaves the page sizes unknown: positions are
+// omitted and a warning is reported, per #22578.
 func TestExternalBlockWire_SoMarkWithoutPageSizes(t *testing.T) {
 	assertExternalBlockWire(t, "pdf_external_block.somark_nosizes", soMarkWireResult(t, false, nil))
 }

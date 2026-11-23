@@ -318,7 +318,7 @@ func defaultModelFields(modelType string) (string, string, entity.ModelType, err
 		return "rerank_id", "tenant_rerank_id", entity.ModelTypeRerank, nil
 	case "asr", "speech2text":
 		return "asr_id", "tenant_asr_id", entity.ModelTypeSpeech2Text, nil
-	case "vision", "image2text":
+	case "vlm", "vision", "image2text":
 		return "img2txt_id", "tenant_img2txt_id", entity.ModelTypeImage2Text, nil
 	case "tts":
 		return "tts_id", "tenant_tts_id", entity.ModelTypeTTS, nil
@@ -361,7 +361,7 @@ func (s *UserTenantService) ListDefaultModels(ctx context.Context) ([]ModelItem,
 		{modelType: "embedding", modelName: membership.EmbdID, modelID: membership.TenantEmbdID},
 		{modelType: "rerank", modelName: membership.RerankID, modelID: membership.TenantRerankID},
 		{modelType: "asr", modelName: membership.ASRID, modelID: membership.TenantASRID},
-		{modelType: "vision", modelName: membership.Img2TxtID, modelID: membership.TenantImg2TxtID},
+		{modelType: "vlm", modelName: membership.Img2TxtID, modelID: membership.TenantImg2TxtID},
 		{modelType: "ocr", modelName: ptrStringValue(membership.OCRID), modelID: membership.TenantOCRID},
 		{modelType: "tts", modelName: ptrStringValue(membership.TTSID), modelID: membership.TenantTTSID},
 		{modelType: "decision", modelName: ptrStringValue(membership.DecisionID), modelID: membership.TenantDecisionID},

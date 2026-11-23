@@ -2,195 +2,51 @@
   "page_count": 3,
   "items": [
     {
-      "_pdf_positions": [
-        [
-          1,
-          165.4,
-          827,
-          233.9,
-          300
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "title",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          165.4,
-          827,
-          233.9,
-          300
-        ]
-      ],
       "text": "# Annual Report"
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          165.4,
-          827,
-          320,
-          360
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "title",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          165.4,
-          827,
-          320,
-          360
-        ]
-      ],
       "text": "### Scope"
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          165.4,
-          827,
-          380,
-          420
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "title",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          165.4,
-          827,
-          380,
-          420
-        ]
-      ],
       "text": "# Level out of range"
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          165.4,
-          1400,
-          440,
-          520
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          165.4,
-          1400,
-          440,
-          520
-        ]
-      ],
       "text": "Body paragraph."
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          165.4,
-          827,
-          540,
-          600
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "equation",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          165.4,
-          827,
-          540,
-          600
-        ]
-      ],
       "text": "a^2 + b^2 = c^2"
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          165.4,
-          827,
-          620,
-          900
-        ]
-      ],
       "doc_type_kwd": "image",
       "layout": "figure",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          165.4,
-          827,
-          620,
-          900
-        ]
-      ],
       "text": "[Image]"
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          1000,
-          1300,
-          620,
-          900
-        ]
-      ],
       "doc_type_kwd": "image",
       "layout": "figure",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          1000,
-          1300,
-          620,
-          900
-        ]
-      ],
       "text": "Approved"
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          165.4,
-          1400,
-          920,
-          1200
-        ]
-      ],
       "doc_type_kwd": "table",
       "layout": "table",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          165.4,
-          1400,
-          920,
-          1200
-        ]
-      ],
       "table": {
         "grid": [
           [
@@ -223,27 +79,9 @@
       }
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          165.4,
-          1400,
-          1220,
-          1400
-        ]
-      ],
       "doc_type_kwd": "table",
       "layout": "table",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          165.4,
-          1400,
-          1220,
-          1400
-        ]
-      ],
       "table": {
         "grid": [
           [
@@ -276,99 +114,27 @@
       }
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          -50,
-          1700,
-          -10,
-          2400
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          -50,
-          1700,
-          -10,
-          2400
-        ]
-      ],
       "text": "overflows the page"
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          165.4,
-          827,
-          1450,
-          1500
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          165.4,
-          827,
-          1450,
-          1500
-        ]
-      ],
       "text": "swapped edges"
     },
     {
-      "_pdf_positions": [
-        [
-          2,
-          413.5,
-          620.25,
-          292.25,
-          438.375
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 1,
-      "positions": [
-        [
-          2,
-          413.5,
-          620.25,
-          292.25,
-          438.375
-        ]
-      ],
       "text": "belongs to page two"
     },
     {
-      "_pdf_positions": [
-        [
-          1,
-          165.4,
-          827,
-          1600,
-          1650
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 1,
-      "positions": [
-        [
-          1,
-          165.4,
-          827,
-          1600,
-          1650
-        ]
-      ],
       "text": "page index outside the document"
     },
     {
@@ -378,53 +144,21 @@
       "text": "no bbox"
     },
     {
-      "_pdf_positions": [
-        [
-          2,
-          82.7,
-          413.5,
-          116.9,
-          233.8
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 2,
-      "positions": [
-        [
-          2,
-          82.7,
-          413.5,
-          116.9,
-          233.8
-        ]
-      ],
       "text": "Second page body."
     },
     {
-      "_pdf_positions": [
-        [
-          3,
-          10,
-          110,
-          20,
-          40
-        ]
-      ],
       "doc_type_kwd": "text",
       "layout": "text",
       "page_number": 3,
-      "positions": [
-        [
-          3,
-          10,
-          110,
-          20,
-          40
-        ]
-      ],
       "text": "Pixel size unknown."
     }
   ],
-  "warnings": []
+  "warnings": [
+    "SoMark page 1: positions omitted because the SoMark pixel size or PDF point size is unavailable",
+    "SoMark page 2: positions omitted because the SoMark pixel size or PDF point size is unavailable",
+    "SoMark page 3: positions omitted because the SoMark pixel size or PDF point size is unavailable"
+  ]
 }

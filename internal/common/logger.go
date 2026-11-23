@@ -464,10 +464,22 @@ func SetLogLevel(level string) error {
 // URLs, etc.) and there is no way to redact them generically. The
 // presence and length of a query string are recorded instead so
 // operators can still see that one was sent.
+//
+// redactLogPath hides the mode 8 MCP handle carried in the path: it identifies a session
+// and is a bearer-style capability, so the access log must not record it even though it
+// authorizes nothing without a live per-turn binding.
+func redactLogPath(path string) string {
+	const codexMCP = "/mcp/codex/"
+	if i := strings.Index(path, codexMCP); i >= 0 {
+		return path[:i+len(codexMCP)] + "***"
+	}
+	return path
+}
+
 func GinLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-		path := c.Request.URL.Path
+		path := redactLogPath(c.Request.URL.Path)
 		raw := c.Request.URL.RawQuery
 		c.Next()
 		latency := time.Since(start)

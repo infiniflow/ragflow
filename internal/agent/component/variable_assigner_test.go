@@ -162,7 +162,7 @@ func TestVariableAssigner_DivideByZero(t *testing.T) {
 	}
 	found := false
 	for _, e := range errs {
-		if containsString(e, "DIVIDE_BY_ZERO") {
+		if strings.Contains(e, "DIVIDE_BY_ZERO") {
 			found = true
 		}
 	}

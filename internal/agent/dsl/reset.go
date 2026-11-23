@@ -45,6 +45,7 @@
 package dsl
 
 import (
+	"maps"
 	"ragflow/internal/common"
 )
 
@@ -90,7 +91,7 @@ func ResetForCanvas(dsl map[string]any) map[string]any {
 	if dsl == nil {
 		return map[string]any{}
 	}
-	out := copyMapStringAny(dsl)
+	out := maps.Clone(dsl)
 
 	// Per-run accumulators. The Python implementation assigns fresh
 	// empty lists to each; we mirror that by replacing whatever is

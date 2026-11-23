@@ -52,7 +52,7 @@ func TestListConnectorsScopesRequestedUserToReadableResources(t *testing.T) {
 		t.Fatalf("ListConnectors() = (%#v, %v), want only caller's connector", listed, err)
 	}
 	listed, err = NewConnectorService().ListConnectors(ctx, "user-b")
-	if err != nil || len(listed.Connectors) != 0 {
-		t.Fatalf("ListConnectors(access_user_id=user-b) = (%#v, %v), want no unreadable connectors", listed, err)
+	if err != nil || len(listed.Connectors) != 1 || listed.Connectors[0].ID != "connector-b" {
+		t.Fatalf("ListConnectors(access_user_id=user-b) = (%#v, %v), want user-b's connector", listed, err)
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"ragflow/internal/entity/models"
-	"ragflow/internal/utility"
 )
 
 // isStructuralOCRTextLayout reports whether an item already carries a
@@ -67,7 +66,13 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 		// Each page entry is its own raster and is converted on its own, so a
 		// response that repeats a page index cannot scale one entry's blocks
 		// by another entry's raster.
-		opts.SourceSizes = map[int][2]float64{pageNumber: {page.Width, page.Height}}
+		pageOpts := opts
+		if page.Normalized {
+			pageOpts.SourceSizes = map[int][2]float64{pageNumber: {1, 1}}
+			pageOpts.AspectTolerance = 0
+		} else {
+			pageOpts.SourceSizes = map[int][2]float64{pageNumber: {page.Width, page.Height}}
+		}
 		var blocks []ExternalBlock
 		var markdownWarnings []string
 		for _, ocrBlock := range page.Blocks {
@@ -80,7 +85,7 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 				block.Regions = []ExternalRegion{{Page: pageNumber, Box: [4]float64(ocrBlock.BBox)}}
 			}
 			label := strings.ToLower(strings.TrimSpace(ocrBlock.Label))
-			content := strings.TrimSpace(utility.StripMarkdownImages(ocrBlock.Text))
+			content := models.OCRBlockBody(ocrBlock.Text)
 			if models.IsOCRMediaLabel(label) || models.IsOCRImageOnlyText(ocrBlock.Text) {
 				// A figure-like block stays a media item. Its region is kept for
 				// the vision pass and the on-demand crop; a synthetic placeholder
@@ -101,7 +106,7 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 				blocks = append(blocks, block)
 			}
 		}
-		items, placementWarnings := ExternalBlocksToItems(blocks, opts)
+		items, placementWarnings := ExternalBlocksToItems(blocks, pageOpts)
 		result.JSON = append(result.JSON, items...)
 		result.Warnings = append(append(result.Warnings, placementWarnings...), markdownWarnings...)
 	}

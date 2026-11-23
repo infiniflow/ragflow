@@ -25,6 +25,7 @@ export const useManageValues = (props: IManageValuesProps) => {
     valueType: data.valueType || metadataValueTypeEnum.string,
     values: data.values || [''],
   });
+  const hasChangedType = metaData.valueType !== data.valueType;
   const [valueError, setValueError] = useState<Record<string, string>>({
     field: '',
     values: '',
@@ -119,13 +120,21 @@ export const useManageValues = (props: IManageValuesProps) => {
       message.error(valueError.field);
       return;
     }
-    if (isAddValueMode) {
+    if (isAddValueMode || hasChangedType) {
       // tempValues, not metaData.values: the latter only syncs on input blur,
       // so a Confirm click that races the blur would queue the pre-blur [''].
       addUpdateValue(metaData.field, '', tempValues, metaData.valueType);
     }
     setShouldSave(true);
-  }, [metaData, tempValues, type, valueError, isAddValueMode, addUpdateValue]);
+  }, [
+    metaData,
+    hasChangedType,
+    tempValues,
+    type,
+    valueError,
+    isAddValueMode,
+    addUpdateValue,
+  ]);
 
   useEffect(() => {
     if (shouldSave) {
@@ -142,7 +151,7 @@ export const useManageValues = (props: IManageValuesProps) => {
   const handleValueBlur = useCallback(
     (values?: string[]) => {
       const newValues = values || tempValues;
-      if (data.values.length > 0 && !isAddValueMode) {
+      if (data.values.length > 0 && !isAddValueMode && !hasChangedType) {
         newValues.forEach((newValue, index) => {
           if (index < data.values.length) {
             const originalValue = data.values[index];
@@ -163,7 +172,15 @@ export const useManageValues = (props: IManageValuesProps) => {
       }
       handleChange('values', [...new Set([...newValues])]);
     },
-    [handleChange, tempValues, metaData, data, addUpdateValue, isAddValueMode],
+    [
+      handleChange,
+      tempValues,
+      metaData,
+      data,
+      addUpdateValue,
+      isAddValueMode,
+      hasChangedType,
+    ],
   );
 
   // Handle value changes, only update temporary state
@@ -200,9 +217,11 @@ export const useManageValues = (props: IManageValuesProps) => {
   // Handle delete operation
   const handleDelete = useCallback(
     (index: number) => {
+      if (!isAddValueMode && !hasChangedType) {
+        addDeleteValue(metaData.field, tempValues[index]);
+      }
       setTempValues((prev) => {
         const newTempValues = [...prev];
-        addDeleteValue(metaData.field, newTempValues[index]);
         newTempValues.splice(index, 1);
         return newTempValues;
       });
@@ -217,7 +236,13 @@ export const useManageValues = (props: IManageValuesProps) => {
         };
       });
     },
-    [addDeleteValue, metaData],
+    [
+      addDeleteValue,
+      hasChangedType,
+      isAddValueMode,
+      metaData.field,
+      tempValues,
+    ],
   );
 
   const handleClearValues = useCallback(

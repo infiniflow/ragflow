@@ -24,13 +24,13 @@ export default function SearchingPage({
   data: searchData,
   setIsSearching,
   setSearchText,
-  showEmbedLogo,
+  showLogo = true,
 }: {
   searchText: string;
   setIsSearching: Dispatch<SetStateAction<boolean>>;
   setSearchText: Dispatch<SetStateAction<string>>;
   data: ISearchAppDetailProps;
-  showEmbedLogo?: boolean;
+  showLogo?: boolean;
 }) {
   const searchingParam = useSearching({
     searchText,
@@ -43,7 +43,7 @@ export default function SearchingPage({
       {...searchingParam}
       searchData={searchData}
       setIsSearching={setIsSearching}
-      showEmbedLogo={showEmbedLogo}
+      showLogo={showLogo}
     />
   );
 }

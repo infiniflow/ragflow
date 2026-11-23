@@ -281,6 +281,56 @@ func TestChatServicePatchChatMergesPromptConfigAndLLMSetting(t *testing.T) {
 	}
 }
 
+// TestChatServiceUpdateChatPreservesServerLLMSettingKeys pins the PUT contract: a full
+// update replaces llm_setting but must not silently drop a server-managed key the client
+// form never round-trips (the provider failover roster). A PUT that speaks about the key
+// still wins, so a client can clear it deliberately.
+func TestChatServiceUpdateChatPreservesServerLLMSettingKeys(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	ctx := serviceTestContext(t, "user-1", "user-1")
+
+	// Seed an out-of-band roster the way an operator would configure it.
+	if _, err := svc.PatchChat(ctx, "chat-1", map[string]interface{}{
+		"llm_setting": map[string]interface{}{"failover_llm_ids": []interface{}{"model-b", "model-c"}},
+	}); err != nil {
+		t.Fatalf("seed PatchChat failed: %v", err)
+	}
+
+	// A PUT that does not mention the roster -- exactly what a web form sends.
+	if _, err := svc.UpdateChat(ctx, "chat-1", map[string]interface{}{
+		"llm_setting": map[string]interface{}{"model_type": "chat"},
+	}); err != nil {
+		t.Fatalf("UpdateChat failed: %v", err)
+	}
+	chat, err := svc.chatDAO.GetByID(ctx, dao.DB, "chat-1")
+	if err != nil {
+		t.Fatalf("failed to fetch updated chat: %v", err)
+	}
+	if chat.LLMSetting["model_type"] != "chat" {
+		t.Fatalf("expected the client key to be applied, got %+v", chat.LLMSetting)
+	}
+	if ids, ok := chat.LLMSetting["failover_llm_ids"].([]interface{}); !ok || len(ids) != 2 {
+		t.Fatalf("a full update dropped the server-managed failover roster: %+v", chat.LLMSetting)
+	}
+
+	// A PUT that does mention the key still wins, so it can be cleared deliberately.
+	if _, err := svc.UpdateChat(ctx, "chat-1", map[string]interface{}{
+		"llm_setting": map[string]interface{}{"failover_llm_ids": []interface{}{}},
+	}); err != nil {
+		t.Fatalf("UpdateChat (clear) failed: %v", err)
+	}
+	chat, err = svc.chatDAO.GetByID(ctx, dao.DB, "chat-1")
+	if err != nil {
+		t.Fatalf("failed to fetch cleared chat: %v", err)
+	}
+	if ids, ok := chat.LLMSetting["failover_llm_ids"].([]interface{}); !ok || len(ids) != 0 {
+		t.Fatalf("an explicit roster in the request must win, got %+v", chat.LLMSetting["failover_llm_ids"])
+	}
+}
+
 func TestChatServiceUpdateChatRejectsTenantID(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")

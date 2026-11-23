@@ -4,7 +4,6 @@ import {
 } from '@/components/bulk-operate-bar';
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
-import { TruncatedText } from '@/components/truncated-text';
 import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
@@ -26,8 +25,8 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { LucidePlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PageFrame } from '@/components/page-frame';
 import { MetadataType } from '../components/metedata/constant';
-import { DatasetPageFrame } from '../components/dataset-page-frame';
 import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
@@ -154,10 +153,8 @@ export default function Dataset() {
     return item;
   });
 
-  const datasetDescription = t('knowledgeDetails.datasetDescription');
-
   return (
-    <DatasetPageFrame>
+    <PageFrame>
       <CardHeader as="header" className="p-5 space-y-0 shrink-0">
         <ListFilterBar
           onSearchChange={handleInputChange}
@@ -173,13 +170,6 @@ export default function Dataset() {
               <h1 className="leading-normal font-medium truncate">
                 {t('knowledgeDetails.subbarFiles')}
               </h1>
-              <TruncatedText
-                as="p"
-                className="text-text-secondary text-sm font-normal truncate"
-                tooltip={datasetDescription}
-              >
-                {datasetDescription}
-              </TruncatedText>
             </div>
           }
         >
@@ -187,9 +177,12 @@ export default function Dataset() {
             <CancelParsingDropdown />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="default" disabled={datasetEditButtonDisabled}>
+                <Button
+                  size="icon"
+                  disabled={datasetEditButtonDisabled}
+                  aria-label={t('knowledgeDetails.addFile')}
+                >
                   <LucidePlus />
-                  {t('knowledgeDetails.addFile')}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-auto min-w-40" align="end">
@@ -284,6 +277,6 @@ export default function Dataset() {
         ></PrivilegeManagementDialog>
       )}
       {/* </> */}
-    </DatasetPageFrame>
+    </PageFrame>
   );
 }

@@ -25,9 +25,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
@@ -144,7 +144,7 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.UseKG = v
 	}
 	if v, ok := params["meta_data_filter"].(map[string]any); ok {
-		out.MetaDataFilter = cloneAnyMap(v)
+		out.MetaDataFilter = maps.Clone(v)
 	}
 	if v, ok := params["retrieval_from"].(string); ok {
 		out.RetrievalFrom = v
@@ -373,7 +373,7 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 		out["use_kg"] = true
 	}
 	if _, ok := out["meta_data_filter"]; !ok && c.params.MetaDataFilter != nil {
-		out["meta_data_filter"] = cloneAnyMap(c.params.MetaDataFilter)
+		out["meta_data_filter"] = maps.Clone(c.params.MetaDataFilter)
 	}
 	if _, ok := out["retrieval_from"]; !ok && c.params.RetrievalFrom != "" {
 		out["retrieval_from"] = c.params.RetrievalFrom
@@ -542,7 +542,7 @@ func newCodeExecComponent(params map[string]any) (Component, error) {
 	return &codeExecComponent{
 		inner:   agenttool.NewCodeExecTool(),
 		params:  cloned,
-		outputs: cloneAnyMap(asAnyMap(params["outputs"])),
+		outputs: maps.Clone(asAnyMap(params["outputs"])),
 	}, nil
 }
 
@@ -736,17 +736,6 @@ func asAnyMap(v any) map[string]any {
 	return nil
 }
 
-func cloneAnyMap(in map[string]any) map[string]any {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
 func resolveCodeExecArguments(args map[string]any, merged map[string]any, state *runtime.CanvasState) map[string]any {
 	if args == nil {
 		return nil
@@ -807,18 +796,8 @@ func lookupCodeExecArgumentRef(ref string, merged map[string]any, state *runtime
 // toFloatParam coerces a node-param float value to float64. Same
 // JSON-float64 / numeric-string tolerance as toIntParam.
 func toFloatParam(v any) float64 {
-	switch x := v.(type) {
-	case float64:
-		return x
-	case int:
-		return float64(x)
-	case int64:
-		return float64(x)
-	case string:
-		f, _ := strconv.ParseFloat(x, 64)
-		return f
-	}
-	return 0
+	f, _ := common.ToFloat(v)
+	return f
 }
 
 // Compile-time interface checks.

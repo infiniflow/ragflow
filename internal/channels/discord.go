@@ -45,7 +45,6 @@ const (
 	discordHandshakeTimeout  = 30 * time.Second
 	discordReadTimeout       = 2 * time.Minute
 	discordWriteTimeout      = 10 * time.Second
-	discordReconnectDelay    = 5 * time.Second
 	discordMessageQueueSize  = 64
 	discordMessageTTL        = time.Hour
 	discordChatWorkerIdle    = 5 * time.Minute
@@ -77,6 +76,8 @@ type discordChannel struct {
 	writeMu sync.Mutex
 	lastSeq atomic.Int64
 	hasSeq  atomic.Bool
+
+	retryAttempts int
 }
 
 type discordChatWorker struct {
@@ -280,6 +281,9 @@ func (c *discordChannel) Send(ctx context.Context, msg core.OutgoingMessage) err
 
 // run reconnects to Discord Gateway until the channel is stopped.
 func (c *discordChannel) run(ctx context.Context) {
+	c.mu.Lock()
+	c.retryAttempts = 0
+	c.mu.Unlock()
 	for ctx.Err() == nil {
 		if err := c.runGateway(ctx); err != nil && ctx.Err() == nil {
 			common.Error("discord: gateway error", err, zap.String("account_id", c.account.AccountID))
@@ -287,10 +291,12 @@ func (c *discordChannel) run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		select {
-		case <-ctx.Done():
+		c.mu.Lock()
+		c.retryAttempts++
+		delay := channelRetryDelay(c.retryAttempts)
+		c.mu.Unlock()
+		if !waitForContext(ctx, delay) {
 			return
-		case <-time.After(discordReconnectDelay):
 		}
 	}
 }
@@ -439,6 +445,7 @@ func (c *discordChannel) handleDispatch(ctx context.Context, payload discordGate
 
 		c.mu.Lock()
 		c.selfID = ready.User.ID
+		c.retryAttempts = 0
 		c.mu.Unlock()
 
 		common.Info("discord: connected", zap.String("account_id", c.account.AccountID), zap.String("bot_id", ready.User.ID))

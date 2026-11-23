@@ -1,4 +1,6 @@
 import { Button } from '@/components/ui/button';
+import { EnterpriseOperatorForm } from '@/ee/pages/agent/form/enterprise-operator-form';
+import { ParserFormContent } from '@/ee/components/pipeline-operator-content';
 import {
   Sheet,
   SheetContent,
@@ -32,7 +34,6 @@ interface IProps {
   readOnly?: boolean;
 }
 
-const EmptyContent = () => <div></div>;
 const SandboxQuickstartUrl =
   'https://github.com/infiniflow/ragflow/blob/main/docs/administrator/configurations/sandbox_quickstart.md';
 
@@ -55,7 +56,7 @@ const FormSheet = ({
   const { clickedToolId, getAgentToolById } = useGraphStore();
 
   const currentFormMap = FormConfigMap[operatorName];
-  const OperatorForm = currentFormMap?.component ?? EmptyContent;
+  const OperatorForm = currentFormMap?.component ?? EnterpriseOperatorForm;
   const isMcp = useIsMcp(operatorName);
   const { t } = useTranslate('flow');
   const { component_name: toolComponentName } = (getAgentToolById(
@@ -144,7 +145,9 @@ const FormSheet = ({
               })}
             >
               <AgentFormContext.Provider value={node}>
-                <OperatorForm node={node} key={node?.id}></OperatorForm>
+                <ParserFormContent node={node}>
+                  <OperatorForm node={node} key={node?.id}></OperatorForm>
+                </ParserFormContent>
               </AgentFormContext.Provider>
             </fieldset>
           )}

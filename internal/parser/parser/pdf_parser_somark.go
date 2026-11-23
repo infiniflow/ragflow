@@ -17,6 +17,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/parser/media"
+	"ragflow/internal/utility"
 )
 
 const soMarkPollTimeout = 30 * time.Minute
@@ -72,13 +73,13 @@ func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, pa
 		return "", fmt.Errorf("parser: SoMark write file: %w", err)
 	}
 	_ = writer.WriteField("output_formats", "json")
-	elementFormats, _ := json.Marshal(map[string]any{
+	elementFormats := utility.MustJSON(map[string]any{
 		"image":   parser.envOrDefault(common.EnvSOMarkImageFormat, parser.SoMarkImageFormat, "url"),
 		"formula": parser.envOrDefault(common.EnvSOMarkFormulaFormat, parser.SoMarkFormulaFormat, "latex"),
 		"table":   parser.envOrDefault(common.EnvSOMarkTableFormat, parser.SoMarkTableFormat, "html"),
 		"cs":      parser.envOrDefault(common.EnvSOMarkCSFormat, parser.SoMarkCSFormat, "image"),
 	})
-	featureConfig, _ := json.Marshal(map[string]any{
+	featureConfig := utility.MustJSON(map[string]any{
 		"enable_text_cross_page":         parser.envOrBool(common.EnvSOMarkEnableTextCrossPage, parser.SoMarkEnableTextCrossPage),
 		"enable_table_cross_page":        parser.envOrBool(common.EnvSOMarkEnableTableCrossPage, parser.SoMarkEnableTableCrossPage),
 		"enable_title_level_recognition": parser.envOrBool(common.EnvSOMarkEnableTitleLevelRecognition, parser.SoMarkEnableTitleLevelRecognition),
@@ -87,8 +88,8 @@ func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, pa
 		"enable_image_understanding":     parser.envOrBool(common.EnvSOMarkEnableImageUnderstanding, parser.SoMarkEnableImageUnderstanding),
 		"keep_header_footer":             parser.envOrBool(common.EnvSOMarkKeepHeaderFooter, parser.SoMarkKeepHeaderFooter),
 	})
-	_ = writer.WriteField("element_formats", string(elementFormats))
-	_ = writer.WriteField("feature_config", string(featureConfig))
+	_ = writer.WriteField("element_formats", elementFormats)
+	_ = writer.WriteField("feature_config", featureConfig)
 	if apiKey != "" {
 		_ = writer.WriteField("api_key", apiKey)
 	}
@@ -205,9 +206,6 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 		pageCount = len(pageSizes)
 	}
 
-	// Pixel dimensions of each page, keyed by the same resolved page number
-	// positions use, so a block whose page_idx points at another page scales
-	// against THAT page's pixel space instead of the enclosing page's.
 	pixByPage := make(map[int][2]float64, len(pages))
 	for pageIndex, pageRaw := range pages {
 		page, ok := pageRaw.(map[string]any)
@@ -220,7 +218,9 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 	}
 	pointsByPage := make(map[int][2]float64, len(pageSizes))
 	for index, size := range pageSizes {
-		pointsByPage[index+1] = size
+		if size[0] > 0 && size[1] > 0 {
+			pointsByPage[index+1] = size
+		}
 	}
 
 	var blocks []ExternalBlock
@@ -242,36 +242,18 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 				continue
 			}
 			block.Page = pageNumber
-			// A block may carry its own 0-based page_idx; it wins over the
-			// enclosing page value, which stays as the fallback. An index
-			// beyond the known page range (the source PDF's pages when
-			// readable, else the returned pages) falls back too: emitting
-			// it would point at a page that does not exist and inflate
-			// page_count downstream.
-			blockPage := pageNumber
-			pageBound := len(pages)
-			if len(pageSizes) > 0 {
-				pageBound = len(pageSizes)
-			}
-			if n, ok := soMarkPageIndex(raw["page_idx"]); ok && n < pageBound {
-				blockPage = n + 1
-			}
-			// A page that is not in the source document cannot have a correct
-			// position, so the block goes out without one.
-			if box, ok := soMarkBox(raw); ok && (len(pageSizes) == 0 || blockPage <= len(pageSizes)) {
-				block.Regions = []ExternalRegion{{Page: blockPage, Box: box}}
+			if box, ok := soMarkBox(raw); ok {
+				block.Regions = []ExternalRegion{{Page: pageNumber, Box: box}}
 			}
 			blocks = append(blocks, block)
 		}
 	}
 	items, placementWarnings := externalBlockMaps(blocks, ExternalBlockOptions{
-		Provider:    "SoMark",
-		PageSizes:   pointsByPage,
-		SourceSizes: pixByPage,
-		// The corners arrive in no fixed order, and a page that could not be
-		// measured keeps its pixel box, as SoMark's original converter left it.
+		Provider:          "SoMark",
+		PageSizes:         pointsByPage,
+		SourceSizes:       pixByPage,
+		BleedTolerance:    0.1,
 		ReorderEdges:      true,
-		KeepUnscaled:      true,
 		FigurePlaceholder: "[Image]",
 	})
 	warnings = append(warnings, placementWarnings...)
@@ -307,7 +289,7 @@ func soMarkBox(block map[string]any) ([4]float64, bool) {
 	}
 	for i, raw := range bbox {
 		n, ok := numericAny(raw)
-		if !ok {
+		if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
 			return box, false
 		}
 		box[i] = n
@@ -324,11 +306,8 @@ func soMarkPagePixelSize(raw any) (float64, float64) {
 	return w, h
 }
 
-// soMarkPagePointSizes reads each page's [width, height] in PDF points from
-// the source document (CropBox, falling back to MediaBox), the space RAGFlow
-// positions and crops use. A nil result or a zero entry means the page size
-// is unknown and positions stay in the service's pixel space, matching the
-// Python converter's fallback when a page cannot be rendered.
+// soMarkPagePointSizes reads the visible [width, height] of each page in PDF points.
+// A nil result or a zero entry means positions for that page are omitted.
 func soMarkPagePointSizes(data []byte) [][2]float64 {
 	r, err := pdfreader.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -336,38 +315,65 @@ func soMarkPagePointSizes(data []byte) [][2]float64 {
 	}
 	numPage := r.NumPage()
 	// A corrupt or malicious catalog /Count can be negative (panics make) or
-	// enormous (allocates/iterates without bound). Treat it as unreadable and
-	// fall back to the caller's pixel-space scaling, mirroring the
-	// maxPDFPageCount guard deepdoc/pdf/plaintext_nocgo.go applies to the
-	// same library.
+	// enormous (allocates/iterates without bound). Treat it as unreadable.
 	if numPage < 0 || numPage > maxSoMarkPageCount {
 		return nil
 	}
-	sizes := make([][2]float64, 0, numPage)
+	sizes := make([][2]float64, numPage)
 	for p := 1; p <= numPage; p++ {
-		box := soMarkInheritedPageValue(r.Page(p), "CropBox")
-		if box.IsNull() || box.Len() != 4 {
-			box = soMarkInheritedPageValue(r.Page(p), "MediaBox")
+		page := r.Page(p)
+		media, hasMedia := soMarkPageBox(page, "MediaBox")
+		crop, hasCrop := soMarkPageBox(page, "CropBox")
+		switch {
+		case !hasCrop:
+			crop = media
+		case hasMedia:
+			crop.Min.X = max(crop.Min.X, media.Min.X)
+			crop.Min.Y = max(crop.Min.Y, media.Min.Y)
+			crop.Max.X = min(crop.Max.X, media.Max.X)
+			crop.Max.Y = min(crop.Max.Y, media.Max.Y)
 		}
-		if box.IsNull() || box.Len() != 4 {
-			sizes = append(sizes, [2]float64{})
+		w, h := crop.Max.X-crop.Min.X, crop.Max.Y-crop.Min.Y
+		if w <= 0 || h <= 0 {
 			continue
 		}
-		x0, y0 := box.Index(0).Float64(), box.Index(1).Float64()
-		x1, y1 := box.Index(2).Float64(), box.Index(3).Float64()
-		w, h := math.Abs(x1-x0), math.Abs(y1-y0)
+		// Page boxes are in default user-space units (one point unless UserUnit is set).
+		if unit := page.V.Key("UserUnit"); !unit.IsNull() {
+			w, h = w*unit.Float64(), h*unit.Float64()
+		}
 		// A quarter-turn /Rotate (also inheritable) swaps the dimensions of
 		// the rendered page SoMark sees; scaling and clamping must use the
 		// rotated size.
-		if rot := soMarkInheritedPageValue(r.Page(p), "Rotate"); !rot.IsNull() {
+		if rot := soMarkInheritedPageValue(page, "Rotate"); !rot.IsNull() {
 			switch deg := ((int(rot.Float64()) % 360) + 360) % 360; deg {
 			case 90, 270:
 				w, h = h, w
 			}
 		}
-		sizes = append(sizes, [2]float64{w, h})
+		sizes[p-1] = [2]float64{w, h}
 	}
 	return sizes
+}
+
+// PDF rectangles may specify either pair of opposite corners in any order.
+func soMarkPageBox(page pdfreader.Page, key string) (pdfreader.Rect, bool) {
+	box := soMarkInheritedPageValue(page, key)
+	if box.Len() != 4 {
+		return pdfreader.Rect{}, false
+	}
+	var coords [4]float64
+	for i := range coords {
+		v := box.Index(i)
+		if v.Kind() != pdfreader.Integer && v.Kind() != pdfreader.Real {
+			return pdfreader.Rect{}, false
+		}
+		coords[i] = v.Float64()
+	}
+	x0, y0, x1, y1 := coords[0], coords[1], coords[2], coords[3]
+	return pdfreader.Rect{
+		Min: pdfreader.Point{X: min(x0, x1), Y: min(y0, y1)},
+		Max: pdfreader.Point{X: max(x0, x1), Y: max(y0, y1)},
+	}, true
 }
 
 // maxSoMarkPageCount mirrors deepdoc/pdf/plaintext_nocgo.go: one million

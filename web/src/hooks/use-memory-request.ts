@@ -29,11 +29,18 @@ export const MemoryKeys = {
     [MemoryApiAction.FetchMemoryList, accessUserId] as const,
 };
 
-export const useFetchAllMemoryList = (accessUserId?: string) => {
+export const useFetchAllMemoryList = (accessUserId?: string | null) => {
   const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
-  const resourceAccessUserId = accessUserId ?? contextAccessUserId;
+  const waitingForAccessUser =
+    accessUserId === null ||
+    (accessUserId === undefined && contextAccessUserId === null);
+  const resourceAccessUserId =
+    accessUserId === undefined
+      ? (contextAccessUserId ?? undefined)
+      : (accessUserId ?? undefined);
   const { data, isLoading, isError, refetch } = useQuery<IMemory[], Error>({
     queryKey: MemoryKeys.list(resourceAccessUserId),
+    enabled: !waitingForAccessUser,
     queryFn: async () => {
       const { data: response } = await memoryService.getMemoryList(
         {

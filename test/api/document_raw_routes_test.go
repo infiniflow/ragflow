@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"image"
 	"image/color"
 	"image/png"
@@ -216,9 +217,14 @@ func TestRESTDocumentIndexedImageIntegrity(t *testing.T) {
 		"image_base64": base64.StdEncoding.EncodeToString(file.Content),
 	}, nil))["data"])
 	chunk := object(t, data["chunk"])
+	// An image ID names its object storage key: "<dataset id>-<chunk id>-<content
+	// hash>". The key is content addressed so a later picture never overwrites the
+	// object an older chunk version still refers to (see chunkImageObjectKey).
+	sum := sha256.Sum256(file.Content)
+	wantImageID := datasetID + "-" + chunk["id"].(string) + "-" + hex.EncodeToString(sum[:8])
 	imageID, ok := chunk["image_id"].(string)
-	if !ok || imageID != datasetID+"-"+chunk["id"].(string) {
-		t.Fatalf("chunk image ID=%v", chunk["image_id"])
+	if !ok || imageID != wantImageID {
+		t.Fatalf("chunk image ID=%v want=%s", chunk["image_id"], wantImageID)
 	}
 	paths := []string{"/documents/images/" + imageID, "/documents/" + id + "/images/" + imageID}
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)

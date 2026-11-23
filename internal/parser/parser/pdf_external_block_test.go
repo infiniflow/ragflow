@@ -34,6 +34,7 @@ func TestExternalBlockPosition(t *testing.T) {
 		{"bleed inside the tolerance is clamped", ExternalBlockOptions{PageSizes: letter, BleedTolerance: 0.1}, ExternalRegion{Page: 1, Box: [4]float64{-20, 12, 620, 92}}, []any{1, 0.0, 612.0, 12.0, 92.0}},
 		{"bleed beyond the tolerance is another space", ExternalBlockOptions{PageSizes: letter, BleedTolerance: 0.1}, ExternalRegion{Page: 1, Box: [4]float64{0, 0, 1275, 1650}}, nil},
 		{"pixels are scaled to points", raster, ExternalRegion{Page: 3, Box: [4]float64{30, 40, 300, 160}}, []any{3, 15.0, 150.0, 20.0, 80.0}},
+		{"normalized box scales by the page alone", ExternalBlockOptions{PageSizes: map[int][2]float64{2: {300, 400}}, SourceSizes: map[int][2]float64{2: {1, 1}}}, ExternalRegion{Page: 2, Box: [4]float64{0.25, 0.5, 0.75, 0.75}}, []any{2, 75.0, 225.0, 200.0, 300.0}},
 		{"scaled box is clipped to the page", raster, ExternalRegion{Page: 3, Box: [4]float64{-30, -40, 1200, 1000}}, []any{3, 0.0, 300.0, 0.0, 400.0}},
 		{"box outside the page has no area left", raster, ExternalRegion{Page: 3, Box: [4]float64{1000, 900, 1100, 1000}}, nil},
 		{"unknown scale drops the box", raster, ExternalRegion{Page: 4, Box: [4]float64{30, 40, 300, 160}}, nil},

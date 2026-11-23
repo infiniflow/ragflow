@@ -2278,6 +2278,20 @@ func TestResolveReasoningLevelReadsAgenticLevel(t *testing.T) {
 	}
 }
 
+// TestEngineLevelsPinTheFrontendContract pins the engine level numbers: a
+// mismatch means the UI and this package disagree on which number means which
+// engine (mode 5 smart-reasoning, 6 planer-explorer-auditor, 7 IterSynth,
+// 8 Codex; the values message-input/next.tsx sends).
+func TestEngineLevelsPinTheFrontendContract(t *testing.T) {
+	if reasoningLevelAgentic != 5 {
+		t.Fatalf("reasoningLevelAgentic = %d, want 5 (the level message-input/next.tsx sends)", reasoningLevelAgentic)
+	}
+	if reasoningLevelPlanExplorer != 6 || reasoningLevelIterative != 7 || reasoningLevelCodex != 8 {
+		t.Fatalf("engine levels = plan:%d iter:%d codex:%d, want 6/7/8 (message-input/next.tsx)",
+			reasoningLevelPlanExplorer, reasoningLevelIterative, reasoningLevelCodex)
+	}
+}
+
 // TestQuoteEnabledNeedsBothSourcesToAgree pins the effective citation setting:
 // the request and the dialog each get a veto, and an absent setting on either
 // side leaves citations on.
@@ -2312,36 +2326,90 @@ func TestQuoteEnabledNeedsBothSourcesToAgree(t *testing.T) {
 	}
 }
 
-// TestAgenticDispatchRequiresKnowledgeBaseScope pins that the agentic branch is
-// unreachable without a knowledge base.
+// TestSelectAgenticEngine pins the engine dispatch: which agentic engine a turn
+// runs on, from the reasoning level alone. Modes 5/6 are unreachable without a
+// knowledge base; mode 8 is reachable with or without one.
 //
-// The agent resolves a citation against an explicit kb_id scope, and
-// buildBoolQueryFromCondition drops that term when the scope is empty — so an
-// agentic turn on a KB-less dialog would resolve a cited chunk out of ANY KB in
-// the tenant. The dispatch therefore falls through instead of running the agent
-// with an unbounded scope, which keeps the empty-scope query unconstructible
-// rather than trusting each retrieval path to defend itself.
-func TestAgenticDispatchRequiresKnowledgeBaseScope(t *testing.T) {
+// Modes 5/6 resolve citations against an explicit kb_id scope, and
+// buildBoolQueryFromCondition drops that term when the scope is empty — so a turn
+// on a KB-less dialog would resolve a cited chunk out of ANY KB in the tenant. The
+// dispatch therefore falls through for them instead of running an engine with an
+// unbounded scope, keeping the empty-scope query unconstructible rather than trusting
+// each retrieval path to defend itself. mode 8 instead lets Codex converse without a
+// KB and makes the MCP retrieval tools error on a no-scope call (see the mode 8 plan).
+//
+// It calls the production selector rather than re-deriving it: an earlier version of
+// this test mirrored the condition, which would have kept passing while the real
+// branch said something else.
+func TestSelectAgenticEngine(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
+		level  int
 		hasKBs bool
-		kwargs map[string]interface{}
-		want   bool
+		want   agenticEngine
 	}{
-		{"agentic level with KBs", true, map[string]interface{}{"reasoning": reasoningLevelAgentic}, true},
-		{"agentic level without KBs", false, map[string]interface{}{"reasoning": reasoningLevelAgentic}, false},
-		{"explicit agent_mode without KBs", false, map[string]interface{}{"agent_mode": "smart-reasoning"}, false},
-		{"explicit agent_mode with KBs", true, map[string]interface{}{"agent_mode": "smart-reasoning"}, true},
-		{"no selection without KBs", false, map[string]interface{}{"reasoning": 0}, false},
+		{"agentic level with KBs", reasoningLevelAgentic, true, engineAgenticRAG},
+		{"agentic level without KBs", reasoningLevelAgentic, false, ""},
+		{"iterative level with KBs", reasoningLevelIterative, true, engineIterative},
+		{"iterative level without KBs", reasoningLevelIterative, false, ""},
+		// mode 8 (Codex) is exempt from the KB gate: Codex can converse without a
+		// KB, and its MCP retrieval tools error on a no-scope call rather than
+		// querying an unbounded scope.
+		{"codex level with KBs", reasoningLevelCodex, true, engineCodex},
+		{"codex level without KBs", reasoningLevelCodex, false, engineCodex},
+		// The depth levels stay on the regular pipeline: they select a harness
+		// mode, not an engine.
+		{"harness depth with KBs", 3, true, ""},
+		{"harness depth without KBs", 4, false, ""},
+		{"off with KBs", 0, true, ""},
+		{"off without KBs", 0, false, ""},
+		// A level above the ladder (a future level, or a stale client) must not be
+		// read as "deeper"; nothing above 7 exists and nothing below 0 does.
+		{"above the ladder", 9, true, ""},
+		{"below the ladder", -1, true, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// Mirrors the guard in AsyncChat's agentic branch.
-			_, byMode := tc.kwargs["agent_mode"].(string)
-			byLevel := resolveReasoningLevel(tc.kwargs, nil) == reasoningLevelAgentic
-			dispatches := (byMode || byLevel) && tc.hasKBs
-			if dispatches != tc.want {
-				t.Errorf("dispatches to agentic = %v, want %v (byMode=%v byLevel=%v hasKBs=%v)",
-					dispatches, tc.want, byMode, byLevel, tc.hasKBs)
+			if got := selectAgenticEngine(tc.level, tc.hasKBs); got != tc.want {
+				t.Errorf("selectAgenticEngine(%d, %v) = %q, want %q",
+					tc.level, tc.hasKBs, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgentModeIsNotASelector pins the removal: an `agent_mode` kwarg — the
+// parameter the API used to carry — must no longer choose an engine. Only the
+// reasoning level does, so a client that still sends one gets the level's engine,
+// and a client that sends ONLY agent_mode gets the plain pipeline.
+func TestAgentModeIsNotASelector(t *testing.T) {
+	chat := &entity.Chat{TenantID: "t1", KBIDs: []any{"kb1"}}
+	for _, tc := range []struct {
+		name   string
+		kwargs map[string]interface{}
+		want   agenticEngine
+	}{
+		{
+			"a mode-5 agent_mode alone selects nothing",
+			map[string]interface{}{"agent_mode": "smart-reasoning"},
+			"",
+		},
+		{
+			"an iterative agent_mode alone selects nothing",
+			map[string]interface{}{"agent_mode": "iterative-synthesis"},
+			"",
+		},
+		{
+			"the level wins and the stale kwarg is ignored",
+			map[string]interface{}{"agent_mode": "smart-reasoning", "reasoning": 7},
+			engineIterative,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := selectAgenticEngine(
+				resolveReasoningLevel(tc.kwargs, map[string]interface{}(chat.PromptConfig)),
+				true)
+			if got != tc.want {
+				t.Errorf("dispatch = %q, want %q", got, tc.want)
 			}
 		})
 	}

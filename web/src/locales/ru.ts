@@ -1082,8 +1082,6 @@ export default {
         'Подключите GitHub для синхронизации содержимого Pull Request и Issue для поиска.',
       airtableDescription:
         'Подключите Airtable и синхронизируйте файлы из указанной таблицы в заданном рабочем пространстве.',
-      dingtalkAITableDescription:
-        'Подключите Dingtalk AI Table и синхронизируйте записи из указанной таблицы.',
       gitlabDescription:
         'Подключите GitLab для синхронизации репозиториев, задач, merge requests и связанной документации.',
       asanaDescription:
@@ -1466,7 +1464,7 @@ export default {
         rerank: 'Rerank',
         sequence2text: 'ASR',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
         speech2text: 'ASR',
         decision: 'Decision',
       },

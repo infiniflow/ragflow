@@ -3870,6 +3870,7 @@ Starts a chat completion request. The same endpoint supports three modes:
   - `"chat_id"`: `string` (optional)
   - `"session_id"`: `string` (optional)
   - `"llm_id"`: `string` (optional)
+  - `"reasoning"`: `integer` (optional)
   - `"legacy"`: `boolean` (optional)
 
 ##### Request example
@@ -3927,6 +3928,12 @@ curl --request POST \
   Optional session ID. If `chat_id` is provided but `session_id` is omitted, a new session will be generated automatically.
 - `"llm_id"`: `string`
   Optional model override when a specific chat model should be used for this request.
+- `"reasoning"`: `integer`
+  Selects the retrieval mode:
+  - `0`: Naive RAG (standard retrieval).
+  - `5`: Agentic RAG (agent-driven retrieval).
+
+  Defaults to `0` (Naive RAG) when omitted.
 - `"legacy"`: `boolean`
   Defaults to `false`. Enables backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:
   - Cumulative output: The `"answer"` field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).

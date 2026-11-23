@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"gorm.io/gorm"
@@ -113,9 +114,12 @@ func (s *SearchService) ListSearches(ctx context.Context, keywords string, page,
 
 // toSearchAppResponse converts search model to response format
 func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[string]interface{} {
-	nickname := search.UserID
-	if search.Nickname != nil && strings.TrimSpace(*search.Nickname) != "" {
+	nickname := ""
+	if search.Nickname != nil {
 		nickname = *search.Nickname
+	}
+	if nickname == "" {
+		nickname = search.UserID
 	}
 	result := map[string]interface{}{
 		"id":            search.ID,
@@ -471,33 +475,21 @@ func stringFromSearchConfig(value interface{}) (string, bool) {
 }
 
 func intFromSearchConfig(value interface{}) (int, bool) {
-	switch typed := value.(type) {
-	case int:
-		return typed, true
-	case int64:
-		return int(typed), true
-	case float64:
-		return int(typed), true
-	case float32:
-		return int(typed), true
-	default:
-		return 0, false
-	}
+	return common.ToIntNum(value)
 }
 
 func floatFromSearchConfig(value interface{}) (float64, bool) {
-	switch typed := value.(type) {
-	case float64:
-		return typed, true
-	case float32:
-		return float64(typed), true
-	case int:
-		return float64(typed), true
-	case int64:
-		return float64(typed), true
-	default:
-		return 0, false
+	// Keep the original narrow contract: common.ToFloat also parses strings
+	// (including "NaN" and "Inf"), which would let a persisted llm_setting
+	// value reach the LLM request body and break json.Marshal.
+	switch value.(type) {
+	case float64, float32, int, int64:
+		f, ok := common.ToFloat(value)
+		if ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
+			return f, true
+		}
 	}
+	return 0, false
 }
 
 // BuildSearchConfigResponse returns the public search configuration without

@@ -1,3 +1,4 @@
+import { EmptyStateTitleKeyMap } from '@/ee/pages/dataset/compilation/constants';
 import { useTranslation } from 'react-i18next';
 
 import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
@@ -17,7 +18,7 @@ const TitleKeyMap: Record<EmptyStateType, string> = {
   [ViewMode.Skills]: 'knowledgeCompilation.noSkills',
   [ViewMode.Graph]: 'knowledgeCompilation.noStructureGraph',
   [ViewMode.MindMap]: 'knowledgeCompilation.noStructureMindmap',
-  [ViewMode.Timeline]: 'knowledgeCompilation.noStructureTimeline',
+  ...EmptyStateTitleKeyMap,
 };
 
 export function CompilationEmptyState({

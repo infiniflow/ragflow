@@ -375,6 +375,9 @@ func (s *externalBlockSpace) position(region ExternalRegion) []any {
 			}
 			return []any{page, x0, x1, y0, y1}
 		default:
+			if s.opts.Provider == "SoMark" && s.reported[page] == "" {
+				s.reported[page] = fmt.Sprintf("%s page %d: positions omitted because the %s pixel size or PDF point size is unavailable", s.opts.Provider, page, s.opts.Provider)
+			}
 			return nil
 		}
 	}
