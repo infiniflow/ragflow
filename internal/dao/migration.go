@@ -70,6 +70,16 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to modify column types: %w", err)
 	}
 
+	// The tenant model backfill below copies tenant_llm keys into
+	// tenant_model_instance.api_key, so it must not run against a column the
+	// widening above failed to bring to the bound the backfill reads through.
+	// The widening reports a failed ALTER as fatal, and this check makes the
+	// ordering explicit: the backfill is refused outright when the column is
+	// still narrower than the bound, whichever step would have widened it.
+	if err := requireTenantModelInstanceAPIKeyWidened(ctx, db); err != nil {
+		return fmt.Errorf("tenant_model_instance.api_key is not widened: %w", err)
+	}
+
 	if err := migrateColumnWidths(ctx, db); err != nil {
 		return fmt.Errorf("failed to widen columns: %w", err)
 	}
@@ -939,6 +949,46 @@ var tenantModelInstanceAPIKeyColumnSpec = columnSpec{
 	// the narrow column left in place is what makes the backfill fail (strict
 	// mode) or truncate the credential (non-strict mode).
 	strict: true,
+}
+
+// requireTenantModelInstanceAPIKeyWidened refuses to let the tenant model
+// backfill run against a tenant_model_instance.api_key column that is still
+// narrower than the bound the backfill reads through. The backfill copies
+// tenant_llm keys into the column with a raw INSERT, so a column left at the
+// legacy varchar(512) either aborts the whole startup (MySQL strict mode,
+// Error 1406) or stores a truncated credential (non-strict session).
+//
+// The check is a verification, not a second widening: modifyColumnTypes has
+// already brought the column to the target shape, and this only confirms it.
+// It is deliberately separate from that step so the ordering requirement — the
+// widening happens before the backfill, and the backfill does not run without
+// it — is enforced by the migration flow rather than by the order two
+// independent helpers happen to be called in.
+//
+// A missing table or column is not an error: a fresh or pre-split install has
+// no such table yet, and AutoMigrate creates it with the entity's declaration
+// afterwards. The backfill creates the table itself when it runs
+// (ensureTenantModelTables), so the column it writes is the entity's.
+func requireTenantModelInstanceAPIKeyWidened(ctx context.Context, db *gorm.DB) error {
+	if !db.WithContext(ctx).Migrator().HasTable(tenantModelInstanceAPIKeyColumnSpec.table) {
+		return nil
+	}
+	currentType, _, exists, err := columnDefinition(ctx, db,
+		tenantModelInstanceAPIKeyColumnSpec.table, tenantModelInstanceAPIKeyColumnSpec.column)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if normalizeColumnType(currentType) == normalizeColumnType(tenantModelInstanceAPIKeyColumnSpec.columnType) {
+		return nil
+	}
+	return fmt.Errorf("column %s.%s is %s, want %s",
+		tenantModelInstanceAPIKeyColumnSpec.table,
+		tenantModelInstanceAPIKeyColumnSpec.column,
+		currentType,
+		tenantModelInstanceAPIKeyColumnSpec.columnType)
 }
 
 // dropLegacyTenantModelInstanceAPIKeyIndex removes the composite unique index
