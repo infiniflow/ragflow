@@ -1874,7 +1874,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 	if historyVersion > 0 {
 		chunkversion.AppendAddBaseline(ctx, dao.DB, req.DatasetID, req.DocumentID, chunkID, historyVersion,
-			chunkSnapshotMeta(kb, datasetLanguageOf(kb)), chunkData)
+			chunkSnapshotMeta(kb, datasetLanguageOf(kb)), chunkData, permission.UserIDFromContext(ctx))
 	}
 
 	tokenNum := int64(s.numTokens(req.Content))
