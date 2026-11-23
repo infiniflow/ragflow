@@ -20,6 +20,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -30,13 +31,25 @@ type ThemeProviderProps = {
   storageKey?: string;
 };
 
+type ResolvedTheme = Exclude<ThemeEnum, ThemeEnum.System>;
+
 type ThemeProviderState = {
   theme: ThemeEnum;
+  resolvedTheme: ResolvedTheme;
   setTheme: (theme: ThemeEnum, persist?: boolean) => void;
 };
 
+const SystemThemeQuery = '(prefers-color-scheme: dark)';
+
+const getSystemTheme = (): ResolvedTheme =>
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia(SystemThemeQuery).matches
+    ? ThemeEnum.Dark
+    : ThemeEnum.Light;
+
 const initialState: ThemeProviderState = {
   theme: ThemeEnum.Light,
+  resolvedTheme: ThemeEnum.Light,
   setTheme: () => null,
 };
 
@@ -51,30 +64,47 @@ export function ThemeProvider({
   const [theme, setThemeState] = useState<ThemeEnum>(
     () => (localStorage.getItem(storageKey) as ThemeEnum) || defaultTheme,
   );
+  const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(getSystemTheme);
   const persistRef = useRef(true);
+  const resolvedTheme = theme === ThemeEnum.System ? systemTheme : theme;
 
   const setTheme = useCallback((nextTheme: ThemeEnum, persist = true) => {
     persistRef.current = persist;
     setThemeState(nextTheme);
   }, []);
 
+  const contextValue = useMemo(
+    () => ({ theme, resolvedTheme, setTheme }),
+    [theme, resolvedTheme, setTheme],
+  );
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+
+    const mediaQuery = window.matchMedia(SystemThemeQuery);
+    const updateSystemTheme = () => {
+      setSystemTheme(mediaQuery.matches ? ThemeEnum.Dark : ThemeEnum.Light);
+    };
+
+    updateSystemTheme();
+    mediaQuery.addEventListener('change', updateSystemTheme);
+    return () => mediaQuery.removeEventListener('change', updateSystemTheme);
+  }, []);
+
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove(ThemeEnum.Light, ThemeEnum.Dark);
+    root.classList.add(resolvedTheme);
+  }, [resolvedTheme]);
+
+  useEffect(() => {
     if (persistRef.current) {
       localStorage.setItem(storageKey, theme);
     }
-    root.classList.add(theme);
   }, [storageKey, theme]);
 
   return (
-    <ThemeProviderContext.Provider
-      {...props}
-      value={{
-        theme,
-        setTheme,
-      }}
-    >
+    <ThemeProviderContext.Provider {...props} value={contextValue}>
       {children}
     </ThemeProviderContext.Provider>
   );
@@ -90,9 +120,9 @@ export const useTheme = () => {
 };
 
 export const useIsDarkTheme = () => {
-  const { theme } = useTheme();
+  const { resolvedTheme } = useTheme();
 
-  return theme === ThemeEnum.Dark;
+  return resolvedTheme === ThemeEnum.Dark;
 };
 
 export function useSwitchToDarkThemeOnMount() {

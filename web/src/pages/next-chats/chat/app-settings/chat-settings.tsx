@@ -37,7 +37,7 @@ import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 import { getWebSearchProvider } from '../web-search-api-key';
 
 export function ChatSettings() {
-  const { data } = useFetchChat();
+  const { data, loading: chatLoading } = useFetchChat();
 
   const chatSettingSchema = useChatSettingSchema();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
@@ -46,7 +46,10 @@ export function ChatSettings() {
     { accessUserId: data?.user_id },
   );
   const { updateChat, loading } = useUpdateChat();
-  const findLlmByUuid = useFindLlmByUuid(data?.tenant_id, data?.user_id);
+  const findLlmByUuid = useFindLlmByUuid(
+    data?.tenant_id,
+    chatLoading ? null : (data?.user_id ?? null),
+  );
   const queryClient = useQueryClient();
   const { id } = useParams();
 
@@ -190,7 +193,9 @@ export function ChatSettings() {
 
   return (
     <ModelResourceTenantIdContext.Provider value={data?.tenant_id}>
-      <ModelResourceAccessUserIdContext.Provider value={data?.user_id}>
+      <ModelResourceAccessUserIdContext.Provider
+        value={chatLoading ? null : (data?.user_id ?? null)}
+      >
         <section
           data-testid="chat-detail-settings"
           className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"

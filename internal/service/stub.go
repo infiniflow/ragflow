@@ -58,8 +58,6 @@ func authorizeModelMetadataReadEE(_ context.Context, identity *modelIdentity) er
 	if identity == nil || identity.providerEntity == nil {
 		return errModelConfigUnavailable
 	}
-	// resolveModelIdentity has already checked provider-read, instance-use,
-	// and model-use access before returning this metadata-only view.
 	return nil
 }
 

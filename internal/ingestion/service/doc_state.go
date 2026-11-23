@@ -73,8 +73,8 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 	// number is known, so the run leaves one version instead of one per value it
 	// touched.
 	ctx = datasetversion.WithStateSink(ctx)
-	if len(r.Metadata) > 0 {
-		if err := mergeDocMetadata(ctx, u.docSvc, r.DocID, r.Metadata); err != nil {
+	if len(r.Metadata) > 0 || len(r.ManagedMetadataKeys) > 0 {
+		if err := mergeDocMetadata(ctx, u.docSvc, r.DocID, r.Metadata, r.ManagedMetadataKeys); err != nil {
 			common.Warn(fmt.Sprintf("failed to update document metadata: %v", err))
 		}
 	}
@@ -232,10 +232,12 @@ func missingIDs(known, kept []string) []string {
 }
 
 // mergeDocMetadata replaces stored keys with the freshly aggregated values,
-// regardless of value type, and retains stored keys absent from this run.
+// removes any key in managedKeys absent from metadata (so re-parsing clears
+// stale extractor-owned values), and retains all other stored keys (such as
+// user-maintained fields).
 // It splits combined string-list values before writing the complete map back.
 // A read failure aborts the merge to avoid losing keys during replacement.
-func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metadata map[string]any) error {
+func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metadata map[string]any, managedKeys []string) error {
 	existing, err := svc.GetDocumentMetadataByID(ctx, docID)
 	if err != nil {
 		return err
@@ -244,8 +246,18 @@ func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metada
 	for key, value := range existing {
 		merged[key] = value
 	}
+	removed := false
+	for _, key := range managedKeys {
+		if _, ok := merged[key]; ok {
+			delete(merged, key)
+			removed = true
+		}
+	}
 	for key, value := range metadata {
 		merged[key] = value
+	}
+	if len(metadata) == 0 && !removed {
+		return nil
 	}
 	merged = common.SplitCombinedMetadataValues(merged)
 	return svc.SetDocumentMetadata(ctx, docID, merged)
@@ -275,5 +287,5 @@ func applyBuiltInMetadata(ctx context.Context, svc docStateSvc, docID, docName s
 	if len(builtIn) == 0 {
 		return nil
 	}
-	return mergeDocMetadata(ctx, svc, docID, builtIn)
+	return mergeDocMetadata(ctx, svc, docID, builtIn, nil)
 }

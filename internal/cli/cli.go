@@ -67,17 +67,19 @@ const (
 type CommandLineMode string
 
 const (
+	CommandMode      CommandLineMode = "command"
 	APIMode          CommandLineMode = "api"
 	AdminMode        CommandLineMode = "admin"
-	IngestorMode     CommandLineMode = "ingestor"  // If we want to access ingestor
-	CollectorMode    CommandLineMode = "collector" // If we want to access collector
+	IngestorMode     CommandLineMode = "ingestor" // If we want to access ingestor
+	SyncerMode       CommandLineMode = "syncer"   // If we want to access syncer
+	ChatterMode      CommandLineMode = "chatter"  // If we want to access chatter
 	DefaultAPIServer                 = "default"
 )
 
 type CommandLineConfig struct {
 	CLIMode           CommandLineMode
 	AdminClientConfig *AdminModeConfig
-	APIClientConfig   APIModeConfig
+	APIClientConfig   *APIModeConfig
 	ShowHelp          bool
 	Verbose           bool
 	Interactive       bool
@@ -107,17 +109,82 @@ func (c *CommandLineConfig) Print() {
 	}
 }
 
+func ReadAPIServerConfig(defaultApiServerConfig *APIServerConfig, configFile string) (*APIModeConfig, error) {
+	var config ConfigFile
+	data, err := os.ReadFile(configFile)
+	if err == nil {
+		if err = yaml.Unmarshal(data, &config); err != nil {
+			return nil, fmt.Errorf("failed to parse rf.yml: %w", err)
+		}
+		if config.Host != "" {
+			var h string
+			var port int
+			h, port, err = parseHostPort(config.Host)
+			if err != nil {
+				return nil, fmt.Errorf("invalid host in config file: %w", err)
+			}
+			if defaultApiServerConfig.IP == "" {
+				defaultApiServerConfig.IP = h
+			}
+			if defaultApiServerConfig.Port == 0 {
+				defaultApiServerConfig.Port = port
+			}
+		}
+		if config.UserName != "" {
+			if defaultApiServerConfig.UserName == nil {
+				defaultApiServerConfig.UserName = &config.UserName
+			}
+		}
+		if config.Password != "" {
+			if defaultApiServerConfig.UserPassword == nil {
+				defaultApiServerConfig.UserPassword = &config.Password
+			}
+		}
+		if config.APIKey != "" {
+			if defaultApiServerConfig.APIKey == nil {
+				defaultApiServerConfig.APIKey = &config.APIKey
+			}
+		}
+	} else {
+		if configFile == "rf.yml" && os.IsNotExist(err) {
+		} else {
+			return nil, fmt.Errorf("failed to read %s: %w", configFile, err)
+		}
+	}
+
+	if defaultApiServerConfig.IP == "" {
+		defaultApiServerConfig.IP = "127.0.0.1"
+	}
+	if defaultApiServerConfig.Port == 0 {
+		defaultApiServerConfig.Port = 9380
+	}
+
+	APIClientConfig := &APIModeConfig{}
+
+	APIClientConfig.APIServerMap = config.APIServerMap
+	if APIClientConfig.APIServerMap == nil {
+		APIClientConfig.APIServerMap = make(map[string]*APIServerConfig)
+	}
+	if APIClientConfig.APIServerMap[DefaultAPIServer] != nil {
+		return nil, fmt.Errorf("'Default' API server config should be in api_servers")
+	}
+	APIClientConfig.APIServerMap[DefaultAPIServer] = defaultApiServerConfig
+	APIClientConfig.CurrentAPIServer = DefaultAPIServer
+
+	return APIClientConfig, nil
+}
+
 var Arguments *CommandLineConfig
 
 func ParseArgs(args []string) (*CommandLineConfig, error) {
 	commandLineConfig := &CommandLineConfig{
-		CLIMode:           APIMode,
+		CLIMode:           CommandMode,
 		AdminClientConfig: nil,
 		ShowHelp:          false,
 		ShowVersion:       false,
 		Verbose:           false,
-		Interactive:       true,
-		OutputFormat:      OutputFormatTable,
+		Interactive:       false,
+		OutputFormat:      OutputFormatPlain,
 		Command:           nil,
 	}
 	for i := 0; i < len(args); i++ {
@@ -140,8 +207,26 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			}
 		case "-v", "--verbose":
 			commandLineConfig.Verbose = true
-		case "--admin", "-admin":
+		case "--api":
+			commandLineConfig.CLIMode = APIMode
+			commandLineConfig.Interactive = true
+			commandLineConfig.OutputFormat = OutputFormatTable
+		case "--admin":
 			commandLineConfig.CLIMode = AdminMode
+			commandLineConfig.Interactive = true
+			commandLineConfig.OutputFormat = OutputFormatTable
+		case "--ingestor":
+			commandLineConfig.CLIMode = IngestorMode
+			commandLineConfig.Interactive = true
+			commandLineConfig.OutputFormat = OutputFormatTable
+		case "--chatter":
+			commandLineConfig.CLIMode = ChatterMode
+			commandLineConfig.Interactive = true
+			commandLineConfig.OutputFormat = OutputFormatTable
+		case "--syncer":
+			commandLineConfig.CLIMode = SyncerMode
+			commandLineConfig.Interactive = true
+			commandLineConfig.OutputFormat = OutputFormatTable
 		case "--help", "-help":
 			commandLineConfig.ShowHelp = true
 		case "--version", "-V":
@@ -157,6 +242,25 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 	var foundCommand bool
 
 	switch commandLineConfig.CLIMode {
+	case CommandMode:
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
+			commandArgs = append(commandArgs, arg)
+		}
+
+		defaultApiServerConfig := &APIServerConfig{
+			UserName:     nil,
+			UserPassword: nil,
+			APIKey:       nil,
+		}
+
+		configFile := "rf.yml"
+		APIClientConfig, err := ReadAPIServerConfig(defaultApiServerConfig, configFile)
+		if err != nil {
+			return nil, err
+		}
+
+		commandLineConfig.APIClientConfig = APIClientConfig
 	case APIMode:
 		defaultApiServerConfig := &APIServerConfig{
 			UserName:     nil,
@@ -242,64 +346,12 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			}
 		}
 
-		var config ConfigFile
-		data, err := os.ReadFile(configFile)
-		if err == nil {
-			if err = yaml.Unmarshal(data, &config); err != nil {
-				return nil, fmt.Errorf("failed to parse rf.yml: %w", err)
-			}
-			if config.Host != "" {
-				var h string
-				var port int
-				h, port, err = parseHostPort(config.Host)
-				if err != nil {
-					return nil, fmt.Errorf("invalid host in config file: %w", err)
-				}
-				if defaultApiServerConfig.IP == "" {
-					defaultApiServerConfig.IP = h
-				}
-				if defaultApiServerConfig.Port == 0 {
-					defaultApiServerConfig.Port = port
-				}
-			}
-			if config.UserName != "" {
-				if defaultApiServerConfig.UserName == nil {
-					defaultApiServerConfig.UserName = &config.UserName
-				}
-			}
-			if config.Password != "" {
-				if defaultApiServerConfig.UserPassword == nil {
-					defaultApiServerConfig.UserPassword = &config.Password
-				}
-			}
-			if config.APIKey != "" {
-				if defaultApiServerConfig.APIKey == nil {
-					defaultApiServerConfig.APIKey = &config.APIKey
-				}
-			}
-		} else {
-			if configFile == "rf.yml" && os.IsNotExist(err) {
-			} else {
-				return nil, fmt.Errorf("failed to read %s: %w", configFile, err)
-			}
+		APIClientConfig, err := ReadAPIServerConfig(defaultApiServerConfig, configFile)
+		if err != nil {
+			return nil, err
 		}
 
-		if defaultApiServerConfig.IP == "" {
-			defaultApiServerConfig.IP = "127.0.0.1"
-		}
-		if defaultApiServerConfig.Port == 0 {
-			defaultApiServerConfig.Port = 9380
-		}
-
-		commandLineConfig.APIClientConfig.APIServerMap = config.APIServerMap
-		if commandLineConfig.APIClientConfig.APIServerMap == nil {
-			commandLineConfig.APIClientConfig.APIServerMap = make(map[string]*APIServerConfig)
-		}
-		if commandLineConfig.APIClientConfig.APIServerMap[DefaultAPIServer] != nil {
-			return nil, fmt.Errorf("'Default' API server config should be in api_servers")
-		}
-		commandLineConfig.APIClientConfig.APIServerMap[DefaultAPIServer] = defaultApiServerConfig
-		commandLineConfig.APIClientConfig.CurrentAPIServer = DefaultAPIServer
+		commandLineConfig.APIClientConfig = APIClientConfig
 	case AdminMode:
 		AdminConfig := &AdminModeConfig{
 			AdminHost: "127.0.0.1",
@@ -368,6 +420,8 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			}
 		}
 		commandLineConfig.AdminClientConfig = AdminConfig
+	default:
+		return nil, fmt.Errorf("invalid mode: %s", commandLineConfig.CLIMode)
 	}
 
 	commandArgsLen := len(commandArgs)
@@ -381,41 +435,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 	}
 
 	return commandLineConfig, nil
-}
-
-// LoadDefaultConfigFile reads the rf.yml file from current directory if it exists
-func LoadDefaultConfigFile() (*ConfigFile, error) {
-	// Try to read rf.yml from current directory
-	data, err := os.ReadFile("rf.yml")
-	if err != nil {
-		// File doesn't exist, return nil without error
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var config ConfigFile
-	if err = yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse rf.yml: %w", err)
-	}
-
-	return &config, nil
-}
-
-// LoadConfigFileFromPath reads a config file from the specified path
-func LoadConfigFileFromPath(path string) (*ConfigFile, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
-	}
-
-	var config ConfigFile
-	if err = yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
-	}
-
-	return &config, nil
 }
 
 // parseHostPort parses a host:port string and returns host and port
@@ -516,7 +535,8 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 		Config: commandLineConfig,
 	}
 
-	if commandLineConfig.CLIMode == APIMode {
+	switch commandLineConfig.CLIMode {
+	case APIMode, CommandMode:
 		apiServerConfig := commandLineConfig.APIClientConfig.APIServerMap[commandLineConfig.APIClientConfig.CurrentAPIServer]
 		httpClient := NewHTTPClient()
 		httpClient.Host = apiServerConfig.IP
@@ -537,7 +557,7 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 		}
 
 		cli.setFilesystemClient(httpClient)
-	} else if commandLineConfig.CLIMode == AdminMode {
+	case AdminMode:
 		httpClient := NewHTTPClient()
 		httpClient.Host = commandLineConfig.AdminClientConfig.AdminHost
 		httpClient.Port = commandLineConfig.AdminClientConfig.AdminPort
@@ -551,8 +571,7 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 				return nil, fmt.Errorf("auto-login failed: %w", err)
 			}
 		}
-
-	} else {
+	default:
 		return nil, fmt.Errorf("invalid CLI mode: %s", commandLineConfig.CLIMode)
 	}
 

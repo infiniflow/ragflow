@@ -437,8 +437,6 @@ func deepCopyDSL(dsl map[string]any) map[string]any {
 	return common.DeepCopyMap(dsl)
 }
 
-// copyMapStringAny returns a shallow copy of m. The new map
-// aliases the original values.
 // stringsToAny is the inverse of toStringSlice: it packs a []string
 // back into a []any so a downstream `.([]any)` type assertion
 // succeeds. The fold step needs this because it computes a

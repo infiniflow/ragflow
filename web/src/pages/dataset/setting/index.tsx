@@ -187,6 +187,7 @@ export default function DatasetSetting() {
   // unpinned datasets.
   const { data: canvasVersions } = useFetchPipelineVersionList(
     parseType === ParseType.Pipeline && pipelineId ? pipelineId : undefined,
+    knowledgeDetails?.user_id,
   );
   // Show the outdated bang only while the form still holds the SAVED pin:
   // once the user picks a different (unsaved) version the bang would be
@@ -369,6 +370,7 @@ export default function DatasetSetting() {
                                 onChange={handleParserSelect}
                                 outdated={savedVersionOutdated}
                                 invalid={fieldState.invalid}
+                                accessUserId={knowledgeDetails?.user_id}
                               />
                               <FormMessage />
                             </FormItem>

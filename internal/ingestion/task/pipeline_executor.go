@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -52,11 +54,15 @@ import (
 // indexed, and these bookkeeping inputs remain for the caller to apply to
 // document state (metadata merge + chunk/token counter bumps).
 type PipelineResult struct {
-	DocID      string
-	KbID       string
-	Metadata   map[string]any
-	Chunks     []map[string]any // populated only in debug (dry-run) mode
-	ChunkCount int
+	DocID    string
+	KbID     string
+	Metadata map[string]any
+	// ManagedMetadataKeys lists document metadata keys owned by the pipeline
+	// (e.g. Resume mode). On re-parse, any key in this set absent from Metadata
+	// is removed while user-maintained keys outside this set stay untouched.
+	ManagedMetadataKeys []string
+	Chunks              []map[string]any // populated only in debug (dry-run) mode
+	ChunkCount          int
 	// OriginalChunkIDs is the set of source chunk ids this run wrote. It drives
 	// the document's chunk counter, so parent rows and compiled products are
 	// deliberately excluded.
@@ -458,6 +464,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 
 	embeddingTokenConsumption := indexdoc.GetEmbeddingTokenConsumption(pipelineOutput)
+	managedMetadataKeys := collectManagedMetadataKeys(chunks)
 	metadata, err := indexdoc.ProcessChunksForPipeline(
 		chunks,
 		s.taskCtx.Doc.ID,
@@ -562,6 +569,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		DocID:                 s.taskCtx.Doc.ID,
 		KbID:                  s.taskCtx.Doc.KbID,
 		Metadata:              metadata,
+		ManagedMetadataKeys:   managedMetadataKeys,
 		ChunkCount:            chunkCount,
 		OriginalChunkIDs:      originalChunkIDs(chunks),
 		WrittenChunkIDs:       writtenChunkIDs(indexChunks),
@@ -708,6 +716,44 @@ func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) 
 		return nil, false
 	}
 	return common.MetadataRawFieldList(metaObj["built_in_metadata"]), common.ParserConfigBool(metaObj["enabled"])
+}
+
+// collectManagedMetadataKeys gathers the deduplicated managed metadata keys
+// declared by pipeline components (such as Extractor in Resume mode) before
+// ProcessChunksForPipeline strips the internal bookkeeping key.
+func collectManagedMetadataKeys(chunks []map[string]any) []string {
+	var out []string
+	seen := make(map[string]struct{})
+	add := func(k string) {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			return
+		}
+		if _, ok := seen[k]; ok {
+			return
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	for _, ck := range chunks {
+		raw, ok := ck["_managed_metadata_keys"]
+		if !ok || raw == nil {
+			continue
+		}
+		switch list := raw.(type) {
+		case []string:
+			for _, k := range list {
+				add(k)
+			}
+		case []any:
+			for _, item := range list {
+				if k, ok := item.(string); ok {
+					add(k)
+				}
+			}
+		}
+	}
+	return out
 }
 
 func docNameValue(name *string) string {
@@ -997,12 +1043,10 @@ func mergeTaskTypes(groups ...[]string) []string {
 }
 
 func sortedTaskTypes(seen map[string]struct{}) []string {
-	out := make([]string, 0, len(seen))
-	for taskType := range seen {
-		out = append(out, taskType)
+	if len(seen) == 0 {
+		return []string{}
 	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // mergeCompiledVariants returns the union of the previous and current

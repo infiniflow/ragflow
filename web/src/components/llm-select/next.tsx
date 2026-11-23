@@ -15,7 +15,6 @@
  */
 
 import { LlmModelType } from '@/constants/knowledge';
-import { ModelReferenceLabel } from '@/ee/components/model-reference-label';
 import { useModelValidIds } from '@/hooks/use-llm-request';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { forwardRef, memo, useMemo, useState } from 'react';
@@ -24,7 +23,7 @@ import { LlmSettingFieldItems } from '../llm-setting-items/next';
 import { ModelTypeMap } from '../model-tree-select';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Select, SelectTrigger, SelectValue } from '../ui/select';
-import { MissingModelLabel } from './llm-label';
+import LLMLabel, { MissingModelLabel } from './llm-label';
 
 export interface NextInnerLLMSelectProps {
   id?: string;
@@ -71,14 +70,11 @@ const NextInnerLLMSelect = forwardRef<
     // importer the owner. Gated on isFetched so a slow list never flashes a
     // false missing state. The filter-derived modelTypes only narrow the
     // dropdown display, not validity.
-    const {
-      validIds,
-      isFetched: ownModelsFetched,
-      getPendingMessage,
-    } = useModelValidIds(ModelTypeMap.llm_id, resourceTenantId);
-    const pendingMessage = value ? getPendingMessage?.(value) : undefined;
-    const isModelMissing =
-      !!value && !pendingMessage && ownModelsFetched && !validIds.has(value);
+    const { validIds, isFetched: ownModelsFetched } = useModelValidIds(
+      ModelTypeMap.llm_id,
+      resourceTenantId,
+    );
+    const isModelMissing = !!value && ownModelsFetched && !validIds.has(value);
 
     return (
       <Select disabled={disabled} value={value}>
@@ -91,7 +87,6 @@ const NextInnerLLMSelect = forwardRef<
               }}
               ref={ref}
               data-testid={triggerTestId}
-              title={pendingMessage}
             >
               <SelectValue placeholder={t('common.pleaseSelect')}>
                 {isModelMissing ? (
@@ -100,10 +95,7 @@ const NextInnerLLMSelect = forwardRef<
                     resourceTenantId={resourceTenantId}
                   />
                 ) : (
-                  <ModelReferenceLabel
-                    value={value}
-                    ownerTenantId={resourceTenantId}
-                  />
+                  <LLMLabel value={value} resourceTenantId={resourceTenantId} />
                 )}
               </SelectValue>
             </SelectTrigger>

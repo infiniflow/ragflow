@@ -64,6 +64,7 @@ export const useFetchDatasetSettingOnMount = (
         'pipeline_version_id',
         'parser_id',
       ]),
+      description: knowledgeDetails.description ?? '',
       embedding_model: knowledgeDetails.embedding_model,
       connectors: sourceData,
       parse_type: knowledgeDetails.pipeline_id

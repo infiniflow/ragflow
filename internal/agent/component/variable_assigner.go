@@ -44,6 +44,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 
 	"gorm.io/gorm"
 )
@@ -510,24 +511,14 @@ func isNumberish(v any) bool {
 // toFloat64 converts numeric operands using the existing float64 arithmetic
 // contract. Callers guard with isNumberish and handle JSON conversion errors.
 func toFloat64(v any) (float64, error) {
-	switch x := v.(type) {
-	case json.Number:
-		if !json.Valid([]byte(x)) {
-			return 0, fmt.Errorf("invalid JSON number %q", x)
+	if n, ok := v.(json.Number); ok {
+		if !json.Valid([]byte(n)) {
+			return 0, fmt.Errorf("invalid JSON number %q", n)
 		}
-		return x.Float64()
-	case int:
-		return float64(x), nil
-	case int64:
-		return float64(x), nil
-	case int32:
-		return float64(x), nil
-	case float64:
-		return x, nil
-	case float32:
-		return float64(x), nil
+		return n.Float64()
 	}
-	return 0, nil
+	f, _ := common.ToFloat(v)
+	return f, nil
 }
 
 func init() {

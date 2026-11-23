@@ -439,6 +439,12 @@ tokenizers. They stop together on failure or shutdown.
 Admin defaults to port 9381 and API to 9380; change their configuration keys
 rather than passing a port flag. `bash build.sh --run` builds and starts this executable.
 
+To run an individual service, select exactly one of `--admin`, `--api`,
+`--ingestor`, `--syncer` or `--chatter`. Run `./bin/ragflow_server --migrate`
+before starting individual services; it applies database migrations and exits.
+The `--admin` mode also initializes the superuser. Standalone DeepDoc inference
+servers require the enterprise edition.
+
 Service identities come from `<service>.name` or `RAGFLOW_<SERVICE>_NAME`.
 Admin discovery uses `admin.host` / `admin.http_port` or
 `RAGFLOW_ADMIN_HOST` / `RAGFLOW_ADMIN_HTTP_PORT`. Ingestor concurrency uses

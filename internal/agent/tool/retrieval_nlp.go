@@ -340,7 +340,6 @@ func resolveRankFeature(
 	return map[string]float64{}
 }
 
-// cloneRankFeature detaches the request's map from the caller's.
 func nlpRequestFromRetrieval(
 	req RetrievalRequest,
 	tenantIDs []string,

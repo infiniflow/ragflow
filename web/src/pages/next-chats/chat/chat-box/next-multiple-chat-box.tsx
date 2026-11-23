@@ -139,10 +139,10 @@ const ChatCard = forwardRef(function ChatCard(
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
 
   const { data: userInfo } = useFetchUserInfo();
-  const { data: currentDialog } = useFetchChat();
+  const { data: currentDialog, loading: chatLoading } = useFetchChat();
   const findLlmByUuid = useFindLlmByUuid(
     currentDialog?.tenant_id,
-    currentDialog?.user_id,
+    chatLoading ? null : (currentDialog?.user_id ?? null),
   );
 
   // Each card must keep its own independently selected config after the initial
@@ -221,7 +221,9 @@ const ChatCard = forwardRef(function ChatCard(
                   value={currentDialog?.tenant_id}
                 >
                   <ModelResourceAccessUserIdContext.Provider
-                    value={currentDialog?.user_id}
+                    value={
+                      chatLoading ? null : (currentDialog?.user_id ?? null)
+                    }
                   >
                     <LargeModelFormFieldWithoutFilter
                       triggerTestId="chat-detail-multimodel-card-model-select"

@@ -86,9 +86,7 @@ func structureBatchCap() int {
 //  2. DEDUP — sequential LLM-judged merge in batch order, grouped by
 //     relation endpoints, then a relation-rewrite pass for entity aliases
 //     (mirrors _struct_local_dedup).
-//  3. KIND POST-PROCESSING — chain validation for list/timeline (LLM
-//     correction, fail-open) and the timeline orphan-entity filter (mirrors
-//     validate_and_correct_chain + cleanup_timeline_isolated_entities).
+//  3. KIND POST-PROCESSING — chain validation and kind-specific cleanup.
 //  4. GRAPH — one compact {"entities","relations"} summary row (mirrors
 //     _struct_rebuild_graph_json).
 //
@@ -96,6 +94,13 @@ func structureBatchCap() int {
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
 	parserConfig, _ := inputs.VariantSpecific["parser_config"].(map[string]any)
 	compileType := InferType(parserConfig)
+	switch compileType {
+	case TypeList, TypeSet, TypeHypergraph:
+	default:
+		if _, err := common.KindToVariant(string(compileType)); err != nil {
+			return common.Outputs{}, err
+		}
+	}
 	docID := common.FirstNonEmpty(inputs.DocID, deps.DatasetID, "unknown")
 	llmID := common.FirstNonEmpty(param.LLMID, inputs.LLMID)
 	cfg := CompileConfig{
@@ -255,12 +260,8 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		compileType, len(prods), stats.DuplicatesDropped))
 
 	// ---- KIND POST-PROCESSING ----
-	// Chain kinds (list/timeline): relations must form a strict linear chain;
-	// offending relations the LLM does not keep are dropped (fail-open).
-	// Timeline additionally drops entity rows no surviving relation references.
-	// (Mirrors validate_and_correct_chain — which runs right after
-	// local dedup — and cleanup_timeline_isolated_entities.)
-	if ChainKinds[compileType] {
+	// Chain relations must form a strict linear chain.
+	if isChainKind(compileType) {
 		chunksByID := make(map[string]string, len(inputs.Chunks))
 		for _, ch := range inputs.Chunks {
 			if id := ch.ID; id != "" {
@@ -269,9 +270,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 		prods = validateAndCorrectChain(ctx, deps, llmID, prods, chunksByID, compileType)
 	}
-	if compileType == Type("timeline") {
-		prods = dropIsolatedTimelineEntities(prods)
-	}
+	prods = postprocessAdditionalKind(compileType, prods)
 
 	// stamps the inferred compile kind (list/set/hypergraph) as each
 	// row's compile_kwd; the chunk converter picks it up from Meta.

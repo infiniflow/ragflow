@@ -53,8 +53,9 @@ type sectionRasterPlan struct {
 }
 
 const (
-	sectionRasterContextPad = 120.0
-	sectionRasterGap        = 6
+	sectionRasterContextPad   = 120.0
+	sectionRasterGap          = 6
+	defaultMaxChunkCropPixels = int64(40_000_000)
 )
 
 func cropSectionPositionsRaster(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) image.Image {
@@ -625,6 +626,10 @@ func CropImageRegion(img image.Image, r pdf.DLARegion) (image.Image, error) {
 // context segments (isEdge): the body segments are computed identically in
 // both paths, so there is no second page-spanning loop to keep in sync.
 func CropMediaSectionPositions(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) string {
+	return cropMediaSectionPositionsLimited(positions, decodedImages, zoom, defaultMaxChunkCropPixels)
+}
+
+func cropMediaSectionPositionsLimited(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64, maxPixels int64) string {
 	plan, ok := buildSectionRasterPlan(positions, decodedImages, zoom)
 	if !ok {
 		return ""
@@ -654,7 +659,7 @@ func CropMediaSectionPositions(positions []pdf.Position, decodedImages map[int]i
 	if len(plan.segments) == 0 {
 		return ""
 	}
-	if !measureSectionRasterPlan(plan, decodedImages) {
+	if !measureSectionRasterPlan(plan, decodedImages) || rasterPlanExceedsLimit(plan, maxPixels) {
 		return ""
 	}
 	return encodeCroppedImage(renderSectionRaster(plan, decodedImages))

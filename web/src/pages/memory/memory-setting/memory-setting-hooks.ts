@@ -27,23 +27,21 @@ import { memoryModelFormSchema } from './memory-model-form';
  */
 export const useMemoryFormSchema = (
   tenantId?: string,
-  ownerUserId?: string,
+  ownerUserId?: string | null,
 ) => {
   const { t } = useTranslation();
   const { data: messageData } = useFetchMemoryMessageList();
   const modelsEditable = !messageData?.messages?.total_count;
-  const {
-    validIds: validLlmIds,
-    isFetched: llmModelsFetched,
-    isSettled: llmModelsSettled,
-    getPendingMessage: getLlmPendingMessage,
-  } = useModelValidIds(ModelTypeMap.llm_id, tenantId, ownerUserId);
-  const {
-    validIds: validEmbdIds,
-    isFetched: embeddingModelsFetched,
-    isSettled: embeddingModelsSettled,
-    getPendingMessage: getEmbeddingPendingMessage,
-  } = useModelValidIds(ModelTypeMap.embd_id, tenantId, ownerUserId);
+  const { validIds: validLlmIds, isFetched: modelsFetched } = useModelValidIds(
+    ModelTypeMap.llm_id,
+    tenantId,
+    ownerUserId,
+  );
+  const { validIds: validEmbdIds } = useModelValidIds(
+    ModelTypeMap.embd_id,
+    tenantId,
+    ownerUserId,
+  );
 
   const formSchema = useMemo(
     () =>
@@ -55,59 +53,30 @@ export const useMemoryFormSchema = (
           ...advancedSettingsFormSchema,
         })
         .superRefine((values, ctx) => {
-          if (values.llm_id) {
-            const pendingMessage = getLlmPendingMessage(values.llm_id);
-            if (pendingMessage) {
-              ctx.addIssue({
-                path: ['llm_id'],
-                message: pendingMessage,
-                code: z.ZodIssueCode.custom,
-              });
-            } else if (llmModelsFetched && !validLlmIds.has(values.llm_id)) {
-              ctx.addIssue({
-                path: ['llm_id'],
-                message: t('common.modelUnavailable'),
-                code: z.ZodIssueCode.custom,
-              });
-            }
+          if (!modelsFetched) return;
+          if (values.llm_id && !validLlmIds.has(values.llm_id)) {
+            ctx.addIssue({
+              path: ['llm_id'],
+              message: t('common.modelUnavailable'),
+              code: z.ZodIssueCode.custom,
+            });
           }
-          if (modelsEditable && values.embd_id) {
-            const pendingMessage = getEmbeddingPendingMessage(values.embd_id);
-            if (pendingMessage) {
-              ctx.addIssue({
-                path: ['embd_id'],
-                message: pendingMessage,
-                code: z.ZodIssueCode.custom,
-              });
-            } else if (
-              embeddingModelsFetched &&
-              !validEmbdIds.has(values.embd_id)
-            ) {
-              ctx.addIssue({
-                path: ['embd_id'],
-                message: t('common.modelUnavailable'),
-                code: z.ZodIssueCode.custom,
-              });
-            }
+          if (
+            modelsEditable &&
+            values.embd_id &&
+            !validEmbdIds.has(values.embd_id)
+          ) {
+            ctx.addIssue({
+              path: ['embd_id'],
+              message: t('common.modelUnavailable'),
+              code: z.ZodIssueCode.custom,
+            });
           }
         }),
-    [
-      t,
-      llmModelsFetched,
-      embeddingModelsFetched,
-      modelsEditable,
-      validLlmIds,
-      validEmbdIds,
-      getLlmPendingMessage,
-      getEmbeddingPendingMessage,
-    ],
+    [t, modelsFetched, modelsEditable, validLlmIds, validEmbdIds],
   );
 
-  return {
-    formSchema,
-    modelsFetched: llmModelsSettled && embeddingModelsSettled,
-    modelsEditable,
-  };
+  return { formSchema, modelsFetched, modelsEditable };
 };
 
 /**

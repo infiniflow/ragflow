@@ -3209,6 +3209,21 @@ func (c *CLI) APIListEnvironmentsCommand(commandCount int, cmd *Command) (Respon
 	return HandleCommonResponse(resp, "list environments")
 }
 
+// APICheckLicenseCommand checks the system license (api mode only).
+func (c *CLI) APICheckLicenseCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := httpClient.Request(commandCount, "GET", "/system/license", httpClient.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check license: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "check license")
+}
+
 func (c *CLI) APIStartIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	httpClient, err := c.apiModeClient()
 	if err != nil {

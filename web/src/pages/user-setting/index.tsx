@@ -14,39 +14,21 @@
  *  limitations under the License.
  */
 
-import { Button } from '@/components/ui/button';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { cn } from '@/lib/utils';
-import { X } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import { Outlet } from 'react-router';
+import { UserSettingCloseButton } from './components/user-setting-close-button';
 import { SideBar } from './sidebar';
 
 function UserSetting() {
-  const { t } = useTranslation();
-  const { closeUserSetting } = useNavigatePage();
-
   return (
-    <section className="relative pt-16 size-full grid grid-cols-[4rem_minmax(0,1fr)] md:grid-cols-[303px_minmax(0,1fr)] grid-rows-1 min-w-0">
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={t('common.close')}
-        title={t('common.close')}
-        onClick={closeUserSetting}
-        className="absolute right-2 top-4 z-10 md:right-6"
-      >
-        <X className="size-6" />
-      </Button>
+    <section className="relative size-full min-w-0 pt-16">
+      <UserSettingCloseButton />
 
-      <SideBar />
+      <div className="mx-auto grid size-full max-w-5xl min-w-0 grid-cols-[4rem_minmax(0,1fr)] gap-[clamp(1rem,5vw,5rem)] px-4 pb-6 md:grid-cols-[16rem_minmax(0,1fr)] md:px-8">
+        <SideBar />
 
-      <div
-        className={cn(
-          'pr-16 md:pr-20 pb-6 flex flex-1 min-w-0 rounded-lg overflow-hidden',
-        )}
-      >
-        <Outlet />
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          <Outlet />
+        </div>
       </div>
     </section>
   );

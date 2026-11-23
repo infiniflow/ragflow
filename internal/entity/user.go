@@ -30,6 +30,7 @@ type User struct {
 	ColorSchema     *string    `gorm:"column:color_schema;size:32;index;default:'Bright'" json:"color_schema,omitempty"`
 	Timezone        *string    `gorm:"column:timezone;size:64;index;default:'UTC+8\tAsia/Shanghai'" json:"timezone,omitempty"`
 	LastLoginTime   *time.Time `gorm:"column:last_login_time;index" json:"last_login_time,omitempty"`
+	LastLoginTenant *string    `gorm:"column:last_login_tenant;size:32" json:"-"`
 	IsAuthenticated string     `gorm:"column:is_authenticated;size:1;not null;default:1;index" json:"is_authenticated"`
 	IsActive        string     `gorm:"column:is_active;size:1;not null;default:1;index" json:"is_active"`
 	IsAnonymous     string     `gorm:"column:is_anonymous;size:1;not null;default:0;index" json:"is_anonymous"`

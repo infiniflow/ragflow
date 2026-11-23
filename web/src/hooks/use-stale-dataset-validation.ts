@@ -37,7 +37,11 @@ export function useStaleDatasetFormSchema<T extends z.ZodTypeAny>(
     fieldName = 'dataset_ids',
     canvasID,
     accessUserId,
-  }: { fieldName?: string; canvasID?: string; accessUserId?: string } = {},
+  }: {
+    fieldName?: string;
+    canvasID?: string;
+    accessUserId?: string | null;
+  } = {},
 ) {
   const { t } = useTranslation();
   const { staleDatasetIds, settled: datasetsFetched } = useStaleDatasetIds(

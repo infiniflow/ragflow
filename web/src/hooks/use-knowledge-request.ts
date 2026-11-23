@@ -77,7 +77,8 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { omit } from 'lodash';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useContext, useMemo, useState } from 'react';
+import { ModelResourceAccessUserIdContext } from './use-llm-request';
 import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
@@ -1081,29 +1082,41 @@ export const useFetchKnowledgeList = (
 export const useFetchDatasetsByIds = (
   ids: string[],
   canvasID?: string,
-  accessUserID?: string,
+  accessUserID?: string | null,
 ) => {
+  const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
+  const waitingForAccessUser =
+    accessUserID === null ||
+    (accessUserID === undefined && contextAccessUserId === null);
+  const resourceAccessUserID =
+    accessUserID === undefined
+      ? (contextAccessUserId ?? undefined)
+      : (accessUserID ?? undefined);
   const sortedIds = useMemo(
     () => Array.from(new Set(ids.filter(isDatasetId))).sort(),
     [ids],
   );
   const { data, isFetching: loading } = useQuery<IDataset[]>({
-    queryKey: KnowledgeListKeys.byIds(sortedIds, canvasID, accessUserID),
-    enabled: sortedIds.length > 0,
+    queryKey: KnowledgeListKeys.byIds(
+      sortedIds,
+      canvasID,
+      resourceAccessUserID,
+    ),
+    enabled: sortedIds.length > 0 && !waitingForAccessUser,
     gcTime: 0,
     // Keep the previous result across id-list changes in the same canvas, but
     // never show resources from a different canvas while its lookup is in
     // flight.
     placeholderData: (previousData, previousQuery) =>
       previousQuery?.queryKey[3] === canvasID &&
-      previousQuery?.queryKey[4] === accessUserID
+      previousQuery?.queryKey[4] === resourceAccessUserID
         ? previousData
         : undefined,
     queryFn: async () => {
       const { data } = await listDatasetByIds(
         sortedIds,
         canvasID,
-        accessUserID,
+        resourceAccessUserID,
       );
       return (data?.data ?? []) as IDataset[];
     },
@@ -1121,7 +1134,7 @@ export const useFetchDatasetsByIds = (
 export const useStaleDatasetIds = (
   datasetIds?: string[],
   canvasID?: string,
-  accessUserID?: string,
+  accessUserID?: string | null,
 ) => {
   // Variable references (e.g. `sys.query`) never resolve to datasets, so
   // exclude them up front instead of letting them fall out of the lookup
