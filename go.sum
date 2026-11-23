@@ -442,6 +442,8 @@ github.com/infiniflow/infinity/go v0.0.0-20261105024148-2fffa346354f h1:j2/H+/Po
 github.com/infiniflow/infinity/go v0.0.0-20261105024148-2fffa346354f/go.mod h1:hw3z5AwNFsGy1cdrE0Mfjot2y9jqVHTxBufUx9VzZ+0=
 github.com/infiniflow/onnxruntime_go v1.29.0 h1:pI6v4Bcc7BJdKRF+ZZZkaf4HV6Of6Kl6XryaW2aGbGQ=
 github.com/infiniflow/onnxruntime_go v1.29.0/go.mod h1:dFFL0KdgeeEDXoE9cjrg/ipQg0wEvD0tkGIg2UH0jdE=
+github.com/infiniflow/pebbis v0.1.2 h1:RG1eNPTY6UmjbWC8+17rtI+vDkZrQSqB1/RvAe+PLOw=
+github.com/infiniflow/pebbis v0.1.2/go.mod h1:Wkx6SCWkU8jGuFK/uf59LtcNhBJl3CoiIeUyW2JB55E=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=
