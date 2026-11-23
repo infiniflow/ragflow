@@ -89,7 +89,7 @@ export function useCanvasChecklist({
     validIds: categorizeModelValidIds,
     isFetched: categorizeModelsFetched,
   } = useModelValidIds(
-    ['chat', 'vision', 'decision'],
+    ['chat', 'vlm', 'decision'],
     resourceTenantId,
     ownerUserId,
   );

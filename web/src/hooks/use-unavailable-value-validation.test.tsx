@@ -135,7 +135,7 @@ describe('useUnavailableModelFormSchema', () => {
     );
 
     expect(mockUseModelValidIds).toHaveBeenCalledWith(
-      ['chat', 'vision'],
+      ['chat', 'vlm'],
       'owner-1',
     );
   });
