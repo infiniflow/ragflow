@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -159,4 +160,12 @@ func ResolveLoginTenantID(_ context.Context, _ *entity.User) (string, error) {
 // does not otherwise change community behavior.
 func defaultTierResolver(_ context.Context, _ string) (common.Tier, error) {
 	return common.TierDefault, nil
+}
+
+func logChatCompletion(_ context.Context, _ *entity.Chat, _ []map[string]any, _ bool, in <-chan AsyncChatResult) <-chan AsyncChatResult {
+	return in
+}
+
+func logAgentCompletion(_ context.Context, _, _ string, _ any, in <-chan canvas.RunEvent) <-chan canvas.RunEvent {
+	return in
 }

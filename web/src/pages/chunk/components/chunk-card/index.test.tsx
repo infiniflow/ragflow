@@ -31,6 +31,12 @@ jest.mock(
   () => ({ ChunkVersionEntry: () => null }),
 );
 
+// Same seam, same reason: the detail entry reads the version history through
+// react-query, which this test renders the card without.
+jest.mock('@/ee/pages/chunk/components/chunk-card/chunk-detail-entry', () => ({
+  ChunkDetailEntry: () => null,
+}));
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -86,5 +92,29 @@ describe('ChunkCard', () => {
     });
 
     expect(switchElement).toBeEnabled();
+  });
+
+  it('leaves the corner strip to the type and the detail entry', () => {
+    render(
+      <ChunkCard
+        item={item}
+        checked={false}
+        switchChunk={jest.fn()}
+        editChunk={jest.fn()}
+        removeChunk={jest.fn()}
+        handleCheckboxClick={jest.fn()}
+        selected={false}
+        clickChunkCard={jest.fn()}
+        textMode={ChunkTextMode.Full}
+      />,
+    );
+
+    expect(screen.getByText('chunk.docType.text')).toBeInTheDocument();
+    expect(screen.getByText('Chunk content')).toBeInTheDocument();
+    // The id and the way into the details belong to the entry, which this test
+    // stubs out: an edition without chunk history prints neither the id nor a
+    // version of its own.
+    expect(screen.queryByText('chunk-1')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^v\d+$/)).not.toBeInTheDocument();
   });
 });

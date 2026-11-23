@@ -230,7 +230,12 @@ func (s *ChatPipelineService) AsyncChat(
 	messages []map[string]interface{},
 	stream bool,
 	kwargs map[string]interface{},
-) (<-chan AsyncChatResult, error) {
+) (results <-chan AsyncChatResult, runErr error) {
+	defer func() {
+		if runErr == nil && results != nil {
+			results = logChatCompletion(ctx, chat, messages, stream, results)
+		}
+	}()
 
 	common.Info("AsyncChat started", zap.String("chat_id", chat.ID))
 
