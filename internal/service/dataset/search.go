@@ -142,7 +142,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		return nil, err
 	}
 
-	// Override request fields with values from saved search config
+	// Apply the saved Search App configuration.
 	var chatID string
 	if searchID != "" {
 		if d.searchService == nil {
@@ -189,14 +189,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			if scUseKG, ok := searchConfig["use_kg"].(bool); ok {
 				useKG = scUseKG
 			}
-			if scLangs, ok := searchConfig["cross_languages"].([]interface{}); ok {
-				crossLanguages = make([]string, len(scLangs))
-				for i, l := range scLangs {
-					if s, ok := l.(string); ok {
-						crossLanguages[i] = s
-					}
-				}
-			}
+			crossLanguages = service.ResolveSearchCrossLanguages(req.CrossLanguages, searchConfig)
 			if scKeyword, ok := searchConfig["keyword"].(bool); ok {
 				keyword = scKeyword
 			}
