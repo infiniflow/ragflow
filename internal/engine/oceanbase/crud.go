@@ -176,7 +176,7 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 	} else if kind == "chunk" {
 		condition["kb_id"] = datasetIDs
 	}
-	whereSQL, args, err := buildFilter(condition, kind, nil)
+	whereSQL, args, err := e.buildFilter(condition, kind, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +245,7 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 			}
 		}
 	}
-	whereSQL, args, err := buildFilter(condition, kind, tableColumns)
+	whereSQL, args, err := e.buildFilter(condition, kind, tableColumns)
 	if err != nil {
 		return err
 	}
@@ -401,7 +401,7 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 			return 0, err
 		}
 	}
-	whereSQL, args, err := buildFilter(condition, kind, tableColumns)
+	whereSQL, args, err := e.buildFilter(condition, kind, tableColumns)
 	if err != nil {
 		return 0, err
 	}

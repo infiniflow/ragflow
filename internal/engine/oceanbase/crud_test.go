@@ -137,6 +137,41 @@ func TestUpdateChunksRejectsUnsupportedRemoveType(t *testing.T) {
 	}
 }
 
+func TestUpdateChunksBindsLegacyExtraPatch(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB("seekdb", "legacy_doc", db)
+
+	const table = "ragflow_tenant_1"
+	mock.ExpectQuery("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?").
+		WithArgs("legacy_doc", table).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
+	mock.ExpectQuery("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?").
+		WithArgs("legacy_doc", table).
+		WillReturnRows(sqlmock.NewRows([]string{"COLUMN_NAME"}).AddRow("id").AddRow("kb_id").AddRow("available_int").AddRow("extra"))
+
+	mock.ExpectExec("UPDATE `ragflow_tenant_1` SET `available_int` = ?, `extra` = "+
+		"JSON_REMOVE(JSON_SET(COALESCE(CASE WHEN JSON_TYPE(`extra`) <> 'NULL' THEN `extra` END, JSON_OBJECT()), "+
+		"?, CAST(? AS JSON), ?, CAST(? AS JSON)), ?) WHERE `kb_id` = ?").
+		WithArgs(0, "$.children_kwd", `["child"]`, "$.token_num", "12", "$.compile_kwd", "kb-1").
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	err = engine.UpdateChunks(t.Context(), nil, map[string]interface{}{
+		"available_int": 0,
+		"children_kwd":  []string{"child"},
+		"token_num":     12,
+		"remove":        "compile_kwd",
+	}, table, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWaitForIndexRefreshIsNoOpWhenDisabled(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

@@ -146,3 +146,39 @@ func TestBuildQualifiedSelectFieldsUsesStructuredColumns(t *testing.T) {
 		t.Fatalf("buildQualifiedSelectFields() aliases = %v, want %v", aliases, wantAliases)
 	}
 }
+
+func TestSearchResolvesSchemaForLegacySortOnly(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB("seekdb", "legacy_doc", db)
+	const table = "ragflow_tenant_1"
+	mock.ExpectQuery("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?").
+		WithArgs("legacy_doc", table).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
+	mock.ExpectQuery("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?").
+		WithArgs("legacy_doc", table).
+		WillReturnRows(sqlmock.NewRows([]string{"COLUMN_NAME"}).AddRow("id").AddRow("extra").AddRow("title_kwd"))
+	mock.ExpectQuery("SELECT COUNT(`id`) FROM `ragflow_tenant_1` WHERE 1=1").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(id)"}).AddRow(3))
+	const outlinks = "JSON_EXTRACT(`extra`, '$.outlinks_int')"
+	mock.ExpectQuery("SELECT `id` FROM `ragflow_tenant_1` WHERE 1=1 ORDER BY " +
+		"CASE WHEN JSON_TYPE(" + outlinks + ") IN ('INTEGER', 'DOUBLE', 'DECIMAL') THEN CAST(JSON_UNQUOTE(" + outlinks + ") AS DOUBLE) END DESC, " +
+		"`title_kwd` ASC LIMIT 1, 1").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("page-2"))
+	result, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{table}, SelectFields: []string{"id"}, Offset: 1, Limit: 1,
+		OrderBy: (&types.OrderByExpr{}).Desc("outlinks_int").Asc("title_kwd"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 3 || len(result.Chunks) != 1 || result.Chunks[0]["id"] != "page-2" {
+		t.Fatalf("unexpected page: %#v", result)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

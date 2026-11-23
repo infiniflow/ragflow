@@ -204,13 +204,15 @@ func TestChunkExtraFilterAndMutation(t *testing.T) {
 			if _, err := engine.InsertChunks(ctx, []map[string]interface{}{
 				{
 					"id": "target", "kb_id": dataset, "compile_kwd": compileType, "token_num": 12,
+					"outlinks_int": 2, "title_kwd": "Zebra",
 					"children_kwd": []string{"child%", "keep"},
 					"claims":       map[string]interface{}{"old": true},
 					"extra":        map[string]interface{}{"custom_field": "keep"},
 				},
-				{"id": "literal-null", "kb_id": dataset, "compile_kwd": "null"},
-				{"id": "absent", "kb_id": dataset},
+				{"id": "literal-null", "kb_id": dataset, "compile_kwd": "null", "outlinks_int": 10, "title_kwd": "Beta"},
+				{"id": "absent", "kb_id": dataset, "outlinks_int": 10, "title_kwd": "alpha"},
 				{"id": "json-null", "kb_id": dataset, "compile_kwd": nil},
+				{"id": "no-extra", "kb_id": dataset},
 				{"id": "numeric-zero", "kb_id": dataset, "token_num": 0},
 				{"id": "other-kb", "kb_id": "other-kb", "compile_kwd": compileType, "token_num": 12, "children_kwd": []string{"child%"}},
 			}, table, dataset, ""); err != nil {
@@ -251,9 +253,24 @@ func TestChunkExtraFilterAndMutation(t *testing.T) {
 			}
 			checkSearch(matches, []string{"compile_kwd", "children_kwd"}, "target")
 			checkSearch(map[string]interface{}{"exists": "compile_kwd"}, nil, "literal-null", "target")
-			checkSearch(map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}, nil, "absent", "json-null", "numeric-zero")
+			checkSearch(map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}, nil, "absent", "json-null", "no-extra", "numeric-zero")
 			checkSearch(map[string]interface{}{"compile_kwd": "null"}, nil, "literal-null")
+			checkSearch(map[string]interface{}{"compile_kwd": "TREE'S"}, nil, "target")
 			checkSearch(map[string]interface{}{"token_num": 0}, nil, "numeric-zero")
+
+			page, err := engine.Search(ctx, &types.SearchRequest{
+				IndexNames: []string{table}, KbIDs: []string{dataset},
+				SelectFields: []string{"id"},
+				Filter:       map[string]interface{}{"id": []string{"target", "literal-null", "absent"}},
+				OrderBy:      (&types.OrderByExpr{}).Desc("outlinks_int").Asc("title_kwd"),
+				Limit:        2,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if page.Total != 3 || len(page.Chunks) != 2 || page.Chunks[0]["id"] != "absent" || page.Chunks[1]["id"] != "literal-null" {
+				t.Fatalf("wiki order should rank 10 before 2, then alpha before Beta: %#v", page)
+			}
 
 			if err := engine.UpdateChunks(ctx, matches, map[string]interface{}{
 				"compile_kwd": "wiki", "claims": map[string]interface{}{"new": true},
@@ -277,7 +294,7 @@ func TestChunkExtraFilterAndMutation(t *testing.T) {
 				t.Fatalf("claims survived remove: %#v", row)
 			}
 			// A row with SQL NULL extra can gain its first JSON key.
-			if err := engine.UpdateChunks(ctx, map[string]interface{}{"id": "absent"},
+			if err := engine.UpdateChunks(ctx, map[string]interface{}{"id": "no-extra"},
 				map[string]interface{}{"compile_kwd": compileType}, table, dataset); err != nil {
 				t.Fatal(err)
 			}

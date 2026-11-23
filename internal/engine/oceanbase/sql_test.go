@@ -19,6 +19,7 @@ package oceanbase
 import (
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -118,7 +119,7 @@ func TestSkillFilterSearchCountsPhysicalPrimaryKey(t *testing.T) {
 }
 
 func TestMemorySourceIDUsesScalarSQL(t *testing.T) {
-	where, args, err := buildFilter(map[string]interface{}{"source_id": "source-1"}, "memory", nil)
+	where, args, err := (&Engine{}).buildFilter(map[string]interface{}{"source_id": "source-1"}, "memory", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,8 +131,35 @@ func TestMemorySourceIDUsesScalarSQL(t *testing.T) {
 	}
 }
 
+func TestLegacyChunkFilterSQL(t *testing.T) {
+	const compile = "JSON_EXTRACT(`extra`, '$.compile_kwd')"
+	const children = "JSON_EXTRACT(`extra`, '$.children_kwd')"
+	const tokens = "JSON_EXTRACT(`extra`, '$.token_num')"
+	engine := &Engine{engineType: "seekdb"}
+	columns := map[string]bool{"id": true, "extra": true}
+	for _, tt := range []struct {
+		name, key string
+		value     interface{}
+		predicate string
+		args      []interface{}
+	}{
+		{"keyword", "compile_kwd", "tree's", "(CASE WHEN JSON_TYPE(" + compile + ") <> 'NULL' THEN JSON_UNQUOTE(" + compile + ") END) COLLATE utf8mb4_general_ci = ?", []interface{}{"tree's"}},
+		{"exists", "exists", "compile_kwd", "CASE WHEN JSON_TYPE(" + compile + ") <> 'NULL' THEN " + compile + " END IS NOT NULL", nil},
+		{"absent", "must_not", map[string]interface{}{"exists": "compile_kwd"}, "CASE WHEN JSON_TYPE(" + compile + ") <> 'NULL' THEN " + compile + " END IS NULL", nil},
+		{"array", "children_kwd", "child%", "(JSON_TYPE(" + children + ") = 'ARRAY' AND JSON_CONTAINS(" + children + ", ?))", []interface{}{`"child%"`}},
+		{"number", "token_num", 0, "CASE WHEN JSON_TYPE(" + tokens + ") IN ('INTEGER', 'DOUBLE', 'DECIMAL') THEN CAST(JSON_UNQUOTE(" + tokens + ") AS DOUBLE) END = ?", []interface{}{0}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			where, args, err := engine.buildFilter(map[string]interface{}{tt.key: tt.value}, "chunk", columns)
+			if err != nil || where != tt.predicate || !slices.Equal(args, tt.args) {
+				t.Fatalf("buildFilter() = %q, %#v, %v; want %q, %#v", where, args, err, tt.predicate, tt.args)
+			}
+		})
+	}
+}
+
 func TestKnowledgeGraphFilterSupportsCurrentAndLegacyRows(t *testing.T) {
-	where, args, err := buildFilter(map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}}, "chunk", nil)
+	where, args, err := (&Engine{}).buildFilter(map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}}, "chunk", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +173,7 @@ func TestKnowledgeGraphFilterSupportsCurrentAndLegacyRows(t *testing.T) {
 }
 
 func TestChunkSourceIDUsesArraySQL(t *testing.T) {
-	where, args, err := buildFilter(map[string]interface{}{"source_id": "source-1"}, "chunk", nil)
+	where, args, err := (&Engine{}).buildFilter(map[string]interface{}{"source_id": "source-1"}, "chunk", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

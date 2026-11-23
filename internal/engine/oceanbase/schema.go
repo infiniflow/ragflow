@@ -311,15 +311,18 @@ func (e *Engine) ensureTableWithLock(ctx context.Context, tableName string, colu
 		for _, column := range columns {
 			definitions = append(definitions, quoteIdentifier(column.name)+" "+column.typeSQL)
 		}
-		collation := "utf8mb4_unicode_ci"
-		if e.engineType == "seekdb" {
-			collation = "utf8mb4_general_ci"
-		}
 		query := fmt.Sprintf("CREATE TABLE %s (%s) DEFAULT CHARSET=utf8mb4 COLLATE=%s ORGANIZATION=heap",
-			quoteIdentifier(tableName), strings.Join(definitions, ", "), collation)
+			quoteIdentifier(tableName), strings.Join(definitions, ", "), e.tableCollation())
 		_, err := e.db.ExecContext(ctx, query)
 		return err
 	})
+}
+
+func (e *Engine) tableCollation() string {
+	if e.engineType == "seekdb" {
+		return "utf8mb4_general_ci"
+	}
+	return "utf8mb4_unicode_ci"
 }
 
 func (e *Engine) ensureColumn(ctx context.Context, tableName string, column columnDefinition, prefix string) error {
