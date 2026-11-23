@@ -82,9 +82,11 @@ func NewRegistryFromDir(dir string) (*Registry, error) {
 	return NewRegistryFromFS(os.DirFS(dir), ".")
 }
 
+// DefaultRegistry builds the process-wide registry once over the template
+// source selected by editionTemplateFS().
 func DefaultRegistry() (*Registry, error) {
 	defaultRegistryOnce.Do(func() {
-		defaultRegistry, defaultRegistryErr = NewRegistryFromFS(builtinTemplateFS, "template")
+		defaultRegistry, defaultRegistryErr = NewRegistryFromFS(editionTemplateFS(), "template")
 	})
 	return defaultRegistry, defaultRegistryErr
 }
