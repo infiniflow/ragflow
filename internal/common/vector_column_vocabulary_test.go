@@ -55,11 +55,15 @@ func TestNoInlineVectorColumnVocabulary(t *testing.T) {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		// filepath.WalkDir yields OS-native separators ("\" on Windows), so
+		// compare against slashed paths or the canonical-file skip below never
+		// matches and the guard flags the helper it is meant to allow.
+		slashPath := filepath.ToSlash(path)
+		if !strings.HasSuffix(slashPath, ".go") || strings.HasSuffix(slashPath, "_test.go") {
 			return nil
 		}
 		// The canonical helper is the single allowed definition site.
-		if strings.HasSuffix(path, "/common/vector_column.go") {
+		if strings.HasSuffix(slashPath, "/common/vector_column.go") {
 			return nil
 		}
 		data, err := os.ReadFile(path)
