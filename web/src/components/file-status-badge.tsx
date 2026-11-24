@@ -91,7 +91,7 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name, className }) => {
 
   return (
     <span
-      className={`inline-flex items-center w-[78px] px-2 py-1 rounded-full text-xs font-medium ${getStatusColor()} ${className}`}
+      className={`inline-flex items-center w-[80px] px-2 py-1 rounded-full text-xs font-medium ${getStatusColor()} ${className}`}
     >
       <div className={`w-1 h-1 mr-1 rounded-full ${getBgStatusColor()}`}></div>
       {name || ''}
