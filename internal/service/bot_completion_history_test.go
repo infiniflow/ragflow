@@ -1099,3 +1099,39 @@ func TestStreamChatbotTurn_InterruptedKeepsDeliveredText(t *testing.T) {
 		t.Fatalf("want the delivered text stored as the answer, got: %+v", turns)
 	}
 }
+
+func TestStreamChatbotTurn_InterruptedFailedTurnKeepsOnlyQuestion(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-failed", "q-failed", "msg-failed")
+	svc := NewBotService(nil)
+	sess := &entity.API4Conversation{ID: "sess-failed", DialogID: "dlg-s1", UserID: "tenant-1"}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	results := make(chan AsyncChatResult, 1)
+	frames := svc.streamChatbotTurn(ctx, sess, "q-failed", "msg-failed", results)
+	// Fill the frame buffer so the next delta's send blocks.
+	for range cap(frames) {
+		results <- AsyncChatResult{Answer: "部分"}
+	}
+	results <- AsyncChatResult{Answer: "never sent"}
+	// Returns once the turn has taken that delta, so the error final stays in
+	// the buffer while the send blocks.
+	results <- AsyncChatResult{Answer: "**ERROR**: provider failed", Final: true}
+	// Let the turn block on that send, so cancellation rejects it.
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	close(results)
+	for range frames {
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(context.Background(), dao.DB, "sess-failed", "dlg-s1", true)
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	if turns := parseChatbotTurns(row.Message); len(turns) != 1 || turns[0]["role"] != "user" {
+		t.Fatalf("want only the question stored for a failed turn, got: %+v", turns)
+	}
+}

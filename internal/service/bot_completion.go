@@ -479,7 +479,7 @@ func (s *BotService) streamChatbotTurn(
 		// already received. The request context is usually cancelled by now.
 		defer func() {
 			content := interruptedAnswerText(deliveredAnswer)
-			if finished || content == "" {
+			if finished || content == "" || queuedFinalFailed(results) {
 				return
 			}
 			saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

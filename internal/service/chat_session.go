@@ -1283,13 +1283,18 @@ func (s *ChatSessionService) ChatCompletions(
 	if stream && streamChan != nil {
 		var fullAnswer strings.Builder
 		var finalLegacyAnswer map[string]interface{}
-		finished := false
+		finished, failed := false, false
 		// sentAnswer is fullAnswer as of the last delta the output channel
 		// accepted. An interrupted turn keeps only this text, not the delta
 		// whose send was rejected.
 		sentAnswer := ""
 
 		for result := range resultChan {
+			// Checked before cancellation: an error final read after the
+			// cut still makes this a failed turn, not an interrupted one.
+			if result.Final {
+				failed = strings.Contains(result.Answer, "**ERROR**")
+			}
 			if ctx.Err() != nil {
 				break
 			}
@@ -1298,7 +1303,6 @@ func (s *ChatSessionService) ChatCompletions(
 			}
 			if result.Final {
 				finished = true
-				failed := strings.Contains(result.Answer, "**ERROR**")
 				if session != nil && !failed {
 					// Store with <think>thinking content</think>
 					content := fullAnswer.String()
@@ -1526,7 +1530,7 @@ func (s *ChatSessionService) ChatCompletions(
 				sentAnswer = fullAnswer.String()
 			}
 		}
-		if session != nil && !finished {
+		if session != nil && !finished && !failed && !queuedFinalFailed(resultChan) {
 			s.persistInterruptedAnswer(session, sentAnswer, messageID)
 		}
 		if legacy && finalLegacyAnswer != nil && ctx.Err() == nil {
@@ -1960,6 +1964,25 @@ func (s *ChatSessionService) persistInterruptedAnswer(session *entity.ChatSessio
 	saveCtx, saveCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer saveCancel()
 	s.updateSessionMessages(saveCtx, session, s.getSessionMessagesAsSlice(session), s.initializeReference())
+}
+
+// queuedFinalFailed reports whether the pipeline already queued an error final
+// that an interrupted turn stopped reading before. Such a turn failed, and a
+// failed turn stores no answer.
+func queuedFinalFailed(results <-chan AsyncChatResult) bool {
+	for {
+		select {
+		case result, ok := <-results:
+			if !ok {
+				return false
+			}
+			if result.Final {
+				return strings.Contains(result.Answer, "**ERROR**")
+			}
+		default:
+			return false
+		}
+	}
 }
 
 // appendAssistantToSession appends or updates the assistant message in session.Message.

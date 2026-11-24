@@ -2168,6 +2168,58 @@ func TestChatCompletionsStreamErrorDoesNotPersistPartialAnswer(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsInterruptedStreamDoesNotPersistFailedTurn(t *testing.T) {
+	errorFinal := AsyncChatResult{Answer: "**ERROR**: provider failed", Final: true}
+	for _, tc := range []struct {
+		name   string
+		legacy bool
+		// queued leaves the error final buffered behind a delta whose send is
+		// rejected; otherwise the turn reads the error final after cancellation.
+		queued bool
+	}{
+		{name: "error final read after cancellation"},
+		{name: "legacy error final read after cancellation", legacy: true},
+		{name: "error final queued behind a rejected send", queued: true},
+		{name: "legacy error final queued behind a rejected send", legacy: true, queued: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			results := make(chan AsyncChatResult)
+			if tc.queued {
+				results = make(chan AsyncChatResult, 1)
+			}
+			store := newFakeSessionStore()
+			svc := newInterruptedTurnService(store, &fakePipeline{resultChan: results}, `[{"role":"assistant","content":"Welcome!"}]`)
+
+			ctx, cancel := context.WithCancel(permission.WithIdentity(t.Context(), "user-1", "user-1"))
+			defer cancel()
+			frames := make(chan string)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_, _ = svc.ChatCompletions(ctx, "chat-1", "session-1", nil, "question", nil, "", nil, nil, tc.legacy, true, frames)
+			}()
+			results <- AsyncChatResult{Answer: "partial"}
+			<-frames
+			if tc.queued {
+				results <- AsyncChatResult{Answer: " never sent"}
+				// Returns once the turn has taken the delta, so the error
+				// final stays in the buffer while that delta's send blocks.
+				results <- errorFinal
+				cancel()
+			} else {
+				cancel()
+				results <- errorFinal
+			}
+			close(results)
+			<-done
+
+			if got := parseMessages(store.sessions["session-1"].Message); len(got) != 2 || got[1]["role"] != "user" {
+				t.Fatalf("stored messages=%#v, want only the prologue and question", got)
+			}
+		})
+	}
+}
+
 func TestChatCompletionsExcludesUnansweredQuestionFromModelContext(t *testing.T) {
 	store := newFakeSessionStore()
 	pipeline := &fakePipeline{resultChan: makeResultChan(AsyncChatResult{Answer: "answer", Final: true})}
