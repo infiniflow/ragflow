@@ -20,12 +20,14 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"hash"
 	"os"
 	"strconv"
 	"strings"
@@ -95,7 +97,7 @@ func checkScryptPassword(password, hashStr string) bool {
 }
 
 // checkPBKDF2Password verifies password using PBKDF2 format
-// Format: pbkdf2:sha256:iterations$base64(salt)$base64(hash)
+// Format: pbkdf2:algorithm:iterations$base64(salt)$base64(hash)
 func checkPBKDF2Password(password, hashStr string) bool {
 	parts := strings.Split(hashStr, "$")
 	if len(parts) != 3 {
@@ -107,8 +109,18 @@ func checkPBKDF2Password(password, hashStr string) bool {
 		return false
 	}
 
+	var hashFunc func() hash.Hash
+	switch methodParts[1] {
+	case "sha256":
+		hashFunc = sha256.New
+	case "sha512":
+		hashFunc = sha512.New
+	default:
+		return false
+	}
+
 	iterations, err := strconv.Atoi(methodParts[2])
-	if err != nil {
+	if err != nil || iterations <= 0 {
 		return false
 	}
 
@@ -123,10 +135,10 @@ func checkPBKDF2Password(password, hashStr string) bool {
 		}
 	}
 
-	key := pbkdf2.Key([]byte(password), saltBytes, iterations, 32, sha256.New)
+	key := pbkdf2.Key([]byte(password), saltBytes, iterations, 32, hashFunc)
 	computedHash := base64.StdEncoding.EncodeToString(key)
 
-	return computedHash == expectedHash
+	return constantTimeCompare([]byte(computedHash), []byte(expectedHash))
 }
 
 // constantTimeCompare performs constant time comparison

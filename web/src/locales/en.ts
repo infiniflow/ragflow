@@ -4392,6 +4392,16 @@ Important structured information may include: names, dates, locations, events, k
       addNow: 'Add Now',
     },
 
+    adminEnhancements: {
+      security: 'Account security',
+      currentPassword: 'Current password',
+      currentPasswordRequired: 'Enter the current password',
+      passwordEncryptionFailed:
+        'Password encryption failed. Shorten the password and try again.',
+      passwordMaxLength: 'Use no more than 128 characters',
+      passwordTransportMaxLength: 'Use a password of no more than 183 UTF-8 bytes.',
+      passwordChangeHint: 'Sign in again with your new password after saving.',
+    },
     admin: {
       loginTitle: 'Admin console',
       title: 'RAGFlow',

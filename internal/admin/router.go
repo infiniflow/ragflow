@@ -60,6 +60,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/logout", r.handler.Logout)
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
+			protected.PUT("/me/password", r.handler.ChangeOwnPassword)
 
 			// User management
 			protected.GET("/users", r.handler.ListUsers)

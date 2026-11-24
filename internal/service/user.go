@@ -19,25 +19,18 @@ package service
 import (
 	"context"
 	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
-	"hash"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 
-	"golang.org/x/crypto/pbkdf2"
-	"golang.org/x/crypto/scrypt"
 	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
@@ -383,138 +376,9 @@ func (s *UserService) GetUserByID(ctx context.Context, id string) (*UserResponse
 	}, common.CodeSuccess, nil
 }
 
-// VerifyPassword verify password
-// Supports both werkzeug pbkdf2 format (pbkdf2:sha256:iterations$salt$hash) and scrypt format
+// VerifyPassword verifies the same stored formats used by password changes.
 func (s *UserService) VerifyPassword(hashedPassword, password string) bool {
-	// Check if it's pbkdf2 format (werkzeug)
-	if strings.HasPrefix(hashedPassword, "pbkdf2:") {
-		return s.verifyPBKDF2Password(hashedPassword, password)
-	}
-
-	// Check if it's scrypt format
-	if strings.HasPrefix(hashedPassword, "scrypt:") {
-		return s.verifyScryptPassword(hashedPassword, password)
-	}
-
-	return false
-}
-
-// verifyPBKDF2Password verifies password using PBKDF2 (werkzeug format)
-// Format: pbkdf2:sha256:iterations$salt$hash
-func (s *UserService) verifyPBKDF2Password(hashedPassword, password string) bool {
-	parts := strings.Split(hashedPassword, "$")
-	if len(parts) != 3 {
-		return false
-	}
-
-	// Parse method (e.g., "pbkdf2:sha256:150000")
-	methodParts := strings.Split(parts[0], ":")
-	if len(methodParts) != 3 {
-		return false
-	}
-
-	if methodParts[0] != "pbkdf2" {
-		return false
-	}
-
-	var hashFunc func() hash.Hash
-	switch methodParts[1] {
-	case "sha256":
-		hashFunc = sha256.New
-	case "sha512":
-		hashFunc = sha512.New
-	default:
-		return false
-	}
-
-	iterations, err := strconv.Atoi(methodParts[2])
-	if err != nil {
-		return false
-	}
-
-	salt := parts[1]
-	expectedHash := parts[2]
-
-	// Decode salt from base64
-	saltBytes, err := base64.StdEncoding.DecodeString(salt)
-	if err != nil {
-		// Try hex encoding
-		saltBytes, err = hex.DecodeString(salt)
-		if err != nil {
-			return false
-		}
-	}
-
-	// Generate hash using PBKDF2
-	key := pbkdf2.Key([]byte(password), saltBytes, iterations, 32, hashFunc)
-	computedHash := base64.StdEncoding.EncodeToString(key)
-
-	return computedHash == expectedHash
-}
-
-// verifyScryptPassword verifies password using scrypt format
-// Format: scrypt:n:r:p$base64(salt)$hex(hash)
-// IMPORTANT: werkzeug uses the base64-encoded salt string as UTF-8 bytes, NOT the decoded bytes
-func (s *UserService) verifyScryptPassword(hashedPassword, password string) bool {
-	// Parse hash format: scrypt:n:r:p$base64(salt)$hex(hash)
-	parts := strings.Split(hashedPassword, "$")
-	if len(parts) != 3 {
-		return false
-	}
-
-	params := strings.Split(parts[0], ":")
-	if len(params) != 4 || params[0] != "scrypt" {
-		return false
-	}
-
-	n, err := strconv.ParseUint(params[1], 10, 0)
-	if err != nil {
-		return false
-	}
-	r, err := strconv.ParseUint(params[2], 10, 0)
-	if err != nil {
-		return false
-	}
-	p, err := strconv.ParseUint(params[3], 10, 0)
-	if err != nil {
-		return false
-	}
-
-	saltB64 := parts[1]
-	hashHex := parts[2]
-
-	// IMPORTANT: werkzeug uses the base64 string as UTF-8 bytes, NOT decoded bytes
-	// This is the key difference from standard implementations
-	salt := []byte(saltB64)
-
-	// Decode expected hash from hex
-	expectedHash, err := hex.DecodeString(hashHex)
-	if err != nil {
-		return false
-	}
-
-	// Compute password hash
-	computed, err := scrypt.Key([]byte(password), salt, int(n), int(r), int(p), len(expectedHash))
-	if err != nil {
-		return false
-	}
-
-	// Constant time comparison
-	return s.constantTimeCompare(expectedHash, computed)
-}
-
-// constantTimeCompare constant time comparison
-func (s *UserService) constantTimeCompare(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	var result byte
-	for i := 0; i < len(a); i++ {
-		result |= a[i] ^ b[i]
-	}
-
-	return result == 0
+	return common.CheckWerkzeugPassword(password, hashedPassword)
 }
 
 func defaultUserLanguage() string {

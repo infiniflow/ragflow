@@ -50,6 +50,11 @@ const AdminNavigationLayout = () => {
         icon: <LucideUserCog className="size-[1em]" />,
       },
       {
+        path: Routes.AdminSecurity,
+        name: t('adminEnhancements.security'),
+        icon: <LucideUserCog className="size-[1em]" />,
+      },
+      {
         path: Routes.AdminSandboxSettings,
         name: t('admin.sandboxSettings'),
         icon: <LucideZap className="size-[1em]" />,
