@@ -51,9 +51,7 @@ func TestCompiledServeSmoke_Manual(t *testing.T) {
 	t.Setenv("RAGFLOW_COMPILED_SERVE_TYPES", "claim")
 	t.Setenv("RAGFLOW_COMPILED_SERVE_TOP_N", "5")
 
-	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "")
 	if err := server.Init(""); err != nil {
 		t.Fatalf("init config: %v", err)
 	}

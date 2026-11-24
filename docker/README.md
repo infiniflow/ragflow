@@ -110,9 +110,7 @@ The [.env](./.env) file is the user-facing environment file for the Go deploymen
 - `MYSQL_PASSWORD`
   The password for MySQL. Required only when `DB_TYPE=mysql` starts the in-cluster MySQL metadata database.
 - `MYSQL_PORT`
-  The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
-- `EXPOSE_MYSQL_PORT`
-  The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `3306`.
+  The MySQL port published on the Docker host. Defaults to `3306`. RAGFlow containers connect to MySQL on port `3306`.
 - `MYSQL_MAX_PACKET`
   The maximum MySQL communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`). Keep the MySQL server's `max_allowed_packet` setting compatible when using an external database.
 
@@ -145,9 +143,16 @@ The Go services use NATS JetStream for ingestion, synchronization, memory, and k
 - `NATS_HOST`
   The NATS hostname used inside the Compose network. Defaults to `nats`.
 - `NATS_PORT`
-  The internal NATS client port. Defaults to `4222`.
-- `EXPOSE_NATS_PORT`
-  The port published on the Docker host. Change this value to avoid a host-side port conflict; Go containers continue to use `NATS_PORT` internally.
+  The NATS client port published on the Docker host. Defaults to `4222`. RAGFlow containers connect to NATS on port `4222`.
+- `NATS_MONITORING_PORT`
+  The NATS monitoring port published on the Docker host. Defaults to `8222`.
+
+### ClickHouse
+
+- `CLICKHOUSE_TCP_PORT`
+  The ClickHouse native TCP port published on the Docker host. Defaults to `9900`. RAGFlow containers connect to ClickHouse on port `9000`.
+- `CLICKHOUSE_HTTP_PORT`
+  The ClickHouse HTTP port published on the Docker host. Defaults to `8123`.
 
 ### RAGFlow
 

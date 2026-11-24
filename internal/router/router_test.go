@@ -18,9 +18,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if err := server.InitLocalVariables(); err != nil {
-		panic(err)
-	}
+	server.InitLocalVariables()
 	server.SetServerName("test")
 	os.Exit(m.Run())
 }

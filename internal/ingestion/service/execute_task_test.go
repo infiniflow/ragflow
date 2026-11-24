@@ -31,7 +31,7 @@ func TestDefaultRunDocumentTask_BothPipelineAndParserMissing(t *testing.T) {
 		t.Fatalf("clear parser_id: %v", err)
 	}
 
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	err := ingestor.defaultRunDocumentTask(context.Background(), &entity.IngestionTask{
 		ID:         taskID,
 		DocumentID: docID,
@@ -64,7 +64,7 @@ func TestDefaultRunDocumentTask_ParserIDWithoutPipelineID(t *testing.T) {
 		testutil.WithTaskID("task-1"),
 	)
 
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	err := ingestor.defaultRunDocumentTask(context.Background(), &entity.IngestionTask{
 		ID:         taskID,
 		DocumentID: docID,
@@ -93,7 +93,7 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 		testutil.WithPipelineID("flow-1"),
 		testutil.WithTenantID("tenant-1"),
 	)
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	var runDocumentTaskCalled bool
 	var gotTaskID string
 	var gotProgress []float64
@@ -155,7 +155,7 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 		t.Fatalf("seed document progress message: %v", err)
 	}
 
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	ingestor.cancelCheck = func(ctx context.Context, taskID string) bool { return true }
 
 	var runDocumentTaskCalled bool
