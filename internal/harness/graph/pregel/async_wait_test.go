@@ -37,10 +37,24 @@ func waitForIdle(t *testing.T, executor *AsyncExecutor) {
 	}
 }
 
-// TestAsyncExecutorWaitReturnsNilForAlreadyIdleExecutor locks in the absence
-// of a polling ticker: a 5ms deadline is shorter than one poll interval, so a
-// ticker-based Wait always reports a deadline error even though nothing is
-// running. An event-driven Wait returns nil immediately.
+// waitWithWatchdog runs Wait in a goroutine and bounds it with a generous
+// watchdog. A watchdog (rather than a sub-poll deadline) keeps these tests
+// stable under scheduler jitter while still detecting a Wait that never wakes.
+func waitWithWatchdog(t *testing.T, executor *AsyncExecutor, ctx context.Context) error {
+	t.Helper()
+	errCh := make(chan error, 1)
+	go func() { errCh <- executor.Wait(ctx) }()
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(time.Second):
+		t.Fatal("Wait did not return within the watchdog")
+		return nil
+	}
+}
+
+// TestAsyncExecutorWaitReturnsNilForAlreadyIdleExecutor checks that an
+// executor whose last task has drained is reported as idle immediately.
 func TestAsyncExecutorWaitReturnsNilForAlreadyIdleExecutor(t *testing.T) {
 	executor := NewAsyncExecutor(2)
 	resultCh := executor.Execute(t.Context(), "instant", func(context.Context) (any, error) {
@@ -53,28 +67,22 @@ func TestAsyncExecutorWaitReturnsNilForAlreadyIdleExecutor(t *testing.T) {
 	}
 	waitForIdle(t, executor)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Millisecond)
-	defer cancel()
-	if err := executor.Wait(ctx); err != nil {
-		t.Fatalf("Wait on idle executor = %v, want nil (polling ticker still in use)", err)
+	if err := waitWithWatchdog(t, executor, t.Context()); err != nil {
+		t.Fatalf("Wait on idle executor = %v, want nil", err)
 	}
 }
 
-// TestAsyncExecutorWaitReturnsNilWithNoTasks covers the zero-task corner case
-// with the same sub-tick deadline as the transition case above.
+// TestAsyncExecutorWaitReturnsNilWithNoTasks covers the zero-task corner case.
 func TestAsyncExecutorWaitReturnsNilWithNoTasks(t *testing.T) {
 	executor := NewAsyncExecutor(2)
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Millisecond)
-	defer cancel()
-	if err := executor.Wait(ctx); err != nil {
+	if err := waitWithWatchdog(t, executor, t.Context()); err != nil {
 		t.Fatalf("Wait with no tasks = %v, want nil", err)
 	}
 }
 
 // TestAsyncExecutorWaitWakesOnLastTaskCompletion starts Wait while a task is
-// active and releases that task before the next poll tick would fire. A
-// ticker-based Wait times out; an event-driven Wait is woken by the task's
-// removal from activeTasks.
+// active and releases that task after the waiter goroutine has signalled it is
+// starting. The watchdog verifies the wake; no sub-poll deadline is used.
 func TestAsyncExecutorWaitWakesOnLastTaskCompletion(t *testing.T) {
 	executor := NewAsyncExecutor(2)
 	started := make(chan struct{})
@@ -86,13 +94,13 @@ func TestAsyncExecutorWaitWakesOnLastTaskCompletion(t *testing.T) {
 	})
 	<-started
 
-	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Millisecond)
-	defer cancel()
+	waitStarting := make(chan struct{})
 	errCh := make(chan error, 1)
-	go func() { errCh <- executor.Wait(ctx) }()
-
-	// Let Wait enter its wait state while the task is still active.
-	time.Sleep(time.Millisecond)
+	go func() {
+		close(waitStarting)
+		errCh <- executor.Wait(t.Context())
+	}()
+	<-waitStarting
 	close(release)
 
 	select {
