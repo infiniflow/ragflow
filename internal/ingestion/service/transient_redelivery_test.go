@@ -34,8 +34,10 @@ func (h *transientTaskHandle) RedeliveryBudget() (uint64, uint64, bool) {
 }
 
 func newTransientTaskCtx(ctx context.Context, taskID, docID string, handle *transientTaskHandle) *taskpkg.TaskContext {
+	pipelineLogID := "run-" + taskID
 	taskCtx := taskpkg.NewTaskContextForScheduling(ctx, &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		PipelineLogID: &pipelineLogID,
 	})
 	taskCtx.Handle = handle
 	return taskCtx
@@ -243,6 +245,49 @@ func TestDeferTransientTaskSettlesStoppingTaskAsStopped(t *testing.T) {
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("deferTransientTask must not settle the message, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
+
+	// runTask's cancel path closes the run when it stops the task; settling it
+	// here must not leave the run ledger open.
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "run-"+taskID).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("run status = %q, want %q", run.OperationStatus, entity.TaskStatusCancel)
+	}
+	var terminal entity.IngestionTaskLog
+	if err := db.Where("pipeline_log_id = ? AND event_type = ?", run.ID, dao.EventTypeTerminal).
+		First(&terminal).Error; err != nil {
+		t.Fatalf("terminal event missing: %v", err)
+	}
+}
+
+// A task deleted while the last delivery retries has nothing left to settle.
+// Retrying would renew the delivery until the worker stops, so the write must
+// report settled on the first attempt and leave the message to the caller.
+func TestDeferTransientTaskTreatsDeletedTaskAsSettled(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	if err := db.Delete(&entity.IngestionTask{}, "id = ?", taskID).Error; err != nil {
+		t.Fatalf("delete task: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1)
+	handle := &transientTaskHandle{delivered: 16, limit: 16, budgetKnown: true}
+	taskCtx := newTransientTaskCtx(t.Context(), taskID, docID, handle)
+
+	start := time.Now()
+	if handled := ingestor.deferTransientTask(t.Context(), taskCtx, nil, errors.New("Infinity is initing")); handled {
+		t.Fatal("a deleted task should settle without a nack")
+	}
+	if elapsed := time.Since(start); elapsed >= terminalWriteRetryDelays[0] {
+		t.Fatalf("terminal write retried for %v after the task was gone", elapsed)
+	}
+	if handle.nacks.Load() != 0 || handle.acks.Load() != 0 {
+		t.Fatalf("expected no direct settlement, got nacks=%d acks=%d", handle.nacks.Load(), handle.acks.Load())
+	}
 }
 
 // A task another worker already settled (any terminal status) must settle the
@@ -260,12 +305,15 @@ func TestMarkFailedOrStoppedSkipsFailureLogOnAlreadyTerminalTask(t *testing.T) {
 	}
 
 	ingestor := newUnitIngestor("test", 1)
-	settled, failed := ingestor.markFailedOrStopped(t.Context(), taskID, "Task failed: timeout")
+	settled, failed, stopped := ingestor.markFailedOrStopped(t.Context(), taskID, "Task failed: timeout")
 	if !settled {
 		t.Fatal("an already-terminal task should settle without a retry")
 	}
 	if failed {
 		t.Fatal("an idempotent MarkFailed no-op must not be reported as a new failure")
+	}
+	if stopped {
+		t.Fatal("a pre-existing COMPLETED task must not be reported as settled STOPPED")
 	}
 	final, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
 	if err != nil {

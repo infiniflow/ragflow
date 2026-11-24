@@ -925,40 +925,51 @@ func (e *Ingestor) markFailed(ctx context.Context, taskID, reason string) (writt
 // the task to STOPPING first. MarkFailed only accepts RUNNING, so without this a
 // stop that lands after the run failed would keep the terminal-write retry loop
 // running until shutdown and leave the task in STOPPING. It reports whether a
-// terminal status is now persisted and whether this call wrote FAILED — the
-// service returns (false, nil) when another worker already settled the task,
-// and that no-op must not surface as a failure here.
-func (e *Ingestor) markFailedOrStopped(ctx context.Context, taskID, reason string) (settled, failed bool) {
+// terminal status is now persisted, whether this call wrote FAILED, and whether
+// it settled the task STOPPED — the two flags tell the caller which terminal
+// entry the run ledger still needs. The service returns (false, nil) when
+// another worker already settled the task, and that no-op must not surface as a
+// failure here.
+func (e *Ingestor) markFailedOrStopped(ctx context.Context, taskID, reason string) (settled, failed, stopped bool) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	changed, err := e.ingestionTaskSvc.MarkFailed(ctx, taskID, reason)
 	if err != nil {
+		// A task deleted mid-retry has nothing left to settle. handleAndExecute
+		// Acks a missing task, so report it settled; retrying would only renew
+		// the delivery until the worker stops.
+		if errors.Is(err, common.ErrTaskNotFound) {
+			return true, false, false
+		}
 		if !isTerminalTransitionError(err) {
 			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), err)
-			return false, false
+			return false, false, false
 		}
 		// The status moved on between the read and the CAS. Re-read it: STOPPING
 		// must settle STOPPED, and an already-terminal task needs no write.
 		task, getErr := e.ingestionTaskSvc.GetTask(ctx, taskID)
 		if getErr != nil {
+			if errors.Is(getErr, common.ErrTaskNotFound) {
+				return true, false, false
+			}
 			common.Error(fmt.Sprintf("Failed to re-read task %s after a rejected FAILED transition", taskID), getErr)
-			return false, false
+			return false, false, false
 		}
 		if task.Status == common.STOPPING {
 			if !e.markStopped(ctx, taskID) {
-				return false, false
+				return false, false, false
 			}
-			return true, false
+			return true, false, true
 		}
 		switch task.Status {
 		case common.COMPLETED, common.STOPPED, common.FAILED:
-			return true, false
+			return true, false, false
 		default:
 			// RUNNING again means another transition raced us; retry.
-			return false, false
+			return false, false, false
 		}
 	}
-	return true, changed
+	return true, changed, false
 }
 
 // taskOutcome is what runTask reports to settleMessage. A transient error
@@ -1262,15 +1273,22 @@ func (e *Ingestor) deferTransientTask(ctx context.Context, taskCtx *taskpkg.Task
 		// therefore retried for as long as the worker lives, renewing the
 		// delivery's in-flight deadline, so a database that recovers later
 		// still settles the task instead of stranding it.
-		settled, failed := false, false
+		settled, failed, stopped := false, false, false
 		written := retryTerminalWrite(ctx, taskCtx.Handle, func() bool {
-			settled, failed = e.markFailedOrStopped(ctx, task.ID, reason)
+			settled, failed, stopped = e.markFailedOrStopped(ctx, task.ID, reason)
 			return settled
 		}, terminalWriteRetryDelays)
 		hb.Stop() // no InProgress may race the settlement below
 		if written {
-			if failed {
+			switch {
+			case failed:
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), reason)
+			case stopped:
+				// A concurrent stop settled the task here, so this worker owns
+				// the run's terminal write; runTask's cancel path records the
+				// same entry. Both writes are no-ops when another worker
+				// already closed the run.
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
 			}
 			return false
 		}
