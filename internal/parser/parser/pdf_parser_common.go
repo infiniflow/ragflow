@@ -639,6 +639,9 @@ func externalAnalyzerURL(method string) string {
 // policy is unit-testable without ONNX Runtime, and it never returns a mock.
 func resolveDocAnalyzerForMethod(method string, nativeFactory func() (deepdoctype.DocAnalyzer, bool)) (deepdoctype.DocAnalyzer, error) {
 	m := normalizePDFParseMethod(method)
+	if err := checkPDFAnalyzerLicense(m); err != nil {
+		return nil, err
+	}
 	if factory, ok := analyzerFactories[m]; ok {
 		url := externalAnalyzerURL(m)
 		if url == "" {

@@ -307,6 +307,9 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	ctx := c.Request.Context()
 	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
 	if err != nil {
+		if respondFeatureDisabled(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, document.ErrPreviewDocumentNotFound):
 			common.RespondError(c, common.CodeDataError, "document not found")
