@@ -979,6 +979,11 @@ func Run(ctx context.Context, in Input) (string, error) {
 	if in.DocIDs != nil {
 		ctx = withDocumentScope(ctx, in.DocIDs)
 	}
+	// Resolve the corpus scope ONCE per turn: every corpus tool of this run must
+	// read the indexes that actually hold the bound datasets, which is decided by
+	// each dataset's own tenant (a team-shared dataset lives in the sharing
+	// tenant), not by the conversation's tenant.
+	ctx = WithDatasetTenants(ctx, ResolveDatasetTenants(ctx, in.DatasetIDs))
 
 	// Conversation identity for per-conversation compiled-knowledge tool
 	// availability: the chat pipeline passes the chat id; when absent, a unique

@@ -2409,7 +2409,7 @@ func (s *ChatPipelineService) buildCodexReference(ctx context.Context, tenantID 
 		return map[string]interface{}{}, final
 	}
 	byID := make(map[string]map[string]interface{}, len(corpus)+len(web))
-	for _, r := range fetchChunksByIDs(ctx, tenantID, datasetIDs, corpus) {
+	for _, r := range fetchChunksByIDs(ctx, datasetIDs, corpus) {
 		if id, ok := r["id"].(string); ok {
 			byID[id] = r
 		}
@@ -5907,7 +5907,7 @@ func (s *ChatPipelineService) planExplorerAuditorRag(
 		// naive answers ([ID:N] -> reference.chunks[N], N 0-based).
 		reference := map[string]interface{}{}
 		if quote {
-			reference, final = s.buildAgenticReference(ctx, chat.TenantID, datasetIDs, final, registry)
+			reference, final = s.buildAgenticReference(ctx, datasetIDs, final, registry)
 		} else {
 			// No reference payload ships, so no marker may survive: it would
 			// point the client at a citation that does not exist. Only the

@@ -25,6 +25,7 @@ package agentic_rag
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -78,17 +79,16 @@ const grepChunksMaxResults = 30
 
 // GrepChunksTool regex-matches chunk content via GrepService. It is stateless:
 // no per-session seen-chunk tracking (memory is intentionally not ported). The
-// tenant and dataset scope are injected at construction from the session, so the
-// tool never needs a canvas runtime.
+// dataset scope is injected at construction from the session, so the tool never
+// needs a canvas runtime; the indexes it reads are resolved from those datasets.
 type GrepChunksTool struct {
-	tenantID   string
 	datasetIDs []string
 }
 
-// NewGrepChunksTool returns a GrepChunksTool scoped to the given tenant and
-// datasets, implementing eino's runtime.InvokableTool.
-func NewGrepChunksTool(tenantID string, datasetIDs []string) *GrepChunksTool {
-	return &GrepChunksTool{tenantID: tenantID, datasetIDs: datasetIDs}
+// NewGrepChunksTool returns a GrepChunksTool scoped to the given datasets,
+// implementing eino's runtime.InvokableTool.
+func NewGrepChunksTool(datasetIDs []string) *GrepChunksTool {
+	return &GrepChunksTool{datasetIDs: datasetIDs}
 }
 
 // Info returns the tool's metadata for the chat model. The parameter schema is
@@ -178,18 +178,19 @@ func (g *GrepChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 	}
 
 	svc := runtime.GetGrepService()
-	tenantID := g.tenantID
 	req := runtime.GrepRequest{
 		Pattern:      query,
 		DatasetIDs:   datasetIDs,
 		DocScope:     docScope,
 		Sort:         grepChunksSortFields, // order by doc_id, page_num_int, chunk_order_int
 		SelectFields: grepChunksSelectFields,
-		TenantID:     tenantID,
 	}
 	chunks, err := svc.Grep(ctx, req)
 	degradedNotice := ""
 	if err != nil {
+		if errors.Is(err, runtime.ErrCorpusScopeUnresolved) {
+			return "", fmt.Errorf("grep_chunks: %w", err)
+		}
 		// The engine refused the pattern (unsupported construct or a blown
 		// automaton budget). Recover rather than dead-end the turn: sanitize
 		// and retry, then fall back to a lexical prefilter — the regexp filter
