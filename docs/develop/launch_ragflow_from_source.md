@@ -65,12 +65,13 @@ brew install llvm cmake simde pcre2
 - `simde` supplies the x86 SSE/AVX headers used in ARM builds.
 - LLD is only required on Linux.
 
-For example, with Homebrew under `/opt/homebrew`, export before running `build.sh`:
+Export before running `build.sh`, deriving the paths from the installed Homebrew prefix (`/opt/homebrew/opt/llvm` on Apple Silicon, `/usr/local/opt/llvm` on Intel):
 
 ```bash
-export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
-export CC="/opt/homebrew/opt/llvm/bin/clang"
-export CXX="/opt/homebrew/opt/llvm/bin/clang++"
+LLVM_PREFIX="$(brew --prefix llvm)"
+export PATH="$LLVM_PREFIX/bin:$PATH"
+export CC="$LLVM_PREFIX/bin/clang"
+export CXX="$LLVM_PREFIX/bin/clang++"
 ```
 
 macOS builds are not covered by project CI and are not independently verified by the maintainers; report build problems as issues.
