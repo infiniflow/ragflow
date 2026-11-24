@@ -17,16 +17,14 @@
 import { Spin } from '@/components/ui/spin';
 import { cn } from '@/lib/utils';
 import { getDocumentPreviewBlob } from '@/services/file-manager-service';
-import { decodeBlobText } from '@/utils/file-util';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { decodeHtmlPreview } from './html-encoding';
 
 const HtmlPreviewHeader = `<!doctype html>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'">
 <style>:where(html) { background: Canvas; color: CanvasText; }</style>
 `;
-const ContentTypeCharset = /;\s*charset\s*=\s*["']?([\w.-]+)/i;
-const HtmlMetaCharset = /<meta\b[^>]*?(?:\s|;)charset\s*=\s*["']?\s*([\w.-]+)/i;
 
 interface HtmlPreviewerProps {
   className?: string;
@@ -57,10 +55,7 @@ export function HtmlPreviewer({ className, url }: HtmlPreviewerProps) {
           setPreview({ status: 'error' });
           return;
         }
-        const declaredEncoding =
-          file.type.match(ContentTypeCharset)?.[1] ??
-          (await file.slice(0, 1024).text()).match(HtmlMetaCharset)?.[1];
-        const html = await decodeBlobText(file, declaredEncoding);
+        const html = await decodeHtmlPreview(file);
         if (controller.signal.aborted) return;
         // Normalize the bytes so the trusted policy and the document are
         // always interpreted using the same encoding inside the sandbox.
