@@ -397,10 +397,12 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	if err = server.InitVariables(kvrocks.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.Error(err))
 	}
-	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeChatter {
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI || serverType == common.ServerTypeIngestion {
 		if err = billing.Init(ctx, config.GetBillingConfig()); err != nil {
 			return fmt.Errorf("initialize billing: %w", err)
 		}
+	}
+	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI {
 		if err = billing.Start(ctx); err != nil {
 			return fmt.Errorf("start billing: %w", err)
 		}
