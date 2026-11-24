@@ -38,9 +38,7 @@ func wikiIntRow(id, pageType, slug, title, topic, summary string, outlinks int) 
 //
 // Run with: bash build.sh --test-integration ./internal/service/...
 func TestWikiKeywordFilter_Integration(t *testing.T) {
-	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
-		t.Fatalf("init logger: %v", err)
-	}
+	common.InitLogger("info", common.FileOutput{}, "")
 	if err := server.Init(""); err != nil {
 		t.Fatalf("init service config: %v", err)
 	}

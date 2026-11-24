@@ -72,7 +72,7 @@ func setupLogger(t *testing.T) {
 	case "warn":
 		level = "warn"
 	}
-	_ = common.InitLogger(level, common.FileOutput{}, "")
+	common.InitLogger(level, common.FileOutput{}, "")
 }
 
 type outputDirs struct {
