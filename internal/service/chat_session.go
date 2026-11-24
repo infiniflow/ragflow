@@ -1275,11 +1275,21 @@ func (s *ChatSessionService) ChatCompletions(
 			return fail(err)
 		}
 	}
+	// Attach the tenant's Langfuse client so the chat pipeline emits
+	// trace/generation events for web UI conversations too (the
+	// OpenAI-compatible path does the same in openai_chat.go).
+	if lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, userID, dialog.ID, ""); lfClient != nil {
+		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = lfClient.Shutdown(shutdownCtx)
+		}()
+	}
 	resultChan, err := s.pipeline.AsyncChat(ctx, dialog, requestMsg, stream, kwargs)
 	if err != nil {
 		return fail(err)
 	}
-
 	if stream && streamChan != nil {
 		var fullAnswer strings.Builder
 		var finalLegacyAnswer map[string]interface{}

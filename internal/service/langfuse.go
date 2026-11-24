@@ -62,6 +62,9 @@ func getTenantLangfuse(tenantID string) (*entity.TenantLangfuse, error) {
 	if tenantID == "" {
 		return nil, gorm.ErrInvalidDB
 	}
+	if dao.DB == nil {
+		return nil, gorm.ErrInvalidDB
+	}
 	var row entity.TenantLangfuse
 	err := dao.DB.Where("tenant_id = ?", tenantID).First(&row).Error
 	if err != nil {
@@ -142,11 +145,13 @@ type LangfuseGeneration struct {
 	Usage               *LangfuseUsage         `json:"usage,omitempty"`
 }
 
-// LangfuseUsage records prompt/completion/total token counts.
+// LangfuseUsage records prompt/completion/total token counts. The JSON tags
+// follow Langfuse v3's ingestion schema (input/output/total); camelCase
+// legacy names are ignored by modern servers.
 type LangfuseUsage struct {
-	PromptTokens     int `json:"promptTokens"`
-	CompletionTokens int `json:"completionTokens"`
-	TotalTokens      int `json:"totalTokens"`
+	PromptTokens     int `json:"input"`
+	CompletionTokens int `json:"output"`
+	TotalTokens      int `json:"total"`
 }
 
 func (c *LangfuseClient) PostTrace(ctx context.Context, t LangfuseTrace) error {
@@ -154,7 +159,7 @@ func (c *LangfuseClient) PostTrace(ctx context.Context, t LangfuseTrace) error {
 	if err != nil {
 		return err
 	}
-	return c.enqueue("traces", body)
+	return c.enqueue("trace-create", body)
 }
 
 func (c *LangfuseClient) PostSpan(ctx context.Context, s LangfuseSpan) error {
@@ -162,7 +167,11 @@ func (c *LangfuseClient) PostSpan(ctx context.Context, s LangfuseSpan) error {
 	if err != nil {
 		return err
 	}
-	return c.enqueue("observations", body)
+	kind := "span-create"
+	if s.EndTime != "" {
+		kind = "span-update"
+	}
+	return c.enqueue(kind, body)
 }
 
 func (c *LangfuseClient) PostGeneration(ctx context.Context, g LangfuseGeneration) error {
@@ -170,7 +179,13 @@ func (c *LangfuseClient) PostGeneration(ctx context.Context, g LangfuseGeneratio
 	if err != nil {
 		return err
 	}
-	return c.enqueue("observations", body)
+	// Start-side events carry no EndTime/Usage and create the observation;
+	// end-side events update the same id with output/usage.
+	kind := "generation-create"
+	if g.EndTime != "" || g.Usage != nil {
+		kind = "generation-update"
+	}
+	return c.enqueue(kind, body)
 }
 
 func (c *LangfuseClient) enqueue(kind string, body []byte) error {
@@ -178,9 +193,9 @@ func (c *LangfuseClient) enqueue(kind string, body []byte) error {
 		return fmt.Errorf("nil langfuse client")
 	}
 	envelope := struct {
-		Kind string `json:"kind"`
-		Body []byte `json:"body"`
-	}{Kind: kind, Body: body}
+		Kind string          `json:"kind"`
+		Body json.RawMessage `json:"body"`
+	}{Kind: kind, Body: json.RawMessage(body)}
 	env, err := json.Marshal(envelope)
 	if err != nil {
 		return err
@@ -225,9 +240,23 @@ func (c *LangfuseClient) post(ctx context.Context, envelope []byte) {
 	if err := json.Unmarshal(envelope, &env); err != nil {
 		return
 	}
-	url := c.Host + "/api/public/" + env.Kind
+	// Langfuse v3 accepts writes only through the batch ingestion API; the
+	// legacy per-entity paths (/api/public/traces, /api/public/observations)
+	// reject POST, which silently dropped every event on modern servers.
+	payload, err := json.Marshal(map[string]interface{}{
+		"batch": []map[string]interface{}{{
+			"id":        fmt.Sprintf("%s-%d", env.Kind, time.Now().UnixNano()),
+			"type":      env.Kind,
+			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+			"body":      env.Body,
+		}},
+	})
+	if err != nil {
+		return
+	}
+	url := c.Host + "/api/public/ingestion"
 	auth := basicAuth(c.PublicKey, c.SecretKey)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(env.Body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return
 	}
