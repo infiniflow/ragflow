@@ -235,9 +235,20 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	// Apply meta_data_filter to get filtered doc_ids
-	docIDs := make([]string, len(documentIDs))
-	copy(docIDs, documentIDs)
-	if len(metadataFilter) > 0 {
+	var docIDs []string
+	if len(documentIDs) > 0 {
+		docIDs = append([]string(nil), documentIDs...)
+	}
+	docIDs, err = service.ListReadableDocumentIDs(ctx, datasetIDs, docIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve readable documents: %w", err)
+	}
+	includeDatasetProducts := (req.IncludeCompiledChunks == nil || *req.IncludeCompiledChunks) && req.KnowledgeCompilationScope != "document"
+	if len(docIDs) == 0 && !includeDatasetProducts {
+		emptyLabels := map[string]float64{}
+		return &service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels, Total: 0}, nil
+	}
+	if len(metadataFilter) > 0 && len(docIDs) > 0 {
 		metadataSvc := service.NewMetadataService()
 		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(ctx, datasetIDs)
 		if err != nil {
@@ -246,9 +257,13 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 		// nil means the metadata filter produced no scope at all, so the
 		// request keeps the document scope it came with.
-		if filteredDocIDs := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs); filteredDocIDs != nil {
+		if filteredDocIDs := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, docIDs, datasetIDs); filteredDocIDs != nil {
 			docIDs = filteredDocIDs
 		}
+	}
+	if len(docIDs) == 0 && !includeDatasetProducts {
+		emptyLabels := map[string]float64{}
+		return &service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &emptyLabels, Total: 0}, nil
 	}
 
 	// Apply cross_languages and keyword extraction
@@ -298,25 +313,26 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{
-		TenantIDs:              tenantIDs,
-		Question:               modifiedQuestion,
-		KbIDs:                  datasetIDs,
-		DocIDs:                 docIDs,
-		Page:                   page,
-		PageSize:               pageSize,
-		RerankCandidatesCount:  &rerankCandidatesCount,
-		KNNTopK:                &knnTopK,
-		KNNNumCandidates:       &knnNumCandidates,
-		SimilarityThreshold:    &similarityThreshold,
-		VectorSimilarityWeight: &vectorSimilarityWeight,
-		RerankModel:            rerankModel,
-		RankFeature:            &labels,
-		EmbeddingModel:         embeddingModel,
-		Highlight:              req.Highlight,
-		Language:               entity.KnowledgebasesLanguage(kbRecords),
+		TenantIDs:                  tenantIDs,
+		Question:                   modifiedQuestion,
+		KbIDs:                      datasetIDs,
+		DocIDs:                     docIDs,
+		DocumentPermissionsChecked: true,
+		Page:                       page,
+		PageSize:                   pageSize,
+		RerankCandidatesCount:      &rerankCandidatesCount,
+		KNNTopK:                    &knnTopK,
+		KNNNumCandidates:           &knnNumCandidates,
+		SimilarityThreshold:        &similarityThreshold,
+		VectorSimilarityWeight:     &vectorSimilarityWeight,
+		RerankModel:                rerankModel,
+		RankFeature:                &labels,
+		EmbeddingModel:             embeddingModel,
+		Highlight:                  req.Highlight,
+		Language:                   entity.KnowledgebasesLanguage(kbRecords),
 	}
 	retrievalReq.Filter = knowledgeCompilationFilter(req.IncludeCompiledChunks, req.KnowledgeCompilationScope)
-	if len(docIDs) > 0 && (req.IncludeCompiledChunks == nil || *req.IncludeCompiledChunks) && req.KnowledgeCompilationScope != "document" {
+	if includeDatasetProducts {
 		// Dataset artifacts use dataset IDs instead of source document IDs.
 		retrievalReq.DocIDs = append(slices.Clone(docIDs), datasetIDs...)
 	}

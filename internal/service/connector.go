@@ -84,8 +84,6 @@ var (
 	ErrConnectorTestUnsupported = errors.New("connector test is not supported for this source")
 	// ErrConnectorSourceNotImplemented is returned for connector sources not registered in the Go syncer.
 	ErrConnectorSourceNotImplemented = errors.New("connector source is not implemented")
-	// ErrConnectorInternal is a generic, safe-to-expose internal failure.
-	ErrConnectorInternal = errors.New("Internal server error")
 	// ErrConnectorEncryptedCredentials is returned when a request sends credentials in the stored "enc:" form.
 	ErrConnectorEncryptedCredentials = errors.New("config.credentials must be plaintext, not an \"enc:\" value")
 	// ErrConnectorInvalidFreq is returned when a connector frequency is not
@@ -295,6 +293,12 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, req *CreateConne
 	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
 		return nil, err
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "data_source", permission.ActionEnable); err != nil {
+		return nil, err
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("data_source::"+strings.TrimSpace(req.Source)), permission.ActionEnable); err != nil {
+		return nil, err
+	}
 	if req != nil && req.Source == "rest_api" {
 		if err := syncerconnector.ValidateRestAPIRequestWindow(req.Config); err != nil {
 			return nil, err
@@ -374,7 +378,7 @@ func (s *ConnectorService) GetConnector(ctx context.Context, connectorID string)
 			return nil, ErrConnectorNotFound
 		}
 		common.Error("get connector failed", err, zap.String("connector_id", connectorID))
-		return nil, ErrConnectorInternal
+		return nil, fmt.Errorf("get connector: %w", err)
 	}
 
 	return withDecryptedCredentials(connector)
@@ -391,33 +395,43 @@ func withDecryptedCredentials(connector *entity.Connector) (*entity.Connector, e
 	return connector, nil
 }
 
-// ListConnectors returns connectors belonging to a tenant the caller can use.
-func (s *ConnectorService) ListConnectors(ctx context.Context, requestedTenantID string) (*ListConnectorsResponse, error) {
+// ListConnectors returns connectors belonging to the requested user in the current tenant.
+func (s *ConnectorService) ListConnectors(ctx context.Context, accessUserID string) (*ListConnectorsResponse, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "data_source", permission.ActionEnable); err != nil {
+		return nil, err
+	}
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	if userID == "" {
 		return nil, permission.ErrUnauthenticated
 	}
-
-	tenantID := strings.TrimSpace(requestedTenantID)
-	if tenantID == "" {
-		var err error
-		tenantID, err = requireCurrentTenantID(ctx)
-		if errors.Is(err, permission.ErrMembershipNotFound) {
-			return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
-		return nil, err
+	tenantID, err := requireCurrentTenantID(ctx)
+	if errors.Is(err, permission.ErrMembershipNotFound) {
+		return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
 	}
-	connectors, err := s.connectorDAO.ListByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}
+	accessUserID = strings.TrimSpace(accessUserID)
+	if accessUserID == "" {
+		accessUserID = userID
+	}
+	connectors, err := s.connectorDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, accessUserID)
+	if err != nil {
+		return nil, err
+	}
+	visibleConnectors := connectors[:0]
+	checker := permission.NewDatabaseChecker(dao.DB)
+	for _, connector := range connectors {
+		checkErr := checker.CheckFeature(ctx, permission.Feature("data_source::"+connector.Source), permission.ActionEnable)
+		if checkErr == nil {
+			visibleConnectors = append(visibleConnectors, connector)
+		} else if !errors.Is(checkErr, permission.ErrPermissionDenied) {
+			return nil, checkErr
+		}
+	}
 
 	return &ListConnectorsResponse{
-		Connectors: connectors,
+		Connectors: visibleConnectors,
 	}, nil
 }
 
@@ -455,6 +469,9 @@ func (s *ConnectorService) TestConnector(ctx context.Context, connectorID string
 
 	source, connectorConfig, err := testConnectorSettings(storedConnector, config)
 	if err != nil {
+		return err
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("data_source::"+source), permission.ActionEnable); err != nil {
 		return err
 	}
 	connector, err := s.connectorRegistry.OpenFromConfig(source, connectorConfig)
@@ -561,6 +578,9 @@ func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, source strin
 	if source != "google-drive" && source != "gmail" {
 		return nil, common.CodeArgumentError, fmt.Errorf("invalid Google OAuth type")
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("data_source::"+source), permission.ActionEnable); err != nil {
+		return nil, common.CodeForbidden, err
+	}
 
 	if req == nil || len(req.Credentials) == 0 {
 		return nil, common.CodeArgumentError, fmt.Errorf("required argument is missing: credentials")
@@ -605,7 +625,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, source strin
 	flowID := common.GenerateUUID()
 	authorizationURL, err := buildGoogleAuthorizationURL(authURI, clientID, redirectURI, flowID, googleOAuthScopesForSource(source), codeChallenge)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration")
+		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration: %w", err)
 	}
 
 	redisClient := kvrocks.Get()
@@ -1497,6 +1517,9 @@ func (s *ConnectorService) StartBoxWebOAuth(ctx context.Context, req *StartBoxWe
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	if userID == "" {
 		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("data_source::box"), permission.ActionEnable); err != nil {
+		return nil, common.CodeForbidden, err
 	}
 	var clientID, clientSecret, redirectURI string
 	if req != nil {

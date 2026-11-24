@@ -248,6 +248,7 @@ func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum 
 	t.Helper()
 	kb := &entity.Knowledgebase{
 		ID:         id,
+		UserID:     "user-1",
 		TenantID:   tenantID,
 		Name:       "test-kb",
 		EmbdID:     "embd-1",
@@ -269,6 +270,7 @@ func insertTestDoc(t *testing.T, id, kbID string, tokenNum, chunkNum int64) {
 	doc := &entity.Document{
 		ID:           id,
 		KbID:         kbID,
+		UserID:       "user-1",
 		ParserID:     "naive",
 		ParserConfig: entity.JSONMap{},
 		TokenNum:     tokenNum,

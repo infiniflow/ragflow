@@ -47,12 +47,13 @@ Do not reintroduce backend-variant primitives or detection helpers (e.g. a `useI
 
 ### Enterprise Overlays
 
-`src/ee/` holds the enterprise customization of shared modules at the same path it overrides. This tree ships those files empty so every shared import resolves; the enterprise repository ships the real implementation. Keep both sides in that shape:
+The frontend mirrors the backend's `stub.go` / `*_ee.go` naming. `src/ee-stub/` holds the no-op customization points for shared modules; the enterprise repository carries real implementations at the same relative paths under `src/ee/`. Shared code always imports the logical `@/ee/...` specifier, and the OSS directory-level aliases resolve it to `src/ee-stub/`.
 
-- `src/ee/locales/<lang>-private.ts` carries enterprise locale strings and `src/ee/utils/api-private.ts` enterprise-only API endpoints. Both stay empty objects here.
+- `src/ee-stub/locales/<lang>-private.ts` and `src/ee-stub/utils/api-private.ts` stay empty objects here; their enterprise counterparts under `src/ee/` carry private locale strings and API endpoints.
 - The shared file only imports the overlay and merges it — `merge(base, private)` in `src/locales/config.ts`, `merge(apiEndpoints, apiPrivate)` in `src/utils/api.ts`. Never inline enterprise strings or endpoints into `src/locales/*.ts` or `src/utils/api.ts`, and never delete the overlay import.
-- The edition is chosen by the file's content, never at runtime: no `import.meta.env` switch that selects enterprise code and no `isEnterprise` branch in shared modules.
-- Adding a new overlay means adding the empty file here and the implementation downstream in the same change.
+- The edition is chosen by directory aliases and file content, never at runtime: no `import.meta.env` switch that selects enterprise code and no `isEnterprise` branch in shared modules.
+- Keep the `@/ee` mappings in `vite.config.ts`, `tsconfig.json`, `jest.config.ts`, and `.storybook/main.ts` ahead of the generic `@` / `@/*` mapping. Do not add per-file aliases or rewrite shared imports to `@/ee-stub`.
+- Adding a new overlay means adding the empty file under `src/ee-stub/` here and the implementation at the same relative path under `src/ee/` downstream in the same change.
 
 ### CSS and Layout Debugging
 
@@ -163,14 +164,20 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 
 ### Prefer Shared Building Blocks
 
-**Do not hand-roll ad-hoc elements when a shared component, hook, util, or constant already covers the need.** Before writing a raw styled element or a local helper, check the shared layers first:
+**Do not hand-roll ad-hoc elements when a shared component, hook, util, or constant already covers the need.** Before writing a raw styled element or a local helper, check the shared layers first and prefer the highest-level abstraction that covers the use case:
 
-- Interactive elements (buttons, inputs, tooltips, dialogs, pagination, …) → compose `src/components/ui/` primitives via `variant`/`size`/`className` (e.g. an icon-only action is `<Button variant="ghost" size="icon">` or `variant="static" size="auto"`, not a raw `<button className="...">`).
+- **Feature-level components before primitives**: when a shared component already provides the interaction, use it instead of importing its underlying shadcn/Radix primitives or recreating equivalent JSX. Common examples:
+  - Selects, including searchable selects → `SelectWithSearch` from `src/components/originui/select-with-search.tsx`.
+  - Tooltips → `RAGFlowTooltip`; form-field help → `FormTooltip` from `src/components/ui/tooltip.tsx`.
+  - Destructive-action confirmations → `ConfirmDeleteDialog` from `src/components/confirm-delete-dialog.tsx`.
+- Basic primitives without a higher-level wrapper may be composed directly via `variant`/`size`/`className` (e.g. an icon-only action is `<Button variant="ghost" size="icon">` or `variant="static" size="auto"`, not a raw `<button className="...">`).
 - Reusable logic → existing hooks in `src/hooks/` (or `ahooks`).
 - Pure helpers → existing utils in `src/utils/` (or `lodash`/`dayjs`).
 - Domain constant lists → the page's `constant/` directory.
 
 Writing your own one-off version of something the shared layer already provides is a defect, not a style choice. Beyond the `ui/` primitives, `src/components/` already covers most recurring needs — empty states, truncation tooltips, confirm/rename dialogs, list-page scaffolding (filter bar, pagination, skeletons), icons, avatars, and layout wrappers — so skim `src/components/`, `src/hooks/`, and `src/utils/` before writing anything new.
+
+If an existing wrapper lacks a required capability, prefer extending its API or composing it in a component outside `src/components/ui/` rather than bypassing it. A missing prop or a small styling difference alone is not a reason to drop to the underlying primitive; any exception needs a written justification and reviewer approval.
 
 ### React Patterns and Conventions
 
@@ -184,6 +191,7 @@ Writing your own one-off version of something the shared layer already provides 
 - Avoid camelCase or SCREAMING_SNAKE_CASE for components and top-level constants.
 - **Place domain constant lists in the page's `constant/` directory** (e.g. `pages/agent/constant/pipeline.tsx`) when they belong to an existing family of constants there (like `ChunkerOperators`, `SingleOperators`), instead of declaring them locally next to their consumer. Keeping related lists in one file makes their overlaps and differences visible and gives new entries a single obvious home.
 - **Name things semantically, not generically.** A name should say what the value holds or what the callback does, so call sites read naturally. Don't leak a generic underlying-primitive API into your own component's public props — rename at the wrapper boundary (e.g., a tabs wrapper exposes `activeTab` / `onTabChange`, mapped internally to Radix's `value` / `onValueChange`), and align with what callers already name the state. Same for variables and functions: `hiddenNodeIds` over `nodeIdSet`, `pickByBackend` over `resolveVariant`.
+- **Use enums for repeated finite string values.** When the same string value is referenced in multiple places (state initialization, comparisons, JSX values, or similar logic), define a string enum and use its members instead of repeating raw string literals.
 - Avoid duplicating component structures in JSX; favor render props or reusable components.
 
 ### Utility Libraries and Reuse

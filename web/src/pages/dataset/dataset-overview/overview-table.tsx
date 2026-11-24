@@ -6,7 +6,6 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -49,6 +48,7 @@ import {
 } from '../compilation/constants';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
+import { DatasetTableLayout } from '@/components/dataset-table-layout';
 import { useIngestionMessages } from '../ingestion-message-hooks';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
@@ -358,7 +358,9 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       fileName: row.original.document_name,
       source: row.original.source_from,
       task: row.original?.task_type,
-      status: row.original.status as RunningStatus,
+      // The pipeline log reports the legacy "Scheduled" ("5") for an enqueued
+      // run; render it like the file list's queue state instead.
+      status: row.original.operation_status,
       startDate: formatDate(row.original.process_begin_at),
       duration: formatSecondsToHumanReadable(
         row.original.process_duration || 0,
@@ -433,8 +435,16 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   });
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 w-full">
-      <Table rootClassName="flex-1 min-h-0 mb-4">
+    <>
+      <DatasetTableLayout
+        pagination={
+          <RAGFlowPagination
+            {...{ current: pagination.current, pageSize: pagination.pageSize }}
+            total={pagination.total}
+            onChange={(page, pageSize) => setPagination({ page, pageSize })}
+          />
+        }
+      >
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -449,7 +459,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
             </TableRow>
           ))}
         </TableHeader>
-        <TableBody className="relative min-w-[1280px] overflow-auto">
+        <TableBody className="relative">
           {table.getRowModel().rows?.length ? (
             table.getRowModel().rows.map((row) => (
               <TableRow
@@ -478,15 +488,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
             </TableRow>
           )}
         </TableBody>
-      </Table>
-
-      <div className="mt-auto flex items-center justify-end">
-        <RAGFlowPagination
-          {...{ current: pagination.current, pageSize: pagination.pageSize }}
-          total={pagination.total}
-          onChange={(page, pageSize) => setPagination({ page, pageSize })}
-        />
-      </div>
+      </DatasetTableLayout>
 
       {isModalVisible && (
         <ProcessLogModal
@@ -496,7 +498,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           logInfo={modalLogInfo as ILogInfo}
         />
       )}
-    </div>
+    </>
   );
 };
 

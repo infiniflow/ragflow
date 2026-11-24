@@ -15,6 +15,8 @@
  */
 
 import { Operator } from '@/constants/agent';
+import { EnterpriseOperatorForm } from '@/ee/pages/agent/form/enterprise-operator-form';
+import { ParserFormContent } from '@/ee/components/pipeline-operator-content';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import CompilationForm from '@/pages/agent/form/compilation-form';
 import ExtractorForm from '@/pages/agent/form/extractor-form';
@@ -64,13 +66,15 @@ const PipelineOperatorForm = ({
   switch (operatorType) {
     case Operator.Parser:
       return (
-        <ParserForm
-          node={node}
-          onValuesChange={handleValuesChange}
-          hideOutputs
-          externalErrors={externalErrors}
-          fixedFileFormats={fixedFileFormats}
-        />
+        <ParserFormContent node={node}>
+          <ParserForm
+            node={node}
+            onValuesChange={handleValuesChange}
+            hideOutputs
+            externalErrors={externalErrors}
+            fixedFileFormats={fixedFileFormats}
+          />
+        </ParserFormContent>
       );
     case Operator.TokenChunker:
       return (
@@ -153,7 +157,13 @@ const PipelineOperatorForm = ({
         </div>
       );
     default:
-      return null;
+      return (
+        <EnterpriseOperatorForm
+          node={node}
+          onValuesChange={handleValuesChange}
+          externalErrors={externalErrors}
+        />
+      );
   }
 };
 

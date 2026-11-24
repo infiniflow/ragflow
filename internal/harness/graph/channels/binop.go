@@ -6,6 +6,7 @@ import (
 
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/errors"
+	"ragflow/internal/harness/graph/types"
 )
 
 // BinaryOperator is a function that combines two values into one.
@@ -93,6 +94,16 @@ func isOverwrite(value interface{}) (bool, interface{}) {
 		return false, nil
 	}
 
+	switch ow := value.(type) {
+	case *types.Overwrite:
+		if ow == nil {
+			return false, nil
+		}
+		return true, ow.Value
+	case types.Overwrite:
+		return true, ow.Value
+	}
+
 	// Check for Overwrite type
 	type overwriter interface {
 		GetValue() interface{}
@@ -119,29 +130,32 @@ func (c *BinaryOperatorAggregate) Update(values []interface{}) (bool, error) {
 		return false, nil
 	}
 
+	var overwriteValue interface{}
+	seenOverwrite := false
+	for _, value := range values {
+		if isOver, v := isOverwrite(value); isOver {
+			if seenOverwrite {
+				return false, &errors.InvalidUpdateError{
+					Message: "Can receive only one Overwrite value per super-step.",
+				}
+			}
+			overwriteValue = v
+			seenOverwrite = true
+		}
+	}
+	if seenOverwrite {
+		c.value = overwriteValue
+		return true, nil
+	}
+
 	// Initialize with first value if empty
 	if IsMissing(c.value) {
 		c.value = values[0]
 		values = values[1:]
 	}
 
-	seenOverwrite := false
 	for _, value := range values {
-		isOver, overwriteValue := isOverwrite(value)
-		if isOver {
-			if seenOverwrite {
-				return false, &errors.InvalidUpdateError{
-					Message: "Can receive only one Overwrite value per super-step.",
-				}
-			}
-			c.value = overwriteValue
-			seenOverwrite = true
-			continue
-		}
-
-		if !seenOverwrite {
-			c.value = c.operator(c.value, value)
-		}
+		c.value = c.operator(c.value, value)
 	}
 
 	return true, nil

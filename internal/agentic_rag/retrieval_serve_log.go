@@ -1,23 +1,24 @@
-/*
- *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- */
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
 
 package agentic_rag
 
 import (
 	"context"
+	"ragflow/internal/retrievalaccount"
 	"strings"
 	"unicode/utf8"
 
@@ -68,6 +69,7 @@ func servedChunkFields(ctx context.Context, tool, query string, hit snippetHit) 
 		zap.Int("snippet_runes", utf8.RuneCountInString(hit.snippet)),
 		zap.Int("query_terms", matched),
 		zap.String("snippet", snippet),
+		zap.String("content", hit.chunk.Content),
 	}
 	if hit.truncated {
 		fields = append(fields, zap.Bool("truncated", true))
@@ -81,7 +83,15 @@ func servedChunkFields(ctx context.Context, tool, query string, hit snippetHit) 
 // logServedChunks writes one debug line per served chunk (a no-op unless the
 // logger runs at debug level).
 func logServedChunks(ctx context.Context, tool, query string, hits []snippetHit) {
-	if len(hits) == 0 || common.Logger == nil || common.Logger.Check(zap.DebugLevel, "agentic_rag: retrieval served chunk") == nil {
+	// The served ledger rides the context: record every served chunk with its
+	// document so the delivery gate can name the documents a failing chain
+	// never deep-read.
+	if l := servedLedgerFrom(ctx); l != nil {
+		for _, hit := range hits {
+			l.Add(query, retrievalaccount.DocNameStem(hit.chunk.DocumentName))
+		}
+	}
+	if len(hits) == 0 {
 		return
 	}
 	for _, hit := range hits {

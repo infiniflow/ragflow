@@ -40,3 +40,33 @@ func TestInferenceTotalCoresIsCgroupAware(t *testing.T) {
 		t.Fatalf("inferenceTotalCores() = %d, want >= 1", got)
 	}
 }
+
+// Tests for local inference budget derivation. The single user-facing K drives
+// a remote gate at K and a local gate at deriveLocalBudget(...), which must
+// never exceed the machine's core count (no oversubscription) even when K is
+// much larger (e.g. K=32 on 16 cores).
+func TestDeriveLocalBudget(t *testing.T) {
+	cases := []struct {
+		name       string
+		k          int
+		totalCores int
+		rawN       int
+		explicitN  bool
+		want       int
+	}{
+		{"K exceeds cores, N unset -> clamp to cores", 32, 16, 0, false, 16},
+		{"K below cores, N unset -> K", 8, 16, 0, false, 8},
+		{"K exceeds cores, explicit smaller N -> N", 32, 16, 4, true, 4},
+		{"K exceeds cores, explicit N=0 (all cores) -> cores", 32, 16, 0, true, 16},
+		{"K below cores, explicit larger N -> clamp to cores? no, N capped by K", 8, 16, 32, true, 8},
+		{"zero cores floor to one", 32, 0, 0, false, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := deriveLocalBudget(tc.k, tc.totalCores, tc.rawN, tc.explicitN); got != tc.want {
+				t.Fatalf("deriveLocalBudget(%d,%d,%d,%v) = %d, want %d",
+					tc.k, tc.totalCores, tc.rawN, tc.explicitN, got, tc.want)
+			}
+		})
+	}
+}

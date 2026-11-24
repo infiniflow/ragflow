@@ -40,6 +40,7 @@ import (
 	"fmt"
 	"net"
 	"ragflow/internal/common"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -487,7 +488,7 @@ func validateJWTAuth(c *gin.Context, cfg map[string]any) error {
 	required := collectStringSlice(rawJWT["required_claims"])
 	reserved := splitCSV(jwtReservedClaims)
 	for _, claim := range required {
-		if contains(reserved, claim) {
+		if slices.Contains(reserved, claim) {
 			return fmt.Errorf("reserved jwt claim cannot be required: %s", claim)
 		}
 		if _, present := claims[claim]; !present {

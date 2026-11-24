@@ -54,6 +54,11 @@ const Nodes: Array<Klass<LexicalNode>> = [
   VariableNode,
 ];
 
+type EditableAttributes = Pick<
+  React.ComponentProps<typeof ContentEditable>,
+  'id' | 'aria-label' | 'aria-labelledby' | 'aria-describedby' | 'aria-invalid'
+>;
+
 type PromptContentProps = {
   enablePathQueryAutoMerge: boolean;
   showToolbar?: boolean;
@@ -61,7 +66,7 @@ type PromptContentProps = {
   multiLine?: boolean;
   onBlur?: () => void;
   onEnablePathQueryAutoMergeChange: (checked: boolean) => void;
-};
+} & EditableAttributes;
 
 type IProps = {
   enablePathQueryAutoMerge?: boolean;
@@ -73,7 +78,8 @@ type IProps = {
   onBlur?: () => void;
   placeholder?: ReactNode;
   types?: JsonSchemaDataType[];
-} & Pick<VariablePickerMenuPluginProps, 'extraOptions' | 'baseOptions'>;
+} & Pick<VariablePickerMenuPluginProps, 'extraOptions' | 'baseOptions'> &
+  EditableAttributes;
 
 function PromptContent({
   enablePathQueryAutoMerge,
@@ -82,6 +88,7 @@ function PromptContent({
   multiLine = true,
   onBlur,
   onEnablePathQueryAutoMergeChange,
+  ...editableAttributes
 }: PromptContentProps) {
   const [editor] = useLexicalComposerContext();
   const [isBlur, setIsBlur] = useState(false);
@@ -162,6 +169,7 @@ function PromptContent({
           </div>
         )}
         <ContentEditable
+          {...editableAttributes}
           className={cn(
             'relative px-2 py-1 focus-visible:outline-none max-h-[50vh] overflow-auto text-sm',
             {
@@ -190,6 +198,7 @@ export const PromptEditor = forwardRef(function PromptEditor(
     extraOptions,
     baseOptions,
     types,
+    ...editableAttributes
   }: IProps,
   ref: React.Ref<HTMLDivElement>,
 ) {
@@ -227,6 +236,7 @@ export const PromptEditor = forwardRef(function PromptEditor(
         <RichTextPlugin
           contentEditable={
             <PromptContent
+              {...editableAttributes}
               enablePathQueryAutoMerge={isPathQueryAutoMergeEnabled}
               showToolbar={showToolbar}
               showMergePath={showMergePath}

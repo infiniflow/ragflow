@@ -25,17 +25,22 @@ import { memoryModelFormSchema } from './memory-model-form';
  * stale value is tolerated, so the select's warning marker is the only
  * signal there.
  */
-export const useMemoryFormSchema = (tenantId?: string) => {
+export const useMemoryFormSchema = (
+  tenantId?: string,
+  ownerUserId?: string | null,
+) => {
   const { t } = useTranslation();
   const { data: messageData } = useFetchMemoryMessageList();
   const modelsEditable = !messageData?.messages?.total_count;
   const { validIds: validLlmIds, isFetched: modelsFetched } = useModelValidIds(
     ModelTypeMap.llm_id,
     tenantId,
+    ownerUserId,
   );
   const { validIds: validEmbdIds } = useModelValidIds(
     ModelTypeMap.embd_id,
     tenantId,
+    ownerUserId,
   );
 
   const formSchema = useMemo(

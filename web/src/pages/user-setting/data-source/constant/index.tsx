@@ -14,24 +14,27 @@
  *  limitations under the License.
  */
 
+import sitemapSvg from '@/assets/svg/data-source/sitemap.svg?raw';
 import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { BookOpen, Globe, Mail, Rss, Search } from 'lucide-react';
+import { Mail, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
+import {
+  eeDataSourceDefaultValues,
+  EeDataSourceFeatureVisibility,
+  generateEeDataSourceFormFields,
+  generateEeDataSourceInfo,
+} from '@/ee/pages/user-setting/data-source/ee-extensions';
 import { IDataSourceInfoMap } from '../interface';
 import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
-import {
-  feishuWikiConstant,
-  feishuWikiDefaultValues,
-} from './feishu-wiki-constant';
 import { jiraConstant } from './jira-constant';
 import {
   getRestAPIWindowFormFields,
@@ -47,7 +50,6 @@ export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   NOTION = 'notion',
   GOOGLE_DRIVE = 'google_drive',
-  FEISHU_WIKI = 'feishu_wiki',
   GMAIL = 'gmail',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   OCI_STORAGE = 'oci_storage',
@@ -69,7 +71,6 @@ export enum DataSourceKey {
   AIRTABLE = 'airtable',
   ASANA = 'asana',
   IMAP = 'imap',
-  DINGTALK_AI_TABLE = 'dingtalk_ai_table',
   SEAFILE = 'seafile',
   MYSQL = 'mysql',
   POSTGRESQL = 'postgresql',
@@ -85,6 +86,98 @@ export enum DataSourceKey {
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
 }
+
+export enum DataSourceCategory {
+  KnowledgeAndLearning = 'knowledgeAndLearning',
+  FileStorage = 'fileStorage',
+  ObjectStorage = 'objectStorage',
+  MessagingAndEmail = 'messagingAndEmail',
+  DevelopmentAndProjectManagement = 'developmentAndProjectManagement',
+  BusinessApplications = 'businessApplications',
+  DatabasesAndApis = 'databasesAndApis',
+  WebAndSocial = 'webAndSocial',
+  Other = 'other',
+}
+
+export const DataSourceCategoryGroups: Array<{
+  category: DataSourceCategory;
+  sources: DataSourceKey[];
+}> = [
+  {
+    category: DataSourceCategory.KnowledgeAndLearning,
+    sources: [
+      DataSourceKey.NOTION,
+      DataSourceKey.CONFLUENCE,
+      DataSourceKey.SHAREPOINT,
+      DataSourceKey.MOODLE,
+      DataSourceKey.ZOTERO,
+    ],
+  },
+  {
+    category: DataSourceCategory.FileStorage,
+    sources: [
+      DataSourceKey.GOOGLE_DRIVE,
+      DataSourceKey.ONEDRIVE,
+      DataSourceKey.DROPBOX,
+      DataSourceKey.BOX,
+      DataSourceKey.SEAFILE,
+      DataSourceKey.WEBDAV,
+    ],
+  },
+  {
+    category: DataSourceCategory.ObjectStorage,
+    sources: [
+      DataSourceKey.S3,
+      DataSourceKey.R2,
+      DataSourceKey.GOOGLE_CLOUD_STORAGE,
+      DataSourceKey.AZURE_BLOB,
+      DataSourceKey.OCI_STORAGE,
+    ],
+  },
+  {
+    category: DataSourceCategory.MessagingAndEmail,
+    sources: [
+      DataSourceKey.SLACK,
+      DataSourceKey.TEAMS,
+      DataSourceKey.DISCORD,
+      DataSourceKey.GMAIL,
+      DataSourceKey.OUTLOOK,
+      DataSourceKey.IMAP,
+    ],
+  },
+  {
+    category: DataSourceCategory.DevelopmentAndProjectManagement,
+    sources: [
+      DataSourceKey.GITHUB,
+      DataSourceKey.GITLAB,
+      DataSourceKey.BITBUCKET,
+      DataSourceKey.AZURE_DEVOPS,
+      DataSourceKey.JIRA,
+      DataSourceKey.ASANA,
+    ],
+  },
+  {
+    category: DataSourceCategory.BusinessApplications,
+    sources: [
+      DataSourceKey.SALESFORCE,
+      DataSourceKey.ZENDESK,
+      DataSourceKey.AIRTABLE,
+    ],
+  },
+  {
+    category: DataSourceCategory.DatabasesAndApis,
+    sources: [
+      DataSourceKey.MYSQL,
+      DataSourceKey.POSTGRESQL,
+      DataSourceKey.BIGQUERY,
+      DataSourceKey.REST_API,
+    ],
+  },
+  {
+    category: DataSourceCategory.WebAndSocial,
+    sources: [DataSourceKey.SITEMAP, DataSourceKey.RSS, DataSourceKey.XQUIK],
+  },
+];
 
 type DataSourceFeatureVisibility = {
   syncDeletedFiles?: boolean;
@@ -149,9 +242,6 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.AIRTABLE]: {
     syncDeletedFiles: true,
   },
-  [DataSourceKey.DINGTALK_AI_TABLE]: {
-    syncDeletedFiles: true,
-  },
   [DataSourceKey.WEBDAV]: {
     syncDeletedFiles: true,
   },
@@ -206,6 +296,7 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.BIGQUERY]: {
     syncDeletedFiles: true,
   },
+  ...EeDataSourceFeatureVisibility,
 };
 
 const isDataSourceFeatureVisible = (
@@ -229,7 +320,12 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.SITEMAP]: {
       name: 'Sitemap',
       description: t(`setting.${DataSourceKey.SITEMAP}Description`),
-      icon: <Globe className="text-text-primary" size={22} />,
+      icon: (
+        <span
+          className="flex w-[22px] text-text-primary [&>svg]:h-auto [&>svg]:w-full"
+          dangerouslySetInnerHTML={{ __html: sitemapSvg }}
+        />
+      ),
     },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
@@ -277,11 +373,6 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Google Drive',
       description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
       icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
-    },
-    [DataSourceKey.FEISHU_WIKI]: {
-      name: 'Feishu Wiki',
-      description: t(`setting.${DataSourceKey.FEISHU_WIKI}Description`),
-      icon: <BookOpen className="text-text-primary" size={22} />,
     },
     [DataSourceKey.GMAIL]: {
       name: 'Gmail',
@@ -338,11 +429,6 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
       icon: <SvgIcon name={'data-source/airtable'} width={38} />,
     },
-    [DataSourceKey.DINGTALK_AI_TABLE]: {
-      name: 'Dingtalk AI Table',
-      description: t(`setting.dingtalkAITableDescription`),
-      icon: <SvgIcon name={'data-source/dingtalk-ai-table'} width={38} />,
-    },
     [DataSourceKey.GITLAB]: {
       name: 'GitLab',
       description: t(`setting.${DataSourceKey.GITLAB}Description`),
@@ -387,7 +473,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.ZOTERO]: {
       name: 'Zotero',
       description: t(`setting.${DataSourceKey.ZOTERO}Description`),
-      icon: <BookOpen className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/zotero'} width={38} />,
     },
     [DataSourceKey.SEAFILE]: {
       name: 'SeaFile',
@@ -417,7 +503,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.OUTLOOK]: {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
-      icon: <Mail className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/outlook'} width={38} />,
     },
     [DataSourceKey.SALESFORCE]: {
       name: 'Salesforce',
@@ -429,6 +515,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.AZURE_BLOB}Description`),
       icon: <SvgIcon name={'data-source/azure-blob'} width={38} />,
     },
+    ...generateEeDataSourceInfo(t),
   };
 };
 
@@ -513,7 +600,6 @@ export const getCommonExtraDefaultValues = () => ({
 });
 
 const generateDataSourceFormFields = (t: TFunction) => ({
-  [DataSourceKey.FEISHU_WIKI]: feishuWikiConstant(t),
   [DataSourceKey.ONEDRIVE]: [
     {
       label: t('setting.dataSourceFieldTenantId'),
@@ -1299,26 +1385,6 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     {
       label: t('setting.dataSourceFieldTableNameOrId'),
       name: 'config.table_name_or_id',
-      type: FormFieldType.Text,
-      required: true,
-    },
-  ],
-  [DataSourceKey.DINGTALK_AI_TABLE]: [
-    {
-      label: t('setting.dataSourceFieldAccessToken'),
-      name: 'config.credentials.access_token',
-      type: FormFieldType.Password,
-      required: true,
-    },
-    {
-      label: t('setting.dataSourceFieldBaseId'),
-      name: 'config.table_id',
-      type: FormFieldType.Text,
-      required: true,
-    },
-    {
-      label: t('setting.dataSourceFieldOperatorId'),
-      name: 'config.operator_id',
       type: FormFieldType.Text,
       required: true,
     },
@@ -2241,10 +2307,10 @@ const generateDataSourceFormFields = (t: TFunction) => ({
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
+  ...generateEeDataSourceFormFields(t),
 });
 
 export const DataSourceFormDefaultValues = {
-  [DataSourceKey.FEISHU_WIKI]: feishuWikiDefaultValues,
   [DataSourceKey.RSS]: {
     name: '',
     source: DataSourceKey.RSS,
@@ -2508,17 +2574,6 @@ export const DataSourceFormDefaultValues = {
       table_name_or_id: '',
       credentials: {
         airtable_access_token: '',
-      },
-    },
-  },
-  [DataSourceKey.DINGTALK_AI_TABLE]: {
-    name: '',
-    source: DataSourceKey.DINGTALK_AI_TABLE,
-    config: {
-      table_id: '',
-      operator_id: '',
-      credentials: {
-        access_token: '',
       },
     },
   },
@@ -2800,6 +2855,7 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  ...eeDataSourceDefaultValues,
 };
 
 export const getDataSourceFieldsWithExtras = (

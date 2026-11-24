@@ -13,7 +13,7 @@ import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { AgentDialogueMode, BeginQueryType } from '../../constant';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
@@ -26,7 +26,7 @@ import { WebHook } from './webhook';
 
 function BeginForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
 
   const ModeOptions = useMemo(
     () => [
@@ -180,7 +180,7 @@ function BeginForm({ node }: INextOperatorForm) {
                 horizontal={false}
                 showMineruOptions={false}
                 showPaddleocrOptions={false}
-                ownerTenantId={ownerTenantId}
+                resourceTenantId={resourceTenantId}
               ></LayoutRecognizeFormField>
             )}
           </>

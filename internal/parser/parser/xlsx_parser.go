@@ -85,6 +85,9 @@ func normalizeXLSXParseMethod(raw string) string {
 }
 
 func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	if err := checkWPSLicense(filename); err != nil {
+		return ParseResult{Err: err}
+	}
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":

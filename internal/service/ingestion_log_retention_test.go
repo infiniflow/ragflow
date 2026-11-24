@@ -1,14 +1,18 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestFoldIngestionRunLeavesRunningRunUntouched(t *testing.T) {
@@ -339,4 +343,104 @@ func countFoldEvents(t *testing.T, db *gorm.DB, runID string) int {
 		t.Fatalf("count events: %v", err)
 	}
 	return int(count)
+}
+
+// trimSQLCaptureLogger records SQL emitted during trimIngestionDocument so the
+// test can assert the per-run COUNT loop was replaced by one GROUP BY query.
+type trimSQLCaptureLogger struct {
+	mu   sync.Mutex
+	sqls []string
+}
+
+func (l *trimSQLCaptureLogger) LogMode(logger.LogLevel) logger.Interface      { return l }
+func (l *trimSQLCaptureLogger) Info(context.Context, string, ...interface{})  {}
+func (l *trimSQLCaptureLogger) Warn(context.Context, string, ...interface{})  {}
+func (l *trimSQLCaptureLogger) Error(context.Context, string, ...interface{}) {}
+func (l *trimSQLCaptureLogger) Trace(_ context.Context, _ time.Time, fc func() (string, int64), _ error) {
+	sql, _ := fc()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.sqls = append(l.sqls, sql)
+}
+
+func TestTrimIngestionDocumentUsesSingleCountQuery(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	// Seed using the original db so seed SQL is not captured.
+	// 5 runs: 4 old terminal + 1 latest running (preserved). 3 events each.
+	for i := 1; i <= 5; i++ {
+		runID := fmt.Sprintf("run-%d", i)
+		status := entity.TaskStatusDone
+		if i == 5 {
+			status = entity.TaskStatusRunning
+		}
+		insertFoldPipelineLog(t, db, runID, status, i)
+		for j := 0; j < 3; j++ {
+			insertFoldEvent(t, db, runID, "task-1", dao.EventTypeMessage, j, "", "detail")
+		}
+	}
+
+	cap := &trimSQLCaptureLogger{}
+	captureDB := db.Session(&gorm.Session{Logger: cap})
+	oldDB := dao.DB
+	dao.DB = captureDB
+	t.Cleanup(func() { dao.DB = oldDB })
+
+	result, err := NewIngestionTaskService().trimIngestionDocument(t.Context(), "doc-1", "", 6)
+	if err != nil {
+		t.Fatalf("trimIngestionDocument: %v", err)
+	}
+	if result.BeforeEvents != 15 || result.DeletedRuns != 3 || result.DeletedEvents != 9 || result.AfterEvents != 6 {
+		t.Fatalf("trim result = %+v, want before=15 deletedRuns=3 deletedEvents=9 after=6", result)
+	}
+
+	countQueries := 0
+	for _, sql := range cap.sqls {
+		if strings.Contains(strings.ToLower(sql), "count(") {
+			countQueries++
+		}
+	}
+	if countQueries > 1 {
+		t.Fatalf("emitted %d COUNT queries for 5 runs, want a single GROUP BY COUNT; SQL=%v", countQueries, cap.sqls)
+	}
+}
+
+func TestTrimIngestionDocumentSkipsRunsWithoutEvents(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	// run-1 is terminal but has no events. The aggregate query returns no row
+	// for it; the deletion loop must treat its count as zero and skip it.
+	insertFoldPipelineLog(t, db, "run-1", entity.TaskStatusDone, 1)
+	for i := 2; i <= 4; i++ {
+		runID := fmt.Sprintf("run-%d", i)
+		insertFoldPipelineLog(t, db, runID, entity.TaskStatusDone, i)
+		for j := 0; j < 3; j++ {
+			insertFoldEvent(t, db, runID, "task-1", dao.EventTypeMessage, j, "", "detail")
+		}
+	}
+	insertFoldPipelineLog(t, db, "run-5", entity.TaskStatusRunning, 5)
+	for j := 0; j < 3; j++ {
+		insertFoldEvent(t, db, "run-5", "task-1", dao.EventTypeMessage, j, "", "detail")
+	}
+
+	result, err := NewIngestionTaskService().trimIngestionDocument(t.Context(), "doc-1", "", 3)
+	if err != nil {
+		t.Fatalf("trimIngestionDocument: %v", err)
+	}
+	if result.BeforeEvents != 12 || result.DeletedRuns != 3 || result.DeletedEvents != 9 || result.AfterEvents != 3 {
+		t.Fatalf("trim result = %+v, want before=12 deletedRuns=3 deletedEvents=9 after=3", result)
+	}
+	if got := countFoldEvents(t, db, "run-1"); got != 0 {
+		t.Fatalf("zero-event run count = %d, want 0", got)
+	}
+	for _, runID := range []string{"run-2", "run-3", "run-4"} {
+		if got := countFoldEvents(t, db, runID); got != 0 {
+			t.Fatalf("deleted run %s event count = %d, want 0", runID, got)
+		}
+	}
+	if got := countFoldEvents(t, db, "run-5"); got != 3 {
+		t.Fatalf("latest run event count = %d, want 3", got)
+	}
 }

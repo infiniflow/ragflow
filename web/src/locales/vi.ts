@@ -742,8 +742,6 @@ export default {
       FishAudioRefIDMessage: `Vui lòng nhập ID của model tham chiếu (để trống để sử dụng model mặc định)`,
       modelsToBeAddedTooltip:
         'Nếu nhà cung cấp mô hình của bạn không có trong danh sách nhưng tuyên bố tương thích với "OpenAI", hãy chọn thẻ OpenAI-API-compatible để thêm mô hình liên quan.',
-      dingtalkAITableDescription:
-        'Kết nối với Dingtalk AI Table và đồng bộ hóa bản ghi từ một bảng được chỉ định.',
     },
     message: {
       registered: 'Đã đăng ký!',
@@ -833,6 +831,16 @@ export default {
       retrievalDescription: `Một thành phần truy xuất thông tin từ một cơ sở kiến thức được chỉ định và trả về 'Phản hồi trống' nếu không tìm thấy thông tin. Đảm bảo chọn đúng cơ sở kiến thức.`,
       generateDescription: `Một thành phần nhắc LLM tạo phản hồi. Đảm bảo lời nhắc được đặt chính xác.`,
       categorizeDescription: `Một thành phần sử dụng LLM để phân loại đầu vào của người dùng thành các danh mục được xác định trước. Đảm bảo bạn chỉ định tên, mô tả và ví dụ cho mỗi danh mục, cùng với thành phần tiếp theo tương ứng.`,
+      scoredSwitchQuestionRequired: 'Mỗi câu hỏi bổ sung cần hướng dẫn',
+      scoredSwitchLevelMinimum: 'Thêm ít nhất hai mức',
+      scoredSwitchFieldMinimum: 'Thêm ít nhất một trường',
+      scoredSwitchFieldNameInvalid:
+        'Tên trường phải bắt đầu bằng chữ cái hoặc dấu gạch dưới',
+      scoredSwitchListItemsRequired: 'Danh sách cần kiểu mục',
+      scoredSwitchEstimateBoundsRequired:
+        'Ước lượng cần giá trị nhỏ nhất và lớn nhất',
+      scoredSwitchForecastRequired: 'Dự báo cần khoảng xa và khoảng cách',
+      scoredSwitchDecimalsRange: 'Số chữ số thập phân phải từ 0 đến 6',
       relevantDescription: `Một thành phần sử dụng LLM để đánh giá xem đầu ra phía thượng nguồn có liên quan đến truy vấn mới nhất của người dùng hay không. Đảm bảo bạn chỉ định thành phần tiếp theo cho mỗi kết quả đánh giá.`,
       rewriteQuestionDescription: `Một thành phần tinh chỉnh truy vấn của người dùng nếu không thể truy xuất thông tin liên quan từ cơ sở kiến thức. Nó lặp lại quá trình này cho đến khi đạt đến giới hạn lặp trên được xác định trước. Đảm bảo phía thượng nguồn của nó là 'Liên quan' và phía hạ nguồn là 'Truy xuất'.`,
       messageDescription:

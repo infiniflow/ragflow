@@ -285,15 +285,25 @@ func (s *IngestionTaskService) trimIngestionDocument(ctx context.Context, docume
 			preserved[preservePipelineLogID] = struct{}{}
 		}
 
-		eventCounts := make(map[string]int, len(runs))
-		for _, run := range runs {
-			var count int64
-			if err := tx.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
-				Where("pipeline_log_id = ?", run.ID).Count(&count).Error; err != nil {
-				return err
-			}
-			eventCounts[run.ID] = int(count)
-			result.BeforeEvents += int(count)
+		runIDs := make([]string, len(runs))
+		for i, run := range runs {
+			runIDs[i] = run.ID
+		}
+		var countRows []struct {
+			PipelineLogID string `gorm:"column:pipeline_log_id"`
+			Count         int64  `gorm:"column:event_count"`
+		}
+		if err := tx.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
+			Select("pipeline_log_id, COUNT(*) AS event_count").
+			Where("pipeline_log_id IN ?", runIDs).
+			Group("pipeline_log_id").
+			Scan(&countRows).Error; err != nil {
+			return err
+		}
+		eventCounts := make(map[string]int, len(countRows))
+		for _, row := range countRows {
+			eventCounts[row.PipelineLogID] = int(row.Count)
+			result.BeforeEvents += int(row.Count)
 		}
 		result.AfterEvents = result.BeforeEvents
 

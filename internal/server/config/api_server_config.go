@@ -36,6 +36,7 @@ type AuthenticationConfig struct {
 
 type APIServerConfig struct {
 	MCP      MCPConfig
+	Codex    CodexConfig
 	Host     string `mapstructure:"host"`
 	HTTPPort int    `mapstructure:"http_port"`
 	// TrustedProxies lists the IPs / CIDRs whose X-Forwarded-For and
@@ -51,6 +52,9 @@ type APIServerConfig struct {
 
 func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 	if err := c.parseMCPConfig(v); err != nil {
+		return err
+	}
+	if err := c.parseCodexConfig(v); err != nil {
 		return err
 	}
 
@@ -89,6 +93,22 @@ func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 
 	c.parseAuthenticationConfig(v)
 
+	return c.deriveCodexMCPBase()
+}
+
+// deriveCodexMCPBase fills codex.mcp_public_base from the API server's own address when
+// the operator did not set it explicitly, so a simple deployment needs no extra config.
+// A wildcard bind address is not reachable, so it maps to loopback.
+func (c *Config) deriveCodexMCPBase() error {
+	if c.apiServer.Codex.Endpoint == "" || c.apiServer.Codex.MCPPublicBase != "" {
+		return nil
+	}
+	host := c.apiServer.Host
+	switch host {
+	case "", "0.0.0.0", "::", "localhost":
+		host = "127.0.0.1"
+	}
+	c.apiServer.Codex.MCPPublicBase = fmt.Sprintf("http://%s:%d", host, c.apiServer.HTTPPort)
 	return nil
 }
 

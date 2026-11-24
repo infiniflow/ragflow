@@ -25,12 +25,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const wikipediaToolName = "wikipedia_search"
@@ -71,9 +71,9 @@ func WikipediaLanguageSupported(language string) bool {
 // non-agent callers and fall back to the tool instance's node-level
 // defaults (WikipediaTool.lang / WikipediaTool.topN) when absent.
 type wikipediaParams struct {
-	Query      string `json:"query"`
-	Lang       string `json:"lang,omitempty"`
-	MaxResults int    `json:"max_results,omitempty"`
+	Query      string `json:"query" doc:"The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title." required:"true"`
+	Lang       string `json:"lang,omitempty" schema:"-" component:"-"`
+	MaxResults int    `json:"max_results,omitempty" schema:"-" component:"-"`
 }
 
 // wikipediaResult mirrors the fields Python passes to _retrieve_chunks:
@@ -145,32 +145,19 @@ func NewWikipediaToolWithParams(h *HTTPHelper, topN int, language string) *Wikip
 
 // Info returns the tool's metadata for the chat model.
 func (w *WikipediaTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: wikipediaToolName,
-		Desc: wikipediaToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(wikipediaToolName, wikipediaToolDescription, wikipediaParams{})
 }
 
 func (w *WikipediaTool) ComponentSpec() ComponentSpec {
-	return ComponentSpec{
-		Inputs: map[string]string{
-			"query": "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
-		},
-		Outputs: map[string]string{
-			"formalized_content": "Rendered Wikipedia references for downstream prompts.",
-			"json":               "Wikipedia result list.",
-		},
-		InputForm: map[string]any{
-			"query": map[string]any{"name": "Query", "type": "line"},
-		},
+	spec := BuildComponentSpec(wikipediaParams{})
+	spec.Outputs = map[string]string{
+		"formalized_content": "Rendered Wikipedia references for downstream prompts.",
+		"json":               "Wikipedia result list.",
 	}
+	spec.InputForm = map[string]any{
+		"query": map[string]any{"name": "Query", "type": "line"},
+	}
+	return spec
 }
 
 // buildWikipediaURL constructs a MediaWiki generator=search URL that returns
@@ -261,7 +248,7 @@ func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 		if content == "" {
 			continue
 		}
-		content = truncateWikipediaRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		fullURL := p.FullURL
 		if fullURL == "" {
 			fullURL = fmt.Sprintf("https://%s.wikipedia.org/wiki/%s", lang, url.PathEscape(p.Title))
@@ -301,7 +288,7 @@ func buildWikipediaReferences(envelope map[string]any) ([]map[string]any, []map[
 			continue
 		}
 		content := wikipediaDataImagePattern.ReplaceAllString(wikipediaText(item["content"]), "")
-		content = truncateWikipediaRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}
@@ -354,13 +341,6 @@ func wikipediaText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func truncateWikipediaRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func renderWikipediaResults(results []wikipediaResult) string {

@@ -3,13 +3,13 @@ import {
   ModelTypeMap,
 } from '@/components/model-tree-select';
 import { useTranslation } from 'react-i18next';
-import { useOwnerTenantId } from '../../context';
+import { useResourceTenantId } from '../../context';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
 export function AudioFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
 
   return (
     <>
@@ -19,7 +19,7 @@ export function AudioFormFields({ prefix }: CommonProps) {
         label={t('chat.model')}
         modelTypes={ModelTypeMap.asr_id}
         allowClear
-        ownerTenantId={ownerTenantId}
+        resourceTenantId={resourceTenantId}
       />
     </>
   );

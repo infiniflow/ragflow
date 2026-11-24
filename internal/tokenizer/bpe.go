@@ -559,23 +559,7 @@ func (m *bpeModel) memoPut(piece string, count int) {
 
 // trimToLimit returns the longest rune prefix with at most limit tokens.
 func (m *bpeModel) trimToLimit(text string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	if m.countTokens(text) <= limit {
-		return text
-	}
-	runes := []rune(text)
-	lo, hi := 0, len(runes)
-	for lo < hi {
-		mid := (lo + hi + 1) / 2
-		if m.countTokens(string(runes[:mid])) <= limit {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
-	}
-	return string(runes[:lo])
+	return trimToRuneLimitByCount(text, limit, m.countTokens)
 }
 
 // ---------------------------------------------------------------------------

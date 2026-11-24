@@ -22,7 +22,7 @@ import { LlmIcon } from '../svg-icon';
 
 interface IProps {
   value?: string;
-  ownerTenantId?: string;
+  resourceTenantId?: string;
 }
 
 /**
@@ -30,8 +30,8 @@ interface IProps {
  * availability: composite values yield their parsed name, plain model_id
  * values are looked up in the (optionally owner-scoped) added-model list.
  */
-function useModelDisplayName({ value, ownerTenantId }: IProps) {
-  const { data: models } = useFetchAllAddedModels(undefined, ownerTenantId);
+function useModelDisplayName({ value, resourceTenantId }: IProps) {
+  const { data: models } = useFetchAllAddedModels(undefined, resourceTenantId);
 
   const parsed = value ? parseModelValue(value) : null;
   if (parsed?.model_name) {
@@ -47,8 +47,8 @@ function useModelDisplayName({ value, ownerTenantId }: IProps) {
     : null;
 }
 
-export const LLMLabel = ({ value, ownerTenantId }: IProps) => {
-  const display = useModelDisplayName({ value, ownerTenantId });
+export const LLMLabel = ({ value, resourceTenantId }: IProps) => {
+  const display = useModelDisplayName({ value, resourceTenantId });
 
   if (!display?.model_name) return null;
 
@@ -76,8 +76,8 @@ export const LLMLabel = ({ value, ownerTenantId }: IProps) => {
  * parsed composite name, else a model_id lookup in the (optionally
  * owner-scoped) added-model list, else the raw value.
  */
-export const MissingModelLabel = ({ value, ownerTenantId }: IProps) => {
-  const display = useModelDisplayName({ value, ownerTenantId });
+export const MissingModelLabel = ({ value, resourceTenantId }: IProps) => {
+  const display = useModelDisplayName({ value, resourceTenantId });
 
   return (
     <span className="flex items-center gap-1.5 text-text-disabled">
