@@ -232,7 +232,7 @@ func (w *WebSearchTool) invokableRun(ctx context.Context, argumentsInJSON string
 			})
 		}
 	}
-	if len(hits) == 0 && len(failures) > 0 {
+	if len(failures) == len(queries) {
 		return "", fmt.Errorf("web_search: every query failed: %s", strings.Join(failures, "; "))
 	}
 	if len(hits) > webSearchMaxResults {
