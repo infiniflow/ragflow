@@ -22,9 +22,9 @@ import (
 	"container/list"
 	"image"
 	"math"
-	"os"
-	"strconv"
 	"sync"
+
+	"ragflow/internal/common"
 )
 
 // pageCacheEntry pairs a page number with its rendered bitmap and a reference
@@ -175,10 +175,8 @@ func (c *lruPageCache) evictLocked() {
 // enough to cover near-term reuse within a contiguous page window; override
 // with RAGFLOW_PAGE_CACHE_LIMIT.
 func pageCacheLimit() int {
-	if v := os.Getenv("RAGFLOW_PAGE_CACHE_LIMIT"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
+	if n := common.GetEnvInt("RAGFLOW_PAGE_CACHE_LIMIT", 0); n > 0 {
+		return n
 	}
 	return 64
 }
@@ -188,10 +186,8 @@ func pageCacheLimit() int {
 // would retain ~18 GB under the page cap alone. 1 GiB still covers ~59 A4
 // pages; override (in MiB) with RAGFLOW_PAGE_CACHE_MB.
 func pageCacheBytes() int64 {
-	if v := os.Getenv("RAGFLOW_PAGE_CACHE_MB"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 && n <= math.MaxInt64>>20 {
-			return n << 20
-		}
+	if n := common.GetEnvInt("RAGFLOW_PAGE_CACHE_MB", 0); n > 0 && n <= math.MaxInt64>>20 {
+		return int64(n) << 20
 	}
 	return 1 << 30
 }

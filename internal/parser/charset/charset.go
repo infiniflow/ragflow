@@ -173,6 +173,11 @@ func detectedCharset(data []byte) string {
 			return label
 		}
 	}
+	// A confident detection outside the chain (e.g. EUC-JP) still wins: GB18030
+	// would otherwise accept those bytes and return mojibake.
+	if isRecognizedCharset(res.Charset) {
+		return strings.ToLower(res.Charset)
+	}
 	return ""
 }
 

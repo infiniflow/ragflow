@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 //go:build cgo
 
 package native
@@ -30,9 +46,10 @@ import (
 // Runtime gives each session its own intra-op thread pool (the C API never
 // switches a session onto a shared/global pool), so the threads DeepDoc
 // inference occupies in this process are intraOpThreads × the number of
-// concurrently running sessions. The capacity registered in inference_limit.go
-// bounds how many Runs may be in flight; together with intraOpThreads this is
-// the process inference budget (see ValidateInferenceConfig).
+// concurrently running sessions. The process inference budget (registered in
+// the doctype gate, see inference_gate.go) bounds how many Runs may be in
+// flight; together with intraOpThreads this is the process inference budget
+// (see ValidateInferenceConfig).
 
 var (
 	ortOnce    sync.Once
@@ -112,6 +129,12 @@ var (
 	weightCache = map[string]*weightSet{}
 )
 
+// sharedWeightsSeam lets the enterprise GPU build extract device-resident
+// initializers so ORT can share one GPU weight buffer across sessions. The
+// OSS build leaves it nil and always uses the CPU extraction path below.
+// Returning (nil, nil) also falls through to the CPU path.
+var sharedWeightsSeam func(modelPath, inName string, inShape []int64, outName string) (*weightSet, error)
+
 // sharedWeights extracts the constant initializers from modelPath once and
 // caches them keyed by model path. Each subsequent call for the same model
 // returns the cached buffers, so every pooled session of that model shares a
@@ -126,9 +149,30 @@ func sharedWeights(modelPath, inName string, inShape []int64, outName string) (*
 	if ws, ok := weightCache[modelPath]; ok {
 		return ws, nil
 	}
+	// Enterprise GPU seam: extract CUDA-memory shared initializers so ORT
+	// shares one GPU weight buffer across all CUDA sessions (zero-copy).
+	// No-op in OSS and in EE CPU mode (hook returns nil, nil).
+	if sharedWeightsSeam != nil {
+		ws, err := sharedWeightsSeam(modelPath, inName, inShape, outName)
+		if err != nil {
+			return nil, err
+		}
+		if ws != nil {
+			weightCache[modelPath] = ws
+			return ws, nil
+		}
+	}
 	// Throwaway extraction session: the weights live in the graph, not in any
 	// input/output tensor, so we only need valid in/out tensors to load the
 	// model. We never Run it, so the output tensor's shape is irrelevant.
+	//
+	// This session intentionally uses the DEFAULT (CPU) provider even when the
+	// running sessions use CUDA. The shared-initializer patch reads initializers
+	// via CreateCpuMemoryInfo + memcpy; a CUDA extraction session would have the
+	// weights resident on the device and that memcpy would be invalid. The
+	// running (possibly CUDA) sessions receive the extracted CPU buffers via
+	// AddInitializer — ORT's CUDA EP copies external initializers to the device
+	// itself. So extraction stays on CPU while inference may run on GPU.
 	inT, err := ort.NewTensor(ort.NewShape(inShape...), make([]float32, prod(inShape)))
 	if err != nil {
 		return nil, fmt.Errorf("allocate extraction input for %s: %w", modelPath, err)
@@ -179,7 +223,7 @@ func sharedWeights(modelPath, inName string, inShape []int64, outName string) (*
 // model-determined, so no outShape argument is needed). The session runs
 // intraOpThreads intra-op threads (see the constant): one thread per Run, with
 // the process-wide ceiling owned by the inference budget the process owner
-// registers (see inference_limit.go). Input/output tensors are allocated and
+// registers (see doctype/inference_gate.go). Input/output tensors are allocated and
 // freed on every Run (see session.Run), so a pooled session holds only its
 // weights in steady state. Weight sharing is applied transparently: the model's
 // constant initializers are extracted once per modelPath and injected into the
@@ -231,7 +275,7 @@ func newRawSession(modelPath, inName string, inShape []int64, outName string, we
 
 // newSessionOptions builds the SessionOptions shared by every running session:
 // one intra-op thread (so each Run costs exactly one CPU thread — see the
-// intraOpThreads constant and inference_limit.go) and the BFC arena disabled
+// intraOpThreads constant and doctype/inference_gate.go) and the BFC arena disabled
 // (idle sessions then keep only their weights; activation tensors are allocated
 // per Run and freed after). When weights != nil, each shared initializer is
 // injected so the model's constant buffers live in memory a single time across
@@ -244,7 +288,7 @@ func newSessionOptions(weights *weightSet) (*ort.SessionOptions, error) {
 	// One intra-op thread per session by default; the startup path may raise it
 	// via SetIntraOpThreads to share N cores across K Runs (see
 	// ValidateInferenceConfig). The session's Runs then cost intraOpThreadCount()
-	// threads each, and the process-wide inference ceiling (inference_limit.go)
+	// threads each, and the process-wide inference ceiling (doctype/inference_gate.go)
 	// bounds how many Runs may be in flight.
 	if err := opts.SetIntraOpNumThreads(intraOpThreadCount()); err != nil {
 		opts.Destroy()
@@ -260,6 +304,14 @@ func newSessionOptions(weights *weightSet) (*ort.SessionOptions, error) {
 	if err := opts.SetCpuMemArena(false); err != nil {
 		opts.Destroy()
 		return nil, err
+	}
+	// Device selection hook: an accelerator-capable build appends its EP here
+	// when the device selects gpu; the default build is a no-op (ParseDevice
+	// rejects gpu at startup). Fail-fast semantics live in the edition that
+	// provides the accelerator EP.
+	if err := ApplyDeviceOptions(opts); err != nil {
+		opts.Destroy()
+		return nil, fmt.Errorf("apply device execution provider: %w", err)
 	}
 	if weights != nil {
 		for i, v := range weights.vals {

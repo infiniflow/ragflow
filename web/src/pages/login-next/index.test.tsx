@@ -1,6 +1,15 @@
 import { useSystemConfig } from '@/hooks/use-system-request';
+import { changeLanguageAsync } from '@/locales/config';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Login from './index';
+
+jest.mock('@/locales/config', () => ({
+  changeLanguageAsync: jest.fn(),
+  supportedLanguages: [
+    { code: 'en', displayName: 'English' },
+    { code: 'zh-Hans', displayName: 'Chinese (Simplified)' },
+  ],
+}));
 
 jest.mock('@/hooks/use-system-request', () => ({
   useSystemConfig: jest.fn(),
@@ -16,11 +25,16 @@ jest.mock('@/hooks/use-login-request', () => ({
 }));
 
 jest.mock('react-router', () => ({
+  useLocation: () => ({ state: null }),
   useNavigate: () => jest.fn(),
+  useSearchParams: () => [new URLSearchParams()],
 }));
 
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { language: 'en' },
+  }),
 }));
 
 jest.mock('@/utils', () => ({ rsaPsw: jest.fn() }));
@@ -33,9 +47,12 @@ jest.mock('./card', () => ({
 }));
 
 const MockUseSystemConfig = jest.mocked(useSystemConfig);
+const MockChangeLanguageAsync = jest.mocked(changeLanguageAsync);
 const OriginalResizeObserver = globalThis.ResizeObserver;
+const OriginalScrollIntoView = Element.prototype.scrollIntoView;
 
 beforeAll(() => {
+  Element.prototype.scrollIntoView = jest.fn();
   globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
     observe: jest.fn(),
     unobserve: jest.fn(),
@@ -45,10 +62,19 @@ beforeAll(() => {
 
 afterAll(() => {
   globalThis.ResizeObserver = OriginalResizeObserver;
+  Element.prototype.scrollIntoView = OriginalScrollIntoView;
 });
 
 describe('login registration entry', () => {
+  const config = {
+    disablePasswordLogin: false,
+    registerEnabled: 1,
+    emailVerificationEnabled: false,
+    upload_size_limit: 0,
+  };
+
   beforeEach(() => {
+    MockChangeLanguageAsync.mockReset();
     MockUseSystemConfig.mockReturnValue({ config: undefined, loading: true });
   });
 
@@ -63,7 +89,7 @@ describe('login registration entry', () => {
       expect(screen.getByTestId('auth-submit')).toBeEnabled();
 
       MockUseSystemConfig.mockReturnValue({
-        config: { registerEnabled },
+        config: { ...config, registerEnabled },
         loading: false,
       });
       rerender(<Login />);
@@ -85,7 +111,7 @@ describe('login registration entry', () => {
       ).not.toBeInTheDocument();
 
       MockUseSystemConfig.mockReturnValue({
-        config: { registerEnabled },
+        config: { ...config, registerEnabled },
         loading: false,
       });
       rerender(<Login />);
@@ -107,5 +133,17 @@ describe('login registration entry', () => {
       screen.queryByTestId('auth-toggle-register'),
     ).not.toBeInTheDocument();
     expect(screen.getByTestId('auth-submit')).toBeEnabled();
+  });
+
+  it('changes the display language from the card footer', async () => {
+    render(<Login />);
+
+    const languageTrigger = screen.getByTestId('auth-language-switch');
+    expect(languageTrigger).toHaveTextContent('English');
+
+    fireEvent.click(languageTrigger);
+    fireEvent.click(await screen.findByTestId('auth-language-option-zh-Hans'));
+
+    expect(MockChangeLanguageAsync).toHaveBeenCalledWith('zh-Hans');
   });
 });

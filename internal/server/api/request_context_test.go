@@ -28,6 +28,8 @@ func TestAPIRequestDrainsAfterProcessCancellation(t *testing.T) {
 		}
 	}))
 	srv.Config.BaseContext = func(net.Listener) context.Context { return requestCtx }
+	draining := make(chan struct{})
+	srv.Config.RegisterOnShutdown(func() { close(draining) })
 	srv.Start()
 	t.Cleanup(func() {
 		cancel()
@@ -56,10 +58,26 @@ func TestAPIRequestDrainsAfterProcessCancellation(t *testing.T) {
 	if err := requestCtx.Err(); err != nil {
 		t.Fatalf("process shutdown canceled the request context: %v", err)
 	}
-	close(release)
 	shutdownCtx, finish := context.WithTimeout(t.Context(), 3*time.Second)
 	defer finish()
-	if err := shutdownHTTPServer(shutdownCtx, "API", srv.Config); err != nil {
+	shutdownDone := make(chan error, 1)
+	go func() { shutdownDone <- shutdownHTTPServer(shutdownCtx, "API", srv.Config) }()
+	select {
+	case <-draining:
+	case <-shutdownCtx.Done():
+		t.Fatal("server did not begin draining")
+	}
+	select {
+	case err := <-shutdownDone:
+		t.Fatalf("shutdown returned before the active request completed: %v", err)
+	default:
+	}
+	if conn, err := (&net.Dialer{}).DialContext(shutdownCtx, "tcp", srv.Listener.Addr().String()); err == nil {
+		conn.Close()
+		t.Fatal("server accepted a new connection during shutdown")
+	}
+	close(release)
+	if err := <-shutdownDone; err != nil {
 		t.Fatal(err)
 	}
 	select {

@@ -106,7 +106,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
     chmod 1777 /tmp && \
     apt update && \
-    apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 fonts-dejavu fontconfig && \
+    apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 fonts-dejavu fonts-crosextra-carlito fonts-liberation fontconfig && \
     fc-cache -f && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
@@ -234,7 +234,7 @@ RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked
 
 COPY internal internal
 COPY cmd cmd
-COPY build.sh ./
+COPY build.sh build_ee.sh ./
 COPY tools/scripts tools/scripts
 COPY Dockerfile ./
 

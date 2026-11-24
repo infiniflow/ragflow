@@ -29,6 +29,7 @@ export interface InstanceNameSectionProps {
   handleSave: () => void;
   /** True while the save request is in flight. */
   saving: boolean;
+  error?: string;
 }
 
 /**
@@ -42,6 +43,7 @@ export function InstanceNameSection({
   handleDelete,
   handleSave,
   saving,
+  error,
 }: InstanceNameSectionProps) {
   const { t: tSetting } = useTranslate('setting');
 
@@ -62,6 +64,7 @@ export function InstanceNameSection({
           placeholder={tSetting('instanceNamePlaceholder')}
           className="flex-1"
           data-testid="instance-name-input"
+          aria-invalid={Boolean(error)}
         />
         <ConfirmDeleteDialog onOk={handleDelete}>
           <Button
@@ -76,6 +79,9 @@ export function InstanceNameSection({
         </ConfirmDeleteDialog>
         <InstanceSaveButton onSave={handleSave} saving={saving} />
       </div>
+      {error && (
+        <p className="text-sm font-medium text-state-error">{error}</p>
+      )}
     </div>
   );
 }

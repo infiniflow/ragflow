@@ -28,6 +28,7 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // systemSettingSeed mirrors one entry of conf/system_settings.json.
@@ -106,27 +107,13 @@ func insertMissingSystemSettings(ctx context.Context, db *gorm.DB, seeds []entit
 	if len(seeds) == 0 {
 		return nil
 	}
-	var existingNames []string
-	if err := db.WithContext(ctx).Model(&entity.SystemSettings{}).Pluck("name", &existingNames).Error; err != nil {
-		return fmt.Errorf("failed to list existing system settings: %w", err)
+	result := db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "name"}},
+		DoNothing: true,
+	}).Create(&seeds)
+	if result.Error != nil {
+		return fmt.Errorf("failed to insert system settings: %w", result.Error)
 	}
-	existing := make(map[string]struct{}, len(existingNames))
-	for _, name := range existingNames {
-		existing[name] = struct{}{}
-	}
-	toInsert := make([]entity.SystemSettings, 0, len(seeds))
-	for _, seed := range seeds {
-		if _, ok := existing[seed.Name]; ok {
-			continue
-		}
-		toInsert = append(toInsert, seed)
-	}
-	if len(toInsert) == 0 {
-		return nil
-	}
-	if err := db.WithContext(ctx).Create(&toInsert).Error; err != nil {
-		return fmt.Errorf("failed to insert system settings: %w", err)
-	}
-	common.Info("Seeded system settings", zap.Int("count", len(toInsert)))
+	common.Info("Seeded system settings", zap.Int64("rows_affected", result.RowsAffected))
 	return nil
 }

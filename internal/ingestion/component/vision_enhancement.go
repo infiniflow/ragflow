@@ -254,7 +254,12 @@ func maybeDispatchVisionEnhancement(
 			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		}
 		if err == nil {
-			prompt, err = figureVisionPromptBuilder(language)
+			prompt = strings.TrimSpace(vision.systemPrompt)
+			if prompt == "" {
+				prompt, err = figureVisionPromptBuilder(language)
+			} else {
+				prompt += "\n\n" + visionResponseLanguageInstruction(language)
+			}
 			vlmReady = err == nil && driver != nil
 		}
 		resolveErr = err
@@ -545,12 +550,7 @@ func defaultVisionChatInvoker(
 ) (*modelModule.ChatResponse, error) {
 	chatCtx, cancel := context.WithTimeout(ctx, visionChatTimeout)
 	defer cancel()
-	vision := true
-	config := &modelModule.ChatConfig{Vision: &vision}
-	if _, ok := driver.(*modelModule.OllamaModel); ok {
-		thinking := false
-		config.Thinking = &thinking
-	}
+	config := &modelModule.ChatConfig{Vision: new(true), Thinking: new(false)}
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 	finish := agentruntime.TrackIO(chatCtx, "Parser", "VLM", "operation=vision_enhancement")
 	resp, err := chatModel.ChatWithMessages(chatCtx, messages, config, nil)

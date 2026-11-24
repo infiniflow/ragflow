@@ -24,12 +24,12 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const bgptToolName = "bgpt_search"
@@ -51,10 +51,10 @@ var bgptNewlinePattern = regexp.MustCompile(`\n+`)
 // runtime input. Info exposes only query; api_key / top_n / days_back
 // come from canvas DSL params and live in BGPTTool.defaults.
 type bgptParams struct {
-	Query    string `json:"query"`
-	TopN     int    `json:"top_n"`
-	APIKey   string `json:"api_key,omitempty"`
-	DaysBack int    `json:"days_back,omitempty"`
+	Query    string `json:"query" doc:"Natural-language scientific search query." required:"true"`
+	TopN     int    `json:"top_n" schema:"-"`
+	APIKey   string `json:"api_key,omitempty" schema:"-"`
+	DaysBack int    `json:"days_back,omitempty" schema:"-"`
 }
 
 // bgptEnv is what the model sees.
@@ -101,17 +101,7 @@ func newBGPTTool(h *HTTPHelper, defaults bgptParams) *BGPTTool {
 
 // Info returns the tool's metadata for the chat model.
 func (b *BGPTTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: bgptToolName,
-		Desc: bgptToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Natural-language scientific search query.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(bgptToolName, bgptToolDescription, bgptParams{})
 }
 
 func (b *BGPTTool) ComponentSpec() ComponentSpec {
@@ -224,7 +214,7 @@ func buildBGPTReferences(envelope map[string]any) ([]map[string]any, []map[strin
 			continue
 		}
 		content := bgptDataImagePattern.ReplaceAllString(formatBGPTPaper(paper), "")
-		content = truncateBGPTRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}
@@ -307,13 +297,6 @@ func renderBGPTReferences(chunks []map[string]any, maxTokens int) string {
 		blocks = append(blocks, block)
 	}
 	return strings.Join(blocks, "\n")
-}
-
-func truncateBGPTRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func bgptJSON(env bgptEnv) string {

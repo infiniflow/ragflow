@@ -28,6 +28,9 @@ const (
 func getOSTestConfig() config.OpenSearchConfig {
 	hosts := os.Getenv("OS_HOST")
 	if hosts == "" {
+		hosts = os.Getenv("OS_HOSTS")
+	}
+	if hosts == "" {
 		hosts = "http://localhost:1201"
 	}
 	username := os.Getenv("OS_USERNAME")
@@ -168,17 +171,41 @@ func TestOpenSearchChunkLifecycle(t *testing.T) {
 	}
 
 	// Hybrid search (text + vector + weighted-sum fusion) through the
-	// normalization search pipeline.
-	hybRes, err := eng.Search(t.Context(), osTestSearchReq([]interface{}{
-		&types.MatchTextExpr{Fields: []string{"content_ltks"}, MatchingText: "hello world", TopN: 10},
-		&types.MatchDenseExpr{VectorColumnName: "q_768_vec", EmbeddingData: osTestVector(0.0), TopN: 10},
-		&types.FusionExpr{Method: "weighted_sum", FusionParams: map[string]interface{}{"weights": "0.5,0.5"}},
-	}))
-	if err != nil {
-		t.Fatalf("Search hybrid: %v", err)
+	// normalization search pipeline: first verify aligned legs preserve c1
+	// across standard and edge weights, then use conflicting text (c1) vs
+	// vector (c2) winners to prove weights actually flip top rank on cluster.
+	for _, wExpr := range []string{"0.5,0.5", "0.001,1", "0.0,1.0"} {
+		hybRes, err := eng.Search(t.Context(), osTestSearchReq([]interface{}{
+			&types.MatchTextExpr{Fields: []string{"content_ltks"}, MatchingText: "hello world", TopN: 10},
+			&types.MatchDenseExpr{VectorColumnName: "q_768_vec", EmbeddingData: osTestVector(0.0), TopN: 10},
+			&types.FusionExpr{Method: "weighted_sum", FusionParams: map[string]interface{}{"weights": wExpr}},
+		}))
+		if err != nil {
+			t.Fatalf("Search hybrid (weights=%q): %v", wExpr, err)
+		}
+		if len(hybRes.Chunks) != 2 || hybRes.Chunks[0]["id"] != "c1" {
+			t.Fatalf("hybrid search (weights=%q): got chunks %v; want 2 chunks c1 first", wExpr, hybRes.Chunks)
+		}
 	}
-	if len(hybRes.Chunks) != 2 || hybRes.Chunks[0]["id"] != "c1" {
-		t.Fatalf("hybrid search: got chunks %v; want 2 chunks c1 first", hybRes.Chunks)
+	for _, tc := range []struct {
+		weights string
+		wantTop string
+	}{
+		{weights: "1.0,0.0", wantTop: "c1"},
+		{weights: "0.001,1", wantTop: "c2"},
+		{weights: "0.0,1.0", wantTop: "c2"},
+	} {
+		hybRes, err := eng.Search(t.Context(), osTestSearchReq([]interface{}{
+			&types.MatchTextExpr{Fields: []string{"content_ltks"}, MatchingText: "hello world", TopN: 10},
+			&types.MatchDenseExpr{VectorColumnName: "q_768_vec", EmbeddingData: osTestVector(10.0), TopN: 10},
+			&types.FusionExpr{Method: "weighted_sum", FusionParams: map[string]interface{}{"weights": tc.weights}},
+		}))
+		if err != nil {
+			t.Fatalf("Search hybrid conflicting legs (weights=%q): %v", tc.weights, err)
+		}
+		if len(hybRes.Chunks) != 2 || hybRes.Chunks[0]["id"] != tc.wantTop {
+			t.Fatalf("hybrid search conflicting legs (weights=%q): got chunks %v; want 2 chunks %s first", tc.weights, hybRes.Chunks, tc.wantTop)
+		}
 	}
 
 	// KNN second-pass scores: c1 is the nearest neighbour.

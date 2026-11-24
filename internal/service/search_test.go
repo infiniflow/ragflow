@@ -44,6 +44,7 @@ func createSearchServiceTestSearch(t *testing.T, id, tenantID, name string) {
 	status := string(entity.StatusValid)
 	if err := dao.DB.Create(&entity.Search{
 		ID:           id,
+		UserID:       tenantID,
 		TenantID:     tenantID,
 		Name:         name,
 		CreatedBy:    tenantID,
@@ -195,7 +196,7 @@ func TestSearchServiceListSearchesReturnsOwnerDisplayFields(t *testing.T) {
 	}
 }
 
-func TestSearchServiceListSearchesNicknameFallsBackToTenantID(t *testing.T) {
+func TestSearchServiceListSearchesNicknameFallsBackToUserID(t *testing.T) {
 	setupSearchServiceTestDB(t)
 
 	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
@@ -299,6 +300,7 @@ func TestSearchServiceListSearchesPaginatesOwnerFilter(t *testing.T) {
 		status := string(entity.StatusValid)
 		if err := dao.DB.Create(&entity.Search{
 			ID:           fmt.Sprintf("search-%d", i),
+			UserID:       "tenant-1",
 			TenantID:     "tenant-1",
 			Name:         fmt.Sprintf("Search %d", i),
 			CreatedBy:    "tenant-1",

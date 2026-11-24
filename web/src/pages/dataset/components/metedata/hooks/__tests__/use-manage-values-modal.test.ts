@@ -1,11 +1,15 @@
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
-
 import { act, renderHook } from '@testing-library/react';
+import { createInstance } from 'i18next';
+import { initReactI18next } from 'react-i18next';
 import { MetadataType, metadataValueTypeEnum } from '../../constant';
-import { IManageValuesProps, IMetaDataTableData } from '../../interface';
+import type { IManageValuesProps, IMetaDataTableData } from '../../interface';
 import { useManageValues } from '../use-manage-values-modal';
+
+beforeAll(async () => {
+  await createInstance()
+    .use(initReactI18next)
+    .init({ lng: 'en', resources: { en: { translation: {} } } });
+});
 
 function makeProps(
   overrides: Partial<IManageValuesProps> = {},
@@ -184,6 +188,46 @@ describe('useManageValues - duplicate field name guard', () => {
 });
 
 describe('useManageValues - edit existing metadata', () => {
+  it.each([
+    metadataValueTypeEnum.string,
+    metadataValueTypeEnum.time,
+    metadataValueTypeEnum.number,
+  ])('queues the complete list when converting a %s field', (valueType) => {
+    const addUpdateValue = jest.fn();
+    const addDeleteValue = jest.fn();
+    const props = makeProps({
+      isAddValueMode: false,
+      addUpdateValue,
+      addDeleteValue,
+      data: { field: 'field', description: '', values: ['old'], valueType },
+    });
+    const { result } = renderHook(() => useManageValues(props));
+
+    act(() => {
+      result.current.handleChange('valueType', metadataValueTypeEnum.list);
+      result.current.handleClearValues();
+    });
+    act(() => result.current.handleValueChange(0, 'first'));
+    act(() => result.current.handleValueBlur());
+    act(() => result.current.handleAddValue());
+    act(() => result.current.handleValueChange(1, 'discard'));
+    act(() => result.current.handleDelete(1));
+    act(() => result.current.handleAddValue());
+    act(() => result.current.handleValueChange(1, 'second'));
+    act(() => result.current.handleValueBlur());
+    expect(addUpdateValue).not.toHaveBeenCalled();
+    expect(addDeleteValue).not.toHaveBeenCalled();
+
+    act(() => result.current.handleSave());
+    expect(addUpdateValue).toHaveBeenCalledTimes(1);
+    expect(addUpdateValue).toHaveBeenCalledWith(
+      'field',
+      '',
+      ['first', 'second'],
+      metadataValueTypeEnum.list,
+    );
+  });
+
   it('queues per-row updates on blur and does not call addUpdateValue on save', () => {
     const addUpdateValue = jest.fn();
     const props = makeProps({

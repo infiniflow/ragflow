@@ -34,6 +34,8 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 // HTTPClient is a minimal context-aware HTTP client for the sandbox
@@ -181,20 +183,12 @@ func isIdempotent(method string) bool {
 }
 
 // backoff returns an exponentially increasing duration with full jitter,
-// capped at max. attempt is 1-indexed; the first retry uses base.
+// capped at max. attempt is 1-indexed; the first retry uses base. The capped
+// exponential is delegated to common.ExponentialBackoff; the jitter is kept
+// here because the shared primitive deliberately returns a deterministic value.
 func backoff(base, max time.Duration, attempt int) time.Duration {
-	if attempt < 1 {
-		attempt = 1
-	}
-	d := base
-	for i := 1; i < attempt; i++ {
-		d *= 2
-		if d > max {
-			d = max
-			break
-		}
-	}
-	return time.Duration(rand.Int64N(int64(d) + 1))
+	capped := common.ExponentialBackoff(base, max, attempt)
+	return time.Duration(rand.Int64N(int64(capped) + 1))
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) {

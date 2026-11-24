@@ -40,7 +40,7 @@ import { Send } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import { useOwnerTenantId } from '../contexts/knowledge-base-context';
+import { useResourceTenantId } from '../contexts/knowledge-base-context';
 
 type TestingFormProps = Pick<
   ReturnType<typeof useTestRetrieval>,
@@ -54,7 +54,7 @@ export default function TestingForm({
 }: TestingFormProps) {
   const { t } = useTranslation();
   const { id } = useParams();
-  const ownerTenantId = useOwnerTenantId();
+  const resourceTenantId = useResourceTenantId();
   const knowledgeBaseId = id;
 
   const formSchema = z
@@ -108,7 +108,9 @@ export default function TestingForm({
             <SimilaritySliderFormField
               isTooltipShown={true}
             ></SimilaritySliderFormField>
-            <RerankFormFields ownerTenantId={ownerTenantId}></RerankFormFields>
+            <RerankFormFields
+              resourceTenantId={resourceTenantId}
+            ></RerankFormFields>
             <CrossLanguageFormField
               name={'cross_languages'}
             ></CrossLanguageFormField>

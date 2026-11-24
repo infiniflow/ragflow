@@ -163,9 +163,9 @@ func TestSearchByRegexpRejectsEmptyScope(t *testing.T) {
 	eng := &Engine{}
 	for _, kbIDs := range [][]string{nil, {}, {""}, {"", "  "}} {
 		_, err := eng.SearchByRegexp(context.Background(), &types.RegexpSearchRequest{
-			TenantID: "tenant1",
-			KbIDs:    kbIDs,
-			Pattern:  "foo.*bar",
+			IndexNames: []string{"ragflow_tenant1"},
+			KbIDs:      kbIDs,
+			Pattern:    "foo.*bar",
 		})
 		if err == nil {
 			t.Fatalf("SearchByRegexp(KbIDs=%v) must reject an empty dataset scope", kbIDs)
@@ -173,5 +173,18 @@ func TestSearchByRegexpRejectsEmptyScope(t *testing.T) {
 		if !strings.Contains(err.Error(), "at least one dataset id") {
 			t.Errorf("SearchByRegexp(KbIDs=%v) error = %v, want it to name the missing dataset scope", kbIDs, err)
 		}
+	}
+}
+
+// TestSearchByRegexpRejectsEmptyIndexNames keeps an unresolved corpus scope from
+// turning into an unscoped table read: the tenant index list is the caller's
+// scope, and an empty one must fail before the client is touched.
+func TestSearchByRegexpRejectsEmptyIndexNames(t *testing.T) {
+	eng := &Engine{}
+	if _, err := eng.SearchByRegexp(context.Background(), &types.RegexpSearchRequest{
+		KbIDs:   []string{"kb1"},
+		Pattern: "foo.*bar",
+	}); err == nil {
+		t.Fatal("SearchByRegexp without index names must fail")
 	}
 }

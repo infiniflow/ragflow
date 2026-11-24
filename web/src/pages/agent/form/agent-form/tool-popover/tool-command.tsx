@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/command';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { Operator } from '@/pages/agent/constant';
-import { useOwnerTenantId } from '@/pages/agent/context';
+import { useResourceTenantId } from '@/pages/agent/context';
 import OperatorIcon from '@/components/operator-icon';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
@@ -35,6 +35,9 @@ const Menus = [
       Operator.SofyaSearch,
       Operator.Search1APISearch,
       Operator.Search1APICrawl,
+      Operator.AnySearchSearch,
+      Operator.AnySearchDiscover,
+      Operator.AnySearchExtract,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.BGPT,
@@ -141,8 +144,11 @@ export function ToolCommand() {
 }
 
 export function MCPCommand({ onChange, value }: ToolCommandProps) {
-  const ownerTenantId = useOwnerTenantId();
-  const { data } = useListMcpServer(ownerTenantId, Boolean(ownerTenantId));
+  const resourceTenantId = useResourceTenantId();
+  const { data } = useListMcpServer(
+    resourceTenantId,
+    Boolean(resourceTenantId),
+  );
   const { toggleOption, currentValue } = useHandleSelectChange({
     onChange,
     value,

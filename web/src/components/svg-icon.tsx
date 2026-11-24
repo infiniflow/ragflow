@@ -130,8 +130,14 @@ const svgIcons = [
   LLMFactory.HostingerRouter,
   LLMFactory.Cheapaimodel,
   LLMFactory.Wally,
+  LLMFactory.Onomeo,
+  LLMFactory.Shengsuanyun,
   LLMFactory.Synap,
   LLMFactory.Wiro,
+  LLMFactory.Crusoe,
+  LLMFactory.HopBase,
+  LLMFactory.GreenNode,
+  LLMFactory.Morse,
 ];
 
 export const LlmIcon = ({

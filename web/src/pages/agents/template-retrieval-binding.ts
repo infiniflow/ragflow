@@ -79,7 +79,7 @@ export function countUnboundModel(
   for (const { params } of source) {
     if (!(params.llm_id || params.model_id)) {
       modelCount++;
-      if (params.llm_filter === 'image2text') modelTypes.add('vision');
+      if (params.llm_filter === 'image2text') modelTypes.add('vlm');
       if (params.llm_filter === 'chat') modelTypes.add('chat');
     }
   }

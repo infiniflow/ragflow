@@ -59,6 +59,14 @@ func NewMetadataServiceForTest(kbDAO *dao.KnowledgebaseDAO, docEngine engine.Doc
 	}
 }
 
+// Available reports whether the metadata store is wired. A service built without an
+// engine cannot read or write metadata, so a caller that only wants to know whether
+// a write changed something can skip the store instead of dereferencing a nil
+// engine.
+func (s *MetadataService) Available() bool {
+	return s != nil && s.docEngine != nil
+}
+
 // BuildMetadataIndexName constructs the metadata index name for a tenant
 func BuildMetadataIndexName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)

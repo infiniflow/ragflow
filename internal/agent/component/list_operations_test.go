@@ -17,6 +17,7 @@
 package component
 
 import (
+	"encoding/json"
 	"reflect"
 	"sort"
 	"strings"
@@ -599,5 +600,108 @@ func TestListOperations_NonListInputStillErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "input is not a list") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestListOperations_RestoredNumericSort keeps numeric order after checkpoints.
+func TestListOperations_RestoredNumericSort(t *testing.T) {
+	const id = json.Number("11099848653006015581")
+	for _, desc := range []bool{false, true} {
+		var state canvas.CanvasState
+		if err := json.Unmarshal([]byte(`{"outputs":{"source":{"xs":[2,11099848653006015581]}}}`), &state); err != nil {
+			t.Fatal(err)
+		}
+		order := "asc"
+		want := []any{float64(2), id}
+		if desc {
+			order = "desc"
+			want = []any{id, float64(2)}
+		}
+		c, err := NewListOperationsComponent(map[string]any{"query": "source@xs", "operations": "sort", "sort_method": order})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := c.Invoke(canvas.WithState(t.Context(), &state), nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(out["result"], want) {
+			t.Fatalf("%s sorted=%#v, want %#v", order, out["result"], want)
+		}
+	}
+}
+
+// TestListOperations_AdjacentLargeIDsSort keeps distinctions above 2^53.
+func TestListOperations_AdjacentLargeIDsSort(t *testing.T) {
+	for _, desc := range []bool{false, true} {
+		var state canvas.CanvasState
+		if err := json.Unmarshal([]byte(`{"outputs":{"source":{"xs":[9007199254740993,9007199254740992]}}}`), &state); err != nil {
+			t.Fatal(err)
+		}
+		order := "asc"
+		want := []any{json.Number("9007199254740992"), json.Number("9007199254740993")}
+		if desc {
+			order = "desc"
+			want[0], want[1] = want[1], want[0]
+		}
+		c, err := NewListOperationsComponent(map[string]any{"query": "source@xs", "operations": "sort", "sort_method": order})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := c.Invoke(canvas.WithState(t.Context(), &state), nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(out["result"], want) {
+			t.Fatalf("%s sorted=%#v, want %#v", order, out["result"], want)
+		}
+	}
+}
+
+// TestListOperations_RestoredMixedNumberSort covers signed IDs and stable keys.
+func TestListOperations_RestoredMixedNumberSort(t *testing.T) {
+	var state canvas.CanvasState
+	if err := json.Unmarshal([]byte(`{"outputs":{"source":{"xs":[9007199254740993,-9007199254740992,2.5,9007199254740992,-9007199254740993,2],"rows":[{"id":"a","score":9007199254740993},{"id":"b","score":2.5},{"id":"c","score":9007199254740993},{"id":"d","score":9007199254740992}]}}}`), &state); err != nil {
+		t.Fatal(err)
+	}
+	ctx := canvas.WithState(t.Context(), &state)
+	c, err := NewListOperationsComponent(map[string]any{"query": "source@xs", "operations": "sort", "sort_method": "asc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.Invoke(ctx, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []any{json.Number("-9007199254740993"), json.Number("-9007199254740992"), float64(2), float64(2.5), json.Number("9007199254740992"), json.Number("9007199254740993")}
+	if !reflect.DeepEqual(out["result"], want) {
+		t.Fatalf("mixed sort = %#v, want %#v", out["result"], want)
+	}
+	c, err = NewListOperationsComponent(map[string]any{"query": "source@rows", "operations": "sort", "sort_method": "asc", "sort_by": "score"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err = c.Invoke(ctx, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := out["result"].([]any)
+	for i, wantID := range []string{"b", "d", "a", "c"} {
+		if got := rows[i].(map[string]any)["id"]; got != wantID {
+			t.Fatalf("sorted row %d = %v, want %s", i, got, wantID)
+		}
+	}
+}
+
+// TestListOperations_MixedNativeNumberOrder keeps comparison equivalence transitive.
+func TestListOperations_MixedNativeNumberOrder(t *testing.T) {
+	a := int64(9007199254740993)
+	b := float64(9007199254740992)
+	c := json.Number("9007199254740993")
+	if lessScalar(a, b) || lessScalar(b, a) {
+		t.Fatal("ordinary comparison changed")
+	}
+	if !lessScalar(a, c) || !lessScalar(b, c) || lessScalar(c, a) || lessScalar(c, b) {
+		t.Fatal("precise comparisons do not consistently order equivalent ordinary values")
 	}
 }

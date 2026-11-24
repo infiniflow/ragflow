@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 // Package component — Agent (T1).
 //
 // Multi-turn ReAct agent powered by eino's flow/agent/react package.
@@ -17,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"ragflow/internal/dao"
 	"regexp"
 	"sort"
@@ -36,6 +53,7 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/modelcontext"
 
 	"go.uber.org/zap"
 )
@@ -121,6 +139,7 @@ type AgentParam struct {
 	// so downstream Message templates like {Agent:X@structured} resolve.
 	OutputStructure map[string]any
 	visualFiles     []string // image URIs resolved from VisualFilesVar for this invocation
+	contextLength   int
 }
 
 // SubAgentTool is a child Agent exposed to a parent Agent as an Eino tool.
@@ -192,6 +211,11 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	// the final model response, so max_rounds=1 can complete a tool call and
 	// produce its answer instead of failing with "exceeds max steps".
 	maxSteps := p.MaxRounds*2 + 1
+	contextLength := chat.EffectiveContextLength(p.contextLength)
+	outputTokens := min(1024, contextLength/4)
+	if p.MaxTokens != nil && *p.MaxTokens > 0 {
+		outputTokens = *p.MaxTokens
+	}
 	if hasCodeExecTool(p.Tools) {
 		// CodeExec user-code failures return a non-zero tool result, allowing
 		// one repair attempt without changing other agents' step budget.
@@ -204,6 +228,8 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 			remaining:            maxSteps / 2,
 			maxRetries:           p.MaxRetries,
 			initialDelay:         p.DelayAfterError,
+			contextLength:        contextLength,
+			outputTokens:         outputTokens,
 		},
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
@@ -286,13 +312,20 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 // The reserved final model step must answer rather than schedule more tools.
 type roundLimitedChatModel struct {
 	model.ToolCallingChatModel
-	remaining    int
-	maxRetries   int
-	initialDelay time.Duration
+	remaining        int
+	maxRetries       int
+	initialDelay     time.Duration
+	contextLength    int
+	outputTokens     int
+	toolSchemaTokens int
 }
 
 func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	bound, err := m.ToolCallingChatModel.WithTools(tools)
+	if err != nil {
+		return nil, err
+	}
+	schemaTokens, err := agentToolSchemaTokens(tools)
 	if err != nil {
 		return nil, err
 	}
@@ -301,6 +334,9 @@ func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolC
 		remaining:            m.remaining,
 		maxRetries:           m.maxRetries,
 		initialDelay:         m.initialDelay,
+		contextLength:        m.contextLength,
+		outputTokens:         m.outputTokens,
+		toolSchemaTokens:     schemaTokens,
 	}, nil
 }
 
@@ -314,6 +350,10 @@ func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option
 
 func (m *roundLimitedChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	input = m.roundInput(input)
+	input, fitErr := m.fitAnySearchInput(input)
+	if fitErr != nil {
+		return nil, fitErr
+	}
 	opts = m.roundOptions(opts)
 	var response *schema.Message
 	err := common.RetryWithBackoff(ctx, m.maxRetries, m.initialDelay, func() error {
@@ -329,6 +369,10 @@ func (m *roundLimitedChatModel) Generate(ctx context.Context, input []*schema.Me
 
 func (m *roundLimitedChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	input = m.roundInput(input)
+	input, fitErr := m.fitAnySearchInput(input)
+	if fitErr != nil {
+		return nil, fitErr
+	}
 	opts = m.roundOptions(opts)
 	return retryChatModelStream(ctx, m.ToolCallingChatModel, input, opts, m.maxRetries, m.initialDelay)
 }
@@ -1169,6 +1213,11 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			p.UserPrompt = resolved
 		}
 	}
+	tenantID := ""
+	if state != nil {
+		tenantID, _ = state.GetSysString("tenant_id")
+	}
+	p.contextLength = modelcontext.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
 	p.visualFiles, err = resolveAgentVisualFiles(state, p.VisualFilesVar)
 	if err != nil {
 		return nil, fmt.Errorf("Agent: resolve visual_files_var: %w", err)
@@ -1431,22 +1480,11 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	apiKey := p.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
 	cm := models.NewChatModel(d, &modelID, cfg)
-	// Build ChatConfig when a generation parameter or Thinking is set.
-	var chatCfg *models.ChatConfig
-	if p.TopP != nil || p.Thinking != "" || p.MaxTokens != nil || p.Temperature != nil {
-		chatCfg = &models.ChatConfig{
-			TopP:        p.TopP,
-			MaxTokens:   p.MaxTokens,
-			Temperature: p.Temperature,
-		}
-		switch p.Thinking {
-		case "enabled":
-			t := true
-			chatCfg.Thinking = &t
-		case "disabled":
-			f := false
-			chatCfg.Thinking = &f
-		}
+	chatCfg := &models.ChatConfig{
+		TopP:        p.TopP,
+		MaxTokens:   p.MaxTokens,
+		Temperature: p.Temperature,
+		Thinking:    new(p.Thinking == "enabled"),
 	}
 	return models.NewEinoChatModel(cm, chatCfg), nil
 }
@@ -1820,8 +1858,11 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		p.Temperature = &f
 	}
 	gateSampler(inputs, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
-	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
+	if v, ok := stringFrom(inputs, "thinking"); ok {
 		p.Thinking = v
+	}
+	if p.Thinking == "" || p.Thinking == "default" {
+		p.Thinking = "disabled"
 	}
 	if v, ok := intFrom(inputs, "max_rounds"); ok {
 		p.MaxRounds = v
@@ -2202,11 +2243,7 @@ func cloneMap(in map[string]any) map[string]any {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
+	return maps.Clone(in)
 }
 
 func mergeToolParams(base, overrides map[string]map[string]any) map[string]map[string]any {

@@ -39,6 +39,11 @@ func TestUserServiceResolveBetaAPIToken(t *testing.T) {
 
 	accessToken := "access-token"
 	status := "1"
+	if err := dao.DB.Create(&entity.Tenant{
+		ID: "tenant-1", ParserIDs: "", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
+	}
 	if err := dao.DB.Create(&entity.User{
 		ID:              "user-1",
 		Email:           "tenant@example.com",

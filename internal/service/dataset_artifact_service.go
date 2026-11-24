@@ -22,8 +22,9 @@ import (
 
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
-
 	"gorm.io/gorm"
+
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -49,7 +50,12 @@ const (
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
 // graphs, structures, navigation, skills) from the document engine.
-type DatasetArtifactService struct{}
+type DatasetArtifactService struct {
+	// docEngine, when set, overrides the global engine returned by engine.Get()
+	// for compiled-search calls. Tests inject a fake here; production leaves it
+	// nil and falls back to the global engine.
+	docEngine engine.DocEngine
+}
 
 // NewDatasetArtifactService creates a DatasetArtifactService.
 func NewDatasetArtifactService() *DatasetArtifactService {
@@ -68,7 +74,17 @@ func (s *DatasetArtifactService) searchCompiled(ctx context.Context, tenantID, d
 }
 
 func (s *DatasetArtifactService) searchCompiledWithMatch(ctx context.Context, tenantID, datasetID string, filter map[string]interface{}, selectFields []string, offset, limit int, orderBy *types.OrderByExpr, matchExprs []interface{}) ([]map[string]interface{}, int64, error) {
-	docEngine := engine.Get()
+	// Read the optional injected engine only when the receiver is non-nil so
+	// that callers passing a nil *DatasetArtifactService (which the wiki-graph
+	// error-path tests rely on) keep getting a clean error instead of a nil
+	// dereference.
+	var docEngine engine.DocEngine
+	if s != nil {
+		docEngine = s.docEngine
+	}
+	if docEngine == nil {
+		docEngine = engine.Get()
+	}
 	if docEngine == nil {
 		return nil, 0, fmt.Errorf("document engine is not initialized")
 	}
@@ -408,6 +424,89 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 		}
 	}
 	return s.GetWikiPage(ctx, tenantID, datasetID, pageType, slug)
+}
+
+// restorableWikiPageFields are the page fields a restore writes back. They are
+// the ones a snapshot carries and the engine indexes: taking the snapshot's own
+// keys would also write back ids and hashes, which describe that moment's
+// document rather than the page.
+var restorableWikiPageFields = []string{
+	"content_with_weight",
+	"title_kwd",
+	"summary_with_weight",
+	"topic_kwd",
+	"entity_names_kwd",
+	"entity_type_kwd",
+	"outlinks_kwd",
+	"related_kb_pages_kwd",
+	"source_chunk_ids",
+	"source_doc_ids",
+	"compile_kwd",
+	"plan_kwd",
+	"scope_kwd",
+}
+
+// RestoreWikiPage writes a page as a version recorded it: every field the
+// snapshot carries, not only the body. A page whose summary and links still
+// describe a later edit is not the page the version described, so the whole
+// document moves together.
+//
+// The page is found by its identity. When the engine no longer holds it the page
+// is rebuilt from the snapshot, because a restore has to put back the pages the
+// version had and not only fix the ones that survived - and the snapshot is the
+// only thing that remembers them.
+func (s *DatasetArtifactService) RestoreWikiPage(ctx context.Context, tenantID, datasetID, pageType, slug string, page map[string]any) (bool, error) {
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return false, fmt.Errorf("document engine is not initialized")
+	}
+	if len(page) == 0 {
+		return false, nil
+	}
+	slugKwd := pageType + "/" + slug
+	filter := map[string]interface{}{
+		"type_kwd":      []string{CompileKwdWikiPage},
+		"page_type_kwd": []string{pageType},
+		"slug_kwd":      []string{slugKwd},
+		"available_int": 1, // merged dataset-level page only
+	}
+	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 1, nil)
+	if err != nil {
+		return false, err
+	}
+
+	fields := make(map[string]interface{}, len(restorableWikiPageFields)+2)
+	for _, key := range restorableWikiPageFields {
+		if value, ok := page[key]; ok {
+			fields[key] = value
+		}
+	}
+	// The identity travels with the content so a rebuilt page is addressable by
+	// the same slug the snapshot was written under.
+	fields["slug_kwd"] = slugKwd
+	fields["page_type_kwd"] = pageType
+	fields["available_int"] = 1
+
+	indexName := wikiIndexName(tenantID)
+	if len(chunks) > 0 {
+		id, _ := chunks[0]["id"].(string)
+		if id == "" {
+			return false, fmt.Errorf("wiki page chunk has no id")
+		}
+		cond := map[string]interface{}{"id": id, "kb_id": datasetID}
+		if err := docEngine.UpdateChunks(ctx, cond, fields, indexName, datasetID); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	fields["id"] = common.GenerateUUID()
+	fields["kb_id"] = datasetID
+	fields["type_kwd"] = CompileKwdWikiPage
+	if _, err := docEngine.InsertChunks(ctx, []map[string]interface{}{fields}, indexName, datasetID, ""); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // WikiTopicItem is a single topic entry returned by ListWikiTopics.
@@ -765,10 +864,42 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 	// pages as both sides of the comparison, which made deletion impossible to
 	// observe. In particular, a deleted document remains in source_doc_ids until
 	// the dataset-level consumer removes the old page.
+	//
+	// Only the four columns actually consumed below are projected; the full row
+	// (including the potentially large parser_config-independent payload) is
+	// never pulled into memory.
 	var documents []entity.Document
-	if err := dao.DB.WithContext(ctx).Where("kb_id = ?", datasetID).Find(&documents).Error; err != nil {
+	if err := dao.DB.WithContext(ctx).
+		Select("id", "status", "pipeline_id", "parser_config").
+		Where("kb_id = ?", datasetID).Find(&documents).Error; err != nil {
 		return nil, fmt.Errorf("list dataset documents for wiki alteration: %w", err)
 	}
+
+	// Collect the distinct pipeline ids and load every referenced canvas in a
+	// single IN query instead of one point query per document. Wiki datasets
+	// typically share one pipeline across many documents, so the naive loop was
+	// a classic N+1.
+	canvasByID := make(map[string]entity.UserCanvas)
+	pipelineIDs := make(map[string]struct{})
+	for i := range documents {
+		if documents[i].PipelineID != nil && *documents[i].PipelineID != "" {
+			pipelineIDs[*documents[i].PipelineID] = struct{}{}
+		}
+	}
+	if len(pipelineIDs) > 0 {
+		ids := make([]string, 0, len(pipelineIDs))
+		for id := range pipelineIDs {
+			ids = append(ids, id)
+		}
+		var canvases []entity.UserCanvas
+		if err := dao.DB.WithContext(ctx).Where("id IN ?", ids).Find(&canvases).Error; err != nil {
+			return nil, fmt.Errorf("load pipelines for wiki alteration: %w", err)
+		}
+		for _, c := range canvases {
+			canvasByID[c.ID] = c
+		}
+	}
+
 	eligible := make(map[string]struct{}, len(documents))
 	for i := range documents {
 		if documents[i].Status != nil && *documents[i].Status == "0" {
@@ -778,7 +909,7 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 		if documents[i].PipelineID != nil {
 			pipelineID = *documents[i].PipelineID
 		}
-		ok, err := s.documentHasWikiTemplate(ctx, tenantID, documents[i].ParserConfig, pipelineID)
+		ok, err := s.wikiTemplateEligible(ctx, tenantID, documents[i].ParserConfig, pipelineID, canvasByID)
 		if err != nil {
 			return nil, err
 		}
@@ -799,11 +930,16 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 	}, nil
 }
 
-// documentHasWikiTemplate reports whether a document's saved pipeline config
-// contains a valid wiki compiler template. A document is eligible only when it
-// is configured for wiki compilation; treating every document in the dataset
-// as eligible would hide both template removal and document deletion.
-func (s *DatasetArtifactService) documentHasWikiTemplate(ctx context.Context, tenantID string, config entity.JSONMap, pipelineID string) (bool, error) {
+// wikiTemplateEligible reports whether a document is configured for wiki
+// compilation. A document is eligible only when it is configured for wiki
+// compilation; treating every document in the dataset as eligible would hide
+// both template removal and document deletion.
+//
+// The caller pre-loads the referenced canvases into canvasByID (a single IN
+// query) so that the pipeline lookup here is a map read rather than a per-
+// document point query. A pipeline id absent from canvasByID is equivalent to
+// the original ErrRecordNotFound branch and yields false.
+func (s *DatasetArtifactService) wikiTemplateEligible(ctx context.Context, tenantID string, config entity.JSONMap, pipelineID string, canvasByID map[string]entity.UserCanvas) (bool, error) {
 	ok, err := s.valueHasWikiTemplate(ctx, tenantID, config)
 	if err != nil || ok {
 		return ok, err
@@ -811,12 +947,9 @@ func (s *DatasetArtifactService) documentHasWikiTemplate(ctx context.Context, te
 	if pipelineID == "" {
 		return false, nil
 	}
-	var canvas entity.UserCanvas
-	if err := dao.DB.WithContext(ctx).Where("id = ?", pipelineID).First(&canvas).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return false, nil
-		}
-		return false, fmt.Errorf("load pipeline %q for wiki alteration: %w", pipelineID, err)
+	canvas, found := canvasByID[pipelineID]
+	if !found {
+		return false, nil
 	}
 	return s.valueHasWikiTemplate(ctx, tenantID, canvas.DSL)
 }
