@@ -85,3 +85,36 @@ it('shows encryption failures without sending an invalid password payload', asyn
   );
   expect(changeOwnPassword).not.toHaveBeenCalled();
 });
+
+it.each(['currentPassword', 'newPassword'])(
+  'rejects a password that exceeds the RSA payload in %s before encrypting',
+  async (field) => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AdminSecurity />
+      </QueryClientProvider>,
+    );
+    const tooLong = '字'.repeat(62);
+    const current = field === 'currentPassword' ? tooLong : 'current-fixture';
+    const replacement =
+      field === 'newPassword' ? tooLong : 'replacement-fixture';
+    fireEvent.change(
+      screen.getByLabelText('adminEnhancements.currentPassword'),
+      {
+        target: { value: current },
+      },
+    );
+    fireEvent.change(screen.getByLabelText('admin.newPassword'), {
+      target: { value: replacement },
+    });
+    fireEvent.change(screen.getByLabelText('admin.confirmNewPassword'), {
+      target: { value: replacement },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'admin.changePassword' }),
+    );
+    await screen.findByText('adminEnhancements.passwordTransportMaxLength');
+    expect(rsaPsw).not.toHaveBeenCalled();
+    expect(changeOwnPassword).not.toHaveBeenCalled();
+  },
+);

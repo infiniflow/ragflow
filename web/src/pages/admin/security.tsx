@@ -21,6 +21,10 @@ import { adminStorage } from '@/utils/authorization-util';
 import { rsaPsw } from '@/utils';
 import { Routes } from '@/routes';
 import { CurrentUserInfoContext } from './layouts/root-layout';
+import {
+  adminPasswordSchema,
+  adminPasswordTransportSchema,
+} from './password-schema';
 
 interface PasswordValues {
   currentPassword: string;
@@ -57,11 +61,9 @@ export default function AdminSecurity() {
         .object({
           currentPassword: z
             .string()
-            .min(1, t('adminEnhancements.currentPasswordRequired')),
-          newPassword: z
-            .string()
-            .min(8, t('admin.passwordMinLength'))
-            .max(128, t('adminEnhancements.passwordMaxLength')),
+            .min(1, t('adminEnhancements.currentPasswordRequired'))
+            .pipe(adminPasswordTransportSchema(t)),
+          newPassword: adminPasswordSchema(t),
           confirmPassword: z
             .string()
             .min(1, t('admin.confirmPasswordRequired')),
