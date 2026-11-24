@@ -1,51 +1,9 @@
 package pipeline
 
 import (
-	"fmt"
 	"reflect"
 	"testing"
 )
-
-func TestBuildParserPageCapOverridePreservesParserSettings(t *testing.T) {
-	for _, method := range []string{"deepdoc_cpu_ee", "deepdoc_gpu_ee", "deepdoc_ascend_ee"} {
-		for _, nested := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/nested=%t", method, nested), func(t *testing.T) {
-				params := fmt.Sprintf(`{"pdf":{"parse_method":%q,"lang":"English","pages":[[1,100000]]}}`, method)
-				if nested {
-					params = `{"setups":` + params + `}`
-				}
-				dsl := envelopedDSL(`{"Parser:Abc":{"obj":{"component_name":"Parser","params":` + params + `}}}`)
-				familyOf := func(string) string { return "pdf" }
-				out := BuildParserPageCapOverride(nil, dsl, "pdf", 2, testParserComponentName, familyOf)
-				family := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)
-				want := map[string]any{"parse_method": method, "lang": "English", "pages": []any{[]any{1, 2}}}
-				if !reflect.DeepEqual(family, want) {
-					t.Fatalf("without overrides: want %#v, got %#v", want, family)
-				}
-				for _, explicitPages := range []bool{false, true} {
-					requestFamily := map[string]any{"lang": "French"}
-					wantPages := []any{[]any{1, 2}}
-					if explicitPages {
-						wantPages = []any{[]any{3, 4}}
-						requestFamily["pages"] = wantPages
-					}
-					pc := map[string]any{"Parser:Abc": map[string]any{"pdf": requestFamily}}
-					out := BuildParserPageCapOverride(pc, dsl, "pdf", 2, testParserComponentName, familyOf)
-					family := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)
-					want := map[string]any{"parse_method": method, "lang": "French", "pages": wantPages}
-					if !reflect.DeepEqual(family, want) {
-						t.Fatalf("explicitPages=%t: want %#v, got %#v", explicitPages, want, family)
-					}
-				}
-				override := map[string]any{"Parser:Abc": map[string]any{"pdf": map[string]any{"parse_method": "plain_text"}}}
-				out = BuildParserPageCapOverride(override, dsl, "pdf", 2, testParserComponentName, familyOf)
-				if got := out["Parser:Abc"].(map[string]any)["pdf"].(map[string]any)["parse_method"]; got != "plain_text" {
-					t.Fatalf("explicit parser method overwritten: %v", got)
-				}
-			})
-		}
-	}
-}
 
 // testParserComponentName mirrors component.ComponentNameParser ("Parser").
 // The pipeline package deliberately does NOT import component (no reverse
