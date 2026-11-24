@@ -11,6 +11,10 @@ jest.mock('./use-sidebar-collapse', () => ({
   useSidebarCollapse: () => ({ collapsed: false }),
 }));
 
+jest.mock('@/ee/hooks/use-visible-integration-children', () => ({
+  useVisibleIntegrationChildren: (items: unknown[]) => items,
+}));
+
 const Children = [
   { key: 'model', path: '/integrations/model', labelKey: 'Model' },
   { key: 'mcp', path: '/integrations/mcp', labelKey: 'MCP' },
