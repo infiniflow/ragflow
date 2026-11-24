@@ -28,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -123,6 +124,7 @@ func findTemplateDirs() []string {
 
 func findIngestionTemplatesDir() string {
 	candidates := []string{
+		filepath.Join(utility.ConfDir(), "pipeline_templates"),
 		"internal/ingestion/pipeline/template",
 		filepath.Join("..", "internal", "ingestion", "pipeline", "template"),
 		filepath.Join("..", "..", "internal", "ingestion", "pipeline", "template"),
@@ -265,6 +267,9 @@ func collectCanvasTypes(rawType, rawTypes any) entity.JSONSlice {
 
 func findAgentTemplatesDir() string {
 	candidates := []string{
+		// The desktop bundle carries both catalogues inside conf/, which resolves
+		// from the executable rather than the working directory.
+		filepath.Join(utility.ConfDir(), "canvas_templates"),
 		"internal/agent/templates",
 		"agent/templates",
 		filepath.Join("..", "agent", "templates"),

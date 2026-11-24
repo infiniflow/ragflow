@@ -74,7 +74,26 @@ stage_conf() {
     cp -R "$conf_src/." "$conf_dest/"
   fi
   chmod -R u+w "$conf_dest"
+  # The two template catalogues seed the canvas_template table. They live under
+  # source directories a packaged app never ships, so they ride along inside conf/
+  # where findTemplateDirs resolves them from the executable.
+  copy_templates "$repo_root/internal/agent/templates" "$conf_dest/canvas_templates"
+  copy_templates "$repo_root/internal/ingestion/pipeline/template" "$conf_dest/pipeline_templates"
+  chmod -R u+w "$conf_dest"
   echo "stage-resources: conf/ $(du -sh "$conf_dest" | cut -f1)"
+}
+
+copy_templates() {
+  local src="$1" dest="$2"
+  [ -d "$src" ] || return 0
+  if command -v rsync >/dev/null 2>&1; then
+    install -d "$dest"
+    rsync -a --delete "$src/" "$dest/"
+  else
+    rm -rf "$dest"
+    install -d "$dest"
+    cp -R "$src/." "$dest/"
+  fi
 }
 
 # DeepDoc's ONNX weights are mandatory: the engine aborts at startup when the

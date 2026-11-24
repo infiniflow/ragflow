@@ -78,3 +78,22 @@ func hasResourceMarker(dir string) bool {
 	info, err := os.Stat(filepath.Join(dir, resourceMarker))
 	return err == nil && !info.IsDir()
 }
+
+// confFilePath resolves a file inside the configuration directory. It reads the
+// same RAGFLOW_CONF_DIR override as internal/utility.ConfDir — either the conf
+// directory itself or the project root containing it — but lives here because
+// utility depends on this package, not the other way round. The desktop shell
+// always exports the variable, so a packaged app finds its copy; a source or
+// deploy tree keeps the working-directory-relative default.
+func confFilePath(name string) string {
+	dir := GetEnv(EnvRAGFlowConfDir)
+	if dir == "" {
+		return filepath.Join("conf", name)
+	}
+	for _, candidate := range []string{filepath.Join(dir, name), filepath.Join(dir, "conf", name)} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return filepath.Join(dir, name)
+}
