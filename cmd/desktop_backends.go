@@ -34,11 +34,12 @@ const defaultDesktopDataDir = ".ragflow/desktop"
 
 // startDesktopBackends boots the in-process document engine, cache, message
 // queue and object store under one data directory, repoints the parsed
-// configuration at them and returns the function that stops them.
+// configuration at them and returns the function that stops them. That function
+// is never nil, so main() can defer it unconditionally.
 //
-// The desktop build has no separate entry point: ragflow_server.go's main runs
-// it here, before the configuration is read, so the tag decides which backends
-// exist rather than how the server starts.
+// The desktop build has no entry point of its own: ragflow_server.go's main runs
+// this before the configuration is read, so the tag decides which backends exist
+// rather than how the server starts.
 func startDesktopBackends(ctx context.Context, arguments *bootstrap.ServerArgs) (func(), error) {
 	dataDir, err := desktopDataDir(arguments.DataDir)
 	if err != nil {

@@ -25,8 +25,9 @@ import (
 )
 
 // startDesktopBackends is a no-op in the server build: every backend is a
-// service the operator configured, so nothing is started here and there is
-// nothing to stop.
+// service the operator configured, so nothing starts here. The returned stop
+// function is never nil, matching the desktop build so main() can defer it
+// unconditionally.
 func startDesktopBackends(context.Context, *bootstrap.ServerArgs) (func(), error) {
-	return nil, nil
+	return func() {}, nil
 }

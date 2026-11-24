@@ -53,54 +53,6 @@ import (
 	"ragflow/internal/storage"
 )
 
-// main is the one entry point of both builds. The `desktop` tag changes which
-// backends the process starts (see startDesktopBackends) and which files are
-// compiled in, never the startup sequence: the same configuration, the same
-// services, the same shutdown.
-func main() {
-	os.Exit(run())
-}
-
-// run is main without the exit, so the deferred shutdowns finish before the
-// process returns its status.
-func run() int {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	defer cancel()
-
-	arguments, err := parseArgsFrom(os.Args)
-	if err != nil {
-		fmt.Printf("Failed to parse arguments: %v\n", err)
-		return 1
-	}
-
-	if *arguments.HelpFlag {
-		printHelp(arguments)
-		return 0
-	}
-
-	if *arguments.VersionFlag {
-		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
-		return 0
-	}
-
-	// The desktop build boots its in-process backends here, before the
-	// configuration is read; the server build has nothing to start.
-	stopBackends, err := startDesktopBackends(ctx, arguments)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start the desktop backends: %v\n", err)
-		return 1
-	}
-	if stopBackends != nil {
-		defer stopBackends()
-	}
-
-	if err = runServer(ctx, cancel, arguments); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start RAGFlow: %v\n", err)
-		return 1
-	}
-	return 0
-}
-
 // isStandaloneDeepDocServer reports whether st is a standalone DeepDoc
 // inference server (CPU/GPU/Ascend). These boot the ONNX runtime only and never
 // the full RAGFlow infrastructure, so main() returns early for them before
@@ -259,6 +211,42 @@ func printHelp(_ *bootstrap.ServerArgs) {
 	fmt.Fprintln(os.Stderr, "  --port int         \tHTTP port: API by default, admin with --admin (1-65535)")
 	fmt.Fprintln(os.Stderr, "  --profile          \tEnable pprof server")
 	fmt.Fprintln(os.Stderr, "  -h, --help         \tShow this help message and exit")
+}
+
+func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	defer cancel()
+
+	arguments, err := parseArgsFrom(os.Args)
+	if err != nil {
+		fmt.Printf("Failed to parse arguments: %v\n", err)
+		os.Exit(1)
+	}
+
+	if *arguments.HelpFlag {
+		printHelp(arguments)
+		return
+	}
+
+	if *arguments.VersionFlag {
+		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
+		return
+	}
+
+	// What the build tag changes: the desktop build boots its in-process
+	// backends here, before the configuration is read, and stops them on the way
+	// out. The server build starts none, so its stop function does nothing.
+	stopBackends, err := startDesktopBackends(ctx, arguments)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start the desktop backends: %v\n", err)
+		os.Exit(1)
+	}
+	defer stopBackends()
+
+	if err = runServer(ctx, cancel, arguments); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start RAGFlow: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.ServerArgs) error {
