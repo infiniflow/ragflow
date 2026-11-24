@@ -22,7 +22,7 @@ import "github.com/spf13/viper"
 // RAGFLOW_<SERVICE>_NAME. Reading full keys also supports env-only settings.
 func (c *Config) ParseServerNames(v *viper.Viper) {
 	c.serverNames = make(map[string]string)
-	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "chatter", "deepdoc", "migrate"} {
+	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "chatter", "deepdoc"} {
 		if v.IsSet(mode + ".name") {
 			c.serverNames[mode] = v.GetString(mode + ".name")
 		}
