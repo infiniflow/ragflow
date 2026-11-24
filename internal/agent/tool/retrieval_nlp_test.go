@@ -542,14 +542,18 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 			var gotRef string
 			adapter := &NLPRetrievalAdapter{
 				modelConstructors: RetrievalModelConstructors{
-					Embedding: func(_ context.Context, _ string, modelRef string) (*modelModule.EmbeddingModel, error) {
+					Embedding: func(ctx context.Context, tenantID string, modelRef string) (*modelModule.EmbeddingModel, error) {
+						if tenantID != test.kb.TenantID || permission.TenantIDFromContext(ctx) != tenantID || permission.UserIDFromContext(ctx) != "caller" {
+							t.Fatalf("embedding constructor did not use the dataset tenant with the caller's identity")
+						}
 						gotRef = modelRef
 						modelName := "resolved-model"
 						return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &modelName, &modelModule.APIConfig{}, 512), nil
 					},
 				},
 			}
-			model, err := adapter.resolveEmbeddingModel(t.Context(), test.kb)
+			ctx := permission.WithIdentity(t.Context(), "caller", "chat-tenant")
+			model, err := adapter.resolveEmbeddingModel(ctx, test.kb)
 			if err != nil {
 				t.Fatalf("resolveEmbeddingModel: %v", err)
 			}
