@@ -257,7 +257,7 @@ func replicatePredictionDone(status string) bool {
 }
 
 func replicatePredictionSucceeded(status string) bool {
-	return status == "successful"
+	return status == "succeeded"
 }
 
 func (r *ReplicateModel) getPrediction(ctx context.Context, baseURL string, apiKey string) (*replicatePrediction, error) {
