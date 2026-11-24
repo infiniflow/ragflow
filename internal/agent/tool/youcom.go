@@ -24,13 +24,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/service/youcom"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const youComToolName = "youcom_search"
@@ -264,7 +264,7 @@ func buildYouComReferences(envelope map[string]any) ([]map[string]any, []map[str
 		if !ok {
 			continue
 		}
-		content := truncateYouComRunes(strings.Join(strings.Fields(youComText(result["content"])), " "), 10000)
+		content := utility.TruncateRunes(strings.Join(strings.Fields(youComText(result["content"])), " "), 10000)
 		if content == "" {
 			continue
 		}
@@ -320,13 +320,6 @@ func youComText(value any) string {
 		return strings.TrimSpace(text)
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
-}
-
-func truncateYouComRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func youComJSON(env youComEnvelope) string {

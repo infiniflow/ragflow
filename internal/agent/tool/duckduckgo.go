@@ -28,13 +28,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	xhtml "golang.org/x/net/html"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const duckduckgoToolName = "duckduckgo_search"
@@ -264,7 +264,7 @@ func buildDuckDuckGoReferences(envelope map[string]any) ([]map[string]any, []map
 			continue
 		}
 		content := duckduckgoDataImagePattern.ReplaceAllString(duckduckgoText(item["body"]), "")
-		content = truncateDuckDuckGoRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}
@@ -315,13 +315,6 @@ func duckduckgoText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func truncateDuckDuckGoRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func (d *DuckDuckGoTool) runNewsSearch(ctx context.Context, query string, topN int) (string, error) {
