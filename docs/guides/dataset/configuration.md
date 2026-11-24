@@ -35,7 +35,7 @@ The following built-in parsing methods are available:
 - **General**: A general-purpose parsing method suitable for most conventional documents. It identifies document content and creates chunks according to the configured chunking rules.
 - **Q&A**: Designed for data organized as question-answer pairs. Each Q&A pair is treated as an individual chunk.
 - **Manual**: Designed for PDFs with a clear hierarchical section structure, such as product manuals and operation guides. Documents are chunked based on their section structure.
-- **Table**: Designed for structured tabular data such as XLSX and CSV/TXT files. Each row is typically treated as an individual chunk.
+- **Table** supports structured tabular data such as XLSX, CSV, TSV, and TXT files. Use the `.tsv` extension for tab-separated fields, including fields that contain commas. Each row is typically treated as an individual chunk.
 - **Paper**: Designed for PDF papers, research reports, and other academic documents. Documents are chunked based on structural elements such as abstracts, sections, and subsections.
 - **Book**: Designed for DOCX, PDF, and TXT books or other long documents with a chapter-based structure.
 - **Laws**: Designed for legal documents in DOCX, PDF, and TXT formats. Chunk boundaries are identified based on the structural characteristics of legal documents.

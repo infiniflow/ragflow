@@ -123,9 +123,9 @@ const DocumentPreview = function ({
           />
         </section>
       )}
-      {['csv'].indexOf(fileType) > -1 && (
+      {(fileType === 'csv' || fileType === 'tsv') && (
         <section className="h-full">
-          <CSVFileViewer className={className} url={url} />
+          <CSVFileViewer className={className} url={url} fileType={fileType} />
         </section>
       )}
       {['md', 'mdx'].indexOf(fileType) > -1 && (

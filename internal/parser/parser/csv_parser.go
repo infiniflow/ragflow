@@ -24,9 +24,11 @@
 package parser
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -95,9 +97,27 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 // When TCADP parse_method is configured, the file is dispatched to
 // the Tencent Cloud Document Parsing API.
 func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	format := "csv"
+	if strings.EqualFold(filepath.Ext(filename), ".tsv") {
+		format = "tsv"
+	}
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
+		if format == "tsv" {
+			// TCADP accepts CSV. Quote commas and preserve empty fields
+			// before sending a tab-separated source as that format.
+			decoded, _ := charset.DecodeToUTF8(data, "text/tab-separated-values")
+			records, err := newCSVReader(string(decoded), '\t').ReadAll()
+			if err != nil {
+				return ParseResult{Err: fmt.Errorf("tsv parse: %w", err)}
+			}
+			var buf bytes.Buffer
+			if err := csv.NewWriter(&buf).WriteAll(records); err != nil {
+				return ParseResult{Err: err}
+			}
+			data = buf.Bytes()
+		}
 		return parseWithTCADP(
 			ctx, filename, data, "CSV",
 			p.TCADPAPIServer, p.TCADPAPIKey,
@@ -120,15 +140,19 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 				"name":     filename,
 				"size":     len(data),
 				"encoding": encName,
-				"format":   "csv",
+				"format":   format,
 				"sheets":   1,
 			},
 		}
 	}
 
-	records, err := newCSVReader(text, detectCSVDelimiter(text)).ReadAll()
+	delimiter := '\t'
+	if format == "csv" {
+		delimiter = detectCSVDelimiter(text)
+	}
+	records, err := newCSVReader(text, delimiter).ReadAll()
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("csv parse: %w", err)}
+		return ParseResult{Err: fmt.Errorf("%s parse: %w", format, err)}
 	}
 
 	// Clean illegal control characters from all cells.
@@ -146,7 +170,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 			"name":     filename,
 			"size":     len(data),
 			"encoding": encName,
-			"format":   "csv",
+			"format":   format,
 			"sheets":   1,
 		},
 		JSON: MapsToItems(items),

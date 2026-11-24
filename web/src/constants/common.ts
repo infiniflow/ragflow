@@ -217,6 +217,7 @@ export const ExceptiveType = [
   'mdx',
   'txt',
   'csv',
+  'tsv',
   'pptx',
   'html',
   'htm',

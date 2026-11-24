@@ -675,6 +675,18 @@ func TestParseTagSourceByFilename_TabSeparatedCSV(t *testing.T) {
 	}
 }
 
+func TestParseTagSourceByFilename_TSV(t *testing.T) {
+	data := []byte("\"Paris, France\"\tcity,capital\n\"first line\nsecond line\"\tnotes")
+	want := []schema.TagLabel{
+		{Content: "Paris, France", Tags: []string{"city", "capital"}},
+		{Content: "first line\nsecond line", Tags: []string{"notes"}},
+	}
+	got, err := parseTagSourceByFilename(data, "examples.TSV")
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v (err=%v), want %+v", got, err, want)
+	}
+}
+
 // A comma separated .csv stays comma separated when one field holds a TAB,
 // quoted, not quoted, or with a trailing empty column.
 func TestParseTagSourceByFilename_CommaCSVWithTabInField(t *testing.T) {

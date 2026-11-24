@@ -346,10 +346,10 @@ func tagSourceFileCacheKey(f *entity.File, lang string) string {
 }
 
 // parseTagSourceByFilename mirrors chunk(): the format is chosen
-// by the file extension, and only .xlsx/.xls, .txt and .csv are supported. Any
+// by the file extension, and only .xlsx/.xls, .txt, .csv and .tsv are supported. Any
 // other extension (including no extension) is rejected, matching
 // NotImplementedError for unsupported formats. xlsx is parsed per-sheet (2
-// columns, no header, multiple sheets); .csv uses a quote-aware reader; .txt
+// columns, no header, multiple sheets); .csv and .tsv use a quote-aware reader; .txt
 // uses the delimiter-detecting reader.
 func parseTagSourceByFilename(data []byte, filename string) ([]schema.TagLabel, error) {
 	switch strings.ToLower(filepath.Ext(filename)) {
@@ -357,11 +357,13 @@ func parseTagSourceByFilename(data []byte, filename string) ([]schema.TagLabel, 
 		return parseXLSXTagSource(data), nil
 	case ".csv":
 		return parseCSVQuoteAwareReader(bytes.NewReader(data), csvTagSourceDelimiter(data)), nil
+	case ".tsv":
+		return parseCSVQuoteAwareReader(bytes.NewReader(data), '\t'), nil
 	case ".txt":
 		delimiter := detectCSVDelimiterBytes(data)
 		return parseCSVTagSourceReader(bytes.NewReader(data), delimiter), nil
 	default:
-		return nil, fmt.Errorf("unsupported tag source extension %q: only .xlsx, .xls, .txt and .csv are supported", filepath.Ext(filename))
+		return nil, fmt.Errorf("unsupported tag source extension %q: only .xlsx, .xls, .txt, .csv and .tsv are supported", filepath.Ext(filename))
 	}
 }
 

@@ -18,6 +18,19 @@ package utility
 
 import "testing"
 
+func TestTSVDocumentType(t *testing.T) {
+	const name = "questions.TSV"
+	if got := FilenameType(name); got != FileTypeDOC {
+		t.Errorf("upload type = %q, want %q", got, FileTypeDOC)
+	}
+	if got := GetFileType(name); got != FileTypeCSV {
+		t.Errorf("parser type = %q, want %q", got, FileTypeCSV)
+	}
+	if got := GetContentType("tsv", "doc"); got != "text/tab-separated-values" {
+		t.Errorf("content type = %q, want text/tab-separated-values", got)
+	}
+}
+
 func TestFilenameTypeBMP(t *testing.T) {
 	cases := []struct {
 		name string

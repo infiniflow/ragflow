@@ -7,7 +7,7 @@ import { getExtension } from '@/utils/document-util';
 import { uniqBy } from 'lodash';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const AllowedExtensions = ['xlsx', 'xls', 'csv', 'txt'];
+const AllowedExtensions = ['xlsx', 'xls', 'csv', 'tsv', 'txt'];
 
 export function canSelectTagFile(node: TreeNodeType) {
   return Boolean(node.isLeaf);

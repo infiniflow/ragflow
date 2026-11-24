@@ -31,7 +31,7 @@ export enum FileType {
 
 export const FileTypeSuffixMap = {
   [FileType.PDF]: ['pdf'],
-  [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv'],
+  [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv', 'tsv'],
   [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
   [FileType.Email]: ['eml', 'msg'],
   [FileType.TextMarkdown]: ['md', 'markdown', 'mdx'],
@@ -110,6 +110,7 @@ export const FileIconMap = {
   png: 'png',
   txt: 'text',
   csv: 'excel',
+  tsv: 'excel',
   md: 'md',
   mdx: 'md',
   mp4: 'mp4',

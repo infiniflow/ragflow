@@ -27,7 +27,7 @@ import CSVFileViewer from '@/components/document-preview/csv-preview';
 const DocumentViewer = () => {
   const { id: documentId } = useParams();
   const [currentQueryParameters] = useSearchParams();
-  const ext = currentQueryParameters.get('ext');
+  const ext = currentQueryParameters.get('ext')?.toLowerCase();
   const resource =
     currentQueryParameters.get('resource') === 'files' ? 'files' : 'document';
   const api =
@@ -66,9 +66,9 @@ const DocumentViewer = () => {
       {(ext === 'xlsx' || ext === 'xls') && (
         <ExcelCsvPreviewer url={api}></ExcelCsvPreviewer>
       )}
-      {ext === 'csv' && (
+      {(ext === 'csv' || ext === 'tsv') && (
         <section className="m-1">
-          <CSVFileViewer url={api} />
+          <CSVFileViewer url={api} fileType={ext} />
         </section>
       )}
 
