@@ -982,12 +982,16 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		return ok
 	}
 
-	if err := e.completeTask(ctx, task.ID); err != nil {
+	settled, err := e.completeTask(ctx, task.ID)
+	if err != nil {
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
 		return false
 	}
-	e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusDone), "Task completed.")
-	e.markProgressTerminal(ctx, task, string(entity.TaskStatusDone))
+	// completeTask may settle a concurrently stopped task to STOPPED instead of
+	// COMPLETED. Both the run row and the progress snapshot must carry the
+	// status that was actually persisted, not an unconditional DONE.
+	e.recordTerminalPipelineLog(ctx, task, string(settled), "Task completed.")
+	e.markProgressTerminal(ctx, task, string(settled))
 	e.publishPendingCompileEvent(ctx, task)
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
@@ -1014,25 +1018,29 @@ func (e *Ingestor) markTerminalProgress(task *entity.IngestionTask) {
 // concurrent stop (or another worker) moved it - is NOT retried: the pipeline
 // already did the work, so completeOrSettle settles the task to its actual
 // terminal state and the caller Acks instead of redelivering.
-func (e *Ingestor) completeTask(ctx context.Context, taskID string) error {
+func (e *Ingestor) completeTask(ctx context.Context, taskID string) (entity.TaskStatus, error) {
+	var settled entity.TaskStatus
 	_, err := backoff.Retry(ctx, func() (struct{}, error) {
-		return struct{}{}, e.completeOrSettle(ctx, taskID)
+		var retryErr error
+		settled, retryErr = e.completeOrSettle(ctx, taskID)
+		return struct{}{}, retryErr
 	}, backoff.WithMaxTries(3))
-	return err
+	return settled, err
 }
 
 // completeOrSettle marks the task COMPLETED, or - if the transition is
 // terminally invalid because the task is no longer RUNNING - settles it to its
-// actual terminal state. Returns nil once the task is in any terminal state;
-// returns a non-terminal (transient) error only for retry-worthy DB failures.
-func (e *Ingestor) completeOrSettle(ctx context.Context, taskID string) error {
+// actual terminal state. It returns the run status corresponding to the state
+// that was persisted once the task is terminal; it returns an empty status and
+// a non-terminal (transient) error only for retry-worthy DB failures.
+func (e *Ingestor) completeOrSettle(ctx context.Context, taskID string) (entity.TaskStatus, error) {
 	if err := e.ingestionTaskSvc.MarkCompleted(ctx, taskID); err != nil {
 		if isTerminalTransitionError(err) {
 			return e.settleToTerminal(ctx, taskID)
 		}
-		return err
+		return "", err
 	}
-	return nil
+	return entity.TaskStatusDone, nil
 }
 
 // isTerminalTransitionError reports whether err is a state-machine transition
@@ -1051,21 +1059,25 @@ func isTerminalTransitionError(err error) bool {
 // re-cancel); already-terminal states (COMPLETED/STOPPED/FAILED) need no
 // action. An unexpected status returns an error so the caller nacks and
 // redelivery settles it.
-func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) error {
+func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) (entity.TaskStatus, error) {
 	task, err := e.ingestionTaskSvc.GetTask(ctx, taskID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	switch task.Status {
 	case common.STOPPING:
 		if !e.markStopped(ctx, taskID) {
-			return fmt.Errorf("task %s: settle to STOPPED failed", taskID)
+			return "", fmt.Errorf("task %s: settle to STOPPED failed", taskID)
 		}
-		return nil
-	case common.COMPLETED, common.STOPPED, common.FAILED:
-		return nil
+		return entity.TaskStatusCancel, nil
+	case common.COMPLETED:
+		return entity.TaskStatusDone, nil
+	case common.STOPPED:
+		return entity.TaskStatusCancel, nil
+	case common.FAILED:
+		return entity.TaskStatusFail, nil
 	default:
-		return fmt.Errorf("task %s in unexpected status %s after transition failure", taskID, task.Status)
+		return "", fmt.Errorf("task %s in unexpected status %s after transition failure", taskID, task.Status)
 	}
 }
 

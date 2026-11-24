@@ -226,7 +226,9 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 		perBatch[i] = rows
 		rowCount += len(rows)
-		remainingWindow.Sub(0, 4).WithPhase("row:extract").ReportPosition(ctx, uint32(i+1), uint32(len(extracted)))
+		// i and len(extracted) count embed batches, not rows; the unit name
+		// must not claim a row count it cannot know before the loop.
+		remainingWindow.Sub(0, 4).WithPhase("batch:embed").ReportPosition(ctx, uint32(i+1), uint32(len(extracted)))
 		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 			"%s-template: embedded batch %d/%d (%d rows so far)", compileType, i+1, len(batches), rowCount))
 	}

@@ -48,6 +48,26 @@ type IngestionProgressResponse struct {
 	Fallback  bool       `json:"fallback"`
 }
 
+// latestActiveStage returns the newest stage with a valid active unit. When
+// skipTerminal is set, completed/failed stages are ignored so a later running
+// stage supplies the summary.
+func latestActiveStage(snap *progressstore.Snapshot, skipTerminal bool) *progressstore.Stage {
+	for i := len(snap.Stages) - 1; i >= 0; i-- {
+		stage := &snap.Stages[i]
+		if stage.Active == "" {
+			continue
+		}
+		if _, ok := stage.Units[stage.Active]; !ok {
+			continue
+		}
+		if skipTerminal && (stage.Phase == progressstore.PhaseDone || stage.Phase == progressstore.PhaseFailed) {
+			continue
+		}
+		return stage
+	}
+	return nil
+}
+
 // mergeProgressSnapshot combines the authoritative run state with the latest
 // running-state snapshot. A missing snapshot — or one with no active unit —
 // marks fallback instead of presenting a fabricated 0/0 position.
@@ -67,16 +87,14 @@ func mergeProgressSnapshot(run *entity.PipelineOperationLog, snap *progressstore
 		updated := snap.UpdatedAt
 		resp.UpdatedAt = &updated
 	}
-	var active *progressstore.Stage
-	for i := range snap.Stages {
-		stage := &snap.Stages[i]
-		if stage.Active == "" {
-			continue
-		}
-		if _, ok := stage.Units[stage.Active]; ok {
-			active = stage
-			break
-		}
+	// Prefer the most recently reported stage that is still running. A
+	// completed stage keeps its Active unit, so scanning forward would freeze
+	// the summary on a finished stage and hide the one actually in progress.
+	active := latestActiveStage(snap, true)
+	if active == nil {
+		// At settlement no stage is running; still surface the latest position
+		// so consumers do not see a fabricated 0/0.
+		active = latestActiveStage(snap, false)
 	}
 	if active == nil {
 		resp.Fallback = true

@@ -18,6 +18,7 @@ import IngestionProgressDetailButton from '@/ee/components/ingestion-progress-de
 import { IngestionProgressResponse } from '@/interfaces/database/ingestion';
 import { getIngestionProgress } from '@/services/knowledge-service';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import React from 'react';
 
 import {
@@ -56,21 +57,19 @@ export function useIngestionProgress(
   };
 }
 
-const UnitLabels: Record<string, string> = {
-  'page:parse': '页面解析',
-  'chunk:final': '文本切分',
-  'chunk:keywords': '关键词提取',
-  'chunk:tags': '标签提取',
-  'chunk:resume': '断点恢复',
-  'chunk:remaining': '信息补全',
-  'chunk:embed': '向量化',
-  'chunk:claim': '观点抽取',
-  'entity:generate': '实体生成',
-  'batch:map': '批量映射',
-  'job:plan': '规划任务',
-  'page:refine': '页面精炼',
-  'row:extract': '行抽取',
-  'row:dedup': '行去重',
+// Authoritative run statuses use both legacy numeric values and the current
+// named values. Map each terminal status to the label the user should see;
+// polling still keys off TerminalStatuses, not this display mapping.
+const TerminalStatusLabels: Record<string, string> = {
+  '2': 'stopped',
+  '3': 'completed',
+  '4': 'failed',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  STOPPED: 'stopped',
+  DONE: 'completed',
+  FAIL: 'failed',
+  CANCEL: 'stopped',
 };
 
 function formatDuration(seconds: number): string {
@@ -99,57 +98,82 @@ interface IngestionProgressSummaryProps {
 export const IngestionProgressSummary: React.FC<
   IngestionProgressSummaryProps
 > = ({ datasetId, logId, data, error }) => {
+  const { t } = useTranslation();
+
   if (error || !data) {
     return (
       <div className="text-text-secondary text-sm">
-        进度信息暂不可用，请查看完整日志。
+        {t('knowledgeDetails.ingestionProgress.unavailable')}
       </div>
     );
   }
 
   const terminal = TerminalStatuses.has(data.status);
   const percent = Math.max(0, Math.min(100, data.percent || 0));
+  const statusLabel = terminal
+    ? t(
+        `knowledgeDetails.ingestionProgress.${TerminalStatusLabels[data.status] ?? 'completed'}`,
+      )
+    : t('knowledgeDetails.ingestionProgress.parsing');
+  const unitLabel = data.unit
+    ? t(`knowledgeDetails.ingestionProgress.units.${data.unit}`, {
+        defaultValue: data.unit,
+      })
+    : '';
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className="text-text-secondary text-sm">状态</span>
+        <span className="text-text-secondary text-sm">
+          {t('knowledgeDetails.ingestionProgress.status')}
+        </span>
         <span className="text-text-primary text-sm font-medium">
-          {terminal ? '已完成' : '解析中'}
+          {statusLabel}
         </span>
       </div>
 
       {terminal ? (
         <>
           <div className="flex items-center justify-between">
-            <span className="text-text-secondary text-sm">总耗时</span>
+            <span className="text-text-secondary text-sm">
+              {t('knowledgeDetails.ingestionProgress.totalDuration')}
+            </span>
             <span className="text-text-primary text-sm">
               {formatDuration(data.duration_s)}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-text-secondary text-sm">生成 chunk</span>
+            <span className="text-text-secondary text-sm">
+              {t('knowledgeDetails.ingestionProgress.chunks')}
+            </span>
             <span className="text-text-primary text-sm">{data.chunk_num}</span>
           </div>
           <IngestionProgressDetailButton datasetId={datasetId} logId={logId} />
         </>
       ) : data.fallback ? (
         <div className="text-text-secondary text-sm">
-          详细进度暂不可用
-          <span className="ml-2">· 耗时 {formatDuration(data.duration_s)}</span>
+          {t('knowledgeDetails.ingestionProgress.detailUnavailable')}
+          <span className="ml-2">
+            · {t('knowledgeDetails.ingestionProgress.elapsed')}{' '}
+            {formatDuration(data.duration_s)}
+          </span>
         </div>
       ) : (
         <>
           <div className="flex items-center justify-between">
-            <span className="text-text-secondary text-sm">当前阶段</span>
-            <span className="text-text-primary text-sm font-medium">
+            <span className="text-text-secondary text-sm">
+              {t('knowledgeDetails.ingestionProgress.currentStage')}
+            </span>
+            <span className="text-text-primary text-sm font-medium min-w-0 break-words">
               {data.stage}
-              {data.unit ? ` · ${UnitLabels[data.unit] ?? data.unit}` : ''}
+              {unitLabel ? ` · ${unitLabel}` : ''}
             </span>
           </div>
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-text-secondary">处理进度</span>
+              <span className="text-text-secondary">
+                {t('knowledgeDetails.ingestionProgress.progress')}
+              </span>
               <span className="text-text-primary">
                 {data.current} / {data.total} ({percent.toFixed(0)}%)
               </span>
@@ -162,13 +186,17 @@ export const IngestionProgressSummary: React.FC<
             </div>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-text-secondary text-sm">耗时</span>
+            <span className="text-text-secondary text-sm">
+              {t('knowledgeDetails.ingestionProgress.elapsed')}
+            </span>
             <span className="text-text-primary text-sm">
               {formatDuration(data.duration_s)}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-text-secondary text-sm">更新于</span>
+            <span className="text-text-secondary text-sm">
+              {t('knowledgeDetails.ingestionProgress.updatedAt')}
+            </span>
             <span className="text-text-primary text-sm">
               {formatUpdated(data.updated_at)}
             </span>

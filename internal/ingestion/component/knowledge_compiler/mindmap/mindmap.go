@@ -70,7 +70,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	batches := packMindmapBatches(inputs.Chunks, deps.Tokenizer)
 	results := make([]mindmapBatchResult, len(batches))
 	jobs := make([]func() error, 0, len(batches))
-	generated := deps.Progress.Sub(0, 3).WithPhase("entity:generate").Counter(ctx, len(batches))
+	generated := deps.Progress.Sub(0, 3).WithPhase("batch:generate").Counter(ctx, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {

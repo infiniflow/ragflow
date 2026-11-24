@@ -548,8 +548,9 @@ export const getPipelineDetail = (datasetId: string, logId: string) =>
 export const getIngestionProgress = (
   datasetId: string,
   logId: string,
-): Promise<{ data: { code: number; data: IngestionProgressResponse } }> =>
-  request.get(api.getIngestionProgress(datasetId, logId));
+): Promise<{
+  data: { code: number; message?: string; data: IngestionProgressResponse };
+}> => request.get(api.getIngestionProgress(datasetId, logId));
 
 export const listIngestionMessages = (
   datasetId: string,

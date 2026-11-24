@@ -236,6 +236,7 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 
 	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		PipelineLogID: testutil.StrPtr("run-" + taskID),
 	})
 
 	if !terminal {
@@ -249,6 +250,16 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 	}
 	if task.Status != common.STOPPED {
 		t.Fatalf("task status = %s, want STOPPED (settled from concurrent STOPPING)", task.Status)
+	}
+
+	// The settled terminal status must also reach the authoritative run row;
+	// a pipeline that finished but was concurrently stopped is CANCEL, not DONE.
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "run-"+taskID).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("run status = %q, want CANCEL (concurrent stop must not be reported as DONE)", run.OperationStatus)
 	}
 }
 

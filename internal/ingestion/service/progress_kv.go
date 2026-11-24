@@ -29,11 +29,11 @@ import (
 func phaseLabel(phase uint8) string {
 	switch phase {
 	case 0:
-		return "running"
+		return progressstore.PhaseRunning
 	case 1:
-		return "done"
+		return progressstore.PhaseDone
 	case 2:
-		return "failed"
+		return progressstore.PhaseFailed
 	default:
 		return ""
 	}

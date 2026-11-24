@@ -53,6 +53,61 @@ func TestMergeProgressUsesActiveUnit(t *testing.T) {
 	}
 }
 
+func TestMergeProgressSelectsRunningStageNotCompletedOne(t *testing.T) {
+	// Adversarial: a completed stage still carries its Active unit because the
+	// store never clears it. The summary must not stop there while a later
+	// stage is actually running.
+	snap := testSnapshot(progressstore.StatusRunning,
+		progressstore.Stage{Name: "Parser", Phase: "done", Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 10, Total: 10},
+		}},
+		progressstore.Stage{Name: "Tokenizer", Phase: "running", Active: "chunk:final", Units: map[string]progressstore.UnitProgress{
+			"chunk:final": {Current: 2, Total: 100},
+		}},
+	)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0)
+	if resp.Stage != "Tokenizer" || resp.Unit != "chunk:final" {
+		t.Fatalf("stage/unit = %q/%q, want Tokenizer/chunk:final (completed stage must not shadow the running one)", resp.Stage, resp.Unit)
+	}
+	if resp.Current != 2 || resp.Total != 100 {
+		t.Fatalf("position = %d/%d, want 2/100", resp.Current, resp.Total)
+	}
+}
+
+func TestMergeProgressSelectsLatestRunningStage(t *testing.T) {
+	// Adversarial: multiple non-terminal stages; the most recently reported
+	// stage supplies the summary, not the first one in the slice.
+	snap := testSnapshot(progressstore.StatusRunning,
+		progressstore.Stage{Name: "Parser", Phase: "running", Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 10, Total: 100},
+		}},
+		progressstore.Stage{Name: "Extractor", Phase: "running", Active: "chunk:tags", Units: map[string]progressstore.UnitProgress{
+			"chunk:tags": {Current: 7, Total: 50},
+		}},
+	)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), snap, 0)
+	if resp.Stage != "Extractor" || resp.Unit != "chunk:tags" {
+		t.Fatalf("stage/unit = %q/%q, want Extractor/chunk:tags", resp.Stage, resp.Unit)
+	}
+}
+
+func TestMergeProgressFallsBackToLastStageWhenAllDone(t *testing.T) {
+	// At settlement no stage is running; still report the latest position so
+	// API consumers do not see a fabricated 0/0.
+	snap := testSnapshot(progressstore.StatusCompleted,
+		progressstore.Stage{Name: "Parser", Phase: "done", Active: "page:parse", Units: map[string]progressstore.UnitProgress{
+			"page:parse": {Current: 10, Total: 10},
+		}},
+		progressstore.Stage{Name: "Tokenizer", Phase: "done", Active: "chunk:final", Units: map[string]progressstore.UnitProgress{
+			"chunk:final": {Current: 100, Total: 100},
+		}},
+	)
+	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusDone)), snap, 0)
+	if resp.Stage != "Tokenizer" || resp.Unit != "chunk:final" {
+		t.Fatalf("stage/unit = %q/%q, want Tokenizer/chunk:final", resp.Stage, resp.Unit)
+	}
+}
+
 func TestMergeProgressFallsBackWhenSnapshotMissing(t *testing.T) {
 	resp := mergeProgressSnapshot(testRun(string(entity.TaskStatusRunning)), nil, 0)
 	if !resp.Fallback {

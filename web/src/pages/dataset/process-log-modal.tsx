@@ -195,7 +195,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                 <div className="w-full mt-2" key={key}>
                   <details className="mt-3">
                     <summary className="text-text-secondary text-sm cursor-pointer">
-                      查看完整日志
+                      {tc('knowledgeDetails.ingestionProgress.viewFullLog')}
                     </summary>
                     <div
                       ref={eventListRef}
@@ -204,7 +204,9 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                     >
                       {logInfo.isLoadingPreviousEvents && (
                         <div className="text-text-secondary text-xs mb-1">
-                          Loading earlier events…
+                          {tc(
+                            'knowledgeDetails.ingestionProgress.loadingEarlierEvents',
+                          )}
                         </div>
                       )}
                       {logInfo.events?.map((event) => {

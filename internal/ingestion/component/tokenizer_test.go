@@ -861,8 +861,8 @@ func TestTokenizerComponent_Embedding_ReportsChunkDetail(t *testing.T) {
 		t.Fatal("expected chunk detail events, got none")
 	}
 	last := details[len(details)-1]
-	if last.unit != "chunk" {
-		t.Errorf("unit = %q, want chunk", last.unit)
+	if last.unit != "chunk:embed" {
+		t.Errorf("unit = %q, want chunk:embed", last.unit)
 	}
 	if last.total != 5 {
 		t.Errorf("total = %d, want 5", last.total)
@@ -871,7 +871,7 @@ func TestTokenizerComponent_Embedding_ReportsChunkDetail(t *testing.T) {
 		t.Errorf("final current = %d, want 5", last.current)
 	}
 	for _, d := range details {
-		if d.unit != "chunk" || d.total != 5 || d.current > d.total {
+		if d.unit != "chunk:embed" || d.total != 5 || d.current > d.total {
 			t.Errorf("malformed detail: %+v", d)
 		}
 	}
