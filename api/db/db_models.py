@@ -1046,13 +1046,10 @@ DB.lock = DatabaseLock[settings.DATABASE_TYPE.upper()].value
 
 def close_connection():
     try:
-        if DB:
-            if settings.DATABASE_TYPE.upper() in GAUSSDB_COMPATIBLE_DATABASE_TYPES:
-                if not DB.is_closed():
-                    # Return this worker thread's connection to the GaussDB pool.
-                    DB.close()
-            else:
-                DB.close_stale(age=30)
+        if DB and not DB.is_closed():
+            # Return only this thread's connection to the pool; never reap
+            # other threads' in-use connections via close_stale().
+            DB.close()
     except Exception as e:
         logging.exception(e)
 
