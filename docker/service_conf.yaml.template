@@ -32,7 +32,7 @@ mysql:
   user: '${MYSQL_USER:-root}'
   password: '${MYSQL_PASSWORD:-infini_rag_flow}'
   host: '${MYSQL_HOST:-mysql}'
-  port: ${MYSQL_PORT:-3306}
+  port: 3306
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: ${MYSQL_MAX_PACKET:-1073741824}
@@ -110,13 +110,13 @@ kvrocks:
   db: 1
   username: '${KVROCKS_USERNAME:-}'
   password: '${REDIS_PASSWORD:-infini_rag_flow}'
-  host: '${KVROCKS_HOST:-kvrocks}:${KVROCKS_PORT:-6379}'
+  host: '${KVROCKS_HOST:-kvrocks}:6379'
 nats:
   host: ${NATS_HOST:-0.0.0.0}
-  port: ${NATS_PORT:-4222}
+  port: 4222
 clickhouse:
   host: '${CLICKHOUSE_HOST:-clickhouse}'
-  port: ${CLICKHOUSE_TCP_PORT:-9000}
+  port: 9000
   user: '${CLICKHOUSE_USER:-ragflow}'
   password: '${CLICKHOUSE_PASSWORD:-infini_rag_flow}'
   database: '${CLICKHOUSE_DATABASE:-ragflow}'

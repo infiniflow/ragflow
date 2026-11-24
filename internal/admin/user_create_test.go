@@ -16,6 +16,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var adminUserCreateTestModels = []any{&entity.User{}, &entity.Tenant{}, &entity.UserTenant{}, &entity.File{}}
+
 func TestCreateUserNickname(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
@@ -31,7 +33,7 @@ func TestCreateUserNickname(t *testing.T) {
 		{name: "too long", nickname: new(strings.Repeat("名", common.NicknameLimit+1)), code: common.CodeBadRequest},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			db := testutil.SetupTestDB(t, &entity.User{}, &entity.Tenant{}, &entity.UserTenant{}, &entity.File{})
+			db := testutil.SetupTestDB(t, adminUserCreateTestModels...)
 			t.Cleanup(testutil.ReplaceDBForTest(t, db))
 			handler := NewHandler(NewService())
 			body := map[string]string{"username": "new@example.com", "password": "test-password!"}
