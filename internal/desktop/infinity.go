@@ -38,9 +38,14 @@ package desktop
 // cache.
 //
 // The two run paths below only matter for the shared link: they make the binary
-// start on its own — `$ORIGIN` for the copy build.sh publishes beside the
-// binaries, and the staging directory for a binary linked elsewhere (a `go test`
-// binary lives in a temp dir, where $ORIGIN resolves to nothing useful).
+// start on its own — `$ORIGIN`/`@loader_path` for the copy build.sh publishes
+// beside the binaries, and the staging directory for a binary linked elsewhere
+// (a `go test` binary lives in a temp dir, where the loader-relative path
+// resolves to nothing useful).
+//
+// Go's #cgo flag check rejects a run path whose value starts with `@`, which is
+// how macOS spells the loader-relative one, so build.sh --desktop adds this
+// exact flag to CGO_LDFLAGS_ALLOW before it builds.
 
 /*
 #cgo darwin LDFLAGS: -Wl,-rpath,@loader_path -Wl,-rpath,${SRCDIR}/../../.cache/infinity-embedded -framework Security -framework CoreFoundation -lc++ -liconv -lresolv

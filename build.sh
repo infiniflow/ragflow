@@ -120,9 +120,10 @@ PDF_OXIDE_PREFIX="${NATIVE_LIBS_DIR}/pdf_oxide/v${PDF_OXIDE_VERSION}"
 #   RAGFLOW_INFINITY_SKIP_BUILD=1  never invoke cargo (a host without the Rust
 #                               toolchain): use an existing artifact as is.
 #   RAGFLOW_INFINITY_CARGO_JOBS    cargo --jobs (default: number of CPUs).
-# Whatever is resolved is staged into .cache/infinity-embedded, the -L path the
-# cgo directive in internal/desktop/infinity.go uses, and a shared object is
-# also published beside the binaries so the linked process finds it at runtime.
+# Whatever is resolved is staged into .cache/infinity-embedded, whose path goes
+# onto CGO_LDFLAGS for the desktop link (see prepare_infinity_embedded), and a
+# shared object is also published beside the binaries, where the run paths in
+# the cgo directive find it at runtime.
 INFINITY_EMBEDDED_LIB="${RAGFLOW_INFINITY_EMBEDDED_LIB:-}"
 INFINITY_DIR="${RAGFLOW_INFINITY_DIR:-}"
 INFINITY_SKIP_BUILD="${RAGFLOW_INFINITY_SKIP_BUILD:-}"
@@ -145,6 +146,11 @@ INFINITY_EMBEDDED_MODE=""
 INFINITY_EMBEDDED_LINK_FLAG=""
 # Set by prepare_infinity_embedded: the staged file itself, for reporting.
 INFINITY_EMBEDDED_STAGED=""
+# Go's #cgo flag check rejects a run path whose value starts with `@` — the way
+# macOS spells the loader-relative one — and the desktop link needs exactly that
+# (see internal/desktop/infinity.go). The allow list is Go's escape hatch; this
+# entry admits that one spelling and nothing wider.
+export CGO_LDFLAGS_ALLOW="${CGO_LDFLAGS_ALLOW:+$CGO_LDFLAGS_ALLOW|}-Wl,-rpath,@loader_path"
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
