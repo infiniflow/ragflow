@@ -85,7 +85,7 @@ nats:
   port: 4222
 clickhouse:
   host: 'localhost'
-  port: 9000
+  port: 9900
   user: ragflow
   password: infini_rag_flow
   database: ragflow
