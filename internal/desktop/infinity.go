@@ -28,28 +28,19 @@ package desktop
 // also sidesteps the 104-byte sun_path limit on macOS, which a deep data
 // directory can exceed.
 //
-// The library itself is staged into ../../.cache/infinity-embedded by
-// build.sh --desktop, which compiles the engine from an Infinity checkout when
-// needed and names the staged artifact on the link line: the archive when the
-// link is static, the shared object otherwise. It is not named here because only
-// the script knows which artifact exists, and because Go keys the final link on
-// the flag string — a fixed -l name would let a rebuilt engine, or a switch
-// between the two link modes, reuse the previously linked binary from the build
-// cache.
+// The library is always the static archive, staged into
+// ../../.cache/infinity-embedded by build.sh --desktop, which compiles the
+// engine from an Infinity checkout when needed. The archive is not named here
+// because only the script knows where it was staged, and because Go keys the
+// final link on the flag string — a stable name would let a rebuilt engine reuse
+// the previously linked binary from the build cache.
 //
-// The two run paths below only matter for the shared link: they make the binary
-// start on its own — `$ORIGIN`/`@loader_path` for the copy build.sh publishes
-// beside the binaries, and the staging directory for a binary linked elsewhere
-// (a `go test` binary lives in a temp dir, where the loader-relative path
-// resolves to nothing useful).
-//
-// Go's #cgo flag check rejects a run path whose value starts with `@`, which is
-// how macOS spells the loader-relative one, so build.sh --desktop adds this
-// exact flag to CGO_LDFLAGS_ALLOW before it builds.
+// Nothing is loaded at runtime, so no run path is declared: there is no shared
+// object to find, and the desktop binary ships as one file.
 
 /*
-#cgo darwin LDFLAGS: -Wl,-rpath,@loader_path -Wl,-rpath,${SRCDIR}/../../.cache/infinity-embedded -framework Security -framework CoreFoundation -lc++ -liconv -lresolv
-#cgo linux LDFLAGS: -Wl,-rpath,$ORIGIN -Wl,-rpath,${SRCDIR}/../../.cache/infinity-embedded -lstdc++ -lpthread -ldl -lm
+#cgo darwin LDFLAGS: -framework Security -framework CoreFoundation -lc++ -liconv -lresolv
+#cgo linux LDFLAGS: -lstdc++ -lpthread -ldl -lm
 #cgo windows LDFLAGS: -lws2_32 -luserenv -lbcrypt -lntdll
 
 #include <stdlib.h>

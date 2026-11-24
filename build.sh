@@ -103,6 +103,10 @@ if [ -z "$PDF_OXIDE_VERSION" ]; then
     echo -e "${RED}Error: could not read pdf_oxide version from go.mod${NC}" >&2; exit 1
 fi
 PDF_OXIDE_PREFIX="${NATIVE_LIBS_DIR}/pdf_oxide/v${PDF_OXIDE_VERSION}"
+# Namespace libpdf_oxide.a's symbols are renamed into when they collide with
+# liboffice_oxide.a, the second Rust staticlib in the desktop link: its office_*
+# C API and its rust_eh_personality. ld64 has no --allow-multiple-definition.
+PDF_OXIDE_SYMBOL_PREFIX="pdfoxide_"
 
 # ── Infinity embedded engine (desktop build dependency) ─────────────────
 # The desktop binaries link Infinity's embedded engine, the Rust library from
@@ -111,46 +115,36 @@ PDF_OXIDE_PREFIX="${NATIVE_LIBS_DIR}/pdf_oxide/v${PDF_OXIDE_VERSION}"
 #   RAGFLOW_INFINITY_DIR        the checkout: the repo root, its rust_engine/
 #                               workspace, or crates/embedded-ffi itself. Unset
 #                               means the usual local checkouts are probed.
-#   RAGFLOW_INFINITY_EMBEDDED_LIB  a pre-built libinfinity_embedded.{so,a}; it
-#                               wins over everything and skips both discovery
-#                               and the build.
-#   RAGFLOW_INFINITY_LINK       static|shared (default: static on Linux, shared
-#                               elsewhere). Static folds the archive into the
-#                               binary; see prepare_infinity_embedded.
+#   RAGFLOW_INFINITY_EMBEDDED_LIB  a pre-built libinfinity_embedded.a; it wins
+#                               over everything and skips both discovery and the
+#                               build.
 #   RAGFLOW_INFINITY_SKIP_BUILD=1  never invoke cargo (a host without the Rust
 #                               toolchain): use an existing artifact as is.
 #   RAGFLOW_INFINITY_CARGO_JOBS    cargo --jobs (default: number of CPUs).
-# Whatever is resolved is staged into .cache/infinity-embedded, whose path goes
-# onto CGO_LDFLAGS for the desktop link (see prepare_infinity_embedded), and a
-# shared object is also published beside the binaries, where the run paths in
-# the cgo directive find it at runtime.
+# The link is always static: the archive is folded into the binary, so a desktop
+# build ships one file and loads no engine at run time. Whatever is resolved is
+# staged into .cache/infinity-embedded, whose path goes onto CGO_LDFLAGS (see
+# prepare_infinity_embedded).
 INFINITY_EMBEDDED_LIB="${RAGFLOW_INFINITY_EMBEDDED_LIB:-}"
 INFINITY_DIR="${RAGFLOW_INFINITY_DIR:-}"
 INFINITY_SKIP_BUILD="${RAGFLOW_INFINITY_SKIP_BUILD:-}"
-# static|shared; empty picks static on Linux, shared elsewhere (see
-# infinity_link_mode).
-INFINITY_LINK_MODE="${RAGFLOW_INFINITY_LINK:-}"
 INFINITY_EMBEDDED_CRATE="crates/embedded-ffi"
 INFINITY_EMBEDDED_PACKAGE="embedded-ffi"
 INFINITY_EMBEDDED_STAGE="$PROJECT_ROOT/.cache/infinity-embedded"
 # Namespace the archive's bundled zstd is renamed into so it cannot collide with
 # the copy pebble compiles into the binary.
 INFINITY_EMBEDDED_SYMBOL_PREFIX="infzstd_"
+# Namespace for `rust_eh_personality`, which every Rust staticlib in the link
+# defines. Linux shares one definition via --allow-multiple-definition; ld64 has
+# no such flag, so the engine's copy is renamed out of the way instead.
+INFINITY_EMBEDDED_RUST_PREFIX="infengine_"
 # Set by prepare_infinity_embedded: the artifact the desktop build links, so the
 # link-flag hook does not have to resolve (or build) it a second time.
 INFINITY_EMBEDDED_RESOLVED=""
-# Set by prepare_infinity_embedded: the mode actually used (static or shared).
-INFINITY_EMBEDDED_MODE=""
-# Set by prepare_infinity_embedded: the link flags naming the staged artifact
-# (a path for the archive, -L/-l:<name> for a shared object).
+# Set by prepare_infinity_embedded: the staged archive the Go link names.
 INFINITY_EMBEDDED_LINK_FLAG=""
 # Set by prepare_infinity_embedded: the staged file itself, for reporting.
 INFINITY_EMBEDDED_STAGED=""
-# Go's #cgo flag check rejects a run path whose value starts with `@` — the way
-# macOS spells the loader-relative one — and the desktop link needs exactly that
-# (see internal/desktop/infinity.go). The allow list is Go's escape hatch; this
-# entry admits that one spelling and nothing wider.
-export CGO_LDFLAGS_ALLOW="${CGO_LDFLAGS_ALLOW:+$CGO_LDFLAGS_ALLOW|}-Wl,-rpath,@loader_path"
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
@@ -1139,31 +1133,13 @@ _infinity_as_rust_engine_root() {
     return 1
 }
 
-# The engine artifact in one directory, ordered by the requested link mode: the
-# static archive first when linking statically, the shared object first
-# otherwise.
-#
-# Both are produced by one cargo build. The shared object needs a run path but
-# keeps the engine out of the binary; the archive is folded in but, on macOS,
-# collides with liboffice_oxide.a on `_rust_eh_personality` (Rust std) and on the
-# ZSTD_* copies both bundle — ld64 has no --allow-multiple-definition, which is
-# why static is only the default on Linux.
+# The engine archive in one directory. Only the staticlib artifact counts: a
+# shared object is never linked, so a directory holding just one is not a
+# candidate.
 _infinity_embedded_lib_in() {
-    local dir="$1" mode="${2:-shared}" shared candidate
+    local dir="$1" candidate
     [ -d "$dir" ] || return 1
-    case "$(uname -s)" in
-        Darwin) shared="dylib" ;;
-        Linux)  shared="so" ;;
-        *)      shared="dll" ;;
-    esac
-    local shared_names=("libinfinity_embedded.${shared}" "infinity_embedded.${shared}")
-    local archive_names=("libinfinity_embedded.a" "libinfinity_embedded.dll" "infinity_embedded.lib")
-    local names=()
-    if [ "$mode" = "static" ]; then
-        names=("${archive_names[@]}" "${shared_names[@]}")
-    else
-        names=("${shared_names[@]}" "${archive_names[@]}")
-    fi
+    local names=("libinfinity_embedded.a" "infinity_embedded.lib")
     for candidate in "${names[@]}"; do
         if [ -f "${dir}/${candidate}" ]; then
             printf '%s\n' "${dir}/${candidate}"
@@ -1229,12 +1205,12 @@ infinity_embedded_target_dir() {
 # Sets INFINITY_EMBEDDED_BUILT_LIB instead of printing the path, so cargo's own
 # progress cannot be mistaken for the result by a caller that captures stdout.
 build_infinity_embedded() {
-    local root target lib jobs mode
+    local root target lib jobs
     if ! root="$(infinity_engine_root)"; then
         echo -e "${RED}Error: no Infinity source checkout to build the embedded engine from.${NC}" >&2
         echo "  Point RAGFLOW_INFINITY_DIR at infinitiflow/infinity (or its rust_engine/," >&2
         echo "  or crates/embedded-ffi), or set RAGFLOW_INFINITY_EMBEDDED_LIB to a" >&2
-        echo "  pre-built libinfinity_embedded.{so,a}." >&2
+        echo "  pre-built libinfinity_embedded.a." >&2
         return 1
     fi
     if ! command -v cargo >/dev/null 2>&1; then
@@ -1245,7 +1221,6 @@ build_infinity_embedded() {
         echo "  pre-built library, or RAGFLOW_INFINITY_SKIP_BUILD=1 to reuse one." >&2
         return 1
     fi
-    mode="$(infinity_link_mode)" || return 1
     jobs="${RAGFLOW_INFINITY_CARGO_JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)}"
     # Progress goes to stderr: callers capture this function's stdout as the
     # library path.
@@ -1264,7 +1239,7 @@ build_infinity_embedded() {
     if ! target="$(infinity_embedded_target_dir)"; then
         return 1
     fi
-    if ! lib="$(_infinity_embedded_lib_in "$target" "$mode")"; then
+    if ! lib="$(_infinity_embedded_lib_in "$target")"; then
         echo -e "${RED}Error: cargo reported success but no engine library is in ${target}.${NC}" >&2
         echo "  Check CARGO_TARGET_DIR: this script expects target/release under the" >&2
         echo "  workspace (or CARGO_TARGET_DIR/release)." >&2
@@ -1274,35 +1249,43 @@ build_infinity_embedded() {
     return 0
 }
 
-# Resolve the engine artifact the desktop build links, in the form the link mode
-# needs. RAGFLOW_INFINITY_EMBEDDED_LIB wins, then a pre-seeded native-lib cache
-# (CI mounts one), then the checkout — which cargo then brings up to date.
-# Prints the path.
+# Resolve the engine archive the desktop build links. RAGFLOW_INFINITY_EMBEDDED_LIB
+# wins, then a pre-seeded native-lib cache (CI mounts one), then the checkout —
+# which cargo then brings up to date. Prints the path.
 infinity_embedded_lib() {
-    local lib mode root
-    mode="$(infinity_link_mode)" || return 1
+    local lib root
     if [ -n "$INFINITY_EMBEDDED_LIB" ]; then
         if [ ! -f "$INFINITY_EMBEDDED_LIB" ]; then
             echo -e "${RED}Error: RAGFLOW_INFINITY_EMBEDDED_LIB points at a missing file:${NC}" >&2
             echo "  ${INFINITY_EMBEDDED_LIB}" >&2
             return 1
         fi
+        case "$INFINITY_EMBEDDED_LIB" in
+            *.a|*.lib) ;;
+            *)
+                echo -e "${RED}Error: RAGFLOW_INFINITY_EMBEDDED_LIB is not a static archive:${NC}" >&2
+                echo "  ${INFINITY_EMBEDDED_LIB}" >&2
+                echo "  The embedded engine is always linked statically, so point this at" >&2
+                echo "  libinfinity_embedded.a (cargo build --release -p ${INFINITY_EMBEDDED_PACKAGE})." >&2
+                return 1
+                ;;
+        esac
         printf '%s\n' "$INFINITY_EMBEDDED_LIB"
         return 0
     fi
-    if lib="$(_infinity_embedded_lib_in "${NATIVE_LIBS_DIR}/infinity-embedded/lib" "$mode")"; then
+    if lib="$(_infinity_embedded_lib_in "${NATIVE_LIBS_DIR}/infinity-embedded/lib")"; then
         printf '%s\n' "$lib"
         return 0
     fi
     if ! root="$(infinity_engine_root)"; then
-        echo -e "${RED}Error: no Infinity source checkout and no pre-built engine library.${NC}" >&2
+        echo -e "${RED}Error: no Infinity source checkout and no pre-built engine archive.${NC}" >&2
         echo "  Point RAGFLOW_INFINITY_DIR at infinitiflow/infinity (or its rust_engine/)," >&2
-        echo "  set RAGFLOW_INFINITY_EMBEDDED_LIB to a pre-built libinfinity_embedded.{so,a}," >&2
+        echo "  set RAGFLOW_INFINITY_EMBEDDED_LIB to a pre-built libinfinity_embedded.a," >&2
         echo "  or pre-seed ${NATIVE_LIBS_DIR}/infinity-embedded/lib." >&2
         return 1
     fi
     if [ -n "$INFINITY_SKIP_BUILD" ]; then
-        if ! lib="$(_infinity_embedded_lib_in "${root}/target/release" "$mode")"; then
+        if ! lib="$(_infinity_embedded_lib_in "${root}/target/release")"; then
             echo -e "${RED}Error: no pre-built Infinity embedded engine in ${root}/target/release.${NC}" >&2
             echo "  RAGFLOW_INFINITY_SKIP_BUILD is set, so the checkout would not be compiled." >&2
             echo "  Build it once with 'cd ${root} && cargo build --release -p ${INFINITY_EMBEDDED_PACKAGE}'," >&2
@@ -1315,228 +1298,183 @@ infinity_embedded_lib() {
         return 0
     fi
     if ! command -v cargo >/dev/null 2>&1; then
-        if lib="$(_infinity_embedded_lib_in "${root}/target/release" "$mode")"; then
+        if lib="$(_infinity_embedded_lib_in "${root}/target/release")"; then
             echo -e "${YELLOW}Warning: cargo is not installed; reusing ${lib} as is.${NC}" >&2
             printf '%s\n' "$lib"
             return 0
         fi
-        echo -e "${RED}Error: cargo is not installed and ${root}/target/release holds no engine library.${NC}" >&2
+        echo -e "${RED}Error: cargo is not installed and ${root}/target/release holds no engine archive.${NC}" >&2
         echo "  Install Rust (https://rustup.rs), or set RAGFLOW_INFINITY_EMBEDDED_LIB to a" >&2
-        echo "  pre-built libinfinity_embedded.{so,a}." >&2
+        echo "  pre-built libinfinity_embedded.a." >&2
         return 1
     fi
     build_infinity_embedded || return 1
     printf '%s\n' "$INFINITY_EMBEDDED_BUILT_LIB"
 }
 
-# How the engine is linked into the desktop binaries: `static` folds the archive
-# into the binary (one file to ship, no run path, no symbol interposition),
-# `shared` links the .so/.dylib and publishes a copy beside the binaries.
-# RAGFLOW_INFINITY_LINK chooses; the default is static on Linux — the only
-# platform whose linker flag (--allow-multiple-definition, already used for
-# office_oxide/pdf_oxide) tolerates the Rust-std symbol every Rust staticlib
-# exports — and shared elsewhere.
-infinity_link_mode() {
-    local mode="${INFINITY_LINK_MODE}"
-    if [ -z "$mode" ]; then
-        case "$(uname -s)" in
-            Linux) mode="static" ;;
-            *)     mode="shared" ;;
-        esac
-    fi
-    case "$mode" in
-        static|shared)
-            printf '%s\n' "$mode"
+# The `old new` rename pairs this archive needs before it can share a link with
+# the rest of the desktop binary. Both sides of every pair are the names as they
+# appear in the symbol table, which is what objcopy and machorename rewrite.
+#
+# The engine bundles zstd 1.5.7 (parquet's zstd feature -> zstd-sys); the desktop
+# binary gets zstd 1.4.5 from pebble (cockroachdb/pebble -> DataDog/zstd, compiled
+# by cgo). Both define ZSTD_/HUF_/HIST_/FSE_/POOL_/ZDICT_/ZBUFF_ symbols, and
+# without the rename the linker picks definitions per symbol, so one zstd could
+# allocate a context the other compresses with. Renaming covers definitions and
+# references inside this archive, so the engine keeps calling its own copy — the
+# same approach build_cpp() applies to the tokenizer's bundled re2.
+#
+# liboffice_oxide.a and libpdf_oxide.a are the other Rust staticlibs in the link
+# and also define `rust_eh_personality`. Linux tolerates that through
+# --allow-multiple-definition; ld64 has no such flag and stops at the duplicate
+# symbol, so on macOS the engine's copy joins a private namespace too.
+_infinity_rename_pairs() {
+    local archive="$1"
+    case "$(uname -s)" in
+        Darwin)
+            # The listing comes from machorename rather than nm: Apple's nm
+            # refuses the objects a recent Rust staticlib carries ("Not an int
+            # attribute") and would silently drop their symbols from the map.
+            # Mach-O names carry a leading underscore, which the rename has to
+            # preserve.
+            ( cd "$PROJECT_ROOT" && go run ./tools/machorename --list-syms "$archive" ) \
+                | awk -v zstd_prefix="$INFINITY_EMBEDDED_SYMBOL_PREFIX" \
+                      -v rust_prefix="$INFINITY_EMBEDDED_RUST_PREFIX" '
+                    function renamed(name, prefix) {
+                        return substr(name, 1, 1) == "_" ? "_" prefix substr(name, 2) : prefix name
+                    }
+                    $NF ~ /^_?(ZSTD|HUF_|HIST_|FSE_|POOL_|ZDICT_|ZBUFF_|XXH)/ { print $NF, renamed($NF, zstd_prefix); next }
+                    $NF ~ /^_?rust_eh_personality$/ { print $NF, renamed($NF, rust_prefix) }
+                '
             ;;
         *)
-            echo -e "${RED}Error: RAGFLOW_INFINITY_LINK=${mode} is not supported.${NC}" >&2
-            echo "  Use 'static' or 'shared'." >&2
-            return 1
+            nm -g --defined-only "$archive" 2>/dev/null \
+                | awk -v prefix="$INFINITY_EMBEDDED_SYMBOL_PREFIX" \
+                    'NF == 3 && $2 ~ /^[A-Za-z]$/ && $3 ~ /^(ZSTD|HUF_|HIST_|FSE_|POOL_|ZDICT_|ZBUFF_|XXH)/ { print $3 " " prefix $3 }'
             ;;
     esac
 }
 
-# Prepare the static archive the Go link consumes. Two transformations, both on a
-# copy so the checkout's cargo output stays pristine:
+# Prepare the static archive the Go link consumes, on a copy so the checkout's
+# cargo output stays pristine:
 #
-#   1. Drop the LLVM sections a Rust staticlib carries (.llvmbc / .llvmcmd from
-#      the rlib members, .linker-options from the C++ objects). Go 1.27+ refuses
-#      any archive named in #cgo LDFLAGS that still has them — the tokenizer
-#      archive runs into the same check (strip_tokenizer_linker_options).
-#   2. Rename the archive's bundled zstd into a private namespace. The engine
-#      bundles zstd 1.5.7 (parquet's zstd feature -> zstd-sys); the desktop
-#      binary gets zstd 1.4.5 from pebble (cockroachdb/pebble -> DataDog/zstd,
-#      compiled by cgo). Both define ZSTD_/HUF_/HIST_/FSE_/POOL_/ZDICT_/ZBUFF_
-#      symbols, and without the rename the linker picks definitions per symbol,
-#      so one zstd could allocate a context the other compresses with. Renaming
-#      covers definitions and references inside this archive, so the engine keeps
-#      calling its own copy — the same approach build_cpp() applies to the
-#      tokenizer's bundled re2.
+#   1. ELF only: drop the LLVM sections a Rust staticlib carries (.llvmbc /
+#      .llvmcmd from the rlib members, .linker-options from the C++ objects). Go
+#      1.27+ refuses any archive named in #cgo LDFLAGS that still has them — the
+#      tokenizer archive runs into the same check (strip_tokenizer_linker_options).
+#      Mach-O archives link as cargo leaves them, so nothing is stripped there.
+#   2. Rename the symbols _infinity_rename_pairs lists into their private
+#      namespaces, so the archives in one link stop defining the same names.
 #
 # Prints the staged archive path. The caller keys the destination directory by
 # the source artifact, so an existing file there is already up to date.
 _infinity_stage_static_archive() {
     local src="$1" dir="$2"
     local staged="${dir}/libinfinity_embedded.a"
-    local map="${dir}/zstd_rename.map"
+    local map="${dir}/rename.map"
     local tmp="${staged}.tmp"
+    local stripped=""
 
     if [ -f "$staged" ]; then
         printf '%s\n' "$staged"
         return 0
     fi
 
-    local objcopy_bin=""
-    if command -v objcopy >/dev/null 2>&1; then
-        objcopy_bin=objcopy
-    elif command -v llvm-objcopy >/dev/null 2>&1; then
-        objcopy_bin=llvm-objcopy
-    else
-        echo -e "${RED}Error: objcopy is required to prepare the static engine archive.${NC}" >&2
-        echo "  Install binutils (Linux) or use RAGFLOW_INFINITY_LINK=shared." >&2
-        return 1
-    fi
-
     cp -f "$src" "$tmp" || return 1
     chmod u+w "$tmp"
-    "$objcopy_bin" --remove-section=.llvmbc --remove-section=.llvmcmd \
-        --remove-section=.linker-options "$tmp" || {
-        echo -e "${RED}Error: could not strip the LLVM sections from the engine archive.${NC}" >&2
-        rm -f "$tmp"
-        return 1
-    }
 
-    # Every globally defined symbol of the bundled zstd: the public API and the
-    # shared internal helpers (HUF_/HIST_/FSE_/POOL_/ZDICT_/ZBUFF_). XXH* covers
-    # the case where zstd's xxhash was built without its ZSTD_ namespace prefix.
-    nm -g --defined-only "$tmp" 2>/dev/null \
-        | awk -v prefix="$INFINITY_EMBEDDED_SYMBOL_PREFIX" \
-            'NF == 3 && $2 ~ /^[A-Za-z]$/ && $3 ~ /^(ZSTD|HUF_|HIST_|FSE_|POOL_|ZDICT_|ZBUFF_|XXH)/ { print $3 " " prefix $3 }' \
-        | sort -u > "$map"
+    if [ "$(uname -s)" != "Darwin" ]; then
+        local objcopy_bin=""
+        if command -v objcopy >/dev/null 2>&1; then
+            objcopy_bin=objcopy
+        elif command -v llvm-objcopy >/dev/null 2>&1; then
+            objcopy_bin=llvm-objcopy
+        else
+            echo -e "${RED}Error: objcopy is required to prepare the static engine archive.${NC}" >&2
+            echo "  Install binutils (llvm-objcopy also works)." >&2
+            rm -f "$tmp"
+            return 1
+        fi
+        "$objcopy_bin" --remove-section=.llvmbc --remove-section=.llvmcmd \
+            --remove-section=.linker-options "$tmp" || {
+            echo -e "${RED}Error: could not strip the LLVM sections from the engine archive.${NC}" >&2
+            rm -f "$tmp"
+            return 1
+        }
+        stripped="stripped LLVM sections and "
+    fi
+
+    _infinity_rename_pairs "$tmp" | sort -u > "$map"
     if [ ! -s "$map" ]; then
-        echo -e "${RED}Error: no zstd symbols found in $(basename "$src").${NC}" >&2
+        echo -e "${RED}Error: no symbols needing a rename were found in $(basename "$src").${NC}" >&2
         echo "  The archive layout changed; this script's rename step has to be revised" >&2
-        echo "  before a static link can separate the two zstd copies." >&2
+        echo "  before a static link can separate the copies the link shares." >&2
         rm -f "$tmp"
         return 1
     fi
-    "$objcopy_bin" --redefine-syms="$map" "$tmp" || {
-        echo -e "${RED}Error: could not rename the engine's bundled zstd symbols.${NC}" >&2
+    rename_archive_symbols "$tmp" "$map" || {
+        echo -e "${RED}Error: could not rename the engine's shared symbols.${NC}" >&2
         rm -f "$tmp"
         return 1
     }
 
-    # Guard: a symbol this map did not cover would silently bind to pebble's
-    # zstd copy at link time instead of failing, so refuse the archive.
-    if nm -g --defined-only "$tmp" 2>/dev/null \
-        | awk 'NF == 3 && $3 ~ /^(ZSTD|HUF_|HIST_|FSE_|POOL_|ZDICT_|ZBUFF_)/ { print }' | grep -q .; then
-        echo -e "${RED}Error: the engine archive still defines un-renamed zstd symbols.${NC}" >&2
+    # Guard: a symbol this map did not cover would silently bind to the other
+    # copy at link time instead of failing, so refuse the archive.
+    if [ -n "$(_infinity_rename_pairs "$tmp")" ]; then
+        echo -e "${RED}Error: the engine archive still defines un-renamed shared symbols.${NC}" >&2
+        _infinity_rename_pairs "$tmp" | sed 's/^/  /' >&2
         rm -f "$tmp"
         return 1
     fi
 
     mv -f "$tmp" "$staged"
-    echo "  stripped LLVM sections and renamed $(wc -l < "$map") zstd symbols to ${INFINITY_EMBEDDED_SYMBOL_PREFIX}*" >&2
+    echo "  ${stripped:+$stripped }renamed $(wc -l < "$map") symbols into ${INFINITY_EMBEDDED_SYMBOL_PREFIX}*/${INFINITY_EMBEDDED_RUST_PREFIX}*" >&2
     printf '%s\n' "$staged"
 }
 
-# Stage the engine and record the path the Go link names explicitly.
+# Stage the engine archive and record the path the Go link names explicitly.
 #
-# The staged artifact lives under a directory keyed by the link mode and by the
-# source artifact (size+mtime), and that keyed location is what build.sh adds to
-# CGO_LDFLAGS. That is deliberate: Go keys the final link on the flag string and
-# does NOT hash the libraries it names, so a stable location would let a mode
-# switch or a rebuilt engine reuse the previously linked binary from the cache.
-# The keyed location changes the flag string, which is also why the cgo directive
-# no longer carries -L/-l.
+# The staged archive lives under a directory keyed by the source artifact
+# (size+mtime), and that keyed path is what build.sh adds to CGO_LDFLAGS. That is
+# deliberate: Go keys the final link on the flag string and does NOT hash the
+# libraries it names, so a stable path would let a rebuilt engine reuse the
+# previously linked binary from the cache. The keyed path changes the flag
+# string, which is also why the cgo directive carries no -L/-l.
 #
 # A stable symlink next to the keyed directories keeps the layout obvious for a
-# human and gives the shared link's run path (${SRCDIR}/../../.cache/
-# infinity-embedded, used by `go test` binaries) something to resolve.
-#
-# A shared link names the library with -L/-l:<name> instead of its path. The
-# engine is a Rust cdylib with no SONAME, so GNU ld records whatever spelling it
-# was given: linking by path bakes that absolute path into DT_NEEDED, and the
-# dynamic loader then ignores the $ORIGIN run path and fails wherever the staging
-# cache is absent. -l:<name> records the bare file name, which is what the copies
-# in bin/ and in the stable slot are for.
+# human.
 prepare_infinity_embedded() {
-    local lib mode stamp key dir staged link_flag
+    local lib stamp key dir staged
     if ! lib="$(infinity_embedded_lib)"; then
         echo -e "${RED}Error: the desktop build needs Infinity's embedded engine.${NC}" >&2
         echo "  Point RAGFLOW_INFINITY_DIR at infinitiflow/infinity (or its rust_engine/)," >&2
-        echo "  set RAGFLOW_INFINITY_EMBEDDED_LIB to a pre-built libinfinity_embedded.{so,a}," >&2
+        echo "  set RAGFLOW_INFINITY_EMBEDDED_LIB to a pre-built libinfinity_embedded.a," >&2
         echo "  or pre-seed ${NATIVE_LIBS_DIR}/infinity-embedded/lib." >&2
         return 1
     fi
     INFINITY_EMBEDDED_RESOLVED="$lib"
-    mode="$(infinity_link_mode)" || return 1
-
-    case "$lib" in
-        *.a) ;;
-        *)
-            if [ "$mode" = "static" ]; then
-                # Static is the preference: folding the engine in ships one file
-                # with no run path. Only an absent archive falls back to shared.
-                echo -e "${YELLOW}Warning: RAGFLOW_INFINITY_LINK=static needs the static archive;${NC}" >&2
-                echo "  ${lib} is a shared object, so the shared link is used. Rebuild the" >&2
-                echo "  crate's staticlib target (cargo build --release -p ${INFINITY_EMBEDDED_PACKAGE})" >&2
-                echo "  to link the engine into the binary instead." >&2
-                mode="shared"
-            fi
-            ;;
-    esac
-    INFINITY_EMBEDDED_MODE="$mode"
 
     stamp="$(stat -c '%s-%Y' "$lib" 2>/dev/null || stat -f '%z-%m' "$lib" 2>/dev/null)"
     [ -n "$stamp" ] || stamp="unknown"
-    # v1: bump it when the transformations below change, so a stale staged copy
+    # v5: bump it when the transformations below change, so a stale staged copy
     # is never reused.
-    key="${mode}-v1-${stamp}"
+    key="static-v5-${stamp}"
     dir="${INFINITY_EMBEDDED_STAGE}/${key}"
     mkdir -p "$dir"
 
-    if [ "$mode" = "static" ]; then
-        staged="$(_infinity_stage_static_archive "$lib" "$dir")" || return 1
-        # Nothing loads the engine at runtime now; drop a copy an earlier shared
-        # build left beside the binaries and in the stable slot.
-        rm -f "${PROJECT_ROOT}/bin/libinfinity_embedded."* \
-            "${PROJECT_ROOT}/bin/infinity_embedded."* \
-            "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.so" \
-            "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.dylib" \
-            "${INFINITY_EMBEDDED_STAGE}/infinity_embedded."*
-        ln -sfn "$staged" "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.a"
-        link_flag="$staged"
-        echo -e "${GREEN}✓ Embedded document engine (static): $lib${NC}"
-    else
-        staged="${dir}/$(basename "$lib")"
-        ln -sfn "$lib" "$staged"
-        rm -f "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.a"
-        ln -sfn "$staged" "${INFINITY_EMBEDDED_STAGE}/$(basename "$lib")"
-        link_flag="$staged"
-        case "$lib" in
-            *.so)
-                # A shared object is looked up by name when the process starts, so
-                # a copy goes next to the binaries: the link flags add $ORIGIN to
-                # the run path, and bin/libinfinity_embedded.so then resolves
-                # without LD_LIBRARY_PATH. Naming it with -l: keeps DT_NEEDED a
-                # bare file name — see the comment above.
-                mkdir -p "$PROJECT_ROOT/bin"
-                cp -f "$lib" "$PROJECT_ROOT/bin/$(basename "$lib")"
-                link_flag="-L${dir} -l:$(basename "$lib")"
-                ;;
-            *.dylib|*.dll)
-                # Mach-O records the library's own LC_ID_DYLIB and PE has no run
-                # path equivalent, so neither can be steered the same way.
-                mkdir -p "$PROJECT_ROOT/bin"
-                cp -f "$lib" "$PROJECT_ROOT/bin/$(basename "$lib")"
-                ;;
-        esac
-        echo -e "${GREEN}✓ Embedded document engine (shared): $lib${NC}"
-    fi
+    staged="$(_infinity_stage_static_archive "$lib" "$dir")" || return 1
+    # Nothing loads the engine at runtime, so drop any copy an earlier shared
+    # build left beside the binaries or in the stable slot.
+    rm -f "${PROJECT_ROOT}/bin/libinfinity_embedded."* \
+        "${PROJECT_ROOT}/bin/infinity_embedded."* \
+        "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.so" \
+        "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.dylib" \
+        "${INFINITY_EMBEDDED_STAGE}/infinity_embedded."*
+    ln -sfn "$staged" "${INFINITY_EMBEDDED_STAGE}/libinfinity_embedded.a"
 
-    INFINITY_EMBEDDED_LINK_FLAG="$link_flag"
+    INFINITY_EMBEDDED_LINK_FLAG="$staged"
     INFINITY_EMBEDDED_STAGED="$staged"
+    echo -e "${GREEN}✓ Embedded document engine (static): $lib${NC}" >&2
     # One engine build is all that may be kept: each staged archive is ~190 MB.
     find "$INFINITY_EMBEDDED_STAGE" -mindepth 1 -maxdepth 1 -type d \
         ! -name "$key" -exec rm -rf {} + 2>/dev/null || true
@@ -1545,8 +1483,8 @@ prepare_infinity_embedded() {
 
 # Stage the engine and put its path on the Go link, unless this run already did.
 # The path is added here rather than in the cgo directive because only build.sh
-# knows the staged artifact — and because naming it on the command line is what
-# makes Go relink when the engine or the link mode changes (see the comment on
+# knows the staged archive — and because naming it on the command line is what
+# makes Go relink when the engine changes (see the comment on
 # prepare_infinity_embedded).
 ensure_infinity_embedded_staged() {
     [ -n "$INFINITY_EMBEDDED_LINK_FLAG" ] || prepare_infinity_embedded || return 1
@@ -1554,6 +1492,18 @@ ensure_infinity_embedded_staged() {
         *" ${INFINITY_EMBEDDED_LINK_FLAG} "*) ;;
         *) export CGO_LDFLAGS="$CGO_LDFLAGS ${INFINITY_EMBEDDED_LINK_FLAG}" ;;
     esac
+    # ld64 encodes compact unwind for at most three personality routines, and the
+    # static engine is a third Rust archive in the link: each brings its own
+    # rust_eh_personality, next to libc++'s __gxx_personality_v0. Dropping the
+    # compact table leaves every object's __eh_frame in place, so unwinding and
+    # backtraces still work; only the encoded short form is gone. Linux has no
+    # such limit and keeps its defaults.
+    if [ "$(uname -s)" = "Darwin" ]; then
+        case " ${CGO_LDFLAGS} " in
+            *" -Wl,-no_compact_unwind "*) ;;
+            *) export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,-no_compact_unwind" ;;
+        esac
+    fi
 }
 
 # Print the path of a libpdf_oxide.a that links next to liboffice_oxide.a on
@@ -1576,7 +1526,8 @@ darwin_pdf_oxide_archive() {
     # (office_*) and the Rust personality routine.
     local rename_map="$out_dir/rename.map"
     nm -g --defined-only "$src" 2>/dev/null \
-        | awk 'NF == 3 && ($3 ~ /^_office_/ || $3 == "_rust_eh_personality") { print $3" pdfoxide_"$3 }' \
+        | awk -v prefix="$PDF_OXIDE_SYMBOL_PREFIX" \
+            'NF == 3 && ($3 ~ /^_office_/ || $3 == "_rust_eh_personality") { print $3 " " prefix $3 }' \
         | sort -u > "$rename_map"
     cp "$src" "$out.tmp"
     rename_archive_symbols "$out.tmp" "$rename_map" || { rm -f "$out.tmp"; return 1; }
@@ -1967,9 +1918,9 @@ OPTIONS:
     --infinity      Build/refresh Infinity's embedded engine and stage it for
                     the desktop build, without building Go. Resolves the
                     checkout from RAGFLOW_INFINITY_DIR (or a sibling/known
-                    checkout), runs `cargo build --release -p embedded-ffi`,
-                    symlinks it into .cache/infinity-embedded and copies the
-                    shared object next to the binaries.
+                    checkout), runs `cargo build --release -p embedded-ffi` and
+                    stages a private copy of the resulting static archive in
+                    .cache/infinity-embedded.
     --test, -t      Run Go unit tests (no build tag). Sets up the CGO env and
                     native static libs (office_oxide/pdfium/pdf_oxide) needed to
                     build (same contract as the Go tier table in AGENTS.md).
@@ -2039,9 +1990,7 @@ ENVIRONMENT:
     RAGFLOW_INFINITY_DIR=...            # checkout: repo root, rust_engine/, or
                                         # crates/embedded-ffi (default: probe
                                         # ../infinity and known local paths)
-    RAGFLOW_INFINITY_EMBEDDED_LIB=...   # use this pre-built libinfinity_embedded.{so,a}
-    RAGFLOW_INFINITY_LINK=static        # static|shared (default: static on Linux);
-                                        # static folds the archive into the binary
+    RAGFLOW_INFINITY_EMBEDDED_LIB=...   # use this pre-built libinfinity_embedded.a
     RAGFLOW_INFINITY_SKIP_BUILD=1       # never run cargo; reuse an existing artifact
     RAGFLOW_INFINITY_CARGO_JOBS=N       # cargo --jobs (default: CPU count)
 EOF
@@ -2082,7 +2031,7 @@ main() {
             # its own after updating the Infinity checkout: --desktop then finds
             # the staged artifact and links it without rebuilding anything.
             prepare_infinity_embedded || exit 1
-            echo "Staged (${INFINITY_EMBEDDED_MODE}): ${INFINITY_EMBEDDED_STAGED}"
+            echo "Staged: ${INFINITY_EMBEDDED_STAGED}"
             ;;
         --test|-t)
             check_go_deps

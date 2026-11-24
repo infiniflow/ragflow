@@ -11,12 +11,19 @@
 // Usage:
 //
 //	go run ./tools/machorename --redefine-syms=rename.map librag_tokenizer_c_api.a
+//	go run ./tools/machorename --list-syms libinfinity_embedded.a
 //
 // The map file holds one `old new` pair per line, exactly like objcopy's
 // --redefine-syms. Every renamed symbol is pointed at its new name appended to
 // the member's string table, so no section, relocation or symbol index moves.
 // Member sizes change, therefore the archive's table of contents is dropped
 // and regenerated with ranlib (part of the base macOS toolchain).
+//
+// --list-syms prints the archive's defined external symbols, which is how the
+// build writes that map for a big third-party archive: Apple's nm refuses the
+// objects a recent Rust staticlib carries ("Not an int attribute"), so it would
+// silently leave symbols out of the map. The listing goes through this tool's
+// own Mach-O reader instead.
 package main
 
 import (
@@ -52,20 +59,39 @@ const (
 	lcSymtab     = 0x2
 	nlist64Len   = 16
 	nlist32Len   = 12
+	// nlist.n_type bits and values.
+	nStab     = 0xe0 // N_STAB: a debug entry, not a real symbol
+	nTypeMask = 0x0e // N_TYPE
+	nUndef    = 0x0  // N_UNDF, the only N_TYPE value that defines nothing
+	nExt      = 0x01 // N_EXT
 )
 
 func main() {
 	mapPath := flag.String("redefine-syms", "", "file holding one `old new` symbol pair per line")
+	listSyms := flag.Bool("list-syms", false, "print the defined external symbols, one per line, instead of renaming")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: machorename --redefine-syms=rename.map <archive>\n")
+		fmt.Fprintf(flag.CommandLine.Output(),
+			"usage: machorename --redefine-syms=rename.map <archive>\n"+
+				"       machorename --list-syms <archive>\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if *mapPath == "" || flag.NArg() != 1 {
+	if flag.NArg() != 1 || (*mapPath == "" && !*listSyms) {
 		flag.Usage()
 		os.Exit(2)
 	}
 	archivePath := flag.Arg(0)
+
+	if *listSyms {
+		syms, err := archiveSymbols(archivePath)
+		if err != nil {
+			fatal(err)
+		}
+		for _, name := range syms {
+			fmt.Println(name)
+		}
+		return
+	}
 
 	renames, err := readRenameMap(*mapPath)
 	if err != nil {
@@ -286,6 +312,131 @@ func writeArchive(members []arMember) []byte {
 
 var errNotMachO = errors.New("not a thin Mach-O object")
 
+// symtabInfo is one thin Mach-O object's LC_SYMTAB, located in the file.
+type symtabInfo struct {
+	order     binary.ByteOrder
+	nlistSize int
+	cmdOffset int // offset of the LC_SYMTAB command; -1 when the object has none
+	symoff    uint32
+	nsyms     uint32
+	stroff    uint32
+	strsize   uint32
+}
+
+// thinSymtab reads the header and load commands of one thin Mach-O object and
+// reports where its symbol table lives.
+func thinSymtab(obj []byte) (symtabInfo, error) {
+	st := symtabInfo{cmdOffset: -1}
+	if len(obj) < 32 {
+		return st, errors.New("truncated Mach-O header")
+	}
+	var is64 bool
+	switch magic := binary.LittleEndian.Uint32(obj[:4]); magic {
+	case magic64LE:
+		st.order, is64 = binary.LittleEndian, true
+	case magic64BE:
+		st.order, is64 = binary.BigEndian, true
+	case magic32LE:
+		st.order, is64 = binary.LittleEndian, false
+	case magic32BE:
+		st.order, is64 = binary.BigEndian, false
+	case fatMagicLE, fatMagic64LE:
+		return st, errors.New("universal (fat) archive: pass a thin Mach-O archive")
+	default:
+		return st, errNotMachO
+	}
+
+	headerSize := 28
+	st.nlistSize = nlist32Len
+	if is64 {
+		headerSize = 32
+		st.nlistSize = nlist64Len
+	}
+	if len(obj) < headerSize {
+		return st, errors.New("truncated Mach-O header")
+	}
+	ncmds := int(st.order.Uint32(obj[16:20]))
+	p := headerSize
+	for i := 0; i < ncmds; i++ {
+		if p+8 > len(obj) {
+			return st, errors.New("truncated load commands")
+		}
+		cmd := st.order.Uint32(obj[p : p+4])
+		cmdsize := int(st.order.Uint32(obj[p+4 : p+8]))
+		if cmdsize < 8 || p+cmdsize > len(obj) {
+			return st, fmt.Errorf("bad load command size %d at offset %d", cmdsize, p)
+		}
+		if cmd == lcSymtab && cmdsize >= 24 {
+			st.cmdOffset = p
+			st.symoff = st.order.Uint32(obj[p+8 : p+12])
+			st.nsyms = st.order.Uint32(obj[p+12 : p+16])
+			st.stroff = st.order.Uint32(obj[p+16 : p+20])
+			st.strsize = st.order.Uint32(obj[p+20 : p+24])
+		}
+		p += cmdsize
+	}
+	return st, nil
+}
+
+// objectSymbols lists the symbols one object defines and exports (defined,
+// external, not a debug entry).
+func objectSymbols(obj []byte) ([]string, error) {
+	st, err := thinSymtab(obj)
+	if err != nil {
+		return nil, err
+	}
+	if st.cmdOffset < 0 {
+		return nil, nil
+	}
+	if int(st.stroff)+int(st.strsize) > len(obj) || int(st.symoff)+int(st.nsyms)*st.nlistSize > len(obj) {
+		return nil, errors.New("symbol table outside the object")
+	}
+	strtab := obj[st.stroff : st.stroff+st.strsize]
+	names := make([]string, 0, st.nsyms)
+	for i := 0; i < int(st.nsyms); i++ {
+		e := int(st.symoff) + i*st.nlistSize
+		nType := obj[e+4]
+		if nType&nStab != 0 || nType&nExt == 0 || nType&nTypeMask == nUndef {
+			continue
+		}
+		strx := st.order.Uint32(obj[e : e+4])
+		if strx >= st.strsize {
+			continue
+		}
+		name, _, _ := strings.Cut(string(strtab[strx:]), "\x00")
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+// archiveSymbols lists the defined external symbols of every Mach-O member.
+func archiveSymbols(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	members, err := parseArchive(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	var out []string
+	for _, m := range members {
+		if isTableOfContents(m.name) {
+			continue
+		}
+		names, err := objectSymbols(m.object)
+		if err != nil {
+			if errors.Is(err, errNotMachO) {
+				fmt.Fprintf(os.Stderr, "machorename: warning: %s: %v\n", m.name, err)
+				continue
+			}
+			return nil, fmt.Errorf("%s: %w", m.name, err)
+		}
+		out = append(out, names...)
+	}
+	return out, nil
+}
+
 // renameObject rewrites the symbol names of one Mach-O object. New names are
 // appended to the string table; when the string table is not the last thing in
 // the file, an appended copy is used so nothing already referenced by a load
@@ -294,60 +445,19 @@ func renameObject(obj []byte, renames map[string]string) ([]byte, int, error) {
 	if len(renames) == 0 || len(obj) < 32 {
 		return obj, 0, nil
 	}
-	var order binary.ByteOrder
-	var is64 bool
-	switch magic := binary.LittleEndian.Uint32(obj[:4]); magic {
-	case magic64LE:
-		order, is64 = binary.LittleEndian, true
-	case magic64BE:
-		order, is64 = binary.BigEndian, true
-	case magic32LE:
-		order, is64 = binary.LittleEndian, false
-	case magic32BE:
-		order, is64 = binary.BigEndian, false
-	case fatMagicLE, fatMagic64LE:
-		return nil, 0, errors.New("universal (fat) archive: pass a thin Mach-O archive")
-	default:
-		return nil, 0, errNotMachO
+	st, err := thinSymtab(obj)
+	if err != nil {
+		return nil, 0, err
 	}
-
-	headerSize := 28
-	nlistSize := nlist32Len
-	if is64 {
-		headerSize = 32
-		nlistSize = nlist64Len
-	}
-	if len(obj) < headerSize {
-		return nil, 0, errors.New("truncated Mach-O header")
-	}
-	ncmds := int(order.Uint32(obj[16:20]))
-	p := headerSize
-	symtabOff := -1
-	var symoff, nsyms, stroff, strsize uint32
-	for i := 0; i < ncmds; i++ {
-		if p+8 > len(obj) {
-			return nil, 0, errors.New("truncated load commands")
-		}
-		cmd := order.Uint32(obj[p : p+4])
-		cmdsize := int(order.Uint32(obj[p+4 : p+8]))
-		if cmdsize < 8 || p+cmdsize > len(obj) {
-			return nil, 0, fmt.Errorf("bad load command size %d at offset %d", cmdsize, p)
-		}
-		if cmd == lcSymtab && cmdsize >= 24 {
-			symtabOff = p
-			symoff = order.Uint32(obj[p+8 : p+12])
-			nsyms = order.Uint32(obj[p+12 : p+16])
-			stroff = order.Uint32(obj[p+16 : p+20])
-			strsize = order.Uint32(obj[p+20 : p+24])
-		}
-		p += cmdsize
-	}
-	if symtabOff < 0 {
+	if st.cmdOffset < 0 {
 		return obj, 0, nil
 	}
+	order, nlistSize := st.order, st.nlistSize
+	symoff, nsyms, stroff, strsize := st.symoff, st.nsyms, st.stroff, st.strsize
 	if int(stroff)+int(strsize) > len(obj) || int(symoff)+int(nsyms)*nlistSize > len(obj) {
 		return nil, 0, errors.New("symbol table outside the object")
 	}
+	symtabOff := st.cmdOffset
 
 	oldStr := obj[stroff : stroff+strsize]
 	newStr := bytes.Clone(oldStr)
