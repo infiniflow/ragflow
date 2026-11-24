@@ -87,6 +87,23 @@ func assertSyncDocumentState(t *testing.T, db *gorm.DB, store *fakeUploadStorage
 	return doc
 }
 
+func TestSyncDocumentUpsertTSV(t *testing.T) {
+	svc, db, store, input := setupSyncDocumentTest(t, false)
+	input.SourceType = "webdav_connector-1"
+	input.SourceDocument.SemanticIdentifier = "places.TSV"
+	input.SourceDocument.Extension = ".tsv"
+	input.SourceDocument.Blob = []byte("city\tlandmark\nParis, France\tLouvre\n")
+
+	result, err := svc.Upsert(t.Context(), input)
+	if err != nil || result.Action != service.DocumentActionAdded {
+		t.Fatalf("Upsert = %+v, err = %v, want added document", result, err)
+	}
+	doc := assertSyncDocumentState(t, db, store, input, input.SourceDocument.Fingerprint)
+	if doc.Type != "doc" {
+		t.Errorf("persisted document type = %q, want doc", doc.Type)
+	}
+}
+
 func TestSyncDocumentUpsertUTF8Filename(t *testing.T) {
 	tests := []struct {
 		name      string

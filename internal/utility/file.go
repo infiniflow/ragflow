@@ -121,7 +121,7 @@ func GetFileType(filename string) FileType {
 		return FileTypeXLS
 	case "xlsx":
 		return FileTypeXLSX
-	case "csv":
+	case "csv", "tsv":
 		return FileTypeCSV
 	case "doc":
 		return FileTypeDOC
@@ -214,7 +214,7 @@ func FilenameType(filename string) FileType {
 
 	docExtensions := []string{
 		"msg", "eml", "doc", "docx", "ppt", "pptx", "yml", "xml", "htm", "json", "jsonl", "ldjson",
-		"csv", "txt", "ini", "xls", "xlsx", "rtf", "hlp", "pages", "numbers", "key",
+		"csv", "tsv", "txt", "ini", "xls", "xlsx", "rtf", "hlp", "pages", "numbers", "key",
 		"md", "markdown", "mdx", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt",
 		"html", "sql", "epub",
 	}
@@ -367,6 +367,7 @@ var CONTENT_TYPE_MAP = map[string]string{
 	"doc":  "application/msword",
 	"pdf":  "application/pdf",
 	"csv":  "text/csv",
+	"tsv":  "text/tab-separated-values",
 	"xls":  "application/vnd.ms-excel",
 	"xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 	// Text/code

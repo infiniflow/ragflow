@@ -14,18 +14,19 @@
  *  limitations under the License.
  */
 
+import { FileType, FileTypeSuffixMap } from '@/constants/file';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
 /**
- * Extracts column headers from a CSV or Excel file.
+ * Extracts column headers from a CSV, TSV or Excel file.
  * Returns an empty array if the file type is not supported or headers cannot be read.
  */
 export async function extractTableColumns(file: File): Promise<string[]> {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
 
-  if (ext === 'csv') {
-    return extractCsvColumns(file);
+  if (ext === 'csv' || ext === 'tsv') {
+    return extractCsvColumns(file, ext === 'tsv' ? '\t' : '');
   }
 
   if (['xlsx', 'xls'].includes(ext)) {
@@ -35,9 +36,10 @@ export async function extractTableColumns(file: File): Promise<string[]> {
   return [];
 }
 
-function extractCsvColumns(file: File): Promise<string[]> {
+function extractCsvColumns(file: File, delimiter: string): Promise<string[]> {
   return new Promise((resolve) => {
     Papa.parse(file, {
+      delimiter,
       preview: 1, // Only read the first row (header)
       header: true,
       skipEmptyLines: true,
@@ -84,9 +86,9 @@ function extractExcelColumns(file: File): Promise<string[]> {
 }
 
 /**
- * Check if a file is a table file (CSV or Excel).
+ * Check if a file is a spreadsheet.
  */
 export function isTableFile(file: File): boolean {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  return ['csv', 'xlsx', 'xls'].includes(ext);
+  return FileTypeSuffixMap[FileType.Spreadsheet].includes(ext);
 }

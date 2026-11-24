@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -87,33 +88,47 @@ func TestXLSParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 
 func TestCSVParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	withSSRFBypass(t)
-	ctx := t.Context()
 	zipPayload := tcadpZipFixture(t)
-	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/reconstruct_document":
-			_, _ = w.Write([]byte(`{"DocumentRecognizeResultUrl":"` + server.URL + `/download.zip"}`))
-		case "/download.zip":
-			_, _ = w.Write(zipPayload)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
+	for _, tc := range []struct{ name, input, wantCSV string }{
+		{"sample.csv", "a,b,c\n1,2,3", "a,b,c\n1,2,3"},
+		{"sample.TSV", "city\tnote\tname\r\nParis, France\t\tLouvre", "city,note,name\n\"Paris, France\",,Louvre\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/reconstruct_document":
+					var req struct {
+						Format string `json:"file_type"`
+						File   []byte `json:"file_base64"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					if req.Format != "CSV" || string(req.File) != tc.wantCSV {
+						t.Errorf("sent %q %q, want CSV %q", req.Format, req.File, tc.wantCSV)
+					}
+					_, _ = w.Write([]byte(`{"DocumentRecognizeResultUrl":"` + server.URL + `/download.zip"}`))
+				case "/download.zip":
+					_, _ = w.Write(zipPayload)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
 
-	p := NewCSVParser()
-	p.ConfigureFromSetup(map[string]any{
-		"parse_method":    "TCADP parser",
-		"tcadp_apiserver": server.URL,
-		"tcadp_api_key":   "tcadp-secret",
-	})
-	res := p.ParseWithResult(ctx, "sample.csv", []byte("a,b,c\n1,2,3"))
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if len(res.JSON) < 2 {
-		t.Fatalf("JSON len = %d, want >=2", len(res.JSON))
+			p := NewCSVParser()
+			p.ConfigureFromSetup(map[string]any{
+				"parse_method":    "TCADP parser",
+				"tcadp_apiserver": server.URL,
+				"tcadp_api_key":   "tcadp-secret",
+			})
+			res := p.ParseWithResult(t.Context(), tc.name, []byte(tc.input))
+			if res.Err != nil || len(res.JSON) < 2 {
+				t.Fatalf("got %d items, err %v", len(res.JSON), res.Err)
+			}
+		})
 	}
 }
 

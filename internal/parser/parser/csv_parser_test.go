@@ -99,6 +99,26 @@ func TestCSVParser_ConfigureproducedJSON(t *testing.T) {
 	}
 }
 
+func TestCSVParser_TSVUsesTabsWhenRowsHaveDifferentWidths(t *testing.T) {
+	data := "term,alias\toptional\tdefinition\r\n" +
+		"RAG,search\t\t\"Paris, France\"\r\n" +
+		"LLM,model\tshort\r\n"
+	res := NewCSVParser().ParseWithResult(t.Context(), "glossary.TSV", []byte(data))
+	if res.Err != nil || len(res.JSON) != 1 {
+		t.Fatalf("got %d table items, err %v", len(res.JSON), res.Err)
+	}
+	table := tableItemHTML(t, res.JSON[0].ToMap())
+	for _, row := range []string{
+		"<th>term,alias</th><th>optional</th><th>definition</th>",
+		"<td>RAG,search</td><td></td><td>Paris, France</td>",
+		"<td>LLM,model</td><td>short</td>",
+	} {
+		if !strings.Contains(table, row) {
+			t.Errorf("missing cells %q in %s", row, table)
+		}
+	}
+}
+
 func TestCSVParser_EmptyContent(t *testing.T) {
 	p := NewCSVParser()
 

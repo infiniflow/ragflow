@@ -45,6 +45,7 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 type qaChunkerParam struct {
@@ -207,7 +208,7 @@ func stringPtrVal(s *string) string {
 }
 
 func isCSV(name string) bool {
-	return strings.HasSuffix(strings.ToLower(name), ".csv")
+	return utility.GetFileType(name) == utility.FileTypeCSV
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +404,7 @@ func detectDelimiter(lines []string) string {
 
 func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 	var pairs []qaPair
-	strictCSV := strings.EqualFold(fileType, "csv")
+	strictCSV := strings.EqualFold(fileType, "csv") || strings.EqualFold(fileType, "tsv")
 	for _, item := range items {
 		var tmp []qaPair
 		td := tableDataOf(item)
