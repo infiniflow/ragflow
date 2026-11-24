@@ -1315,64 +1315,91 @@ func (s *ChatPipelineService) AsyncChat(
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
-			if chatDriver.ToolConfig != nil {
+			onToolDelta := func(answerDelta *string, reason *string) error {
 				// Tool streaming path:
 				// Wraps reasoning in <think></think> markers.
 				// inThink tracks local state to route reasoning vs answer.
 				var inThink bool
-				_, driverErr = chatDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg,
-					func(answerDelta *string, reason *string) error {
-						if answerDelta == nil || *answerDelta == "" {
-							return nil
-						}
-						text := *answerDelta
-						fullAnswer += text
+				if answerDelta == nil || *answerDelta == "" {
+					return nil
+				}
+				text := *answerDelta
+				fullAnswer += text
 
-						if text == "<think>" {
-							inThink = true
-							if !send(AsyncChatResult{
-								Answer:       "",
-								Reference:    map[string]interface{}{},
-								AudioBinary:  nil,
-								CreatedAt:    float64(time.Now().Unix()),
-								Final:        false,
-								StartToThink: true,
-							}) {
-								return ctx.Err()
-							}
-							return nil
+				if text == "<think>" {
+					inThink = true
+					if !send(AsyncChatResult{
+						Answer:       "",
+						Reference:    map[string]interface{}{},
+						AudioBinary:  nil,
+						CreatedAt:    float64(time.Now().Unix()),
+						Final:        false,
+						StartToThink: true,
+					}) {
+						return ctx.Err()
+					}
+					return nil
+				}
+				if text == "</think>" {
+					inThink = false
+					if !send(AsyncChatResult{
+						Answer:      "",
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+						EndToThink:  true,
+					}) {
+						return ctx.Err()
+					}
+					return nil
+				}
+				if inThink {
+					// Reasoning text — route to Reasoning field so
+					// the SSE handler maps it to
+					// `delta.reasoning_content`.
+					if !send(AsyncChatResult{
+						Reasoning:   text,
+						Reference:   map[string]interface{}{},
+						AudioBinary: nil,
+						CreatedAt:   float64(time.Now().Unix()),
+						Final:       false,
+					}) {
+						return ctx.Err()
+					}
+				} else {
+					// Regular answer content
+					if !send(AsyncChatResult{
+						Answer:    text,
+						Reference: map[string]interface{}{},
+						CreatedAt: float64(time.Now().Unix()),
+						Final:     false,
+					}) {
+						return ctx.Err()
+					}
+				}
+				return nil
+			}
+			onDelta := func(answer *string, reason *string) error {
+				if reason != nil && *reason != "" {
+					if thinkState.EnterReasoning() {
+						if !send(AsyncChatResult{
+							Answer:       "",
+							Reference:    map[string]interface{}{},
+							AudioBinary:  nil,
+							CreatedAt:    float64(time.Now().Unix()),
+							Final:        false,
+							StartToThink: true,
+						}) {
+							return ctx.Err()
 						}
-						if text == "</think>" {
-							inThink = false
+					}
+					deltas := NextThinkDelta(thinkState, *reason, 16)
+					for _, d := range deltas {
+						if d.Kind == ThinkDeltaText && d.Value != "" {
+							fullAnswer += d.Value
 							if !send(AsyncChatResult{
-								Answer:      "",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
-								EndToThink:  true,
-							}) {
-								return ctx.Err()
-							}
-							return nil
-						}
-						if inThink {
-							// Reasoning text — route to Reasoning field so
-							// the SSE handler maps it to
-							// `delta.reasoning_content`.
-							if !send(AsyncChatResult{
-								Reasoning:   text,
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
-							}) {
-								return ctx.Err()
-							}
-						} else {
-							// Regular answer content
-							if !send(AsyncChatResult{
-								Answer:    text,
+								Answer:    d.Value,
 								Reference: map[string]interface{}{},
 								CreatedAt: float64(time.Now().Unix()),
 								Final:     false,
@@ -1380,84 +1407,86 @@ func (s *ChatPipelineService) AsyncChat(
 								return ctx.Err()
 							}
 						}
-						return nil
-					})
+					}
+				}
+				if isContentDelta(answer) {
+					if thinkState.ExitReasoning() {
+						for _, d := range FlushRemaining(thinkState) {
+							if d.Kind == ThinkDeltaText && d.Value != "" {
+								fullAnswer += d.Value
+								if !send(AsyncChatResult{
+									Answer:    d.Value,
+									Reference: map[string]interface{}{},
+									CreatedAt: float64(time.Now().Unix()),
+									Final:     false,
+								}) {
+									return ctx.Err()
+								}
+							}
+						}
+						if !send(AsyncChatResult{
+							Answer:      "",
+							Reference:   map[string]interface{}{},
+							AudioBinary: nil,
+							CreatedAt:   float64(time.Now().Unix()),
+							Final:       false,
+							EndToThink:  true,
+						}) {
+							return ctx.Err()
+						}
+					}
+					fullAnswer += *answer
+					deltas := BufferAnswerDelta(thinkState, *answer, 16)
+					for _, d := range deltas {
+						if d.Kind == ThinkDeltaText && d.Value != "" {
+							if !send(AsyncChatResult{
+								Answer:    d.Value,
+								Reference: map[string]interface{}{},
+								CreatedAt: float64(time.Now().Unix()),
+								Final:     false,
+							}) {
+								return ctx.Err()
+							}
+						}
+					}
+				}
+				return nil
+			}
+			if chatDriver.ToolConfig != nil {
+				_, driverErr = chatDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg, onToolDelta)
 			} else {
-				driverErr = chatDriver.ChatStreamlyWithSender(
-					ctx, chatMessages, chatCfg, nil,
-					func(answer *string, reason *string) error {
-						if reason != nil && *reason != "" {
-							if thinkState.EnterReasoning() {
-								if !send(AsyncChatResult{
-									Answer:       "",
-									Reference:    map[string]interface{}{},
-									AudioBinary:  nil,
-									CreatedAt:    float64(time.Now().Unix()),
-									Final:        false,
-									StartToThink: true,
-								}) {
-									return ctx.Err()
-								}
+				driverErr = chatDriver.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+			}
+			// The gp- primary failed before any delta reached the client:
+			// flip its current group member inactive and retry once on the
+			// next member. Once deltas have streamed the answer cannot be
+			// replayed on another model, so the error surfaces as-is.
+			if driverErr != nil && ctx.Err() == nil && fullAnswer == "" {
+				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
+					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
+					modelCtx := permission.WithTenantID(ctx, chat.TenantID)
+					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
+						if retryDriver := s.buildChatDriver(ctx, chat, retryModel); retryDriver != nil {
+							fullAnswer = ""
+							thinkState = &ThinkStreamState{}
+							if retryDriver.ToolConfig != nil {
+								_, driverErr = retryDriver.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg, onToolDelta)
+							} else {
+								driverErr = retryDriver.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
 							}
-							deltas := NextThinkDelta(thinkState, *reason, 16)
-							for _, d := range deltas {
-								if d.Kind == ThinkDeltaText && d.Value != "" {
-									fullAnswer += d.Value
-									if !send(AsyncChatResult{
-										Answer:    d.Value,
-										Reference: map[string]interface{}{},
-										CreatedAt: float64(time.Now().Unix()),
-										Final:     false,
-									}) {
-										return ctx.Err()
-									}
-								}
+							if driverErr != nil {
+								common.WarnCtx(ctx, "chat completions: group failover retry failed",
+									zap.String("llm_id", chat.LLMID), zap.Error(driverErr))
 							}
+						} else {
+							common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
+								zap.String("llm_id", chat.LLMID), zap.Error(fmt.Errorf("re-resolved driver is nil")))
 						}
-						if isContentDelta(answer) {
-							if thinkState.ExitReasoning() {
-								for _, d := range FlushRemaining(thinkState) {
-									if d.Kind == ThinkDeltaText && d.Value != "" {
-										fullAnswer += d.Value
-										if !send(AsyncChatResult{
-											Answer:    d.Value,
-											Reference: map[string]interface{}{},
-											CreatedAt: float64(time.Now().Unix()),
-											Final:     false,
-										}) {
-											return ctx.Err()
-										}
-									}
-								}
-								if !send(AsyncChatResult{
-									Answer:      "",
-									Reference:   map[string]interface{}{},
-									AudioBinary: nil,
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-									EndToThink:  true,
-								}) {
-									return ctx.Err()
-								}
-							}
-							fullAnswer += *answer
-							deltas := BufferAnswerDelta(thinkState, *answer, 16)
-							for _, d := range deltas {
-								if d.Kind == ThinkDeltaText && d.Value != "" {
-									if !send(AsyncChatResult{
-										Answer:    d.Value,
-										Reference: map[string]interface{}{},
-										CreatedAt: float64(time.Now().Unix()),
-										Final:     false,
-									}) {
-										return ctx.Err()
-									}
-								}
-							}
-						}
-						return nil
-					},
-				)
+					} else {
+						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
+							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
+					}
+				}
 			}
 			if driverErr != nil {
 				if ctx.Err() != nil {
@@ -1545,6 +1574,39 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 			timer.Exit(common.PhaseGenerateAnswer)
 
+			if err != nil {
+				// The gp- primary failed: flip its current group member
+				// inactive and retry once on the next member.
+				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
+					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
+					modelCtx := permission.WithTenantID(ctx, chat.TenantID)
+					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
+						if retryDriver := s.buildChatDriver(ctx, chat, retryModel); retryDriver != nil {
+							if retryDriver.ToolConfig != nil {
+								answer, _, err = retryDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
+							} else {
+								resp, respErr := retryDriver.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
+								if respErr != nil {
+									err = respErr
+								} else if resp != nil && resp.Answer != nil {
+									answer = *resp.Answer
+									err = nil
+								}
+							}
+							if err != nil {
+								common.WarnCtx(ctx, "chat completions: group failover retry failed",
+									zap.String("llm_id", chat.LLMID), zap.Error(err))
+							}
+						} else {
+							common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
+								zap.String("llm_id", chat.LLMID), zap.Error(fmt.Errorf("re-resolved driver is nil")))
+						}
+					} else {
+						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
+							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
+					}
+				}
+			}
 			if err != nil {
 				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -1724,6 +1786,10 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatModel, err = s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 		}
 		if err != nil {
+			common.WarnCtx(ctx, "chat completions: chat model construction failed",
+				zap.String("tenant_id", chat.TenantID),
+				zap.String("llm_id", chat.LLMID),
+				zap.Error(err))
 			sendResult(AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
@@ -1777,24 +1843,39 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 
-			driverErr := chatModel.ChatStreamlyWithSender(
-				ctx, chatMessages, chatCfg, nil,
-				func(answer *string, reason *string) error {
-					if reason != nil && *reason != "" {
-						if thinkState.EnterReasoning() {
+			onDelta := func(answer *string, reason *string) error {
+				if reason != nil && *reason != "" {
+					if thinkState.EnterReasoning() {
+						if !sendResult(AsyncChatResult{
+							Answer:       "",
+							Reference:    map[string]interface{}{},
+							AudioBinary:  nil,
+							CreatedAt:    float64(time.Now().Unix()),
+							Final:        false,
+							StartToThink: true,
+						}) {
+							return ctx.Err()
+						}
+					}
+					deltas := NextThinkDelta(thinkState, *reason, 16)
+					for _, d := range deltas {
+						if d.Kind == ThinkDeltaText && d.Value != "" {
+							fullAnswer += d.Value
 							if !sendResult(AsyncChatResult{
-								Answer:       "",
-								Reference:    map[string]interface{}{},
-								AudioBinary:  nil,
-								CreatedAt:    float64(time.Now().Unix()),
-								Final:        false,
-								StartToThink: true,
+								Answer:      d.Value,
+								Reference:   map[string]interface{}{},
+								AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
+								CreatedAt:   float64(time.Now().Unix()),
+								Final:       false,
 							}) {
 								return ctx.Err()
 							}
 						}
-						deltas := NextThinkDelta(thinkState, *reason, 16)
-						for _, d := range deltas {
+					}
+				}
+				if isContentDelta(answer) {
+					if thinkState.ExitReasoning() {
+						for _, d := range FlushRemaining(thinkState) {
 							if d.Kind == ThinkDeltaText && d.Value != "" {
 								fullAnswer += d.Value
 								if !sendResult(AsyncChatResult{
@@ -1808,53 +1889,57 @@ func (s *ChatPipelineService) AsyncChatSolo(
 								}
 							}
 						}
+						if !sendResult(AsyncChatResult{
+							Answer:      "",
+							Reference:   map[string]interface{}{},
+							AudioBinary: nil,
+							CreatedAt:   float64(time.Now().Unix()),
+							Final:       false,
+							EndToThink:  true,
+						}) {
+							return ctx.Err()
+						}
 					}
-					if isContentDelta(answer) {
-						if thinkState.ExitReasoning() {
-							for _, d := range FlushRemaining(thinkState) {
-								if d.Kind == ThinkDeltaText && d.Value != "" {
-									fullAnswer += d.Value
-									if !sendResult(AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}) {
-										return ctx.Err()
-									}
-								}
-							}
+					fullAnswer += *answer
+					deltas := BufferAnswerDelta(thinkState, *answer, 16)
+					for _, d := range deltas {
+						if d.Kind == ThinkDeltaText && d.Value != "" {
 							if !sendResult(AsyncChatResult{
-								Answer:      "",
+								Answer:      d.Value,
 								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
+								AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
-								EndToThink:  true,
 							}) {
 								return ctx.Err()
 							}
 						}
-						fullAnswer += *answer
-						deltas := BufferAnswerDelta(thinkState, *answer, 16)
-						for _, d := range deltas {
-							if d.Kind == ThinkDeltaText && d.Value != "" {
-								if !sendResult(AsyncChatResult{
-									Answer:      d.Value,
-									Reference:   map[string]interface{}{},
-									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-								}) {
-									return ctx.Err()
-								}
-							}
-						}
 					}
-					return nil
-				},
-			)
+				}
+				return nil
+			}
+			driverErr := chatModel.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+			// The gp- primary failed before any delta reached the client:
+			// flip its current group member inactive and retry once on the
+			// next member. Once deltas have streamed the answer cannot be
+			// replayed on another model, so the error surfaces as-is.
+			if driverErr != nil && ctx.Err() == nil && fullAnswer == "" {
+				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
+					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
+					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
+						thinkState = &ThinkStreamState{}
+						fullAnswer = ""
+						driverErr = retryModel.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+						if driverErr != nil {
+							common.WarnCtx(ctx, "chat completions: group failover retry failed",
+								zap.String("llm_id", chat.LLMID), zap.Error(driverErr))
+						}
+					} else {
+						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
+							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
+					}
+				}
+			}
 			if driverErr != nil {
 				if ctx.Err() != nil {
 					return
@@ -1928,6 +2013,25 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			resp, err := chatModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
 			timer.Exit(common.PhaseGenerateAnswer)
 			if err != nil {
+				// The gp- primary failed: flip its current group member
+				// inactive and retry once on the next member.
+				if _, ok := common.ParseGroupModelRef(chat.LLMID); ok {
+					s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
+					if retryModel, rerr := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID); rerr == nil {
+						timer.Enter(common.PhaseGenerateAnswer)
+						resp, err = retryModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
+						timer.Exit(common.PhaseGenerateAnswer)
+						if err != nil {
+							common.WarnCtx(ctx, "chat completions: group failover retry failed",
+								zap.String("llm_id", chat.LLMID), zap.Error(err))
+						}
+					} else {
+						common.WarnCtx(ctx, "chat completions: group failover re-resolve failed",
+							zap.String("llm_id", chat.LLMID), zap.Error(rerr))
+					}
+				}
+			}
+			if err != nil {
 				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 					Final:  true,
@@ -1961,7 +2065,23 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	return out, nil
 }
 
-// splitChatAttachments resolves the last message's file attachments into
+// flipChatGroupMember deactivates the currently picked member of a gp- chat
+// model reference (best-effort) so the next NewChatModel on the same
+// reference picks the next member, mirroring the ingestion dispatchers'
+// failover. No-op for non-group references; failures are logged without
+// masking the original model error.
+func (s *ChatPipelineService) flipChatGroupMember(ctx context.Context, tenantID, llmID string) {
+	groupID, ok := common.ParseGroupModelRef(llmID)
+	if !ok {
+		return
+	}
+	if _, err := dao.MarkGroupMemberInactive(ctx, dao.DB, strings.TrimSpace(tenantID), groupID, entity.ModelTypeChat); err != nil {
+		common.WarnCtx(ctx, "chat completions: model group failover flip failed",
+			zap.String("llm_id", llmID),
+			zap.Error(err))
+	}
+}
+
 // text content (entries joined by "\n\n") and image data URIs, reading
 // each blob from storage at most once.
 //
@@ -5876,6 +5996,12 @@ func (s *ChatPipelineService) planExplorerAuditorRag(
 		}
 		if err != nil {
 			common.ErrorCtx(ctx, "smart_reasoning: run", err)
+			// A turn that died on a model failure marks the gp- primary's
+			// current member inactive: agenticModelChain rebuilds the chain
+			// on the next request, which then picks the next member.
+			if agentic_rag.ModelFailure(err) {
+				s.flipChatGroupMember(ctx, chat.TenantID, chat.LLMID)
+			}
 			if final == "" {
 				final = fmt.Sprintf("**ERROR**: %s", err.Error())
 			}
