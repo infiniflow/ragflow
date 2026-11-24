@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Form } from '@/components/ui/form';
 import { FileType } from '@/constants/file';
+import { ParserExtensionFields } from '@/ee/components/parser-extension-fields';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LucideTrash2 } from 'lucide-react';
@@ -194,6 +195,7 @@ const ParserForm = ({
     <Form {...form}>
       <form className="space-y-5 px-5 pt-4">
         <VisionEnhancementFormFields />
+        <ParserExtensionFields />
         {fields.map((field, index) => {
           return (
             <ParserItem

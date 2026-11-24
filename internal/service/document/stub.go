@@ -36,6 +36,8 @@ func grantDocumentOwnerEE(context.Context, *gorm.DB, *entity.Document) error { r
 // community routing in dedicatedDocumentParserID is unchanged.
 func dedicatedParserExtension(utility.FileType, string) string { return "" }
 
+func inheritFallbackParserOptions(map[string]any, map[string]any, string) {}
+
 // preparePreviewPresentationEE is a no-op outside the enterprise edition.
 func preparePreviewPresentationEE(context.Context, *entity.Document, string) ([]byte, string, bool, error) {
 	return nil, "", false, nil

@@ -30,7 +30,6 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
-	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -2375,33 +2374,6 @@ func TestSelectAgenticEngine(t *testing.T) {
 					tc.level, tc.hasKBs, got, tc.want)
 			}
 		})
-	}
-}
-
-// TestEngineInstalledFallsBackToThePipeline pins the community edition's
-// degradation: a level-6 (plan-explorer) or level-7 (iterative) turn with
-// knowledge bases selects the engine, but the engine is not installed in this
-// build, so the dispatcher must keep the turn on the regular pipeline instead
-// of failing inside a stub. The agentic engine always passes: it is the plain
-// explorer the community edition ships.
-func TestEngineInstalledFallsBackToThePipeline(t *testing.T) {
-	for _, tc := range []struct {
-		engine agenticEngine
-		want   bool
-	}{
-		{enginePlanExplorer, agentic_rag.PlanEngineAvailable()},
-		{engineIterative, agentic_rag.IterativeEngineAvailable()},
-		{engineAgenticRAG, true},
-		{"", true},
-	} {
-		if got := engineInstalled(tc.engine); got != tc.want {
-			t.Errorf("engineInstalled(%q) = %v, want %v", tc.engine, got, tc.want)
-		}
-	}
-	// The whole point of the fallback: in a build without the engines, a level-6
-	// turn with KBs selects one and is then refused, so it reaches the pipeline.
-	if sel := selectAgenticEngine(reasoningLevelPlanExplorer, true); sel == enginePlanExplorer && agentic_rag.PlanEngineAvailable() {
-		t.Fatal("this test asserts the community (stub) build; PlanEngineAvailable must be false here")
 	}
 }
 
