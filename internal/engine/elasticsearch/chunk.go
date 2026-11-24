@@ -1496,28 +1496,19 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 
 	payload := append([]byte(nil), buf.Bytes()...)
 
-	var allResults []map[string]interface{}
+	perIndex := make([][]map[string]interface{}, len(req.IndexNames))
 	var totalHits int64
-	for _, indexName := range req.IndexNames {
+	for i, indexName := range req.IndexNames {
 		chunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload)
 		if esErr != nil {
 			return nil, fmt.Errorf("elasticsearch: regexp search index %q: %w", indexName, esErr)
 		}
 		totalHits += indexTotal
-		allResults = append(allResults, chunks...)
-	}
-
-	// A reading-order request is sorted ONCE over the merged set: sorting each
-	// index separately would leave the concatenation unordered.
-	if req.Sort != nil && len(req.Sort.Fields) > 0 {
-		allResults = esoscommon.SortByFields(allResults, req.Sort)
-	}
-	if len(allResults) > maxResults {
-		allResults = allResults[:maxResults]
+		perIndex[i] = chunks
 	}
 
 	return &types.SearchResult{
-		Chunks: allResults,
+		Chunks: esoscommon.MergeRegexpHits(perIndex, maxResults, req.Sort),
 		Total:  totalHits,
 	}, nil
 }

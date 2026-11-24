@@ -507,13 +507,13 @@ func TestGrepAdapter_NoFallbackOnRegexpError(t *testing.T) {
 	}
 	adapter := NewGrepAdapter(fe)
 
-	_, err := adapter.Grep(context.Background(), runtime.GrepRequest{
+	_, err := adapter.Grep(WithDatasetTenants(context.Background(), map[string]string{"kb1": "t"}), runtime.GrepRequest{
 		Pattern:    `\bbeta\b`,
 		DatasetIDs: []string{"kb1"},
 		Limit:      30,
 	})
-	if err == nil {
-		t.Fatal("expected Grep to surface the regexp pushdown error (no in-memory fallback)")
+	if !errors.Is(err, runtime.ErrRegexpPushdown) {
+		t.Fatalf("expected Grep to surface the regexp pushdown error (no in-memory fallback), got %v", err)
 	}
 	if fe.searchCalls != 0 {
 		t.Fatalf("expected no in-memory recall Search after fallback removal, got %d", fe.searchCalls)

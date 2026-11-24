@@ -483,9 +483,10 @@ func claimSearchEnabled() bool {
 // invisible however well its claim matches the question.
 //
 // Every degraded path returns nil, and nil means "the anchored page stands": no
-// engine, no nav service, no tenant embedder, an engine error. The leg is an
-// extra, never a replacement, so a deployment that cannot embed is byte-for-byte
-// the run it was before this existed.
+// engine, no nav service, no tenant embedder, a dataset whose tenant cannot be
+// resolved, an engine error. The leg is an extra, never a replacement, so a
+// deployment that cannot embed is byte-for-byte the run it was before this
+// existed.
 func searchClaimsForQuestion(ctx context.Context, tenantID string, datasetIDs, docScope []string, question string, limit int) []claimHit {
 	if limit <= 0 || !claimSearchEnabled() || len(datasetIDs) == 0 || tenantID == "" {
 		return nil
@@ -502,16 +503,18 @@ func searchClaimsForQuestion(ctx context.Context, tenantID string, datasetIDs, d
 		filter["doc_id"] = docScope
 	}
 	var out []claimHit
-	for _, group := range groupDatasetsByTenant(ctx, datasetIDs, tenantID) {
-		// The tenant's default embedding model decides the column: the rows carry a
-		// vector per model dimension, and addressing a column the rows do not have is
-		// an empty result, not an error.
+	for _, group := range groupDatasetsByTenant(ctx, datasetIDs) {
+		indexNames := IndexNamesFor(ctx, group.KBIDs)
+		if len(indexNames) == 0 {
+			continue
+		}
+		// The tenant's embedding model decides the vector column.
 		vec := claimQueryVector(ctx, group.TenantID, question)
 		if len(vec) == 0 {
 			continue
 		}
 		rows, err := claimSearchRows(ctx, &enginetypes.SearchRequest{
-			IndexNames: IndexNamesFor(ctx, group.KBIDs),
+			IndexNames: indexNames,
 			KbIDs:      group.KBIDs,
 			SelectFields: []string{
 				"content_with_weight", "source_chunk_ids", "entity_type_kwd", "compile_kwd", "doc_id",
@@ -537,6 +540,9 @@ func searchClaimsForQuestion(ctx context.Context, tenantID string, datasetIDs, d
 				out = append(out, h)
 			}
 		}
+	}
+	if len(out) > 1 {
+		sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
 	}
 	if len(out) > limit {
 		out = out[:limit]

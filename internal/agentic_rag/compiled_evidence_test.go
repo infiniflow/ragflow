@@ -725,7 +725,7 @@ func TestClaimTextLegParsesRowsAndSkipsUnusableOnes(t *testing.T) {
 				{"content_with_weight": "not a claim payload"},
 			}, nil
 		})
-	got := searchClaimsForQuestion(context.Background(), "tenant-1", []string{"kb1"}, nil, "when was Acme founded", 50)
+	got := searchClaimsForQuestion(WithDatasetTenants(context.Background(), map[string]string{"kb1": "tenant-1"}), "tenant-1", []string{"kb1"}, nil, "when was Acme founded", 50)
 	if len(got) != 1 || got[0].name != "Acme was founded in 1994" || got[0].chunkID != "c9" {
 		t.Fatalf("claims = %+v, want the one parseable row", got)
 	}
@@ -743,7 +743,7 @@ func TestClaimTextLegDegradesWithoutQueryVector(t *testing.T) {
 			searched = true
 			return nil, nil
 		})
-	got := searchClaimsForQuestion(context.Background(), "tenant-1", []string{"kb1"}, nil, "when was Acme founded", 50)
+	got := searchClaimsForQuestion(WithDatasetTenants(context.Background(), map[string]string{"kb1": "tenant-1"}), "tenant-1", []string{"kb1"}, nil, "when was Acme founded", 50)
 	if len(got) != 0 {
 		t.Fatalf("claims = %+v, want none without a vector", got)
 	}
@@ -760,7 +760,7 @@ func TestClaimTextLegDegradesOnEngineError(t *testing.T) {
 		func(context.Context, *enginetypes.SearchRequest) ([]map[string]interface{}, error) {
 			return nil, errors.New("engine down")
 		})
-	if got := searchClaimsForQuestion(context.Background(), "tenant-1", []string{"kb1"}, nil, "q", 50); len(got) != 0 {
+	if got := searchClaimsForQuestion(WithDatasetTenants(context.Background(), map[string]string{"kb1": "tenant-1"}), "tenant-1", []string{"kb1"}, nil, "q", 50); len(got) != 0 {
 		t.Fatalf("claims = %+v, want none on an engine error", got)
 	}
 }
@@ -794,25 +794,36 @@ func TestClaimTextLegEncodesWithEachDatasetTenant(t *testing.T) {
 	}
 }
 
-func TestClaimTextLegFallsBackToTheRunTenant(t *testing.T) {
+func TestClaimTextLegRanksMergedGroupsByScore(t *testing.T) {
 	claimTextOn(t)
 	var encoded []string
-	searches := 0
 	installClaimTextSearch(t,
 		func(_ context.Context, tenantID, _ string) []float64 {
 			encoded = append(encoded, tenantID)
 			return []float64{0.1, 0.2}
 		},
-		func(context.Context, *enginetypes.SearchRequest) ([]map[string]interface{}, error) {
-			searches++
-			return nil, nil
+		func(_ context.Context, req *enginetypes.SearchRequest) ([]map[string]interface{}, error) {
+			if len(req.IndexNames) == 0 {
+				t.Errorf("search without an index scope: %+v", req)
+			}
+			row := claimRow("weak", "d1", "q", "c1")
+			if req.KbIDs[0] == "kb-b" {
+				row = claimRow("strong", "d2", "q", "c2")
+				row["_score"] = 0.9
+			} else {
+				row["_score"] = 0.2
+			}
+			return []map[string]interface{}{row}, nil
 		})
-	searchClaimsForQuestion(context.Background(), "tenant-1", []string{"kb1", "kb2"}, nil, "q", 50)
-	if len(encoded) != 1 || encoded[0] != "tenant-1" {
-		t.Fatalf("encoded tenants = %v, want [tenant-1]", encoded)
+	ctx := WithDatasetTenants(context.Background(), map[string]string{"kb-a": "tenant-a", "kb-b": "tenant-b"})
+	got := searchClaimsForQuestion(ctx, "tenant-chat", []string{"kb-a", "kb-b", "kb-unresolved"}, nil, "q", 1)
+	if len(got) != 1 || got[0].name != "strong" {
+		t.Fatalf("claims = %+v, want the higher-scoring group's claim", got)
 	}
-	if searches != 1 {
-		t.Fatalf("searches = %d, want 1", searches)
+	for _, tenantID := range encoded {
+		if tenantID == "tenant-chat" {
+			t.Fatalf("an unresolved dataset must not be encoded with the run tenant: %v", encoded)
+		}
 	}
 }
 
@@ -845,7 +856,7 @@ func TestClaimTextLegUnionsOntoAnchoredPage(t *testing.T) {
 				claimRow("Acme was acquired by Beta", "d2", "q", "c9"),
 			}, nil
 		})
-	claims, hasClaims := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, []string{"c1"}, "when was Acme founded")
+	claims, hasClaims := compiledClaimsForChunks(WithDatasetTenants(context.Background(), map[string]string{"kb1": "tenant-1"}), "tenant-1", []string{"kb1"}, []string{"c1"}, "when was Acme founded")
 	if len(claims) != 3 {
 		t.Fatalf("claims = %d, want the 2 anchored + 1 added, deduped: %+v", len(claims), claims)
 	}

@@ -112,18 +112,12 @@ func IndexNamesFor(ctx context.Context, datasetIDs []string) []string {
 	return names
 }
 
-func groupDatasetsByTenant(ctx context.Context, datasetIDs []string, fallbackTenantID string) []dao.TenantKBIDs {
+func groupDatasetsByTenant(ctx context.Context, datasetIDs []string) []dao.TenantKBIDs {
 	tenants := DatasetTenants(ctx, datasetIDs)
 	groups := make([]dao.TenantKBIDs, 0, len(tenants))
 	positions := make(map[string]int, len(tenants))
 	for _, datasetID := range datasetIDs {
-		if datasetID == "" {
-			continue
-		}
 		tenantID := tenants[datasetID]
-		if tenantID == "" {
-			tenantID = fallbackTenantID
-		}
 		if tenantID == "" {
 			continue
 		}

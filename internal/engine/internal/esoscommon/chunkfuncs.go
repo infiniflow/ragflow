@@ -864,6 +864,38 @@ func SortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []ma
 	return chunks
 }
 
+func MergeRegexpHits(perIndex [][]map[string]interface{}, maxResults int, sortExpr *types.OrderByExpr) []map[string]interface{} {
+	if sortExpr != nil && len(sortExpr.Fields) > 0 {
+		merged := make([]map[string]interface{}, 0, maxResults)
+		for _, chunks := range perIndex {
+			merged = append(merged, chunks...)
+		}
+		merged = SortByFields(merged, sortExpr)
+		if len(merged) > maxResults {
+			merged = merged[:maxResults]
+		}
+		return merged
+	}
+	merged := make([]map[string]interface{}, 0, maxResults)
+	for i := 0; len(merged) < maxResults; i++ {
+		advanced := false
+		for _, chunks := range perIndex {
+			if i >= len(chunks) {
+				continue
+			}
+			advanced = true
+			merged = append(merged, chunks[i])
+			if len(merged) == maxResults {
+				return merged
+			}
+		}
+		if !advanced {
+			break
+		}
+	}
+	return merged
+}
+
 func SortByScore(chunks []map[string]interface{}, limit int) []map[string]interface{} {
 	if len(chunks) == 0 {
 		return chunks
