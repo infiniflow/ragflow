@@ -86,6 +86,46 @@ func TestPasswordResetPreservesConcurrentActivation(t *testing.T) {
 	}
 }
 
+func TestGrantAdminPreservesConcurrentAccountChange(t *testing.T) {
+	db := setupAccountGuardDB(t)
+	active, valid, isSuperuser := "1", "1", false
+	oldSession := "fixture-old-session"
+	user := entity.User{
+		ID: "fixture-target", Email: "target@example.test", Nickname: "Fixture target",
+		IsActive: active, Status: &valid, IsSuperuser: &isSuperuser, AccessToken: &oldSession,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	const newSession = "fixture-new-session"
+	deactivated := false
+	if err := db.Callback().Update().Before("gorm:update").Register("test:deactivate-before-grant", func(tx *gorm.DB) {
+		if deactivated || tx.Statement.Table != "user" {
+			return
+		}
+		deactivated = true
+		if err := tx.Exec("UPDATE user SET is_active = ?, access_token = ? WHERE id = ?", "0", newSession, user.ID).Error; err != nil {
+			_ = tx.AddError(err)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := NewService().GrantAdmin(t.Context(), user.Email); err != nil {
+		t.Fatal(err)
+	}
+	var current entity.User
+	if err := db.Take(&current, "id = ?", user.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !deactivated || current.IsActive != "0" || current.AccessToken == nil || *current.AccessToken != newSession {
+		t.Fatal("grant overwrote the concurrent account change")
+	}
+	if current.IsSuperuser == nil || !*current.IsSuperuser {
+		t.Fatal("grant did not update the superuser flag")
+	}
+}
+
 func setupAccountGuardDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := testutil.SetupTestDB(t, &entity.User{})

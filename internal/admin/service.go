@@ -465,10 +465,8 @@ func (s *Service) GrantAdmin(ctx context.Context, username string) error {
 		return nil
 	}
 
-	isSuperuser := true
-	user.IsSuperuser = &isSuperuser
-
-	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
+	if err = dao.DB.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ?", user.ID).Update("is_superuser", true).Error; err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
