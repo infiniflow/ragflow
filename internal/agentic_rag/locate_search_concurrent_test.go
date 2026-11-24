@@ -19,6 +19,7 @@ package agentic_rag
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -31,6 +32,80 @@ import (
 	"ragflow/internal/agent/runtime"
 )
 
+// entryBarrier parks every search until all expected searches have entered,
+// so an overlap assertion measures the code under test rather than the
+// scheduler. A bounded timeout with a one-shot release keeps a serial
+// regression from hanging the test.
+type entryBarrier struct {
+	expected int
+	arrived  chan struct{}
+	release  chan struct{}
+	once     sync.Once
+}
+
+const entryBarrierTimeout = 3 * time.Second
+
+func newEntryBarrier(n int) *entryBarrier {
+	return &entryBarrier{
+		expected: n,
+		arrived:  make(chan struct{}, n),
+		release:  make(chan struct{}),
+	}
+}
+
+func (b *entryBarrier) wait(ctx context.Context) error {
+	b.arrived <- struct{}{}
+	select {
+	case <-b.release:
+		return nil
+	case <-ctx.Done():
+		b.once.Do(func() { close(b.release) })
+		return ctx.Err()
+	case <-time.After(entryBarrierTimeout):
+		b.once.Do(func() { close(b.release) })
+		return errors.New("entry barrier timed out")
+	}
+}
+
+func (b *entryBarrier) waitForAll() error {
+	timer := time.NewTimer(entryBarrierTimeout)
+	defer timer.Stop()
+	for i := 0; i < b.expected; i++ {
+		select {
+		case <-b.arrived:
+		case <-timer.C:
+			b.once.Do(func() { close(b.release) })
+			return fmt.Errorf("entry barrier: only %d of %d calls arrived", i, b.expected)
+		}
+	}
+	b.once.Do(func() { close(b.release) })
+	return nil
+}
+
+// A barrier must keep a call parked until the gate is opened, otherwise an
+// overlap assertion measured through it is still timing-dependent.
+func TestEntryBarrierBlocksUntilEveryCallArrives(t *testing.T) {
+	barrier := newEntryBarrier(1)
+	entered := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		close(entered)
+		done <- barrier.wait(context.Background())
+	}()
+	<-entered
+	select {
+	case err := <-done:
+		t.Fatalf("wait returned before the gate opened: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if err := barrier.waitForAll(); err != nil {
+		t.Fatalf("waitForAll: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("wait after release: %v", err)
+	}
+}
+
 // concurrentRetrievalService records peak in-flight searches so the test can
 // tell a real concurrent fan-out from a serial loop that merely calls Search
 // the same number of times.
@@ -40,6 +115,7 @@ type concurrentRetrievalService struct {
 	peak     int
 	calls    []runtime.RetrievalRequest
 	delay    time.Duration
+	barrier  *entryBarrier
 	respond  func(string) ([]runtime.RetrievalChunk, error)
 }
 
@@ -55,7 +131,16 @@ func (s *concurrentRetrievalService) Search(ctx context.Context, _ *gorm.DB, req
 	}
 	s.mu.Unlock()
 
-	time.Sleep(s.delay)
+	if s.barrier != nil {
+		if err := s.barrier.wait(ctx); err != nil {
+			s.mu.Lock()
+			s.inFlight--
+			s.mu.Unlock()
+			return nil, err
+		}
+	} else {
+		time.Sleep(s.delay)
+	}
 
 	s.mu.Lock()
 	s.inFlight--
@@ -111,15 +196,21 @@ func chunkIDsInOrder(t *testing.T, out string) []string {
 // The three searches must overlap: a serial loop gives the same call count
 // but a different (and three times longer) latency profile.
 func TestRunLocateSearchIssuesQueriesConcurrently(t *testing.T) {
+	barrier := newEntryBarrier(3)
 	fake := &concurrentRetrievalService{
-		delay: 40 * time.Millisecond,
+		barrier: barrier,
 		respond: func(q string) ([]runtime.RetrievalChunk, error) {
 			return []runtime.RetrievalChunk{locateTestChunk("c-"+q, q+" alpha beta")}, nil
 		},
 	}
 	installConcurrentRetrieval(t, fake)
 
+	gateErr := make(chan error, 1)
+	go func() { gateErr <- barrier.waitForAll() }()
 	out := runLocateForTest(t, context.Background(), locateSpec([]string{"q1", "q2", "q3"}))
+	if err := <-gateErr; err != nil {
+		t.Fatal(err)
+	}
 	if len(fake.calls) != 3 {
 		t.Fatalf("Search calls = %d, want 3", len(fake.calls))
 	}
@@ -156,8 +247,9 @@ func TestRunLocateSearchPreservesQueryOrderAndDedup(t *testing.T) {
 
 var errTestQueryFailed = errors.New("embedding backend failed")
 
-// A single failed query must not cancel its siblings: the group is a join,
-// not an errgroup.WithContext whose context is handed to Search.
+// A single failed query must not cancel its siblings: the fan-out joins with
+// a WaitGroup, and no derived context is handed to Search that a failure
+// could cancel.
 func TestRunLocateSearchPartialFailureKeepsSiblingResults(t *testing.T) {
 	fake := &concurrentRetrievalService{
 		delay: 5 * time.Millisecond,
@@ -185,8 +277,9 @@ func TestRunLocateSearchPartialFailureKeepsSiblingResults(t *testing.T) {
 // The engine context, not the run context, must reach every concurrent
 // Search: eino may hand the tool an already-canceled context.
 func TestRunLocateSearchConcurrentCallsUseEngineContext(t *testing.T) {
+	barrier := newEntryBarrier(3)
 	fake := &concurrentRetrievalService{
-		delay: 5 * time.Millisecond,
+		barrier: barrier,
 		respond: func(q string) ([]runtime.RetrievalChunk, error) {
 			return []runtime.RetrievalChunk{locateTestChunk("c-"+q, q+" alpha")}, nil
 		},
@@ -195,7 +288,12 @@ func TestRunLocateSearchConcurrentCallsUseEngineContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+	gateErr := make(chan error, 1)
+	go func() { gateErr <- barrier.waitForAll() }()
 	out := runLocateForTest(t, ctx, locateSpec([]string{"q1", "q2", "q3"}))
+	if err := <-gateErr; err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(out, `<search_results count="3"`) {
 		t.Errorf("a canceled parent must not kill the engine searches, got: %s", out)
 	}

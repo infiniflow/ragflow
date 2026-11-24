@@ -290,24 +290,16 @@ type SearchCompletionPlan struct {
 	Options    AskStreamOptions
 }
 
-// datasetUseChecker is the permission surface completion-plan authorization
-// needs. It is injectable so the batch contract can be tested without a DB.
-type datasetUseChecker interface {
-	FilterResources(ctx context.Context, refs []permission.ResourceRef, op permission.Operation) ([]permission.ResourceRef, error)
-	CheckResource(ctx context.Context, ref permission.ResourceRef, op permission.Operation) error
-}
-
 // newDatasetUseChecker is the seam used by completion-plan authorization.
-var newDatasetUseChecker = func(db *gorm.DB) datasetUseChecker {
+var newDatasetUseChecker = func(db *gorm.DB) permission.ResourceChecker {
 	return permission.NewDatabaseChecker(db)
 }
 
-// checkDatasetsUsable authorizes every dataset with one batch resource load
-// instead of one authorization round-trip per dataset. When the batch fails or
-// omits a dataset it falls back to ordered single-resource checks: the first
-// error in request order must survive, because permissionresponse.Normalize at
-// the call site maps that specific error to the returned code.
-func checkDatasetsUsable(ctx context.Context, checker datasetUseChecker, datasetIDs []string) error {
+// checkDatasetsUsable maps dataset IDs to resource refs and delegates the
+// batch load plus ordered fallback to the shared permission helper. Reusing
+// that helper keeps completion-plan authorization consistent with every other
+// caller that authorizes a set of datasets.
+func checkDatasetsUsable(ctx context.Context, checker permission.ResourceChecker, datasetIDs []string) error {
 	if len(datasetIDs) == 0 {
 		return nil
 	}
@@ -320,36 +312,7 @@ func checkDatasetsUsable(ctx context.Context, checker datasetUseChecker, dataset
 		seen[id] = true
 		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id})
 	}
-
-	accessible, err := checker.FilterResources(ctx, refs, permission.OperationUse)
-	if err != nil {
-		// A single dataset's invalid state can mask the first request-order
-		// error in a shared load, so re-check in the original order.
-		for _, id := range datasetIDs {
-			if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id}, permission.OperationUse); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	allowed := make(map[string]bool, len(accessible))
-	for _, ref := range accessible {
-		allowed[ref.ID] = true
-	}
-	if len(allowed) == len(refs) {
-		return nil
-	}
-	// Omission is not denial: re-check only the datasets the batch did not
-	// answer for, still in request order.
-	for _, id := range datasetIDs {
-		if allowed[id] {
-			continue
-		}
-		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id}, permission.OperationUse); err != nil {
-			return err
-		}
-	}
-	return nil
+	return permission.CheckResources(ctx, checker, refs, permission.OperationUse)
 }
 
 func (s *SearchService) PrepareCompletion(ctx context.Context, searchID string, req *SearchCompletionsRequest) (*SearchCompletionPlan, common.ErrorCode, error) {

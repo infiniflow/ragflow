@@ -21,9 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -137,16 +137,17 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 	}
 
 	// Fan the queries out, but keep each response in its query's slot. A plain
-	// Group (not WithContext) joins them without handing a failed query's
-	// cancellation to its siblings: ectx stays the single engine context for
-	// every call, and a per-query error is recorded in errs[i] instead of
-	// aborting the group.
+	// WaitGroup joins them without handing a failed query's cancellation to
+	// its siblings: ectx stays the single engine context for every call, and a
+	// per-query error is recorded in errs[i] instead of aborting the others.
 	results := make([][]runtime.RetrievalChunk, len(queries))
 	errs := make([]error, len(queries))
-	var group errgroup.Group
+	var wg sync.WaitGroup
 	for i, q := range queries {
 		i, q := i, q
-		group.Go(func() error {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			results[i], errs[i] = svc.Search(ectx, dao.DB, runtime.RetrievalRequest{
 				Query:                    q,
 				DatasetIDs:               datasetIDs,
@@ -165,10 +166,9 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 				// derived graph content.
 				OnlyOriginalText: true,
 			})
-			return nil
-		})
+		}()
 	}
-	_ = group.Wait()
+	wg.Wait()
 
 	// Merge in the original query order, never completion order: the dedup
 	// set and the XML the model reads are both order-sensitive.

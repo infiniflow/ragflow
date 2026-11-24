@@ -748,7 +748,9 @@ func uniqueStorageLocation(ctx context.Context, store storage.Storage, bucket, n
 		return name
 	}
 	candidate := name + "_" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	if !store.ObjExist(ctx, bucket, candidate) {
+	// The location column is capped; an over-long candidate would let the
+	// storage move succeed while the DB update fails, orphaning the file.
+	if len(candidate) <= common.NameLimit255 && !store.ObjExist(ctx, bucket, candidate) {
 		return candidate
 	}
 	candidate = name + "_"

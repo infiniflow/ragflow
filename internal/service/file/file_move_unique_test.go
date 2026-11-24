@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
@@ -127,6 +128,51 @@ func TestMoveFilesKeepsOriginalNameWhenFree(t *testing.T) {
 
 // A long run of underscore names is the adversarial case for the old loop;
 // the probe count must stay flat as the number of collisions grows.
+// A near-limit name plus a collision must not produce a location longer than
+// the database column: the storage move happens before the DB update, so an
+// over-long location would leave the file moved but untrackable.
+func TestMoveFilesKeepsLongNameWithinLocationLimit(t *testing.T) {
+	longName := strings.Repeat("a", common.NameLimit255-5)
+	setupFolderTestDB(t)
+	for _, f := range []*entity.File{
+		{ID: "pf1", ParentID: "pf1", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "root", Type: FileTypeFolder},
+		{ID: "d1", ParentID: "pf1", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "dest", Type: FileTypeFolder},
+		{ID: "s1", ParentID: "pf1", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: longName, Location: sptr(longName), Type: "pdf"},
+	} {
+		if err := dao.DB.Create(f).Error; err != nil {
+			t.Fatalf("seed %s: %v", f.ID, err)
+		}
+	}
+
+	ctx := t.Context()
+	mem := storage.NewMemoryStorage()
+	if err := mem.Put(ctx, "pf1", longName, []byte("payload")); err != nil {
+		t.Fatalf("seed source object: %v", err)
+	}
+	if err := mem.Put(ctx, "d1", longName, []byte("taken")); err != nil {
+		t.Fatalf("seed colliding object: %v", err)
+	}
+	store := &countingObjExistStorage{Storage: mem}
+	factory := storage.GetStorageFactory()
+	original := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(original) })
+
+	if err := testFileService().MoveFiles(fileTestContext(t, "tenant-1", "tenant-1"), []string{"s1"}, "d1", ""); err != nil {
+		t.Fatalf("MoveFiles: %v", err)
+	}
+	location := movedUniqueLocation(t)
+	if len(location) > common.NameLimit255 {
+		t.Errorf("location length = %d, want at most %d", len(location), common.NameLimit255)
+	}
+	if location == longName {
+		t.Error("location still collides with the existing object")
+	}
+	if !store.Storage.ObjExist(ctx, "d1", location) {
+		t.Errorf("no object at the recorded location %q", location)
+	}
+}
+
 func TestMoveFilesProbeCountIsIndependentOfCollisionCount(t *testing.T) {
 	taken := []string{"report.txt"}
 	for i := 1; i <= 15; i++ {

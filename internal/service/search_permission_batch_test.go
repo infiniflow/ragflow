@@ -182,7 +182,7 @@ func TestPrepareCompletionUsesBatchDatasetAuthorization(t *testing.T) {
 
 	fake := &countingDatasetChecker{}
 	original := newDatasetUseChecker
-	newDatasetUseChecker = func(*gorm.DB) datasetUseChecker { return fake }
+	newDatasetUseChecker = func(*gorm.DB) permission.ResourceChecker { return fake }
 	t.Cleanup(func() { newDatasetUseChecker = original })
 
 	plan, code, err := NewSearchService().PrepareCompletion(ctx, "search-batch", &SearchCompletionsRequest{Question: "question"})

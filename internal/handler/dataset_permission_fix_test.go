@@ -3,52 +3,12 @@ package handler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 )
-
-// fakeDatasetChecker records every resource it is asked to check so the test
-// can prove that all omitted datasets are examined, not just the first one.
-type fakeDatasetChecker struct {
-	calls   []string
-	errByID map[string]error
-}
-
-func (f *fakeDatasetChecker) FilterResources(ctx context.Context, refs []permission.ResourceRef, op permission.Operation) ([]permission.ResourceRef, error) {
-	return nil, nil
-}
-func (f *fakeDatasetChecker) CheckResource(ctx context.Context, ref permission.ResourceRef, op permission.Operation) error {
-	f.calls = append(f.calls, ref.ID)
-	return f.errByID[ref.ID]
-}
-
-// TestCheckOmittedDatasetsChecksAllOmitted is the RED test for #4: if an
-// omitted dataset becomes readable at check time, the helper must still go on
-// and check the remaining omitted datasets instead of returning success.
-func TestCheckOmittedDatasetsChecksAllOmitted(t *testing.T) {
-	refs := []permission.ResourceRef{
-		{Kind: permission.ResourceKindDataset, ID: "ds-a"},
-		{Kind: permission.ResourceKindDataset, ID: "ds-b"},
-		{Kind: permission.ResourceKindDataset, ID: "ds-allowed"},
-	}
-	allowed := map[string]bool{"ds-allowed": true}
-	checker := &fakeDatasetChecker{errByID: map[string]error{
-		"ds-b": permission.ErrPermissionDenied,
-	}}
-
-	err := checkOmittedDatasets(context.Background(), checker, refs, allowed)
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("err = %v, want ErrPermissionDenied from the second omitted dataset", err)
-	}
-	want := []string{"ds-a", "ds-b"}
-	if fmt.Sprint(checker.calls) != fmt.Sprint(want) {
-		t.Fatalf("checked = %v, want %v (all omitted datasets must be examined)", checker.calls, want)
-	}
-}
 
 // TestCheckDatasetsReadableBatchFailureKeepsFirstError is the RED test for #3:
 // when the shared batch load fails, the helper must fall back to ordered
@@ -76,12 +36,11 @@ func TestCheckDatasetsReadableBatchFailureKeepsFirstError(t *testing.T) {
 	}
 }
 
-// TestCheckDatasetRefsReadableChecksAllOmitted is adversarial at the full
-// production path: the batch omits two datasets, and the first omitted one
-// becomes readable at single-check time. The helper must still examine the
-// second omitted dataset and return its denial. This guards the wiring of
-// checkOmittedDatasets into the real check flow, not just the helper in isolation.
-func TestCheckDatasetRefsReadableChecksAllOmitted(t *testing.T) {
+// TestPermissionCheckResourcesChecksAllOmitted is adversarial at the shared
+// helper used by the production path: the batch omits two datasets, and the
+// first omitted one becomes readable at single-check time. The helper must
+// still examine the second omitted dataset and return its denial.
+func TestPermissionCheckResourcesChecksAllOmitted(t *testing.T) {
 	refs := []permission.ResourceRef{
 		{Kind: permission.ResourceKindDataset, ID: "ds-a"},
 		{Kind: permission.ResourceKindDataset, ID: "ds-b"},
@@ -95,7 +54,7 @@ func TestCheckDatasetRefsReadableChecksAllOmitted(t *testing.T) {
 			"ds-b": permission.ErrPermissionDenied,
 		},
 	}
-	err := checkDatasetRefsReadable(context.Background(), checker, refs)
+	err := permission.CheckResources(context.Background(), checker, refs, permission.OperationRead)
 	if !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("err = %v, want ErrPermissionDenied from the later omitted dataset", err)
 	}
