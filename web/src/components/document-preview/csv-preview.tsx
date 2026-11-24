@@ -69,7 +69,7 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({
           header: false,
           skipEmptyLines: false,
         });
-        setData({ headers: rows[0], rows: rows.slice(1) });
+        setData({ headers: rows[0] ?? [], rows: rows.slice(1) });
       } catch (error) {
         message.error('CSV file parse failed');
         console.error('Error loading CSV file:', error);

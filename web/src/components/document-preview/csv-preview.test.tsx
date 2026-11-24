@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { Blob as NodeBlob } from 'node:buffer';
 import CSVFileViewer from './csv-preview';
 
@@ -35,4 +35,14 @@ it('previews TSV fields containing commas as single cells', async () => {
       true,
     );
   }
+});
+
+it('renders an empty TSV without a header row to measure', async () => {
+  mockRequest.mockResolvedValue({ data: new Blob([]) });
+  const { container } = render(
+    <CSVFileViewer url="/documents/empty/preview" fileType="tsv" />,
+  );
+
+  await waitFor(() => expect(container.querySelector('.table')).not.toBeNull());
+  expect(container.querySelectorAll('.table-cell')).toHaveLength(0);
 });
