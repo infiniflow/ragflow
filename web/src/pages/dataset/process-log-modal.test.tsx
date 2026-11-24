@@ -11,9 +11,9 @@ jest.mock('@/hooks/common-hooks', () => ({
 
 import ProcessLogModal from './process-log-modal';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { formatTime } from '@/utils/date';
 
 const eventTs = '2026-09-18T10:20:30+08:00';
+const OriginalTimezone = process.env.TZ;
 const MissingFileMessage =
   'Parser: storage.Get("source-bucket", "source-file.txt"): The specified key does not exist.';
 const MissingFileHint = 'File not found in object storage.';
@@ -47,7 +47,19 @@ function renderModal(events: LogEvent[] = [], details = '') {
 }
 
 describe('ProcessLogModal ingestion events', () => {
-  it('renders each event line prefixed with its timestamp', () => {
+  beforeAll(() => {
+    process.env.TZ = 'Asia/Shanghai';
+  });
+
+  afterAll(() => {
+    if (OriginalTimezone === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = OriginalTimezone;
+    }
+  });
+
+  it('renders event timestamps in local time', () => {
     renderModal([
       {
         id: 1,
@@ -76,8 +88,11 @@ describe('ProcessLogModal ingestion events', () => {
     ]);
 
     const times = screen.getAllByTestId('ingestion-event-time');
-    expect(times).toHaveLength(3);
-    expect(times[0].textContent).toBe(formatTime(eventTs));
+    expect(times.map((time) => time.textContent)).toEqual([
+      '10:20:30',
+      '10:21:05',
+      '10:21:10',
+    ]);
     expect(
       screen.getByText('[WARN] LLM call failed; retrying in 2s'),
     ).toHaveClass('text-state-warning');
