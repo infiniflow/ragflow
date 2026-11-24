@@ -1604,6 +1604,345 @@ func TestMergeExtentCol(t *testing.T) {
 	}
 }
 
+func TestDetectHeaderRow_RecoveryCountsFilledCellsInMergedRows(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	bold, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for r := 1; r <= 2; r++ {
+		mustSetCell(t, f, "Sheet1", cellRef('A', r), "Project")
+		mustSetCell(t, f, "Sheet1", cellRef('B', r), "Owner")
+		if err := f.SetCellStyle("Sheet1", cellRef('A', r), cellRef('B', r), bold); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for c, value := range []string{"item", "", "", "1", "2", "note"} {
+		mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), 3), value)
+	}
+	if err := f.MergeCell("Sheet1", "A3", "C3"); err != nil {
+		t.Fatal(err)
+	}
+	for r := 4; r <= 10; r++ {
+		for c, value := range []string{"a", "b", "c", "d", "e", "f"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), value)
+		}
+	}
+	_, _, _, headerRow, _, _, _, err := readSpreadsheetRecords(f, "Sheet1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if headerRow != 1 {
+		t.Fatalf("half-numeric merged data row was promoted to header %d, want fallback 1", headerRow)
+	}
+}
+
+func TestDetectHeaderRow_MergedFirstRowNeedsHeaderEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		mergeEnd   string
+		styled     bool
+		numeric    bool
+		wantHeader int
+	}{
+		{name: "merged header over text data", mergeEnd: "C1", wantHeader: 1},
+		{name: "ambiguous merged title over text rows", mergeEnd: "F1", wantHeader: 1},
+		{name: "merged title over styled header", mergeEnd: "F1", styled: true, wantHeader: 2},
+		{name: "merged title over numeric contrast", mergeEnd: "F1", numeric: true, wantHeader: 2},
+		{name: "unmerged title over text header", wantHeader: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := excelize.NewFile()
+			defer f.Close()
+			mustSetCell(t, f, "Sheet1", "A1", "Group")
+			if tc.mergeEnd != "" {
+				if err := f.MergeCell("Sheet1", "A1", tc.mergeEnd); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for c, value := range []string{"Name", "Quantity", "Cost"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), 2), value)
+			}
+			if tc.styled {
+				style, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := f.SetCellStyle("Sheet1", "A2", "C2", style); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for r := 3; r <= 8; r++ {
+				values := []string{"Widget", "Blue", "Small"}
+				if tc.numeric {
+					values = []string{"Widget", "2", "50"}
+				}
+				for c, value := range values {
+					mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), value)
+				}
+			}
+			_, _, _, headerRow, _, _, _, err := readSpreadsheetRecords(f, "Sheet1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if headerRow != tc.wantHeader {
+				t.Fatalf("header row = %d, want %d", headerRow, tc.wantHeader)
+			}
+		})
+	}
+}
+
+func TestXLSXParser_NarrowTablesDoNotEmitFormChunks(t *testing.T) {
+	for _, header := range [][]string{{"Item", "Qty"}, {"Item", "Qty", "Cost"}} {
+		t.Run(strconv.Itoa(len(header))+" columns", func(t *testing.T) {
+			data := newTestXLSX(t, func(f *excelize.File) {
+				for c, value := range header {
+					mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), 1), value)
+				}
+				for r := 2; r <= 6; r++ {
+					for c, value := range []string{"Widget", "2", "50"}[:len(header)] {
+						mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), value)
+					}
+				}
+			})
+			p, _ := NewXLSXParser("")
+			res := p.ParseWithResult(t.Context(), "table.xlsx", data)
+			if res.Err != nil {
+				t.Fatal(res.Err)
+			}
+			for _, item := range res.JSON {
+				text, _ := item.ToMap()["text"].(string)
+				if strings.HasPrefix(text, "Sheet:") {
+					t.Fatalf("ordinary table emitted a form chunk: %s", text)
+				}
+			}
+			if !strings.Contains(spreadsheetText(res), "<th>Item</th><th>Qty</th>") {
+				t.Fatal("ordinary table lost its headers")
+			}
+		})
+	}
+}
+
+// TestIsFormSheet verifies the form-sheet detection heuristic.
+func TestIsFormSheet(t *testing.T) {
+	// Kros cover sheet: 30 rows, most with 1-2 cells.
+	form := make([][]string, 30)
+	form[0] = []string{""}
+	form[1] = []string{"", "", "", "KRYCÍ LIST ROZPOČTU"}
+	form[2] = []string{"", "", "", "Stavba:"}
+	form[3] = []string{"", "", "", "", "DSP Millhaus"}
+	form[4] = []string{"", "", "", "Objekt:"}
+	form[5] = []string{"", "", "", "", "SO01 - BYTOVÝ OBJEKT"}
+	form[6] = []string{"", "", "", "Časť:"}
+	form[7] = []string{"", "", "", "", "E1.2 - Statika"}
+	for i := 8; i < 25; i++ {
+		if i%3 == 0 {
+			form[i] = []string{"", "", "", "Label:", "", "", "", "", "", "12345"}
+		} else {
+			form[i] = []string{"", "", "", "", "text value"}
+		}
+	}
+	form[25] = []string{"", "", "", "Cena bez DPH", "", "", "", "", "", "5391273.95"}
+	form[26] = []string{"", "", "", "Cena s DPH", "", "", "", "", "", "6469528.74"}
+	for i := 27; i < 30; i++ {
+		form[i] = []string{""}
+	}
+	if !isFormSheet(form, 1) {
+		t.Fatal("Kros cover sheet should be detected as form")
+	}
+
+	// Regular table: 20 rows with 7 cells each.
+	table := make([][]string, 20)
+	table[0] = []string{"Kód", "", "Zákazka", "ZRN", "VRN", "Cena bez DPH", "DPH"}
+	for i := 1; i < 20; i++ {
+		table[i] = []string{"SO01", "", "OBJEKT", "17234914", "689480", "17924395", "3584879"}
+	}
+	if isFormSheet(table, 1) {
+		t.Fatal("regular table should NOT be detected as form")
+	}
+
+	// Hybrid sheet: 30-row form prefix followed by 80 wide rows (like E1.2).
+	hybrid := make([][]string, 110)
+	for i := 0; i < 30; i++ {
+		if i%4 == 0 {
+			hybrid[i] = []string{"", "", "", "label", "", "", "", "", "", "12345"}
+		} else {
+			hybrid[i] = []string{"", "", "", "label", "", "", "", "", "", "value"}
+		}
+	}
+	for i := 30; i < 110; i++ {
+		hybrid[i] = make([]string, 29)
+		for j := range hybrid[i] {
+			hybrid[i][j] = "data"
+		}
+	}
+	if !isFormSheet(hybrid, 1) {
+		t.Fatal("hybrid sheet (form prefix + table body) should be detected as form")
+	}
+
+	// Too few rows.
+	if isFormSheet([][]string{{"a"}, {"b"}}, 1) {
+		t.Fatal("tiny sheet should not be form")
+	}
+}
+
+// TestRenderFormSheetKV verifies KV extraction from a Kros cover sheet.
+func TestRenderFormSheetKVPairsStayInCellOrder(t *testing.T) {
+	for _, row := range [][]string{
+		{"Cena", "100", "DPH", "20"},
+		{"Cena", "100", "DPH"},
+		{"Cena", "bez DPH", "100"},
+	} {
+		text := renderFormSheetKV("form", [][]string{row})
+		if !strings.Contains(text, "Cena: 100") && !strings.Contains(text, "Cena bez DPH: 100") {
+			t.Fatalf("missing ordered price pair for %v: %s", row, text)
+		}
+		if len(row) == 4 && !strings.Contains(text, "DPH: 20") {
+			t.Fatalf("missing tax pair: %s", text)
+		}
+		if strings.Contains(text, "Cena DPH:") {
+			t.Fatalf("labels from separate pairs combined: %s", text)
+		}
+	}
+}
+
+func TestRenderFormSheetKV(t *testing.T) {
+	rows := [][]string{
+		{""},
+		{"", "", "", "KRYCÍ LIST ROZPOČTU"},
+		{"", "", "", "Stavba:"},
+		{"", "", "", "", "DSP Millhaus"},
+		{"", "", "", "Časť:"},
+		{"", "", "", "", "E1.2 - Statika"},
+		{""},
+		{"", "", "", "Náklady z rozpočtu", "", "", "", "", "", "5183917.256"},
+		{"", "", "", "Cena bez DPH", "", "", "", "", "", "5391273.95"},
+		{"", "", "", "Cena s DPH", "", "", "", "", "", "6469528.74"},
+	}
+	text := renderFormSheetKV("E1.2 - Statika", rows)
+	if !strings.Contains(text, "Sheet: E1.2 - Statika") {
+		t.Fatalf("missing sheet name in KV text:\n%s", text)
+	}
+	if !strings.Contains(text, "Cena bez DPH: 5391273.95") {
+		t.Fatalf("missing KV pair in text:\n%s", text)
+	}
+	if !strings.Contains(text, "Cena s DPH: 6469528.74") {
+		t.Fatalf("missing KV pair in text:\n%s", text)
+	}
+	if !strings.Contains(text, "Náklady z rozpočtu: 5183917.256") {
+		t.Fatalf("missing KV pair in text:\n%s", text)
+	}
+	if !strings.Contains(text, "DSP Millhaus") {
+		t.Fatalf("missing metadata in text:\n%s", text)
+	}
+
+	// Wide mixed-table rows inside the form prefix must be skipped, not break
+	// extraction of the following narrow form rows.
+	rowsWithWide := [][]string{
+		{"label", "1"},
+		{"a", "b", "c", "d", "e"},
+		{"other label", "2"},
+	}
+	text2 := renderFormSheetKV("wide-mixed", rowsWithWide)
+	if strings.Contains(text2, "a: b") {
+		t.Fatalf("wide mixed-table row should be skipped:\n%s", text2)
+	}
+	if !strings.Contains(text2, "other label: 2") {
+		t.Fatalf("narrow row after wide row should still be extracted:\n%s", text2)
+	}
+}
+
+// TestXLSXParser_FormSheetEmitsKVChunk verifies that a form-style sheet
+// emits an additional text KV chunk alongside the regular HTML table chunk.
+func TestXLSXParser_FormSheetCleansCellsBeforeClassification(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		for r := 1; r <= 6; r++ {
+			for c, value := range []string{"\ufeffCena\u200b", "100", "\u200b", "\ufeff"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), value)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "form.xlsx", data)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	for _, item := range res.JSON {
+		text, _ := item.ToMap()["text"].(string)
+		if strings.HasPrefix(text, "Sheet: Sheet1\n") {
+			if !strings.Contains(text, "Cena: 100") || strings.ContainsAny(text, "\u200b\ufeff") {
+				t.Fatalf("unclean form chunk: %q", text)
+			}
+			return
+		}
+	}
+	t.Fatal("cleaned form sheet did not emit a KV chunk")
+}
+
+func TestXLSXParser_FormSheetEmitsKVChunk(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		sheet := "E1.2 - Statika"
+		idx, err := f.NewSheet(sheet)
+		if err != nil {
+			t.Fatalf("NewSheet: %v", err)
+		}
+		f.SetActiveSheet(idx)
+		// Fill a form-style sheet with sparse label-value pairs.
+		mustSetCell(t, f, sheet, "D2", "KRYCÍ LIST ROZPOČTU")
+		mustSetCell(t, f, sheet, "D4", "Stavba:")
+		mustSetCell(t, f, sheet, "E5", "DSP Millhaus")
+		mustSetCell(t, f, sheet, "D6", "Časť:")
+		mustSetCell(t, f, sheet, "E7", "E1.2 - Statika")
+		mustSetCell(t, f, sheet, "D8", "Objednávateľ:")
+		mustSetCell(t, f, sheet, "D9", "Projektant:")
+		mustSetCell(t, f, sheet, "D10", "Zhotoviteľ:")
+		mustSetCell(t, f, sheet, "D11", "Spracovateľ:")
+		mustSetCell(t, f, sheet, "D12", "Poznámka:")
+		mustSetCell(t, f, sheet, "D14", "Náklady z rozpočtu")
+		mustSetCell(t, f, sheet, "J14", 5183917.256)
+		mustSetCell(t, f, sheet, "D15", "Ostatné náklady")
+		mustSetCell(t, f, sheet, "J15", 207356.69)
+		mustSetCell(t, f, sheet, "D16", "Cena bez DPH")
+		mustSetCell(t, f, sheet, "J16", 5391273.95)
+		mustSetCell(t, f, sheet, "D18", "Cena s DPH")
+		mustSetCell(t, f, sheet, "J18", 6469528.74)
+		// Pad to enough rows so isFormSheet triggers (>= 6 rows).
+		for r := 19; r <= 30; r++ {
+			mustSetCell(t, f, sheet, cellRef('D', r), "padding")
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "budget.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	// Should have at least 2 items for the form sheet: HTML table + KV text.
+	// (Sheet1 is empty so yields nothing.)
+	var htmlCount, kvCount int
+	for _, docItem := range res.JSON {
+		item := docItem.ToMap()
+		text, _ := item["text"].(string)
+		if strings.Contains(text, "<table>") {
+			htmlCount++
+		}
+		if strings.Contains(text, "Sheet: E1.2 - Statika") && strings.Contains(text, "Cena bez DPH: 5391273.95") {
+			kvCount++
+			if item["sheet"] != "E1.2 - Statika" {
+				t.Errorf("KV item sheet = %v, want E1.2 - Statika", item["sheet"])
+			}
+		}
+	}
+	if kvCount == 0 {
+		var texts []string
+		for _, docItem := range res.JSON {
+			text, _ := docItem.ToMap()["text"].(string)
+			texts = append(texts, text[:min(len(text), 200)])
+		}
+		t.Fatalf("no KV chunk found for form sheet, items:\n%v", texts)
+	}
+}
+
 // TestXLSXParser_EmptySheet asserts an empty sheet yields no parser items.
 func TestXLSXParser_EmptySheet(t *testing.T) {
 	// excelize.NewFile yields a single empty "Sheet1".
