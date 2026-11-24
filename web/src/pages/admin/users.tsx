@@ -1,4 +1,4 @@
-import { useDebounce } from 'ahooks';
+import { useDebounceFn } from 'ahooks';
 import { useContext, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
@@ -125,11 +125,18 @@ function AdminUserManagement() {
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState('');
-  const debouncedKeyword = useDebounce(keyword, { wait: 300 });
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const { run: applyKeyword } = useDebounceFn(
+    (value: string) => {
+      setSearchKeyword(value);
+      setPagination((current) => ({ ...current, pageIndex: 0 }));
+    },
+    { wait: 300 },
+  );
   const params: AdminUserListParams = {
     page: pagination.pageIndex + 1,
     page_size: pagination.pageSize,
-    keyword: debouncedKeyword,
+    keyword: searchKeyword,
     status,
     order: 'create_time',
     sort: 'desc',
@@ -149,8 +156,9 @@ function AdminUserManagement() {
   }
 
   function handleKeywordChange(event: React.ChangeEvent<HTMLInputElement>) {
-    setKeyword(event.target.value);
-    setPagination((current) => ({ ...current, pageIndex: 0 }));
+    const value = event.target.value;
+    setKeyword(value);
+    applyKeyword(value);
   }
 
   function handlePaginationChange(page: number, pageSize: number) {

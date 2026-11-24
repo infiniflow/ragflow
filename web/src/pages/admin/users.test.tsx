@@ -116,3 +116,30 @@ it('uses the server order and sends the active-status filter', async () => {
     ),
   );
 });
+
+it('starts a new search on page one after a page change during debounce', async () => {
+  renderUsers();
+  await screen.findByText('member-00@example.com');
+
+  const nextPage = () => screen.getByRole('link', { name: 'Go to next page' });
+  fireEvent.change(screen.getByPlaceholderText('header.search'), {
+    target: { value: 'member-' },
+  });
+  fireEvent.click(nextPage());
+
+  await waitFor(() =>
+    expect(MockListUsers).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 2, keyword: '' }),
+    ),
+  );
+  await waitFor(() =>
+    expect(MockListUsers.mock.calls.find(([params]) => params?.keyword)?.[0])
+      .toEqual(expect.objectContaining({ page: 1, keyword: 'member-' })),
+  );
+  await screen.findByText('member-00@example.com');
+  fireEvent.click(nextPage());
+  await screen.findByText('member-10@example.com');
+  expect(MockListUsers).toHaveBeenLastCalledWith(
+    expect.objectContaining({ page: 2, keyword: 'member-' }),
+  );
+});
