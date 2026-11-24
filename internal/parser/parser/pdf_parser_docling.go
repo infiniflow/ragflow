@@ -272,6 +272,9 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 
 const doclingImagePlaceholder = "<!-- image -->"
 
+// doclingMarkdownResult parses Docling Markdown and restores picture-child OCR
+// text when the structured document and the placeholder export agree on the
+// number of pictures (#21973).
 func doclingMarkdownResult(ctx context.Context, filename, markdown string, pages int, content map[string]any) ParseResult {
 	res := doclingAttachPositions(pdfMarkdownToResult(ctx, filename, markdown, pages), content)
 	if res.Err != nil || !strings.Contains(markdown, doclingImagePlaceholder) {
@@ -335,6 +338,7 @@ func doclingMarkdownResult(ctx context.Context, filename, markdown string, pages
 	return res
 }
 
+// doclingChildRefs collects $ref strings from a node's child or caption list.
 func doclingChildRefs(node map[string]any, key string) []string {
 	children, _ := node[key].([]any)
 	refs := make([]string, 0, len(children))
@@ -347,6 +351,8 @@ func doclingChildRefs(node map[string]any, key string) []string {
 	return refs
 }
 
+// doclingBodyPictures walks the document body in reading order and returns the
+// picture nodes it reaches, skipping nested groups after their children.
 func doclingBodyPictures(content map[string]any) []map[string]any {
 	nodes := make(map[string]map[string]any)
 	for _, key := range []string{"groups", "pictures"} {
