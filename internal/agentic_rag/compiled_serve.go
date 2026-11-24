@@ -155,14 +155,13 @@ func buildCompiledFilter(chunkIDs, kinds, types []string) map[string]interface{}
 }
 
 func fetchCompiledProducts(ctx context.Context, datasetIDs, chunkIDs []string) []compiledRow {
-	tenantID := decisionScopeFrom(ctx).tenantID
 	de := engine.Get()
 	if de == nil || len(chunkIDs) == 0 {
 		return nil
 	}
 	start := time.Now()
 	res, err := de.Search(ctx, &enginetypes.SearchRequest{
-		IndexNames:   []string{indexNameFor(tenantID, "")},
+		IndexNames:   IndexNamesFor(ctx, datasetIDs),
 		KbIDs:        datasetIDs,
 		SelectFields: []string{"id", "content_with_weight", "source_chunk_ids", "compile_kwd", "doc_id"},
 		Filter:       buildCompiledFilter(chunkIDs, compiledServeKinds(), compiledServeTypes()),

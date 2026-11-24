@@ -275,7 +275,7 @@ func (s *ChatPipelineService) agenticRag(
 			Template:        &tmpl,
 			TenantID:        chat.TenantID,
 			UserID:          userID,
-			DatasetIDs:      chatDatasetIDs(chat),
+			DatasetIDs:      chatDatasetIDs(chat), // the corpus index set is resolved from these datasets' own tenants
 			DocIDs:          docIDs,
 			ConversationKey: chat.ID,
 			Stream:          stream,
@@ -350,7 +350,7 @@ func (s *ChatPipelineService) agenticRag(
 		}
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
+			reference, answer = s.buildAgenticReference(ctx, chatDatasetIDs(chat), answer, registry)
 		} else {
 			if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 				common.InfoCtx(ctx, "agentic citations suppressed by quote=false")

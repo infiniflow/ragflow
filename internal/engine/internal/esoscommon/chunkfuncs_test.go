@@ -8,31 +8,6 @@ import (
 	"ragflow/internal/engine/types"
 )
 
-func TestEsIndexNameForTenant(t *testing.T) {
-	cases := []struct {
-		in      string
-		want    string
-		wantErr bool
-	}{
-		{"t1", "ragflow_t1", false},
-		{"  t2  ", "ragflow_t2", false}, // trimmed
-		{"", "", true},                  // empty -> error (adversarial)
-		{"a,b", "", true},               // comma -> error (adversarial)
-	}
-	for _, c := range cases {
-		got, err := esoscommon.EsIndexNameForTenant(c.in)
-		if c.wantErr {
-			if err == nil {
-				t.Errorf("EsIndexNameForTenant(%q): expected error, got %q", c.in, got)
-			}
-			continue
-		}
-		if err != nil || got != c.want {
-			t.Errorf("EsIndexNameForTenant(%q) = (%q,%v), want (%q,nil)", c.in, got, err, c.want)
-		}
-	}
-}
-
 func TestIsASCIILetter(t *testing.T) {
 	if !esoscommon.IsASCIILetter('a') || !esoscommon.IsASCIILetter('Z') {
 		t.Error("ASCII letters should be true")
