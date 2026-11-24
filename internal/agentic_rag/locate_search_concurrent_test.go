@@ -302,6 +302,66 @@ func TestRunLocateSearchConcurrentCallsUseEngineContext(t *testing.T) {
 	}
 }
 
+// A panic inside a retrieval goroutine must become that query's failure, not
+// take down the process: without a recover in the spawned goroutine the whole
+// test binary dies here, which is exactly the regression being guarded.
+func TestRunLocateSearchPanicBecomesQueryFailure(t *testing.T) {
+	barrier := newEntryBarrier(3)
+	fake := &concurrentRetrievalService{
+		barrier: barrier,
+		respond: func(q string) ([]runtime.RetrievalChunk, error) {
+			if q == "q2" {
+				panic("simulated retrieval engine panic")
+			}
+			return []runtime.RetrievalChunk{locateTestChunk("c-"+q, q+" alpha")}, nil
+		},
+	}
+	installConcurrentRetrieval(t, fake)
+
+	gateErr := make(chan error, 1)
+	go func() { gateErr <- barrier.waitForAll() }()
+	out := runLocateForTest(t, context.Background(), locateSpec([]string{"q1", "q2", "q3"}))
+	if err := <-gateErr; err != nil {
+		t.Fatal(err)
+	}
+	if got := chunkIDsInOrder(t, out); !slices.Equal(got, []string{"c-q1", "c-q3"}) {
+		t.Errorf("surviving chunk order = %v, want [c-q1 c-q3]", got)
+	}
+	if !strings.Contains(out, `<search_results count="2"`) {
+		t.Errorf("a panicking query must not drop the two live queries' hits, got: %s", out)
+	}
+	if !strings.Contains(out, `severity="warn"`) || !strings.Contains(out, `failed_queries="1"`) ||
+		!strings.Contains(out, "retrieval panicked") {
+		t.Errorf("panic must surface as that query's partial failure, got: %s", out)
+	}
+}
+
+// The all-panic case must still reach the outage notice — neither a crash nor
+// a misleading empty-corpus result.
+func TestRunLocateSearchAllQueriesPanicIsOutageNotice(t *testing.T) {
+	barrier := newEntryBarrier(3)
+	fake := &concurrentRetrievalService{
+		barrier: barrier,
+		respond: func(string) ([]runtime.RetrievalChunk, error) {
+			panic("engine down")
+		},
+	}
+	installConcurrentRetrieval(t, fake)
+
+	gateErr := make(chan error, 1)
+	go func() { gateErr <- barrier.waitForAll() }()
+	out := runLocateForTest(t, context.Background(), locateSpec([]string{"q1", "q2", "q3"}))
+	if err := <-gateErr; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `<tool_error tool="search_chunks" severity="error" failed_queries="3">`) {
+		t.Errorf("all-panic case must be an error tool_result, got: %s", out)
+	}
+	if !strings.Contains(out, "SEMANTIC RETRIEVAL UNAVAILABLE") || !strings.Contains(out, "retrieval panicked") {
+		t.Errorf("all-panic case must carry the outage reason, got: %s", out)
+	}
+}
+
 func BenchmarkRunLocateSearchConcurrent(b *testing.B) {
 	fake := &concurrentRetrievalService{
 		respond: func(q string) ([]runtime.RetrievalChunk, error) {

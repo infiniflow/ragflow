@@ -148,6 +148,13 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// A panic in a goroutine would end the whole process; turn it into
+			// this query's failure so the partial/outage paths can report it.
+			defer func() {
+				if r := recover(); r != nil {
+					errs[i] = fmt.Errorf("retrieval panicked: %v", r)
+				}
+			}()
 			results[i], errs[i] = svc.Search(ectx, dao.DB, runtime.RetrievalRequest{
 				Query:                    q,
 				DatasetIDs:               datasetIDs,
