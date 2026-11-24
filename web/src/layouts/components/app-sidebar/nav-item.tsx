@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { useVisibleIntegrationChildren } from '@/ee/hooks/use-visible-integration-children';
 import { cn } from '@/lib/utils';
-import { LucideChevronDown } from 'lucide-react';
+import { LucideChevronDown, type LucideIcon } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -69,48 +69,59 @@ export function NavItemLink({ item }: { item: NavItem }) {
   );
 }
 
-export function IntegrationsNavGroup() {
+export type NavGroupChild = {
+  key: string;
+  path: string;
+  labelKey: string;
+};
+
+type CollapsibleNavGroupProps = {
+  id: string;
+  labelKey: string;
+  icon: LucideIcon;
+  items: NavGroupChild[];
+};
+
+export function CollapsibleNavGroup({
+  id,
+  labelKey,
+  icon: Icon,
+  items,
+}: CollapsibleNavGroupProps) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const { collapsed } = useSidebarCollapse();
-  const integrationChildren =
-    useVisibleIntegrationChildren(IntegrationChildren);
-  const activeIntegrationKey = integrationChildren.find((child) =>
+  const activeChildKey = items.find((child) =>
     matchesPath(pathname, child.path),
   )?.key;
-  const [expanded, setExpanded] = useState(Boolean(activeIntegrationKey));
+  const [expanded, setExpanded] = useState(Boolean(activeChildKey));
 
-  // Follow navigation into an integrations page even when the user
-  // collapsed the group before.
+  // Follow navigation into a child page even when the user collapsed the group before.
   useEffect(() => {
-    if (activeIntegrationKey) {
+    if (activeChildKey) {
       setExpanded(true);
     }
-  }, [activeIntegrationKey]);
+  }, [activeChildKey]);
 
   const toggleExpanded = useCallback(() => {
     setExpanded((prev) => !prev);
   }, []);
 
-  const Icon = IntegrationsNavItem.icon;
-  const isActive = Boolean(activeIntegrationKey);
+  const isActive = Boolean(activeChildKey);
 
-  if (integrationChildren.length === 0) {
+  if (items.length === 0) {
     return null;
   }
 
   return (
     <div>
-      <NavItemTooltip
-        collapsed={collapsed}
-        label={t(IntegrationsNavItem.labelKey)}
-      >
+      <NavItemTooltip collapsed={collapsed} label={t(labelKey)}>
         <Button
           block
           variant="ghost"
-          aria-label={t(IntegrationsNavItem.labelKey)}
+          aria-label={t(labelKey)}
           aria-expanded={expanded}
-          aria-controls="integrations-nav-children"
+          aria-controls={id}
           onClick={toggleExpanded}
           className={cn(
             'h-10 justify-start gap-2.5 px-3 text-base',
@@ -127,7 +138,7 @@ export function IntegrationsNavGroup() {
               !collapsed && 'md:inline',
             )}
           >
-            {t(IntegrationsNavItem.labelKey)}
+            {t(labelKey)}
           </span>
           <LucideChevronDown
             className={cn(
@@ -141,14 +152,14 @@ export function IntegrationsNavGroup() {
 
       {expanded && (
         <ul
-          id="integrations-nav-children"
+          id={id}
           className={cn(
             'mt-1 flex flex-col gap-1',
             collapsed ? 'items-center' : 'max-md:items-center',
           )}
         >
-          {integrationChildren.map((child) => {
-            const isChildActive = activeIntegrationKey === child.key;
+          {items.map((child) => {
+            const isChildActive = activeChildKey === child.key;
             return (
               <li key={child.key}>
                 <NavItemTooltip collapsed={collapsed} label={t(child.labelKey)}>
@@ -186,6 +197,20 @@ export function IntegrationsNavGroup() {
         </ul>
       )}
     </div>
+  );
+}
+
+export function IntegrationsNavGroup() {
+  const integrationChildren =
+    useVisibleIntegrationChildren(IntegrationChildren);
+
+  return (
+    <CollapsibleNavGroup
+      id="integrations-nav-children"
+      labelKey={IntegrationsNavItem.labelKey}
+      icon={IntegrationsNavItem.icon}
+      items={integrationChildren}
+    />
   );
 }
 
