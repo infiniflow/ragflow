@@ -357,16 +357,23 @@ func (c *JiraConnector) searchJQL(ctx context.Context, jql string, startAt, maxR
 		out.NextPageToken = ids.NextPageToken
 		issueIDs := make([]string, 0, len(ids.Issues))
 		for _, issue := range ids.Issues {
-			if issue.ID != "" {
-				issueIDs = append(issueIDs, issue.ID)
+			if issue.ID == "" {
+				return fmt.Errorf("Jira search returned an issue without an ID")
 			}
+			issueIDs = append(issueIDs, issue.ID)
 		}
 		if len(issueIDs) == 0 {
+			if ids.NextPageToken != "" || ids.IsLast != nil && !*ids.IsLast {
+				return fmt.Errorf("Jira search returned an empty non-final page")
+			}
 			return nil
 		}
 		payload := map[string]any{"issueIdsOrKeys": issueIDs, "fields": strings.Split(fields, ",")}
-		_, err := c.doJSON(ctx, http.MethodPost, "issue/bulkfetch", nil, payload, out)
-		return err
+		if _, err := c.doJSON(ctx, http.MethodPost, "issue/bulkfetch", nil, payload, out); err != nil {
+			return err
+		}
+		out.NextPageToken, out.IsLast = ids.NextPageToken, ids.IsLast
+		return validateJiraBulkIssues(issueIDs, out)
 	}
 	query := url.Values{
 		"jql":        {jql},
@@ -657,6 +664,11 @@ func (s *jiraSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			if !s.windowEnd.IsZero() && !updatedAt.IsZero() && updatedAt.After(s.windowEnd) {
 				continue
 			}
+			if !issue.shouldSkip(s.connector.labelsToSkip) {
+				if err := s.connector.completeComments(ctx, &issue); err != nil {
+					return SyncBatch{}, err
+				}
+			}
 			doc, ok := s.connector.issueDocument(issue)
 			if ok {
 				documents = append(documents, doc)
@@ -713,11 +725,17 @@ func (s *jiraSyncSession) nextIssuePage(ctx context.Context) (jiraSearchPage, er
 		return jiraSearchPage{}, err
 	}
 	if s.connector.isCloud() {
+		if err := validateJiraCloudPage(page, s.nextPageToken); err != nil {
+			return jiraSearchPage{}, err
+		}
 		s.nextPageToken = page.NextPageToken
 		s.done = page.NextPageToken == "" || len(page.Issues) == 0
 	} else {
-		s.startAt += len(page.Issues)
-		s.done = len(page.Issues) < s.batchSize
+		var err error
+		s.startAt, s.done, err = advanceJiraServerPage(page, s.startAt, s.batchSize)
+		if err != nil {
+			return jiraSearchPage{}, err
+		}
 	}
 	return page, nil
 }
@@ -770,11 +788,17 @@ func (s *jiraPruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 			}
 		}
 		if s.connector.isCloud() {
+			if err := validateJiraCloudPage(page, s.nextPageToken); err != nil {
+				return PruneBatch{}, err
+			}
 			s.nextPageToken = page.NextPageToken
 			s.done = page.NextPageToken == "" || len(page.Issues) == 0
 		} else {
-			s.startAt += len(page.Issues)
-			s.done = len(page.Issues) < s.batchSize
+			var err error
+			s.startAt, s.done, err = advanceJiraServerPage(page, s.startAt, s.batchSize)
+			if err != nil {
+				return PruneBatch{}, err
+			}
 		}
 	}
 	if len(documents) == 0 {
@@ -801,8 +825,12 @@ func jiraCheckpoint(startAt int, nextPageToken string, doc SourceDocument) *Sync
 }
 
 type jiraSearchPage struct {
-	Issues        []jiraIssue `json:"issues"`
-	NextPageToken string      `json:"nextPageToken"`
+	Issues        []jiraIssue       `json:"issues"`
+	NextPageToken string            `json:"nextPageToken"`
+	StartAt       *int              `json:"startAt"`
+	Total         *int              `json:"total"`
+	IsLast        *bool             `json:"isLast"`
+	IssueErrors   []json.RawMessage `json:"issueErrors"`
 }
 
 type jiraIssue struct {
@@ -840,9 +868,12 @@ type jiraUser struct {
 
 type jiraCommentBlock struct {
 	Comments []jiraComment `json:"comments"`
+	StartAt  int           `json:"startAt"`
+	Total    *int          `json:"total"`
 }
 
 type jiraComment struct {
+	ID      string   `json:"id"`
 	Author  jiraUser `json:"author"`
 	Created jiraTime `json:"created"`
 	Body    any      `json:"body"`
