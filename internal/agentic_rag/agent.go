@@ -1665,6 +1665,14 @@ func modelFailure(err error) bool {
 	return err != nil && modelFailureRe.MatchString(err.Error())
 }
 
+// ModelFailure reports whether an error means the model chain, not the run's
+// content, failed the call. Exported for the chat pipeline's group failover:
+// a turn that died on a model failure flips the gp- primary's current member
+// inactive so the next run's chain picks the next member.
+func ModelFailure(err error) bool {
+	return modelFailure(err)
+}
+
 // modelCause extracts the provider-facing reason from a model-failure error,
 // for the one-line record the question's failure carries. A non-model
 // failure has no model cause.

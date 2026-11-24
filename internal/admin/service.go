@@ -150,11 +150,12 @@ func generateRandomHex(n int) string {
 //   - username: email address of the user
 //   - password: encrypted password (base64 encoded RSA encrypted)
 //   - role: user role ("user" or "admin")
+//   - nickname: display name of the user (optional)
 //
 // Returns:
 //   - map[string]interface{}: user information without password
 //   - error: error message
-func (s *Service) CreateUser(ctx context.Context, username, password, role string) (map[string]interface{}, error) {
+func (s *Service) CreateUser(ctx context.Context, username, password, role, nickname string) (map[string]interface{}, error) {
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(username) {
 		return nil, fmt.Errorf("invalid email address: %s", username)
@@ -185,7 +186,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		ID:              userID,
 		AccessToken:     &accessToken,
 		Email:           username,
-		Nickname:        "",
+		Nickname:        nickname,
 		Password:        &hashedPassword,
 		Status:          &status,
 		IsActive:        "1",
