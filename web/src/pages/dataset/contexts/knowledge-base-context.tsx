@@ -34,6 +34,6 @@ export const useKnowledgeBaseContext = (): KnowledgeBaseContextType => {
 };
 
 // oxlint-disable-next-line react-refresh/only-export-components
-export const useOwnerTenantId = (): string | undefined => {
+export const useResourceTenantId = (): string | undefined => {
   return useKnowledgeBaseContext().knowledgeBase?.tenant_id;
 };

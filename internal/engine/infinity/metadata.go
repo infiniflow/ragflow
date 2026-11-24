@@ -199,32 +199,12 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 	return []string{}, nil
 }
 
-// UpdateMetadata updates or inserts document metadata in tenant's metadata table.
-//
-// "Updates" here means MERGE, not replace. The supplied metaFields are
-// overlaid on top of the row's existing meta_fields map: keys already
-// present are overwritten with the new value, keys not in the input
-// are preserved, and brand-new keys are added. If no row exists for
-// (docID, datasetID), one is inserted containing exactly metaFields.
-//
-// Examples (existing row → input → resulting meta_fields):
-//
-//	{character:["曹操","孙权"], year:2025}
-//	  + {author:["John","Tom"], category:"tech"}
-//	  = {character:["曹操","孙权"], year:2025, author:["John","Tom"], category:"tech"}
-//
-//	{character:["曹操","孙权"], year:2025}
-//	  + {year:2025}
-//	  = {character:["曹操","孙权"], year:2025}    // year value unchanged, character preserved
-//
-//	(empty / row absent) + {author:"Tom"} = {author:"Tom"}
-//
-// Note: this is at odds with the SET-METADATA CLI's name, which a
-// reader naturally parses as "replace". The merge semantics exist so
-// that user-driven metadata edits compose with auto-extracted fields
-// produced by the LLM extraction pipeline. See the CLI parser in
-// internal/cli/user_parser.go (parseDevSetMeta) for the user-facing
-// surface that drives this engine method.
+// UpdateMetadata updates or inserts document metadata in tenant's metadata
+// table. "Updates" means REPLACE, matching the service's replace_meta_fields
+// contract: callers (SetDocumentMetadata, patchDocumentMetadata) send the
+// complete desired meta_fields map, so keys absent from metaFields do not
+// survive the call. If no row exists for (docID, datasetID), one is inserted
+// containing exactly metaFields.
 func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.UpdateMetadata called", zap.String("tableName", tableName), zap.String("docID", docID), zap.String("datasetID", datasetID))
@@ -260,43 +240,8 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID str
 		// Check if id column has any rows - len(qr.Data["id"]) > 0 means there are rows
 		if ok && qr != nil && len(qr.Data["id"]) > 0 {
 			rowExists = true
-			// Get meta_fields from the first row
-			if metaFieldsData, exists := qr.Data["meta_fields"]; exists && len(metaFieldsData) > 0 {
-				existingMetaFieldsVal := metaFieldsData[0]
-
-				// Parse existing meta_fields if it's a string or []uint8
-				var existingMetaFields map[string]interface{}
-				if existingMetaFieldsVal != nil {
-					switch v := existingMetaFieldsVal.(type) {
-					case string:
-						if err := json.Unmarshal([]byte(v), &existingMetaFields); err != nil {
-							common.Warn(fmt.Sprintf("Failed to parse existing meta_fields: %v", err))
-							existingMetaFields = make(map[string]interface{})
-						}
-					case []uint8:
-						// Handle raw bytes from Infinity - Infinity prefixes JSON with 4 bytes (likely length), skip them
-						decoded := v
-						if len(decoded) > 4 {
-							decoded = decoded[4:]
-						}
-						if err := json.Unmarshal(decoded, &existingMetaFields); err != nil {
-							common.Warn(fmt.Sprintf("Failed to parse existing meta_fields from []uint8: %v", err))
-							existingMetaFields = make(map[string]interface{})
-						}
-					case map[string]interface{}:
-						existingMetaFields = v
-					}
-				}
-
-				// Merge new meta_fields with existing (new values override existing)
-				if existingMetaFields == nil {
-					existingMetaFields = make(map[string]interface{})
-				}
-				for k, v := range metaFields {
-					existingMetaFields[k] = v
-				}
-				metaFields = existingMetaFields
-			}
+			// Replace semantics: callers send the complete desired meta_fields, so keys
+			// absent from metaFields must not survive. The stored map is not merged.
 		}
 	}
 
@@ -306,7 +251,7 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID str
 	}
 
 	if rowExists {
-		// Row exists: update it with merged metadata
+		// Row exists: replace its meta_fields with the supplied map.
 		common.Info(fmt.Sprintf("UpdateMetadata: updating existing row, table=%s, filter=%s, newValue=%v", tableName, filter, updatedFields))
 		_, err = table.Update(filter, updatedFields)
 		if err != nil {

@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import './register-react-devtools';
 import React from 'react';
 import { Inspector } from 'react-dev-inspector';
 import ReactDOM from 'react-dom/client';
@@ -21,7 +22,7 @@ import '../tailwind.css';
 import App from './app';
 import './global.less';
 import { initLanguage } from './locales/config';
-import { fetchBillingStatus } from '@/ee/services/billingStatus';
+import { fetchDeploymentType } from '@/ee/services/deployment-service';
 
 // Vite dispatches `vite:preloadError` when a lazily imported chunk fails to
 // load, typically because a stale tab still references hashed files that a
@@ -42,7 +43,7 @@ window.addEventListener('vite:preloadError', (event) => {
 });
 
 initLanguage()
-  .then(() => fetchBillingStatus())
+  .then(() => fetchDeploymentType())
   .then(() => {
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>

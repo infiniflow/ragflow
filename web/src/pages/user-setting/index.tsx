@@ -15,21 +15,20 @@
  */
 
 import { Outlet } from 'react-router';
+import { UserSettingCloseButton } from './components/user-setting-close-button';
 import { SideBar } from './sidebar';
-
-import { cn } from '@/lib/utils';
 
 function UserSetting() {
   return (
-    <section className="pt-8 size-full grid grid-cols-[4rem_minmax(0,1fr)] md:grid-cols-[303px_minmax(0,1fr)] grid-rows-1 min-w-0">
-      <SideBar />
+    <section className="relative size-full min-w-0 pt-16">
+      <UserSettingCloseButton />
 
-      <div
-        className={cn(
-          'pr-2 md:pr-6 pb-6 flex flex-1 min-w-0 rounded-lg overflow-hidden',
-        )}
-      >
-        <Outlet />
+      <div className="mx-auto grid size-full max-w-5xl min-w-0 grid-cols-[4rem_minmax(0,1fr)] gap-[clamp(1rem,5vw,5rem)] px-4 pb-6 md:grid-cols-[16rem_minmax(0,1fr)] md:px-8">
+        <SideBar />
+
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          <Outlet />
+        </div>
       </div>
     </section>
   );

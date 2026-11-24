@@ -651,7 +651,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	}
 	if err := validateAgentChatModels(ctx, canvas.EffectiveTenantID(), dsl); err != nil {
 		if errors.Is(err, ErrAgentStorageError) {
-			return nil, common.CodeServerError, errors.New("Internal storage error while accessing the agent.")
+			return nil, common.CodeServerError, err
 		}
 		return nil, common.CodeDataError, err
 	}
@@ -670,9 +670,9 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		return nil, common.CodeDataError, err
 	}
 	var namePtr = &name
-	var sourcePtr *string
-	if req.Source != "" {
-		sourcePtr = &req.Source
+	source := strings.TrimSpace(req.Source)
+	if source == "" || source == string(entity.AgentSessionSourceChatChannel) {
+		source = string(entity.AgentSessionSourceAgent)
 	}
 
 	id := common.GenerateUUID()
@@ -687,7 +687,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		UserID:    userID,
 		ExpUserID: &userID,
 		Message:   messages,
-		Source:    sourcePtr,
+		Source:    &source,
 		DSL:       dsl,
 	}
 	if err := s.api4ConversationDAO.Create(ctx, dao.DB, row); err != nil {

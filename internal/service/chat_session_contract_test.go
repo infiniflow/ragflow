@@ -73,6 +73,9 @@ func TestCreateSession_Success(t *testing.T) {
 	if resp.ChatID != "chat-1" {
 		t.Fatalf("chat_id=%q", resp.ChatID)
 	}
+	if resp.Source != entity.ChatSessionSourceNormal {
+		t.Fatalf("source=%q, want %q", resp.Source, entity.ChatSessionSourceNormal)
+	}
 	if len(store.sessions) != 1 {
 		t.Fatalf("expected 1 session created, got %d", len(store.sessions))
 	}

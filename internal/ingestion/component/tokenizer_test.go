@@ -25,6 +25,7 @@ import (
 	"math"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -815,5 +817,62 @@ func TestTokenizeChunks_WhitespaceSummaryShadowsTextBug(t *testing.T) {
 	if strings.TrimSpace(chunks[0].ContentLtks) == "" {
 		t.Errorf("whitespace Summary should be skipped, Text %q should be tokenized, but ContentLtks is empty",
 			chunks[0].Text)
+	}
+}
+
+// TestTokenizerComponent_Embedding_ReportsChunkDetail verifies that embedding
+// batches emit structured chunk positions. Adversarial: the detail must use
+// "chunk" unit, a cumulative current (cache hits + processed), and the true
+// total; a wrong implementation reporting fractions or page units fails here.
+func TestTokenizerComponent_Embedding_ReportsChunkDetail(t *testing.T) {
+	requireTokenizerPool(t)
+	c, _ := withStubEmbedder(t, 2)
+	t.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "2")
+
+	type rec struct {
+		unit    string
+		current uint32
+		total   uint32
+	}
+	var mu sync.Mutex
+	var details []rec
+	ctx := runtime.WithProgressDetailCallback(context.Background(), func(_ string, d runtime.ProgressDetail) {
+		mu.Lock()
+		defer mu.Unlock()
+		details = append(details, rec{d.Unit, d.Current, d.Total})
+	})
+	ctx = runtime.BindComponentDetail(ctx, "Tokenizer")
+
+	if _, err := c.Invoke(ctx, nil, map[string]any{
+		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "one"}, {"text": "two"}, {"text": "three"},
+			{"text": "four"}, {"text": "five"},
+		},
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(details) == 0 {
+		t.Fatal("expected chunk detail events, got none")
+	}
+	last := details[len(details)-1]
+	if last.unit != "chunk" {
+		t.Errorf("unit = %q, want chunk", last.unit)
+	}
+	if last.total != 5 {
+		t.Errorf("total = %d, want 5", last.total)
+	}
+	if last.current != 5 {
+		t.Errorf("final current = %d, want 5", last.current)
+	}
+	for _, d := range details {
+		if d.unit != "chunk" || d.total != 5 || d.current > d.total {
+			t.Errorf("malformed detail: %+v", d)
+		}
 	}
 }

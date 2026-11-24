@@ -237,7 +237,7 @@ func RerankStandard(
 
 	// Get vector information
 	vectorSize := len(questionVector)
-	vectorColumn := getVectorColumnName(vectorSize)
+	vectorColumn := common.VectorColumnName(vectorSize)
 	zeroVector := make([]float64, vectorSize)
 
 	// Extract embeddings and tokens from search results
@@ -413,11 +413,6 @@ func ArgsortDescending(values []float64) []int {
 }
 
 // Helper functions
-
-// getVectorColumnName returns the vector column name based on dimension
-func getVectorColumnName(dim int) string {
-	return "q_" + strconv.Itoa(dim) + "_vec"
-}
 
 // extractVector extracts vector from chunk fields
 func extractVector(fields map[string]interface{}, column string, zeroVector []float64) []float64 {
@@ -967,26 +962,7 @@ func RerankWithKNN(
 
 // toFloat64 converts various numeric types to float64
 func toFloat64(v interface{}) (float64, bool) {
-	switch val := v.(type) {
-	case float64:
-		return val, true
-	case float32:
-		return float64(val), true
-	case int:
-		return float64(val), true
-	case int64:
-		return float64(val), true
-	case int32:
-		return float64(val), true
-	case string:
-		// The engine's field projection stringifies non-string values
-		// (pagerank_fea arrives as "7"), and Python's rerank coerces the same
-		// string through np.array(..., dtype=float).
-		f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
-		return f, err == nil
-	default:
-		return 0, false
-	}
+	return common.ToFloat(v)
 }
 
 // parseTagFeasRerank parses a tag_feas JSON string into a map

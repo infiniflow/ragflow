@@ -103,6 +103,9 @@ const (
 	TokenParser
 	TokenPipeline
 	TokenSearch
+	TokenFind
+	TokenWS
+	TokenNew
 	TokenAgent
 	TokenMemories
 	TokenMemory
@@ -219,6 +222,8 @@ const (
 	TokenDate
 	TokenGroup
 	TokenGroups
+	TokenFeatures
+	TokenDeploy
 	// Literals
 	TokenIdentifier
 	TokenQuotedString

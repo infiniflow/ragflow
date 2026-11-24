@@ -18,7 +18,7 @@ export interface SegmentedLabeledOption {
 declare type SegmentedOptions = (SegmentedRawOption | SegmentedLabeledOption)[];
 const segmentedVariants = {
   round: {
-    default: 'rounded-md',
+    default: 'rounded-full',
     none: 'rounded-none',
     sm: 'rounded-sm',
     md: 'rounded-md',
@@ -130,7 +130,7 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
             <div
               className={cn(
                 itemClassName,
-                'absolute bg-bg-base rounded-sm transition-all',
+                'absolute bg-bg-base rounded-full transition-all',
               )}
               style={{
                 positionAnchor: `--${anchorNamePrefix}-${String(selectedValue).replace('/', '')}`,
@@ -191,7 +191,7 @@ const Segmented = React.forwardRef<HTMLDivElement, SegmentedProps>(
                   variant="static"
                   className={cn(
                     {
-                      'text-text-primary bg-bg-base':
+                      'text-text-primary bg-bg-base rounded-full':
                         selectedValue === actualValue,
                     },
                     itemClassName,

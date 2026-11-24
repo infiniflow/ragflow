@@ -4,7 +4,7 @@ title: Configure SSL Certificates
 sidebar_label: Configure SSL Certificates
 slug: /config_ssl_cert
 sidebar_custom_props: {
-  categoryIcon: LucideCog
+  categoryIcon: LucideShieldCheck
 }
 ---
 # Configure SSL Certificates

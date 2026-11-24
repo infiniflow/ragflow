@@ -36,12 +36,18 @@ export function useStaleDatasetFormSchema<T extends z.ZodTypeAny>(
   {
     fieldName = 'dataset_ids',
     canvasID,
-  }: { fieldName?: string; canvasID?: string } = {},
+    accessUserId,
+  }: {
+    fieldName?: string;
+    canvasID?: string;
+    accessUserId?: string | null;
+  } = {},
 ) {
   const { t } = useTranslation();
   const { staleDatasetIds, settled: datasetsFetched } = useStaleDatasetIds(
     persistedDatasetIds,
     canvasID,
+    accessUserId,
   );
 
   const formSchema = useMemo(() => {

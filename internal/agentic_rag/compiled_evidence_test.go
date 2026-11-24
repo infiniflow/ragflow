@@ -51,7 +51,7 @@ func installClaimLookup(t *testing.T, fn func(context.Context, string, []string,
 func installClaimProbe(t *testing.T, present bool) {
 	t.Helper()
 	prev := claimRowsPresent
-	claimRowsPresent = func(context.Context, string, []string) bool { return present }
+	claimRowsPresent = func(context.Context, []string) bool { return present }
 	t.Cleanup(func() { claimRowsPresent = prev })
 }
 
@@ -348,7 +348,7 @@ func TestListChunksServesCompiledEvidenceBeforeText(t *testing.T) {
 	ctx = WithQuery(ctx, "when was Acme founded")
 	ctx = withCompiledRun(ctx, "t", []string{"kb1"})
 
-	tool := NewListChunksTool("t", []string{"kb1"})
+	tool := NewListChunksTool([]string{"kb1"})
 	args := `{"doc_id":"d1","anchor_chunk_ids":["c1"],"intent":"founding year of Acme"}`
 
 	gated, err := tool.InvokableRun(ctx, args)
@@ -493,7 +493,7 @@ func TestCompiledEvidenceNoticeShownOnce(t *testing.T) {
 func TestCompiledEvidenceNoticeSkippedWithoutCorpusClaims(t *testing.T) {
 	probes := 0
 	prev := claimRowsPresent
-	claimRowsPresent = func(context.Context, string, []string) bool { probes++; return false }
+	claimRowsPresent = func(context.Context, []string) bool { probes++; return false }
 	t.Cleanup(func() { claimRowsPresent = prev })
 	installClaimLookup(t, func(context.Context, string, []string, []string, []string, int) []claimHit {
 		t.Error("a corpus without claims must not be looked up")
@@ -725,7 +725,7 @@ func TestClaimTextLegParsesRowsAndSkipsUnusableOnes(t *testing.T) {
 				{"content_with_weight": "not a claim payload"},
 			}, nil
 		})
-	got := searchClaimsForQuestion(context.Background(), "tenant-1", []string{"kb1"}, nil, "when was Acme founded", 50)
+	got := searchClaimsForQuestion(WithDatasetTenants(context.Background(), map[string]string{"kb1": "tenant-1"}), "tenant-1", []string{"kb1"}, nil, "when was Acme founded", 50)
 	if len(got) != 1 || got[0].name != "Acme was founded in 1994" || got[0].chunkID != "c9" {
 		t.Fatalf("claims = %+v, want the one parseable row", got)
 	}
@@ -743,7 +743,7 @@ func TestClaimTextLegDegradesWithoutQueryVector(t *testing.T) {
 			searched = true
 			return nil, nil
 		})
-	got := searchClaimsForQuestion(context.Background(), "tenant-1", []string{"kb1"}, nil, "when was Acme founded", 50)
+	got := searchClaimsForQuestion(WithDatasetTenants(context.Background(), map[string]string{"kb1": "tenant-1"}), "tenant-1", []string{"kb1"}, nil, "when was Acme founded", 50)
 	if len(got) != 0 {
 		t.Fatalf("claims = %+v, want none without a vector", got)
 	}
@@ -760,8 +760,70 @@ func TestClaimTextLegDegradesOnEngineError(t *testing.T) {
 		func(context.Context, *enginetypes.SearchRequest) ([]map[string]interface{}, error) {
 			return nil, errors.New("engine down")
 		})
-	if got := searchClaimsForQuestion(context.Background(), "tenant-1", []string{"kb1"}, nil, "q", 50); len(got) != 0 {
+	if got := searchClaimsForQuestion(WithDatasetTenants(context.Background(), map[string]string{"kb1": "tenant-1"}), "tenant-1", []string{"kb1"}, nil, "q", 50); len(got) != 0 {
 		t.Fatalf("claims = %+v, want none on an engine error", got)
+	}
+}
+
+func TestClaimTextLegEncodesWithEachDatasetTenant(t *testing.T) {
+	claimTextOn(t)
+	var encoded []string
+	var scoped [][]string
+	installClaimTextSearch(t,
+		func(_ context.Context, tenantID, _ string) []float64 {
+			encoded = append(encoded, tenantID)
+			if tenantID == "tenant-a" {
+				return []float64{0.1}
+			}
+			return []float64{0.1, 0.2}
+		},
+		func(_ context.Context, req *enginetypes.SearchRequest) ([]map[string]interface{}, error) {
+			scoped = append(scoped, append(append([]string(nil), req.IndexNames...), req.KbIDs...))
+			return nil, nil
+		})
+	ctx := WithDatasetTenants(context.Background(), map[string]string{"kb-a": "tenant-a", "kb-b": "tenant-b"})
+	searchClaimsForQuestion(ctx, "tenant-chat", []string{"kb-a", "kb-b"}, nil, "q", 50)
+	if len(encoded) != 2 || encoded[0] != "tenant-a" || encoded[1] != "tenant-b" {
+		t.Fatalf("encoded tenants = %v, want [tenant-a tenant-b]", encoded)
+	}
+	if len(scoped) != 2 || len(scoped[0]) != 2 || scoped[0][0] != "ragflow_tenant-a" || scoped[0][1] != "kb-a" {
+		t.Fatalf("first search scope = %v, want ragflow_tenant-a + kb-a", scoped)
+	}
+	if len(scoped[1]) != 2 || scoped[1][0] != "ragflow_tenant-b" || scoped[1][1] != "kb-b" {
+		t.Fatalf("second search scope = %v, want ragflow_tenant-b + kb-b", scoped)
+	}
+}
+
+func TestClaimTextLegRanksMergedGroupsByScore(t *testing.T) {
+	claimTextOn(t)
+	var encoded []string
+	installClaimTextSearch(t,
+		func(_ context.Context, tenantID, _ string) []float64 {
+			encoded = append(encoded, tenantID)
+			return []float64{0.1, 0.2}
+		},
+		func(_ context.Context, req *enginetypes.SearchRequest) ([]map[string]interface{}, error) {
+			if len(req.IndexNames) == 0 {
+				t.Errorf("search without an index scope: %+v", req)
+			}
+			row := claimRow("weak", "d1", "q", "c1")
+			if req.KbIDs[0] == "kb-b" {
+				row = claimRow("strong", "d2", "q", "c2")
+				row["_score"] = 0.9
+			} else {
+				row["_score"] = 0.2
+			}
+			return []map[string]interface{}{row}, nil
+		})
+	ctx := WithDatasetTenants(context.Background(), map[string]string{"kb-a": "tenant-a", "kb-b": "tenant-b"})
+	got := searchClaimsForQuestion(ctx, "tenant-chat", []string{"kb-a", "kb-b", "kb-unresolved"}, nil, "q", 1)
+	if len(got) != 1 || got[0].name != "strong" {
+		t.Fatalf("claims = %+v, want the higher-scoring group's claim", got)
+	}
+	for _, tenantID := range encoded {
+		if tenantID == "tenant-chat" {
+			t.Fatalf("an unresolved dataset must not be encoded with the run tenant: %v", encoded)
+		}
 	}
 }
 
@@ -794,7 +856,7 @@ func TestClaimTextLegUnionsOntoAnchoredPage(t *testing.T) {
 				claimRow("Acme was acquired by Beta", "d2", "q", "c9"),
 			}, nil
 		})
-	claims, hasClaims := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, []string{"c1"}, "when was Acme founded")
+	claims, hasClaims := compiledClaimsForChunks(WithDatasetTenants(context.Background(), map[string]string{"kb1": "tenant-1"}), "tenant-1", []string{"kb1"}, []string{"c1"}, "when was Acme founded")
 	if len(claims) != 3 {
 		t.Fatalf("claims = %d, want the 2 anchored + 1 added, deduped: %+v", len(claims), claims)
 	}

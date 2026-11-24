@@ -145,7 +145,8 @@ func TestRunWithVersionedMapStoreStillBuildsDocumentPages(t *testing.T) {
 	store := &memoryWikiMapVersionStore{payloads: map[string][]byte{}}
 	chat := &countingWikiMapChat{}
 	deps := common.Deps{
-		TenantID: "tenant-1", DatasetID: "kb-1",
+		ModelContextLen: common.DefaultLLMContextLength,
+		TenantID:        "tenant-1", DatasetID: "kb-1",
 		Chat: chat, Embed: staticWikiEmbedder{}, WikiMapVersions: store,
 	}
 	param := common.Param{}.Defaults()

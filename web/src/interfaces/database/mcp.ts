@@ -6,6 +6,7 @@ export interface IMcpServer {
   name: string;
   server_type: string;
   tenant_id: string;
+  user_id?: string;
   update_date: string;
   url: string;
   variables: Record<string, any> & { tools?: IMCPToolObject };

@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 //go:build cgo && manual
 
 // Package bench holds manual, never-CI performance benchmarks for the DeepDoc
@@ -22,6 +38,7 @@ import (
 	"ragflow/internal/deepdoc/parser/pdf"
 	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	pdftype "ragflow/internal/deepdoc/parser/pdf/type"
+	doctype "ragflow/internal/deepdoc/parser/type"
 )
 
 // TestMultiPDFThroughput parses every PDF in DEEPDOC_BENCH_DIR as a single
@@ -29,8 +46,8 @@ import (
 // memory. Inference runs single-threaded per session (intraOpThreads is pinned
 // to 1 in native/session.go), so the process-wide inference ceiling is exactly
 // the number of concurrent Runs the parser admits — the page worker pool and
-// the native inference gate are both sized to DeepDocConcurrency(). See
-// pdf.parser_concurrency.go and native/inference_limit.go.
+// the process inference gate are both sized to DeepDocConcurrency(). See
+// pdf.parser_concurrency.go and doctype/inference_gate.go.
 //
 // Run:
 //
@@ -67,7 +84,7 @@ func TestMultiPDFThroughput(t *testing.T) {
 	// the page worker pool and the native inference gate are sized to it.
 	budget := pdf.DeepDocConcurrency()
 	pdf.SetPageWorkerPoolSize(budget)
-	native.SetInferenceLimit(budget)
+	doctype.SetInferenceLimit(budget)
 	t.Logf("page worker pool = %d, inference gate = %d", budget, budget)
 
 	// Collect PDFs, sorted for a stable doc ordering across runs.

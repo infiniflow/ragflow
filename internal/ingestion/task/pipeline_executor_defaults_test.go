@@ -308,3 +308,15 @@ func TestBuiltInMetadataFromParserConfig_MapSliceBuiltIn(t *testing.T) {
 		t.Fatalf("expected update_time item, got %#v", cfg[0])
 	}
 }
+
+func TestCollectManagedMetadataKeys_DeduplicatesBothSliceForms(t *testing.T) {
+	chunks := []map[string]any{
+		{"_managed_metadata_keys": []string{"highest_degree", "work_experience_years"}},
+		{"_managed_metadata_keys": []any{"work_experience_years", "skills", " "}},
+	}
+	got := collectManagedMetadataKeys(chunks)
+	want := []string{"highest_degree", "work_experience_years", "skills"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("collectManagedMetadataKeys = %#v, want %#v", got, want)
+	}
+}

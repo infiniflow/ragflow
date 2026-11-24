@@ -69,6 +69,19 @@ const handleCheckChange = ({
   }
 };
 
+// True when any leaf option inside `node` is part of the current selection.
+// Used to auto-expand a group so an already-applied filter stays visible when
+// the popover is reopened, instead of being hidden behind a collapsed header.
+const subtreeHasSelected = (
+  node: FilterType,
+  selectedIds: Set<string>,
+): boolean => {
+  if (node.list && node.list.length > 0) {
+    return node.list.some((child) => subtreeHasSelected(child, selectedIds));
+  }
+  return selectedIds.has(node.id.toString());
+};
+
 const FilterItem = memo(
   ({
     item,
@@ -90,7 +103,7 @@ const FilterItem = memo(
           <FormControl>
             <div className="flex items-center space-x-2 min-w-0">
               <Checkbox
-                checked={field.value?.includes?.(item.id.toString())}
+                checked={Boolean(field.value?.includes?.(item.id.toString()))}
                 onCheckedChange={(checked: boolean) =>
                   handleCheckChange({ checked, field, item })
                 }
@@ -124,14 +137,34 @@ export const FilterField = memo(
     item,
     parent,
     level = 0,
+    autoExpand = false,
+    selectedIds,
   }: {
     item: FilterType;
     parent: FilterType;
     level?: number;
+    autoExpand?: boolean;
+    selectedIds: Set<string>;
   }) => {
     const form = useFormContext();
-    const [showAll, setShowAll] = useState(false);
     const hasNestedList = item.list && item.list.length > 0;
+
+    // Start expanded when this group already holds a selected option (an
+    // applied filter), so the selection is visible on open. `selectedIds` comes
+    // from the applied `value` prop and is stable while the popover is open, so
+    // this only needs to seed the initial state. Search-driven expansion still
+    // reacts to `autoExpand` changes below.
+    const [showAll, setShowAll] = useState(
+      autoExpand || subtreeHasSelected(item, selectedIds),
+    );
+    const [prevAutoExpand, setPrevAutoExpand] = useState(autoExpand);
+
+    if (autoExpand !== prevAutoExpand) {
+      setPrevAutoExpand(autoExpand);
+      if (autoExpand) {
+        setShowAll(true);
+      }
+    }
 
     return (
       <FormField
@@ -167,6 +200,8 @@ export const FilterField = memo(
                         field: `${parent.field}.${item.field}`,
                       }}
                       level={level + 1}
+                      autoExpand={autoExpand}
+                      selectedIds={selectedIds}
                     />
                   ))}
               </div>

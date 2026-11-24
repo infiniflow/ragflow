@@ -179,6 +179,28 @@ func TestUpdateConfluenceScopeBackfillsWithoutRebuilding(t *testing.T) {
 	}
 
 	newScope := entity.JSONMap{"index_mode": "page", "page_id": "456"}
+	if err := db.Exec(`CREATE TRIGGER deny_backfill BEFORE INSERT ON sync_logs
+		BEGIN SELECT RAISE(ABORT, 'fixture backfill unavailable'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, code, err := svc.UpdateConnector(ctx, connectorID, &UpdateConnectorRequest{Config: newScope}); code != common.CodeServerError || err == nil {
+		t.Fatalf("failed backfill: code=%v err=%v", code, err)
+	}
+	if len(publisher.taskIDs) != 0 {
+		t.Fatalf("failed backfill published %d tasks", len(publisher.taskIDs))
+	}
+	savedConnector, err := svc.connectorDAO.GetByID(ctx, db, connectorID)
+	if err != nil || savedConnector.Config["page_id"] != "123" {
+		t.Fatalf("failed backfill did not roll back scope: connector=%v err=%v", savedConnector, err)
+	}
+	var active entity.SyncLogs
+	if err := db.Take(&active, "id = ?", "old-active").Error; err != nil || active.Status != string(entity.TaskStatusRunning) {
+		t.Fatalf("failed backfill interrupted existing task: status=%s err=%v", active.Status, err)
+	}
+	if err := db.Exec("DROP TRIGGER deny_backfill").Error; err != nil {
+		t.Fatal(err)
+	}
+
 	backfill := update(&UpdateConnectorRequest{Config: newScope})
 	if !IsFromBeginning(backfill.FromBeginning) || backfill.PollRangeStart != nil {
 		t.Fatalf("new scope must start from the beginning: %+v", backfill)
@@ -211,7 +233,9 @@ func TestUpdateConfluenceScopeBackfillsWithoutRebuilding(t *testing.T) {
 
 	newWaterline := waterline.Add(30 * time.Minute)
 	if err := db.Model(&retry).Updates(map[string]any{
-		"status": string(entity.TaskStatusDone), "poll_range_end": entity.NewFlexibleTime(&newWaterline),
+		// The fixture can create two rounds within one millisecond.
+		"create_time": *retry.CreateTime + 1,
+		"status":      string(entity.TaskStatusDone), "poll_range_end": entity.NewFlexibleTime(&newWaterline),
 	}).Error; err != nil {
 		t.Fatalf("mark full scan successful: %v", err)
 	}

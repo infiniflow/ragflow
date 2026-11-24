@@ -15,6 +15,7 @@ import (
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -33,7 +34,14 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) 
 		return nil, ErrDocumentImageNotFound
 	}
 	docID, err := s.imageDocumentID(ctx, bucket, imageID, "")
-	if err != nil || docID == "" {
+	if err != nil {
+		if !errors.Is(err, ErrDocumentImageNotFound) {
+			common.Error("Failed to find document image", err)
+			return nil, errors.New("Failed to find document image")
+		}
+		return nil, err
+	}
+	if docID == "" {
 		return nil, ErrDocumentImageNotFound
 	}
 	return s.GetDocumentImageForDocument(ctx, docID, imageID)
@@ -43,7 +51,16 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) 
 // composite image ID belongs to an indexed chunk of an accessible document.
 func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, docID, imageID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead) != nil {
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return nil, fmt.Errorf("load image document: %w", err)
+	}
+	if err != nil || doc == nil {
+		return nil, ErrDocumentImageNotFound
+	}
+	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead); err != nil {
+		if !permissionresponse.IsPermissionError(err) {
+			return nil, err
+		}
 		return nil, ErrDocumentImageNotFound
 	}
 	bucket, objectKey, ok := strings.Cut(imageID, "-")
@@ -51,7 +68,10 @@ func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, docID
 		return nil, ErrDocumentImageNotFound
 	}
 	ownerID, err := s.imageDocumentID(ctx, doc.KbID, imageID, doc.ID)
-	if err != nil || ownerID != doc.ID {
+	if err != nil {
+		return nil, err
+	}
+	if ownerID != doc.ID {
 		return nil, ErrDocumentImageNotFound
 	}
 
@@ -61,7 +81,10 @@ func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, docID
 	}
 
 	data, err := storageImpl.Get(ctx, bucket, objectKey)
-	if err != nil || len(data) == 0 {
+	if err != nil {
+		return nil, fmt.Errorf("load document image: %w", err)
+	}
+	if len(data) == 0 {
 		return nil, ErrDocumentImageNotFound
 	}
 	return data, nil
@@ -71,7 +94,19 @@ func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, docID
 // document metadata.
 func (s *DocumentService) GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead) != nil || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return nil, fmt.Errorf("load thumbnail document: %w", err)
+	}
+	if err != nil || doc == nil {
+		return nil, ErrDocumentImageNotFound
+	}
+	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead); err != nil {
+		if !permissionresponse.IsPermissionError(err) {
+			return nil, err
+		}
+		return nil, ErrDocumentImageNotFound
+	}
+	if doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
 		return nil, ErrDocumentImageNotFound
 	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -79,7 +114,10 @@ func (s *DocumentService) GetDocumentThumbnail(ctx context.Context, docID string
 		return nil, fmt.Errorf("storage not initialized")
 	}
 	data, err := storageImpl.Get(ctx, doc.KbID, *doc.Thumbnail)
-	if err != nil || len(data) == 0 {
+	if err != nil {
+		return nil, fmt.Errorf("load document thumbnail: %w", err)
+	}
+	if len(data) == 0 {
 		return nil, ErrDocumentImageNotFound
 	}
 	return data, nil
@@ -91,6 +129,9 @@ func (s *DocumentService) imageDocumentID(ctx context.Context, kbID, imageID, do
 	}
 	tenantID, err := dao.GetTenantIDByKBID(ctx, dao.DB, kbID)
 	if err != nil {
+		if !dao.IsNotFoundErr(err) {
+			return "", fmt.Errorf("load image dataset tenant: %w", err)
+		}
 		return "", ErrDocumentImageNotFound
 	}
 	filter := map[string]any{"img_id": imageID}
@@ -104,7 +145,10 @@ func (s *DocumentService) imageDocumentID(ctx context.Context, kbID, imageID, do
 		SelectFields: []string{"doc_id", "img_id"},
 		Filter:       filter,
 	})
-	if err != nil || result == nil {
+	if err != nil {
+		return "", fmt.Errorf("find document image: %w", err)
+	}
+	if result == nil {
 		return "", ErrDocumentImageNotFound
 	}
 	for _, chunk := range result.Chunks {
@@ -254,6 +298,25 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		return nil, ErrPreviewDocumentNotFound
 	}
 
+	fileName := ""
+	if doc.Name != nil {
+		fileName = *doc.Name
+	}
+
+	// Preview artifacts generated during ingestion are served as-is. A handled
+	// type must not fall back to its raw source when the generated
+	// representation is unavailable.
+	if previewData, previewType, handled, perr := preparePreviewPresentation(ctx, doc, fileName); handled {
+		if perr != nil {
+			return nil, perr
+		}
+		return &DocumentPreview{
+			Data:        previewData,
+			ContentType: previewType,
+			FileName:    previewFileName(fileName),
+		}, nil
+	}
+
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
 		return nil, fmt.Errorf("resolve storage address for document %s: %w", docID, err)
@@ -272,11 +335,6 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		return nil, ErrPreviewFileEmpty
 	}
 
-	fileName := ""
-	if doc.Name != nil {
-		fileName = *doc.Name
-	}
-
 	ext := utility.GetFileExtension(fileName)
 	contentType := utility.GetContentType(ext, doc.Type)
 
@@ -286,6 +344,8 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 		if text, cerr := extractDOCPreviewText(ctx, fileName, data); cerr == nil {
 			data = []byte(text)
 			contentType = "text/plain; charset=utf-8"
+		} else if errors.Is(cerr, utility.ErrFeatureDisabled) {
+			return nil, cerr
 		}
 	}
 
@@ -333,4 +393,30 @@ func docPreviewText(res parser.ParseResult) (string, error) {
 		}
 	}
 	return strings.Join(parts, "\n"), nil
+}
+
+// preparePreviewPresentation lets the enterprise edition serve a generated
+// preview artifact for its own file types. The community stub returns
+// handled=false and the original bytes are served unchanged.
+func preparePreviewPresentation(ctx context.Context, doc *entity.Document, fileName string) ([]byte, string, bool, error) {
+	return preparePreviewPresentationEE(ctx, doc, fileName)
+}
+
+// cleanupPreviewArtifacts lets the enterprise edition remove generated preview
+// artifacts together with the document that owns them.
+func cleanupPreviewArtifacts(ctx context.Context, doc *entity.Document) {
+	cleanupPreviewArtifactsEE(ctx, doc)
+}
+
+// previewFileName keeps the original stem but advertises the generated PDF
+// extension so Content-Disposition stays consistent with the payload.
+func previewFileName(fileName string) string {
+	if strings.TrimSpace(fileName) == "" {
+		return "preview.pdf"
+	}
+	ext := filepath.Ext(fileName)
+	if ext == "" {
+		return fileName + ".pdf"
+	}
+	return strings.TrimSuffix(fileName, ext) + ".pdf"
 }

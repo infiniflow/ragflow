@@ -427,7 +427,7 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 			return errors.New("embedding response is empty")
 		}
 		vectorDim = len(vector)
-		message[fmt.Sprintf("q_%d_vec", len(vector))] = vector
+		message[common.VectorColumnName(len(vector))] = vector
 		if id, ok := message["id"].(string); !ok || id == "" {
 			message["id"] = fmt.Sprintf("%s_%v", message["memory_id"], message["message_id"])
 		}

@@ -16,6 +16,7 @@ export const BgSvg = ({ isPaused = false }: { isPaused?: boolean }) => {
     return (
       <svg
         className="w-full h-full"
+        role="presentation"
         // style={{ aspectRatio: `1440/${aspectRatio[type]}` }}
         // preserveAspectRatio="xMinYMid meet"
         preserveAspectRatio="none"

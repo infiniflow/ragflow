@@ -4,7 +4,7 @@ title: Import and Export Workflows
 sidebar_label: Import and Export Workflows
 slug: /import_and_export_agents
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideImport
 }
 ---
 

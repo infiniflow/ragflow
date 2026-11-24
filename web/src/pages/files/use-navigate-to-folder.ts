@@ -1,6 +1,5 @@
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchParentFolderList } from '@/hooks/use-file-request';
-import { Routes } from '@/routes';
 import { useCallback } from 'react';
 
 export const useNavigateToOtherFolder = () => {
@@ -23,6 +22,6 @@ export const useSelectBreadcrumbItems = () => {
     ? []
     : parentFolderList.map((x) => ({
         title: x.name === '/' ? 'root' : x.name,
-        path: `${Routes.Files}?folderId=${x.id}`,
+        folderId: x.id,
       }));
 };

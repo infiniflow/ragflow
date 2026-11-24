@@ -71,6 +71,7 @@ func Init(configPath string) error {
 	globalViper = v
 
 	globalConfig = &config.Config{}
+	globalConfig.ParseServerNames(v)
 	err := globalConfig.ParseGeneralConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse general config error: %w", err)

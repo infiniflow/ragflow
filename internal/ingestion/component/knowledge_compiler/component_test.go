@@ -153,7 +153,7 @@ func firstWords(s string, n int) string {
 func installProseDeps(t *testing.T) {
 	t.Helper()
 	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
-		return common.Deps{Chat: proseChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
+		return common.Deps{Chat: proseChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID, ModelContextLen: common.DefaultLLMContextLength}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 }
@@ -458,6 +458,7 @@ func installStrictScopeWikiDeps(t *testing.T, store *strictScopeWikiMapVersions)
 			Embed:           mockEmbedder{dim: 8},
 			WikiMapVersions: store,
 			TenantID:        tenantID,
+			ModelContextLen: common.DefaultLLMContextLength,
 		}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -791,9 +792,10 @@ func TestKnowledgeCompiler_Tree_DegenerateNoInfiniteLoop(t *testing.T) {
 func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
 	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
-			Chat:     proseChat{},
-			Embed:    constEmbedder{dim: 8, vec: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
-			TenantID: tenantID,
+			ModelContextLen: common.DefaultLLMContextLength,
+			Chat:            proseChat{},
+			Embed:           constEmbedder{dim: 8, vec: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
+			TenantID:        tenantID,
 		}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -839,9 +841,10 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
 func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
-			Chat:     wikiUpdateChat{},
-			Embed:    mockEmbedder{dim: 8},
-			TenantID: tenantID,
+			ModelContextLen: common.DefaultLLMContextLength,
+			Chat:            wikiUpdateChat{},
+			Embed:           mockEmbedder{dim: 8},
+			TenantID:        tenantID,
 			WikiPages: wikiStoreTestStub{page: &common.WikiPageCandidate{
 				ID:           "existing-1",
 				Slug:         "entity/person/alpha",
@@ -930,10 +933,11 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupScopedByDataset(t *testing.T) {
 	knn := &fakeHistoricalKNN{hit: true} // every product is a near-dup -> dropped
 	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
-			Chat:          proseChat{},
-			Embed:         constEmbedder{dim: 8, vec: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
-			TenantID:      tenantID,
-			HistoricalKNN: knn,
+			ModelContextLen: common.DefaultLLMContextLength,
+			Chat:            proseChat{},
+			Embed:           constEmbedder{dim: 8, vec: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
+			TenantID:        tenantID,
+			HistoricalKNN:   knn,
 		}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })

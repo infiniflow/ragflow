@@ -19,7 +19,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -108,8 +107,7 @@ func IsOlderReleaseThan(codeVersion, targetVersion string) (older, comparable bo
 // It is off unless the variable is explicitly set to a true value, so a
 // production deployment keeps the guard even when the variable is absent.
 func DevModeEnabled() bool {
-	enabled, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(EnvRAGFlowDevMode)))
-	return err == nil && enabled
+	return GetEnvBool(EnvRAGFlowDevMode, false)
 }
 
 // releaseVersion normalizes a version string to the "vMAJOR.MINOR.PATCH" form

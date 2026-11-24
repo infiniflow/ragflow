@@ -749,7 +749,7 @@ func ApplyMetaDataFilter(
 					condition.Value = value
 				}
 				if op, ok := cond["op"].(string); ok {
-					condition.Op = op
+					condition.Op = common.NormalizeOperator(op)
 				}
 				conditions = append(conditions, condition)
 			}
