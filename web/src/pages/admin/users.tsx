@@ -141,7 +141,12 @@ function AdminUserManagement() {
     order: 'create_time',
     sort: 'desc',
   };
-  const { data: usersPage, isPlaceholderData } = useQuery({
+  const {
+    data: usersPage,
+    isPlaceholderData,
+    isSuccess,
+    fetchStatus,
+  } = useQuery({
     queryKey: AdminUserKeys.list(params),
     queryFn: async () => (await listUsers(params)).data,
     retry: false,
@@ -432,12 +437,12 @@ function AdminUserManagement() {
   });
 
   useLayoutEffect(() => {
-    if (!usersPage || isPlaceholderData) return;
+    if (!isSuccess || isPlaceholderData || fetchStatus !== 'idle') return;
     const lastPage = Math.max(0, Math.ceil(total / pagination.pageSize) - 1);
     if (pagination.pageIndex > lastPage) {
       setPagination((current) => ({ ...current, pageIndex: lastPage }));
     }
-  }, [usersPage, isPlaceholderData, total, pagination]);
+  }, [isSuccess, isPlaceholderData, fetchStatus, total, pagination]);
 
   return (
     <>

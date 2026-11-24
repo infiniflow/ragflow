@@ -67,10 +67,9 @@ beforeEach(() => {
   });
 });
 
-function renderUsers() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+function renderUsers(
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return render(
     <MemoryRouter>
       <QueryClientProvider client={client}>
@@ -133,8 +132,9 @@ it('starts a new search on page one after a page change during debounce', async 
     ),
   );
   await waitFor(() =>
-    expect(MockListUsers.mock.calls.find(([params]) => params?.keyword)?.[0])
-      .toEqual(expect.objectContaining({ page: 1, keyword: 'member-' })),
+    expect(
+      MockListUsers.mock.calls.find(([params]) => params?.keyword)?.[0],
+    ).toEqual(expect.objectContaining({ page: 1, keyword: 'member-' })),
   );
   await screen.findByText('member-00@example.com');
   fireEvent.click(nextPage());
@@ -143,3 +143,51 @@ it('starts a new search on page one after a page change during debounce', async 
     expect.objectContaining({ page: 2, keyword: 'member-' }),
   );
 });
+
+it.each([25, 20])(
+  'uses the refreshed total %i to keep the selected page or correct it',
+  async (serverTotal) => {
+    const client = new QueryClient();
+    const listUsers = MockListUsers.getMockImplementation()!;
+    let finishRefresh: () => void = () => {};
+    const refresh = new Promise<void>((resolve) => {
+      finishRefresh = resolve;
+    });
+    MockListUsers.mockImplementation(async (params) => {
+      if (params?.page !== 3) return listUsers(params);
+      await refresh;
+      const response = await listUsers(params);
+      return serverTotal === 25
+        ? response
+        : {
+            ...response,
+            data: { ...response.data, data: [], total: serverTotal },
+          };
+    });
+    renderUsers(client);
+    await screen.findByText('member-00@example.com');
+    const [firstPage] = MockListUsers.mock.calls[0];
+    client.setQueryData(['admin/listUsers', { ...firstPage, page: 3 }], {
+      code: 0,
+      message: '',
+      data: [],
+      total: 20,
+    });
+
+    try {
+      fireEvent.click(screen.getByRole('link', { name: 'Go to next page' }));
+      await screen.findByText('member-10@example.com');
+      fireEvent.click(screen.getByRole('link', { name: 'Go to next page' }));
+      await waitFor(() =>
+        expect(MockListUsers).toHaveBeenLastCalledWith(
+          expect.objectContaining({ page: 3 }),
+        ),
+      );
+    } finally {
+      finishRefresh();
+    }
+    await screen.findByText(
+      serverTotal === 25 ? 'member-24@example.com' : 'member-10@example.com',
+    );
+  },
+);
