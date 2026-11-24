@@ -220,7 +220,7 @@ func (s *CanvasState) MarshalJSON() ([]byte, error) {
 // pointer (nodes may poll it concurrently with unmarshal completion).
 func (s *CanvasState) UnmarshalJSON(b []byte) error {
 	var snap canvasStateJSON
-	if err := json.Unmarshal(b, &snap); err != nil {
+	if err := UnmarshalCheckpointJSON(b, &snap); err != nil {
 		return err
 	}
 	s.mu.Lock()

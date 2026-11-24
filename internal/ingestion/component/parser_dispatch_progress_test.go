@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
@@ -138,5 +139,37 @@ func TestPDFPageProgressSupported(t *testing.T) {
 		if got := pdfPageProgressSupported(tc.fileType, setups); got != tc.want {
 			t.Errorf("pdfPageProgressSupported(%s, method=%s) = %v, want %v", tc.fileType, tc.method, got, tc.want)
 		}
+	}
+}
+
+// TestPDFPageProgressSupported_RegisteredAnalyzer reports the RED regression
+// in an edition-neutral way: any parse method backed by a registered external
+// DeepDoc analyzer runs the per-page worker loop and must report page progress,
+// while whole-document engines and unregistered methods must not.
+func TestPDFPageProgressSupported_RegisteredAnalyzer(t *testing.T) {
+	const probe = "probe_progress_analyzer"
+	// Registration is process-local to this test binary and the method name is
+	// unique, so the throwaway entry cannot collide with other cases.
+	parser.RegisterAnalyzerFactory(probe, func(string) (deepdoctype.DocAnalyzer, error) { return nil, nil })
+
+	tests := []struct {
+		name   string
+		method string
+		want   bool
+	}{
+		{"registered analyzer", probe, true},
+		{"registered analyzer normalized", "  PROBE_PROGRESS_ANALYZER  ", true},
+		{"whole-document mineru stays off", "mineru", false},
+		{"unregistered method stays off", "never_registered_progress_analyzer", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			setups := map[string]schema.ParserSetup{
+				"pdf": {"parse_method": tc.method},
+			}
+			if got := pdfPageProgressSupported(utility.FileTypePDF, setups); got != tc.want {
+				t.Errorf("pdfPageProgressSupported(pdf, method=%q) = %v, want %v", tc.method, got, tc.want)
+			}
+		})
 	}
 }

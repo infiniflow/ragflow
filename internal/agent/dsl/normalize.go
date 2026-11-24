@@ -437,16 +437,6 @@ func deepCopyDSL(dsl map[string]any) map[string]any {
 	return common.DeepCopyMap(dsl)
 }
 
-// copyMapStringAny returns a shallow copy of m. The new map
-// aliases the original values.
-func copyMapStringAny(m map[string]any) map[string]any {
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
-}
-
 // stringsToAny is the inverse of toStringSlice: it packs a []string
 // back into a []any so a downstream `.([]any)` type assertion
 // succeeds. The fold step needs this because it computes a
@@ -475,6 +465,7 @@ var componentNameToNodeTypeMap = map[string]string{
 	"Begin":              "beginNode",
 	"Retrieval":          "ragNode",
 	"Categorize":         "categorizeNode",
+	"ScoredSwitch":       "scoredSwitchNode",
 	"Message":            "messageNode",
 	"Answer":             "messageNode",
 	"RewriteQuestion":    "rewriteNode",

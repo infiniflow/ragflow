@@ -40,7 +40,7 @@ type IngestLogConfig struct {
 type IngestorConfig struct {
 	// ConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
 	// parallel — it is the NATS consumer worker count. Valid range [1, 256],
-	// enforced at startup by the CLI/env/config resolver (GetIngestor*); a
+	// enforced at startup by the env/config resolver (GetIngestor*); a
 	// value outside that range is a fatal startup error. Default 1.
 	ConcurrentWorkers int `mapstructure:"concurrent_workers"`
 	// ConcurrentWorkersSet is true when concurrent_workers was explicitly
@@ -52,7 +52,7 @@ type IngestorConfig struct {
 	// PageConcurrency bounds the total number of PDF pages parsed concurrently
 	// across the whole process (it sizes the single shared page worker pool that
 	// all ingestor workers submit to), not a per-document or per-worker limit.
-	// Valid range [1, 16], enforced at startup by the CLI/env/config resolver; a
+	// Valid range [1, 16], enforced at startup by the env/config resolver; a
 	// value outside that range is a fatal startup error. Default 2.
 	PageConcurrency int `mapstructure:"page_concurrency"`
 	// PageConcurrencySet is true when page_concurrency was explicitly present in
@@ -90,7 +90,7 @@ type IngestorConfig struct {
 	logConfig IngestLogConfig
 }
 
-// Ingestor concurrency bounds, shared by the CLI/env/config resolver so the
+// Ingestor concurrency bounds, shared by the env/config resolver so the
 // configured values can be validated against a single source of truth.
 const (
 	// MinIngestorWorkers / MaxIngestorWorkers are the inclusive bounds for
@@ -242,14 +242,14 @@ func (c *Config) GetDeepDocInferenceCPUCores(argValue *int) (int, bool, error) {
 }
 
 // GetIngestorConcurrentWorkers applies the precedence
-// CLI flag > environment variable > config file > default(1) and returns
+// environment variable > config file > default(1) and returns
 // the resolved ingestor worker count (K), validating it against the
 // inclusive range [MinIngestorWorkers, MaxIngestorWorkers]. An out-of-range
 // or noninteger value at any layer is a fatal startup error. An explicitly
 // configured zero or negative value is rejected (not silently defaulted):
 // the config-layer presence is tracked by ConcurrentWorkersSet so an absent
 // key falls back to the default while an explicit 0/-N fails fast.
-func (c *Config) GetIngestorConcurrentWorkers(argValue *int) (int, error) {
+func (c *Config) GetIngestorConcurrentWorkers() (int, error) {
 	val := c.ingestor.ConcurrentWorkers
 	set := c.ingestor.ConcurrentWorkersSet
 	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorConcurrentWorkers)); v != "" {
@@ -258,9 +258,6 @@ func (c *Config) GetIngestorConcurrentWorkers(argValue *int) (int, error) {
 			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorConcurrentWorkers, v, err)
 		}
 		val, set = n, true
-	}
-	if argValue != nil {
-		val, set = *argValue, true
 	}
 	if !set {
 		val = MinIngestorWorkers
@@ -273,13 +270,13 @@ func (c *Config) GetIngestorConcurrentWorkers(argValue *int) (int, error) {
 }
 
 // GetIngestorPageConcurrency applies the precedence
-// CLI flag > environment variable > config file > default(2) and returns
+// environment variable > config file > default(2) and returns
 // the resolved per-document page concurrency (N), validating it against
 // the inclusive range [MinPageConcurrency, MaxPageConcurrency]. An
 // out-of-range or noninteger value at any layer is a fatal startup error.
 // As with GetIngestorConcurrentWorkers, an explicitly configured zero or
 // negative page_concurrency is rejected rather than silently defaulted.
-func (c *Config) GetIngestorPageConcurrency(argValue *int) (int, error) {
+func (c *Config) GetIngestorPageConcurrency() (int, error) {
 	val := c.ingestor.PageConcurrency
 	set := c.ingestor.PageConcurrencySet
 	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorPageConcurrency)); v != "" {
@@ -288,9 +285,6 @@ func (c *Config) GetIngestorPageConcurrency(argValue *int) (int, error) {
 			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorPageConcurrency, v, err)
 		}
 		val, set = n, true
-	}
-	if argValue != nil {
-		val, set = *argValue, true
 	}
 	if !set {
 		val = 2 // default page concurrency
@@ -304,6 +298,33 @@ func (c *Config) GetIngestorPageConcurrency(argValue *int) (int, error) {
 
 func (c *Config) GetIngestorConfig() *IngestorConfig {
 	return &c.ingestor
+}
+
+// GetIngestorTier resolves the ingestor tier (which lanes the ingestor consumes)
+// with precedence CLI flag > environment variable RAGFLOW_INGESTOR_TIER >
+// default (TierDefault). It validates the value through common.ParseIngestorTier,
+// which is edition-specific: the community build accepts only the default (low)
+// lane, while the enterprise build accepts its full high/medium/low set. An
+// invalid value at any layer is a fatal startup error.
+func (c *Config) GetIngestorTier(argValue *string) (common.Tier, error) {
+	tier := common.TierDefault
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorTier)); v != "" {
+		parsed, err := common.ParseIngestorTier(v)
+		if err != nil {
+			return "", err
+		}
+		tier = parsed
+	}
+	if argValue != nil {
+		if v := strings.TrimSpace(*argValue); v != "" {
+			parsed, err := common.ParseIngestorTier(v)
+			if err != nil {
+				return "", err
+			}
+			tier = parsed
+		}
+	}
+	return tier, nil
 }
 
 func (c *Config) GetIngestLogConfig() *IngestLogConfig {

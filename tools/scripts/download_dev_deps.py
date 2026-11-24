@@ -254,6 +254,19 @@ def pdfium_url(goos: str, goarch: str) -> str:
     return f"{gh_proxy()}https://github.com/kognitos/pdfium-static/releases/download/chromium%2F{PDFIUM_VERSION}/{PDFIUM_STATIC_ASSETS[(goos, goarch)]}"
 
 
+def pdfium_required_files(goos: str) -> list[str]:
+    """Required files inside the pdfium-static archive for `goos`.
+
+    kognitos/pdfium-static bundles lib/libc++.a and lib/libc++abi.a only in the
+    Linux tarballs (which build.sh links with -fuse-ld=lld on Linux); the macOS
+    tarballs ship lib/libpdfium.a and include/fpdfview.h and rely on the system
+    libc++ from the macOS SDK.
+    """
+    if goos == "linux":
+        return ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"]
+    return ["lib/libpdfium.a", "include/fpdfview.h"]
+
+
 def pdfium_local_asset_name(goos: str, goarch: str) -> str:
     """Local deps/ filename for the pdfium tarball, suffixed with the resolved
     chromium build number so two pdfium versions never share a path.
@@ -480,15 +493,26 @@ def _stamp_present(data, version, stamp_format):
     return needle in data
 
 
-def native_lib_provisioned(directory, required_files, version=None, stamp_format="null"):
-    """True when DIRECTORY already holds every file in REQUIRED_FILES (non-empty)
-    and, for .a files when VERSION is set, the expected version stamp.
+def native_lib_provisioned(directory, required_files, version=None, stamp_format="null", *, platform=None, archive_hash=None):
+    """Check required files and version stamps in a provisioned native library.
 
-    This is the same check _extract_native_archive.complete() performs, lifted to
-    module scope so the download pass can skip fetching a lib whose version-keyed
-    cache dir is already populated (e.g. a CI builder's mounted pre-baked native
-    libs cache) instead of re-downloading it every run. pdfium passes VERSION
-    None (its .a carries no stamp), so only file presence is checked there."""
+    PDFium callers also supply the target platform and, when available, the
+    archive hash so download and extraction use the same cache validation.
+    """
+    if platform is not None or archive_hash is not None:
+        stamp_path = os.path.join(directory, ".ragflow_platform")
+        if not os.path.isfile(stamp_path):
+            return False
+        with open(stamp_path, encoding="utf-8") as stamp_file:
+            lines = stamp_file.read().splitlines()
+        stamp_platform = lines[0].strip() if lines else ""
+        stamp_hash = lines[1].strip() if len(lines) > 1 else ""
+        if platform is not None:
+            platform_token = f"{platform[0]}/{platform[1]}" if isinstance(platform, tuple) else str(platform)
+            if stamp_platform != platform_token:
+                return False
+        if archive_hash is not None and stamp_hash != archive_hash:
+            return False
     for name in required_files:
         path = os.path.join(directory, name)
         if not os.path.isfile(path) or os.path.getsize(path) == 0:
@@ -500,7 +524,7 @@ def native_lib_provisioned(directory, required_files, version=None, stamp_format
     return True
 
 
-def _extract_native_archive(archive_path, target, required_files, version=None, stamp_format="null"):
+def _extract_native_archive(archive_path, target, required_files, version=None, stamp_format="null", *, platform=None, archive_hash=None):
     """Extract ARCHIVE_PATH into TARGET, verifying REQUIRED_FILES (and, for .a
     files, an optional VERSION stamp) before promoting the staged tree.
 
@@ -512,11 +536,11 @@ def _extract_native_archive(archive_path, target, required_files, version=None, 
     Path-traversal / absolute / non-regular members are rejected before
     extraction, and an incomplete archive raises instead of replacing a
     previously good directory."""
+    platform_token = None
+    if platform is not None:
+        platform_token = f"{platform[0]}/{platform[1]}" if isinstance(platform, tuple) else str(platform)
 
-    def complete(directory):
-        return native_lib_provisioned(directory, required_files, version, stamp_format)
-
-    if complete(target):
+    if native_lib_provisioned(target, required_files, version, stamp_format, platform=platform, archive_hash=archive_hash):
         print(f"  ✓ {os.path.basename(target)} already extracted to {target}")
         return
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -528,8 +552,16 @@ def _extract_native_archive(archive_path, target, required_files, version=None, 
                 if os.path.isabs(member.name) or ".." in member.name.split("/") or not (member.isfile() or member.isdir()):
                     raise tarfile.TarError(f"Unsafe native archive member: {member.name}")
             archive.extractall(staging, members=members)
-        if not complete(staging):
+        if not native_lib_provisioned(staging, required_files, version, stamp_format):
             raise RuntimeError(f"{archive_path} is missing required native files or version {version}")
+        if platform_token is not None or archive_hash is not None:
+            with open(os.path.join(staging, ".ragflow_platform"), "w", encoding="utf-8") as stamp_file:
+                if platform_token is not None:
+                    stamp_file.write(f"{platform_token}\n")
+                else:
+                    stamp_file.write("\n")
+                if archive_hash is not None:
+                    stamp_file.write(f"{archive_hash}\n")
         if os.path.isdir(target):
             shutil.rmtree(target)
         os.replace(staging, target)
@@ -542,7 +574,7 @@ def _extract_native_archive(archive_path, target, required_files, version=None, 
     print(f"  ✓ extracted {os.path.basename(archive_path)} to {target}")
 
 
-def extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_version=None, stamp_format="null"):
+def extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_version=None, stamp_format="null", *, platform=None):
     """Extract a native static archive into the version-keyed cache dir
     ~/ragflow-native-libs/<subdir>/<dir_version>/.
 
@@ -554,8 +586,8 @@ def extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_
     no-op for an already-provisioned cache.
 
     STAMP_FORMAT is forwarded to _extract_native_archive (see its docstring):
-    "null" for office_oxide, "text" for pdf_oxide. pdfium passes stamp_version
-    None and is not stamp-checked.
+    "null" for office_oxide, "text" for pdf_oxide. PDFium has no embedded version
+    stamp. It passes PLATFORM to key cache reuse on the target and archive hash.
 
     Returns True when extraction ran or was skipped-successfully (the dir is in
     place afterwards), False when the archive is absent (caller must then
@@ -565,8 +597,9 @@ def extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_
         print(f"  Skipping extraction: {os.path.basename(archive_path)} not found")
         return False
     target = os.path.join(native_libs_dir(), subdir, dir_version)
+    archive_hash = _sha256_of(archive_path) if platform is not None else None
     try:
-        _extract_native_archive(archive_path, target, required_files, stamp_version, stamp_format)
+        _extract_native_archive(archive_path, target, required_files, stamp_version, stamp_format, platform=platform, archive_hash=archive_hash)
     except (tarfile.TarError, EOFError, RuntimeError):
         os.unlink(archive_path)
         raise
@@ -911,7 +944,7 @@ def native_lib_specs(goos, goarch):
             pdfium_url(goos, goarch),
             pdfium_local_asset_name(goos, goarch),
             "v" + PDFIUM_VERSION,
-            ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"],
+            pdfium_required_files(goos),
             None,
             "null",
         ),
@@ -941,11 +974,13 @@ def download_native_archives(goos, goarch):
     version-keyed cache dir (~/ragflow-native-libs/<lib>/v<ver>/) is already
     provisioned (e.g. a CI builder's mounted pre-baked native-libs cache) — the
     download pass consults that cache, not just the transient deps/ archive, so a
-    pre-baked lib is never re-fetched. Falls back to the deps/ archive check,
+    valid pre-baked lib is not re-fetched. Falls back to the deps/ archive check,
     then network."""
     for subdir, url, archive, dir_version, required_files, stamp_version, stamp_format in native_lib_specs(goos, goarch):
         target = os.path.join(native_libs_dir(), subdir, dir_version)
-        if native_lib_provisioned(target, required_files, stamp_version, stamp_format):
+        platform = (goos, goarch) if subdir == "pdfium-static" else None
+        archive_hash = _sha256_of(archive) if platform is not None and os.path.isfile(archive) else None
+        if native_lib_provisioned(target, required_files, stamp_version, stamp_format, platform=platform, archive_hash=archive_hash):
             print(f"  ✓ {subdir} {dir_version} already provisioned at {target}; skipping download")
             continue
         print(f"Downloading {archive} from {url}...")
@@ -1002,11 +1037,21 @@ def main():
     # avoided re-fetching it), so a pre-baked native-libs cache is a no-op here.
     for subdir, _url, archive, dir_version, required_files, stamp_version, stamp_format in native_lib_specs(goos, goarch):
         target = os.path.join(native_libs_dir(), subdir, dir_version)
-        if native_lib_provisioned(target, required_files, stamp_version, stamp_format):
+        platform = (goos, goarch) if subdir == "pdfium-static" else None
+        archive_hash = _sha256_of(archive) if platform is not None and os.path.isfile(archive) else None
+        if native_lib_provisioned(target, required_files, stamp_version, stamp_format, platform=platform, archive_hash=archive_hash):
             print(f"  ✓ {subdir} {dir_version} already provisioned at {target}; skipping extraction")
             continue
         archive_path = os.path.join(RAGFLOW_DEPS_DIR, archive)
-        extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_version, stamp_format)
+        extract_native_lib(
+            archive_path,
+            subdir,
+            dir_version,
+            required_files,
+            stamp_version,
+            stamp_format,
+            platform=platform,
+        )
 
     if not extract_onnxruntime(
         os.path.join(native_libs_dir(), "onnxruntime", "static_lib"),

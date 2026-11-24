@@ -129,22 +129,23 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 }
 
 type ChatCompletionsRequest struct {
-	ChatID           string                   `json:"chat_id,omitempty"`
-	SessionID        string                   `json:"session_id,omitempty"`
-	ConversationID   string                   `json:"conversation_id,omitempty"`
-	Messages         []map[string]interface{} `json:"messages,omitempty"`
-	Question         string                   `json:"question,omitempty"`
-	Query            string                   `json:"query,omitempty"`
-	Files            []interface{}            `json:"files,omitempty"`
-	LLMID            string                   `json:"llm_id,omitempty"`
-	Legacy           bool                     `json:"legacy,omitempty"`
-	Stream           *bool                    `json:"stream"`
-	Thinking         string                   `json:"thinking"`
-	Temperature      *float64                 `json:"temperature,omitempty"`
-	TopP             *float64                 `json:"top_p,omitempty"`
-	FrequencyPenalty *float64                 `json:"frequency_penalty,omitempty"`
-	PresencePenalty  *float64                 `json:"presence_penalty,omitempty"`
-	MaxTokens        *int                     `json:"max_tokens,omitempty"`
+	ChannelContext   *service.ChatChannelExecutionContext `json:"channel_context,omitempty"`
+	ChatID           string                               `json:"chat_id,omitempty"`
+	SessionID        string                               `json:"session_id,omitempty"`
+	ConversationID   string                               `json:"conversation_id,omitempty"`
+	Messages         []map[string]interface{}             `json:"messages,omitempty"`
+	Question         string                               `json:"question,omitempty"`
+	Query            string                               `json:"query,omitempty"`
+	Files            []interface{}                        `json:"files,omitempty"`
+	LLMID            string                               `json:"llm_id,omitempty"`
+	Legacy           bool                                 `json:"legacy,omitempty"`
+	Stream           *bool                                `json:"stream"`
+	Thinking         string                               `json:"thinking"`
+	Temperature      *float64                             `json:"temperature,omitempty"`
+	TopP             *float64                             `json:"top_p,omitempty"`
+	FrequencyPenalty *float64                             `json:"frequency_penalty,omitempty"`
+	PresencePenalty  *float64                             `json:"presence_penalty,omitempty"`
+	MaxTokens        *int                                 `json:"max_tokens,omitempty"`
 
 	StoreHistoryMessages *bool `json:"store_history_messages,omitempty"`
 }
@@ -162,6 +163,9 @@ type ChatCompletionsRequest struct {
 // @Success 200 {string} text/event-stream "Streaming SSE response"
 // @Router /api/v1/chat/completions [post]
 func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
+	common.StartOperationLog(c, "request_chat_completion")
+	defer common.FinishOperationLog(c)
+
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
@@ -192,6 +196,8 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	if sessionID == "" {
 		sessionID = req.ConversationID
 	}
+	common.SetOperationResource(c, "chat_id", req.ChatID)
+	common.SetOperationResource(c, "session_id", sessionID)
 
 	// Build generation config
 	genConfig := make(map[string]interface{})
@@ -199,9 +205,8 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		switch req.Thinking {
 		case "enabled":
 			genConfig["thinking"] = true
-		case "disabled":
+		case "disabled", "default":
 			genConfig["thinking"] = false
-		case "", "default":
 		}
 	}
 	if req.Temperature != nil {
@@ -224,9 +229,32 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		genConfig["max_tokens"] = *req.MaxTokens
 	}
 
+	if req.ChannelContext != nil {
+		question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+		if err != nil {
+			common.RespondError(c, common.CodeArgumentError, err.Error())
+			return
+		}
+		ctx, channelSessionID, err := service.PrepareChatChannelCompletion(c.Request.Context(), *req.ChannelContext, req.ChatID, question, false)
+		if err != nil {
+			if !respondPermissionErrorIf(c, err, true) {
+				common.RespondError(c, common.CodeArgumentError, err.Error())
+			}
+			return
+		}
+		if (req.SessionID != "" && req.SessionID != channelSessionID) ||
+			(req.ConversationID != "" && req.ConversationID != channelSessionID) {
+			common.RespondError(c, common.CodeArgumentError, "session_id does not match the chat channel conversation")
+			return
+		}
+		c.Request = c.Request.WithContext(ctx)
+		sessionID = channelSessionID
+		common.SetOperationResource(c, "session_id", sessionID)
+	}
+
 	// Remove known keys from rawBody; what remains is passthrough kwargs
 	knownKeys := []string{
-		"chat_id", "session_id", "conversation_id",
+		"chat_id", "session_id", "conversation_id", "channel_context",
 		"messages", "question", "query", "files",
 		"llm_id",
 		"legacy", "stream", "thinking",
@@ -244,6 +272,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	if streamMode {
+		common.FinishOperationLog(c)
 		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
@@ -330,6 +359,10 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 
 // CreateSession create a session in a dialog
 func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
+	common.StartOperationLog(c, "create_chat_session")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+
 	chatID := strings.TrimSpace(c.Param("chat_id"))
 	if chatID == "" {
 		common.RespondError(c, common.CodeBadRequest, "chat_id is required")
@@ -360,11 +393,16 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "session_id", result.ID)
 	common.RespondSuccess(c, result, "success")
 }
 
 // DeleteSessions delete a session in a dialog
 func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
+	common.StartOperationLog(c, "delete_chat_sessions")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+
 	chatID := strings.TrimSpace(c.Param("chat_id"))
 	if chatID == "" {
 		common.RespondError(c, common.CodeBadRequest, "chat_id is required")
@@ -386,6 +424,17 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	var sessionIDs []string
+	if ids, ok := req["ids"].([]any); ok {
+		for _, value := range ids {
+			if id, ok := value.(string); ok && strings.TrimSpace(id) != "" {
+				sessionIDs = append(sessionIDs, id)
+			}
+		}
+	}
+	deleteAll, _ := req["delete_all"].(bool)
+	common.SetOperationResource(c, "session_ids", sessionIDs)
+	common.SetOperationResource(c, "delete_all", deleteAll)
 	result, message, code, err := h.chatSessionService.DeleteSessions(ctx, chatID, req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
@@ -399,6 +448,10 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 }
 
 func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
+	common.StartOperationLog(c, "update_chat_session")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+
 	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
 
 	// An empty payload is a valid no-op (mirrors Python's update_session).
@@ -421,6 +474,11 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 }
 
 func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
+	common.StartOperationLog(c, "delete_chat_message")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+	common.SetOperationResource(c, "message_id", c.Param("msg_id"))
+
 	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
 
 	ctx := c.Request.Context()
@@ -436,6 +494,11 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 }
 
 func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
+	common.StartOperationLog(c, "update_chat_message_feedback")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+	common.SetOperationResource(c, "message_id", c.Param("msg_id"))
+
 	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
 
 	req := map[string]interface{}{}

@@ -260,7 +260,7 @@ func TestBedrockConfigPreservesEmbeddingMaxTokens(t *testing.T) {
 }
 
 func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
-	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocr.json", "monkeyocrv2.json", "paddleocr_local.json")
+	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocr.json", "monkeyocrv2.json", "paddleocr_local.json", "unlimited_ocr.json")
 	defer restore()
 
 	err := InitProviderManager(dir)
@@ -269,6 +269,20 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 
 	pm := GetProviderManager()
+
+	unlimitedOCR := pm.FindProvider("Unlimited-OCR-2")
+	if unlimitedOCR == nil {
+		t.Fatal("Unlimited-OCR-2 provider not found")
+	}
+	if _, ok := unlimitedOCR.ModelDriver.(*UnlimitedOCRModel); !ok {
+		t.Fatalf("Unlimited-OCR-2 ModelDriver=%T, want *models.UnlimitedOCRModel", unlimitedOCR.ModelDriver)
+	}
+	if unlimitedOCR.ModelDriver.Name() != "unlimited_ocr" {
+		t.Fatalf("Unlimited-OCR-2 Name()=%q, want unlimited_ocr", unlimitedOCR.ModelDriver.Name())
+	}
+	if unlimitedOCR.URLSuffix.DocumentParse != "file_parse" {
+		t.Errorf("Unlimited-OCR-2 doc_parse suffix=%q", unlimitedOCR.URLSuffix.DocumentParse)
+	}
 
 	minerU := pm.FindProvider("MinerU")
 	if minerU == nil {
@@ -963,15 +977,20 @@ func TestChatModelWithDefaults(t *testing.T) {
 	if config.ModelClass == nil || *config.ModelClass != "chat" {
 		t.Fatalf("ModelClass = %v, want chat", config.ModelClass)
 	}
-	if config.Thinking == nil || !*config.Thinking {
-		t.Fatalf("Thinking = %v, want true", config.Thinking)
+	if config.Thinking == nil || *config.Thinking {
+		t.Fatalf("Thinking = %v, want false even when the model defaults to thinking", config.Thinking)
 	}
 
 	modelClass := "custom"
-	thinking := false
+	thinking := true
 	config = model.withDefaults(&ChatConfig{ModelClass: &modelClass, Thinking: &thinking})
 	if config.ModelClass != &modelClass || config.Thinking != &thinking {
 		t.Fatal("explicit chat config values should not be overwritten by model defaults")
+	}
+
+	config = (&ChatModel{}).withDefaults(nil)
+	if config.Thinking == nil || *config.Thinking {
+		t.Fatalf("Thinking without metadata = %v, want false", config.Thinking)
 	}
 }
 

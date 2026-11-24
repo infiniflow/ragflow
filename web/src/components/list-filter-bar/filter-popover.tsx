@@ -292,6 +292,7 @@ function CheckboxFormMultiple({
                               id: x.field,
                               // field: `${x.field}${item.field ? '.' + item.field : ''}`,
                             }}
+                            autoExpand={Boolean(searchTerms[x.field])}
                           />
                         );
                       })}

@@ -8,7 +8,6 @@ import (
 
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/utility"
 )
 
 // isStructuralOCRTextLayout reports whether an item already carries a
@@ -52,7 +51,7 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 			pageCount = page.Index + 1
 		}
 		size := sizes[page.Index]
-		if paddleOCRPositive(page.Width) && paddleOCRPositive(page.Height) && paddleOCRPositive(size[0]) && paddleOCRPositive(size[1]) && !paddleOCRAspectRatioMatches(page, size) {
+		if paddleOCRPageMismatch(page, size) {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s page %d: OCR dimensions %gx%g do not match PDF aspect ratio %gx%g; coordinates omitted", provider, page.Index+1, page.Width, page.Height, size[0], size[1]))
 			size = [2]float64{}
 		}
@@ -62,7 +61,7 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 			}
 			label := strings.ToLower(strings.TrimSpace(block.Label))
 			if models.IsOCRMediaLabel(label) || models.IsOCRImageOnlyText(block.Text) {
-				text := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
+				text := models.OCRBlockBody(block.Text)
 				position := paddleOCRBlockPosition(page, block.BBox, size)
 				// A block with neither body text nor a crop region has nothing
 				// media can act on: a crop preview needs positive-area geometry,
@@ -73,7 +72,7 @@ func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, r
 				result.JSON = append(result.JSON, paddleOCRMediaItem(page, text, position))
 				continue
 			}
-			content := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
+			content := models.OCRBlockBody(block.Text)
 			if content == "" {
 				continue
 			}
@@ -167,11 +166,23 @@ func paddleOCRMediaItem(page models.OCRPage, text string, position []any) DocIte
 	return DocItemFromMap(fields)
 }
 
+// paddleOCRPageMismatch reports whether a page's OCR image dimensions do not
+// match the PDF page's aspect ratio, so its pixel boxes cannot be placed. A
+// Normalized page gives boxes as page fractions and is never a mismatch.
+func paddleOCRPageMismatch(page models.OCRPage, size [2]float64) bool {
+	return !page.Normalized && paddleOCRPositive(page.Width) && paddleOCRPositive(page.Height) && paddleOCRPositive(size[0]) && paddleOCRPositive(size[1]) && !paddleOCRAspectRatioMatches(page, size)
+}
+
+// paddleOCRBlockPosition scales a block box onto the PDF page. A Normalized
+// page gives the box as page fractions, so it needs no aspect-ratio check.
 func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64) []any {
+	if page.Normalized {
+		page.Width, page.Height = 1, 1
+	}
 	if page.Index < 0 || !paddleOCRPositive(page.Width) || !paddleOCRPositive(page.Height) || !paddleOCRPositive(size[0]) || !paddleOCRPositive(size[1]) {
 		return nil
 	}
-	if !paddleOCRAspectRatioMatches(page, size) || len(bbox) != 4 {
+	if (!page.Normalized && !paddleOCRAspectRatioMatches(page, size)) || len(bbox) != 4 {
 		return nil
 	}
 	for _, v := range bbox {

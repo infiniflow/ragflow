@@ -4,7 +4,7 @@ title: Embed Workflows into Web Pages
 sidebar_label: Embed Workflows into Web Pages
 slug: /embed_into_web_pages
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideMonitorDot
 }
 ---
 

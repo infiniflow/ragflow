@@ -1,7 +1,24 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -13,6 +30,7 @@ import (
 )
 
 func TestParallelResumePreservesProducerState(t *testing.T) {
+	const searchID = "11099848653006015581"
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
 			"parallel": {Obj: CanvasComponentObj{ComponentName: "Parallel", Params: map[string]any{
@@ -20,7 +38,7 @@ func TestParallelResumePreservesProducerState(t *testing.T) {
 				"outputs":   map[string]any{"results": map[string]any{"ref": "consumer@result"}},
 			}}},
 			"producer": {Obj: CanvasComponentObj{ComponentName: "VariableAssigner", Params: map[string]any{
-				"variables": []any{map[string]any{"variable": "env.saved", "operator": "set", "parameter": "prepared"}},
+				"variables": []any{map[string]any{"variable": "env.saved", "operator": "set", "parameter": "search_0@id"}},
 			}}, Upstream: []string{"parallel"}, Downstream: []string{"input"}},
 			"input": {Obj: CanvasComponentObj{ComponentName: "UserFillUp", Params: map[string]any{
 				"inputs": map[string]any{"value": map[string]any{"type": "line"}},
@@ -44,6 +62,13 @@ func TestParallelResumePreservesProducerState(t *testing.T) {
 		return WithRunMeta(WithState(t.Context(), state), &RunMeta{Events: events})
 	}
 	ctx := newContext()
+	initial, err := GetStateFromContext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the numeric search ID produced by Querit before this subgraph.
+	// Only the initial state has it; the resumed context starts empty.
+	initial.SetVar("search_0", "id", json.Number(searchID))
 	_, err = compiled.Workflow.Invoke(ctx, map[string]any{}, compose.WithCheckPointID(checkpoint))
 	if !IsInterruptError(err) {
 		t.Fatalf("first run: want UserFillUp interrupt, got %v", err)
@@ -63,8 +88,8 @@ func TestParallelResumePreservesProducerState(t *testing.T) {
 	}
 	parallel, _ := out["parallel"].(map[string]any)
 	result, _ := parallel["results"].([]any)
-	if len(result) != 1 || result[0] != "prepared:answer" {
-		t.Fatalf("results = %#v, want [prepared:answer]", out)
+	if len(result) != 1 || result[0] != searchID+":answer" {
+		t.Fatalf("results = %#v, want [%s:answer]", out, searchID)
 	}
 }
 

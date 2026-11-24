@@ -38,11 +38,10 @@ import (
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/parser"
-
 	"gorm.io/gorm"
-	"ragflow/internal/entity"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/tokenizer"

@@ -4,7 +4,7 @@ slug: /message_page
 title: Message Page
 sidebar_label: Message Page
 sidebar_custom_props: {
-  categoryIcon: LucideBox
+  categoryIcon: LucideMessagesSquare
 }
 ---
 

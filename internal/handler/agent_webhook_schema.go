@@ -33,6 +33,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -224,7 +225,7 @@ func extractBySchema(data map[string]any, schema map[string]any, name string) (m
 		raw, present := data[lookupKey]
 
 		// 1. Required field missing → error (python agent_api.py:1913).
-		isRequired := contains(required, field)
+		isRequired := slices.Contains(required, field)
 		if isRequired && !present {
 			return nil, fmt.Errorf("%s missing required field: %s", name, field)
 		}
@@ -270,13 +271,4 @@ func stringSlice(v any) []string {
 		return out
 	}
 	return nil
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }

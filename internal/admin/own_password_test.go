@@ -1,19 +1,27 @@
 package admin
 
 import (
+	"crypto/sha512"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/testutil"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 func TestChangeOwnPasswordInvalidatesPreviousSession(t *testing.T) {
-	db := setupUserDeletionDB(t)
-	hash, err := common.GenerateWerkzeugPasswordHash("current-password-fixture")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := testutil.SetupTestDB(t, &entity.User{})
+	t.Cleanup(testutil.ReplaceDBForTest(t, db))
+	salt := []byte("legacy-password-fixture")
+	const iterations = 1000
+	key := pbkdf2.Key([]byte("current-password-fixture"), salt, iterations, 32, sha512.New)
+	hash := fmt.Sprintf("pbkdf2:sha512:%d$%s$%s", iterations,
+		base64.StdEncoding.EncodeToString(salt), base64.StdEncoding.EncodeToString(key))
 	on, superuser, token := "1", true, "fixture-session-token"
 	actor := entity.User{ID: "fixture-admin", Email: "admin@example.test", Nickname: "Fixture admin", Password: &hash, IsActive: on, Status: &on, IsSuperuser: &superuser, AccessToken: &token}
 	if err := db.Create(&actor).Error; err != nil {
@@ -35,7 +43,7 @@ func TestChangeOwnPasswordInvalidatesPreviousSession(t *testing.T) {
 		t.Fatal("password and session state were not updated")
 	}
 	var coded *common.CodedError
-	err = svc.ChangeOwnPassword(t.Context(), &actor, "replacement-password", "another-password")
+	err := svc.ChangeOwnPassword(t.Context(), &actor, "replacement-password", "another-password")
 	if !errors.As(err, &coded) || coded.Code != common.CodeUnauthorized {
 		t.Fatalf("old session can still change the password: %v", err)
 	}

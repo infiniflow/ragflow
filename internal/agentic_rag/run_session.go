@@ -58,7 +58,7 @@ const sessionLogPageSize = 32
 //     belongs to the FIRST turn only; restart marks the conversation unseeded
 //     so the next turn carries it again.
 type conversation struct {
-	// kind names the conversation in logs ("explorer").
+	// kind names the conversation in logs ("explorer" / "auditor").
 	kind string
 	// store is the run's event log; both conversations of a run share it and
 	// are told apart by id.
@@ -77,9 +77,10 @@ func newConversation(kind string, store adk.SessionEventStore[adk.Message]) *con
 	return &conversation{kind: kind, store: store, id: kind}
 }
 
-// runSession owns the event log one agentic turn maintains, plus the
-// conversation that writes into it: the explorer's (research turns, one per
-// Run).
+// runSession owns the event log one agentic turn maintains, plus the two
+// conversations that write into it: the explorer's (research turns + the
+// delivery gate's repair turns) and the auditor's (one audit conversation
+// threaded across every pass).
 //
 // The store is deliberately process-local and request-scoped: the durable
 // boundary of a conversation is the caller's REQUEST, where the shipped answer
@@ -88,6 +89,7 @@ func newConversation(kind string, store adk.SessionEventStore[adk.Message]) *con
 type runSession struct {
 	store    *session.InMemoryStore[adk.Message]
 	explorer *conversation
+	auditor  *conversation
 }
 
 func newRunSession() *runSession {
@@ -95,6 +97,7 @@ func newRunSession() *runSession {
 	return &runSession{
 		store:    store,
 		explorer: newConversation("explorer", store),
+		auditor:  newConversation("auditor", store),
 	}
 }
 

@@ -114,13 +114,6 @@ func annNotOverlapped(a, b annRegion) bool {
 	return a.x1 < b.x0 || a.x0 > b.x1 || a.y1 < b.y0 || a.y0 > b.y1
 }
 
-func imin(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // sortYFirstly orders regions top-to-bottom (and left-to-right within a
 // vertical threshold), matching Recognizer.sort_Y_firstly (recognizer.py:54)
 // which LayoutRecognizer.__call__ applies before annotation
@@ -158,10 +151,10 @@ func cleanupLayouts(regs []annRegion, boxes []pdf.TextBox) []annRegion {
 	i := 0
 	for i+1 < len(regs) {
 		j := i + 1
-		for j < imin(i+far, len(regs)) && (regs[j].label != regs[i].label || annNotOverlapped(regs[i], regs[j])) {
+		for j < min(i+far, len(regs)) && (regs[j].label != regs[i].label || annNotOverlapped(regs[i], regs[j])) {
 			j++
 		}
-		if j >= imin(i+far, len(regs)) {
+		if j >= min(i+far, len(regs)) {
 			i++
 			continue
 		}
@@ -361,6 +354,14 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 	// Marks for Python-style pop removal.
 	dropped := make([]bool, len(boxes))
 
+	// Bucket candidates by label once so each priority type scans only its
+	// own regions instead of filtering the full list on every box. Indices
+	// are kept so cands[bestJ].typeIndex and tie-break order stay identical.
+	candsByLabel := make(map[string][]int)
+	for j := range cands {
+		candsByLabel[cands[j].label] = append(candsByLabel[cands[j].label], j)
+	}
+
 	// Priority order matching Python's findLayout loop.
 	priorityOrder := []string{
 		pdf.LayoutTypeFooter, pdf.LayoutTypeHeader, pdf.LayoutTypeReference,
@@ -385,10 +386,8 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 			bestOverlap := 0.0
 			bestRegionOverlap := 0.0
 			bestJ := -1
-			for j, r := range cands {
-				if r.label != ty {
-					continue
-				}
+			for _, j := range candsByLabel[ty] {
+				r := cands[j]
 				ix0 := math.Max(r.x0, boxes[i].X0)
 				iy0 := math.Max(r.y0, boxes[i].Top)
 				ix1 := math.Min(r.x1, boxes[i].X1)

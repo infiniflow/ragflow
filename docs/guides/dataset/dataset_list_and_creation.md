@@ -4,7 +4,7 @@ title: Dataset List and Creation
 sidebar_label: Dataset List and Creation
 slug: /dataset_list_and_creation
 sidebar_custom_props: {
-  categoryIcon: LucideDatabaseZap
+  categoryIcon: LucideListPlus
 }
 ---
 

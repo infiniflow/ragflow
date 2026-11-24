@@ -31,7 +31,14 @@ import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { ListTree, Search, X } from 'lucide-react';
-import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
+import {
+  Dispatch,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
 import PdfDrawer from './document-preview-modal';
@@ -74,13 +81,16 @@ export default function SearchingView({
   handleSearch,
   pageSize,
   handleTopChange,
-  showEmbedLogo,
+  showLogo = true,
 }: ISearchReturnProps & {
   setIsSearching?: Dispatch<SetStateAction<boolean>>;
   searchData: ISearchAppDetailProps;
-  showEmbedLogo?: boolean;
+  showLogo?: boolean;
 }) {
   const { t } = useTranslation();
+  const handleLogoClick = useCallback(() => {
+    setIsSearching?.(false);
+  }, [setIsSearching]);
 
   const [searchText, setSearchText] = useState<string>('');
   const [retrievalLoading, setRetrievalLoading] = useState(false);
@@ -100,18 +110,14 @@ export default function SearchingView({
       {/* search header */}
       <div
         className={cn(
-          'relative z-10 px-8 pt-8 flex  text-transparent justify-start items-start w-full h-full',
+          'relative z-10 mx-auto flex h-full w-full max-w-5xl items-start justify-start px-8 pt-8 text-transparent',
         )}
       >
-        <RAGFlowLogo
-          onClick={() => {
-            setIsSearching?.(false);
-          }}
-          showEmbedIcon={showEmbedLogo}
-        ></RAGFlowLogo>
+        {showLogo && <RAGFlowLogo onClick={handleLogoClick} />}
         <div
           className={cn(
-            ' rounded-lg text-primary text-xl sticky flex flex-col justify-center  transform scale-100 ml-16 h-full flex-1 3xl:w-2/3 3xl:flex-none',
+            'rounded-lg text-primary text-xl sticky flex h-full flex-1 flex-col justify-center',
+            showLogo ? 'ml-16 3xl:w-2/3 3xl:flex-none' : 'ml-0',
           )}
         >
           <div className={cn('flex flex-col justify-start items-start w-full')}>

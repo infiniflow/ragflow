@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
@@ -122,17 +123,15 @@ func (h *Handler) Login(c *gin.Context) {
 
 	// Set Authorization header with access_token
 	c.Header("Authorization", authToken)
-	// Set CORS headers
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "*")
-	c.Header("Access-Control-Allow-Headers", "*")
-	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	common.RespondSuccess(c, user, "Welcome back!")
 }
 
 // Logout handle logout
 func (h *Handler) Logout(c *gin.Context) {
+	common.StartOperationLog(c, "logout_admin")
+	defer common.FinishOperationLog(c)
+
 	user, exists := c.Get("user")
 	if !exists {
 		common.RespondError(c, common.CodeUnauthorized, "Not authenticated")
@@ -271,11 +270,16 @@ type CreateUserHTTPRequest struct {
 
 // CreateUser handle create user
 func (h *Handler) CreateUser(c *gin.Context) {
+	common.StartOperationLog(c, "create_admin_user")
+	defer common.FinishOperationLog(c)
+
 	var req CreateUserHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Username and password are required")
+		common.RespondError(c, common.CodeBadRequest, "Username and password are required: "+err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "target_username", req.Username)
 
 	if req.Role == "" {
 		req.Role = "user"
@@ -288,6 +292,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "target_user_id", userInfo["id"])
 	common.RespondSuccess(c, userInfo, "User created successfully")
 }
 
@@ -323,6 +328,10 @@ func (h *Handler) GetUser(c *gin.Context) {
 
 // DeleteUser handle delete user
 func (h *Handler) DeleteUser(c *gin.Context) {
+	common.StartOperationLog(c, "delete_admin_user")
+	defer common.FinishOperationLog(c)
+
+	common.SetOperationResource(c, "target_username", c.Param("username"))
 	username, err := getUserName(c)
 	if err != nil {
 		return
@@ -349,6 +358,10 @@ type ChangePasswordHTTPRequest struct {
 
 // ChangePassword handle change password
 func (h *Handler) ChangePassword(c *gin.Context) {
+	common.StartOperationLog(c, "update_admin_user_password")
+	defer common.FinishOperationLog(c)
+
+	common.SetOperationResource(c, "target_username", c.Param("username"))
 	username, err := getUserName(c)
 	if err != nil {
 		return
@@ -356,13 +369,13 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 
 	var req ChangePasswordHTTPRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "New password is required")
+		common.RespondError(c, common.CodeBadRequest, "New password is required: "+err.Error())
 		return
 	}
 
 	ctx := c.Request.Context()
-	if err = h.service.ChangePassword(ctx, username, req.NewPassword); err != nil {
-		common.RespondError(c, common.CodeServerError, err.Error())
+	if err = h.service.ChangePassword(ctx, c.GetString("user_id"), username, req.NewPassword); err != nil {
+		common.RespondError(c, passwordChangeErrorCode(err), err.Error())
 		return
 	}
 
@@ -376,6 +389,10 @@ type UpdateActivateStatusHTTPRequest struct {
 
 // UpdateUserActivateStatus handle update user activate status
 func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
+	common.StartOperationLog(c, "update_admin_user_status")
+	defer common.FinishOperationLog(c)
+
+	common.SetOperationResource(c, "target_username", c.Param("username"))
 	username, err := getUserName(c)
 	if err != nil {
 		return
@@ -383,7 +400,7 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 
 	var req UpdateActivateStatusHTTPRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Activation status is required")
+		common.RespondError(c, common.CodeBadRequest, "Activation status is required: "+err.Error())
 		return
 	}
 
@@ -404,6 +421,10 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 
 // GrantAdmin handle grant admin role
 func (h *Handler) GrantAdmin(c *gin.Context) {
+	common.StartOperationLog(c, "grant_admin")
+	defer common.FinishOperationLog(c)
+
+	common.SetOperationResource(c, "target_username", c.Param("username"))
 	username, err := getUserName(c)
 	if err != nil {
 		return
@@ -427,6 +448,10 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 
 // RevokeAdmin handle revoke admin role
 func (h *Handler) RevokeAdmin(c *gin.Context) {
+	common.StartOperationLog(c, "revoke_admin")
+	defer common.FinishOperationLog(c)
+
+	common.SetOperationResource(c, "target_username", c.Param("username"))
 	username, err := getUserName(c)
 	if err != nil {
 		return
@@ -467,6 +492,10 @@ func (h *Handler) ListUserAPITokens(c *gin.Context) {
 
 // GenerateUserAPIToken handle generate user API key
 func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
+	common.StartOperationLog(c, "create_admin_user_api_token")
+	defer common.FinishOperationLog(c)
+
+	common.SetOperationResource(c, "target_username", c.Param("username"))
 	username, err := getUserName(c)
 	if err != nil {
 		return
@@ -475,6 +504,10 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 	ctx := c.Request.Context()
 	apiKey, err := h.service.GenerateUserAPIToken(ctx, username)
 	if err != nil {
+		if errors.Is(err, dao.ErrAPITokenLimitReached) {
+			common.RespondError(c, common.CodeBadRequest, err.Error())
+			return
+		}
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -484,6 +517,10 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 
 // DeleteUserAPIToken handle delete user API key
 func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
+	common.StartOperationLog(c, "delete_admin_user_api_token")
+	defer common.FinishOperationLog(c)
+
+	common.SetOperationResource(c, "target_username", c.Param("username"))
 	username, err := getUserName(c)
 	if err != nil {
 		return
@@ -559,7 +596,11 @@ func (h *Handler) GetService(c *gin.Context) {
 
 // ShutdownService handle shutdown service
 func (h *Handler) ShutdownService(c *gin.Context) {
+	common.StartOperationLog(c, "request_admin_service_shutdown")
+	defer common.FinishOperationLog(c)
+
 	serviceName := c.Param("service_name")
+	common.SetOperationResource(c, "service_name", serviceName)
 	if serviceName == "" {
 		common.RespondError(c, common.CodeBadRequest, "Service name is required")
 		return
@@ -576,7 +617,11 @@ func (h *Handler) ShutdownService(c *gin.Context) {
 
 // StartService handle start service
 func (h *Handler) StartService(c *gin.Context) {
+	common.StartOperationLog(c, "request_admin_service_start")
+	defer common.FinishOperationLog(c)
+
 	serviceName := c.Param("service_name")
+	common.SetOperationResource(c, "service_name", serviceName)
 	if serviceName == "" {
 		common.RespondError(c, common.CodeBadRequest, "Service name is required")
 		return
@@ -593,7 +638,11 @@ func (h *Handler) StartService(c *gin.Context) {
 
 // RestartService handle restart service
 func (h *Handler) RestartService(c *gin.Context) {
+	common.StartOperationLog(c, "request_admin_service_restart")
+	defer common.FinishOperationLog(c)
+
 	serviceName := c.Param("service_name")
+	common.SetOperationResource(c, "service_name", serviceName)
 	if serviceName == "" {
 		common.RespondError(c, common.CodeBadRequest, "Service name is required")
 		return
@@ -628,7 +677,7 @@ func (h *Handler) ListVariables(c *gin.Context) {
 		VarName string `json:"var_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid request body")
+		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -717,11 +766,16 @@ func (r SetVariableHTTPRequest) flattenedVariableValue() (string, error) {
 
 // SetVariable handle set variable
 func (h *Handler) SetVariable(c *gin.Context) {
+	common.StartOperationLog(c, "update_admin_variable")
+	defer common.FinishOperationLog(c)
+
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "variable_name", req.VarName)
 
 	if req.VarName == "" {
 		common.RespondError(c, common.CodeBadRequest, "Var name is required")
@@ -820,11 +874,16 @@ type SetSandboxConfigHTTPRequest struct {
 
 // SetSandboxConfig handle set sandbox config
 func (h *Handler) SetSandboxConfig(c *gin.Context) {
+	common.StartOperationLog(c, "update_admin_sandbox_config")
+	defer common.FinishOperationLog(c)
+
 	var req SetSandboxConfigHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string, config an object, and set_active a boolean")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string, config an object, and set_active a boolean: "+err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "provider_type", req.ProviderType)
 
 	if req.ProviderType == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Provider type is required")
@@ -849,11 +908,16 @@ type TestSandboxConnectionHTTPRequest struct {
 
 // TestSandboxConnection handle test sandbox connection
 func (h *Handler) TestSandboxConnection(c *gin.Context) {
+	common.StartOperationLog(c, "test_admin_sandbox_connection")
+	defer common.FinishOperationLog(c)
+
 	var req TestSandboxConnectionHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string and config an object")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string and config an object: "+err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "provider_type", req.ProviderType)
 
 	if req.ProviderType == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Provider type is required")
@@ -934,9 +998,12 @@ type SetLogLevelRequest struct {
 
 // SetLogLevel sets the log level at runtime
 func (h *Handler) SetLogLevel(c *gin.Context) {
+	common.StartOperationLog(c, "update_admin_log_level")
+	defer common.FinishOperationLog(c)
+
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Level is required")
+		common.RespondError(c, common.CodeBadRequest, "Level is required: "+err.Error())
 		return
 	}
 
@@ -945,6 +1012,7 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "log_level", req.Level)
 	common.RespondSuccess(c, gin.H{"level": req.Level}, "SUCCESS")
 }
 
@@ -978,9 +1046,12 @@ type PublishMessageToQueueRequest struct {
 }
 
 func (h *Handler) PublishMessageToQueue(c *gin.Context) {
+	common.StartOperationLog(c, "request_admin_queue_publish")
+	defer common.FinishOperationLog(c)
+
 	var req PublishMessageToQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Message is required")
+		common.RespondError(c, common.CodeBadRequest, "Message is required: "+err.Error())
 		return
 	}
 
@@ -1012,6 +1083,9 @@ type PullMessageFromQueueRequest struct {
 }
 
 func (h *Handler) PullMessageFromQueue(c *gin.Context) {
+	common.StartOperationLog(c, "request_admin_queue_pull")
+	defer common.FinishOperationLog(c)
+
 	var req PullMessageFromQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeBadRequest, fmt.Sprintf("Message count error: %s", err.Error()))
@@ -1109,11 +1183,16 @@ type ShutdownIngestorRequest struct {
 }
 
 func (h *Handler) ShutdownIngestor(c *gin.Context) {
+	common.StartOperationLog(c, "request_admin_ingestor_shutdown")
+	defer common.FinishOperationLog(c)
+
 	var req ShutdownIngestorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Ingestor ID is required")
+		common.RespondError(c, common.CodeBadRequest, "Ingestor ID is required: "+err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "ingestor_id", req.IngestorID)
 
 	taskID := common.GenerateUUID()
 	//ingestionManager.SubmitTask(&common.TaskAssignment{

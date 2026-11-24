@@ -22,7 +22,7 @@ package common
 // treat as the default. The community build uses the single default lane, which
 // reuses the bare community queue name (TaskSubject) so an OSS split needs no
 // rename and OSS/EE can share one NATS server. The enterprise build
-// (task_primary_ee.go) designates its own default lane.
+// (task_default_ee.go) designates its own default lane.
 func DefaultTier() Tier {
 	return TierDefault
 }

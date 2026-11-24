@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 // InMemoryStore is an in-memory implementation of BaseStore.
@@ -599,7 +601,7 @@ func (s *InMemoryStore) matchQuery(value map[string]interface{}, query string) b
 	// Can be extended to support more complex queries
 	for _, v := range value {
 		if str, ok := v.(string); ok {
-			if strings.Contains(strings.ToLower(str), strings.ToLower(query)) {
+			if common.ContainsFold(str, query) {
 				return true
 			}
 		}
@@ -775,17 +777,16 @@ func (s *InMemoryStore) cleanupExpired() {
 								delete(s.data, nsKey)
 							}
 						}
-					}
-					delete(s.ttl, fullKey)
-					// Also clean up indexes
-					for nsKey := range s.indexes {
+						// Embedding indexes are keyed by the bare key, not by
+						// fullKey; delete the same entry PutItem wrote.
 						if idxMap, ok := s.indexes[nsKey]; ok {
-							delete(idxMap, fullKey)
+							delete(idxMap, key)
 							if len(idxMap) == 0 {
 								delete(s.indexes, nsKey)
 							}
 						}
 					}
+					delete(s.ttl, fullKey)
 				}
 			}
 			s.mu.Unlock()
@@ -809,12 +810,7 @@ func cosineSimilarity(a, b []float64) float64 {
 	if normA == 0 || normB == 0 {
 		return 0.0
 	}
-	return dot / (sqrt(normA) * sqrt(normB))
-}
-
-// sqrt is a simple square root implementation using math.Sqrt.
-func sqrt(x float64) float64 {
-	return math.Sqrt(x)
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
 // searchByEmbedding performs semantic search using embedding vectors.

@@ -19,25 +19,18 @@ package service
 import (
 	"context"
 	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
-	"hash"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 
-	"golang.org/x/crypto/pbkdf2"
-	"golang.org/x/crypto/scrypt"
 	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
@@ -294,20 +287,10 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 		return nil, code, err
 	}
 
-	// Generate new access token
-	token := common.GenerateToken()
-	user.AccessToken = &token
-	now := time.Now().Truncate(time.Second)
-	user.LastLoginTime = &now
-	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
-	}
-	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
-		billingService.SyncLoginTokenRateLimit(ctx, user.ID, token)
-	}
-
-	return user, common.CodeSuccess, nil
+	return completePasswordLogin(ctx, user)
 }
+
+var errInvalidEmailCredentials = errors.New("email and password do not match")
 
 // LoginByEmail user login by email
 // Returns user on success, or error with specific code:
@@ -318,16 +301,16 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	user, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if err != nil {
 		common.Error("user not found by email", err)
-		return nil, common.CodeAuthenticationError, fmt.Errorf("email: %s is not registered", req.Email)
+		return nil, common.CodeAuthenticationError, errInvalidEmailCredentials
 	}
 
 	decryptedPassword, err := common.DecryptPassword(req.Password)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password")
+		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password: %w", err)
 	}
 
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("email and password do not match")
+		return nil, common.CodeAuthenticationError, errInvalidEmailCredentials
 	}
 
 	if user.IsActive == "0" {
@@ -337,19 +320,27 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 		return nil, code, err
 	}
 
-	// Generate new access token
-	token := common.GenerateToken()
-	user.AccessToken = &token
-	now := time.Now().Truncate(time.Second)
-	user.LastLoginTime = &now
+	return completePasswordLogin(ctx, user)
+}
 
-	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
+func completePasswordLogin(ctx context.Context, user *entity.User) (*entity.User, common.ErrorCode, error) {
+	token := common.GenerateToken()
+	now := time.Now().Truncate(time.Second)
+	// A login that checked the old password must not issue a session after a password change.
+	result := dao.DB.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ? AND password = ?", user.ID, user.Password).
+		Updates(map[string]any{"access_token": token, "last_login_time": now})
+	if result.Error != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", result.Error)
 	}
+	if result.RowsAffected != 1 {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("invalid email or password")
+	}
+	user.AccessToken = &token
+	user.LastLoginTime = &now
 	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
 		billingService.SyncLoginTokenRateLimit(ctx, user.ID, token)
 	}
-
 	return user, common.CodeSuccess, nil
 }
 
@@ -385,138 +376,9 @@ func (s *UserService) GetUserByID(ctx context.Context, id string) (*UserResponse
 	}, common.CodeSuccess, nil
 }
 
-// VerifyPassword verify password
-// Supports both werkzeug pbkdf2 format (pbkdf2:sha256:iterations$salt$hash) and scrypt format
+// VerifyPassword verifies the same stored formats used by password changes.
 func (s *UserService) VerifyPassword(hashedPassword, password string) bool {
-	// Check if it's pbkdf2 format (werkzeug)
-	if strings.HasPrefix(hashedPassword, "pbkdf2:") {
-		return s.verifyPBKDF2Password(hashedPassword, password)
-	}
-
-	// Check if it's scrypt format
-	if strings.HasPrefix(hashedPassword, "scrypt:") {
-		return s.verifyScryptPassword(hashedPassword, password)
-	}
-
-	return false
-}
-
-// verifyPBKDF2Password verifies password using PBKDF2 (werkzeug format)
-// Format: pbkdf2:sha256:iterations$salt$hash
-func (s *UserService) verifyPBKDF2Password(hashedPassword, password string) bool {
-	parts := strings.Split(hashedPassword, "$")
-	if len(parts) != 3 {
-		return false
-	}
-
-	// Parse method (e.g., "pbkdf2:sha256:150000")
-	methodParts := strings.Split(parts[0], ":")
-	if len(methodParts) != 3 {
-		return false
-	}
-
-	if methodParts[0] != "pbkdf2" {
-		return false
-	}
-
-	var hashFunc func() hash.Hash
-	switch methodParts[1] {
-	case "sha256":
-		hashFunc = sha256.New
-	case "sha512":
-		hashFunc = sha512.New
-	default:
-		return false
-	}
-
-	iterations, err := strconv.Atoi(methodParts[2])
-	if err != nil {
-		return false
-	}
-
-	salt := parts[1]
-	expectedHash := parts[2]
-
-	// Decode salt from base64
-	saltBytes, err := base64.StdEncoding.DecodeString(salt)
-	if err != nil {
-		// Try hex encoding
-		saltBytes, err = hex.DecodeString(salt)
-		if err != nil {
-			return false
-		}
-	}
-
-	// Generate hash using PBKDF2
-	key := pbkdf2.Key([]byte(password), saltBytes, iterations, 32, hashFunc)
-	computedHash := base64.StdEncoding.EncodeToString(key)
-
-	return computedHash == expectedHash
-}
-
-// verifyScryptPassword verifies password using scrypt format
-// Format: scrypt:n:r:p$base64(salt)$hex(hash)
-// IMPORTANT: werkzeug uses the base64-encoded salt string as UTF-8 bytes, NOT the decoded bytes
-func (s *UserService) verifyScryptPassword(hashedPassword, password string) bool {
-	// Parse hash format: scrypt:n:r:p$base64(salt)$hex(hash)
-	parts := strings.Split(hashedPassword, "$")
-	if len(parts) != 3 {
-		return false
-	}
-
-	params := strings.Split(parts[0], ":")
-	if len(params) != 4 || params[0] != "scrypt" {
-		return false
-	}
-
-	n, err := strconv.ParseUint(params[1], 10, 0)
-	if err != nil {
-		return false
-	}
-	r, err := strconv.ParseUint(params[2], 10, 0)
-	if err != nil {
-		return false
-	}
-	p, err := strconv.ParseUint(params[3], 10, 0)
-	if err != nil {
-		return false
-	}
-
-	saltB64 := parts[1]
-	hashHex := parts[2]
-
-	// IMPORTANT: werkzeug uses the base64 string as UTF-8 bytes, NOT decoded bytes
-	// This is the key difference from standard implementations
-	salt := []byte(saltB64)
-
-	// Decode expected hash from hex
-	expectedHash, err := hex.DecodeString(hashHex)
-	if err != nil {
-		return false
-	}
-
-	// Compute password hash
-	computed, err := scrypt.Key([]byte(password), salt, int(n), int(r), int(p), len(expectedHash))
-	if err != nil {
-		return false
-	}
-
-	// Constant time comparison
-	return s.constantTimeCompare(expectedHash, computed)
-}
-
-// constantTimeCompare constant time comparison
-func (s *UserService) constantTimeCompare(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	var result byte
-	for i := 0; i < len(a); i++ {
-		result |= a[i] ^ b[i]
-	}
-
-	return result == 0
+	return common.CheckWerkzeugPassword(password, hashedPassword)
 }
 
 func defaultUserLanguage() string {
@@ -672,7 +534,8 @@ func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map
 
 // UpdateUserSettings updates user settings
 func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
-	// Update fields if provided
+	fields := make(map[string]any)
+	oldHash := user.Password
 	if req.Password != nil {
 		ciphertext, err := base64.StdEncoding.DecodeString(*req.Password)
 		if err != nil {
@@ -710,6 +573,8 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 			user.Password = &hashedPassword
 			invalidToken := "INVALID_" + common.GenerateToken()
 			user.AccessToken = &invalidToken
+			fields["password"] = hashedPassword
+			fields["access_token"] = invalidToken
 		}
 	}
 	if req.Nickname != nil {
@@ -718,28 +583,44 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 			return common.CodeDataError, err
 		}
 		user.Nickname = nickname
+		fields["nickname"] = nickname
 	}
 	if req.Avatar != nil {
 		// In Go version, avatar might be stored differently
 		// For now, just update if field exists
 		user.Avatar = req.Avatar
+		fields["avatar"] = req.Avatar
 	}
 	if req.Language != nil {
 		// Store language preference
 		user.Language = req.Language
+		fields["language"] = req.Language
 	}
 	if req.ColorSchema != nil {
 		// Store color schema preference
 		user.ColorSchema = req.ColorSchema
+		fields["color_schema"] = req.ColorSchema
 	}
 	if req.Timezone != nil {
 		// Store timezone preference
 		user.Timezone = req.Timezone
+		fields["timezone"] = req.Timezone
 	}
 
-	// Save updated user
-	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
-		return common.CodeServerError, err
+	if len(fields) == 0 {
+		return common.CodeSuccess, nil
+	}
+	query := dao.DB.WithContext(ctx).Model(&entity.User{}).Where("id = ?", user.ID)
+	_, passwordChanged := fields["password"]
+	if passwordChanged {
+		query = query.Where("password = ?", oldHash)
+	}
+	result := query.Updates(fields)
+	if result.Error != nil {
+		return common.CodeServerError, result.Error
+	}
+	if passwordChanged && result.RowsAffected != 1 {
+		return common.CodeConflict, fmt.Errorf("account credentials changed; sign in and try again")
 	}
 	return common.CodeSuccess, nil
 }

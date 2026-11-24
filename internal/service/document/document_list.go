@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
+	"ragflow/internal/service/chunkversion"
 )
 
 // documentPipelineVersionOutdated reports whether a document pinned pipeline version
@@ -393,10 +394,17 @@ func (s *DocumentService) toResponseWithTask(ctx context.Context, doc *entity.Do
 		}
 		updatedAt = time.Unix(ts, 0).Format("2006-01-02 15:04:05")
 	}
-	ingestionStatus := "UNSTART"
+	taskStatus := ""
 	if task != nil && task.Status != "" {
-		ingestionStatus = task.Status
+		taskStatus = task.Status
 	}
+	// Only the empty-parse marker distinguishes an empty parse from no parse.
+	if doc.RestoredVersion != nil && doc.ChunkNum == 0 {
+		if known, err := chunkversion.HasEmptyParseMarker(ctx, dao.DB, doc.ID); err == nil && known {
+			doc.RestoredFromParse = true
+		}
+	}
+	ingestionStatus := doc.IngestionStatusWith(taskStatus)
 	return &DocumentResponse{
 		ID:                doc.ID,
 		Name:              doc.Name,
@@ -420,6 +428,7 @@ func (s *DocumentService) toResponseWithTask(ctx context.Context, doc *entity.Do
 		ProcessBeginAt:          doc.ProcessBeginAt,
 		ProcessDuration:         doc.ProcessDuration,
 		Suffix:                  doc.Suffix,
+		RestoredVersion:         doc.RestoredVersion,
 		IngestionStatus:         ingestionStatus,
 		Status:                  doc.Status,
 		CreatedAt:               createdAt,

@@ -51,7 +51,7 @@ const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(
       className,
       value,
       onChange,
-      dateFormat = 'DD/MM/YYYY',
+      dateFormat = 'YYYY-MM-DD',
       timeFormat = 'HH:mm:ss',
       showTimeSelect = false,
       showTimeSelectOnly = false,

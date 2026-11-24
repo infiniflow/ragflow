@@ -322,11 +322,12 @@ func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
 	topP := 0.9
 	stop := []string{"END"}
 	effort := "high"
+	jsonMode := true
 	_, err := m.ChatWithMessages(ctx, "LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		// Deliberately pass Stop/Effort to prove they are filtered out.
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		// Deliberately pass Stop/Effort/JSONMode to prove they are filtered out.
+		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort, JSONMode: &jsonMode},
 		nil,
 	)
 	if err != nil {

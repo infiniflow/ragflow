@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 // Package component — LLM (T1).
 //
 // One-shot LLM call. Reads system_prompt + user_prompt, dispatches to a
@@ -102,13 +118,7 @@ type LLMParam struct {
 	// (2 seconds). Matches Python's `delay_after_error` param.
 	DelayAfterError time.Duration
 
-	// Thinking mirrors the python `thinking` Agent LLM setting
-	// (PR #15446). When set to "enabled" or "disabled", the LLM
-	// driver is told to turn its reasoning mode on/off
-	// (provider-specific; see chat_model.py for Qwen/Kimi/GLM
-	// policy). Empty string means "system default" — the LLM
-	// driver decides, which today means Qwen3 is sent
-	// `enable_thinking=false` unless overridden.
+	// Thinking enables reasoning only when explicitly set to "enabled".
 	Thinking string
 }
 
@@ -127,7 +137,7 @@ type LLMInput struct {
 	OutputStructure          map[string]any
 	Driver                   string
 	APIKey                   string
-	Thinking                 string // "enabled" | "disabled" | ""
+	Thinking                 string // "enabled" | "disabled"
 }
 
 // LLMOutput mirrors the outputs map (per plan §2.11.3 row 5):
@@ -224,18 +234,7 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 	}
-	// Propagate the agent-level Thinking setting to the driver so
-	// providers like DeepSeek can send thinking: {type: "disabled"}
-	// and prevent chain-of-thought from leaking into the answer.
-	// Mirrors the Python agent/component/llm.py behaviour.
-	switch req.Thinking {
-	case "enabled":
-		t := true
-		chatCfg.Thinking = &t
-	case "disabled":
-		f := false
-		chatCfg.Thinking = &f
-	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	einoMsgs := toEinoMessages(req.Messages)
 	infos, choice := toolOptions(req.Tools, req.ToolChoice)
@@ -391,14 +390,7 @@ func (e *einoChatInvoker) Stream(ctx context.Context, _ *gorm.DB, req ChatInvoke
 	apiKey := req.APIKey
 	cm := models.NewChatModel(d, &bareModel, &models.APIConfig{ApiKey: &apiKey})
 	chatCfg := &models.ChatConfig{Temperature: req.Temperature, TopP: req.TopP, MaxTokens: req.MaxTokens}
-	switch req.Thinking {
-	case "enabled":
-		t := true
-		chatCfg.Thinking = &t
-	case "disabled":
-		f := false
-		chatCfg.Thinking = &f
-	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
 
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	if infos, choice := toolOptions(req.Tools, req.ToolChoice); len(infos) > 0 {
@@ -547,14 +539,7 @@ func (c *resolvedModelInvoker) resolvedChatWrapper(modelName string, req ChatInv
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxTokens,
 	}
-	switch req.Thinking {
-	case "enabled":
-		t := true
-		chatCfg.Thinking = &t
-	case "disabled":
-		f := false
-		chatCfg.Thinking = &f
-	}
+	chatCfg.Thinking = new(req.Thinking == "enabled")
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	infos, choice := toolOptions(req.Tools, req.ToolChoice)
 	if len(infos) > 0 {
@@ -1335,16 +1320,10 @@ func collectSysFiles(state *runtime.CanvasState) (textParts, imageURIs []string)
 
 // dedupStrings returns the deduplicated slice in first-seen order.
 func dedupStrings(vals []string) []string {
-	seen := make(map[string]struct{}, len(vals))
-	out := make([]string, 0, len(vals))
-	for _, v := range vals {
-		if _, dup := seen[v]; dup {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
+	if vals == nil {
+		return []string{}
 	}
-	return out
+	return common.Deduplicate(vals)
 }
 
 // prependHistory inserts up to `window` prior turns from the canvas
@@ -1523,15 +1502,10 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 	}
 	gateSampler(inputs, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 	if v, ok := stringFrom(inputs, "thinking"); ok {
-		// Forward any non-empty, non-"default" value to match the
-		// lenient Python gate: hasattr(self,"thinking") and
-		// self.thinking and self.thinking != "default".
-		// Downstream (einoChatInvoker) only acts on "enabled" /
-		// "disabled" and silently ignores unknown values, so
-		// this is safe.
-		if v != "" && v != "default" {
-			p.Thinking = v
-		}
+		p.Thinking = v
+	}
+	if p.Thinking == "" || p.Thinking == "default" {
+		p.Thinking = "disabled"
 	}
 	return p
 }
@@ -1588,38 +1562,31 @@ func gateSampler[T any](inputs map[string]any, flag string, value **T, disabled 
 	}
 }
 
-// floatFrom extracts a float64 from inputs[name], also accepting int.
+// floatFrom extracts a float64 from inputs[name]. Only the native numeric
+// kinds count; common.ToFloat would also parse strings, so delegate only for
+// the types this helper accepted before the convergence.
 func floatFrom(inputs map[string]any, name string) (float64, bool) {
 	v, ok := inputs[name]
 	if !ok {
 		return 0, false
 	}
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case float32:
-		return float64(x), true
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
+	switch v.(type) {
+	case float64, float32, int, int64:
+		return common.ToFloat(v)
 	}
 	return 0, false
 }
 
-// intFrom extracts an int from inputs[name], also accepting float64.
+// intFrom extracts an int from inputs[name]. Only int, int64 and float64
+// count; common.ToIntNum also accepts int32/float32, which this helper did not.
 func intFrom(inputs map[string]any, name string) (int, bool) {
 	v, ok := inputs[name]
 	if !ok {
 		return 0, false
 	}
-	switch x := v.(type) {
-	case int:
-		return x, true
-	case int64:
-		return int(x), true
-	case float64:
-		return int(x), true
+	switch v.(type) {
+	case int, int64, float64:
+		return common.ToIntNum(v)
 	}
 	return 0, false
 }

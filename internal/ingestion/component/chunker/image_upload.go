@@ -24,9 +24,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
+
+	"ragflow/internal/common"
 
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
@@ -43,10 +43,8 @@ var imageUploadSem = make(chan struct{}, imageUploadConcurrency())
 var ChunkImageUploader component.ImageUploader = component.DefaultImageUploader
 
 func imageUploadConcurrency() int {
-	if v := os.Getenv("MAX_CONCURRENT_MINIO"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
+	if n := common.GetEnvInt("MAX_CONCURRENT_MINIO", 0); n > 0 {
+		return n
 	}
 	return 10
 }

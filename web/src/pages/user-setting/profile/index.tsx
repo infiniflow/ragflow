@@ -18,7 +18,7 @@
 import { AvatarUpload } from '@/components/avatar-upload';
 import PasswordInput from '@/components/originui/password-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
-import Spotlight from '@/components/spotlight';
+import { TruncatedText } from '@/components/truncated-text';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -30,21 +30,34 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
-import { useTranslate } from '@/hooks/common-hooks';
+import { useChangeLanguage } from '@/hooks/logic-hooks';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
+import { DEFAULT_LANGUAGE_CODE, supportedLanguages } from '@/locales/config';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Loader2Icon, PenLine } from 'lucide-react';
-import { FC, useEffect, useMemo } from 'react';
+import {
+  type FC,
+  type PropsWithChildren,
+  useCallback,
+  useEffect,
+  useMemo,
+} from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { ProfileSettingWrapperCard } from '../components/user-setting-header';
 import { NICKNAME_MAX_LENGTH, NICKNAME_PATTERN } from './constants';
 import { EditType, modalTitle, useProfile } from './hooks/use-profile';
 
 const timezoneOptions = TimezoneList.map(({ name }) => ({
   value: name,
   label: name,
+}));
+
+const languageOptions = supportedLanguages.map(({ code, displayName }) => ({
+  value: code,
+  label: displayName,
 }));
 
 const baseSchema = z.object({
@@ -104,8 +117,60 @@ const passwordSchema = baseSchema
     }
   });
 
+type ProfileFieldProps = PropsWithChildren<{
+  label: string;
+  controlId?: string;
+}>;
+
+function ProfileField({ label, controlId, children }: ProfileFieldProps) {
+  const LabelTag = controlId ? 'label' : 'span';
+
+  return (
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-start gap-4 sm:grid-cols-[9rem_minmax(0,1fr)] lg:grid-cols-[12rem_minmax(0,1fr)]">
+      <LabelTag
+        htmlFor={controlId}
+        className="pt-1.5 text-sm font-medium text-text-secondary"
+      >
+        {label}
+      </LabelTag>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+type ProfileValueProps = {
+  value: string;
+  editLabel: string;
+  onEdit: () => void;
+};
+
+function ProfileValue({ value, editLabel, onEdit }: ProfileValueProps) {
+  return (
+    <div className="flex h-8 min-w-0 items-center gap-1 rounded-md bg-bg-input px-2">
+      <TruncatedText
+        as="span"
+        className="min-w-0 flex-1 truncate text-sm text-text-primary"
+        tooltip={value}
+      >
+        {value}
+      </TruncatedText>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label={editLabel}
+        title={editLabel}
+        onClick={onEdit}
+        className="shrink-0"
+      >
+        <PenLine className="size-4" />
+      </Button>
+    </div>
+  );
+}
+
 const ProfilePage: FC = () => {
-  const { t } = useTranslate('setting');
+  const { t } = useTranslation('translation', { keyPrefix: 'setting' });
 
   const {
     profile,
@@ -118,6 +183,22 @@ const ProfilePage: FC = () => {
     handleSave,
     handleAvatarUpload,
   } = useProfile();
+  const changeLanguage = useChangeLanguage();
+  const {
+    data: { language = DEFAULT_LANGUAGE_CODE },
+  } = useFetchUserInfo();
+
+  const handleNameEdit = useCallback(() => {
+    handleEditClick(EditType.editName);
+  }, [handleEditClick]);
+
+  const handleTimeZoneEdit = useCallback(() => {
+    handleEditClick(EditType.editTimeZone);
+  }, [handleEditClick]);
+
+  const handlePasswordEdit = useCallback(() => {
+    handleEditClick(EditType.editPassword);
+  }, [handleEditClick]);
 
   const form = useForm<z.infer<typeof baseSchema | typeof passwordSchema>>({
     resolver: zodResolver(
@@ -127,23 +208,10 @@ const ProfilePage: FC = () => {
       userName: '',
       timeZone: '',
     },
-    // shouldUnregister: true,
   });
   useEffect(() => {
     form.reset({ ...editForm, currPasswd: undefined });
   }, [editForm, form]);
-
-  //   const ModalContent: FC = () => {
-  //     // let content = null;
-  //     // if (editType === EditType.editName) {
-  //     //   content = editName();
-  //     // }
-  //     return (
-  //       <>
-
-  //       </>
-  //     );
-  //   };
 
   const timezone = useMemo(() => {
     const tz = TimezoneList.find((tz) => tz.name === profile.timeZone);
@@ -151,110 +219,75 @@ const ProfilePage: FC = () => {
   }, [profile.timeZone]);
 
   return (
-    // <div className="h-full w-full text-text-secondary relative flex flex-col gap-4">
-    <ProfileSettingWrapperCard
-      header={
-        <header>
-          <h2 className="text-2xl font-medium text-text-primary">
-            {t('profile')}
-          </h2>
-          <p className="mt-1 text-sm text-text-secondary ">
-            {t('profileDescription')}
-          </p>
-        </header>
-      }
-    >
-      <Spotlight />
+    <article className="h-full w-full min-w-0 overflow-y-auto">
+      <h2 className="text-2xl font-medium text-text-primary">{t('profile')}</h2>
 
-      {/* Main Content */}
-      <div className="max-w-3xl space-y-11 w-3/4 p-7">
-        {/* Name */}
-        <div className="flex items-start gap-4 ">
-          <label className="w-[190px] text-sm font-medium">
-            {t('username')}
-          </label>
-          <div className="flex-1 flex items-center gap-4 min-w-0">
-            <div className="text-sm text-text-primary border border-border-button flex-1 min-w-0 rounded-md py-1.5 px-2 truncate">
-              {profile.userName}
-            </div>
+      <div className="mt-12 space-y-11">
+        <ProfileField label={t('username')}>
+          <ProfileValue
+            value={profile.userName}
+            editLabel={t('editName')}
+            onEdit={handleNameEdit}
+          />
+        </ProfileField>
 
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => handleEditClick(EditType.editName)}
+        <ProfileField label={t('avatar')}>
+          <AvatarUpload
+            value={profile.avatar}
+            onChange={handleAvatarUpload}
+            tips={t('avatarTip')}
+          />
+        </ProfileField>
+
+        <ProfileField label={t('timezone')}>
+          <ProfileValue
+            value={timezone}
+            editLabel={t('editTimeZone')}
+            onEdit={handleTimeZoneEdit}
+          />
+        </ProfileField>
+
+        <ProfileField label={t('email')}>
+          <div className="min-w-0 py-1.5">
+            <TruncatedText
+              className="truncate text-sm text-text-primary"
+              tooltip={profile.email}
             >
-              <PenLine size={12} /> {t('edit')}
-            </Button>
-          </div>
-        </div>
-
-        {/* Avatar */}
-        <div className="flex items-start gap-4">
-          <label className="w-[190px] text-sm font-medium">{t('avatar')}</label>
-          <div className="flex items-center gap-4">
-            <AvatarUpload
-              value={profile.avatar}
-              onChange={handleAvatarUpload}
-              tips={t('avatarTip')}
-            />
-          </div>
-        </div>
-
-        {/* Time Zone */}
-        <div className="flex items-start gap-4">
-          <label className="w-[190px] text-sm font-medium">
-            {t('timezone')}
-          </label>
-          <div className="flex-1 flex items-center gap-4">
-            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2 empty:before:content-['_'] empty:before:whitespace-pre">
-              {timezone}
-            </div>
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => handleEditClick(EditType.editTimeZone)}
-            >
-              <PenLine size={12} /> {t('edit')}
-            </Button>
-          </div>
-        </div>
-
-        {/* Email Address */}
-        <div className="flex items-start gap-4">
-          <label className="w-[190px] text-sm font-medium"> {t('email')}</label>
-          <div className="flex-1 flex flex-col items-start gap-2">
-            <div className="text-sm text-text-primary flex-1 rounded-md py-1.5 ">
               {profile.email}
-            </div>
-            <span className="text-text-secondary text-xs">
+            </TruncatedText>
+            <p className="mt-2 break-words text-xs text-text-secondary">
               {t('emailDescription')}
-            </span>
+            </p>
           </div>
-        </div>
+        </ProfileField>
 
-        {/* Password */}
-        <div className="flex items-start gap-4">
-          <label className="w-[190px] text-sm font-medium">
-            {t('password')}
-          </label>
-          <div className="flex-1 flex items-center gap-4">
-            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2">
-              <span className="inline-block translate-y-0.5">********</span>
-            </div>
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => handleEditClick(EditType.editPassword)}
-            >
-              <PenLine size={12} /> {t('edit')}
-            </Button>
-          </div>
-        </div>
+        {(!profile.loginChannel || profile.loginChannel === 'password') && (
+          <ProfileField label={t('password')}>
+            <ProfileValue
+              value="********"
+              editLabel={t('editPassword')}
+              onEdit={handlePasswordEdit}
+            />
+          </ProfileField>
+        )}
+
+        <ProfileField
+          label={t('displayLanguage')}
+          controlId="profile-display-language"
+        >
+          <SelectWithSearch
+            options={languageOptions}
+            value={language}
+            onChange={changeLanguage}
+            triggerId="profile-display-language"
+            triggerClassName="w-full border-0 bg-bg-input"
+          />
+        </ProfileField>
       </div>
 
       {editType && (
         <Modal
-          title={modalTitle[editType]}
+          title={t(modalTitle[editType])}
           open={isEditing}
           showfooter={false}
           maskClosable={false}
@@ -266,7 +299,6 @@ const ProfilePage: FC = () => {
           }}
           className="!w-[480px]"
         >
-          {/* <ModalContent /> */}
           <Form {...form}>
             <form
               onSubmit={form.handleSubmit((data) => handleSave(data as any))}
@@ -342,6 +374,7 @@ const ProfilePage: FC = () => {
                           <FormControl className="w-full">
                             <PasswordInput
                               {...field}
+                              placeholder={t('currentPassword')}
                               autoComplete="current-password"
                               className="bg-bg-input border-border-default"
                             />
@@ -368,6 +401,7 @@ const ProfilePage: FC = () => {
                           <FormControl className="w-full">
                             <PasswordInput
                               {...field}
+                              placeholder={t('newPassword')}
                               autoComplete="new-password"
                               className="bg-bg-input border-border-default"
                             />
@@ -394,6 +428,7 @@ const ProfilePage: FC = () => {
                           <FormControl className="w-full">
                             <PasswordInput
                               {...field}
+                              placeholder={t('confirmPassword')}
                               className="bg-bg-input border-border-default"
                               autoComplete="new-password"
                               onBlur={() => {
@@ -430,8 +465,7 @@ const ProfilePage: FC = () => {
           </Form>
         </Modal>
       )}
-    </ProfileSettingWrapperCard>
-    // </div>
+    </article>
   );
 };
 
