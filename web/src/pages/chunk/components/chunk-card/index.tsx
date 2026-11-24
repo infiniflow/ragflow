@@ -96,8 +96,8 @@ const ChunkCard = ({
         selected && 'bg-text-primary/15',
       )}
     >
-      {/* Corner row: the chunk type, then the entry into its details - which the
-          enterprise build also uses to name the chunk by id. The version the text
+      {/* Corner row: the chunk type, then the entry into its details, which
+          names the chunk by id. The version the text
           is at is one of those details, so it is not printed on the card. The
           type keeps its own box and spacing; the entry takes what the card can
           spare. */}
