@@ -11,9 +11,9 @@ sidebar_custom_props: {
 
 ## View and Search Users
 
-User accounts are managed on the **Users** page. Administrators can view the user list, including `Email`, `Nickname`, `Status`, and `User type`.
+User accounts are managed on the **Users** page. Administrators can view the user list, including `Email`, `Name`, `Status`, and `User type`.
 
-Use the search box in the upper-right corner to search users by `Email` or `Nickname`. You can also filter `Active` or `Inactive` users by `Status`.
+Use the search box in the upper-right corner to search users by `Email` or `Name`. You can also filter `Active` or `Inactive` users by `Status`.
 
 ![View And Search Users](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_and_search_users_1.jpg)
 
@@ -21,14 +21,14 @@ Use the search box in the upper-right corner to search users by `Email` or `Nick
 
 ## Create a New User
 
-To create an account for a new member, go to **Users** and click **New user**. The **New user** dialog contains `Email`, `Password`, and `Confirm password`. It has no Role selector. Set the account type separately from the **User type** column after creation if needed; see [Set Backend Administrator Identity](#set-backend-administrator-identity).
+To create an account for a new member, go to **Users** and click **New user**. The **New user** dialog contains `Email`, `Name`, `Password`, and `Confirm password`. `Name` is an optional display name shown in the UI and supports up to 100 characters; leading and trailing whitespace is removed. It has no Role selector. Set the account type separately from the **User type** column after creation if needed; see [Set Backend Administrator Identity](#set-backend-administrator-identity).
 
 1. Go to the **Users** page.
 2. Click **New user**.
 
    ![Open Users and click New user](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_a_new_user_1.jpg)
 
-3. Enter the user's `Email`.
+3. Enter the user's `Email` and, optionally, `Name`.
 4. Enter the initial password.
 5. Enter the same password again in `Confirm password`.
 
