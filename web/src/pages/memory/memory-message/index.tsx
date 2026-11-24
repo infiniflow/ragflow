@@ -1,6 +1,6 @@
 import ListFilterBar from '@/components/list-filter-bar';
 import { t } from 'i18next';
-import { useFetchMemoryMessageList, useSelectFilters } from './hook';
+import { useFetchMemoryMessageList } from './hook';
 import { MemoryTable } from './message-table';
 
 export default function MemoryMessage() {
@@ -11,25 +11,14 @@ export default function MemoryMessage() {
     pagination,
     handleInputChange,
     setPagination,
-    filterValue,
-    handleFilterSubmit,
     loading,
   } = useFetchMemoryMessageList();
-  const { filters } = useSelectFilters();
   return (
     <div className="flex flex-col gap-2">
       <ListFilterBar
         title={t('header.dataset')}
         onSearchChange={handleInputChange}
         searchString={searchString}
-        // showFilter={false}
-        // value={filterValue}
-        // onChange={handleFilterSubmit}
-        // onOpenChange={onOpenChange}
-        // filters={filters}
-        filters={filters}
-        onChange={handleFilterSubmit}
-        value={filterValue}
         leftPanel={
           <div className="items-start">
             <div className="pb-1">{t('memory.sideBar.messages')}</div>
