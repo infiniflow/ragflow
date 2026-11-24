@@ -3,12 +3,7 @@ import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { useVisibleIntegrationChildren } from '@/ee/hooks/use-visible-integration-children';
 import { cn } from '@/lib/utils';
 import { LucideChevronDown, type LucideIcon } from 'lucide-react';
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type PropsWithChildren,
-} from 'react';
+import { useCallback, useState, type PropsWithChildren } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router';
 import {
@@ -95,13 +90,17 @@ export function CollapsibleNavGroup({
     matchesPath(pathname, child.path),
   )?.key;
   const [expanded, setExpanded] = useState(Boolean(activeChildKey));
+  const [previousActiveChildKey, setPreviousActiveChildKey] =
+    useState(activeChildKey);
 
   // Follow navigation into a child page even when the user collapsed the group before.
-  useEffect(() => {
+  // Synchronize during render to avoid committing the stale collapsed state first.
+  if (activeChildKey !== previousActiveChildKey) {
+    setPreviousActiveChildKey(activeChildKey);
     if (activeChildKey) {
       setExpanded(true);
     }
-  }, [activeChildKey]);
+  }
 
   const toggleExpanded = useCallback(() => {
     setExpanded((prev) => !prev);
