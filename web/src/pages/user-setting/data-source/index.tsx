@@ -21,8 +21,12 @@ import { PageFrame } from '@/components/page-frame';
 import { TruncatedText } from '@/components/truncated-text';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
+import { useVisibleRoleIntegrationItems } from '@/ee/hooks/use-visible-role-integration-items';
 import AddDataSourceModal from './add-datasource-modal';
-import { getCategorizedDataSourceKeys } from './backend-adapter';
+import {
+  getAvailableDataSourceKeys,
+  getCategorizedDataSourceKeys,
+} from './backend-adapter';
 import { AddedSourceCard } from './component/added-source-card';
 import { useDataSourceInfo } from './constant';
 import { useAddDataSource, useListDataSource } from './hooks';
@@ -76,15 +80,35 @@ const AvailableSourceCard = ({ source, onAdd }: AvailableSourceCardProps) => {
 const DataSource = () => {
   const { t } = useTranslation();
   const { dataSourceInfo } = useDataSourceInfo();
-  const dataSourceGroups = getCategorizedDataSourceKeys().map((group) => ({
-    ...group,
-    sources: group.sources.map((id) => ({
+  const dataSourceTemplates = useVisibleRoleIntegrationItems(
+    'data_source',
+    getAvailableDataSourceKeys().map((id) => ({
       id,
       name: dataSourceInfo[id].name,
       description: dataSourceInfo[id].description,
       icon: dataSourceInfo[id].icon,
     })),
-  }));
+    (item) =>
+      String(item.id) === 'dingtalk_ai_table'
+        ? ['dingtalk_ai_table', 'dingtalk_wiki', 'dingtalk_drive']
+        : [item.id],
+  );
+  const visibleDataSourceKeys = new Set(
+    dataSourceTemplates.map((source) => source.id),
+  );
+  const dataSourceGroups = getCategorizedDataSourceKeys()
+    .map((group) => ({
+      ...group,
+      sources: group.sources
+        .filter((id) => visibleDataSourceKeys.has(id))
+        .map((id) => ({
+          id,
+          name: dataSourceInfo[id].name,
+          description: dataSourceInfo[id].description,
+          icon: dataSourceInfo[id].icon,
+        })),
+    }))
+    .filter((group) => group.sources.length > 0);
 
   // useListTenantUser();
   const { categorizedList } = useListDataSource();

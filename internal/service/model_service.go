@@ -121,6 +121,10 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Feature("model_provider::"+providerName), permission.ActionEnable); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
+		return code, normalizedErr
+	}
 	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)

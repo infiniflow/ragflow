@@ -21,6 +21,9 @@ export interface EeDataSourceInfoItem {
 /** Connector keys that exist only in the enterprise build. */
 export const eeDataSourceKeys: string[] = [];
 
+/** Backend connector source keys controlled by role-level integration permissions. */
+export const eeDataSourcePermissionKeys: string[] = [];
+
 /** Connector cards shown in the data-source grid. */
 export const generateEeDataSourceInfo = (
   _t: TFunction,
