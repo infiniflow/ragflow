@@ -22,11 +22,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 
-	"ragflow/internal/common"
 	"ragflow/internal/desktop"
 	"ragflow/internal/server/bootstrap"
 )
@@ -35,50 +32,23 @@ import (
 // --data-dir nor RAGFLOW_DESKTOP_DATA_DIR is set.
 const defaultDesktopDataDir = ".ragflow/desktop"
 
-// main is the desktop build's entry point. It boots the in-process backends
-// (pebbis, JetStream, the S3 gateway) under one data directory, repoints the
-// parsed configuration at them, and then runs the same server the server build
-// runs. The server build's main lives in ragflow_server.go behind !desktop.
-func main() {
-	os.Exit(runDesktop())
-}
-
-func runDesktop() int {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	defer cancel()
-
-	arguments, err := parseArgsFrom(os.Args)
-	if err != nil {
-		fmt.Printf("Failed to parse arguments: %v\n", err)
-		return 1
-	}
-
-	if *arguments.HelpFlag {
-		printHelp(arguments)
-		return 0
-	}
-
-	if *arguments.VersionFlag {
-		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
-		return 0
-	}
-
+// startDesktopBackends boots the in-process document engine, cache, message
+// queue and object store under one data directory, repoints the parsed
+// configuration at them and returns the function that stops them.
+//
+// The desktop build has no separate entry point: ragflow_server.go's main runs
+// it here, before the configuration is read, so the tag decides which backends
+// exist rather than how the server starts.
+func startDesktopBackends(ctx context.Context, arguments *bootstrap.ServerArgs) (func(), error) {
 	dataDir, err := desktopDataDir(arguments.DataDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to resolve the desktop data directory: %v\n", err)
-		return 1
+		return nil, fmt.Errorf("resolve the data directory: %w", err)
 	}
 
 	runtime, err := desktop.Start(ctx, dataDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start the desktop backends: %v\n", err)
-		return 1
+		return nil, fmt.Errorf("start the backends in %s: %w", dataDir, err)
 	}
-	defer func() {
-		if closeErr := runtime.Close(); closeErr != nil {
-			fmt.Fprintf(os.Stderr, "Failed to stop the desktop backends: %v\n", closeErr)
-		}
-	}()
 
 	bootstrap.SetDesktopEndpoints(bootstrap.DesktopEndpoints{
 		KvrocksAddr:     runtime.KvrocksAddr,
@@ -101,11 +71,11 @@ func runDesktop() int {
 		}
 	}
 
-	if err = runServer(ctx, cancel, arguments); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start RAGFlow: %v\n", err)
-		return 1
-	}
-	return 0
+	return func() {
+		if closeErr := runtime.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to stop the desktop backends: %v\n", closeErr)
+		}
+	}, nil
 }
 
 // desktopDataDir resolves where the in-process backends keep their state:

@@ -1463,7 +1463,7 @@ prepare_infinity_embedded() {
     mkdir -p "$dir"
 
     staged="$(_infinity_stage_static_archive "$lib" "$dir")" || return 1
-    # Nothing loads the engine at runtime, so drop any copy an earlier shared
+    # Nothing loads the engine at runtime, so drop any dynamic copy an older
     # build left beside the binaries or in the stable slot.
     rm -f "${PROJECT_ROOT}/bin/libinfinity_embedded."* \
         "${PROJECT_ROOT}/bin/infinity_embedded."* \
