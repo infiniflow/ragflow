@@ -96,13 +96,13 @@ func toolRegistry() map[string]toolFactory {
 		// The draft decomposition's structural check: header-only, deterministic
 		// and callable before any search (see tool_check_decomposition.go).
 		"check_decomposition": func(_ string, _ []string) tool.BaseTool { return NewCheckDecompositionTool() },
-		"grep_chunks":         func(t string, d []string) tool.BaseTool { return NewGrepChunksTool(t, d) },
+		"grep_chunks":         func(_ string, d []string) tool.BaseTool { return NewGrepChunksTool(d) },
 		"search_chunks":       func(t string, d []string) tool.BaseTool { return NewSearchChunksTool(t, d) },
-		"search_bm25_chunks":  func(t string, d []string) tool.BaseTool { return NewSearchBm25ChunksTool(t, d) },
+		"search_bm25_chunks":  func(_ string, d []string) tool.BaseTool { return NewSearchBm25ChunksTool(d) },
 		// The pure-vector leg: same payload as search_chunks, no keyword leg at
 		// all (see tool_search_semantic_chunks.go).
 		"search_semantic_chunks": func(t string, d []string) tool.BaseTool { return NewSearchSemanticChunksTool(t, d) },
-		"list_chunks":            func(t string, d []string) tool.BaseTool { return NewListChunksTool(t, d) },
+		"list_chunks":            func(_ string, d []string) tool.BaseTool { return NewListChunksTool(d) },
 		"search_metadata":        func(t string, d []string) tool.BaseTool { return NewMetadataSearchTool(t, d) },
 		// The compiled-knowledge-graph walk. Registered always; a template that
 		// omits it simply never offers it to the model.
@@ -115,7 +115,7 @@ func toolRegistry() map[string]toolFactory {
 		// The compiled-navigation-tree router. Registered always; a template that
 		// omits it simply never offers it to the model (same pattern as
 		// graph_explore).
-		"navigate_tree": func(t string, d []string) tool.BaseTool { return NewNavigateTreeTool(t, d) },
+		"navigate_tree": func(_ string, d []string) tool.BaseTool { return NewNavigateTreeTool(d) },
 		// The compiled-structure drilldown: given a doc_id (from navigate_tree),
 		// reads that document's compiled entity/relation outline and returns a
 		// query-focused TOC the model feeds to list_chunks. Registered always; a

@@ -33,9 +33,9 @@ func TestIntentIsAdvertisedAsAProperty(t *testing.T) {
 	tools := map[string]interface {
 		Info(context.Context) (*schema.ToolInfo, error)
 	}{
-		"grep_chunks":            NewGrepChunksTool("tenant", []string{"kb1"}),
-		"list_chunks":            NewListChunksTool("tenant", []string{"kb1"}),
-		"search_bm25_chunks":     NewSearchBm25ChunksTool("tenant", []string{"kb1"}),
+		"grep_chunks":            NewGrepChunksTool([]string{"kb1"}),
+		"list_chunks":            NewListChunksTool([]string{"kb1"}),
+		"search_bm25_chunks":     NewSearchBm25ChunksTool([]string{"kb1"}),
 		"search_semantic_chunks": NewSearchSemanticChunksTool("tenant", []string{"kb1"}),
 		"search_chunks":          NewSearchChunksTool("tenant", []string{"kb1"}),
 	}

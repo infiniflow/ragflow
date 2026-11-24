@@ -1744,8 +1744,17 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       jiraTokenTip:
         '在 https://id.atlassian.com/manage-profile/security/api-tokens 生成的 API Token。 (Clould only)',
       jiraPasswordTip: '可选：仅 Jira Server/Data Center 环境需要的密码字段。',
-      availableSourcesDescription: '选择要添加的数据源',
-      availableSources: '可用数据源',
+      dataSourceCategories: {
+        knowledgeAndLearning: '知识与学习',
+        fileStorage: '文件存储',
+        objectStorage: '对象存储',
+        messagingAndEmail: '消息与邮件',
+        developmentAndProjectManagement: '开发与项目管理',
+        businessApplications: '业务应用',
+        databasesAndApis: '数据库与 API',
+        webAndSocial: '网页与社交媒体',
+        other: '其他',
+      },
       datasourceDescription: '管理您的数据源和连接',
       dataSourceTestConnection: '测试连接',
       dataSourceTestSuccess: '数据源连接验证成功。',
@@ -2561,7 +2570,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
       advancedSettings: '高级设置',
       addTools: '添加工具',
-      sysPromptDefultValue: `
+      sysPromptDefaultValue: `
 <role>
   你是一名乐于助人的助手，一名专注于为用户解决问题的 AI 助手。
   如果用户指定了特定领域，你需要在该领域展现专业性；如果没有，则以通用助手的方式工作。
@@ -3908,7 +3917,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       newUser: '新建用户',
       email: '邮箱',
       name: '名称',
-      nickname: '昵称',
+      nickname: '名称',
+      nicknameMaxLength: '名称不能超过100个字符',
       status: '状态',
       id: 'ID',
       serviceType: '服务类型',

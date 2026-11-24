@@ -47,7 +47,7 @@ func setupChannelCompletionAPI(t *testing.T) (*gin.Engine, *AgentHandler) {
 		&entity.APIToken{TenantID: "user-1", UserID: new("user-1"), Token: "first-key"},
 		&entity.UserCanvas{ID: "workflow", UserID: "user-1", TenantID: new("user-1"), Permission: "me",
 			CanvasCategory: "agent_canvas", DSL: entity.JSONMap(channelCompletionDSL("first"))},
-		&entity.ChatChannel{ID: "channel", TenantID: "user-1", Name: "Telegram", Config: entity.JSONMap{}, Status: 1, AgentID: new("workflow")},
+		&entity.ChatChannel{ID: "channel", TenantID: "user-1", Name: "Telegram", Channel: "telegram", Config: entity.JSONMap{}, Status: 1, AgentID: new("workflow")},
 	} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatal(err)

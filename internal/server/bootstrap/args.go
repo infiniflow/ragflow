@@ -57,16 +57,9 @@ type ServerArgs struct {
 	IngestorTier *string
 }
 
-// SelectedLogLevel resolves the effective log level: an explicit --log-level
-// (non-nil) wins, otherwise the configured level, otherwise "warn".
-func SelectedLogLevel(args *ServerArgs, configured string) string {
+func GetLogLevel(args *ServerArgs) string {
 	if args.LogLevel != nil {
 		return *args.LogLevel
 	}
-
-	if configured == "" {
-		return "warn"
-	}
-
-	return configured
+	return "warn"
 }

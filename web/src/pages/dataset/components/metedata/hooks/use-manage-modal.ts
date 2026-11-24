@@ -224,7 +224,7 @@ export const useMetadataOperations = () => {
           ...prev,
           updates: updatedUpdates,
           deletes:
-            type === metadataValueTypeEnum.list && originalValue === ''
+            originalValue === ''
               ? prev.deletes.filter(
                   (item) => item.key !== key || item.value !== undefined,
                 )

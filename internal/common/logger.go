@@ -153,7 +153,7 @@ func LogLevelHigherThanInfo(level string) bool {
 //
 // Numeric fields (MaxSize, MaxBackups, MaxAge) are defaulted to 100/10/30
 // when zero. Compress is taken as supplied.
-func InitLogger(level string, file FileOutput, serviceName string) error {
+func InitLogger(level string, file FileOutput, serviceName string) {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		zapLevel = zapcore.InfoLevel
@@ -253,8 +253,6 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 		)
 	}
 	Sugar = Logger.Sugar()
-
-	return nil
 }
 
 // SyncLog flushes any buffered log entries.

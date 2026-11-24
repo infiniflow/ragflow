@@ -83,8 +83,8 @@ func TestNavigateTreeToolIsRegisteredAndBuildableByTemplate(t *testing.T) {
 	if err != nil || info.Name != navigateTreeToolName {
 		t.Fatalf("tool info = %+v err=%v", info, err)
 	}
-	if tool.tenantID != "tenant-1" || len(tool.datasetIDs) != 1 || tool.datasetIDs[0] != "kb1" {
-		t.Errorf("scope = %q/%v, want tenant-1/[kb1]", tool.tenantID, tool.datasetIDs)
+	if len(tool.datasetIDs) != 1 || tool.datasetIDs[0] != "kb1" {
+		t.Errorf("scope = %v, want [kb1]", tool.datasetIDs)
 	}
 }
 
@@ -98,7 +98,7 @@ func TestNavigateTreeToolRoutesDocuments(t *testing.T) {
 		}, nil
 	}})
 
-	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	tool := NewNavigateTreeTool([]string{"kb1"})
 	out, err := tool.InvokableRun(context.Background(), `{"query":"2023 revenue by segment"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -127,7 +127,7 @@ func TestNavigateTreeToolSkipsClusters(t *testing.T) {
 		}, nil
 	}})
 
-	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	tool := NewNavigateTreeTool([]string{"kb1"})
 	out, err := tool.InvokableRun(context.Background(), `{"query":"finance"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -144,7 +144,7 @@ func TestNavigateTreeToolSkipsClusters(t *testing.T) {
 func TestNavigateTreeToolNoTreeIsAHintNotAnError(t *testing.T) {
 	installFakeNavService(t, nil) // no NavService installed -> Route returns (nil,nil)
 
-	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	tool := NewNavigateTreeTool([]string{"kb1"})
 	out, err := tool.InvokableRun(context.Background(), `{"query":"q"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -161,7 +161,7 @@ func TestNavigateTreeToolNoDocOnEmptyRoute(t *testing.T) {
 		return []nav.NavHit{}, nil // structure exists, nothing routed
 	}})
 
-	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	tool := NewNavigateTreeTool([]string{"kb1"})
 	out, err := tool.InvokableRun(context.Background(), `{"query":"q"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -176,7 +176,7 @@ func TestNavigateTreeToolNoDocOnEmptyRoute(t *testing.T) {
 
 // TestNavigateTreeToolRequiresQuery pins the argument contract.
 func TestNavigateTreeToolRequiresQuery(t *testing.T) {
-	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	tool := NewNavigateTreeTool([]string{"kb1"})
 	out, err := tool.InvokableRun(context.Background(), `{"query":"   "}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -193,7 +193,7 @@ func TestNavigateTreeToolAppliesBoundDocumentScope(t *testing.T) {
 		return []nav.NavHit{{Type: nav.TypeNavDoc, DocID: "d1", Name: "Annual Report"}}, nil
 	}})
 
-	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	tool := NewNavigateTreeTool([]string{"kb1"})
 	ctx := withDocumentScope(context.Background(), []string{"d1"})
 	if _, err := tool.InvokableRun(ctx, `{"query":"q"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -210,7 +210,7 @@ func TestNavigateTreeToolRejectsDocumentOutsideBoundScope(t *testing.T) {
 		return nil, nil
 	}})
 
-	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	tool := NewNavigateTreeTool([]string{"kb1"})
 	ctx := withDocumentScope(context.Background(), []string{"d1"})
 	out, err := tool.InvokableRun(ctx, `{"query":"q","doc_scope":["d2"]}`)
 	if err != nil {
@@ -231,7 +231,7 @@ func TestNavigateTreeToolWithEmptyDocumentScopeSkipsTheRoute(t *testing.T) {
 		return []nav.NavHit{{Type: nav.TypeNavDoc, DocID: "d1"}}, nil
 	}})
 
-	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	tool := NewNavigateTreeTool([]string{"kb1"})
 	ctx := WithConversationKey(withDocumentScope(context.Background(), []string{}), "test-nav-tree-empty-doc-scope")
 	out, err := tool.InvokableRun(ctx, `{"query":"q"}`)
 	if err != nil {

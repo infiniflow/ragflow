@@ -328,7 +328,24 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
 
         {showContent && (
           <div className="flex p-4" style={{ justifyContent: 'safe center' }}>
-            <div style={{ zoom: zoomScale / 100 }}>
+            {/*
+             * @extend-ai/react-docx renders each page into a fixed A4-height
+             * box with an inline `overflow: clip`. The default line spacing we
+             * inject above (see normalizeDocxLineSpacing) makes some pages
+             * render taller than the A4 box, so that clip silently hides the
+             * last lines/table rows of those pages. The viewer can't be told to
+             * re-paginate, so let the page wrappers/surfaces grow to fit their
+             * content instead of clipping it.
+             */}
+            <div
+              className={classNames(
+                '[&_[data-docx-page-wrapper]]:!h-auto',
+                '[&_[data-docx-page-wrapper]]:!overflow-visible',
+                '[&_[data-docx-page-surface]]:!h-auto',
+                '[&_[data-docx-page-surface]]:!overflow-visible',
+              )}
+              style={{ zoom: zoomScale / 100 }}
+            >
               <DocxEditorViewer
                 editor={editor}
                 mode="read-only"

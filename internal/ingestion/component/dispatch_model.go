@@ -35,8 +35,32 @@ import (
 	"ragflow/internal/modelcontext"
 	"ragflow/internal/permission"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// markGroupMemberInactive deactivates a gp- reference's currently picked
+// member of modelType so the next resolve of the same reference picks the
+// next member. Exposed as a package var for failover tests; the enterprise
+// build implements it, the community build is a no-op because gp-
+// references never resolve there.
+var markGroupMemberInactive = defaultMarkGroupMemberInactive
+
+// noteGroupMemberFailure flips the currently picked member of a gp- reference
+// inactive after a driver invocation failed against a model resolved from
+// modelRef, so a retry that re-resolves the same reference picks the next
+// member. Best-effort: non-group references are ignored and failures are
+// logged without masking the invocation error.
+func noteGroupMemberFailure(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) {
+	if db == nil || strings.TrimSpace(modelRef) == "" {
+		return
+	}
+	if _, err := markGroupMemberInactive(ctx, db, tenantID, modelType, modelRef); err != nil {
+		common.WarnCtx(ctx, "model group failover: failed to mark member inactive",
+			zap.String("model_ref", modelRef),
+			zap.Error(err))
+	}
+}
 
 type tenantModelExtra struct {
 	MaxTokens json.RawMessage `json:"max_tokens"`

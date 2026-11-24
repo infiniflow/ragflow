@@ -66,7 +66,6 @@ type Ingestor struct {
 
 	// Configuration
 	maxConcurrency           int32
-	supportedDocTypes        []string
 	version                  string
 	heartbeatInterval        time.Duration
 	memoryReconcileInterval  time.Duration
@@ -178,7 +177,7 @@ type pendingDocumentCompileEvent struct {
 // process-wide relational handle, message-queue engine, and kvrocks client;
 // they are resolved once at the server assembly point and injected here rather
 // than read from the package globals (arch_test.go guards that rule).
-func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tier common.Tier, deps *ingestion.Deps) *Ingestor {
+func NewIngestor(name string, maxConcurrency int32, tier common.Tier, deps *ingestion.Deps) *Ingestor {
 	if maxConcurrency <= 0 {
 		maxConcurrency = int32(runtime.NumCPU())
 	}
@@ -209,7 +208,6 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tie
 		dispatchCtx:              dispatchCtx,
 		dispatchCancel:           dispatchCancel,
 		maxConcurrency:           maxConcurrency,
-		supportedDocTypes:        supportedTypes,
 		version:                  "1.0.0",
 		ingestorTier:             tier,
 		currentTasks:             make(map[string]struct{}),
@@ -1325,6 +1323,22 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		pipelineLogID = *ingestionTask.PipelineLogID
 	}
 	sink := newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)
+	// Install the structured-progress emitter: component page/chunk positions
+	// are forwarded to the ingestion log sink. Identity is captured once here
+	// (the run row is loaded a single time) so the high-frequency callback never
+	// touches the DB. A missing run still yields an event with task identity.
+	var progressRun *entity.PipelineOperationLog
+	if pipelineLogID != "" {
+		progressRun, _ = dao.NewPipelineOperationLogDAO().GetByID(ctx, e.deps.DB, pipelineLogID)
+	}
+	sink.detailEmitter = func(component, unit string, current, total uint32) {
+		log := observability.BuildProgressIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, unit, current, total)
+		common.LogIngest(&log)
+	}
+	sink.lifecycleEmitter = func(component string, phase uint8, message string) {
+		log := observability.BuildComponentIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, phase, message)
+		common.LogIngest(&log)
+	}
 	// Close is idempotent and intentionally called twice: the defer is the
 	// panic backstop (an unwind out of Execute must still stop the flusher),
 	// and the explicit call pins the final flush ahead of docState.apply,

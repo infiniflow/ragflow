@@ -228,6 +228,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewHostingerRouterModel(baseURL, urlSuffix), nil
 	case "wally":
 		return NewWallyModel(baseURL, urlSuffix), nil
+	case "onomeo":
+		return NewOnomeoModel(baseURL, urlSuffix), nil
 	case "synap":
 		return NewSynapModel(baseURL, urlSuffix), nil
 	case "wiro ai":

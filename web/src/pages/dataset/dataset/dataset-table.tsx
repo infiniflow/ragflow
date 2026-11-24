@@ -29,7 +29,7 @@ import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
-import { DatasetTableLayout } from '../components/dataset-table-layout';
+import { DatasetTableLayout } from '@/components/dataset-table-layout';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import ProcessLogModal from '../process-log-modal';
 import {

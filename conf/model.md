@@ -197,6 +197,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **N1N** | Multi-provider aggregator |
 | **Novita** | Open-source model hosting |
 | **Obscurify.ai** | Privacy-focused OpenAI-compatible API, 200+ models |
+| **onomeo** | OpenAI-compatible gateway for Claude, GPT, DeepSeek and other models |
 | **OpenRouter** | Multi-provider router |
 | **OrcaRouter** | Auto-routing layer |
 | **PPIO** | Edge AI platform |

@@ -63,6 +63,9 @@ func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
 
 // ParseWithResult extracts text for the DOC family as structured JSON items.
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	if err := checkWPSLicense(filename); err != nil {
+		return ParseResult{Err: err}
+	}
 	irJSON, mdText, plainText, _, err := docExtract(data, "doc")
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {

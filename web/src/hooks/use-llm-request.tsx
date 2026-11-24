@@ -46,8 +46,8 @@ import { createContext, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
-  buildModelValue,
   buildValidModelIds,
+  getDefaultModelIdByField,
   parseModelValue,
 } from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
@@ -768,19 +768,8 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
 
   const result = useMemo(() => {
     const dict: Record<string, string> = {};
-    Object.entries(ModelTypeToField).forEach(([key, field]) => {
-      const model = defaultModels.find((m) => m.model_type === key);
-      if (!model || !model.enable) {
-        dict[field] = '';
-        return;
-      }
-      dict[field] =
-        model.model_id ||
-        buildModelValue({
-          model_name: model.model_name,
-          model_instance: model.model_instance,
-          model_provider: model.model_provider,
-        });
+    Object.values(ModelTypeToField).forEach((field) => {
+      dict[field] = getDefaultModelIdByField(defaultModels, field);
     });
     return dict;
   }, [defaultModels]);

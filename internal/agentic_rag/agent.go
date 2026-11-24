@@ -979,6 +979,11 @@ func Run(ctx context.Context, in Input) (string, error) {
 	if in.DocIDs != nil {
 		ctx = withDocumentScope(ctx, in.DocIDs)
 	}
+	// Resolve the corpus scope ONCE per turn: every corpus tool of this run must
+	// read the indexes that actually hold the bound datasets, which is decided by
+	// each dataset's own tenant (a team-shared dataset lives in the sharing
+	// tenant), not by the conversation's tenant.
+	ctx = WithDatasetTenants(ctx, ResolveDatasetTenants(ctx, in.DatasetIDs))
 
 	// Conversation identity for per-conversation compiled-knowledge tool
 	// availability: the chat pipeline passes the chat id; when absent, a unique
@@ -1658,6 +1663,14 @@ var modelFailureRe = regexp.MustCompile(`exceeds max retries|failed on every mod
 // content, failed the call.
 func modelFailure(err error) bool {
 	return err != nil && modelFailureRe.MatchString(err.Error())
+}
+
+// ModelFailure reports whether an error means the model chain, not the run's
+// content, failed the call. Exported for the chat pipeline's group failover:
+// a turn that died on a model failure flips the gp- primary's current member
+// inactive so the next run's chain picks the next member.
+func ModelFailure(err error) bool {
+	return modelFailure(err)
 }
 
 // modelCause extracts the provider-facing reason from a model-failure error,

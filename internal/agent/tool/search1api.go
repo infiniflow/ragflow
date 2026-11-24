@@ -24,10 +24,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/utility"
 )
 
 const search1APIToolName = "search1api_search"
@@ -338,7 +339,7 @@ func buildSearch1APIReferences(envelope map[string]any) ([]map[string]any, []map
 		if content == "" {
 			content = searchReferenceText(result["snippet"])
 		}
-		content = truncateSearch1APIRunes(strings.Join(strings.Fields(content), " "), 10000)
+		content = utility.TruncateRunes(strings.Join(strings.Fields(content), " "), 10000)
 		if content == "" {
 			continue
 		}
@@ -365,13 +366,6 @@ func buildSearch1APIReferences(envelope map[string]any) ([]map[string]any, []map
 		})
 	}
 	return chunks, docAggs
-}
-
-func truncateSearch1APIRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func search1APIJSON(env search1APIEnvelope) string {
