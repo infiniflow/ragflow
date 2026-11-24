@@ -31,6 +31,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -437,7 +438,7 @@ func (q *QueritTool) BuildReferences(_ context.Context, response map[string]any)
 			continue
 		}
 		content = queritDataImagePattern.ReplaceAllString(content, "")
-		content = truncateQueritRunes(content, 10000)
+		content = utility.TruncateRunes(content, 10000)
 		if content == "" {
 			continue
 		}
@@ -526,17 +527,6 @@ func queritText(value any) string {
 
 func queritPromptField(value any) string {
 	return queritNewlinePattern.ReplaceAllString(queritText(value), " ")
-}
-
-func truncateQueritRunes(value string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	runes := []rune(value)
-	if len(runes) <= limit {
-		return value
-	}
-	return string(runes[:limit])
 }
 
 func queritInt(value int) *int { return &value }
