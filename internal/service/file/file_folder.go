@@ -105,20 +105,34 @@ func (s *FileService) listFiles(ctx context.Context, tenantID, pfID string, page
 		return nil, err
 	}
 
-	// Apply file visibility in SQL before count and pagination. Community
-	// permission policy compiles this to correlated EXISTS predicates so large
-	// folders do not need to materialize every candidate ID.
+	// Apply file visibility in SQL before count and pagination, so large folders
+	// do not need to materialize every candidate ID. The scope is authorized per
+	// kind, and a page holds both files and folders, so both must be admitted.
 	excludeSkills := folder.ID == folder.ParentID
 	checker := permission.NewDatabaseChecker(dao.DB)
-	visibilityScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
+	folderRef := permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folder.ID}
+	fileScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
 		Kind:      permission.ResourceKindFile,
-		Parent:    permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folder.ID},
+		Parent:    folderRef,
 		Operation: permission.OperationRead,
 	})
 	if err != nil {
 		return nil, err
 	}
-	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, terms, keywords, excludeSkills, visibilityScope.Apply)
+	folderScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindFolder,
+		Parent:    folderRef,
+		Operation: permission.OperationRead,
+	})
+	if err != nil {
+		return nil, err
+	}
+	visible := func(query *gorm.DB) *gorm.DB {
+		return query.Where("file.id IN (?) OR file.id IN (?)",
+			fileScope.Apply(dao.DB.Model(&entity.File{}).Select("id")),
+			folderScope.Apply(dao.DB.Model(&entity.File{}).Select("id")))
+	}
+	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, terms, keywords, excludeSkills, visible)
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +169,18 @@ func (s *FileService) listFiles(ctx context.Context, tenantID, pfID string, page
 		return nil, permission.ErrResourceNotFound
 	}
 
+	// One layered walk for the whole page replaces a recursive walk per folder.
+	folderIDs := make([]string, 0, len(files))
+	for _, file := range files {
+		if file.Type == FileTypeFolder {
+			folderIDs = append(folderIDs, file.ID)
+		}
+	}
+	folderSizes, childFolders, err := s.fileDAO.GetFolderAggregates(ctx, dao.DB, folderIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	// Process files to add additional info, deduplicating by ID as a safety net
 	// against any leftover duplicate rows (e.g. duplicate 'skills' or '.knowledgebase' folders).
 	fileResponses := make([]map[string]interface{}, 0, len(files))
@@ -168,14 +194,8 @@ func (s *FileService) listFiles(ctx context.Context, tenantID, pfID string, page
 
 		// If folder, calculate size and check for child folders
 		if file.Type == FileTypeFolder {
-			folderSize, err := s.fileDAO.GetFolderSize(ctx, dao.DB, file.ID)
-			if err == nil {
-				fileInfo.Size = folderSize
-			}
-			hasChild, err := s.fileDAO.HasChildFolder(ctx, dao.DB, file.ID)
-			if err == nil {
-				fileInfo.HasChildFolder = hasChild
-			}
+			fileInfo.Size = folderSizes[file.ID]
+			fileInfo.HasChildFolder = childFolders[file.ID]
 			fileInfo.KbsInfo = []map[string]interface{}{}
 		} else {
 			// Get KB info for non-folder files
