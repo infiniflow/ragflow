@@ -242,8 +242,16 @@ func (s *Scheduler) armTaskTimer(ctx context.Context, taskID string, current **t
 // The timer pointer is only read while holding timerMu, which also protects
 // the assignment made by armTaskTimer.
 func (s *Scheduler) handleTimerWakeup(ctx context.Context, taskID string, timer **time.Timer) {
-	if err := s.publish(ctx, taskID, true); err != nil && ctx.Err() == nil {
-		common.Warn("syncer scheduler timer publish failed", zap.String("task_id", taskID), zap.Error(err))
+	_, err := s.taskDAO.GetScheduledTask(ctx, taskID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		s.retireTimer(taskID, timer)
+		return
+	}
+	if err == nil {
+		err = s.publish(ctx, taskID, true)
+	}
+	if err != nil && ctx.Err() == nil {
+		common.Warn("syncer scheduler timer wakeup failed", zap.String("task_id", taskID), zap.Error(err))
 		s.armTaskTimer(ctx, taskID, timer, taskDispatchRetryDelay, s.handleTimerWakeup)
 		return
 	}

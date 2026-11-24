@@ -130,6 +130,74 @@ func TestPeriodicDispatchStopsAfterPauseOrUnlink(t *testing.T) {
 	}
 }
 
+func TestPeriodicWakeupSkipsPausedConnector(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		db := setupSyncerDB(t)
+		insertTaskContext(t, db, "conn-1", "kb-1", "next", dao.TaskTypeSync)
+		taskDAO := dao.NewSyncTaskDAO(db)
+		broker := &fakeSyncTaskBroker{}
+		scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, broker)
+		defer scheduler.stopTimers()
+
+		if err := scheduler.ScheduleTaskAfter(t.Context(), "next", time.Second); err != nil {
+			t.Fatal(err)
+		}
+		// Leave a scheduled row to exercise the guards against an old delivery.
+		if err := db.Model(&entity.Connector{}).Where("id = ?", "conn-1").Update("status", dao.SyncStatusCancel).Error; err != nil {
+			t.Fatal(err)
+		}
+		if claimed, err := service.NewSyncTaskService(taskDAO).Claim(t.Context(), "next"); err != nil || claimed {
+			t.Errorf("paused connector: claimed=%t, err=%v", claimed, err)
+		}
+
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if got := broker.publishedIDs(); len(got) != 0 {
+			t.Fatalf("paused connector wakeup published %v", got)
+		}
+		taskContext, err := taskDAO.GetTaskContext(t.Context(), "next")
+		if err != nil || taskContext.Connector.Status != dao.SyncStatusCancel || taskContext.Task.Status != dao.SyncStatusSchedule {
+			t.Fatalf("paused connector: connector=%s, task=%s, err=%v", taskContext.Connector.Status, taskContext.Task.Status, err)
+		}
+	})
+}
+
+func TestCompletedTaskDoesNotSchedulePausedConnector(t *testing.T) {
+	for _, taskType := range []string{dao.TaskTypeSync, dao.TaskTypePrune} {
+		t.Run(taskType, func(t *testing.T) {
+			db := setupSyncerDB(t)
+			insertTaskContext(t, db, "conn-1", "kb-1", "current", taskType)
+			taskDAO := dao.NewSyncTaskDAO(db)
+			taskService := service.NewSyncTaskService(taskDAO)
+			ctx := t.Context()
+			if claimed, err := taskService.Claim(ctx, "current"); err != nil || !claimed {
+				t.Fatalf("initial claim: claimed=%t, err=%v", claimed, err)
+			}
+			taskContext, err := taskDAO.GetTaskContext(ctx, "current")
+			if err != nil || taskContext.Connector.Status != dao.SyncStatusRunning {
+				t.Fatalf("running connector: status=%s, err=%v", taskContext.Connector.Status, err)
+			}
+			if err := db.Model(&entity.Connector{}).Where("id = ?", "conn-1").Update("status", dao.SyncStatusCancel).Error; err != nil {
+				t.Fatal(err)
+			}
+			var next string
+			switch taskType {
+			case dao.TaskTypeSync:
+				next, err = taskService.CompleteSync(ctx, taskContext, time.Now(), service.SyncStats{})
+			case dao.TaskTypePrune:
+				next, err = taskService.CompletePrune(ctx, taskContext, 0)
+			}
+			if err != nil || next != "" {
+				t.Fatalf("paused completion: next=%q, err=%v", next, err)
+			}
+			current, err := taskDAO.GetTaskContext(ctx, "current")
+			if err != nil || current.Connector.Status != dao.SyncStatusCancel {
+				t.Fatalf("paused connector: status=%s, err=%v", current.Connector.Status, err)
+			}
+		})
+	}
+}
+
 func TestPeriodicDispatchRecoversAfterPublishFailure(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		db := setupSyncerDB(t)

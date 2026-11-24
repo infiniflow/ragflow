@@ -273,10 +273,12 @@ type boxOAuthTokenResponse struct {
 
 // cancelConnectorTasks Stop connector tasks
 func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID string) error {
-	if err := s.connectorDAO.CancelRunningOrScheduledLogs(ctx, dao.DB, connectorID); err != nil {
-		return err
-	}
-	return s.connectorDAO.UpdateByID(ctx, dao.DB, connectorID, map[string]interface{}{"status": string(entity.TaskStatusCancel)})
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.connectorDAO.UpdateByID(ctx, tx, connectorID, map[string]interface{}{"status": string(entity.TaskStatusCancel)}); err != nil {
+			return err
+		}
+		return s.connectorDAO.CancelRunningOrScheduledLogs(ctx, tx, connectorID)
+	})
 }
 
 // CreateConnector creates a connector owned by the current user.

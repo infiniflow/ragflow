@@ -74,17 +74,7 @@ func NewSyncTaskService(taskDAO *dao.SyncTaskDAO) *SyncTaskService {
 
 // Claim marks a scheduled task running if no other scanner claimed it first.
 func (s *SyncTaskService) Claim(ctx context.Context, taskID string) (bool, error) {
-	claimed, err := s.taskDAO.ClaimTask(ctx, taskID, time.Now().Local())
-	if err != nil || !claimed {
-		return claimed, err
-	}
-
-	taskContext, err := s.taskDAO.GetTaskContext(ctx, taskID)
-	if err != nil {
-		return true, err
-	}
-
-	return true, s.taskDAO.MarkConnectorRunning(ctx, taskContext.Connector.ID)
+	return s.taskDAO.ClaimTask(ctx, taskID, time.Now().Local())
 }
 
 // CompleteSync commits a successful SYNC task and schedules the next one.

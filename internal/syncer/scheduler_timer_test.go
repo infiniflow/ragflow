@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"ragflow/internal/dao"
 )
 
 // TestSchedulerExpiredCallbackKeepsReplacementTimer verifies the stale
@@ -112,7 +114,9 @@ func TestSchedulerCallbackPreservesReplacement(t *testing.T) {
 			t.Errorf("schedule replacement: %v", err)
 		}
 	}
-	scheduler = NewNATSScheduler(make(chan TaskEnvelope, 1), nil, broker)
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	scheduler = NewNATSScheduler(make(chan TaskEnvelope, 1), dao.NewSyncTaskDAO(db), broker)
 	defer scheduler.stopTimers()
 
 	if err := scheduler.ScheduleTaskAfter(ctx, "task-1", time.Hour); err != nil {
@@ -157,7 +161,9 @@ func TestSchedulerCallbackFailurePreservesReplacement(t *testing.T) {
 			t.Errorf("schedule replacement: %v", err)
 		}
 	}
-	scheduler = NewNATSScheduler(make(chan TaskEnvelope, 1), nil, broker)
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	scheduler = NewNATSScheduler(make(chan TaskEnvelope, 1), dao.NewSyncTaskDAO(db), broker)
 	defer scheduler.stopTimers()
 	if err := scheduler.ScheduleTaskAfter(ctx, "task-1", time.Hour); err != nil {
 		t.Fatal(err)
