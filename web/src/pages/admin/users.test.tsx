@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { listUsers } from '@/services/admin-service';
-import AdminUserManagement from './users';
+import AdminUserManagement, { AdminUserKeys } from './users';
 
 jest.setTimeout(15000);
 
@@ -167,7 +167,7 @@ it.each([25, 20])(
     renderUsers(client);
     await screen.findByText('member-00@example.com');
     const [firstPage] = MockListUsers.mock.calls[0];
-    client.setQueryData(['admin/listUsers', { ...firstPage, page: 3 }], {
+    client.setQueryData(AdminUserKeys.list({ ...firstPage, page: 3 }), {
       code: 0,
       message: '',
       data: [],

@@ -14,6 +14,59 @@ import (
 	"ragflow/internal/common"
 )
 
+func TestChatThinkingDefaultsAcrossInvocationPaths(t *testing.T) {
+	for _, thinking := range []*bool{nil, new(false), new(true)} {
+		for _, path := range []string{"chat", "stream", "eino generate", "eino stream", "tools", "tools stream"} {
+			t.Run(fmt.Sprintf("%s/thinking=%v", path, thinking), func(t *testing.T) {
+				driver := &captureToolDriver{resp: &ChatResponse{Answer: new("done")}}
+				chat := NewChatModelWithInfo(driver, new("chat"), &APIConfig{}, &ModelInfo{
+					Thinking: &ModelThinking{DefaultValue: true},
+				})
+				cfg := &ChatConfig{Thinking: thinking}
+				messages := []Message{{Role: "user", Content: "hi"}}
+				sender := func(*string, *string) error { return nil }
+				var err error
+				switch path {
+				case "chat":
+					_, err = chat.ChatWithMessages(t.Context(), messages, cfg, nil)
+				case "stream":
+					err = chat.ChatStreamlyWithSender(t.Context(), messages, cfg, nil, sender)
+				case "eino generate":
+					_, err = NewEinoChatModel(chat, cfg).Generate(t.Context(), []*schema.Message{schema.UserMessage("hi")})
+				case "eino stream":
+					var stream *schema.StreamReader[*schema.Message]
+					stream, err = NewEinoChatModel(chat, cfg).Stream(t.Context(), []*schema.Message{schema.UserMessage("hi")})
+					if err == nil {
+						defer stream.Close()
+						for {
+							_, err = stream.Recv()
+							if err != nil {
+								break
+							}
+						}
+						if errors.Is(err, io.EOF) {
+							err = nil
+						}
+					}
+				case "tools":
+					chat.ToolConfig = &ToolConfig{Tools: "[]"}
+					_, _, err = chat.ChatWithTools(t.Context(), "", messages, cfg)
+				case "tools stream":
+					chat.ToolConfig = &ToolConfig{Tools: "[]"}
+					_, err = chat.ChatStreamlyWithTools(t.Context(), "", messages, cfg, sender)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := thinking != nil && *thinking
+				if driver.lastConfig == nil || driver.lastConfig.Thinking == nil || *driver.lastConfig.Thinking != want {
+					t.Fatalf("driver config = %+v, want thinking %v", driver.lastConfig, want)
+				}
+			})
+		}
+	}
+}
+
 func TestEinoChatModelRequiresExecuteCodeTool(t *testing.T) {
 	name := "chat"
 	base := NewChatModel(&streamSentinelDriver{}, &name, &APIConfig{})

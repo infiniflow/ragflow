@@ -23,11 +23,11 @@ import (
 )
 
 func TestMessageSubstringFilterKeepsExactFilters(t *testing.T) {
-	got, args, err := buildFilter(map[string]interface{}{"session_id_contains": "part_%'x"}, "memory")
+	got, args, err := buildFilter(map[string]interface{}{"session_id_contains": "part_%'x"}, "memory", chunkTableSchema{})
 	if err != nil || got != "INSTR(`session_id`, ?) > 0" || !reflect.DeepEqual(args, []interface{}{"part_%'x"}) {
 		t.Fatalf("%s %v %v", got, args, err)
 	}
-	exact, _, err := buildFilter(map[string]interface{}{"session_id": "part"}, "memory")
+	exact, _, err := buildFilter(map[string]interface{}{"session_id": "part"}, "memory", chunkTableSchema{})
 	if err != nil || !strings.Contains(exact, " = ?") {
 		t.Fatal(exact, err)
 	}
@@ -38,7 +38,7 @@ func TestMemoryMessageIDsDecodeAsIntegers(t *testing.T) {
 		stored string
 		want   int64
 	}{{"42", 42}, {"9223372036854775807", 9223372036854775807}} {
-		row := decodeLogicalRow(map[string]interface{}{"message_id": tc.stored}, "memory")
+		row := decodeLogicalRow(map[string]interface{}{"message_id": tc.stored}, "memory", nil)
 		if row["message_id"] != tc.want {
 			t.Fatalf("message_id = %#v, want %d", row["message_id"], tc.want)
 		}
@@ -46,7 +46,7 @@ func TestMemoryMessageIDsDecodeAsIntegers(t *testing.T) {
 }
 
 func TestMemoryContentIncludesUnsetForgetTime(t *testing.T) {
-	row := decodeLogicalRow(map[string]interface{}{"message_id": "42", "content_ltks": "content"}, "memory")
+	row := decodeLogicalRow(map[string]interface{}{"message_id": "42", "content_ltks": "content"}, "memory", nil)
 	if value, ok := row["forget_at"]; !ok || value != nil {
 		t.Fatalf("unset forget_at = %#v, present=%v", value, ok)
 	}

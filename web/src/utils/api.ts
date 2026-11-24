@@ -44,8 +44,6 @@ const apiEndpoints = {
   listAllAddedModels: `${restAPIv1}/models`,
   defaultModel: `${restAPIv1}/models/default`,
   // AIMLAPI agent-authorization (OAuth device grant) — obtain a key from the provider dialog
-  aimlapiAuthorizeStart: `${restAPIv1}/llm/aimlapi/authorize/start`,
-  aimlapiAuthorizePoll: `${restAPIv1}/llm/aimlapi/authorize/poll`,
   listProviders: `${restAPIv1}/providers`,
   addProvider: `${restAPIv1}/providers`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
@@ -546,9 +544,9 @@ const apiEndpoints = {
   skillReindex: `${restAPIv1}/skills/reindex`,
 };
 
-// Enterprise customization overlays: the enterprise repository carries a real
-// implementation of the same-path file `web/src/ee/utils/api-private.ts`;
-// upstream ships it as an empty object so this import resolves in both trees.
-// Enterprise endpoints must live only in the ee/ file, never here. Keys in
+// Enterprise customization overlays: the enterprise repository carries real
+// implementations under `web/src/ee/utils/`; upstream ships no-op stubs under
+// `web/src/ee-stub/utils/` so this import resolves in both trees. Enterprise
+// endpoints must live only in the enterprise ee/ file, never here. Keys in
 // the overlay override or extend `apiEndpoints`.
 export default merge(apiEndpoints, apiPrivate);

@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -669,10 +672,10 @@ func (s *FileService) MoveFiles(ctx context.Context, srcFileIDs []string, destFi
 	}
 	file := filesByID[srcFileIDs[0]]
 	if err := s.fileDAO.UpdateByID(ctx, dao.DB, file.ID, map[string]interface{}{"name": newName}); err != nil {
-		return errors.New("Database error (File rename)!")
+		return fmt.Errorf("Database error (File rename)!: %w", err)
 	}
 	if err := s.renameLinkedDocuments(ctx, file.ID, newName); err != nil {
-		return errors.New("Database error (Document rename)!")
+		return fmt.Errorf("Database error (Document rename)!: %w", err)
 	}
 	return nil
 }
@@ -695,7 +698,7 @@ func (s *FileService) checkSourcesDisjoint(ctx context.Context, files []*entity.
 	for _, file := range files {
 		ancestors, err := s.fileDAO.GetAllParentFolders(ctx, dao.DB, file.ID)
 		if err != nil {
-			return false, "failed to check source folder hierarchy"
+			return false, "failed to check source folder hierarchy: " + err.Error()
 		}
 		for _, ancestor := range ancestors {
 			if ancestor.ID == file.ID {
@@ -731,6 +734,30 @@ func (s *FileService) renameLinkedDocuments(ctx context.Context, fileID, newName
 		}
 	}
 	return nil
+}
+
+// uniqueStorageLocation returns an object name free in the destination bucket.
+// The conflict-free path is unchanged: one probe and the original name. Once
+// the name is taken, a unique token replaces the old name_, name__, ... walk,
+// so K occupied names no longer cost K+1 sequential storage calls. A fresh,
+// unpredictable suffix also narrows the check-then-move window in which another
+// writer could claim the probed name. A token collision falls back to the
+// original deterministic naming so correctness never depends on the clock.
+func uniqueStorageLocation(ctx context.Context, store storage.Storage, bucket, name string) string {
+	if !store.ObjExist(ctx, bucket, name) {
+		return name
+	}
+	candidate := name + "_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	// The location column is capped; an over-long candidate would let the
+	// storage move succeed while the DB update fails, orphaning the file.
+	if len(candidate) <= common.NameLimit255 && !store.ObjExist(ctx, bucket, candidate) {
+		return candidate
+	}
+	candidate = name + "_"
+	for store.ObjExist(ctx, bucket, candidate) {
+		candidate += "_"
+	}
+	return candidate
 }
 
 // moveEntryRecursive recursively moves a file or folder entry
@@ -792,10 +819,7 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity
 		}
 
 		// Calculate new location
-		newLocation := effectiveName
-		for storageImpl.ObjExist(ctx, destFolder.ID, newLocation) {
-			newLocation += "_"
-		}
+		newLocation := uniqueStorageLocation(ctx, storageImpl, destFolder.ID, effectiveName)
 
 		// Perform storage move (copy + delete)
 		if sourceFile.Location == nil || *sourceFile.Location == "" {

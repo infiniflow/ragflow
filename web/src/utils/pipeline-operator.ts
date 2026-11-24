@@ -15,6 +15,7 @@
  */
 
 import { Operator } from '@/constants/agent';
+import { additionalParserGlobalOptions } from '@/ee/utils/parser-global-options';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   getInitialExtractorValues,
@@ -83,8 +84,10 @@ export function transformParserConfigSetups(
       'allowed_output_format',
       'enable_vision_enhancement',
       'vlm',
+      ...Object.keys(additionalParserGlobalOptions.shape),
     ]),
   )
+    .filter(([, config]) => typeof config === 'object')
     .map(([fileFormat, config]) => {
       const { pages, ...rest } = (config ?? {}) as Record<string, any>;
       const normalizedPages = Array.isArray(pages)
@@ -357,7 +360,8 @@ export function transformApiConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
   switch (operatorType) {
-    case Operator.Parser:
+    case Operator.Parser: {
+      const additional = additionalParserGlobalOptions.safeParse(config ?? {});
       // Lift the global vision options back onto the form's top level; omit
       // them when absent so an explicit undefined cannot clobber template or
       // default baselines downstream (Object.assign/spread copies undefined).
@@ -367,7 +371,9 @@ export function transformApiConfigToForm(
           ? { enable_vision_enhancement: config.enable_vision_enhancement }
           : {}),
         ...(config?.vlm !== undefined ? { vlm: config.vlm } : {}),
+        ...(additional.success ? additional.data : {}),
       };
+    }
     case Operator.Extractor:
       return transformExtractorConfigToForm(config);
     case Operator.Tokenizer:

@@ -68,11 +68,12 @@ func (s *SwitchComponent) Name() string { return s.name }
 
 // Invoke evaluates the conditions list in order, returns the first
 // matching group's downstream cpn_ids at outputs["_next"]. If no
-// group matches, outputs["_next"] = inputs["default"] (a
-// free-form string — resolved to a real cpn_id by the canvas
-// scheduler's MultiBranch wiring in canvas/multibranch.go).
+// group matches, outputs["_next"] is the explicit "default" cpn_id
+// when set; otherwise it is every non-empty end_cpn_ids entry — the
+// legacy ELSE/Other destinations, which may fan out to several
+// targets (see switchDefaultTargets).
 // Unknown / empty inputs are tolerated: an absent "conditions"
-// list yields outputs["_next"] = inputs["default"].
+// list yields the default / end_cpn_ids routing described above.
 //
 // The "to" field in each condition group can be a single string
 // or a list of strings — Python's Switch routes to ALL targets
@@ -97,10 +98,7 @@ func (s *SwitchComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		merged[k] = v
 	}
 
-	defaultNext, _ := merged["default"].(string)
-	if defaultNext == "" {
-		defaultNext = legacySwitchDefaultTarget(merged)
-	}
+	defaultTargets := switchDefaultTargets(merged)
 	if raw, ok := merged["conditions"].([]any); ok {
 		for i, item := range raw {
 			group, ok := item.(map[string]any)
@@ -129,9 +127,16 @@ func (s *SwitchComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 			return map[string]any{"_next": nextAny}, nil
 		}
 	}
-	// Default: single target. Wrap as a one-element list so the
-	// MultiBranch condition can still consume it uniformly.
-	return map[string]any{"_next": []any{defaultNext}}, nil
+	// No condition matched: route to the default / ELSE targets.
+	// Wrapped as a list so the MultiBranch condition can consume it
+	// uniformly — the same shape the matched-condition path above
+	// returns, so an ELSE branch fanning out to several end_cpn_ids
+	// fires all of them (#22314).
+	nextAny := make([]any, len(defaultTargets))
+	for i, t := range defaultTargets {
+		nextAny[i] = t
+	}
+	return map[string]any{"_next": nextAny}, nil
 }
 
 // Stream is a synchronous facade over Invoke for P0. Switch is a
@@ -223,6 +228,16 @@ func normalizeLegacyGroup(group map[string]any) (string, []any) {
 			continue
 		}
 		left := legacySwitchLeft(item)
+		if left == "" {
+			// No operand: neither the legacy `cpn_id` nor the newer `left`
+			// field names what to compare. Python skips such an item
+			// (`if not item["cpn_id"]: continue`), and the front end creates
+			// one whenever "Add" is pressed and the row is left unfilled — it
+			// appends `{operator}` only. Keeping the clause would compare ""
+			// against "", which satisfies `contains`, `=` and `empty` and
+			// routes the run to a branch whose condition was never configured.
+			continue
+		}
 		operator, _ := item["operator"].(string)
 		clause := map[string]any{
 			"left": left,
@@ -315,25 +330,39 @@ func switchGroupTarget(group map[string]any) (string, bool) {
 	return "", false
 }
 
-func legacySwitchDefaultTarget(merged map[string]any) string {
+// switchDefaultTargets resolves the no-match routing set: the
+// explicit "default" cpn_id when set, otherwise every non-empty
+// end_cpn_ids entry in configuration order, mirroring the
+// matched-condition path, which returns every "to" target. Entries
+// that are empty or not strings are skipped. When neither source
+// yields a target, the single-empty-string shape is kept so
+// downstream consumers see the "no successor" signal.
+func switchDefaultTargets(merged map[string]any) []string {
+	if next, _ := merged["default"].(string); next != "" {
+		return []string{next}
+	}
+	var targets []string
 	if merged == nil {
-		return ""
+		return []string{""}
 	}
 	if raw, ok := merged["end_cpn_ids"].([]any); ok {
 		for _, item := range raw {
 			if next, ok := item.(string); ok && next != "" {
-				return next
+				targets = append(targets, next)
 			}
 		}
 	}
 	if raw, ok := merged["end_cpn_ids"].([]string); ok {
 		for _, next := range raw {
 			if next != "" {
-				return next
+				targets = append(targets, next)
 			}
 		}
 	}
-	return ""
+	if len(targets) == 0 {
+		return []string{""}
+	}
+	return targets
 }
 
 // evaluateClause resolves a single clause. left is a {{...}} reference
@@ -387,10 +416,10 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 		return !equalFoldValues(lv, right), nil
 	case "contains":
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
-		return containsString(strings.ToLower(ls), strings.ToLower(rs)), nil
+		return strings.Contains(strings.ToLower(ls), strings.ToLower(rs)), nil
 	case "not contains":
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
-		return !containsString(strings.ToLower(ls), strings.ToLower(rs)), nil
+		return !strings.Contains(strings.ToLower(ls), strings.ToLower(rs)), nil
 	case "start with":
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
 		return strings.HasPrefix(strings.ToLower(ls), strings.ToLower(rs)), nil
@@ -492,26 +521,6 @@ func equalFoldValues(a, b any) bool {
 		}
 	}
 	return strings.EqualFold(as, bs)
-}
-
-func containsString(haystack, needle string) bool {
-	if needle == "" {
-		return true
-	}
-	return indexOf(haystack, needle) >= 0
-}
-
-// indexOf is a tiny wrapper around strings.Index to keep the operator
-// table readable. strings import is hidden behind this helper to
-// minimize the import list surface.
-func indexOf(s, sub string) int {
-	// use stdlib to avoid hand-rolling
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
 
 // numericize attempts to convert v to float64. Returns ok=false if v

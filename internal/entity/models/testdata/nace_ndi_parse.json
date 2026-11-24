@@ -1,0 +1,364 @@
+{
+  "job_id": "00000000-0000-0000-0000-000000000001",
+  "kind": "parse",
+  "status": "succeeded",
+  "error": null,
+  "result": {
+    "result_type": "parse",
+    "file_name": "document.pdf",
+    "lane": "pdf",
+    "document": {
+      "page_count": 2,
+      "markdown": "# Quarterly Widget Report\n\nThis synthetic report lists widget shipments for a fictional company. All numbers are invented for testing document parsers.\n\n# Shipments by region\n\n| Region | Units | Revenue |\n| --- | --- | --- |\n| North | 120 | 1,200.00 |\n| South | 95 | 950.00 |\n| East | 143 | 1,430.00 |\n\n# Trend\n\n| Quarter | Value |\n|---|---|\n| Q1 | 3.5 |\n| Q2 | 2.8 |\n| Q3 | 4.2 |\n| Q4 | 5.1 |\n\nFigure 1: Units shipped per quarter.\n\nShipments grew in the fourth quarter.",
+      "content_url": null,
+      "text": null,
+      "blocks": [
+        {
+          "id": "blk_1_1",
+          "type": "heading",
+          "content": "Quarterly Widget Report",
+          "sheet_name": null,
+          "source_id": null,
+          "source_name": null,
+          "image_anchor": null,
+          "markdown_span": {
+            "kind": "text_span",
+            "page": 1,
+            "char_start": 2,
+            "char_end": 25
+          },
+          "table_row_offset": 0,
+          "location": {
+            "kind": "page_region",
+            "page": 1,
+            "polygons": [
+              [
+                [
+                  0.11519607843137254,
+                  0.09217171717171717
+                ],
+                [
+                  0.49836601307189543,
+                  0.09217171717171717
+                ],
+                [
+                  0.49836601307189543,
+                  0.12058080808080808
+                ],
+                [
+                  0.11519607843137254,
+                  0.12058080808080808
+                ]
+              ]
+            ]
+          },
+          "confidence": null,
+          "image_url": null
+        },
+        {
+          "id": "blk_1_2",
+          "type": "text",
+          "content": "This synthetic report lists widget shipments for a fictional company. All numbers are invented for testing document parsers.",
+          "sheet_name": null,
+          "source_id": null,
+          "source_name": null,
+          "image_anchor": null,
+          "markdown_span": {
+            "kind": "text_span",
+            "page": 1,
+            "char_start": 27,
+            "char_end": 151
+          },
+          "table_row_offset": 0,
+          "location": {
+            "kind": "page_region",
+            "page": 1,
+            "polygons": [
+              [
+                [
+                  0.11356209150326797,
+                  0.14457070707070707
+                ],
+                [
+                  0.6511437908496732,
+                  0.14457070707070707
+                ],
+                [
+                  0.6511437908496732,
+                  0.18371212121212122
+                ],
+                [
+                  0.11356209150326797,
+                  0.18371212121212122
+                ]
+              ]
+            ]
+          },
+          "confidence": null,
+          "image_url": null
+        },
+        {
+          "id": "blk_1_3",
+          "type": "heading",
+          "content": "Shipments by region",
+          "sheet_name": null,
+          "source_id": null,
+          "source_name": null,
+          "image_anchor": null,
+          "markdown_span": {
+            "kind": "text_span",
+            "page": 1,
+            "char_start": 155,
+            "char_end": 174
+          },
+          "table_row_offset": 0,
+          "location": {
+            "kind": "page_region",
+            "page": 1,
+            "polygons": [
+              [
+                [
+                  0.11437908496732026,
+                  0.2077020202020202
+                ],
+                [
+                  0.3464052287581699,
+                  0.2077020202020202
+                ],
+                [
+                  0.3464052287581699,
+                  0.2297979797979798
+                ],
+                [
+                  0.11437908496732026,
+                  0.2297979797979798
+                ]
+              ]
+            ]
+          },
+          "confidence": null,
+          "image_url": null
+        },
+        {
+          "id": "blk_1_4",
+          "type": "table",
+          "content": "| Region | Units | Revenue |\n| --- | --- | --- |\n| North | 120 | 1,200.00 |\n| South | 95 | 950.00 |\n| East | 143 | 1,430.00 |",
+          "sheet_name": null,
+          "source_id": null,
+          "source_name": null,
+          "image_anchor": null,
+          "markdown_span": {
+            "kind": "text_span",
+            "page": 1,
+            "char_start": 176,
+            "char_end": 301
+          },
+          "table_row_offset": 0,
+          "location": {
+            "kind": "page_region",
+            "page": 1,
+            "polygons": [
+              [
+                [
+                  0.12908496732026145,
+                  0.24242424242424243
+                ],
+                [
+                  0.7687908496732027,
+                  0.24242424242424243
+                ],
+                [
+                  0.7687908496732027,
+                  0.3440656565656566
+                ],
+                [
+                  0.12908496732026145,
+                  0.3440656565656566
+                ]
+              ]
+            ]
+          },
+          "confidence": null,
+          "image_url": null
+        },
+        {
+          "id": "blk_2_5",
+          "type": "heading",
+          "content": "Trend",
+          "sheet_name": null,
+          "source_id": null,
+          "source_name": null,
+          "image_anchor": null,
+          "markdown_span": {
+            "kind": "text_span",
+            "page": 2,
+            "char_start": 305,
+            "char_end": 310
+          },
+          "table_row_offset": 0,
+          "location": {
+            "kind": "page_region",
+            "page": 2,
+            "polygons": [
+              [
+                [
+                  0.11356209150326797,
+                  0.09659090909090909
+                ],
+                [
+                  0.1854575163398693,
+                  0.09659090909090909
+                ],
+                [
+                  0.1854575163398693,
+                  0.11868686868686869
+                ],
+                [
+                  0.11356209150326797,
+                  0.11868686868686869
+                ]
+              ]
+            ]
+          },
+          "confidence": null,
+          "image_url": null
+        },
+        {
+          "id": "blk_2_6",
+          "type": "figure",
+          "content": "| Quarter | Value |\n|---|---|\n| Q1 | 3.5 |\n| Q2 | 2.8 |\n| Q3 | 4.2 |\n| Q4 | 5.1 |",
+          "sheet_name": null,
+          "source_id": null,
+          "source_name": null,
+          "image_anchor": null,
+          "markdown_span": {
+            "kind": "text_span",
+            "page": 2,
+            "char_start": 312,
+            "char_end": 393
+          },
+          "table_row_offset": 0,
+          "location": {
+            "kind": "page_region",
+            "page": 2,
+            "polygons": [
+              [
+                [
+                  0.190359477124183,
+                  0.2077020202020202
+                ],
+                [
+                  0.6887254901960784,
+                  0.2077020202020202
+                ],
+                [
+                  0.6887254901960784,
+                  0.55239898989899
+                ],
+                [
+                  0.190359477124183,
+                  0.55239898989899
+                ]
+              ]
+            ]
+          },
+          "confidence": null,
+          "image_url": null
+        },
+        {
+          "id": "blk_2_7",
+          "type": "image_caption",
+          "content": "Figure 1: Units shipped per quarter.",
+          "sheet_name": null,
+          "source_id": null,
+          "source_name": null,
+          "image_anchor": null,
+          "markdown_span": {
+            "kind": "text_span",
+            "page": 2,
+            "char_start": 395,
+            "char_end": 431
+          },
+          "table_row_offset": 0,
+          "location": {
+            "kind": "page_region",
+            "page": 2,
+            "polygons": [
+              [
+                [
+                  0.19281045751633988,
+                  0.5681818181818182
+                ],
+                [
+                  0.45669934640522875,
+                  0.5681818181818182
+                ],
+                [
+                  0.45669934640522875,
+                  0.586489898989899
+                ],
+                [
+                  0.19281045751633988,
+                  0.586489898989899
+                ]
+              ]
+            ]
+          },
+          "confidence": null,
+          "image_url": null
+        },
+        {
+          "id": "blk_2_8",
+          "type": "text",
+          "content": "Shipments grew in the fourth quarter.",
+          "sheet_name": null,
+          "source_id": null,
+          "source_name": null,
+          "image_anchor": null,
+          "markdown_span": {
+            "kind": "text_span",
+            "page": 2,
+            "char_start": 433,
+            "char_end": 470
+          },
+          "table_row_offset": 0,
+          "location": {
+            "kind": "page_region",
+            "page": 2,
+            "polygons": [
+              [
+                [
+                  0.11437908496732026,
+                  0.6174242424242424
+                ],
+                [
+                  0.4150326797385621,
+                  0.6174242424242424
+                ],
+                [
+                  0.4150326797385621,
+                  0.6376262626262627
+                ],
+                [
+                  0.11437908496732026,
+                  0.6376262626262627
+                ]
+              ]
+            ]
+          },
+          "confidence": null,
+          "image_url": null
+        }
+      ],
+      "chunks": [],
+      "ocr": null,
+      "spreadsheet": null
+    },
+    "ocr_applied": true,
+    "units": 2,
+    "converted_pdf_url": null,
+    "transcript_url": null,
+    "transcript": null,
+    "disclosures": []
+  }
+}

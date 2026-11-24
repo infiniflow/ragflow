@@ -2,6 +2,10 @@ package channels
 
 import (
 	"testing"
+
+	"ragflow/internal/harness/graph/constants"
+	"ragflow/internal/harness/graph/errors"
+	"ragflow/internal/harness/graph/types"
 )
 
 // TestBinaryOperatorAggregate_IntAdd verifies IntAdd reducer with BinaryOperatorAggregate.
@@ -160,5 +164,165 @@ func TestListAppendDirect(t *testing.T) {
 	list, ok := result.([]interface{})
 	if !ok || len(list) != 4 {
 		t.Errorf("expected 4 items, got %v", result)
+	}
+}
+
+func TestBinaryOperatorAggregate_OverwriteTypes(t *testing.T) {
+	cases := []struct {
+		name    string
+		updates []interface{}
+		want    int
+	}{
+		{
+			name:    "pointer_overwrite",
+			updates: []interface{}{types.NewOverwrite(99)},
+			want:    99,
+		},
+		{
+			name:    "value_overwrite",
+			updates: []interface{}{types.Overwrite{Value: 7}},
+			want:    7,
+		},
+		{
+			name:    "map_overwrite",
+			updates: []interface{}{map[string]interface{}{constants.Overwrite: 55}},
+			want:    55,
+		},
+		{
+			name:    "overwrite_before_normal",
+			updates: []interface{}{types.NewOverwrite(12), 5},
+			want:    12,
+		},
+		{
+			name:    "normal_before_overwrite",
+			updates: []interface{}{5, types.NewOverwrite(13)},
+			want:    13,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := NewBinaryOperatorAggregate(int(0), IntAdd)
+			if _, err := ch.Update([]interface{}{10}); err != nil {
+				t.Fatalf("seed Update: %v", err)
+			}
+			updated, err := ch.Update(tc.updates)
+			if err != nil {
+				t.Fatalf("Update: %v", err)
+			}
+			if !updated {
+				t.Fatal("expected updated=true")
+			}
+			got, err := ch.Get()
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("Get() = %#v (%T), want %d", got, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBinaryOperatorAggregate_OverwriteWhenEmpty(t *testing.T) {
+	t.Run("single_pointer_overwrite", func(t *testing.T) {
+		ch := NewBinaryOperatorAggregate(nil, IntAdd)
+		if updated, err := ch.Update([]interface{}{types.NewOverwrite(42)}); err != nil || !updated {
+			t.Fatalf("Update = (%v, %v), want (true, nil)", updated, err)
+		}
+		got, err := ch.Get()
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got != 42 {
+			t.Errorf("Get() = %#v (%T), want 42", got, got)
+		}
+	})
+
+	t.Run("single_map_overwrite", func(t *testing.T) {
+		ch := NewBinaryOperatorAggregate(nil, IntAdd)
+		if updated, err := ch.Update([]interface{}{map[string]interface{}{constants.Overwrite: 42}}); err != nil || !updated {
+			t.Fatalf("Update = (%v, %v), want (true, nil)", updated, err)
+		}
+		got, err := ch.Get()
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got != 42 {
+			t.Errorf("Get() = %#v (%T), want 42", got, got)
+		}
+	})
+
+	t.Run("overwrite_followed_by_normal_value", func(t *testing.T) {
+		ch := NewBinaryOperatorAggregate(nil, IntAdd)
+		if updated, err := ch.Update([]interface{}{types.NewOverwrite(42), 5}); err != nil || !updated {
+			t.Fatalf("Update = (%v, %v), want (true, nil)", updated, err)
+		}
+		got, err := ch.Get()
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got != 42 {
+			t.Errorf("Get() = %#v (%T), want 42", got, got)
+		}
+	})
+
+	t.Run("duplicate_overwrite_rejected_and_keeps_empty", func(t *testing.T) {
+		ch := NewBinaryOperatorAggregate(nil, IntAdd)
+		updated, err := ch.Update([]interface{}{
+			map[string]interface{}{constants.Overwrite: 42},
+			map[string]interface{}{constants.Overwrite: 99},
+		})
+		if !errors.IsInvalidUpdateError(err) {
+			t.Fatalf("Update err = %v, want InvalidUpdateError", err)
+		}
+		if updated {
+			t.Error("expected updated=false on duplicate Overwrite")
+		}
+		if _, err := ch.Get(); !errors.IsEmptyChannelError(err) {
+			t.Errorf("Get() err = %v, want EmptyChannelError (channel must stay empty)", err)
+		}
+	})
+}
+
+func TestBinaryOperatorAggregate_DuplicateOverwriteLeavesStateUnchanged(t *testing.T) {
+	cases := []struct {
+		name    string
+		updates []interface{}
+	}{
+		{
+			name:    "pointer_overwrites_after_normal",
+			updates: []interface{}{5, types.NewOverwrite(42), types.NewOverwrite(99)},
+		},
+		{
+			name: "map_overwrites",
+			updates: []interface{}{
+				map[string]interface{}{constants.Overwrite: 42},
+				map[string]interface{}{constants.Overwrite: 99},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := NewBinaryOperatorAggregate(int(0), IntAdd)
+			if _, err := ch.Update([]interface{}{10}); err != nil {
+				t.Fatalf("seed Update: %v", err)
+			}
+			updated, err := ch.Update(tc.updates)
+			if !errors.IsInvalidUpdateError(err) {
+				t.Fatalf("Update err = %v, want InvalidUpdateError", err)
+			}
+			if updated {
+				t.Error("expected updated=false on duplicate Overwrite")
+			}
+			got, err := ch.Get()
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if got != 10 {
+				t.Errorf("Get() = %#v after rejected Update, want unchanged 10", got)
+			}
+		})
 	}
 }

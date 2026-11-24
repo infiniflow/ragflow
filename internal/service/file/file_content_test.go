@@ -47,7 +47,10 @@ func TestParseFileContent_JSONItems(t *testing.T) {
 	ctx := t.Context()
 	// CSV parser now produces JSON table items. sys.files still needs the
 	// readable item text, not the original CSV bytes.
-	result := parseFileContent(ctx, "data.csv", []byte("a,b,c\n1,2,3\n"))
+	result, err := parseFileContent(ctx, "data.csv", []byte("a,b,c\n1,2,3\n"))
+	if err != nil {
+		t.Fatalf("parseFileContent: %v", err)
+	}
 	if result == "" {
 		t.Fatal("CSV parser returned empty content")
 	}
@@ -139,7 +142,10 @@ func TestParseAgentUploadContent_JSONUsesParsedItemText(t *testing.T) {
 func TestParseFileContent_MarkdownOutputFormat(t *testing.T) {
 	ctx := t.Context()
 	// .md files fall through to default parser or produce text/markdown.
-	result := parseFileContent(ctx, "doc.md", []byte("# Title\n\nBody"))
+	result, err := parseFileContent(ctx, "doc.md", []byte("# Title\n\nBody"))
+	if err != nil {
+		t.Fatalf("parseFileContent: %v", err)
+	}
 	// This is integration-dependent; verify it doesn't crash and returns something.
 	if result == "" {
 		t.Skip("markdown parser returned empty (integration-only)")
@@ -149,7 +155,7 @@ func TestParseFileContent_MarkdownOutputFormat(t *testing.T) {
 func TestHTMLContentExtractionWithoutMediaCache(t *testing.T) {
 	input := []byte(`<p>before</p><img alt="figure" src="data:image/png;base64,aGVsbG8="><p>after</p>`)
 	for name, parse := range map[string]func() (string, error){
-		"file":  func() (string, error) { return parseFileContent(t.Context(), "sample.html", input), nil },
+		"file":  func() (string, error) { return parseFileContent(t.Context(), "sample.html", input) },
 		"agent": func() (string, error) { return parseAgentUploadContent(t.Context(), "sample.html", input, "") },
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -195,7 +201,7 @@ func buildTestEPUBForContent(t *testing.T) []byte {
 func TestEPUBContentExtractionWithoutMediaCache(t *testing.T) {
 	input := buildTestEPUBForContent(t)
 	for name, parse := range map[string]func() (string, error){
-		"file":  func() (string, error) { return parseFileContent(t.Context(), "book.epub", input), nil },
+		"file":  func() (string, error) { return parseFileContent(t.Context(), "book.epub", input) },
 		"agent": func() (string, error) { return parseAgentUploadContent(t.Context(), "book.epub", input, "") },
 	} {
 		t.Run(name, func(t *testing.T) {

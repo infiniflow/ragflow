@@ -53,72 +53,76 @@ func TestExtractCitedChunkIDsEmpty(t *testing.T) {
 	}
 }
 
-func TestInsertCitationMarkers(t *testing.T) {
-	ids := []string{"ccc111", "ccc222"}
-	got := InsertCitationMarkers(citationFixture, ids)
-	// ccc111 appears three times: every occurrence gets the SAME marker (its
-	// position in ids), and ccc222 gets [ID:1].
-	if n := strings.Count(got, " [ID:0]"); n != 3 {
-		t.Errorf("ccc111 marker count = %d, want 3", n)
-	}
-	if n := strings.Count(got, " [ID:1]"); n != 1 {
-		t.Errorf("ccc222 marker count = %d, want 1", n)
-	}
-	if !strings.Contains(got, "chunk_id: ccc111 [ID:0]") {
-		t.Errorf("marker not appended right after the chunk_id field: %s", got)
-	}
-	// The original text must be preserved apart from the markers.
-	if !strings.Contains(got, "Final Answer: **1897**") ||
-		strings.Count(got, "chunk_id:") != 4 {
-		t.Error("citation rewrite damaged the deliverable text")
-	}
-	// Idempotent: a second pass must not stack markers.
-	if again := InsertCitationMarkers(got, ids); again != got {
-		t.Errorf("insertion not idempotent:\nfirst:  %s\nsecond: %s", got, again)
+func TestRewriteProvenanceReplacesTupleInPlace(t *testing.T) {
+	in := "- `Tested: 华雄 (doc: a.md, doc_id: d1, chunk_id: ccc111, snippet: \"x\")`"
+	got := RewriteProvenance(in, map[string]int{"ccc111": 0})
+	// The whole tuple goes, and the marker lands where it stood.
+	if want := "- `Tested: 华雄 [ID:0]`"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 
-// The FOS wraps every matrix/chain line in backticks, and the frontend's
-// citation pass skips text inside <code> nodes — the marker must land AFTER
-// the line's closing backtick or it renders as literal text.
-func TestInsertCitationMarkersOutsideCodeSpan(t *testing.T) {
-	in := "- `Tested: 华雄 (doc: a.md, doc_id: d1, chunk_id: ccc111, snippet: \"x\")`\n" +
-		"- `Retained: 华雄 - confirmed`"
-	got := InsertCitationMarkers(in, []string{"ccc111"})
-	lines := strings.Split(got, "\n")
-	if !strings.HasSuffix(lines[0], ")` [ID:0]") {
-		t.Errorf("marker not placed outside the code span: %s", lines[0])
+func TestRewriteProvenanceSharedChunkAndIdempotence(t *testing.T) {
+	in := "- Tested: a (chunk_id: c1, snippet: \"x\")\n- Tested: b (chunk_id: c1, snippet: \"y\")"
+	idx := map[string]int{"c1": 0}
+	got := RewriteProvenance(in, idx)
+	if n := strings.Count(got, "[ID:0]"); n != 2 {
+		t.Fatalf("marker count = %d, want 2: %s", n, got)
 	}
-	if strings.Contains(lines[0][:strings.LastIndex(lines[0], "`")], "[ID:0]") {
-		t.Errorf("marker leaked inside the code span: %s", lines[0])
-	}
-	// The un-cited second line must stay untouched.
-	if lines[1] != "- `Retained: 华雄 - confirmed`" {
-		t.Errorf("unrelated line modified: %s", lines[1])
+	if again := RewriteProvenance(got, idx); again != got {
+		t.Fatalf("not idempotent:\nfirst:  %s\nsecond: %s", got, again)
 	}
 }
 
-// Two lines citing the SAME chunk both carry that chunk's marker.
-func TestInsertCitationMarkersSharedChunk(t *testing.T) {
-	shared := "479d61f35f7aaadd"
-	in := "- `Tested: 孟坦 (chunk_id: " + shared + ", snippet: \"a\")`\n" +
-		"- `Tested: 韩福 (chunk_id: " + shared + ", snippet: \"b\")`"
-	got := InsertCitationMarkers(in, []string{shared})
-	if n := strings.Count(got, " [ID:0]`") + strings.Count(got, "` [ID:0]"); n < 2 {
-		t.Errorf("shared chunk marked on %d lines, want 2: %s", n, got)
-	}
-}
-
-func TestInsertCitationMarkersUnresolvableStaysUnmarked(t *testing.T) {
+func TestRewriteProvenanceUnresolvableStaysVisible(t *testing.T) {
 	in := "- Tested: Bob (doc: a.md, doc_id: d1, chunk_id: ccc111, snippet: \"x\")"
-	got := InsertCitationMarkers(in, []string{"other999"})
-	if got != in {
-		t.Errorf("unresolvable id got marked: %s", got)
+	if got := RewriteProvenance(in, map[string]int{"other999": 0}); got != in {
+		t.Fatalf("an unresolvable tuple changed: %s", got)
 	}
-	// A failed load must not silently produce markers pointing at wrong
-	// indices either.
-	if got := InsertCitationMarkers(in, nil); got != in {
-		t.Errorf("nil id list rewrote the text: %s", got)
+	if got := RewriteProvenance(in, nil); got != in {
+		t.Fatalf("a nil index rewrote the text: %s", got)
+	}
+}
+
+func TestRewriteProvenanceBareField(t *testing.T) {
+	// An answer that never followed the tuple contract still gets markers.
+	if got, want := RewriteProvenance("答案 chunk_id: c1", map[string]int{"c1": 2}), "答案 [ID:2]"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteProvenanceWebTuple(t *testing.T) {
+	in := "事实 (source: web, url: https://e/x, title: T, snippet: \"y\")"
+	if got, want := RewriteProvenance(in, map[string]int{"https://e/x": 1}), "事实 [ID:1]"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestRewriteProvenanceSnippetWithParen(t *testing.T) {
+	// A parenthesised snippet must not end the tuple early.
+	in := "答案 (doc: A, doc_id: d1, chunk_id: c1, snippet: \"see (this) bit\")"
+	if got, want := RewriteProvenance(in, map[string]int{"c1": 0}), "答案 [ID:0]"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestExtractCitedWebSources(t *testing.T) {
+	in := "a (source: web, url: https://e/x, title: T1, snippet: \"S1\") " +
+		"b (source: web, url: https://e/y, title: T2, snippet: \"S2\") " +
+		"again (source: web, url: https://e/x, title: T1, snippet: \"S1\")"
+	got := ExtractCitedWebSources(in)
+	if len(got) != 2 {
+		t.Fatalf("sources = %+v, want 2 (deduped by url)", got)
+	}
+	if got[0].URL != "https://e/x" || got[0].Title != "T1" || got[0].Snippet != "S1" {
+		t.Fatalf("first source = %+v", got[0])
+	}
+	if got[1].URL != "https://e/y" {
+		t.Fatalf("second source = %+v", got[1])
+	}
+	// A corpus parenthetical is not a web source.
+	if got := ExtractCitedWebSources("(doc: a, doc_id: d1, chunk_id: c1, snippet: \"x\")"); len(got) != 0 {
+		t.Fatalf("corpus tuple parsed as web: %+v", got)
 	}
 }
 
@@ -139,6 +143,18 @@ func TestCitedIDsFromMarkers(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("CitedIDsFromMarkers = %v, want %v (first-citation order, deduped)", got, want)
 		}
+	}
+}
+
+func TestCitedIDsFromMarkersAcceptsBareNumericMarkers(t *testing.T) {
+	r := NewEvidenceRegistry()
+	r.Stamp("c1") // [ID:0]
+	r.Stamp("c2") // [ID:1]
+
+	got := CitedIDsFromMarkers("fact A [1]\nfact B [0]\nignored [9]", r)
+	want := []string{"c2", "c1"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("CitedIDsFromMarkers = %v, want %v", got, want)
 	}
 }
 
@@ -168,6 +184,33 @@ func TestResolveCitationsCompactsAndDrops(t *testing.T) {
 	}
 	if len(cited) != 2 || cited[0] != "c3" || cited[1] != "c1" {
 		t.Fatalf("cited = %v, want [c3 c1]", cited)
+	}
+}
+
+func TestResolveCitationsAcceptsBareNumericMarkers(t *testing.T) {
+	r := NewEvidenceRegistry()
+	r.Stamp("c1") // [ID:0]
+	r.Stamp("c2") // [ID:1]
+
+	marked, cited := ResolveCitations("A [1]\nB [0]", r, []string{"c2", "c1"})
+	if marked != "A [ID:0]\nB [ID:1]" {
+		t.Fatalf("marked = %q, want compacted canonical handles", marked)
+	}
+	if fmt.Sprint(cited) != "[c2 c1]" {
+		t.Fatalf("cited = %v, want [c2 c1]", cited)
+	}
+}
+
+func TestResolveCitationsPreservesUnresolvedBareNumericMarkers(t *testing.T) {
+	r := NewEvidenceRegistry()
+	r.Stamp("c1")
+
+	marked, cited := ResolveCitations("Year [2024]; evidence [0]", r, []string{"c1"})
+	if marked != "Year [2024]; evidence [ID:0]" {
+		t.Fatalf("marked = %q, want unresolved bare number preserved", marked)
+	}
+	if fmt.Sprint(cited) != "[c1]" {
+		t.Fatalf("cited = %v, want [c1]", cited)
 	}
 }
 

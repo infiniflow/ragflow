@@ -64,7 +64,8 @@ export interface IEditInstanceModelRequestBody {
 
 export interface IListAllModelsRequestParams {
   type?: string;
-  tenant_id?: string;
+  owner_ids?: string[];
+  access_user_id?: string;
 }
 
 export interface IUpdateModelStatusRequestBody {
@@ -112,12 +113,14 @@ export type ISetDefaultModelRequestBody =
   | {
       model_type: string;
       model_id: string;
+      tenant_id?: string;
     }
   | {
       model_type: string;
       model_provider: string;
       model_instance: string;
       model_name: string;
+      tenant_id?: string;
     };
 
 /**

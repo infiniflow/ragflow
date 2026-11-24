@@ -186,10 +186,15 @@ export const listUsers = (params?: AdminUserListParams) =>
     { params },
   );
 
-export const createUser = (email: string, password: string) =>
+export const createUser = (
+  email: string,
+  password: string,
+  nickname?: string,
+) =>
   request.post<ResponseData<Record<string, unknown>>>(adminCreateUser, {
     username: email,
     password,
+    nickname,
   });
 
 export const grantSuperuser = (email: string) =>

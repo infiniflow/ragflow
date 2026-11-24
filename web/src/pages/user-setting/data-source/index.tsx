@@ -14,62 +14,65 @@
  *  limitations under the License.
  */
 
+import type { MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { PageFrame } from '@/components/page-frame';
+import { TruncatedText } from '@/components/truncated-text';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { ProfileSettingWrapperCard } from '../components/user-setting-header';
+import { useVisibleRoleIntegrationItems } from '@/ee/hooks/use-visible-role-integration-items';
 import AddDataSourceModal from './add-datasource-modal';
-import { getAvailableDataSourceKeys } from './backend-adapter';
+import {
+  getAvailableDataSourceKeys,
+  getCategorizedDataSourceKeys,
+} from './backend-adapter';
 import { AddedSourceCard } from './component/added-source-card';
 import { useDataSourceInfo } from './constant';
 import { useAddDataSource, useListDataSource } from './hooks';
 import { IDataSorceInfo } from './interface';
 
-const AvailableSourceCard = ({
-  name,
-  description,
-  icon,
-  onAdd,
-}: IDataSorceInfo & { onAdd: () => void }) => {
+type AvailableSourceCardProps = {
+  source: IDataSorceInfo;
+  onAdd: (source: IDataSorceInfo) => void;
+};
+
+const AvailableSourceCard = ({ source, onAdd }: AvailableSourceCardProps) => {
   const { t } = useTranslation();
+  const { name, icon } = source;
+
+  const handleAdd = () => {
+    onAdd(source);
+  };
+
+  const handleButtonClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    handleAdd();
+  };
 
   return (
     <article
-      className="
-        size-full p-2.5 border-0.5 border-border-button rounded-lg relative group hover:bg-bg-card focus-within:bg-bg-card
-        grid grid-cols-[auto_1fr] grid-rows-[auto_1fr] gap-x-2.5 gap-y-1"
-      style={{
-        gridTemplateAreas: '"icon title" "icon description"',
-      }}
-      onClick={() => onAdd()}
+      className="group relative flex size-full cursor-pointer items-center gap-2.5 rounded-lg border-0.5 border-border-button p-5 hover:bg-bg-card focus-within:bg-bg-card"
+      onClick={handleAdd}
     >
-      <span className="w-6" style={{ gridArea: 'icon' }}>
-        {icon}
-      </span>
+      <span className="w-6 shrink-0">{icon}</span>
 
-      <header className="flex items-center gap-2" style={{ gridArea: 'title' }}>
-        <h3 className="text-base text-text-primary">{name}</h3>
-
-        <Button
-          size="auto"
-          className="ml-auto px-1 py-0.5 gap-0.5 text-xs items-center opacity-0 transition-all group-hover:opacity-100 group-focus-within:opacity-100"
-          onClick={(e: any) => {
-            e.stopPropagation();
-            onAdd();
-          }}
-        >
-          <Plus className="size-[1em]" />
-          {t('setting.add')}
-        </Button>
-      </header>
-
-      <p
-        style={{ gridArea: 'description' }}
-        className="text-xs text-text-secondary"
+      <TruncatedText
+        as="h4"
+        className="min-w-0 flex-1 truncate text-base font-normal text-text-primary"
+        tooltip={name}
       >
-        {description}
-      </p>
+        {name}
+      </TruncatedText>
+
+      <Button
+        size="icon-sm"
+        className="ml-auto shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        aria-label={t('setting.add')}
+        onClick={handleButtonClick}
+      >
+        <Plus className="size-4" />
+      </Button>
     </article>
   );
 };
@@ -77,14 +80,35 @@ const AvailableSourceCard = ({
 const DataSource = () => {
   const { t } = useTranslation();
   const { dataSourceInfo } = useDataSourceInfo();
-  const dataSourceTemplates = getAvailableDataSourceKeys().map((id) => {
-    return {
+  const dataSourceTemplates = useVisibleRoleIntegrationItems(
+    'data_source',
+    getAvailableDataSourceKeys().map((id) => ({
       id,
       name: dataSourceInfo[id].name,
       description: dataSourceInfo[id].description,
       icon: dataSourceInfo[id].icon,
-    };
-  });
+    })),
+    (item) =>
+      String(item.id) === 'dingtalk_ai_table'
+        ? ['dingtalk_ai_table', 'dingtalk_wiki', 'dingtalk_drive']
+        : [item.id],
+  );
+  const visibleDataSourceKeys = new Set(
+    dataSourceTemplates.map((source) => source.id),
+  );
+  const dataSourceGroups = getCategorizedDataSourceKeys()
+    .map((group) => ({
+      ...group,
+      sources: group.sources
+        .filter((id) => visibleDataSourceKeys.has(id))
+        .map((id) => ({
+          id,
+          name: dataSourceInfo[id].name,
+          description: dataSourceInfo[id].description,
+          icon: dataSourceInfo[id].icon,
+        })),
+    }))
+    .filter((group) => group.sources.length > 0);
 
   // useListTenantUser();
   const { categorizedList } = useListDataSource();
@@ -99,19 +123,17 @@ const DataSource = () => {
   } = useAddDataSource({});
 
   return (
-    <ProfileSettingWrapperCard
-      header={
-        <header>
-          <h2 className="text-2xl font-medium text-text-primary">
-            {t('setting.dataSources')}
-          </h2>
-          <p className="mt-1 text-sm text-text-secondary ">
-            {t('setting.datasourceDescription')}
-          </p>
-        </header>
-      }
-    >
-      <div className="h-full p-5 overflow-x-hidden overflow-y-auto">
+    <PageFrame>
+      <header className="shrink-0 p-5">
+        <h2 className="text-2xl font-medium text-text-primary">
+          {t('setting.dataSources')}
+        </h2>
+        <p className="mt-1 text-sm text-text-secondary">
+          {t('setting.datasourceDescription')}
+        </p>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-5">
         <section className="flex flex-col gap-3">
           {categorizedList?.length <= 0 && (
             <div className="text-text-secondary w-full flex justify-center items-center h-20">
@@ -124,27 +146,25 @@ const DataSource = () => {
         </section>
 
         <section className="mt-8">
-          <header className="flex flex-row items-center justify-between space-y-0 p-0 pb-4">
-            {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
-            <h2 className="text-2xl font-medium">
-              {t('setting.availableSources')}
-              <div className="text-sm text-text-secondary font-normal mt-1.5">
-                {t('setting.availableSourcesDescription')}
-              </div>
-            </h2>
-          </header>
-
-          {/* <TenantTable searchTerm={searchTerm}></TenantTable> */}
-          <ul className="@container grid sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4 3xl:grid-cols-4 gap-4">
-            {dataSourceTemplates.map((item) => (
-              <li key={item.id} className="h-full">
-                <AvailableSourceCard
-                  {...item}
-                  onAdd={() => showAddingModal(item)}
-                />
-              </li>
+          <div className="flex flex-col gap-8">
+            {dataSourceGroups.map((group) => (
+              <section key={group.category}>
+                <h3 className="mb-4 text-lg font-medium text-text-primary">
+                  {t(`setting.dataSourceCategories.${group.category}`)}
+                </h3>
+                <ul className="@container grid gap-4 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4 3xl:grid-cols-4">
+                  {group.sources.map((source) => (
+                    <li key={source.id} className="h-full">
+                      <AvailableSourceCard
+                        source={source}
+                        onAdd={showAddingModal}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ))}
-          </ul>
+          </div>
         </section>
       </div>
 
@@ -159,7 +179,7 @@ const DataSource = () => {
           sourceData={addSource}
         />
       )}
-    </ProfileSettingWrapperCard>
+    </PageFrame>
   );
 };
 

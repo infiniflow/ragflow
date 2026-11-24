@@ -327,6 +327,116 @@ def test_incomplete_native_archive_preserves_existing_directory(tmp_path):
     assert (target / "existing").read_bytes() == b"keep"
 
 
+def test_pdfium_required_files_by_platform():
+    """Verify PDFium required archive entries for Linux vs. macOS."""
+    assert native.pdfium_required_files("linux") == [
+        "lib/libpdfium.a",
+        "lib/libc++.a",
+        "lib/libc++abi.a",
+        "include/fpdfview.h",
+    ]
+    assert native.pdfium_required_files("darwin") == [
+        "lib/libpdfium.a",
+        "include/fpdfview.h",
+    ]
+
+
+def test_extracts_darwin_pdfium_archive_without_bundled_libcxx(tmp_path):
+    """Darwin PDFium archives without bundled libc++ extract on macOS and fail Linux checks."""
+    archive = tmp_path / "pdfium-mac-arm64-static.tgz"
+    with tarfile.open(archive, "w:gz") as tf:
+        for rel, payload in [
+            ("lib/libpdfium.a", b"!<arch>\npdfium"),
+            ("include/fpdfview.h", b"// header"),
+        ]:
+            info = tarfile.TarInfo(rel)
+            info.size = len(payload)
+            tf.addfile(info, io.BytesIO(payload))
+
+    darwin_target = tmp_path / "pdfium-darwin"
+    native._extract_native_archive(
+        str(archive),
+        str(darwin_target),
+        native.pdfium_required_files("darwin"),
+        platform=("darwin", "arm64"),
+    )
+    assert (darwin_target / "lib" / "libpdfium.a").is_file()
+    assert (darwin_target / "include" / "fpdfview.h").is_file()
+
+    linux_target = tmp_path / "pdfium-linux"
+    with pytest.raises(RuntimeError, match="missing required native file"):
+        native._extract_native_archive(str(archive), str(linux_target), native.pdfium_required_files("linux"))
+
+
+def test_extract_native_archive_replaces_cached_tree_when_platform_changes(tmp_path):
+    """Switching target platform/arch replaces a cached PDFium tree instead of reusing it."""
+
+    def write_pdfium_tar(path, payload):
+        """Create a minimal Darwin PDFium tar.gz with the given libpdfium.a payload."""
+        with tarfile.open(path, "w:gz") as tf:
+            for rel, data in [
+                ("lib/libpdfium.a", payload),
+                ("include/fpdfview.h", b"// header"),
+            ]:
+                info = tarfile.TarInfo(rel)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))
+
+    arm64_archive = tmp_path / "pdfium-mac-arm64-static.tgz"
+    amd64_archive = tmp_path / "pdfium-mac-x64-static.tgz"
+    write_pdfium_tar(arm64_archive, b"!<arch>\narm64-pdfium")
+    write_pdfium_tar(amd64_archive, b"!<arch>\namd64-pdfium")
+
+    target = tmp_path / "pdfium-static"
+    required = native.pdfium_required_files("darwin")
+    native._extract_native_archive(str(arm64_archive), str(target), required, platform=("darwin", "arm64"))
+    assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\narm64-pdfium"
+
+    native._extract_native_archive(str(amd64_archive), str(target), required, platform=("darwin", "amd64"))
+    assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\namd64-pdfium"
+
+
+def test_extract_native_lib_replaces_cached_pdfium_when_hash_changes(tmp_path, monkeypatch):
+    """A changed archive replaces PDFium cached under the same version and platform."""
+
+    def write_pdfium_tar(path, payload):
+        with tarfile.open(path, "w:gz") as tf:
+            for rel, data in [
+                ("lib/libpdfium.a", payload),
+                ("include/fpdfview.h", b"// header"),
+            ]:
+                info = tarfile.TarInfo(rel)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))
+
+    archive_v1 = tmp_path / "pdfium-v1.tgz"
+    archive_v2 = tmp_path / "pdfium-v2.tgz"
+    write_pdfium_tar(archive_v1, b"!<arch>\npdfium-v1")
+    write_pdfium_tar(archive_v2, b"!<arch>\npdfium-v2")
+
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    dir_version = f"v{native.PDFIUM_VERSION}"
+    target = tmp_path / "native-libs" / "pdfium-static" / dir_version
+    required = native.pdfium_required_files("darwin")
+    native.extract_native_lib(
+        str(archive_v1),
+        "pdfium-static",
+        dir_version,
+        required,
+        platform=("darwin", "arm64"),
+    )
+    assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\npdfium-v1"
+
+    native.extract_native_lib(
+        str(archive_v2),
+        "pdfium-static",
+        dir_version,
+        required,
+        platform=("darwin", "arm64"),
+    )
+    assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\npdfium-v2"
+
+
 @pytest.mark.parametrize("kind", ["traversal", "absolute", "symlink", "hardlink", "fifo", "device"])
 def test_native_archive_rejects_unsafe_members(tmp_path, kind):
     target = tmp_path / "native"
@@ -1360,3 +1470,20 @@ def test_extract_native_lib_honors_ragflow_native_libs_dir_env(tmp_path, monkeyp
     native.extract_native_lib(str(archive), "pdfium-static", "v7809", ["lib/libpdfium.a"], None)
     assert (tmp_path / "isolated" / "pdfium-static" / "v7809" / "lib" / "libpdfium.a").is_file()
     assert not os.path.exists("/attribute-path-ignored")
+
+
+def test_ee_native_download_hook_noop_and_delegates(monkeypatch):
+    import sys
+    import types
+
+    # When the optional extension module is absent, the hook is a safe no-op.
+    monkeypatch.setitem(sys.modules, "download_dev_deps_ee", None)
+    assert native._run_ee_native_downloads("linux", "amd64") is None
+
+    # When provided, the hook delegates (goos, goarch) to download_ee_native_libs.
+    calls = []
+    fake = types.ModuleType("download_dev_deps_ee")
+    fake.download_ee_native_libs = lambda goos, goarch: calls.append((goos, goarch))
+    monkeypatch.setitem(sys.modules, "download_dev_deps_ee", fake)
+    native._run_ee_native_downloads("linux", "amd64")
+    assert calls == [("linux", "amd64")]

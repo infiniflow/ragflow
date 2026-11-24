@@ -23,12 +23,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const sofyaToolName = "sofya_search"
@@ -62,10 +62,10 @@ var sofyaEndpoint = "https://sofya.co/v1/search"
 // max_results is decoded loosely: a missing, blank or non-numeric value means
 // "use the node's Top N" rather than failing the run.
 type sofyaArgs struct {
-	Query      string `json:"query"`
-	Topic      string `json:"topic"`
-	Freshness  string `json:"freshness"`
-	MaxResults any    `json:"max_results"`
+	Query      string `json:"query" doc:"The search keywords to execute with Sofya. The most important words/terms (and synonyms) from the original request." required:"true"`
+	Topic      string `json:"topic,omitempty" doc:"Search category: \"news\" for current events, \"general\" (default) for a broader web search." enum:"news,general"`
+	Freshness  string `json:"freshness,omitempty" doc:"Restrict results by recency: \"day\", \"week\", \"month\", \"year\", or \"any\" (default) for no limit." enum:"day,week,month,year,any"`
+	MaxResults any    `json:"max_results,omitempty" doc:"Number of results to return, 1 to 20. Leave it out to use the Top N set on the node." type:"integer"`
 }
 
 // sofyaDefaults holds the node-level configuration.
@@ -131,34 +131,7 @@ func newSofyaTool(h *HTTPHelper, apiKey string, defaults sofyaDefaults) *SofyaTo
 
 // Info returns the tool's metadata for the chat model.
 func (s *SofyaTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: sofyaToolName,
-		Desc: sofyaToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with Sofya. The most important words/terms (and synonyms) from the original request.",
-				Required: true,
-			},
-			"topic": {
-				Type:     schema.String,
-				Desc:     `Search category: "news" for current events, "general" (default) for a broader web search.`,
-				Enum:     sofyaTopics,
-				Required: false,
-			},
-			"freshness": {
-				Type:     schema.String,
-				Desc:     `Restrict results by recency: "day", "week", "month", "year", or "any" (default) for no limit.`,
-				Enum:     sofyaFreshnessValues,
-				Required: false,
-			},
-			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Number of results to return, 1 to 20. Leave it out to use the Top N set on the node.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(sofyaToolName, sofyaToolDescription, sofyaArgs{})
 }
 
 // InvokableRun performs the Sofya search.
@@ -322,7 +295,7 @@ func buildSofyaReferences(envelope map[string]any) ([]map[string]any, []map[stri
 		if content == "" {
 			content = sofyaText(result["description"])
 		}
-		content = truncateSofyaRunes(strings.Join(strings.Fields(content), " "), 10000)
+		content = utility.TruncateRunes(strings.Join(strings.Fields(content), " "), 10000)
 		if content == "" {
 			continue
 		}
@@ -378,13 +351,6 @@ func sofyaText(value any) string {
 		return strings.TrimSpace(text)
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
-}
-
-func truncateSofyaRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func sofyaJSON(env sofyaEnvelope) string {

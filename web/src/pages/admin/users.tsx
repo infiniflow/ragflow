@@ -94,7 +94,7 @@ import EnterpriseFeature from './components/enterprise-feature';
 import { CurrentUserInfoContext } from './layouts/root-layout';
 
 const columnHelper = createColumnHelper<AdminService.ListUsersItem>();
-const AdminUserKeys = {
+export const AdminUserKeys = {
   all: ['admin/listUsers'] as const,
   list: (params: AdminUserListParams) =>
     [...AdminUserKeys.all, params] as const,
@@ -202,11 +202,13 @@ function AdminUserManagement() {
     mutationFn: async ({
       email,
       password,
+      nickname,
     }: {
       email: string;
       password: string;
+      nickname: string;
     }) => {
-      await createUser(email, rsaPsw(password) as string);
+      await createUser(email, rsaPsw(password) as string, nickname);
     },
     onSuccess: () => {
       // message.success(t('admin.userCreatedSuccessfully'));

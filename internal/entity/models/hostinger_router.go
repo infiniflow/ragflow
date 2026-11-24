@@ -63,6 +63,7 @@ func (m *HostingerRouterModel) ListModels(ctx context.Context, apiConfig *APICon
 	}
 	for i := range models {
 		if entry := pm.FindModel(provider, models[i].Name); entry != nil && len(entry.ModelTypes) > 0 {
+			models[i].ModelTypesInferred = false
 			models[i].ModelTypes = append([]string(nil), entry.ModelTypes...)
 		}
 	}

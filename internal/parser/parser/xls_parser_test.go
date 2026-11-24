@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/xuri/excelize/v2"
+
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )

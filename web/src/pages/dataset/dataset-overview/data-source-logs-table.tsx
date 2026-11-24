@@ -2,7 +2,6 @@ import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -25,6 +24,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { DatasetTableLayout } from '@/components/dataset-table-layout';
 import { LogTabs } from './dataset-common';
 import { DatasetOverviewKeys } from './utils';
 
@@ -110,64 +110,57 @@ const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
   });
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      <Table
-        rootClassName="max-h-[calc(100vh-380px)] mb-4"
-        className="table-fixed"
-      >
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <TableHead
-                  key={header.id}
-                  className={header.column.columnDef.meta?.headerClassName}
-                >
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                </TableHead>
-              ))}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody className="min-w-[1280px]">
-          {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell
-                    key={cell.id}
-                    className={cell.column.columnDef.meta?.cellClassName}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                <Empty
-                  type={EmptyType.Data}
-                  text={tDatasetOverview('noData')}
-                />
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-
-      <div className="mt-auto flex items-center justify-end">
+    <DatasetTableLayout
+      tableClassName="table-fixed"
+      pagination={
         <RAGFlowPagination
           current={pagination.current}
           pageSize={pagination.pageSize}
           total={data?.total}
           onChange={(page, pageSize) => setPagination({ page, pageSize })}
         />
-      </div>
-    </div>
+      }
+    >
+      <TableHeader>
+        {table.getHeaderGroups().map((headerGroup) => (
+          <TableRow key={headerGroup.id}>
+            {headerGroup.headers.map((header) => (
+              <TableHead
+                key={header.id}
+                className={header.column.columnDef.meta?.headerClassName}
+              >
+                {flexRender(
+                  header.column.columnDef.header,
+                  header.getContext(),
+                )}
+              </TableHead>
+            ))}
+          </TableRow>
+        ))}
+      </TableHeader>
+      <TableBody>
+        {table.getRowModel().rows?.length ? (
+          table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id}>
+              {row.getVisibleCells().map((cell) => (
+                <TableCell
+                  key={cell.id}
+                  className={cell.column.columnDef.meta?.cellClassName}
+                >
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))
+        ) : (
+          <TableRow>
+            <TableCell colSpan={columns.length} className="h-24 text-center">
+              <Empty type={EmptyType.Data} text={tDatasetOverview('noData')} />
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </DatasetTableLayout>
   );
 };
 

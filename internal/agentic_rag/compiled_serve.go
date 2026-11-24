@@ -155,14 +155,13 @@ func buildCompiledFilter(chunkIDs, kinds, types []string) map[string]interface{}
 }
 
 func fetchCompiledProducts(ctx context.Context, datasetIDs, chunkIDs []string) []compiledRow {
-	tenantID := decisionScopeFrom(ctx).tenantID
 	de := engine.Get()
 	if de == nil || len(chunkIDs) == 0 {
 		return nil
 	}
 	start := time.Now()
 	res, err := de.Search(ctx, &enginetypes.SearchRequest{
-		IndexNames:   []string{indexNameFor(tenantID, "")},
+		IndexNames:   IndexNamesFor(ctx, datasetIDs),
 		KbIDs:        datasetIDs,
 		SelectFields: []string{"id", "content_with_weight", "source_chunk_ids", "compile_kwd", "doc_id"},
 		Filter:       buildCompiledFilter(chunkIDs, compiledServeKinds(), compiledServeTypes()),
@@ -263,31 +262,23 @@ func compileProductText(p compiledRow) string {
 
 // distinctChunkIDs / distinctDatasetIDs gather the recall scope from locate hits.
 func distinctChunkIDs(hits []snippetHit) []string {
-	seen := make(map[string]bool, len(hits))
-	out := make([]string, 0, len(hits))
+	ids := make([]string, 0, len(hits))
 	for _, h := range hits {
-		id := h.chunk.ID
-		if id == "" || seen[id] {
-			continue
+		if h.chunk.ID != "" {
+			ids = append(ids, h.chunk.ID)
 		}
-		seen[id] = true
-		out = append(out, id)
 	}
-	return out
+	return common.Deduplicate(ids)
 }
 
 func distinctDatasetIDs(hits []snippetHit) []string {
-	seen := make(map[string]bool, len(hits))
-	out := make([]string, 0, len(hits))
+	ids := make([]string, 0, len(hits))
 	for _, h := range hits {
-		id := h.chunk.DatasetID
-		if id == "" || seen[id] {
-			continue
+		if h.chunk.DatasetID != "" {
+			ids = append(ids, h.chunk.DatasetID)
 		}
-		seen[id] = true
-		out = append(out, id)
 	}
-	return out
+	return common.Deduplicate(ids)
 }
 
 // tryFormatLocateCompiled serves the compiled products for a locate result set.
