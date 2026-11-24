@@ -26,9 +26,13 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 const scheduledTaskStartupPageSize = 4096
+const taskDispatchRetryDelay = 3 * time.Second
+
+type taskTimerCallback func(context.Context, string, **time.Timer)
 
 // TaskEnvelope is the only payload sent through the task queue.
 type TaskEnvelope struct {
@@ -167,6 +171,44 @@ func (s *Scheduler) ScheduleTask(ctx context.Context, task dao.ScheduledSyncTask
 	return s.ScheduleTaskAfter(ctx, task.ID, delay)
 }
 
+// scheduleNextTask dispatches a successor that has already been committed.
+func (s *Scheduler) scheduleNextTask(ctx context.Context, taskID string) {
+	if s == nil || s.broker == nil || taskID == "" {
+		return
+	}
+	s.dispatchNextTask(ctx, taskID, nil)
+}
+
+func (s *Scheduler) dispatchNextTask(ctx context.Context, taskID string, timer **time.Timer) {
+	if ctx.Err() != nil {
+		s.retireTimer(taskID, timer)
+		return
+	}
+
+	task, err := s.taskDAO.GetScheduledTask(ctx, taskID)
+	if err == nil {
+		delay, schedule := s.taskDelay(task, time.Now())
+		if schedule && delay > 0 {
+			s.armTaskTimer(ctx, taskID, timer, delay, s.handleTimerWakeup)
+			return
+		}
+		if schedule {
+			err = s.publish(ctx, taskID, timer != nil)
+		}
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		// The task was claimed, canceled or is no longer linked and enabled.
+		s.retireTimer(taskID, timer)
+		return
+	}
+
+	if err != nil && ctx.Err() == nil {
+		common.Warn("syncer next task dispatch failed; retry scheduled", zap.String("task_id", taskID), zap.Error(err))
+		s.armTaskTimer(ctx, taskID, timer, taskDispatchRetryDelay, s.dispatchNextTask)
+		return
+	}
+	s.retireTimer(taskID, timer)
+}
+
 // ScheduleTaskAfter publishes a task after delay.
 func (s *Scheduler) ScheduleTaskAfter(ctx context.Context, taskID string, delay time.Duration) error {
 	if s == nil || s.broker == nil || taskID == "" {
@@ -175,50 +217,45 @@ func (s *Scheduler) ScheduleTaskAfter(ctx context.Context, taskID string, delay 
 	if delay <= 0 {
 		return s.publish(ctx, taskID, false)
 	}
-	s.timerMu.Lock()
-	defer s.timerMu.Unlock()
-	s.scheduleTimerLocked(ctx, taskID, delay)
+	s.armTaskTimer(ctx, taskID, nil, delay, s.handleTimerWakeup)
 	return nil
 }
 
-// scheduleTimerLocked replaces a timer while holding timerMu.
-func (s *Scheduler) scheduleTimerLocked(ctx context.Context, taskID string, delay time.Duration) {
+// armTaskTimer replaces a timer. A running callback can only replace itself.
+func (s *Scheduler) armTaskTimer(ctx context.Context, taskID string, current **time.Timer, delay time.Duration, callback taskTimerCallback) {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+	if ctx.Err() != nil || (current != nil && s.timers[taskID] != *current) {
+		return
+	}
 	if existing := s.timers[taskID]; existing != nil {
 		existing.Stop()
 	}
 	var timer *time.Timer
 	timer = time.AfterFunc(delay, func() {
-		s.handleTimerWakeup(ctx, taskID, &timer)
+		callback(ctx, taskID, &timer)
 	})
 	s.timers[taskID] = timer
 }
 
 // handleTimerWakeup is also exercised directly by callback-path unit tests.
 // The timer pointer is only read while holding timerMu, which also protects
-// the assignment made by scheduleTimerLocked.
+// the assignment made by armTaskTimer.
 func (s *Scheduler) handleTimerWakeup(ctx context.Context, taskID string, timer **time.Timer) {
 	if err := s.publish(ctx, taskID, true); err != nil && ctx.Err() == nil {
 		common.Warn("syncer scheduler timer publish failed", zap.String("task_id", taskID), zap.Error(err))
-		s.retryTimerIfCurrent(ctx, taskID, timer)
+		s.armTaskTimer(ctx, taskID, timer, taskDispatchRetryDelay, s.handleTimerWakeup)
 		return
 	}
 	s.retireTimer(taskID, timer)
 }
 
-// retryTimerIfCurrent prevents an outdated callback's failure from replacing
-// a newer schedule. The identity check and replacement are one critical section.
-func (s *Scheduler) retryTimerIfCurrent(ctx context.Context, taskID string, timer **time.Timer) {
-	s.timerMu.Lock()
-	defer s.timerMu.Unlock()
-	if ctx.Err() != nil || s.timers[taskID] != *timer {
-		return
-	}
-	s.scheduleTimerLocked(ctx, taskID, 3*time.Second)
-}
-
 // retireTimer removes only the timer whose callback finished. A newer
 // schedule for the same task must remain registered for replacement/shutdown.
 func (s *Scheduler) retireTimer(taskID string, timer **time.Timer) {
+	if timer == nil {
+		return
+	}
 	s.timerMu.Lock()
 	defer s.timerMu.Unlock()
 	if s.timers[taskID] == *timer {

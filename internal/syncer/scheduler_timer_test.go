@@ -83,7 +83,7 @@ func TestSchedulerStaleFailureKeepsReplacementTimer(t *testing.T) {
 
 	// Simulate the stale callback's retry, using the same path as the
 	// production callback. The newer schedule must not be overwritten.
-	scheduler.retryTimerIfCurrent(t.Context(), "task-1", &original)
+	scheduler.armTaskTimer(t.Context(), "task-1", &original, taskDispatchRetryDelay, scheduler.handleTimerWakeup)
 	scheduler.timerMu.Lock()
 	got := scheduler.timers["task-1"]
 	scheduler.timerMu.Unlock()
@@ -92,7 +92,7 @@ func TestSchedulerStaleFailureKeepsReplacementTimer(t *testing.T) {
 	}
 
 	// A genuinely current timer must still be retried on publish failure.
-	scheduler.retryTimerIfCurrent(t.Context(), "task-1", &replacement)
+	scheduler.armTaskTimer(t.Context(), "task-1", &replacement, taskDispatchRetryDelay, scheduler.handleTimerWakeup)
 	scheduler.timerMu.Lock()
 	retry := scheduler.timers["task-1"]
 	scheduler.timerMu.Unlock()
