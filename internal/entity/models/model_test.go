@@ -875,7 +875,7 @@ func lineAtOffset(data []byte, offset int64) int {
 // definitions, and the duplicate key meant the column the doc-delete fix (#17685) added -
 // with its analyzer - never took effect.
 func TestConfFilesHaveNoDuplicateKeys(t *testing.T) {
-	confDir := filepath.Join(findRepoRoot(), "conf")
+	confDir := utility.ConfDir()
 	var files []string
 	err := filepath.WalkDir(confDir, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
