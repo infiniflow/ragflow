@@ -2570,7 +2570,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
       advancedSettings: '高级设置',
       addTools: '添加工具',
-      sysPromptDefultValue: `
+      sysPromptDefaultValue: `
 <role>
   你是一名乐于助人的助手，一名专注于为用户解决问题的 AI 助手。
   如果用户指定了特定领域，你需要在该领域展现专业性；如果没有，则以通用助手的方式工作。
