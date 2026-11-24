@@ -26,14 +26,26 @@ package desktop
 // The TCP entry point is deliberate. The library's unix-socket entry point is
 // cfg(unix) only, and a desktop binary has to run on Windows as well. A port
 // also sidesteps the 104-byte sun_path limit on macOS, which a deep data
-// directory can exceed. The static library and its link flags are supplied by
-// build.sh --desktop through CGO_LDFLAGS; see that script for where the
-// archive comes from.
+// directory can exceed.
+//
+// The library itself is staged into ../../.cache/infinity-embedded by
+// build.sh --desktop, which compiles the engine from an Infinity checkout when
+// needed and names the staged artifact on the link line: the archive when the
+// link is static, the shared object otherwise. It is not named here because only
+// the script knows which artifact exists, and because Go keys the final link on
+// the flag string — a fixed -l name would let a rebuilt engine, or a switch
+// between the two link modes, reuse the previously linked binary from the build
+// cache.
+//
+// The two run paths below only matter for the shared link: they make the binary
+// start on its own — `$ORIGIN` for the copy build.sh publishes beside the
+// binaries, and the staging directory for a binary linked elsewhere (a `go test`
+// binary lives in a temp dir, where $ORIGIN resolves to nothing useful).
 
 /*
-#cgo darwin LDFLAGS: -L${SRCDIR}/../../.cache/infinity-embedded -linfinity_embedded -framework Security -framework CoreFoundation -lc++ -liconv -lresolv
-#cgo linux LDFLAGS: -L${SRCDIR}/../../.cache/infinity-embedded -linfinity_embedded -lstdc++ -lpthread -ldl -lm
-#cgo windows LDFLAGS: -L${SRCDIR}/../../.cache/infinity-embedded -linfinity_embedded -lws2_32 -luserenv -lbcrypt -lntdll
+#cgo darwin LDFLAGS: -Wl,-rpath,@loader_path -Wl,-rpath,${SRCDIR}/../../.cache/infinity-embedded -framework Security -framework CoreFoundation -lc++ -liconv -lresolv
+#cgo linux LDFLAGS: -Wl,-rpath,$ORIGIN -Wl,-rpath,${SRCDIR}/../../.cache/infinity-embedded -lstdc++ -lpthread -ldl -lm
+#cgo windows LDFLAGS: -lws2_32 -luserenv -lbcrypt -lntdll
 
 #include <stdlib.h>
 
