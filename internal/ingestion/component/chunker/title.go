@@ -166,30 +166,17 @@ func defaultsTitle() titleChunkerParam {
 }
 
 // selectLevelGroup returns the regex-list family (rawLevels) with the
-// highest heading hit count across the input lines.
-func selectLevelGroup(lines []string, rawLevels [][]string) []string {
+// highest heading hit count across the input lines. When allowInlineClauses is
+// true, a long Chinese "一、" clause still counts as a heading hit (#22119).
+func selectLevelGroup(lines []string, rawLevels [][]string, allowInlineClauses bool) []string {
 	if len(rawLevels) == 0 {
 		return nil
 	}
 	hits := make([]int, len(rawLevels))
 	for i, group := range rawLevels {
 		for _, line := range lines {
-			text := trim(line)
-			if text == "" {
-				continue
-			}
-			// A bullet-looking line cannot count as a heading hit for any
-			// family, and a long body paragraph does not count either.
-			if notHeadingCandidate(text) {
-				continue
-			}
-			for _, pattern := range group {
-				if re := compileLevelPattern(pattern); re != nil {
-					if re.MatchString(text) {
-						hits[i]++
-						break
-					}
-				}
+			if matchRegexLevel(line, group, allowInlineClauses) != 0 {
+				hits[i]++
 			}
 		}
 	}
@@ -214,15 +201,19 @@ func selectLevelGroup(lines []string, rawLevels [][]string) []string {
 }
 
 // matchRegexLevel returns the 1-indexed heading level matched by the regex
-// family; "" or no-match returns 0 (BODY).
-func matchRegexLevel(text string, group []string) int {
+// family; "" or no-match returns 0 (BODY). When allowInlineClauses is true, a
+// long Chinese clause stays a heading: its body is inline and heading content
+// is not prepended to descendant chunks (#22119).
+func matchRegexLevel(text string, group []string, allowInlineClauses bool) int {
 	stripped := trim(text)
-	if stripped == "" {
+	if stripped == "" || notBullet(stripped) {
 		return 0
 	}
-	// A bullet-looking line is not a heading regardless of the regex
-	// family.
-	if notHeadingCandidate(stripped) {
+	// A numbered body paragraph that is too long to be a heading stays body
+	// text. The exception is an inline Chinese clause when heading content is
+	// disabled, so long paragraphs are not repeated in every chunk (#21585).
+	// De Morgan form avoids staticcheck QF1001.
+	if headingTooLong(stripped) && (!allowInlineClauses || !inlineChineseClause.MatchString(stripped)) {
 		return 0
 	}
 	for lvl, pattern := range group {
@@ -233,6 +224,10 @@ func matchRegexLevel(text string, group []string) int {
 	}
 	return 0
 }
+
+// inlineChineseClause matches a Chinese enumeration marker such as the one
+// that introduces a clause whose body starts on the same line (#22119).
+var inlineChineseClause = regexp.MustCompile(`^[零一二三四五六七八九十百]+、`)
 
 // notBulletPatterns flags a line that looks like a numbered/bulleted list
 // item rather than a section heading, so it must not be promoted to a title
@@ -379,7 +374,8 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 	for i, r := range records {
 		lines[i] = r.text
 	}
-	group := selectLevelGroup(lines, p.Levels)
+	allowInlineClauses := !p.IncludeHeadingContent
+	group := selectLevelGroup(lines, p.Levels, allowInlineClauses)
 	fallbackLevel := len(group) + 1
 	out := make([]int, len(records))
 	for i, rec := range records {
@@ -394,7 +390,7 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 			out[i] = bodyLevel
 			continue
 		}
-		if lvl := matchRegexLevel(rec.text, group); lvl != 0 {
+		if lvl := matchRegexLevel(rec.text, group, allowInlineClauses); lvl != 0 {
 			out[i] = lvl
 			continue
 		}
