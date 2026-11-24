@@ -14,9 +14,7 @@
 //  limitations under the License.
 //
 
-// JSONParser handles JSON and JSON Lines files. In .jsonl and .ldjson files,
-// each valid line becomes one item. Other inputs are parsed by shape, so a
-// JSON array produces one item per element and an object produces one item.
+// JSONParser handles JSON, JSON Lines, and Docling document exports.
 
 package parser
 
@@ -44,18 +42,19 @@ func (p *JSONParser) String() string {
 	return "JSONParser"
 }
 
-// ParseWithResult reads declared JSON Lines files one value per line and
-// detects the shape of other JSON input. Each record becomes a text item.
+// ParseWithResult reads JSON Lines one value per line, and detects the shape
+// of other JSON input before building text items.
 func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	decoded, encName := charset.DecodeToUTF8(data, "application/json")
+	file := map[string]any{
+		"name":     filename,
+		"size":     len(data),
+		"encoding": encName,
+	}
 	text := string(bytes.TrimSpace(decoded))
 	if text == "" {
 		return ParseResult{
-			File: map[string]any{
-				"name":     filename,
-				"size":     len(data),
-				"encoding": encName,
-			},
+			File: file,
 			JSON: []DocItem{NewTextJSONItem("")},
 		}
 	}
@@ -67,23 +66,19 @@ func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data 
 		items = parseJSONLines(text)
 	}
 	if items == nil {
-		items = parseJSONContent(text)
+		items = parseJSONContent(text, file)
 	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		File: map[string]any{
-			"name":     filename,
-			"size":     len(data),
-			"encoding": encName,
-		},
+		File: file,
 		JSON: MapsToItems(items),
 	}
 }
 
 // parseJSONContent detects the JSON shape and dispatches.
-func parseJSONContent(text string) []map[string]any {
+func parseJSONContent(text string, file map[string]any) []map[string]any {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return nil
@@ -114,6 +109,12 @@ func parseJSONContent(text string) []map[string]any {
 		obj, ok := parseSingleJSONObjectValue(trimmed)
 		if !ok {
 			return []map[string]any{{"text": trimmed, "doc_type_kwd": "text"}}
+		}
+		if items, ok := parseDoclingJSONItems(obj); ok {
+			if pageCount := doclingPageCount([]doclingDocument{{JSONContent: obj}}, 0); pageCount <= doclingMaxSourcePageCount {
+				file["page_count"] = pageCount
+			}
+			return items
 		}
 		return singleObjectItems(obj)
 	}
