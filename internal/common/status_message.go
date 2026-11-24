@@ -31,10 +31,12 @@ const (
 type ServerType string
 
 const (
+	ServerTypeStandalone    ServerType = "standalone"     // Standalone server with all services
 	ServerTypeAdmin         ServerType = "admin"          // Admin server
 	ServerTypeAPI           ServerType = "api"            // API server
 	ServerTypeIngestion     ServerType = "ingestor"       // Ingestion server
 	ServerTypeFileSyncer    ServerType = "syncer"         // File syncer server
+	ServerTypeChatter       ServerType = "chatter"        // Chat channel runtime
 	ServerTypeDeepDocGPU    ServerType = "deepdoc_gpu"    // DeepDoc GPU server
 	ServerTypeDeepDocCPU    ServerType = "deepdoc_cpu"    // DeepDoc CPU server
 	ServerTypeDeepDocAscend ServerType = "deepdoc_ascend" // DeepDoc Ascend server

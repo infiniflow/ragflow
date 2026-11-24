@@ -50,7 +50,9 @@ type RetrievalChunk struct {
 	// for top-level chunks. It is threaded through so the harness can run
 	// retrieval_by_children (child fragments are promoted to their parent chunk)
 	// after search, mirroring Python settings.retriever.retrieval_by_children.
-	MomID            string
+	MomID string
+	// Highlight is the retrieval snippet with matched words wrapped in <em>.
+	Highlight        string
 	Score            float64
 	TermSimilarity   float64
 	VectorSimilarity float64
@@ -76,6 +78,7 @@ type RetrievalRequest struct {
 	AllowDenseFallback       *bool
 	RerankID                 string
 	CrossLanguages           []string
+	Highlight                bool
 	MetaDataFilter           map[string]any
 	RetrievalFrom            string
 	// DocScope restricts retrieval to a set of document ids (the doc_id list
@@ -153,7 +156,6 @@ type GrepRequest struct {
 	Sort []string // Ordered ascending sort fields.
 	// SelectFields limits the ES _source fields returned per hit.
 	SelectFields []string
-	TenantID     string // Tenant that owns the running canvas.
 }
 
 // Bm25Service is the lexical full-text (BM25) search surface used by
@@ -172,7 +174,6 @@ type Bm25Request struct {
 	DatasetIDs []string // Knowledge base IDs to restrict to.
 	DocScope   []string // Document IDs to restrict to (empty = no doc filter).
 	TopN       int      // Max chunks per query before merging.
-	TenantID   string   // Tenant that owns the running canvas.
 }
 
 // ErrRetrievalServiceMissing is returned when no RetrievalService is registered.
@@ -212,6 +213,8 @@ var ErrRegexpNotSupported = errors.New(
 // apart from a transport or scope failure and degrade deliberately instead of
 // surfacing an opaque backend error.
 var ErrRegexpPushdown = errors.New("grep_chunks: regexp pushdown failed")
+
+var ErrCorpusScopeUnresolved = errors.New("grep_chunks: corpus scope could not be resolved")
 
 var (
 	retrievalServiceMu   sync.RWMutex

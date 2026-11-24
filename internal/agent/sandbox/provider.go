@@ -62,6 +62,10 @@ const (
 	// ProviderUCloudAgentSandbox runs each execution in a disposable
 	// UCloud Agent Sandbox using UCloud's native Go SDK.
 	ProviderUCloudAgentSandbox ProviderType = "ucloud_agent_sandbox"
+
+	// ProviderKosa8 runs each execution in a disposable kosa8 microVM
+	// sandbox through the kosa8 REST API (hosted or self-hosted).
+	ProviderKosa8 ProviderType = "kosa8"
 )
 
 // ErrE2BProviderNotImplemented is returned when an operator configures

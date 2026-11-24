@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -266,7 +267,7 @@ func (c *AzureBlobStorageConnector) ensureClient(ctx context.Context) (*containe
 	}
 	options := &container.ClientOptions{
 		ClientOptions: azcore.ClientOptions{Transport: &http.Client{
-			Transport: azureBlobTransport{},
+			Transport: &azureBlobTransport{},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= 10 || connectorOrigin(req.URL.String()) != connectorOrigin(via[0].URL.String()) {
 					return http.ErrUseLastResponse
@@ -309,9 +310,13 @@ func (c *AzureBlobStorageConnector) ensureClient(ctx context.Context) (*containe
 
 // azureBlobTransport validates the SDK's effective endpoint and pins the
 // request after signing, preserving the original Host and TLS name.
-type azureBlobTransport struct{}
+type azureBlobTransport struct {
+	mu        sync.Mutex
+	key       string
+	transport *http.Transport
+}
 
-func (azureBlobTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *azureBlobTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	hostname, ip, err := assertConnectorURL(req.URL.String(), azureAssertURLSafe)
 	if err != nil {
 		if req.Body != nil {
@@ -320,20 +325,34 @@ func (azureBlobTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, &connectorUnsafeURLError{Err: err}
 	}
 	pinned := req.Clone(req.Context())
-	transport, err := pinConnectorRequest(pinned, nil, hostname, ip, 30*time.Second)
+	candidate, err := pinConnectorRequest(pinned, nil, hostname, ip, 30*time.Second)
 	if err != nil {
 		if req.Body != nil {
 			req.Body.Close()
 		}
 		return nil, err
 	}
+	proxy, _ := candidate.Proxy(pinned)
+	key := pinned.URL.Scheme + "|" + pinned.URL.Host + "|" + hostname
+	if proxy != nil {
+		key += "|" + proxy.String()
+	}
+	t.mu.Lock()
+	if t.key != key {
+		if t.transport != nil {
+			t.transport.CloseIdleConnections()
+		}
+		candidate.IdleConnTimeout = 30 * time.Second
+		t.key, t.transport = key, candidate
+	}
+	transport := t.transport
+	t.mu.Unlock()
+
 	resp, err := transport.RoundTrip(pinned)
 	if err != nil {
-		transport.CloseIdleConnections()
 		return nil, err
 	}
 	resp.Request = req
-	resp.Body = &connectorCloseIdleBody{body: resp.Body, transport: transport}
 	return resp, nil
 }
 

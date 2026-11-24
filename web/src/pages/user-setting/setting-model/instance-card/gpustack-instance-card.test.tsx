@@ -57,7 +57,7 @@ jest.mock('@/components/confirm-delete-dialog', () => ({
 jest.mock('@/components/ui/select', () => ({
   Select: ({ onValueChange, children }: any) => (
     <div>
-      <button onClick={() => onValueChange('vision')}>make-vision</button>
+      <button onClick={() => onValueChange('vlm')}>make-vision</button>
       {children}
     </div>
   ),
@@ -325,7 +325,7 @@ describe('GPUStackInstanceCard saved', () => {
       instance_name: 'saved',
       model_name: 'writer',
       max_tokens: 8192,
-      model_type: ['chat', 'vision'],
+      model_type: ['chat', 'vlm'],
       extra: { is_tools: true },
     });
   });

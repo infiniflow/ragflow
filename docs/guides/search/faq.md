@@ -4,7 +4,7 @@ title: FAQ
 sidebar_label: FAQ
 slug: /search_faq
 sidebar_custom_props:
-  categoryIcon: LucideSearch
+  categoryIcon: LucideCircleHelp
 ---
 
 # FAQ

@@ -52,6 +52,49 @@ func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string,
 	return nil
 }
 
+// recordingChunkDeleter records what the finalizer asks the engine to delete.
+type recordingChunkDeleter struct {
+	conditions []map[string]interface{}
+	indexNames []string
+}
+
+func (d *recordingChunkDeleter) DeleteChunks(_ context.Context, condition map[string]interface{}, baseName, _ string) (int64, error) {
+	d.conditions = append(d.conditions, condition)
+	d.indexNames = append(d.indexNames, baseName)
+	ids, _ := condition["id"].([]string)
+	return int64(len(ids)), nil
+}
+
+// TestRemoveDroppedChunksDeletesTheRowsAReparseLeftOut pins the second half of a
+// re-parse: the chunks the new run did not produce leave the index, so the chunk
+// list and retrieval stop showing them. Their history rows stay, so a document
+// version recorded before the parse can still bring them back.
+func TestRemoveDroppedChunksDeletesTheRowsAReparseLeftOut(t *testing.T) {
+	deleter := &recordingChunkDeleter{}
+	u := &docStateUpdater{engine: deleter}
+	result := &taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1", TenantID: "tenant-1"}
+
+	u.removeDroppedChunks(t.Context(), result, []string{"chunk-1", "chunk-2"})
+
+	if len(deleter.conditions) != 1 {
+		t.Fatalf("delete calls = %d, want 1", len(deleter.conditions))
+	}
+	if got := deleter.indexNames[0]; got != "ragflow_tenant-1" {
+		t.Fatalf("index = %q, want ragflow_tenant-1", got)
+	}
+	if got, _ := deleter.conditions[0]["id"].([]string); !reflect.DeepEqual(got, []string{"chunk-1", "chunk-2"}) {
+		t.Fatalf("deleted ids = %v", got)
+	}
+
+	// Nothing dropped, no tenant and no engine all leave the index alone.
+	u.removeDroppedChunks(t.Context(), result, nil)
+	u.removeDroppedChunks(t.Context(), &taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1"}, []string{"chunk-3"})
+	(&docStateUpdater{}).removeDroppedChunks(t.Context(), result, []string{"chunk-4"})
+	if len(deleter.conditions) != 1 {
+		t.Fatalf("delete calls = %d, want the no-op cases to add none", len(deleter.conditions))
+	}
+}
+
 func TestDocStateUpdater_PreservesTypedMetadataOnReplacement(t *testing.T) {
 	svc := &stubDocStateSvc{metaData: map[string]any{
 		"year": float64(2024), "verified": false, "null": nil,
@@ -312,4 +355,58 @@ func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
 	if svc.metaData["author"] != "Alice" {
 		t.Fatalf("custom metadata should still be written even when built_in is off, got %v", svc.metaData)
 	}
+}
+
+func TestDocStateUpdater_ManagedMetadataClearsStaleKeysAndPreservesUserFields(t *testing.T) {
+	t.Run("re-parse removes stale managed keys and keeps user fields", func(t *testing.T) {
+		svc := &stubDocStateSvc{metaData: map[string]any{
+			"highest_degree":        "硕士",
+			"work_experience_years": 6.0,
+			"skills":                []string{"Go", "OldSkill"},
+			"interview_stage":       "二面",
+		}}
+		u := &docStateUpdater{docSvc: svc}
+		u.apply(t.Context(), &taskpkg.PipelineResult{
+			DocID: "doc-1",
+			Metadata: map[string]any{
+				"highest_degree": "硕士",
+				"skills":         []string{"Go", "Rust"},
+			},
+			ManagedMetadataKeys: []string{"highest_degree", "work_experience_years", "skills", "certificates"},
+		})
+		if !svc.setCalled {
+			t.Fatal("expected SetDocumentMetadata to be called")
+		}
+		if _, exists := svc.metaData["work_experience_years"]; exists {
+			t.Fatalf("stale work_experience_years must be deleted on re-parse, got %#v", svc.metaData)
+		}
+		if svc.metaData["interview_stage"] != "二面" {
+			t.Fatalf("user-maintained interview_stage must be preserved, got %#v", svc.metaData)
+		}
+		if !reflect.DeepEqual(svc.metaData["skills"], []string{"Go", "Rust"}) {
+			t.Fatalf("skills = %#v, want [Go Rust]", svc.metaData["skills"])
+		}
+	})
+
+	t.Run("all-empty re-parse still cleans stale managed keys", func(t *testing.T) {
+		svc := &stubDocStateSvc{metaData: map[string]any{
+			"work_experience_years": 5.0,
+			"interview_stage":       "终面",
+		}}
+		u := &docStateUpdater{docSvc: svc}
+		u.apply(t.Context(), &taskpkg.PipelineResult{
+			DocID:               "doc-1",
+			Metadata:            nil,
+			ManagedMetadataKeys: []string{"work_experience_years", "highest_degree"},
+		})
+		if !svc.setCalled {
+			t.Fatal("expected SetDocumentMetadata to be called when stale managed keys exist")
+		}
+		if _, exists := svc.metaData["work_experience_years"]; exists {
+			t.Fatalf("stale managed key must be cleared even when Metadata is empty: %#v", svc.metaData)
+		}
+		if svc.metaData["interview_stage"] != "终面" {
+			t.Fatalf("user-maintained key lost: %#v", svc.metaData)
+		}
+	})
 }

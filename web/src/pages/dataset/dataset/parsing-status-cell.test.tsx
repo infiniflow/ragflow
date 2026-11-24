@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import React, { StrictMode } from 'react';
 
 jest.mock('react-i18next', () => ({
@@ -34,7 +34,11 @@ jest.mock('@/components/ui/message', () => ({
 }));
 
 import { IngestionTaskStatus } from './constant';
-import { ParseDropdownButton, ParsingStatusCell } from './parsing-status-cell';
+import {
+  ParseCell,
+  ParseDropdownButton,
+  ParsingStatusCell,
+} from './parsing-status-cell';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 const baseRecord = {
@@ -65,14 +69,33 @@ const baseRecord = {
   chunk_method: 'naive',
 };
 
+function createRecord(overrides: Record<string, any> = {}) {
+  return { ...baseRecord, ...overrides } as any;
+}
+
+const mockShowLog = jest.fn();
+const mockShowChangeParserModal = jest.fn();
+
 function renderCell(overrides: Record<string, any> = {}) {
-  const record = { ...baseRecord, ...overrides } as any;
   return render(
     React.createElement(ParsingStatusCell, {
-      record,
-      showLog: jest.fn(),
-      showChangeParserModal: jest.fn(),
+      record: createRecord(overrides),
+      showLog: mockShowLog,
     }),
+    { wrapper: StrictMode },
+  );
+}
+
+function renderParseCell(overrides: Record<string, any> = {}) {
+  return render(
+    React.createElement(
+      TooltipProvider,
+      null,
+      React.createElement(ParseCell, {
+        record: createRecord(overrides),
+        showChangeParserModal: mockShowChangeParserModal,
+      }),
+    ),
     { wrapper: StrictMode },
   );
 }
@@ -97,6 +120,8 @@ describe('ParsingStatusCell', () => {
     mockRunDocumentByIds.mockClear();
     mockShowReparseDialog.mockClear();
     mockWarning.mockClear();
+    mockShowLog.mockClear();
+    mockShowChangeParserModal.mockClear();
     mockUseDocumentPipelineVersion.mockReset();
     mockUseDocumentPipelineVersion.mockReturnValue({
       version: undefined,
@@ -112,15 +137,31 @@ describe('ParsingStatusCell', () => {
     expect(
       screen.getByText('knowledgeDetails.runningStatusQueued'),
     ).toBeInTheDocument();
+
+    const { container: parseContainer } = renderParseCell({
+      ingestion_status: IngestionTaskStatus.CREATED,
+    });
+    expect(
+      parseContainer.querySelector('svg.lucide-circle-x'),
+    ).toBeInTheDocument();
   });
 
-  it('shows progress and an enabled cancel button while RUNNING', () => {
+  it('shows progress in Status and an enabled cancel button in Parse while RUNNING', () => {
     const { container } = renderCell({
       ingestion_status: IngestionTaskStatus.RUNNING,
     });
     expect(getSection(container)).toHaveAttribute('data-state', 'running');
-    expect(container.querySelector('svg.lucide-circle-x')).toBeInTheDocument();
     expect(container.querySelector('button[disabled]')).not.toBeInTheDocument();
+
+    const { container: parseContainer } = renderParseCell({
+      ingestion_status: IngestionTaskStatus.RUNNING,
+    });
+    expect(
+      parseContainer.querySelector('svg.lucide-circle-x'),
+    ).toBeInTheDocument();
+    expect(
+      within(parseContainer).getByTestId('document-parse-toggle'),
+    ).toBeEnabled();
   });
 
   it('masks the progress area with a loading overlay while STOPPING', () => {
@@ -148,6 +189,13 @@ describe('ParsingStatusCell', () => {
     // Both the progress/log button and the cancel button are disabled.
     const buttons = container.querySelectorAll('button');
     buttons.forEach((button) => expect(button).toBeDisabled());
+
+    const { container: parseContainer } = renderParseCell({
+      ingestion_status: IngestionTaskStatus.STOPPING,
+    });
+    expect(
+      within(parseContainer).getByTestId('document-parse-toggle'),
+    ).toBeDisabled();
   });
 
   it('renders the success state for COMPLETED', () => {
@@ -172,7 +220,11 @@ describe('ParsingStatusCell', () => {
       ingestion_status: IngestionTaskStatus.UNSTART,
     });
     expect(getSection(container)).toHaveAttribute('data-state', 'unstart');
-    expect(hasIconFont(container, 'play')).toBe(true);
+
+    const { container: parseContainer } = renderParseCell({
+      ingestion_status: IngestionTaskStatus.UNSTART,
+    });
+    expect(hasIconFont(parseContainer, 'play')).toBe(true);
   });
 
   it('treats a missing ingestion_status as idle', () => {
@@ -183,8 +235,32 @@ describe('ParsingStatusCell', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('shows View error for FAILED and opens the document log', () => {
+    const { container } = renderCell({
+      ingestion_status: IngestionTaskStatus.FAILED,
+    });
+
+    expect(getSection(container)).toHaveAttribute('data-state', 'fail');
+    expect(container.querySelector('svg.lucide-triangle-alert')).toBeVisible();
+    fireEvent.click(screen.getByTestId('document-view-error'));
+
+    expect(mockShowLog).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'doc-1' }),
+    );
+  });
+
+  it('opens the document log from a non-failure status dot', () => {
+    renderCell({ ingestion_status: IngestionTaskStatus.COMPLETED });
+
+    fireEvent.click(screen.getByRole('button'));
+
+    expect(mockShowLog).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'doc-1' }),
+    );
+  });
+
   it('asks for confirmation before dropping existing chunks', () => {
-    renderCell({
+    renderParseCell({
       ingestion_status: IngestionTaskStatus.COMPLETED,
       chunk_count: 3,
       parser_config: { enable_metadata: true },
@@ -197,7 +273,7 @@ describe('ParsingStatusCell', () => {
   });
 
   it('re-parses a chunkless document straight away without confirmation', () => {
-    renderCell({
+    renderParseCell({
       ingestion_status: IngestionTaskStatus.COMPLETED,
       chunk_count: 0,
       parser_config: { enable_metadata: true },
@@ -323,7 +399,7 @@ describe('ParsingStatusCell', () => {
       version: undefined,
       missing: true,
     });
-    renderCell({
+    renderParseCell({
       pipeline_id: 'canvas-1',
       pipeline_version_id: 'v1',
       ingestion_status: IngestionTaskStatus.COMPLETED,
@@ -346,7 +422,7 @@ describe('ParsingStatusCell', () => {
       version: undefined,
       missing: true,
     });
-    renderCell({
+    renderParseCell({
       pipeline_id: 'canvas-1',
       pipeline_version_id: 'v1',
       ingestion_status: IngestionTaskStatus.RUNNING,

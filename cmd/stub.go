@@ -22,8 +22,16 @@ import (
 	"context"
 	"errors"
 
+	"github.com/alecthomas/kingpin/v2"
+
 	"ragflow/internal/server/bootstrap"
 )
+
+func registerEEFlags(_ *kingpin.Application, _ *bootstrap.ServerArgs) func() error {
+	return func() error { return nil }
+}
+
+func printEEHelp() {}
 
 // runDeepDoc reports that the EE DeepDoc inference server is an enterprise
 // capability.

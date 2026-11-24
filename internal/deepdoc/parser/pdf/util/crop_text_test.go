@@ -215,3 +215,17 @@ func TestCropTextSectionPositionsKeepsColumnsSeparate(t *testing.T) {
 		t.Fatalf("column line rows = %v, want %v", counts, want)
 	}
 }
+
+func TestCropTextSectionPositionsLimitedRejectsOversizedStitchBeforeCopy(t *testing.T) {
+	page := &accessCountingImage{bounds: image.Rect(0, 0, 400, 400)}
+	positions := []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 200, Top: 0, Bottom: 100}}
+	got := cropTextSectionPositionsLimited(positions, map[int]image.Image{0: page}, 1, 5_000)
+	if got != "" {
+		t.Fatalf("limited text crop = %q, want empty string when stitched pixels exceed limit", got)
+	}
+	// snapTextBoundary samples a bounded edge strip before final stitch sizing,
+	// whereas renderSectionRaster would copy >= 20,000 pixels of the 200x100 body.
+	if page.reads >= 20_000 {
+		t.Fatalf("source pixel reads = %d, expected < 20000 when skipping oversized stitch copy", page.reads)
+	}
+}

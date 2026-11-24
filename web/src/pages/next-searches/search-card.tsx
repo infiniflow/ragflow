@@ -45,7 +45,11 @@ export function SearchCard({
           <MoreButton></MoreButton>
         </SearchDropdown>
       }
-      sharedBadge={<SharedBadge>{data.nickname}</SharedBadge>}
+      sharedBadge={
+        <SharedBadge userId={data.user_id} ownerNickname={data.nickname}>
+          {data.nickname}
+        </SharedBadge>
+      }
       onClick={navigateToSearch(data?.id)}
     />
   );

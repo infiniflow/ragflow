@@ -29,6 +29,7 @@ import (
 	"image/png"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -258,7 +259,6 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		}
 		joinSep := "\n"
 		if !customDelimiter {
-			body, bodySources = joinPDFContinuations(body, bodySources)
 			body = separateGeneralTextBlocks(body)
 			body, bodySources = splitPDFUnits(body, bodySources, primaryPattern, true)
 			joinSep = ""
@@ -503,18 +503,18 @@ func separateGeneralTextBlocks(units []schema.ChunkDoc) []schema.ChunkDoc {
 	return units
 }
 
-// groupDOCXUnitsByRecordBoundary merges consecutive text paragraphs into one
-// unit until a paragraph begins with a custom (backtick) delimiter prefix.
-// DOCX upstream emits one paragraph per unit, so a custom delimiter that only
-// appears at the start of each logical record must group paragraphs rather
-// than split within a single paragraph (#20496).
+// groupDOCXUnitsByRecordBoundary groups consecutive text paragraphs when at
+// least one paragraph starts with a custom delimiter. A marked paragraph starts
+// a new record, and a non-text unit ends the current group.
 func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []string) ([]schema.ChunkDoc, bool) {
-	if len(recordPrefixes) == 0 {
+	if len(recordPrefixes) == 0 || !slices.ContainsFunc(units, func(unit schema.ChunkDoc) bool {
+		return itemDocType(unit) == "text" && strings.TrimSpace(unit.Text) != "" &&
+			docxTextStartsRecordBoundary(unit.Text, recordPrefixes)
+	}) {
 		return units, false
 	}
 	grouped := make([]schema.ChunkDoc, 0, len(units))
 	var current *schema.ChunkDoc
-	sawBoundary := false
 	flush := func() {
 		if current == nil {
 			return
@@ -537,15 +537,7 @@ func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []st
 		text.DocType = "text"
 		clearStructuralLayout(&text)
 		if docxTextStartsRecordBoundary(text.Text, recordPrefixes) {
-			sawBoundary = true
 			flush()
-			current = &text
-			continue
-		}
-		if !sawBoundary {
-			flush()
-			grouped = append(grouped, text)
-			continue
 		}
 		if current == nil {
 			current = &text
@@ -554,9 +546,6 @@ func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []st
 		mergeGeneralChunk(current, text, "\n")
 	}
 	flush()
-	if !sawBoundary {
-		return units, false
-	}
 	return grouped, true
 }
 

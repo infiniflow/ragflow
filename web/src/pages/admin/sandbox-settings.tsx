@@ -65,6 +65,7 @@ const PROVIDER_ICONS: Record<string, React.ElementType> = {
   e2b: LucideZap,
   tenki: LucideCloudLightning,
   ucloud_agent_sandbox: LucideCloud,
+  kosa8: LucideCloudLightning,
 };
 
 const SandboxKeys = {

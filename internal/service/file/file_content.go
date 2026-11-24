@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -163,7 +164,10 @@ func (s *FileService) GetFileContents(ctx context.Context, fileDicts []map[strin
 			}
 			images = append(images, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
 		} else {
-			content := parseFileContent(ctx, name, data)
+			content, err := parseFileContent(ctx, name, data)
+			if err != nil {
+				return nil, nil, fmt.Errorf("file %q: %w", name, err)
+			}
 			texts = append(texts, fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", name, content))
 		}
 	}
@@ -280,25 +284,31 @@ func parseResultText(res parser.ParseResult) (string, error) {
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
 // Falls back to returning raw text if no parser is available.
-func parseFileContent(ctx context.Context, filename string, data []byte) string {
+func parseFileContent(ctx context.Context, filename string, data []byte) (string, error) {
 	fileType := utility.GetFileType(filename)
 	if fileType == utility.FileTypeOTHER {
-		return string(data)
+		return string(data), nil
 	}
 	fp, actual, err := parser.GetTextOnlyParser(fileType, data)
 	if err != nil {
-		return string(data)
+		if errors.Is(err, utility.ErrFeatureDisabled) {
+			return "", err
+		}
+		return string(data), nil
 	}
 	if actual != fileType {
 		common.Warn(fmt.Sprintf("file %q: requested format %s; detected %s; continuing with the %s parser", filename, fileType, actual, actual))
 	}
 	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
-		return string(data)
+		if errors.Is(res.Err, utility.ErrFeatureDisabled) {
+			return "", res.Err
+		}
+		return string(data), nil
 	}
 	content, err := parseResultText(res)
 	if err != nil {
-		return string(data)
+		return string(data), nil
 	}
-	return content
+	return content, nil
 }

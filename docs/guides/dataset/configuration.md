@@ -4,7 +4,7 @@ title: Configuration
 sidebar_label: Configuration
 slug: /dataset_configuration
 sidebar_custom_props: {
-  categoryIcon: LucideDatabaseZap
+  categoryIcon: LucideCog
 }
 ---
 
@@ -48,6 +48,8 @@ The following built-in parsing methods are available:
 > **Tip:** On the built-in parsing configuration page, click **View built-in parser details** on the right to view the supported file formats, detailed chunking rules, and examples for each parsing method.
 
 Selection suggestion: choose the parsing method based on the form of the material itself. Use **General** first for regular documents; use **Table** first for tabular materials; choose the corresponding method for Q&A collections, manuals, papers, images, audio, and emails to reduce later chunk adjustment costs.
+
+Upload a Docling JSON export (`.json`) and use the **General** parsing method to index its body text and headings in reading order. RAGFlow retains page numbers and valid bounding boxes from the export.
 
 ### Built-in Parsing Configuration
 

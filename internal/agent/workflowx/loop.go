@@ -49,6 +49,7 @@
 package workflowx
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1019,9 +1020,7 @@ func cloneByteSlices(src [][]byte) [][]byte {
 	}
 	dst := make([][]byte, len(src))
 	for i, v := range src {
-		buf := make([]byte, len(v))
-		copy(buf, v)
-		dst[i] = buf
+		dst[i] = bytes.Clone(v)
 	}
 	return dst
 }

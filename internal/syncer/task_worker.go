@@ -19,6 +19,7 @@ package syncer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
@@ -131,6 +132,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			nackEnvelope(envelope)
 			return
 		}
+		recordTaskEvent(envelope.TaskID, dao.EventTypeTerminal, "setup", "[ERROR] Could not load sync task configuration")
 		ackEnvelope(envelope)
 		return
 	}
@@ -138,6 +140,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	// lock the connector and the KB
 	lease, locked, lockErr := w.locker.TryLock(taskContext.Connector.ID, taskContext.Knowledgebase.ID)
 	if lockErr != nil {
+		recordTaskEvent(taskContext.Task.ID, dao.EventTypeSystem, "setup", "[WARN] Could not acquire connector lock")
 		common.Warn("syncer connector lock acquisition failed", zap.String("task_id", taskContext.Task.ID), zap.Error(lockErr))
 		restored, rescheduleErr := w.rescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID, taskContext.Task.TimeStarted)
 		if rescheduleErr != nil {
@@ -167,10 +170,12 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	defer w.locker.Unlock(taskContext.Connector.ID, taskContext.Knowledgebase.ID)
 
 	startedAt := time.Now()
+	recordTaskEvent(envelope.TaskID, dao.EventTypeSystem, taskContext.Task.TaskType, "Task started")
 	outcome, err := w.coordinator.Execute(ctx, taskContext, lease)
 	if err != nil { // execute the task(sync/ prune)
 		logSyncTaskDuration(taskContext, startedAt) // test sync task run time
 		if errors.Is(err, errSyncTaskCanceled) {    // task is canceled by the user
+			recordTaskEvent(envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, "Task cancelled")
 			ackEnvelope(envelope)
 			return
 		}
@@ -182,6 +187,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 				return
 			}
 			if restored {
+				recordTaskEvent(envelope.TaskID, dao.EventTypeSystem, taskContext.Task.TaskType, "[WARN] Worker stopped. Task queued to resume")
 				w.scheduleRetry(context.WithoutCancel(ctx), taskContext.Task.ID, 3*time.Second)
 			}
 			ackEnvelope(envelope)
@@ -197,13 +203,20 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			return
 		}
 		logSyncRetry(taskContext, attempts, failed, maxRetries, err)
-		if !failed {
+		if failed {
+			recordTaskEvent(envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, fmt.Sprintf("[ERROR] Task failed after %d attempts", attempts))
+		} else if attempts > 0 {
+			delay := transientRetryDelay(attempts)
+			recordTaskEvent(envelope.TaskID, dao.EventTypeSystem, taskContext.Task.TaskType, fmt.Sprintf("[WARN] Attempt %d failed. Retrying in %s", attempts, delay))
+			w.scheduleRetry(ctx, taskContext.Task.ID, delay)
+		} else {
 			w.scheduleRetry(ctx, taskContext.Task.ID, transientRetryDelay(attempts))
 		}
 		ackEnvelope(envelope)
 		return
 	}
 	logSyncTaskDuration(taskContext, startedAt)
+	recordTaskEvent(envelope.TaskID, dao.EventTypeTerminal, taskContext.Task.TaskType, "Task completed")
 	w.scheduleNext(ctx, outcome.NextTaskID)
 	ackEnvelope(envelope)
 }

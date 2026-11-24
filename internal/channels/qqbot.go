@@ -43,7 +43,6 @@ const (
 	defaultQQBotBaseURL  = "https://api.sgroup.qq.com"
 	defaultQQBotTokenURL = "https://bots.qq.com/app/getAppAccessToken"
 	qqBotRequestTimeout  = 60 * time.Second
-	qqBotReconnectDelay  = 3 * time.Second
 	qqBotIntents         = (1 << 30) | (1 << 12) | (1 << 25) | (1 << 26)
 )
 
@@ -66,6 +65,8 @@ type qqBotChannel struct {
 	done      chan struct{}
 	sessionID string
 	sequence  *int64
+
+	retryAttempts int
 }
 
 type qqBotGatewayPayload struct {
@@ -199,6 +200,9 @@ func (c *qqBotChannel) Send(ctx context.Context, msg core.OutgoingMessage) error
 }
 
 func (c *qqBotChannel) run(ctx context.Context) {
+	c.mu.Lock()
+	c.retryAttempts = 0
+	c.mu.Unlock()
 	for ctx.Err() == nil {
 		token, err := c.getAccessToken(ctx)
 		if err == nil {
@@ -208,10 +212,17 @@ func (c *qqBotChannel) run(ctx context.Context) {
 				err = c.runGatewaySession(ctx, gatewayURL, token)
 			}
 		}
-		if err != nil && ctx.Err() == nil {
-			common.Error("qqbot: gateway loop error", err, zap.String("account_id", c.account.AccountID))
+		if ctx.Err() != nil {
+			return
 		}
-		if !waitForContext(ctx, qqBotReconnectDelay) {
+		c.mu.Lock()
+		c.retryAttempts++
+		delay := channelRetryDelay(c.retryAttempts)
+		c.mu.Unlock()
+		if err != nil {
+			common.Error("qqbot: gateway loop error", err, zap.String("account_id", c.account.AccountID), zap.Duration("retry_delay", delay))
+		}
+		if !waitForContext(ctx, delay) {
 			return
 		}
 	}
@@ -279,9 +290,6 @@ func (c *qqBotChannel) runGatewaySession(ctx context.Context, gatewayURL string,
 			_ = json.Unmarshal(payload.Data, &canResume)
 			if !canResume {
 				c.clearSession()
-				if !waitForContext(ctx, qqBotReconnectDelay) {
-					return ctx.Err()
-				}
 			}
 			return fmt.Errorf("invalid gateway session (can_resume=%t)", canResume)
 		case 0:
@@ -353,10 +361,14 @@ func (c *qqBotChannel) handleDispatch(ctx context.Context, eventType string, dat
 	if eventType == "READY" {
 		c.mu.Lock()
 		c.sessionID = anyToString(raw["session_id"])
+		c.retryAttempts = 0
 		c.mu.Unlock()
 		return nil
 	}
 	if eventType == "RESUMED" {
+		c.mu.Lock()
+		c.retryAttempts = 0
+		c.mu.Unlock()
 		return nil
 	}
 	incoming := c.normalizeIncomingEvent(eventType, raw)
@@ -577,15 +589,4 @@ func anyToString(value any) string {
 		return ""
 	}
 	return fmt.Sprint(value)
-}
-
-func waitForContext(ctx context.Context, delay time.Duration) bool {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
 }

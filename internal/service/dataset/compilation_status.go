@@ -73,11 +73,11 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, datase
 		st.CurrentPhase = row.CurrentPhase
 		st.ProgressMsg = row.ProgressMsg
 		var err error
-		st.Inflight, err = countCompilationStatusEntries(tx, (entity.KnowledgeCompileInflight{}).TableName(), datasetID, normalizedKind)
+		st.Inflight, err = countCompilationStatusEntries(ctx, tx, (entity.KnowledgeCompileInflight{}).TableName(), datasetID, normalizedKind)
 		if err != nil {
 			return err
 		}
-		st.Backlog, err = countCompilationStatusEntries(tx, (entity.KnowledgeCompileBacklog{}).TableName(), datasetID, normalizedKind)
+		st.Backlog, err = countCompilationStatusEntries(ctx, tx, (entity.KnowledgeCompileBacklog{}).TableName(), datasetID, normalizedKind)
 		if err != nil {
 			return err
 		}
@@ -98,29 +98,21 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, datase
 	return st, common.CodeSuccess, nil
 }
 
-func countCompilationStatusEntries(db *gorm.DB, table, datasetID, kind string) (int, error) {
-	query := db.Table(table).Where("dataset_id = ?", datasetID)
+func countCompilationStatusEntries(ctx context.Context, db *gorm.DB, table, datasetID, kind string) (int, error) {
 	if kind == "" {
-		var count int64
-		err := query.Count(&count).Error
-		return int(count), err
+		return dao.CountKnowledgeCompileEntries(ctx, db, table, datasetID)
 	}
-	rows, err := query.Select("variants", "task_types").Rows()
+	entries, err := dao.ListKnowledgeCompileEntries(ctx, db, table, datasetID)
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
 	count := 0
-	for rows.Next() {
-		var entry entity.KnowledgeCompileEntry
-		if err := db.ScanRows(rows, &entry); err != nil {
-			return 0, err
-		}
+	for _, entry := range entries {
 		if compilationStatusEntryMatches(entry, kind) {
 			count++
 		}
 	}
-	return count, rows.Err()
+	return count, nil
 }
 
 func compilationStatusEntryMatches(entry entity.KnowledgeCompileEntry, kind string) bool {
@@ -141,7 +133,7 @@ func compilationStatusEntryMatches(entry entity.KnowledgeCompileEntry, kind stri
 			return true
 		}
 		if strings.EqualFold(strings.TrimSpace(variant), "structure") &&
-			(kind == "Graph" || kind == "Timeline" || kind == "PageIndex") {
+			(kind == "Graph" || kind == "PageIndex" || (kind != "" && additionalStructureCompilationKinds[strings.ToLower(kind)] == kind)) {
 			return true
 		}
 	}
@@ -158,11 +150,9 @@ func normalizeCompilationKind(kind string) string {
 		return "Graph"
 	case "mindmap", "mind_map":
 		return "Mindmap"
-	case "timeline":
-		return "Timeline"
 	case "pageindex", "page_index", "skill":
 		return "PageIndex"
 	default:
-		return ""
+		return additionalStructureCompilationKinds[strings.ToLower(strings.TrimSpace(kind))]
 	}
 }

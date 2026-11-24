@@ -66,7 +66,7 @@ func parsePrivateNetwork(entry string) (netip.Prefix, error) {
 
 func (n PrivateNetworks) permits(ip net.IP) bool {
 	ip = effectiveIP(ip)
-	if isGlobalIP(ip) {
+	if IsGlobalIP(ip) {
 		return true
 	}
 	addr, ok := netip.AddrFromSlice(ip)

@@ -954,7 +954,6 @@ export default {
         knowledge_graph: 'Bilimlar grafi',
         mind_map: 'On’a xaritasi',
         page_index: 'Sahifa indeksi',
-        timeline: 'Vaqt chizig‘i',
         tree: 'Daraxt',
         raptor: 'RAPTOR',
       },
@@ -1258,17 +1257,6 @@ export default {
       dataSourceFieldClientSecret: 'Client Secret',
       dataSourceFieldFolderPathOptional: 'Papka yo‘li',
       dataSourceFieldBatchSize: 'Partiya hajmi',
-      dataSourceFieldFeishuAppId: 'Feishu app ID',
-      dataSourceFieldFeishuAppSecret: 'Feishu app kaliti (secret)',
-      dataSourceFieldWikiSpaceId: 'Wiki maydon ID',
-      dataSourceFieldRootNodeToken: 'Wiki ildiz tugmasi tokeni',
-      dataSourceFieldIncludeExtensions: 'Ruxsat etilgan fayl kengaytmalari',
-      dataSourceFieldIncludeKeywords: 'Majburiy fayl nomi kalit so‘zlari',
-      dataSourceFieldExcludeKeywords:
-        'Istisno qilinadigan fayl nomi kalit so‘zlari',
-      dataSourceFieldMaxFileSizeBytes: 'Maksimal fayl hajmi (bayt)',
-      dataSourceValidationFeishuBatchSize:
-        'Partiya hajmi 1 dan 10 gacha bo‘lishi kerak',
       dataSourceFieldMailFolder: 'Pochta papkasi',
       dataSourceFieldMailboxUserIds: 'Pochta qutilari foydalanuvchi ID’lari',
       dataSourceFieldInstanceUrl: 'Instansiya URL',
@@ -1543,8 +1531,6 @@ export default {
         'Bilim olish uchun Notion’dan sahifa va ma’lumotlar bazalarini sinxronlang.',
       google_driveDescription:
         'Google Drive’ingizni OAuth orqali ulang va aniq papkalar yoki drivelarni sinxronlang.',
-      feishu_wikiDescription:
-        'Feishu Wiki subtreesidan yuklab olinadigan fayl tugmalarini sinxronlash.',
       gmailDescription:
         'Email sinxronlash uchun Gmail’ingizni OAuth orqali ulang.',
       webdavDescription:
@@ -1655,8 +1641,6 @@ export default {
         'Olish uchun GitHub’dan pull request va issue’larni sinxronlang.',
       airtableDescription:
         'Airtable’ga ulaning va belgilangan workspace’dagi aniq jadvaldan fayllarni sinxronlang.',
-      dingtalkAITableDescription:
-        'Dingtalk AI Table’ga ulaning va aniq jadvaldan yozuvlarni sinxronlang.',
       gitlabDescription:
         'GitLab’ni ulab, repositorylar, issue’lar, merge requestlar va tegishli hujjatlarni sinxronlang.',
       asanaDescription:
@@ -2007,14 +1991,6 @@ export default {
       apiKeyTip:
         'API Key mos LLM provayderida ro‘yxatdan o‘tish orqali olinishi mumkin.',
       aimlapiGetKey: 'API kalitini olish',
-      aimlapiCheckStatus: 'Holatni tekshirish',
-      aimlapiAwaitingConsent: 'AI/ML API oynasida tasdiqlanishi kutilmoqda…',
-      aimlapiKeyAdded: 'AI/ML API kalitingiz yaratildi va yuqorida qo‘shildi.',
-      aimlapiAuthDenied: 'Ruxsat rad etildi. Iltimos, qayta urinib ko‘ring.',
-      aimlapiAuthExpired:
-        'So‘rov muddati tugadi. Iltimos, qayta urinib ko‘ring.',
-      aimlapiAuthFailed:
-        'Kirish amalga oshmadi. Iltimos, qayta urinib ko‘ring.',
       showMoreModels: 'Modellarni ko‘rish',
       hideModels: 'Modellarni yashirish',
       baseUrl: 'Base URL',
@@ -2406,12 +2382,10 @@ export default {
       navTree: 'Daraxt/PageIndex',
       graph: 'Graf',
       structureMindmap: 'On’a xaritasi',
-      structureTimeline: 'Vaqt chizig‘i',
       noWikiPages: 'Hozircha wiki yo‘q',
       noSkills: 'Hozircha ko‘nikmalar yo‘q',
       noStructureGraph: 'Hozircha graf yo‘q',
       noStructureMindmap: 'Hozircha on’a xaritasi yo‘q',
-      noStructureTimeline: 'Hozircha vaqt chizig‘i yo‘q',
       contents: 'Mundarija',
       topics: 'Mavzular',
       searchEntity: 'Obyektni qidirish',
@@ -2759,6 +2733,17 @@ export default {
         'LLMdan javoblar generatsiya qilishni so‘raydigan komponent. Prompt to‘g‘ri belgilanganiga ishonch hosil qiling.',
       categorizeDescription:
         'LLM yordamida foydalanuvchi kirishlarini oldindan belgilangan toifalarga tasniflaydigan komponent. Har bir toifa uchun nom, tavsif va misollarni, hamda mos keyingi komponentni belgilang.',
+      scoredSwitchQuestionRequired:
+        'Har bir qo‘shimcha savol uchun ko‘rsatma kerak',
+      scoredSwitchLevelMinimum: 'Kamida ikkita daraja qo‘shing',
+      scoredSwitchFieldMinimum: 'Kamida bitta maydon qo‘shing',
+      scoredSwitchFieldNameInvalid:
+        'Maydon nomi harf yoki pastki chiziq bilan boshlanishi kerak',
+      scoredSwitchListItemsRequired: 'Ro‘yxat uchun element turi kerak',
+      scoredSwitchEstimateBoundsRequired:
+        'Baholash uchun eng past va eng yuqori qiymat kerak',
+      scoredSwitchForecastRequired: 'Bashorat uchun ufqlik va oraliq kerak',
+      scoredSwitchDecimalsRange: 'O‘nliklar 0 dan 6 gacha bo‘lishi kerak',
       relevantDescription:
         'LLM yordamida yuqoridagi chiqish foydalanuvchining oxirgi so‘roviga tegishlimi yoki yo‘qligini baholaydigan komponent. Har bir hakamlik natijasi uchun keyingi komponentni belgilang.',
       rewriteQuestionDescription:

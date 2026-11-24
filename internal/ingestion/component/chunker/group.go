@@ -484,6 +484,10 @@ func pdfPosRowLess(a, b []float64) bool {
 // is what ChunkDoc.ToMap emits for such a matrix, so one representation flows
 // through the chunker and the index boundary.
 func mergePositionMatrix(sources ...json.RawMessage) [][]any {
+	return mergePositionRows(sources, nil)
+}
+
+func mergePositionRows(sources []json.RawMessage, accept func([]any) bool) [][]any {
 	var out [][]any
 	seen := make(map[string]bool)
 	for _, src := range sources {
@@ -492,7 +496,7 @@ func mergePositionMatrix(sources ...json.RawMessage) [][]any {
 			continue
 		}
 		for _, row := range rows {
-			if len(row) < 5 {
+			if len(row) < 5 || (accept != nil && !accept(row)) {
 				continue
 			}
 			key := fmt.Sprint(row[:5])

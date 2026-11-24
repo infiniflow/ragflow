@@ -89,8 +89,9 @@ func getMaxConfiguredBytes(envName, fallbackEnvName string, defaultBytes int64) 
 }
 
 var (
-	ssrfHTTPClient       = sync.OnceValue(newSSRFHTTPClient)
-	schemeSafeHTTPClient = sync.OnceValue(newSchemeSafeHTTPClient)
+	ssrfHTTPClient               = sync.OnceValue(newSSRFHTTPClient)
+	schemeSafeHTTPClient         = sync.OnceValue(newSchemeSafeHTTPClient)
+	schemeSafeLongCallHTTPClient = sync.OnceValue(newSchemeSafeLongCallHTTPClient)
 )
 
 // llmHTTPResponseHeaderTimeout lets a deployment shorten the wait for response
@@ -129,6 +130,22 @@ func GetSchemeSafeHTTPClient() *http.Client {
 }
 
 func newSchemeSafeHTTPClient() *http.Client {
+	return buildSchemeSafeHTTPClient(llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault))
+}
+
+// GetSchemeSafeLongCallHTTPClient returns the scheme-safe client for endpoints
+// that answer only when the work is done, such as a synchronous OCR parse. It
+// sets no response-header timeout and ignores LLM_HTTP_RESPONSE_HEADER_TIMEOUT,
+// so every request must carry a context deadline.
+func GetSchemeSafeLongCallHTTPClient() *http.Client {
+	return schemeSafeLongCallHTTPClient()
+}
+
+func newSchemeSafeLongCallHTTPClient() *http.Client {
+	return buildSchemeSafeHTTPClient(0)
+}
+
+func buildSchemeSafeHTTPClient(responseHeaderTimeout time.Duration) *http.Client {
 	var t *http.Transport
 	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
 		t = dt.Clone()
@@ -139,7 +156,7 @@ func newSchemeSafeHTTPClient() *http.Client {
 	t.MaxIdleConnsPerHost = 500
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
+	t.ResponseHeaderTimeout = responseHeaderTimeout
 	t.TLSHandshakeTimeout = 30 * time.Second
 
 	var rt http.RoundTripper = t
@@ -618,11 +635,11 @@ func effectiveIP(ip net.IP) net.IP {
 	return ip
 }
 
-// isGlobalIP mirrors Python's ipaddress.IPv*Address.is_global: an address is
-// global if it is none of {unspecified, loopback, multicast, link-local,
+// IsGlobalIP reports address routability without consulting ALLOW_ANY_HOST.
+// An address is global if it is none of {unspecified, loopback, multicast, link-local,
 // private (including CGNAT and IPv6 ULA), benchmarking, documentation,
 // reserved}.
-func isGlobalIP(ip net.IP) bool {
+func IsGlobalIP(ip net.IP) bool {
 	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsPrivate() {
 		return false
 	}
@@ -670,7 +687,7 @@ func isGlobalIP(ip net.IP) bool {
 		// an arbitrary IPv4 address that none of the checks above look at. Unwrap
 		// and re-check it so 2002:7f00:1::1 is treated as 127.0.0.1.
 		for _, inner := range embeddedIPv4(v6) {
-			if !isGlobalIP(inner) {
+			if !IsGlobalIP(inner) {
 				return false
 			}
 		}

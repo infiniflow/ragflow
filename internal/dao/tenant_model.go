@@ -41,8 +41,13 @@ func (dao *TenantModelDAO) DeleteByModelIDAndProviderIDAndInstanceID(ctx context
 	return result.RowsAffected, result.Error
 }
 
-func (dao *TenantModelDAO) UpdateStatusByIDAndScope(ctx context.Context, db *gorm.DB, modelID, providerID, instanceID, status string) (int64, error) {
-	result := db.WithContext(ctx).Model(&entity.TenantModel{}).Where("id = ? AND provider_id = ? AND instance_id = ?", modelID, providerID, instanceID).Update("status", status)
+func (dao *TenantModelDAO) UpdateStatusByIDsAndScope(ctx context.Context, db *gorm.DB, modelIDs []string, providerID, instanceID, status string) (int64, error) {
+	if len(modelIDs) == 0 {
+		return 0, nil
+	}
+	result := db.WithContext(ctx).Model(&entity.TenantModel{}).
+		Where("id IN ? AND provider_id = ? AND instance_id = ?", modelIDs, providerID, instanceID).
+		Update("status", status)
 	return result.RowsAffected, result.Error
 }
 
@@ -80,7 +85,8 @@ func (dao *TenantModelDAO) ListByTenantIDAndModelType(ctx context.Context, db *g
 	var models []*entity.TenantModel
 	query := db.WithContext(ctx).Model(&entity.TenantModel{}).
 		Joins("JOIN tenant_model_provider ON tenant_model_provider.id = tenant_model.provider_id").
-		Where("tenant_model_provider.tenant_id = ?", tenantID)
+		Where("tenant_model_provider.tenant_id = ?", tenantID).
+		Where("tenant_model.status = ?", "active")
 	if modelType != 0 {
 		query = query.Where("(tenant_model.model_type = 0 OR (tenant_model.model_type & ?) > 0)", modelType)
 	}

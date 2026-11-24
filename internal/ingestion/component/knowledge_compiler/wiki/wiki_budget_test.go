@@ -9,7 +9,48 @@ import (
 	"time"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/utility"
 )
+
+func TestPackWikiRefineSources_PreservesSourceFormatting(t *testing.T) {
+	chunks := []common.Chunk{
+		{ID: "first", Text: " source one "},
+		{Content: "source two"},
+		{ID: "empty", Text: " "},
+		{ID: "last", Content: "source three"},
+	}
+	for _, ids := range [][]string{nil, {"last", "chunk-2", "missing", "empty", "first"}} {
+		var batches []string
+		for _, batch := range common.PackBatches(wikiRefineSourceBlocks(chunks, ids), 40, wikiRefineTokenizer{}) {
+			batches = append(batches, joinWikiRefineSources(batch))
+		}
+		if got, want := strings.Join(batches, ""), buildSourceContext(chunks, ids); got != want {
+			t.Fatalf("ids=%v: packed source = %q, want %q", ids, got, want)
+		}
+		for _, batch := range batches {
+			if len(batch) > 40 {
+				t.Fatalf("batch exceeds rendered-source budget: %q", batch)
+			}
+		}
+	}
+}
+
+func TestWikiRefineBudget_ReservesOutputAndFraming(t *testing.T) {
+	p := refinePipeline()
+	p.deps.ModelMaxOutput = 512
+	p.deps.ModelContextLen = 2048
+	p.deps.Tokenizer = refineByteTokenizer{}
+	budget, output := p.wikiRefineTokenBudget()
+	if output != 512 || budget != 2048-512-wikiRefineSafetyTokens {
+		t.Fatalf("budget/output = %d/%d", budget, output)
+	}
+	req := common.ChatRequest{SystemPrompt: "s", UserPrompt: strings.Repeat("x", budget-2)}
+	if err := p.checkWikiRefineBudget(req); err != nil {
+		t.Fatalf("exact input boundary rejected: %v", err)
+	}
+	req.UserPrompt += "x"
+	assertRefineBudgetError(t, p.checkWikiRefineBudget(req))
+}
 
 func TestWikiTargetPageCount_Clamp(t *testing.T) {
 	cases := []struct {
@@ -356,7 +397,7 @@ func TestRunPlan_TruncatesToGlobalHardCap(t *testing.T) {
 		ctx:   context.Background(),
 		param: topicModeParam(),
 		deps: common.Deps{
-			Chat: reconcileChatStub{resp: mustJSON(payload)},
+			Chat: reconcileChatStub{resp: utility.MustJSON(payload)},
 		},
 		reduced: wikiExtract{
 			Entities: []wikiEntity{{Name: "Entity", SourceChunkIDs: []string{"c1"}}},

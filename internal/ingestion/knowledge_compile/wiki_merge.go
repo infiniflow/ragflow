@@ -19,6 +19,7 @@ import (
 	"context"
 	"strings"
 
+	"ragflow/internal/common"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -201,16 +202,7 @@ func unionStrs(a, b []string) []string {
 	if len(b) == 0 {
 		return a
 	}
-	seen := make(map[string]struct{}, len(a)+len(b))
-	out := make([]string, 0, len(a)+len(b))
-	for _, s := range append(append([]string(nil), a...), b...) {
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	return out
+	return common.Deduplicate(append(append([]string(nil), a...), b...))
 }
 
 // isWikiGroup reports whether a merge group targets the wiki variant and needs

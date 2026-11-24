@@ -24,13 +24,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/service/youcom"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const youComToolName = "youcom_search"
@@ -57,9 +57,9 @@ var youComFreshnessValues = []string{"any", "day", "week", "month", "year"}
 // is decoded loosely: a missing, blank or non-numeric value means "use the
 // node's Top N" rather than failing the run.
 type youComArgs struct {
-	Query      string `json:"query"`
-	Freshness  string `json:"freshness"`
-	MaxResults any    `json:"max_results"`
+	Query      string `json:"query" doc:"The search keywords to execute with You.com. The most important words/terms (and synonyms) from the original request." required:"true"`
+	Freshness  string `json:"freshness,omitempty" doc:"Restrict results by recency: \"day\", \"week\", \"month\", \"year\", or \"any\" (default) for no limit." enum:"day,week,month,year,any"`
+	MaxResults any    `json:"max_results,omitempty" doc:"Number of results to return, 1 to 20. Leave it out to use the Top N set on the node." type:"integer"`
 }
 
 // youComDefaults holds the node-level configuration.
@@ -112,28 +112,7 @@ func newYouComTool(h *HTTPHelper, apiKey string, defaults youComDefaults) *YouCo
 
 // Info returns the tool's metadata for the chat model.
 func (t *YouComTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: youComToolName,
-		Desc: youComToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with You.com. The most important words/terms (and synonyms) from the original request.",
-				Required: true,
-			},
-			"freshness": {
-				Type:     schema.String,
-				Desc:     `Restrict results by recency: "day", "week", "month", "year", or "any" (default) for no limit.`,
-				Enum:     youComFreshnessValues,
-				Required: false,
-			},
-			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Number of results to return, 1 to 20. Leave it out to use the Top N set on the node.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(youComToolName, youComToolDescription, youComArgs{})
 }
 
 // InvokableRun performs the You.com search.
@@ -285,7 +264,7 @@ func buildYouComReferences(envelope map[string]any) ([]map[string]any, []map[str
 		if !ok {
 			continue
 		}
-		content := truncateYouComRunes(strings.Join(strings.Fields(youComText(result["content"])), " "), 10000)
+		content := utility.TruncateRunes(strings.Join(strings.Fields(youComText(result["content"])), " "), 10000)
 		if content == "" {
 			continue
 		}
@@ -341,13 +320,6 @@ func youComText(value any) string {
 		return strings.TrimSpace(text)
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
-}
-
-func truncateYouComRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }
 
 func youComJSON(env youComEnvelope) string {

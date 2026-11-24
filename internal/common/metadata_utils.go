@@ -17,6 +17,7 @@
 package common
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -88,10 +89,14 @@ func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput 
 			op, _ = cond["operator"].(string) // OpenAI API uses "operator"
 		}
 		op = convertOperator(op)
+		value := cond["value"]
+		if op == "in" || op == "not in" {
+			value = splitSetValue(value)
+		}
 		conditions = append(conditions, MetaCondition{
 			Operator: op,
 			Key:      name,
-			Value:    cond["value"],
+			Value:    value,
 		})
 	}
 
@@ -103,6 +108,29 @@ func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput 
 		Conditions: conditions,
 		Logic:      logic,
 	}
+}
+
+// splitSetValue turns the documented string form of an "in" / "not in" value
+// ("a,b") into the list filterSet expects, trimming spaces and dropping empty
+// items. Lists and non-string values are returned unchanged. A string with no
+// items ("", " , ") returns nil, which filterSet treats as matching nothing, so
+// a blank "not in" value cannot select every document.
+func splitSetValue(value interface{}) interface{} {
+	s, ok := value.(string)
+	if !ok {
+		return value
+	}
+	parts := strings.Split(s, ",")
+	list := make([]interface{}, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			list = append(list, t)
+		}
+	}
+	if len(list) == 0 {
+		return nil
+	}
+	return list
 }
 
 // convertOperator translates operator aliases to their canonical form.
@@ -563,10 +591,11 @@ var combinedValueDelim = regexp.MustCompile(`[、,，;；|]+`)
 // api/db/services/doc_metadata_service.py:_split_combined_values (applied at
 // both insert_document_metadata:383 and update_document_metadata:468).
 //
-// Only list-typed values are split (each string element is split on the
-// delimiter, trimmed, empties dropped, then flattened and de-duplicated);
-// scalar string values are left untouched, matching the Python implementation.
-// Non-string / non-list values pass through unchanged.
+// List values are walked element by element, as the Python implementation does:
+// a string element is split on the delimiters, trimmed, and its empty parts
+// dropped; a non-string element is kept untouched. A list of strings stays a
+// []string, a list that also holds other types comes back as []any. Scalar
+// values pass through unchanged.
 func SplitCombinedMetadataValues(meta map[string]any) map[string]any {
 	if len(meta) == 0 {
 		return meta
@@ -577,14 +606,47 @@ func SplitCombinedMetadataValues(meta map[string]any) map[string]any {
 		case []string:
 			out[k] = splitCombinedStringList(val)
 		case []any:
-			strs, allStr := toStringSlice(val)
-			if !allStr {
-				out[k] = v
-				continue
-			}
-			out[k] = splitCombinedStringList(strs)
+			out[k] = splitCombinedAnyList(val)
 		default:
 			out[k] = v
+		}
+	}
+	return out
+}
+
+// splitCombinedAnyList applies the per-element rule to a []any. All-string
+// lists keep their []string shape so callers that relied on it are unaffected;
+// anything else is rebuilt as []any with the string elements split.
+func splitCombinedAnyList(items []any) any {
+	if strs, allStr := toStringSlice(items); allStr {
+		return splitCombinedStringList(strs)
+	}
+	out := make([]any, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	add := func(v any) {
+		key := fmt.Sprintf("%v", v)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, v)
+	}
+	for _, item := range items {
+		s, isString := item.(string)
+		if !isString {
+			add(item)
+			continue
+		}
+		if s == "" {
+			continue
+		}
+		parts, got := splitCombinedParts(s)
+		if !got {
+			add(item)
+			continue
+		}
+		for _, p := range parts {
+			add(p)
 		}
 	}
 	return out
@@ -598,21 +660,28 @@ func splitCombinedStringList(items []string) []string {
 		if item == "" {
 			continue
 		}
-		parts := combinedValueDelim.Split(strings.TrimSpace(item), -1)
-		got := false
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			out = append(out, p)
-			got = true
-		}
+		parts, got := splitCombinedParts(item)
 		if !got {
 			out = append(out, item)
+			continue
 		}
+		out = append(out, parts...)
 	}
 	return dedupeMetaStrings(out)
+}
+
+// splitCombinedParts splits one value on the combined-value delimiters,
+// trimming each part and dropping the empties. got reports whether anything
+// survived; when nothing did the caller keeps the original value.
+func splitCombinedParts(item string) ([]string, bool) {
+	raw := combinedValueDelim.Split(strings.TrimSpace(item), -1)
+	parts := make([]string, 0, len(raw))
+	for _, p := range raw {
+		if p = strings.TrimSpace(p); p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return parts, len(parts) > 0
 }
 
 // toStringSlice converts a []any to []string when every element is a string,

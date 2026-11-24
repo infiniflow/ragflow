@@ -209,7 +209,50 @@ func TestPrivateNetworksApplyToAzureBlobConnectionString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (azureBlobTransport{}).RoundTrip(req); err == nil || !strings.Contains(err.Error(), "non-public address") {
+	if _, err := (&azureBlobTransport{}).RoundTrip(req); err == nil || !strings.Contains(err.Error(), "non-public address") {
 		t.Fatalf("Azure Blob SDK transport accepted a denied destination: %v", err)
+	}
+}
+
+func TestAzureBlobSDKReusesValidatedConnection(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "1")
+	t.Setenv(allowedPrivateNetworksEnv, "[]")
+	requests := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests <- req.RemoteAddr
+		w.Header().Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
+		w.Header().Set("ETag", `"fixture"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	connector, err := NewAzureBlobStorageConnector(map[string]any{
+		"auth_mode": "connection_string",
+		"credentials": map[string]any{
+			"container_name":    "fixture",
+			"connection_string": "DefaultEndpointsProtocol=http;AccountName=fixture;AccountKey=Zml4dHVyZQ==;BlobEndpoint=" + server.URL,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := connector.ensureClient(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := client.GetProperties(t.Context(), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if first, second := <-requests, <-requests; first != second {
+		t.Fatalf("SDK requests used different connections: %s and %s", first, second)
+	}
+	t.Setenv(common.EnvAllowAnyHost, "")
+	if _, err := client.GetProperties(t.Context(), nil); err == nil || !strings.Contains(err.Error(), "non-public address") {
+		t.Fatalf("SDK request after restoring default policy = %v, want destination rejected", err)
+	}
+	if len(requests) != 0 {
+		t.Fatal("SDK reached destination after restoring default policy")
 	}
 }

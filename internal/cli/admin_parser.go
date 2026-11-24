@@ -146,6 +146,8 @@ func (p *Parser) parseAdminListCommands() (*Command, error) {
 		return p.parseAdminListIngestionTasks()
 	case TokenAPI:
 		return p.parseAdminListAPIServers()
+	case TokenFeatures:
+		return p.parseAdminListFeatures()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -368,6 +370,18 @@ func (p *Parser) parseAdminListAPIServers() (*Command, error) {
 	return cmd, nil
 }
 
+// LIST FEATURES;
+func (p *Parser) parseAdminListFeatures() (*Command, error) {
+	p.nextToken() // consume FEATURES
+	cmd := NewCommand("admin_list_features")
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
 // endregion LIST commands
 
 // region SHOW commands
@@ -416,6 +430,8 @@ func (p *Parser) parseAdminShowCommands() (*Command, error) {
 		return p.parseAdminShowLogCommands()
 	case TokenHardware:
 		return p.parseAdminShowHardware()
+	case TokenDeploy:
+		return p.parseAdminShowDeploy()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -3044,6 +3060,20 @@ func (p *Parser) parseAdminShowHardware() (*Command, error) {
 
 	return cmd, nil
 }
+
+func (p *Parser) parseAdminShowDeploy() (*Command, error) {
+	p.nextToken() // consume DEPLOY
+	cmd := NewCommand("admin_show_deploy")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW DEPLOY
 
 // PURGE PREVIEW ORPHAN
 // PURGE ORPHAN

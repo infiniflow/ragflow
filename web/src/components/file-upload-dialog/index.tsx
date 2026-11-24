@@ -33,7 +33,7 @@ import { IModalProps } from '@/interfaces/common';
 import { extractTableColumns, isTableFile } from '@/utils/table-column-extract';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TFunction } from 'i18next';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -91,11 +91,13 @@ type UploadFormProps = {
   submit: (values?: UploadFormSchemaType) => void;
   showParseOnCreation?: boolean;
   isTableParser?: boolean;
+  description?: ReactNode;
 };
 function UploadForm({
   submit,
   showParseOnCreation,
   isTableParser,
+  description,
 }: UploadFormProps) {
   const { t } = useTranslation();
   const FormSchema = buildUploadFormSchema(t);
@@ -194,6 +196,7 @@ function UploadForm({
                 handleFilesChange(files);
               }}
               accept={{}}
+              description={description}
               data-testid="dataset-upload-dropzone"
             />
           )}
@@ -276,13 +279,17 @@ function UploadForm({
 }
 
 type FileUploadDialogProps = IModalProps<UploadFormSchemaType> &
-  Pick<UploadFormProps, 'showParseOnCreation' | 'isTableParser'>;
+  Pick<
+    UploadFormProps,
+    'showParseOnCreation' | 'isTableParser' | 'description'
+  >;
 export function FileUploadDialog({
   hideModal,
   onOk,
   loading,
   showParseOnCreation = false,
   isTableParser = false,
+  description,
 }: FileUploadDialogProps) {
   const { t } = useTranslation();
 
@@ -299,6 +306,7 @@ export function FileUploadDialog({
           submit={onOk!}
           showParseOnCreation={showParseOnCreation}
           isTableParser={isTableParser}
+          description={description}
         />
         <DialogFooter>
           <ButtonLoading type="submit" loading={loading} form={UploadFormId}>

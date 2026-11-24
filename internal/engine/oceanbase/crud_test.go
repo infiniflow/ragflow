@@ -19,6 +19,7 @@ package oceanbase
 import (
 	"context"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -136,6 +137,43 @@ func TestUpdateChunksRejectsUnsupportedRemoveType(t *testing.T) {
 	}
 }
 
+func TestUpdateChunksBindsLegacyExtraPatch(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB("seekdb", "legacy_doc", db)
+
+	const table = "ragflow_tenant_1"
+	mock.ExpectQuery("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?").
+		WithArgs("legacy_doc", table).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
+	mock.ExpectQuery(chunkTableSchemaSQL).
+		WithArgs("legacy_doc", table).
+		WillReturnRows(sqlmock.NewRows([]string{"COLUMN_NAME", "TABLE_COLLATION"}).
+			AddRow("id", "utf8mb4_unicode_ci").AddRow("kb_id", "utf8mb4_unicode_ci").
+			AddRow("available_int", "utf8mb4_unicode_ci").AddRow("extra", "utf8mb4_unicode_ci"))
+
+	mock.ExpectExec("UPDATE `ragflow_tenant_1` SET `available_int` = ?, `extra` = "+
+		"JSON_REMOVE(JSON_SET(COALESCE(CASE WHEN JSON_TYPE(`extra`) <> 'NULL' THEN `extra` END, JSON_OBJECT()), "+
+		"?, CAST(? AS JSON), ?, CAST(? AS JSON)), ?) WHERE `kb_id` = ?").
+		WithArgs(0, "$.children_kwd", `["child"]`, "$.token_num", "12", "$.compile_kwd", "kb-1").
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	err = engine.UpdateChunks(t.Context(), nil, map[string]interface{}{
+		"available_int": 0,
+		"children_kwd":  []string{"child"},
+		"token_num":     12,
+		"remove":        "compile_kwd",
+	}, table, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWaitForIndexRefreshIsNoOpWhenDisabled(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -149,5 +187,69 @@ func TestWaitForIndexRefreshIsNoOpWhenDisabled(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The insert path resolves fields against the table that exists: a field the
+// table has no column for must reach extra instead of appearing in REPLACE.
+func TestInsertChunksRoutesMissingColumnToExtra(t *testing.T) {
+	var replaceSQL string
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherFunc(
+		func(expectedSQL, actualSQL string) error {
+			if strings.HasPrefix(actualSQL, "REPLACE INTO ") {
+				replaceSQL = actualSQL
+				return nil
+			}
+			return sqlmock.QueryMatcherRegexp.Match(expectedSQL, actualSQL)
+		})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	engine := newEngineWithDB("seekdb", "legacy_doc", db)
+	engine.flags.enableFullTextSearch = false
+	tableName := "ragflow_tenant_1"
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?")).
+		WithArgs("legacy_doc", tableName).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
+	for _, column := range chunkExtraColumns {
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?")).
+			WithArgs("legacy_doc", tableName, column.name).
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
+	}
+	for _, column := range chunkIndexColumns {
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ?")).
+			WithArgs("legacy_doc", tableName, regularIndexName(tableName, column)).
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
+	}
+	columnRows := sqlmock.NewRows([]string{"COLUMN_NAME", "TABLE_COLLATION"})
+	for _, column := range chunkColumns {
+		if column.name != "compile_kwd" {
+			columnRows.AddRow(column.name, "utf8mb4_general_ci")
+		}
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(chunkTableSchemaSQL)).
+		WithArgs("legacy_doc", tableName).
+		WillReturnRows(columnRows)
+	mock.ExpectBegin()
+	mock.ExpectExec("REPLACE INTO").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	_, err = engine.InsertChunks(t.Context(), []map[string]interface{}{{
+		"id": "chunk-1", "compile_kwd": "wiki", "content_with_weight": "hello",
+	}}, tableName, "kb-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(replaceSQL, "`extra`") {
+		t.Errorf("REPLACE did not write extra: %s", replaceSQL)
+	}
+	if strings.Contains(replaceSQL, "`compile_kwd`") {
+		t.Errorf("REPLACE named a column the table lacks: %s", replaceSQL)
 	}
 }
