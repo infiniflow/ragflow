@@ -88,54 +88,45 @@ func TestXLSParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 
 func TestCSVParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	withSSRFBypass(t)
-	ctx := t.Context()
 	zipPayload := tcadpZipFixture(t)
-	type request struct {
-		Format string `json:"file_type"`
-		File   []byte `json:"file_base64"`
-	}
-	requests := make(chan request, 1)
-	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/reconstruct_document":
-			var req request
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			requests <- req
-			_, _ = w.Write([]byte(`{"DocumentRecognizeResultUrl":"` + server.URL + `/download.zip"}`))
-		case "/download.zip":
-			_, _ = w.Write(zipPayload)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	p := NewCSVParser()
-	p.ConfigureFromSetup(map[string]any{
-		"parse_method":    "TCADP parser",
-		"tcadp_apiserver": server.URL,
-		"tcadp_api_key":   "tcadp-secret",
-	})
 	for _, tc := range []struct{ name, input, wantCSV string }{
 		{"sample.csv", "a,b,c\n1,2,3", "a,b,c\n1,2,3"},
 		{"sample.TSV", "city\tnote\tname\r\nParis, France\t\tLouvre", "city,note,name\n\"Paris, France\",,Louvre\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			res := p.ParseWithResult(ctx, tc.name, []byte(tc.input))
+			var server *httptest.Server
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/reconstruct_document":
+					var req struct {
+						Format string `json:"file_type"`
+						File   []byte `json:"file_base64"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					if req.Format != "CSV" || string(req.File) != tc.wantCSV {
+						t.Errorf("sent %q %q, want CSV %q", req.Format, req.File, tc.wantCSV)
+					}
+					_, _ = w.Write([]byte(`{"DocumentRecognizeResultUrl":"` + server.URL + `/download.zip"}`))
+				case "/download.zip":
+					_, _ = w.Write(zipPayload)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			p := NewCSVParser()
+			p.ConfigureFromSetup(map[string]any{
+				"parse_method":    "TCADP parser",
+				"tcadp_apiserver": server.URL,
+				"tcadp_api_key":   "tcadp-secret",
+			})
+			res := p.ParseWithResult(t.Context(), tc.name, []byte(tc.input))
 			if res.Err != nil || len(res.JSON) < 2 {
 				t.Fatalf("got %d items, err %v", len(res.JSON), res.Err)
-			}
-			select {
-			case req := <-requests:
-				if req.Format != "CSV" || string(req.File) != tc.wantCSV {
-					t.Errorf("sent %q %q, want CSV %q", req.Format, req.File, tc.wantCSV)
-				}
-			default:
-				t.Fatal("missing TCADP request")
 			}
 		})
 	}
