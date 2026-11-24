@@ -23,14 +23,12 @@ import (
 	"fmt"
 
 	"ragflow/internal/agent/canvas"
-	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	serverconfig "ragflow/internal/server/config"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -225,9 +223,15 @@ func (s *ChatPipelineService) codexAgent(
 }
 
 // iterativeSynthesis runs one mode 7 turn. The community edition has no
-// iterative-synthesis engine, so a level-7 request degrades to the regular RAG
-// pipeline: strip the reasoning level from the request so the dispatcher does
-// not re-select the missing engine, then run the ordinary chat path.
+// iterative-synthesis engine, so it reports the engine as unavailable instead of
+// re-dispatching to the regular pipeline. The dispatcher already performs that
+// fallback: engineInstalled reports false here, so selectedEngine is cleared
+// before this function is reached and this body is unreachable in practice.
+// Re-dispatching would duplicate that decision, and it would be wrong when it
+// did run: stripping kwargs["reasoning"] also drops a per-request level-7
+// override, so a chat pinned to another level would answer at that level
+// instead of on the plain path. Returning an error, like codexAgent, keeps one
+// fallback point — the dispatcher's.
 func (s *ChatPipelineService) iterativeSynthesis(
 	ctx context.Context,
 	chat *entity.Chat,
@@ -237,17 +241,5 @@ func (s *ChatPipelineService) iterativeSynthesis(
 	useWebSearch bool,
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
-	common.WarnCtx(ctx, "iterative synthesis (mode 7) requested in the community edition; using the regular pipeline",
-		zap.String("chat_id", chat.ID))
-	plain := make(map[string]interface{}, len(kwargs))
-	for k, v := range kwargs {
-		if k == "reasoning" {
-			continue
-		}
-		plain[k] = v
-	}
-	if useWebSearch {
-		ctx = agentic_rag.WithWebSearch(ctx, s.webSearchFunc(chat.PromptConfig))
-	}
-	return s.AsyncChat(ctx, chat, messages, stream, plain)
+	return nil, fmt.Errorf("iterative synthesis (mode 7) is not available in the community edition")
 }

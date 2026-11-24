@@ -24,7 +24,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DatasetTableLayout } from '../components/dataset-table-layout';
+import { DatasetTableLayout } from '@/components/dataset-table-layout';
 import { LogTabs } from './dataset-common';
 import { DatasetOverviewKeys } from './utils';
 
