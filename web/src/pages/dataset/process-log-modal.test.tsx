@@ -9,6 +9,11 @@ jest.mock('@/hooks/common-hooks', () => ({
   useTranslate: () => ({ t: (key: string) => key }),
 }));
 
+jest.mock('./ingestion-progress', () => ({
+  useIngestionProgress: () => ({ data: null, error: false }),
+  IngestionProgressSummary: () => null,
+}));
+
 import ProcessLogModal from './process-log-modal';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { formatTime } from '@/utils/date';

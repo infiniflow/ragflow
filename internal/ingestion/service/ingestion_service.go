@@ -35,6 +35,7 @@ import (
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/observability"
 	"ragflow/internal/permission"
+	"ragflow/internal/progressstore"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/service/datasetversion"
 	documentpkg "ragflow/internal/service/document"
@@ -958,6 +959,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			stopped := e.markStopped(ctx, task.ID)
 			if stopped {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
+				e.markProgressTerminal(ctx, task, string(entity.TaskStatusCancel))
 			}
 			return stopped
 		}
@@ -967,6 +969,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			ok := e.markFailed(ctx, task.ID, "Task timed out.")
 			if ok {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "Task timed out.")
+				e.markProgressTerminal(ctx, task, string(entity.TaskStatusFail))
 			}
 			return ok
 		}
@@ -974,6 +977,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		ok := e.markFailed(ctx, task.ID, fmt.Sprintf("Task failed: %v", err))
 		if ok {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err))
+			e.markProgressTerminal(ctx, task, string(entity.TaskStatusFail))
 		}
 		return ok
 	}
@@ -983,6 +987,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		return false
 	}
 	e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusDone), "Task completed.")
+	e.markProgressTerminal(ctx, task, string(entity.TaskStatusDone))
 	e.publishPendingCompileEvent(ctx, task)
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
@@ -1333,13 +1338,19 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if pipelineLogID != "" {
 		progressRun, _ = dao.NewPipelineOperationLogDAO().GetByID(ctx, e.deps.DB, pipelineLogID)
 	}
+	// The progress snapshot is written alongside the ingestion log so the API
+	// can serve a one-screen summary without ClickHouse. The store uses the
+	// injected KV client; a nil/disabled client degrades to a no-op.
+	progressStore := progressstore.New(e.deps.KV)
 	sink.detailEmitter = func(component, unit string, current, total uint32) {
 		log := observability.BuildProgressIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, unit, current, total)
 		common.LogIngest(&log)
+		progressStore.Update(ctx, pipelineLogID, ingestionTask.DocumentID, ingestionTask.DatasetID, component, unit, current, total)
 	}
 	sink.lifecycleEmitter = func(component string, phase uint8, message string) {
 		log := observability.BuildComponentIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, phase, message)
 		common.LogIngest(&log)
+		progressStore.SetPhase(ctx, pipelineLogID, ingestionTask.DocumentID, ingestionTask.DatasetID, component, phaseLabel(phase))
 	}
 	// Close is idempotent and intentionally called twice: the defer is the
 	// panic backstop (an unwind out of Execute must still stop the flusher),

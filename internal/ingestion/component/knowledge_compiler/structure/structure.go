@@ -164,7 +164,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	remainingWindow := deps.Progress
 	remainingWindow.Base += mapWindow.Span
 	remainingWindow.Span -= mapWindow.Span
-	mapDone := mapWindow.Counter(ctx, len(batches))
+	mapDone := mapWindow.WithPhase("batch:map").Counter(ctx, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
@@ -226,7 +226,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 		perBatch[i] = rows
 		rowCount += len(rows)
-		remainingWindow.Sub(0, 4).Report(ctx, float64(i+1)/float64(len(extracted)))
+		remainingWindow.Sub(0, 4).WithPhase("row:extract").ReportPosition(ctx, uint32(i+1), uint32(len(extracted)))
 		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 			"%s-template: embedded batch %d/%d (%d rows so far)", compileType, i+1, len(batches), rowCount))
 	}
@@ -239,7 +239,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// _struct_local_dedup (which folds docs in list order)
 	decider := NewLLMMergeDecider(deps.Chat, llmID, deps.Embed, param.SimilarityThreshold)
 	deduper := NewGroupedDeduper(decider)
-	dedupDone := remainingWindow.Sub(1, 4).Counter(ctx, rowCount)
+	dedupDone := remainingWindow.Sub(1, 4).WithPhase("row:dedup").Counter(ctx, rowCount)
 	for _, rows := range perBatch {
 		for _, row := range rows {
 			if err := deduper.Add(ctx, row); err != nil {
