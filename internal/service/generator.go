@@ -313,7 +313,7 @@ func FullQuestion(
 			continue
 		}
 		content, _ := m["content"].(string)
-		convLines = append(convLines, fmt.Sprintf("%s: %s", strings.ToUpper(role), content))
+		convLines = append(convLines, fmt.Sprintf("%s: %s", strings.ToUpper(role), historyMessageContent(role, content)))
 	}
 	conv := strings.Join(convLines, "\n")
 
