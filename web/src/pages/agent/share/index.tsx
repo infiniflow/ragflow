@@ -133,7 +133,7 @@ const ChatContainer = () => {
         <div className="flex flex-1 flex-col p-2.5  h-[90vh] m-3">
           <div
             className={cn(
-              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto md:w-5/6',
+              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-full md:w-5/6',
             )}
             ref={messageContainerRef}
           >
