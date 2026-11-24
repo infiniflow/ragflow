@@ -61,6 +61,7 @@ type documentServiceIface interface {
 	ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
 	ListDocumentIDsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions) ([]string, error)
 	GetDocumentFiltersByDatasetID(ctx context.Context, opts dao.DocumentListOptions) (map[string]interface{}, int64, error)
+	GetDocumentCountersByDatasetID(ctx context.Context, opts dao.DocumentListOptions) (map[string]interface{}, int64, error)
 	GetMetadataByKBs(ctx context.Context, kbIDs []string) (map[string]interface{}, error)
 	GetDocumentsByAuthorID(ctx context.Context, authorID, page, pageSize int) ([]*document.DocumentResponse, int64, error)
 	GetThumbnails(ctx context.Context, docIDs []string) (map[string]string, error)
@@ -621,8 +622,14 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		return
 	}
 
-	if c.Query("type") == "filter" {
-		filters, total, err := h.documentService.GetDocumentFiltersByDatasetID(ctx, opts)
+	if requestType := c.Query("type"); requestType == "filter" || requestType == "counters" {
+		getFilters := h.documentService.GetDocumentFiltersByDatasetID
+		// type=counters asks for the suffix and status counters alone, which
+		// the dataset page polls; the metadata facet is left empty.
+		if requestType == "counters" {
+			getFilters = h.documentService.GetDocumentCountersByDatasetID
+		}
+		filters, total, err := getFilters(ctx, opts)
 		if err != nil {
 			common.RespondError(c, common.CodeExceptionError, "failed to get document filters: "+err.Error())
 			return

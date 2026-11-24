@@ -200,6 +200,14 @@ func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(ctx context.Contex
 	return responses, total, nil
 }
 
+// GetDocumentCountersByDatasetID returns the suffix and ingestion status
+// counters for documents in a dataset, without the metadata facet. Callers that
+// only act on a status count skip the document ID listing and the metadata
+// read that the facet costs.
+func (s *DocumentService) GetDocumentCountersByDatasetID(ctx context.Context, opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
+	return s.documentDAO.GetFilterByKBID(ctx, dao.DB, opts)
+}
+
 // GetDocumentFiltersByDatasetID returns aggregate filter values for documents in a dataset.
 func (s *DocumentService) GetDocumentFiltersByDatasetID(ctx context.Context, opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
 	filters, total, err := s.documentDAO.GetFilterByKBID(ctx, dao.DB, opts)
