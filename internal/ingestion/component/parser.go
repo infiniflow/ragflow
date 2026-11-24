@@ -208,6 +208,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			s[k][fk] = cloneParserSetupValue(fv)
 		}
 	}
+	schema.ApplyParserGlobalOptions(params, s)
 	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement, vision: vision}
 	if err := pc.Check(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)

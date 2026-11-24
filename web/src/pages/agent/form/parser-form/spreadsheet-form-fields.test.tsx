@@ -17,7 +17,7 @@ jest.mock('@/hooks/use-llm-request', () => ({
         provider_id: 'provider-1',
         instance_name: 'test-instance',
         instance_id: 'instance-1',
-        model_type: ['vision'],
+        model_type: ['vlm'],
       },
     ],
     isFetched: true,

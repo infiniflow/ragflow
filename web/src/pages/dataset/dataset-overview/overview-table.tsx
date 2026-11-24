@@ -48,7 +48,7 @@ import {
 } from '../compilation/constants';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
-import { DatasetTableLayout } from '../components/dataset-table-layout';
+import { DatasetTableLayout } from '@/components/dataset-table-layout';
 import { useIngestionMessages } from '../ingestion-message-hooks';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';

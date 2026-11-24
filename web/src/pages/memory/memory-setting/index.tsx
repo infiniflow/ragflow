@@ -1,4 +1,5 @@
 import { DynamicForm } from '@/components/dynamic-form';
+import { SettingsFormContainer } from '@/components/settings-form-container';
 import {
   ModelResourceAccessUserIdContext,
   ModelResourceTenantIdContext,
@@ -79,7 +80,7 @@ export default function MemoryMessage() {
     onMemoryRenameOk(data);
   };
   return (
-    <section className="h-full flex flex-col">
+    <SettingsFormContainer className="flex h-full flex-col">
       <TopTitle
         title={t('knowledgeDetails.configuration')}
         description={t('memory.config.titleDescription')}
@@ -93,9 +94,9 @@ export default function MemoryMessage() {
               <Form {...form}>
                 <form
                   onSubmit={form.handleSubmit(() => {})}
-                  className="space-y-6 "
+                  className="w-full space-y-6"
                 >
-                  <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
+                  <div className="w-full h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
                     <section className="space-y-5 text-text-secondary !space-y-10">
                       <div className="text-base font-medium text-text-primary">
                         {t('knowledgeConfiguration.baseInfo')}
@@ -106,7 +107,7 @@ export default function MemoryMessage() {
                       <AdvancedSettingsForm />
                     </section>
                   </div>
-                  <div className="text-right items-center flex justify-end gap-3 w-[768px]">
+                  <div className="text-right items-center flex justify-end gap-3 w-full">
                     <Button
                       type="reset"
                       className="bg-transparent text-color-white hover:bg-transparent border-border-button border"
@@ -129,6 +130,6 @@ export default function MemoryMessage() {
           </ModelResourceTenantIdContext.Provider>
         </MemorySettingProvider>
       </div>
-    </section>
+    </SettingsFormContainer>
   );
 }
