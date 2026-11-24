@@ -29,7 +29,7 @@ import (
 )
 
 func init() {
-	_ = common.InitLogger("info", common.FileOutput{}, "oceanbase_test")
+	common.InitLogger("info", common.FileOutput{}, "oceanbase_test")
 }
 
 func TestUpdateMetadataReplacesCompleteLegacyJSON(t *testing.T) {
