@@ -1,0 +1,6 @@
+{
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "resources": ["binaries/ragflow-desktop", "resource"]
+  }
+}

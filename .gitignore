@@ -306,3 +306,21 @@ gomod_cache
 parity/
 # downloaded Go native deps (fetched by ragflow_deps/download_go_deps.py)
 ragflow_deps/
+
+# Frontend bundle copied next to its go:embed directive by build.sh --desktop
+internal/webui/dist/
+
+# The desktop shell is an application, not a library: its lock file pins the
+# exact window/runtime versions the bundle was tested with.
+!desktop/src-tauri/Cargo.lock
+
+# Desktop shell: tool dependencies and bundle products. The staged engine
+# (src-tauri/binaries) is a copy of bin/ragflow-desktop, made by
+# desktop/stage-sidecar.sh before every build.
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/src-tauri/binaries/
+# staged analyzer resource tree (desktop/stage-resources.sh) and its stamp
+desktop/src-tauri/resource/
+desktop/src-tauri/.resource-stamp

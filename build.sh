@@ -1006,6 +1006,61 @@ build_cpp_test() {
 
 # Build the Go binaries for one variant.
 #   build_go_binaries <label> <build-tags> <server-out> <cli-out>
+# The desktop build embeds web/dist into the Go binary and serves it from the
+# process (internal/webui). go:embed cannot reach outside its own package, so the
+# bundle is copied next to the embed directive before the link; that copy is a
+# build product and stays out of version control.
+prepare_web_bundle() {
+    local dist="$PROJECT_ROOT/web/dist"
+    local target="$PROJECT_ROOT/internal/webui/dist"
+
+    if [ ! -f "$dist/index.html" ]; then
+        if [ -n "${RAGFLOW_SKIP_WEB:-}" ]; then
+            echo -e "${RED}Error: web/dist is missing and RAGFLOW_SKIP_WEB is set.${NC}" >&2
+            echo "  Run 'cd web && npm run build' first, or unset RAGFLOW_SKIP_WEB." >&2
+            return 1
+        fi
+        build_web_bundle || return 1
+    fi
+
+    rm -rf "$target"
+    cp -R "$dist" "$target" || return 1
+    echo -e "${GREEN}✓ Web bundle embedded: $(du -sh "$target" | cut -f1) from web/dist${NC}"
+}
+
+# Vite needs Node 18+, which is not always the node first on PATH (a 12.x from
+# /usr/local on macOS is common). RAGFLOW_NODE pins one explicitly.
+detect_node() {
+    local candidate
+    for candidate in "${RAGFLOW_NODE:-}" "$(command -v node 2>/dev/null)" /opt/homebrew/bin/node /usr/local/bin/node; do
+        [ -n "$candidate" ] && [ -x "$candidate" ] || continue
+        if "$candidate" -e 'process.exit(parseInt(process.versions.node, 10) >= 18 ? 0 : 1)' 2>/dev/null; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    echo -e "${RED}Error: Node.js 18+ is required to build the web frontend.${NC}" >&2
+    echo "  Install it (https://nodejs.org), or point RAGFLOW_NODE at an 18+ binary." >&2
+    return 1
+}
+
+build_web_bundle() {
+    local node_bin node_version
+    if ! node_bin="$(detect_node)"; then
+        return 1
+    fi
+    node_version="$("$node_bin" --version)"
+    echo "Building the web frontend ($node_version) with npm run build"
+    ( cd "$PROJECT_ROOT/web" && PATH="$(dirname "$node_bin"):$PATH" npm run build ) || {
+        echo -e "${RED}Error: the web frontend build failed.${NC}" >&2
+        return 1
+    }
+    if [ ! -f "$PROJECT_ROOT/web/dist/index.html" ]; then
+        echo -e "${RED}Error: the web build finished without producing web/dist/index.html.${NC}" >&2
+        return 1
+    fi
+}
+
 build_go_binaries() {
     local label="$1" tags="$2" server_out="$3" cli_out="$4"
 
@@ -1039,10 +1094,13 @@ build_go_binaries() {
     setup_cgo_env
 
     # The desktop variant links Infinity's embedded engine, so it has to be staged
-    # (built from the checkout when needed) before the link happens.
+    # (built from the checkout when needed) before the link happens. It also
+    # serves the web frontend from the binary, so the bundle has to exist and sit
+    # where go:embed can reach it.
     case ",$tags," in
         *,desktop,*)
             ensure_infinity_embedded_staged || return 1
+            prepare_web_bundle || return 1
             ;;
     esac
 
@@ -1109,7 +1167,46 @@ build_go() {
 build_desktop() {
     prepare_infinity_embedded || exit 1
     build_go_binaries "desktop" "$GO_BUILD_TAGS,desktop" \
-        "$RAGFLOW_DESKTOP_BINARY" "$RAGFLOW_DESKTOP_CLI_BINARY"
+        "$RAGFLOW_DESKTOP_BINARY" "$RAGFLOW_DESKTOP_CLI_BINARY" || return 1
+    link_desktop_resources
+}
+
+# The analyzer dictionaries, OpenCC, WordNet and the spaCy models are a data
+# bundle the engine loads at startup, not code: the packaged app ships a copy,
+# and internal/common.ResourceDir looks for one next to the executable. Point
+# bin/resource at the tree this checkout already has instead of copying ~370 MB
+# for every build, so the binaries run straight out of bin/.
+find_resource_tree() {
+    local candidate
+    for candidate in \
+        "${RAGFLOW_RESOURCE_DIR:-}" \
+        "$PROJECT_ROOT/resource" \
+        "$PROJECT_ROOT/../resource" \
+        "$PROJECT_ROOT/../../resource" \
+        "$HOME/.ragflow/resource" \
+        /usr/share/infinity/resource; do
+        [ -n "$candidate" ] && [ -f "$candidate/rag/huqie.trie" ] || continue
+        printf '%s\n' "$candidate"
+        return 0
+    done
+    return 1
+}
+
+link_desktop_resources() {
+    local tree
+    if ! tree="$(find_resource_tree)"; then
+        echo -e "${YELLOW}Warning: no analyzer resource tree found. Set RAGFLOW_DICT_PATH when running the binaries, or RAGFLOW_RESOURCE_DIR when building the app bundle.${NC}" >&2
+        return 0
+    fi
+    tree="$(cd "$tree" && pwd)"
+    mkdir -p "$PROJECT_ROOT/bin"
+    if ln -sfn "$tree" "$PROJECT_ROOT/bin/resource" 2>/dev/null; then
+        echo -e "${GREEN}✓ Analyzer resources: bin/resource -> $tree${NC}"
+    else
+        # Windows needs developer mode for symlinks; running with
+        # RAGFLOW_DICT_PATH set is equivalent.
+        echo -e "${YELLOW}Warning: could not link bin/resource -> $tree; set RAGFLOW_DICT_PATH instead.${NC}" >&2
+    fi
 }
 
 # Normalize a directory to the rust_engine workspace that holds
@@ -1984,6 +2081,13 @@ ENVIRONMENT:
     RAGFLOW_GO_TAGS=ee      # build the enterprise sources
     RAGFLOW_CMAKE_ARGS=...  # extra arguments for the C++ configure step, e.g.
                             # -DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a
+
+    # Analyzer resources (dictionaries, OpenCC, WordNet, spaCy models). --desktop
+    # links bin/resource at this tree so the binaries run straight out of bin/;
+    # desktop/stage-resources.sh bundles a copy into the app.
+    RAGFLOW_RESOURCE_DIR=...            # default: resource/, ../resource,
+                                        # ../../resource, ~/.ragflow/resource,
+                                        # /usr/share/infinity/resource
 
     # Infinity's embedded engine (--desktop/--infinity). Built from source with
     # cargo; the Rust toolchain is pinned by the checkout's rust-toolchain.toml.

@@ -30,7 +30,12 @@ type ServerArgs struct {
 	// backends. nil means "unspecified": the desktop entry then falls back to
 	// RAGFLOW_DESKTOP_DATA_DIR, then ~/.ragflow/desktop. The server build
 	// never reads it.
-	DataDir       *string
+	DataDir *string
+	// UI, when set, serves the frontend bundled into the desktop build on a
+	// loopback port. UIReadyFile is where that port is published for the window
+	// shell; both are no-ops in the server build.
+	UI            *bool
+	UIReadyFile   *string
 	InitSuperUser bool         // Used by admin;
 	Port          *int         // Used by admin, api
 	Name          *string      // server name

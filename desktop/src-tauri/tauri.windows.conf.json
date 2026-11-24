@@ -1,0 +1,6 @@
+{
+  "bundle": {
+    "targets": ["nsis"],
+    "resources": ["binaries/ragflow-desktop.exe", "resource"]
+  }
+}
