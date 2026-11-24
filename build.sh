@@ -33,6 +33,18 @@ source "${SCRIPT_DIR}/tools/scripts/ort_present.sh"
 # instead of letting `find` order pick between coexisting minimal/full dirs.
 source "${SCRIPT_DIR}/tools/scripts/ort_variant.sh"
 
+# Actionable diagnostic for a gpu/full build that cannot find the -full ORT
+# archive. The bundled downloader only produces the minimal (-glibc2_28)
+# archive, so a full/CUDA-capable build must have it pre-staged manually.
+# Called from BOTH the early presence gate and the post-download failure branch
+# so the user sees the real fix regardless of which path fails.
+ort_full_archive_hint() {
+    [ "${DEEPDOC_ORT_VARIANT:-cpu}" = "cpu" ] && return 0
+    echo "  A ${DEEPDOC_ORT_VARIANT} build needs the -full ONNX Runtime archive," >&2
+    echo "  which the bundled downloader does not produce. Pre-stage it manually at:" >&2
+    echo "    ${ONNXRUNTIME_STATIC_PREFIX}/onnxruntime-linux-*-static_lib-*-full/lib/libonnxruntime.a" >&2
+}
+
 # Native static-lib user-cache root. Overridable via RAGFLOW_NATIVE_LIBS_DIR so
 # CI can mount the cache at a fixed host path (sep-tests.yml Slice 3); defaults
 # to ~/ragflow-native-libs. Captured once here and reused by every <lib>/v<version>
@@ -267,6 +279,7 @@ _ensure_native_libs_installed() {
         return 0
     fi
     echo -e "${RED}Error: native static libraries still missing after download.${NC}" >&2
+    ort_full_archive_hint
     echo "  Pre-place the version-keyed dirs manually on a locked-down host:" >&2
     echo "    ${OFFICE_OXIDE_PREFIX}" >&2
     echo "    ${PDFIUM_STATIC_PREFIX}" >&2
@@ -578,8 +591,7 @@ check_onnxruntime_deps() {
         echo -e "${RED}Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX${NC}" >&2
         if [ "${DEEPDOC_ORT_VARIANT:-cpu}" != "cpu" ]; then
             echo "  requested variant: ${DEEPDOC_ORT_VARIANT} (archive dir suffix '${ort_variant_suffix_value}')" >&2
-            echo "  A ${DEEPDOC_ORT_VARIANT} build needs the full/CUDA-capable archive; a minimal" >&2
-            echo "  (-glibc2_28) archive alone cannot register the CUDA execution provider." >&2
+            ort_full_archive_hint
         fi
         echo "  available: ${avail:-<none>}" >&2
         echo "  DeepDocORTVersion=${ort_version}; fetch it with:" >&2

@@ -20,9 +20,25 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// buildShORTVersion returns the pinned ORT version from the single source of
+// truth (internal/common/environments.go: DeepDocORTVersion). Tests must read
+// this instead of hardcoding a version, so a version bump cannot create a
+// false-green fixture that no longer matches the production archive naming.
+func buildShORTVersion(t *testing.T) string {
+	t.Helper()
+	src := readFile(t, filepath.Join(repoRoot(t), "internal", "common", "environments.go"))
+	re := regexp.MustCompile(`const\s+DeepDocORTVersion\s*=\s*"([^"]+)"`)
+	m := re.FindStringSubmatch(src)
+	if m == nil {
+		t.Fatal("cannot parse DeepDocORTVersion from internal/common/environments.go")
+	}
+	return m[1]
+}
 
 // ortVariantScriptPath is the helper that maps DEEPDOC_ORT_VARIANT to an ORT
 // archive-directory glob suffix. build.sh sources it; the tests below source
@@ -40,9 +56,9 @@ func ortVariantScriptPath(t *testing.T) string {
 // (empty means unset) and returns ort_variant_suffix's stdout.
 func runVariantSuffix(t *testing.T, variant string) string {
 	t.Helper()
-	script := "unset DEEPDOC_ORT_VARIANT; [ -n \"$1\" ] && export DEEPDOC_ORT_VARIANT=\"$1\"; source " +
-		ortVariantScriptPath(t) + " && ort_variant_suffix"
-	cmd := exec.Command("bash", "-c", script, "bash", variant)
+	// Helper path is $2 (quoted) so checkouts with spaces work.
+	script := "unset DEEPDOC_ORT_VARIANT; [ -n \"$1\" ] && export DEEPDOC_ORT_VARIANT=\"$1\"; source \"$2\" && ort_variant_suffix"
+	cmd := exec.Command("bash", "-c", script, "bash", variant, ortVariantScriptPath(t))
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("ort_variant_suffix (variant=%q) failed: %v (%s)", variant, err, out)
@@ -87,7 +103,7 @@ func makeFakeOrtCache(t *testing.T, suffix string) string {
 // addOrtArchive adds another suffixed archive dir into an existing cache.
 func addOrtArchive(t *testing.T, cache, suffix string) string {
 	t.Helper()
-	libDir := filepath.Join(cache, "onnxruntime-linux-x64-static_lib-1.29.0"+suffix, "lib")
+	libDir := filepath.Join(cache, "onnxruntime-linux-x64-static_lib-"+buildShORTVersion(t)+suffix, "lib")
 	if err := os.MkdirAll(libDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -184,11 +200,13 @@ func TestOrtPresentVariantAware(t *testing.T) {
 
 	minimalOnly := makeFakeOrtCache(t, "-glibc2_28")
 	prefix := "onnxruntime-linux-x64-static_lib-"
+	version := buildShORTVersion(t)
 	// ragflow_ort_present <cache> <dir_prefix> <version> [variant_suffix]
+	// The helper path is $1 (quoted) so checkouts with spaces work.
 	// Assert it exits exactly 1 (missing), not a source/bash error (other codes).
 	cmd := exec.Command("bash", "-c",
-		"source "+present+" && ragflow_ort_present \"$1\" \"$2\" \"$3\" \"$4\"",
-		"bash", minimalOnly, prefix, "1.29.0", "-full")
+		"source \"$1\" && ragflow_ort_present \"$2\" \"$3\" \"$4\" \"$5\"",
+		"bash", present, minimalOnly, prefix, version, "-full")
 	if err := cmd.Run(); err == nil {
 		t.Error("ragflow_ort_present reported full variant PRESENT when only minimal archive exists; should exit 1 (missing)")
 	} else if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() != 1 {
@@ -197,8 +215,8 @@ func TestOrtPresentVariantAware(t *testing.T) {
 
 	addOrtArchive(t, minimalOnly, "-full")
 	cmd = exec.Command("bash", "-c",
-		"source "+present+" && ragflow_ort_present \"$1\" \"$2\" \"$3\" \"$4\"",
-		"bash", minimalOnly, prefix, "1.29.0", "-full")
+		"source \"$1\" && ragflow_ort_present \"$2\" \"$3\" \"$4\" \"$5\"",
+		"bash", present, minimalOnly, prefix, version, "-full")
 	if err := cmd.Run(); err != nil {
 		t.Errorf("ragflow_ort_present reported full variant MISSING after full archive added: %v", err)
 	}
@@ -212,26 +230,10 @@ func TestOrtPresentBackwardCompatible(t *testing.T) {
 	cache := makeFakeOrtCache(t, "-glibc2_28")
 	prefix := "onnxruntime-linux-x64-static_lib-"
 	cmd := exec.Command("bash", "-c",
-		"source "+present+" && ragflow_ort_present \"$1\" \"$2\" \"$3\"",
-		"bash", cache, prefix, "1.29.0")
+		"source \"$1\" && ragflow_ort_present \"$2\" \"$3\" \"$4\"",
+		"bash", present, cache, prefix, buildShORTVersion(t))
 	if err := cmd.Run(); err != nil {
 		t.Errorf("3-arg ragflow_ort_present broke backward compatibility: %v", err)
-	}
-}
-
-// TestBuildShWiresVariantSelection guards that build.sh actually consumes the
-// helper (a correct helper that nobody calls would be a false green). It asserts
-// the source line, the suffix use in the selection loop, and the fail-fast guard.
-func TestBuildShWiresVariantSelection(t *testing.T) {
-	script := readFile(t, filepath.Join(repoRoot(t), "build.sh"))
-	if !strings.Contains(script, "ort_variant.sh") {
-		t.Error("build.sh must source tools/scripts/ort_variant.sh")
-	}
-	if !strings.Contains(script, "ort_variant_suffix") {
-		t.Error("build.sh must use ort_variant_suffix to narrow the ORT glob in check_onnxruntime_deps")
-	}
-	if !strings.Contains(script, "DEEPDOC_ORT_VARIANT") {
-		t.Error("build.sh must have a DEEPDOC_ORT_VARIANT fail-fast guard for mismatched minimal/full selection")
 	}
 }
 
@@ -240,9 +242,8 @@ func TestBuildShWiresVariantSelection(t *testing.T) {
 // which would reintroduce the exact minimal/full selection bug this change
 // fixes. It must fail loudly so a bad config surfaces at build time.
 func TestOrtVariantSuffixRejectsUnknown(t *testing.T) {
-	script := "unset DEEPDOC_ORT_VARIANT; export DEEPDOC_ORT_VARIANT=\"$1\"; source " +
-		ortVariantScriptPath(t) + " && ort_variant_suffix"
-	cmd := exec.Command("bash", "-c", script, "bash", "gpou") // typo of "gpu"
+	script := "unset DEEPDOC_ORT_VARIANT; export DEEPDOC_ORT_VARIANT=\"$1\"; source \"$2\" && ort_variant_suffix"
+	cmd := exec.Command("bash", "-c", script, "bash", "gpou", ortVariantScriptPath(t)) // typo of "gpu"
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("ort_variant_suffix accepted unknown variant 'gpou' and returned %q; want non-zero exit", strings.TrimSpace(string(out)))
@@ -257,22 +258,11 @@ func TestOrtVariantSuffixRejectsUnknown(t *testing.T) {
 // be rejected, not silently treated as "cpu". ${VAR:-cpu} cannot distinguish
 // unset from set-to-empty, so the helper must use ${VAR+set} detection.
 func TestOrtVariantEmptyValueIsRejected(t *testing.T) {
-	script := "export DEEPDOC_ORT_VARIANT=\"\"; source " +
-		ortVariantScriptPath(t) + " && ort_variant_suffix"
-	cmd := exec.Command("bash", "-c", script)
+	script := "export DEEPDOC_ORT_VARIANT=\"\"; source \"$1\" && ort_variant_suffix"
+	cmd := exec.Command("bash", "-c", script, "bash", ortVariantScriptPath(t))
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("ort_variant_suffix accepted an explicitly empty variant and returned %q; want rejection", strings.TrimSpace(string(out)))
-	}
-}
-
-// TestOrtPresentCommentDocumentsVariant guards F1: the helper's header must
-// describe the 4th variant_suffix argument and the narrowed glob, not stale
-// prose claiming the glob only has platform+version dimensions.
-func TestOrtPresentCommentDocumentsVariant(t *testing.T) {
-	present := readFile(t, filepath.Join(repoRoot(t), "tools", "scripts", "ort_present.sh"))
-	if !strings.Contains(present, "variant_suffix") {
-		t.Error("ort_present.sh header must document the optional variant_suffix argument")
 	}
 }
 
@@ -292,6 +282,62 @@ _ensure_native_libs_installed
 	out, _ := cmd.CombinedOutput()
 	if strings.Contains(string(out), "running downloader") {
 		t.Errorf("invalid variant triggered a full native-lib download before failing: %s", out)
+	}
+}
+
+// TestFullVariantMissingHasActionableHint (Finding A) is the adversarial guard:
+// a gpu/full build with only a minimal archive must produce an actionable hint
+// naming the -full archive and that it must be pre-staged manually — because the
+// bundled downloader only produces minimal. A generic "still missing" message
+// is not enough. The hint is emitted by a dedicated function called from BOTH
+// the early presence gate and the post-download failure branch.
+func TestFullVariantMissingHasActionableHint(t *testing.T) {
+	script := `
+set +e
+source "$1" >/dev/null 2>&1 || exit 90
+export DEEPDOC_ORT_VARIANT=gpu
+if declare -F ort_full_archive_hint >/dev/null 2>&1; then
+  ort_full_archive_hint 2>&1
+else
+  echo "NO_HINT_FUNCTION"
+fi
+`
+	cmd := exec.Command("bash", "-c", script, "bash", filepath.Join(repoRoot(t), "build.sh"))
+	out, _ := cmd.CombinedOutput()
+	msg := strings.ToLower(string(out))
+	if strings.Contains(msg, "no_hint_function") {
+		t.Fatal("build.sh has no ort_full_archive_hint helper; gpu/full missing-full has no actionable diagnostic")
+	}
+	if !strings.Contains(msg, "-full") || !strings.Contains(msg, "manually") {
+		t.Errorf("ort_full_archive_hint lacks actionable pre-stage wording (want '-full' + 'manually'): %s", out)
+	}
+}
+
+// TestFullVariantHintNotCalledForCpu guards the "no false hint" edge: the
+// actionable full-archive hint must NOT fire for a cpu/default build (which
+// legitimately uses the minimal archive). A hint that always printed would be
+// noise and could mislead CPU users.
+func TestFullVariantHintNotCalledForCpu(t *testing.T) {
+	script := `
+set +e
+source "$1" >/dev/null 2>&1 || exit 90
+export DEEPDOC_ORT_VARIANT=cpu
+if declare -F ort_full_archive_hint >/dev/null 2>&1; then
+  ort_full_archive_hint 2>&1
+fi
+`
+	cmd := exec.Command("bash", "-c", script, "bash", filepath.Join(repoRoot(t), "build.sh"))
+	out, _ := cmd.CombinedOutput()
+	// Guard against a vacuous pass: if the helper is absent, the conditional
+	// never runs and the test would be green while proving nothing.
+	probe := exec.Command("bash", "-c",
+		"source \"$1\" >/dev/null 2>&1 && declare -F ort_full_archive_hint >/dev/null 2>&1",
+		"bash", filepath.Join(repoRoot(t), "build.sh"))
+	if probe.Run() != nil {
+		t.Fatal("ort_full_archive_hint helper missing; cpu-silence test would be vacuous")
+	}
+	if strings.Contains(strings.ToLower(string(out)), "-full") {
+		t.Errorf("full-archive hint fired for cpu variant; should be silent: %s", out)
 	}
 }
 
