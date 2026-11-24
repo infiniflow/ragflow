@@ -66,7 +66,6 @@ type Ingestor struct {
 
 	// Configuration
 	maxConcurrency           int32
-	supportedDocTypes        []string
 	version                  string
 	heartbeatInterval        time.Duration
 	memoryReconcileInterval  time.Duration
@@ -178,7 +177,7 @@ type pendingDocumentCompileEvent struct {
 // process-wide relational handle, message-queue engine, and kvrocks client;
 // they are resolved once at the server assembly point and injected here rather
 // than read from the package globals (arch_test.go guards that rule).
-func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tier common.Tier, deps *ingestion.Deps) *Ingestor {
+func NewIngestor(name string, maxConcurrency int32, tier common.Tier, deps *ingestion.Deps) *Ingestor {
 	if maxConcurrency <= 0 {
 		maxConcurrency = int32(runtime.NumCPU())
 	}
@@ -209,7 +208,6 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tie
 		dispatchCtx:              dispatchCtx,
 		dispatchCancel:           dispatchCancel,
 		maxConcurrency:           maxConcurrency,
-		supportedDocTypes:        supportedTypes,
 		version:                  "1.0.0",
 		ingestorTier:             tier,
 		currentTasks:             make(map[string]struct{}),
