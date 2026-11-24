@@ -2393,6 +2393,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       s3: 'S3 上传',
       preview: '预览',
       fileError: '文件错误',
+      htmlPreviewError: '无法加载 HTML 原文预览。',
       uploadLimit: '文件大小不能超过 10M，文件总数不超过 128 个',
       destinationFolder: '目标文件夹',
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',

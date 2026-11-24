@@ -24,6 +24,7 @@ import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
 import { EpubPreviewer } from './epub-preview';
 import { ExcelCsvPreviewer } from './excel-preview';
+import { HtmlPreviewer } from './html-preview';
 import { ImagePreviewer } from './image-preview';
 import { Md } from './md';
 import PdfPreviewer, { IProps } from './pdf-preview';
@@ -131,6 +132,11 @@ const DocumentPreview = function ({
       {['md', 'mdx'].indexOf(fileType) > -1 && (
         <section>
           <Md className={className} url={url} />
+        </section>
+      )}
+      {['html', 'htm'].includes(fileType) && (
+        <section className="h-full">
+          <HtmlPreviewer key={url} className={className} url={url} />
         </section>
       )}
       {['epub'].indexOf(fileType) > -1 && (
