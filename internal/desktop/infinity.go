@@ -57,7 +57,12 @@ import "C"
 
 import (
 	"fmt"
+	"os"
 	"unsafe"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // embeddedInfinity owns one in-process document engine.
@@ -69,6 +74,19 @@ type embeddedInfinity struct {
 // startEmbeddedInfinity opens the engine on dataDir and serves it on a loopback
 // port chosen by the OS. The engine is ready for connections when this returns.
 func startEmbeddedInfinity(dataDir string) (*embeddedInfinity, error) {
+	// The engine's text analyzers load their dictionaries from the same tree the
+	// Go tokenizer uses. The Rust side resolves it through INFINITY_RESOURCE_PATH
+	// (analyzer::resource_path), and the two must agree: a full-text index built
+	// with a different dictionary set cannot be queried with this one. Setting it
+	// here rather than in the shell also covers running the binary directly.
+	if dir := common.ResourceDir(); dir != "" {
+		if err := os.Setenv("INFINITY_RESOURCE_PATH", dir); err != nil {
+			return nil, fmt.Errorf("desktop: export INFINITY_RESOURCE_PATH=%s: %w", dir, err)
+		}
+		common.Info("Document engine shares the analyzer resource tree",
+			zap.String("path", dir))
+	}
+
 	cDataDir := C.CString(dataDir)
 	defer C.free(unsafe.Pointer(cDataDir))
 

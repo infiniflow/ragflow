@@ -3,15 +3,16 @@
 # Stages the analyzer resource tree where the shell's bundle config expects it.
 #
 # The engine needs the `resource/` tree at startup: the analyzer dictionaries
-# (ik, jieba, mecab, rag), OpenCC, WordNet and the spaCy models. It is not source
-# code — it is a data bundle the engine loads — so it ships inside the app and is
-# resolved at run time by internal/common.ResourceDir.
+# (rag/), OpenCC and WordNet. It is not source code — it is a data bundle the
+# engine loads — so it ships inside the app and is resolved at run time by
+# internal/common.ResourceDir.
 #
 # Tauri copies `bundle.resources` entries into the app's resource directory
 # keeping their relative layout, so staging the tree as src-tauri/resource makes
 # it land as $RESOURCES/resource, which is exactly what the lookup expects.
 #
-#   RAGFLOW_RESOURCE_DIR   stage this tree instead of probing for one
+#   RAGFLOW_RESOURCE_DIR      stage this tree instead of probing for one
+#   RAGFLOW_RESOURCE_INCLUDE  subdirectories to stage (default: rag wordnet opencc)
 #
 # A tree is only complete when it contains rag/huqie.trie; a half-copied
 # directory would make the engine fail later with a confusing error, so the
@@ -129,17 +130,23 @@ stage_deps() {
     echo "stage-resources: warning: $deps_src is missing; tokenization will fail at startup" >&2
     return 0
   fi
+  # Exactly the files the counters open, at the paths they look for. The rest of
+  # the downloaded tree (model cards, merges, configs, and the InfiniFlow/deepdoc
+  # copy of the weights staged above) is 18 MB of metadata the engine never reads.
   rm -rf "$deps_dest"
-  install -d "$deps_dest/huggingface.co"
-  if [ -f "$deps_src/cl100k_base.tiktoken" ]; then
-    install -m 0644 "$deps_src/cl100k_base.tiktoken" "$deps_dest/"
-  else
-    echo "stage-resources: warning: deps/cl100k_base.tiktoken is missing; the engine cannot count tokens" >&2
-  fi
-  local repo
-  for repo in BAAI Qwen intfloat; do
-    [ -d "$deps_src/huggingface.co/$repo" ] || continue
-    cp -R "$deps_src/huggingface.co/$repo" "$deps_dest/huggingface.co/"
+  local rel
+  for rel in \
+    cl100k_base.tiktoken \
+    huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model \
+    huggingface.co/BAAI/bge-large-en-v1.5/vocab.txt \
+    huggingface.co/Qwen/Qwen3-Embedding-0.6B/tokenizer.json \
+    huggingface.co/intfloat/e5-mistral-7b-instruct/tokenizer.json; do
+    if [ ! -f "$deps_src/$rel" ]; then
+      echo "stage-resources: warning: deps/$rel is missing; a tokenizer counter will be unavailable" >&2
+      continue
+    fi
+    install -d "$deps_dest/$(dirname "$rel")"
+    install -m 0644 "$deps_src/$rel" "$deps_dest/$rel"
   done
   chmod -R u+w "$deps_dest"
   echo "stage-resources: deps/ $(du -sh "$deps_dest" | cut -f1)"
@@ -150,33 +157,50 @@ stage_conf
 stage_deepdoc
 stage_deps
 
+# Two analyzer implementations read this tree and share it: the Go tokenizer
+# (C++ analyzer: rag/, wordnet/, opencc/) and the embedded Infinity engine's `rag`
+# analyzer, which reads rag/. Infinity's optional `chinese`, `ik`, `japanese` and
+# `korean` analyzers want jieba/, ik/ and mecab/ instead, and nothing in this
+# build selects them — 145 MB of a 248 MB tree. spacy/ likewise only serves the
+# cgo_thincner NER extractor, which the desktop tags (cgo,static,sonic,desktop) do
+# not compile. Both stay out; RAGFLOW_RESOURCE_INCLUDE adds them back for a build
+# that needs those analyzers.
+resource_include="${RAGFLOW_RESOURCE_INCLUDE:-rag wordnet opencc}"
+
 # The marker's mtime is enough to notice an updated bundle: the tree is replaced
 # wholesale when it is refreshed, it is never edited file by file in place.
-# `v2` covers the switch to a .git-free copy (see the exclusions below).
-fingerprint="v2 $src $(stat -c %Y "$src/$marker" 2>/dev/null || stat -f %m "$src/$marker" 2>/dev/null)"
+# `v3` covers the switch to a subset copy; the include list is part of the key so
+# widening it re-stages.
+fingerprint="v3 $src $resource_include $(stat -c %Y "$src/$marker" 2>/dev/null || stat -f %m "$src/$marker" 2>/dev/null)"
 if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$fingerprint" ] && [ -f "$dest/$marker" ] && [ ! -e "$dest/.git" ]; then
   echo "stage-resources: up to date ($(du -sh "$dest" | cut -f1) from $src)"
   exit 0
 fi
 
-# The tree is usually a git checkout, and .git is up to 126 MB of objects the
-# app never opens. Excluded, not just ignored: it also carries read-only files,
-# which fs::copy preserves — tauri-build copies bundle.resources into
-# target/<profile> on every build-script run, and the second copy then fails with
-# EACCES opening its own earlier output. The chmod covers any read-only file that
-# does belong to the bundle.
-if command -v rsync >/dev/null 2>&1; then
-  install -d "$dest"
-  rsync -a --delete --exclude=.git --exclude=.DS_Store "$src/" "$dest/"
-else
-  rm -rf "$dest"
-  install -d "$dest"
-  ( cd "$src" && tar -cf - --exclude=.git --exclude=.DS_Store . ) | ( cd "$dest" && tar -xf - )
-fi
-# rsync's --delete spares excluded paths, so a tree staged by an older revision
-# keeps its .git until it is removed here.
-find "$dest" -maxdepth 2 -type d -name .git -prune -exec rm -rf {} + 2>/dev/null || true
+# Built fresh rather than synced: the destination must not keep a subdirectory a
+# narrower include list dropped. The tree is usually a git checkout, and .git is
+# up to 126 MB of objects the app never opens — it also carries read-only files,
+# which fs::copy preserves, and tauri-build copies bundle.resources into
+# target/<profile> on every build-script run, so the second copy would then fail
+# with EACCES opening its own earlier output. The chmod covers the rest.
+rm -rf "$dest"
+install -d "$dest"
+for part in $resource_include; do
+  if [ ! -e "$src/$part" ]; then
+    echo "stage-resources: warning: $src/$part is missing; the analyzer may not load" >&2
+    continue
+  fi
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a "$src/$part" "$dest/"
+  else
+    cp -R "$src/$part" "$dest/"
+  fi
+done
+for top in LICENSE README.md; do
+  [ -f "$src/$top" ] && cp "$src/$top" "$dest/"
+done
 find "$dest" -name .DS_Store -delete 2>/dev/null || true
+find "$dest" -maxdepth 2 -type d -name .git -prune -exec rm -rf {} + 2>/dev/null || true
 chmod -R u+w "$dest"
 
 printf '%s' "$fingerprint" > "$stamp"
