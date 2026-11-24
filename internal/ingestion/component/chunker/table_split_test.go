@@ -468,3 +468,84 @@ func TestSplitLargeHTMLTableWithOnlyRowHeaders(t *testing.T) {
 		}
 	}
 }
+
+// TestSplitLargeHTMLTableRowgroupHeaderStaysWithItsData covers the case where a
+// rowgroup <th> labels several following rows. The label is row-scoped, so it
+// must stay a data row (not become a repeated column header), and it must not
+// be lost when a split boundary falls inside the group.
+func TestSplitLargeHTMLTableRowgroupHeaderStaysWithItsData(t *testing.T) {
+	table, err := tableutil.ParseTableHTML(`<table>
+		<tr><th scope="col">Region</th><th scope="col">Orders</th></tr>
+		<tr><th scope="rowgroup">South</th><td>10</td></tr>
+		<tr><td>East</td><td>20</td></tr>
+		<tr><td>West</td><td>30</td></tr>
+	</table>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if table.HeaderRows != 1 {
+		t.Fatalf("HeaderRows = %d, want 1 (only the col-header row)", table.HeaderRows)
+	}
+	parts, ranges, headerRows := splitLargeTable(table, 45, charTokens, "")
+	if headerRows != 1 {
+		t.Fatalf("headerRows = %d, want 1", headerRows)
+	}
+	if len(parts) < 2 {
+		t.Fatalf("parts = %d, want at least 2", len(parts))
+	}
+	// Every data row must survive exactly once, including the row that carries
+	// the rowgroup label. Only the column header may be repeated.
+	seen := map[string]int{}
+	for _, part := range parts {
+		for _, row := range part.CellTexts()[1:] {
+			seen[strings.Join(row, "|")]++
+		}
+	}
+	for _, want := range []string{"South|10", "East|20", "West|30"} {
+		if seen[want] != 1 {
+			t.Errorf("data row %q appears %d times, want exactly 1", want, seen[want])
+		}
+	}
+	if len(ranges) != len(parts) {
+		t.Errorf("ranges = %v, parts = %d", ranges, len(parts))
+	}
+}
+
+// TestSplitLargeHTMLTableAllRowScopedHeadersAreData covers the case CodeRabbit
+// flagged: every row starts with <th scope="row">. Those are row labels, not a
+// column header, so the one-row fallback must not turn the first data row into
+// a repeated header when the table is split.
+func TestSplitLargeHTMLTableAllRowScopedHeadersAreData(t *testing.T) {
+	table, err := tableutil.ParseTableHTML(`<table>
+		<tr><th scope="row">North</th><td>10</td></tr>
+		<tr><th scope="row">South</th><td>20</td></tr>
+		<tr><th scope="row">East</th><td>30</td></tr>
+	</table>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if table.HeaderRows != 0 {
+		t.Fatalf("HeaderRows = %d, want 0: a row-scoped th labels its row, not a column", table.HeaderRows)
+	}
+	parts, ranges, headerRows := splitLargeTable(table, 45, charTokens, "")
+	if headerRows != 0 {
+		t.Fatalf("headerRows = %d, want 0", headerRows)
+	}
+	if len(parts) < 2 {
+		t.Fatalf("parts = %d, want at least 2 so the fallback would have been visible", len(parts))
+	}
+	seen := map[string]int{}
+	for _, part := range parts {
+		for _, row := range part.CellTexts()[headerRows:] {
+			seen[strings.Join(row, "|")]++
+		}
+	}
+	for _, want := range []string{"North|10", "South|20", "East|30"} {
+		if seen[want] != 1 {
+			t.Errorf("data row %q appears %d times, want exactly 1", want, seen[want])
+		}
+	}
+	if len(ranges) != len(parts) {
+		t.Errorf("ranges = %v, parts = %d", ranges, len(parts))
+	}
+}
