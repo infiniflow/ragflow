@@ -123,7 +123,7 @@ For other MCP servers, use their documented URL, transport, and authentication. 
 [ClickHouse Loom](https://github.com/ClickHouse/loom/tree/v1.3.0) stores shared agent memory. Use its read-only search tool to look up a handoff saved by another workflow.
 
 1. Start an authenticated Loom deployment and [create a token](https://github.com/ClickHouse/loom/blob/v1.3.0/docs/guides/tokens-and-grants.md) with read access to the namespace containing the handoff.
-2. In **User settings → MCP → Add MCP**, enter `loom` as the name, your Loom instance's full HTTPS `/mcp` URL, and `streamable-http` as the server type. Put the token in **Authorization Token**.
+2. In **User settings → MCP → Add MCP**, enter `loom` as the name, your Loom instance's HTTPS URL with `/mcp?toolset=readonly`, and `streamable-http` as the server type. Put the token in **Authorization Token**.
 3. Refresh **Tools available** and confirm that `loom_search` appears, then save. In an **Agent** component, add the Loom connection and enable `loom_search`.
 4. Ask the agent to find a known handoff saved in Loom. In the run's tool calls, check that it called `loom_search` and that the result contains the handoff.
 
