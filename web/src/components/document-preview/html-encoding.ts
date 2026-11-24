@@ -17,9 +17,24 @@
 import { decodeBlobText } from '@/utils/file-util';
 
 const HtmlEncodingScanBytes = 1024;
-const ContentTypeCharset = /;\s*charset\s*=\s*["']?([\w.-]+)/i;
+const ContentTypeCharset =
+  /;\s*charset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s;"']+))(?=\s*(?:;|$))/i;
 const HtmlAttribute =
   /([^\t\n\f\r /"'=<>]+)(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"([^"]*)"|'([^']*)'|([^\t\n\f\r >]*)))?/g;
+
+function getSupportedEncoding(label: string | undefined): string | undefined {
+  if (!label) return undefined;
+  try {
+    return new TextDecoder(label).encoding;
+  } catch {
+    return undefined;
+  }
+}
+
+function getContentTypeCharset(contentType: string | undefined) {
+  const charset = contentType?.match(ContentTypeCharset);
+  return charset?.[1] ?? charset?.[2] ?? charset?.[3];
+}
 
 function getMetaEncoding(attributes: string): string | undefined {
   const values = new Map<string, string>();
@@ -38,18 +53,15 @@ function getMetaEncoding(attributes: string): string | undefined {
 
   const legacyEncoding =
     values.get('http-equiv')?.toLowerCase() === 'content-type'
-      ? values.get('content')?.match(ContentTypeCharset)?.[1]
+      ? getContentTypeCharset(values.get('content'))
       : undefined;
-  const encoding = values.get('charset') ?? legacyEncoding;
-  if (!encoding) return undefined;
-
-  try {
-    const name = new TextDecoder(encoding).encoding;
-    // An HTML meta declaration cannot switch an ASCII-compatible scan to UTF-16.
-    return name === 'utf-16le' || name === 'utf-16be' ? 'utf-8' : name;
-  } catch {
-    return undefined;
-  }
+  const encoding = getSupportedEncoding(
+    values.get('charset') ?? legacyEncoding,
+  );
+  // An HTML meta declaration cannot switch an ASCII-compatible scan to UTF-16.
+  return encoding === 'utf-16le' || encoding === 'utf-16be'
+    ? 'utf-8'
+    : encoding;
 }
 
 function prescanHtmlEncoding(htmlPrefix: string): string | undefined {
@@ -83,7 +95,7 @@ function prescanHtmlEncoding(htmlPrefix: string): string | undefined {
 
 export async function decodeHtmlPreview(file: Blob): Promise<string> {
   const declaredEncoding =
-    file.type.match(ContentTypeCharset)?.[1] ??
+    getSupportedEncoding(getContentTypeCharset(file.type)) ??
     prescanHtmlEncoding(await file.slice(0, HtmlEncodingScanBytes).text());
   return decodeBlobText(file, declaredEncoding);
 }

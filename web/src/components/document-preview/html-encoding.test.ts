@@ -63,6 +63,19 @@ describe('decodeHtmlPreview', () => {
     );
   });
 
+  it.each(['not-an-encoding', '"utf-8/invalid"'])(
+    'falls back to the meta charset when the HTTP label %s is unsupported',
+    async (charset) => {
+      const head = '<meta charset=windows-1252><p>caf';
+      await expect(
+        decode(
+          [head, new Uint8Array([0xe9]), '</p>'],
+          'text/html; charset=' + charset,
+        ),
+      ).resolves.toBe(head + 'é</p>');
+    },
+  );
+
   it('gives a BOM priority over both HTTP and meta declarations', async () => {
     const html = '<meta charset="windows-1252">' + HtmlText;
     await expect(
