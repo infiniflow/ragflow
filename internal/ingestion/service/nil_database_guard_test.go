@@ -35,7 +35,7 @@ func TestMarkFailedToleratesNilDatabase(t *testing.T) {
 	defer testutil.ReplaceDBForTest(t, nil)()
 
 	ingestor := newUnitIngestor("test", 1)
-	if written := ingestor.markFailed(context.Background(), "task-1", ""); written {
+	if written, _ := ingestor.markFailed(context.Background(), "task-1", ""); written {
 		t.Fatal("markFailed reported a durable FAILED write without a database")
 	}
 }

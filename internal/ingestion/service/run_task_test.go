@@ -313,7 +313,7 @@ func TestRunTask_EngineStartingLeavesTaskForRedelivery(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
 		var engineErr error = infinitysdk.NewInfinityException(2008, "Infinity is initing")
 		return fmt.Errorf("execute pipeline: %w", engineErr)
