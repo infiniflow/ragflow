@@ -47,12 +47,13 @@ func ComputeDurations(enqueue, begin, end time.Time) (float64, float64) {
 }
 
 // isBeginRelevant reports whether the worker-claim time should be attached to
-// this event. created/scheduled events happen before any worker has claimed the
-// document, so they must not carry a (possibly stale, from a prior run) claim
-// time.
-func isBeginRelevant(eventType string) bool {
-	switch eventType {
-	case "running", "completed", "failed", "stopped":
+// this event. It keys on the task-level status (uppercase), not event_type —
+// event_type now carries the event scope (task|component|progress).
+// created/scheduled events happen before any worker has claimed the document,
+// so they must not carry a (possibly stale, from a prior run) claim time.
+func isBeginRelevant(status string) bool {
+	switch status {
+	case "RUNNING", "COMPLETED", "FAILED", "STOPPED":
 		return true
 	default:
 		return false
@@ -83,30 +84,36 @@ func claimTime(doc *entity.Document, run *entity.PipelineOperationLog) *time.Tim
 	return nil
 }
 
-// BuildIngestLog assembles a common.IngestionLog from the task, its document, and
-// the bound pipeline run. eventType is one of
-// created|scheduled|running|completed|failed|stopped.
+// BuildIngestLog assembles a common.IngestionLog from the task, its document,
+// and the bound pipeline run. scope is the event scope (task|component|progress);
+// the lifecycle state lives in status. Component/progress events are built by
+// the dedicated granularity builders instead.
 //
 // Ingest identity (ingestor name, NATS subject, worker name, user/tenant
 // display names) is read from ctx via the WithXxx/IngestXxx accessors in
 // ingest_ctx.go; it is execution/routing metadata not derivable from the task
-// or document and varies per execution in the EE build. A missing key yields an
-// empty field that serializes as omitted/zero.
-func BuildIngestLog(ctx context.Context, task *entity.IngestionTask, doc *entity.Document, run *entity.PipelineOperationLog, eventType, status, errorInfo string) common.IngestionLog {
+// or document and varies per execution. A missing key yields an empty field
+// that serializes as omitted/zero.
+func BuildIngestLog(ctx context.Context, task *entity.IngestionTask, doc *entity.Document, run *entity.PipelineOperationLog, scope, status, errorInfo string) common.IngestionLog {
 	ev := common.IngestionLog{
 		EventTime:    time.Now().UTC(),
-		TaskID:       task.ID,
-		DocID:        task.DocumentID,
-		DatasetID:    task.DatasetID,
-		UserID:       task.UserID,
 		UserName:     UserName(ctx),
 		TenantName:   TenantName(ctx),
 		IngestorName: IngestorName(ctx),
 		NatsQueue:    NatsQueue(ctx),
 		Worker:       WorkerName(ctx),
-		EventType:    eventType,
+		EventType:    scope,
 		Status:       status,
 		ErrorInfo:    errorInfo,
+	}
+	// task may be absent (e.g. a best-effort granularity event where the task
+	// row could not be loaded); keep the builder nil-safe so instrumentation
+	// never panics the parse path. Identity fields simply stay empty.
+	if task != nil {
+		ev.TaskID = task.ID
+		ev.DocID = task.DocumentID
+		ev.DatasetID = task.DatasetID
+		ev.UserID = task.UserID
 	}
 	if doc != nil {
 		name := ""
@@ -122,6 +129,9 @@ func BuildIngestLog(ctx context.Context, task *entity.IngestionTask, doc *entity
 		}
 	}
 	if run != nil {
+		// Run identity is part of every scope (task/component/progress): task ids
+		// are reused across retries, so the run id is what disambiguates a run.
+		ev.PipelineLogID = run.ID
 		if run.RunCount != nil {
 			ev.RunCount = *run.RunCount
 		}
@@ -140,7 +150,7 @@ func BuildIngestLog(ctx context.Context, task *entity.IngestionTask, doc *entity
 		}
 		// BeginTime only for running/terminal events; created/scheduled must not
 		// leak a (possibly stale) claim time from a previous run.
-		if ct := claimTime(doc, run); ct != nil && isBeginRelevant(eventType) {
+		if ct := claimTime(doc, run); ct != nil && isBeginRelevant(status) {
 			ev.BeginTime = ct.UTC()
 		}
 		// When the end time still could not be derived (the run had no
@@ -148,7 +158,7 @@ func BuildIngestLog(ctx context.Context, task *entity.IngestionTask, doc *entity
 		// transition time for a terminal event so a parse duration is still reported
 		// if a begin time is present.
 		if ev.EndTime.IsZero() && !ev.BeginTime.IsZero() &&
-			(eventType == "completed" || eventType == "failed" || eventType == "stopped") {
+			(status == common.COMPLETED || status == common.FAILED || status == common.STOPPED) {
 			ev.EndTime = ev.EventTime
 		}
 	}

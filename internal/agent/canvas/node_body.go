@@ -302,6 +302,9 @@ func realComponentBodyWithOptions(cpnID, componentClass, displayName string, com
 		// runtime.ReportComponentFraction calls are attributed to this node
 		// without the component knowing its own cpnID.
 		cctx = runtime.BindComponentFraction(cctx, cpnID)
+		// Bind the node id into the detail reporter so component progress
+		// positions (page/chunk/batch) are attributed to this node.
+		cctx = runtime.BindComponentDetail(cctx, cpnID)
 
 		var out map[string]any
 		var componentOut map[string]any
