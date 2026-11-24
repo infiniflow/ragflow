@@ -140,8 +140,11 @@ INFINITY_EMBEDDED_SYMBOL_PREFIX="infzstd_"
 INFINITY_EMBEDDED_RESOLVED=""
 # Set by prepare_infinity_embedded: the mode actually used (static or shared).
 INFINITY_EMBEDDED_MODE=""
-# Set by prepare_infinity_embedded: the staged artifact the Go link names.
+# Set by prepare_infinity_embedded: the link flags naming the staged artifact
+# (a path for the archive, -L/-l:<name> for a shared object).
 INFINITY_EMBEDDED_LINK_FLAG=""
+# Set by prepare_infinity_embedded: the staged file itself, for reporting.
+INFINITY_EMBEDDED_STAGED=""
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
@@ -1434,12 +1437,12 @@ _infinity_stage_static_archive() {
 # Stage the engine and record the path the Go link names explicitly.
 #
 # The staged artifact lives under a directory keyed by the link mode and by the
-# source artifact (size+mtime), and the absolute path is what build.sh adds to
+# source artifact (size+mtime), and that keyed location is what build.sh adds to
 # CGO_LDFLAGS. That is deliberate: Go keys the final link on the flag string and
-# does NOT hash the libraries it names, so a stable path would let a mode switch
-# or a rebuilt engine reuse the previously linked binary from the cache. A keyed
-# path changes the flag string, which is also why the cgo directive no longer
-# carries -L/-l.
+# does NOT hash the libraries it names, so a stable location would let a mode
+# switch or a rebuilt engine reuse the previously linked binary from the cache.
+# The keyed location changes the flag string, which is also why the cgo directive
+# no longer carries -L/-l.
 #
 # A stable symlink next to the keyed directories keeps the layout obvious for a
 # human and gives the shared link's run path (${SRCDIR}/../../.cache/
@@ -1467,8 +1470,12 @@ prepare_infinity_embedded() {
         *.a) ;;
         *)
             if [ "$mode" = "static" ]; then
+                # Static is the preference: folding the engine in ships one file
+                # with no run path. Only an absent archive falls back to shared.
                 echo -e "${YELLOW}Warning: RAGFLOW_INFINITY_LINK=static needs the static archive;${NC}" >&2
-                echo "  ${lib} is a shared object, so the shared link is used." >&2
+                echo "  ${lib} is a shared object, so the shared link is used. Rebuild the" >&2
+                echo "  crate's staticlib target (cargo build --release -p ${INFINITY_EMBEDDED_PACKAGE})" >&2
+                echo "  to link the engine into the binary instead." >&2
                 mode="shared"
             fi
             ;;
@@ -1523,6 +1530,7 @@ prepare_infinity_embedded() {
     fi
 
     INFINITY_EMBEDDED_LINK_FLAG="$link_flag"
+    INFINITY_EMBEDDED_STAGED="$staged"
     # One engine build is all that may be kept: each staged archive is ~190 MB.
     find "$INFINITY_EMBEDDED_STAGE" -mindepth 1 -maxdepth 1 -type d \
         ! -name "$key" -exec rm -rf {} + 2>/dev/null || true
@@ -2068,7 +2076,7 @@ main() {
             # its own after updating the Infinity checkout: --desktop then finds
             # the staged artifact and links it without rebuilding anything.
             prepare_infinity_embedded || exit 1
-            echo "Staged (${INFINITY_EMBEDDED_MODE}): ${INFINITY_EMBEDDED_LINK_FLAG}"
+            echo "Staged (${INFINITY_EMBEDDED_MODE}): ${INFINITY_EMBEDDED_STAGED}"
             ;;
         --test|-t)
             check_go_deps
