@@ -414,7 +414,10 @@ function MarkdownContent({
                     // users into thinking the citation can be previewed.
                     'hover:no-underline cursor-default':
                       !documentUrl &&
-                      !(supportsSourceLocate(fileExtension) && clickDocumentButton),
+                      !(
+                        supportsSourceLocate(fileExtension) &&
+                        clickDocumentButton
+                      ),
                   })}
                 >
                   {document?.doc_name}
