@@ -34,7 +34,14 @@ const buildGroupedFilters = (): FilterCollection[] => [
         id: 'file_name',
         field: 'file_name',
         label: 'file_name',
-        list: [{ id: 'report.pdf', field: 'report.pdf', label: 'report.pdf', count: 1 }],
+        list: [
+          {
+            id: 'report.pdf',
+            field: 'report.pdf',
+            label: 'report.pdf',
+            count: 1,
+          },
+        ],
       },
     ],
   },

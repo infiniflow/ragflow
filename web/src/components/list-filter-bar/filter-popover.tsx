@@ -295,7 +295,9 @@ function CheckboxFormMultiple({
                             id: x.field,
                             field: ``,
                           }}
-                          selectedIds={selectedIdsByField[x.field] ?? EMPTY_ID_SET}
+                          selectedIds={
+                            selectedIdsByField[x.field] ?? EMPTY_ID_SET
+                          }
                         />
                       </div>
                     ))}
