@@ -30,6 +30,9 @@ func (c *CLI) ExecuteCommand(commandCount int, cmd *Command) (ResponseIf, error)
 	case AdminMode:
 		// Admin mode: execute command with admin privileges
 		return c.ExecuteAdminCommand(commandCount, cmd)
+	case CommandMode:
+		// Command mode: execute command with user privileges
+		return c.ExecuteSingleCommand(commandCount, cmd)
 	default:
 		return nil, fmt.Errorf("invalid server type: %s", c.Config.CLIMode)
 	}
@@ -269,6 +272,8 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.AdminListUserDefaultModelsCommand(commandCount, cmd)
 	case "admin_list_user_operation_logs":
 		return c.AdminListUserLogsCommand(commandCount, cmd)
+	case "admin_list_features":
+		return c.CommonListFeaturesCommand(commandCount, cmd)
 	case "admin_stop_user_ingestion_tasks_command":
 		return c.AdminStopUserIngestionTasksCommand(commandCount, cmd)
 	case "admin_remove_user_ingestion_tasks_command":
@@ -299,6 +304,8 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.AdminShowLogLevelCommand(commandCount, cmd)
 	case "admin_show_hardware":
 		return c.CommonShowHardwareCommand(commandCount, cmd)
+	case "admin_show_deploy":
+		return c.CommonShowDeployCommand(commandCount, cmd)
 	case "admin_list_api_servers":
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_add_api_server":
@@ -530,6 +537,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.APIShowModelStatsCommand(commandCount, cmd)
 	case "api_show_group_stats":
 		return c.APIShowGroupStatsCommand(commandCount, cmd)
+	case "api_show_deploy":
+		return c.CommonShowDeployCommand(commandCount, cmd)
 	case "api_list_model_groups":
 		return c.APIListModelGroupCommand(commandCount, cmd)
 	case "api_show_model_group":
@@ -538,6 +547,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":
 		return c.APIListEnvironmentsCommand(commandCount, cmd)
+	case "api_check_license":
+		return c.APICheckLicenseCommand(commandCount, cmd)
 	case "api_add_api_server":
 		return c.AddAPIServerCommand(commandCount, cmd)
 	case "api_delete_api_server":
@@ -548,6 +559,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.DeleteAdminServerCommand(commandCount, cmd)
 	case "api_save_config_command":
 		return c.CommonSaveServerConfigCommand(commandCount, cmd)
+	case "api_list_features":
+		return c.CommonListFeaturesCommand(commandCount, cmd)
 
 	// File system commands
 	case "file_system_command":
@@ -579,5 +592,29 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
+}
 
+func (c *CLI) ExecuteSingleCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	switch cmd.Type {
+	case "single_list_files":
+		return c.SingleListFilesCommand(commandCount, cmd)
+	case "single_cat_file":
+		return c.SingleCatFileCommand(commandCount, cmd)
+	case "single_search":
+		return c.SingleSearchCommand(commandCount, cmd)
+	case "single_find":
+		return c.SingleFindCommand(commandCount, cmd)
+	case "single_use_workspace":
+		return c.SingleUseWorkspaceCommand(commandCount, cmd)
+	case "single_new_workspace":
+		return c.SingleNewWorkspaceCommand(commandCount, cmd)
+	case "single_save_message":
+		return c.SingleSaveMessageCommand(commandCount, cmd)
+	case "single_show_workspace":
+		return c.SingleShowCurrentWorkspaceCommand(commandCount, cmd)
+	case "file_system_command":
+		return c.ExecuteFilesystemCommand(commandCount, cmd)
+	default:
+		return nil, fmt.Errorf("single command mode: %s", cmd.Type)
+	}
 }

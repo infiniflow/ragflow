@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 //go:build cgo
 
 package native
@@ -270,13 +286,24 @@ func (r DLAResult) ClampBoxes() []DLABox {
 	w, h := float32(r.W), float32(r.H)
 	out := make([]DLABox, len(r.Boxes))
 	for i, b := range r.Boxes {
-		b.X0 = minf(maxf(b.X0, 0), w)
-		b.Y0 = minf(maxf(b.Y0, 0), h)
-		b.X1 = minf(maxf(b.X1, 0), w)
-		b.Y1 = minf(maxf(b.Y1, 0), h)
+		b.X0 = clampCoord(b.X0, w)
+		b.Y0 = clampCoord(b.Y0, h)
+		b.X1 = clampCoord(b.X1, w)
+		b.Y1 = clampCoord(b.Y1, h)
 		out[i] = b
 	}
 	return out
+}
+
+// clampCoord clamps v into [0, hi]. A NaN coordinate maps to 0, preserving the
+// behavior of the former minf/maxf pair (maxf(NaN, 0) returned 0); Go's builtin
+// min/max propagate NaN, which would otherwise leak through ClampBoxes and make
+// Wire() drop the marshal error and emit an empty string.
+func clampCoord(v, hi float32) float32 {
+	if math.IsNaN(float64(v)) {
+		v = 0
+	}
+	return min(max(v, 0), hi)
 }
 
 // Wire encodes the result in the exact format the Go DocAnalyzer consumes:

@@ -28,6 +28,7 @@ import { Spin } from '@/components/ui/spin';
 // import FileError from '@/pages/document-viewer/file-error';
 import { Authorization } from '@/constants/authorization';
 import { cn } from '@/lib/utils';
+import { getSourceLocatePageNumber } from '@/ee/utils/source-locate-private';
 import FileError from '@/pages/document-viewer/file-error';
 import { getAuthorization } from '@/utils/authorization-util';
 import { useCatchDocumentError } from './hooks';
@@ -107,7 +108,7 @@ const PdfPreview = ({
         errorMessage={<FileError>{error}</FileError>}
       >
         {(pdfDocument) => {
-          pdfDocument.getPage(1).then((page) => {
+          pdfDocument.getPage(getSourceLocatePageNumber(state)).then((page) => {
             const viewport = page.getViewport({ scale: 1 });
             const width = viewport.width;
             const height = viewport.height;

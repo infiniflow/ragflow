@@ -6,6 +6,6 @@
     "description": "Agent Workflow"
   },
   "customProps": {
-    "categoryIcon": "RagAiAgent"
+    "categoryIcon": "LucideWorkflow"
   }
 }

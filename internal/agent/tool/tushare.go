@@ -50,10 +50,10 @@ var tushareEndpoint = "https://api.tushare.pro"
 //   - Params (optional): a free-form map of Tushare query parameters,
 //     e.g. {"ts_code":"000001.SZ","start_date":"20240101"}.
 type tushareParams struct {
-	Token   string            `json:"token"`
-	APIName string            `json:"api_name"`
-	Params  map[string]string `json:"params,omitempty"`
-	Fields  []string          `json:"fields,omitempty"`
+	Token   string            `json:"token" schema:"-"`
+	APIName string            `json:"api_name" doc:"Tushare interface name, e.g. stock_basic, daily, fund_basic, index_daily, fut_basic." required:"true"`
+	Params  map[string]string `json:"params,omitempty" doc:"Optional query parameters, e.g. {\"ts_code\":\"000001.SZ\",\"start_date\":\"20240101\"}."`
+	Fields  []string          `json:"fields,omitempty" doc:"Optional subset of columns to return (Tushare fields parameter)."`
 }
 
 // tushareRequest is the JSON envelope Tushare Pro expects on POST.
@@ -130,27 +130,7 @@ func newTushareTool(h *HTTPHelper, defaults tushareParams) *TushareTool {
 
 // Info returns the tool's metadata for the chat model.
 func (t *TushareTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: tushareToolName,
-		Desc: tushareToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"api_name": {
-				Type:     schema.String,
-				Desc:     "Tushare interface name, e.g. stock_basic, daily, fund_basic, index_daily, fut_basic.",
-				Required: true,
-			},
-			"params": {
-				Type:     schema.Object,
-				Desc:     "Optional query parameters, e.g. {\"ts_code\":\"000001.SZ\",\"start_date\":\"20240101\"}.",
-				Required: false,
-			},
-			"fields": {
-				Type:     schema.Array,
-				Desc:     "Optional subset of columns to return (Tushare `fields` parameter).",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(tushareToolName, tushareToolDescription, tushareParams{})
 }
 
 // buildTushareRequestBody marshals the request envelope to JSON. The

@@ -341,17 +341,19 @@ export const useFetchSessionList = () => {
     },
   });
 
+  const keyword = searchString.trim();
   const data = useMemo(
     () =>
-      searchString
-        ? result.data.filter((session) => session.name.includes(searchString))
+      keyword
+        ? result.data.filter((session) => session.name.includes(keyword))
         : result.data,
-    [result.data, searchString],
+    [result.data, keyword],
   );
 
   return {
     ...result,
     data,
+    total: keyword ? data.length : result.total,
     searchString,
     handleInputChange,
     setSearchString,
@@ -610,7 +612,7 @@ export const useFetchExternalChatInfo = () => {
     queryFn: async () => {
       const { data } = await chatService.fetchExternalChatInfo(id!);
 
-      return data?.data;
+      return data?.data ?? ({} as IExternalChatInfo);
     },
   });
 

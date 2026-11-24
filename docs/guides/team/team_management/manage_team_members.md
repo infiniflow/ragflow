@@ -2,6 +2,9 @@
 sidebar_position: 1
 sidebar_label: Manage Team Members
 title: Manage Team Members
+sidebar_custom_props: {
+  categoryIcon: LucideUserCog
+}
 ---
 
 # Manage Team Members

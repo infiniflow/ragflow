@@ -178,14 +178,14 @@ func (s *BotService) AgentbotLogs(ctx context.Context, agentID, messageID string
 	}
 	payload, err := kvrocks.Get().Get(ctx, fmt.Sprintf("%s-%s-logs", agentID, messageID))
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("failed to read agent logs")
+		return nil, common.CodeServerError, fmt.Errorf("failed to read agent logs: %w", err)
 	}
 	data := map[string]any{}
 	if payload == "" {
 		return data, common.CodeSuccess, nil
 	}
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {
-		return nil, common.CodeServerError, errors.New("failed to decode agent logs")
+		return nil, common.CodeServerError, fmt.Errorf("failed to decode agent logs: %w", err)
 	}
 	return data, common.CodeSuccess, nil
 }
@@ -230,8 +230,9 @@ type ChatbotCompletionRequest struct {
 	// Reasoning / Internet arrive as bool OR 0/1 number depending on the
 	// widget. Internet is normalised by normalizeInternetFlag before reaching
 	// the pipeline (chat_pipeline.go); Reasoning is passed through verbatim as
-	// the 0..4 agentic-RAG level so medium/high/ultra levels are not collapsed
-	// to a bool — resolveReasoningLevel reads it directly.
+	// the 0..6 reasoning level so the depth levels (2/3/4) and the
+	// engine-selecting ones (5 and 6) are not collapsed to a bool —
+	// resolveReasoningLevel reads it directly.
 	Reasoning any `json:"reasoning"`
 	Internet  any `json:"internet"`
 	// DocIDs is an optional comma-separated document filter,

@@ -2,28 +2,29 @@ package service
 
 import (
 	"context"
-	"errors"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 )
 
-// CheckDocumentAccess keeps dataset grants effective for every document while
-// allowing a direct document grant to expose that document independently.
+// CheckDocumentAccess requires access to both the dataset and the document.
 func CheckDocumentAccess(ctx context.Context, documentID, datasetID string, operation permission.Operation) error {
 	checker := permission.NewDatabaseChecker(dao.DB)
-	datasetErr := checker.CheckResource(ctx, permission.ResourceRef{
+	if err := checker.CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindDataset,
 		ID:   datasetID,
-	}, operation)
-	if datasetErr == nil {
-		return nil
-	}
-	if !errors.Is(datasetErr, permission.ErrPermissionDenied) && !errors.Is(datasetErr, permission.ErrMembershipNotFound) {
-		return datasetErr
+	}, operation); err != nil {
+		return err
 	}
 	return checker.CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindDocument,
 		ID:   documentID,
 	}, operation)
+}
+
+// ListReadableDocumentIDs returns the requested documents visible to the
+// current user in the given datasets. A nil candidate list means all readable
+// documents; a non-nil empty list matches no documents.
+func ListReadableDocumentIDs(ctx context.Context, datasetIDs, candidateIDs []string) ([]string, error) {
+	return permission.ListReadableDocumentIDs(ctx, dao.DB, datasetIDs, candidateIDs)
 }

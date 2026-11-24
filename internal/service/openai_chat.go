@@ -342,6 +342,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 	}
 
 	if stream {
+		common.FinishOperationLog(c)
 		events := make(chan OpenAIStreamEvent, 16)
 		go func() {
 			defer close(events)

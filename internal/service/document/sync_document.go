@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
+	"ragflow/internal/service/datasetversion"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 
@@ -91,6 +92,14 @@ func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpse
 		return service.DocumentUpsertResult{}, err
 	}
 	if existing != nil && existing.ContentHash != nil && *existing.ContentHash == contentHash {
+		// Content is unchanged but the source may have renamed the document
+		// (a moved node, or a name that only now resolves), so re-align the name.
+		if existing.Name == nil || *existing.Name != filename {
+			if err := s.documentDAO.UpdateByID(ctx, dao.DB, existing.ID, map[string]any{"name": filename}); err != nil {
+				return service.DocumentUpsertResult{}, err
+			}
+			existing.Name = &filename
+		}
 		if err := s.ensureSyncDocumentPostWrite(ctx, input, existing); err != nil {
 			return service.DocumentUpsertResult{}, err
 		}
@@ -139,6 +148,10 @@ func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpse
 
 // insertSyncDocument inserts a new synced document and file-manager link.
 func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.DocumentUpsertInput, filename, location, filetype, contentHash, tenantID string) (service.DocumentUpsertResult, error) {
+	// The settings and values the document is created with are recorded under the
+	// upload version this request allocates at the end (see InsertDocument and
+	// afterSyncDocumentUpsert): the sink holds them until the number exists.
+	ctx = datasetversion.WithStateSink(ctx)
 	// base info
 	kb := &input.TaskContext.Knowledgebase
 	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
@@ -171,6 +184,16 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 	// write metadata and do `auto_parse` (or not)
 	if err = s.afterSyncDocumentUpsert(ctx, input, doc, false, contentHash); err != nil {
 		return service.DocumentUpsertResult{}, err
+	}
+	// A synced document is an added document: the dataset's history should show
+	// that its content grew even when nobody uploaded it by hand.
+	version, verr := datasetversion.RecordContentVersionChangesOwnTx(ctx, kb.ID, entity.DatasetVersionKindUpload,
+		[]entity.DatasetVersionChange{documentVersionChange(entity.DatasetVersionChangeActionAdd, doc)})
+	if verr != nil {
+		return service.DocumentUpsertResult{}, verr
+	}
+	if verr := datasetversion.FlushStates(ctx, dao.DB, kb.ID, version); verr != nil {
+		return service.DocumentUpsertResult{}, verr
 	}
 
 	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionAdded}, nil
@@ -344,17 +367,7 @@ func syncDocumentFilename(name, extension, fallback string) string {
 		name += extension
 	}
 
-	if len(name) <= 255 {
-		return name
-	}
-
-	ext := filepath.Ext(name)
-	baseLimit := 255 - len(ext)
-	if baseLimit < 1 {
-		return name[:255]
-	}
-
-	return name[:baseLimit] + ext
+	return utility.TruncateFilename(name, 255)
 }
 
 // syncDocumentStagedLocation returns a unique object-storage key for unpublished synced content.

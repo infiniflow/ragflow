@@ -17,7 +17,7 @@ jest.mock('@/hooks/use-llm-request', () => ({
         provider_id: 'provider-1',
         instance_name: 'test-instance',
         instance_id: 'instance-1',
-        model_type: ['vision'],
+        model_type: ['vlm'],
       },
     ],
     isFetched: true,
@@ -29,9 +29,10 @@ jest.mock('@/hooks/common-hooks', () => ({
   useTranslate: () => ({ t: (key: string) => key }),
 }));
 
-jest.mock('../../context', () => ({ useOwnerTenantId: () => 'tenant-1' }));
+jest.mock('../../context', () => ({ useResourceTenantId: () => 'tenant-1' }));
 
 jest.mock('react-i18next', () => ({
+  ...jest.requireActual('react-i18next'),
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 

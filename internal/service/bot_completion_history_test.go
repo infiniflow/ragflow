@@ -707,14 +707,13 @@ func seedStreamTurnSession(t *testing.T, id, question, messageID string) {
 // persisted turn:
 //
 //   - The final frame carries the retrieval reference but an empty
-//     `answer` whenever text was already streamed as deltas (python
-//     async_chat sets final["answer"] = "").
-//   - The persisted assistant turn is the raw streamed text, NOT the
-//     decorated final answer. Persisting the decorated text leaks the
-//     server-inserted [ID:n] markers into the next turn's prompt
-//     history; models that imitate the history format then emit
-//     citation markers on turns whose retrieval returned nothing, and
-//     the widget renders those as "Reference unavailable" icons.
+//     `answer` whenever text was already streamed as deltas. An
+//     AnswerIsAuthoritative result is the exception: it contains the
+//     compacted, final answer that must replace the streamed text.
+//   - Ordinary turns persist the raw streamed text, while an
+//     AnswerIsAuthoritative result persists its canonical final answer.
+//     This keeps compacted citation markers out of ordinary history while
+//     preserving the authoritative answer used to replace the stream.
 func TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -767,6 +766,45 @@ func TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText(t *testing.T
 	}
 	if got := turns[1]["content"]; got != "答案第一段" {
 		t.Errorf("persisted assistant content = %v, want raw streamed text without server-inserted markers", got)
+	}
+}
+
+func TestStreamChatbotTurn_AuthoritativeFinalReplacesStreamedAnswer(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-authoritative", "q-authoritative", "msg-authoritative")
+	svc := NewBotService(nil)
+
+	results := make(chan AsyncChatResult, 2)
+	results <- AsyncChatResult{Answer: "raw answer [47]", Reference: map[string]any{}}
+	results <- AsyncChatResult{
+		Answer:                "final answer [ID:0]",
+		Reference:             map[string]any{"chunks": []any{map[string]any{"chunk_id": "c1"}}},
+		Final:                 true,
+		AnswerIsAuthoritative: true,
+	}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-authoritative", DialogID: "dlg-s1", UserID: "tenant-1"}
+	var frames []ChatbotSSEFrame
+	for frame := range svc.streamChatbotTurn(t.Context(), sess, "q-authoritative", "msg-authoritative", results) {
+		frames = append(frames, frame)
+	}
+	if len(frames) != 3 || !frames[2].Done {
+		t.Fatalf("want delta + authoritative final + done, got %+v", frames)
+	}
+	if !frames[1].Final || frames[1].Data != "final answer [ID:0]" {
+		t.Fatalf("authoritative final frame = %+v, want the rewritten answer", frames[1])
+	}
+
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-authoritative", "dlg-s1", true)
+	if err != nil || row == nil {
+		t.Fatalf("re-read session: row=%v err=%v", row, err)
+	}
+	turns := parseChatbotTurns(row.Message)
+	if got := turns[len(turns)-1]["content"]; got != "final answer [ID:0]" {
+		t.Fatalf("persisted authoritative content = %q, want final answer", got)
 	}
 }
 

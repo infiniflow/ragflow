@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
 )
 
@@ -148,8 +149,8 @@ func TestSortValuesEqual(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := sortValuesEqual(tc.a, tc.b); got != tc.want {
-				t.Errorf("sortValuesEqual(%#v, %#v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			if got := esoscommon.SortValuesEqual(tc.a, tc.b); got != tc.want {
+				t.Errorf("esoscommon.SortValuesEqual(%#v, %#v) = %v, want %v", tc.a, tc.b, got, tc.want)
 			}
 		})
 	}
@@ -488,7 +489,7 @@ func TestFormatOrderedTagFeas(t *testing.T) {
 		"质量投诉": 3,
 	}
 
-	raw, ok := formatOrderedTagFeas(tagFeas)
+	raw, ok := esoscommon.FormatOrderedTagFeas(tagFeas)
 	if !ok {
 		t.Fatal("expected formatOrderedTagFeas to succeed")
 	}
@@ -504,7 +505,7 @@ func TestFormatOrderedTagFeas(t *testing.T) {
 		"HighTag": json.Number("8.7"),
 		"MidTag":  float64(5.6),
 	}
-	rawNum, okNum := formatOrderedTagFeas(tagFeasWithJSONNumber)
+	rawNum, okNum := esoscommon.FormatOrderedTagFeas(tagFeasWithJSONNumber)
 	if !okNum {
 		t.Fatal("expected formatOrderedTagFeas with json.Number to succeed")
 	}
@@ -541,7 +542,7 @@ func TestBuildQueryStringQueryMinimumShouldMatchHalfUp(t *testing.T) {
 		{1.0, "100%"},
 	}
 	for _, tc := range tests {
-		query := buildQueryStringQuery(&types.MatchTextExpr{
+		query := esoscommon.BuildQueryStringQuery(&types.MatchTextExpr{
 			MatchingText: "hello",
 			ExtraOptions: map[string]interface{}{"minimum_should_match": tc.fraction},
 		}, false, false)

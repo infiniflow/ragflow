@@ -1,47 +1,39 @@
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { LucideX } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
+import { FolderBookmark } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import CategoryPanel from './category-panel';
 
 const ChunkMethodLearnMore = ({ parserId }: { parserId: string }) => {
   const { t } = useTranslation();
-  const [visible, setVisible] = useState(false);
-
-  const toggleVisible = useCallback(() => {
-    setVisible((v) => !v);
-  }, []);
-
-  const hidePanel = useCallback(() => {
-    setVisible(false);
-  }, []);
 
   return (
-    <div className="flex flex-1 flex-col">
-      <div>
-        <Button variant="outline" onClick={toggleVisible}>
+    <Sheet modal={false}>
+      <SheetTrigger asChild>
+        <Button type="button" variant="outline">
+          <FolderBookmark />
           {t('knowledgeDetails.learnMore')}
         </Button>
-      </div>
-
-      {visible && (
-        <Card as="article" className="relative flex-1 overflow-auto mt-4">
-          <Button
-            className="absolute right-2 top-2"
-            variant="ghost"
-            size="icon-xs"
-            onClick={hidePanel}
-          >
-            <LucideX />
-          </Button>
-
-          <CardContent className="p-5">
-            <CategoryPanel chunkMethod={parserId}></CategoryPanel>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+      </SheetTrigger>
+      <SheetContent
+        side="right"
+        className="flex flex-col"
+        aria-describedby={undefined}
+      >
+        <SheetHeader>
+          <SheetTitle>{t('knowledgeDetails.builtInParserDetails')}</SheetTitle>
+        </SheetHeader>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <CategoryPanel chunkMethod={parserId} />
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 };
 

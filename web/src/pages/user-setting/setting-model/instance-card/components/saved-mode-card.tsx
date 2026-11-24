@@ -213,7 +213,7 @@ export function SavedModeCard({
             onSubmit={() => undefined}
             defaultValues={formDefaultValues}
             labelClassName="font-normal"
-            resetOptions={{ keepDirtyValues: true }}
+            resetOptions={{ keepDirtyValues: true, keepErrors: true }}
           />
 
           {/* {providerName !== LLMFactory.OpenAiAPICompatible && (

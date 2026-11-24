@@ -1,4 +1,5 @@
 import { FilterCollection } from '@/components/list-filter-bar/interface';
+import { PageFrame } from '@/components/page-frame';
 import SvgIcon from '@/components/svg-icon';
 import { useIsDarkTheme } from '@/components/theme-provider';
 
@@ -46,7 +47,7 @@ const StatCard: FC<StatCardProps> = ({
 }) => {
   return (
     <Card
-      className="px-5 py-2.5 rounded-lg border-border-default grid grid-cols-[1fr_auto] grid-rows-[1fr_auto]"
+      className="px-5 py-2.5 rounded-2xl border-border-default grid grid-cols-[1fr_auto] grid-rows-[1fr_auto]"
       style={{
         gridTemplateAreas: '"data icon" "footer footer"',
       }}
@@ -212,13 +213,9 @@ const FileLogsPage: FC = () => {
   const isDark = useIsDarkTheme();
 
   return (
-    <Card
-      className="
-      p-5 min-w-[880px] mr-5 mb-5 bg-transparent shadow-none
-      flex flex-col min-h-0"
-    >
+    <PageFrame className="px-5 pt-5">
       {/* Stats Cards */}
-      <div className="grid grid-cols-3 md:grid-cols-3 gap-7 mb-6">
+      <div className="grid grid-cols-3 md:grid-cols-3 gap-7 mb-6 shrink-0">
         <StatCard
           title={t('datasetOverview.totalFiles')}
           value={overviewStats.totalFiles}
@@ -300,7 +297,7 @@ const FileLogsPage: FC = () => {
           active={active}
         />
       )}
-    </Card>
+    </PageFrame>
   );
 };
 

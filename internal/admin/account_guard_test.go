@@ -7,10 +7,13 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/testutil"
+
+	"gorm.io/gorm"
 )
 
 func TestAccountChangesPreserveAnActiveSuperuser(t *testing.T) {
-	db := setupUserDeletionDB(t)
+	db := setupAccountGuardDB(t)
 	svc := NewService()
 	on, superuser := "1", true
 	token := "fixture-session"
@@ -41,4 +44,51 @@ func TestAccountChangesPreserveAnActiveSuperuser(t *testing.T) {
 		t.Fatalf("revoking the other administrator should succeed: %v", err)
 	}
 	assertConflict(svc.RevokeAdmin(ctx, admin.Email))
+}
+
+func TestPasswordResetPreservesConcurrentActivation(t *testing.T) {
+	db := setupAccountGuardDB(t)
+	inactive, valid, superuser := "0", "1", true
+	user := entity.User{
+		ID: "fixture-target", Email: "target@example.test", Nickname: "Fixture target",
+		IsActive: inactive, Status: &valid, IsSuperuser: &superuser,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	activationWritten := false
+	if err := db.Callback().Update().Before("gorm:update").Register("test:activate-before-password-write", func(tx *gorm.DB) {
+		if activationWritten || tx.Statement.Table != "user" {
+			return
+		}
+		activationWritten = true
+		result := tx.Exec("UPDATE user SET is_active = ? WHERE id = ?", "1", user.ID)
+		if result.Error != nil {
+			_ = tx.AddError(result.Error)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	const password = "new-password-fixture"
+	if err := NewService().ChangePassword(t.Context(), "fixture-admin", user.Email, password); err != nil {
+		t.Fatal(err)
+	}
+	var current entity.User
+	if err := db.Take(&current, "id = ?", user.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !activationWritten || !activeSuperuser(&current) {
+		t.Fatal("password reset overwrote the concurrent activation")
+	}
+	if current.Password == nil || !common.CheckWerkzeugPassword(password, *current.Password) {
+		t.Fatal("password was not updated")
+	}
+}
+
+func setupAccountGuardDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := testutil.SetupTestDB(t, &entity.User{})
+	t.Cleanup(testutil.ReplaceDBForTest(t, db))
+	return db
 }

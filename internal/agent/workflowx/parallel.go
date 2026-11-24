@@ -37,6 +37,8 @@ import (
 	"strconv"
 	"sync"
 
+	"ragflow/internal/agent/runtime"
+
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
@@ -326,7 +328,7 @@ func runParallelInvoke[I, O any](
 	effectiveItems := items
 	if isResume && prev != nil {
 		var restored []I
-		if rErr := json.Unmarshal(prev.OriginalInputsJSON, &restored); rErr != nil {
+		if rErr := runtime.UnmarshalCheckpointJSON(prev.OriginalInputsJSON, &restored); rErr != nil {
 			return nil, fmt.Errorf("%w: decode original_inputs_json: %w", ErrParallelResumeStateInvalid, rErr)
 		}
 		effectiveItems = restored
@@ -358,8 +360,7 @@ func runParallelInvoke[I, O any](
 		outputs = make([]O, totalCount)
 		// Replay completed results into the correct output slots.
 		// The persisted value came through a JSON round-trip so
-		// numeric types are float64; we coerce to O via an
-		// intermediate any round-trip.
+		// numeric types need coercion back to the requested output type.
 		for idx, v := range prev.CompletedResults {
 			if idx < 0 || idx >= totalCount {
 				return nil, fmt.Errorf("%w: completed index %d out of range", ErrParallelResumeStateInvalid, idx)
@@ -440,11 +441,8 @@ func runParallelInvoke[I, O any](
 }
 
 // coerceAnyToO adapts a JSON-roundtripped any to the typed
-// output O. JSON decoding maps numeric types to float64 by
-// default, so a value that originated as int, int64, float32,
-// etc. comes back as float64. This helper covers the common
-// numeric conversions; for non-numeric O, the direct assertion
-// is used.
+// output O. Ordinary numbers decode as float64; large integer IDs
+// remain json.Number and convert directly to the requested numeric type.
 func coerceAnyToO[O any](v any) (O, bool) {
 	var zero O
 	if v == nil {
@@ -452,6 +450,13 @@ func coerceAnyToO[O any](v any) (O, bool) {
 	}
 	if typed, ok := v.(O); ok {
 		return typed, true
+	}
+	if number, ok := v.(json.Number); ok {
+		// Let the target numeric type enforce its own range without a float64 hop.
+		if err := json.Unmarshal([]byte(number.String()), &zero); err != nil {
+			return zero, false
+		}
+		return zero, true
 	}
 	// JSON-decode coercion: float64 -> O when O is one of the
 	// common numeric types. We use reflect-free type switches.
@@ -516,7 +521,7 @@ func loadParallelSnapshot(ctx context.Context) (*ParallelInterruptState, bool, e
 	// store. Production code never sets this key.
 	if raw, ok := ctx.Value(parallelResumeBackdoorKey{}).([]byte); ok && len(raw) > 0 {
 		var st ParallelInterruptState
-		if err := json.Unmarshal(raw, &st); err != nil {
+		if err := runtime.UnmarshalCheckpointJSON(raw, &st); err != nil {
 			return nil, false, fmt.Errorf("%w: decode state: %w", ErrParallelResumeStateInvalid, err)
 		}
 		if st.TotalCount < 0 {
@@ -532,7 +537,7 @@ func loadParallelSnapshot(ctx context.Context) (*ParallelInterruptState, bool, e
 		return nil, false, nil
 	}
 	var st ParallelInterruptState
-	if err := json.Unmarshal(payload, &st); err != nil {
+	if err := runtime.UnmarshalCheckpointJSON(payload, &st); err != nil {
 		return nil, false, fmt.Errorf("%w: decode state: %w", ErrParallelResumeStateInvalid, err)
 	}
 	if st.TotalCount < 0 {

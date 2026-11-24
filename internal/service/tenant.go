@@ -393,7 +393,7 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, req *Add
 			return common.NewCodedError(common.CodeDataError, "user is already a member")
 		case entity.TenantMembershipStatusInvited:
 			return common.NewCodedError(common.CodeDataError, "user already has a pending invitation")
-		case entity.TenantMembershipStatusRequested, entity.TenantMembershipStatusRejected, entity.TenantMembershipStatusLeft, entity.TenantMembershipStatusRemoved:
+		case entity.TenantMembershipStatusRequested, entity.TenantMembershipStatusRejected, entity.TenantMembershipStatusRemoved:
 		default:
 			return common.NewCodedError(common.CodeConflict, "Tenant membership has an unsupported status")
 		}
@@ -437,11 +437,20 @@ func (s *TenantService) RemoveMember(ctx context.Context, tenantID, targetUserID
 			return fmt.Errorf("load Tenant membership: %w", err)
 		}
 		oldStatus := tenantMembershipStatus(membership.Status)
-		if oldStatus == entity.TenantMembershipStatusRemoved || oldStatus == entity.TenantMembershipStatusRejected || oldStatus == entity.TenantMembershipStatusLeft {
+		if oldStatus == entity.TenantMembershipStatusRemoved || oldStatus == entity.TenantMembershipStatusRejected {
 			return nil
 		}
 		if membership.Role == TenantRoleOwner {
 			return common.NewCodedError(common.CodeArgumentError, "cannot remove or leave the tenant owner")
+		}
+		if oldStatus == entity.TenantMembershipStatusJoined {
+			handled, err := markJoinedTenantMemberLeftEE(ctx, tx, tenantID, targetUserID, &membership)
+			if err != nil {
+				return err
+			}
+			if handled {
+				return nil
+			}
 		}
 
 		newStatus := entity.TenantMembershipStatusRemoved

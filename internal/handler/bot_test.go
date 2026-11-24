@@ -21,19 +21,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	gcs "cloud.google.com/go/storage"
+	"github.com/aws/smithy-go"
 	"github.com/gin-gonic/gin"
+	"github.com/minio/minio-go/v7"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
+	"ragflow/internal/storage"
 )
 
 // stubBotService is the stub for the botService interface used by
@@ -715,25 +720,35 @@ func TestDownloadAttachment_DefaultExt(t *testing.T) {
 // TestDownloadAttachment_NotFound covers criterion 3.
 func TestDownloadAttachment_NotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant-x"})
-		c.Next()
-	})
-	h := &AgentHandler{fileService: &fakeFileService{err: errors.New("not found")}}
-	g := r.Group("/api/v1/agents")
-	inlineRegisterAgentRoutes(g, h)
-	w := doJSON(r, http.MethodGet, "/api/v1/agents/attachments/00000000-0000-0000-0000-000000000099/download", "")
-	var resp struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.Code != 102 {
-		t.Errorf("code = %d, want 102", resp.Code)
-	}
-	if !strings.Contains(resp.Message, "not found") {
-		t.Errorf("message = %q, want contains 'not found'", resp.Message)
+	for _, tt := range []struct {
+		name    string
+		err     error
+		code    common.ErrorCode
+		message string
+	}{
+		{"memory", storage.ErrMemoryNotFound, common.CodeDataError, "Attachment not found!"},
+		{"minio", minio.ErrorResponse{Code: "NoSuchKey"}, common.CodeDataError, "Attachment not found!"},
+		{"s3", &smithy.GenericAPIError{Code: "NoSuchKey"}, common.CodeDataError, "Attachment not found!"},
+		{"gcs", gcs.ErrObjectNotExist, common.CodeDataError, "Attachment not found!"},
+		{"unauthenticated", permission.ErrUnauthenticated, common.CodeUnauthorized, permission.ErrUnauthenticated.Error()},
+		{"backend failure", errors.New("storage.internal: timeout"), common.CodeServerError, "Failed to download attachment"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := gin.New()
+			h := &AgentHandler{fileService: &fakeFileService{err: fmt.Errorf("download: %w", tt.err)}}
+			r.GET("/api/v1/agents/attachments/:attachment_id/download", h.DownloadAttachment)
+			w := doJSON(r, http.MethodGet, "/api/v1/agents/attachments/00000000-0000-0000-0000-000000000099/download", "")
+			var resp struct {
+				Code    common.ErrorCode `json:"code"`
+				Message string           `json:"message"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.Code != tt.code || !strings.HasSuffix(resp.Message, tt.message) {
+				t.Fatalf("response = %+v, want code %d and message %q", resp, tt.code, tt.message)
+			}
+		})
 	}
 }
 

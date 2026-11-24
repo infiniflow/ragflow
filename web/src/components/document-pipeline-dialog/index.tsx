@@ -42,6 +42,7 @@ const FormId = 'DocumentPipelineDialogForm';
 interface IProps
   extends IModalProps<IChangeParserRequestBody>, IDocumentPipelineDialogProps {
   loading: boolean;
+  saveDisabled?: boolean;
 }
 
 export function DocumentPipelineDialog({
@@ -52,6 +53,7 @@ export function DocumentPipelineDialog({
   pipelineVersionId,
   parserConfig,
   loading,
+  saveDisabled = false,
 }: IProps) {
   const { t } = useTranslation();
 
@@ -167,6 +169,7 @@ export function DocumentPipelineDialog({
           <ButtonLoading
             type="submit"
             form={FormId}
+            disabled={saveDisabled}
             loading={
               loading || (operatorNodesLoading && operatorNodes.length === 0)
             }

@@ -640,39 +640,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	}
 	// knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
-	var config *models.ChatConfig
-	// Build a provider config only for per-call overrides. In particular, do not
-	// inject the model's configured max_output as max_tokens: call-site or
-	// compiler-node settings may override it, while the model driver remains
-	// responsible for its configured default when neither is set.
-	if req.Temperature != nil || req.TopP != nil || req.PresencePenalty != nil || req.FrequencyPenalty != nil || req.MaxTokens != nil || req.Thinking != nil || req.DisableThinking {
-		config = &models.ChatConfig{}
-		if req.Temperature != nil {
-			config.Temperature = req.Temperature
-		}
-		if req.TopP != nil {
-			config.TopP = req.TopP
-		}
-		if req.PresencePenalty != nil {
-			config.PresencePenalty = req.PresencePenalty
-		}
-		if req.FrequencyPenalty != nil {
-			config.FrequencyPenalty = req.FrequencyPenalty
-		}
-		if req.MaxTokens != nil {
-			config.MaxTokens = req.MaxTokens
-		}
-		// Reasoning models (MiniMax-M1/M3, kimi, qwen) spend the completion
-		// budget on visible COT before the structured reply; compilation should
-		// run with thinking off. MiniMaxModel maps Thinking=false to
-		// `thinking: {"type": "disabled"}` in the request body.
-		if req.Thinking != nil {
-			config.Thinking = req.Thinking
-		} else if req.DisableThinking {
-			off := false
-			config.Thinking = &off
-		}
-	}
+	config := chatConfigForRequest(req)
 	// Retry transient transport/provider failures (HTTP timeout, reset,
 	// connection refused, 5xx, 429) with exponential backoff. A single
 	// external-LLM hiccup must not abort the whole knowledge compile — the reply
@@ -726,6 +694,41 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		content = *resp.Answer
 	}
 	return &kc.ChatResponse{Content: content}, nil
+}
+
+// chatConfigForRequest maps the compiler's per-call settings onto the provider
+// config and returns nil when the call sets nothing, so the driver's configured
+// defaults apply untouched. It deliberately does not inject the model's
+// configured max_output as max_tokens: call-site or compiler-node settings may
+// override it, while the driver keeps its own default when neither is set.
+func chatConfigForRequest(req kc.ChatRequest) *models.ChatConfig {
+	if req.Temperature == nil && req.TopP == nil && req.PresencePenalty == nil &&
+		req.FrequencyPenalty == nil && req.MaxTokens == nil && req.Thinking == nil &&
+		!req.DisableThinking && !req.JSONMode {
+		return nil
+	}
+	config := &models.ChatConfig{
+		Temperature:      req.Temperature,
+		TopP:             req.TopP,
+		PresencePenalty:  req.PresencePenalty,
+		FrequencyPenalty: req.FrequencyPenalty,
+		MaxTokens:        req.MaxTokens,
+	}
+	// Reasoning models (MiniMax-M1/M3, kimi, qwen) spend the completion budget
+	// on visible COT before the structured reply; compilation should run with
+	// thinking off. MiniMaxModel maps Thinking=false to
+	// `thinking: {"type": "disabled"}` in the request body.
+	if req.Thinking != nil {
+		config.Thinking = req.Thinking
+	} else if req.DisableThinking {
+		off := false
+		config.Thinking = &off
+	}
+	if req.JSONMode {
+		on := true
+		config.JSONMode = &on
+	}
+	return config
 }
 
 // kcChatRetryMax bounds how many times a transient LLM transport failure is
@@ -872,7 +875,7 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 	for i, v := range queryVec {
 		vec[i] = float64(v)
 	}
-	vectorField := fmt.Sprintf("q_%d_vec", len(vec))
+	vectorField := appcommon.VectorColumnName(len(vec))
 	req := &enginetypes.SearchRequest{
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
@@ -1045,16 +1048,6 @@ func anyStrings(v interface{}) []string {
 }
 
 func anyFloat(v interface{}) float64 {
-	switch x := v.(type) {
-	case float64:
-		return x
-	case float32:
-		return float64(x)
-	case int:
-		return float64(x)
-	case int64:
-		return float64(x)
-	default:
-		return 0
-	}
+	f, _ := appcommon.ToFloat(v)
+	return f
 }

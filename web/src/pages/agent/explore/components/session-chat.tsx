@@ -5,6 +5,7 @@ import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { VirtualMessageList } from '@/components/virtual-message-list';
+import { AgentSessionSource } from '@/constants/agent';
 import { MessageType } from '@/constants/chat';
 import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
@@ -22,6 +23,28 @@ import { useSendSessionMessage } from '../hooks/use-send-session-message';
 
 interface SessionChatProps {
   session?: IAgentLogResponse;
+}
+
+interface SessionInputState {
+  session?: IAgentLogResponse;
+  sessionId?: string;
+  isNew: boolean;
+  isWaiting: boolean;
+}
+
+function isSessionInputDisabled({
+  session,
+  sessionId,
+  isNew,
+  isWaiting,
+}: SessionInputState) {
+  const isChannelSession =
+    session?.id === sessionId &&
+    session?.source === AgentSessionSource.ChatChannel;
+  const isSessionDetailPending = Boolean(
+    sessionId && !isNew && session?.id !== sessionId,
+  );
+  return isWaiting || isChannelSession || isSessionDetailPending;
 }
 
 export function SessionChat({ session }: SessionChatProps) {
@@ -59,6 +82,12 @@ export function SessionChat({ session }: SessionChatProps) {
   const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
     sendFormMessage,
+  });
+  const inputDisabled = isSessionInputDisabled({
+    session,
+    sessionId,
+    isNew: isNew === 'true',
+    isWaiting,
   });
   // An in-flight stream only renders a loading state on the session it
   // belongs to, not on whichever session the user switched to. Before the
@@ -231,8 +260,8 @@ export function SessionChat({ session }: SessionChatProps) {
           <NextMessageInput
             value={value}
             sendLoading={sendLoading}
-            disabled={isWaiting}
-            sendDisabled={sendLoading || isWaiting}
+            disabled={inputDisabled}
+            sendDisabled={sendLoading || inputDisabled}
             isUploading={isUploading || isWaiting}
             onPressEnter={handleSessionPressEnter}
             onInputChange={handleInputChange}

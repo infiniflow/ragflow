@@ -17,6 +17,7 @@ import {
   transformParserParams,
   transformTokenChunkerParams,
 } from './utils';
+import { graphToDsl, initialEmptyDsl } from './utils/dsl-bridge';
 
 describe('transformParserParams MinerU settings', () => {
   it('round-trips component-scoped choices through validation, save and reload', () => {
@@ -149,14 +150,64 @@ describe('transformParserParams MinerU settings', () => {
       }
     },
   );
+
+  it('preserves Unlimited-OCR-2 options when serializing PDF setups', () => {
+    const result = transformParserParams({
+      setups: [
+        {
+          fileFormat: FileType.PDF,
+          parse_method: 'unlimited-ocr-model-id',
+          unlimited_ocr_crop_mode: 'gundam',
+          unlimited_ocr_no_repeat_ngram_size: 40,
+          unlimited_ocr_page_guard: false,
+        },
+      ],
+    } as any);
+    const saved = JSON.parse(JSON.stringify(result)).pdf;
+    expect(saved).toMatchObject({
+      parse_method: 'unlimited-ocr-model-id',
+      unlimited_ocr_crop_mode: 'gundam',
+      unlimited_ocr_no_repeat_ngram_size: 40,
+      unlimited_ocr_page_guard: false,
+    });
+  });
 });
 
 describe('transformParserParams markdown settings', () => {
-  it.each([true, false])('keeps the remove_toc switch %s', (removeToc) => {
+  it('omits a saved remove_toc switch from Markdown params', () => {
     const result: Record<string, any> = transformParserParams({
-      setups: [{ fileFormat: FileType.TextMarkdown, remove_toc: removeToc }],
+      setups: [{ fileFormat: FileType.TextMarkdown, remove_toc: true }],
     } as any);
-    expect(result.markdown.remove_toc).toBe(removeToc);
+    expect(result.markdown).toEqual({ order_index: 0 });
+  });
+});
+
+it('drops the saved Markdown TOC switch when saving a parser canvas', () => {
+  const node = {
+    id: 'Parser:test',
+    type: 'ragNode',
+    position: { x: 0, y: 0 },
+    data: {
+      label: Operator.Parser,
+      name: 'Parser',
+      form: {
+        setups: [
+          { fileFormat: FileType.TextMarkdown, remove_toc: true },
+          { fileFormat: FileType.PDF, remove_toc: true },
+        ],
+      },
+    },
+  } satisfies RAGFlowNodeType;
+
+  const saved = graphToDsl([node], [], initialEmptyDsl(false));
+
+  expect(saved.graph?.nodes[0].data.form?.setups).toEqual([
+    { fileFormat: FileType.TextMarkdown },
+    { fileFormat: FileType.PDF, remove_toc: true },
+  ]);
+  expect(saved.components[node.id].obj.params).toMatchObject({
+    markdown: { order_index: 0 },
+    pdf: { remove_toc: true },
   });
 });
 
