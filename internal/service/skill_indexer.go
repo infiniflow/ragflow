@@ -128,7 +128,7 @@ func (s *SkillIndexerService) indexSkill(ctx context.Context, tenantID, spaceID 
 	if err != nil {
 		return fmt.Errorf("failed to get embedding dimension: %w", err)
 	}
-	vectorField := fmt.Sprintf("q_%d_vec", dimension)
+	vectorField := common.VectorColumnName(dimension)
 
 	// Determine engine type
 	usesTokens := usesTokenFields(docEngine)
@@ -256,7 +256,7 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 		return fmt.Errorf("failed to get embedding dimension: %w", err)
 	}
 	common.Info(fmt.Sprintf("Using embedding dimension: %d", dimension))
-	vectorField := fmt.Sprintf("q_%d_vec", dimension)
+	vectorField := common.VectorColumnName(dimension)
 
 	// Generate embeddings in batch
 	common.Info(fmt.Sprintf("Generating embeddings for %d skills with embdID=%s", len(skills), embdID))
@@ -897,7 +897,12 @@ func (s *SkillIndexerService) initializeIndex(ctx context.Context, tenantID, spa
 		return s.createIndex(ctx, tenantID, spaceID, docEngine, embdID)
 	}
 
-	common.Info("Skill search index already exists", zap.String("indexName", indexName))
+	common.Info("Skill search index already exists, ensuring vector mappings", zap.String("indexName", indexName))
+	if docEngine.GetType() != "infinity" {
+		if err := docEngine.CreateChunkStore(ctx, indexName, "skill", 0, "", ""); err != nil {
+			common.Warn("Failed to ensure skill index vector mappings", zap.String("indexName", indexName), zap.Error(err))
+		}
+	}
 	return nil
 }
 

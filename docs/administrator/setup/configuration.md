@@ -71,9 +71,7 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `MYSQL_PASSWORD`
   The password for MySQL.
 - `MYSQL_PORT`
-  The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
-- `EXPOSE_MYSQL_PORT`
-  The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `3306`.
+  The MySQL port published on the Docker host. Defaults to `3306`. RAGFlow containers connect to MySQL on port `3306`.
 - `MYSQL_MAX_PACKET`
   The maximum MySQL communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`). Keep the MySQL server's `max_allowed_packet` setting compatible when using an external database.
 
@@ -101,6 +99,10 @@ Kvrocks provides the Redis-compatible cache. It is separate from the NATS JetStr
 - `REDIS_PASSWORD`
   The password used to access Kvrocks through its Redis-compatible protocol.
 
+:::tip NOTE
+Kvrocks holds the secret key that signs login tokens (when none is configured), the agent-run lease, distributed locks, and the media cache used during ingestion. The lease, the locks, and the media cache use Lua scripts.
+:::
+
 ### NATS
 
 NATS JetStream provides the message queue used by the Go services.
@@ -108,9 +110,16 @@ NATS JetStream provides the message queue used by the Go services.
 - `NATS_HOST`
   The NATS hostname used inside the Compose network. Defaults to `nats`.
 - `NATS_PORT`
-  The internal NATS client port. Defaults to `4222`.
-- `EXPOSE_NATS_PORT`
-  The NATS port published on the Docker host.
+  The NATS client port published on the Docker host. Defaults to `4222`. RAGFlow containers connect to NATS on port `4222`.
+- `NATS_MONITORING_PORT`
+  The NATS monitoring port published on the Docker host. Defaults to `8222`.
+
+### ClickHouse
+
+- `CLICKHOUSE_TCP_PORT`
+  The ClickHouse native TCP port published on the Docker host. Defaults to `9900`. RAGFlow containers connect to ClickHouse on port `9000`.
+- `CLICKHOUSE_HTTP_PORT`
+  The ClickHouse HTTP port published on the Docker host. Defaults to `8123`.
 
 ### RAGFlow
 

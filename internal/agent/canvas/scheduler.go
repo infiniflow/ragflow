@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 // Package canvas — eino Workflow topology builder.
 //
 // BuildWorkflow turns a Canvas (DSL) into a *compose.Workflow. The
@@ -122,7 +138,7 @@ func isKnownPrimitive(name string) bool {
 		return true
 	}
 	switch strings.ToLower(name) {
-	case "begin", "message", "llm", "categorize", "switch",
+	case "begin", "message", "llm", "categorize", "scoredswitch", "switch",
 		"agent", "invoke", "dataoperations", "listoperations",
 		"stringtransform", "variableaggregator", "variableassigner",
 		"loop", "parallel": // macros in BuildWorkflow; the pre-pass absorbs them.
@@ -242,17 +258,6 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 	return out, nil
 }
 
-// emitEventFromCtx reads the events channel from the RunMeta attached to
-// ctx (via WithRunMeta) and pushes the event. No-op when no metadata is
-// present (test paths without a full service harness).
-func emitEventFromCtx(ctx context.Context, ev RunEvent) {
-	meta := GetRunMeta(ctx)
-	if meta == nil || meta.Events == nil {
-		return
-	}
-	PushEvent(ctx, meta.Events, ev)
-}
-
 func sanitizeNodeInputs(inputs map[string]any) map[string]any {
 	if len(inputs) == 0 {
 		return map[string]any{}
@@ -275,17 +280,19 @@ func sanitizeNodeInputs(inputs map[string]any) map[string]any {
 // Metadata (message/session ids) is read from ctx via RunMeta.
 func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, inputs map[string]any) {
 	common.Debug("node_started", zap.String("cpnID", cpnID), zap.String("componentName", componentName))
-	if state == nil {
+	meta := GetRunMeta(ctx)
+	if state == nil || meta == nil || meta.Events == nil {
 		return
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 
+	inputs = sanitizeNodeInputs(inputs)
 	state.MergeNamespaces(map[string]any{
 		"_node_start_" + cpnID:  now,
-		"_node_inputs_" + cpnID: sanitizeNodeInputs(inputs),
+		"_node_inputs_" + cpnID: inputs,
 	}, nil, nil)
 	nsData, err := runtime.SafeJSONMarshal(NodeStartedData{
-		Inputs:        sanitizeNodeInputs(inputs),
+		Inputs:        inputs,
 		CreatedAt:     now,
 		ComponentID:   cpnID,
 		ComponentName: componentName,
@@ -301,15 +308,10 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 		nsData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
 			cpnID, componentName, componentType))
 	}
-	meta := GetRunMeta(ctx)
-	msgID, sessionID := "", ""
-	if meta != nil {
-		msgID, sessionID = meta.MessageID, meta.SessionID
-	}
-	emitEventFromCtx(ctx, RunEvent{
+	PushEvent(ctx, meta.Events, RunEvent{
 		Type: "node_started", Data: string(nsData),
-		MessageID: msgID, CreatedAt: time.Now().Unix(),
-		SessionID: sessionID,
+		MessageID: meta.MessageID, CreatedAt: time.Now().Unix(),
+		SessionID: meta.SessionID,
 	})
 }
 
@@ -317,7 +319,10 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 // statePost wrapper. The elapsed time is computed from the time recorded
 // by nodeStartedAt. Metadata is read from ctx via RunMeta.
 func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, nodeErr error) {
-	if state == nil {
+	// Ingestion persists its progress separately and has no canvas event stream.
+	// Skip snapshots and JSON encoding of the full chunk and vector payload.
+	meta := GetRunMeta(ctx)
+	if state == nil || meta == nil || meta.Events == nil {
 		return
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
@@ -374,15 +379,10 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 		nfData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
 			cpnID, componentName, componentType))
 	}
-	meta := GetRunMeta(ctx)
-	msgID, sessionID := "", ""
-	if meta != nil {
-		msgID, sessionID = meta.MessageID, meta.SessionID
-	}
-	emitEventFromCtx(ctx, RunEvent{
+	PushEvent(ctx, meta.Events, RunEvent{
 		Type: "node_finished", Data: string(nfData),
-		MessageID: msgID, CreatedAt: time.Now().Unix(),
-		SessionID: sessionID,
+		MessageID: meta.MessageID, CreatedAt: time.Now().Unix(),
+		SessionID: meta.SessionID,
 	})
 }
 
@@ -848,31 +848,29 @@ func messageConsumesComponent(c *Canvas, msgID, cpnID string) bool {
 		return false
 	}
 	msgComp, ok := c.Components[msgID]
-	if !ok || len(msgComp.Obj.Params) == 0 {
+	if !ok {
 		return false
 	}
-	needle := strings.ToLower(cpnID) + "@"
-	for _, v := range msgComp.Obj.Params {
-		switch x := v.(type) {
+	text := ""
+	if v, ok := msgComp.Obj.Params["text"].(string); ok {
+		text = v
+	} else {
+		switch x := msgComp.Obj.Params["content"].(type) {
 		case string:
-			if strings.Contains(strings.ToLower(x), needle) {
-				return true
-			}
+			text = x
 		case []string:
-			for _, s := range x {
-				if strings.Contains(strings.ToLower(s), needle) {
-					return true
-				}
-			}
+			text = strings.Join(x, "")
 		case []any:
+			parts := make([]string, 0, len(x))
 			for _, item := range x {
-				if s, ok := item.(string); ok && strings.Contains(strings.ToLower(s), needle) {
-					return true
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					parts = append(parts, s)
 				}
 			}
+			text = strings.Join(parts, "")
 		}
 	}
-	return false
+	return strings.Contains(strings.ToLower(text), strings.ToLower(cpnID)+"@")
 }
 
 func hasStructuredOutput(params map[string]any) bool {

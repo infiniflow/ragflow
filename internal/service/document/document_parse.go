@@ -223,6 +223,11 @@ func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, do
 		return fmt.Errorf("apply dataset parser config for document %s: %w", doc.ID, err)
 	}
 	doc.ParserConfig = merged
+	// This rewrote the document's own settings, so it is a change to their
+	// history like any other. Without the state row, a restore to a version after
+	// this parse would put back the settings from before it and drop the
+	// dataset's metadata binding from the timeline.
+	recordDocumentParserSettingStates(ctx, dao.DB, []*entity.Document{doc})
 	return nil
 }
 
@@ -328,6 +333,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
 		return err
 	}
+	cleanupPreviewArtifacts(ctx, doc)
 
 	if s.docEngine == nil {
 		return nil
@@ -802,7 +808,7 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 	}
 
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"status": statusStr}); err != nil {
-		return errors.New("database error (Document update)")
+		return fmt.Errorf("database error (Document update): %w", err)
 	}
 
 	if s.docEngine != nil {

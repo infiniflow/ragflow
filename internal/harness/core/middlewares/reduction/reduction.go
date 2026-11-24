@@ -5,9 +5,11 @@ package reduction
 import (
 	"context"
 	"sync"
+	"unicode/utf8"
 
 	"ragflow/internal/harness/core"
 	"ragflow/internal/harness/core/schema"
+	"ragflow/internal/utility"
 )
 
 // Backend persists overflow content.
@@ -165,11 +167,10 @@ func truncateText(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	// Slice on a rune boundary; [:maxLen] indexes bytes and can split a
-	// multi-byte UTF-8 character, same as TruncateToolResult guards against.
-	runes := []rune(s)
-	if maxLen > len(runes) {
+	// Slicing on a byte boundary can split a multi-byte rune; keep the whole
+	// string when the rune count fits, otherwise truncate on a rune boundary.
+	if maxLen > utf8.RuneCountInString(s) {
 		return s
 	}
-	return string(runes[:maxLen])
+	return utility.TruncateRunes(s, maxLen)
 }

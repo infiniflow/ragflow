@@ -20,6 +20,7 @@ import {
   useFetchAddedProviders,
   useFetchAvailableProviders,
 } from '@/hooks/use-llm-request';
+import { useVisibleRoleIntegrationItems } from '@/ee/hooks/use-visible-role-integration-items';
 import { cn } from '@/lib/utils';
 import { ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -52,7 +53,12 @@ interface SidebarProps {
  */
 export function Sidebar({ selection, onSelect }: SidebarProps) {
   const { t } = useTranslation();
-  const { data: providers } = useFetchAvailableProviders();
+  const { data: availableProviders } = useFetchAvailableProviders();
+  const providers = useVisibleRoleIntegrationItems(
+    'model_provider',
+    availableProviders,
+    (provider) => [provider.name],
+  );
   const { data: addedProviders } = useFetchAddedProviders();
   const [search, setSearch] = useState('');
 

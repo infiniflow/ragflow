@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -84,6 +85,7 @@ func datasetListItemToMap(latestByCanvas map[string]string, kb *entity.Knowledge
 	// matching Python's full-row dict response.
 	item := map[string]interface{}{
 		"id":                         kb.ID,
+		"user_id":                    kb.UserID,
 		"name":                       kb.Name,
 		"avatar":                     stringPointerValue(kb.Avatar),
 		"language":                   stringPointerValue(kb.Language),
@@ -122,6 +124,7 @@ func datasetListItemToMap(latestByCanvas map[string]string, kb *entity.Knowledge
 func datasetToMap(ctx context.Context, kb *entity.Knowledgebase) map[string]interface{} {
 	item := map[string]interface{}{
 		"id":                         kb.ID,
+		"user_id":                    kb.UserID,
 		"tenant_id":                  kb.TenantID,
 		"name":                       kb.Name,
 		"embedding_model":            kb.EmbdID,
@@ -136,6 +139,15 @@ func datasetToMap(ctx context.Context, kb *entity.Knowledgebase) map[string]inte
 		"parser_config":              kb.ParserConfig,
 		"pagerank":                   kb.Pagerank,
 		"create_time":                kb.CreateTime,
+		// The dataset header shows "Updated <date> · v<version>"; the version is
+		// the dataset's own sequence, advanced by every recorded change.
+		"version": kb.Version,
+	}
+	if kb.UpdateTime != nil {
+		item["update_time"] = *kb.UpdateTime
+	}
+	if kb.UpdateDate != nil {
+		item["update_date"] = kb.UpdateDate.Format("2006-01-02 15:04:05")
 	}
 	if kb.Avatar != nil {
 		item["avatar"] = *kb.Avatar
@@ -323,15 +335,24 @@ func datasetCosSim(a, b []float64) float64 {
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }
 
+func datasetCleanEmbeddingText(s string) string {
+	re := regexp.MustCompile(`<[^>]*>`)
+	return re.ReplaceAllString(s, "")
+}
+
 func datasetEncodeEmbedding(ctx context.Context, embeddingModel *modelModule.EmbeddingModel, texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return nil, nil
+	}
+	cleaned := make([]string, len(texts))
+	for i, t := range texts {
+		cleaned[i] = datasetCleanEmbeddingText(t)
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
 	// Embed inside the model's window: this path takes whatever text the API handed
 	// it, and the provider rejects an over-window input with 400/20015 instead of
 	// truncating it.
-	embeddings, err := embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: texts}, embeddingConfig, nil)
+	embeddings, err := embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: cleaned}, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

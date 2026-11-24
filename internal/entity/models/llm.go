@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// Package models — EinoChatModel thin wrapper (Phase 2 P0, plan §2.11.6 D1).
+// Package models — EinoChatModel thin wrapper.
 //
 // Bridges the existing RAGFlow provider-specific *ChatModel (OpenAI, Anthropic,
 // Gemini, …) to eino's model.BaseChatModel / model.ToolCallingChatModel
@@ -37,6 +37,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -400,9 +401,9 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	if cm.ModelName == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
-	// ChatWithMessages does not take a context.Context today — Phase 0 kept
-	// the signature stable. We log a guard so a future context-aware
-	// signature can be slotted in without changing call sites.
+	// ChatWithMessages does not take a context.Context today; this guard
+	// lets a future context-aware signature be slotted in without changing
+	// call sites.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -414,7 +415,7 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	// prose. Code-exec agents pin tool_choice to "required"/execute_code, and
 	// keeping that pin on the follow-up turn would loop forever instead of
 	// returning the answer. Explicit per-call choices can require further tools.
-	if chatCfg != nil && containsToolResult(internal) && model.GetCommonOptions(nil, opts...).ToolChoice == nil {
+	if chatCfg != nil && slices.ContainsFunc(internal, func(m Message) bool { return m.Role == "tool" }) && model.GetCommonOptions(nil, opts...).ToolChoice == nil {
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
@@ -432,7 +433,7 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	common.Debug("models: eino generate message skeleton",
 		zap.String("skeleton", describeInternalMessages(internal)))
 	captureModelInput(ctx, *cm.ModelName, internal)
-	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, internal, cm.APIConfig, chatCfg, nil)
+	resp, err := cm.ChatWithMessages(ctx, internal, chatCfg, nil)
 	if err != nil {
 		// The chat paths surface this to the user as `**ERROR**: <err>`
 		// (errorAnswerText in agentic-rag/agentic_rag_graph.go, chat_pipeline.go),
@@ -771,18 +772,6 @@ func toolCallsFromInternal(calls []map[string]interface{}) []schema.ToolCall {
 	return out
 }
 
-// containsToolResult reports whether any message already carries a tool
-// result. Initial-turn constraints are released after a result, while an
-// explicit per-call choice may still require another retrieval step.
-func containsToolResult(messages []Message) bool {
-	for _, message := range messages {
-		if message.Role == "tool" {
-			return true
-		}
-	}
-	return false
-}
-
 // Stream returns a schema.StreamReader that yields message chunks
 // incrementally. Uses the existing ChatStreamlyWithSender pathway; the
 // sender callback pushes the streamed delta into the StreamReader.
@@ -802,7 +791,7 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	// endpoint) stream tool intent as ordinary prose. Use the provider's
 	// non-streaming parser for tool-bound turns so structured tool_calls are
 	// preserved; ReAct still streams the final answer turn normally.
-	if len(m.tools) > 0 && !containsToolResult(internalMessage) {
+	if len(m.tools) > 0 && !slices.ContainsFunc(internalMessage, func(m Message) bool { return m.Role == "tool" }) {
 		msg, err := m.Generate(ctx, msgs, opts...)
 		if err != nil {
 			return nil, err
@@ -822,7 +811,7 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	// Same tool_choice release as generateOnce: a turn carrying tool results
 	// must be able to produce the final text instead of being forced to call
 	// a tool again, unless an explicit per-call choice requires it.
-	if chatCfg != nil && containsToolResult(internalMessage) && model.GetCommonOptions(nil, opts...).ToolChoice == nil {
+	if chatCfg != nil && slices.ContainsFunc(internalMessage, func(m Message) bool { return m.Role == "tool" }) && model.GetCommonOptions(nil, opts...).ToolChoice == nil {
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
@@ -923,7 +912,7 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 			attemptCfg.ToolCallsResult = nil
 			attemptCfg.UsageResult = nil
 			captureModelInput(ctx, *cm.ModelName, internalMessage)
-			err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, internalMessage, cm.APIConfig, attemptCfg, nil, sender)
+			err := cm.ChatStreamlyWithSender(ctx, internalMessage, attemptCfg, nil, sender)
 			if err != nil {
 				// Same user-visible shape as generateOnce's error: lead with the
 				// model name and keep the provider's own sentence. Tagging it HERE

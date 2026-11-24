@@ -63,6 +63,7 @@ func (m *CloudGPUModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 	}
 	for i := range models {
 		if known := pm.FindModel(provider, models[i].Name); known != nil && len(known.ModelTypes) > 0 {
+			models[i].ModelTypesInferred = false
 			models[i].ModelTypes = append([]string(nil), known.ModelTypes...)
 		}
 	}

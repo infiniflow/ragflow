@@ -19,6 +19,7 @@ package oceanbase
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -57,6 +58,18 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		}
 	}
 
+	// One metadata read resolves every row of the batch against the table that
+	// actually exists, so fields an existing table lacks go to its extra column
+	// instead of a column it does not have. Read before the transaction so the
+	// metadata query does not borrow a second connection mid-transaction.
+	var schema chunkTableSchema
+	if !strings.HasPrefix(baseName, "memory_") && !strings.HasPrefix(baseName, "skill_") && datasetID != "skill" {
+		schema, err = e.loadChunkTableSchema(ctx, baseName)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	tx, err := e.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -83,7 +96,7 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 				return nil, err
 			}
 		default:
-			normalized, err = normalizeChunk(chunk)
+			normalized, err = normalizeChunk(chunk, schema.columns)
 			if err != nil {
 				return nil, err
 			}
@@ -163,7 +176,7 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 	} else if kind == "chunk" {
 		condition["kb_id"] = datasetIDs
 	}
-	whereSQL, args, err := buildFilter(condition, kind)
+	whereSQL, args, err := buildFilter(condition, kind, chunkTableSchema{})
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +190,28 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 		}
 		return nil, nil
 	}
-	return decodeLogicalRow(rows[0], kind), nil
+	return decodeLogicalRow(rows[0], kind, nil), nil
+}
+
+func chunkUpdateNeedsSchema(fields map[string]interface{}) bool {
+	for key, value := range fields {
+		if isOptionalChunkColumn(mapChunkField(key)) {
+			return true
+		}
+		switch key {
+		case "remove", "add":
+			if column, ok := value.(string); ok && isOptionalChunkColumn(mapChunkField(column)) {
+				return true
+			}
+			items, _ := value.(map[string]interface{})
+			for column := range items {
+				if isOptionalChunkColumn(column) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // UpdateChunks updates rows while retaining the dataset-level scope used by
@@ -201,16 +235,27 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 	if !exists {
 		return fmt.Errorf("%w: '%s'", types.ErrIndexNotFound, baseName)
 	}
+	var schema chunkTableSchema
 	if kind == "chunk" {
 		newValue = normalizeImportantKeywordFields(newValue)
+		if chunkFilterUsesExtra(condition, nil) || chunkUpdateNeedsSchema(newValue) {
+			schema, err = e.loadChunkTableSchema(ctx, baseName)
+			if err != nil {
+				return err
+			}
+		}
 	}
-	whereSQL, args, err := buildFilter(condition, kind)
+	whereSQL, args, err := buildFilter(condition, kind, schema)
 	if err != nil {
 		return err
 	}
 	setParts := make([]string, 0, len(newValue))
 	setArgs := make([]interface{}, 0, len(newValue))
-	for key, value := range newValue {
+	var extraAssignments []string
+	var extraArgs []interface{}
+	var extraRemove string
+	for _, rawKey := range sortedColumns(newValue) {
+		key, value := rawKey, newValue[rawKey]
 		if kind == "memory" {
 			key = mapMemoryField(key)
 		} else if kind == "chunk" {
@@ -230,11 +275,18 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 				if err := validateIdentifier(remove); err != nil {
 					return err
 				}
+				if chunkFieldInExtra(remove, schema.columns) {
+					extraRemove = chunkExtraPath(remove)
+					continue
+				}
 				setParts = append(setParts, quoteIdentifier(remove)+" = NULL")
 			case map[string]interface{}:
 				for column, item := range remove {
 					if kind != "chunk" || !arrayColumns[column] {
 						return fmt.Errorf("column %s is not an array column", column)
+					}
+					if chunkFieldInExtra(column, schema.columns) {
+						return fmt.Errorf("cannot remove an item from %s in extra; replace the array instead", column)
 					}
 					setParts = append(setParts, fmt.Sprintf("%s = ARRAY_REMOVE(%s, ?)", quoteIdentifier(column), quoteIdentifier(column)))
 					setArgs = append(setArgs, item)
@@ -251,6 +303,9 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 				if kind != "chunk" || !arrayColumns[column] {
 					return fmt.Errorf("column %s is not an array column", column)
 				}
+				if chunkFieldInExtra(column, schema.columns) {
+					return fmt.Errorf("cannot add an item to %s in extra; replace the array instead", column)
+				}
 				if column == "important_kwd" {
 					if text, ok := item.(string); ok {
 						item, _ = sanitizeImportantKeyword(text)
@@ -262,6 +317,16 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 		default:
 			if err := validateIdentifier(key); err != nil {
 				return err
+			}
+			if chunkFieldInExtra(key, schema.columns) {
+				// Match InsertChunks' JSON encoding, including arrays, objects and null.
+				encoded, err := json.Marshal(value)
+				if err != nil {
+					return fmt.Errorf("encode %s: %w", key, err)
+				}
+				extraAssignments = append(extraAssignments, "?, CAST(? AS JSON)")
+				extraArgs = append(extraArgs, chunkExtraPath(key), string(encoded))
+				continue
 			}
 			encoded, encodeErr := encodeUpdateValue(kind, key, value)
 			if encodeErr != nil {
@@ -285,6 +350,22 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 				}
 			}
 		}
+	}
+	if len(extraAssignments) > 0 || extraRemove != "" {
+		if _, replacesExtra := newValue["extra"]; replacesExtra {
+			return fmt.Errorf("cannot replace extra and modify individual extra fields in the same update")
+		}
+		expression := "`extra`"
+		if len(extraAssignments) > 0 {
+			expression = "JSON_SET(COALESCE(CASE WHEN JSON_TYPE(`extra`) <> 'NULL' THEN `extra` END, JSON_OBJECT()), " +
+				strings.Join(extraAssignments, ", ") + ")"
+		}
+		if extraRemove != "" {
+			expression = "JSON_REMOVE(" + expression + ", ?)"
+			extraArgs = append(extraArgs, extraRemove)
+		}
+		setParts = append(setParts, "`extra` = "+expression)
+		setArgs = append(setArgs, extraArgs...)
 	}
 	if len(setParts) == 0 {
 		return nil
@@ -313,7 +394,14 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	if !exists {
 		return 0, nil
 	}
-	whereSQL, args, err := buildFilter(condition, kind)
+	var schema chunkTableSchema
+	if kind == "chunk" && chunkFilterUsesExtra(condition, nil) {
+		schema, err = e.loadChunkTableSchema(ctx, baseName)
+		if err != nil {
+			return 0, err
+		}
+	}
+	whereSQL, args, err := buildFilter(condition, kind, schema)
 	if err != nil {
 		return 0, err
 	}

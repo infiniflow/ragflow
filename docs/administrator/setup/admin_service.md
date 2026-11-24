@@ -11,7 +11,7 @@ sidebar_custom_props: {
 
 The Go Admin Service provides the administration API used by the Web UI and the Go CLI. It manages users and configuration, checks infrastructure dependencies, and tracks Go API servers, ingestors, and file syncers that report heartbeats. The target Admin Service port is `9381`; the target Go API server port is `9380`.
 
-Start the Admin Service before the API server, ingestors, and syncers so those processes can report their heartbeats as soon as they start. MySQL, the configured document engine and storage service, the cache, and the message queue must be available to the Admin Service. For the default host-run configuration, see [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services) for the dependency list, port settings, and readiness checks.
+The OSS server starts Admin first, then API, Ingestor, Syncer and Chatter in the same process. MySQL, the configured document engine and storage service, the cache, and the message queue must be available to the Admin Service. For the default host-run configuration, see [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services) for the dependency list, port settings, and readiness checks.
 
 ## Start from source
 
@@ -23,41 +23,17 @@ bash build.sh --all
 
 Use `bash build.sh --go` for subsequent Go-only rebuilds after the C++ bindings have already been built.
 
-Before proceeding, run `./bin/ragflow_server --admin --help` to check that the binary can load and parse the Admin arguments. This command prints help and exits; it does not start the Admin Service or test its dependencies. If it exits with status `139` without printing help, see the [build troubleshooting notes](../../develop/launch_ragflow_from_source.md#1-get-the-source-and-build-dependencies).
-
-Complete the standalone database migration before starting any server mode. Run the migration once for this startup; do not attach `--migrate` to `--admin`, `--api`, or `--ingestor`:
+Run `./bin/ragflow_server --help` to verify the binary starts and lists its options.
 
 ```bash
-./bin/ragflow_server --migrate
+./bin/ragflow_server
 ```
 
-Start each process in a separate terminal, in this order. The source-development commands below use `RAGFLOW_DEV_MODE=true` to bypass the code and database version downgrade check; this setting does not run migrations or change the schema. Do not set it in production:
+The OSS server runs all services in one Go process. It migrates the database, starts Admin and initializes the superuser,
+then starts API, Ingestor, Syncer and Chatter. No mode or initialization flags
+are needed. Admin defaults to port `9381` and API to `9380`.
 
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
-```
-
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
-```
-
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
-```
-
-If file synchronization is enabled, also start:
-
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
-```
-
-To initialize the default superuser when starting Admin, add `--init-superuser` to the Admin command. Do this only when initial account setup is required.
-
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
-```
-
-If no superuser exists, this option creates `admin@ragflow.io`. Set
+If no superuser exists, startup creates `admin@ragflow.io`. Set
 `DEFAULT_SUPERUSER_PASSWORD` or `ADMIN_DEFAULT_PASSWORD` before initialization
 to choose its initial password. If neither variable is set, RAGFlow generates
 a random password and writes it to `logs/admin_bootstrap_password.txt`.
@@ -65,11 +41,13 @@ Changing either variable after a superuser exists does not reset its password.
 
 To change the Admin listening port, set `admin.http_port` in the server configuration.
 
-For processes on another host, set `admin.host` and `admin.http_port` in their server configuration to the reachable Admin address and port. When changing the Admin port, also update the CLI connection address and the health check URLs below.
+The services share the server configuration. When changing the Admin port, also update the CLI connection address and the health check URLs below.
 
 ## Start with Docker Compose
 
-For the Go deployment, use `docker/docker-compose.yml` and its `.env` file. The `ragflow-cpu` service already passes `--enable-adminserver` and `--init-superuser` to the Go entrypoint. The entrypoint runs migrations before starting the server processes; it then starts Admin before the API server and ingestor. Its optional syncer starts earlier, so its heartbeat may appear only after Admin becomes available.
+For the Go deployment, use `docker/docker-compose.yml` and its `.env` file.
+The entrypoint starts the single-process server, which owns migration, superuser
+initialization and service startup in the same order as a host-run server.
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml --profile cpu up -d
@@ -86,7 +64,7 @@ The API server is published on host port `9380` by default. Use
 `ADMIN_SVR_HTTP_PORT` and `SVR_HTTP_PORT` to change the corresponding published
 host ports.
 
-Use the Go Compose entry point documented in [Go Docker deployment](../../../docker/README.md). Initialize the first superuser with `--init-superuser` only when initial account setup is required.
+Use the Go Compose entry point documented in [Go Docker deployment](../../../docker/README.md). The server initializes the first superuser automatically.
 
 ## Check health and service registration
 
@@ -102,7 +80,7 @@ Use `/healthz` to check the Admin Service and its required dependencies. It retu
 curl -f http://127.0.0.1:9381/healthz
 ```
 
-The API server, ingestor, and syncer periodically send heartbeat reports to Admin. Admin keeps their latest reports in its runtime service registry; it does not register itself there. After those processes start, launch the Go CLI and log in as an administrator. If you changed the Admin port or are connecting from another host, add `--host <host:port>` to the CLI command:
+The API server, ingestor, and syncer periodically send heartbeat reports to Admin. Admin keeps their latest reports in its runtime service registry; it does not register itself there. After the server starts, launch the Go CLI and log in as an administrator. If you changed the Admin port or are connecting from another host, add `--host <host:port>` to the CLI command:
 
 ```bash
 ragflow-cli --admin

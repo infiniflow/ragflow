@@ -2628,8 +2628,8 @@ func TestIngestionTaskServiceMarkFailedCarriesReason(t *testing.T) {
 	if got.ErrorInfo != reason {
 		t.Fatalf("emitted ErrorInfo = %q, want %q", got.ErrorInfo, reason)
 	}
-	if got.EventType != "failed" || got.Status != common.FAILED {
-		t.Fatalf("emitted event type/status = %q/%q, want failed/%q", got.EventType, got.Status, common.FAILED)
+	if got.EventType != "task" || got.Status != common.FAILED {
+		t.Fatalf("emitted event type/status = %q/%q, want task/%q", got.EventType, got.Status, common.FAILED)
 	}
 }
 
@@ -2689,7 +2689,7 @@ func TestPrepareValidatedRunEmitsRunningEventWithFreshClaimTime(t *testing.T) {
 	var running common.IngestionLog
 	found := false
 	for _, l := range emitter.logs {
-		if l.EventType == "running" {
+		if l.Status == common.RUNNING {
 			running = l
 			found = true
 		}
@@ -2705,5 +2705,90 @@ func TestPrepareValidatedRunEmitsRunningEventWithFreshClaimTime(t *testing.T) {
 	}
 	if time.Since(running.BeginTime) > 30*time.Second {
 		t.Fatalf("running event BeginTime = %v, suspiciously old for a fresh claim", running.BeginTime)
+	}
+}
+
+// TestIngestionTaskServiceRetryRollsBackAtomicallyOnRunCreationFailure locks the
+// invariant that a retry commits its status transition and its fresh run binding
+// in one transaction. If run creation fails, the task must remain STOPPED with
+// its previous binding intact and no orphan run row.
+func TestIngestionTaskServiceRetryRollsBackAtomicallyOnRunCreationFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
+
+	runCount := 1
+	oldRun := &entity.PipelineOperationLog{
+		ID:              "old-run",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusCancel),
+		RunCount:        &runCount,
+	}
+	if err := db.Create(oldRun).Error; err != nil {
+		t.Fatalf("seed old run: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "old-run").Error; err != nil {
+		t.Fatalf("bind old run: %v", err)
+	}
+
+	// Fail only the retry's fresh-run insert, after the old run is seeded.
+	if err := db.Exec("CREATE TRIGGER fail_retry_run BEFORE INSERT ON pipeline_operation_log BEGIN SELECT RAISE(FAIL, 'forced run creation failure'); END").Error; err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	_, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED,
+	})
+	if err == nil {
+		t.Fatal("retry unexpectedly succeeded despite forced run-creation failure")
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("status after failed retry = %q, want %q", task.Status, common.STOPPED)
+	}
+	if task.PipelineLogID == nil || *task.PipelineLogID != "old-run" {
+		t.Fatalf("pipeline_log_id after failed retry = %v, want old-run preserved", task.PipelineLogID)
+	}
+	if n := countPipelineLogs(t, db, "doc-1"); n != 1 {
+		t.Fatalf("pipeline log count after failed retry = %d, want 1", n)
+	}
+}
+
+// TestRetryWithFreshRunIdentityRejectsDriftedStatus verifies the CAS guard inside
+// the retry transaction: if a concurrent stop/restart moved the task out of a
+// terminal state before this retry acquired the lock, the retry is rejected and
+// no replacement run is created.
+func TestRetryWithFreshRunIdentityRejectsDriftedStatus(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+
+	svc := NewIngestionTaskService()
+	_, err := svc.retryWithFreshRunIdentity(t.Context(), &entity.IngestionTask{
+		ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1",
+	}, nil)
+	if err == nil {
+		t.Fatal("retry with a drifted (RUNNING) status unexpectedly succeeded")
+	}
+	var conflict *TaskStatusConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("error = %v, want TaskStatusConflictError", err)
+	}
+	if n := countPipelineLogs(t, db, "doc-1"); n != 0 {
+		t.Fatalf("pipeline log count = %d, want 0 (no run created on conflict)", n)
 	}
 }

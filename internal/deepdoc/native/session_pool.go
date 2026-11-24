@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 //go:build cgo
 
 package native
@@ -38,6 +54,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	doctype "ragflow/internal/deepdoc/parser/type"
 )
 
 // pooledSession is the minimal contract the pool needs from any cached ONNX
@@ -51,10 +70,15 @@ type pooledSession interface {
 }
 
 // sessionKeyPool holds reusable sessions for one key.
+type idleSession[V pooledSession] struct {
+	sess V
+	at   time.Time // when it became idle
+}
+
 type sessionKeyPool[V pooledSession] struct {
 	mu   sync.Mutex
 	live bool // false once evicted; checked-out sessions self-Destroy on release
-	free []V
+	free []idleSession[V]
 }
 
 // sessionPool is a generic reusable ONNX session pool keyed by K, storing
@@ -68,11 +92,57 @@ type sessionPool[K comparable, V pooledSession] struct {
 }
 
 func newSessionPool[K comparable, V pooledSession](maxKeys, maxFree int) *sessionPool[K, V] {
-	return &sessionPool[K, V]{
+	p := &sessionPool[K, V]{
 		pools:   make(map[K]*sessionKeyPool[V]),
 		maxKeys: maxKeys,
 		maxFree: maxFree,
 	}
+	// Register this pool with the adaptive idle budget. The callback destroys
+	// idle sessions oldest-first, keeping the newest minIdleKeep. It is a no-op
+	// unless the EE GPU path installed a budget at startup.
+	registerIdlePruner(func(maxAge time.Duration, maxCount int) int {
+		return p.pruneIdle(maxAge, maxCount)
+	})
+	return p
+}
+
+// pruneIdle destroys idle sessions older than maxAge, oldest-first, keeping
+// the newest minIdleKeep idle sessions in every key-pool. maxCount<=0 means no
+// count limit. Returns the number destroyed.
+func (p *sessionPool[K, V]) pruneIdle(maxAge time.Duration, maxCount int) int {
+	idleBudget.mu.Lock()
+	keep := idleBudget.cfg.minIdleKeep
+	idleBudget.mu.Unlock()
+
+	var victims []V
+	now := time.Now()
+	p.mu.Lock()
+	for _, kp := range p.pools {
+		kp.mu.Lock()
+		// free is append-ordered: index 0 is oldest, end is newest.
+		// Walk oldest-first, protecting the newest `keep` entries.
+		eligible := len(kp.free) - keep
+		if eligible < 0 {
+			eligible = 0
+		}
+		for i := 0; i < eligible && (maxCount <= 0 || len(victims) < maxCount); {
+			e := kp.free[i]
+			if maxAge > 0 && now.Sub(e.at) <= maxAge {
+				break // oldest not old enough; the rest are newer
+			}
+			victims = append(victims, e.sess)
+			kp.free = append(kp.free[:i], kp.free[i+1:]...)
+			eligible--
+		}
+		kp.mu.Unlock()
+	}
+	p.mu.Unlock()
+
+	for _, v := range victims {
+		v.Destroy()
+		noteIdleRemoved()
+	}
+	return len(victims)
 }
 
 // Get returns a reusable session for key, constructing one with newFn on a pool
@@ -80,12 +150,12 @@ func newSessionPool[K comparable, V pooledSession](maxKeys, maxFree int) *sessio
 // poisoned session is Destroyed on release rather than pooled (ORT does not
 // guarantee reuse safety after a forced termination).
 //
-// Get takes a process-wide inference slot before it hands out a session and
-// returns that slot from release, so the slot is held for the whole hold window
-// (session construction on a miss, then the caller's Run). This is what makes
-// the process inference budget real; see inference_limit.go.
+// Get acquires the INNER in-process inference budget (doctype.AcquireLocal)
+// before handing out a session, which bounds concurrent on-device ONNX Runs.
+// The OUTER budget (doctype.AcquireInference) is acquired by the parser call
+// wrappers and bounds every backend including remote clients.
 func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, error)) (V, func(), error) {
-	if err := acquireInference(ctx); err != nil {
+	if err := doctype.AcquireLocal(ctx); err != nil {
 		var zero V
 		return zero, nil, err
 	}
@@ -95,7 +165,7 @@ func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, err
 			return
 		}
 		slotReturned = true
-		releaseInference()
+		doctype.ReleaseLocal()
 	}
 
 	p.mu.Lock()
@@ -115,8 +185,9 @@ func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, err
 	kp.mu.Lock()
 	var s V
 	if n := len(kp.free); n > 0 {
-		s = kp.free[n-1]
+		s = kp.free[n-1].sess
 		kp.free = kp.free[:n-1]
+		noteIdleRemoved()
 	}
 	kp.mu.Unlock()
 
@@ -137,8 +208,13 @@ func (p *sessionPool[K, V]) Get(ctx context.Context, key K, newFn func() (V, err
 			return
 		}
 		kp.mu.Lock()
-		if kp.live && (p.maxFree <= 0 || len(kp.free) < p.maxFree) {
-			kp.free = append(kp.free, s)
+		// shouldPoolIdle() atomically check-and-reserves an idle slot, so it
+		// MUST be the last condition: if it returns true the session is always
+		// retained below. Placing it earlier (or adding a noteIdleRemoved() in
+		// the else branch) would either double-count or wrongly decrement the
+		// global counter when kp.live is false and it was never called.
+		if kp.live && (p.maxFree <= 0 || len(kp.free) < p.maxFree) && shouldPoolIdle() {
+			kp.free = append(kp.free, idleSession[V]{sess: s, at: time.Now()})
 			kp.mu.Unlock()
 		} else {
 			kp.mu.Unlock()
@@ -190,8 +266,9 @@ func (p *sessionPool[K, V]) evictLRU() {
 	}
 	kp.mu.Lock()
 	kp.live = false
-	for _, s := range kp.free {
-		s.Destroy()
+	for _, e := range kp.free {
+		e.sess.Destroy()
+		noteIdleRemoved()
 	}
 	kp.free = nil
 	kp.mu.Unlock()

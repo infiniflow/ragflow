@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package agentic_rag
 
 import (
@@ -181,12 +197,16 @@ func TestConversationTurnMessagesSeedsOnce(t *testing.T) {
 	}
 }
 
-// lastAssistant reads the recovery path straight out of the session: the
-// newest assistant message that carries a cited answer, even when later turns
-// were pure narration.
+// lastAssistant reads the recovery ladder straight out of the session: the
+// newest assistant message that carries an answer, even when later turns were
+// pure narration.
 func TestConversationLastAssistant(t *testing.T) {
 	conv := newTestConversation()
-	const deliverable = "The pass holds 14 people.\n\nchunk_id: abc123"
+	const deliverable = "## Reasoning Chain\n- Clue: b\n\nFinal Answer: **14 人**"
+	// The predicate is local on purpose: this shared test exercises the
+	// conversation's lastAssistant walk, not the edition-specific answer-line
+	// contract (hasAnswerLine lives with the delivery gate in the EE build).
+	carriesAnswer := func(s string) bool { return strings.Contains(s, "Final Answer:") }
 	agent := &scriptedSessionAgent{out: func(turn int) string {
 		if turn == 1 {
 			return deliverable
@@ -202,13 +222,13 @@ func TestConversationLastAssistant(t *testing.T) {
 
 	ctx := context.Background()
 	answer := func(m *schema.Message) bool {
-		return strings.TrimSpace(m.Content) != "" && strings.Contains(m.Content, "chunk_id:")
+		return strings.TrimSpace(m.Content) != "" && carriesAnswer(m.Content)
 	}
 	if got := conv.lastAssistant(ctx, answer); got != deliverable {
 		t.Errorf("lastAssistant(answer) = %q, want the earlier deliverable", got)
 	}
 	substantive := func(m *schema.Message) bool { return strings.TrimSpace(m.Content) != "" }
-	if got := conv.lastAssistant(ctx, substantive); strings.Contains(got, "chunk_id:") || got == "" {
+	if got := conv.lastAssistant(ctx, substantive); carriesAnswer(got) || got == "" {
 		t.Errorf("lastAssistant(substantive) = %q, want the narration tail", got)
 	}
 }

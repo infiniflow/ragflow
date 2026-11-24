@@ -21,9 +21,8 @@ import "strings"
 // ModelType represents the type of model as a bitmask, matching Python's
 // ModelTypeBinary enum (common/constants.py).
 // Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=asr, 8=vision, 16=rerank, 32=tts, 64=ocr,
-// 128=decision. The first seven mirror Python's ModelTypeBinary; `decision` has
-// no Python counterpart — it exists only in this Go implementation, and a
-// migration the other way would have to drop or re-map it.
+// 128=decision, 256=scoring. The first seven mirror Python's ModelTypeBinary.
+// decision and scoring exist only in this Go implementation.
 // A model can belong to multiple types simultaneously.
 type ModelType int
 
@@ -50,6 +49,8 @@ const (
 	// different protocol (TypeSafe System One: one request carrying several
 	// questions), so a plain chat model must not silently be usable as one.
 	ModelTypeDecision
+	// ModelTypeScoring scores a fixed set of options or extracts typed fields (1 << 8).
+	ModelTypeScoring
 )
 
 // Has returns true if the bitmask contains the given model type.
@@ -89,6 +90,9 @@ func (mt ModelType) String() string {
 	if mt.Has(ModelTypeDecision) {
 		parts = append(parts, "decision")
 	}
+	if mt.Has(ModelTypeScoring) {
+		parts = append(parts, "scoring")
+	}
 	return strings.Join(parts, ",")
 }
 
@@ -108,7 +112,7 @@ func (mt ModelType) HumanReadable() []string {
 		parts = append(parts, "asr")
 	}
 	if mt.Has(ModelTypeImage2Text) {
-		parts = append(parts, "vision")
+		parts = append(parts, "vlm")
 	}
 	if mt.Has(ModelTypeRerank) {
 		parts = append(parts, "rerank")
@@ -122,6 +126,9 @@ func (mt ModelType) HumanReadable() []string {
 	if mt.Has(ModelTypeDecision) {
 		parts = append(parts, "decision")
 	}
+	if mt.Has(ModelTypeScoring) {
+		parts = append(parts, "scoring")
+	}
 	return parts
 }
 
@@ -134,7 +141,7 @@ func ModelTypeFromString(s string) ModelType {
 		return ModelTypeEmbedding
 	case "asr", "speech2text":
 		return ModelTypeSpeech2Text
-	case "vision", "image2text":
+	case "vlm", "vision", "image2text":
 		return ModelTypeImage2Text
 	case "rerank":
 		return ModelTypeRerank
@@ -144,6 +151,8 @@ func ModelTypeFromString(s string) ModelType {
 		return ModelTypeOCR
 	case "decision":
 		return ModelTypeDecision
+	case "scoring":
+		return ModelTypeScoring
 	default:
 		return 0
 	}

@@ -18,7 +18,7 @@ func TestBuildIngestLogPropagatesUserAndTenantName(t *testing.T) {
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), TenantID: "tenant-1"}
 
 	ctx := WithIngestIdentity(context.Background(), IngestIdentity{UserName: "alice", TenantName: "Acme Corp"})
-	ev := BuildIngestLog(ctx, task, doc, run, "completed", "COMPLETED", "")
+	ev := BuildIngestLog(ctx, task, doc, run, "task", "COMPLETED", "")
 
 	if ev.UserName != "alice" {
 		t.Errorf("UserName = %q, want %q", ev.UserName, "alice")
@@ -41,7 +41,7 @@ func TestBuildIngestLogEmptyNamesStaysEmpty(t *testing.T) {
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf"}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), TenantID: "tenant-1"}
 
-	ev := BuildIngestLog(context.Background(), task, doc, run, "running", "RUNNING", "")
+	ev := BuildIngestLog(context.Background(), task, doc, run, "task", "RUNNING", "")
 
 	if ev.UserName != "" {
 		t.Errorf("UserName = %q, want empty", ev.UserName)

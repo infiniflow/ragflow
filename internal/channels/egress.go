@@ -63,66 +63,6 @@ func newSafeChannelHTTPClient(timeout time.Duration, policy channelURLPolicy) *h
 	}
 }
 
-func newChannelSDKWebSocketDialer(base *websocket.Dialer) *websocket.Dialer {
-	if base == nil {
-		base = &websocket.Dialer{}
-	}
-	dialer := *base
-	dialer.NetDial = nil
-	dialer.NetDialTLSContext = nil
-	dialer.Proxy = func(req *http.Request) (*url.URL, error) {
-		if req == nil || req.URL == nil || req.URL.Scheme != "https" || req.URL.User != nil || req.URL.Fragment != "" {
-			return nil, fmt.Errorf("channel SDK WebSocket must use a valid TLS URL")
-		}
-		if err := validateChannelSDKWebSocketDestination(req.URL.Hostname(), channelURLPort(req.URL)); err != nil {
-			return nil, err
-		}
-		return nil, nil
-	}
-	dialer.NetDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		if network != "tcp" && network != "tcp4" && network != "tcp6" {
-			return nil, fmt.Errorf("unsupported channel SDK WebSocket network %q", network)
-		}
-		host, port, err := net.SplitHostPort(address)
-		if err != nil {
-			return nil, fmt.Errorf("invalid channel SDK WebSocket destination")
-		}
-		host, err = normalizeChannelHost(host)
-		if err != nil {
-			return nil, fmt.Errorf("invalid channel SDK WebSocket host")
-		}
-		if err := validateChannelSDKWebSocketDestination(host, port); err != nil {
-			return nil, err
-		}
-		resolvedIP, err := common.AssertHostSafe(host)
-		if err != nil {
-			return nil, fmt.Errorf("channel SDK WebSocket host %q is not safe: %w", host, err)
-		}
-		return (&net.Dialer{Timeout: dialer.HandshakeTimeout, KeepAlive: 30 * time.Second}).DialContext(
-			ctx,
-			network,
-			net.JoinHostPort(resolvedIP, port),
-		)
-	}
-	return &dialer
-}
-
-func validateChannelSDKWebSocketDestination(host, port string) error {
-	host, err := normalizeChannelHost(host)
-	if err != nil {
-		return fmt.Errorf("invalid channel SDK WebSocket host")
-	}
-	if port != "443" {
-		return fmt.Errorf("channel SDK WebSocket destination must use port 443")
-	}
-	switch host {
-	case "msg-frontier.feishu.cn", "msg-frontier.larksuite.com", "wss-open-connection.dingtalk.com":
-		return nil
-	default:
-		return fmt.Errorf("channel SDK WebSocket host %q is not trusted", host)
-	}
-}
-
 func (t *channelHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req == nil || req.URL == nil {
 		return nil, fmt.Errorf("channel request has no URL")

@@ -27,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
@@ -165,11 +166,17 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/retrieval [post]
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
+	common.StartOperationLog(c, "request_search_query")
+	defer common.FinishOperationLog(c)
 
 	var req SearchBotRetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
+	}
+
+	if req.SearchID != nil {
+		common.SetOperationResource(c, "search_id", *req.SearchID)
 	}
 
 	// Filter out empty strings from KbIDs before validation.
@@ -205,6 +212,10 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	}
 
 	svcReq := toRetrievalServiceRequest(&req)
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
+		common.RespondSuccess(c, service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, err.Error())
+		return
+	}
 	ctx := c.Request.Context()
 	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq)
 	if err != nil {
@@ -229,12 +240,16 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/ask [post]
 func (h *SearchBotHandler) Ask(c *gin.Context) {
+	common.StartOperationLog(c, "request_search_answer")
+	defer common.FinishOperationLog(c)
 
 	var req SearchBotAskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "search_id", req.SearchID)
 
 	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
 	if err != nil {
@@ -296,6 +311,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 			modelID = service.ModelReference(info)
 		}
 	}
+	common.FinishOperationLog(c)
 	if modelID == "" {
 		h.sseWriter.Write(c, sseError("chat model not configured"))
 		return
@@ -324,14 +340,14 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false, "success"))
 		case service.AskDeltaMarker:
 			ok = h.sseWriter.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
 			hadError = true
 			ok = h.sseWriter.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true, delta.Message))
 		}
 		if !ok || ctx.Err() != nil {
 			cancel()
@@ -354,12 +370,16 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/mindmap [post]
 func (h *SearchBotHandler) MindMap(c *gin.Context) {
+	common.StartOperationLog(c, "request_search_mindmap")
+	defer common.FinishOperationLog(c)
 
 	var req SearchBotMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "search_id", req.SearchID)
 
 	filtered := make(common.StringSlice, 0, len(req.KbIDs))
 	for _, id := range req.KbIDs {
@@ -482,13 +502,13 @@ type askSSEData struct {
 	EndToThink   bool        `json:"end_to_think,omitempty"`
 }
 
-func sseAnswer(answer string, refs interface{}, final bool) string {
+func sseAnswer(answer string, refs interface{}, final bool, message string) string {
 	if refs == nil {
 		refs = map[string]interface{}{}
 	}
 	payload := ssePayload{
 		Code:    0,
-		Message: "success",
+		Message: message,
 		Data: askSSEData{
 			Answer:    answer,
 			Reference: refs,

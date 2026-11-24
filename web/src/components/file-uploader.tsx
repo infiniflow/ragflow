@@ -47,7 +47,11 @@ function FilePreview({ file }: FilePreviewProps) {
   }
 
   return (
-    <FileText strokeWidth={1} className="size-10 text-muted-foreground" aria-hidden="true" />
+    <FileText
+      strokeWidth={1}
+      className="size-10 text-muted-foreground"
+      aria-hidden="true"
+    />
   );
 }
 
@@ -389,41 +393,45 @@ export function FileUploader(props: FileUploaderProps) {
 
   return (
     <div className="relative flex flex-col gap-4 overflow-hidden">
-      {!(hideDropzoneOnMaxFileCount && reachesMaxFileCount) && (
-        <Tabs defaultValue="file" className="w-full">
-          <TabsList className="w-fit justify-start">
-            <TabsTrigger value="file" className="gap-2">
-              <FileText className="size-4" />
-              {t('fileManager.files', 'Files')}
-            </TabsTrigger>
-            {showFolderTab && (
-              <TabsTrigger value="folder" className="gap-2">
-                <FolderUp className="size-4" />
-                {t('fileManager.folder', 'Folder')}
+      {!(hideDropzoneOnMaxFileCount && reachesMaxFileCount) &&
+        maxFileCount > 1 && (
+          <Tabs defaultValue="file" className="w-full">
+            <TabsList className="w-fit justify-start">
+              <TabsTrigger value="file" className="gap-2">
+                <FileText className="size-4" />
+                {t('fileManager.files', 'Files')}
               </TabsTrigger>
-            )}
-          </TabsList>
-          <TabsContent value="file" className="mt-1">
-            {renderDropzone(false)}
-          </TabsContent>
-          {showFolderTab && (
-            <TabsContent value="folder" className="mt-1">
-              {renderDropzone(true)}
-              <input
-                ref={folderInputRef}
-                type="file"
-                className="hidden"
-                multiple
-                onChange={handleFolderSelect}
-                {...{
-                  webkitdirectory: '',
-                  directory: '',
-                }}
-              />
+              {showFolderTab && (
+                <TabsTrigger value="folder" className="gap-2">
+                  <FolderUp className="size-4" />
+                  {t('fileManager.folder', 'Folder')}
+                </TabsTrigger>
+              )}
+            </TabsList>
+            <TabsContent value="file" className="mt-1">
+              {renderDropzone(false)}
             </TabsContent>
-          )}
-        </Tabs>
-      )}
+            {showFolderTab && (
+              <TabsContent value="folder" className="mt-1">
+                {renderDropzone(true)}
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  className="hidden"
+                  multiple
+                  onChange={handleFolderSelect}
+                  {...{
+                    webkitdirectory: '',
+                    directory: '',
+                  }}
+                />
+              </TabsContent>
+            )}
+          </Tabs>
+        )}
+      {!(hideDropzoneOnMaxFileCount && reachesMaxFileCount) &&
+        maxFileCount <= 1 &&
+        renderDropzone(false)}
 
       {files?.length ? (
         <div className="h-fit w-full">

@@ -259,6 +259,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback(ctx))
 	runCtx = runtime.WithProgressMessageCallback(runCtx, p.componentProgressMessageCallback(ctx))
 	runCtx = runtime.WithProgressFractionCallback(runCtx, p.componentFractionCallback(ctx))
+	runCtx = runtime.WithProgressDetailCallback(runCtx, p.componentDetailCallback(ctx))
 
 	current := cloneMapOrEmpty(inputs)
 
@@ -453,6 +454,25 @@ type detailedProgressSink interface {
 // not implement it simply receives no fraction channel.
 type fractionProgressSink interface {
 	OnComponentFraction(ctx context.Context, component string, fraction float64)
+}
+
+// detailProgressSink is the optional interface through which the pipeline
+// forwards structured progress positions (page/chunk/batch) to the sink's
+// ingestion-log emitter. A sink that does not implement it receives no detail
+// channel.
+type detailProgressSink interface {
+	OnProgressDetail(ctx context.Context, component, unit string, current, total uint32)
+}
+
+// componentDetailCallback forwards structured progress reports to the sink.
+func (p *Pipeline) componentDetailCallback(ctx context.Context) runtime.ProgressDetailCallback {
+	sink, ok := p.sink.(detailProgressSink)
+	if !ok {
+		return nil
+	}
+	return func(component string, detail runtime.ProgressDetail) {
+		sink.OnProgressDetail(ctx, component, detail.Unit, detail.Current, detail.Total)
+	}
 }
 
 // componentFractionCallback forwards fraction reports to the sink. The sink

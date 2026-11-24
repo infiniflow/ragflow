@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package sandbox
 
 import (
@@ -13,7 +29,7 @@ type ValidationError struct{ Message string }
 func (e *ValidationError) Error() string { return e.Message }
 
 var providerOrder = []string{
-	"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "local",
+	"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "kosa8", "local",
 }
 
 var providerMetadata = map[string]map[string]any{
@@ -24,6 +40,7 @@ var providerMetadata = map[string]map[string]any{
 	"e2b":                    {"name": "E2B", "description": "E2B Cloud - Code Execution Sandboxes", "tags": []any{"saas", "fast", "global"}},
 	"tenki":                  {"name": "Tenki", "description": "Tenki - Disposable microVM code sandboxes", "tags": []any{"saas", "cloud", "microvm", "isolated"}},
 	"ucloud_agent_sandbox":   {"name": "UCloud Agent Sandbox", "description": "UCloud Agent Sandbox - Disposable cloud sandboxes for agent code execution", "tags": []any{"saas", "cloud", "isolated", "ucloud"}},
+	"kosa8":                  {"name": "kosa8", "description": "kosa8 - Disposable microVM sandboxes, hosted or self-hosted", "tags": []any{"saas", "self-hosted", "microvm", "isolated"}},
 }
 
 func field(typ string, required bool, label string) map[string]any {
@@ -38,13 +55,13 @@ func ConfigSchema(provider string) (map[string]any, error) {
 	if s == nil {
 		return nil, &ValidationError{Message: fmt.Sprintf("unknown provider: %s", provider)}
 	}
-	return cloneMap(s), nil
+	return deepCloneMap(s), nil
 }
 
 func ListProviders() []map[string]any {
 	result := make([]map[string]any, 0, len(providerOrder))
 	for _, id := range providerOrder {
-		item := cloneMap(providerMetadata[id])
+		item := deepCloneMap(providerMetadata[id])
 		item["id"] = id
 		result = append(result, item)
 	}
@@ -157,6 +174,18 @@ func ValidateConfig(provider string, config map[string]any) error {
 		if _, present := config["template"]; present && strings.TrimSpace(stringValue(config["template"])) == "" {
 			return invalid("template is required")
 		}
+	case "kosa8":
+		if strings.TrimSpace(stringValue(config["api_key"])) == "" {
+			return invalid("kosa8 API key is required")
+		}
+		if baseURL := strings.TrimSpace(stringValue(config["base_url"])); baseURL != "" && !strings.HasPrefix(baseURL, "https://") && !strings.HasPrefix(baseURL, "http://localhost") && !strings.HasPrefix(baseURL, "http://127.0.0.1") {
+			return invalid("kosa8 API URL must use https: %s", baseURL)
+		}
+		for _, key := range []string{"python_template", "node_template"} {
+			if _, present := config[key]; present && strings.TrimSpace(stringValue(config[key])) == "" {
+				return invalid("%s must not be empty", key)
+			}
+		}
 	}
 	return nil
 }
@@ -218,12 +247,12 @@ func stringValue(value any) string {
 	return v
 }
 
-func cloneMap(in map[string]any) map[string]any {
+func deepCloneMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for key, value := range in {
 		switch v := value.(type) {
 		case map[string]any:
-			out[key] = cloneMap(v)
+			out[key] = deepCloneMap(v)
 		case []any:
 			out[key] = append([]any(nil), v...)
 		default:
@@ -245,7 +274,7 @@ func selfManagedSchema() map[string]any {
 	s := staticSchema("self_managed")
 	s["base_python_image"].(map[string]any)["default"] = env("SANDBOX_BASE_PYTHON_IMAGE", "infiniflow/sandbox-base-python:latest")
 	s["base_nodejs_image"].(map[string]any)["default"] = env("SANDBOX_BASE_NODEJS_IMAGE", "infiniflow/sandbox-base-nodejs:latest")
-	return cloneMap(s)
+	return deepCloneMap(s)
 }
 
 func staticSchema(provider string) map[string]any {
@@ -286,6 +315,8 @@ func staticSchema(provider string) map[string]any {
 		return tenkiSchema()
 	case "ucloud_agent_sandbox":
 		return ucloudSchema()
+	case "kosa8":
+		return kosa8Schema()
 	}
 	return nil
 }
@@ -360,5 +391,20 @@ func ucloudSchema() map[string]any {
 		"max_output_bytes":      limitsNoDescription("integer", false, "Max Output Bytes", 1048576, 1024, 10485760),
 		"max_artifacts":         limitsNoDescription("integer", false, "Max Artifacts", 20, 0, 100),
 		"max_artifact_bytes":    limitsNoDescription("integer", false, "Max Artifact Bytes", 10485760, 1024, 104857600),
+	}
+}
+
+func kosa8Schema() map[string]any {
+	return map[string]any{
+		"api_key":            fieldWith("string", true, "API Key", "secret", true, "placeholder", "k8c_live_...", "description", "kosa8 API key. Create one at https://app.kosa8.com under API keys."),
+		"base_url":           fieldWith("string", false, "API Endpoint", "placeholder", "https://api.kosa8.com", "description", "Override the kosa8 API endpoint, for example a self-hosted deployment. Leave empty for kosa8 Cloud."),
+		"python_template":    fieldWith("string", false, "Python Template", "default", "python", "description", "Template for Python runs. The default is Python 3.12 on Alpine."),
+		"node_template":      fieldWith("string", false, "Node.js Template", "default", "node", "description", "Template for JavaScript runs. The default is Node.js 22 on Alpine."),
+		"allow_internet":     fieldWith("boolean", false, "Allow Internet Access", "default", false, "description", "Security-relevant. Disabled by default so sandboxed code has no network access. Enable it to let code make outbound connections (e.g. to install packages)."),
+		"timeout":            limits("integer", false, "Timeout (seconds)", 30, 1, 600, "Maximum execution time for a single run."),
+		"max_lifetime":       limits("integer", false, "Max Sandbox Lifetime (seconds)", 3600, 60, 86400, "kosa8 deletes a sandbox after this, guarding against leaks if the run is interrupted."),
+		"max_output_bytes":   limits("integer", false, "Max Output Bytes", 1048576, 1024, 10485760, "Maximum combined stdout and stderr size."),
+		"max_artifacts":      limits("integer", false, "Max Artifacts", 20, 0, 100, "Maximum number of files collected from the sandbox artifacts directory."),
+		"max_artifact_bytes": limits("integer", false, "Max Artifact Bytes", 10485760, 1024, 104857600, "Maximum size of a single artifact file in bytes."),
 	}
 }

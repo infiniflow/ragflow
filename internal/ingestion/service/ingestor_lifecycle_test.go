@@ -47,7 +47,7 @@ func (p *startupTaskPublisher) PublishTaskMessage(_ string, msg common.TaskMessa
 // pool and activeWorkers would exceed concurrency after the second call.
 func TestStartWorkerPool_StartOnceIdempotent(t *testing.T) {
 	const concurrency int32 = 3
-	ingestor := newUnitIngestor("test-idempotent", concurrency, nil)
+	ingestor := newUnitIngestor("test-idempotent", concurrency)
 
 	ingestor.startWorkerPool()
 	// Wait for all workers to enter their loop (they block on the select
@@ -82,7 +82,7 @@ func TestStartWorkerPool_StartOnceIdempotent(t *testing.T) {
 // for all worker goroutines to exit without hanging.
 func TestStop_GracefulShutdown(t *testing.T) {
 	const concurrency int32 = 2
-	ingestor := newUnitIngestor("test-shutdown", concurrency, nil)
+	ingestor := newUnitIngestor("test-shutdown", concurrency)
 
 	// Start workers; they will block on the task channel since nothing is pushed.
 	ingestor.startWorkerPool()
@@ -107,7 +107,7 @@ func TestStop_GracefulShutdown(t *testing.T) {
 // Stop. Without this, the admin graceful-shutdown path is dead (cmd blocks
 // forever on the receive).
 func TestStop_ClosesShutdownCh(t *testing.T) {
-	ingestor := newUnitIngestor("test-shutdown-ch", 1, nil)
+	ingestor := newUnitIngestor("test-shutdown-ch", 1)
 	ingestor.Stop(context.Background())
 	select {
 	case <-ingestor.ShutdownCh:
@@ -128,7 +128,7 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
 	const concurrency int32 = 1
-	ingestor := newUnitIngestor("test-stuck", concurrency, []string{"pdf"})
+	ingestor := newUnitIngestor("test-stuck", concurrency)
 	ingestor.startWorkerPool()
 
 	// runDocumentTask blocks on release and ignores ctx, simulating a
@@ -188,7 +188,7 @@ func TestStopDeadlineStopsStuckWorkerHeartbeat(t *testing.T) {
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := newUnitIngestor("test-stuck-heartbeat", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-stuck-heartbeat", 1)
 	ingestor.heartbeatInterval = 10 * time.Millisecond
 	ingestor.startWorkerPool()
 
@@ -238,7 +238,7 @@ func TestStopDeadlineStopsStuckWorkerHeartbeat(t *testing.T) {
 // redelivery rule to memory extraction: a non-cooperative memory runner must
 // not settle its old handle after the ingestor's Stop deadline passes.
 func TestStopDeadlineLeavesStuckMemoryHandleUnsettled(t *testing.T) {
-	ingestor := newUnitIngestor("test-stuck-memory", 1, nil)
+	ingestor := newUnitIngestor("test-stuck-memory", 1)
 	ingestor.memorySvc = &servicepkg.MemoryMessageService{}
 	ingestor.startWorkerPool()
 
@@ -278,7 +278,7 @@ func TestStopDeadlineLeavesStuckMemoryHandleUnsettled(t *testing.T) {
 // long DB query). Without BP3, the initial cancelCheck call runs
 // synchronously and pollCancel cannot observe done until it returns.
 func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 
 	// Block cancelCheck until released — simulate a stuck DB call.
 	blocking := make(chan struct{})
@@ -319,7 +319,7 @@ func TestStartNilEngine(t *testing.T) {
 	engine.SetMessageQueueEngine(nil)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
-	ingestor := newUnitIngestor("test-nil-engine", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-nil-engine", 1)
 	defer ingestor.Stop(context.Background())
 
 	err := ingestor.Start()
@@ -338,7 +338,7 @@ func TestStartRetainsStartupFailure(t *testing.T) {
 	engine.SetMessageQueueEngine(nil)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
-	ingestor := newUnitIngestor("test-startup-failure", 1, nil)
+	ingestor := newUnitIngestor("test-startup-failure", 1)
 	t.Cleanup(func() { ingestor.Stop(context.Background()) })
 
 	if err := ingestor.Start(); err == nil {
@@ -361,7 +361,7 @@ func TestExecuteTask_MarkFailedAfterCtxCancelAcks(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	parentCtx, parentCancel := context.WithCancel(context.Background())
 	defer parentCancel()
 	handle := &fakeTaskHandle{}
@@ -406,7 +406,7 @@ func TestStart_FullPathReturnsAndStartsWorkers(t *testing.T) {
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
 	const concurrency int32 = 2
-	ing := newUnitIngestor("test-start-fullpath", concurrency, nil)
+	ing := newUnitIngestor("test-start-fullpath", concurrency)
 	t.Cleanup(func() { ing.Stop(context.Background()) })
 
 	done := make(chan error, 1)
@@ -452,7 +452,7 @@ func TestStartSchedulesCreatedTasks(t *testing.T) {
 	engine.SetMessageQueueEngine(testutil.SetupNatsEngine(t))
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
-	ingestor := newUnitIngestor("test-schedule-created", 1, nil)
+	ingestor := newUnitIngestor("test-schedule-created", 1)
 	publisher := &startupTaskPublisher{}
 	ingestor.ingestionTaskSvc.SetTaskPublisher(publisher)
 	t.Cleanup(func() { ingestor.Stop(context.Background()) })
@@ -483,7 +483,7 @@ func TestMemoryTaskReconcilerRunsAtStartupAndStopsWithIngestor(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	ingestor := newUnitIngestor("test-memory-reconciler", 1, nil)
+	ingestor := newUnitIngestor("test-memory-reconciler", 1)
 	ingestor.memorySvc = &servicepkg.MemoryMessageService{}
 	ingestor.memoryReconcileInterval = time.Hour
 	called := make(chan struct{}, 1)
@@ -533,7 +533,7 @@ func TestWorkerDispatcherDoesNotActivateTaskUntilWorkerReceivesTask(t *testing.T
 	engine.SetMessageQueueEngine(queue)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
-	ingestor := newUnitIngestor("test-worker-dispatch", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-worker-dispatch", 1)
 	releaseFirst := make(chan struct{})
 	firstStarted := make(chan struct{})
 	ingestor.runDocumentTask = func(_ context.Context, task *entity.IngestionTask) error {

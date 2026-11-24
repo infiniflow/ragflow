@@ -418,6 +418,11 @@ func (s *MemoryMessageService) extractMemoryTask(ctx context.Context, task *enti
 	if err != nil {
 		return nil, classifyMemoryTaskDependencyError(err)
 	}
+	// Attribute the extraction's model usage to the memory owner: the
+	// scheduler context carries no identity, so without this stamp the
+	// usage rows from the LLM and embedding calls below would record an
+	// empty user_id and user_email.
+	ctx = permission.WithIdentity(ctx, mem.Memory.UserID, mem.Memory.TenantID)
 	memoryTypes := mem.MemoryType
 	if len(memoryTypes) == 0 {
 		memoryTypes = dao.GetMemoryTypeHuman(mem.Memory.MemoryType)
@@ -458,6 +463,9 @@ func (s *MemoryMessageService) storeMemoryTaskExtraction(ctx context.Context, ta
 	if err != nil {
 		return classifyMemoryTaskDependencyError(err)
 	}
+	// Same identity stamp as extractMemoryTask: the embedding call below
+	// must be attributed to the memory owner.
+	ctx = permission.WithIdentity(ctx, mem.Memory.UserID, mem.Memory.TenantID)
 	messages := make([]map[string]any, 0, len(extracted))
 	for _, item := range extracted {
 		messages = append(messages, buildExtractedMessage(task.SourceID, task.MemoryID, msg, item))

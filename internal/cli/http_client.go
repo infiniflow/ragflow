@@ -22,8 +22,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	ce "ragflow/internal/cli/filesystem"
+	"strconv"
 	"time"
 )
 
@@ -62,12 +64,12 @@ func NewHTTPClient() *HTTPClient {
 
 // APIBase returns the API base URL
 func (c *HTTPClient) APIBase() string {
-	return fmt.Sprintf("%s:%d/api/%s", c.Host, c.Port, c.APIVersion)
+	return fmt.Sprintf("%s/api/%s", net.JoinHostPort(c.Host, strconv.Itoa(c.Port)), c.APIVersion)
 }
 
 // NonAPIBase returns the non-API base URL
 func (c *HTTPClient) NonAPIBase() string {
-	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+	return net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 }
 
 // BuildURL builds the full URL for a given path

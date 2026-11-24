@@ -149,21 +149,36 @@ func TestSyncJobExecutorCloseSettlesQueuedJobs(t *testing.T) {
 		executor.Close()
 		close(closed)
 	}()
-	close(release)
 
+	// Keep the only worker blocked on `release` so queued jobs cannot be
+	// dispatched away while shutdown settles them. At most one job fits in the
+	// worker channel buffer; the rest must be replied with the closed error.
+	queued := results[1:]
+	settled := make(chan syncJobResult, len(queued))
+	for _, result := range queued {
+		go func(r <-chan syncJobResult) { settled <- <-r }(result)
+	}
 	closedErrs := 0
-	for _, result := range results {
+	deadline := time.After(time.Second)
+	for closedErrs == 0 {
 		select {
-		case item := <-result:
+		case item := <-settled:
 			if errors.Is(item.err, errSyncJobExecutorClosed) {
 				closedErrs++
 			}
-		case <-time.After(time.Second):
-			t.Fatalf("timed out waiting for shutdown result")
+		case <-deadline:
+			t.Fatal("queued jobs were not settled with closed error")
 		}
 	}
-	if closedErrs == 0 {
-		t.Fatalf("queued jobs were not settled with closed error")
+	close(release)
+
+	select {
+	case item := <-first:
+		if item.err != nil {
+			t.Fatalf("first job result: %v", item.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first job result")
 	}
 	select {
 	case <-closed:

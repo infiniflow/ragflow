@@ -81,23 +81,8 @@ func (h *SystemHandler) GetQuota(c *gin.Context)       { eeNotImplemented(c, "Ge
 func (h *UserHandler) IsAdmin(c *gin.Context) { eeNotImplemented(c, "IsAdmin") }
 func (h *UserHandler) GetMeta(c *gin.Context) { eeNotImplemented(c, "GetMeta") }
 
-// GetLoginChannelsDeprecated lists the OAuth authentication channels. The
-// community edition offers password login only, so the list is empty.
-// @Summary Get Login Channels
-// @Description Get all supported OAuth authentication channels
-// @Tags users
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/user/login/channels [get]
-func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
-	channels, code, err := h.userService.GetLoginChannels()
-	if err != nil {
-		common.RespondError(c, code, "Load channels failure, error: "+err.Error())
-		return
-	}
-
-	common.RespondSuccessList(c, channels, "success")
-}
 func (h *ProviderHandler) CreateModelGroup(c *gin.Context) { eeNotImplemented(c, "CreateModelGroup") }
+func (h *ProviderHandler) ListModelGroups(c *gin.Context)  { eeNotImplemented(c, "ListModelGroups") }
 func (h *ProviderHandler) DeleteModelGroup(c *gin.Context) { eeNotImplemented(c, "DeleteModelGroup") }
 func (h *ProviderHandler) ShowModelGroup(c *gin.Context)   { eeNotImplemented(c, "ShowModelGroup") }
 func (h *ProviderHandler) AddModelToGroup(c *gin.Context)  { eeNotImplemented(c, "AddModelToGroup") }
@@ -107,3 +92,9 @@ func (h *ProviderHandler) RemoveModelFromGroup(c *gin.Context) {
 
 func (h *StatsHandler) GetModelStats(c *gin.Context) { eeNotImplemented(c, "GetModelStats") }
 func (h *StatsHandler) GetGroupStats(c *gin.Context) { eeNotImplemented(c, "GetGroupStats") }
+
+// eeDocAnalyzers is the provider hook consumed by docAnalyzers. This tree
+// contributes no additional backends, so it reports an empty list.
+func eeDocAnalyzers(_ context.Context) []DocAnalyzerInfo {
+	return nil
+}

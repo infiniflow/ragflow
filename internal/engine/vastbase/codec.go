@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
 
 	"github.com/lib/pq"
@@ -185,7 +186,7 @@ func normalizeMemory(document map[string]interface{}, datasetID string) (map[str
 			if !ok || len(vector) == 0 {
 				continue
 			}
-			key = fmt.Sprintf("q_%d_vec", len(vector))
+			key = common.VectorColumnName(len(vector))
 			value = vector
 		}
 		if vectorColumnPattern.MatchString(key) {
@@ -381,26 +382,7 @@ func floatSlice(value interface{}) ([]float64, bool) {
 // numberToFloat coerces the numeric kinds database/sql and JSON decode to
 // into a float64.
 func numberToFloat(value interface{}) (float64, bool) {
-	switch number := value.(type) {
-	case float64:
-		return number, true
-	case float32:
-		return float64(number), true
-	case int:
-		return float64(number), true
-	case int32:
-		return float64(number), true
-	case int64:
-		return float64(number), true
-	case json.Number:
-		parsed, err := number.Float64()
-		return parsed, err == nil
-	case string:
-		parsed, err := strconv.ParseFloat(number, 64)
-		return parsed, err == nil
-	default:
-		return 0, false
-	}
+	return common.ToFloat(value)
 }
 
 // numberToInt64 coerces the numeric kinds database/sql and JSON decode to

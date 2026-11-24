@@ -142,11 +142,12 @@ func rewriteTitleGroup(ctx context.Context, deps common.Deps, llmID, title strin
 		"Nodes: " + string(itemsJSON)
 
 	temp := 0.0
+	// The reply is a top-level array, so JSON object mode would ask the model
+	// for a shape this parser rejects.
 	req := common.ChatRequest{
 		LLMID:        llmID,
 		SystemPrompt: "You rename duplicate tree node titles for display.",
 		UserPrompt:   prompt,
-		JSONMode:     true,
 		Temperature:  &temp,
 	}
 	resp, err := deps.Chat.Chat(ctx, req)

@@ -45,7 +45,7 @@ func NewSyncPruneService(deleter SyncDocumentDeleter, store DocumentStore) *Sync
 }
 
 // DeleteStale removes documents missing from the complete source snapshot.
-func (s *SyncPruneService) DeleteStale(ctx context.Context, taskContext SyncTaskContext, retain map[string]struct{}) (int64, error) {
+func (s *SyncPruneService) DeleteStale(ctx context.Context, taskContext SyncTaskContext, retain map[string]struct{}, onDelete func(docID string, err error)) (int64, error) {
 	sourceType := SourceType(taskContext.Connector.Source, taskContext.Connector.ID)
 	existing, err := s.store.ListIDs(ctx, taskContext.Knowledgebase.ID, sourceType)
 	if err != nil {
@@ -59,7 +59,11 @@ func (s *SyncPruneService) DeleteStale(ctx context.Context, taskContext SyncTask
 		if s.deleter == nil {
 			return removed, ErrSyncDocumentDeleterNotConfigured
 		}
-		if err = s.deleter.DeleteDocument(ctx, docID); err != nil {
+		err = s.deleter.DeleteDocument(ctx, docID)
+		if onDelete != nil {
+			onDelete(docID, err)
+		}
+		if err != nil {
 			return removed, err
 		}
 		removed++

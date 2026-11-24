@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -27,11 +28,14 @@ import (
 	"mime/quotedprintable"
 	"net/mail"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/AkmalOt/gomsg"
 	"go.uber.org/zap"
+	htmlcharset "golang.org/x/net/html/charset"
+	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/common"
@@ -116,12 +120,12 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		}
 	}
 
-	// Re-chunk attachments so their content becomes retrievable within the
-	// same document (user-oriented; mirrors Python legacy rag/app/email.py
-	// naive_chunk). Each attachment is re-parsed by its file extension via
-	// the shared parser registry; a single unparseable/skipped attachment
-	// never breaks the whole email.
-	extraItems := p.rechunkEmailAttachments(ctx, content, depth)
+	// Re-parse attachments into the same searchable document. Malformed
+	// attachments are skipped; license denial fails the parent operation.
+	extraItems, err := p.rechunkEmailAttachments(ctx, content, depth)
+	if err != nil {
+		return ParseResult{Err: err}
+	}
 
 	// Attachments have been consumed by rechunkEmailAttachments, which
 	// re-parses each one by extension into a searchable item. Keeping their
@@ -172,20 +176,48 @@ func targetFieldsSet(fields []string) map[string]bool {
 
 // rfc2047Decoder decodes RFC 2047 encoded-words (e.g. "=?utf-8?B?...?=") in
 // header values. utf-8 is handled natively by mime; the CharsetReader covers
-// the non-UTF-8 charsets via charsetEncoding.
+// the non-UTF-8 charsets via charsetEncoding, and every other WHATWG label
+// (windows-1250 to windows-1258, iso-8859-2 to iso-8859-16, koi8-r, ...) via
+// htmlcharset.Lookup, as decodeWithCharset does for mail bodies. Three labels
+// need more than that:
+//   - every ISO-8859-1 alias (iso_8859-1, iso8859-1, l1, ...) is read as
+//     windows-1252, like the label mime decodes itself (see latin1EncodedWordRe);
+//   - a bare utf-16 starts with a byte order mark and is big-endian without one
+//     (RFC 2781), where WHATWG reads it as little-endian and skips the mark;
+//   - WHATWG maps iso-2022-kr, iso-2022-cn and the like to its replacement
+//     decoder, which turns the whole word into U+FFFD, so those stay undecoded.
 var rfc2047Decoder = &mime.WordDecoder{
 	CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
+		htmlEnc, htmlName := htmlcharset.Lookup(charset)
+		if htmlName == "windows-1252" {
+			return transform.NewReader(input, htmlEnc.NewDecoder()), nil
+		}
+		if strings.EqualFold(strings.TrimSpace(charset), "utf-16") {
+			return transform.NewReader(input, unicode.UTF16(unicode.BigEndian, unicode.UseBOM).NewDecoder()), nil
+		}
 		if enc, ok := charsetlib.CharsetEncoding(charset); ok {
 			return transform.NewReader(input, enc.NewDecoder()), nil
+		}
+		if htmlEnc != nil && htmlName != "replacement" {
+			return transform.NewReader(input, htmlEnc.NewDecoder()), nil
 		}
 		return nil, fmt.Errorf("email: unsupported header charset %q", charset)
 	},
 }
 
+// latin1EncodedWordRe matches the charset of an RFC 2047 encoded-word
+// labelled ISO-8859-1, with an optional RFC 2231 language suffix. Go's mime
+// package decodes iso-8859-1 itself, byte for byte, without asking the
+// CharsetReader, so the curly quotes, dashes and euro sign that Outlook writes
+// under that label came out as C1 control characters.
+var latin1EncodedWordRe = regexp.MustCompile(`(?i)=\?(?:iso-8859-1|latin1)(\*[^?]*)?\?`)
+
 // decodeHeaderWord decodes any RFC 2047 encoded-words in a header value,
-// leaving undecodable values untouched.
+// leaving undecodable values untouched. An ISO-8859-1 encoded-word is read as
+// windows-1252, as WHATWG specifies for that label and as the HTML path
+// already reads it; the two differ only in bytes 0x80-0x9F.
 func decodeHeaderWord(val string) string {
-	decoded, err := rfc2047Decoder.DecodeHeader(val)
+	decoded, err := rfc2047Decoder.DecodeHeader(latin1EncodedWordRe.ReplaceAllString(val, "=?windows-1252$1?"))
 	if err != nil {
 		return val
 	}
@@ -620,8 +652,8 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // video) are skipped: they carry no plain text in this pipeline and would
 // require vision/speech models that are out of scope here. A single
 // unparseable, empty, unsupported, or panicking attachment is skipped
-// without failing the whole email (mirrors email.py's per-attachment
-// try/except).
+// without failing the whole email. License denial is propagated so a parent
+// operation cannot silently succeed after a denied attachment parse.
 //
 // The function returns structured JSON items (one per non-empty text
 // segment), each carrying only "text" and "doc_type_kwd".
@@ -631,19 +663,19 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // avoid unbounded recursion through attachments-of-attachments.
 const maxRechunkPayloadBytes = 32 << 20 // 32 MiB
 
-func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) []map[string]any {
+func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) ([]map[string]any, error) {
 	if depth > 0 {
-		return nil
+		return nil, nil
 	}
 	// Honor task cancellation so a long attachment list does not keep
 	// re-parsing after the ingestion task has been stopped/aborted.
 	if ctx.Err() != nil {
-		return nil
+		return nil, nil
 	}
 
 	raw, ok := content["attachments"].([]map[string]any)
 	if !ok || len(raw) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var extra []map[string]any
@@ -689,6 +721,9 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			})
 		} else {
 			np, actual, err := GetTextOnlyParser(ft, []byte(payload))
+			if errors.Is(err, utility.ErrFeatureDisabled) {
+				return nil, fmt.Errorf("email attachment %q: %w", fn, err)
+			}
 			if err != nil {
 				continue
 			}
@@ -705,6 +740,9 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			// bad file can't fail the whole email — mirrors the .msg
 			// parseMSG recover.
 			common.Warn("email: attachment re-parse panicked, skipping", zap.String("file", fn))
+		}
+		if errors.Is(res.Err, utility.ErrFeatureDisabled) {
+			return nil, fmt.Errorf("email attachment %q: %w", fn, res.Err)
 		}
 		if panicked || res.Err != nil {
 			continue
@@ -728,5 +766,5 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			})
 		}
 	}
-	return extra
+	return extra, nil
 }

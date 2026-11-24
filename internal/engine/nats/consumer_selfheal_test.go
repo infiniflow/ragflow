@@ -58,6 +58,16 @@ func TestIsConsumerGoneErr(t *testing.T) {
 	}
 }
 
+// publishedPullContext budgets a pull that is expected to return a message just
+// published. A freshly published message is not always visible to the pull
+// request on the first round-trip; the 1s budget of taskPullContext is enough
+// in isolation but not once the whole suite runs packages in parallel, where
+// this test was seen returning an empty pull.
+func publishedPullContext(t *testing.T) (context.Context, context.CancelFunc) {
+	t.Helper()
+	return context.WithTimeout(t.Context(), 10*time.Second)
+}
+
 // A pull must repair itself when the consumer behind the stored handle is gone.
 // Before this, the fetch loop answered "no responders available for request"
 // forever: the workers kept logging errors, the queue stopped draining, and only
@@ -73,7 +83,7 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 	queue := newTaskQueue(t)
 
 	publishTask(t, queue, "before-delete")
-	ctx, cancel := taskPullContext(t)
+	ctx, cancel := publishedPullContext(t)
 	handle, err := queue.PullMessage(ctx)
 	cancel()
 	if err != nil {
@@ -113,7 +123,7 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 	// And the recreated consumer must actually deliver: publish after the repair
 	// and pull it back.
 	publishTask(t, queue, "after-repair")
-	recoveredCtx, recoveredCancel := taskPullContext(t)
+	recoveredCtx, recoveredCancel := publishedPullContext(t)
 	defer recoveredCancel()
 	recovered, err := queue.PullMessage(recoveredCtx)
 	if err != nil {

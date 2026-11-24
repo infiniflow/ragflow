@@ -38,7 +38,7 @@ func NewChatDAO() *ChatDAO {
 // ListByResourceIDs lists chats that have already been authorized by the
 // permission layer, with the same filters and pagination as the chat list API.
 func (dao *ChatDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, resourceIDs, ownerIDs []string, page, pageSize int, terms []OrderTerm, keywords, id, name string) ([]*entity.ChatListItem, int64, error) {
-	if len(resourceIDs) == 0 || (ownerIDs != nil && len(ownerIDs) == 0) {
+	if len(resourceIDs) == 0 {
 		return []*entity.ChatListItem{}, 0, nil
 	}
 
@@ -47,13 +47,14 @@ func (dao *ChatDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, resource
 	query := db.WithContext(ctx).Model(&entity.Chat{}).
 		Select(`
 			dialog.*,
-			user.nickname,
-			user.avatar as tenant_avatar
+			owner.nickname,
+			tenant.avatar as tenant_avatar
 		`).
-		Joins("LEFT JOIN user ON dialog.tenant_id = user.id").
+		Joins("LEFT JOIN user AS owner ON dialog.user_id = owner.id").
+		Joins("LEFT JOIN user AS tenant ON dialog.tenant_id = tenant.id").
 		Where("dialog.id IN ? AND dialog.status = ?", resourceIDs, "1")
-	if ownerIDs != nil {
-		query = query.Where("dialog.tenant_id IN ?", ownerIDs)
+	if len(ownerIDs) > 0 {
+		query = query.Where("dialog.user_id IN ?", ownerIDs)
 	}
 	if keywords != "" {
 		query = query.Where("LOWER(dialog.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")

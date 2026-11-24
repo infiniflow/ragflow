@@ -211,14 +211,15 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
    cd ragflow
    ```
 
-2. Go ビルドがリンクするネイティブ静的ライブラリ（`download_dev_deps.py`）と、バックエンドが実行時に読み込むモデル / トークナイザーリソース（`download_deps.py`）を、依存関係ダウンロードスクリプトで用意します:
+2. 依存関係ダウンロードスクリプトを一度実行し、ローカル Go サーバーのビルド、実行、文書解析、トークン数の計算に必要なリソースをすべて用意します。`download_dev_deps.py` はネイティブ静的ライブラリと、cl100k 語彙、DeepDoc `.ort` モデル、embedding トークナイザーなどの実行時リソースをダウンロードします:
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` は pdfium、pdf_oxide、office_oxide、onnxruntime を `~/ragflow-native-libs` にダウンロードして展開します。`download_deps.py` は cl100k 語彙、DeepDoc モデル、embedding トークナイザーリソースを `deps/` にダウンロードします。どちらも Python スクリプトで、`uv run` が宣言された依存関係（`requests`、モデルとトークナイザーのダウンロードには `huggingface-hub`）を自動的にインストールします。同等のリソースを他の方法で用意済みの場合はこの手順をスキップしてください。リポジトリルートから起動する場合、Go サービスは `internal/rag/res/deepdoc` を自動的に見つけます。他のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR` にその絶対パスを設定してください。
+   ローカル開発ではこのスクリプトだけで準備が完了します。再実行時は既存のファイルをスキップし、再ダウンロードしません。イメージ向けの `deps/download_deps.py` は同じ実行時リソースを取得しますが、ネイティブ `.a` ライブラリは取得しません。依存関係イメージのビルド時または CI でのみ実行し、ローカル開発では追加で実行する必要はありません。
+
+   `download_dev_deps.py` は pdfium、pdf_oxide、office_oxide、onnxruntime を `~/ragflow-native-libs` にダウンロードして展開し、cl100k 語彙、DeepDoc モデル、embedding トークナイザーのリソースを `deps/` に保存します。Python スクリプトで、`uv run` が宣言された依存関係（`requests` と `huggingface-hub`）を自動的にインストールします。同等のリソースを他の方法で用意済みの場合はこの手順をスキップしてください。リポジトリルートから起動する場合、Go サービスは `internal/rag/res/deepdoc` を自動的に見つけます。他のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR` にその絶対パスを設定してください。
 
 3. サービスをビルドします:
 
@@ -233,35 +234,15 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-5. データベースをマイグレーションします:
+5. RAGFlow を起動します:
 
    ```bash
-   ./bin/ragflow_server --migrate
+   ./bin/ragflow_server
    ```
 
-6. 4つのサービスを4つのターミナルで起動します:
+   オープンソース版はすべてのサービスを単一の Go プロセスで実行します。データベースを移行し、Admin を起動してスーパーユーザーを初期化した後、API、Ingestor、Syncer、Chatter を起動します。既定のポートは Admin が `9381`、API が `9380` です。プロセスを停止すると全サービスが停止します。サービスは `conf/service_conf.yaml` または環境変数で設定します。
 
-   ターミナル1: Admin (`9381`)。
-
-   ```bash
-   ./bin/ragflow_server --admin
-   ```
-
-   ```bash
-   ./bin/ragflow_server --ingestor
-   ```
-
-   ターミナル3: Syncer。
-
-   ```bash
-   ./bin/ragflow_server --syncer
-   ```
-
-   ターミナル4: API (`9380`)。
-
-   ```bash
-   ./bin/ragflow_server --api
-   ```
+6. `./bin/ragflow_server --help` を実行して、利用可能なオプションを確認します。
 
 7. フロントエンド開発時のみ Node.js と npm をインストールし、API を確認します:
 
@@ -273,7 +254,7 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
 
 詳細は[ソースコードからサービスを起動](./docs/develop/launch_ragflow_from_source.md)を参照してください。
 
-> **運用上の注意:** Elasticsearch の設定を永続化するには、`/etc/sysctl.conf` に `vm.max_map_count=262144` を追加します。既定の MySQL 構成では、Docker エントリポイントが移行後に Admin、Syncer、Ingestor、API を起動します。オープンソース 1.0 の DeepDoc はレイアウト解析、OCR、表認識に CPU 推論を使用します。Docker 設定変更後の再起動とデータ保持・削除は [Docker ガイド](./docker/README.md)に従ってください。`download_dev_deps.py` はネイティブライブラリを、`download_deps.py` はモデルとトークナイザーリソースを準備します。どちらも `uv run` で実行します。`--migrate` は移行後に終了し、`--admin` は管理サービス、`--ingestor` は取り込みサービス、`--syncer` は外部データソース同期サービス、`--api` は Web UI と SDK 向けの API サービスを起動します。HTTP 200 は API の準備完了を示します。
+> **運用上の注意:** Elasticsearch の設定を永続化するには、`/etc/sysctl.conf` に `vm.max_map_count=262144` を追加します。オープンソース 1.0 の DeepDoc はレイアウト解析、OCR、表認識に CPU 推論を使用します。Docker 設定変更後の再起動とデータ保持・削除は [Docker ガイド](./docker/README.md)に従ってください。HTTP 200 は API の準備完了を示します。
 
 ## 📚 ドキュメンテーション
 
