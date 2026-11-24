@@ -51,6 +51,16 @@ type IngestionLog struct {
 	ParseDurationS float64        `json:"parse_duration_s"`
 	Progress       float64        `json:"progress"`
 	RunCount       int            `json:"run_count"`
-	Code           int            `json:"code"`
 	Operation      map[string]any `json:"operation,omitempty"`
+
+	// Granularity fields carry component and page/chunk events in the same
+	// wide ingestion table. EventType is the scope (task|component|progress);
+	// Status keeps the task-level state for every scope.
+	PipelineLogID string `json:"pipeline_log_id,omitempty"`
+	Component     string `json:"component,omitempty"`
+	Phase         uint8  `json:"phase,omitempty"`
+	Unit          string `json:"unit,omitempty"`
+	Current       uint32 `json:"current,omitempty"`
+	Total         uint32 `json:"total,omitempty"`
+	Message       string `json:"message,omitempty"`
 }

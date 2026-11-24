@@ -540,7 +540,7 @@ func (r *runningEventRecorder) findRunning() (common.IngestionLog, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, e := range r.events {
-		if e.EventType == "running" {
+		if e.Status == common.RUNNING {
 			return e, true
 		}
 	}

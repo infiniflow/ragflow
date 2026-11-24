@@ -1325,6 +1325,22 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		pipelineLogID = *ingestionTask.PipelineLogID
 	}
 	sink := newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)
+	// Install the structured-progress emitter: component page/chunk positions
+	// are forwarded to the ingestion log sink. Identity is captured once here
+	// (the run row is loaded a single time) so the high-frequency callback never
+	// touches the DB. A missing run still yields an event with task identity.
+	var progressRun *entity.PipelineOperationLog
+	if pipelineLogID != "" {
+		progressRun, _ = dao.NewPipelineOperationLogDAO().GetByID(ctx, e.deps.DB, pipelineLogID)
+	}
+	sink.detailEmitter = func(component, unit string, current, total uint32) {
+		log := observability.BuildProgressIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, unit, current, total)
+		common.LogIngest(&log)
+	}
+	sink.lifecycleEmitter = func(component string, phase uint8, message string) {
+		log := observability.BuildComponentIngestLog(ctx, ingestionTask, &docTaskCtx.Doc, progressRun, component, phase, message)
+		common.LogIngest(&log)
+	}
 	// Close is idempotent and intentionally called twice: the defer is the
 	// panic backstop (an unwind out of Execute must still stop the flusher),
 	// and the explicit call pins the final flush ahead of docState.apply,

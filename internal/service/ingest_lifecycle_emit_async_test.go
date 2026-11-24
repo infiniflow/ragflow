@@ -75,7 +75,7 @@ func TestEmitLifecycleEventIsFireAndForgetNonBlocking(t *testing.T) {
 	task := &entity.IngestionTask{ID: "task1"}
 
 	start := time.Now()
-	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
+	svc.emitLifecycleEvent(context.Background(), task, "COMPLETED", "")
 	elapsed := time.Since(start)
 	if elapsed > 100*time.Millisecond {
 		t.Fatalf("emitLifecycleEvent blocked for %v; must be fire-and-forget and return immediately", elapsed)
@@ -94,7 +94,7 @@ func TestEmitLifecycleEventIsolatesPanic(t *testing.T) {
 	task := &entity.IngestionTask{ID: "task1"}
 
 	// Must not panic the caller even though the emitter panics.
-	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
+	svc.emitLifecycleEvent(context.Background(), task, "COMPLETED", "")
 	// Reaching here means the panic was isolated to the instrumentation goroutine.
 	time.Sleep(50 * time.Millisecond)
 }
