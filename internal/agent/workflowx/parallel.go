@@ -253,14 +253,9 @@ func AddParallelNode[I, O any](
 	}
 	options := getParallelOptions(opts)
 
-	// Build a fresh per-node bridge store. It is captured in the
-	// lambda's closure and rehydrated from ItemCheckpoints on
-	// resume.
-	bridgeState := newParallelBridgeState(nil)
-
 	compileOpts := append([]compose.GraphCompileOption{}, options.compileOpts...)
 	if options.enableSubCheckpoint {
-		compileOpts = append(compileOpts, compose.WithCheckPointStore(bridgeState.store()))
+		compileOpts = append(compileOpts, compose.WithCheckPointStore(newParallelBridgeStore()))
 	}
 	compiled, err := sub.Compile(ctx, compileOpts...)
 	if err != nil {
@@ -269,7 +264,7 @@ func AddParallelNode[I, O any](
 
 	lambda, err := compose.AnyLambda[[]I, []O, struct{}](
 		func(ctx context.Context, items []I, _ ...struct{}) ([]O, error) {
-			return runParallelInvoke(ctx, key, compiled, items, options, bridgeState)
+			return runParallelInvoke(ctx, key, compiled, items, options)
 		},
 		func(ctx context.Context, items []I, _ ...struct{}) (*schema.StreamReader[[]O], error) {
 			return nil, errParallelOuterStreamUnsupported
@@ -315,7 +310,6 @@ func runParallelInvoke[I, O any](
 	sub compose.Runnable[I, O],
 	items []I,
 	options *parallelOptions,
-	defaultBridge *parallelBridgeState,
 ) ([]O, error) {
 	prev, isResume, resumeErr := loadParallelSnapshot(ctx)
 	if resumeErr != nil {
@@ -348,7 +342,7 @@ func runParallelInvoke[I, O any](
 		indicesToProcess[i] = i
 	}
 
-	bridgeState := defaultBridge
+	bridgeState := newParallelBridgeState(nil)
 	outputs := make([]O, totalCount)
 	completedResults := make(map[int]any)
 
@@ -694,6 +688,9 @@ func runParallelFanout[I, O any](
 			}()
 			out, err = sub.Invoke(subCtx, items[idx], invokeOpts...)
 		}()
+		if err == nil && options.enableSubCheckpoint && cpID != "" && bridgeState != nil {
+			bridgeState.delete(cpID)
+		}
 		resultCh <- parallelTaskResult{index: idx, output: out, err: err}
 	}
 
@@ -749,8 +746,9 @@ func runParallelFanout[I, O any](
 type parallelBridgeStoreKey struct{}
 
 // parallelBridgeState is the in-memory map backing the per-item
-// child checkpoints. It is owned by AddParallelNode and passed
-// through ctx so the parallelBridgeStore can find it.
+// child checkpoints for a single parallel invocation. It is created
+// per run in runParallelInvoke and passed through ctx so the
+// stateless parallelBridgeStore can find it.
 type parallelBridgeState struct {
 	mu   sync.RWMutex
 	data map[string][]byte
@@ -785,6 +783,12 @@ func (s *parallelBridgeState) set(id string, payload []byte) {
 	buf := make([]byte, len(payload))
 	copy(buf, payload)
 	s.data[id] = buf
+}
+
+func (s *parallelBridgeState) delete(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.data, id)
 }
 
 func (s *parallelBridgeState) snapshot() map[string][]byte {
@@ -824,11 +828,4 @@ func (s *parallelBridgeStore) Set(ctx context.Context, checkPointID string, chec
 // withParallelBridgeState wires the per-run bridge state into ctx.
 func withParallelBridgeState(ctx context.Context, state *parallelBridgeState) context.Context {
 	return context.WithValue(ctx, parallelBridgeStoreKey{}, state)
-}
-
-// store returns the per-run CheckPointStore that the inner
-// sub-workflow should use. It is captured by closure when the
-// inner sub-workflow is compiled.
-func (s *parallelBridgeState) store() *parallelBridgeStore {
-	return newParallelBridgeStore()
 }

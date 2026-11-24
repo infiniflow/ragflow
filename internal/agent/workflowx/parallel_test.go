@@ -415,8 +415,7 @@ func TestParallel_SingleItemError_Wrapped(t *testing.T) {
 		WithParallelMaxConcurrency(0),
 		WithParallelEnableSubCheckpoint(false),
 	})
-	bridge := newParallelBridgeState(nil)
-	_, err = runParallelInvoke(ctx, "par", compiled, []int{1, 2, 3}, opts, bridge)
+	_, err = runParallelInvoke(ctx, "par", compiled, []int{1, 2, 3}, opts)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -512,8 +511,7 @@ func TestParallel_MixedCompletedAndInterrupted_StateStructure(t *testing.T) {
 			return "mixed-cp:" + itoa(idx)
 		}),
 	})
-	bridge := newParallelBridgeState(nil)
-	_, err = runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts, bridge)
+	_, err = runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts)
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
@@ -625,7 +623,6 @@ func TestParallel_InvokeRejectsInputCountMismatch(t *testing.T) {
 		runner,
 		[]int{1, 2},
 		getParallelOptions(nil),
-		newParallelBridgeState(nil),
 	)
 	if err == nil {
 		t.Fatal("expected resume state error, got nil")
@@ -659,7 +656,7 @@ func TestParallel_ResumeBuilderFailureSkipsItemInvocation(t *testing.T) {
 			return ctx, cloneErr
 		}),
 	})
-	_, err = runParallelInvoke(injectResumeState(t.Context(), payload), "par", sub, nil, opts, newParallelBridgeState(nil))
+	_, err = runParallelInvoke(injectResumeState(t.Context(), payload), "par", sub, nil, opts)
 	if !errors.Is(err, cloneErr) {
 		t.Fatalf("resume error = %v, want state clone failure", err)
 	}
@@ -754,8 +751,7 @@ func TestParallel_PanicRecoveredAsItemError(t *testing.T) {
 		WithParallelMaxConcurrency(0),
 		WithParallelEnableSubCheckpoint(false),
 	})
-	bridge := newParallelBridgeState(nil)
-	_, err := runParallelInvoke(ctx, "par", runner, []int{0, 1, 2}, opts, bridge)
+	_, err := runParallelInvoke(ctx, "par", runner, []int{0, 1, 2}, opts)
 	if err == nil {
 		t.Fatal("expected panic-as-error, got nil")
 	}
@@ -790,9 +786,8 @@ func TestParallel_StableCheckpointIDAcrossResume(t *testing.T) {
 	node.AddInput(compose.START)
 	sub.End().AddInput("op")
 
-	bridge := newParallelBridgeState(nil)
 	compiled, err := sub.Compile(ctx,
-		compose.WithCheckPointStore(bridge.store()),
+		compose.WithCheckPointStore(newParallelBridgeStore()),
 	)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
@@ -807,7 +802,7 @@ func TestParallel_StableCheckpointIDAcrossResume(t *testing.T) {
 			return "stable-cp:" + nodeKey + ":" + itoa(idx)
 		}),
 	})
-	_, err = runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts, bridge)
+	_, err = runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}

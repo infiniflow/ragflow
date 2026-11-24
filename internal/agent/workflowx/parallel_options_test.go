@@ -317,8 +317,7 @@ func TestOptions_EmptyBuilderReturnRejectsEmptyID(t *testing.T) {
 			return ""
 		}),
 	})
-	bridge := newParallelBridgeState(nil)
-	got, err := runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts, bridge)
+	got, err := runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -356,8 +355,7 @@ func TestOptions_EnableSubCheckpointFalse_NoPerItemID(t *testing.T) {
 		WithParallelMaxConcurrency(0),
 		WithParallelEnableSubCheckpoint(false),
 	})
-	bridge := newParallelBridgeState(nil)
-	_, err = runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts, bridge)
+	_, err = runParallelInvoke(ctx, "par", compiled, []int{0, 1, 2}, opts)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
