@@ -406,8 +406,12 @@ func TestGeneralChunkerDoclingJSON(t *testing.T) {
 	if chunk["text"] != "Results\nThe experiment succeeded.\n" || chunk["heading_level"] != float64(2) {
 		t.Errorf("chunk did not preserve the heading and paragraph: %#v", chunk)
 	}
-	if got := parserlib.PDFPositionRows(chunk["_pdf_positions"]); len(got) != 2 {
-		t.Errorf("chunk positions = %#v, want both source boxes", got)
+	wantPositions := [][]any{
+		{1.0, 1.0, 5.0, 2.0, 4.0},
+		{2.0, 1.0, 5.0, 4.0, 6.0},
+	}
+	if got := parserlib.PDFPositionRows(chunk["_pdf_positions"]); !reflect.DeepEqual(got, wantPositions) {
+		t.Errorf("chunk positions = %v, want %v", got, wantPositions)
 	}
 }
 
