@@ -148,6 +148,18 @@ func BuildIngestLog(ctx context.Context, task *entity.IngestionTask, doc *entity
 			// still accurate without a dedicated column.
 			ev.EndTime = run.ProcessBeginAt.Add(time.Duration(run.ProcessDuration * float64(time.Second))).UTC()
 		}
+	}
+	// The run row can be unavailable at emit time (lookup failure or not yet
+	// committed). Fall back to the task's run id so every scope still carries run
+	// identity; task ids are reused across retries and only the run id tells them
+	// apart. A loaded run always wins over this fallback.
+	if ev.PipelineLogID == "" && task != nil && task.PipelineLogID != nil {
+		ev.PipelineLogID = *task.PipelineLogID
+	}
+	// Claim and terminal timing belong to task-scope lifecycle events only.
+	// Component/progress snapshots are emitted mid-run; inheriting a terminal
+	// EndTime would fabricate a full-run parse duration for a single snapshot.
+	if scope == "task" && run != nil {
 		// BeginTime only for running/terminal events; created/scheduled must not
 		// leak a (possibly stale) claim time from a previous run.
 		if ct := claimTime(doc, run); ct != nil && isBeginRelevant(status) {

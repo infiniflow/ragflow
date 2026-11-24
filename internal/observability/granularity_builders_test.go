@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -167,5 +168,90 @@ func TestBuildIngestLogNilTaskIsSafe(t *testing.T) {
 	log := BuildIngestLog(granularityCtx(), nil, nil, nil, "component", "", "")
 	if log.TaskID != "" || log.EventType != "component" {
 		t.Errorf("nil-entity log = %+v, want empty TaskID and component scope", log)
+	}
+}
+
+// TestBuildIngestLogFallsBackToTaskRunID is the adversarial fixture for the
+// run-lookup failure path: when the run row could not be loaded (nil run) but
+// the task carries a PipelineLogID, the event must still carry that run id so
+// retry-scoped queries can tell runs apart. Without the fallback the builder
+// emits an empty PipelineLogID and this assertion fails.
+func TestBuildIngestLogFallsBackToTaskRunID(t *testing.T) {
+	runID := "run-missing"
+	task := &entity.IngestionTask{ID: "task-1", Status: common.RUNNING, PipelineLogID: &runID}
+	doc := &entity.Document{Name: ptrStr("report"), Suffix: ".pdf", Type: "pdf"}
+
+	prog := BuildProgressIngestLog(granularityCtx(), task, doc, nil, "Tokenizer", "chunk", 257, 3000)
+	if prog.PipelineLogID != runID {
+		t.Errorf("progress PipelineLogID = %q, want %q (fallback to task run id when run row is missing)", prog.PipelineLogID, runID)
+	}
+	comp := BuildComponentIngestLog(granularityCtx(), task, doc, nil, "Parser", 0, "enter")
+	if comp.PipelineLogID != runID {
+		t.Errorf("component PipelineLogID = %q, want %q", comp.PipelineLogID, runID)
+	}
+	// The same fallback must apply to task-scope events.
+	taskLog := BuildIngestLog(granularityCtx(), task, doc, nil, "task", common.RUNNING, "")
+	if taskLog.PipelineLogID != runID {
+		t.Errorf("task PipelineLogID = %q, want %q", taskLog.PipelineLogID, runID)
+	}
+}
+
+// TestBuildIngestLogLoadedRunIDWins is the adversarial counterpart: a loaded
+// run is authoritative and must win over a stale task.PipelineLogID. This
+// guards the fallback from overwriting the correct run id.
+func TestBuildIngestLogLoadedRunIDWins(t *testing.T) {
+	stale := "stale-run"
+	task := &entity.IngestionTask{ID: "task-1", Status: common.RUNNING, PipelineLogID: &stale}
+	doc := &entity.Document{Name: ptrStr("report"), Suffix: ".pdf", Type: "pdf"}
+	run := &entity.PipelineOperationLog{ID: "authoritative-run"}
+
+	log := BuildProgressIngestLog(granularityCtx(), task, doc, run, "Tokenizer", "chunk", 1, 5)
+	if log.PipelineLogID != "authoritative-run" {
+		t.Errorf("PipelineLogID = %q, want authoritative-run (loaded run must win)", log.PipelineLogID)
+	}
+}
+
+// TestGranularityBuildersOmitTerminalTiming is the adversarial fixture for the
+// terminal-status leak: a progress/component snapshot emitted after the task
+// reached a terminal status must NOT inherit EndTime / ParseDurationS from that
+// status. Those fields belong to task-scope lifecycle events only. Without the
+// scope gate the builders apply the terminal fallback to every scope.
+func TestGranularityBuildersOmitTerminalTiming(t *testing.T) {
+	now := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	claim := now.Add(2 * time.Minute)
+	task := &entity.IngestionTask{ID: "task-1", Status: common.COMPLETED}
+	doc := &entity.Document{Name: ptrStr("report"), Suffix: ".pdf", Type: "pdf", ProcessBeginAt: &claim}
+	run := &entity.PipelineOperationLog{ID: "run-1", CreateDate: &now, ProcessBeginAt: &claim}
+
+	prog := BuildProgressIngestLog(granularityCtx(), task, doc, run, "Tokenizer", "chunk", 1, 5)
+	if !prog.EndTime.IsZero() {
+		t.Errorf("progress EndTime = %v, want zero (progress snapshots are not terminal events)", prog.EndTime)
+	}
+	if prog.ParseDurationS != 0 {
+		t.Errorf("progress ParseDurationS = %v, want 0", prog.ParseDurationS)
+	}
+
+	comp := BuildComponentIngestLog(granularityCtx(), task, doc, run, "Parser", 1, "exit")
+	if !comp.EndTime.IsZero() {
+		t.Errorf("component EndTime = %v, want zero", comp.EndTime)
+	}
+	if comp.ParseDurationS != 0 {
+		t.Errorf("component ParseDurationS = %v, want 0", comp.ParseDurationS)
+	}
+}
+
+// TestBuildIngestLogTaskScopeKeepsTerminalTiming guards that scope gating does
+// not break task-scope events: a terminal task-scope event with no run duration
+// still gets EndTime == EventTime. This passes both before and after the fix.
+func TestBuildIngestLogTaskScopeKeepsTerminalTiming(t *testing.T) {
+	now := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	claim := now.Add(2 * time.Minute)
+	task := &entity.IngestionTask{ID: "task-1", Status: common.COMPLETED}
+	doc := &entity.Document{Name: ptrStr("report"), Suffix: ".pdf", Type: "pdf", ProcessBeginAt: &claim}
+	run := &entity.PipelineOperationLog{ID: "run-1", CreateDate: &now, ProcessBeginAt: &claim}
+
+	log := BuildIngestLog(granularityCtx(), task, doc, run, "task", common.COMPLETED, "")
+	if log.EndTime.IsZero() {
+		t.Error("task-scope terminal event must keep the EndTime fallback")
 	}
 }
