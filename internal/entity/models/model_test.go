@@ -33,6 +33,7 @@ import (
 	"testing"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 // joinModelNames extracts model names from a ListModelResponse slice and
@@ -770,7 +771,7 @@ func TestAllModelsCatalogHasNoDuplicateKeys(t *testing.T) {
 		t.Fatalf("detector control: got %d duplicates (%v), want 3 (a, c, e)", len(dups), dups)
 	}
 
-	target := filepath.Join(findRepoRoot(), "conf", "all_models.json")
+	target := filepath.Join(utility.ConfDir(), "all_models.json")
 	data, err := os.ReadFile(target)
 	if err != nil {
 		t.Fatalf("read %s: %v", target, err)
@@ -927,7 +928,7 @@ func TestAllModelsCatalogTokenizerTagsAreKnown(t *testing.T) {
 		t.Fatal("tokenizer.CounterStatuses reports no counters; the check would pass vacuously")
 	}
 
-	target := filepath.Join(findRepoRoot(), "conf", "all_models.json")
+	target := filepath.Join(utility.ConfDir(), "all_models.json")
 	data, err := os.ReadFile(target)
 	if err != nil {
 		t.Fatalf("read %s: %v", target, err)

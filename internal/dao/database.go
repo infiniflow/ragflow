@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 	"strings"
 	"time"
 
@@ -539,7 +540,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	}
 	common.Info("Database connected and migrated successfully")
 
-	err = models.InitProviderManager("conf/models")
+	err = models.InitProviderManager(filepath.Join(utility.ConfDir(), "models"))
 	if err != nil {
 		common.Fatal("Failed to load model providers", zap.Error(err))
 	}

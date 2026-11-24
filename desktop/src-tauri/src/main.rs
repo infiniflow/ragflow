@@ -135,13 +135,24 @@ fn spawn_sidecar(
         .stdout(Stdio::from(log.try_clone()?))
         .stderr(Stdio::from(log));
 
-    // The analyzer dictionaries, WordNet and the spaCy models ship as a resource
-    // bundle. Say where it is rather than let the engine guess: on Windows and
-    // Linux the binary and the resources live in different directories, so the
-    // executable-relative lookup cannot find them.
-    let resources = app.path().resource_dir()?.join("resource");
-    if resources.is_dir() {
-        command.env("RAGFLOW_DICT_PATH", &resources);
+    // A window launched from Finder starts in "/": nothing can be written there,
+    // and the engine's cwd-relative defaults (its `logs` directory among them)
+    // have no home. Run it from the data directory instead.
+    command.current_dir(data_dir);
+
+    // The analyzer dictionaries and the configuration directory ship as
+    // resources. Say where they are rather than let the engine guess: on Windows
+    // and Linux the binary and the resources live in different directories, so
+    // its executable-relative lookup cannot find them.
+    let resources = app.path().resource_dir()?;
+    for (key, dir) in [
+        ("RAGFLOW_DICT_PATH", resources.join("resource")),
+        ("RAGFLOW_CONF_DIR", resources.join("conf")),
+        ("DEEPDOC_MODEL_DIR", resources.join("deepdoc")),
+    ] {
+        if dir.is_dir() {
+            command.env(key, dir);
+        }
     }
 
     let child = command

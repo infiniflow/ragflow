@@ -321,6 +321,9 @@ desktop/node_modules/
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
 desktop/src-tauri/binaries/
-# staged analyzer resource tree (desktop/stage-resources.sh) and its stamp
+# staged engine data: analyzer resources, conf/, DeepDoc weights, plus the stamp
 desktop/src-tauri/resource/
+desktop/src-tauri/conf/
+desktop/src-tauri/deepdoc/
+desktop/src-tauri/deps/
 desktop/src-tauri/.resource-stamp

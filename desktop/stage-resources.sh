@@ -55,7 +55,82 @@ EOF
   exit 1
 fi
 
+# The engine also reads its configuration directory at start: conf/models is
+# fatal when missing, and conf/system_settings.json seeds the defaults. It is part
+# of the repository and small (1.7 MB), so it is re-synced on every build instead
+# of being fingerprinted.
+stage_conf() {
+  local conf_src="$repo_root/conf" conf_dest="$here/src-tauri/conf"
+  if [ ! -d "$conf_src" ]; then
+    echo "stage-resources: warning: $conf_src is missing; the packaged app cannot load model providers" >&2
+    return 0
+  fi
+  install -d "$conf_dest"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete "$conf_src/" "$conf_dest/"
+  else
+    rm -rf "$conf_dest"
+    install -d "$conf_dest"
+    cp -R "$conf_src/." "$conf_dest/"
+  fi
+  chmod -R u+w "$conf_dest"
+  echo "stage-resources: conf/ $(du -sh "$conf_dest" | cut -f1)"
+}
+
+# DeepDoc's ONNX weights are mandatory: the engine aborts at startup when the
+# in-process backend cannot load them. The download cache inside the directory is
+# not part of the bundle.
+stage_deepdoc() {
+  local model_src="$repo_root/internal/rag/res/deepdoc" model_dest="$here/src-tauri/deepdoc"
+  if [ ! -d "$model_src" ]; then
+    echo "stage-resources: warning: $model_src is missing; the packaged app cannot start (DeepDoc is required)" >&2
+    return 0
+  fi
+  install -d "$model_dest"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete --exclude=.cache "$model_src/" "$model_dest/"
+  else
+    rm -rf "$model_dest"
+    install -d "$model_dest"
+    ( cd "$model_src" && tar -cf - --exclude=.cache . ) | ( cd "$model_dest" && tar -xf - )
+  fi
+  chmod -R u+w "$model_dest"
+  echo "stage-resources: deepdoc/ $(du -sh "$model_dest" | cut -f1)"
+}
+
+# Runtime tokenizer assets: the cl100k BPE table and the pinned embedding
+# tokenizer.json catalogues under huggingface.co. The engine aborts when the
+# table is missing, and deps/ as a whole must not ship — it also holds the
+# build-time native-library archives (hundreds of MB) and the download scripts.
+# huggingface.co/InfiniFlow is left out too: those are the DeepDoc weights,
+# already staged above under their own directory.
+stage_deps() {
+  local deps_src="$repo_root/deps" deps_dest="$here/src-tauri/deps"
+  if [ ! -d "$deps_src" ]; then
+    echo "stage-resources: warning: $deps_src is missing; tokenization will fail at startup" >&2
+    return 0
+  fi
+  rm -rf "$deps_dest"
+  install -d "$deps_dest/huggingface.co"
+  if [ -f "$deps_src/cl100k_base.tiktoken" ]; then
+    install -m 0644 "$deps_src/cl100k_base.tiktoken" "$deps_dest/"
+  else
+    echo "stage-resources: warning: deps/cl100k_base.tiktoken is missing; the engine cannot count tokens" >&2
+  fi
+  local repo
+  for repo in BAAI Qwen intfloat; do
+    [ -d "$deps_src/huggingface.co/$repo" ] || continue
+    cp -R "$deps_src/huggingface.co/$repo" "$deps_dest/huggingface.co/"
+  done
+  chmod -R u+w "$deps_dest"
+  echo "stage-resources: deps/ $(du -sh "$deps_dest" | cut -f1)"
+}
+
 src="$(cd "$src" && pwd)"
+stage_conf
+stage_deepdoc
+stage_deps
+
 # The marker's mtime is enough to notice an updated bundle: the tree is replaced
 # wholesale when it is refreshed, it is never edited file by file in place.
 # `v2` covers the switch to a .git-free copy (see the exclusions below).

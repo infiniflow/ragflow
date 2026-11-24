@@ -1,6 +1,14 @@
 {
   "bundle": {
-    "targets": ["nsis"],
-    "resources": ["binaries/ragflow-desktop.exe", "resource"]
+    "targets": [
+      "nsis"
+    ],
+    "resources": [
+      "binaries/ragflow-desktop.exe",
+      "resource",
+      "conf",
+      "deepdoc",
+      "deps"
+    ]
   }
 }
