@@ -44,13 +44,10 @@
 //
 // docx, image, audio, video, email, epub) — see
 //
-//		  function_map at line ~1273. The Go port is LANDed and LIVE
-//		  in production for the families the ingestor claims (see
-//		  cmd/ragflow_server.go: Ingestor.supportedTypes =
-//		  ["pdf","docx","txt"]); those run their real parsers,
-//		  including the cgo-gated office variants via office_oxide.
-//		  Families not yet ported fall through to the raw-text path
-//		  below rather than printing skeletons.
+//		  function_map at line ~1273. The Go port runs the real parsers for
+//		  supported families, including the cgo-gated office variants via
+//		  office_oxide. Families without a Go parser fall through to the
+//		  raw-text path below rather than printing skeletons.
 //
 //		- For any family NOT yet ported (its Go parser returns no real
 //		  data), the component uses a "raw text" fallback: it treats
