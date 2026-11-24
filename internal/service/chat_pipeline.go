@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -37,6 +38,7 @@ import (
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 	"regexp"
 	"sort"
 	"strings"
@@ -604,7 +606,11 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 			}
 			var images []string
-			textAttachmentsList, images = splitFileAttachments(ctx, files, modelType == "image2text")
+			textAttachmentsList, images, err = splitFileAttachments(ctx, files, modelType == "image2text")
+			if err != nil {
+				sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err), Final: true})
+				return
+			}
 			imageFiles, hasImageAttachments = gateImageAttachments(chat.LLMID, modelType, images)
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			// Log counts only: attachment payloads are base64 images or
@@ -618,7 +624,11 @@ func (s *ChatPipelineService) AsyncChat(
 		var historyImageFiles []string
 		for _, previous := range messages[:len(messages)-1] {
 			if previous["role"] == "user" && previous["files"] != nil {
-				_, images := s.splitChatAttachments(ctx, previous["files"])
+				_, images, attachmentErr := s.splitChatAttachments(ctx, previous["files"])
+				if attachmentErr != nil {
+					sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", attachmentErr), Final: true})
+					return
+				}
 				modelType, _ := llmModelConfig["model_type"].(string)
 				images, _ = gateImageAttachments(chat.LLMID, modelType, images)
 				historyImageFiles = append(historyImageFiles, images...)
@@ -1159,7 +1169,11 @@ func (s *ChatPipelineService) AsyncChat(
 		// Fit messages within token budget.
 		usedTokenCount, llmMessages := s.messageFitIn(llmMessages, int(float64(modelMaxTokens)*0.95))
 		for i := range llmMessages[:len(llmMessages)-1] {
-			llmMessages[i] = s.chatHistoryMessage(ctx, llmMessages[i], modelType, factoryName)
+			llmMessages[i], err = s.chatHistoryMessage(ctx, llmMessages[i], modelType, factoryName)
+			if err != nil {
+				sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err), Final: true})
+				return
+			}
 		}
 		common.Debug("Messages fitted in token budget",
 			zap.Int("model max_tokens", modelMaxTokens),
@@ -1743,7 +1757,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
 				var images []string
-				attachmentsStr, images = s.splitChatAttachments(ctx, files)
+				attachmentsStr, images, err = s.splitChatAttachments(ctx, files)
+				if err != nil {
+					sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err), Final: true})
+					return
+				}
 				imageFiles, _ = gateImageAttachments(chat.LLMID, modelType, images)
 				common.Info("AsyncChatSolo: file attachments resolved",
 					zap.Bool("vision_model", isImage2Text),
@@ -1760,7 +1778,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				continue
 			}
 			if i < len(messages)-1 {
-				m = s.chatHistoryMessage(ctx, m, modelType, factoryName)
+				m, err = s.chatHistoryMessage(ctx, m, modelType, factoryName)
+				if err != nil {
+					sendResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err), Final: true})
+					return
+				}
 			}
 			llmMessage := normalizeLLMMessage(m)
 			content := llmMessage["content"]
@@ -2093,7 +2115,7 @@ func (s *ChatPipelineService) flipChatGroupMember(ctx context.Context, tenantID,
 //
 // Downstream ConvertLastUserMsgToMultimodal → parseDataURIOrB64 accepts the
 // returned data URIs directly.
-func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, files interface{}) (string, []string) {
+func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, files interface{}) (string, []string, error) {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
@@ -2101,14 +2123,17 @@ func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, files in
 		fileSvc := file.NewFileService(nil)
 		texts, images, err := fileSvc.GetFileContents(ctx, fileDicts)
 		if err != nil {
+			if errors.Is(err, utility.ErrFeatureDisabled) {
+				return "", nil, err
+			}
 			common.Warn("GetFileContents failed in splitChatAttachments",
 				zap.Error(err))
-			return "", nil
+			return "", nil, nil
 		}
 		if len(texts) == 0 {
-			return "", images
+			return "", images, nil
 		}
-		return strings.Join(texts, "\n\n"), images
+		return strings.Join(texts, "\n\n"), images, nil
 	}
 
 	// ── String mode ──
@@ -2143,9 +2168,9 @@ func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, files in
 		}
 	}
 	if len(texts) == 0 {
-		return "", images
+		return "", images, nil
 	}
-	return strings.Join(texts, "\n\n"), images
+	return strings.Join(texts, "\n\n"), images, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -2652,7 +2677,7 @@ func emptyResponseReference(kbinfos map[string]interface{}, knowledges []string,
 //     URIs → image files.
 //     - raw=true: all items go to textAttachments (Python's FileService.get_files
 //     with raw=True pre-separates images, so non-image content arrives here).
-func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
+func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (textAttachments []string, imageAttachments []string, err error) {
 	// ── Mode 1: file dicts (Python-compatible) ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
@@ -2660,10 +2685,12 @@ func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (tex
 		fileSvc := file.NewFileService(nil)
 		texts, images, err := fileSvc.GetFileContents(ctx, fileDicts)
 		if err != nil {
-			common.Warn("GetFileContents failed, falling back to string splitting",
-				zap.Error(err))
+			if errors.Is(err, utility.ErrFeatureDisabled) {
+				return nil, nil, err
+			}
+			common.Warn("GetFileContents failed, falling back to string splitting", zap.Error(err))
 		} else {
-			return texts, images
+			return texts, images, nil
 		}
 	}
 
@@ -2692,7 +2719,7 @@ func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (tex
 				}
 			}
 		}
-		return texts, images
+		return texts, images, nil
 	}
 
 	// raw=false: split by "data:" prefix.
@@ -2719,7 +2746,7 @@ func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (tex
 			}
 		}
 	}
-	return texts, images
+	return texts, images, nil
 }
 
 // parseFileDicts attempts to parse files as a list of file-dict maps
@@ -3099,19 +3126,22 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 	return result
 }
 
-func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, message map[string]interface{}, modelType, factory string) map[string]interface{} {
+func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, message map[string]interface{}, modelType, factory string) (map[string]interface{}, error) {
 	if message["role"] != "user" || message["files"] == nil {
-		return message
+		return message, nil
 	}
-	_, images := s.splitChatAttachments(ctx, message["files"])
+	_, images, attachmentErr := s.splitChatAttachments(ctx, message["files"])
+	if attachmentErr != nil {
+		return nil, attachmentErr
+	}
 	images, _ = gateImageAttachments("", modelType, images)
 	msg := normalizeLLMMessage(message)
 	converted, err := common.ConvertLastUserMsgToMultimodal(msg, images, factory)
 	if err != nil {
 		common.Warn("chat history multimodal conversion failed", zap.Error(err))
-		return msg
+		return msg, nil
 	}
-	return converted
+	return converted, nil
 }
 
 func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {
@@ -5794,7 +5824,12 @@ func (s *ChatPipelineService) planExplorerAuditorRag(
 		if info := modelChain[0].Info(); info != nil && entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
 			modelType = "image2text"
 		}
-		msgs := s.convertMessagesToEino(ctx, modelType, messages)
+		msgs, err := s.convertMessagesToEino(ctx, modelType, messages)
+		if err != nil {
+			common.ErrorCtx(ctx, "smart_reasoning: resolve chat attachments", err)
+			out <- AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err.Error()), Final: true}
+			return
+		}
 
 		// Resolve the dataset scope from the chat's KBs. These are passed into
 		// the agent's Input and injected into its retrieval tools, so
