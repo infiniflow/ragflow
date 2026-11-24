@@ -256,14 +256,15 @@ Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。鏡像、端
    cd ragflow
    ```
 
-2. 執行依賴下載腳本，準備 Go 建置所需連結的原生靜態庫（`download_dev_deps.py`）與後端執行時載入的模型/分詞器資源（`download_deps.py`）：
+2. 執行一次依賴下載腳本，準備本地 Go 服務建置、執行、解析文件和統計 token 所需的全部資源。`download_dev_deps.py` 會下載原生靜態庫及執行時資源，包括 cl100k 詞表、DeepDoc `.ort` 模型和 embedding 分詞器資源：
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` 拉取並解壓 pdfium、pdf_oxide、office_oxide、onnxruntime 等到 `~/ragflow-native-libs`；`download_deps.py` 拉取 cl100k 詞表、DeepDoc 模型與 embedding 分詞器資源到 `deps/`。兩個腳本均為 Python 腳本，`uv run` 會自動安裝其聲明的依賴（`requests`，模型與分詞器下載另需 `huggingface-hub`）。如果已透過其他方式準備好相同資源，可跳過這一步。Go 服務從倉庫根目錄啓動時會自動查找 `internal/rag/res/deepdoc`；如需從其他目錄啓動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
+   本地開發只需執行這一個腳本；再次執行時會跳過已有檔案，不會重複下載。用於映像建置的 `deps/download_deps.py` 下載相同的執行時資源，但不下載原生 `.a` 靜態庫；僅在建置依賴映像或 CI 中執行，本地開發無需額外執行。
+
+   `download_dev_deps.py` 將 pdfium、pdf_oxide、office_oxide 和 onnxruntime 下載並解壓至 `~/ragflow-native-libs`，將 cl100k 詞表、DeepDoc 模型和 embedding 分詞器資源寫入 `deps/`。該腳本使用 Python 編寫，`uv run` 會自動安裝其宣告的依賴（`requests` 和 `huggingface-hub`）。如果已透過其他方式準備好相同資源，可跳過這一步。Go 服務從倉庫根目錄啟動時會自動查找 `internal/rag/res/deepdoc`；如需從其他目錄啟動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
 
 3. 編譯：
 
@@ -278,43 +279,15 @@ Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。鏡像、端
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-5. 數據遷移：
+5. 啟動 RAGFlow：
 
    ```bash
-   ./bin/ragflow_server --migrate
+   ./bin/ragflow_server
    ```
 
-6. 啓動 4 個終端分別啓動 4 個服務：
+   開源版在一個 Go 程序中執行所有服務。啟動時先執行資料庫遷移，啟動 Admin 並初始化超級管理員，隨後啟動 API、Ingestor、Syncer 和 Chatter。Admin 預設監聽 `9381` 連接埠，API 預設監聽 `9380` 連接埠。停止此程序會停止所有服務。服務設定透過 `conf/service_conf.yaml` 或環境變數配置。
 
-   終端 1：啓動 Admin，監聽端口 `9381`。
-
-   ```bash
-   ./bin/ragflow_server --admin
-   ```
-
-   ```bash
-   ./bin/ragflow_server --ingestor
-   ```
-
-   終端 3：啓動 Syncer。
-
-   ```bash
-   ./bin/ragflow_server --syncer
-   ```
-
-   終端 4：啓動 API，監聽端口 `9380`。
-
-   ```bash
-   ./bin/ragflow_server --api
-   ```
-
-   各啓動參數的作用如下：
-
-   - `--migrate`：執行數據庫遷移，完成後即可退出。
-   - `--admin`：啓動 Admin 服務，負責管理和初始化操作。
-   - `--ingestor`：啓動 Ingestor 服務，負責數據攝取和解析任務。
-   - `--syncer`：啓動 Syncer 服務，負責外部數據源的數據同步任務。
-   - `--api`：啓動 API 服務，為 Web 和 SDK 提供 API 接口。
+6. 執行 `./bin/ragflow_server --help` 查看可用啟動參數。
 
 7. 僅在前端開發時安裝 Node.js 和 npm，然後啓動 React 前端：
 

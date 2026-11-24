@@ -74,7 +74,7 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	// When type is empty or "builtin", return the builtin catalog.
 	_ = pipelineType
 
-	common.RespondSuccess(c, h.registry.List(), "success")
+	common.RespondSuccess(c, filterLicensedPipelines(h.registry.List()), "success")
 }
 
 // GetPipeline GET /api/v1/pipelines/:id

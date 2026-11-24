@@ -22,18 +22,18 @@ import (
 	"errors"
 	"fmt"
 	"math"
-
-	"ragflow/internal/agentic_rag"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	"ragflow/internal/permission"
-	permissionresponse "ragflow/internal/permission/response"
 	"strings"
 	"unicode/utf8"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/agentic_rag"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/dao/transaction"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 var DefaultRerankModels = map[string]struct{}{
@@ -157,11 +157,15 @@ func (s *ChatService) ListChats(ctx context.Context, status, keywords, id, name 
 		}
 		chat.Chat.OperatorPermission = access.PermissionMask
 		kbNames, datasetIDs := s.getDatasetNamesAndIDs(ctx, chat.KBIDs)
+		nickname := ""
+		if chat.Nickname != nil {
+			nickname = *chat.Nickname
+		}
 		chatsWithKBNames = append(chatsWithKBNames, &ChatWithKBNames{
 			Chat:         &chat.Chat,
 			KBNames:      kbNames,
 			DatasetIDs:   datasetIDs,
-			Nickname:     ownerNickname(chat.Nickname, chat.TenantID),
+			Nickname:     nickname,
 			TenantAvatar: chat.TenantAvatar,
 		})
 	}
@@ -170,13 +174,6 @@ func (s *ChatService) ListChats(ctx context.Context, status, keywords, id, name 
 		Total: total,
 		Chats: chatsWithKBNames,
 	}, nil
-}
-
-func ownerNickname(nickname *string, tenantID string) string {
-	if nickname != nil && strings.TrimSpace(*nickname) != "" {
-		return *nickname
-	}
-	return tenantID
 }
 
 type CreateChatRequest struct {
@@ -866,6 +863,13 @@ var chatReadonlyFields = map[string]struct{}{
 	"update_date": {},
 }
 
+// chatLLMSettingServerKeys are llm_setting keys owned by the server/agent layer rather than
+// by the client form. A full (non-PATCH) update that does not mention them must NOT drop
+// them: the web form never round-trips them, so one PUT would silently erase e.g. the
+// provider failover roster configured out-of-band, and mode 8 would lose its instance
+// failover. A client can still clear one by sending it explicitly (including null).
+var chatLLMSettingServerKeys = []string{"failover_llm_ids"}
+
 var defaultRerankModels = map[string]struct{}{
 	"BAAI/bge-reranker-v2-m3":           {},
 	"maidalun1020/bce-reranker-base_v1": {},
@@ -996,7 +1000,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, chatID string, req map
 		if patch {
 			req["llm_setting"] = mergeJSONMap(currentChat.LLMSetting, llmSetting)
 		} else {
-			req["llm_setting"] = entity.JSONMap(llmSetting)
+			req["llm_setting"] = preserveServerLLMSetting(currentChat.LLMSetting, llmSetting)
 		}
 	}
 
@@ -1034,16 +1038,13 @@ func (s *ChatService) updateChatREST(ctx context.Context, chatID string, req map
 
 	if len(updates) > 0 {
 		if err = s.chatDAO.UpdateByID(ctx, dao.DB, chatID, updates); err != nil {
-			if patch {
-				return nil, errors.New("failed to update chat")
-			}
-			return nil, errors.New("chat not found")
+			return nil, fmt.Errorf("failed to update chat: %w", err)
 		}
 	}
 
 	updatedChat, err := s.chatDAO.GetByID(ctx, dao.DB, chatID)
 	if err != nil {
-		return nil, errors.New("failed to retrieve updated chat")
+		return nil, fmt.Errorf("failed to retrieve updated chat: %w", err)
 	}
 	return s.buildRESTChatResponse(ctx, updatedChat), nil
 }
@@ -1266,6 +1267,25 @@ func mergeJSONMap(base entity.JSONMap, patch map[string]interface{}) entity.JSON
 	return merged
 }
 
+// preserveServerLLMSetting is the llm_setting a full (non-PATCH) update should store: the
+// client's map, plus every server-managed key (chatLLMSettingServerKeys) the client did NOT
+// speak about. A key the client sends is taken verbatim -- including null, which clears it.
+func preserveServerLLMSetting(current entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
+	merged := entity.JSONMap{}
+	for _, key := range chatLLMSettingServerKeys {
+		if _, provided := incoming[key]; provided {
+			continue
+		}
+		if value, ok := current[key]; ok {
+			merged[key] = value
+		}
+	}
+	for key, value := range incoming {
+		merged[key] = value
+	}
+	return merged
+}
+
 func (s *ChatService) buildRESTChatResponse(ctx context.Context, chat *entity.Chat) map[string]interface{} {
 	kbNames, datasetIDs := s.getDatasetNamesAndIDs(ctx, chat.KBIDs)
 	return map[string]interface{}{
@@ -1309,7 +1329,7 @@ func (s *ChatService) DeleteChat(ctx context.Context, chatID string) error {
 	if err := s.chatDAO.UpdateByID(ctx, dao.DB, chatID, map[string]interface{}{
 		"status": string(entity.StatusInvalid),
 	}); err != nil {
-		return fmt.Errorf("failed to delete chat %s", chatID)
+		return fmt.Errorf("failed to delete chat %s: %w", chatID, err)
 	}
 
 	return nil
@@ -1380,7 +1400,7 @@ func (s *ChatService) BulkDeleteChats(ctx context.Context, req *BulkDeleteChatsR
 		if err := s.chatDAO.UpdateByID(ctx, dao.DB, chatID, map[string]interface{}{
 			"status": string(entity.StatusInvalid),
 		}); err != nil {
-			errorsList = append(errorsList, fmt.Sprintf("Failed to delete chat %s", chatID))
+			errorsList = append(errorsList, fmt.Sprintf("Failed to delete chat %s: %v", chatID, err))
 			continue
 		}
 		successCount++

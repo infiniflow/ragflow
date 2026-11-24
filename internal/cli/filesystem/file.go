@@ -24,13 +24,13 @@ import (
 	"strings"
 )
 
-// FileProvider handles file operations using Python backend /files API
+// FileProvider handles file operations via the /files API
 // Path structure:
 //   - files/                             -> List root folder contents
 //   - files/{folder_name}/               -> List folder contents
 //   - files/{folder_name}/{file_name}    -> Get file info/content
 //
-// Note: Uses Python backend API (useAPIBase=true):
+// Note: Uses the /files API (useAPIBase=true):
 //   - GET /files?parent_id={id}         -> List files/folders in parent
 //   - GET /files/{file_id}              -> Get file info
 //   - POST /files                       -> Create folder or upload file
@@ -50,7 +50,7 @@ func NewFileProvider(httpClient HTTPClientInterface) *FileProvider {
 	return &FileProvider{
 		BaseProvider: BaseProvider{
 			name:        "files",
-			description: "File manager provider (Python server)",
+			description: "File manager provider",
 			rootPath:    "files",
 		},
 		httpClient:  httpClient,
@@ -271,7 +271,7 @@ func (p *FileProvider) findNodeByPath(ctx stdctx.Context, parts []string) (*Node
 	return nil, fmt.Errorf("%s: '%s'", ErrNotFound, strings.Join(parts, "/"))
 }
 
-// ==================== Python Server API Methods ====================
+// ==================== Files API Methods ====================
 
 // getRootID gets or caches the root folder ID
 func (p *FileProvider) getRootID(ctx stdctx.Context) (string, error) {
@@ -545,7 +545,7 @@ func (p *FileProvider) downloadFile(ctx stdctx.Context, fileID string) ([]byte, 
 
 // DeleteFile deletes a file or folder by its ID
 func (p *FileProvider) DeleteFile(ctx stdctx.Context, fileID string) error {
-	// Use JSON body format expected by Python backend: {"ids": ["file_id"]}
+	// Use JSON body format expected by the /files API: {"ids": ["file_id"]}
 	payload := map[string]interface{}{
 		"ids": []string{fileID},
 	}

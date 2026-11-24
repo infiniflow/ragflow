@@ -271,11 +271,3 @@ func parsePgArray(literal string) []string {
 }
 
 // containsString reports whether target appears in values.
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}

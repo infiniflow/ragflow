@@ -15,29 +15,42 @@
  */
 
 import { IMemory } from '@/interfaces/database/memory';
+import { ModelResourceAccessUserIdContext } from '@/hooks/use-llm-request';
 import memoryService from '@/services/memory-service';
 import { useQuery } from '@tanstack/react-query';
+import { useContext } from 'react';
 
 export const enum MemoryApiAction {
   FetchMemoryList = 'fetchMemoryList',
 }
 
 export const MemoryKeys = {
-  list: (canvasID?: string) =>
-    [MemoryApiAction.FetchMemoryList, canvasID] as const,
+  list: (accessUserId?: string) =>
+    [MemoryApiAction.FetchMemoryList, accessUserId] as const,
 };
 
-export const useFetchAllMemoryList = (canvasID?: string) => {
+export const useFetchAllMemoryList = (accessUserId?: string | null) => {
+  const contextAccessUserId = useContext(ModelResourceAccessUserIdContext);
+  const waitingForAccessUser =
+    accessUserId === null ||
+    (accessUserId === undefined && contextAccessUserId === null);
+  const resourceAccessUserId =
+    accessUserId === undefined
+      ? (contextAccessUserId ?? undefined)
+      : (accessUserId ?? undefined);
   const { data, isLoading, isError, refetch } = useQuery<IMemory[], Error>({
-    queryKey: MemoryKeys.list(canvasID),
+    queryKey: MemoryKeys.list(resourceAccessUserId),
+    enabled: !waitingForAccessUser,
     queryFn: async () => {
       const { data: response } = await memoryService.getMemoryList(
         {
-          // The backend filters this list to resources both canvas owner and
-          // current user can use.
-          params: canvasID
-            ? { page_size: 100, page: 1, canvas_id: canvasID }
-            : { page_size: 100, page: 1 },
+          params: {
+            page_size: 100,
+            page: 1,
+            ...(resourceAccessUserId
+              ? { access_user_id: resourceAccessUserId }
+              : {}),
+          },
           data: {},
         },
         true,

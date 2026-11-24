@@ -101,6 +101,8 @@ type ResourceRef struct {
 // Feature identifies a feature whose availability is edition-dependent.
 type Feature string
 
+const FeatureDataset Feature = "dataset"
+
 // Action identifies a feature-level action.
 type Action string
 
@@ -243,12 +245,15 @@ type Scope struct {
 type ScopeQuery struct {
 	// TenantID optionally selects a tenant boundary for the query. It does not
 	// change the authenticated identity carried by the context.
-	TenantID  string
-	Kind      ResourceKind
-	Parent    ResourceRef
-	Operation Operation
-	Entry     *ResourceRef
-	EntryOp   Operation
+	TenantID string
+	// OwnerUserID optionally intersects visibility with the resource owner's
+	// permissions. Policies may ignore it when owner-aware sharing is unsupported.
+	OwnerUserID string
+	Kind        ResourceKind
+	Parent      ResourceRef
+	Operation   Operation
+	Entry       *ResourceRef
+	EntryOp     Operation
 }
 
 // Source loads normalized permission facts. GetResources must return the
@@ -266,6 +271,7 @@ type policy interface {
 	CheckFeature(context.Context, Feature, Action) error
 	CheckTenant(context.Context, string, TenantRequirement) error
 	CheckResource(context.Context, ResourceRef, Operation) error
+	CheckResourcePermission(context.Context, ResourceRef, int32) error
 	CheckDependency(context.Context, ResourceRef, ResourceRef, Operation, Operation) error
 	ResolveAccess(context.Context, ResourceRef) (Access, error)
 	Scope(context.Context, ScopeQuery) (Scope, error)
@@ -333,6 +339,16 @@ func (c *Checker) CheckResource(ctx context.Context, resource ResourceRef, opera
 		return ErrSourceUnavailable
 	}
 	return c.policy.CheckResource(ctx, resource, operation)
+}
+
+// CheckResourcePermission checks the resource grant independently of feature-role actions.
+// A resource owner grant satisfies every requested level; otherwise the levels are
+// hierarchical, so write implies read and manage implies write and read.
+func (c *Checker) CheckResourcePermission(ctx context.Context, resource ResourceRef, required int32) error {
+	if c == nil || c.policy == nil {
+		return ErrSourceUnavailable
+	}
+	return c.policy.CheckResourcePermission(ctx, resource, required)
 }
 
 // CheckDependency checks entry access and the caller's and entry owner's access to a dependency.

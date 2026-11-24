@@ -47,7 +47,7 @@ func TestEmitLifecycleEventResolvesUserAndTenantName(t *testing.T) {
 	svc := &IngestionTaskService{documentDAO: &dao.DocumentDAO{}, eventEmitter: rec}
 	task := &entity.IngestionTask{ID: "task1", DocumentID: "doc1", UserID: "u1", PipelineLogID: &runX}
 
-	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
+	svc.emitLifecycleEvent(context.Background(), task, "COMPLETED", "")
 
 	if !waitForEmitCount(rec.count, 1) {
 		t.Fatalf("event not emitted (async) within timeout")
@@ -97,7 +97,7 @@ func TestEmitLifecycleEventMissingTenantStillResolvesUser(t *testing.T) {
 	svc := &IngestionTaskService{documentDAO: &dao.DocumentDAO{}, eventEmitter: rec}
 	task := &entity.IngestionTask{ID: "task1", DocumentID: "doc1", UserID: "u1", PipelineLogID: &runX}
 
-	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
+	svc.emitLifecycleEvent(context.Background(), task, "COMPLETED", "")
 
 	if !waitForEmitCount(rec.count, 1) {
 		t.Fatalf("event not emitted (async) within timeout")
@@ -123,7 +123,7 @@ func TestEmitLifecycleEventMissingIdentityIsNoop(t *testing.T) {
 	svc := &IngestionTaskService{eventEmitter: rec}
 	task := &entity.IngestionTask{ID: "task1"}
 
-	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
+	svc.emitLifecycleEvent(context.Background(), task, "COMPLETED", "")
 
 	if !waitForEmitCount(rec.count, 1) {
 		t.Fatalf("event not emitted (async) within timeout")

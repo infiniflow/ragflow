@@ -370,14 +370,14 @@ func (cur *confluenceSearchCursor) next(ctx context.Context) (confluenceContent,
 		if cur.nextPath == "" {
 			return confluenceContent{}, false, nil
 		}
+		if cur.pages >= maxConfluenceSearchPages {
+			return confluenceContent{}, false, fmt.Errorf("confluence search incomplete: reached the %d-page limit with more results available", maxConfluenceSearchPages)
+		}
 		if _, ok := cur.seen[cur.nextPath]; ok {
 			return confluenceContent{}, false, fmt.Errorf("confluence pagination repeated the same next link")
 		}
 		cur.seen[cur.nextPath] = struct{}{}
 		cur.pages++
-		if cur.pages > maxConfluenceSearchPages {
-			return confluenceContent{}, false, fmt.Errorf("confluence search exceeded %d pages", maxConfluenceSearchPages)
-		}
 		var page confluenceSearchResponse
 		if err := cur.connector.getJSON(ctx, cur.nextPath, &page); err != nil {
 			return confluenceContent{}, false, err

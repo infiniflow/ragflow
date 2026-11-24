@@ -16,6 +16,7 @@
 
 import Image, { useDocumentImageUrl } from '@/components/image';
 import FileIcon from '@/components/file-icon';
+import PdfSheet from '@/components/pdf-drawer';
 import {
   Carousel,
   CarouselContent,
@@ -25,12 +26,12 @@ import {
 } from '@/components/ui/carousel';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IReferenceChunk } from '@/interfaces/database/chat';
-import PdfDrawer from '@/pages/next-search/document-preview-modal';
 import { buildCitationDisplayMap, resolveCitationChunk } from '@/utils/chat';
 import { middleEllipsis } from '@/utils/common-util';
 import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, type MouseEvent } from 'react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
+import { Button } from '../ui/button';
 type IProps = {
   referenceChunks?: IReferenceChunk[] | Record<string, IReferenceChunk>;
   messageContent: string;
@@ -41,6 +42,7 @@ type ImageItem = {
   documentId: string;
   documentName: string;
   index: number;
+  chunk: IReferenceChunk;
 };
 
 const getButtonVisibilityClass = (imageCount: number) => {
@@ -63,57 +65,61 @@ const getButtonVisibilityClass = (imageCount: number) => {
  * @param documentId - The document identifier for the image
  * @param index - The display index of the image in the list
  */
-function ImagePhotoView({ id, documentId, documentName, index }: ImageItem) {
+function ImagePhotoView({
+  id,
+  documentId,
+  documentName,
+  index,
+  chunk,
+}: ImageItem) {
   const src = useDocumentImageUrl(id, documentId);
   const { visible, showModal, hideModal } = useSetModalState();
-  const previewButton = (
-    <button
-      type="button"
-      title={documentName}
-      onClick={(e) => {
-        // Prevent triggering the image fullscreen preview
-        e.stopPropagation();
-        showModal();
-      }}
-      className="absolute bottom-2 left-2 flex max-w-[calc(100%-2.5rem)] items-end gap-1 rounded-md text-[11px] leading-tight "
-    >
-      <span className="[&>img]:h-4 [&>img]:w-4 [&>svg]:h-4 [&>svg]:w-4">
-        <FileIcon id={documentId} name={documentName} width={14}></FileIcon>
-      </span>
-      <span className="truncate">{middleEllipsis(documentName, 10, 6)}</span>
-    </button>
-  );
-  const imageElement = (
-    <Image
-      id={id}
-      documentId={documentId}
-      className="h-40 w-full"
-      label={`[${index + 1}]`}
-      previewButton={previewButton}
-    />
-  );
+  const handlePreviewClick = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    showModal();
+  };
 
-  const wrapped = (
+  const card = (
     <div className="relative">
-      {imageElement}
-      {visible && (
-        <PdfDrawer
-          visible={visible}
-          hideModal={hideModal}
+      <div className="relative">
+        <Image
+          id={id}
           documentId={documentId}
-          chunk={{ document_name: documentName }}
-        ></PdfDrawer>
-      )}
+          className="h-40 w-full"
+          label={`[${index + 1}]`}
+        />
+      </div>
+      <Button
+        variant="secondary"
+        title={documentName}
+        onClick={handlePreviewClick}
+        // className="mt-2 flex w-full min-w-0 items-center gap-1 text-left text-[11px] leading-tight text-text-secondary "
+      >
+        <span className="shrink-0 [&>img]:h-4 [&>img]:w-4 [&>svg]:h-4 [&>svg]:w-4">
+          <FileIcon id={documentId} name={documentName} width={14}></FileIcon>
+        </span>
+        <span className="min-w-0 flex-1 truncate">
+          {middleEllipsis(documentName, 10, 6)}
+        </span>
+      </Button>
     </div>
   );
 
-  // When src is not yet available, render image without PhotoView
-  // to avoid PhotoView caching an empty src that would show blank preview
-  if (!src) {
-    return wrapped;
-  }
-
-  return <PhotoView src={src}>{wrapped}</PhotoView>;
+  return (
+    <div className="relative">
+      {/* Keep the sheet outside PhotoView: portal events still bubble through
+          the React tree, so a close click inside the sheet would open preview. */}
+      {src ? <PhotoView src={src}>{card}</PhotoView> : card}
+      {visible && (
+        <PdfSheet
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={chunk}
+        ></PdfSheet>
+      )}
+    </div>
+  );
 }
 
 function ImageCarousel({ images }: { images: ImageItem[] }) {
@@ -149,7 +155,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
         }}
       >
         <CarouselContent>
-          {images.map(({ id, documentId, documentName, index }) => (
+          {images.map(({ id, documentId, documentName, index, chunk }) => (
             <CarouselItem
               key={index}
               className="
@@ -165,6 +171,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
                 documentId={documentId}
                 documentName={documentName}
                 index={index}
+                chunk={chunk}
               ></ImagePhotoView>
             </CarouselItem>
           ))}
@@ -198,9 +205,11 @@ export function ReferenceImageList({
           documentId: chunk.document_id,
           documentName: chunk.document_name,
           index: typeof key === 'number' ? key : position,
+          chunk,
         } as ImageItem;
       })
-      .filter((item): item is ImageItem => item !== null);
+      .filter((item): item is ImageItem => item !== null)
+      .sort((a, b) => a.index - b.index);
   }, [messageContent, referenceChunks]);
 
   const imageCount = images?.length || 0;

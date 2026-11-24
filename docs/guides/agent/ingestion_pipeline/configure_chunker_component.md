@@ -4,7 +4,7 @@ title: Configure the Chunker Component
 sidebar_label: Configure the Chunker Component
 slug: /configure_chunker_component
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideBlocks
 }
 ---
 

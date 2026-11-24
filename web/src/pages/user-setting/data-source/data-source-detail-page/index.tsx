@@ -14,17 +14,20 @@
  *  limitations under the License.
  */
 
+import BackButton from '@/components/back-button';
 import {
   DynamicForm,
   DynamicFormRef,
   FormFieldConfig,
   FormFieldType,
 } from '@/components/dynamic-form';
+import { PageFrame } from '@/components/page-frame';
+import { SettingsFormContainer } from '@/components/settings-form-container';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
 import { RunningStatus, RunningStatusOld } from '@/constants/knowledge';
+import { shouldDisableEeDataSourceField } from '@/ee/pages/user-setting/data-source/ee-extensions';
 import { isEqual } from 'lodash';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
@@ -45,7 +48,6 @@ import {
   useUpdateDataSourceStatus,
 } from '../hooks';
 import { DataSourceLogsTable } from './log-table';
-import BackButton from '@/components/back-button';
 
 const SourceDetailPage = () => {
   const { t } = useTranslation();
@@ -144,6 +146,7 @@ const SourceDetailPage = () => {
       ...field,
       horizontal: true,
       onChange: undefined,
+      ...(shouldDisableEeDataSourceField(field.name) ? { disabled: true } : {}),
     }));
   }, [detail, customFields, t]);
 
@@ -234,11 +237,10 @@ const SourceDetailPage = () => {
   }, [defaultValues, fields]);
 
   return (
-    <div className="px-10 py-5">
-      {/* <BackButton /> */}
-      <Card className="bg-transparent border border-border-button px-5 pt-[10px] pb-5 rounded-md mt-5">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-0 pb-3">
-          <CardTitle className="text-2xl text-text-primary flex gap-1 items-center font-normal pb-3">
+    <PageFrame>
+      <SettingsFormContainer className="flex min-h-0 flex-1 flex-col">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-5 shrink-0">
+          <CardTitle className="text-2xl text-text-primary flex gap-1 items-center font-normal">
             <BackButton className="border-none">
               <></>
             </BackButton>
@@ -246,47 +248,48 @@ const SourceDetailPage = () => {
             {detail?.name}
           </CardTitle>
         </CardHeader>
-        <Separator className="border-border-button bg-border-button w-[calc(100%+2rem)] -translate-x-4 -translate-y-4" />
-        <CardContent className="p-2 flex flex-col gap-10 max-h-[calc(100vh-230px)] overflow-y-auto scrollbar-auto">
-          <div className="max-w-[1200px]">
-            <DynamicForm.Root
-              ref={formRef}
-              fields={fields}
-              onSubmit={(data) => handleAddOk(data)}
-              defaultValues={defaultValues}
-            />
-          </div>
-          <div className="max-w-[1200px] flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleTest}
-              disabled={testLoading}
-              loading={testLoading}
-            >
-              {t('setting.dataSourceTestConnection')}
-            </Button>
-            <Button
-              type="button"
-              onClick={handlePrimaryAction}
-              disabled={addLoading || statusUpdateLoading}
-              loading={
-                (addLoading && actionMode === 'save') ||
-                (statusUpdateLoading && actionMode !== 'save')
-              }
-            >
-              {primaryActionLabel}
-            </Button>
-          </div>
-          <section className="flex flex-col gap-2">
-            <div className="text-2xl text-text-primary mb-2">
-              {t('setting.log')}
+        <CardContent className="px-5 py-0 flex-1 min-h-0 overflow-y-auto scrollbar-auto">
+          <div className="flex min-h-full flex-col gap-10">
+            <div className="shrink-0">
+              <DynamicForm.Root
+                ref={formRef}
+                fields={fields}
+                onSubmit={(data) => handleAddOk(data)}
+                defaultValues={defaultValues}
+              />
             </div>
-            <DataSourceLogsTable autoRefresh={isConnectorActive} />
-          </section>
+            <div className="flex shrink-0 justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleTest}
+                disabled={testLoading}
+                loading={testLoading}
+              >
+                {t('setting.dataSourceTestConnection')}
+              </Button>
+              <Button
+                type="button"
+                onClick={handlePrimaryAction}
+                disabled={addLoading || statusUpdateLoading}
+                loading={
+                  (addLoading && actionMode === 'save') ||
+                  (statusUpdateLoading && actionMode !== 'save')
+                }
+              >
+                {primaryActionLabel}
+              </Button>
+            </div>
+            <section className="flex flex-1 flex-col gap-2">
+              <div className="mb-2 shrink-0 text-2xl text-text-primary">
+                {t('setting.log')}
+              </div>
+              <DataSourceLogsTable autoRefresh={isConnectorActive} />
+            </section>
+          </div>
         </CardContent>
-      </Card>
-    </div>
+      </SettingsFormContainer>
+    </PageFrame>
   );
 };
 export default SourceDetailPage;

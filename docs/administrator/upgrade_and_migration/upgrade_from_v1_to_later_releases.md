@@ -1,14 +1,14 @@
 ---
 sidebar_position: 3
-title: Upgrade from v1.x to later releases
-sidebar_label: Upgrade from v1.x to later releases
+title: Upgrade from v1.x to Later Releases
+sidebar_label: Upgrade from v1.x to Later Releases
 slug: /upgrade_from_v1_to_later_releases
 sidebar_custom_props: {
-  categoryIcon: LucideLocateFixed
+  categoryIcon: LucideCircleArrowUp
 }
 ---
 
-# Upgrade from v1.x to later releases
+# Upgrade from v1.x to Later Releases
 
 :::info Version scope
 This document applies to MySQL-based RAGFlow `v1.0.0-rc1` and later Docker deployments. To upgrade from an earlier release, first follow [Upgrade from v0.x to v1.x](./upgrade_from_v0_to_v1.md).
@@ -57,9 +57,9 @@ If the logs report a migration failure, stop the deployment and preserve the log
 
 #### Parser-config conversion failures
 
-The `v1.0.0-rc2` step converts saved Python v0.27.2 ingestion settings for Parser, Chunker, Tokenizer, and Extractor together before the existing dataset `raptor` and `graphrag` cleanup records the shared version. Invalid JSON, metadata schemas that Go cannot represent, and unsupported PDF engine or OCR model-reference choices stop `--migrate` and block application startup. The error identifies the table, row ID, and rejected setting.
+The `v1.0.0-rc2` step converts saved Python v0.27.2 ingestion settings for Parser, Chunker, Tokenizer, and Extractor together before the existing dataset `raptor` and `graphrag` cleanup records the shared version. Invalid JSON, metadata schemas that Go cannot represent, and unsupported PDF engine or OCR model-reference choices stop the automatic database migration and block application startup. The error identifies the table, row ID, and rejected setting.
 
-Keep all writers stopped. Back up the affected row's original `parser_config`, then correct the reported value in that row. For an unsupported engine or OCR model reference, explicitly choose and configure an engine that Go can run; deleting the setting would select the template's default engine instead. Start the target deployment again to rerun `--migrate`, and review its logs before resuming writes.
+Keep all writers stopped. Back up the affected row's original `parser_config`, then correct the reported value in that row. For an unsupported engine or OCR model reference, explicitly choose and configure an engine that Go can run; deleting the setting would select the template's default engine instead. Start the target deployment again to retry the automatic migration, and review its logs before resuming writes.
 
 Each failed batch rolls back and its migration version does not advance. Earlier batches may already be committed; rerunning the conversion after correcting the data is safe. Do not change the migration version manually. To return to the previous release instead, restore the complete pre-upgrade recovery point as described below.
 

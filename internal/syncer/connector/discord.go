@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -398,7 +399,7 @@ func (c *DiscordConnector) listTargets(ctx context.Context) ([]discordTarget, er
 			if ch.Type != discordChannelTypeGuildText {
 				continue
 			}
-			if len(c.channelNames) > 0 && !discordContainsString(c.channelNames, ch.Name) {
+			if len(c.channelNames) > 0 && !slices.Contains(c.channelNames, ch.Name) {
 				continue
 			}
 			selected[ch.ID] = ch
@@ -564,16 +565,6 @@ func discordRetryAfter(resp *http.Response) time.Duration {
 		}
 	}
 	return 0
-}
-
-// discordContainsString reports whether a slice contains a value.
-func discordContainsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 // discordMessageIterator walks messages of the enumerated targets in

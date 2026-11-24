@@ -24,12 +24,12 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const githubToolName = "github_search"
@@ -47,8 +47,8 @@ const githubQueryDescription = "The search keywords to execute with GitHub. Use 
 // githubParams mirrors Python GitHubParam. Info() exposes only Query to the
 // model, while TopN is a canvas-side configuration value merged with defaults.
 type githubParams struct {
-	Query string `json:"query"`
-	TopN  int    `json:"top_n"`
+	Query string `json:"query" doc:"The search keywords to execute with GitHub. Use the most important terms and synonyms from the original request." required:"true"`
+	TopN  int    `json:"top_n" schema:"-"`
 }
 
 // githubResponse keeps GitHub's raw repository objects intact. The Python
@@ -106,17 +106,7 @@ func NewGitHubToolWithDefaults(h *HTTPHelper, defaults githubParams) *GitHubTool
 
 // Info returns the tool's metadata for the chat model.
 func (g *GitHubTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: githubToolName,
-		Desc: githubToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     githubQueryDescription,
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(githubToolName, githubToolDescription, githubParams{})
 }
 
 // buildGitHubURL constructs the repository search URL used by the Python
@@ -223,7 +213,7 @@ func buildGitHubReferences(envelope map[string]any) ([]map[string]any, []map[str
 		if !ok {
 			continue
 		}
-		content := truncateGitHubRunes(githubValueString(repository["description"])+"\n stars:"+githubValueString(repository["watchers"]), 10000)
+		content := utility.TruncateRunes(githubValueString(repository["description"])+"\n stars:"+githubValueString(repository["watchers"]), 10000)
 		if content == "" {
 			continue
 		}
@@ -305,11 +295,4 @@ func githubValueString(value any) string {
 		return "False"
 	}
 	return fmt.Sprint(value)
-}
-
-func truncateGitHubRunes(value string, limit int) string {
-	if utf8.RuneCountInString(value) <= limit {
-		return value
-	}
-	return string([]rune(value)[:limit])
 }

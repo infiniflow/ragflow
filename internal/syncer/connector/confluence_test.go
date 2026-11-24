@@ -15,6 +15,23 @@ import (
 	"time"
 )
 
+func TestConfluencePageLimitDoesNotCompleteAnIncompleteSearch(t *testing.T) {
+	cursor := confluenceSearchCursor{
+		pages:    maxConfluenceSearchPages,
+		nextPath: "/rest/api/content/search?start=1000",
+		seen:     make(map[string]struct{}),
+	}
+	for range 2 {
+		if _, found, err := cursor.next(t.Context()); found || err == nil || !strings.Contains(err.Error(), "search incomplete: reached the") {
+			t.Fatalf("unfinished search reported found=%t err=%v", found, err)
+		}
+	}
+	cursor.nextPath = ""
+	if _, found, err := cursor.next(t.Context()); found || err != nil {
+		t.Fatalf("completed search reported found=%t err=%v", found, err)
+	}
+}
+
 func TestConfluenceConnectorSyncPagesCommentsAndAttachments(t *testing.T) {
 	server := newConfluenceFixtureServer(t, http.StatusOK)
 	defer server.Close()

@@ -215,6 +215,34 @@ func TestPretoken(t *testing.T) {
 	}
 }
 
+// TestPretokenPunctOnlyMatchesLeadingPunctuation pins the anchored punct class:
+// only a leading punctuation character turns a token into "#".
+func TestPretokenPunctOnlyMatchesLeadingPunctuation(t *testing.T) {
+	cases := []struct {
+		token string
+		want  bool
+	}{
+		{"@abc", true},
+		{"，abc", true},
+		{"#x", true},
+		{"‘x", true},
+		{"“x", true},
+		{".5", true},
+		{"`x", true},
+		{`\x`, true},
+		{"]x", true},
+		{"abc", false},
+		{"a,b", false}, // mid-token punctuation is kept
+		{"-5", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := rePretokenPunct.MatchString(c.token); got != c.want {
+			t.Errorf("MatchString(%q) = %v, want %v", c.token, got, c.want)
+		}
+	}
+}
+
 // TestTokenMerge tests token merging
 func TestTokenMerge(t *testing.T) {
 	d := NewTermWeightDealer("")
@@ -936,5 +964,30 @@ func TestWeightsDependOnlyOnTheTerm(t *testing.T) {
 	}
 	if got := ratio([]string{"hello", "a", "a"}, 2, 0); math.Abs(got-want) > 1e-12 {
 		t.Errorf("a/hello = %v alone, %v when a repeats last", want, got)
+	}
+}
+
+// TestPretokenPunctPattern pins the fixture this package once carried as a
+// latent bug: the pattern must compile (the trailing "\\]" is an escaped
+// backslash plus the class terminator, not an escaped bracket), and it must be
+// anchored like Python's re.match so only a LEADING punctuation char collapses a
+// token to "#".
+func TestPretokenPunctPattern(t *testing.T) {
+	if rePretokenPunct == nil {
+		t.Fatal("rePretokenPunct is nil")
+	}
+
+	dropped := []string{",abc", "、x", "「引」", `\path`, "。好", "（括号）"}
+	for _, tok := range dropped {
+		if !rePretokenPunct.MatchString(tok) {
+			t.Errorf("%q must match (leading punctuation)", tok)
+		}
+	}
+
+	kept := []string{"刘备", "abc,", "世界。", "x}y", "hello"}
+	for _, tok := range kept {
+		if rePretokenPunct.MatchString(tok) {
+			t.Errorf("%q must NOT match (punctuation is not leading)", tok)
+		}
 	}
 }

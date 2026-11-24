@@ -79,6 +79,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
@@ -648,18 +649,8 @@ func outlineFromUpstream(upstream schema.ChunkerFromUpstream) []outlineEntry {
 }
 
 func anyToInt(v any) int {
-	switch t := v.(type) {
-	case int:
-		return t
-	case int64:
-		return int(t)
-	case float64:
-		return int(t)
-	case float32:
-		return int(t)
-	default:
-		return 0
-	}
+	n, _ := common.ToIntNum(v)
+	return n
 }
 
 // bodyLevel is the sentinel uses for non-heading lines. We use

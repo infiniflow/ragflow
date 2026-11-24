@@ -24,6 +24,7 @@ import { IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import { getExtension } from '@/utils/document-util';
 import { get } from 'lodash';
+import { useTranslation } from 'react-i18next';
 import DocumentPreview from '../document-preview';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
 
@@ -41,6 +42,7 @@ export const PdfSheet = ({
   width = '50vw',
   height,
 }: IProps) => {
+  const { t } = useTranslation();
   const getDocumentUrl = useGetDocumentUrl(documentId);
   const url = getDocumentUrl(documentId);
   const { highlights, setWidthAndHeight } = useGetChunkHighlights(chunk);
@@ -59,7 +61,7 @@ export const PdfSheet = ({
         }}
       >
         <SheetHeader>
-          <SheetTitle>Document Previewer</SheetTitle>
+          <SheetTitle>{t('common.preview')}</SheetTitle>
         </SheetHeader>
         {url && documentId && (
           <DocumentPreview

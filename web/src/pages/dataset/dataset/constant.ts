@@ -47,5 +47,5 @@ export enum ParserGapReason {
  */
 export enum ParserModelKind {
   Asr = 'asr',
-  Vision = 'vision',
+  Vision = 'vlm',
 }

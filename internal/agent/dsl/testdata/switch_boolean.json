@@ -1,0 +1,165 @@
+{
+  "components": {
+    "begin": {
+      "obj": {
+        "component_name": "Begin",
+        "params": {
+          "inputs": {
+            "eq_string": {},
+            "eq_bool": {},
+            "ne_string": {},
+            "ne_bool": {}
+          }
+        }
+      },
+      "upstream": [],
+      "downstream": [
+        "Switch:Boolean"
+      ]
+    },
+    "Switch:Boolean": {
+      "obj": {
+        "component_name": "Switch",
+        "params": {
+          "conditions": [
+            {
+              "logical_operator": "and",
+              "items": [
+                {
+                  "cpn_id": "begin@eq_string",
+                  "operator": "=",
+                  "value": "true"
+                }
+              ],
+              "to": [
+                "Message:EqualString"
+              ]
+            },
+            {
+              "logical_operator": "and",
+              "items": [
+                {
+                  "cpn_id": "begin@eq_bool",
+                  "operator": "=",
+                  "value": false
+                }
+              ],
+              "to": [
+                "Message:EqualBoolean"
+              ]
+            },
+            {
+              "logical_operator": "and",
+              "items": [
+                {
+                  "cpn_id": "begin@ne_string",
+                  "operator": "!=",
+                  "value": "false"
+                }
+              ],
+              "to": [
+                "Message:NotEqualString"
+              ]
+            },
+            {
+              "logical_operator": "and",
+              "items": [
+                {
+                  "cpn_id": "begin@ne_bool",
+                  "operator": "!=",
+                  "value": true
+                }
+              ],
+              "to": [
+                "Message:NotEqualBoolean"
+              ]
+            }
+          ],
+          "end_cpn_ids": [
+            "Message:Fallback"
+          ]
+        }
+      },
+      "upstream": [
+        "begin"
+      ],
+      "downstream": [
+        "Message:EqualString",
+        "Message:EqualBoolean",
+        "Message:NotEqualString",
+        "Message:NotEqualBoolean",
+        "Message:Fallback"
+      ]
+    },
+    "Message:EqualString": {
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "equal to string true"
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:Boolean"
+      ],
+      "downstream": []
+    },
+    "Message:EqualBoolean": {
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "equal to boolean false"
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:Boolean"
+      ],
+      "downstream": []
+    },
+    "Message:NotEqualString": {
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "not equal to string false"
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:Boolean"
+      ],
+      "downstream": []
+    },
+    "Message:NotEqualBoolean": {
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "not equal to boolean true"
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:Boolean"
+      ],
+      "downstream": []
+    },
+    "Message:Fallback": {
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "no boolean condition matched"
+          ]
+        }
+      },
+      "upstream": [
+        "Switch:Boolean"
+      ],
+      "downstream": []
+    }
+  }
+}

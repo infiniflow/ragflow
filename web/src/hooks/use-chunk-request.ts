@@ -16,6 +16,7 @@
 
 import { evictDocumentImage } from '@/components/image';
 import message from '@/components/ui/message';
+import { useChunkHistoryCache } from '@/ee/hooks/use-chunk-history-cache';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/dataset';
@@ -83,6 +84,7 @@ export const useDeleteChunk = () => {
 export const useCreateChunk = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { invalidateAfterEdit } = useChunkHistoryCache();
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
   const {
@@ -113,6 +115,9 @@ export const useCreateChunk = () => {
             payload.doc_id || payload.document_id,
           );
         }
+        // The write may have recorded a version; editions that keep one refresh
+        // their history here, editions that do not have nothing to invalidate.
+        invalidateAfterEdit();
         setTimeout(() => {
           queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
         }, 1000); // Delay to ensure the list is updated
@@ -244,6 +249,7 @@ export const useFetchNextChunkList = (
 export const useSwitchChunk = () => {
   const { t } = useTranslation();
   const { knowledgeId } = useGetKnowledgeSearchParams();
+  const { invalidateAfterSwitch } = useChunkHistoryCache();
   const {
     data,
     isPending: loading,
@@ -261,6 +267,9 @@ export const useSwitchChunk = () => {
       });
       if (data.code === 0) {
         message.success(t('message.modified'));
+        // A switch may open a version of its own, so an edition that keeps one
+        // refreshes the badge it shows; the community edition has neither.
+        invalidateAfterSwitch();
       }
       return data?.code;
     },

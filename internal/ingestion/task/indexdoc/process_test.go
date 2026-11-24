@@ -889,3 +889,29 @@ func TestProcessChunksForPipeline_SpreadsheetPositionsKeepRowIndex(t *testing.T)
 		t.Errorf("top_int = %v, want the chunk's own row index [41]", ck["top_int"])
 	}
 }
+
+func TestProcessChunksForPipeline_StripsPipelineOnlyBookkeepingFields(t *testing.T) {
+	chunks := []map[string]any{{
+		"text":                   "完整简历原文",
+		"embedding_text":         "职位方向: 后端\n\n完整简历原文",
+		"_managed_metadata_keys": []string{"highest_degree", "work_experience_years"},
+		"metadata":               map[string]any{"highest_degree": "硕士", "work_experience_years": 6.0},
+	}}
+	meta, err := ProcessChunksForPipeline(chunks, "doc-resume-1", "resume.pdf", time.Now())
+	if err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	ck := chunks[0]
+	if _, exists := ck["embedding_text"]; exists {
+		t.Fatalf("embedding_text must be stripped before indexing: %v", ck["embedding_text"])
+	}
+	if _, exists := ck["_managed_metadata_keys"]; exists {
+		t.Fatalf("_managed_metadata_keys must be stripped before indexing: %v", ck["_managed_metadata_keys"])
+	}
+	if ck["content_with_weight"] != "完整简历原文" {
+		t.Fatalf("content_with_weight = %v, want 完整简历原文", ck["content_with_weight"])
+	}
+	if meta["highest_degree"] != "硕士" || meta["work_experience_years"] != 6.0 {
+		t.Fatalf("merged metadata = %#v, want highest_degree=硕士 and work_experience_years=6.0", meta)
+	}
+}

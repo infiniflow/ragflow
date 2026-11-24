@@ -91,7 +91,12 @@ export function McpCard({
             </div>
             <section className="flex items-center justify-between">
               <p>{formatDate(data.update_date)}</p>
-              <SharedBadge>{data?.nickname}</SharedBadge>
+              <SharedBadge
+                userId={data?.user_id}
+                ownerNickname={data?.nickname}
+              >
+                {data?.nickname}
+              </SharedBadge>
             </section>
           </div>
         </div>

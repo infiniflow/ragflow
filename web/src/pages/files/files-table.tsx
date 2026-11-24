@@ -33,6 +33,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
@@ -42,7 +43,6 @@ import { formatDate } from '@/utils/date';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
 import { ActionCell } from './action-cell';
 import {
   UseHandleConnectToKnowledgeReturnType,
@@ -86,7 +86,7 @@ export function FilesTable({
     keyPrefix: 'fileManager',
   });
   const navigateToOtherFolder = useNavigateToOtherFolder();
-  const navigate = useNavigate();
+  const { navigateToSkills } = useNavigatePage();
   const {
     connectToKnowledgeVisible,
     hideConnectToKnowledgeModal,
@@ -175,7 +175,7 @@ export function FilesTable({
 
         const handleNameClick = () => {
           if (isSkillsFolder) {
-            navigate('/files/skills');
+            navigateToSkills();
           } else if (isFolder) {
             navigateToOtherFolder(id);
           }

@@ -26,7 +26,7 @@ export function InnerCategorizeNode({
         <section className="flex flex-col gap-2">
           <LLMLabelCard
             llmId={get(data, 'form.llm_id')}
-            modelTypes={['chat', 'vision', 'decision']}
+            modelTypes={['chat', 'vlm', 'decision']}
           ></LLMLabelCard>
           {positions.map((position) => {
             return (
