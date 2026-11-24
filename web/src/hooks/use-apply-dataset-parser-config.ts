@@ -19,7 +19,14 @@ export function useApplyDatasetParserConfig(datasetId: string) {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: DocumentKeys.all() }),
-        queryClient.invalidateQueries({ queryKey: DocumentKeys.allFilters() }),
+        queryClient.invalidateQueries({
+          queryKey: DocumentKeys.allStatusCounts(),
+        }),
+        // The filter's counts reload on its next open.
+        queryClient.invalidateQueries({
+          queryKey: DocumentKeys.allFilters(),
+          refetchType: 'none',
+        }),
       ]);
     },
   });

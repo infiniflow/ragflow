@@ -18,12 +18,14 @@ import kbService, {
   createDocument,
   deleteDocument,
   documentFilter,
+  documentStatusCounts,
 } from '@/services/knowledge-service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
 import {
   useCreateDocument,
+  useFetchDocumentStatusCounts,
   useGetDocumentFilter,
   useRemoveDocument,
   useRunDocument,
@@ -35,6 +37,7 @@ jest.mock('@/services/knowledge-service', () => ({
   createDocument: jest.fn(),
   deleteDocument: jest.fn(),
   documentFilter: jest.fn(),
+  documentStatusCounts: jest.fn(),
 }));
 
 // src/routes.tsx builds a browser router at module scope, which jsdom cannot
@@ -44,6 +47,7 @@ jest.mock('@/routes', () => ({
 }));
 
 const mockDocumentFilter = jest.mocked(documentFilter);
+const mockDocumentStatusCounts = jest.mocked(documentStatusCounts);
 const mockDeleteDocument = jest.mocked(deleteDocument);
 const mockCreateDocument = jest.mocked(createDocument);
 const mockDocumentIngest = jest.mocked(kbService.documentIngest);
@@ -90,6 +94,20 @@ describe('useGetDocumentFilter', () => {
     mockDocumentFilter.mockResolvedValue({
       data: { code: 0, data: { filter: { suffix: { pdf: 1 } } } },
     } as never);
+  });
+
+  it('loads the status counts without the filter popover or its facets', async () => {
+    mockDocumentStatusCounts.mockResolvedValue({
+      data: { code: 0, data: { filter: { ingestion_status: { RUNNING: 2 } } } },
+    } as never);
+
+    const { result } = renderHook(() => useFetchDocumentStatusCounts(), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current).toEqual({ RUNNING: 2 }));
+    expect(mockDocumentStatusCounts).toHaveBeenCalledWith('dataset-id');
+    expect(mockDocumentFilter).not.toHaveBeenCalled();
   });
 
   it('leaves the facet counts unfetched until the filter popover opens', async () => {

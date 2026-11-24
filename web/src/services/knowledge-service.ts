@@ -451,6 +451,10 @@ export const listDocument = (
 export const documentFilter = (kb_id: string) =>
   request.get(api.getDatasetFilter(kb_id), { params: {} });
 
+// The suffix and status counters alone, without the metadata facet.
+export const documentStatusCounts = (kb_id: string) =>
+  request.get(api.getDatasetCounters(kb_id), { params: {} });
+
 export const uploadDocument = async (datasetId: string, formData: FormData) => {
   const url = api.documentUpload(datasetId);
   const response = await request.post(url, { data: formData });

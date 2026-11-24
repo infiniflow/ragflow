@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { IngestionTaskStatus } from '@/constants/knowledge';
 import {
-  useGetDocumentFilter,
+  useFetchDocumentStatusCounts,
   useStopAllDocuments,
 } from '@/hooks/use-document-request';
 import { Pause, SquarePause } from 'lucide-react';
@@ -30,7 +30,7 @@ const CancelScopeStatuses: Record<CancelScope, IngestionTaskStatus[]> = {
 function useCancelParsingTasks() {
   const { t } = useTranslation();
   const { id: datasetId } = useParams();
-  const { statusCounts } = useGetDocumentFilter();
+  const statusCounts = useFetchDocumentStatusCounts();
   const { stopAllDocuments } = useStopAllDocuments();
   const [confirmScope, setConfirmScope] = useState<CancelScope | null>(null);
 

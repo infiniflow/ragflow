@@ -48,6 +48,7 @@ import kbService, {
   createDocument,
   deleteDocument,
   documentFilter,
+  documentStatusCounts,
   listDocument,
   renameDocument,
   stopAllDocuments,
@@ -139,9 +140,15 @@ const invalidateDocumentFilters = (queryClient: QueryClient) =>
     refetchType: 'none',
   });
 
+// The status counts drive the dataset-wide cancel control, which is always on
+// screen, so they are refetched rather than only marked stale.
+const refreshDocumentStatusCounts = (queryClient: QueryClient) =>
+  queryClient.invalidateQueries({ queryKey: DocumentKeys.allStatusCounts() });
+
 // Refreshes the document list after a change to the dataset's documents.
 const invalidateDocumentQueries = (queryClient: QueryClient) => {
   invalidateDocumentFilters(queryClient);
+  refreshDocumentStatusCounts(queryClient);
   return queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
 };
 
@@ -275,6 +282,10 @@ export const useFetchDocumentList = (loop = true) => {
         },
       );
       if (ret.data.code === 0) {
+        // Every list fetch, including the poll while documents parse, keeps
+        // the status counts in step with the rows; the filter's facets wait
+        // for the popover to open.
+        refreshDocumentStatusCounts(queryClient);
         return ret.data.data;
       }
 
@@ -395,7 +406,6 @@ const DocumentFilterStaleTimeMs = 30_000;
 
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
-  statusCounts: Record<string, number>;
   loading: boolean;
   onOpenChange: (open: boolean) => void;
 } => {
@@ -475,11 +485,32 @@ export const useGetDocumentFilter = (): {
     // Only the very first fetch has nothing to render; later refreshes keep
     // showing the cached counts.
     loading: isLoading,
-    // Per-status exact counts (UNSTART/CREATED/SCHEDULED/RUNNING/...) before
-    // the display-bucket adaptation, for callers that act on a single status.
-    statusCounts: data?.filter?.ingestion_status ?? {},
     onOpenChange: handleOpenChange,
   };
+};
+
+const EmptyStatusCounts: Record<string, number> = {};
+
+// Per-status exact counts (UNSTART/CREATED/SCHEDULED/RUNNING/...) for the whole
+// dataset, before the filter's display-bucket adaptation, for callers that act
+// on a single status. Fetched on every visit and kept fresh by the list's
+// fetches; the request carries no metadata facet, so it stays cheap.
+export const useFetchDocumentStatusCounts = (): Record<string, number> => {
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+  const { id } = useParams();
+  const datasetId = knowledgeId || id;
+  const { data } = useQuery({
+    queryKey: DocumentKeys.statusCounts(datasetId),
+    enabled: !!datasetId,
+    queryFn: async () => {
+      const { data } = await documentStatusCounts(datasetId!);
+      if (data.code === 0) {
+        return data.data;
+      }
+      return null;
+    },
+  });
+  return data?.filter?.ingestion_status ?? EmptyStatusCounts;
 };
 // update document status
 export const useSetDocumentStatus = () => {
@@ -619,12 +650,10 @@ export const useRunDocument = () => {
         } else {
           invalidateDocumentQueries(queryClient);
         }
-        // The status facet is independent of the list's optimistic state.
-        // Refresh it as soon as the start succeeds so the dataset-wide cancel
-        // control appears without waiting for the next list poll.
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.allFilters(),
-        });
+        // The status counts are independent of the list's optimistic state.
+        // Refresh them as soon as the start succeeds so the dataset-wide
+        // cancel control appears without waiting for the next list poll.
+        refreshDocumentStatusCounts(queryClient);
         message.success(i18n.t('message.operated'));
       } else {
         invalidateDocumentQueries(queryClient);
@@ -680,7 +709,8 @@ export const useStopAllDocuments = () => {
         );
       }
       queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
-      queryClient.invalidateQueries({ queryKey: DocumentKeys.allFilters() });
+      invalidateDocumentFilters(queryClient);
+      refreshDocumentStatusCounts(queryClient);
       return data;
     },
     onError: () => {

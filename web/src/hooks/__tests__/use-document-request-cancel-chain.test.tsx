@@ -17,6 +17,7 @@
 import { IngestionTaskStatus } from '@/constants/knowledge';
 import kbService, {
   documentFilter,
+  documentStatusCounts,
   listDocument,
 } from '@/services/knowledge-service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -28,6 +29,7 @@ jest.mock('@/services/knowledge-service', () => ({
   default: { documentIngest: jest.fn() },
   listDocument: jest.fn(),
   documentFilter: jest.fn(),
+  documentStatusCounts: jest.fn(),
 }));
 
 jest.mock('@/components/list-filter-bar/use-handle-filter-submit', () => ({
@@ -83,12 +85,14 @@ jest.mock('@/pages/dataset/dataset/use-select-filters', () => ({
 
 import {
   useFetchDocumentList,
+  useFetchDocumentStatusCounts,
   useGetDocumentFilter,
   useRunDocument,
 } from '../use-document-request';
 
 const mockList = jest.mocked(listDocument);
 const mockFilter = jest.mocked(documentFilter);
+const mockStatusCounts = jest.mocked(documentStatusCounts);
 const mockIngest = jest.mocked(kbService.documentIngest);
 
 // Declared locally: an imported binding used in a type position breaks the
@@ -118,8 +122,15 @@ const useCancelChain = () => ({
   run: useRunDocument(),
 });
 
-const useStartFilterChain = () => ({
+// The dataset page with the filter popover and the cancel control mounted.
+const useStatusPollChain = () => ({
+  list: useFetchDocumentList(true),
   filter: useGetDocumentFilter(),
+  statusCounts: useFetchDocumentStatusCounts(),
+});
+
+const useStartStatusChain = () => ({
+  statusCounts: useFetchDocumentStatusCounts(),
   run: useRunDocument(),
 });
 
@@ -166,7 +177,7 @@ describe('document cancel chain (list polling + stop-loss retry)', () => {
   });
 
   it('refreshes the pending counts when a parse start succeeds', async () => {
-    mockFilter
+    mockStatusCounts
       .mockResolvedValueOnce({
         data: {
           code: 0,
@@ -181,11 +192,11 @@ describe('document cancel chain (list polling + stop-loss retry)', () => {
       } as never);
     mockIngest.mockResolvedValue({ data: { code: 0 } } as never);
 
-    const { result } = renderHook(useStartFilterChain, {
+    const { result } = renderHook(useStartStatusChain, {
       wrapper: makeWrapper(),
     });
     await waitFor(() =>
-      expect(result.current.filter.statusCounts).toEqual({ UNSTART: 1 }),
+      expect(result.current.statusCounts).toEqual({ UNSTART: 1 }),
     );
 
     await act(async () => {
@@ -196,9 +207,44 @@ describe('document cancel chain (list polling + stop-loss retry)', () => {
     });
 
     await waitFor(() =>
-      expect(result.current.filter.statusCounts).toEqual({ SCHEDULED: 1 }),
+      expect(result.current.statusCounts).toEqual({ SCHEDULED: 1 }),
     );
-    expect(mockFilter).toHaveBeenCalledTimes(2);
+    expect(mockStatusCounts).toHaveBeenCalledTimes(2);
+    expect(mockFilter).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the status counts on every list poll without refetching the opened filter', async () => {
+    mockList.mockResolvedValue(
+      listResult(makeDoc('doc-poll', IngestionTaskStatus.RUNNING)) as never,
+    );
+    mockFilter.mockResolvedValue({
+      data: { code: 0, data: { filter: { suffix: { pdf: 1 } } } },
+    } as never);
+    mockStatusCounts.mockResolvedValue({
+      data: { code: 0, data: { filter: { ingestion_status: { RUNNING: 1 } } } },
+    } as never);
+
+    const { result } = renderHook(useStatusPollChain, {
+      wrapper: makeWrapper(),
+    });
+    await waitFor(() =>
+      expect(result.current.statusCounts).toEqual({ RUNNING: 1 }),
+    );
+
+    act(() => {
+      result.current.filter.onOpenChange(true);
+    });
+    await waitFor(() => expect(mockFilter).toHaveBeenCalledTimes(1));
+    const listCalls = mockList.mock.calls.length;
+    const statusCalls = mockStatusCounts.mock.calls.length;
+
+    await advanceSeconds(11);
+
+    expect(mockList.mock.calls.length).toBeGreaterThanOrEqual(listCalls + 2);
+    expect(mockStatusCounts.mock.calls.length).toBeGreaterThanOrEqual(
+      statusCalls + 2,
+    );
+    expect(mockFilter).toHaveBeenCalledTimes(1);
   });
 
   it('keeps polling fast after the click and re-sends the cancel once it is overdue', async () => {
