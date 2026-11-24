@@ -61,6 +61,24 @@ func TestParseMetadataUpdatesPreservesTypeAndMatch(t *testing.T) {
 	}
 }
 
+func TestParseMetadataDeletesPreservesValue(t *testing.T) {
+	var body map[string]any
+	if err := json.Unmarshal([]byte(`{"deletes":[
+		{"key":"tags","value":"a"},
+		{"key":"status"}
+	]}`), &body); err != nil {
+		t.Fatal(err)
+	}
+	deletes, errMsg := parseMetadataDeletes(body["deletes"])
+	want := []document.MetadataDelete{
+		{Key: "tags", Value: "a"},
+		{Key: "status"},
+	}
+	if errMsg != "" || !reflect.DeepEqual(deletes, want) {
+		t.Fatalf("deletes = %#v, error = %q, want %#v", deletes, errMsg, want)
+	}
+}
+
 func TestParseMetadataSelectorDocumentIDs(t *testing.T) {
 	tests := []struct {
 		name    string
