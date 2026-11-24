@@ -117,3 +117,14 @@ In an **Agent** component, add the imported tools from `parallel-search` and ena
 Check that discovery returns both tool names. Then inspect an agent run's tool calls to confirm it selected one. If connection fails, check the transport, outbound access to `search.parallel.ai`, and configured headers. Queries, requested URLs, and request context sent through these tools reach Parallel; review its [privacy policy](https://parallel.ai/privacy-policy) before sending sensitive content.
 
 For other MCP servers, use their documented URL, transport, and authentication. Imported `headers` must be an object with string names and string values. Keep real credentials out of committed configuration files.
+
+## Example: recall a team handoff from Loom
+
+[ClickHouse Loom](https://github.com/ClickHouse/loom/tree/v1.3.0) stores shared agent memory. Use its read-only search tool to look up a handoff saved by another workflow.
+
+1. Start an authenticated Loom deployment and [create a token](https://github.com/ClickHouse/loom/blob/v1.3.0/docs/guides/tokens-and-grants.md) with read access to the namespace containing the handoff.
+2. In **User settings → MCP → Add MCP**, enter `loom` as the name, your Loom instance's full HTTPS `/mcp` URL, and `streamable-http` as the server type. Put the token in **Authorization Token**.
+3. Refresh **Tools available** and confirm that `loom_search` appears, then save. In an **Agent** component, add the Loom connection and enable `loom_search`.
+4. Ask the agent to find a known handoff saved in Loom. In the run's tool calls, check that it called `loom_search` and that the result contains the handoff.
+
+The RAGFlow backend must be able to reach the Loom endpoint. Give this connection access only to the namespaces the workflow is allowed to read.
