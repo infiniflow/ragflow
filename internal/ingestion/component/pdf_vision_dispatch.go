@@ -347,6 +347,15 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		}
 		return res, true, nil
 	}
+	if isMistralOCRModelSelector(ctx, db, tenantID, modelID) {
+		pages, err := utility.NormalizePDFPages(setup["pages"])
+		if err != nil {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: Mistral OCR pages: %w", err)
+		}
+		res, err := dispatchOCRModelPDF(ctx, db, filename, binary, tenantID, modelID,
+			"Mistral OCR", "mistral", &modelModule.OCRConfig{Pages: pages})
+		return res, true, err
+	}
 	if tenantID == "" {
 		return parser.ParseResult{}, true, fmt.Errorf(
 			`parser: pdf parse_method %q requires tenant_id to resolve VLM model`, modelID)
@@ -1776,6 +1785,16 @@ func defaultIsNaceOCRModelSelector(ctx context.Context, db *gorm.DB, tenantID, s
 // blocks onto the PDF pages.
 func dispatchNaceOCRPDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID, selector string, pages [][]int) (parser.ParseResult, error) {
 	return dispatchOCRModelPDF(ctx, db, filename, binary, tenantID, selector, "Nace", "nace", &modelModule.OCRConfig{Pages: pages})
+}
+
+func isMistralOCRModelSelector(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+	if strings.Contains(selector, "@") {
+		name, _, provider, err := common.ParseCompositeModelName(selector)
+		// Mistral serves vision chat models as well as its dedicated OCR models.
+		return err == nil && strings.EqualFold(modelModule.CatalogProviderName(provider), "Mistral") &&
+			strings.HasPrefix(strings.ToLower(name), "mistral-ocr-")
+	}
+	return isOCRModelSelector(ctx, db, tenantID, selector, "Mistral", "mistral")
 }
 
 // isOCRModelSelector reports whether selector names an OCR model of the given
