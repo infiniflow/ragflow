@@ -208,7 +208,8 @@ func (d *SyncTaskDAO) ClaimTask(ctx context.Context, taskID string, now time.Tim
 	var claimed bool
 	err = d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Pause and task finalization also lock the connector before its tasks.
-		status, err := lockSyncConnectorStatus(ctx, tx, candidate.ConnectorID)
+		var connector entity.Connector
+		err := forUpdate(ctx, tx).Select("status", "config").Where("id = ?", candidate.ConnectorID).Take(&connector).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
@@ -222,7 +223,10 @@ func (d *SyncTaskDAO) ClaimTask(ctx context.Context, taskID string, now time.Tim
 			}
 			return err
 		}
-		if task.Status != SyncStatusSchedule || status == SyncStatusCancel {
+		if task.Status != SyncStatusSchedule || connector.Status == SyncStatusCancel {
+			return nil
+		}
+		if task.TaskType == TaskTypePrune && !utility.ConfigBool(connector.Config, "sync_deleted_files") {
 			return nil
 		}
 
@@ -284,6 +288,16 @@ func (d *SyncTaskDAO) GetTaskContext(ctx context.Context, taskID string) (SyncTa
 	}
 
 	return SyncTaskContext{Task: task, Connector: connector, Connector2Kb: connector2Kb, Knowledgebase: kb}, nil
+}
+
+// IsPruneEnabled reads the setting independently of a worker's snapshot.
+func (d *SyncTaskDAO) IsPruneEnabled(ctx context.Context, connectorID string) (bool, error) {
+	var connector entity.Connector
+	err := d.db.WithContext(ctx).Select("config").Take(&connector, "id = ?", connectorID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return err == nil && utility.ConfigBool(connector.Config, "sync_deleted_files"), err
 }
 
 // IsTaskCanceled reports whether a sync_logs task has been canceled.
@@ -541,8 +555,9 @@ func (d *SyncTaskDAO) CompleteSyncTask(ctx context.Context, taskContext SyncTask
 func (d *SyncTaskDAO) CompletePruneTask(ctx context.Context, taskContext SyncTaskContext, removed int64) (string, error) {
 	var nextTaskID string
 	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		status, err := lockSyncConnectorStatus(ctx, tx, taskContext.Connector.ID)
-		if errors.Is(err, gorm.ErrRecordNotFound) || status == SyncStatusCancel {
+		var connector entity.Connector
+		err := forUpdate(ctx, tx).Select("status", "config").Where("id = ?", taskContext.Connector.ID).Take(&connector).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) || connector.Status == SyncStatusCancel {
 			return nil
 		}
 		if err != nil {
@@ -562,7 +577,7 @@ func (d *SyncTaskDAO) CompletePruneTask(ctx context.Context, taskContext SyncTas
 		if err := tx.Model(&entity.Connector{}).Where("id = ?", taskContext.Connector.ID).Update("status", SyncStatusDone).Error; err != nil {
 			return err
 		}
-		if !utility.ConfigBool(taskContext.Connector.Config, "sync_deleted_files") {
+		if !utility.ConfigBool(connector.Config, "sync_deleted_files") {
 			return nil
 		}
 		nextTaskID, err = createScheduledTask(ctx, tx, taskContext.Connector.ID, taskContext.Knowledgebase.ID, TaskTypePrune, false, nil, taskContext.Task.TotalDocsIndexed)

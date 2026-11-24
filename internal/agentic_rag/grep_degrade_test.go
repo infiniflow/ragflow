@@ -151,7 +151,7 @@ func TestGrepChunksSplitsExplodingAlternation(t *testing.T) {
 	runtime.SetGrepService(svc)
 	defer runtime.SetGrepService(nil)
 
-	out, err := NewGrepChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+	out, err := NewGrepChunksTool([]string{"kb1"}).InvokableRun(context.Background(),
 		`{"query":"Boston.*home|Cambridge.*home"}`)
 	if err != nil {
 		t.Fatalf("split must recover, got error: %v", err)
@@ -185,7 +185,7 @@ func TestGrepChunksSanitizesLuceneUnsafePattern(t *testing.T) {
 
 	// The pattern must still have at least two runes after sanitizing: `\b`-only
 	// text would leave nothing to search.
-	out, err := NewGrepChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+	out, err := NewGrepChunksTool([]string{"kb1"}).InvokableRun(context.Background(),
 		`{"query":"\\bBoston\\b"}`)
 	if err != nil {
 		t.Fatalf("sanitized retry must recover, got error: %v", err)
@@ -218,7 +218,7 @@ func TestGrepChunksDegradesToLexicalPrefilter(t *testing.T) {
 		runtime.SetBm25Service(nil)
 	}()
 
-	out, err := NewGrepChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+	out, err := NewGrepChunksTool([]string{"kb1"}).InvokableRun(context.Background(),
 		`{"query":"Maple.*Park"}`)
 	if err != nil {
 		t.Fatalf("lexical prefilter must recover, got error: %v", err)
@@ -250,7 +250,7 @@ func TestGrepChunksUnrecoverablePushdownStaysAnError(t *testing.T) {
 	runtime.SetBm25Service(nil)
 	defer runtime.SetGrepService(nil)
 
-	out, err := NewGrepChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+	out, err := NewGrepChunksTool([]string{"kb1"}).InvokableRun(context.Background(),
 		`{"query":"A.*B"}`)
 	if err != nil {
 		t.Fatalf("failures become results, got error: %v", err)

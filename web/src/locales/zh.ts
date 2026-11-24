@@ -515,6 +515,7 @@ export default {
       datasetLog: '知识库日志',
       created: '创建于',
       learnMore: '查看内置解析模板说明',
+      builtInParserDetails: '内置解析模板说明',
       general: '通用',
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
@@ -526,7 +527,6 @@ export default {
       dataset: '知识库',
       testing: '检索测试',
       configuration: '配置',
-      nextConfiguration: '知识库配置',
       knowledgeGraph: 'Graph',
       compilation: '编译',
       files: '个文件',
@@ -544,6 +544,10 @@ export default {
       parsingMode: '解析方式',
       enabled: '启用',
       disabled: '禁用',
+      enabledStatus: '已启用',
+      disabledStatus: '已禁用',
+      info: '信息',
+      viewError: '查看错误',
       action: '操作',
       parsingStatus: '解析状态',
       parsingStatusTip:
@@ -739,7 +743,6 @@ export default {
       editLinkDataPipeline: '编辑 pipeline',
       linkPipelineSetTip: '管理与此知识库的数据管道链接',
       default: '默认',
-      dataPipeline: '选择或切换解析方式',
       linkDataPipeline: '关联 pipeline',
       enableAutoGenerate: '是否启用自动生成',
       teamPlaceholder: '请选择团队',
@@ -757,7 +760,6 @@ export default {
         '知识库设置已保存，但现有文件尚未更新。选择“是”可重试。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
-      titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
       photoTip: '可以上传 4MB 以内的文件',
@@ -1742,8 +1744,17 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       jiraTokenTip:
         '在 https://id.atlassian.com/manage-profile/security/api-tokens 生成的 API Token。 (Clould only)',
       jiraPasswordTip: '可选：仅 Jira Server/Data Center 环境需要的密码字段。',
-      availableSourcesDescription: '选择要添加的数据源',
-      availableSources: '可用数据源',
+      dataSourceCategories: {
+        knowledgeAndLearning: '知识与学习',
+        fileStorage: '文件存储',
+        objectStorage: '对象存储',
+        messagingAndEmail: '消息与邮件',
+        developmentAndProjectManagement: '开发与项目管理',
+        businessApplications: '业务应用',
+        databasesAndApis: '数据库与 API',
+        webAndSocial: '网页与社交媒体',
+        other: '其他',
+      },
       datasourceDescription: '管理您的数据源和连接',
       dataSourceTestConnection: '测试连接',
       dataSourceTestSuccess: '数据源连接验证成功。',
@@ -2559,7 +2570,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
       advancedSettings: '高级设置',
       addTools: '添加工具',
-      sysPromptDefultValue: `
+      sysPromptDefaultValue: `
 <role>
   你是一名乐于助人的助手，一名专注于为用户解决问题的 AI 助手。
   如果用户指定了特定领域，你需要在该领域展现专业性；如果没有，则以通用助手的方式工作。
@@ -2863,6 +2874,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       anySearchDiscover: 'AnySearch 领域发现',
       anySearchDiscoverDescription:
         '列出 AnySearch 当前支持的领域，以及各领域可用的垂直标签和参数，便于智能体选择有效的标签。',
+      anySearchExtract: 'AnySearch 网页提取',
+      anySearchExtractDescription:
+        '通过 AnySearch 读取单个网页并返回其文本。支持 HTML、文本、JSON 和 Markdown（不支持 PDF 或 Office 文件）。无需 API Key 即可使用。',
+      anySearchExtractUrl: '网页地址',
+      anySearchExtractUrlTip:
+        '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
       anySearchApiKeyTip:
         '可选。AnySearch 无需 Key 即可使用。填写后将使用你账户的额度，服务限制仍然适用。',
       anySearchZone: '区域',
@@ -3370,6 +3387,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         queritContents: '正在使用 Querit 读取网页',
         anySearchSearch: '正在使用 AnySearch 搜索',
         anySearchDiscover: '正在查询 AnySearch 垂直领域',
+        anySearchExtract: '正在使用 AnySearch 读取网页',
         tavilyExtract: '读取网页内容',
         exeSQL: '查询数据库',
         google: '正在网上搜索',
@@ -3899,7 +3917,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       newUser: '新建用户',
       email: '邮箱',
       name: '名称',
-      nickname: '昵称',
+      nickname: '名称',
+      nicknameMaxLength: '名称不能超过100个字符',
       status: '状态',
       id: 'ID',
       serviceType: '服务类型',

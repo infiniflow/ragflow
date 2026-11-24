@@ -2628,8 +2628,8 @@ func TestIngestionTaskServiceMarkFailedCarriesReason(t *testing.T) {
 	if got.ErrorInfo != reason {
 		t.Fatalf("emitted ErrorInfo = %q, want %q", got.ErrorInfo, reason)
 	}
-	if got.EventType != "failed" || got.Status != common.FAILED {
-		t.Fatalf("emitted event type/status = %q/%q, want failed/%q", got.EventType, got.Status, common.FAILED)
+	if got.EventType != "task" || got.Status != common.FAILED {
+		t.Fatalf("emitted event type/status = %q/%q, want task/%q", got.EventType, got.Status, common.FAILED)
 	}
 }
 
@@ -2689,7 +2689,7 @@ func TestPrepareValidatedRunEmitsRunningEventWithFreshClaimTime(t *testing.T) {
 	var running common.IngestionLog
 	found := false
 	for _, l := range emitter.logs {
-		if l.EventType == "running" {
+		if l.Status == common.RUNNING {
 			running = l
 			found = true
 		}

@@ -12,6 +12,8 @@ sidebar_custom_props: {
 
 Use **AnySearch** for general web searches. Add **AnySearch Discover** when an Agent needs to choose a vertical search tag and its parameters from the current catalog.
 
+Use [AnySearch Extract](./use_anysearch_extract.md) to read a public page returned by a search or supplied by the user.
+
 AnySearch works anonymously: leave **API Key** blank. To use your account's quota, enter your own key in each tool you configure. Service limits still apply. Keep keys in the tool configuration, outside prompts and model tool arguments.
 
 ## Add AnySearch to an Agent

@@ -46,9 +46,10 @@ import (
 // Runtime gives each session its own intra-op thread pool (the C API never
 // switches a session onto a shared/global pool), so the threads DeepDoc
 // inference occupies in this process are intraOpThreads × the number of
-// concurrently running sessions. The capacity registered in inference_limit.go
-// bounds how many Runs may be in flight; together with intraOpThreads this is
-// the process inference budget (see ValidateInferenceConfig).
+// concurrently running sessions. The process inference budget (registered in
+// the doctype gate, see inference_gate.go) bounds how many Runs may be in
+// flight; together with intraOpThreads this is the process inference budget
+// (see ValidateInferenceConfig).
 
 var (
 	ortOnce    sync.Once
@@ -222,7 +223,7 @@ func sharedWeights(modelPath, inName string, inShape []int64, outName string) (*
 // model-determined, so no outShape argument is needed). The session runs
 // intraOpThreads intra-op threads (see the constant): one thread per Run, with
 // the process-wide ceiling owned by the inference budget the process owner
-// registers (see inference_limit.go). Input/output tensors are allocated and
+// registers (see doctype/inference_gate.go). Input/output tensors are allocated and
 // freed on every Run (see session.Run), so a pooled session holds only its
 // weights in steady state. Weight sharing is applied transparently: the model's
 // constant initializers are extracted once per modelPath and injected into the
@@ -274,7 +275,7 @@ func newRawSession(modelPath, inName string, inShape []int64, outName string, we
 
 // newSessionOptions builds the SessionOptions shared by every running session:
 // one intra-op thread (so each Run costs exactly one CPU thread — see the
-// intraOpThreads constant and inference_limit.go) and the BFC arena disabled
+// intraOpThreads constant and doctype/inference_gate.go) and the BFC arena disabled
 // (idle sessions then keep only their weights; activation tensors are allocated
 // per Run and freed after). When weights != nil, each shared initializer is
 // injected so the model's constant buffers live in memory a single time across
@@ -287,7 +288,7 @@ func newSessionOptions(weights *weightSet) (*ort.SessionOptions, error) {
 	// One intra-op thread per session by default; the startup path may raise it
 	// via SetIntraOpThreads to share N cores across K Runs (see
 	// ValidateInferenceConfig). The session's Runs then cost intraOpThreadCount()
-	// threads each, and the process-wide inference ceiling (inference_limit.go)
+	// threads each, and the process-wide inference ceiling (doctype/inference_gate.go)
 	// bounds how many Runs may be in flight.
 	if err := opts.SetIntraOpNumThreads(intraOpThreadCount()); err != nil {
 		opts.Destroy()

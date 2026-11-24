@@ -2518,7 +2518,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         rerank: 'Yeniden sıralama',
         sequence2text: 'ASR',
         tts: 'TTS',
-        image2text: 'OCR',
+        image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
         decision: 'Karar',

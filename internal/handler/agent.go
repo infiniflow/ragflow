@@ -42,6 +42,7 @@ import (
 	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
+	"ragflow/internal/utility"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -253,6 +254,9 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 func mapAgentError(err error) (common.ErrorCode, string) {
 	if err == nil {
 		return common.CodeSuccess, ""
+	}
+	if errors.Is(err, utility.ErrFeatureDisabled) {
+		return common.CodeForbidden, err.Error()
 	}
 	if errors.Is(err, service.ErrAgentNotOwner) {
 		return common.CodeOperatingError, "Only the owner of the agent is authorized for this operation."
@@ -484,6 +488,9 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	defer cancel()
 	events, err := h.chatRunner.RunAgent(ctx, canvasID, sessionID, version, userInput, nil)
 	if err != nil {
+		if respondFeatureDisabled(c, err) {
+			return
+		}
 		ec, em := mapAgentError(err)
 		common.RespondError(c, ec, em)
 		return
@@ -609,6 +616,9 @@ func (h *AgentHandler) runCanvasPipelineDebug(ctx context.Context, user *entity.
 // renders the debug output.
 func respondWithDebugResult(c *gin.Context, result *task.PipelineResult, err error) {
 	if err != nil {
+		if respondFeatureDisabled(c, err) {
+			return
+		}
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -947,7 +957,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	toDate := c.Query("to_date")
 	orderby := c.DefaultQuery("orderby", "update_time")
 	descParam := c.Query("desc")
-	desc := descParam != "false" && descParam != "False"
+	desc := !strings.EqualFold(descParam, "false")
 	sessionID := c.Query("id")
 	queryUserID := c.Query("user_id")
 	expUserID := c.Query("exp_user_id")
@@ -1351,6 +1361,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	defer cancel()
 	events, err := h.chatRunner.RunAgent(ctx, req.AgentID, req.SessionID, "", userInput, req.Files)
 	if err != nil {
+		if respondFeatureDisabled(c, err) {
+			return
+		}
 		common.Warn("agent chat completions: RunAgent failed",
 			append([]zap.Field{
 				zap.String("user_id", user.ID),

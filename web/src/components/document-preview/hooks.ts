@@ -46,6 +46,15 @@ export const isZipLikeBlob = async (blob: Blob): Promise<boolean> => {
   }
 };
 
+// A legacy binary .xls (OLE2/BIFF) is not a ZIP: its bytes do not start with
+// the "PK" signature. OOXML .xlsx files do. Used to decide whether the
+// previewer needs its xls -> xlsx conversion switched on.
+const isLegacyXlsData = (data: ArrayBuffer): boolean => {
+  if (data.byteLength < 2) return false;
+  const head = new Uint8Array(data, 0, 2);
+  return !(head[0] === ZIP_HEADER_0 && head[1] === ZIP_HEADER_1);
+};
+
 export const useDocumentResizeObserver = () => {
   const [containerWidth, setContainerWidth] = useState<number>();
   const [containerRef, setContainerRef] = useState<HTMLElement | null>(null);
@@ -385,7 +394,19 @@ export const useFetchExcel = (filePath: string, positions?: number[][]) => {
       previewerRef.current = null;
     }
 
-    const previewer = jsPreviewExcel.init(containerEl);
+    // @js-preview/excel only converts legacy binary .xls into a workbook it
+    // can parse when its `xls` option is on; otherwise it hands the raw OLE2
+    // bytes to ExcelJS, which rejects. The flag is undocumented in its Options
+    // type but read at runtime. Only enable it for non-ZIP data so .xlsx keeps
+    // the existing (non-converting) path.
+    const previewer = jsPreviewExcel.init(
+      containerEl,
+      isLegacyXlsData(dataRef.current)
+        ? ({ xls: true } as unknown as Parameters<
+            typeof jsPreviewExcel.init
+          >[1])
+        : undefined,
+    );
     previewerRef.current = previewer;
 
     try {

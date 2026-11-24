@@ -653,12 +653,15 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		}
 		contentResults = append(contentResults, batchResults...)
 		runtime.ReportComponentFraction(ctx, float64(cacheHits+end)/float64(embedTotal))
+		runtime.ReportProgressDetail(ctx, "chunk", uint32(cacheHits+end), uint32(embedTotal))
 	}
 	if len(texts) == 0 && embedTotal > 0 {
 		// With no cache misses the batch loop never runs, so the phase would
 		// otherwise report nothing at all; every content embedding is already
-		// resolved, which is the loop's completion value.
+		// resolved, which is the loop's completion value. Emit the terminal
+		// detail too so the progress log records the finished position (finding ④).
 		runtime.ReportComponentFraction(ctx, 1)
+		runtime.ReportProgressDetail(ctx, "chunk", uint32(embedTotal), uint32(embedTotal))
 	}
 
 	titleWeight := c.param.FilenameEmbdWeight

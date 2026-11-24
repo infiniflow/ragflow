@@ -97,6 +97,8 @@ export function useAgentToolInitialValues() {
           return omit(initialValues, 'query', 'outputs');
         case Operator.AnySearchDiscover:
           return { api_key: '' };
+        case Operator.AnySearchExtract:
+          return pick(initialValues, 'api_key');
 
         default:
           return initialValues;

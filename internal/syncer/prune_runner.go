@@ -46,7 +46,20 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 	if r.pruneService == nil {
 		return "", errors.New("prune service is not configured")
 	}
-	// Get the run session
+	canPrune := func() (bool, error) {
+		if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
+			return false, err
+		}
+		return r.taskDAO.IsPruneEnabled(ctx, taskContext.Connector.ID)
+	}
+	enabled, err := canPrune()
+	if err != nil {
+		return "", err
+	}
+	if !enabled {
+		return r.taskService.CompletePrune(ctx, taskContext, 0)
+	}
+
 	session, err := connector.OpenPrune(ctx, syncerconnector.PruneRequest{
 		TaskID:      taskContext.Task.ID,
 		ConnectorID: taskContext.Connector.ID,
@@ -69,6 +82,7 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 	defer session.Close()
 
 	retain := map[string]struct{}{}
+	sourceIDs := map[string]struct{}{}
 	for {
 		if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 			return "", err
@@ -82,15 +96,20 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, 
 			return "", nextErr
 		}
 		for _, doc := range batch.Documents {
+			sourceIDs[doc.SourceID] = struct{}{}
 			service.AddRetainDocumentID(retain, taskContext.Knowledgebase.ID, taskContext.Connector.ID, doc.SourceID)
 		}
 	}
 
-	if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
+	enabled, err = canPrune()
+	if err != nil {
 		return "", err
 	}
-	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("Source scan found %d document IDs to retain", len(retain)))
-	removed, err := r.pruneService.DeleteStale(ctx, taskContext, retain, func(docID string, deleteErr error) {
+	if !enabled {
+		return r.taskService.CompletePrune(ctx, taskContext, 0)
+	}
+	recordTaskEvent(taskContext.Task.ID, dao.EventTypeMessage, "prune", fmt.Sprintf("Source scan found %d document IDs to retain", len(sourceIDs)))
+	removed, err := r.pruneService.DeleteStale(ctx, taskContext, retain, canPrune, func(docID string, deleteErr error) {
 		message := "File " + docID + " deleted"
 		if deleteErr != nil {
 			message = "[ERROR] Could not delete file " + docID

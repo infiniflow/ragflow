@@ -242,8 +242,8 @@ func (s *Scheduler) armTaskTimer(ctx context.Context, taskID string, current **t
 // The timer pointer is only read while holding timerMu, which also protects
 // the assignment made by armTaskTimer.
 func (s *Scheduler) handleTimerWakeup(ctx context.Context, taskID string, timer **time.Timer) {
-	_, err := s.taskDAO.GetScheduledTask(ctx, taskID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	task, err := s.taskDAO.GetScheduledTask(ctx, taskID)
+	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && isPruneTaskDisabled(task)) {
 		s.retireTimer(taskID, timer)
 		return
 	}
@@ -301,6 +301,10 @@ func (s *Scheduler) stopTimers() {
 	}
 }
 
+func isPruneTaskDisabled(task dao.ScheduledSyncTask) bool {
+	return task.TaskType == dao.TaskTypePrune && !utility.ConfigBool(task.ConnectorConfig, "sync_deleted_files")
+}
+
 // taskDelay reports the delay before publication and whether the task must be scheduled at all.
 // A non-positive frequency disables periodic rescheduling (fail-closed):
 // the task runs at most once (when never run before) instead of being
@@ -312,7 +316,7 @@ func (s *Scheduler) taskDelay(task dao.ScheduledSyncTask, now time.Time) (time.D
 	case dao.TaskTypeSync:
 		freq = task.ConnectorRefreshFreq
 	case dao.TaskTypePrune:
-		if !utility.ConfigBool(task.ConnectorConfig, "sync_deleted_files") {
+		if isPruneTaskDisabled(task) {
 			return 0, false
 		}
 		freq = task.ConnectorPruneFreq

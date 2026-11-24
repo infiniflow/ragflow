@@ -58,9 +58,26 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to add unique index on ingestion_task.document_id: %w", err)
 	}
 
+	// Drop the legacy unique index on tenant_model_instance before api_key is
+	// widened: MySQL rebuilds the index on the ALTER, and the widened key
+	// exceeds the InnoDB length limit, so the upgrade aborts while it exists.
+	if err := dropLegacyTenantModelInstanceAPIKeyIndex(ctx, db); err != nil {
+		return fmt.Errorf("failed to drop legacy tenant_model_instance api_key index: %w", err)
+	}
+
 	// Modify column types that AutoMigrate may not handle correctly
 	if err := modifyColumnTypes(ctx, db); err != nil {
 		return fmt.Errorf("failed to modify column types: %w", err)
+	}
+
+	// The tenant model backfill below copies tenant_llm keys into
+	// tenant_model_instance.api_key, so it must not run against a column the
+	// widening above failed to bring to the bound the backfill reads through.
+	// The widening reports a failed ALTER as fatal, and this check makes the
+	// ordering explicit: the backfill is refused outright when the column is
+	// still narrower than the bound, whichever step would have widened it.
+	if err := requireTenantModelInstanceAPIKeyWidened(ctx, db); err != nil {
+		return fmt.Errorf("tenant_model_instance.api_key is not widened: %w", err)
 	}
 
 	if err := migrateColumnWidths(ctx, db); err != nil {
@@ -856,6 +873,7 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 			columnType: "text", nullable: true,
 			definition: "text",
 		},
+		tenantModelInstanceAPIKeyColumnSpec,
 		// api_token.dialog_id mirrors Python's CharField(max_length=32, null=True).
 		{
 			table: "api_token", column: "dialog_id",
@@ -906,6 +924,91 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 // columns hold either one of these or a GroupModelRefWidth-long gp-<group_id>
 // reference, so both shapes are valid values in the same column.
 const tenantModelIDLength = 32
+
+// tenantModelInstanceAPIKeyColumnSpec widens tenant_model_instance.api_key
+// ahead of the base-step backfill. migrateModelData — and with it
+// migrateTenantModelInstances, which copies tenant_llm keys into the column
+// with a raw INSERT — runs before AutoMigrate, so on an upgrade whose table
+// still holds the legacy varchar(512) a provider key longer than 512
+// characters (IONOS keys exceed 1,700, #22422) fails the INSERT in strict
+// mode and with it the whole startup, before AutoMigrate could converge the
+// entity's declaration; non-strict sessions truncate the key silently. The
+// target stays a bounded varchar(4096) (review of #22424) rather than TEXT,
+// so the column keeps a declared maximum; the legacy unique index that
+// would break the widening is dropped first (dropLegacyTenantModelInstanceAPIKeyIndex).
+// The spec is guarded like every other: it issues no DDL when the table or
+// column is missing or already carries the target shape.
+var tenantModelInstanceAPIKeyColumnSpec = columnSpec{
+	table:      "tenant_model_instance",
+	column:     "api_key",
+	columnType: "varchar(4096)",
+	nullable:   false,
+	definition: "varchar(4096) NOT NULL",
+	// The backfill below reads the column through this bound, so a failed
+	// widening must stop the migration instead of being logged and ignored:
+	// the narrow column left in place is what makes the backfill fail (strict
+	// mode) or truncate the credential (non-strict mode).
+	strict: true,
+}
+
+// requireTenantModelInstanceAPIKeyWidened refuses to let the tenant model
+// backfill run against a tenant_model_instance.api_key column that is still
+// narrower than the bound the backfill reads through. The backfill copies
+// tenant_llm keys into the column with a raw INSERT, so a column left at the
+// legacy varchar(512) either aborts the whole startup (MySQL strict mode,
+// Error 1406) or stores a truncated credential (non-strict session).
+//
+// The check is a verification, not a second widening: modifyColumnTypes has
+// already brought the column to the target shape, and this only confirms it.
+// It is deliberately separate from that step so the ordering requirement — the
+// widening happens before the backfill, and the backfill does not run without
+// it — is enforced by the migration flow rather than by the order two
+// independent helpers happen to be called in.
+//
+// A missing table or column is not an error: a fresh or pre-split install has
+// no such table yet, and AutoMigrate creates it with the entity's declaration
+// afterwards. The backfill creates the table itself when it runs
+// (ensureTenantModelTables), so the column it writes is the entity's.
+func requireTenantModelInstanceAPIKeyWidened(ctx context.Context, db *gorm.DB) error {
+	if !db.WithContext(ctx).Migrator().HasTable(tenantModelInstanceAPIKeyColumnSpec.table) {
+		return nil
+	}
+	currentType, _, exists, err := columnDefinition(ctx, db,
+		tenantModelInstanceAPIKeyColumnSpec.table, tenantModelInstanceAPIKeyColumnSpec.column)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if normalizeColumnType(currentType) == normalizeColumnType(tenantModelInstanceAPIKeyColumnSpec.columnType) {
+		return nil
+	}
+	return fmt.Errorf("column %s.%s is %s, want %s",
+		tenantModelInstanceAPIKeyColumnSpec.table,
+		tenantModelInstanceAPIKeyColumnSpec.column,
+		currentType,
+		tenantModelInstanceAPIKeyColumnSpec.columnType)
+}
+
+// dropLegacyTenantModelInstanceAPIKeyIndex removes the composite unique index
+// idx_api_key_provider_id (provider_id, api_key) that the releases between
+// #13922 and #15460 declared through the entity's uniqueIndex tags and that
+// later releases dropped again. Databases created in that window still carry
+// it, and it must go before api_key is widened anywhere in the upgrade:
+// MODIFY COLUMN past the legacy varchar(512) makes MySQL rebuild the index,
+// and the widened key (4096 chars of utf8mb4 on api_key plus provider_id)
+// exceeds the 3072-byte InnoDB key length limit, so the ALTER — and with it
+// the whole startup — fails while the index is in place. Uniqueness of
+// api_key was never part of the contract the current schema keeps: keys are
+// freely shared between instances. Guarded by HasTable like every other
+// step; dropIndexIfExists is a no-op once the index is gone.
+func dropLegacyTenantModelInstanceAPIKeyIndex(ctx context.Context, db *gorm.DB) error {
+	if !db.WithContext(ctx).Migrator().HasTable("tenant_model_instance") {
+		return nil
+	}
+	return dropIndexIfExists(ctx, db, "tenant_model_instance", "idx_api_key_provider_id")
+}
 
 // tenantModelIDColumnSpecs projects tenantModelIDFields into column specs for
 // the tenant model id columns. These columns were once declared *int64, so a
@@ -1263,6 +1366,14 @@ type columnSpec struct {
 	// so a value whose length is missing from this list is reset to NULL. An
 	// empty list means the change cannot invalidate values and skips the sweep.
 	keepLengths []int
+	// strict makes a failed ALTER fatal instead of a warning. It is set for the
+	// specs whose widening a later step depends on: the backfill that copies
+	// tenant_llm keys into tenant_model_instance.api_key runs after this and
+	// reads the column through the bound it establishes. A swallowed ALTER
+	// error would leave the narrow column in place and let the backfill write
+	// a key the column cannot hold — MySQL strict mode aborts the whole
+	// backfill, a non-strict session truncates the credential silently.
+	strict bool
 }
 
 // applyColumnSpec aligns a column with its expected definition, issuing DDL only
@@ -1296,6 +1407,9 @@ func applyColumnSpec(ctx context.Context, db *gorm.DB, spec columnSpec) error {
 			zap.String("table", spec.table),
 			zap.String("column", spec.column),
 			zap.Error(err))
+		if spec.strict {
+			return fmt.Errorf("widen %s.%s to %s: %w", spec.table, spec.column, spec.columnType, err)
+		}
 		return nil
 	}
 	discardOrphanedColumnValues(ctx, db, spec)

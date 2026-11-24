@@ -63,6 +63,31 @@ type progressSink struct {
 	// flusher goroutine touches it, and Close re-flushes after wg.Wait, so no
 	// additional synchronization is needed.
 	lastFlushed float64
+
+	// emitMu serializes emitter calls. eino runs parallel branches concurrently,
+	// so both report paths can fire from multiple goroutines. An installed log
+	// sink is not required to be safe for concurrent use, so serialize here.
+	emitMu sync.Mutex
+
+	// detailEmitter, when set, forwards a component's page/chunk position to
+	// the ingestion log. The orchestration layer installs a closure capturing
+	// the task/document/run identity; nil (default) keeps unit tests and
+	// editions without a sink observer-independent.
+	detailEmitter func(component, unit string, current, total uint32)
+
+	// lifecycleEmitter, when set, forwards a component lifecycle event to the
+	// ingestion log. Same capture-identity pattern as detailEmitter.
+	lifecycleEmitter func(component string, phase uint8, message string)
+}
+
+// OnProgressDetail forwards an in-flight component's structured position to
+// the configured emitter. It is a no-op when no emitter is installed.
+func (s *progressSink) OnProgressDetail(_ context.Context, component, unit string, current, total uint32) {
+	s.emitMu.Lock()
+	defer s.emitMu.Unlock()
+	if s.detailEmitter != nil {
+		s.detailEmitter(component, unit, current, total)
+	}
 }
 
 // docProgressSvc is the subset of *service.DocumentService the sink needs to
@@ -168,6 +193,18 @@ func (s *progressSink) OnComponentTotal(ctx context.Context, taskID string, tota
 func (s *progressSink) OnComponentProgress(ctx context.Context, ev pipeline.ProgressEvent) {
 	if err := s.taskSvc.RecordLifecycle(ctx, s.pipelineLogID, ev.TaskID, ev.Component, ev.Phase, ev.Message); err != nil {
 		common.Error(fmt.Sprintf("progressSink: record component progress for task %s failed: %v", ev.TaskID, err), err)
+	}
+	// Mirror the component lifecycle into the ingestion log (component-scope
+	// event). Phase is already the 0=enter/1=exit/2=error enum; clamp defensively
+	// so an out-of-range phase never corrupts the LowCardinality column.
+	if s.lifecycleEmitter != nil {
+		phase := max(0, min(ev.Phase, int(agentruntime.PhaseError)))
+		// Use a scope with defer so a panicking emitter cannot leak the lock.
+		func() {
+			s.emitMu.Lock()
+			defer s.emitMu.Unlock()
+			s.lifecycleEmitter(ev.Component, uint8(phase), ev.Message)
+		}()
 	}
 	if ev.Phase == int(agentruntime.PhaseExit) {
 		s.progress.MarkDone(ev.Component)

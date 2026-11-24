@@ -58,7 +58,7 @@ Each thought can build on, question, or revise previous insights as understandin
 
 - **thought**: Your current thinking step. Write in natural, user-friendly language. NEVER mention tool names in your thinking process. Focus on WHAT you're trying to find and WHY, not HOW (which tools you'll use).
 - **next_thought_needed**: True if you need more thinking, even if at what seemed like the end
-- **thought_number**: Current number in sequence (can go beyond initial total if needed)
+- **thought_number**: Current number in the 1-BASED sequence: the FIRST call of a run must send 1, and it may go beyond the initial total later if needed
 - **total_thoughts**: Current estimate of thoughts needed (can be adjusted up/down)
 - **is_revision**: A boolean indicating if this thought revises previous thinking
 - **revises_thought**: If is_revision is true, which thought number is being reconsidered
@@ -104,7 +104,7 @@ func (t *ThinkTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			},
 			"thought_number": {
 				Type: schema.Number, Required: true,
-				Desc: "Current thought number (>= 1).",
+				Desc: "Current thought number in the 1-based sequence; the first call of a run sends 1.",
 			},
 			"total_thoughts": {
 				Type: schema.Number, Required: true,

@@ -62,6 +62,9 @@ func createServiceTestDialog(t *testing.T, db *gorm.DB, id, tenantID, name strin
 
 func createServiceTestChannel(t *testing.T, db *gorm.DB, channel *entity.ChatChannel) *entity.ChatChannel {
 	t.Helper()
+	if channel.Channel == "" {
+		channel.Channel = "telegram"
+	}
 
 	if err := db.Create(channel).Error; err != nil {
 		t.Fatalf("failed to create chat channel: %v", err)

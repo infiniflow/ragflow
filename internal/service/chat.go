@@ -863,6 +863,13 @@ var chatReadonlyFields = map[string]struct{}{
 	"update_date": {},
 }
 
+// chatLLMSettingServerKeys are llm_setting keys owned by the server/agent layer rather than
+// by the client form. A full (non-PATCH) update that does not mention them must NOT drop
+// them: the web form never round-trips them, so one PUT would silently erase e.g. the
+// provider failover roster configured out-of-band, and mode 8 would lose its instance
+// failover. A client can still clear one by sending it explicitly (including null).
+var chatLLMSettingServerKeys = []string{"failover_llm_ids"}
+
 var defaultRerankModels = map[string]struct{}{
 	"BAAI/bge-reranker-v2-m3":           {},
 	"maidalun1020/bce-reranker-base_v1": {},
@@ -993,7 +1000,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, chatID string, req map
 		if patch {
 			req["llm_setting"] = mergeJSONMap(currentChat.LLMSetting, llmSetting)
 		} else {
-			req["llm_setting"] = entity.JSONMap(llmSetting)
+			req["llm_setting"] = preserveServerLLMSetting(currentChat.LLMSetting, llmSetting)
 		}
 	}
 
@@ -1255,6 +1262,25 @@ func mergeJSONMap(base entity.JSONMap, patch map[string]interface{}) entity.JSON
 				value = mergeJSONMap(entity.JSONMap(previous), object)
 			}
 		}
+		merged[key] = value
+	}
+	return merged
+}
+
+// preserveServerLLMSetting is the llm_setting a full (non-PATCH) update should store: the
+// client's map, plus every server-managed key (chatLLMSettingServerKeys) the client did NOT
+// speak about. A key the client sends is taken verbatim -- including null, which clears it.
+func preserveServerLLMSetting(current entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
+	merged := entity.JSONMap{}
+	for _, key := range chatLLMSettingServerKeys {
+		if _, provided := incoming[key]; provided {
+			continue
+		}
+		if value, ok := current[key]; ok {
+			merged[key] = value
+		}
+	}
+	for key, value := range incoming {
 		merged[key] = value
 	}
 	return merged

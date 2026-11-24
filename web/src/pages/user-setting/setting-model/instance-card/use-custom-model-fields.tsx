@@ -47,7 +47,7 @@ export const MODEL_FIELD_SCHEMA: AddCustomModelDialogFields[] = [
       { value: 'scoring', label: 'modelTypes.scoring' },
       { value: 'rerank', label: 'modelTypes.rerank' },
       { value: 'tts', label: 'modelTypes.tts' },
-      { value: 'vision', label: 'modelTypes.image2text' },
+      { value: 'vlm', label: 'modelTypes.image2text' },
       { value: 'ocr', label: 'modelTypes.ocr' },
       { value: 'asr', label: 'modelTypes.speech2text' },
       { value: 'decision', label: 'modelTypes.decision' },

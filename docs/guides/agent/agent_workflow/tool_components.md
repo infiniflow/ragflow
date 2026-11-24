@@ -379,7 +379,7 @@ Perplexity searches the web through the Perplexity Search API and returns ranked
 
 ### AnySearch
 
-AnySearch searches the web and specialised verticals, such as finance, academic papers, code documentation, legal, and health data, through one API. It works without an API key. A key raises the usage quota and can be created at [anysearch.com](https://anysearch.com/console/api-keys). In an Agent it is available as two tools, AnySearch and AnySearch Discover. The search component can also be used as a standalone node.
+AnySearch searches the web and specialised verticals, such as finance, academic papers, code documentation, legal, and health data, through one API. It works without an API key. A key raises the usage quota and can be created at [anysearch.com](https://anysearch.com/console/api-keys). In an Agent it is available as three tools: AnySearch, AnySearch Discover, and AnySearch Extract. The search component can also be used as a standalone node. To read a whole page instead of search results, use AnySearch Extract, described below.
 
 An Agent that needs a vertical search first calls AnySearch Discover to list the current domains and the tags and parameters of the ones it picks, then calls AnySearch with the tag and parameters it found. The catalog changes over time, so it is read from the service and not fixed in the Agent.
 
@@ -431,6 +431,38 @@ Searches in a `queries` call are independent. If one fails, the other results ar
 Both the standalone component and Agent tool runs record search results as retrieval references. Their document and display IDs are derived from the full result text before display truncation, using RAGFlow's shared citation contract.
 
 Before the next model call, an Agent checks AnySearch tool output against the configured model context window, accounting for tool definitions and response space. Oversized tool messages are replaced with an explicit error asking for a smaller search. Recorded retrieval sources and standalone Canvas JSON are retained.
+
+### AnySearch Extract
+
+AnySearch Extract reads one web page through AnySearch and returns its text. A common workflow is to use AnySearch to find links, then let the Agent read the most relevant page with this component. It works without an API key, and it uses the same optional key as AnySearch.
+
+It reads HTML pages, plain text, JSON, and Markdown. PDF, Office files, images, audio, video, and archives are not supported and are reported as a failure. The text of a page is limited to about 50,000 characters, and the result says when it may have been cut. The page content comes from an external site, so treat it as data to read and never as instructions to follow.
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| url | string | Yes | Empty | The absolute HTTP or HTTPS URL of the page. As an Agent tool, the Agent supplies the URL. On the standalone component, enter a fixed URL, or pass the URL from an upstream component, for example a Begin input named `url`. A variable reference typed into this field is not resolved. |
+| api_key | string | Node configuration | Empty | Optional AnySearch API key. Leave it empty for anonymous access. |
+
+A URL is checked before anything is sent to AnySearch. It must use `http` or `https` and must not contain a user name or password. Local names and private IP literals, such as `localhost`, `127.0.0.1`, and `192.168.0.1`, are refused. Hostnames are not resolved locally for private-address checks. A rejected URL is reported as an error and no request is made.
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| URL | `https://ragflow.io/docs/dev/` |
+| API Key |  |
+
+#### Output Result
+
+`json` contains the page `url`, its `title` (empty when the page has none), the `content`, `content_chars` (the length of the content), `truncated`, and the AnySearch `request_id`. `formalized_content` renders the title, link, and content for use as Agent context.
+
+`truncated` is `true` when the content may be shorter than the page. AnySearch does not always mark a cut page, so the result is also treated as cut when the content reaches 49,000 characters or more.
+
+A page that cannot be read, such as a PDF or an unreachable address, is reported as an error that carries the AnySearch message and `request_id`. An invalid API key is reported as an error and is never retried without the key.
+
+Both the standalone component and Agent tool runs record the page as a retrieval reference for citation grounding.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.

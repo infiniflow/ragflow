@@ -670,6 +670,8 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 		return p.parseAPIShowQuota()
 	case TokenGroup:
 		return p.parseAPIShowGroup()
+	case TokenDeploy:
+		return p.parseAPIShowDeploy()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -1217,6 +1219,21 @@ func (p *Parser) parseAPIShowGroupStats() (*Command, error) {
 	return cmd, nil
 }
 
+// SHOW DEPLOY
+func (p *Parser) parseAPIShowDeploy() (*Command, error) {
+	p.nextToken() // consume DEPLOY
+	cmd := NewCommand("api_show_deploy")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// endregion SHOW commands
+
 // ADD 'model@instance@provider' GROUP 'group_id';
 // DELETE 'model@instance@provider' GROUP 'group_id';
 func (p *Parser) parseAPIAddGroupModel() (*Command, error) {
@@ -1289,8 +1306,6 @@ func (p *Parser) parseAPIDeleteGroupModel() (*Command, error) {
 	cmd.Params["group_id"] = groupID
 	return cmd, nil
 }
-
-// endregion SHOW commands
 
 // region CREATE commands
 

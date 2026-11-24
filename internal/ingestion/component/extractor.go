@@ -540,6 +540,14 @@ func (m *extractorModelCache) ctxLen(ctx context.Context, db *gorm.DB, llmID str
 	return v
 }
 
+// invalidate drops a cached target so the next resolve re-picks from the
+// model group after a failover flip marked the cached member inactive.
+func (m *extractorModelCache) invalidate(llmID string) {
+	m.mu.Lock()
+	delete(m.targets, llmID)
+	m.mu.Unlock()
+}
+
 type extractorModelCacheKey struct{}
 
 // withExtractorModelCache attaches a fresh per-run model cache to ctx. The
@@ -1447,6 +1455,13 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		resp = r
 		return e
 	}, isRetryableLLMError); err != nil {
+		// The resolved chat target failed after retries: flip the gp-
+		// reference's current member inactive (best-effort) and evict the
+		// cached target, so a retry that re-resolves picks the next member.
+		noteGroupMemberFailure(ctx, db, extractorTenantIDFromCtx(ctx), entity.ModelTypeChat, in.llmID)
+		if cache := extractorModelCacheFromCtx(ctx); cache != nil {
+			cache.invalidate(in.llmID)
+		}
 		return nil, err
 	}
 	if resp == nil {
@@ -1651,6 +1666,18 @@ type extractorChatConfig struct {
 	baseURL   string // api_base
 }
 
+// extractorTenantIDFromCtx reads the tenant_id global from the canvas state.
+// It returns "" when there is no state (unit tests).
+func extractorTenantIDFromCtx(ctx context.Context) string {
+	state, err := runtime.GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return ""
+	}
+	tidVal, _ := state.GetGlobal("tenant_id")
+	tid, _ := tidVal.(string)
+	return tid
+}
+
 // resolveExtractorChatConfig resolves tenant-scoped credentials for
 // the given llm_id via the shared resolveModelConfig helper.
 //
@@ -1660,12 +1687,7 @@ type extractorChatConfig struct {
 // Returns nil error when there is no canvas state (unit tests) —
 // the caller's @ split fallback handles that case.
 func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID string) (extractorChatConfig, error) {
-	state, err := runtime.GetStateFromContext(ctx)
-	if err != nil || state == nil {
-		return extractorChatConfig{}, nil
-	}
-	tidVal, _ := state.GetGlobal("tenant_id")
-	tid, _ := tidVal.(string)
+	tid := extractorTenantIDFromCtx(ctx)
 	if tid == "" {
 		return extractorChatConfig{}, nil
 	}
@@ -1683,6 +1705,7 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 		driver, modelName, apiConfig = resolved.driver, resolved.model.ModelName, resolved.apiConfig
 	} else {
 		// Composite "model@provider" path: delegate to the shared dispatcher.
+		var err error
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
 			return extractorChatConfig{}, fmt.Errorf("extractor: resolve model %q: %w", compositeLLMID, err)

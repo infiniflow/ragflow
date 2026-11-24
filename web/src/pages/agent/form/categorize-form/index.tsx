@@ -42,7 +42,7 @@ function CategorizeForm({ node }: INextOperatorForm) {
         <ModelTreeSelectFormField
           name="llm_id"
           label={t('chat.model')}
-          modelTypes={['chat', 'vision', 'decision']}
+          modelTypes={['chat', 'vlm', 'decision']}
           providers={[]}
           resourceTenantId={resourceTenantId}
         />
