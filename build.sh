@@ -1252,6 +1252,11 @@ setup_cgo_env() {
     # -export_dynamic — which is what the binding's dlopen(NULL)+dlsym
     # lookup needs at runtime.
 
+    # Optional build extension hook (no-op unless defined by build_ee.sh).
+    if declare -F setup_ee_cgo_env >/dev/null 2>&1; then
+        setup_ee_cgo_env || return 1
+    fi
+
     # ── platform-specific system libraries ────────────────────────────
     case "$(uname -s)" in
         Linux)

@@ -1470,3 +1470,20 @@ def test_extract_native_lib_honors_ragflow_native_libs_dir_env(tmp_path, monkeyp
     native.extract_native_lib(str(archive), "pdfium-static", "v7809", ["lib/libpdfium.a"], None)
     assert (tmp_path / "isolated" / "pdfium-static" / "v7809" / "lib" / "libpdfium.a").is_file()
     assert not os.path.exists("/attribute-path-ignored")
+
+
+def test_ee_native_download_hook_noop_and_delegates(monkeypatch):
+    import sys
+    import types
+
+    # When the optional extension module is absent, the hook is a safe no-op.
+    monkeypatch.setitem(sys.modules, "download_dev_deps_ee", None)
+    assert native._run_ee_native_downloads("linux", "amd64") is None
+
+    # When provided, the hook delegates (goos, goarch) to download_ee_native_libs.
+    calls = []
+    fake = types.ModuleType("download_dev_deps_ee")
+    fake.download_ee_native_libs = lambda goos, goarch: calls.append((goos, goarch))
+    monkeypatch.setitem(sys.modules, "download_dev_deps_ee", fake)
+    native._run_ee_native_downloads("linux", "amd64")
+    assert calls == [("linux", "amd64")]

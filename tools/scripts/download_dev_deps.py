@@ -993,6 +993,20 @@ def download_native_archives(goos, goarch):
             raise RuntimeError(f"Invalid downloaded dependency: {archive}")
 
 
+def _run_ee_native_downloads(goos: str, goarch: str) -> None:
+    """Invoke the optional native-library download extension hook when defined."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    try:
+        import download_dev_deps_ee  # type: ignore[import-not-found]
+    except ImportError:
+        return
+    fn = getattr(download_dev_deps_ee, "download_ee_native_libs", None)
+    if callable(fn):
+        fn(goos, goarch)
+
+
 def main():
     """Download the native static libraries the Go build links, then the runtime
     resources (cl100k BPE table, DeepDoc .ort weights, embedding tokenizer assets)
@@ -1082,6 +1096,8 @@ def main():
     else:
         print(f"  ERROR: ONNX Runtime .a files still missing under {ort_static_dir} after extraction; build.sh will refuse to link.", file=sys.stderr)
         sys.exit(1)
+
+    _run_ee_native_downloads(goos, goarch)
 
     # The Go server also needs the runtime resources (cl100k BPE table, the
     # DeepDoc .ort weights for in-process PDF/table parsing, the embedding
