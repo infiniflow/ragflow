@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"errors"
 	"testing"
 
 	"ragflow/internal/common"
@@ -361,6 +362,22 @@ func TestIngestionEventWriterFeedsRunScopedLogReaders(t *testing.T) {
 
 func insertMessageRun(t *testing.T, id, kbID, documentID string, status entity.TaskStatus, runCount int) {
 	t.Helper()
+	if documentID != entity.DatasetLogDocumentID {
+		var document entity.Document
+		err := dao.DB.Where("id = ?", documentID).Take(&document).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			document = entity.Document{
+				ID: documentID, KbID: kbID, CreatedBy: "user-1", ParserID: "naive",
+				ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "text",
+				Status: sptr(string(entity.StatusValid)),
+			}
+			if err := dao.DB.Create(&document).Error; err != nil {
+				t.Fatalf("insert run document: %v", err)
+			}
+		} else if err != nil {
+			t.Fatalf("load run document: %v", err)
+		}
+	}
 	runCountPtr := &runCount
 	if err := dao.DB.Create(&entity.PipelineOperationLog{
 		ID:              id,
