@@ -47,12 +47,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import { useMessageAction } from './hook';
 import { IMessageInfo } from './interface';
+import { canWriteMemory } from '@/ee/pages/memories/memory-dropdown-guard';
 
 export type MemoryTableProps = {
   messages: Array<IMessageInfo>;
   total: number;
   pagination: Pagination;
   setPagination: (params: { page: number; pageSize: number }) => void;
+  operatorPermission: number;
+  hasRoleWrite: boolean;
 };
 
 const columnHelper = createColumnHelper<IMessageInfo>();
@@ -116,7 +119,10 @@ export function MemoryTable({
   total,
   pagination,
   setPagination,
+  operatorPermission,
+  hasRoleWrite,
 }: MemoryTableProps) {
+  const canWrite = hasRoleWrite && canWriteMemory(operatorPermission);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     [],
@@ -263,7 +269,7 @@ export function MemoryTable({
         cell: ({ row }) => (
           <StatusSwitch
             row={row}
-            disabled={disabledRowFunc(row)}
+            disabled={!canWrite || disabledRowFunc(row)}
             onUpdate={handleClickUpdateMessageState}
           />
         ),
@@ -317,7 +323,7 @@ export function MemoryTable({
             >
               <TextSelect />
             </Button>
-            <Button
+            {canWrite && <Button
               variant={'delete'}
               disabled={disabledRowFunc(row)}
               className="bg-transparent"
@@ -327,12 +333,12 @@ export function MemoryTable({
               }}
             >
               <Eraser />
-            </Button>
+            </Button>}
           </div>
         ),
       },
     ],
-    [handleClickDeleteMessage],
+    [canWrite, handleClickDeleteMessage],
   );
 
   const currentPagination = useMemo(() => {

@@ -630,7 +630,17 @@ func (s *MemoryService) CreateMemory(ctx context.Context, req *CreateMemoryReque
 //	resp, err := service.UpdateMemory(ctx, "memory456", req)
 func (s *MemoryService) UpdateMemory(ctx context.Context, memoryID string, req *UpdateMemoryRequest) (*CreateMemoryResponse, error) {
 	updateDict := make(map[string]interface{})
-	if err := permission.NewDatabaseChecker(s.db).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID}, permission.OperationUpdate); err != nil {
+	checker := permission.NewDatabaseChecker(s.db)
+	if err := checker.CheckFeature(ctx, "memory", permission.ActionWrite); err != nil {
+		return nil, err
+	}
+	memoryRef := permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID}
+	if err := checker.CheckResourcePermission(ctx, memoryRef, permission.ResourcePermissionManage); err != nil {
+		if ownerErr := checker.CheckResourcePermission(ctx, memoryRef, permission.ResourcePermissionOwner); ownerErr != nil {
+			return nil, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -665,11 +675,6 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, memoryID string, req *
 		perm := TenantPermission(strings.ToLower(strings.TrimSpace(*req.Permissions)))
 		if !validPermissions[perm] {
 			return nil, fmt.Errorf("unknown permission '%s'", *req.Permissions)
-		}
-		if strings.ToLower(strings.TrimSpace(currentMemory.Permissions)) != string(perm) {
-			if err := permission.NewDatabaseChecker(s.db).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID}, permission.OperationShare); err != nil {
-				return nil, err
-			}
 		}
 		updateDict["permissions"] = perm
 	}

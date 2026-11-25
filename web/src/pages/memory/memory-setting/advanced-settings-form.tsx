@@ -26,7 +26,7 @@ export const defaultAdvancedSettingsForm = {
   system_prompt: '',
   user_prompt: '',
 };
-export const AdvancedSettingsForm = () => {
+export const AdvancedSettingsForm = ({ readOnly = false }: { readOnly?: boolean }) => {
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   return (
     <>
@@ -59,16 +59,17 @@ export const AdvancedSettingsForm = () => {
                     defaultValue="me"
                     className="flex"
                     {...field}
+                    disabled={readOnly}
                     onValueChange={(value) => {
                       field.onChange(value);
                     }}
                   >
                     <div className="flex items-center gap-3">
-                      <RadioGroupItem value="me" id="r1" />
+                      <RadioGroupItem value="me" id="r1" disabled={readOnly} />
                       <Label htmlFor="r1">{t('memory.config.onlyMe')}</Label>
                     </div>
                     <div className="flex items-center gap-3">
-                      <RadioGroupItem value="team" id="r2" />
+                      <RadioGroupItem value="team" id="r2" disabled={readOnly} />
                       <Label htmlFor="r2">{t('memory.config.team')}</Label>
                     </div>
                   </RadioGroup>
@@ -88,6 +89,7 @@ export const AdvancedSettingsForm = () => {
                 // { label: 'Graph', value: 'graph' },
               ],
               required: false,
+              disabled: readOnly,
             }}
           />
           <RenderField
@@ -102,6 +104,7 @@ export const AdvancedSettingsForm = () => {
                 { label: 'FIFO', value: 'FIFO' },
               ],
               required: false,
+              disabled: readOnly,
             }}
           />
           <RenderField
@@ -121,7 +124,7 @@ export const AdvancedSettingsForm = () => {
                     max={1}
                     step={0.01}
                     min={0}
-                    disabled={false}
+                    disabled={readOnly}
                   ></SingleFormSlider>
                   <NumberInput
                     className={cn('h-6 w-16')}
@@ -131,6 +134,7 @@ export const AdvancedSettingsForm = () => {
                     precision={2}
                     {...field}
                     hideIcons
+                    disabled={readOnly}
                   ></NumberInput>
                 </div>
               ),
@@ -145,6 +149,7 @@ export const AdvancedSettingsForm = () => {
               horizontal: true,
               placeholder: t('memory.config.systemPromptPlaceholder'),
               required: false,
+              disabled: readOnly,
               fieldConfig: {
                 resize: 'vertical',
                 autoSize: {
@@ -163,6 +168,7 @@ export const AdvancedSettingsForm = () => {
               horizontal: true,
               placeholder: t('memory.config.userPromptPlaceholder'),
               required: false,
+              disabled: readOnly,
               fieldConfig: {
                 resize: 'vertical',
                 autoSize: {
