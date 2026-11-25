@@ -98,6 +98,14 @@ func NewConfluenceConnector(config map[string]any) (*ConfluenceConnector, error)
 	return c, nil
 }
 
+// ConfluenceScopeChanged compares the effective site and page selection.
+func ConfluenceScopeChanged(before, after map[string]any) bool {
+	old, oldErr := NewConfluenceConnector(before)
+	next, nextErr := NewConfluenceConnector(after)
+	return oldErr != nil || nextErr != nil || old.apiBase != next.apiBase ||
+		old.isCloud != next.isCloud || old.basePageCQL() != next.basePageCQL()
+}
+
 // Validate validates Confluence settings and credentials.
 func (c *ConfluenceConnector) Validate(ctx context.Context) error {
 	if c == nil {
