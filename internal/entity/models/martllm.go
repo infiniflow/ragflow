@@ -23,39 +23,39 @@ import (
 	"strings"
 )
 
-const uberLLMProviderName = "UberLLM"
+const martLLMProviderName = "MartLLM"
 
-// UberLLMModel drives UberLLM (https://api.uberllm.dev/v1), which serves
+// MartLLMModel drives MartLLM (https://api.martllm.com/v1), which serves
 // many model families through OpenAI-compatible chat and model-list endpoints,
 // so the embedded OpenAIAPICompatibleModel covers every call.
-type UberLLMModel struct {
+type MartLLMModel struct {
 	*OpenAIAPICompatibleModel
 }
 
-// NewUberLLMModel creates an UberLLM driver.
-func NewUberLLMModel(baseURL map[string]string, urlSuffix URLSuffix) *UberLLMModel {
-	return &UberLLMModel{
+// NewMartLLMModel creates a MartLLM driver.
+func NewMartLLMModel(baseURL map[string]string, urlSuffix URLSuffix) *MartLLMModel {
+	return &MartLLMModel{
 		OpenAIAPICompatibleModel: NewOpenAIAPICompatibleModel(baseURL, urlSuffix),
 	}
 }
 
 // Name returns the driver name.
-func (m *UberLLMModel) Name() string {
-	return "uberllm"
+func (m *MartLLMModel) Name() string {
+	return "martllm"
 }
 
 // NewInstance returns a driver bound to the given base URL.
-func (m *UberLLMModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewUberLLMModel(baseURL, m.baseModel.URLSuffix)
+func (m *MartLLMModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewMartLLMModel(baseURL, m.baseModel.URLSuffix)
 }
 
-// uberLLMModelList is the part of UberLLM's GET /models response the driver
+// martLLMModelList is the part of MartLLM's GET /models response the driver
 // reads. Each entry names its endpoints and input modalities.
-type uberLLMModelList struct {
-	Models []uberLLMModelListItem `json:"data"`
+type martLLMModelList struct {
+	Models []martLLMModelListItem `json:"data"`
 }
 
-type uberLLMModelListItem struct {
+type martLLMModelListItem struct {
 	ID              string   `json:"id"`
 	ContextLength   *int     `json:"context_length"`
 	MaxOutputTokens *int     `json:"max_output_tokens"`
@@ -63,19 +63,19 @@ type uberLLMModelListItem struct {
 	InputModalities []string `json:"input_modalities"`
 }
 
-// ListModels lists UberLLM's models. A model whose endpoints include
+// ListModels lists MartLLM's models. A model whose endpoints include
 // chat/completions is a chat model, and a vision model too when its
 // input_modalities include "image", so models outside the shipped catalogue
 // get accurate types. A model that names no endpoints falls back to
-// name-inferred types. Models in the UberLLM catalogue keep the catalogue's
+// name-inferred types. Models in the MartLLM catalogue keep the catalogue's
 // types.
-func (m *UberLLMModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (m *MartLLMModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	modelsSuffix := strings.Trim(strings.TrimSpace(m.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
-		return nil, fmt.Errorf("uberllm: models URL suffix is not configured")
+		return nil, fmt.Errorf("martllm: models URL suffix is not configured")
 	}
 	url, err := m.baseModel.EndpointURL(apiConfig, modelsSuffix)
 	if err != nil {
@@ -85,7 +85,7 @@ func (m *UberLLMModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 	if err != nil {
 		return nil, err
 	}
-	var modelList uberLLMModelList
+	var modelList martLLMModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -96,7 +96,7 @@ func (m *UberLLMModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 	var provider *Provider
 	pm := GetProviderManager()
 	if pm != nil {
-		provider = pm.FindProvider(uberLLMProviderName)
+		provider = pm.FindProvider(martLLMProviderName)
 	}
 
 	models := make([]ListModelResponse, 0, len(modelList.Models))
@@ -105,7 +105,7 @@ func (m *UberLLMModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		if name == "" {
 			continue
 		}
-		model := ListModelResponse{Name: name, ModelTypes: uberLLMModelTypes(item)}
+		model := ListModelResponse{Name: name, ModelTypes: martLLMModelTypes(item)}
 		if provider != nil {
 			if entry := pm.FindModel(provider, name); entry != nil && len(entry.ModelTypes) > 0 {
 				model.ModelTypes = append([]string(nil), entry.ModelTypes...)
@@ -125,10 +125,10 @@ func (m *UberLLMModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 	return models, nil
 }
 
-// uberLLMModelTypes derives a listed model's types from its endpoints and
+// martLLMModelTypes derives a listed model's types from its endpoints and
 // input modalities. A model that names no endpoints gets name-inferred types,
 // and one whose endpoints do not include chat/completions gets none.
-func uberLLMModelTypes(item uberLLMModelListItem) []string {
+func martLLMModelTypes(item martLLMModelListItem) []string {
 	if len(item.Endpoints) == 0 {
 		return InferModelTypes(item.ID)
 	}

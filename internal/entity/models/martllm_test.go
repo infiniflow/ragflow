@@ -21,62 +21,63 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/common"
+	"slices"
 	"testing"
 )
 
-// newUberLLMForTest creates a UberLLMModel instance for testing.
-func newUberLLMForTest(baseURL string) *UberLLMModel {
-	return NewUberLLMModel(
+// newMartLLMForTest creates a MartLLMModel instance for testing.
+func newMartLLMForTest(baseURL string) *MartLLMModel {
+	return NewMartLLMModel(
 		map[string]string{"default": baseURL},
 		URLSuffix{Chat: "chat/completions", Models: "models"},
 	)
 }
 
-// TestUberLLMName tests the driver name.
-func TestUberLLMName(t *testing.T) {
-	if got := newUberLLMForTest("http://unused").Name(); got != "uberllm" {
+// TestMartLLMName tests the driver name.
+func TestMartLLMName(t *testing.T) {
+	if got := newMartLLMForTest("http://unused").Name(); got != "martllm" {
 		t.Errorf("Name()=%q", got)
 	}
 }
 
-// TestUberLLMFactory tests creating the driver from factory.
-func TestUberLLMFactory(t *testing.T) {
-	driver, err := NewModelFactory().CreateModelDriver("uberllm", map[string]string{"default": "http://unused"}, URLSuffix{})
+// TestMartLLMFactory tests creating the driver from factory.
+func TestMartLLMFactory(t *testing.T) {
+	driver, err := NewModelFactory().CreateModelDriver("martllm", map[string]string{"default": "http://unused"}, URLSuffix{})
 	if err != nil {
 		t.Fatalf("CreateModelDriver: %v", err)
 	}
-	if _, ok := driver.(*UberLLMModel); !ok {
-		t.Fatalf("driver type=%T, want *UberLLMModel", driver)
+	if _, ok := driver.(*MartLLMModel); !ok {
+		t.Fatalf("driver type=%T, want *MartLLMModel", driver)
 	}
-	if _, ok := driver.NewInstance(map[string]string{"default": "http://other"}).(*UberLLMModel); !ok {
-		t.Fatal("NewInstance did not return *UberLLMModel")
+	if _, ok := driver.NewInstance(map[string]string{"default": "http://other"}).(*MartLLMModel); !ok {
+		t.Fatal("NewInstance did not return *MartLLMModel")
 	}
 }
 
-// The shipped config must resolve to the UberLLM driver. CreateModelDriver
-// dispatches on strings.ToLower(name), so the "UberLLM" provider name has
-// to match the "uberllm" case; anything else silently falls through to
+// The shipped config must resolve to the MartLLM driver. CreateModelDriver
+// dispatches on strings.ToLower(name), so the "MartLLM" provider name has
+// to match the "martllm" case; anything else silently falls through to
 // DummyModel.
-func TestUberLLMProviderConfig(t *testing.T) {
-	dir, restore := setupProviderTestDir(t, "uberllm.json")
+func TestMartLLMProviderConfig(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "martllm.json")
 	defer restore()
 
 	if err := InitProviderManager(dir); err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
 	}
 
-	provider := GetProviderManager().FindProvider("UberLLM")
+	provider := GetProviderManager().FindProvider("MartLLM")
 	if provider == nil {
-		t.Fatal("UberLLM provider not found")
+		t.Fatal("MartLLM provider not found")
 	}
-	if _, ok := provider.ModelDriver.(*UberLLMModel); !ok {
-		t.Fatalf("ModelDriver=%T, want *models.UberLLMModel", provider.ModelDriver)
+	if _, ok := provider.ModelDriver.(*MartLLMModel); !ok {
+		t.Fatalf("ModelDriver=%T, want *models.MartLLMModel", provider.ModelDriver)
 	}
 }
 
-// TestUberLLMChatSendsAPIKey tests chat completion authentication and that
+// TestMartLLMChatSendsAPIKey tests chat completion authentication and that
 // the model id reaches the API unchanged.
-func TestUberLLMChatSendsAPIKey(t *testing.T) {
+func TestMartLLMChatSendsAPIKey(t *testing.T) {
 	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" {
@@ -95,7 +96,7 @@ func TestUberLLMChatSendsAPIKey(t *testing.T) {
 			t.Errorf("model=%q", body.Model)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":      "chat-uberllm",
+			"id":      "chat-martllm",
 			"choices": []map[string]any{{"message": map[string]any{"content": "pong"}}},
 			"usage":   map[string]any{"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8},
 		})
@@ -103,7 +104,7 @@ func TestUberLLMChatSendsAPIKey(t *testing.T) {
 	defer srv.Close()
 
 	usage := &common.ModelUsage{}
-	resp, err := newUberLLMForTest(srv.URL).ChatWithMessages(
+	resp, err := newMartLLMForTest(srv.URL).ChatWithMessages(
 		t.Context(),
 		"deepseek/deepseek-v4.1-flash",
 		[]Message{{Role: "user", Content: "ping"}},
@@ -120,8 +121,8 @@ func TestUberLLMChatSendsAPIKey(t *testing.T) {
 	assertModelUsage(t, usage, 3, 5, 8)
 }
 
-// TestUberLLMListModelsAndCheckConnection tests model listing and connectivity check.
-func TestUberLLMListModelsAndCheckConnection(t *testing.T) {
+// TestMartLLMListModelsAndCheckConnection tests model listing and connectivity check.
+func TestMartLLMListModelsAndCheckConnection(t *testing.T) {
 	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/models" {
@@ -139,7 +140,7 @@ func TestUberLLMListModelsAndCheckConnection(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	model := newUberLLMForTest(srv.URL)
+	model := newMartLLMForTest(srv.URL)
 	list, err := model.ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
@@ -152,14 +153,14 @@ func TestUberLLMListModelsAndCheckConnection(t *testing.T) {
 	}
 }
 
-// TestUberLLMListModelsKeepsCatalogueTypes tests that listed models in the
-// UberLLM catalogue keep its types, so vision models are not reported as
+// TestMartLLMListModelsKeepsCatalogueTypes tests that listed models in the
+// MartLLM catalogue keep its types, so vision models are not reported as
 // chat-only, while other models keep name-inferred types.
-func TestUberLLMListModelsKeepsCatalogueTypes(t *testing.T) {
+func TestMartLLMListModelsKeepsCatalogueTypes(t *testing.T) {
 	withSSRFBypass(t)
 	saved := GetProviderManager()
 	defer setProviderManager(saved)
-	dir, restore := setupProviderTestDir(t, "uberllm.json")
+	dir, restore := setupProviderTestDir(t, "martllm.json")
 	defer restore()
 	if err := InitProviderManager(dir); err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
@@ -177,7 +178,7 @@ func TestUberLLMListModelsKeepsCatalogueTypes(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	list, err := newUberLLMForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
+	list, err := newMartLLMForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -186,22 +187,22 @@ func TestUberLLMListModelsKeepsCatalogueTypes(t *testing.T) {
 		got[m.Name] = m.ModelTypes
 	}
 	for _, name := range []string{"google/gemini-3.5-flash", "openai/gpt-5.4-mini"} {
-		if !containsModelType(got[name], "vision") || !containsModelType(got[name], "chat") {
+		if !slices.Contains(got[name], "vision") || !slices.Contains(got[name], "chat") {
 			t.Errorf("%s types=%v, want chat and vision", name, got[name])
 		}
 	}
-	if containsModelType(got["z-ai/glm-5.2"], "vision") || !containsModelType(got["z-ai/glm-5.2"], "chat") {
+	if slices.Contains(got["z-ai/glm-5.2"], "vision") || !slices.Contains(got["z-ai/glm-5.2"], "chat") {
 		t.Errorf("z-ai/glm-5.2 types=%v, want chat only", got["z-ai/glm-5.2"])
 	}
-	if !containsModelType(got["qwen/qwen3-max"], "chat") {
+	if !slices.Contains(got["qwen/qwen3-max"], "chat") {
 		t.Errorf("qwen/qwen3-max types=%v, want name-inferred chat", got["qwen/qwen3-max"])
 	}
 }
 
-// TestUberLLMListModelsReadsListedCapabilities tests that models outside the
+// TestMartLLMListModelsReadsListedCapabilities tests that models outside the
 // catalogue take their types from the listed endpoints and input modalities,
 // and their limits from context_length and max_output_tokens.
-func TestUberLLMListModelsReadsListedCapabilities(t *testing.T) {
+func TestMartLLMListModelsReadsListedCapabilities(t *testing.T) {
 	withSSRFBypass(t)
 	chatEndpoints := []string{"/v1/chat/completions", "/v1/messages", "/v1/responses"}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +216,7 @@ func TestUberLLMListModelsReadsListedCapabilities(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	list, err := newUberLLMForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
+	list, err := newMartLLMForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -224,14 +225,14 @@ func TestUberLLMListModelsReadsListedCapabilities(t *testing.T) {
 		got[m.Name] = m
 	}
 	opus, ok := got["anthropic/claude-opus-4.6"]
-	if !ok || !containsModelType(opus.ModelTypes, "vision") || !containsModelType(opus.ModelTypes, "chat") {
+	if !ok || !slices.Contains(opus.ModelTypes, "vision") || !slices.Contains(opus.ModelTypes, "chat") {
 		t.Errorf("claude-opus-4.6 types=%v, want chat and vision", opus.ModelTypes)
 	}
 	if opus.ContextLength == nil || *opus.ContextLength != 1000000 || opus.MaxOutput == nil || *opus.MaxOutput != 128000 {
 		t.Errorf("claude-opus-4.6 limits=%v/%v, want 1000000/128000", opus.ContextLength, opus.MaxOutput)
 	}
 	ds := got["deepseek/deepseek-v4-pro"]
-	if containsModelType(ds.ModelTypes, "vision") || !containsModelType(ds.ModelTypes, "chat") {
+	if slices.Contains(ds.ModelTypes, "vision") || !slices.Contains(ds.ModelTypes, "chat") {
 		t.Errorf("deepseek-v4-pro types=%v, want chat only", ds.ModelTypes)
 	}
 	if _, ok := got["acme/image-model"]; ok {

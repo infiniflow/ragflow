@@ -131,9 +131,9 @@ export enum LLMFactory {
   Synap = 'Synap',
   Wiro = 'Wiro AI',
   Crusoe = 'Crusoe',
+  MartLLM = 'MartLLM',
   HopBase = 'HopBase',
   GreenNode = 'GreenNode',
-  UberLLM = 'UberLLM',
 }
 
 // Please lowercase the file name
@@ -246,9 +246,9 @@ export const IconMap = {
   [LLMFactory.Synap]: 'synap',
   [LLMFactory.Wiro]: 'wiro',
   [LLMFactory.Crusoe]: 'crusoe',
+  [LLMFactory.MartLLM]: 'martllm',
   [LLMFactory.HopBase]: 'hopbase',
   [LLMFactory.GreenNode]: 'greennode',
-  [LLMFactory.UberLLM]: 'uberllm',
 };
 
 /**
@@ -311,8 +311,8 @@ export const APIMapUrl = {
   [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
   [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
   [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
+  [LLMFactory.MartLLM]: 'https://martllm.com/dashboard/keys',
   [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
-  [LLMFactory.UberLLM]: 'https://uberllm.dev/dashboard/keys',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
