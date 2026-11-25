@@ -71,7 +71,7 @@ func TestDefaultRunDocumentTask_WarnsWhenDatasetPipelineNotSelected(t *testing.T
 	}
 
 	logs := captureWarns(t)
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	err := ingestor.defaultRunDocumentTask(context.Background(), &entity.IngestionTask{
 		ID:         taskID,
 		DocumentID: docID,
@@ -113,7 +113,7 @@ func TestDefaultRunDocumentTask_NoWarnWhenDocSelectsPipeline(t *testing.T) {
 	}
 
 	logs := captureWarns(t)
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	err := ingestor.defaultRunDocumentTask(context.Background(), &entity.IngestionTask{
 		ID:         taskID,
 		DocumentID: docID,
@@ -144,7 +144,7 @@ func TestDefaultRunDocumentTask_NoWarnWhenDatasetHasNoPipeline(t *testing.T) {
 	)
 
 	logs := captureWarns(t)
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1)
 	err := ingestor.defaultRunDocumentTask(context.Background(), &entity.IngestionTask{
 		ID:         taskID,
 		DocumentID: docID,
