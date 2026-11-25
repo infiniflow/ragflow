@@ -232,12 +232,15 @@ func Run(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs
 
 	apiServerConfig := globalConfig.GetAPIServerConfig()
 
+	requestCtx, cancelRequests := newRequestContext(ctx)
+	defer cancelRequests()
+
 	// Create HTTP server with timeouts to prevent slow clients from blocking shutdown
 	addr := fmt.Sprintf(":%d", apiServerConfig.HTTPPort)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           ginEngine,
-		BaseContext:       func(net.Listener) context.Context { return ctx },
+		BaseContext:       func(net.Listener) context.Context { return requestCtx },
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		// WriteTimeout spans "request header read → response written", so it is a
