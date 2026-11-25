@@ -5,6 +5,7 @@ export interface IngestionEventItem {
   component: string;
   phase: number;
   message: string;
+  error_code?: string;
 }
 
 export interface IngestionMessagesResponse {
