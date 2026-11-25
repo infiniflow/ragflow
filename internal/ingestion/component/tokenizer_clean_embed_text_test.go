@@ -67,8 +67,8 @@ func TestCleanEmbedText(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := cleanEmbedText(c.in); got != c.want {
-				t.Fatalf("cleanEmbedText(%q) = %q, want %q", c.in, got, c.want)
+			if got := CleanEmbeddingText(c.in); got != c.want {
+				t.Fatalf("CleanEmbeddingText(%q) = %q, want %q", c.in, got, c.want)
 			}
 		})
 	}
@@ -79,12 +79,12 @@ func TestCleanEmbedText(t *testing.T) {
 // replaced, not just the first.
 func TestCleanEmbedTextStripsEveryMatch(t *testing.T) {
 	in := "<td>a</td><td>b</td><td>c</td>"
-	got := cleanEmbedText(in)
+	got := CleanEmbeddingText(in)
 	if strings.Contains(got, "<td>") || strings.Contains(got, "</td>") {
-		t.Fatalf("cleanEmbedText(%q) = %q, want every tag replaced", in, got)
+		t.Fatalf("CleanEmbeddingText(%q) = %q, want every tag replaced", in, got)
 	}
 	if got != "a  b  c" {
-		t.Fatalf("cleanEmbedText(%q) = %q, want %q", in, got, "a  b  c")
+		t.Fatalf("CleanEmbeddingText(%q) = %q, want %q", in, got, "a  b  c")
 	}
 }
 
