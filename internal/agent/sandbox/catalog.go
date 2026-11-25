@@ -29,7 +29,7 @@ type ValidationError struct{ Message string }
 func (e *ValidationError) Error() string { return e.Message }
 
 var providerOrder = []string{
-	"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "kosa8", "local",
+	"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "kosa8", "boxd", "local",
 }
 
 var providerMetadata = map[string]map[string]any{
@@ -41,6 +41,7 @@ var providerMetadata = map[string]map[string]any{
 	"tenki":                  {"name": "Tenki", "description": "Tenki - Disposable microVM code sandboxes", "tags": []any{"saas", "cloud", "microvm", "isolated"}},
 	"ucloud_agent_sandbox":   {"name": "UCloud Agent Sandbox", "description": "UCloud Agent Sandbox - Disposable cloud sandboxes for agent code execution", "tags": []any{"saas", "cloud", "isolated", "ucloud"}},
 	"kosa8":                  {"name": "kosa8", "description": "kosa8 - Disposable microVM sandboxes, hosted or self-hosted", "tags": []any{"saas", "self-hosted", "microvm", "isolated"}},
+	"boxd":                   {"name": "boxd", "description": "boxd - Disposable, isolated cloud machines (microVMs)", "tags": []any{"saas", "cloud", "microvm", "isolated"}},
 }
 
 func field(typ string, required bool, label string) map[string]any {
@@ -186,6 +187,30 @@ func ValidateConfig(provider string, config map[string]any) error {
 				return invalid("%s must not be empty", key)
 			}
 		}
+	case "boxd":
+		if strings.TrimSpace(stringValue(config["api_key"])) == "" {
+			return invalid("boxd API key is required")
+		}
+		if baseURL := strings.TrimSpace(stringValue(config["base_url"])); baseURL != "" {
+			if !strings.HasPrefix(baseURL, "https://") {
+				return invalid("boxd API URL must use https: %s", baseURL)
+			}
+			if _, _, _, err := boxdEndpoints(strings.TrimRight(baseURL, "/"), ""); err != nil {
+				return invalid("%s", strings.TrimPrefix(err.Error(), "boxd: "))
+			}
+		}
+		if region := strings.ToLower(strings.TrimSpace(stringValue(config["region"]))); region != "" && !boxdRegionPattern.MatchString(region) {
+			return invalid("invalid boxd region: %s", region)
+		}
+		if vcpu := integerOr(config["vcpu"], 0); !slices.Contains(boxdSizes, int(vcpu)) {
+			return invalid("vcpu must be 0, 1, 2, 4 or 8")
+		}
+		if prefix, present := config["name_prefix"]; present && stringValue(prefix) != "" && !boxdNamePrefixPattern.MatchString(stringValue(prefix)) {
+			return invalid("name_prefix must be up to 40 lowercase letters, digits and hyphens")
+		}
+		if _, err := parseBoxdLabels(stringValue(config["labels"])); err != nil {
+			return invalid("%s", strings.TrimPrefix(err.Error(), "boxd: "))
+		}
 	}
 	return nil
 }
@@ -317,6 +342,8 @@ func staticSchema(provider string) map[string]any {
 		return ucloudSchema()
 	case "kosa8":
 		return kosa8Schema()
+	case "boxd":
+		return boxdSchema()
 	}
 	return nil
 }
@@ -403,6 +430,24 @@ func kosa8Schema() map[string]any {
 		"allow_internet":     fieldWith("boolean", false, "Allow Internet Access", "default", false, "description", "Security-relevant. Disabled by default so sandboxed code has no network access. Enable it to let code make outbound connections (e.g. to install packages)."),
 		"timeout":            limits("integer", false, "Timeout (seconds)", 30, 1, 600, "Maximum execution time for a single run."),
 		"max_lifetime":       limits("integer", false, "Max Sandbox Lifetime (seconds)", 3600, 60, 86400, "kosa8 deletes a sandbox after this, guarding against leaks if the run is interrupted."),
+		"max_output_bytes":   limits("integer", false, "Max Output Bytes", 1048576, 1024, 10485760, "Maximum combined stdout and stderr size."),
+		"max_artifacts":      limits("integer", false, "Max Artifacts", 20, 0, 100, "Maximum number of files collected from the sandbox artifacts directory."),
+		"max_artifact_bytes": limits("integer", false, "Max Artifact Bytes", 10485760, 1024, 104857600, "Maximum size of a single artifact file in bytes."),
+	}
+}
+
+func boxdSchema() map[string]any {
+	return map[string]any{
+		"api_key":            fieldWith("string", true, "API Key", "secret", true, "placeholder", "bxd_...", "description", "boxd API key. Create one at https://app.boxd.sh?ref=ragflow under API keys."),
+		"region":             fieldWith("string", false, "Region", "placeholder", "fra", "description", "Region the machines run in: fra (Frankfurt) or nyc (New York). Empty uses fra."),
+		"org":                fieldWith("string", false, "Organization", "description", "boxd organization to create machines in, by name or id. Empty uses the API key's organization."),
+		"vcpu":               limits("integer", false, "vCPUs", 0, 0, 8, "Machine size: 1, 2, 4 or 8 vCPUs with 4 GB of memory per vCPU. 0 uses the organization's default size."),
+		"allow_internet":     fieldWith("boolean", false, "Allow Internet Access", "default", false, "description", "Security-relevant. Disabled by default so sandboxed code has no network access. Enable it to let code make outbound connections (e.g. to install packages)."),
+		"timeout":            limits("integer", false, "Timeout (seconds)", 30, 1, 600, "Maximum execution time for a single run."),
+		"max_lifetime":       limits("integer", false, "Max Machine Lifetime (seconds)", 3600, 60, 86400, "boxd deletes a machine after this, guarding against leaks if the run is interrupted."),
+		"name_prefix":        fieldWith("string", false, "Machine Name Prefix", "default", "ragflow-sandbox-", "description", "Machine names start with this prefix, so they are easy to find in the boxd console."),
+		"labels":             fieldWith("string", false, "Machine Labels", "placeholder", "team=data,env=prod", "description", "Labels added to every machine, as comma-separated key=value pairs. created-by=ragflow is always set."),
+		"base_url":           fieldWith("string", false, "API Endpoint", "placeholder", "https://boxd.sh:9443", "description", "Override the boxd API endpoint. Leave empty for boxd.sh."),
 		"max_output_bytes":   limits("integer", false, "Max Output Bytes", 1048576, 1024, 10485760, "Maximum combined stdout and stderr size."),
 		"max_artifacts":      limits("integer", false, "Max Artifacts", 20, 0, 100, "Maximum number of files collected from the sandbox artifacts directory."),
 		"max_artifact_bytes": limits("integer", false, "Max Artifact Bytes", 10485760, 1024, 104857600, "Maximum size of a single artifact file in bytes."),

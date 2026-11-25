@@ -268,6 +268,28 @@ Create an API key in the [kosa8 dashboard](https://app.kosa8.com). Each executio
 
 The settings can also come from the `KOSA8_API_KEY`, `KOSA8_API_URL`, `KOSA8_PYTHON_TEMPLATE`, `KOSA8_NODE_TEMPLATE`, `KOSA8_TIMEOUT`, and `KOSA8_ALLOW_INTERNET` environment variables when `SANDBOX_PROVIDER_TYPE=kosa8`. Keep internet access disabled unless executed code requires it. Artifacts are read through the kosa8 files API; a kosa8 host without it runs code normally but returns no artifacts. A run longer than 90 seconds on a host that cannot time a streamed command is timed with the template's `timeout` command, and fails if the template has none.
 
+## Configure boxd
+
+Create an API key in the [boxd console](https://app.boxd.sh?ref=ragflow) under **API keys**. Each execution runs in a new, isolated [boxd](https://boxd.sh?ref=ragflow) machine with Python 3 and Node.js. RAGFlow closes the machine's outbound network before code runs, unless you allow internet access, and deletes the machine when the run ends. Then select **boxd** in **Admin > Sandbox** and configure:
+
+| Setting | Required | Default | Description |
+| --- | --- | --- | --- |
+| **API Key** | Yes | — | Begins with `bxd_`. |
+| **Region** | No | `fra` | `fra` (Frankfurt) or `nyc` (New York). |
+| **Organization** | No | The API key's organization | The boxd organization to create machines in, by name or ID. |
+| **vCPUs** | No | `0` | `1`, `2`, `4`, or `8` vCPUs, with 4 GB of memory per vCPU. `0` uses the organization's default size. |
+| **Allow Internet Access** | No | Disabled | Applied as the machine's egress policy before code runs. Enable only when required. |
+| **Timeout (seconds)** | No | `30` | Range: 1–600. |
+| **Max Machine Lifetime (seconds)** | No | `3600` | Range: 60–86400. boxd deletes a machine after this even if the run is interrupted. |
+| **Machine Name Prefix** | No | `ragflow-sandbox-` | Machine names start with it, so you can find them in the boxd console. |
+| **Machine Labels** | No | — | Comma-separated `key=value` pairs added to every machine. `created-by=ragflow` is always set. |
+| **API Endpoint** | No | `https://boxd.sh:9443` | Override the boxd API endpoint. Must use HTTPS. |
+| **Max Output Bytes** | No | `1048576` | Combined stdout and stderr. |
+| **Max Artifacts** | No | `20` | Number of returned files. |
+| **Max Artifact Bytes** | No | `10485760` | Per returned file. |
+
+The settings can also come from the `BOXD_API_KEY`, `BOXD_BASE_URL`, `BOXD_REGION`, `BOXD_ORG`, `BOXD_TIMEOUT`, and `BOXD_ALLOW_INTERNET` environment variables when `SANDBOX_PROVIDER_TYPE=boxd`. Keep internet access disabled unless executed code requires it. A new machine takes a few seconds to start, so each execution has that much more latency than with a warm pool.
+
 ## Verify code execution
 
 After saving the provider:
