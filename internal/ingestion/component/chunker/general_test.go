@@ -1710,6 +1710,63 @@ func TestGeneralContextSourceTextProjectsMergedRows(t *testing.T) {
 	}
 }
 
+func TestGeneralContextSourceTextSkipsHeaderOnlyTableWithoutPanicking(t *testing.T) {
+	// An all-empty table parses into a nil grid while BuildTableData keeps
+	// HeaderRows==1, so headerCount exceeds the row count.
+	td, err := tableutil.ParseTableHTML("<table><tr></tr></table>")
+	if err != nil {
+		t.Fatalf("ParseTableHTML: %v", err)
+	}
+	if td.HeaderRows <= len(td.Grid) {
+		t.Fatalf("test setup: HeaderRows=%d, grid rows=%d, want header past the grid", td.HeaderRows, len(td.Grid))
+	}
+	got, ok := generalContextSourceText(schema.ChunkDoc{
+		DocType:   "table",
+		Sheet:     "Sheet1",
+		TableData: td,
+	})
+	if ok || got != "" {
+		t.Fatalf("generalContextSourceText = (%q, %v), want (\"\", false)", got, ok)
+	}
+}
+
+func TestGeneralChunkerSpreadsheetEmptySegmentDoesNotPanicMediaContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   100,
+		"table_context_size": 8,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	empty := map[string]any{
+		"table":        map[string]any{"grid": [][]entity.TableCell{}, "header_rows": 1, "caption": "Sheet1"},
+		"text":         "",
+		"doc_type_kwd": "table",
+		"sheet_index":  1,
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "workbook.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			empty,
+			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Revenue"}}, 1, 2),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	var sawData bool
+	for _, chunk := range outputChunks(t, out) {
+		if text, _ := chunk["text"].(string); strings.Contains(text, "Revenue") {
+			sawData = true
+		}
+	}
+	if !sawData {
+		t.Fatalf("chunks = %#v, want the data segment preserved", outputChunks(t, out))
+	}
+}
+
 func TestGeneralChunkerMarkdownPreservesUnresolvedImageReferences(t *testing.T) {
 	markdown, err := parserlib.NewMarkdownParser(parserlib.GoMarkdown)
 	if err != nil {

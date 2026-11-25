@@ -73,7 +73,7 @@ export function SwitchFormField({
           <FormControl>
             <Switch
               checked={field.value}
-              disabled={disabled}
+              disabled={disabled || field.disabled}
               onCheckedChange={field.onChange}
               aria-readonly
               className="!m-0"

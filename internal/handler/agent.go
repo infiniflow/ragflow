@@ -84,7 +84,7 @@ type AgentHandler struct {
 	// client (kvrocks.Get) so production behaviour is unchanged; tests inject
 	// a miniredis-backed getter to exercise Agent log endpoints without a
 	// live Redis (mirrors the newExecutor injection pattern).
-	redisGet func(key string) (string, error)
+	redisGet func(ctx context.Context, key string) (string, error)
 	// redisStore writes the debug-run log array. Defaults to the global
 	// client (kvrocks.Get, which satisfies task.DebugLogStore); tests inject a
 	// miniredis-backed writer so runCanvasPipelineDebug can be exercised without a
@@ -115,7 +115,7 @@ func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fi
 		chatRunner:   agentService,
 		fileService:  fileService,
 		loader:       agentService,
-		redisGet:     func(key string) (string, error) { return kvrocks.Get().Get(ctx, key) },
+		redisGet:     func(ctx context.Context, key string) (string, error) { return kvrocks.Get().Get(ctx, key) },
 		redisStore:   kvrocks.Get(),
 		newExecutor: func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
 			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize, &ingestion.Deps{
@@ -131,7 +131,7 @@ func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fi
 // WithRedisGetter overrides the Redis string getter used by Agent log endpoints.
 // Tests pass a miniredis-backed getter so polling can be exercised end-to-end
 // without a live Redis.
-func (h *AgentHandler) WithRedisGetter(f func(key string) (string, error)) *AgentHandler {
+func (h *AgentHandler) WithRedisGetter(f func(ctx context.Context, key string) (string, error)) *AgentHandler {
 	h.redisGet = f
 	return h
 }
@@ -1628,7 +1628,7 @@ func (h *AgentHandler) persistAgentToolInvocations(ctx context.Context, canvasID
 	key := fmt.Sprintf("%s-%s-logs", canvasID, ev.MessageID)
 	var entries []map[string]any
 	if h.redisGet != nil {
-		if payload, err := h.redisGet(key); err == nil {
+		if payload, err := h.redisGet(ctx, key); err == nil {
 			_ = json.Unmarshal([]byte(payload), &entries)
 		}
 	}
@@ -1691,7 +1691,7 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	}
 
 	key := fmt.Sprintf("%s-%s-logs", canvasID, messageID)
-	payload, rerr := h.redisGet(key)
+	payload, rerr := h.redisGet(c.Request.Context(), key)
 	var data interface{} = map[string]interface{}{}
 	if rerr == nil {
 		data = parseAgentLogs(payload)
@@ -1734,7 +1734,7 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 		jsonInternalError(c, errors.New("agent webhook trace: redis getter not configured"))
 		return
 	}
-	payload, err := h.redisGet(fmt.Sprintf("webhook-trace-%s-logs", canvasID))
+	payload, err := h.redisGet(ctx, fmt.Sprintf("webhook-trace-%s-logs", canvasID))
 	if err != nil {
 		jsonInternalError(c, fmt.Errorf("read agent webhook trace: %w", err))
 		return

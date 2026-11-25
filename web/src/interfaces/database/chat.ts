@@ -140,6 +140,7 @@ export interface IConversation {
   create_time: number;
   chat_id: string;
   id: string;
+  user_id?: string;
   avatar: string;
   messages: Message[];
   name: string;

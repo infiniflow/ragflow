@@ -1,4 +1,5 @@
 import { NextMessageInput } from '@/components/message-input/next';
+import { useChatSessionAccess } from '@/ee/pages/next-chats/chat-session-access';
 import MessageItem from '@/components/message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
@@ -41,9 +42,15 @@ export function SingleChatBox({ conversation }: IProps) {
   } = useSendMessage();
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchChat();
+  const { conversationId, isNew } = useGetChatSearchParams();
+  const sessionAccess = useChatSessionAccess(
+    currentDialog,
+    userInfo.id,
+    conversation.user_id,
+    !conversationId || isNew === 'true' || conversation.is_new,
+  );
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
-  const { conversationId } = useGetChatSearchParams();
   const disabled = useGetSendButtonDisabled();
   const sendDisabled = useSendButtonDisabled(value);
   const isChannelConversation =
@@ -104,11 +111,16 @@ export function SingleChatBox({ conversation }: IProps) {
               index={i}
               isLast={(messages?.length ?? 0) - 1 === i}
               removeMessageById={
-                isChannelConversation ? undefined : removeMessageById
+                isChannelConversation || !sessionAccess.canDeleteMessages
+                  ? undefined
+                  : removeMessageById
               }
+              showLikeButton={sessionAccess.canFeedback}
               deleteDisabled={message.awaitingServerId}
               regenerateMessage={
-                isChannelConversation ? undefined : regenerateMessage
+                isChannelConversation || !sessionAccess.canSend
+                  ? undefined
+                  : regenerateMessage
               }
               sendLoading={sendLoading}
             />
@@ -118,8 +130,10 @@ export function SingleChatBox({ conversation }: IProps) {
 
       <div className="p-5 pt-0">
         <NextMessageInput
-          disabled={disabled || isChannelConversation}
-          sendDisabled={sendDisabled || isChannelConversation}
+          disabled={disabled || isChannelConversation || !sessionAccess.canSend}
+          sendDisabled={
+            sendDisabled || isChannelConversation || !sessionAccess.canSend
+          }
           sendLoading={sendLoading}
           value={value}
           resize="vertical"

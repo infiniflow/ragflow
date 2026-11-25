@@ -676,6 +676,13 @@ func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
 		// rows, and a colspan is not duplicated. CellTexts would skip every
 		// Covered slot, dropping a data rowspan from the context entirely.
 		rows, headerCount := tableutil.ResolveRows(td, tableutil.RowsData), td.HeaderRows
+		// A header-only segment has no data row to contribute, and BuildTableData
+		// keeps HeaderRows==1 even when every cell was empty and the grid is nil,
+		// so headerCount can meet or exceed len(rows). Return instead of slicing
+		// past the grid.
+		if len(rows) <= headerCount {
+			return "", false
+		}
 		lines := make([]string, 0, len(rows)-headerCount)
 		for _, row := range rows[headerCount:] {
 			cells := make([]string, 0, len(row))

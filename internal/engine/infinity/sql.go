@@ -27,6 +27,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"ragflow/internal/common"
@@ -46,14 +48,85 @@ var whitespaceRe = regexp.MustCompile("[ `]+")
 
 var rowCountFooterRe = regexp.MustCompile(`^\(\d+ rows?`)
 
+var selectClauseRe = regexp.MustCompile(`(?si)(select\s+)(.+?)(\s+from\b)`)
+
+// Alias patterns are pure functions of the alias string, so they are compiled
+// once per alias and reused across every RunSQL call.
+var (
+	aliasBoundaryRegexCache sync.Map
+	aliasWordRegexCache     sync.Map
+	keywordRegexCache       sync.Map
+)
+
+func cachedKeywordRegex(keyword string) *regexp.Regexp {
+	if cached, ok := keywordRegexCache.Load(keyword); ok {
+		return cached.(*regexp.Regexp)
+	}
+	compiled := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(keyword) + `\b`)
+	actual, _ := keywordRegexCache.LoadOrStore(keyword, compiled)
+	return actual.(*regexp.Regexp)
+}
+
+func cachedAliasBoundaryRegex(alias string) *regexp.Regexp {
+	if cached, ok := aliasBoundaryRegexCache.Load(alias); ok {
+		return cached.(*regexp.Regexp)
+	}
+	compiled := regexp.MustCompile(`(^|[,\s])` + regexp.QuoteMeta(alias) + `($|[,\s])`)
+	actual, _ := aliasBoundaryRegexCache.LoadOrStore(alias, compiled)
+	return actual.(*regexp.Regexp)
+}
+
+func cachedAliasWordRegex(alias string) *regexp.Regexp {
+	if cached, ok := aliasWordRegexCache.Load(alias); ok {
+		return cached.(*regexp.Regexp)
+	}
+	compiled := regexp.MustCompile(`\b` + regexp.QuoteMeta(alias) + `\b`)
+	actual, _ := aliasWordRegexCache.LoadOrStore(alias, compiled)
+	return actual.(*regexp.Regexp)
+}
+
 // fieldMappingEntry is one entry in infinity_mapping.json.
 type fieldMappingEntry struct {
 	Type    string `json:"type"`
 	Comment string `json:"comment"`
 }
 
+// fieldMappingCacheEntry is the parsed result reused across RunSQL calls.
+// The file fingerprint keeps the runtime-reload behavior the baseline had:
+// a replaced or edited mapping file must be picked up on the next query.
+type fieldMappingCacheEntry struct {
+	aliasToActual      map[string]string
+	actualToFirstAlias map[string]string
+	modTime            time.Time
+	size               int64
+}
+
+// fieldMappingCache is keyed by the resolved mapping file path, so two
+// projects with the same file name never share an entry.
+var fieldMappingCache sync.Map
+
+// fieldMappingGeneration detects an invalidation that lands while a cold load
+// is reading the file; such a load must not republish the old mapping.
+var fieldMappingGeneration atomic.Uint64
+
+// readFieldMappingFile is an indirection so tests can interleave a file
+// replacement or an invalidation with the read.
+var readFieldMappingFile = os.ReadFile
+
+// InvalidateFieldMapping drops all cached field mappings. Call after a mapping
+// file is replaced at runtime, or in tests that rewrite the fixture in place.
+func InvalidateFieldMapping() {
+	fieldMappingGeneration.Add(1)
+	fieldMappingCache.Range(func(key, _ any) bool {
+		fieldMappingCache.Delete(key)
+		return true
+	})
+}
+
 // loadFieldMapping reads infinity_mapping.json and returns alias→actual
 // and actual→firstAlias maps. Silently returns empty maps on missing file.
+// Parsed results are cached per resolved file path because RunSQL calls this
+// on every query.
 func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, actualToFirstAlias map[string]string, err error) {
 	if mappingFileName == "" {
 		mappingFileName = "infinity_mapping.json"
@@ -64,7 +137,20 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 		return nil, nil, err
 	}
 
-	data, err := os.ReadFile(*filePath)
+	// Stat is cheap compared with ReadFile + Unmarshal. The pre-read fingerprint
+	// describes the bytes we are about to parse and is the only one we publish.
+	preInfo, preStatErr := os.Stat(*filePath)
+	if preStatErr == nil {
+		if cached, ok := fieldMappingCache.Load(*filePath); ok {
+			cachedEntry := cached.(fieldMappingCacheEntry)
+			if cachedEntry.modTime.Equal(preInfo.ModTime()) && cachedEntry.size == preInfo.Size() {
+				return cachedEntry.aliasToActual, cachedEntry.actualToFirstAlias, nil
+			}
+		}
+	}
+	generation := fieldMappingGeneration.Load()
+
+	data, err := readFieldMappingFile(*filePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return map[string]string{}, map[string]string{}, nil
@@ -98,6 +184,20 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 			actualToFirstAlias[actual] = firstAlias
 		}
 	}
+	// Publish only when the file was unchanged across the read and no
+	// invalidation landed in between. Otherwise the parsed bytes describe a
+	// file state that is no longer current.
+	if preStatErr == nil && fieldMappingGeneration.Load() == generation {
+		if postInfo, postStatErr := os.Stat(*filePath); postStatErr == nil &&
+			postInfo.ModTime().Equal(preInfo.ModTime()) && postInfo.Size() == preInfo.Size() {
+			fieldMappingCache.Store(*filePath, fieldMappingCacheEntry{
+				aliasToActual:      aliasToActual,
+				actualToFirstAlias: actualToFirstAlias,
+				modTime:            preInfo.ModTime(),
+				size:               preInfo.Size(),
+			})
+		}
+	}
 	return aliasToActual, actualToFirstAlias, nil
 }
 
@@ -114,13 +214,11 @@ func rewriteFieldAliases(sql string, aliasToActual map[string]string) string {
 	if len(aliasToActual) == 0 {
 		return sql
 	}
-	selectRe := regexp.MustCompile(`(?si)(select\s+)(.+?)(\s+from\b)`)
-	sql = selectRe.ReplaceAllStringFunc(sql, func(m string) string {
-		parts := selectRe.FindStringSubmatch(m)
+	sql = selectClauseRe.ReplaceAllStringFunc(sql, func(m string) string {
+		parts := selectClauseRe.FindStringSubmatch(m)
 		prefix, cols, suffix := parts[1], parts[2], parts[3]
 		for alias, actual := range aliasToActual {
-			pat := regexp.MustCompile(`(^|[,\s])` + regexp.QuoteMeta(alias) + `($|[,\s])`)
-			cols = pat.ReplaceAllString(cols, "${1}"+actual+"${2}")
+			cols = cachedAliasBoundaryRegex(alias).ReplaceAllString(cols, "${1}"+actual+"${2}")
 		}
 		return prefix + cols + suffix
 	})
@@ -136,12 +234,14 @@ func rewriteFieldAliases(sql string, aliasToActual map[string]string) string {
 }
 
 func rewriteFirstAliasAfterKeyword(sql, keyword string, aliasToActual map[string]string) string {
+	// The keyword pattern is identical for every alias in this clause; compile
+	// it once instead of once per alias.
+	kwIdx := cachedKeywordRegex(keyword).FindStringIndex(sql)
+	if kwIdx == nil {
+		return sql
+	}
 	for alias, actual := range aliasToActual {
-		aliasPat := regexp.MustCompile(`\b` + regexp.QuoteMeta(alias) + `\b`)
-		kwIdx := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(keyword) + `\b`).FindStringIndex(sql)
-		if kwIdx == nil {
-			continue
-		}
+		aliasPat := cachedAliasWordRegex(alias)
 		tail := sql[kwIdx[1]:]
 		aliasIdx := aliasPat.FindStringIndex(tail)
 		if aliasIdx == nil {

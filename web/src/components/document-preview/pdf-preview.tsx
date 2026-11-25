@@ -14,7 +14,8 @@
  *  limitations under the License.
  */
 
-import { memo, useEffect, useRef } from 'react';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   AreaHighlight,
   Highlight,
@@ -38,8 +39,14 @@ type PdfLoaderProps = React.ComponentProps<typeof PdfLoader> & {
 };
 
 const Loader = PdfLoader as React.ComponentType<PdfLoaderProps>;
+export type PdfPageLocator = (
+  pdf: PDFDocumentProxy,
+  signal: AbortSignal,
+) => Promise<number | undefined>;
+
 export interface IProps {
   highlights?: IHighlight[];
+  locatePage?: PdfPageLocator;
   setWidthAndHeight?: (width: number, height: number) => void;
   url: string;
   className?: string;
@@ -58,6 +65,7 @@ const HighlightPopup = ({
 // TODO: merge with DocumentPreviewer
 const PdfPreview = ({
   highlights: state,
+  locatePage,
   setWidthAndHeight,
   url,
   className,
@@ -66,6 +74,32 @@ const PdfPreview = ({
 
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
   const error = useCatchDocumentError(url);
+  const highlighterRef = useRef<PdfHighlighter<IHighlight>>(null);
+  const [readyPDF, setReadyPDF] = useState<{
+    url: string;
+    document: PDFDocumentProxy;
+  }>();
+  useEffect(() => {
+    const viewer = highlighterRef.current?.viewer;
+    if (!locatePage || !viewer || readyPDF?.url !== url) return;
+
+    const controller = new AbortController();
+    void locatePage(readyPDF.document, controller.signal).then(
+      (pageNumber) => {
+        if (
+          !controller.signal.aborted &&
+          pageNumber !== undefined &&
+          Number.isInteger(pageNumber) &&
+          pageNumber >= 1 &&
+          pageNumber <= viewer.pagesCount
+        ) {
+          viewer.scrollPageIntoView({ pageNumber });
+        }
+      },
+      () => {},
+    );
+    return () => controller.abort();
+  }, [locatePage, readyPDF, url]);
 
   const resetHash = () => {};
 
@@ -94,6 +128,7 @@ const PdfPreview = ({
       )}
     >
       <Loader
+        key={locatePage ? url : undefined}
         url={url}
         httpHeaders={httpHeaders}
         beforeLoad={
@@ -117,11 +152,13 @@ const PdfPreview = ({
 
           return (
             <PdfHighlighter
+              ref={highlighterRef}
               pdfDocument={pdfDocument}
               enableAreaSelection={(event) => event.altKey}
               onScrollChange={resetHash}
               scrollRef={(scrollTo) => {
                 ref.current = scrollTo;
+                if (locatePage) setReadyPDF({ url, document: pdfDocument });
               }}
               onSelectionFinished={() => null}
               highlightTransform={(

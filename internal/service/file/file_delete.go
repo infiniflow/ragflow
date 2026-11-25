@@ -73,14 +73,6 @@ func removeFileObject(ctx context.Context, storageImpl storage.Storage, file *en
 		if storageImpl == nil {
 			return fmt.Errorf("storage is not configured for file %s", file.ID)
 		}
-		exists, err := storageImpl.ObjectExists(ctx, file.ParentID, *file.Location)
-		if err != nil {
-			return fmt.Errorf("check file %s: %w", file.ID, err)
-		}
-		if !exists {
-			common.Warn("File object already missing", zap.String("file", fileNameAndID(file)), zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
-			return nil
-		}
 		if err := storageImpl.Remove(ctx, file.ParentID, *file.Location); err != nil {
 			return fmt.Errorf("remove file %s: %w", file.ID, err)
 		}
