@@ -25,7 +25,7 @@ All long-running RAGFlow processes started below use `bin/ragflow_server`.
 - A recommended starting configuration of 4 CPU cores, 16 GB RAM, and 50 GB free disk space. Actual requirements depend on the selected document engine, local models, data volume, parsing workload, and concurrency.
 - Docker 24.0.0 or later and Docker Compose v2.26.1 or later.
 - Go 1.27 or later, as declared in `go.mod` (check `go version`).
-- CMake 4.0 or later, Clang 20, LLD 20, and PCRE2 development headers.
+- CMake 4.0 or later, Clang 20, and PCRE2 development headers. On Linux, LLD 20 is also required.
 - Node.js 18.20.4 or later and npm for the frontend.
 - Python 3.10 or later for `tools/scripts/download_dev_deps.py` and `deps/download_deps.py`, which download the native libraries and model resources required by the Go build.
 
@@ -39,7 +39,7 @@ cd ragflow
 go version
 cmake --version
 clang++ --version
-ld.lld --version
+ld.lld --version   # Linux only
 ```
 
 Install Go 1.27 or later if needed; make sure the Go executable selected by your shell meets the requirement in `go.mod`. Install `uv` as well; the dependency downloaders run through it. On Ubuntu, install the compiler, linker, PCRE2 headers, Python 3, and command-line tools used by the build with:
@@ -74,6 +74,8 @@ export CC="$LLVM_PREFIX/bin/clang"
 export CXX="$LLVM_PREFIX/bin/clang++"
 ```
 
+Known limitation: `bash build.sh --all` fails to configure on Intel Macs because the build passes Go's `amd64` to CMake as `CMAKE_OSX_ARCHITECTURES`, while the PCRE2 architecture check expects `x86_64`. See [#22759](https://github.com/infiniflow/ragflow/issues/22759); until it is fixed, pass a matching PCRE2 archive with `RAGFLOW_CMAKE_ARGS=-DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a`. Apple Silicon is unaffected.
+
 macOS builds are not covered by project CI and are not independently verified by the maintainers; report build problems as issues.
 
 Download the native static libraries and the runtime model / tokenizer resources with the two dependency downloaders (`uv run` installs each script's declared Python dependencies):
@@ -106,7 +108,7 @@ Check that the newly built executable can load and parse its arguments:
 
 It should print server usage information and exit successfully. This command only checks that the binary can load and parse arguments; it does not initialize DeepDoc, connect to dependencies, or prove that the API can start. Complete the runtime checks in section 5 after starting the dependencies and Go processes.
 
-The Go/C++ build requires LLD 20. Confirm that `ld.lld --version` reports LLD 20 before building; merely installing `lld-20` is insufficient when an older `ld.lld` remains the system default. If the binary builds successfully but exits or crashes before reaching Go `main`, verify the selected linker and rebuild with LLD 20.
+On Linux, the Go/C++ build requires LLD 20. Confirm that `ld.lld --version` reports LLD 20 before building; merely installing `lld-20` is insufficient when an older `ld.lld` remains the system default. If the binary builds successfully but exits or crashes before reaching Go `main`, verify the selected linker and rebuild with LLD 20. macOS uses the system linker and does not require LLD.
 
 To prepare the resource image used by the Go Dockerfile, first run `uv run deps/download_deps.py` (above) to populate `deps/`, then build from `deps/`:
 
