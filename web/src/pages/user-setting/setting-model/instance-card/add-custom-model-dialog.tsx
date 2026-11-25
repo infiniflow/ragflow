@@ -301,12 +301,23 @@ export const AddCustomModelDialog = ({
       for (const key of providerFeatureKeys ?? []) {
         extra[key] = selectedSet.has(key);
       }
+      // Pin the tool-calling toggle into `extra` too (it normally stays
+      // in `features`) so an explicit "off" survives the draft default
+      // that otherwise turns tool calling on for every model.
+      const hasToolOption = fields.some(
+        (field) =>
+          field.name === 'features' &&
+          field.options?.some((opt) => opt.value === 'is_tools'),
+      );
+      if (hasToolOption) {
+        extra.is_tools = featuresArray.includes('is_tools');
+      }
       if (Object.keys(extra).length > 0) {
         item.extra = extra;
       }
       onSubmit(item);
     },
-    [onSubmit, providerFeatureKeys],
+    [onSubmit, providerFeatureKeys, fields],
   );
 
   // Reset form whenever the dialog opens/closes, applying defaultValues for edit mode.
@@ -324,7 +335,7 @@ export const AddCustomModelDialog = ({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <div className=" max-h-[70vh] overflow-y-auto mb-12">
+        <div className=" max-h-[70vh] overflow-y-auto mb-12 pl-1">
           <DynamicForm.Root
             ref={formRef}
             fields={dynamicFields}

@@ -496,6 +496,8 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           visible={isModalVisible}
           onCancel={() => setIsModalVisible(false)}
           logInfo={modalLogInfo as ILogInfo}
+          datasetId={datasetId}
+          logId={selectedLogID}
         />
       )}
     </>

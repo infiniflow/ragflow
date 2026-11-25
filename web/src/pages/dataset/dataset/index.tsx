@@ -258,6 +258,7 @@ export default function Dataset() {
             // selectedRowKeys={selectedRowKeys}
             tableData={tableData}
             isCanAdd={metadataConfig.isCanAdd}
+            readOnly={metadataConfig.readOnly}
             isAddValue={metadataConfig.isAddValue}
             isVerticalShowValue={metadataConfig.isVerticalShowValue}
             isEditField={metadataConfig.isEditField}

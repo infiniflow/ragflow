@@ -359,7 +359,7 @@ func TestEmbedChunks_AllCacheHitsReportsTerminalDetail(t *testing.T) {
 		t.Fatal("expected a terminal detail event on all-cache-hit path, got none")
 	}
 	last := details[len(details)-1]
-	if last.component != "Tokenizer:cache" || last.unit != "chunk" || last.current != 2 || last.total != 2 {
+	if last.component != "Tokenizer:cache" || last.unit != "chunk:embed" || last.current != 2 || last.total != 2 {
 		t.Errorf("terminal detail = %+v, want Tokenizer:cache/chunk/2/2", last)
 	}
 }

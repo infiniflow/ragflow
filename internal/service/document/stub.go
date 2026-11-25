@@ -24,8 +24,14 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 )
+
+func (s *DocumentService) stopIngestionTasks(ctx context.Context, taskIDs []string) ([]*entity.IngestionTask, error) {
+	userID := permission.UserIDFromContext(ctx)
+	return s.ingestionTaskSvc.RequestStopMany(ctx, taskIDs, &userID)
+}
 
 // grantDocumentOwnerEE grants nothing: the community edition has no document
 // permission records.

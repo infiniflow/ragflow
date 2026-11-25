@@ -169,6 +169,14 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
+	permissionMask, permissionErr := documentOperatorPermission(ctx, documentID)
+	if permissionErr != nil {
+		respondPermissionError(c, permissionErr, false)
+		return
+	}
+	if resp.Doc != nil {
+		resp.Doc["operator_permission"] = permissionMask
+	}
 
 	common.RespondSuccess(c, resp, "success")
 }

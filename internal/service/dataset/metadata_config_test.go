@@ -184,6 +184,9 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 	insertDatasetMetadataConfigKB(t, "kb-1", "owner-1")
 	ensureDatasetTestMembership(t, "user-1", "owner-1", "normal")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("created_by", "owner-1").Error; err != nil {
+		t.Fatalf("set document owner: %v", err)
+	}
 
 	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
@@ -558,7 +561,11 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 		missingTenantCtx, "kb-bad-tenant", "doc2",
 		map[string]interface{}{"metadata": map[string]interface{}{"a": "b"}},
 	)
-	if code != common.CodeServerError || err == nil {
-		t.Fatalf("expected server error for tenant lookup failure, got code=%v err=%v", code, err)
+	wantCode := common.CodeServerError
+	if datasetTestResourcePermissionsAvailable() {
+		wantCode = common.CodeForbidden
+	}
+	if code != wantCode || err == nil {
+		t.Fatalf("tenant lookup failure code=%v err=%v, want code=%v", code, err, wantCode)
 	}
 }

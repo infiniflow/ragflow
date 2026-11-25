@@ -32,6 +32,34 @@ import (
 	"gorm.io/gorm"
 )
 
+// CheckDocumentWrite checks whether the caller can write the document.
+func CheckDocumentWrite(ctx context.Context, documentID, datasetID string, datasetOperation, documentOperation permission.Operation) error {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	if datasetOperation != "" {
+		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, datasetOperation); err != nil {
+			return err
+		}
+	}
+	if documentOperation == "" {
+		return nil
+	}
+	return checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: documentID}, documentOperation)
+}
+
+// CheckDocumentManage preserves the community permission checks.
+func CheckDocumentManage(ctx context.Context, documentID, datasetID string, datasetOperation, documentOperation permission.Operation) error {
+	checker := permission.NewDatabaseChecker(dao.DB)
+	if datasetOperation != "" {
+		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, datasetOperation); err != nil {
+			return err
+		}
+	}
+	if documentOperation == "" {
+		return nil
+	}
+	return checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: documentID}, documentOperation)
+}
+
 // configExtras is empty in the community edition.
 type configExtras struct{}
 

@@ -58,6 +58,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isDeleteSingleValue,
     tableData: originalTableData,
     isCanAdd,
+    readOnly = false,
     type: metadataType,
     otherData,
     isEditField,
@@ -179,6 +180,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
   );
 
   const handAddValueRow = () => {
+    if (readOnly) return;
     setValueData({
       field: '',
       description: '',
@@ -195,16 +197,18 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
   };
   const handleEditValueRow = useCallback(
     (data: IMetaDataTableData, index: number) => {
+      if (readOnly) return;
       setCurrentValueIndex(index);
       setValueData(data);
       showManageValuesModal();
     },
-    [showManageValuesModal],
+    [readOnly, showManageValuesModal],
   );
   const { rowSelection, rowSelectionIsEmpty, setRowSelection, selectedCount } =
     useRowSelection();
   const { columns, deleteDialogContent } = useMetadataColumns({
     isDeleteSingleValue: !!isDeleteSingleValue,
+    readOnly,
     metadataType,
     setTableData,
     handleDeleteSingleValue,
@@ -231,6 +235,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
   });
 
   const handleSaveValues = (data: IMetaDataTableData) => {
+    if (readOnly) return;
     setTableData((prev) => {
       let newData;
       if (currentValueIndex >= prev.length) {
@@ -275,14 +280,14 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
   };
 
   useEffect(() => {
-    if (shouldSave) {
+    if (shouldSave && !readOnly) {
       const timer = setTimeout(() => {
         handleSave({ callback: () => {}, builtInMetadata: builtInSelection });
         setShouldSave(false);
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [tableData, shouldSave, handleSave, builtInSelection]);
+  }, [tableData, shouldSave, handleSave, builtInSelection, readOnly]);
 
   const existsKeys = useMemo(() => {
     return tableData.map((item) => item.field);
@@ -300,6 +305,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       label: t('common.delete'),
       icon: <Trash2 />,
       onClick: async () => {
+        if (readOnly) return;
         await handleDelete();
         setRowSelection({});
         // if (code === 0) {
@@ -315,10 +321,15 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
         open={visible}
         onCancel={hideModal}
         maskClosable={false}
+        showfooter={!readOnly}
         okText={t('common.save')}
         testId={testId}
         okButtonTestId={okButtonTestId}
         onOk={async () => {
+          if (readOnly) {
+            hideModal();
+            return;
+          }
           const res = await handleSave({
             callback: hideModal,
             builtInMetadata: builtInSelection,
@@ -334,6 +345,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
               </div>
               <div>
                 {isCanAdd &&
+                  !readOnly &&
                   activeTab !== 'built-in' &&
                   !(
                     metadataType === MetadataType.Setting ||
@@ -353,7 +365,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
               </div>
             </div>
 
-            {rowSelectionIsEmpty || (
+            {readOnly || rowSelectionIsEmpty || (
               <BulkOperateBar
                 list={operateList}
                 count={selectedCount}
@@ -393,7 +405,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                         {t('knowledgeDetails.metadata.toMetadataSetting')}
                       </Button>
                     )} */}
-                    {isCanAdd && activeTab !== 'built-in' && (
+                    {isCanAdd && !readOnly && activeTab !== 'built-in' && (
                       <Button
                         variant="outline"
                         type="button"

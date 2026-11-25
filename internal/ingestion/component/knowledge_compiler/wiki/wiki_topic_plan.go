@@ -235,7 +235,7 @@ func (p *wikiPipeline) runTopicPlan() (wikiPlan, error) {
 			return nil
 		})
 	}
-	planDone = p.deps.Progress.Sub(2, 6).Counter(p.ctx, len(jobs))
+	planDone = p.deps.Progress.Sub(2, 6).WithPhase("job:plan").Counter(p.ctx, len(jobs))
 	if err := runBatches(p.ctx, jobs); err != nil {
 		return wikiPlan{}, err
 	}

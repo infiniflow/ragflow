@@ -43,19 +43,21 @@ export function NavItemLink({ item }: { item: NavItem }) {
       <Button
         asLink
         to={item.path}
-        block
+        block={!collapsed}
         variant="ghost"
         aria-label={t(item.labelKey)}
         aria-current={isActive ? 'page' : undefined}
         className={cn(
-          'h-10 justify-start gap-2.5 px-3 text-base',
+          'h-10 justify-start gap-1 p-0 text-base',
           collapsed
             ? 'size-10 justify-center p-0'
             : 'max-md:size-10 max-md:justify-center max-md:p-0',
           isActive && 'bg-bg-card text-text-primary',
         )}
       >
-        <Icon className="size-5 shrink-0 stroke-[1.5]" />
+        <span className="flex size-10 shrink-0 items-center justify-center">
+          <Icon className="size-5 shrink-0 stroke-[1.5]" />
+        </span>
         <span className={cn('hidden truncate', !collapsed && 'md:inline')}>
           {t(item.labelKey)}
         </span>
@@ -116,21 +118,23 @@ export function CollapsibleNavGroup({
     <div>
       <NavItemTooltip collapsed={collapsed} label={t(labelKey)}>
         <Button
-          block
+          block={!collapsed}
           variant="ghost"
           aria-label={t(labelKey)}
           aria-expanded={expanded}
           aria-controls={id}
           onClick={toggleExpanded}
           className={cn(
-            'h-10 justify-start gap-2.5 px-3 text-base',
+            'h-10 justify-start gap-1 p-0 text-base',
             collapsed
               ? 'size-10 justify-center p-0'
               : 'max-md:size-10 max-md:justify-center max-md:p-0',
             isActive && 'text-text-primary',
           )}
         >
-          <Icon className="size-5 shrink-0 stroke-[1.5]" />
+          <span className="flex size-10 shrink-0 items-center justify-center">
+            <Icon className="size-5 shrink-0 stroke-[1.5]" />
+          </span>
           <span
             className={cn(
               'hidden flex-1 truncate text-start',
@@ -141,7 +145,7 @@ export function CollapsibleNavGroup({
           </span>
           <LucideChevronDown
             className={cn(
-              'hidden size-4 shrink-0 transition-transform',
+              'hidden size-4 shrink-0 transition-transform md:me-3',
               !collapsed && 'md:block',
               expanded && 'rotate-180',
             )}
@@ -165,7 +169,7 @@ export function CollapsibleNavGroup({
                   <Button
                     asLink
                     to={child.path}
-                    block
+                    block={!collapsed}
                     variant="ghost"
                     aria-label={t(child.labelKey)}
                     aria-current={isChildActive ? 'page' : undefined}

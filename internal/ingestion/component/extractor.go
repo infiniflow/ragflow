@@ -822,7 +822,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	// available to downstream stages without triggering generic summary
 	// shadowing.
 	if resumeOn {
-		if err := c.resume.Run(ctx, db, in, phaseWindows.Take(true)); err != nil {
+		if err := c.resume.Run(ctx, db, in, phaseWindows.Take(true).WithPhase("chunk:resume")); err != nil {
 			return nil, fmt.Errorf("extractor: %w", err)
 		}
 	}
@@ -830,13 +830,13 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	// No node-level wall-clock budget (see the package doc): each LLM call
 	// carries its own budget, and an expired call skips its chunk instead
 	// of failing the document. Task cancellation still aborts via ctx.
-	if err := c.runAutoKeywordsPool(ctx, db, in, phaseWindows.Take(keywordsOn)); err != nil {
+	if err := c.runAutoKeywordsPool(ctx, db, in, phaseWindows.Take(keywordsOn).WithPhase("chunk:keywords")); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
 
 	// Phase 2: Tag phase (if enabled), benefiting from title and freshly extracted keywords.
 	if tagsOn {
-		tagged, tagErr := c.runAutoTags(ctx, db, in, phaseWindows.Take(tagsOn))
+		tagged, tagErr := c.runAutoTags(ctx, db, in, phaseWindows.Take(tagsOn).WithPhase("chunk:tags"))
 		if tagErr != nil {
 			return nil, fmt.Errorf("extractor: %w", tagErr)
 		}
@@ -844,7 +844,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	}
 
 	// Phase 3: Remaining extractions (Questions, Summary, Metadata) via extractorPool.
-	if err := c.runRemainingExtractions(ctx, db, in, phaseWindows.Take(remainingOn)); err != nil {
+	if err := c.runRemainingExtractions(ctx, db, in, phaseWindows.Take(remainingOn).WithPhase("chunk:remaining")); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
 	// The tag phase swallows per-chunk failures, so a task stopped mid-run
@@ -1207,7 +1207,7 @@ func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractor
 		wg.Add(1)
 		go func(f utility.WorkerPoolFuture[extractorJob, struct{}]) {
 			defer wg.Done()
-			defer func() { w.Report(ctx, float64(done.Add(1))/float64(total)) }()
+			defer func() { w.ReportPosition(ctx, uint32(done.Add(1)), uint32(total)) }()
 			res, werr := f.Wait(ctx)
 			if werr != nil {
 				emu.Lock()
