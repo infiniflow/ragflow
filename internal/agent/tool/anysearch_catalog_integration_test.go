@@ -121,10 +121,10 @@ func TestAnySearchCatalogLive(t *testing.T) {
 			if r.RequestID == "" || q.RequestID != r.RequestID {
 				t.Fatal("delivered diagnostics did not preserve the real server request ID")
 			}
-			if tc.Tag == "code.snippet" && tc.Params["repo"] == "facebook/react" {
+			if tc.Tag == "code.snippet" && tc.Params["repo"] == "react/react" {
 				for _, result := range q.Results {
 					u, err := url.Parse(anySearchText(result["url"]))
-					if err != nil || !strings.EqualFold(u.Hostname(), "github.com") || !strings.HasPrefix(strings.ToLower(u.Path), "/facebook/react/") {
+					if err != nil || !strings.EqualFold(u.Hostname(), "github.com") || u.Path != "/react/react/blob/main/packages/react/src/ReactHooks.js" {
 						t.Fatal("repository-filtered snippet did not identify the requested GitHub repository")
 					}
 				}
@@ -168,7 +168,7 @@ func anySearchCatalogScenarios(now time.Time) []anySearchCatalogScenario {
 		{"business-people", "business.people", "stripe.com", p("type", "EmailLookup", "keyword", "stripe.com")},
 		{"business-trade", "business.trade", "China tea exports", p("type", "GlobalBilateralTrade", "hs_code", "0902", "location", "China", "date_start", "2023", "flow", "export")},
 		{"code-doc", "code.doc", "useEffect cleanup", p("library", "react")},
-		{"code-snippet", "code.snippet", "useState", p("repo", "facebook/react", "lang", "TypeScript")},
+		{"code-snippet", "code.snippet", "useState", p("repo", "react/react", "lang", "JavaScript", "path", "packages/react/src/ReactHooks.js")},
 		{"energy-electricity", "energy.electricity", "France electricity generation", p("type", "EUElectricity", "location", "France", "metric", "generation", "date_start", "2025")},
 		{"energy-production", "energy.production", "crude oil production", p("type", "USEnergyData", "keyword", "crude oil production", "date_start", "2020", "frequency", "annual")},
 		{"environment-aqi", "environment.aqi", "Beijing air quality", p("type", "GlobalAirQuality", "location", "Beijing")},
