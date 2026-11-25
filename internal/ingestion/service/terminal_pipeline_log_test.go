@@ -50,7 +50,7 @@ func TestRecordTerminalPipelineLogPreservesRunIdentity(t *testing.T) {
 		ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", PipelineLogID: &pipelineLogID,
 	}
 	ingestor := newUnitIngestor("test", 1)
-	ingestor.recordTerminalPipelineLog(t.Context(), task, string(entity.TaskStatusFail), "boom")
+	ingestor.recordTerminalPipelineLog(t.Context(), task, string(entity.TaskStatusFail), "boom", "")
 
 	var run entity.PipelineOperationLog
 	if err := db.First(&run, "id = ?", "run-1").Error; err != nil {

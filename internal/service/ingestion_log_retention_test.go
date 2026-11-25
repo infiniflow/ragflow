@@ -172,7 +172,7 @@ func TestRecordTerminalFoldsTerminalRunAfterWritingEvent(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetIngestionLogSettings failed: %v", err)
 	}
-	if err := svc.RecordTerminal(t.Context(), "run-1", "task-1", "Task completed."); err != nil {
+	if err := svc.RecordTerminal(t.Context(), "run-1", "task-1", "Task completed.", ""); err != nil {
 		t.Fatalf("RecordTerminal failed: %v", err)
 	}
 	if got := countFoldEvents(t, db, "run-1"); got != 5 {
@@ -212,7 +212,7 @@ func TestRecordTerminalDropsOldTerminalRunsOverDocumentCap(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetIngestionLogSettings failed: %v", err)
 	}
-	if err := svc.RecordTerminal(t.Context(), "run-2", "task-1", "Task completed."); err != nil {
+	if err := svc.RecordTerminal(t.Context(), "run-2", "task-1", "Task completed.", ""); err != nil {
 		t.Fatalf("RecordTerminal failed: %v", err)
 	}
 	if got := countFoldEvents(t, db, "run-1"); got != 0 {
