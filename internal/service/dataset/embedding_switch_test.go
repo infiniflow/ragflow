@@ -213,6 +213,28 @@ func TestValidateEmbeddingSwitchFindsVectorBeyondAVectorlessSample(t *testing.T)
 	}
 }
 
+// A model switch can leave an empty vector column next to a populated one on
+// the same row. Go does not fix map iteration order, so reading a single
+// column could sample the empty one and let an incompatible switch through.
+func TestValidateEmbeddingSwitchReadsEveryVectorColumnOfARow(t *testing.T) {
+	chunk := chunkWithVector(384)
+	chunk["q_1024_vec"] = []float64{}
+	engine := &switchProbeEngine{chunk: chunk}
+	stubDimensionProbe(t, 1024, nil)
+
+	svc := &DatasetService{docEngine: engine}
+	code, err := svc.validateEmbeddingSwitch(context.Background(), switchTestKB(5), "big-1024@Builtin")
+	if err == nil {
+		t.Fatal("expected the dimension change to be rejected despite the empty vector column")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected CodeDataError, got %v", code)
+	}
+	if !strings.Contains(err.Error(), "q_384_vec") {
+		t.Fatalf("expected the error to name the populated vector column, got %q", err.Error())
+	}
+}
+
 func TestValidateEmbeddingSwitchFailsClosedWhenSampleFails(t *testing.T) {
 	engine := &switchProbeEngine{searchErr: errors.New("engine unavailable")}
 	stubDimensionProbe(t, 384, nil)

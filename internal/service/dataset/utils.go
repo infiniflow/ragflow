@@ -265,6 +265,22 @@ func datasetGuessVecField(src map[string]interface{}) string {
 	return ""
 }
 
+// datasetFirstStoredVector returns the dimension and name of the first vector
+// column of the chunk that holds a value. A row can carry an empty vector
+// column next to a populated one, so every column is checked instead of
+// trusting the map order.
+func datasetFirstStoredVector(src map[string]interface{}) (int, string) {
+	for k, v := range src {
+		if !strings.HasSuffix(k, "_vec") {
+			continue
+		}
+		if vector := datasetAsFloatVec(v); len(vector) > 0 {
+			return len(vector), k
+		}
+	}
+	return 0, ""
+}
+
 func datasetAsFloatVec(v interface{}) []float64 {
 	switch val := v.(type) {
 	case []float64:

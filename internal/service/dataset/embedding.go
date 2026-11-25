@@ -339,10 +339,13 @@ func (d *DatasetService) validateEmbeddingSwitch(ctx context.Context, kb *entity
 // chunk the pipeline skipped embedding for would otherwise let the check pass
 // while its neighbours still hold vectors in the old space.
 //
-// A dataset that somehow carries several vector columns answers with whichever
-// column the engine enumerates first: the columns can only disagree after a
-// switch this check let through, and any of them still tells whether the
-// candidate lands in the space the dataset is indexed in.
+// A chunk can carry several vector columns once a model switch left an empty
+// column next to a populated one. Every column is inspected before the row
+// counts as vectorless, because Go does not fix map iteration order and an
+// empty column must not hide its neighbour. The answer names the first
+// populated column: such columns can only disagree after a switch this check
+// let through, and any of them still tells whether the candidate lands in the
+// space the dataset is indexed in.
 func (d *DatasetService) storedVectorDimension(ctx context.Context, tenantID, datasetID string) (int, string, error) {
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	// Bounded so one switch costs a handful of reads at most.
@@ -376,12 +379,8 @@ func (d *DatasetService) storedVectorDimension(ctx context.Context, tenantID, da
 			return 0, "", fmt.Errorf("failed to load chunk %s: %w", chunkID, err)
 		}
 		chunk := datasetMap(raw)
-		field := datasetGuessVecField(chunk)
-		if field == "" {
-			continue
-		}
-		if vector := datasetAsFloatVec(chunk[field]); len(vector) > 0 {
-			return len(vector), field, nil
+		if dim, field := datasetFirstStoredVector(chunk); dim > 0 {
+			return dim, field, nil
 		}
 	}
 	return 0, "", nil
