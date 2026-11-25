@@ -1977,8 +1977,9 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 	// The buildRunFunc placeholder branch is reserved for the rare
 	// "canvas exists but has no DSL at all" edge case.
 	var (
-		versionRow *entity.UserCanvasVersion
-		dsl        map[string]any
+		versionRow   *entity.UserCanvasVersion
+		dsl          map[string]any
+		eventVersion = version
 	)
 	channelRun, _ := ctx.Value(channelAgentRunContextKey{}).(bool)
 	refreshSessionDSL := channelRun && version == ""
@@ -2035,6 +2036,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 			} else {
 				// A paused execution must resume the graph that wrote its checkpoint.
 				dsl = dslpkg.NormalizeForRun(existingSession.DSL)
+				eventVersion = ""
 			}
 		}
 	}
@@ -2144,6 +2146,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		case <-lifecycleDone:
 		}
 	}()
+	runCtx = withAgentEventLog(runCtx, agentTenantID, userID, canvasID, eventVersion, dsl)
 	inner := s.runner.Run(runCtx, run, canvasID, sessionID, userInput, root)
 
 	out := make(chan canvas.RunEvent, 8)
