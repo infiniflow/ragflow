@@ -441,7 +441,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	defer cancel()
 	switch serverType {
 	case common.ServerTypeStandalone:
-		return runServices(ctx, cancel, arguments, services)
+		return standaloneRun(ctx, cancel, arguments, services)
 	case common.ServerTypeAdmin:
 		return admin.Run(ctx, serverType, arguments)
 	case common.ServerTypeAPI:
@@ -457,7 +457,7 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 	}
 }
 
-func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
+func standaloneRun(ctx context.Context, cancel context.CancelFunc, args *bootstrap.ServerArgs, services *bootstrap.AgentServices) error {
 	group, serviceCtx := errgroup.WithContext(ctx)
 	var workerReady []<-chan struct{}
 	waitReady := func(mode string, ready <-chan struct{}) error {
@@ -481,13 +481,13 @@ func runServices(ctx context.Context, cancel context.CancelFunc, args *bootstrap
 		serviceArgs.Mode = &mode
 		serviceArgs.InitSuperUser = mode == "admin"
 		var port int
-		config := server.GetConfig()
+		globalConfig := server.GetConfig()
 		if mode == "admin" {
-			port = config.GetAdminServerConfig().HTTPPort
+			port = globalConfig.GetAdminServerConfig().HTTPPort
 		} else if mode == "api" {
-			port = config.GetAPIServerConfig().HTTPPort
+			port = globalConfig.GetAPIServerConfig().HTTPPort
 		}
-		name, err := bootstrap.ResolveServerName(mode, config.GetServerName(mode), port)
+		name, err := bootstrap.ResolveServerName(mode, globalConfig.GetServerName(mode), port)
 		if err != nil {
 			startupErr = err
 			return
