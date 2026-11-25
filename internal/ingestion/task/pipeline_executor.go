@@ -370,6 +370,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		s.persistResolvedPipeline(context.WithoutCancel(ctx))
 	}
 
+	ctx, savePreview := s.prepareDocumentPreview(ctx)
 	pipelineOutput, pipelineDSL, err := s.runPipelineFunc(ctx, dsl)
 	if err != nil {
 		return nil, err
@@ -384,6 +385,10 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	result, err := s.processOutput(ctx, pipelineOutput, start)
 	if err != nil {
 		return nil, err
+	}
+
+	if savePreview != nil {
+		savePreview(ctx)
 	}
 
 	if pipelineDSL != "" && s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.PipelineLogID != nil && *s.taskCtx.IngestionTask.PipelineLogID != "" {

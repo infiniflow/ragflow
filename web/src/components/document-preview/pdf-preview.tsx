@@ -14,7 +14,8 @@
  *  limitations under the License.
  */
 
-import { memo, useEffect, useRef } from 'react';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   AreaHighlight,
   Highlight,
@@ -38,8 +39,13 @@ type PdfLoaderProps = React.ComponentProps<typeof PdfLoader> & {
 };
 
 const Loader = PdfLoader as React.ComponentType<PdfLoaderProps>;
+export type PdfPageLocator = (
+  pdf: PDFDocumentProxy,
+) => Promise<{ pageNumber: number; notice?: string } | undefined>;
+
 export interface IProps {
   highlights?: IHighlight[];
+  locatePage?: PdfPageLocator;
   setWidthAndHeight?: (width: number, height: number) => void;
   url: string;
   className?: string;
@@ -55,9 +61,15 @@ const HighlightPopup = ({
     </div>
   ) : null;
 
+function PdfLoadError({ url }: { url: string }) {
+  const error = useCatchDocumentError(url);
+  return <FileError>{error}</FileError>;
+}
+
 // TODO: merge with DocumentPreviewer
 const PdfPreview = ({
   highlights: state,
+  locatePage,
   setWidthAndHeight,
   url,
   className,
@@ -65,7 +77,43 @@ const PdfPreview = ({
   // const url = useGetDocumentUrl();
 
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
-  const error = useCatchDocumentError(url);
+  const highlighterRef = useRef<PdfHighlighter<IHighlight>>(null);
+  const [readyPDF, setReadyPDF] = useState<{
+    url: string;
+    document: PDFDocumentProxy;
+  }>();
+  const [notice, setNotice] = useState<{
+    document: PDFDocumentProxy;
+    locatePage: PdfPageLocator;
+    text?: string;
+  }>();
+
+  useEffect(() => {
+    if (!locatePage || readyPDF?.url !== url) return;
+
+    let active = true;
+    void locatePage(readyPDF.document).then((location) => {
+      if (!active || !location) return;
+      setNotice({
+        document: readyPDF.document,
+        locatePage,
+        text: location.notice,
+      });
+      const viewer = highlighterRef.current?.viewer;
+      const { pageNumber } = location;
+      if (
+        viewer &&
+        Number.isInteger(pageNumber) &&
+        pageNumber >= 1 &&
+        pageNumber <= viewer.pagesCount
+      ) {
+        viewer.scrollPageIntoView({ pageNumber });
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [locatePage, readyPDF, url]);
 
   const resetHash = () => {};
 
@@ -93,6 +141,17 @@ const PdfPreview = ({
         className,
       )}
     >
+      {notice?.document === readyPDF?.document &&
+        notice?.locatePage === locatePage &&
+        readyPDF?.url === url &&
+        notice?.text && (
+          <p
+            role="status"
+            className="absolute top-2 left-2 right-2 z-10 rounded border border-border-button bg-bg-card p-2 text-sm text-text-secondary"
+          >
+            {notice.text}
+          </p>
+        )}
       <Loader
         url={url}
         httpHeaders={httpHeaders}
@@ -105,23 +164,27 @@ const PdfPreview = ({
         cMapUrl="/pdfjs-dist/cmaps/"
         cMapPacked={true}
         standardFontDataUrl="/pdfjs-dist/standard_fonts/"
-        errorMessage={<FileError>{error}</FileError>}
+        errorMessage={<PdfLoadError key={url} url={url} />}
       >
         {(pdfDocument) => {
-          pdfDocument.getPage(getSourceLocatePageNumber(state)).then((page) => {
-            const viewport = page.getViewport({ scale: 1 });
-            const width = viewport.width;
-            const height = viewport.height;
-            setWidthAndHeight?.(width, height);
-          });
+          if (setWidthAndHeight) {
+            pdfDocument
+              .getPage(getSourceLocatePageNumber(state))
+              .then((page) => {
+                const { width, height } = page.getViewport({ scale: 1 });
+                setWidthAndHeight(width, height);
+              });
+          }
 
           return (
             <PdfHighlighter
+              ref={highlighterRef}
               pdfDocument={pdfDocument}
               enableAreaSelection={(event) => event.altKey}
               onScrollChange={resetHash}
               scrollRef={(scrollTo) => {
                 ref.current = scrollTo;
+                setReadyPDF({ url, document: pdfDocument });
               }}
               onSelectionFinished={() => null}
               highlightTransform={(

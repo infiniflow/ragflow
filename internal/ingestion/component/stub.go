@@ -18,6 +18,12 @@
 
 package component
 
+import "context"
+
 // This build registers no extraction mode, so construction attaches nothing
 // and Invoke's extra phase stays inert.
 func attachResumeHook(*ExtractorComponent, map[string]any) {}
+
+func bindDocumentPreview(ctx context.Context, _ string, _ *string) context.Context {
+	return ctx
+}

@@ -201,6 +201,7 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 
 // updateSyncDocument updates an existing synced document and file-manager row.
 func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document, filename, location, filetype, contentHash string) (service.DocumentUpsertResult, error) {
+	previousSource := *doc
 	suffix := strings.TrimPrefix(strings.ToLower(filepath.Ext(filename)), ".")
 	updates := map[string]any{
 		"name":        filename,
@@ -222,6 +223,7 @@ func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.
 	if err := s.publishSyncDocument(ctx, doc, location); err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
+	cleanupPreviewArtifacts(ctx, &previousSource)
 	// update new updated file
 	if err := s.updateSyncDocumentFile(ctx, input, doc); err != nil {
 		return service.DocumentUpsertResult{}, err

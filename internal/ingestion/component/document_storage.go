@@ -31,9 +31,10 @@ import (
 // It is exported so higher-level integration tests can inject doc_id resolution
 // without reaching into DAO state.
 type DocumentStorageRef struct {
-	Name   string
-	Bucket string
-	Path   string
+	Name             string
+	Bucket           string
+	Path             string
+	documentLocation *string
 }
 
 // ResolveDocumentStorageOverride is the narrow test seam for doc_id-driven
@@ -80,7 +81,7 @@ func ResolveDocumentStorage(ctx context.Context, db *gorm.DB, docID string) (*Do
 	if err != nil {
 		return nil, err
 	}
-	ref := &DocumentStorageRef{Name: documentNameOrID(doc)}
+	ref := &DocumentStorageRef{Name: documentNameOrID(doc), documentLocation: doc.Location}
 
 	mappings, err := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, doc.ID)
 	if err != nil {
