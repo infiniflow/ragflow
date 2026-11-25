@@ -109,7 +109,11 @@ type MemoryMessageService struct {
 	taskDAO       *dao.TaskDAO
 	memoryTaskDAO *dao.MemoryTaskDAO
 	taskPublisher TaskPublisher
-	resumeTask    func(context.Context, *entity.MemoryTask, string) error
+	// db is inherited from the owning MemoryService at construction so the
+	// embedding failover can flip a gp- group member without touching the
+	// package-level dao.DB singleton (the arch test forbids it here).
+	db         *gorm.DB
+	resumeTask func(context.Context, *entity.MemoryTask, string) error
 	// tierResolver maps a tenant to its ingestion queue tier so memory
 	// wake-ups land on the same priority lane as document ingestion for that
 	// tenant. Injected (defaults to defaultTierResolver) rather than read from
@@ -150,8 +154,13 @@ func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
 		mq = memories.mqEngine
 		kv = memories.kvrocksClient
 	}
+	var db *gorm.DB
+	if memories != nil {
+		db = memories.db
+	}
 	return &MemoryMessageService{
 		memories:      memories,
+		db:            db,
 		taskDAO:       dao.NewTaskDAO(),
 		memoryTaskDAO: dao.NewMemoryTaskDAO(),
 		taskPublisher: NewMessageQueueTaskPublisherWithEngine(mq),
@@ -409,7 +418,7 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 	// Group failover: a gp- reference whose member fails the embedding call
 	// flips inactive and retries once on the next member.
 	var embeddings []models.EmbeddingData
-	err := dao.InvokeWithGroupFailover(ctx, dao.DB, mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID,
+	err := dao.InvokeWithGroupFailover(ctx, s.db, mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID,
 		func(ctx context.Context) (*models.EmbeddingModel, error) {
 			return NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, mem.TenantID), mem.EmbdID)
 		}, nil,

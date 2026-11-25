@@ -69,6 +69,12 @@ func InvokeWithGroupFailover[T any](
 	if !ok {
 		return invErr
 	}
+	// A nil db means the caller was assembled without a database handle
+	// (unit tests, degraded wiring): failover is best-effort, so skip the
+	// flip and surface the original invocation error.
+	if db == nil {
+		return invErr
+	}
 	flipped, ferr := MarkGroupMemberInactive(ctx, db, strings.TrimSpace(tenantID), groupID, modelType)
 	if ferr != nil {
 		common.WarnCtx(ctx, "model group failover: failed to mark member inactive",
