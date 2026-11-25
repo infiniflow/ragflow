@@ -29,8 +29,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 const (
@@ -278,7 +276,7 @@ func (c *AirtableConnector) downloadAttachment(ctx context.Context, rawURL strin
 	if c.downloadFile != nil {
 		return c.downloadFile(ctx, rawURL)
 	}
-	data, _, _, err := utility.FetchRemoteFileSafely(ctx, rawURL, c.sizeThreshold)
+	data, _, _, err := fetchConnectorRemoteFile(ctx, rawURL, c.sizeThreshold, 0)
 	return data, err
 }
 

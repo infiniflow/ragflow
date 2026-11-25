@@ -45,12 +45,19 @@ func FetchRemoteFileSafely(ctx context.Context, rawURL string, maxSize int64) ([
 
 // FetchRemoteFileSafelyWithTimeout downloads rawURL with a caller-selected timeout.
 func FetchRemoteFileSafelyWithTimeout(ctx context.Context, rawURL string, maxSize int64, timeout time.Duration) ([]byte, http.Header, string, error) {
+	return FetchRemoteFileSafelyWithValidator(ctx, rawURL, maxSize, timeout, common.AssertURLSafeWithContext)
+}
+
+// FetchRemoteFileSafelyWithValidator validates and pins each hop using the caller's address policy.
+func FetchRemoteFileSafelyWithValidator(ctx context.Context, rawURL string, maxSize int64, timeout time.Duration,
+	validate func(context.Context, string) (string, string, error),
+) ([]byte, http.Header, string, error) {
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
 	currentURL := rawURL
 	for redirects := 0; redirects < 10; redirects++ {
-		hostname, resolvedIP, err := common.AssertURLSafeWithContext(ctx, currentURL)
+		hostname, resolvedIP, err := validate(ctx, currentURL)
 		if err != nil {
 			return nil, nil, "", err
 		}

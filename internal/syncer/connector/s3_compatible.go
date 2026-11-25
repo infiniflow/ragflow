@@ -227,11 +227,11 @@ func s3PinnedHTTPClient() *http.Client {
 			// the connection through a proxy host instead of the pinned IP.
 			Proxy: nil,
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				host, port, err := net.SplitHostPort(addr)
+				_, port, err := net.SplitHostPort(addr)
 				if err != nil {
 					return nil, err
 				}
-				_, pinIP, err := assertConnectorURLSafe("https://" + host)
+				_, pinIP, err := assertConnectorURLSafe((&url.URL{Scheme: "https", Host: addr}).String())
 				if err != nil {
 					return nil, err
 				}
