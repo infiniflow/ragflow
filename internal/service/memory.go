@@ -676,6 +676,11 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, memoryID string, req *
 		if !validPermissions[perm] {
 			return nil, fmt.Errorf("unknown permission '%s'", *req.Permissions)
 		}
+		if strings.ToLower(strings.TrimSpace(currentMemory.Permissions)) != string(perm) {
+			if err := checker.CheckResource(ctx, memoryRef, permission.OperationShare); err != nil {
+				return nil, err
+			}
+		}
 		updateDict["permissions"] = perm
 	}
 

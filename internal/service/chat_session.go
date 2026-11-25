@@ -198,7 +198,7 @@ func (s *ChatSessionService) GetSession(ctx context.Context, chatID, sessionID s
 	if session.DialogID != chatID {
 		return nil, common.CodeDataError, errors.New("session does not belong to this chat")
 	}
-	if err = authorizeChatSessionOwner(ctx, chatID, session, permission.OperationUpdate); err != nil {
+	if err = authorizeChatSessionOwner(ctx, chatID, session, permission.OperationUpdate, s.permissionChecker); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -287,11 +287,6 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, chatID string, 
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, "", code, normalizedErr
 	}
-	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationUpdate); err != nil {
-		code, normalizedErr := permissionresponse.NormalizeHidden(err)
-		return nil, "", code, normalizedErr
-	}
-
 	if len(req) == 0 {
 		return map[string]interface{}{}, "success", common.CodeSuccess, nil
 	}
@@ -333,7 +328,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, chatID string, 
 			continue
 		}
 
-		if werr := authorizeChatSessionOwner(ctx, chatID, session, permission.OperationDelete); werr != nil {
+		if werr := authorizeChatSessionOwner(ctx, chatID, session, permission.OperationDelete, s.permissionChecker); werr != nil {
 			_, normalizedErr := permissionresponse.NormalizeHidden(werr)
 			errorsList = append(errorsList, fmt.Sprintf("%s: %s", normalizedErr, sid))
 			continue
@@ -535,11 +530,6 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, chatID, s
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
-	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationUpdate); err != nil {
-		code, normalizedErr := permissionresponse.NormalizeHidden(err)
-		return nil, code, normalizedErr
-	}
-
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID, sessionHistoryOptions())
 	if err != nil || session.DialogID != chatID {
 		if err != nil && !isChatSessionNotFound(err) {
@@ -548,7 +538,7 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, chatID, s
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
-	if werr := authorizeChatSessionOwner(ctx, chatID, session, permission.OperationDelete); werr != nil {
+	if werr := authorizeChatSessionOwner(ctx, chatID, session, permission.OperationDelete, s.permissionChecker); werr != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(werr)
 		return nil, code, normalizedErr
 	}
@@ -610,7 +600,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, chatID, 
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
-	if err = authorizeChatSessionFeedback(ctx, chatID, session); err != nil {
+	if err = authorizeChatSessionFeedback(ctx, chatID, session, s.permissionChecker); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
