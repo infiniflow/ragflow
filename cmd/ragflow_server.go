@@ -284,23 +284,21 @@ func runServer(ctx context.Context, _ context.CancelFunc, arguments *bootstrap.S
 
 	var port int
 	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAPI {
-		port, err = globalConfig.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.Port)
-		if err != nil {
-			return fmt.Errorf("resolve API port: %w", err)
+		if arguments.Port != nil {
+			err = globalConfig.SetAPIServerHTTPPort(port)
+			if err != nil {
+				return err
+			}
 		}
-		globalConfig.SetAPIServerHTTPPort(port)
 	}
 
 	if serverType == common.ServerTypeStandalone || serverType == common.ServerTypeAdmin {
-		var adminPort *int
-		if serverType == common.ServerTypeAdmin {
-			adminPort = arguments.Port
+		if arguments.Port != nil {
+			err = globalConfig.SetAdminHTTPPort(port)
+			if err != nil {
+				return err
+			}
 		}
-		port, err = globalConfig.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, adminPort)
-		if err != nil {
-			return fmt.Errorf("resolve admin port: %w", err)
-		}
-		globalConfig.SetAdminHTTPPort(port)
 	}
 
 	if serverType != common.ServerTypeStandalone {
