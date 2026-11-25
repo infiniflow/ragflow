@@ -531,7 +531,7 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 		t.Fatalf("prepare document permission fixture: %v", err)
 	}
 	if accessible {
-		if err := testsupport.GrantTestResourcePermission(db, "tenant-owner", "document", "doc-1", "user-1", "read", "write"); err != nil {
+		if err := testsupport.GrantTestResourcePermission(db, "tenant-owner", "document", "doc-1", "user-1", "read", "write", "manage"); err != nil {
 			t.Fatalf("grant document access: %v", err)
 		}
 	}
